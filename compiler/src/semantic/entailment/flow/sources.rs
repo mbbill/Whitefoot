@@ -824,10 +824,48 @@ impl Analyzer<'_, '_> {
                     );
                     return true;
                 }
+                // [VIEW-2] the child carries the parent's range, so the one
+                // relation the formation publishes is the parent view's own
+                // length read through its holder.
+                if let CheckedSliceSource::ViewHolder {
+                    binding: parent, ..
+                } = source
+                {
+                    let source_length = self.place_measure_term(
+                        CheckedMeasure::Length,
+                        projected_place(PlaceTerm {
+                            root: PlaceRoot::Binding(*parent),
+                            deref: self.is_holder(*parent),
+                            fields: Vec::new(),
+                        }),
+                        MeasuredKind::Slice,
+                        None,
+                    );
+                    let slice_place = self.bound_place(binding);
+                    let slice_length = self.place_measure_term(
+                        CheckedMeasure::Length,
+                        projected_place(slice_place),
+                        MeasuredKind::Slice,
+                        None,
+                    );
+                    let event = self.binding_event(event, FlowEventKind::S6, node_path);
+                    state.establish(
+                        &Relation::Equal {
+                            left: slice_length,
+                            right: source_length,
+                            difference: 0,
+                        },
+                        &mut self.derivations,
+                        event,
+                    );
+                    return true;
+                }
                 let (place, array_length) = match source {
                     // Answered above; a run's viewed place is a projection
                     // path and not a field list.
-                    CheckedSliceSource::Run(_) => return true,
+                    CheckedSliceSource::Run(_) | CheckedSliceSource::ViewHolder { .. } => {
+                        return true;
+                    }
                     CheckedSliceSource::Array { root, length } => {
                         (self.array_root_place(root), Some(*length))
                     }

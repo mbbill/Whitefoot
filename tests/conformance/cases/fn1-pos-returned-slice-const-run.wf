@@ -1,4 +1,4 @@
-const fixed_bytes: array<u8, 3> =[7_u8, 13_u8, 19_u8];
+const fixed_bytes: FixedVector<u8, 3> =[7_u8, 13_u8, 19_u8];
 
 fn fixed_view['r]() -> result: own Slice<'r, u8> pure {
   let view = slice_of(&'r fixed_bytes);

@@ -1,4 +1,4 @@
-const fir_weights: array<u32, 3> =[1_u32, 2_u32, 1_u32];
+const fir_weights: FixedVector<u32, 3> =[1_u32, 2_u32, 1_u32];
 
 command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- slides a fixed 3-tap integer FIR window across a sample buffer with bounds-checked reads";

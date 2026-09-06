@@ -1,4 +1,4 @@
-const table: array<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
+const table: FixedVector<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
 
 command fn main() -> status: own ExitStatus pure {
   doc "A const item is immutable: writing through it is rejected [CONST-2].";

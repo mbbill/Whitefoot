@@ -34,6 +34,17 @@ impl IrBuilder<'_> {
                 }
                 IrOperation::SliceFromBuffer { buffer }
             }
+            // [VIEW-2, OWN-6] the shared child of a view reached through its
+            // holder. A view value is already a descriptor and the child
+            // carries the parent's range, so the child *is* the parent's
+            // descriptor value: nothing is computed and nothing is narrowed.
+            CheckedSliceSource::ViewHolder { binding, .. } => {
+                let parent = self.binding_value(*binding)?;
+                if self.value_type(parent)? != (IrType::Slice { element }) {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                return Ok(parent);
+            }
             // [VIEW-2] a run's window: its own slots, from `head` onward.
             CheckedSliceSource::Run(root) => {
                 let run = self.container_root_value(root)?;

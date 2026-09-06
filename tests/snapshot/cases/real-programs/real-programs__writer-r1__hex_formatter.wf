@@ -1,4 +1,4 @@
-const hex_digits: array<u8, 16> =[48_u8, 49_u8, 50_u8, 51_u8, 52_u8, 53_u8, 54_u8, 55_u8, 56_u8, 57_u8, 97_u8, 98_u8, 99_u8, 100_u8, 101_u8, 102_u8];
+const hex_digits: FixedVector<u8, 16> =[48_u8, 49_u8, 50_u8, 51_u8, 52_u8, 53_u8, 54_u8, 55_u8, 56_u8, 57_u8, 97_u8, 98_u8, 99_u8, 100_u8, 101_u8, 102_u8];
 
 command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- formats each byte of a buffer as two lowercase hex ASCII characters into a bounds-proved output";

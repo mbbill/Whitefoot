@@ -1,4 +1,4 @@
-const values: array<u8, 8> =[10_u8, 3_u8, 20_u8, 7_u8, 30_u8, 1_u8, 40_u8, 9_u8];
+const values: FixedVector<u8, 8> =[10_u8, 3_u8, 20_u8, 7_u8, 30_u8, 1_u8, 40_u8, 9_u8];
 
 command fn main() -> status: own ExitStatus pure {
   doc "SNAPSHOT REJECT [INV-1]: the finder expected ACCEPT for conditional accumulation into two sums, but one arm advances a sum and the other leaves it, so the body join keeps only a fresh delta atom and the backedge target even_sum <= 255_u32 * (i + 1_u64) is unprovable [ENT-6].";

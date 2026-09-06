@@ -42,6 +42,7 @@ use super::model::{
     CheckedNominal, CheckedNominalKind, CheckedParameter, CheckedProgramData,
     CheckedResultStateOrigin, CheckedSetTarget, CheckedSliceOrigin, CheckedStateOrigins,
     CheckedStatement, CheckedType, CheckedValue, DerivedConst, DerivedConstId, FunctionId,
+    LoanStrength,
     NominalId, ValueInitializerKind, evaluate_const_operation,
 };
 use super::permission::{PermissionSignature, analyze_permission};
@@ -156,14 +157,34 @@ fn derive_slice_return_ceiling(
     };
     let mut ceiling = vec![CheckedSliceOrigin::ImmutableConst];
     for parameter in parameters {
-        if parameter.mode == CheckedMode::Own
-            && parameter.ty
-                == (CheckedType::Slice {
-                    region,
-                    element,
-                    strength,
-                })
-        {
+        let admitted = match parameter.ty {
+            // [VIEW-6] the ceiling half [FN-1] already had: an `own` view
+            // parameter of exactly the result's own type.
+            CheckedType::Slice {
+                region: formal_region,
+                element: formal_element,
+                strength: formal_strength,
+            } => {
+                formal_region == region
+                    && formal_element == element
+                    && match parameter.mode {
+                        CheckedMode::Own => formal_strength == strength,
+                        // [VIEW-6, OWN-6] the shared child reborrow of the
+                        // view a helper was handed: a borrowed view holder at
+                        // the result's own region and element supplies a
+                        // **shared** result at either parent strength, which
+                        // is what makes the fill-and-publish helper writable.
+                        // No borrowed holder supplies an exclusive result: a
+                        // second exclusive loan on one range is what [OWN-5]
+                        // refuses.
+                        CheckedMode::Shared(_) | CheckedMode::Unique(_) => {
+                            strength == LoanStrength::Shared
+                        }
+                    }
+            }
+            _ => false,
+        };
+        if admitted {
             ceiling.push(CheckedSliceOrigin::FormalSlice {
                 parameter: parameter.declaration,
                 region,
@@ -1093,6 +1114,59 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for (root, places) in wanted {
             if let Some(local) = bindings.get_mut(&root) {
                 local.hold_slice_loans(holder, &places);
+            }
+        }
+    }
+
+    /// [VIEW-6, OWN-5] the shared child a call published, registered at the
+    /// caller.
+    ///
+    /// A callee handed `&uniq MutSlice<'r, T>` may return the shared child of
+    /// that view [VIEW-6]. The child reaches the caller's own storage, and
+    /// the caller holds the exclusive loan that storage already carries, so
+    /// the freeze the child puts on its parent has to stand here too: the
+    /// parent may not write the elements it views while the returned child
+    /// lives. No new formation happened at this caller, so the loan is
+    /// registered from the result's own origin set, and only where an
+    /// exclusive loan on that place is what the child is a child *of* — a
+    /// shared result over storage no exclusive loan covers already carries
+    /// its own shared loan from its formation.
+    pub(in crate::semantic::check) fn hold_published_child_loan(
+        holder: DeclarationId,
+        ty: CheckedType,
+        slice: Option<&borrows::SliceInfo>,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+    ) {
+        let (
+            CheckedType::Slice {
+                strength: LoanStrength::Shared,
+                ..
+            },
+            Some(slice),
+        ) = (ty, slice)
+        else {
+            return;
+        };
+        let places = slice.effect_places();
+        let mut added: Vec<(DeclarationId, SliceLoan)> = Vec::new();
+        for (root, local) in bindings.iter() {
+            for loan in &local.slice_loans {
+                if loan.strength == LoanStrength::Exclusive && places.contains(&loan.place) {
+                    added.push((
+                        *root,
+                        SliceLoan {
+                            region: slice.region,
+                            place: loan.place.clone(),
+                            strength: LoanStrength::Shared,
+                            descriptors: vec![holder],
+                        },
+                    ));
+                }
+            }
+        }
+        for (root, loan) in added {
+            if let Some(local) = bindings.get_mut(&root) {
+                local.push_slice_loan(loan);
             }
         }
     }

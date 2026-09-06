@@ -1668,6 +1668,14 @@ pub(crate) enum CheckedSliceSource {
         fields: Vec<u32>,
         length: CheckedConst,
     },
+    /// The shared child reborrow of the view a **view holder** reaches
+    /// [VIEW-2, OWN-6]: the parent's own descriptor, read once more under the
+    /// narrower loan. There is no second storage and no second range, which
+    /// is why the source carries only the holder binding.
+    ViewHolder {
+        binding: BindingId,
+        element: CheckedFlatElement,
+    },
     /// One run [BLK-1], viewed over its initialized window.
     ///
     /// The window is `len_of` slots beginning at `head_of`, and the row's own

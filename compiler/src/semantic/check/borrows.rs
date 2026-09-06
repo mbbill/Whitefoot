@@ -1485,6 +1485,25 @@ and name it on the returned reborrow"
                     nominal,
                 }
             }
+            // A view value is already a descriptor, so the child reborrow a
+            // helper takes of its own view holder is that same descriptor
+            // read once more: there is no content to address and nothing to
+            // reload, exactly as a system-resource holder's child is
+            // [OWN-6, VIEW-1]. The child carries the parent's range and its
+            // loan region, and [OWN-6]'s ordinary suspension freezes the
+            // holder while the child lives [OWN-5].
+            CheckedType::Slice { .. } if fields.is_empty() => CheckedExpression::Binding {
+                carrier: self.tree.path(carrier)?.clone(),
+                binding: local.binding,
+                state_origins: local.state_origins.clone(),
+                ty,
+                slice_origins: local
+                    .slice
+                    .as_ref()
+                    .map(|slice| slice.origins.clone())
+                    .unwrap_or_default(),
+                consume_root: false,
+            },
             _ if fields.is_empty() && self.borrow_addresses_storage(ty)? => {
                 CheckedExpression::ReborrowAddressed {
                     carrier: self.tree.path(carrier)?.clone(),
@@ -1502,11 +1521,16 @@ and name it on the returned reborrow"
             place,
             origin_region: parent.origin_region,
         };
+        // The reborrowed descriptor reaches the same storage its parent does,
+        // so the child's origin set is the parent's own [VIEW-2].
+        let slice = matches!(ty, CheckedType::Slice { .. })
+            .then(|| local.slice.clone())
+            .flatten();
         Ok(TypedExpression {
             expression,
             mode: borrow.mode(),
             borrow: Some(borrow),
-            slice: None,
+            slice,
             holder: Some(holder),
             reference_value: true,
             effects: EffectSet::NONE,

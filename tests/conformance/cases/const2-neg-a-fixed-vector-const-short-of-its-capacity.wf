@@ -1,0 +1,7 @@
+const table: FixedVector<u8, 4> =[10_u8, 20_u8];
+
+command fn main() -> status: own ExitStatus pure {
+  doc "[CONST-2, S34] the const form of the inline run takes exactly `n` entries, because its `len_of = cap_of = n` is a standing fact of the type and not a stored word. A shorter entry list would leave a const whose measures the program could not read off its own type, so it is rejected at the item.";
+  let v = table[0_u64];
+  return exit_status(code: 0_u8);
+}

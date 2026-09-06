@@ -4598,4 +4598,4 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   `raw_deflate_vectors.wf`, `telemetry_packet.wf`, `utf8parse.wf` and
   `wfgrep.wf` — and every one of them keeps the exit code it had; no program of
   that corpus was added or removed.
-ACTIVE-SPEC: v0.45 b3ae80744d881cbc83031047491a5cabf58c0a32d84ec8cf20aa512e453f998d 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+ACTIVE-SPEC: v0.45 e712f98392f8a66d1d6eab15e303c0ce3b73a06854099f9018ca817db3c1874a 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

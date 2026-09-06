@@ -1,22 +1,22 @@
-const subject_head: array<u8, 19> =[116_u8, 104_u8, 101_u8, 32_u8, 113_u8, 117_u8, 105_u8, 99_u8, 107_u8, 32_u8, 98_u8, 114_u8, 111_u8, 119_u8, 110_u8, 32_u8, 102_u8, 111_u8, 120_u8];
+const subject_head: FixedVector<u8, 19> =[116_u8, 104_u8, 101_u8, 32_u8, 113_u8, 117_u8, 105_u8, 99_u8, 107_u8, 32_u8, 98_u8, 114_u8, 111_u8, 119_u8, 110_u8, 32_u8, 102_u8, 111_u8, 120_u8];
 
-const subject_tail: array<u8, 24> =[32_u8, 106_u8, 117_u8, 109_u8, 112_u8, 115_u8, 32_u8, 111_u8, 118_u8, 101_u8, 114_u8, 32_u8, 116_u8, 104_u8, 101_u8, 32_u8, 108_u8, 97_u8, 122_u8, 121_u8, 32_u8, 100_u8, 111_u8, 103_u8];
+const subject_tail: FixedVector<u8, 24> =[32_u8, 106_u8, 117_u8, 109_u8, 112_u8, 115_u8, 32_u8, 111_u8, 118_u8, 101_u8, 114_u8, 32_u8, 116_u8, 104_u8, 101_u8, 32_u8, 108_u8, 97_u8, 122_u8, 121_u8, 32_u8, 100_u8, 111_u8, 103_u8];
 
-const needle_present: array<u8, 5> =[98_u8, 114_u8, 111_u8, 119_u8, 110_u8];
+const needle_present: FixedVector<u8, 5> =[98_u8, 114_u8, 111_u8, 119_u8, 110_u8];
 
-const needle_absent: array<u8, 3> =[99_u8, 97_u8, 116_u8];
+const needle_absent: FixedVector<u8, 3> =[99_u8, 97_u8, 116_u8];
 
-const label_length: array<u8, 7> =[108_u8, 101_u8, 110_u8, 103_u8, 116_u8, 104_u8, 61_u8];
+const label_length: FixedVector<u8, 7> =[108_u8, 101_u8, 110_u8, 103_u8, 116_u8, 104_u8, 61_u8];
 
-const label_present: array<u8, 7> =[32_u8, 98_u8, 114_u8, 111_u8, 119_u8, 110_u8, 61_u8];
+const label_present: FixedVector<u8, 7> =[32_u8, 98_u8, 114_u8, 111_u8, 119_u8, 110_u8, 61_u8];
 
-const label_absent: array<u8, 5> =[32_u8, 99_u8, 97_u8, 116_u8, 61_u8];
+const label_absent: FixedVector<u8, 5> =[32_u8, 99_u8, 97_u8, 116_u8, 61_u8];
 
-const word_none: array<u8, 4> =[110_u8, 111_u8, 110_u8, 101_u8];
+const word_none: FixedVector<u8, 4> =[110_u8, 111_u8, 110_u8, 101_u8];
 
-const line_end: array<u8, 1> =[10_u8];
+const line_end: FixedVector<u8, 1> =[10_u8];
 
-const digit_glyphs: array<u8, 10> =[48_u8, 49_u8, 50_u8, 51_u8, 52_u8, 53_u8, 54_u8, 55_u8, 56_u8, 57_u8];
+const digit_glyphs: FixedVector<u8, 10> =[48_u8, 49_u8, 50_u8, 51_u8, 52_u8, 53_u8, 54_u8, 55_u8, 56_u8, 57_u8];
 
 struct ByteString {
   buf: buffer<u8>;

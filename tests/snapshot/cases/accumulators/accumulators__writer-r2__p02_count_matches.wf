@@ -1,4 +1,4 @@
-const codes: array<u8, 8> =[3_u8, 7_u8, 3_u8, 3_u8, 9_u8, 1_u8, 3_u8, 0_u8];
+const codes: FixedVector<u8, 8> =[3_u8, 7_u8, 3_u8, 3_u8, 9_u8, 1_u8, 3_u8, 0_u8];
 
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: counts bytes equal to 3, conditional accumulation only in the true arm, bounded by the header invariant.";

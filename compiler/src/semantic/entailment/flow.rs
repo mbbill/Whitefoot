@@ -12210,13 +12210,15 @@ impl Analyzer<'_, '_> {
         }
         // [CALL-4] a `set` target is an S12 destination, and [CALL-6] puts
         // the establishment after the call's own transfer, consumes and the
-        // target's commit and kills — which is exactly this point. A
-        // kernel-domain row publishes here from its own declared relation
-        // list [BLK-0]; a source callee keeps the narrow receiver route
-        // above, which is the only route [FN-9] gives it.
+        // target's commit and kills — which is exactly this point. The
+        // destination list is one entry long because a single-target `set`
+        // takes result ordinal zero, and the route is the same one a `let`
+        // binder and a `set` target list take: a kernel-domain row publishes
+        // from its own declared relation list [BLK-0] and a source callee
+        // from its verified summary [FN-9], with the target's own kills the
+        // events every substitution must survive.
         if commit_reached
             && let Some(prepared) = prepared.as_ref()
-            && matches!(prepared.callee, PreparedCallee::Kernel(_))
             && let CheckedSetTarget::Place(place) = target
         {
             let destinations = vec![Some((
@@ -12228,12 +12230,13 @@ impl Analyzer<'_, '_> {
                     .collect::<Vec<_>>(),
                 place.ty,
             ))];
-            self.establish_kernel_relations(
+            self.establish_result_list_destinations(
                 node_path,
                 &destinations,
                 value,
                 prepared,
-                &mut state.facts,
+                &target_kills,
+                state,
             );
         }
         // [ENT-3.S5, ENT-5]: the committed value exists only after the old

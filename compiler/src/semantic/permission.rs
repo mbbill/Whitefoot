@@ -1829,6 +1829,7 @@ pub(crate) fn visit_read_bindings(
             CheckedSliceSource::Buffer(root) => note(root.binding),
             CheckedSliceSource::ArenaContent { binding, .. } => note(*binding),
             CheckedSliceSource::Run(root) => note(root.binding),
+            CheckedSliceSource::ViewHolder { binding, .. } => note(*binding),
         },
         _ => {}
     }
@@ -1978,6 +1979,9 @@ pub(super) fn slice_source_place(places: &PlaceMap, source: &CheckedSliceSource)
         // A run's path may carry subscripts of its own, so its viewed place
         // is the one the measured-root resolver builds [MSR-1].
         CheckedSliceSource::Run(root) => rooted_container_place(places, root),
+        // The child views exactly what its parent views, and the parent is
+        // reached through its holder [OWN-6].
+        CheckedSliceSource::ViewHolder { binding, .. } => rooted_place(places, *binding, &[]),
     }
 }
 

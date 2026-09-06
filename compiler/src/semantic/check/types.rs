@@ -1844,6 +1844,7 @@ extent's region is one the caller must choose, so it is written at every positio
                 self.use_at(node, LexicalUseRole::Type)?.target(),
                 ResolvedTarget::Container(_)
             )
+            && !self.written_type_is_fixed_vector(node)?
         {
             return self.issue_node(
                 SemanticRule::Const2,
@@ -1852,6 +1853,32 @@ extent's region is one the caller must choose, so it is written at every positio
             );
         }
         let ty = self.parse_type(node)?;
+        // [CONST-1, CONST-2, S34] the one const-eligible container form: a
+        // `FixedVector<T, n>` of const-eligible flat `T` with exactly `n`
+        // literal entries. It lowers to **element storage only** — its four
+        // measures are the standing facts `len_of = cap_of = n` and
+        // `room_of = head_of = 0`, materialized from the type at each use
+        // rather than stored — so the const's storage type is the run of `n`
+        // slots itself, which is the place every read of it resolves to and
+        // the measure row every one of its four measures already reads.
+        if let CheckedType::FixedVector { element, length } = ty {
+            let CheckedElement::Flat(element) = element else {
+                return self.issue_node(
+                    SemanticRule::Const2,
+                    node,
+                    SemanticIssueKind::InvalidConstValue,
+                );
+            };
+            let storage = CheckedType::Array { element, length };
+            if self.const_eligible_type(storage)? && length.value().is_some() {
+                return Ok(storage);
+            }
+            return self.issue_node(
+                SemanticRule::Const2,
+                node,
+                SemanticIssueKind::InvalidConstValue,
+            );
+        }
         if self.const_eligible_type(ty)? {
             Ok(ty)
         } else {
@@ -1861,6 +1888,19 @@ extent's region is one the caller must choose, so it is written at every positio
                 SemanticIssueKind::InvalidConstValue,
             )
         }
+    }
+
+    /// Whether one written `type` node spells the compiler-owned inline run
+    /// [BLK-1], which is the one container nominal a `const` item may write
+    /// [CONST-2, S34].
+    fn written_type_is_fixed_vector(&self, node: NodeId) -> Result<bool, CheckStop> {
+        let Some(token) = self
+            .tree
+            .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
+        else {
+            return Ok(false);
+        };
+        Ok(self.tree.token_bytes(token)? == b"FixedVector")
     }
 
     /// The CONST-2 const-eligibility relation: a primitive, an array of

@@ -1,7 +1,7 @@
-const values: array<i32, 4> =[10_i32, 20_i32, 30_i32, 40_i32];
+const values: FixedVector<i32, 4> =[10_i32, 20_i32, 30_i32, 40_i32];
 
 fn get(i: own u64) -> result: own i32 pure {
-  doc "The deterministic remainder rule derives 0 <= bounded < 4, which discharges the following fixed-array subscript obligation [OP-4].";
+  doc "The deterministic remainder rule derives 0 <= bounded < 4, which discharges the following const-run subscript obligation [OP-4].";
   let bounded = i % 4_u64;
   return values[bounded];
 }

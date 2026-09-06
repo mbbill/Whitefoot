@@ -115,6 +115,11 @@ inside the `region` block whose region it takes",
             .first_child_with(place_node, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         if self.has_fixed(pbase, FixedTerminal::Deref)? {
+            if let Some(formed) = self.check_view_holder_slice_of(
+                node, borrow, place_node, pbase, region, strength, bindings, loop_depth, atoms[0],
+            )? {
+                return Ok(formed);
+            }
             return self.check_arena_content_slice_of(
                 node, borrow, place_node, pbase, region, strength, function, bindings, loop_depth,
             );
@@ -312,6 +317,177 @@ inside the `region` block whose region it takes",
             effects: EffectSet::NONE,
             accesses,
         })
+    }
+
+    /// [VIEW-2, OWN-6] `slice_of` over a **view holder**: the shared child
+    /// reborrow of the view a helper was handed.
+    ///
+    /// [VIEW-2]'s viewable operand class is stated over storage and reads
+    /// nothing about what that storage is made of, and a view of a view is a
+    /// view of the same storage under the narrower loan. So the operand
+    /// `&'c deref(destination)` of a `destination: &uniq MutSlice<'r, T>`
+    /// parameter forms the shared child [OWN-6] admits: the child carries the
+    /// parent's origin set and range, its loan region is the one the operand
+    /// borrow writes [VIEW-2] and the parent's own region must outlive it
+    /// [OWN-10], and the parent is frozen against element writes while the
+    /// child lives [OWN-5].
+    ///
+    /// `None` means the deref root is not a view holder, so the position
+    /// keeps its other dispositions.
+    #[allow(clippy::too_many_arguments)]
+    fn check_view_holder_slice_of(
+        &self,
+        node: NodeId,
+        borrow: NodeId,
+        place_node: NodeId,
+        pbase: NodeId,
+        region: DeclarationId,
+        strength: LoanStrength,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+        operand: NodeId,
+    ) -> Result<Option<TypedExpression>, CheckStop> {
+        let Some(inner_place) = self.tree.first_child_with(pbase, Production::Place)? else {
+            return Ok(None);
+        };
+        let Some(inner_pbase) = self.tree.first_child_with(inner_place, Production::Pbase)? else {
+            return Ok(None);
+        };
+        // One deref of a directly named holder, no suffix chain on either
+        // half: a deeper chain keeps its existing disposition.
+        if self.has_fixed(inner_pbase, FixedTerminal::Deref)?
+            || !self.tree.children(inner_pbase)?.is_empty()
+            || !self
+                .tree
+                .children_with(inner_place, Production::Psuffix)?
+                .is_empty()
+            || !self
+                .tree
+                .children_with(place_node, Production::Psuffix)?
+                .is_empty()
+        {
+            return Ok(None);
+        }
+        let root_use = self.use_at(inner_pbase, LexicalUseRole::PlaceBase)?;
+        let ResolvedTarget::Source {
+            declaration,
+            class: DeclarationClass::Value,
+        } = root_use.target()
+        else {
+            return Ok(None);
+        };
+        let Some(local) = bindings.get(&declaration).cloned() else {
+            return Ok(None);
+        };
+        let CheckedType::Slice {
+            region: parent_region,
+            element,
+            ..
+        } = local.ty
+        else {
+            return Ok(None);
+        };
+        if local.mode == CheckedMode::Own {
+            // An owned view is not a holder; a child over the viewed place is
+            // the landed formation and this position is not it.
+            return Ok(None);
+        }
+        // Every rejection below is a source verdict about a program this arm
+        // owns, so it is reported rather than handed on.
+        if !self.borrow_region_is_inside_current_loops(region, borrow, loop_depth)? {
+            return self
+                .issue_node(
+                    SemanticRule::Own11,
+                    borrow,
+                    SemanticIssueKind::BorrowRegionOutsideLoop {
+                        mechanical_fix: "introduce the borrow region inside the enclosing loop body",
+                    },
+                )
+                .map(Some);
+        }
+        if !local.live {
+            return self
+                .issue_node(
+                    SemanticRule::Own1,
+                    place_node,
+                    SemanticIssueKind::UseAfterMove {
+                        mechanical_fix: "introduce a new `let` binding before reuse",
+                    },
+                )
+                .map(Some);
+        }
+        self.check_holder_not_suspended(&local, place_node)?;
+        // [OWN-5] two exclusive loans on one range are what the rule refuses,
+        // and a child of a view is a second view of the parent's own range.
+        if strength == LoanStrength::Exclusive {
+            return self
+                .issue_node(SemanticRule::Own5, operand, SemanticIssueKind::BorrowConflict)
+                .map(Some);
+        }
+        // [OWN-10] the child's loan may not outlive the parent's own.
+        if !self.region_outlives(parent_region, region)? {
+            return self
+                .issue_node(
+                    SemanticRule::Own10,
+                    borrow,
+                    SemanticIssueKind::InvalidBorrowLifetime {
+                        region: self.region_phrase(region)?,
+                        binder: self.declaration_spelling(declaration)?,
+                        mechanical_fix: "a child of a view names a region the view's own \
+region outlives; name that region, or one it outlives, on this borrow"
+                            .to_owned(),
+                    },
+                )
+                .map(Some);
+        }
+        let Some(parent) = local.slice.clone() else {
+            return Ok(None);
+        };
+        let holder_place = ResolvedPlace {
+            root: declaration,
+            fields: Vec::new(),
+        };
+        self.check_loan_access(
+            bindings,
+            Some(declaration),
+            &holder_place,
+            AccessKind::SharedBorrow,
+            borrow,
+        )?;
+        // [OWN-5] the freeze: while this child lives the parent may not write
+        // the elements it views. The parent is reached through its holder, so
+        // the loan stands at the holder's own place, which is exactly what an
+        // element write through that holder resolves its origin to.
+        bindings
+            .get_mut(&declaration)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            .push_slice_loan(SliceLoan {
+                region,
+                place: holder_place,
+                strength: LoanStrength::Shared,
+                descriptors: Vec::new(),
+            });
+        let origins = parent.origins.clone();
+        Ok(Some(TypedExpression {
+            expression: CheckedExpression::SliceOf {
+                carrier: self.tree.path(node)?.clone(),
+                source: CheckedSliceSource::ViewHolder {
+                    binding: local.binding,
+                    element,
+                },
+                region,
+                element,
+                strength: LoanStrength::Shared,
+                origins: origins.clone(),
+            },
+            mode: CheckedMode::Own,
+            borrow: None,
+            slice: Some(SliceInfo { region, origins }),
+            holder: None,
+            reference_value: false,
+            effects: EffectSet::NONE,
+            accesses: Vec::new(),
+        }))
     }
 
     /// [OWN-5] `slice_of` over a place reached in arena content: the operand

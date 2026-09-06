@@ -1,4 +1,4 @@
-const readings: array<u8, 6> =[0_u8, 12_u8, 0_u8, 30_u8, 8_u8, 0_u8];
+const readings: FixedVector<u8, 6> =[0_u8, 12_u8, 0_u8, 30_u8, 8_u8, 0_u8];
 
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: two accumulators (sum and nonzero-count) update together over one loop, each bounded by its own header invariant.";

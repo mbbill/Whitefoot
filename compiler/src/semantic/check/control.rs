@@ -673,6 +673,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // through a call, or returned — names the loans this binding now
         // holds.
         Self::hold_slice_loans_of(declaration_id, value.slice.as_ref(), bindings);
+        Self::hold_published_child_loan(declaration_id, expected, value.slice.as_ref(), bindings);
         if bindings
             .insert(
                 declaration_id,

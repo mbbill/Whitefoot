@@ -1,0 +1,54 @@
+fn inner(destination: &uniq MutSlice<u8>, value: own u8) -> written: own u64 writes(destination) contract {
+  requires 2_u64 <= len_of(deref(destination));
+  ensures written == 2_u64;
+} {
+  doc "Writes the first two element positions of the destination it was handed.";
+  set deref(destination)[0_u64] = value;
+  set deref(destination)[1_u64] = value;
+  return 2_u64;
+}
+
+fn outer(destination: &uniq MutSlice<u8>, value: own u8) -> written: own u64 writes(destination) contract {
+  requires 2_u64 <= len_of(deref(destination));
+  ensures written == 2_u64;
+} {
+  doc "Passes its own destination on to a helper of the same parameter shape.";
+  region {
+    let count = inner(destination: &uniq deref(destination), value: value);
+  }
+  return 2_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "[OWN-6] a helper handed `&uniq MutSlice<u8>` re-lends that destination through its own holder: `&uniq deref(destination)` is the ordinary child reborrow, the child carries the parent's range and loan region, the parent is suspended while the child lives, and [CALL-3] classifies the inner callee's write as element storage of the viewed range. The outer caller reads back what the innermost helper wrote, which is what a decoder chaining one output destination through three frames needs.";
+  region 'a {
+    let workspace = arena_frame::<4, 1, 'a>();
+    region {
+      let table = arena_vector_proved::<u8>(store: &uniq workspace, count: 4_u64);
+      set table = place_back(vector: move table, value: 3_u8);
+      set table = place_back(vector: move table, value: 3_u8);
+      region {
+        let window = mut_slice_of(&uniq table);
+        region {
+          let count = outer(destination: &uniq window, value: 200_u8);
+        }
+        let seen = len_of(window);
+        if seen == 2_u64 {
+        } else {
+          return exit_status(code: 201_u8);
+        }
+      }
+      let first = table[0_u64];
+      let second = table[1_u64];
+      if first == 200_u8 {
+      } else {
+        return exit_status(code: 202_u8);
+      }
+      if second == 200_u8 {
+      } else {
+        return exit_status(code: 203_u8);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

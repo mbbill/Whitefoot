@@ -1,7 +1,7 @@
-const table: array<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
+const table: FixedVector<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
 
 command fn main() -> status: own ExitStatus pure {
-  doc "A const array is read-only static rodata, indexed with copy-out [CONST-2].";
+  doc "A const run is read-only static rodata, indexed with copy-out; its length is the type constant [CONST-2, S34].";
   let v = table[2_u64];
   if v == 30_u8 {
   } else {

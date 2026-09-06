@@ -800,6 +800,9 @@ impl<'check> Survey<'check, '_> {
                 CheckedSliceSource::Run(root) => {
                     Some((root.binding, slice_source_place(self.places, source)))
                 }
+                CheckedSliceSource::ViewHolder { binding, .. } => {
+                    Some((*binding, slice_source_place(self.places, source)))
+                }
                 CheckedSliceSource::Array {
                     root: CheckedArrayRoot::Constant(_),
                     ..

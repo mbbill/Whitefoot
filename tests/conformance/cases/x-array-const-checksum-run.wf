@@ -1,4 +1,4 @@
-const input: array<u64, 8> =[3_u64, 5_u64, 8_u64, 13_u64, 21_u64, 34_u64, 55_u64, 89_u64];
+const input: FixedVector<u64, 8> =[3_u64, 5_u64, 8_u64, 13_u64, 21_u64, 34_u64, 55_u64, 89_u64];
 
 fn checksum() -> function_result: own u64 pure {
   let total = 0_u64;
@@ -10,7 +10,7 @@ fn checksum() -> function_result: own u64 pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  doc "A static fixed array feeds a counted-loop checksum whose range facts discharge indexing.";
+  doc "A static const run feeds a counted-loop checksum whose range facts discharge indexing.";
   let result = checksum();
   if result == 228_u64 {
   } else {

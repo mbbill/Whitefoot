@@ -8297,7 +8297,10 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
     // `write_once` source needs [VIEW-2], so it hands its assembled length back
     // and its caller publishes, and the caller proves the publish bound from
     // that clause. Five call sites and the two returns of the clause's own
-    // proof are the seven. `give` and delivery-join routes stay absent.
+    // proof were the seven B3 counted; B7c4b-1 made a `set` target the same
+    // [ENT-3.S12] destination a `let` binder is, so every `set x = helper(...)`
+    // of these sources publishes on this route too. `give` and delivery-join
+    // routes stay absent.
     assert_eq!(
         program
             .functions
@@ -8308,7 +8311,7 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
                 DerivationRootKind::PostconditionDirectResult { .. }
             ))
             .count(),
-        7
+        15
     );
     assert!(program.functions.iter().all(|function| {
         function.entailment.derivations.roots.iter().all(|root| {
