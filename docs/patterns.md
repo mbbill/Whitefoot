@@ -513,6 +513,14 @@ taken from the **general** store is denied instead: its release spends that
 store's own capability on the iteration's own exit [PROV-6, STOR-1], which puts
 the store on both sides of the cut.
 
+*Compiler limit, recorded 6.0x.* The permission above is granted, and the
+lowering does not yet take it for this shape: `whitefootc --par` hands a staged
+loop out only when the regions enclosing its cut carry no compiler-derived drop
+record, and a region that binds a store-backed run, or a view of one, carries
+one. Until that is repaired the run form is staged on paper and sequential in
+the emitted module, and `tests/programs/tcp_fanout.wf` keeps its `buffer_new`
+scratch for exactly that reason.
+
 Three companion rules make the rest of that body work, and each is a form to
 copy rather than a fact to rediscover:
 
