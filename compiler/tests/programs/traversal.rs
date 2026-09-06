@@ -8,7 +8,8 @@
 
 use super::support::compile_rejection;
 use super::support::{
-    build_program, compile_program, compile_program_rejection_with, fixture_directory,
+    build_program, close_path, compile_program, compile_program_rejection_with, fixture_directory,
+    reopen_path,
 };
 use whitefoot::Inventory;
 
@@ -84,19 +85,11 @@ fn an_unreadable_subdirectory_is_recorded_without_descending_into_it() {
     fixture.write(b"a.txt", b"first\n");
     let closed = fixture.directory("closed");
     fixture.write_nested("closed/hidden.txt", b"hidden\n");
-    let mut permissions = std::fs::metadata(&closed)
-        .expect("fixture directory metadata")
-        .permissions();
-    std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o000);
-    std::fs::set_permissions(&closed, permissions).expect("close the fixture directory");
+    close_path(&closed);
 
     let output = program.run(fixture.path(), &[]);
 
-    let mut restored = std::fs::metadata(&closed)
-        .expect("fixture directory metadata")
-        .permissions();
-    std::os::unix::fs::PermissionsExt::set_mode(&mut restored, 0o755);
-    std::fs::set_permissions(&closed, restored).expect("reopen the fixture directory");
+    reopen_path(&closed, 0o755);
 
     assert!(output.status.success());
     assert_eq!(
