@@ -673,3 +673,12 @@ uint64_t wf_file_monotonic_ns(void) {
               / frequency.QuadPart
           );
 }
+
+/* This platform's sockets are blocking objects of the completion port and the
+ * adapter, so no transfer is attempted without an engine: every one is left
+ * for the route the bridge chooses. */
+int wf_file_transfer_now(const wf_file_request *request, wf_file_result *result) {
+    (void)request;
+    (void)result;
+    return 0;
+}

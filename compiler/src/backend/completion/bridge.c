@@ -84,6 +84,15 @@ _Static_assert(
  * number chosen here; it moves no file measurement because no file batch
  * reaches it. */
 #define WF_BRIDGE_WINDOW_DEFAULT 1024u
+/* How many completions one progress pass reaps before it returns to the
+ * scheduler loop.  It was one, and one is what made the reap the serial
+ * resource of the TCP echo control test: every idle thread took the
+ * submission lock to kick and the completion lock to read a single entry,
+ * and 64 connections ping-ponging through one ring made 720 thousand futex
+ * calls a run.  At 64 the same run makes 19 thousand and the round-trip rate
+ * doubles, 35 to 69 thousand a second on the development host; 1024 measures
+ * the same as 64 (`docs/done/0108-streams-and-tcp.md` section 6). */
+#define WF_BRIDGE_REAP_BUDGET 64u
 static wf_completion_runtime wf_bridge_runtime;
 static wf_file_adapter wf_bridge_adapter;
 static unsigned wf_bridge_once;
@@ -418,7 +427,7 @@ static int wf_bridge_ring_progress(void) {
     {
         int reap_error = wf_linux_io_uring_progress(
             &wf_bridge_linux_adapter,
-            1u,
+            WF_BRIDGE_REAP_BUDGET,
             0,
             &published
         );
@@ -1412,6 +1421,24 @@ static wf_completion_record *wf_bridge_begin(void *record) {
  * submit uses: the ring where it has a form for this kind, then the bounded
  * adapter, and the engine here when neither applies.  Every path ends in a
  * record the runtime owns, so there is nothing to answer. */
+/* Completes a socket transfer here when the host answers it without waiting:
+ * the operation's outcome is the host's own, and nothing parks, wakes, or
+ * crosses a ring for an answer that was already there. */
+static int wf_bridge_transfer_now(wf_completion_record *record) {
+    wf_file_result result;
+    if (!wf_file_transfer_now(&record->request, &result)) {
+        return 0;
+    }
+    record->route = WF_COMPLETION_ROUTE_INLINE;
+    atomic_fetch_add_explicit(
+        &wf_bridge_inline_executions,
+        1,
+        memory_order_relaxed
+    );
+    wf_file_complete_record(record, &result);
+    return 1;
+}
+
 static void wf_bridge_dispatch(wf_completion_record *record) {
     if (wf_bridge_file_request_is_empty(&record->request)) {
         wf_bridge_complete_empty(record);
@@ -1687,6 +1714,9 @@ void wf__completion_socket_receive_submit(
     held->request.operation.receive.descriptor = descriptor;
     held->request.operation.receive.buffer = buffer;
     held->request.operation.receive.count = (size_t)count;
+    if (wf_bridge_transfer_now(held)) {
+        return;
+    }
     wf_bridge_dispatch(held);
 }
 
@@ -1706,6 +1736,9 @@ void wf__completion_socket_send_submit(
     held->request.operation.send.descriptor = descriptor;
     held->request.operation.send.buffer = buffer;
     held->request.operation.send.count = (size_t)count;
+    if (wf_bridge_transfer_now(held)) {
+        return;
+    }
     wf_bridge_dispatch(held);
 }
 

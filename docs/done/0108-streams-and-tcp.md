@@ -240,7 +240,45 @@ in alternating order and reports medians, and `io-bench.yml`'s Linux job runs
 it after the file tables.
 
 The table, on this host (Linux 6.18, four cores, `ROUNDS=3 WARMUP=1`), with
-the Whitefoot line under `WF_STACKS=1100` and otherwise the shipped defaults:
+the Whitefoot line under `WF_STACKS=1100` and otherwise the shipped defaults,
+at the batch's last revision, after the two runtime changes the isolation
+below arrived at:
+
+```text
+line                conns   bytes    trips     rt_per_s     p50_us     p99_us   connect_us   vs_uring   vs_epoll
+uring.k1                1      64    20000      29233.9       32.0       62.0         89.0       1.00       0.99
+epoll.k1                1      64    20000      29520.5       32.0       57.0         62.0       1.01       1.00
+wf.k1                   1      64    20000      31653.1        6.0      186.0         73.0       1.08       1.07
+uring.k64              64      64     2000     318424.6       62.0     2403.0        462.0       1.00       0.98
+epoll.k64              64      64     2000     325926.7       50.0     2772.0        527.0       1.02       1.00
+wf.k64                 64      64     2000     218075.9      250.0      841.0        608.0       0.68       0.67
+uring.k1024          1024      64      200     346920.2     1760.0     8738.0       4017.0       1.00       1.07
+epoll.k1024          1024      64      200     324860.8     1750.0    10554.0       5385.0       0.94       1.00
+wf.k1024             1024      64      200     166786.8     5966.0    11299.0       5608.0       0.48       0.51
+uring.k64.64k          64   65536      200      62160.7      661.0     4714.0        434.0       1.00       0.88
+epoll.k64.64k          64   65536      200      70539.5      329.0     4561.0        467.0       1.13       1.00
+wf.k64.64k             64   65536      200      48220.6     1099.0     3575.0        574.0       0.78       0.68
+
+line                  bytes_per_s
+uring.k64.64k        4073761479.3
+epoll.k64.64k        4622877114.9
+wf.k64.64k           3160188417.8
+```
+
+What the table says. At one connection the Whitefoot line leads both
+references, because a receive whose bytes have already arrived and a send the
+host accepts at once complete on the submitting thread without an
+`io_uring_enter`, and on one connection driven by one client nearly every
+operation is one of those (the median of 6 microseconds is that path, and the
+99th percentile of 186 the park). At 64 connections it is two thirds of the
+references, at 1024 half, and on the 64 KiB payload three quarters of io_uring
+and two thirds of epoll: no longer flat across the connection counts, but
+still short of the references by a margin that grows with the number of peers
+waiting at once. What that margin is, read from the structure and not yet
+measured apart, is under "what is left" below.
+
+The first reading of the same protocol, at a6b31b5 before either runtime
+change, is the point the isolation started from:
 
 ```text
 line                conns   bytes    trips     rt_per_s     p50_us     p99_us   connect_us   vs_uring   vs_epoll
@@ -263,7 +301,7 @@ epoll.k64.64k        4886625315.3
 wf.k64.64k           1195542174.9
 ```
 
-What the table says. At one connection the Whitefoot server answers a round
+What that table said. At one connection the Whitefoot server answered a round
 trip in 48 microseconds against the references' 33: every receive and every
 send is a submission, a park of the callee's stack, and a wake, and the
 difference is about what one park-and-wake costs on this host. At 64 and 1024
@@ -302,9 +340,68 @@ epoll.k64.64k          64   65536      200      36791.7     1032.0     5885.0   
 wf.k64.64k             64   65536      200      19670.4     2556.0     5420.0         34.0       0.84       0.53
 ```
 
-The shape is the same on both hosts: the Whitefoot line is flat across the
+The shape was the same on both hosts: the Whitefoot line flat across the
 connection counts while the references scale, and the ratio at one connection
-is the cost of one park-and-wake per operation on that host.
+the cost of one park-and-wake per operation on that host. The owner asked for
+the line to lead or for the reason and the data it cannot, and to find that
+reason one variable at a time.
+
+### Isolating the serial resource, one variable at a time
+
+Every row below is the same server, hand-linked with the grant observer so
+the core's counters print at exit, at 64 connections and 2000 round trips of
+64 bytes, three trials per variable, on this host; the reference io_uring
+line is 330 thousand round trips a second here. The counters for the shipped
+runtime said what the threads did: `parks=256132 resumes=256132 steals=64
+inline_runs=0` for 256 thousand operations, one park and one resume per
+receive and per send, and `strace -c` counted 720 thousand `futex` calls and
+178 thousand `io_uring_enter` calls per run, 5.6 and 1.4 per round trip.
+
+| variable | rt/s (three trials) | what it says |
+|---|---:|---|
+| shipped runtime | 34.0k, 35.0k, 37.2k | the baseline |
+| WF_WORKERS 2 / 4 / 8 | 35.0k / 36.0k / same | flat: a serial resource, not the core count |
+| E1: the progress pass reaps 64 completions instead of 1 | 69.8k, 69.5k, 69.4k | the reap was the serial resource; futex calls fall to 19 thousand a run |
+| E2: read the staged count without the submission lock before kicking | 69.1k, 69.6k, 70.5k | nothing; reverted |
+| E3: reap in batches and publish after dropping the completion lock | 66.4k, 68.5k, 68.8k | nothing; reverted |
+| E4: idle spin 0 rounds, and 4096 rounds with no yields | 68.3k, 69.8k, 67.7k and 69.9k, 68.5k, 68.2k | the spin is not in this path |
+| E6: WF_WORKERS 2 / 8 on E1 | 67.7k to 70.7k / 68.6k to 71.3k | still flat: one more serial resource |
+| E5a: a send the host accepts at once completes without the ring | 208.5k, 207.3k, 197.0k | half the parks gone (127 thousand); three times the rate |
+| E5b: the same attempt for a receive whose bytes have arrived | 215.5k, 208.1k, 204.8k | parks 107 to 115 thousand; kept, it is the same rule |
+| E7: reap budget 1024 | 214.6k, 202.4k, 217.1k | the same as 64 |
+
+What E1 and E5 are. The progress pass a scheduler thread makes on every idle
+turn reaped exactly one completion, taking the submission lock to kick and
+the completion lock to read it; with four threads doing that for 64
+connections the two mutexes were the convoy the futex count showed. The
+budget is `WF_BRIDGE_REAP_BUDGET`, 64, in `bridge.c`. E5 is the rule the
+bounded adapter already applies to a positioned read the submitting thread
+would run itself, applied to a socket transfer: `wf_file_transfer_now` in
+the platform leaf asks the host once with `MSG_DONTWAIT`, and an answer that
+is the operation's own outcome, bytes moved, the peer's end, or a definite
+refusal, completes the record where it was submitted, with no ring, no park
+and no wake; only the answer that the host would have to wait leaves the
+record for the engine. A send on a loopback whose window has room is always
+that first case, so the send half of every round trip stopped parking. The
+Windows leaf answers that the host would wait for every transfer, so nothing
+moves there.
+
+What is left, read from the structure and not yet measured apart. After E5
+every operation that the host can answer at once costs no ring, and what
+remains on the ring is exactly the receive whose peer has not sent yet: 107
+to 115 thousand parks in 256 thousand operations at 64 connections, one per
+receive that had to wait. Each of those is a submission under the ring's one
+submission lock, a park of the callee's stack, an `io_uring_enter` by some
+thread's progress pass, a reap under the ring's one completion lock, and a
+publication through the core's lock that wakes the parked stack; the
+io_uring reference arms one multishot receive per connection and never waits
+per connection, on one ring per thread with no lock. The remaining gap grows
+with the number of peers waiting at once, from 0.68 at 64 to 0.48 at 1024,
+which is what a shared ring and a wake per completion would do; measuring
+those apart is the next work, and the reason it is not in this PR is that a
+ring per thread and a receive that stays armed change what a record is (one
+record, one operation, one completion, one owner frame), which the emitter,
+the core and the bridge all assume.
 
 The ratio is the batch's result, and the plan carries what it points at: the
 ring per thread, the locks, and the wake per completion are runtime structure

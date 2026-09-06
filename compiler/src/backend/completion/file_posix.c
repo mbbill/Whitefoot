@@ -543,3 +543,57 @@ extern uint64_t WF_FILE_MONOTONIC_NS(void);
 uint64_t wf_file_monotonic_ns(void) {
     return WF_FILE_MONOTONIC_NS();
 }
+
+/* One transfer attempted without waiting: the host is asked once with
+ * MSG_DONTWAIT, and the answer is either the operation's own outcome -- bytes
+ * moved, the peer's end, or a definite refusal -- or the one answer that says
+ * the host would have to wait, EAGAIN, which leaves the record for an engine
+ * that can wait on it.  A send on a loopback whose window has room and a
+ * receive whose bytes have already arrived complete here, with no ring, no
+ * park and no wake, which is the same rule the bounded adapter applies to a
+ * positioned read the submitting thread would run itself. */
+int wf_file_transfer_now(const wf_file_request *request, wf_file_result *result) {
+    ssize_t moved;
+    memset(result, 0, sizeof(*result));
+    result->head.kind = request->kind;
+    result->head.value = -1;
+    switch (request->kind) {
+    case WF_FILE_SOCKET_SEND:
+        if (request->operation.send.count > (size_t)SSIZE_MAX) {
+            return 0;
+        }
+        moved = send(
+            request->operation.send.descriptor,
+            request->operation.send.buffer,
+            request->operation.send.count,
+            WF_SOCKET_SEND_FLAGS | MSG_DONTWAIT
+        );
+        break;
+    case WF_FILE_SOCKET_RECEIVE:
+        if (request->operation.receive.count > (size_t)SSIZE_MAX) {
+            return 0;
+        }
+        moved = recv(
+            request->operation.receive.descriptor,
+            request->operation.receive.buffer,
+            request->operation.receive.count,
+            MSG_DONTWAIT
+        );
+        break;
+    default:
+        return 0;
+    }
+    if (moved >= 0) {
+        result->head.value = moved;
+        return 1;
+    }
+    if (errno == EAGAIN || errno == EINTR
+#if defined(EWOULDBLOCK) && EWOULDBLOCK != EAGAIN
+        || errno == EWOULDBLOCK
+#endif
+    ) {
+        return 0;
+    }
+    result->head.error_code = errno;
+    return 1;
+}

@@ -216,6 +216,12 @@ wf_file_result wf_file_execute_timed(
  * the program sees. */
 wf_file_result wf_file_execute_direct(wf_file_request *request);
 
+/* Attempts one socket transfer without waiting, in the platform leaf.  Answers
+ * 1 with the operation's own outcome in `result` when the host answered at
+ * once, and 0 when the host would have to wait, leaving the record untouched
+ * for an engine that can wait on it. */
+int wf_file_transfer_now(const wf_file_request *request, wf_file_result *result);
+
 /* Whether one typed request's shape is one this ABI can mean at all.  It is
  * the adapter's own check rather than a host's, so it is shared; the leaf runs
  * it before it makes any host call. */

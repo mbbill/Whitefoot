@@ -2260,8 +2260,40 @@ run with `WF_STACKS=1100`), `netload.c` the one load generator, and
 `linux-net-bench.sh` the protocol: warm-up and recorded passes in alternating
 order, medians over the recorded passes, every echoed byte verified, no
 timeout deciding anything. `io-bench.yml`'s Linux job runs it after the file
-tables; the table below is the development host, Linux 6.18 on four cores,
-`ROUNDS=3 WARMUP=1`.
+tables; the tables below are the development host, Linux 6.18 on four cores,
+`ROUNDS=3 WARMUP=1`. First the batch's last revision, after the two runtime
+changes the single-variable isolation in `docs/done/0108-streams-and-tcp.md`
+§6 arrived at (the progress pass reaps 64 completions instead of one, and a
+socket transfer the host answers at once completes on the submitting thread
+without the ring):
+
+```text
+line                conns   bytes    trips     rt_per_s     p50_us     p99_us   connect_us   vs_uring   vs_epoll
+uring.k1                1      64    20000      29233.9       32.0       62.0         89.0       1.00       0.99
+epoll.k1                1      64    20000      29520.5       32.0       57.0         62.0       1.01       1.00
+wf.k1                   1      64    20000      31653.1        6.0      186.0         73.0       1.08       1.07
+uring.k64              64      64     2000     318424.6       62.0     2403.0        462.0       1.00       0.98
+epoll.k64              64      64     2000     325926.7       50.0     2772.0        527.0       1.02       1.00
+wf.k64                 64      64     2000     218075.9      250.0      841.0        608.0       0.68       0.67
+uring.k1024          1024      64      200     346920.2     1760.0     8738.0       4017.0       1.00       1.07
+epoll.k1024          1024      64      200     324860.8     1750.0    10554.0       5385.0       0.94       1.00
+wf.k1024             1024      64      200     166786.8     5966.0    11299.0       5608.0       0.48       0.51
+uring.k64.64k          64   65536      200      62160.7      661.0     4714.0        434.0       1.00       0.88
+epoll.k64.64k          64   65536      200      70539.5      329.0     4561.0        467.0       1.13       1.00
+wf.k64.64k             64   65536      200      48220.6     1099.0     3575.0        574.0       0.78       0.68
+
+line                  bytes_per_s
+uring.k64.64k        4073761479.3
+epoll.k64.64k        4622877114.9
+wf.k64.64k           3160188417.8
+```
+
+The Whitefoot line leads both references at one connection, where nearly
+every operation is answered at once, and is 0.68 of io_uring at 64
+connections, 0.48 at 1024 and 0.78 on the 64 KiB payload; what remains on the
+ring is the receive whose peer has not sent yet, one submission, park, reap
+and wake each, on one ring under two locks for the whole pool. The first
+reading of the same protocol, at a6b31b5 before either change:
 
 ```text
 line                conns   bytes    trips     rt_per_s     p50_us     p99_us   connect_us   vs_uring   vs_epoll
@@ -2284,13 +2316,12 @@ epoll.k64.64k        4886625315.3
 wf.k64.64k           1195542174.9
 ```
 
-The Whitefoot line stays at 27 to 36 thousand round trips a second whatever
-the connection count while the references reach 330 to 344 thousand, which is
-the mark of one serial resource rather than of the number of peers; what is
-serial in the runtime, read from the code and not yet measured apart, is one
-ring under one submission lock and one completion lock for the whole pool and
-one wake through the runtime's eventfd per completion. At one connection the
-gap is about one park-and-wake per operation. The test also found the ring's
+There the Whitefoot line stayed at 27 to 36 thousand round trips a second
+whatever the connection count while the references reached 330 to 344
+thousand, the mark of one serial resource rather than of the number of peers;
+the isolation found two, the one-completion reap under the ring's locks on
+every progress pass (E1, 35 to 69 thousand) and the park on a transfer the
+host could answer at once (E5, 69 to 205 thousand). The test also found the ring's
 completion-queue overflow stall at 129 connections, fixed in the same slice;
 `docs/done/0108-streams-and-tcp.md` §6 carries the reading of this table and
 §5 the defect. 8192 connections in flight is outside the shapes and the stack
@@ -2315,6 +2346,6 @@ epoll.k64.64k          64   65536      200      36791.7     1032.0     5885.0   
 wf.k64.64k             64   65536      200      19670.4     2556.0     5420.0         34.0       0.84       0.53
 ```
 
-The shape is the same on both hosts: the Whitefoot line is flat across the
+The shape was the same on both hosts: the Whitefoot line flat across the
 connection counts while the references scale, and the ratio at one connection
-is the cost of one park-and-wake per operation on that host.
+the cost of one park-and-wake per operation on that host.

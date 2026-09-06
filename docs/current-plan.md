@@ -873,12 +873,21 @@ control test of NETWORK.md §6 is in `research/experiments/io-completion-bench`:
 buffer ring, one ring and `SO_REUSEPORT` listener per thread), `epoll_echo.c`,
 `netload.c` as the one load generator, `linux-net-bench.sh` as the protocol,
 `programs/tcp_echo_server.wf` as the Whitefoot line, and a step in io-bench's
-Linux job. The result on the development host, at `ROUNDS=3`: the Whitefoot
-line is 0.54 of the io_uring reference at one connection, 0.11 at 64, 0.08 at
-1024, and 0.31 on the 64 KiB payload, staying at 27 to 36 thousand round trips
-a second whatever the connection count while the references reach 330 to 344
-thousand; the record says what is serial in the runtime, read from the code
-and not yet measured apart. The bounds were set to the test's numbers: the
+Linux job. The first reading on the development host, at `ROUNDS=3`: the
+Whitefoot line was 0.54 of the io_uring reference at one connection, 0.11 at
+64, 0.08 at 1024, and 0.31 on the 64 KiB payload, staying at 27 to 36 thousand
+round trips a second whatever the connection count while the references reach
+330 to 344 thousand. The owner's rule, first place or the reason and the data
+it cannot be, isolated one variable at a time (the record's §6): the progress
+pass reaped one completion under the ring's two locks per idle turn, and 64
+instead of one doubled the rate; a socket transfer the host answers at once
+was parked and woken like one that waits, and completing it on the submitting
+thread tripled it. The line at the batch's last revision is 1.08 of io_uring
+at one connection, 0.68 at 64, 0.48 at 1024 and 0.78 on the 64 KiB payload;
+what remains on the ring is the receive whose peer has not sent yet, and the
+gap that grows with the peers waiting at once is the shared ring's locks and
+the wake per completion, read from the structure and not measured apart. The
+bounds were set to the test's numbers: the
 lane holds 1024 slots, the bridge's default window is 1024, `WF_STACKS` may
 name 2048 stacks, and the harness pins the window at the lane's slot count.
 The test found and the slice fixed a stall in the Linux ring at exactly 129
