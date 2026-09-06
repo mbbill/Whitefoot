@@ -275,27 +275,61 @@ fn four_connections_reach_one_listener_on_both_routes() {
 #[test]
 fn the_fanout_loop_states_its_permission_verdict() {
     // The judgment is target-independent and the same on both routes, so this
-    // reads it once. It is recorded here because the shape a server loop may
-    // take is the language work the network exposes
-    // (`research/investigations/io-model/NETWORK.md` §6): today the four
-    // accepts run one at a time, and the ledger says exactly why.
+    // reads it once. The counted permission refuses the loop, because the
+    // status it accumulates is written by no associative operation; the staged
+    // permission admits it, because every edge that leaves the loop is in the
+    // prologue, the factory is touched by the prologue alone, the listener is
+    // only ever borrowed shared, the status is written by the remainder alone,
+    // and the scratch is the iteration's own [PAR-3]. The disposition table is
+    // pinned here because those four dispositions are what a server loop's
+    // shape has to satisfy, and the ledger is where a writer reads them.
+    //
+    // What the permission grants, the lowering does not yet take: the staged
+    // point is a may-suspend user call, `serve_one`, and the backend hands out
+    // only a system operation at that point (`backend/emitter.rs`,
+    // `IrCompletionStep::without_submission`), so the four peers are still
+    // served in turn. The hand-out form for a may-suspend call in a staged
+    // loop is the next compiler work the network exposes
+    // (`research/investigations/io-model/NETWORK.md` §6); the case that
+    // proves four peers are answered at once arrives with it.
     let ledger = program_permission_ledger("tcp_fanout.wf");
     let denial = ledger
         .iter()
-        .find(|line| line.starts_with("PAR loop") && line.contains("denied"))
-        .expect("the fixed-trip accept loop states a verdict");
+        .find(|line| {
+            line.starts_with("PAR loop")
+                && line.contains("tcp_fanout.wf:")
+                && line.contains("set outcome = reported")
+        })
+        .expect("the fixed-trip accept loop states a counted verdict");
     assert!(
-        denial.contains("condition 1: the loop writes storage outliving the iteration"),
-        "the accept loop's verdict must be the judgment's own, got {denial}"
+        denial.contains("denied")
+            && denial.contains("condition 1: the loop writes storage outliving the iteration"),
+        "the accept loop's counted verdict must be the judgment's own, got {denial}"
     );
     let staging = ledger
         .iter()
-        .find(|line| line.starts_with("PAR stage") && line.contains("reserve_handle"))
+        .find(|line| line.starts_with("PAR stage") && line.contains("serve_one(listener: &bound"))
         .expect("the fixed-trip accept loop states a staging verdict");
     assert!(
-        staging.contains("condition 1"),
-        "the accept loop's staging verdict must be the judgment's own, got {staging}"
+        staging.contains("permitted") && staging.contains("4 places classified"),
+        "the accept loop must be staged at its accept, got {staging}"
     );
+    for (disposition, place) in [
+        ("serialized-P", "&uniq handles"),
+        ("read-only", "&bound"),
+        ("serialized-E", "set outcome = reported;"),
+        ("replicated", "let scratch = buffer_new(256_u64, 0_u8);"),
+    ] {
+        assert!(
+            ledger.iter().any(|line| {
+                line.starts_with("PAR place")
+                    && line.contains("tcp_fanout.wf:")
+                    && line.contains(disposition)
+                    && line.contains(place)
+            }),
+            "the ledger must classify {place} as {disposition}"
+        );
+    }
 }
 
 #[test]

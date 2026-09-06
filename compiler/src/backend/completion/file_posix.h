@@ -155,14 +155,19 @@ static inline void wf_socket_address_from_native(
     unsigned length,
     wf_socket_address *address
 ) {
-    unsigned short family = 0;
+    struct sockaddr head;
+    unsigned family;
     memset(address, 0, sizeof(*address));
-    if (length < sizeof(family)) {
+    if (length < sizeof(head)) {
         return;
     }
-    memcpy(&family, native->bytes, sizeof(family));
-    /* `sa_family_t` is the first field of every host address record and is
-     * read through a copy, because the record's storage is bytes. */
+    /* The family is read through `struct sockaddr`'s own member and never as
+     * a number at the record's first byte: on Linux `sa_family` is a
+     * sixteen-bit field at offset zero, on the BSD family and Darwin it is one
+     * byte at offset one behind `sa_len`, and only the host's own record type
+     * knows which. The copy is because the record's storage is bytes. */
+    memcpy(&head, native->bytes, sizeof(head));
+    family = head.sa_family;
     if (family == AF_INET6 && length >= sizeof(struct sockaddr_in6)) {
         struct sockaddr_in6 host;
         unsigned index;

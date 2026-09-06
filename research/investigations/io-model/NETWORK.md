@@ -231,7 +231,15 @@ The program shapes the checker admits today bound the connections in
 flight: a fixed-trip loop over accepts staged under [PAR-3], or an overlap
 group of accepts. Widening those shapes to a real server loop is the
 language work this batch exposes, and it is the point of doing the network
-now rather than later.
+now rather than later. Slice 2 found where the widening starts: [PAR-3]
+stages `tcp_fanout.wf`'s accept loop as written, but the lowering hands out
+only a system operation at the staged point, so a may-suspend user call there
+runs on the loop's own stack and the peers are served in turn. The hand-out
+form for that call, one pool stack per in-flight iteration joined where the
+remainder's result is consumed, is the compiler work the control test needs
+first; the runtime's window (32 iterations by default) and the stack pool bound
+it above, and a loop stopped by data a remainder produced is the one shape the
+rule itself does not stage.
 
 ## 7. Slices
 

@@ -114,9 +114,8 @@ fn serve_one(listener: &TcpListener, permit: own HandlePermit, scratch: &uniq bu
 }
 
 command fn main(command.args as args: own Args, command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(args, handles), writes(handles), allocates(heap) {
-  doc "Listens on the loopback port named by the invocation and serves four connections in a fixed-trip loop, each with its own permit, so several peers reach one listener in one run [SYS-17].";
+  doc "Listens on the loopback port named by the invocation and serves four connections in a fixed-trip loop the staged permission admits: each iteration owns its scratch, takes its own permit before its accept, and leaves the loop only from its prologue, so the four accepts may be in flight at once and several peers reach one listener together [PAR-3, SYS-17].";
   let digits = buffer_new(16_u64, 0_u8);
-  let scratch = buffer_new(256_u64, 0_u8);
   let port = 0_u16;
   let arguments = 0_u64;
   region {
@@ -165,16 +164,19 @@ command fn main(command.args as args: own Args, command.handles as handles: own 
                 served in 0_u64..4_u64,
                 invariant progress: served <= 4_u64
               ) {
-                match reserve_handle(factory: &uniq handles) {
-                  Ok(value: accept_permit) => {
-                    let reported = serve_one(listener: &bound, permit: move accept_permit, scratch: &uniq scratch);
-                    if reported == 0_u8 {
-                    } else {
-                      set outcome = reported;
+                let scratch = buffer_new(256_u64, 0_u8);
+                region {
+                  match reserve_handle(factory: &uniq handles) {
+                    Ok(value: accept_permit) => {
+                      let reported = serve_one(listener: &bound, permit: move accept_permit, scratch: &uniq scratch);
+                      if reported == 0_u8 {
+                      } else {
+                        set outcome = reported;
+                      }
                     }
-                  }
-                  Err(error: problem) => {
-                    set outcome = 6_u8;
+                    Err(error: problem) => {
+                      return exit_status(code: 6_u8);
+                    }
                   }
                 }
               }

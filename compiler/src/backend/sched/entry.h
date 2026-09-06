@@ -124,6 +124,14 @@ unsigned wf__sched_pool_running(void);
  * own join overlapped with nothing, so it is not counted here. */
 unsigned long wf__par_grants(void);
 
+/* The core's summed counters as one line of text, when the run asked for
+ * them with `WF_SCHED_REPORT` (0 or unset: no line; 1: the line), read at the
+ * core's entry under the one settings rule. Answers 1 and writes the line
+ * when it was asked for and fits, 0 otherwise. It is for an observer or a
+ * gate that has to say what the threads did rather than only what they
+ * granted; no program reads it. */
+int wf__sched_report(char *buffer, size_t capacity);
+
 /* ------------------------------------------- the emitted module's ABI */
 
 /* Each is a thin function over the core, and the contract is the one

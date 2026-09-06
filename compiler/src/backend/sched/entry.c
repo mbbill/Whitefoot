@@ -432,6 +432,11 @@ static void wf__sched_start_workers(unsigned threads) {
 static unsigned wf__sched_threads = 1u;
 static unsigned wf__sched_workers_once;
 
+/* Whether `wf__sched_report` answers: `WF_SCHED_REPORT`, read once at the
+ * core's entry with every other startup setting, so a value this runtime
+ * cannot mean ends the run there and not at exit. */
+static unsigned long wf__sched_report_wanted;
+
 static void wf__sched_start_workers_once(void) {
     if (wf__sched_threads >= 2u) {
         wf__sched_start_workers(wf__sched_threads);
@@ -453,6 +458,7 @@ int wf__sched_start(void) {
     if (ceiling != 0u) {
         (void)wf__sched_setting("WF_IO_HELPERS", ceiling, &helpers);
     }
+    (void)wf__sched_setting("WF_SCHED_REPORT", 1ul, &wf__sched_report_wanted);
     requested = wf__sched_requested_lanes();
     threads = requested >= 2 ? (unsigned)requested : 1u;
     /* The stack reservation is made here, at the core's entry, before the
@@ -655,4 +661,34 @@ unsigned long wf__par_grants(void) {
     wf_sched_statistics counts;
     wf_sched_statistics_sum(&wf__sched_core, &counts);
     return (unsigned long)counts.steals;
+}
+
+int wf__sched_report(char *buffer, size_t capacity) {
+    wf_sched_statistics counts;
+    int written;
+    if (wf__sched_report_wanted == 0ul || buffer == NULL || capacity == 0u) {
+        return 0;
+    }
+    wf_sched_statistics_sum(&wf__sched_core, &counts);
+    written = snprintf(
+        buffer,
+        capacity,
+        "sched: threads=%u workers_started=%u parks=%llu cancels=%llu resumes=%llu "
+        "steals=%llu inline_runs=%llu exhausted_io=%llu exhausted_compute=%llu "
+        "late_parks=%llu line_one=%llu spin_rounds=%u yield_rounds=%u",
+        wf__sched_threads,
+        wf_prim_load_u(&wf__sched_workers, WF_PRIM_ACQUIRE),
+        counts.parks,
+        counts.cancels,
+        counts.resumes,
+        counts.steals,
+        counts.inline_runs,
+        counts.exhausted_io_waits,
+        counts.exhausted_compute_waits,
+        counts.late_parks,
+        counts.line_one,
+        (unsigned)WF_SCHED_IDLE_SPIN_ROUNDS,
+        (unsigned)WF_SCHED_IDLE_YIELD_ROUNDS
+    );
+    return written > 0 && (size_t)written < capacity;
 }

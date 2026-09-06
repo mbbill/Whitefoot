@@ -890,13 +890,23 @@ spends the credit. `tests/programs/` gains `tcp_echo.wf`, `tcp_client.wf`,
 `unsupported` now expect `accept` — the subject moved from unsupported to
 supported and no expectation about the language changed.
 
-What the slice leaves open is the program shape, not the runtime: the fixed-trip
-accept loop of `tcp_fanout.wf` is denied both actualizations by the permission
-judgment ([PAR-1] condition 1, because the loop writes a status that outlives
-the iteration; [PAR-3] condition 1, because the per-iteration `reserve_handle`
-is neither before the submission on every path nor reached only through it), so
-four peers are served one at a time. Widening that shape to a real server loop
-is the language work §6 of NETWORK.md says this batch exposes.
+What the slice leaves open is not the program shape and not the judgment: the
+fixed-trip accept loop of `tcp_fanout.wf` is staged by [PAR-3] as written
+now, at `serve_one(listener: &bound, permit: move accept_permit, scratch:
+&uniq scratch)`, with the factory serialized to the prologue, the listener
+read-only, the status serialized to the remainder and the per-iteration
+scratch replicated; the two edits that admitted it were an `Err` arm that
+returns from the prologue instead of writing a status from a path that never
+submits, and a scratch buffer the iteration owns. What is open is the
+lowering: the backend hands out only a system operation at the staged point
+(`backend/emitter.rs`, `IrCompletionStep::without_submission`), and a
+may-suspend user call there keeps its qualified wrapper and runs on the loop's
+own stack, so the four peers are still served in turn. The hand-out form for a
+may-suspend call in a staged loop, which is the form a server's accept loop
+takes, is the next compiler work §6 of NETWORK.md says this batch exposes; the
+bound above it is the runtime's window (`WF_BRIDGE_WINDOW_DEFAULT`, 32 in
+`bridge.c`) and the stack pool, and a loop whose stop condition is data a
+remainder produced is the one shape [PAR-3] itself does not stage.
 
 **Status 2026-09-05, slice 1: landed on this branch.** The amendment and
 everything derived from it are in the tree: `spec/kernel-spec.md` declares

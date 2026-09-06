@@ -1801,11 +1801,19 @@ fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
     } else {
         defaulted
     };
-    assert!(
-        observed_grants > 0,
-        "a --par binary with no worker setting must run in the overlapped \
-         world and be granted lanes, or the path is off for every real run"
-    );
+    if observed_grants == 0 {
+        // One more run, for its counters: the observer prints the core's own
+        // statistics after the grant line when the run asks for them, and a
+        // failure here is read from what the threads did rather than from the
+        // zero alone.
+        let (_, last) = counted.run(None);
+        panic!(
+            "a --par binary with no worker setting must run in the overlapped \
+             world and be granted lanes, or the path is off for every real run; \
+             the last run reported: {}",
+            String::from_utf8_lossy(&last.stderr).trim()
+        );
+    }
 
     let mut runs = vec![("WF_WORKERS absent".to_owned(), published.stdout)];
     for setting in ["0", "1"] {
@@ -2250,6 +2258,9 @@ fn counted_run(executable: &Path, workers: Option<&str>) -> (u64, std::process::
         Some(count) => command.env("WF_WORKERS", count),
         None => command.env_remove("WF_WORKERS"),
     };
+    // The observer prints the core's counters after the grant line when asked,
+    // so a case that fails on the count has the threads' own record beside it.
+    command.env("WF_SCHED_REPORT", "1");
     let output = command.output().expect("run the counted program");
     let report = String::from_utf8_lossy(&output.stderr).into_owned();
     let granted = report

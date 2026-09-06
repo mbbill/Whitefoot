@@ -49,13 +49,23 @@
  * which cannot turn a pool that granted nothing into one that did.
  */
 
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 extern unsigned long wf__par_grants(void);
+extern int wf__sched_report(char *buffer, size_t capacity);
 
+/* The grant line is the one line every judge of this observer reads, and it
+ * stays one line. The core's own counters follow it only when the run asked
+ * for them with `WF_SCHED_REPORT`, so a case that fails on the grant count can
+ * show what the threads did instead of the count alone. */
 static void wf__par_report(void) {
+    char counters[512];
     (void)fprintf(stderr, "grants=%lu\n", wf__par_grants());
+    if (wf__sched_report(counters, sizeof(counters))) {
+        (void)fprintf(stderr, "%s\n", counters);
+    }
 }
 
 __attribute__((constructor)) static void wf__par_register_report(void) {
