@@ -2,7 +2,7 @@ struct Counter {
   value: u64;
 }
 
-fn write_byte(out: &uniq buffer<u8>) -> function_result: own unit writes(out) contract {
+fn write_byte(out: &uniq MutSlice<u8>) -> function_result: own unit writes(out) contract {
   define spare = len_of(deref(out));
   requires 0_u64 < spare;
 } {
@@ -10,14 +10,14 @@ fn write_byte(out: &uniq buffer<u8>) -> function_result: own unit writes(out) co
   return unit;
 }
 
-fn proxy_byte(out: &uniq buffer<u8>) -> function_result: own unit writes(out) contract {
-  define spare = len_of(deref(out));
+fn proxy_byte(out: own MutSlice<u8>) -> function_result: own unit writes(out) contract {
+  define spare = len_of(out);
   requires 1_u64 < spare;
 } {
   region {
-    write_byte(out: &uniq deref(out));
+    write_byte(out: &uniq out);
   }
-  set deref(out)[1_u64] = 9_u8;
+  set out[1_u64] = 9_u8;
   return unit;
 }
 
@@ -39,7 +39,10 @@ command fn main() -> status: own ExitStatus pure {
   let output = buffer_new(2_u64, 0_u8);
   let counter = Counter(value: 40_u64);
   region {
-    proxy_byte(out: &uniq output);
+    let window = mut_slice_of(&uniq output);
+    proxy_byte(out: move window);
+  }
+  region {
     proxy_counter(counter: &uniq counter);
   }
   let first = output[0_u64];
