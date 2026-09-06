@@ -1,6 +1,22 @@
-Say what this changes and why, then answer every line below. A line that does
-not apply is answered "n/a" with the reason, never left blank or deleted: the
-value of this list is that a skipped step has to be written down as skipped.
+Say what this changes and why.
+
+**Answered at: `<short sha>`** — leave this as `draft` until you request
+review.
+
+The list below is answered once, when review is requested, against the head
+commit at that moment; name that commit above. Do not fill it in while the pull
+request is a draft: answers written against a head that then moves describe a
+revision nobody is being asked to review, which is worse than no answers,
+because they read as current.
+
+Push after answering and the answers are stale by construction. Re-answer them
+and move the commit above, or say which lines still hold. A reviewer comparing
+that commit against the head can see at a glance whether they are reading the
+pull request or its history.
+
+A line that does not apply is answered "n/a" with the reason, never left blank
+or deleted: the value of this list is that a skipped step has to be written
+down as skipped.
 
 ## Derivation — language changes only
 
@@ -57,9 +73,9 @@ not before.
 
 ## Gate
 
-Report `make check` stage by stage. A single "green" line hides a stage that
-never ran: `check` stops at the first failure, so an early failure silently
-gates every stage after it.
+Report `make check` stage by stage, on the commit named at the top. A single
+"green" line hides a stage that never ran: `check` stops at the first failure,
+so an early failure silently gates every stage after it.
 
 | stage | result |
 | --- | --- |
