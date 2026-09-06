@@ -2260,3 +2260,55 @@ The mixed result must therefore be judged by heavy deadline capacity and light
 tails together. It tests whether removing the demonstrated initial-assignment
 defect makes the owner-local policy competitive; it does not select permanent
 affinity, the current global wake mechanism or the per-ring locking overhead.
+
+The dispatch revision `b8c94ecd7a48b0fb235d20e821028ac90a51aba2` passed the
+canonical gate and io-hosts. Its native Windows placement job also passed all
+six staged socket runs and the retained memory/pinning IOCP checks in
+[run 34058004685](https://github.com/mbbill/Whitefoot/actions/runs/34058004685).
+The Linux measurement jobs are still required for its performance decision.
+
+## Twenty-first experiment: omit a running owner's redundant wake
+
+A pinned ready queue is consumed only by its owner. When that owner is already
+executing the completion drain, pushing its own ready stack need not broadcast
+a wake to every scheduler. The same argument covers an initial call published
+to the current owner: its scheduler will inspect the queue before sleeping.
+`WF_SCHED_LOCAL_WAKE=1` tests just this omission, retaining the same ready queue,
+mutex, FIFO, initial placement, ring engine and record protocol. It requires
+pinned queues. Other-thread and helper publication, in-place waiters and program
+exit still use the original wake paths. No source or module ABI changes.
+
+The predicate must identify an actual executing core thread. A helper's default
+thread ordinal is also zero; comparing ordinals alone would lose wakes for the
+entry worker. POSIX and Windows primitives now retain a thread-local core
+pointer while `wf_sched_run` executes and clear it on return. The predicate
+requires both that pointer and the owner ordinal to match. The enumerator
+stores the same attachment in each actor. No shared counter, new scheduling
+edge or per-request allocation is introduced; the default policy omits the
+attachment calls and keeps all original wakes.
+
+The isolated balanced candidate passes the full M1 completion suite and all
+four enumerations (18/18/21/20 schedules, zero bounded executions), plus twelve
+byte-checked echo/mixed runs with one/two/four workers under opportunistic and
+round-robin initial placement. The integrated original-placement pinned policy
+also passes its full suite (17/17/20/19 schedules). New real-thread smoke checks
+require an unattached helper to differ from worker zero, require calls executing
+on a pool stack to identify their current core, and require the returning host
+thread to have cleared that identity. The smoke initially needed its primitive
+header included; after that build fix these assertions pass. All 36 compiler
+completion integration tests pass. Six additional integrated runs use the
+benchmark's actual `quiet` linker policy, unchanged emitted echo/chunked modules,
+exact initial distribution and the reported `local_wake=1` flag; all return
+correct bytes and the mixed runs perform checkpoint switches.
+
+`scheduler-wake` compares base/rings/balanced/quiet plus native io_uring/epoll
+over the same 840-row echo cohort and compute/file controls. Its fixed-arrival
+companion compares base/chunk/chunk+balanced/chunk+quiet plus native inline/
+chunked epoll (504 rows); all chunked WF modules must be byte-identical. Every
+candidate runs the full completion suite, two-ring wake probe and four-thread
+native bridge probe before timing. The Windows staged socket check retains
+both existing placement policies and adds round-robin plus local wake omission.
+All memory flags stay off and all TCP options, stacks and workloads match the
+previous cohort. Reduced wake traffic is a hypothesis until native measurements
+show its throughput, tails and CPU consequences; the experimental default is
+zero.

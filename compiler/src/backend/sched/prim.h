@@ -68,6 +68,10 @@ enum wf_prim_section {
  * by `wf_sched_run` before the thread's first switch. */
 unsigned wf_prim_thread_index(void);
 void wf_prim_set_thread_index(unsigned index);
+/* Thread-local identity, distinct from an unregistered helper's zero ordinal.
+ * Attachment lasts only while wf_sched_run executes this core. */
+void wf_prim_set_thread_core(struct wf_sched_core *core);
+int wf_prim_is_core_thread(const struct wf_sched_core *core, unsigned index);
 
 #if defined(WF_SCHED_ENUMERATE)
 

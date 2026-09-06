@@ -70,8 +70,22 @@ static void wf_sched_pool_push(wf_sched_core *core, wf_sched_stack *stack) {
 
 /* A ready shard belongs to the parking worker. The stealing policy scans all
  * shards before sleeping; the pinned policy resumes only its own shard.
- * Every shard's empty-to-nonempty transition wakes the shared epoch: no global
- * ready counter or cross-shard lock is needed. */
+ * An empty-to-nonempty transition wakes the shared epoch unless the pinned
+ * owner is this currently executing core thread. No global ready counter or
+ * cross-shard lock is needed. In-place waiters and program exit keep their
+ * unconditional wake paths. */
+static void wf_sched_wake_owner(wf_sched_core *core, unsigned owner) {
+#if WF_SCHED_LOCAL_WAKE
+    if (wf_prim_is_core_thread(core, owner)) {
+        return;
+    }
+#else
+    (void)core;
+    (void)owner;
+#endif
+    wf_prim_wake();
+}
+
 static void wf_sched_ready_push(wf_sched_core *core, wf_sched_stack *stack) {
     unsigned owner = 0;
     unsigned mutex = 0;
@@ -98,7 +112,7 @@ static void wf_sched_ready_push(wf_sched_core *core, wf_sched_stack *stack) {
     queue->tail = stack;
     wf_prim_unlock(mutex);
     if (was_empty) {
-        wf_prim_wake();
+        wf_sched_wake_owner(core, owner);
     }
 }
 
@@ -949,6 +963,9 @@ int wf_sched_run(wf_sched_core *core, unsigned index, void (*entry)(void *), voi
         wf_prim_fail("a thread the core does not know started");
     }
     wf_prim_set_thread_index(index);
+#if WF_SCHED_LOCAL_WAKE
+    wf_prim_set_thread_core(core);
+#endif
     thread = &core->threads[index];
     thread->entry = entry;
     thread->entry_argument = argument;
@@ -980,6 +997,9 @@ int wf_sched_run(wf_sched_core *core, unsigned index, void (*entry)(void *), voi
         wf_sched_pool_push(core, thread->pending_empty);
         thread->pending_empty = NULL;
     }
+#if WF_SCHED_LOCAL_WAKE
+    wf_prim_set_thread_core(NULL);
+#endif
     return core->status;
 }
 
@@ -1055,7 +1075,7 @@ void wf_sched_publish_staged(wf_sched_core *core, void *frame, void (*run)(void 
     queue->incoming_tail = slot;
     wf_prim_unlock(mutex);
     if (was_empty) {
-        wf_prim_wake();
+        wf_sched_wake_owner(core, owner);
     }
 #else
     wf_sched_publish(core, frame, run);

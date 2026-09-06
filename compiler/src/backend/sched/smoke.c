@@ -7,6 +7,7 @@
  * on main's first I/O and run to its return by a worker (S17). */
 
 #include "core.h"
+#include "prim.h"
 
 #include <pthread.h>
 #include <stdio.h>
@@ -47,6 +48,13 @@ static void device_submit(wf_sched_record *record) {
 
 static void *device_main(void *argument) {
     (void)argument;
+#if WF_SCHED_LOCAL_WAKE
+    /* A helper's default ordinal is zero, but it is not the entry worker. */
+    if (wf_prim_thread_index() != 0u || wf_prim_is_core_thread(&core, 0u)) {
+        fputs("an unattached helper was mistaken for the entry worker\n", stderr);
+        abort();
+    }
+#endif
     for (;;) {
         wf_sched_record *record;
         struct timespec pause = {0, 200000};
@@ -74,6 +82,13 @@ static unsigned long long compute_sum;
 /* One I/O operation: a record in this frame, submitted, then joined. */
 static void one_read(void) {
     wf_sched_record record;
+#if WF_SCHED_LOCAL_WAKE
+    if (!wf_prim_is_core_thread(&core, wf_prim_thread_index())
+        || wf_prim_is_core_thread(NULL, wf_prim_thread_index())) {
+        fputs("a running scheduler lost its core identity\n", stderr);
+        abort();
+    }
+#endif
     wf_sched_record_init(&record);
     device_submit(&record);
     wf_sched_join(&core, &record, 1);
@@ -207,6 +222,12 @@ int main(void) {
         pthread_attr_destroy(&attributes);
     }
     status = wf_sched_run(&core, 0, main_body, NULL);
+#if WF_SCHED_LOCAL_WAKE
+    if (wf_prim_is_core_thread(&core, 0u)) {
+        fputs("a returned host thread retained scheduler ownership\n", stderr);
+        abort();
+    }
+#endif
     wf_sched_statistics_sum(&core, &counts);
     pthread_mutex_lock(&device_lock);
     device_stopping = 1;

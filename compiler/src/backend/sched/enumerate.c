@@ -126,6 +126,7 @@ typedef enum actor_state { A_NEW, A_RUNNABLE, A_FINISHED, A_DEAD } actor_state;
 
 typedef struct actor {
     unsigned index;
+    struct wf_sched_core *attached_core;
     actor_state state;
     void *sp;
     unsigned char *host_stack;
@@ -370,6 +371,17 @@ static void announce(const op *o) {
 static int current_exec_stack(void) {
     void *here = __builtin_frame_address(0);
     return stack_index_of(here);
+}
+
+void wf_prim_set_thread_core(struct wf_sched_core *core) {
+    if (core != NULL && (core != &wf_enum_core || current_index() >= cfg_threads)) {
+        fail_execution("a non-scheduler actor attached a core");
+    }
+    current->attached_core = core;
+}
+
+int wf_prim_is_core_thread(const struct wf_sched_core *core, unsigned index) {
+    return core != NULL && current->attached_core == core && current_index() == index;
 }
 
 unsigned wf_prim_thread_index(void) {

@@ -52,6 +52,15 @@ void wf_prim_fail(const char *reason) {
 /* ---------------------------------------------------------- thread index */
 
 static _Thread_local unsigned wf_prim_thread_ordinal;
+static _Thread_local struct wf_sched_core *wf_prim_attached_core;
+
+void wf_prim_set_thread_core(struct wf_sched_core *core) {
+    wf_prim_attached_core = core;
+}
+
+int wf_prim_is_core_thread(const struct wf_sched_core *core, unsigned index) {
+    return core != NULL && wf_prim_attached_core == core && wf_prim_thread_ordinal == index;
+}
 
 unsigned wf_prim_thread_index(void) {
     return wf_prim_thread_ordinal;

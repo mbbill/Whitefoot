@@ -340,7 +340,8 @@ The current scheduler experiments and their controls are described in
 `scheduler-chunks`, `scheduler-canonical`, `scheduler-stackful` and
 `scheduler-stackful-paced`, `scheduler-nodelay`, `scheduler-owner` and
 `scheduler-owner-paced`, `scheduler-memory`, `scheduler-dispatch` and
-`scheduler-dispatch-paced` run their respective Linux cohorts. The measured
+`scheduler-dispatch-paced`, `scheduler-wake` and `scheduler-wake-paced` run
+their respective Linux cohorts. The measured
 priority, counter-stripe, stack-offset and independently locked ready-queue
 prototypes were retired; their results and exact revisions remain in the investigation. The canonical
 comparison also builds the recorded prior compiler revision from local Git
@@ -372,6 +373,10 @@ steals, retains pure-compute stealing, and compares identical WF chunk modules
 under different placement policies. Equal connection counts do not guarantee
 equal CPU demand; the fixed-arrival cohort measures heavy deadline capacity
 and light tails together.
+The wake comparison keeps that initial placement and suppresses a ready-queue
+wake only when the target owner is the current executing core thread. External
+helpers, other workers, in-place waiters and process exit retain their wake
+paths. The same candidate runs the full completion suite before timing.
 
 On native Windows, `windows-bench.ps1` owns a separate production
 qualification:

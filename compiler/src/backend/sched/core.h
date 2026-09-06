@@ -62,6 +62,18 @@
 #error "Round-robin I/O dispatch requires pinned worker queues"
 #endif
 
+/* An owner that is currently executing will inspect its own queues before
+ * sleeping. A helper or another core must still publish the shared wake. */
+#ifndef WF_SCHED_LOCAL_WAKE
+#define WF_SCHED_LOCAL_WAKE 0
+#endif
+#if WF_SCHED_LOCAL_WAKE != 0 && WF_SCHED_LOCAL_WAKE != 1
+#error "WF_SCHED_LOCAL_WAKE must be zero or one"
+#endif
+#if WF_SCHED_LOCAL_WAKE && !WF_SCHED_READY_PINNED
+#error "Local wake elision requires pinned ready queues"
+#endif
+
 /* Experimental compact metadata and first-use context preparation. */
 #ifndef WF_SCHED_COMPACT_STACKS
 #define WF_SCHED_COMPACT_STACKS 0
