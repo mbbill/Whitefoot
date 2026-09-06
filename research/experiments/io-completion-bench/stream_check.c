@@ -1,6 +1,9 @@
 /* Untimed stream/lifetime checks for the epoll representation comparison.
  * Usage: stream_check SERVER echo|compute|truncated WORKERS
- * Owned by scheduler-stackful/stackful-check; retire with that comparison.
+ *        stream_check SERVER resident WORKERS CONNECTIONS BYTES PREFIX
+ *        stream_check launch SERVER [ARGUMENTS...]
+ * Owned by scheduler-stackful/stackful-check and scheduler-pages; retire with
+ * those comparisons. Residency captures only byte-checked live connections.
  * The compute answers below are fixed independent protocol vectors. */
 #define _POSIX_C_SOURCE 200809L
 #include <arpa/inet.h>
@@ -12,7 +15,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/resource.h>
 #include <sys/wait.h>
+#if defined(__linux__)
+#include <sys/prctl.h>
+#endif
 #include <time.h>
 #include <unistd.h>
 
@@ -36,6 +43,51 @@ static void require(int condition, const char *reason) {
         stop_server();
         exit(1);
     }
+}
+
+/* Benchmark process policy only. The default caller changes nothing. Both
+ * timed launches and untimed residency children use the same inherited flag. */
+static void select_page_policy(void) {
+    const char *setting = getenv("WF_BENCH_THP_DISABLE");
+    if (setting == NULL) return;
+    require(strcmp(setting, "0") == 0 || strcmp(setting, "1") == 0, "invalid THP policy");
+#if defined(__linux__)
+    unsigned long disabled = (unsigned long)(setting[0] == '1');
+    require(prctl(PR_SET_THP_DISABLE, disabled, 0UL, 0UL, 0UL) == 0, "THP policy failed");
+    require(prctl(PR_GET_THP_DISABLE, 0UL, 0UL, 0UL, 0UL) == (int)disabled, "THP policy did not apply");
+#else
+    require(0, "process THP policy requires Linux");
+#endif
+}
+
+static unsigned bounded_number(const char *text, unsigned limit) {
+    char *end = NULL;
+    unsigned long value = strtoul(text, &end, 10);
+    require(end != text && *end == '\0' && value != 0 && value <= limit, "invalid residency size");
+    return (unsigned)value;
+}
+
+static void snapshot_process(const char *prefix, const char *name) {
+    /* A dash permits portable byte/lifetime qualification without /proc.
+     * The Linux experiment caller requires both actual snapshot files. */
+    if (strcmp(prefix, "-") == 0) return;
+    char source[128];
+    char destination[4096];
+    int written = snprintf(source, sizeof source, "/proc/%ld/%s", (long)server_pid, name);
+    require(written > 0 && (size_t)written < sizeof source, "snapshot source path overflow");
+    written = snprintf(destination, sizeof destination, "%s.%s", prefix, name);
+    require(written > 0 && (size_t)written < sizeof destination, "snapshot output path overflow");
+    FILE *input = fopen(source, "r");
+    require(input != NULL, "process snapshot unavailable");
+    FILE *output = fopen(destination, "w");
+    require(output != NULL, "snapshot output unavailable");
+    unsigned char bytes[16384];
+    size_t count;
+    while ((count = fread(bytes, 1u, sizeof bytes, input)) != 0u) {
+        require(fwrite(bytes, 1u, count, output) == count, "snapshot write failed");
+    }
+    require(ferror(input) == 0, "snapshot read failed");
+    require(fclose(input) == 0 && fclose(output) == 0, "snapshot close failed");
 }
 
 static void delay_ms(unsigned milliseconds) {
@@ -86,6 +138,37 @@ struct peer {
 
 static unsigned char echo_byte(unsigned peer, size_t offset) {
     return (unsigned char)((offset * 37u + peer * 53u) ^ (offset >> 11));
+}
+
+static void check_residency(unsigned count, unsigned length, const char *prefix) {
+    int *descriptors = malloc((size_t)count * sizeof *descriptors);
+    unsigned char *bytes = malloc(length);
+    require(descriptors != NULL && bytes != NULL, "residency client allocation failed");
+    for (unsigned index = 0u; index < count; index++) {
+        descriptors[index] = connect_peer();
+        for (unsigned at = 0u; at < length; at++) bytes[at] = echo_byte(index, at);
+        send_all(descriptors[index], bytes, length);
+        memset(bytes, 0, length);
+        receive_all(descriptors[index], bytes, length);
+        for (unsigned at = 0u; at < length; at++) {
+            require(bytes[at] == echo_byte(index, at), "residency echo mismatch");
+        }
+    }
+    /* Every connection has completed a checked exchange and remains open.
+     * Taking the snapshot here distinguishes live storage from peak startup
+     * RSS or allocator pages retained after connections have closed. */
+    snapshot_process(prefix, "smaps");
+    snapshot_process(prefix, "status");
+    for (unsigned index = 0u; index < count; index++) {
+        require(shutdown(descriptors[index], SHUT_WR) == 0, "residency half-close failed");
+        unsigned char extra;
+        ssize_t taken;
+        do { taken = recv(descriptors[index], &extra, 1u, 0); } while (taken < 0 && errno == EINTR);
+        require(taken == 0, "residency peer did not finish");
+        require(close(descriptors[index]) == 0, "residency close failed");
+    }
+    free(bytes);
+    free(descriptors);
 }
 
 #define ECHO_BYTES (2u * 1024u * 1024u)
@@ -155,10 +238,29 @@ static void *run_peer(void *raw) {
 }
 
 int main(int argc, char **argv) {
-    require(argc == 4, "expected SERVER MODE WORKERS");
+    if (argc >= 3 && strcmp(argv[1], "launch") == 0) {
+        select_page_policy();
+        execv(argv[2], argv + 2);
+        require(0, "server launch failed");
+    }
+    require(argc == 4 || argc == 7, "expected SERVER MODE WORKERS [CONNECTIONS BYTES PREFIX]");
     mode = argv[2];
+    int resident = strcmp(mode, "resident") == 0;
     require(strcmp(mode, "echo") == 0 || strcmp(mode, "compute") == 0 ||
-            strcmp(mode, "truncated") == 0, "unknown mode");
+            strcmp(mode, "truncated") == 0 || resident, "unknown mode");
+    require(argc == (resident ? 7 : 4), "incorrect arguments for stream mode");
+    unsigned count = resident ? bounded_number(argv[4], 4096u) : 0u;
+    unsigned bytes = resident ? bounded_number(argv[5], 65536u) : 0u;
+    if (resident) {
+        struct rlimit limit;
+        require(getrlimit(RLIMIT_NOFILE, &limit) == 0, "descriptor limit unavailable");
+        rlim_t wanted = (rlim_t)count + 128u;
+        if (limit.rlim_cur < wanted) {
+            require(limit.rlim_max >= wanted, "insufficient descriptor ceiling");
+            limit.rlim_cur = wanted;
+            require(setrlimit(RLIMIT_NOFILE, &limit) == 0, "descriptor limit change failed");
+        }
+    }
     signal(SIGPIPE, SIG_IGN);
     signal(SIGALRM, timed_out);
     atexit(stop_server);
@@ -180,11 +282,22 @@ int main(int argc, char **argv) {
     pid_t child = fork();
     require(child >= 0, "fork failed");
     if (child == 0) {
-        execl(argv[1], argv[1], port_text, truncated ? "1" : "4", "--threads", argv[3], (char *)NULL);
+        select_page_policy();
+        const char *server_cpus = getenv("WF_BENCH_SERVER_CPUS");
+        if (server_cpus != NULL) {
+            /* The Linux residency caller pins its client separately. taskset
+             * execs in place, preserving the PID used for the live snapshot. */
+            execlp("taskset", "taskset", "-c", server_cpus, argv[1], port_text,
+                   resident ? argv[4] : (truncated ? "1" : "4"), "--threads", argv[3], (char *)NULL);
+            _exit(127);
+        }
+        execl(argv[1], argv[1], port_text, resident ? argv[4] : (truncated ? "1" : "4"), "--threads", argv[3], (char *)NULL);
         _exit(127);
     }
     server_pid = child;
-    if (truncated) {
+    if (resident) {
+        check_residency(count, bytes, argv[6]);
+    } else if (truncated) {
         int descriptor = connect_peer();
         unsigned char prefix[17] = {0};
         send_all(descriptor, prefix, sizeof prefix);
@@ -204,6 +317,8 @@ int main(int argc, char **argv) {
     server_pid = 0;
     require(WIFEXITED(status) && WEXITSTATUS(status) == (truncated ? 1 : 0), "unexpected server exit");
     alarm(0);
-    printf("stream_check: PASS mode=%s workers=%s\n", mode, argv[3]);
+    printf("stream_check: PASS mode=%s workers=%s", mode, argv[3]);
+    if (resident) printf(" connections=%u bytes=%u", count, bytes);
+    putchar('\n');
     return 0;
 }

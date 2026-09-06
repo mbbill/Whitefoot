@@ -2750,6 +2750,68 @@ allocation-placement experiment and real network measurements before it can
 replace the existing representation comparison. No C++ source or coroutine
 library has been introduced into the WF compiler.
 
+### Native receive-storage results
+
+Revision `361cb9520f421b8a0562e2a8618844b960562c2b` completes all 770 rows in
+Linux job `101564979286`, [artifact 9998207444](https://github.com/mbbill/Whitefoot/actions/runs/34062347023/artifacts/9998207444).
+The host is a Xeon Platinum 8573C with four logical CPUs on two physical SMT
+cores, Linux 6.17, clang 18.1.3, glibc 2.39 and 4096-byte base pages. All
+expanded stream checks, memory-control qualification and native baseline
+codegen comparisons pass. Its Windows scheduler qualification, canonical gate,
+native-host qualification and program I/O benchmark workflows also pass.
+The optimized WF module folds the 64 KiB allocation/fill into calloc here too.
+
+Peak RSS medians expose large layout-dependent costs even with 64-byte wire
+payloads. Values below are KiB; no row is drawn from another host:
+
+| Placement / peers | Manual shared | Manual arena | Manual malloc | Manual calloc | Stackful shared | Stackful calloc | WF base | WF small |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| split1 / 64 | 1980 | 5940 | 1992 | 2220 | 1992 | 2476 | 35664 | 10000 |
+| split1 / 1024 | 1980 | 67396 | 5804 | 10028 | 5932 | 14124 | 79312 | 59584 |
+| split2 / 64 | 1980 | 5972 | 2220 | 2364 | 1980 | 2604 | 36292 | 11864 |
+| split2 / 1024 | 1980 | 67424 | 5804 | 10028 | 5804 | 14124 | 79448 | 63300 |
+
+At 1024 connections, private arena receive storage adds about 64 MiB to the
+manual reference, whereas per-connection malloc adds about 4 MiB and calloc
+about 8 MiB. Stackful execution adds about another 4 MiB with the latter two
+policies. The arena's generated code contains no full receive-buffer clearing;
+its much larger RSS needs page-mapping evidence before being attributed to
+initialization. Transparent huge pages can amplify sparsely touched mappings
+([kernel documentation](https://docs.kernel.org/admin-guide/mm/transhuge.html)),
+but this run did not record THP controls or live smaps and does not establish
+that as its cause. The initialization allocator thread also differs: WF
+allocates scratch in the staged caller, while native malloc/calloc policies
+allocate on the accepting worker. This experiment does not isolate that axis.
+
+Memory layout is not performance-neutral, and stackful/manual parity from a
+smaller case cannot be extrapolated to every storage policy. At split1/1024,
+shared stackful/manual throughput wins every paired pass, median 1.0611
+(1.0101..1.1220), while calloc stackful/manual loses every pass, 0.9014
+(0.8628..0.9457). At split2/64 KiB, shared stackful/manual loses every pass,
+0.9459 (0.9134..0.9894), and private arena/shared manual also loses every pass,
+0.9270 (0.8655..0.9729). The corresponding large-transfer medians are
+69376/s for manual shared, 64952/s for stackful shared and 64204/s for
+stackful calloc. These are host/workload observations, not a universal cost of
+ordinary sequential calls.
+
+Most small-memory WF/base paired rate medians remain within 1.2% of parity;
+the noisier split2/one-peer median is 1.0366 with a range crossing parity.
+The remaining WF gap survives a matched private-calloc stackful reference:
+small/reference split2 rates lose every pair at 64 peers, 1024 peers and the
+64 KiB transfer, with paired medians 0.8787 (0.8134..0.9613), 0.8553
+(0.7999..0.9047), and 0.7613 (0.7470..0.8534). The 64-peer and large-transfer
+tails also lose every pair, 1.1907 (1.0421..1.7110) and 1.4338
+(1.2485..1.4477). At 1024 peers small/reference RSS remains about 4.2..4.4
+times higher in paired medians. Allocation semantics and stack representation
+alone therefore do not yet account for the full runtime gap.
+
+Finite compute small/base medians are 3334/3338, 1813/1820 and 1887/1891 ms
+at two/four/eight workers. File+compute is 154/167, 160/171 and 182/195 ms,
+with about 8..12 ms less system CPU in the first two cases. These retain the
+startup observation from experiment 19. The next residency experiment holds
+all connections open for snapshots and compares inherited versus disabled
+per-process THP without changing the compiler's buffer semantics.
+
 ## Twenty-fourth experiment: Windows wake ownership under re-entry
 
 The Windows timeout above makes progress qualification the immediate next
@@ -2804,5 +2866,74 @@ the new waiter. Test timeouts satisfy none of those assertions. The new branch
 retains the existing Windows memory and all staged socket policy checks and
 repeats the previously stalled pinned/four-worker file+compute case 32 times;
 Linux storage timings continue on their original revision instead of being
-rerun for a Windows-only change. The repair still requires native CI, and no
+rerun for a Windows-only change. The repair was sent to native CI; no
 performance claim is made for its altered wake traffic.
+
+Revision `04106a23e9df8c7c6aefac01e9a2594af180a4d1` now passes native Windows
+io-hosts job [`101568658904`](https://github.com/mbbill/Whitefoot/actions/runs/34063697994/job/101568658904):
+both `gate=0` and `gate=1` replays report `expected=2 received=2`, followed by
+the original native file-I/O qualification. Scheduler job
+[`101568658716`](https://github.com/mbbill/Whitefoot/actions/runs/34063697974/job/101568658716)
+passes all 32 pinned/four-worker repetitions, all other memory cases and all
+18 staged IOCP socket configurations. The Linux io-hosts companion and
+canonical gate also pass; the program I/O benchmark is still running.
+This closes the demonstrated lost-notification interleaving and provides
+repeat evidence for the previously stalled workload; it does not establish
+that no other scheduler progress defect exists.
+
+## Twenty-fifth experiment: process page policy and live storage
+
+The storage result leaves two distinct questions: why a sparsely used private
+arena adds roughly its entire virtual size to RSS, and why WF small still
+uses over four times the memory of native stackful calloc. The next experiment
+uses the same normal server binaries with process THP disable set to zero or
+one before exec. Zero permits the global policy; it does not force huge pages.
+The policy survives exec according to the [kernel documentation](https://docs.kernel.org/admin-guide/mm/transhuge.html).
+Global THP controls are recorded, including per-size settings, and never
+written. Compiler buffer initialization, scheduler flags and source semantics
+remain unchanged.
+
+`make scheduler-pages` retains the storage code-generation comparison, all
+32 native stream cases, and the small-memory completion qualification. It
+records 588 paired timed echo rows: WF base/small; native manual shared,
+arena, malloc and calloc; native stackful calloc; split1/split2 placement;
+both process page policies; 64/1024 peers with 64-byte payloads and 64 peers
+with 64-KiB payloads; seven passes after two warmups. Form and page-policy
+ordering alternate between passes. Every timed server passes through the same
+small exec launcher, which verifies the requested process policy with prctl.
+The client runs on the original disjoint logical CPU set. Compute/file control
+results remain those of the storage revision: this experiment changes only
+the network process page-policy comparison and makes no new claim about those
+other workloads.
+
+An untimed resident mode of the existing independent stream checker opens
+every connection, exchanges and verifies a peer-specific byte pattern, and
+keeps all connections open until both smaps and status have been copied from
+the server. It then half-closes each peer, requires EOF without extra bytes,
+and checks server exit. Linux taskset execs the child in place on the server
+CPU set; the checker retains the actual server PID. Snapshot failure or a
+wrong THP_enabled value fails the run. A 30-second test watchdog diagnoses
+stalls without selecting runtime progress behavior.
+
+Three repetitions cover all eleven WF/native forms from the storage study,
+including io_uring and both manual/stackful forms of each storage policy,
+under both page policies, both placements and all three connection/payload
+cases: 396 snapshots. `resident.tsv` sums RSS, anonymous memory, anonymous huge
+pages, private dirty pages and swap from smaps; the full mappings and process
+status remain in the artifact. The [proc documentation](https://docs.kernel.org/filesystems/proc.html)
+defines these fields. Peak RSS from timed process lifetime and live RSS from
+these snapshots answer different questions and must not be substituted for
+each other. Even a demonstrated page amplification would not by itself
+explain the allocation-thread difference between WF's staged caller and the
+native accepting worker.
+
+Local qualification passes strict C11 compilation, all 32 maintained native
+protocol cases using the existing M1 compatibility bridge, and the actual
+pages runner's eight native builds plus all three unchanged manual LLVM
+comparisons. The final resident client passes manual/shared 64-peer small
+echo, stackful/calloc 1024-peer small echo with four workers, and
+stackful/arena 64-peer large echo with one worker, including clean EOF and
+server exit. Portable qualification uses the explicit dash snapshot prefix;
+it makes no claim about Linux prctl or proc files. The no-policy exec launcher,
+workflow YAML, embedded Bash and runner Bash syntax checks pass. Actual Linux
+policy readback, retained mappings and performance results remain pending CI.
