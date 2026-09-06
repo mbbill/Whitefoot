@@ -8501,7 +8501,14 @@ cases marked "no twin" in 6.0v are re-answered: the alignment half now has one
 and is migrated to `heap_vector` and `heap_box`, and the byte-ceiling half has
 none for the reason the finding above states rather than for a missing arm.
 
-**Verdicts.** VERDICTS_PLACEHOLDER
+**Verdicts.** The adapter moves from Pass=727 Skip=3 over 730 to **Pass=730
+Skip=3 over 733**, the three skips unchanged in id, expectation and status, with
+coverage complete at 161/161. Three cases are added and none deleted;
+`fn8-pos-requires-affine-row` is modified in source, doc and rule list with its
+`run` exit-0 expectation unchanged, and four `accept-par3-staged-*` docs are
+corrected in the manifest and in their own sources where they had been rewritten
+to describe condition 7. No case flips a verdict. The recorded-verdict snapshot
+corpus is **Pass=484 Flip=0**, unchanged: no row moves, silently or otherwise.
 
 ### 6.1 What the compiler did in this session
 
