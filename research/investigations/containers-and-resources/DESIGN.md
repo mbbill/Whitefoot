@@ -8282,6 +8282,87 @@ Pass=484: fifty-two rows keep their verdict over migrated sources, seven move fr
 their sources because their program cannot be written on the run surface without changing
 what the row records.
 
+### 6.0w B7c4b-2 landed in part (v0.45)
+
+**The flagship's cost shape re-derived, the read-only array places moved to the
+const run, and the retirement itself not landed.** Numbered rules +0, grammar
+productions +0, atoms +0, writer operation spellings +0: this batch changes no
+rule of the specification, and the retirement of `buffer<T>`, `box<T>`,
+`arena<'r, T>` and `array<T, n>` is still owed. What it does is pay two of that
+retirement's preconditions and record two findings that change its shape.
+
+- **The three §9.1 cost-shape rows the eight-program merge left red are
+  re-derived from the migrated `wfgrep`, not loosened.** The declared-function
+  list is re-derived off the source and gains five names, two of them the store
+  surface's own `zeroed_bytes` and `zeroed_words`; without them the census read
+  neither an allocation nor a call target, because `zeroed_bytes` is the first
+  `wfgrep` helper the host inliner leaves out of line. The release-close count
+  moves from nine to seventeen, and the whole of the growth is `main`'s: a take
+  from the store is a `match` on an `Option` plus the window-viewability test
+  the source writes before forming a view, and four of them are eight new edges
+  leaving `main`, each carrying the release of the `command.cwd` `DirectoryRead`
+  the entry holds for the run [STOR-3]. The resource abort keeps its `noreturn`
+  property and loses its reachability: a refused take is an arm `wfgrep`
+  answers with exit 70, so the program has no call site into the abort at all,
+  and the census exemption is now asserted vacuous. The eleven allocations stay
+  eleven and change shape — the take is `malloc` because a store hands out raw
+  slots, and the zero fill is the source's own loop — so eight expanded
+  `@malloc`s plus three calls into the helper are asserted with their sum.
+
+- **A run's length is not a fact of its type, and that is what an array
+  migration costs.** `array<T, N>` gave a standing `len_of = N` at every place
+  of that type. `FixedVector<T, n>` gives a standing `cap_of = n` and carries
+  `len_of`, `room_of` and `head_of` as descriptor words [BLK-1, OP-9]; only the
+  [S34] const form has all four standing. So a read-only array place migrates
+  by a rename of its declaration into a `const` item and nothing else — which is
+  what the compiler's own unit tests did, with every migrated source compiling
+  to the same diagnostic or the same acceptance before and after — while a
+  *mutable* or *parameter* array place does not migrate at all without a
+  declared `requires len_of(v) == n;` or a caller that publishes it, and its
+  subscript exhibits `reads` where an array subscript was `pure`. Three
+  entailment assertions were re-derived for exactly this, and the recorded
+  measure census over a run is now one constant where an array place fixed
+  four.
+
+- **A `FixedVector` const of a tag-only enum is not const-eligible.**
+  `const flags: FixedVector<Bool, 1> = [False()];` is a [CONST-2]
+  `InvalidConstValue` because enums are excluded and `Bool` is one, so an
+  `array<Bool, N>` place has no const-run migration and keeps a value form.
+  Whether the exclusion should hold for a tag-only enum is [CONST-2]'s own
+  DEFERRED question and is not reopened here.
+
+- **A view over a run crossing a may-suspend call takes the stackless ABI where
+  the same view over an array did not.** This is the finding that blocks the
+  `array` retirement rather than merely pricing it.
+  `a_stack_backed_slice_crossing_the_suspend_point_keeps_the_synchronous_abi`
+  compiles one program in which `slice_of(&local)` is live across a
+  `write_once`; with `local` an `array<u8, 1>` the module names no
+  `wf__stackless` symbol, and with `local` the same-sized run built by
+  `fixed_vector` and one `place_back` it names seven. It was isolated: a run
+  built by `place_back` that is not viewed across the suspend point keeps the
+  synchronous ABI, so the trigger is the loan of run storage and not the run.
+  No rule of this design states that difference, the test's own subject is a
+  *stack-backed* slice so the const run is not an available migration, and the
+  retirement of `array<T, N>` cannot land until the stack judgment's treatment
+  of a loan of run storage is either derived or repaired.
+
+- **The const-run diagnostic wart 6.0v recorded is closed**, and it was two
+  warts rather than one: the message named `index` and `len`, neither of which
+  is a current spelling — a subscript is `p[i]`, and `len` was superseded at
+  [S36]. It now names the run, the subscript, the four readers and the shared
+  view, which is exactly [CONST-2]'s read set.
+
+**What did not land, and why it is one piece.** The retirement cannot be
+partial: the moment `buffer<T>`'s production leaves [GRAM-3], every remaining
+`buffer`, `box` and `arena` occurrence in the compiler's embedded test sources
+stops parsing, and about eleven hundred of them remain. Every sentence of
+6.0q-6.0v and of §7's B7 that calls a spelling transitional therefore still
+holds and is left standing.
+
+**Verdicts.** Unchanged in every corpus: the adapter at Pass=702 Skip=3 over
+705 with coverage 157/157, and the recorded-verdict snapshot corpus at
+Pass=484 Flip=0. No conformance case is added, modified, deleted or renamed.
+
 ### 6.1 What the compiler did in this session
 
 ```text

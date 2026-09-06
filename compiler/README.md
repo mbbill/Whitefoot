@@ -384,10 +384,12 @@ facts `len_of = cap_of = n` and `room_of = head_of = Z` and the checker's array
 place already is exactly those four constants over that storage. Nothing else is
 added — the subscript discharges from `len_of = n`, the four readers answer from
 the type, `slice_of` gives the `immutable-const` origin, and `mut_slice_of` and
-a `set` through it are the two [CONST-2] refusals a const already had. One
-recorded wart: a diagnostic about such an item still spells its type
-`array<T, N>`, which is its internal spelling until [S34]'s retirement renames
-it.
+a `set` through it are the two [CONST-2] refusals a const already had. The wart
+B7c4b-1 recorded here — a diagnostic about such an item spelling its type
+`array<T, N>` — is closed, and it was two warts rather than one: the message
+also named `index` and `len`, neither of which is a current spelling. It now
+names the run, the subscript, the four readers and the shared view, which is
+exactly the read set above.
 **A `set` target is a published relation's destination.** A single-target
 `set x = helper(...)` takes result ordinal zero through the same destination
 route a destructuring `let` binder and a `set` target list take, with the
