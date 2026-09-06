@@ -1726,6 +1726,86 @@ Replaces: taking a run or a buffer by value in order to write it, passing a
 `&uniq buffer<T>` where the callee only needs a window, and the `Option<T>`
 slot that stood in for a writable view.
 
+## P26. Pass the destination on, and hand its reader back as the child
+
+Status: active in v0.45 (B7c4b-1). Two forms a helper handed a writable view
+could not write until this batch.
+
+Problem: a decoder's output destination is threaded three frames deep, and a
+helper that fills a destination usually also wants to publish what it filled.
+Both were refused: a helper handed `&uniq MutSlice<'r, u8>` could not pass that
+destination to a second helper, and could not form the shared view a reader —
+or a `write_once` source — needs.
+
+Pattern: re-lend with `&uniq deref(destination)` and publish with
+`slice_of(&'r deref(destination))`.
+
+```whitefoot
+fn outer(destination: &uniq MutSlice<u8>, value: own u8) -> written: own u64
+    writes(destination) contract {
+  requires 2_u64 <= len_of(deref(destination));
+} {
+  region {
+    let count = inner(destination: &uniq deref(destination), value: value);
+  }
+  return 2_u64;
+}
+
+fn fill_and_publish['r](destination: &uniq MutSlice<'r, u8>, value: own u8)
+    -> filled: own Slice<'r, u8> writes(destination) contract {
+  requires 2_u64 <= len_of(deref(destination));
+} {
+  set deref(destination)[0_u64] = value;
+  set deref(destination)[1_u64] = value;
+  return slice_of(&'r deref(destination));
+}
+```
+
+The re-lend is [OWN-6]'s ordinary child reborrow: it lives for its statement,
+the holder is suspended while it does, and the inner callee's write is
+classified over the viewed range [CALL-3], so the outer helper's own
+requirement still stands after the call. The publish is [OWN-6]'s *shared*
+child of an exclusive loan applied to a view [VIEW-2]: the child carries the
+parent's range and origin set, its region is the one the operand borrow writes
+and the parent's own region must outlive it, and while the child lives the
+parent may not write the elements it views — at the caller too, which is what
+makes the returned child safe to read.
+
+Two things this does not buy. The child a borrowed view holder can form is
+**shared** and nothing else, so a helper cannot hand out a second writable
+window; and the ceiling half that admits the result is a shared result only, so
+`-> own MutSlice<'r, u8>` from a borrowed holder is still refused [VIEW-6].
+
+Replaces: the hand-the-length-back workaround two diagnostics helpers took in
+B3, and the `&uniq buffer<u8>` spelling a chained output destination kept.
+
+## P27. A full fixed run of literals is a `const`
+
+Status: active in v0.45 (B7c4b-1).
+
+Problem: a lookup table, a test vector, a message — a run of `n` literal
+elements the program only ever reads — was written either as a `const` of the
+retiring `array<T, N>` or built at run time with `n` appends and the invariants
+that proof needs.
+
+Pattern: write it as a `const` of the inline run.
+
+```whitefoot
+const digit_glyphs: FixedVector<u8, 10> =[48_u8, 49_u8, 50_u8, 51_u8, 52_u8,
+  53_u8, 54_u8, 55_u8, 56_u8, 57_u8];
+```
+
+The entry count is the type's own `n`, and `len_of = cap_of = n`,
+`room_of = head_of = Z` are standing facts of the type rather than stored
+words: the item lowers to element storage only, a subscript's bound discharges
+from `len_of = n` with no invariant to write, and all four readers answer from
+the type. `slice_of(&table)` gives the `immutable-const` origin, so the const
+travels into any consumer that takes a `Slice`; `mut_slice_of` over it and a
+`set` through it are the two refusals a const has always had [CONST-2].
+
+Replaces: a `const` of `array<T, N>`, and the counted `place_back` fill of a
+run whose contents are literals.
+
 ## Known gaps (findings, not yet patterns)
 
 - In-place mutation interleaved with traversal of the same structure (graph

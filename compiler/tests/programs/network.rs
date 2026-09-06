@@ -10,9 +10,13 @@ fn ipv4_checksum_uses_one_slice_consumer_for_static_and_runtime_storage() {
     assert!(checksum.contains("getelementptr inbounds i8"));
     assert!(!checksum.contains("call void @free"));
     assert_eq!(main.matches("call i16 @wf_ipv4_checksum").count(), 2);
-    // Each explicit validation-failure return owns its ordinary cleanup path;
-    // no caller-side copied fact can bypass that cleanup.
-    assert!(main.matches("call void @free").count() >= 1);
+    // B7c4b-1: the runtime copy of the header is a run taken from one bump
+    // extent reserved in this activation's frame, so the program reaches the
+    // host allocator on no path at all and every validation-failure return
+    // leaves the extent with the frame. The free this assertion used to count
+    // was the heap buffer's, and there is no heap buffer any more.
+    assert!(!main.contains("call void @free"));
+    assert!(!llvm.contains("call ptr @malloc"));
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());

@@ -261,6 +261,28 @@ per depth, so a run two struct levels down keeps its measures across the
 construct that renames it. One generic cycle still stops explicitly: one that
 varies a *const* argument, which [FN-6] is written over type parameters and does
 not refuse.
+**B7c4b-1 closes the three gaps B3 named, lands the const run, and takes the
+conformance corpus off the retiring surface.** No rule is added or retired (157
+remain) and no grammar production moves: each capability is a sentence inside a
+rule this version already carries. A helper handed `&uniq MutSlice<'r, T>` can
+now pass that destination on, because a view value is already a descriptor and
+the child reborrow is that descriptor read once more rather than an addressed
+one; a helper handed a view can now form the shared child a `write_once` source
+needs and return it, with the parent frozen against element writes while the
+child lives at the callee *and* at the caller; and a published relation reaches
+a `set` target through the same destination route a `let` binder takes. [S34]'s
+const form lands with them: a `FixedVector<T, n>` of const-eligible flat `T`
+with exactly `n` literal entries is const-eligible static rodata whose four
+measures are standing facts of its type, so it lowers to element storage and
+carries no descriptor word. Every conformance case and the whole snapshot corpus
+leave `buffer<T>`, `box<T>` and `arena<'r, T>`; eight `tests/programs` sources
+do not, each because it lends a struct holding a run through a `&uniq`
+parameter, which [BLK-4] refuses. Three defects are recorded rather than papered
+over: [FN-1]'s ceiling containment refusal has no reachable program on this
+surface, the [PAR] footprint judgment does not resolve a bound view argument,
+and a variant-routed measure clause is still [CALL-4]'s deferred route, so the
+growth policy's contract cannot be written.
+
 **B3 makes a call's kill classification the callee's declaration and closes the
 design's D1.** Four rules land and none is retired (157 remain). [CALL-1] states
 that a shared-borrow argument is a kill event for no fact supported by its

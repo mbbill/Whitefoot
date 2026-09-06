@@ -8171,6 +8171,117 @@ modified with every recorded expectation unchanged, and none is deleted or renam
 recorded-verdict snapshot corpus reports Pass=491, Flip=0 before and after, over eight
 moved verdicts and no modified source.
 
+### 6.0v B7c4b-1 landed (v0.45)
+
+**The last three call-shaped capabilities, the [S34] const run, and most of the corpus
+off the retiring surface.** Numbered rules +0 and grammar productions +0: every one of the
+four is a sentence inside a rule this version already adds or amends. One [META-5]
+DEFERRED clause is discharged — the child reborrow of a view formed through a *view
+holder* — leaving five.
+
+- **A helper re-lends the destination it was handed, and the fix is one arm.** `&uniq
+  deref(destination)` at a `&uniq MutSlice<'r, u8>` parameter is [OWN-6]'s ordinary child
+  reborrow; the checker refused it because `borrow_addresses_storage` excludes a view
+  referent and lowering had no representation for an addressed reborrow of a descriptor.
+  Both disappear once the child is *not* an addressed reborrow: a view value **is** a
+  descriptor, so the child is that descriptor read once more, exactly as a
+  system-resource holder's child is. The child carries the parent's origin set, [OWN-6]
+  suspends the holder for the statement, and [CALL-3] classifies the inner callee's write.
+  `own6-pos-a-helper-re-lends-its-view-destination` is the witness. 6.0u's first limit is
+  closed.
+
+- **[VIEW-2]'s viewable operand class gains the view holder, and the fill-and-publish
+  helper is writable.** `slice_of(&'r deref(destination))` forms the shared child of the
+  view a helper was handed, on this rule's own sentence: a view is a view of storage and
+  nothing in the rule reads what that storage is made of. Three things had to be true
+  together, and each is stated where it belongs. The child's loan region is the one the
+  operand borrow writes, and the parent's own region must outlive it [OWN-10]. The parent
+  is frozen against element writes while the child lives — inside the callee that is a
+  shared loan standing at the holder's own place, which is exactly what an element write
+  through that holder resolves its origin to. And **the freeze has to reach the caller**:
+  the returned child is a shared loan on the caller's storage, so a shared loan is
+  registered at the caller for every origin place that already carries an exclusive one.
+  [VIEW-6]'s ceiling gains the half that makes the result legal: a *shared* view result
+  additionally has the formal-view origin of every borrow-mode view parameter at the same
+  region and element type, at either parent strength. `view6-pos-a-helper-publishes-the-
+  child-of-its-destination` runs and `own5-neg-a-published-child-freezes-its-parent-view`
+  refuses the write. 6.0u's second limit is closed and 6.0r's DEFERRED clause with it.
+
+- **A `set` target is the [ENT-3.S12] destination a `let` binder is.** The compiler had
+  two routes for a `set`: a kernel row published from its own relation list, and a source
+  callee kept [FN-9]'s narrow receiver route, which requires the target to *also* be an
+  argument. The repair is to send both through the destination route a destructuring
+  `let` and a `set` target list already take, with the target's own kills as the events
+  every substitution must survive. `set x = helper(...)` now carries `result <= capacity`
+  where it dropped it. 6.0u's third finding is closed.
+
+- **[CONST-2] gains the [S34] const form, and it costs no new representation.** A
+  `FixedVector<T, n>` of const-eligible flat `T` with exactly `n` literal entries is
+  const-eligible; its four measures are the standing facts `len_of = cap_of = n` and
+  `room_of = head_of = Z` rather than stored words, so it **lowers to element storage
+  only** and every use materializes the descriptor from the type. That is exactly what the
+  checker's array place already is — four exact constants over a run of `n` slots — so the
+  const's storage type *is* that place and every read [CONST-2] admits reads it with no
+  new plumbing: the subscript discharges from `len_of = n`, all four readers answer from
+  the type, `slice_of` gives the `immutable-const` origin, and `mut_slice_of` and a `set`
+  are the same two [CONST-2] refusals they were. The recorded delta is one wart: a
+  diagnostic about such a const still names `array<T, N>`, because that is the internal
+  spelling of the const run until [S34]'s retirement renames it.
+
+**What the corpus paid, and what it found.** Every conformance case is off `buffer<T>`,
+`box<T>` and `arena<'r, T>`. The `&uniq` of a **measured non-view** referent, which four
+cases pinned over `buffer<u8>`, is the bump extent [BLK-4] and its measure is `room_of`,
+so those cases move from an [OP-4] residual to a [BLK-0] row requirement; the whole-place
+replacement moves to `Box<'s, u64>` at [STOR-1]; the arena escape moves to [BLK-2]'s
+reservation placement; and `x-buffer-borrowed-columns-run` and `x-borrowed-pool-tree-run`
+are restructured to lend views and a scalar borrow rather than a `&uniq` of a struct
+holding runs, both keeping exit 0.
+
+**Three defects the migration found, each recorded rather than papered over.**
+
+1. **[FN-1]'s ceiling containment refusal has no program on this surface.** Every shape
+   that would reach it — a view over a parameter run, over a borrowed run, over cell
+   content — is refused earlier by [OWN-10], which forbids a borrow of storage the callee
+   reaches at a caller-supplied region. `fn1-neg-returned-slice-arena-origin` is deleted
+   with that reason and FN-1 keeps four other negatives. Whether the containment check is
+   now dead code or merely unreachable from *this* corpus is open.
+
+2. **The [PAR] footprint judgment does not resolve a view argument.** `argument_place`
+   resolves a direct `slice_of` expression and a borrow, and a **bound** view value
+   resolves to nothing, so every overlap pair and every staged loop whose call hands a
+   `MutSlice` on is denied for the unresolved-footprint condition rather than for its own
+   reason. It cost `par_layout.wf` both of its eligible folds until the metric table was
+   handed on as `&Vector<f64>` — a shared borrow of the run, which resolves — instead of
+   as a view, and it is why four `accept-par3-staged-*` cases now report condition 7 where
+   they reported 3 or 5. The fix is a declaration-to-binding map the footprint resolver
+   does not have; it is a compiler gap and not a rule.
+
+3. **3.L.5's growth policy is writable except for its contract.** `bs_new` and
+   `bs_reserve` compile verbatim — the drain-front/append-back walk, its eight invariants,
+   the destructuring consume and the one early `dispose` — but every
+   `ensures when Grew(value: ready): cap_of(ready) == total;` is refused: a variant-routed
+   measure clause is [CALL-4]'s own DEFERRED route. `growable_vec.wf` therefore reads the
+   four measures back at the caller and branches on them, which is what a writer must do
+   until that route lands.
+
+**What did not land.** Eight `tests/programs` sources still name `buffer<T>`:
+`byte_string.wf`, `dir_walk.wf`, `wfgrep.wf` and the five-file `raw_deflate*` chain. Each
+is built on a `ByteString`-shaped struct lent `&uniq`, which [BLK-4] refuses once the
+field is a run, so each needs the same hand-back-by-value restructure `growable_vec.wf`
+took, applied across a program of four hundred to fourteen hundred lines with its own
+proof obligations at every call. They are stated here as the remaining work rather than
+half-migrated.
+
+**Verdicts.** The adapter moves from Pass=697 over 700 to Pass=702 over 705, the three
+skips unchanged in id, expectation and status, with coverage complete at 157/157. Twelve
+cases are added and six deleted, each deletion with the reason its program no longer
+exists on this surface. The recorded-verdict snapshot corpus moves from Pass=491 to
+Pass=484: fifty-two rows keep their verdict over migrated sources, seven move from
+`reject` to `accept` because a write through a view kills no measure of its origin
+[CALL-3], one keeps its `reject` and moves the rule it cites, and seven are retired with
+their sources because their program cannot be written on the run surface without changing
+what the row records.
+
 ### 6.1 What the compiler did in this session
 
 ```text

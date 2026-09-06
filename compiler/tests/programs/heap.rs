@@ -42,19 +42,16 @@ fn growable_vector_grows_by_affine_replace_and_runs_its_checks() {
 #[test]
 fn affine_slot_buffers_fill_replace_vacate_and_drop_per_element() {
     let llvm = compile_program("option_slots.wf");
-    // The construction is the all-None allocation and the drop of the
-    // box-payload buffer is the derived per-element loop plus one free.
-    assert!(llvm.contains("buffer.vacant.head"));
-    let helper_start = llvm
-        .find("define private void @wf.drop.buffer.t")
-        .expect("box-payload elements must derive the buffer drop loop");
-    let helper_end = llvm[helper_start..]
-        .find("\n}\n")
-        .map(|offset| helper_start + offset)
-        .expect("buffer drop helper must be complete");
-    let helper = &llvm[helper_start..helper_end];
-    assert!(helper.contains("call void @wf.drop.t"));
-    assert_eq!(helper.matches("call void @free").count(), 1);
+    // B7c4b-1: the two slot runs are `FixedVector<Option<T>, n>`s built by the
+    // library's own `vacant` generic, so there is no `buffer_vacant` head to
+    // name and no per-buffer drop helper. What the row still owes is the
+    // release of the one `Some` cell the program leaves in a slot: the run is
+    // frame-resident, its element drop is derived over the slots, and the cell
+    // it holds is freed to the general store.
+    assert!(!llvm.contains("buffer.vacant.head"));
+    assert!(llvm.contains("call ptr @malloc"));
+    let helper = derived_drop(&llvm, "define private void @wf.drop.t");
+    assert!(helper.contains("call void @free"));
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());

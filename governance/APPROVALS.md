@@ -4598,4 +4598,142 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   `raw_deflate_vectors.wf`, `telemetry_packet.wf`, `utf8parse.wf` and
   `wfgrep.wf` — and every one of them keeps the exit code it had; no program of
   that corpus was added or removed.
+- CONTENT (B7c4b-1, the last three call-shaped capabilities, the const run,
+  and the corpus migration): v0.45 additionally lands three compiler
+  capabilities the corpus needs, the [S34] const form of the inline run, and
+  the migration of the conformance corpus, part of `tests/programs` and the
+  snapshot corpus off `buffer<T>`, `box<T>` and `arena<'r, T>`. Numbered rules
+  +0/-0 (157 remain); grammar productions +0/-0 (88 remain); grammar atoms
+  +0/-0; writer operation spellings +0/-0; kernel declaration records +0/-0;
+  compiler-owned nominal type spellings +0/-0; exception clauses +0/-0.
+  [CONST-2] is added to the amended-rule list; [VIEW-2], [VIEW-6], [FN-9],
+  [ENT-3] and [MSR-1] are refined in place, each of them a rule this same
+  version adds or already amends, so none of them moves a count. One DEFERRED
+  clause of [META-5] is discharged and removed — the child reborrow of a view
+  formed through a *view holder* — leaving five.
+  **[VIEW-2] gains the view-holder operand.** `slice_of(&'c deref(h))` at a
+  holder whose referent is a view forms that view's shared child reborrow
+  [OWN-6], on this rule's own sentence that a view is a view of storage and
+  nothing in the rule reads what that storage is made of. The child carries the
+  parent's complete origin set and range, its loan region is the one the
+  operand borrow writes and the parent's own region must outlive it [OWN-10],
+  the parent may not write the elements it views while the child lives and
+  resumes at the child's last use [OWN-5], and `mut_slice_of` over a view
+  holder is a hard error citing OWN-5 because two exclusive loans on one range
+  are what that rule refuses.
+  **[VIEW-6] gains the ceiling half that makes the fill-and-publish helper
+  writable.** A *shared* view result additionally has in its ceiling the
+  formal-view origin of every borrow-mode parameter whose referent is a view at
+  the same formal region and element type, at either strength; no exclusive
+  result takes that half.
+  **[FN-9] and [ENT-3.S12] name the direct-`set` target.** An unrouted fragment
+  result establishes onto the fresh binding of a direct ordinary-`let` call and
+  onto the target place of a direct ordinary `set` whose right-hand side is
+  that call — one destination rule at two placements, the `set` placement after
+  that statement's own commit and target kills [CALL-6], where a substitution
+  whose support those kills remove makes only that relation unavailable.
+  [FN-9]'s narrow direct-set receiver is the case of it in which the target is
+  also an argument.
+  **[CONST-2] gains the [S34] const form of the inline run.** A
+  `FixedVector<T, n>` of const-eligible flat `T` with exactly `n` literal
+  entries is const-eligible. Its four measures are the standing facts
+  `len_of = cap_of = n` and `room_of = head_of = Z` rather than stored words,
+  so the item lowers to element storage only and each use materializes the
+  descriptor from those facts; every read [CONST-2] already admits reads it,
+  and it is the `immutable-const` origin of a shared view and never of an
+  exclusive one. [MSR-1] carries the same two standing cells beside its table.
+  `array<T, N>` and its `array_new` row are untouched by this batch; only their
+  retirement stays DEFERRED.
+  The compiler lands all four: the child reborrow of a view holder in the
+  semantic pass and in lowering (a view is already a descriptor, so the child
+  is that descriptor read once more), the view-holder `slice_of` with its
+  in-callee freeze and the caller-side loan a published child carries, the
+  `set` destination through the same result-list route a destructuring `let`
+  and a `set` target list take, and the const run as element storage whose
+  measures are read off its type.
+- CONFORMANCE BOUNDARY (B7c4b-1): nine added cases, six deleted cases, and
+  fifty-one modified case sources whose recorded expectations are unchanged.
+  No case is renamed and no status changes.
+  Added:
+  `own6-pos-a-helper-re-lends-its-view-destination`
+  (`{"kind": "run", "exit": 0}`),
+  `view6-pos-a-helper-publishes-the-child-of-its-destination`
+  (`{"kind": "run", "exit": 0}`),
+  `own5-neg-a-published-child-freezes-its-parent-view`
+  (`{"kind": "reject", "rule": "OWN-5"}`),
+  `ent3-pos-s12-a-published-relation-reaches-a-set-target`
+  (`{"kind": "run", "exit": 0}`),
+  `ent3-pos-s12-a-published-relation-reaches-a-let-binder`
+  (`{"kind": "run", "exit": 0}`),
+  `const2-pos-a-fixed-vector-const-run`
+  (`{"kind": "run", "exit": 0}`),
+  `const2-neg-a-fixed-vector-const-short-of-its-capacity`
+  (`{"kind": "reject", "rule": "CONST-2"}`),
+  `ent5-neg-a-callee-write-through-a-uniq-extent-kills-the-room`
+  (`{"kind": "reject", "rule": "BLK-0"}`),
+  `call5-neg-a-one-byte-body-kills-the-measure-the-same`
+  (`{"kind": "reject", "rule": "BLK-0"}`),
+  `stor1-neg-whole-cell-replacement`
+  (`{"kind": "reject", "rule": "STOR-1"}`),
+  `ent2-pos-a-run-capacity-survives-a-root-replace`
+  (`{"kind": "run", "exit": 0}`),
+  and `blk2-neg-an-extent-reserved-at-a-caller-region`
+  (`{"kind": "reject", "rule": "BLK-2"}`).
+  Deleted, each with the reason its program no longer exists on this surface:
+  `ent5-neg-callee-uniq-buffer-replace-kills-length`
+  (`{"kind": "reject", "rule": "OP-4"}`) and
+  `call5-neg-an-element-only-body-kills-the-measure-the-same`
+  (`{"kind": "reject", "rule": "OP-4"}`) pinned a caller's *length* dying at a
+  call through a `&uniq buffer<u8>`; the measured non-view referent a `&uniq`
+  parameter may still name is the bump extent [BLK-4], whose measure is
+  `room_of`, and the undischarged consequence is the row requirement of
+  `arena_vector_proved`, so both are replaced above with a [BLK-0] expectation
+  rather than an [OP-4] one.
+  `stor1-neg-whole-buffer-replacement` (`{"kind": "reject", "rule": "STOR-1"}`)
+  is replaced by `stor1-neg-whole-cell-replacement` at the same expectation
+  over `Box<'s, u64>`.
+  `ent2-pos-array-length-survives-root-replace`
+  (`{"kind": "run", "exit": 0}`) is replaced by
+  `ent2-pos-a-run-capacity-survives-a-root-replace` at the same expectation:
+  a run's `len_of` is a descriptor word and does not survive a root replace,
+  while its `cap_of` is the type constant and does, so the successor pins the
+  measure the successor type actually carries.
+  `stor4-neg-arena-escape` (`{"kind": "reject", "rule": "STOR-4"}`) is replaced
+  by `blk2-neg-an-extent-reserved-at-a-caller-region`: on the run surface the
+  confinement of a bump extent is [BLK-2]'s reservation placement and not
+  [STOR-4]'s arena confinement.
+  `stor4-neg-borrowed-arena-result` (`{"kind": "reject", "rule": "STOR-4"}`)
+  is deleted with no successor: a borrow-mode `Arena` result is [FN-1]'s
+  ordinary return mismatch, which `fn1-neg-borrowed-slice-result` and
+  `fn1-neg-contract-borrowed-slice-result` already pin. [STOR-4] keeps
+  `stor4-pos-arena-confined`.
+  `fn1-neg-returned-slice-arena-origin` (`{"kind": "reject", "rule": "FN-1"}`)
+  is deleted with no successor: every program on the run surface that would
+  reach [FN-1]'s ceiling containment refusal is refused earlier by [OWN-10],
+  which is recorded as a design finding rather than papered over. FN-1 keeps
+  four other negatives.
+  Modified, every recorded expectation unchanged: the thirty-five const-array
+  case sources whose `const` items become the [S34] const run, the five
+  `accept-par3-staged-*` sources whose scratch becomes an extent-backed run
+  viewed where it is written, `call5-neg-a-bound-borrow-actual-kills-the-same`
+  (whose expectation moves from `OP-4` to `BLK-0` for the reason its two
+  deleted siblings give), `msr3-neg-uniq-state-measure-in-ensures`,
+  `ent3-pos-s5-set-commit-image`, `fn3-pos-normalized-region-effects`,
+  `liv2-pos-read-out-at-a-binding-a-field-and-a-deref`,
+  `type7-neg-index-box-holder`, `v033-neg-allocation-fit-unproved`,
+  `type2-pos-buffer-tagonly`, `call4-neg-ambiguous-route-over-two-enum-ordinals`,
+  `prov6-pos-dispose-writes-the-operands-storage-origin`, the three `own1`/
+  `type7` box cases, the fourteen `ent2`/`ent3`/`ent4`/`ent5`/`op4` cases whose
+  `buffer<T>` parameter becomes a `Slice<T>`, and the five `x-` programs
+  (`x-base64-rfc-vectors-run`, `x-borrowed-pool-tree-run`,
+  `x-buffer-borrowed-columns-run`, `x-child-reborrow-run`,
+  `x-requires-output-capacity-run`), the last two of which are restructured to
+  lend views rather than a `&uniq` of a struct holding runs [BLK-4] and both of
+  which keep exit 0.
+  Two case `doc` strings and two manifest `doc` strings are corrected where
+  they named `array` for what is now the const run, and four
+  `accept-par3-staged-*` docs are corrected where the permission judgment now
+  reports a different condition; no expectation moves with them.
+  The adapter reports Pass=702 over 705 declared cases with the three skips
+  unchanged in id, expectation and status, and coverage complete at 157/157.
 ACTIVE-SPEC: v0.45 e712f98392f8a66d1d6eab15e303c0ce3b73a06854099f9018ca817db3c1874a 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

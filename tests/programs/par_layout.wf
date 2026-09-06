@@ -89,18 +89,18 @@ fn cascade(inh: own f64, w: own f64, h: own f64) -> result: own f64 pure {
   return final_h;
 }
 
-fn measure_words(words: own Slice<f64>, font: own f64) -> result: own f64 reads(words) {
+fn measure_words(words: &Vector<f64>, font: own f64) -> result: own f64 reads(words) {
   doc "Measures every word of the shared metric table at one font size. The walk is bounded by the table's own length, so its index obligation is discharged directly.";
   let widest = 0.0_f64;
   let total = 0.0_f64;
-  let spare = len_of(words);
+  let spare = len_of(deref(words));
   let k = 0_u64;
   loop @scan {
     let done = k >= spare;
     if done {
       break @scan;
     }
-    let raw = words[k];
+    let raw = deref(words)[k];
     let scaled = fmul.strict(raw, font);
     let above = fgt(scaled, widest);
     if above {
@@ -112,18 +112,18 @@ fn measure_words(words: own Slice<f64>, font: own f64) -> result: own f64 reads(
   return fadd.strict(total, widest);
 }
 
-fn measure_band(words: own Slice<f64>, count: own u64, font: own f64) -> result: own f64 reads(words) {
+fn measure_band(words: &Vector<f64>, count: own u64, font: own f64) -> result: own f64 reads(words) {
   doc "The same walk over a caller-supplied prefix, clamped to the table it reads.";
   let widest = 0.0_f64;
   let total = 0.0_f64;
-  let spare = len_of(words);
+  let spare = len_of(deref(words));
   let bounded_count = spare;
   let count_fits = count <= spare;
   if count_fits {
     set bounded_count = count;
   }
   for (k in 0_u64..bounded_count) {
-    let raw = words[k];
+    let raw = deref(words)[k];
     let scaled = fmul.strict(raw, font);
     let above = fgt(scaled, widest);
     if above {
@@ -134,7 +134,7 @@ fn measure_band(words: own Slice<f64>, count: own u64, font: own f64) -> result:
   return fadd.strict(total, widest);
 }
 
-fn layout['s](node: &uniq Box<'s, LNode<'s>>, words: own Slice<f64>, inh: own f64) -> result: own f64 reads(node, words), writes(node) {
+fn layout['s](node: &uniq Box<'s, LNode<'s>>, words: &Vector<f64>, inh: own f64) -> result: own f64 reads(node, words), writes(node) {
   doc "Folds the box tree, writing each node's resolved height into its own slot. The two child calls are the permitted and actualizable pair: neither reads what the other defines, their written footprints are the disjoint sibling subtrees, neither may suspend, and no exit of the first skips the second.";
   match deref(deref(node)) {
     Leaf(w: lw, h: lh, out: lslot) => {
@@ -159,7 +159,7 @@ fn layout['s](node: &uniq Box<'s, LNode<'s>>, words: own Slice<f64>, inh: own f6
   }
 }
 
-fn layout_banded['s](node: &uniq Box<'s, LNode<'s>>, words: own Slice<f64>, count: own u64, inh: own f64) -> result: own f64 reads(node, words), writes(node) {
+fn layout_banded['s](node: &uniq Box<'s, LNode<'s>>, words: &Vector<f64>, count: own u64, inh: own f64) -> result: own f64 reads(node, words), writes(node) {
   doc "The same fold whose per-node measure takes a caller-supplied band.";
   match deref(deref(node)) {
     Leaf(w: lw, h: lh, out: lslot) => {
@@ -274,8 +274,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
                   }
                   region 'tree {
                     region {
-                      let table = slice_of(&words);
-                      let total = layout(node: &uniq 'tree tree, words: table, inh: seed);
+                      let total = layout(node: &uniq 'tree tree, words: &words, inh: seed);
                       set last = total;
                     }
                   }
@@ -300,8 +299,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
                   }
                   region 'banded_tree {
                     region {
-                      let table = slice_of(&words);
-                      let total = layout_banded(node: &uniq 'banded_tree tree, words: table, count: 4096_u64, inh: band_seed);
+                      let total = layout_banded(node: &uniq 'banded_tree tree, words: &words, count: 4096_u64, inh: band_seed);
                       set banded = total;
                     }
                   }

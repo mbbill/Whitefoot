@@ -332,11 +332,23 @@ published relations — while their spelling stays an [OP-1] table entry until
 spelling.
 **A shared view of a place a live exclusive view holds is that view's child
 reborrow**: it is admitted, and the parent may not write the elements it views
-until the child's last use. What is **not** implemented of the design's view
-half is named rather than hidden: a view formed through a *view holder* —
-`slice_of(&'r deref(destination))` from a `&uniq MutSlice<'r, u8>` parameter —
-so a helper handed a destination fills it and cannot publish it, which is the
-one shape [VIEW-6]'s ceiling half needs.
+until the child's last use. **The same child forms through a view holder.**
+`slice_of(&'r deref(destination))` at a `&uniq MutSlice<'r, u8>` parameter is
+that reborrow with a view as the parent: the child carries the parent's origin
+set and range, its region is the one the operand borrow writes and the parent's
+own region must outlive it, and the freeze stands both inside the callee — where
+the loan sits at the holder's own place, which is what an element write through
+that holder resolves its origin to — and at the caller, where a shared loan is
+registered on every origin place the returned child reaches that already carries
+an exclusive one. `mut_slice_of` over a view holder is refused citing [OWN-5].
+The result is legal because [VIEW-6]'s ceiling admits a borrow-mode view
+parameter's formal origin for a **shared** view result at the same region and
+element type, at either parent strength, and for no exclusive one.
+**A helper re-lends the destination it was handed** with
+`&uniq deref(destination)`. A view value is already a descriptor, so the child
+is that descriptor read once more rather than an addressed reborrow of one;
+there is nothing to load and nothing to narrow, which is why the semantic arm
+and the lowering arm are one line each.
 **The system boundary takes views.** The range-bearing parameter of each of the
 seven operations [SYS-8] names is one operand class rather than one type:
 `&uniq MutSlice<u8>` where the operation writes the storage, `&Slice<u8>` where
@@ -347,8 +359,16 @@ an element write over the view's own place [ENT-5, MSR-2], so the view's
 measures survive it and its element facts do not. A `&uniq` parameter whose
 referent is a view is admitted at a source declaration for the same reason
 [BLK-4]. What still stops is the exclusive view over an inline run
-(`ExclusiveViewOverInlineRun`), which is why four staged [PAR-3] cases keep a
-`buffer<u8>` destination.
+(`ExclusiveViewOverInlineRun`), which is why a writable destination is a
+`Vector<'s, T>` taken from a store or a bump extent and never a
+`FixedVector<T, n>`.
+**One judgment does not follow a view yet, and it is the permission one.** The
+[PAR] footprint resolver reads a direct `slice_of` expression and a borrow; a
+*bound* view value resolves to no place, so an overlap pair or a staged loop
+whose call hands one on is denied for the unresolved-footprint condition rather
+than for its own reason. `par_layout.wf` therefore hands its metric table on as
+`&Vector<f64>`, a shared borrow of the run, and keeps both of its eligible
+folds.
 **A shared borrow of a run is the ordinary borrow.** `&FixedVector<T, n>` as a
 parameter, a `let`-bound holder over either run, and a run reached through a
 shared borrow of the nominal that owns it all reach the borrow through one path:
@@ -357,6 +377,22 @@ storage exactly as a borrow of a struct is, and the holder's `deref` resolves to
 the same measured place the deref-free path forms. A run holder written where
 the run itself is required is [TYPE-7]'s missing dereference, as a `buffer`
 holder already was.
+**A `const` may name the inline run.** A `FixedVector<T, n>` of const-eligible
+flat `T` with exactly `n` literal entries is const-eligible: the item's storage
+type is the run of `n` slots itself, because its four measures are the standing
+facts `len_of = cap_of = n` and `room_of = head_of = Z` and the checker's array
+place already is exactly those four constants over that storage. Nothing else is
+added — the subscript discharges from `len_of = n`, the four readers answer from
+the type, `slice_of` gives the `immutable-const` origin, and `mut_slice_of` and
+a `set` through it are the two [CONST-2] refusals a const already had. One
+recorded wart: a diagnostic about such an item still spells its type
+`array<T, N>`, which is its internal spelling until [S34]'s retirement renames
+it.
+**A `set` target is a published relation's destination.** A single-target
+`set x = helper(...)` takes result ordinal zero through the same destination
+route a destructuring `let` binder and a `set` target list take, with the
+target's own kills as the events every substitution must survive; [FN-9]'s
+narrow receiver route is the case of it where the target is also an argument.
 **Every acquiring kernel row's allocation-fit obligation is submitted.**
 `heap_vector`, `arena_vector` and `arena_vector_proved` each carry [OP-9]'s
 allocation-fit obligation over their element type and count — the obligation
@@ -470,9 +506,9 @@ whether it supplies a `MutSlice<u8>` or the transitional `buffer<u8>`, and a
 kernel row's `&uniq` state operand is a run or a provider whose descriptor the
 row changes. The argument expression's shape is read for the *place* a write
 reaches and never for how far into it that write goes; deriving the latter from
-the former was the unsound accept
-`ent5-neg-callee-uniq-buffer-replace-kills-length` recorded, and that case now
-runs. A subscript inside a measured place owes [OP-4]'s obligation
+the former was the unsound accept the sweep of 2026-09-03 recorded, and
+`ent5-neg-a-callee-write-through-a-uniq-extent-kills-the-room` is its successor
+over the one measured non-view referent a `&uniq` parameter may still name. A subscript inside a measured place owes [OP-4]'s obligation
 against the prefix that reaches its base, submitted where the place is formed,
 and the lowering projects a measured place step by step — a field selection is
 the ordinary struct projection and a subscript is [BLK-1]'s element read — so a
