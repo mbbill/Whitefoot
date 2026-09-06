@@ -7,6 +7,16 @@
 
 #include <string.h>
 
+/* Each counter has one writer, but the optional exit observer can read while
+ * workers are still alive. Relaxed atomic loads/stores make that snapshot
+ * defined without an atomic read-modify-write on the owner's hot path.
+ * Counters never select a core action; the enumerator restores them but
+ * excludes them from its state digest and its shared protocol steps. */
+static void wf_sched_count(unsigned long long *counter, unsigned amount) {
+    unsigned long long value = __atomic_load_n(counter, __ATOMIC_RELAXED);
+    __atomic_store_n(counter, value + amount, __ATOMIC_RELAXED);
+}
+
 /* --------------------------------------------------------------- threads */
 
 wf_sched_thread *wf_sched_current_thread(wf_sched_core *core) {
@@ -47,32 +57,19 @@ static void wf_sched_pool_push(wf_sched_core *core, wf_sched_stack *stack) {
     wf_prim_unlock();
 }
 
-/* Links one READY stack at the chosen tail. Only the empty-to-nonempty
- * transition of the union bumps the epoch, keeping the original wake policy
- * in every form. A pop scans all queues before giving up (§6). */
+/* Links one READY stack at the tail. Only the empty-to-nonempty transition
+ * bumps the epoch; a later sleeper's last look finds an existing stack (§6). */
 static void wf_sched_ready_push(wf_sched_core *core, wf_sched_stack *stack) {
     int was_empty;
-    unsigned queue = 0;
-#if WF_SCHED_READY_POLICY == 1
-    queue = stack->park_thread;
-#elif WF_SCHED_READY_POLICY == 2
-    /* The target adapter's helpers have no scheduler identity and use 0.
-     * The NOTIFIED arm enqueues from the worker committing the park. */
-    queue = wf_prim_thread_index();
-#endif
-    if (queue >= core->thread_count) {
-        wf_prim_fail("a ready queue names an absent worker");
-    }
     wf_prim_lock(WF_PRIM_SECTION_READY_PUSH);
     stack->next = NULL;
-    was_empty = core->ready_count == 0u;
-    if (core->ready_head[queue] == NULL) {
-        core->ready_head[queue] = stack;
+    was_empty = core->ready_head == NULL;
+    if (was_empty) {
+        core->ready_head = stack;
     } else {
-        core->ready_tail[queue]->next = stack;
+        core->ready_tail->next = stack;
     }
-    core->ready_tail[queue] = stack;
-    core->ready_count += 1u;
+    core->ready_tail = stack;
     wf_prim_unlock();
     if (was_empty) {
         wf_prim_wake();
@@ -81,30 +78,14 @@ static void wf_sched_ready_push(wf_sched_core *core, wf_sched_stack *stack) {
 
 static wf_sched_stack *wf_sched_ready_pop(wf_sched_core *core) {
     wf_sched_stack *stack;
-    unsigned queue = 0;
     wf_prim_lock(WF_PRIM_SECTION_READY_POP);
-#if WF_SCHED_READY_POLICY != 0
-    unsigned offset;
-    unsigned own = wf_prim_thread_index();
-    /* Prefer local work, then take another queue's oldest stack. A preference
-     * never strands ready work on an occupied worker. The fixed scan is
-     * exhaustive and is covered by the same enumerator as the global FIFO. */
-    queue = own;
-    for (offset = 0; offset < core->thread_count; offset += 1u) {
-        queue = (own + offset) % core->thread_count;
-        if (core->ready_head[queue] != NULL) {
-            break;
-        }
-    }
-#endif
-    stack = core->ready_head[queue];
+    stack = core->ready_head;
     if (stack != NULL) {
-        core->ready_head[queue] = stack->next;
-        if (core->ready_head[queue] == NULL) {
-            core->ready_tail[queue] = NULL;
+        core->ready_head = stack->next;
+        if (core->ready_head == NULL) {
+            core->ready_tail = NULL;
         }
         stack->next = NULL;
-        core->ready_count -= 1u;
     }
     wf_prim_unlock();
     return stack;
@@ -214,7 +195,7 @@ static wf_sched_slot *wf_sched_steal(wf_sched_core *core, wf_sched_lane *victim)
     if (!wf_prim_cas_q(&victim->top, &top, top + 1u, WF_PRIM_SEQ_CST, WF_PRIM_RELAXED)) {
         return NULL;
     }
-    wf_sched_current_thread(core)->counts.steals += 1u;
+    wf_sched_count(&wf_sched_current_thread(core)->counts.steals, 1u);
     return slot;
 }
 
@@ -356,7 +337,7 @@ static int wf_sched_park(
     wf_sched_stack *stack = thread->stack;
     unsigned expected = WF_SCHED_STACK_RUNNING;
 
-#if WF_SCHED_READY_POLICY != 0 || WF_SCHED_OBSERVE_RESUMES
+#if WF_SCHED_OBSERVE
     stack->park_thread = thread->index;
 #endif
 
@@ -397,7 +378,7 @@ static int wf_sched_park(
                 )) {
                 wf_prim_fail("a cancel that owned its registration found its stack not SUSPENDING");
             }
-            thread->counts.cancels += 1u;
+            wf_sched_count(&thread->counts.cancels, 1u);
             if (target_was_ready) {
                 wf_sched_ready_push(core, target);
             } else {
@@ -407,15 +388,15 @@ static int wf_sched_park(
         }
     }
     /* 5. switch, then commit on the target stack */
-    thread->counts.parks += 1u;
+    wf_sched_count(&thread->counts.parks, 1u);
     thread->pending_commit = stack;
     wf_sched_switch_to(core, target);
     /* Resumed: the registration is cleared on every park exit (§6). */
     wf_prim_store_p((void **)&record->waiter, NULL, WF_PRIM_RELAXED);
     thread = wf_sched_current_thread(core);
-    thread->counts.resumes += 1u;
-#if WF_SCHED_OBSERVE_RESUMES
-    thread->counts.resume_migrations += stack->park_thread != thread->index;
+    wf_sched_count(&thread->counts.resumes, 1u);
+#if WF_SCHED_OBSERVE
+    wf_sched_count(&thread->counts.resume_migrations, stack->park_thread != thread->index);
 #endif
     return 1;
 }
@@ -465,6 +446,9 @@ static int wf_sched_idle_looks(
     wf_sched_thread *thread = wf_sched_current_thread(core);
     unsigned long long bit = 1ull << thread->index;
     wf_sched_stack *ready;
+#if WF_SCHED_OBSERVE
+    wf_sched_count(&thread->counts.idle_looks, 1u);
+#endif
     if (on_record != NULL) {
         unsigned state = wf_prim_load_u(&on_record->state, WF_PRIM_ACQUIRE);
         if (state == WF_SCHED_DONE || state == WF_SCHED_COMPLETING) {
@@ -481,7 +465,7 @@ static int wf_sched_idle_looks(
              * registers this stack on the record itself and re-reads the
              * record's state after it does, so the in-place registration the
              * line above has just ended is not one it needs. */
-            thread->counts.late_parks += 1u;
+            wf_sched_count(&thread->counts.late_parks, 1u);
             (void)wf_sched_park(core, on_record, ready, 1);
             return 1;
         }
@@ -545,6 +529,10 @@ static int wf_sched_idle_step(
     unsigned look_rounds = WF_SCHED_IDLE_SPIN_ROUNDS + WF_SCHED_IDLE_YIELD_ROUNDS;
     unsigned round;
     uint64_t epoch;
+#if WF_SCHED_OBSERVE
+    wf_sched_count(&thread->counts.idle_steps, 1u);
+    wf_sched_count(&thread->counts.idle_progress, 1u);
+#endif
     *left_for_status = 0;
     /* The bit goes up before the epoch is captured and before the last look,
      * so a publisher that misses the bit is one whose push the look finds.
@@ -568,10 +556,24 @@ static int wf_sched_idle_step(
         } else {
             wf_prim_yield();
         }
+#if WF_SCHED_IDLE_PROGRESS_INTERVAL != 0
+        if ((round + 1u) % WF_SCHED_IDLE_PROGRESS_INTERVAL == 0u) {
+#if WF_SCHED_OBSERVE
+            wf_sched_count(&thread->counts.idle_progress, 1u);
+#endif
+            if (wf_prim_progress(core)) {
+                wf_sched_idle_end(core, on_record, bit);
+                return 1;
+            }
+        }
+#endif
         if (wf_sched_idle_looks(core, on_record, left_for_status)) {
             return 1;
         }
     }
+#if WF_SCHED_OBSERVE
+    wf_sched_count(&thread->counts.idle_waits, 1u);
+#endif
     wf_prim_park(epoch);
     wf_sched_idle_end(core, on_record, bit);
     return 1;
@@ -587,7 +589,7 @@ void wf_sched_join(wf_sched_core *core, wf_sched_record *record, int is_io) {
         for (;;) {
             unsigned state = wf_prim_load_u(&record->state, WF_PRIM_ACQUIRE);
             if (state == WF_SCHED_DONE) {
-                thread->counts.line_one += 1u;
+                wf_sched_count(&thread->counts.line_one, 1u);
                 return;
             }
             if (state != WF_SCHED_COMPLETING) {
@@ -601,7 +603,7 @@ void wf_sched_join(wf_sched_core *core, wf_sched_record *record, int is_io) {
             if (slot->home == thread->lane && wf_sched_newest(thread->lane) == slot) {
                 wf_sched_slot *popped = wf_sched_pop(thread->lane);
                 if (popped == slot) {
-                    thread->counts.inline_runs += 1u;
+                    wf_sched_count(&thread->counts.inline_runs, 1u);
                     wf_sched_execute(core, slot);
                     return;
                 }
@@ -620,11 +622,11 @@ void wf_sched_join(wf_sched_core *core, wf_sched_record *record, int is_io) {
         }
         /* line four */
         if (is_io) {
-            thread->counts.exhausted_io_waits += 1u;
+            wf_sched_count(&thread->counts.exhausted_io_waits, 1u);
             (void)wf_sched_idle_step(core, record, &left);
             continue;
         }
-        thread->counts.exhausted_compute_waits += 1u;
+        wf_sched_count(&thread->counts.exhausted_compute_waits, 1u);
         {
             wf_sched_slot *slot = wf_sched_pop(thread->lane);
             if (slot == NULL) {
@@ -898,15 +900,19 @@ void wf_sched_statistics_sum(const wf_sched_core *core, wf_sched_statistics *out
     memset(out, 0, sizeof(*out));
     for (index = 0; index < core->thread_count; index += 1u) {
         const wf_sched_statistics *counts = &core->threads[index].counts;
-        out->parks += counts->parks;
-        out->cancels += counts->cancels;
-        out->resumes += counts->resumes;
-        out->steals += counts->steals;
-        out->inline_runs += counts->inline_runs;
-        out->exhausted_io_waits += counts->exhausted_io_waits;
-        out->exhausted_compute_waits += counts->exhausted_compute_waits;
-        out->late_parks += counts->late_parks;
-        out->line_one += counts->line_one;
-        out->resume_migrations += counts->resume_migrations;
+        out->parks += __atomic_load_n(&counts->parks, __ATOMIC_RELAXED);
+        out->cancels += __atomic_load_n(&counts->cancels, __ATOMIC_RELAXED);
+        out->resumes += __atomic_load_n(&counts->resumes, __ATOMIC_RELAXED);
+        out->steals += __atomic_load_n(&counts->steals, __ATOMIC_RELAXED);
+        out->inline_runs += __atomic_load_n(&counts->inline_runs, __ATOMIC_RELAXED);
+        out->exhausted_io_waits += __atomic_load_n(&counts->exhausted_io_waits, __ATOMIC_RELAXED);
+        out->exhausted_compute_waits += __atomic_load_n(&counts->exhausted_compute_waits, __ATOMIC_RELAXED);
+        out->late_parks += __atomic_load_n(&counts->late_parks, __ATOMIC_RELAXED);
+        out->line_one += __atomic_load_n(&counts->line_one, __ATOMIC_RELAXED);
+        out->resume_migrations += __atomic_load_n(&counts->resume_migrations, __ATOMIC_RELAXED);
+        out->idle_steps += __atomic_load_n(&counts->idle_steps, __ATOMIC_RELAXED);
+        out->idle_looks += __atomic_load_n(&counts->idle_looks, __ATOMIC_RELAXED);
+        out->idle_progress += __atomic_load_n(&counts->idle_progress, __ATOMIC_RELAXED);
+        out->idle_waits += __atomic_load_n(&counts->idle_waits, __ATOMIC_RELAXED);
     }
 }

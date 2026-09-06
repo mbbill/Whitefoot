@@ -1,4 +1,4 @@
-# Scheduler locality experiment
+# Scheduler experiments
 
 Question: does the choice of worker that resumes a parked stack materially
 affect the network gap, without changing the source model or stack representation?
@@ -7,13 +7,16 @@ measurement does not select either local-queue policy as a replacement:
 low-connection throughput regresses and higher-connection throughput is flat.
 This result concerns queue preference under the existing shared runtime;
 it does not decide a complete per-worker execution design.
+The current branch replaces those unselected queue variants with the second
+experiment below, which isolates idle progress and CPU placement. The first
+experiment remains reproducible at its recorded revision.
 
 The existing `RESULTS.md` third network series tested per-worker rings while
 retaining the global ready queue. It did not test a complete per-worker
 execution design. This first experiment separates queue locality from lock
 sharding and ring ownership; those remain later independent variables.
 
-## Forms
+## First experiment: forms at b714ced7
 
 The same compiler emits each program once. The runtime is linked three times:
 
@@ -43,7 +46,7 @@ parking field in the stack header. Its invariants now check every queue's
 tail, disjoint membership, valid destination and the union of ready queues
 when checking that all workers cannot sleep beside ready work.
 
-## Validation and measurement
+## First experiment: validation and measurement at b714ced7
 
 `make scheduler-experiment` is part of root `make check`. It runs all existing
 schedules at (1,2), (1,3), (2,3), (2,4) for every policy. The original compiler
@@ -224,11 +227,84 @@ A locality redesign must demonstrate the intended ownership in counters,
 then compare shared and sharded synchronization separately. The true mixed
 network/long-compute workload remains necessary before choosing the runtime.
 
-The temporary selectors, runner, gate stage and workflow belong to this
-active investigation, with policy 0 remaining the default. The narrower
-negative result is recorded in `mcts_mem/whitefoot/system-interface.md`.
-Policies 1 and 2 remain only as reproducible controls on the experiment branch
-for the next cost comparison. Replace them in place when that comparison is
-implemented, or remove them with their temporary gate stage and workflow if
-this investigation closes. They are not selected production options and must
-not grow into a permanent collection of runtime switches.
+The narrower negative result is recorded in
+`mcts_mem/whitefoot/system-interface.md`. The second experiment removes the
+unselected ready-queue selectors and restores the original single-queue
+enumerator invariants. No schedule or configuration is removed: the temporary
+gate stage now checks the additional idle-progress transitions. The runner,
+stage and workflow belong to this active investigation and are superseded in
+place; remove unused variants at the next selection, and remove the temporary
+gate stage and workflow if the investigation closes.
+
+## Second experiment: idle progress and CPU placement
+
+Question: how much of the network cost comes from workers repeatedly looking
+for compute/ready work while new I/O completions wait undrained, and how much
+comes from server/client CPU competition? The original idle window progresses
+I/O once, then makes 256 spin looks and 16 yielding looks without progressing
+I/O again. A completion arriving in that window must be drained by another
+worker or wait for this worker to progress again. This is a hypothesis about
+the cost, not a prediction that polling more often must win.
+
+All forms use the original global FIFO, shared mutex, shared ring, lane and
+stack representation, and the same emitted program. The old queue union count
+is no longer needed. Each form is compared with a new baseline in its own
+cohort, never with the first experiment's absolute rates.
+
+| form | spin looks | yielding looks | additional progress interval |
+| --- | ---: | ---: | ---: |
+| base | 256 | 16 | none |
+| sleep | 0 | 0 | none |
+| short | 16 | 0 | none |
+| spin | 256 | 0 | none |
+| poll1 | 16 | 0 | every look |
+| poll16 | 256 | 0 | every 16 looks |
+
+The added progress pass stays inside the existing epoch-capture window. A
+successful pass ends the idle registration and returns to the normal
+scheduler loop, exactly as the original first progress pass does. Every
+unsuccessful pass is followed by the same last look, and parking still uses
+the original captured epoch. The canonical experiment stage enumerates every
+existing schedule at (1,2), (1,3), (2,3), (2,4) with zero spin, one spin without
+additional progress, and one spin with progress. The short windows cover the
+protocol's transitions, not the timing of 256 physical pause instructions.
+
+CPU placement is derived from the runner's actual allowed CPU list and
+physical-core topology, recorded in `host.txt` and `cohorts.tsv`:
+
+| cohort | server / client workers | CPU placement |
+| --- | --- | --- |
+| shared4 | 4 / 4 | both use all allowed logical CPUs |
+| shared2 | 2 / 2 | both use all allowed logical CPUs |
+| split2 | 2 / 2 | disjoint sets of two logical CPUs |
+| split1 | 1 / 1 | one logical CPU each, on different physical cores |
+
+Split2 can still share physical cores through SMT. Split1 avoids that
+server/client sharing but tests only one server worker. These cohorts separate
+specific resource conditions; comparing a two-worker and four-worker cohort
+does not isolate affinity by itself. The io_uring and epoll references use the
+same worker counts and CPU sets as WF within each cohort.
+
+This screen uses 1, 4, 64 connections at 64 bytes, two warm-up passes and seven
+recorded passes in alternating form order. The first series's 1024-connection
+and large-payload measurements remain evidence; finalists must return to both
+before selection. Network samples retain separate server and client CPU/RSS
+and context-switch measurements, and every echo is still verified. Compute
+and warm-read mixed workloads run for all six forms at 2, 4, 8 workers with
+the established expected output bytes. The true network/long-compute mixed
+workload remains outstanding.
+
+Separate untimed observed links record migration, idle steps, idle looks,
+progress passes and waits, plus the existing ring counters. Observed builds
+must report both the scheduler and native ring and exercise submissions and
+completions. Idle counters can change while the exit observer reads them, so
+all scheduler counter accesses now use relaxed atomic loads and stores. One
+worker writes each counter; no atomic read-modify-write or scheduling edge is
+needed. The snapshot is defined but is not simultaneous across workers, and
+the enumerator still excludes diagnostic counters from its state digest.
+Timed links compile out the extra idle counters and migration tracking.
+
+Results are pending. This experiment changes no source semantics or function
+signatures and leaves the default idle policy unchanged. The owner's broader
+research instruction permits changing language design if measurements later
+show a need; the current experiment does not assume that need in advance.

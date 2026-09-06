@@ -18,7 +18,7 @@ concurrency:
 jobs:
   measure:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Install toolchain
@@ -39,10 +39,10 @@ jobs:
         if: always()
         run: |
           {
-            echo '## Scheduler locality experiment'
-            echo 'Policies: 0 global FIFO; 1 parking worker; 2 enqueuing worker. Shared lock and shared ring in all three.'
+            echo '## Scheduler idle-progress experiment'
+            echo 'Forms: base 256/16; sleep 0/0; short 16/0; spin 256/0; poll1 16/0 with progress each look; poll16 256/0 with progress every 16 looks. Shared global queue and ring throughout.'
             echo '```text'
-            for file in host.txt network-summary.txt compute.txt mixed.txt; do
+            for file in host.txt cohorts.tsv network-summary.txt compute.txt mixed.txt; do
               cat "$RUNNER_TEMP/io-scheduler/$file" 2>/dev/null || echo "$file was not produced"
             done
             echo '```'

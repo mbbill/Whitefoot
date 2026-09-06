@@ -42,11 +42,11 @@
  * (`completion/bridge.c`), so whichever way round they fall, this one finds a
  * live stream and a live core.
  *
- * The read is a benign race by construction. The core keeps its counters per
- * thread so that no two threads ever write one word, the counters are static
- * storage that outlives every thread, and a worker still granting lanes while
- * this sums them can only make the total smaller than the run's true one --
- * which cannot turn a pool that granted nothing into one that did.
+ * The core's counter writes and this snapshot's reads are relaxed atomic.
+ * Each counter has one writer, and its static storage outlives every thread.
+ * The snapshot is not simultaneous across workers: a worker still granting
+ * lanes while this sums them can make the total smaller than the run's final
+ * one, but cannot turn a pool that granted nothing into one that did.
  */
 
 #include <stddef.h>
@@ -62,7 +62,7 @@ extern int wf__bridge_report(char *buffer, size_t capacity);
  * for them with `WF_SCHED_REPORT`, so a case that fails on the grant count can
  * show what the threads did instead of the count alone. */
 static void wf__par_report(void) {
-    char counters[512];
+    char counters[1024];
     (void)fprintf(stderr, "grants=%lu\n", wf__par_grants());
     if (wf__sched_report(counters, sizeof(counters))) {
         (void)fprintf(stderr, "%s\n", counters);

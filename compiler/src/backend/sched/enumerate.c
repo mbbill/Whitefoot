@@ -293,11 +293,8 @@ static void print_state(FILE *out) {
             (int)records[index].state
         );
     }
-    for (index = 0; index < WF_SCHED_READY_QUEUES; index += 1u) {
-        (void)fprintf(out, "enumerate:   ready_queue=%u head=%d\n", index,
-            wf_enum_core.ready_head[index] == NULL ? -1 : (int)wf_enum_core.ready_head[index]->index);
-    }
-    (void)fprintf(out, "enumerate:   free_head=%d status_posted=%u idle=%llx\n",
+    (void)fprintf(out, "enumerate:   ready_head=%d free_head=%d status_posted=%u idle=%llx\n",
+        wf_enum_core.ready_head == NULL ? -1 : (int)wf_enum_core.ready_head->index,
         wf_enum_core.free_head == NULL ? -1 : (int)wf_enum_core.free_head->index,
         wf_enum_core.status_posted, wf_enum_core.idle);
 }
@@ -1445,31 +1442,12 @@ static void check_state(void) {
     int is_io;
 
     on_free = walk_list(wf_enum_core.free_head, WF_SCHED_STACK_EMPTY, "free", &last);
-    on_ready = 0;
-    for (index = 0; index < WF_SCHED_READY_QUEUES; index += 1u) {
-        unsigned queue = walk_list(wf_enum_core.ready_head[index], WF_SCHED_STACK_READY, "ready", &last);
-        if (wf_enum_core.ready_tail[index] != last) {
-            fail_execution("ready queue %u's tail does not name its last stack", index);
-        }
-        if (on_ready & queue) {
-            fail_execution("a stack is on two ready queues");
-        }
-        if (index >= wf_enum_core.thread_count && queue != 0u) {
-            fail_execution("a ready stack belongs to an absent worker");
-        }
-        on_ready |= queue;
+    on_ready = walk_list(wf_enum_core.ready_head, WF_SCHED_STACK_READY, "ready", &last);
+    if (wf_enum_core.ready_tail != last) {
+        fail_execution("the ready list's tail does not name its last stack");
     }
     if (on_free & on_ready) {
         fail_execution("a stack is on both lists");
-    }
-    {
-        unsigned queued = 0;
-        for (index = 0; index < wf_enum_core.stack_count; index += 1u) {
-            queued += (on_ready >> index) & 1u;
-        }
-        if (queued != wf_enum_core.ready_count) {
-            fail_execution("the ready count differs from the union of ready queues");
-        }
     }
 
     /* Enqueues and transits, by what appeared on or left the ready list. */
@@ -1594,7 +1572,7 @@ static void check_state(void) {
                 }
             }
         }
-        if (on_ready != 0u) {
+        if (wf_enum_core.ready_head != NULL) {
             fail_execution("every thread is asleep with a non-empty ready list (item 20)");
         }
         if (wf_enum_core.status_posted != 0u && actors[0].state == A_RUNNABLE && entry_idle) {
