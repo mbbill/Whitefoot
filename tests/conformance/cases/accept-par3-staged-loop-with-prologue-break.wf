@@ -17,7 +17,7 @@ fn component() -> made: own FixedVector<u8, 16> pure contract {
 }
 
 command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  doc "An uncounted loop with its exit and its carried index written before the submission. PAR-3's unit is the iteration the statement graph gives, so a loop_stmt is admitted on the same terms as a for_stmt; the break lies in the prologue, and the short unique factory loan that reserve_file takes is serialized by index-ordered prologues rather than replicated.";
+  doc "An uncounted loop with its exit and its carried index written before the submission. PAR-3's unit is the iteration the statement graph gives, so a loop_stmt is admitted on the same terms as a for_stmt; the break lies in the prologue, and the short unique factory loan that reserve_handle takes is serialized by index-ordered prologues rather than replicated.";
   let opened = 0_u64;
   let index = 0_u64;
   loop @scan {
