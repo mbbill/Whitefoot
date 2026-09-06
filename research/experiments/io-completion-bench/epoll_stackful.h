@@ -46,9 +46,9 @@ static int receive_request(struct connection *link) {
 }
 #endif
 
-/* The echo source is the owner's shared receive scratch until a short send
- * first blocks. Copy its remainder before yielding, just as the manual
- * reference does, so another connection may reuse the owner's scratch. */
+/* With shared receive scratch, copy the unsent remainder before yielding so
+ * another connection may reuse it, just as the manual reference does. Private
+ * receive storage is already link->pending and needs no copy across a wait. */
 static int send_response(struct connection *link, unsigned char *source, size_t length) {
     size_t offset = 0;
     while (offset < length) {
@@ -108,9 +108,9 @@ static void connection_main(void *raw) {
         if (++link->owner->replies == 8u) connection_yield(link);
 #endif
 #else
-        ssize_t taken = recv(link->descriptor, link->owner->scratch, TRANSFER_BYTES, 0);
+        ssize_t taken = recv(link->descriptor, WF_BENCH_RECEIVE_BUFFER(link->owner, link), TRANSFER_BYTES, 0);
         if (taken > 0) {
-            if (!send_response(link, link->owner->scratch, (size_t)taken)) break;
+            if (!send_response(link, WF_BENCH_RECEIVE_BUFFER(link->owner, link), (size_t)taken)) break;
         } else if (taken < 0 && errno == EINTR) {
             continue;
         } else if (taken < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {

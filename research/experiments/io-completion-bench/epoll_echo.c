@@ -29,10 +29,12 @@
  * buffer ring; a read needs a buffer chosen by this process before the kernel
  * has said there is anything to put in it.
  *
- * Everything is sized from CONNECTIONS before the first accept: the connection
- * table is indexed by descriptor, each connection owns one pending buffer for
- * the remainder of a short write, and each thread owns one receive buffer.
- * Nothing is allocated per operation. */
+ * The default sizes everything from CONNECTIONS before the first accept: the
+ * connection table is indexed by descriptor, each connection owns one pending
+ * buffer for the remainder of a short write, and each thread owns one receive
+ * buffer. The storage experiment can instead receive into private arena slices
+ * or allocate a buffer on accept and free it on close. No policy allocates per
+ * receive or send. */
 #include <errno.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -68,6 +70,26 @@
 #define TRANSFER_BYTES COMPUTE_BYTES
 #else
 #define TRANSFER_BYTES 65536u
+#endif
+
+/* Receive storage: shared worker scratch with private short-send spill (0),
+ * private slices in the existing arena (1), per-connection malloc (2), or
+ * per-connection calloc (3). Only initialized received prefixes are echoed.
+ * The latter pair compares the allocator's zeroed-storage path with the same
+ * ownership and call lifetime. Owned by the io-model storage experiment. */
+#ifndef WF_BENCH_RECEIVE_STORAGE
+#define WF_BENCH_RECEIVE_STORAGE 0
+#endif
+#if WF_BENCH_RECEIVE_STORAGE < 0 || WF_BENCH_RECEIVE_STORAGE > 3
+#error "WF_BENCH_RECEIVE_STORAGE must be in 0..3"
+#endif
+#if WF_BENCH_RECEIVE_STORAGE && defined(WF_BENCH_COMPUTE)
+#error "The receive-storage comparison applies to the echo byte stream"
+#endif
+#if WF_BENCH_RECEIVE_STORAGE
+#define WF_BENCH_RECEIVE_BUFFER(worker, link) ((link)->pending)
+#else
+#define WF_BENCH_RECEIVE_BUFFER(worker, link) ((worker)->scratch)
 #endif
 
 struct connection {
@@ -203,6 +225,10 @@ static void check_finished(void) {
 static void close_connection(struct worker *worker, int descriptor) {
     epoll_ctl(worker->epoll, EPOLL_CTL_DEL, descriptor, NULL);
     table[descriptor].active = 0;
+#if WF_BENCH_RECEIVE_STORAGE >= 2
+    free(table[descriptor].pending);
+    table[descriptor].pending = NULL;
+#endif
 #if !defined(WF_BENCH_STACKFUL)
     table[descriptor].offset = 0;
     table[descriptor].length = 0;
@@ -327,7 +353,7 @@ static void service(struct worker *worker, int descriptor) {
 #endif
         link->length = COMPUTE_BYTES;
 #else
-        ssize_t taken = recv(descriptor, worker->scratch, TRANSFER_BYTES, 0);
+        ssize_t taken = recv(descriptor, WF_BENCH_RECEIVE_BUFFER(worker, link), TRANSFER_BYTES, 0);
         if (taken == 0) {
             close_connection(worker, descriptor);
             return;
@@ -344,7 +370,7 @@ static void service(struct worker *worker, int descriptor) {
         }
         size_t handed = 0;
         while (handed < (size_t)taken) {
-            ssize_t moved = send(descriptor, worker->scratch + handed, (size_t)taken - handed,
+            ssize_t moved = send(descriptor, WF_BENCH_RECEIVE_BUFFER(worker, link) + handed, (size_t)taken - handed,
                                  MSG_NOSIGNAL);
             if (moved > 0) {
                 handed += (size_t)moved;
@@ -357,9 +383,15 @@ static void service(struct worker *worker, int descriptor) {
             return;
         }
         if (handed < (size_t)taken) {
-            memcpy(link->pending, worker->scratch + handed, (size_t)taken - handed);
+#if WF_BENCH_RECEIVE_STORAGE
+            /* This connection already owns the unsent suffix. */
+            link->offset = (uint32_t)handed;
+            link->length = (uint32_t)taken;
+#else
+            memcpy(link->pending, WF_BENCH_RECEIVE_BUFFER(worker, link) + handed, (size_t)taken - handed);
             link->offset = 0;
             link->length = (uint32_t)((size_t)taken - handed);
+#endif
             return;
         }
 #endif
@@ -413,6 +445,19 @@ static void accept_ready(struct worker *worker) {
             return;
         }
 #endif
+#if WF_BENCH_RECEIVE_STORAGE >= 2
+#if WF_BENCH_RECEIVE_STORAGE == 3
+        link->pending = calloc(1u, TRANSFER_BYTES);
+#else
+        link->pending = malloc(TRANSFER_BYTES);
+#endif
+        if (link->pending == NULL) {
+            fprintf(stderr, "epoll_echo: out of memory for connection receive storage\n");
+            close(descriptor);
+            mark_failed();
+            return;
+        }
+#endif
         link->active = 1;
 #if defined(WF_BENCH_STACKFUL)
         link->owner = worker;
@@ -439,6 +484,11 @@ static void accept_ready(struct worker *worker) {
         registration.data.fd = descriptor;
         if (epoll_ctl(worker->epoll, EPOLL_CTL_ADD, descriptor, &registration) != 0) {
             report("epoll_ctl of a connection", errno);
+#if WF_BENCH_RECEIVE_STORAGE >= 2
+            free(link->pending);
+            link->pending = NULL;
+            link->active = 0;
+#endif
             close(descriptor);
             mark_failed();
             return;
@@ -580,14 +630,22 @@ int main(int argc, char **argv) {
     descriptor_capacity = (unsigned)(option_connections + 8 * option_threads + 64);
     table = calloc(descriptor_capacity, sizeof *table);
     workers = calloc(option_threads, sizeof *workers);
+#if WF_BENCH_RECEIVE_STORAGE < 2
     pending_memory = malloc((size_t)descriptor_capacity * TRANSFER_BYTES);
-    if (table == NULL || workers == NULL || pending_memory == NULL) {
+#endif
+    if (table == NULL || workers == NULL
+#if WF_BENCH_RECEIVE_STORAGE < 2
+        || pending_memory == NULL
+#endif
+    ) {
         fprintf(stderr, "epoll_echo: out of memory\n");
         return 1;
     }
+#if WF_BENCH_RECEIVE_STORAGE < 2
     for (unsigned at = 0; at < descriptor_capacity; at++) {
         table[at].pending = pending_memory + (size_t)at * TRANSFER_BYTES;
     }
+#endif
 #if defined(WF_BENCH_STACKFUL)
     /* Reserve before accepting. Only accepted connections touch a context
      * page; each slot has a low guard and 64 KiB of usable stack. Descriptor
@@ -670,6 +728,18 @@ int main(int argc, char **argv) {
     int broken = atomic_load_explicit(&failed, memory_order_relaxed);
     uint64_t accepted = atomic_load_explicit(&accepted_total, memory_order_relaxed);
     uint64_t closed = atomic_load_explicit(&closed_total, memory_order_relaxed);
+#if defined(WF_BENCH_STORAGE_OBSERVE)
+    fprintf(stderr, "storage: policy=%u transfer_bytes=%u accepted=%llu closed=%llu\n",
+            (unsigned)WF_BENCH_RECEIVE_STORAGE, (unsigned)TRANSFER_BYTES,
+            (unsigned long long)accepted, (unsigned long long)closed);
+#endif
+#if WF_BENCH_RECEIVE_STORAGE >= 2
+    /* A failed run may stop with accepted connections still live. Normal
+     * closes have already cleared their pointers, including descriptor reuse. */
+    for (unsigned at = 0; at < descriptor_capacity; at++) {
+        free(table[at].pending);
+    }
+#endif
     free(pending_memory);
     free(workers);
     free(table);

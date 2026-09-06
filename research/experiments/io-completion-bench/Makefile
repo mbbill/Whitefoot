@@ -23,7 +23,7 @@ ROOT := $(abspath ../../..)
 
 # Scheduler experiment: exhaustive correctness is a canonical check stage;
 # timings run separately on a Linux CI host and never select acceptance.
-.PHONY: scheduler-check scheduler-bench scheduler-mixed scheduler-fairness scheduler-inline scheduler-sustain scheduler-checkpoint scheduler-footprint scheduler-paced scheduler-chunks scheduler-canonical scheduler-stackful scheduler-stackful-paced scheduler-nodelay scheduler-owner scheduler-owner-paced scheduler-memory scheduler-dispatch scheduler-dispatch-paced scheduler-wake scheduler-wake-paced scheduler-service scheduler-service-paced stackful-check
+.PHONY: scheduler-check scheduler-bench scheduler-mixed scheduler-fairness scheduler-inline scheduler-sustain scheduler-checkpoint scheduler-footprint scheduler-paced scheduler-chunks scheduler-canonical scheduler-stackful scheduler-stackful-paced scheduler-nodelay scheduler-owner scheduler-owner-paced scheduler-memory scheduler-dispatch scheduler-dispatch-paced scheduler-wake scheduler-wake-paced scheduler-service scheduler-service-paced scheduler-storage stackful-check
 scheduler-check:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" bash scheduler-bench.sh check
 
@@ -92,6 +92,9 @@ scheduler-service:
 
 scheduler-service-paced:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" EXPERIMENT=service-paced bash scheduler-bench.sh bench
+
+scheduler-storage:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" EXPERIMENT=storage bash scheduler-bench.sh bench
 
 WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
 WORK := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-io-completion-bench
@@ -604,24 +607,31 @@ stackful-check: prepare
 	  flags=''; \
 	  if [ "$$mode" != echo ]; then flags='-DWF_BENCH_COMPUTE'; fi; \
 	  if [ "$$mode" = quantum ]; then flags="$$flags -DWF_BENCH_QUANTUM"; fi; \
+	  storage_policies=0; \
+	  if [ "$$mode" = echo ]; then storage_policies='0 1 2 3'; fi; \
 	  for form in manual stackful; do \
 	    extra=''; \
 	    if [ "$$form" = stackful ]; then extra='-DWF_BENCH_STACKFUL -DWF_BENCH_OBSERVE'; fi; \
-	    binary="$(BUILD)/check-$$mode-$$form"; \
-	    $(CLANG) $(CFLAGS) -Wpedantic -pthread -DWF_BENCH_SNDBUF=4096 $$flags $$extra epoll_echo.c -o "$$binary"; \
+	   for storage in $$storage_policies; do \
+	    binary="$(BUILD)/check-$$mode-$$form-s$$storage"; \
+	    $(CLANG) $(CFLAGS) -Wpedantic -pthread -DWF_BENCH_SNDBUF=4096 \
+	      -DWF_BENCH_STORAGE_OBSERVE "-DWF_BENCH_RECEIVE_STORAGE=$$storage" $$flags $$extra epoll_echo.c -o "$$binary"; \
 	    cases='compute truncated'; \
 	    if [ "$$mode" = echo ]; then cases=echo; fi; \
 	    for workers in 1 4; do \
 	      for case_name in $$cases; do \
-	        log="$(BUILD)/check-$$mode-$$form-w$$workers-$$case_name.log"; \
+	        log="$(BUILD)/check-$$mode-$$form-s$$storage-w$$workers-$$case_name.log"; \
 	        if ! "$(BUILD)/stream_check" "$$binary" "$$case_name" "$$workers" > "$$log" 2>&1; then cat "$$log"; exit 1; fi; \
 	        cat "$$log"; \
+	        awk -v storage="$$storage" '/^storage:/ {for(i=2;i<=NF;i++) {split($$i,a,"=");v[a[1]]=a[2]+0}; seen=1} \
+	          END {exit !(seen && v["policy"]==storage && v["accepted"]>0 && v["closed"]==v["accepted"])}' "$$log"; \
 	        if [ "$$form" = stackful ] && [ "$$case_name" != truncated ]; then \
 	          awk -v mode="$$mode" '/^stackful:/ {for(i=2;i<=NF;i++) {split($$i,a,"=");v[a[1]]+=a[2]+0}} \
 	            END {exit !(v["resumes"]>0 && v["waits"]>0 && (mode!="echo" || v["send_waits"]>0) && (mode!="quantum" || v["yields"]>0))}' "$$log"; \
 	        fi; \
 	      done; \
 	    done; \
+	   done; \
 	  done; \
 	done
 

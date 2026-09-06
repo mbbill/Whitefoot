@@ -2582,3 +2582,86 @@ This is neither a deadline guarantee nor an admission fix. The checkpoint
 does not create a stack or start an unstarted call, and the fixed-capacity
 fallback's progress question remains. No timing result has selected either
 budget policy yet.
+
+## Twenty-third experiment: receive storage and sequential-handler residency
+
+The memory gap remaining after lazy scheduler initialization does not identify
+the cost of the source execution model. The native epoll reference shares a
+worker receive scratch and touches each connection's private pending buffer
+only when a send blocks. WF's echo instead owns a 64 KiB initialized buffer
+per connection. A comparison that changes both the receive storage and the
+execution representation cannot attribute their separate costs.
+
+`WF_BENCH_RECEIVE_STORAGE` isolates four native echo policies, under both the
+existing manual state machine and the ordinary nested C stackful handler:
+
+| Policy | Receive destination | Storage lifetime |
+| --- | --- | --- |
+| 0, shared | Worker scratch; private spill after a blocked send | Existing preallocated arenas |
+| 1, arena | Connection's private 64 KiB arena slice | Existing preallocated arena |
+| 2, malloc | Connection's private 64 KiB allocation | Allocate on accept, free on close |
+| 3, calloc | Connection's private zeroed 64 KiB allocation | Allocate on accept, free on close |
+
+Every policy echoes only the initialized prefix returned by receive. Private
+storage retains its unsent suffix across waits without copying; it is freed
+after the handler returns to its owner. Normal close clears the pointer before
+descriptor reuse, registration failure frees the allocation, and final failed
+run cleanup frees any remaining allocations after worker joins. No policy
+allocates per request. These are native C reference changes, not permission
+for WF source to expose uninitialized storage. No container, source function,
+proof rule, compiler buffer lowering or runtime interface changes here.
+
+The original manual echo, compute and quantum reference optimized LLVM remains
+identical to the experiment-16 baseline after removing module path headers.
+The runner verifies this on its actual toolchain before timing. In particular,
+the default echo buffer expression stays a direct worker-scratch access: an
+initial local-pointer rewrite changed the optimized baseline and was replaced
+before measurement. Native storage observations run separately from timing and
+require the requested policy, transfer size and exact accepted/closed count.
+The artifact retains optimized LLVM for all eight native representations and
+WF, plus page size and libc version, to expose allocator lowering differences.
+
+The maintained `stackful-check` expands echo to all four storage policies and
+retains every compute, truncated-protocol and quantum check. Its 32 M1
+kqueue-compatibility runs pass, including one/four workers, forced short
+writes, byte checks and the existing wait/send-wait/quantum observations. The
+actual runner's eight native build paths also pass independent byte checks,
+and all three unchanged-reference codegen comparisons pass. These local runs
+qualify the prototype; Linux epoll behavior still requires CI.
+
+Two complete M1 residency batches use one server worker, two client threads,
+100 exchanges of 64 bytes per connection, one/64/1024 connections, and both
+execution representations. The second reverses storage-policy order; all 48
+runs pass. `/usr/bin/time -l` peak RSS, converted from bytes to KiB, is below;
+ranges contain the two observations, not confidence intervals. The host has
+16 KiB pages and Apple clang 21.0.0. No local rate selects a Linux policy.
+
+| Connections / representation | Shared KiB | Arena KiB | malloc KiB | calloc KiB |
+| --- | ---: | ---: | ---: | ---: |
+| 1 / manual | 1376 | 1392 | 1360..1376 | 1360 |
+| 1 / stackful | 1392 | 1392 | 1376 | 1360 |
+| 64 / manual | 1376 | 2400 | 2400 | 2400..2416 |
+| 64 / stackful | 2400 | 3408 | 3424 | 3408 |
+| 1024 / manual | 1424 | 17776..17792 | 18048 | 18032..18048 |
+| 1024 / stackful | 17808 | 34176 | 34448 | 34416..34432 |
+
+Private receive storage and sequential-handler stack residency each add about
+one host page per live connection at 1024 connections. The malloc/calloc paths
+have nearly equal RSS on this host. Local optimized WF LLVM folds the emitted
+malloc plus zero-fill loop into a 65536-byte calloc call; that does not imply
+explicitly touching every byte of every allocation. An earlier diagnostic
+with explicit full-buffer memset had much higher RSS and is not a simulation
+of that optimized allocation path. The Linux allocator comparison remains
+unmeasured; neither eliminating zero initialization nor a container API change
+is selected from the M1 observations.
+
+`make scheduler-storage` runs 770 paired Linux echo rows: base and the combined
+used-lane/compact-stack WF control, io_uring, and all eight native echo forms;
+five connection/payload cases; split1/split2 placement; seven recorded passes
+after warmup. Compute and file+compute controls remain. TCP_NODELAY is fixed
+on, WF reserves 1100 stacks, and dispatch, local-wake and service-budget flags
+remain at their original defaults. The small-memory control runs its full
+completion suite before timing. All native stream checks run before timing,
+and the existing Windows memory and staged-IOCP qualification remains wired.
+Other placement and paced-load comparisons are deferred until this narrower
+experiment can distinguish receive storage from execution representation.

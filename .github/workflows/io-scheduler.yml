@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        experiment: [service, service-paced]
+        experiment: [storage]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -58,9 +58,9 @@ jobs:
         run: |
           {
             echo '## Scheduler experiment: ${{ matrix.experiment }}'
-            echo 'Paired within this job and CPU cohort. Compare the balanced owner policy with 1/16 completed I/O joins per service turn and a 16-join budget retained across worker stack switches, retaining the existing progress and safe checkpoint protocol. Keep 1100 reserved stacks and TCP_NODELAY in every form. Echo includes small/large payloads and compute/file controls; paced load compares identical chunk modules at fixed light arrivals. Each candidate runs the full completion suite before timing. See the investigation for scope.'
+            echo 'Paired within this job and CPU cohort. Compare shared receive scratch, private arena slices, per-connection malloc and calloc under manual and sequential native handlers on split1/split2. Include WF base and compact/used-lane controls plus io_uring. Keep 1100 reserved stacks and TCP_NODELAY in every form. Echo includes small/large payloads and compute/file controls. Retain all stream/protocol checks, expand them for every storage policy, and verify the unchanged native baseline code before timing. See the investigation for scope.'
             echo '```text'
-            for file in host.txt cohorts.tsv network-summary.txt compute.txt mixed.txt balanced-check.log service1-check.log service16-check.log servicepoll16-check.log; do
+            for file in host.txt cohorts.tsv network-summary.txt compute.txt mixed.txt small-check.log stackful-check.log; do
               cat "$RUNNER_TEMP/io-scheduler/$file" 2>/dev/null || echo "$file was not produced"
             done
             echo '```'
