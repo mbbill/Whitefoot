@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments']
+    branches: ['codex/io-idle-retry']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/emitter/**'
@@ -26,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        experiment: [idle, mixed]
+        experiment: [idle]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
