@@ -219,9 +219,17 @@ fn a_peer_that_resets_reaches_the_program_as_its_own_outcome_on_both_routes() {
         // for anything, and never read back: the program echoes it into this
         // socket's receive queue, and a host closing a connection whose
         // receive queue still holds data sends a reset rather than a graceful
-        // end. That is the reset the program then observes.
+        // end. That is the reset the program then observes. The peek is what
+        // makes the queue hold data at the close: a close that raced ahead of
+        // the echo would send a graceful end instead, which the program then
+        // reads as the direction's end before any reset reaches it, and a
+        // receive the submitting thread answers at once made that race real
+        // on the macOS runner.
         let bytes = vec![7_u8; 64 * 1024];
         stream.write_all(&bytes).expect("send the payload");
+        stream
+            .peek(&mut [0_u8; 1])
+            .expect("the first echoed byte arrives before the peer closes");
         drop(stream);
         let (status, _) = finished(child);
         // `tcp_echo.wf` reports 20 plus the portable class for a refused

@@ -483,11 +483,86 @@ connection at once waits on the first, as the sequential program says. And a
 server whose port is still in `TIME_WAIT` from the previous trial refuses
 its bind; the trials draw ports from a wider range.
 
-The ratio is the batch's result, and the plan carries what it points at: the
-ring per thread and the armed receive are runtime structure the scheduler
-design did not have to decide for files, where every operation of a program
-went through one thread's submissions; they are the next performance work on
-this line, in a new PR by the owner's decision.
+### The third series: the ring is not where the time is
+
+The owner's answer to the second series was to keep going in this PR, so
+the structural candidates it named were built and measured one at a time,
+on the same 64-connection echo with the observer's counters, then on the
+protocol. None of them is kept; what they measured is the result.
+
+| variable | rt/s at 64 connections (three trials) | what it says |
+|---|---:|---|
+| the runtime at d016afb | 234.3k to 251.5k | the baseline of this series |
+| E18: one ring per scheduler thread, own ring kicked and reaped first, the rest reaped by every pass | 197k to 267k at four workers, 228k to 235k at two, 219k to 287k at eight | enters triple, to 13 thousand, because each ring kicks a smaller batch; no gain at four threads on four cores |
+| E20: `IORING_SETUP_SQPOLL`, idle 1 ms and 100 ms | 183k to 190k; 181k to 228k | the poll thread takes a core the client needs; enters fall to one and the rate falls with them |
+| E19: one multishot `IORING_OP_POLL_ADD` per receive half, armed by the first receive that waits, the reaper moving the bytes with one `recv`, a `POLL_REMOVE` rung at the half's release | 188k to 226k | receives submit nothing and enters fall from 4 thousand to 120; the rate does not move |
+| E26: the idle spin once per idle period, later turns park at once | 182k to 186k; 64k at 4 connections | the spin is not the cost |
+| E25: a publisher inside its own progress pass defers the wake it would send, and sends one only when it published more than it will pop | 189k to 216k; 60k at 4 connections | the wake is not the cost |
+| E29: `EPOLLEXCLUSIVE` on the ring descriptor in the shared epoll | 254k to 268k before the host restarted; no difference on the protocol after it | one parked thread wakes per completion instead of all; within the host's noise |
+
+The stage dwell of one waiting receive, timed under a compile-time counter
+(not shipped) at 64 connections on the runtime of d016afb: 70 microseconds
+from staging to the kick, 305 from the kick to the reap, 95 from the
+publication to the stack running again, about 470 in all, against a 60
+microsecond client turnaround. Every stage is a queue: the receive waits for
+the current batch of stacks to drain before anyone reaches the ring, the
+completion waits for the next pass, the resumed stack waits behind the batch
+in the ready list. Taking the kick out (E19), moving it to a kernel thread
+(E20) or splitting it four ways (E18) left the rate where it was: the batch
+cycle, not the kick, is the period, and the second series' "22 percent of
+the wall time" was serial work that the cycle hid rather than paid for.
+
+The two readings of E19 on the protocol, on the host after its restart, say
+what the armed receive is worth. Skipping the host attempt when the half's
+poll is armed and has reported nothing (fewer syscalls, more parks) reads
+0.94 at one connection against the baseline's 1.26, 0.72 against 0.76 at
+64, 0.75 against 0.64 at 1024 and 0.96 against 0.82 on 64 KiB; always
+attempting first reads 1.30, 0.77, 0.63 and 0.84, the baseline within noise.
+A four-hundred-line lock-free slot protocol that trades one connection for a
+thousand is not kept; the design is in this record if the thousand-connection
+line becomes the target.
+
+What `perf` says. With `linux-tools-generic` installed on the development
+host (perf 6.8 sampling `cpu-clock` at 4 kHz), the Whitefoot server at 64
+connections spends 20 percent of its samples in `_raw_spin_unlock_irqrestore`
+and 9 in `finish_task_switch`; the reference spends 14 and 14. Reading the
+callers, 17.8 of the 20 are under the program's own `send`: the loopback
+delivery wakes the client's thread (`tcp_data_ready`, `sock_def_readable`,
+`__wake_up_sync_key`) and both servers pay it in full. The runtime's own
+symbols at 64 connections are `pthread_mutex_lock` at 2.8 percent, the
+progress pass, the completion and the submit at about one each; the
+kernel's TCP path is the rest. At 4 connections the picture is different:
+`finish_task_switch` is 21 percent, `pthread_mutex_lock` 8, the steal scan
+`wf_sched_find` 3.7 and `wf_prim_pause` 3.2, and the Whitefoot line runs at
+65 to 70 thousand round trips a second against the reference's 294
+thousand, on 4.5 CPU-seconds against 0.76: four scheduler threads chasing
+four connections through one ready list and one lock, switching context once
+or twice per round trip, where the reference's four threads each own one
+connection and switch once, on the arrival of their own data. That shape, a
+connection that stays on the thread that reaped it, a per-thread ready list,
+a steal only from an idle thread, is what the profile points at, and it is a
+core change the enumerator has to cover, not a ring change: the next
+version's work, with this as its reason.
+
+Two host states. The development host restarted during this series, and
+after the restart the same binary measures in two states at 64 connections,
+180 to 195 thousand and 255 to 275 thousand, baseline and candidates alike
+when run alternately, and the references move by a fifth between protocol
+runs. Only ratios within one run are read above, and the runner's own table
+on this revision is the check. One defect the series found in the tests:
+`a_peer_that_resets_reaches_the_program_as_its_own_outcome_on_both_routes`
+closed the peer as soon as its payload was written, so on the macOS runner
+the close raced ahead of the echo, sent a graceful end instead of a reset,
+and the program read the direction's end and exited zero; the peer now
+peeks one echoed byte before it closes, so the queue holds data at the close
+on every host.
+
+The ratio is the batch's result, and the plan carries what it points at:
+the connection that stays on its reaping thread, the per-thread ready list
+and the steal from idleness are scheduler structure the design did not have
+to decide for files, where every operation of a program went through one
+thread's submissions; they are the next performance work on this line, in a
+new PR by the owner's decision.
 
 ## 7. Gates
 
@@ -534,14 +609,18 @@ worktree for every landed slice.
   configuration measured twice at 64 connections gave 95 thousand and 36
   thousand round trips a second, and the ring-required setting 81 and 35
   thousand, with nothing changed between the runs. Neither series after E1
-  reached a second state in some forty observed runs, all within 200 to 250
-  thousand; the one-completion reap under two locks is the likeliest cause
-  of the old one, and the runner's next reading is the check.
-- **A ring per thread and a receive armed once per connection.** The second
-  series of §6 measured the serial kick at 22 percent of the wall time and
-  the threads flat past two; the reference's answer changes what a record
-  is for the emitter, the core and the bridge, and is the next version's
-  work with that data as its reason.
+  reached a second state in some forty observed runs; after the development
+  host restarted during the third series the two states were back, 180 to
+  195 and 255 to 275 thousand for one binary, and the references themselves
+  moved by a fifth between protocol runs, so the states are the host's and
+  only ratios within one run are read.
+- **The connection that stays on its thread.** The third series of §6 built
+  and measured the ring per thread, the kernel submission thread and the
+  armed receive and found the rate unmoved by all three; the profile puts the
+  remaining cost in the scheduler's shape, one ready list and one lock for
+  every connection, with the context switches that follow. A per-thread
+  ready list with a steal from idleness is the next version's work, a core
+  change the enumerator covers, with that data as its reason.
 - **§12 item 1 of PARK-ON-MISS.md, the compute-miss regression**, narrowed to
   11 and 17 percent by the spin and still the owner's decision; the colouring
   design is sequenced after this batch; a new PR.

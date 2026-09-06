@@ -2297,7 +2297,12 @@ where its cost is: the `io_uring_enter` that hands staged receives to the
 kernel takes a microsecond an entry, 22 percent of the wall time, serialized
 on the pool's one ring, and two threads reach 85 percent of four; the
 reference arms one multishot receive per connection on a ring per thread and
-submits no receive at all. The first
+submits no receive at all. The third series then built the ring per
+thread, the kernel submission thread and the armed multishot receive and
+measured the rate unmoved by all three; the profile (`perf` on the
+development host) puts the remaining cost in the scheduler's shape, one
+ready list and one lock for every connection and the context switches that
+follow, and none of the three is kept (the record's §6, third series). The first
 reading of the same protocol, at a6b31b5 before either change:
 
 ```text

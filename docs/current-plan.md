@@ -890,9 +890,13 @@ its cost: the `io_uring_enter` that hands staged receives to the kernel is a
 microsecond an entry and 22 percent of the wall time, serialized on the
 pool's one ring, and two threads reach 85 percent of four. The reference
 arms one multishot receive per connection on a ring per thread and submits
-no receive; a ring per thread and a receive that completes more than once
-change what a record is for the emitter, the core and the bridge, which is
-the reason and the data for the next version. The bounds were set to the
+no receive. The third series built the ring per thread, the kernel
+submission thread and the armed multishot receive, one at a time, and the
+rate did not move for any of them; `perf` puts the remaining cost in the
+scheduler's shape, one ready list and one lock for every connection and the
+context switches that follow, so the next version's work is the connection
+that stays on its reaping thread with a per-thread ready list, a core change
+the enumerator covers, and none of the three ring changes is kept. The bounds were set to the
 test's numbers: the
 lane holds 1024 slots, the bridge's default window is 1024, `WF_STACKS` may
 name 2048 stacks, and the harness pins the window at the lane's slot count.
