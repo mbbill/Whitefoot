@@ -261,6 +261,29 @@ per depth, so a run two struct levels down keeps its measures across the
 construct that renames it. One generic cycle still stops explicitly: one that
 varies a *const* argument, which [FN-6] is written over type parameters and does
 not refuse.
+**B3 makes a call's kill classification the callee's declaration and closes the
+design's D1.** Four rules land and none is retired (157 remain). [CALL-1] states
+that a shared-borrow argument is a kill event for no fact supported by its
+actual's place; [CALL-2] that an `own` argument of affine or linear class is a
+consuming use while a copy one is a duplicate, and that a result carries exactly
+the callee's declared relations; [CALL-3] that a write through a view reaches the
+viewed range's element storage and no measure of the origin place nor of the
+view; and [CALL-5] that no transport reads the actual's spelling, the callee's
+body, or a summary of one, a parameter for which none is selected killing
+conservatively. [ENT-5]'s clause (b), [FN-9]'s entry-image sentence and [SYS-8]
+are amended in place. The unsound accept the sweep of 2026-09-03 recorded — a
+callee replacing the referent of its `&uniq buffer<u8>` parameter while its
+caller kept the length it had before, and reading out of bounds with it — is an
+[OP-4] rejection, and the conformance case that tracked it moves from `xfail` to
+`runnable`. Seventeen corpus sources paid for it: a helper that fills a caller's
+storage now takes `&uniq MutSlice<u8>`, ten executable programs were migrated and
+kept their exit codes, and eight snapshot rows moved to `reject` because the
+shape they were written in is the one [CALL-5] makes conservative. Two forms the
+migration needed are not implemented and are named with their cost: a helper
+handed `&uniq MutSlice<'r, T>` cannot pass its destination on to a second helper,
+and one handed a view cannot form the shared child a `write_once` source needs,
+so the raw DEFLATE decoder's `out` chain keeps its old spelling and two
+diagnostics helpers hand their assembled length back instead of publishing it.
 
 v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
 or `ensures` operand be a measure of a place, so `ensures len_of(rest) >= len_of(out);`

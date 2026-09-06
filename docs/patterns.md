@@ -20,7 +20,11 @@ introduced by v0.45 (P16): a measured value carries the standing facts
 `len_of(P) + room_of(P) = cap_of(P)` with no writer statement, a write to a
 sibling field kills no measure, and it is those four `_of` spellings, not the
 four bare words a writer wants for a binding, that are reserved against every
-writer declaration — the contract-clause
+writer declaration — and the four call transports v0.45 also introduces (P16),
+which fix what a call kills from the callee's declared parameter and never from
+the argument's spelling or the callee's body, so a helper that fills a caller's
+storage takes a view and a call through a `&uniq` run costs its caller that
+run's measures — the contract-clause
 measure operands and the
 call datum introduced by v0.44 (P16, P21), the loop-body
 region block and the associative [ENT-6] join introduced by v0.43, the one canonical
@@ -628,31 +632,65 @@ larger than those two slots.
 
 ## P16. One length fact above the writes
 
-Problem: a program fills a buffer through `&uniq` callees and then hands a
-prefix of it to a call whose `requires` bounds that prefix by the buffer's
-length. The habit — and the reading of [ENT-5] an unguided writer forms in
-twenty minutes — is that the callee's write killed the length fact, so `let
-room = len_of(line);` has to be re-bound after every call that wrote through the
-borrow. The write did not kill it. Under v0.45 the support of a measure term
-over `P` is `P`'s **descriptor storage** [MSR-2] — the measure words the value
-carries — together with every holder a prefix of `P` reads through and the
-support of every offset in `P`. An element write overlaps the descriptor
-storage of the written element and none of `P`'s own, so it kills no measure of
-`P`, and the compiler honours that across a callee boundary. Only a write to
-`P`'s own descriptor storage or to a prefix of it — a fresh `buffer_new`, a
-`set` of the whole binding, a `replace` of `P` — kills it.
+Problem: a program fills storage through callees and then hands a prefix of it
+to a call whose `requires` bounds that prefix by the storage's length. The
+habit — and the reading of [ENT-5] an unguided writer forms in twenty minutes —
+is that the callee's write killed the length fact, so `let room =
+len_of(line);` has to be re-bound after every call that wrote through the
+borrow. Whether it did is decided by **the callee's declared parameter**, and by
+nothing else [CALL-5].
+
+Within one body the support of a measure term over `P` is `P`'s **descriptor
+storage** [MSR-2] — the measure words the value carries — together with every
+holder a prefix of `P` reads through and the support of every offset in `P`. An
+element write overlaps the descriptor storage of the written element and none of
+`P`'s own, so it kills no measure of `P`. Only a write to `P`'s own descriptor
+storage or to a prefix of it — a fresh `buffer_new`, a `set` of the whole
+binding, a `replace` of `P` — kills it.
+
+At a call the transports decide which of those two a projected callee write is:
+
+- a **shared borrow** `&'r T` of any type kills nothing at all [CALL-1];
+- a **view** parameter — `&uniq MutSlice<'r, T>`, or the range-bearing operand
+  of an [SYS-8] operation — writes the viewed range's element storage, so every
+  measure of the origin place and of the view survives it [CALL-3];
+- an **`own`** parameter consumes an affine or linear actual and duplicates a
+  copy one: a `Slice` handed at an `own` parameter leaves the caller's place and
+  its facts standing, which is what lets a view-taking helper be called in a
+  loop [CALL-2];
+- **every other `&uniq` parameter** — a `&uniq buffer<T>` among them — selects
+  no transport and kills the actual's descriptor storage, whatever the callee's
+  body does [CALL-5].
+
+So the helper that fills a caller's storage without costing it the length takes
+`destination: &uniq MutSlice<u8>`, and the caller forms the view:
+
+```whitefoot
+region {
+  let window = mut_slice_of(&uniq output);
+  region {
+    let written = fill(destination: &uniq window, value: 9_u8);
+  }
+  let still_known = len_of(window);
+}
+```
 
 **Correction, v0.45.** The pattern used to say the support was `P`'s *root
 binding*, and the compiler used to read it that way. That is a strictly larger
 support than [MSR-2] states, and it cost a real fact: a write to a **sibling
 field** of the same struct killed the measure of a field beside it, so
 `set frame.flags = 1_u64;` killed `len_of(frame.tail)`. Descriptor storage is the
-place itself, so a sibling-field write now kills neither, and the length fact
-survives a write to anything but the run's own descriptor. The compiler still
-classifies a projected callee write through a `&uniq buffer<T>` actual from the
-actual's shape rather than from what the callee does; that gap is tracked as
-the conformance case `ent5-neg-callee-uniq-buffer-replace-kills-length` and is
-not repaired here.
+place itself, so a sibling-field write now kills neither, and within one body
+the length fact survives a write to anything but the run's own descriptor.
+
+**Correction, v0.45 (B3).** This pattern used to say that a callee's write never
+killed a caller's length and that the compiler honoured that across a callee
+boundary. It honoured it by reading the *argument's spelling*, which is
+precisely the selector [CALL-5] removes: a callee that replaced the whole
+referent of its `&uniq buffer<u8>` parameter left its caller holding the length
+the buffer had before, which is the out-of-bounds heap read
+`ent5-neg-callee-uniq-buffer-replace-kills-length` records and which is no
+longer an `xfail`. The transport list above is what replaces the claim.
 
 Pattern: bind the length once, above the loop and above every write, and
 discharge every later requirement from that one binding.

@@ -2667,10 +2667,21 @@ falsifying its conclusion unless the release is a write.
 *Publishes:* the survival of every such fact. *Amends:* nothing. *Depends:* [OWN-5]
 585-611's shared-holder prohibition, the whole ground; [MSR-2]'s kill classification.
 *Verified today* for `&'a buffer<u8>`: probe `p6` keeps `len_of(line) = 10` across the call.
+*Landed at B3* (2026-09-06) as a specification rule, with
+`call1-pos-a-shared-borrow-keeps-every-fact` over a `&FixedVector<u8, n>` parameter.
 *Law:* L11. *History:* r6 F1-2.
 
 **[CALL-2] Through a value passed and returned, only the contract's facts exist on the
-result.** An `own` argument is a consuming use, so every fact whose support contains that
+result.**
+
+*Correction of 2026-09-06, found by B3's corpus migration:* the sentence below is true of
+an **affine or linear** actual and false of a **copy** one. A `Slice` handed at an `own`
+parameter is a duplicate, not a consume, so the caller's place and every fact supported by
+it survive and are available at the next call — which is what lets a view-taking helper be
+called twice, or in a loop. The rule as landed says so; this compiler already behaved that
+way, and `call2-pos-a-copy-actual-at-an-own-parameter-is-not-a-consume` pins it.
+
+An `own` argument is a consuming use, so every fact whose support contains that
 binding's root dies. The result is a fresh binding carrying exactly the callee's verified
 relations, and nothing else. Those relations may name the consumed parameter's measure,
 which denotes that call's **call datum** [MSR-3]: `len_of(rest) = len_of(out) + 1` means what it
@@ -2722,6 +2733,15 @@ view carries exactly the callee's verified relations, so a helper returning the 
 two views tells its caller nothing. The danger was never a view a callee returns; it was
 one a callee **installs**, and [BLK-4] refuses the parameter while [VIEW-4] refuses the
 local statement.
+
+*Correction of 2026-09-06, at B3:* the measured-element half of this rule has no program
+on today's surface. A view's element domain is the flat one [TYPE-2] gives it, so
+`MutSlice<Vector<'s, u8>>` stops as `SemanticUnsupported { CompositeValues }` at the view's
+element position, and for a flat element no fact lives in element storage at all. The rule
+landed stated over storage exactly as written here, so a widened element domain exercises
+the other half without amendment; the surviving half — `len_of(origin)` and `len_of(view)`
+across a fill — is what `call3-pos-a-fill-through-an-exclusive-view-keeps-both-lengths`
+pins.
 
 *Judgment:* the kill classification per parameter type, which is [MSR-2]'s judgment
 parameterized by [PROV-3]'s access classification. *Publishes:* the surviving measures.
@@ -2972,6 +2992,10 @@ selected kills conservatively. **Two rules of this design tested that sentence a
 satisfy it**: [RES-8]'s saturation fact is a **declared** clause, and [CALL-7]'s
 completeness obligation is a **declaration-site** check of a written contract against a
 body, exactly as [EFF-2] 1432 checks an effect row.
+
+*Landed at B3* (2026-09-06). [ENT-5]'s clause (b), [FN-9]'s entry-image sentence and
+[SYS-8] are amended in place, and the two `call5-neg-*` cases show that a bound borrow
+actual and an element-only body reach the same rejection the replacing body does.
 
 *Judgment:* the conservative default for every unselected parameter type. *Publishes:*
 the absence of a call-site-derived fact. *Amends:* [ENT-5] 2863-2967's clause (b) at 2876,
@@ -8075,6 +8099,78 @@ sources are modified with every recorded expectation unchanged. The recorded-ver
 snapshot corpus reports Pass=491, Flip=0 before and after, over three modified sources.
 Three executable-corpus programs take the view forms and keep their exit codes.
 
+### 6.0u B3 landed (v0.45)
+
+**A call's kill classification is read from the callee's declaration, and D1 is closed.**
+[CALL-1], [CALL-2], [CALL-3] and [CALL-5] are four added rules, 157 remain, and no
+grammar, spelling or record count moves. The defect they close is exactly the one the
+sweep of 2026-09-03 recorded: the compiler derived the element flag of a projected callee
+write from the *actual's* syntactic shape, so a callee that replaced the whole referent of
+its `&uniq buffer<u8>` parameter left its caller holding the length the buffer had before
+and indexed freed storage with it. `ent5-neg-callee-uniq-buffer-replace-kills-length`
+turns XPASS with the residual `9_u64 < len_of(line)` and moves from `xfail` to `runnable`.
+
+- **The selector is one value per declared parameter, computed once.** A `CallTransport` is
+  read from the declared mode and type — a `&'r` of any type is [CALL-1]'s shared borrow, a
+  loan-bearing type own or behind a borrow is [CALL-3]'s viewed range, an `own` is
+  [CALL-2]'s value, and every other `&uniq` selects none and kills conservatively. A system
+  operation and a kernel row have no body, so their declaration records are read the same
+  way: [SYS-8]'s range-bearing operand class is a viewed range at either member, which is
+  why no I/O program moved, and a row's `&uniq` state operand is a run or a provider whose
+  descriptor the row changes.
+- **[CALL-2]'s copy half is a correction this batch owes the entry above.** The 6.0
+  drafting said an `own` argument is a consuming use; the migration found that a `Slice`
+  handed at an `own` parameter twice must leave the caller's length standing between the
+  two calls, which is what lets a view-taking helper be called in a loop. [OWN-1] already
+  classifies the view as copy and this compiler already behaved correctly; the rule now
+  says so, and `call2-pos-a-copy-actual-at-an-own-parameter-is-not-a-consume` pins it.
+- **[CALL-3]'s measured-element half has no program on this surface, and that is a
+  capability and not a rule defect.** The design's §7 B3 asks for a callee writing through
+  `&uniq MutSlice<'r, Vector<'s, u8>>` to kill `len_of(origin[0])` while keeping
+  `len_of(origin)`. A view's element domain is the flat one [TYPE-2] gives it, so
+  `MutSlice<Vector<'s, u8>>` stops as `SemanticUnsupported { CompositeValues }` at the
+  view's element position — the smallest reproducer is that type written at one parameter.
+  For a flat element no fact of this document lives in element storage at all: a copy read
+  out of an element is an L0 fact about its own binding, and an element re-read carries no
+  fact either way, so the surviving half is the whole observable effect here. The rule
+  stays stated over storage so that a widened element domain exercises the other half
+  without amendment, and the compiler's classification is stated the same way.
+- **Two limits the corpus migration found, and neither weakens a rule.** First, **a helper
+  handed `&uniq MutSlice<'r, T>` cannot pass its destination on.** [OWN-6] admits the child
+  reborrow `&uniq deref(destination)`; this compiler refuses it in the semantic pass
+  (`borrow_addresses_storage` excludes a view referent) and, with that refusal lifted,
+  refuses it again in lowering, where an addressed reborrow of a descriptor has no
+  representation. The raw DEFLATE decoder's `out` chain is three helpers deep — `inflate`,
+  `decode_fixed`/`decode_dynamic`, `emit_byte`/`copy_distance` — so it keeps its
+  `&uniq buffer<u8>` spelling and `raw_deflate_vectors.wf` reads its destination's length
+  again after the call. Second, **a helper handed a view cannot form the shared child a
+  `write_once` source needs**, because [VIEW-2]'s viewable operand class is the storage and
+  not a view; `wfgrep`'s `report_failure` and the boundary driver's `publish_reason`
+  therefore became `assemble_failure` and `assemble_reason`, handing their length back for
+  the caller to publish. Both are the same missing form and belong with B8's already
+  DEFERRED view-holder reborrow; the hand-back is the shape [CALL-2] prescribes and it cost
+  those two programs one result each.
+- **A third, smaller finding.** A relation published on a call result reaches a `let`
+  binder and not a `set` target: `set assembled = helper(...)` lost `result <= capacity`
+  where `let assembled = helper(...)` keeps it. The migrated callers bind rather than
+  assign. [ENT-3.S12]'s destination list names both, so this is a compiler gap.
+
+**What the corpus paid.** Seventeen sources lost a caller's measure at a call. Ten
+executable programs were migrated to the view — `dir_walk`, `grayscale_pixels`,
+`par_layout`, `percent_decode`, `raw_deflate_boundary`, `raw_deflate_dynamic_decode`,
+`raw_deflate_vectors`, `telemetry_packet`, `utf8parse` and `wfgrep` — each keeping its
+exit code, and three conformance case sources followed with their expectations unchanged.
+Eight snapshot rows moved from `accept` to `reject`: they hand a `&uniq buffer<u8>` to a
+helper, which is the shape [CALL-5] makes conservative, and the sweep programs themselves
+are unchanged as that corpus's model requires.
+
+**Verdicts.** The adapter moves from Pass=689 over 693 cases to Pass=697 over 700, no
+xfail remaining and the three skips unchanged in id, expectation and status, with coverage
+complete at 157/157. Seven cases are added, one status changes, three case sources are
+modified with every recorded expectation unchanged, and none is deleted or renamed. The
+recorded-verdict snapshot corpus reports Pass=491, Flip=0 before and after, over eight
+moved verdicts and no modified source.
+
 ### 6.1 What the compiler did in this session
 
 ```text
@@ -8670,6 +8766,16 @@ writing through a `MutSlice<'r, Vector<u8>>` killing `len_of(origin[0])` and kee
 corrected in the same change. **This batch flips a conformance case from `xfail`, which
 is conformance evidence; the disposition is recorded in `governance/APPROVALS.md` with
 the merge**, as B7's supersession is.
+
+*Corrections of 2026-09-06, at the landing.* The `MutSlice<'r, Vector<u8>>` test is not
+writable on this surface — a view's element domain is flat, so that type stops as an
+explicit unsupported capability — and 6.0u records it as a capability finding rather than
+a weakened rule. The migration added two tests this entry did not ask for: a `Slice` handed
+twice at an `own` parameter, which is [CALL-2]'s copy half, and the fill-and-publish helper
+of B8, which is [CALL-3]'s positive. Probe `q8`'s program is the same program as the
+conformance case and is not added a second time. The claim that this batch "needs none of
+the new types" is **false as stated and true as landed**: the seventeen corpus sources that
+lose a caller's measure need the writable view B8 landed, which is why B3 runs after it.
 
 **B4. Liveness and one commit rule.** Rules: [LIV-1], [LIV-2]. Tests: **probe `q9`'s
 program accepted**, and the same at a `deref`, a field and a subscript; a `set` whose two

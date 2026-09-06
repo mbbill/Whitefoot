@@ -454,7 +454,25 @@ different storages — so `grid[k]` and `grid[i][j]` are decided at `k` against
 and its element read-out both read. [MSR-2]'s granularity is that relation
 rather than a flag: an element write carries the element's own place, so it
 kills every measure of `P[i]` and no measure of `P`, and a whole-value write of
-`P` kills both. A subscript inside a measured place owes [OP-4]'s obligation
+`P` kills both.
+
+**Which of the two a projected callee write is comes from the callee's
+declaration** [CALL-5]. One `CallTransport` is computed per declared parameter
+from its declared mode and type and is the same at every call site: a `&'r`
+parameter of any type is [CALL-1]'s shared borrow and the call kills nothing
+through it, a parameter of view type own or behind a borrow is [CALL-3]'s viewed
+range and the write reaches element storage only, an `own` parameter is
+[CALL-2]'s value, and every other `&uniq` selects none and kills the actual's
+descriptor storage. A callee with no body is read the same way from its own
+record: [SYS-8]'s range-bearing operand class is a viewed range at either of its
+members, which is why the I/O corpus keeps its lengths across a `read_at`
+whether it supplies a `MutSlice<u8>` or the transitional `buffer<u8>`, and a
+kernel row's `&uniq` state operand is a run or a provider whose descriptor the
+row changes. The argument expression's shape is read for the *place* a write
+reaches and never for how far into it that write goes; deriving the latter from
+the former was the unsound accept
+`ent5-neg-callee-uniq-buffer-replace-kills-length` recorded, and that case now
+runs. A subscript inside a measured place owes [OP-4]'s obligation
 against the prefix that reaches its base, submitted where the place is formed,
 and the lowering projects a measured place step by step — a field selection is
 the ordinary struct projection and a subscript is [BLK-1]'s element read — so a
