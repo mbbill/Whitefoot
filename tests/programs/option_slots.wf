@@ -1,125 +1,154 @@
 struct OptVec {
-  buf: buffer<Option<u32>>;
+  buf: FixedVector<Option<u32>, 4>;
   fill: u64;
 }
 
-fn optvec_new(capacity: own u64) -> result: own OptVec pure contract {
-  requires buffer_fits::<Option<u32>>(capacity);
-  requires capacity <= 1000_u64;
+fn vacant<T: affine, const n: u64>() -> result: own FixedVector<Option<T>, n> pure contract {
+  ensures len_of(result) >= n;
+  ensures room_of(result) <= 0_u64;
+  ensures head_of(result) <= 0_u64;
 } {
-  let empty = buffer_vacant::<u32>(capacity);
+  doc "Builds a run of n slots, every one holding None.";
+  let built = fixed_vector::<Option<T>, n>();
+  for @fill (
+    at in 0_u64..n,
+    invariant grown: len_of(built) >= at,
+    invariant spare: room_of(built) + at >= n,
+    invariant flat: head_of(built) <= 0_u64
+  ) {
+    let empty = None<T>();
+    set built = place_back(vector: move built, value: move empty);
+  }
+  return move built;
+}
+
+fn optvec_new() -> result: own OptVec pure {
+  let empty = vacant::<u32, 4>();
   return OptVec(buf: move empty, fill: 0_u64);
 }
 
-fn optvec_push(v: &uniq OptVec, x: own u32) -> result: own unit reads(v.buf, v.fill), writes(v.buf, v.fill) {
-  let count = deref(v).fill;
-  let limit = len_of(deref(v).buf);
+fn optvec_push(v: own OptVec, x: own u32) -> result: own OptVec reads(v.buf, v.fill), writes(v.buf, v.fill) {
+  doc "A run may not be lent uniquely [BLK-4], so the container is taken by value and handed back.";
+  let count = v.fill;
+  let limit = len_of(v.buf);
   let has_room = count < limit;
   if has_room {
   } else {
-    return unit;
+    return move v;
   }
   let filled = Some<u32>(value: x);
-  let displaced = replace deref(v).buf[count] = move filled;
+  let displaced = replace v.buf[count] = move filled;
   match displaced {
     None() => {
     }
     Some(value: stray) => {
-      return unit;
+      return move v;
     }
   }
   let bumped = count + 1_u64;
-  set deref(v).fill = bumped;
-  return unit;
+  set v.fill = bumped;
+  return move v;
 }
 
-fn optvec_pop(v: &uniq OptVec) -> result: own u32 reads(v.buf, v.fill), writes(v.buf, v.fill) {
-  let count = deref(v).fill;
+fn optvec_pop(v: own OptVec) -> (rest: own OptVec, taken: own u32) reads(v.buf, v.fill), writes(v.buf, v.fill) {
+  doc "The same hand-back, with the removed element beside the container.";
+  let count = v.fill;
   let nonempty = count > 0_u64;
   if nonempty {
   } else {
-    return 0_u32;
+    return move v, 0_u32;
   }
   let last = count - 1_u64;
-  let limit = len_of(deref(v).buf);
+  let limit = len_of(v.buf);
   let in_range = last < limit;
   if in_range {
   } else {
-    return 0_u32;
+    return move v, 0_u32;
   }
-  let taken = replace deref(v).buf[last] = None<u32>();
-  set deref(v).fill = last;
-  match taken {
+  let removed = replace v.buf[last] = None<u32>();
+  set v.fill = last;
+  match removed {
     None() => {
-      return 0_u32;
+      return move v, 0_u32;
     }
     Some(value: w) => {
-      return w;
+      return move v, w;
     }
   }
 }
 
-fn boxed_slots() -> result: own unit pure {
-  let slots = buffer_vacant::<box<u64>>(3_u64);
-  let first = box_new(11_u64);
-  let wrapped = Some<box<u64>>(value: move first);
-  let vacant = replace slots[0_u64] = move wrapped;
-  match vacant {
-    None() => {
-    }
-    Some(value: stray) => {
-      return unit;
-    }
-  }
-  let second = box_new(22_u64);
-  let wrapped2 = Some<box<u64>>(value: move second);
-  let vacant2 = replace slots[2_u64] = move wrapped2;
-  match vacant2 {
-    None() => {
-    }
-    Some(value: stray2) => {
-      return unit;
-    }
-  }
-  let taken = replace slots[0_u64] = None<box<u64>>();
-  match taken {
-    None() => {
-      return unit;
-    }
-    Some(value: payload) => {
-      let observed = deref(payload);
-      if observed == 11_u64 {
-      } else {
+fn boxed_slots(store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+  doc "A run of optional cells at the general store: each slot holds a Box the store hands out, and each exchange leaves exactly one owner.";
+  let slots = vacant::<Box<u64>, 3>();
+  region {
+    match heap_box(store: &uniq deref(store), value: 11_u64) {
+      Err(error: refused_first) => {
         return unit;
+      }
+      Ok(value: first) => {
+        let wrapped = Some<Box<u64>>(value: move first);
+        let vacant_zero = replace slots[0_u64] = move wrapped;
+        match vacant_zero {
+          None() => {
+          }
+          Some(value: stray) => {
+            return unit;
+          }
+        }
+        region {
+          match heap_box(store: &uniq deref(store), value: 22_u64) {
+            Err(error: refused_second) => {
+              return unit;
+            }
+            Ok(value: second) => {
+              let wrapped2 = Some<Box<u64>>(value: move second);
+              let vacant_two = replace slots[2_u64] = move wrapped2;
+              match vacant_two {
+                None() => {
+                }
+                Some(value: stray2) => {
+                  return unit;
+                }
+              }
+              let taken = replace slots[0_u64] = None<Box<u64>>();
+              match taken {
+                None() => {
+                  return unit;
+                }
+                Some(value: payload) => {
+                  let observed = deref(payload);
+                  if observed == 11_u64 {
+                  } else {
+                    return unit;
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   }
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
-  let v = optvec_new(capacity: 4_u64);
-  region {
-    optvec_push(v: &uniq v, x: 10_u32);
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let v = optvec_new();
+  set v = optvec_push(v: move v, x: 10_u32);
+  set v = optvec_push(v: move v, x: 20_u32);
+  set v = optvec_push(v: move v, x: 30_u32);
+  let (rest, top) = optvec_pop(v: move v);
+  if top == 30_u32 {
+  } else {
+    return exit_status(code: 1_u8);
   }
-  region {
-    optvec_push(v: &uniq v, x: 20_u32);
-  }
-  region {
-    optvec_push(v: &uniq v, x: 30_u32);
-  }
-  region {
-    let top = optvec_pop(v: &uniq v);
-    if top == 30_u32 {
-    } else {
-      return exit_status(code: 1_u8);
-    }
-  }
-  let remaining = v.fill;
+  let remaining = rest.fill;
   if remaining == 2_u64 {
   } else {
     return exit_status(code: 1_u8);
   }
-  boxed_slots();
+  region {
+    boxed_slots(store: &uniq heap);
+  }
   return exit_status(code: 0_u8);
 }

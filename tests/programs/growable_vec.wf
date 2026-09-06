@@ -1,136 +1,193 @@
-struct ByteVec {
-  buf: buffer<u8>;
-  fill: u64;
+const appended_bytes: FixedVector<u8, 5> =[33_u8, 33_u8, 33_u8, 33_u8, 33_u8];
+
+enum Grown {
+  Grew(value: Vector<u8>);
+  Refused(value: Vector<u8>);
 }
 
-fn vec_new() -> result: own ByteVec pure {
-  let empty = buffer_new(0_u64, 0_u8);
-  return ByteVec(buf: move empty, fill: 0_u64);
+fn bs_new(heap: &uniq Heap) -> made: own Option<Vector<u8>> reads(heap), writes(heap), allocates(heap) {
+  doc "Builds one empty byte string over a zero-length backing run.";
+  region {
+    return heap_vector::<u8>(store: &uniq deref(heap), count: 0_u64);
+  }
 }
 
-fn vec_push(v: &uniq ByteVec, x: own u8) -> result: own Result<unit, Overflow> reads(v.buf, v.fill), writes(v.buf, v.fill) {
-  let count = deref(v).fill;
-  let limit = len_of(deref(v).buf);
-  let full = count >= limit;
-  if full {
-    let growth_fits = limit <= 1000_u64;
-    if growth_fits {
-    } else {
-      let overflow = Overflow();
-      return Err<unit, Overflow>(error: overflow);
+fn bs_reserve(s: own Vector<u8>, heap: &uniq Heap, total: own u64) -> grown: own Grown reads(s, heap), writes(s, heap), allocates(heap) contract {
+  requires total >= len_of(s);
+} {
+  doc "Grows the backing run to total slots, preserving element order, or reports that the store refused. Growth is the drain-front, append-back walk the growth policy fixes, and the superseded run is disposed before the new one is handed back, which is the difference between a peak of count + total slots and a peak of total. The four measures the policy publishes on the Grew arm are not written here: a variant-routed measure clause is a deferred contract route, so the caller reads them back instead.";
+  let count = len_of(s);
+  region {
+    match heap_vector::<u8>(store: &uniq deref(heap), count: total) {
+      None() => {
+        return Refused(value: move s);
+      }
+      Some(value: fresh) => {
+        let built = move fresh;
+        for @move (
+          at in 0_u64..count,
+          invariant left: len_of(s) + at >= count,
+          invariant gone: len_of(s) + at <= count,
+          invariant made_lo: len_of(built) >= at,
+          invariant made_hi: len_of(built) <= at,
+          invariant spare_lo: room_of(built) + at >= total,
+          invariant spare_hi: room_of(built) + at <= total,
+          invariant flat: head_of(built) <= 0_u64
+        ) {
+          set (s, byte) = take_front(vector: move s);
+          set built = place_back(vector: move built, value: byte);
+        }
+        dispose s;
+        return Grew(value: move built);
+      }
     }
-    match limit +checked 8_u64 {
-      Ok(value: ncap) => {
-        let nbuf = buffer_new(ncap, x);
-        if limit < ncap {
+  }
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "The growth policy exercised twice: one string grown to twenty-four slots and filled with twenty bytes, and one grown to eight and filled from a const run.";
+  region {
+    match bs_new(heap: &uniq heap) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let s = move fresh;
+        let start_length = len_of(s);
+        if 24_u64 >= start_length {
         } else {
-          let overflow = Overflow();
-          return Err<unit, Overflow>(error: overflow);
-        }
-        for @copy (i in 0_u64..limit) {
-          let e = deref(v).buf[i];
-          set nbuf[i] = e;
-        }
-        let old = replace deref(v).buf = move nbuf;
-        let grown = propagate limit +checked 1_u64;
-        set deref(v).fill = grown;
-        return Ok<unit, Overflow>(value: unit);
-      }
-      Err(error: overflow) => {
-        return Err<unit, Overflow>(error: overflow);
-      }
-    }
-  }
-  set deref(v).buf[count] = x;
-  let bumped = propagate count +checked 1_u64;
-  set deref(v).fill = bumped;
-  return Ok<unit, Overflow>(value: unit);
-}
-
-fn bytes_append(dst: &uniq ByteVec, src: &buffer<u8>) -> result: own Result<unit, Overflow> reads(dst.buf, dst.fill, src), writes(dst.buf, dst.fill) {
-  let count = len_of(deref(src));
-  for @append (i in 0_u64..count) {
-    let byte = deref(src)[i];
-    region {
-      let pushed = propagate vec_push(v: &uniq deref(dst), x: byte);
-    }
-  }
-  return Ok<unit, Overflow>(value: unit);
-}
-
-command fn main() -> status: own ExitStatus pure {
-  let v = vec_new();
-  let b = 7_u8;
-  for @seed (i in 0_u64..20_u64) {
-    region {
-      match vec_push(v: &uniq v, x: b) {
-        Ok(value: pushed) => {
-        }
-        Err(error: overflow) => {
           return exit_status(code: 1_u8);
         }
+        region {
+          match bs_reserve(s: move s, heap: &uniq heap, total: 24_u64) {
+            Refused(value: refused) => {
+              return exit_status(code: 71_u8);
+            }
+            Grew(value: ready) => {
+              let grown = move ready;
+              let opening = len_of(grown);
+              let spare = room_of(grown);
+              let flat = head_of(grown);
+              if opening == 0_u64 {
+              } else {
+                return exit_status(code: 1_u8);
+              }
+              if spare >= 24_u64 {
+              } else {
+                return exit_status(code: 1_u8);
+              }
+              if flat == 0_u64 {
+              } else {
+                return exit_status(code: 1_u8);
+              }
+              let b = 7_u8;
+              for @seed (
+                at in 0_u64..20_u64,
+                invariant grown_lo: len_of(grown) >= at,
+                invariant grown_hi: len_of(grown) <= at,
+                invariant spare_left: room_of(grown) + at >= 24_u64,
+                invariant flat_run: head_of(grown) <= 0_u64
+              ) {
+                set grown = place_back(vector: move grown, value: b);
+                set b = b +wrap 7_u8;
+              }
+              let total = len_of(grown);
+              if total == 20_u64 {
+              } else {
+                return exit_status(code: 1_u8);
+              }
+              let cap_now = cap_of(grown);
+              if cap_now == 24_u64 {
+              } else {
+                return exit_status(code: 1_u8);
+              }
+              if 3_u64 < total {
+                let third = grown[3_u64];
+                if third == 28_u8 {
+                } else {
+                  return exit_status(code: 1_u8);
+                }
+              } else {
+                return exit_status(code: 1_u8);
+              }
+            }
+          }
+        }
       }
     }
-    set b = b +wrap 7_u8;
   }
-  let total = v.fill;
-  if total == 20_u64 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  let cap_now = len_of(v.buf);
-  if cap_now == 24_u64 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if 3_u64 < cap_now {
-    let third = v.buf[3_u64];
-    if third == 28_u8 {
-    } else {
-      return exit_status(code: 1_u8);
-    }
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  let s = vec_new();
   region {
-    match vec_push(v: &uniq s, x: 65_u8) {
-      Ok(value: pushed) => {
+    match bs_new(heap: &uniq heap) {
+      None() => {
+        return exit_status(code: 70_u8);
       }
-      Err(error: overflow) => {
-        return exit_status(code: 1_u8);
+      Some(value: second_fresh) => {
+        let s = move second_fresh;
+        let second_start_length = len_of(s);
+        if 8_u64 >= second_start_length {
+        } else {
+          return exit_status(code: 1_u8);
+        }
+        region {
+          match bs_reserve(s: move s, heap: &uniq heap, total: 8_u64) {
+            Refused(value: second_refused) => {
+              return exit_status(code: 71_u8);
+            }
+            Grew(value: second_ready) => {
+              let held = move second_ready;
+              let opening = len_of(held);
+              let spare = room_of(held);
+              let flat = head_of(held);
+              if opening == 0_u64 {
+              } else {
+                return exit_status(code: 1_u8);
+              }
+              if spare >= 8_u64 {
+              } else {
+                return exit_status(code: 1_u8);
+              }
+              if flat == 0_u64 {
+              } else {
+                return exit_status(code: 1_u8);
+              }
+              set held = place_back(vector: move held, value: 65_u8);
+              region {
+                let source = slice_of(&appended_bytes);
+                for @append (
+                  at in 0_u64..5_u64,
+                  invariant held_lo: len_of(held) >= at + 1_u64,
+                  invariant held_hi: len_of(held) <= at + 1_u64,
+                  invariant spare_left: room_of(held) + at + 1_u64 >= 8_u64,
+                  invariant flat_run: head_of(held) <= 0_u64
+                ) {
+                  let byte = source[at];
+                  set held = place_back(vector: move held, value: byte);
+                }
+              }
+              let stored = len_of(held);
+              if stored == 6_u64 {
+              } else {
+                return exit_status(code: 1_u8);
+              }
+              if 5_u64 < stored {
+                let last = held[5_u64];
+                if last == 33_u8 {
+                } else {
+                  return exit_status(code: 1_u8);
+                }
+                let front = held[0_u64];
+                if front == 65_u8 {
+                } else {
+                  return exit_status(code: 1_u8);
+                }
+              } else {
+                return exit_status(code: 1_u8);
+              }
+            }
+          }
+        }
       }
     }
-  }
-  let raw = buffer_new(5_u64, 33_u8);
-  region {
-    match bytes_append(dst: &uniq s, src: &raw) {
-      Ok(value: appended) => {
-      }
-      Err(error: overflow) => {
-        return exit_status(code: 1_u8);
-      }
-    }
-  }
-  let stored = s.fill;
-  if stored == 6_u64 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  let scap = len_of(s.buf);
-  if 5_u64 < scap {
-    let last = s.buf[5_u64];
-    if last == 33_u8 {
-    } else {
-      return exit_status(code: 1_u8);
-    }
-    let front = s.buf[0_u64];
-    if front == 65_u8 {
-    } else {
-      return exit_status(code: 1_u8);
-    }
-  } else {
-    return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
 }
