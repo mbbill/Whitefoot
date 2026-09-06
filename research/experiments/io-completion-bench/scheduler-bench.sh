@@ -10,6 +10,8 @@ OUT=${OUT:-${WHITEFOOT_SCRATCH_ROOT:-$HOME/do_not_scan}/whitefoot-scheduler-expe
 CLANG=${CLANG:-/usr/bin/clang}
 BACKEND=$ROOT/compiler/src/backend
 MODE=${1:-bench}
+profile_active=0
+PROFILE_PERF=${PROFILE_PERF:-perf}
 ROUNDS=${ROUNDS:-7}
 WARMUP=${WARMUP:-2}
 EXPERIMENT=${EXPERIMENT:-idle}
@@ -68,8 +70,12 @@ if [[ $MODE == check ]]; then
     fi
     exit 0
 fi
-if [[ $MODE != bench || $(uname -s) != Linux ]]; then
-    echo 'scheduler-bench: use check on POSIX, or bench on Linux with io_uring' >&2
+if [[ ( $MODE != bench && $MODE != profile ) || $(uname -s) != Linux ]]; then
+    echo 'scheduler-bench: use check on POSIX, or bench/profile on Linux with io_uring' >&2
+    exit 2
+fi
+if [[ $MODE == profile && $EXPERIMENT != coroutine-paced ]]; then
+    echo 'scheduler-bench: profile uses the qualified coroutine-paced workload' >&2
     exit 2
 fi
 [[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == footprint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical || $EXPERIMENT == stackful || $EXPERIMENT == stackful-paced || $EXPERIMENT == nodelay || $EXPERIMENT == owner || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced || $EXPERIMENT == memory || $EXPERIMENT == dispatch || $EXPERIMENT == wake || $EXPERIMENT == service || $storage_experiment == 1 || $coroutine_experiment == 1 ]] || exit 2
@@ -181,7 +187,14 @@ fi
     "$CLANG" --version
     if [[ $coroutine_experiment == 1 ]]; then "$CORO_CXX" --version; fi
     lscpu
-    echo "experiment=$EXPERIMENT rounds=$ROUNDS warmup=$WARMUP"
+    echo "experiment=$EXPERIMENT mode=$MODE rounds=$ROUNDS warmup=$WARMUP"
+    if [[ $MODE == profile ]]; then
+        "$PROFILE_PERF" --version
+        echo 'profile=cpu-clock frequency=999; whole server lifetime, inherited threads, no callchain; not an unprofiled timing panel'
+        for setting in perf_event_paranoid kptr_restrict; do
+            printf '%s=' "$setting"; cat "/proc/sys/kernel/$setting"
+        done
+    fi
     if [[ $storage_experiment == 1 ]]; then
         echo "page_bytes=$(getconf PAGESIZE)"
         getconf GNU_LIBC_VERSION
@@ -568,7 +581,7 @@ field() {
 sample=0
 network_case() {
     local form=$1 connections=$2 trips=$3 bytes=$4 pass=$5 observed=$6
-    local binary environment=() arguments=() launcher=() directory port
+    local binary environment=() arguments=() launcher=() directory port server_stderr
     sample=$((sample + 1))
     directory="$OUT/samples/$sample-$cohort-$form-k$connections-b$bytes-r$compute_rounds-a$admitted-d$duration_ms-l${light_per_second:-0}"
     if [[ $observed == 1 ]]; then directory="$OUT/observed/$cohort-$form-k$connections-a$admitted"; fi
@@ -613,15 +626,23 @@ network_case() {
         environment+=("WF_BENCH_THP_DISABLE=$disabled")
         launcher=("$OUT/bin/stream_check" launch)
     fi
+    server_stderr="$directory/server.err"
+    if [[ $profile_active == 1 ]]; then
+        # Keep recorder diagnostics separate from the server's strict stderr
+        # check. The wrapper execs the same normal binary without recompiling.
+        launcher=("$PROFILE_PERF" record -e cpu-clock -F 999 -o "$directory/perf.data" --
+            "$OUT/bin/profile-server" "$server_stderr")
+        server_stderr="$directory/perf-record.err"
+    fi
     echo "sample=$sample pass=$pass cohort=$cohort form=$form connections=$connections compute=$compute_rounds observed=$observed admitted=$admitted"
     setsid timeout --signal=TERM --kill-after=5s 120s \
         /usr/bin/time -f '%U\t%S\t%M\t%w\t%c' -o "$directory/resources.tsv" taskset -c "$server_cpus" \
         env "${environment[@]}" "${launcher[@]}" "$binary" "$port" "$connections" "${arguments[@]}" \
-        > "$directory/server.out" 2> "$directory/server.err" &
+        > "$directory/server.out" 2> "$server_stderr" &
     server_pid=$!
     while ! port_present "$port" 1; do
         if ! kill -0 "$server_pid" 2>/dev/null; then
-            cat "$directory/server.err" >&2
+            cat "$directory/server.err" "$server_stderr" >&2
             echo "scheduler-bench: $form exited before listening" >&2
             return 1
         fi
@@ -636,10 +657,17 @@ network_case() {
         /usr/bin/time -f '%U\t%S\t%M\t%w\t%c' -o "$directory/client-resources.tsv" taskset -c "$client_cpus" \
         "$OUT/bin/netload" "$port" "$connections" "$trips" "$bytes" --threads "$client_workers" "${client_arguments[@]}" \
         > "$directory/client.tsv" 2> "$directory/client.err"
-    if ! wait "$server_pid"; then cat "$directory/server.err" >&2; return 1; fi
+    if ! wait "$server_pid"; then cat "$directory/server.err" "$server_stderr" >&2; return 1; fi
     server_pid=''
     [[ ! -s $directory/server.out && ! -s $directory/client.err ]]
     if [[ $observed == 0 ]]; then [[ ! -s $directory/server.err ]]; fi
+    if [[ $profile_active == 1 ]]; then
+        "$PROFILE_PERF" report --stdio --header --show-nr-samples --no-children \
+            --sort comm,dso,symbol -i "$directory/perf.data" > "$directory/perf-report.txt" 2> "$directory/perf-report.err"
+        "$PROFILE_PERF" script -i "$directory/perf.data" \
+            -F comm,pid,tid,time,event,ip,sym,dso,period > "$directory/perf-samples.txt" 2> "$directory/perf-script.err"
+        [[ -s $directory/perf-samples.txt ]]
+    fi
     if [[ $pass -ge 0 ]]; then
         printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
             "$pass" "$form" "$connections" "$bytes" "$trips" \
@@ -930,6 +958,23 @@ if [[ $EXPERIMENT == canonical || $EXPERIMENT == stackful-paced || $EXPERIMENT =
     awk '$4==0 || ($4==2097152 && $5>=100)' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
     mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
 fi
+if [[ $MODE == profile ]]; then
+    # All protocol/observer qualification above stays enabled. Attribute the
+    # measured WF gap against native C manual and compact C++ continuations.
+    profile_active=1
+    forward=(base chbalanced16384 q16384 cpp-elide)
+    reverse=(cpp-elide q16384 chbalanced16384 base)
+    cp "$OUT/bin/echo-base" "$OUT/bin/echo-chbalanced16384" \
+        "$OUT/bin/epoll_quantum" "$OUT/bin/cpp-elide" "$OUT/codegen/"
+    cat > "$OUT/bin/profile-server" <<'PROFILE_SERVER'
+#!/usr/bin/env bash
+set -euo pipefail
+diagnostics=$1
+shift
+exec "$@" 2> "$diagnostics"
+PROFILE_SERVER
+    chmod +x "$OUT/bin/profile-server"
+fi
 for ((pass=-WARMUP; pass<ROUNDS; pass++)); do
     order=("${forward[@]}")
     if (( (pass + WARMUP) % 2 )); then order=("${reverse[@]}"); fi
@@ -1019,3 +1064,7 @@ awk -F '\t' '
     }' "$OUT/network.tsv" > "$OUT/network-summary.txt"
 cat "$OUT/network-summary.txt"
 for program in "${cpu_programs[@]}"; do cat "$OUT/$program.txt"; done
+if [[ $MODE == profile ]]; then
+    mv "$OUT/network.tsv" "$OUT/profile.tsv"
+    mv "$OUT/network-summary.txt" "$OUT/profile-summary.txt"
+fi

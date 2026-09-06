@@ -3081,7 +3081,7 @@ the usual C compiler, while the new C++ checks require a compiler supporting
 the elision attribute (clang++-20 is selected when installed). Timed and
 observed binaries are separate, their optimized LLVM is retained, the original
 three C manual LLVM comparisons remain mandatory, and THP controls are
-recorded without changing them. Native Linux timing remains pending.
+recorded without changing them. Native Linux results follow below.
 
 This is evidence for a compact sequential implementation candidate, not a
 selected WF lowering. The C++ control explicitly uses coroutine types and
@@ -3119,7 +3119,96 @@ passes all fourteen Linux/macOS jobs. Linux scheduler job `101575057169`
 passes the original C stream cases, all 48 C++ cases and both nested-frame
 sanitizer probes (2048/2048 heap allocations/frees; 1024/1024 elided ones).
 Native-host and Windows placement checks also pass. Echo and paced timing
-jobs are still running; qualification success is not a performance result.
+jobs subsequently complete; their independently checked results follow.
+
+### Native coroutine results
+
+Revision `2de6c000` completes 910 echo rows in Linux job `101575042832`,
+[artifact 9999338615](https://github.com/mbbill/Whitefoot/actions/runs/34066113672/artifacts/9999338615),
+on an EPYC 9V74, four logical CPUs on two SMT cores, Linux 6.17 and clang
+20.1.2. All ten workload/placement cells contain thirteen forms and seven
+distinct passes. Independent analysis checks exact exchange counts, retained
+client outputs, and all three unchanged C manual LLVM comparisons. The
+native checks pass all 32 C and 48 C++ stream cases plus both sanitizer probes.
+
+Elision is real on Linux too. The four-peer echo preflight changes 84 heap
+allocations/frees (8576 bytes cumulatively) to four roots (672 bytes). Normal
+LLVM uses a 64-byte heap root with a 104-byte child allocation per send, versus
+one 168-byte root with the child contained inside it. The quantum preflight
+changes 168 allocations/frees (14016 bytes) to four 248-byte roots (992 bytes).
+These are frame allocation counts, separate from receive buffers and libc's
+physical page decisions.
+
+Peak RSS at 1024 small-packet peers shows the representation's memory value:
+
+| Placement / receive storage | C++ manual KiB | C++ stackful KiB | C++ elided KiB | Paired elided/stackful RSS |
+| --- | ---: | ---: | ---: | ---: |
+| split1 / shared scratch | 4096 | 7904 | 4364 | 0.5521 (0.5506..0.5541) |
+| split2 / shared scratch | 4240 | 7792 | 4340 | 0.5487 (0.5362..0.5633) |
+| split1 / private calloc | 12012 | 16096 | 12256 | 0.7614 (0.7566..0.7632) |
+| split2 / private calloc | 12024 | 16124 | 12256 | 0.7551 (0.7539..0.7632) |
+
+The roughly four-MiB difference is consistent with about one resident stack
+page per connection; these are peak measurements, separate from WF's much
+larger caller heap. C++ manual itself has a higher
+baseline RSS than the C manual executable; comparing the C++ forms within
+one link environment avoids assigning that baseline to coroutine frames.
+THP is permitted and global policy is always, so these peak values do not
+replace the separately controlled live-mapping experiment.
+
+There is no stable overall throughput winner among the native representations.
+Every elided/manual and elided/stackful paired throughput range crosses one
+in this echo panel, for both storage forms. Most split1 medians are close to
+parity. Split2/four-peer samples vary widely even between C and C++ manual
+controls; a large median there is not a reliable representation effect.
+At split2/1024 shared scratch, elided/stackful CPU per exchange improves in
+every pass, median 0.9885 (0.9500..0.9943), while the rate range still crosses
+parity. At split2/large private calloc, elided/manual p99 improves every pass,
+0.9046 (0.5593..0.9972); stackful/manual also improves every p99 pair there,
+so that observation does not uniquely select coroutine lowering.
+
+WF small remains behind the compact private-calloc reference at split2/1024:
+paired rate 0.9012 (0.8182..0.9614), CPU/exchange 1.0989
+(1.0743..1.1908), and RSS 5.0607 (4.8944..5.4126). All rate and CPU pairs
+lose. At split2/64-KiB transfers every rate pair loses, 0.8393
+(0.8189..0.8854), and every p99 pair worsens, 1.2691 (1.2365..1.3650).
+Split1 is different: WF small wins every 64-peer small-packet rate pair
+(1.0113 median) and every large-packet rate pair (1.0604), without uniformly
+winning tails. Existing compute/file controls reproduce the smaller runtime's
+startup savings, roughly 11..18 ms for compute and 16..21 ms for file/compute;
+they do not measure a coroutine WF backend.
+
+The paced job `101575042677` completes 336 rows,
+[artifact 9999215441](https://github.com/mbbill/Whitefoot/actions/runs/34066113672/artifacts/9999215441),
+on a different host: Xeon 8573C, four logical CPUs on two SMT cores, Linux
+6.17 and clang 20.1.2. All six cells contain eight forms and seven passes;
+deadline counts, raw clients and the C LLVM controls independently check.
+Its ratios are formed only within that job.
+
+| Placement / compute rounds / light arrivals per peer/s | Native elided light p99 us | WF balanced chunks p99 us | Paired WF/native p99 | Paired WF/native heavy capacity |
+| --- | ---: | ---: | ---: | ---: |
+| split1 / 0 / 100 | 152 | 196 | 1.2973 (1.1316..1.4354) | 0.9647 (0.9534..0.9750) |
+| split2 / 0 / 100 | 105 | 1885 | 19.1619 (3.6040..132.6667) | 0.8772 (0.8378..0.9482) |
+| split1 / 2097152 / 100 | 847 | 1017 | 1.1797 (1.0841..1.2353) | 1.0000 (1.0000..1.0000) |
+| split2 / 2097152 / 100 | 673 | 1371 | 2.0876 (1.6835..5.0129) | 0.9825 (0.9782..1.0044) |
+| split1 / 2097152 / 500 | 844 | 924 | 1.0922 (1.0012..2.2655) | 0.9231 (0.9231..0.9846) |
+| split2 / 2097152 / 500 | 647 | 1169 | 1.7761 (1.0970..6.1543) | 0.9903 (0.9784..1.0048) |
+
+All six WF balanced/native light-tail comparisons lose every pass. The
+zero-compute split2 rate ratio is 0.8791 (0.8403..0.9490) and CPU/exchange
+is 1.1432 (1.0644..1.1900). For long compute at split1/500, total rate can
+look better while every heavy-capacity pair loses; that remains a tradeoff,
+not a throughput win. Unchunked WF still delays light requests by hundreds
+of milliseconds under long compute. Among native manual, stackful and both
+coroutine forms, every elided/manual and elided/stackful rate range crosses
+parity; their long-compute deadline capacities are generally close. Removing
+child allocations is not the missing mixed-load service policy.
+
+The evidence supports compact sequential continuations as a memory candidate,
+without selecting them as a universal speed winner or establishing a general
+WF lowering. Keep allocation placement and CPU attribution separate from
+the eventual compiler/ABI decision. No source coloring or container runtime
+interface is changed by this reference comparison.
 
 ## Twenty-seventh experiment: allocation inside the sequential handler
 
@@ -3171,3 +3260,43 @@ cases pass with one/four workers, including 2-MiB streams, backpressure,
 half-close and process exit. Both optimized sources retain an initialized
 65536-byte calloc. Runner Bash and workflow YAML/embedded shell checks pass.
 Native Linux allocation placement, residency and timing remain pending.
+
+## Twenty-eighth experiment: CPU attribution of the mixed-load gap
+
+The completed coroutine panel makes representation alone an insufficient
+explanation for WF's remaining mixed-load loss. `make scheduler-profile`
+therefore uses the same qualified coroutine-paced sources, compiler, normal
+binaries, two CPU placements and three fixed-arrival cases, and profiles four
+forms: WF base, WF balanced chunks, native C manual quantum and native C++
+elided quantum. All preceding completion, protocol, observer, lifetime and
+unchanged-C-LLVM qualification remains enabled. No compiler or runtime
+interface changes in this experiment.
+
+Three profiles per cell produce 72 profiled rows. They have no benchmark
+warmup panel and are written as profile.tsv/profile-summary.txt, distinct
+from the preceding unprofiled measurements. The client still checks every
+byte, retains every scheduled light request and reports heavy completions
+by deadline. Profile-induced rate or tail changes are not used to replace
+those unprofiled performance conclusions.
+
+[perf record](https://man7.org/linux/man-pages/man1/perf-record.1.html) samples
+cpu-clock at 999 Hz, inheriting collection into the server's worker threads.
+It covers the whole server lifetime, including startup and drain. No hardware
+PMU event or stack-unwinding support is assumed. Flat sampled instruction
+pointers can locate CPU-consuming functions but cannot measure off-CPU queue
+waits or reconstruct costs of inlined callees independently. Raw perf.data,
+per-sample text and the complete
+[perf report](https://man7.org/linux/man-pages/man1/perf-report.1.html) histogram
+are retained with each checked client sample, along with the exact four ELF
+binaries in codegen for later instruction-level inspection. Unknown symbols and diagnostics
+are retained rather than filtered out; empty sample output fails the run.
+A temporary generated wrapper execs the normal server and separates its
+strict stderr check from recorder diagnostics.
+
+Only the dedicated GitHub-hosted profiling job temporarily sets
+perf_event_paranoid=-1 and kptr_restrict=0 for event access and kernel symbol
+lookup, records the original values, and restores them on shell exit. It
+uses the installed generic perf executable directly because the Azure kernel
+may have a different version from Ubuntu's generic tools. Page policy is
+recorded without modification. M1 can check runner/workflow shell syntax but
+cannot qualify Linux perf collection; actual profiles remain pending CI.

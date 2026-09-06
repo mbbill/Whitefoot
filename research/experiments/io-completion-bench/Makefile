@@ -110,6 +110,10 @@ scheduler-coroutine:
 scheduler-coroutine-paced:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" CORO_CXX="$(CORO_CXX)" EXPERIMENT=coroutine-paced bash scheduler-bench.sh bench
 
+.PHONY: scheduler-profile
+scheduler-profile:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS=3 WARMUP=0 CORO_CXX="$(CORO_CXX)" EXPERIMENT=coroutine-paced bash scheduler-bench.sh profile
+
 WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
 WORK := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-io-completion-bench
 BUILD := $(WORK)/build
