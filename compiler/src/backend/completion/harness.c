@@ -14,6 +14,7 @@
 #include "native_contract.h"
 #include "../sched/core.h"
 #include "../sched/entry.h"
+#include "../sched/prim.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -3156,6 +3157,82 @@ static int benchmark_record_roundtrip(uint64_t *nanoseconds_per_operation) {
  * handler only prints it. */
 static const char *volatile wf_harness_running = "startup";
 
+#if defined(__linux__) && defined(WF_IO_OWNER_RINGS) && WF_IO_OWNER_RINGS
+/* A separate process enters the real runtime before any other harness case
+ * initializes its globals. Four initial hand-outs wait at a host barrier,
+ * forcing one onto each core thread. This tests bridge slot selection without
+ * assuming an opportunistic network schedule happens to distribute its work.
+ * The barrier is test orchestration, not a scheduler policy. */
+extern int wf__bridge_report(char *buffer, size_t capacity);
+static _Atomic unsigned owner_bridge_arrived;
+static _Atomic unsigned owner_bridge_submitted;
+static _Atomic unsigned owner_bridge_threads;
+static _Atomic unsigned owner_bridge_failed;
+
+static void owner_bridge_read(void *frame) {
+    int descriptor = *(int *)frame;
+    unsigned thread = wf_prim_thread_index();
+    wf_harness_record record;
+    unsigned char bytes[4] = {0};
+    int64_t value = -1;
+    int error = -1;
+    if (thread >= 4u || wf__sched_current_stack() == NULL) abort();
+    atomic_fetch_or(&owner_bridge_threads, 1u << thread);
+    atomic_fetch_add(&owner_bridge_arrived, 1u);
+    while (atomic_load(&owner_bridge_arrived) != 4u) sched_yield();
+    wf__completion_file_pread_submit(descriptor, bytes, sizeof(bytes),
+        (uint64_t)thread * sizeof(bytes), record.bytes);
+    atomic_fetch_add(&owner_bridge_submitted, 1u);
+    while (atomic_load(&owner_bridge_submitted) != 4u) sched_yield();
+    wf__completion_file_join(record.bytes, &value, &error);
+    if (value != 4 || error != 0) atomic_store(&owner_bridge_failed, 1u);
+    for (unsigned index = 0; index < sizeof(bytes); ++index) {
+        if (bytes[index] != thread * sizeof(bytes) + index) {
+            atomic_store(&owner_bridge_failed, 1u);
+        }
+    }
+}
+
+static int owner_bridge_body(int argc, char **argv) {
+    char path[512];
+    unsigned char bytes[16];
+    void *frames[4];
+    char report[1024];
+    char *count;
+    char *end;
+    int descriptor;
+    (void)argc;
+    CHECK(snprintf(path, sizeof(path), "%s/wf-owner-bridge-%ld",
+        argv[1], (long)getpid()) > 0);
+    descriptor = open(path, O_CREAT | O_EXCL | O_RDWR, 0600);
+    CHECK(descriptor >= 0);
+    CHECK(unlink(path) == 0);
+    for (unsigned index = 0; index < sizeof(bytes); ++index) bytes[index] = (unsigned char)index;
+    CHECK(write(descriptor, bytes, sizeof(bytes)) == (ssize_t)sizeof(bytes));
+    for (unsigned index = 0; index < 4u; ++index) {
+        frames[index] = wf__par_acquire_lane(sizeof(descriptor));
+        CHECK(frames[index] != NULL);
+        *(int *)frames[index] = descriptor;
+        wf__par_publish(frames[index], owner_bridge_read);
+    }
+    for (unsigned index = 4u; index > 0u; --index) {
+        wf__par_join(frames[index - 1u]);
+        wf__par_release(frames[index - 1u]);
+    }
+    CHECK(atomic_load(&owner_bridge_threads) == 15u);
+    CHECK(atomic_load(&owner_bridge_failed) == 0u);
+    CHECK(wf__completion_native_ring_submissions() == 4u);
+    CHECK(wf__bridge_report(report, sizeof(report)) != 0);
+    count = strstr(report, " owner_rings=");
+    CHECK(count != NULL);
+    CHECK(strtoul(count + strlen(" owner_rings="), &end, 10) == 4u && *end == '\0');
+    CHECK(close(descriptor) == 0);
+    puts(report);
+    puts("completion owner-bridge four-thread-read: PASS");
+    return 0;
+}
+#endif
+
 /* A deadlock is a failure mode of this suite, so it gets a name.
  *
  * A join that waits in place makes threads wait for each other on purpose,
@@ -3202,6 +3279,19 @@ int main(int argc, char **argv) {
     if (argc != 2) {
         fprintf(stderr, "usage: %s SCRATCH_DIRECTORY\n", argv[0]);
         return 2;
+    }
+    if (getenv("WF_TEST_OWNER_RINGS") != NULL) {
+#if defined(__linux__) && defined(WF_IO_OWNER_RINGS) && WF_IO_OWNER_RINGS
+        int status = 1;
+        wf_harness_running = "owner bridge four-thread read";
+        CHECK(setenv("WF_WORKERS", "4", 1) == 0);
+        CHECK(setenv("WF_STACKS", "16", 1) == 0);
+        CHECK(setenv("WF_IO_HELPERS", "0", 1) == 0);
+        CHECK(wf__sched_entry_stack(owner_bridge_body, argc, argv, &status) == 1);
+        return status;
+#else
+        return 77;
+#endif
     }
     /* The bridge cases below assert which route an operation took, and under
      * the demand-driven policy that is the runtime's choice: it runs a

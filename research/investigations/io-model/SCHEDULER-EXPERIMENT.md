@@ -1834,6 +1834,53 @@ with both policies and one/four workers through the temporary kqueue shim.
 All three default manual reference forms still produce the exact earlier
 optimized LLVM. These local checks are correctness evidence only.
 
+### Seventeenth result: the 41 ms tail is a TCP policy interaction
+
+Revision `74e72d3cf9795f2ab285561c6d8b2a07c1aa5da1` completed all 840 timed
+rows in [run 34050912298](https://github.com/mbbill/Whitefoot/actions/runs/34050912298),
+on AMD EPYC 7763, four logical CPUs/two physical cores, Linux 6.17.0-1022-azure
+and clang 18.1.3. Artifact `9995105413` retains every sample and option
+verification. The full gate, host qualification and Linux/macOS benchmark
+jobs passed. Windows warm-file qualification refused its table because two
+complete cohorts remained unstable; no Windows performance result is used.
+
+The same WF program/runtime, with only the socket option changed, produced:
+
+| Placement, 64 peers, 64 KiB payload | WF default rate/s | WF NODELAY rate/s | Default p99 us | NODELAY p99 us | Paired rate ratio | Paired p99 ratio |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| shared4 | 31720 | 31573 | 6931 | 5295 | 0.9898 | 0.7895 |
+| shared2 | 27029 | 28208 | 41667 | 2410 | 1.0304 | 0.0579 |
+| split2 | 28390 | 29807 | 41625 | 2390 | 1.0680 | 0.0578 |
+| split1 | 20711 | 22467 | 3485 | 3071 | 1.0453 | 0.5776 |
+
+The shared2 p99 ratio was 0.0563..0.0657 in all seven paired passes. Split2
+was 0.0497..0.9735: one default sample already had a short tail, but every
+pair improved. This removes the approximately 41 ms tail without changing
+ownership, source coloring, continuation representation or the scheduler.
+It does not establish the exact packet-level cause, which was not traced.
+
+The reverse native control confirms that this interaction also depends on
+the engine's transfer pattern. Native io_uring without NODELAY ran at about
+1562..1564 requests/s with a 41..42 ms p99 in every large-payload placement.
+Enabling it increased paired throughput by 11.78x/14.41x/14.57x/14.98x on
+split1/split2/shared2/shared4. Native epoll did not show that collapse; its
+large-payload paired ranges were wide and did not select one policy. Packet
+coalescing must therefore be controlled before attributing a tail to the
+language or continuation model.
+
+The small-payload WF gap remains. At 64 peers, NODELAY/default paired rates
+were 0.9941/1.0030/1.0073/1.0010 across shared4/shared2/split2/split1, all with
+ranges straddling one. At shared2/four peers every pair was slightly slower
+(median 0.9869, range 0.9589..0.9950). This is not a universal packet-policy
+win. For the following latency-oriented engine comparisons, retain NODELAY
+on every contender and leave the general WF default unselected.
+
+Even after alignment, split2/64 large-payload WF CPU/request was 64.375 us
+versus native epoll's 39.375 us, with p99 2390/2273 us and rates
+29807/32384. At split2/1024 small-payload peers, WF/native epoll rates were
+143560/176812 and peak RSS 79256/1864 KiB. Correcting the transport policy
+does not resolve the remaining execution or storage costs.
+
 ## Eighteenth experiment: persistent continuations and worker-owned rings
 
 The sequential native handler in experiment 16 motivates a WF runtime
@@ -1899,8 +1946,10 @@ and combined policies against inline/quantum C (504 rows). Its two chunked
 modules must be byte-identical. All these forms enable TCP_NODELAY so the
 engine comparison uses the native references' packet policy. The three
 runtime candidates run full completion suites on each measuring host;
-observations require real native traffic, at least two rings in multi-worker
-64-peer owner runs, and no migration under pinning. A separate Windows job
+observations require real native traffic, an owner ring when selected,
+and no migration under pinning. A separate four-thread bridge probe forces
+one first positioned read onto each actual core thread and requires four
+native submissions, four rings, and correct offset-specific bytes. A separate Windows job
 checks original/pinned execution with actual IOCP traffic and fixed output.
 Defaults remain unchanged pending native qualification and measurements.
 
@@ -1928,3 +1977,15 @@ assertion put a continuation operator at the beginning of a line. The
 expression is corrected, and an explicit two-ring-probe success marker is
 required so future measuring logs show that the candidate check actually ran.
 No performance conclusion is drawn from these preflight runs.
+
+At `2c5d7f947e2b123dbce07ceb96de6e15e1f5a7e0`, the paced preflight
+exposed a genuine distribution weakness: split2/chowner16384/64 peers
+completed all bytes with 4,225 parks/resumes, zero migration, 15,360 checkpoint
+switches, but zero stolen hand-outs and only one submitting ring. Pinning
+preserved an initial single-thread placement instead of balancing it later.
+The former requirement for two rings in every opportunistic 64-peer run was
+therefore not a bridge invariant. It is replaced by the deterministic
+four-thread bridge test above, while the preflight retains and prints the
+actual ring/steal counts, including the unbalanced case. There is no retry
+until distribution happens to improve, and timed runs retain this policy's
+load-balancing cost. The two-ring/four-sleeper wake test remains required.

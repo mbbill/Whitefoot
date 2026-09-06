@@ -276,7 +276,11 @@ completion-test: completion-core-read-test completion-default-route-test sched-s
 		if [ $$status -ne 0 ] && [ $$status -ne 77 ]; then exit $$status; fi; \
 		if [ $$status -eq 0 ]; then \
 			WF_REQUIRE_LINUX_IO_URING=1 WF_IO_HELPERS=1 \
+				"$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" || exit $$?; \
+			WF_TEST_OWNER_RINGS=1 \
 				"$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)"; \
+			status=$$?; \
+			if [ $$status -ne 0 ] && [ $$status -ne 77 ]; then exit $$status; fi; \
 		fi; \
 	else \
 		$(CC) -std=c11 -Wall -Wextra -Werror -Wpedantic -pthread \
