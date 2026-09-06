@@ -623,7 +623,14 @@ worktree for every landed slice.
   change the enumerator covers, with that data as its reason.
 - **§12 item 1 of PARK-ON-MISS.md, the compute-miss regression**, narrowed to
   11 and 17 percent by the spin and still the owner's decision; the colouring
-  design is sequenced after this batch; a new PR.
+  design is sequenced after this batch; a new PR. Measured once more at the
+  end of this batch against `main` at 82f6d6a on the development host, each
+  tree compiling its own `par_layout.wf` with its own `whitefootc --par` and
+  the two run alternately five times per worker count: medians of 1.524
+  against 1.538 seconds at one worker, 0.774 against 0.788 at two, 0.409
+  against 0.446 at four and 0.431 against 0.464 at eight, so this branch is
+  within two percent of `main` at one and two workers and eight to nine
+  percent behind at four and eight, with the same output bytes.
 - **8192 connections in flight** is outside the shapes and the stack pool the
   control test could reach; the table stops at 1024.
 
