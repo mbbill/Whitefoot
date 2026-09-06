@@ -4215,4 +4215,248 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   executable corpus changed behaviour or exit code; `tests/programs/heap_run.wf`
   is added and runs to exit 12, and `tests/programs/recursive_tree.wf` is
   migrated to `Box<'s, Tree<'s>>` and keeps its exit 0.
+- CONTENT (B7c4a, the range-bearing operand class, the shared borrow of a run,
+  and the allocation-fit obligation):
+  The seven range-bearing operations [SYS-8] take, at their own range-bearing
+  parameter, one **operand class** rather than one type: `&uniq MutSlice<u8>`
+  where the operation writes the storage and `&Slice<u8>` where it reads it,
+  each class additionally admitting `buffer<u8>` at the same position for
+  exactly as long as `buffer<T>` and its `buffer_new` row live. That is the
+  device [VIEW-2]'s viewable operand already is and for the same reason: no row
+  reads what the storage is made of, so the operand's own type decides only
+  which measure-table row [MSR-1] the two range obligations are stated over.
+  Seven declared parameter types change; no count, no operation region
+  parameter and no obligation order changes, a view's own region at those
+  positions being elided and related to nothing [FORM-8]. [SYS-2], [SYS-8],
+  [SYS-9], [SYS-11], [SYS-12] and [SYS-14] are amended, and [META-5]'s
+  system-operation count stays 203.
+  [BLK-4]'s `&uniq` parameter refusal no longer reaches a view referent. A view
+  carries no measure a callee could move, [VIEW-4] already forbids replacing one
+  through such a borrow, and what a callee writes through one is an element
+  write of the viewed storage, which [ENT-5] kills at [MSR-2]'s own
+  granularity; so a `&uniq MutSlice<'r, T>` parameter leaves every measure its
+  caller retained standing, and the fill-and-publish helper a caller hands one
+  destination to is admitted at a source declaration on the same ground the
+  `&uniq` destination of an [SYS-8] row is. The refusal's remaining clause is
+  the container nominal and the unbounded type parameter, and the checked
+  program's published fact narrows to match.
+  Every acquiring row of [BLK-0] carries the obligation its record notation
+  spells `fits::<T>(count)`. [BLK-0] states that this spelling is not a term but
+  the record notation of [OP-9]'s allocation-fit obligation over `(T, count)`,
+  and [OP-9] states that the predicate, its normalization and its disposition
+  are the same object `buffer_fits::<T>(n)` is. Nothing submitted it, so
+  `heap_vector::<i32>(store, count: n)` at an unconstrained `n` compiled while
+  the same shape written `buffer_new(n, 0_i32)` was refused. The obligation now
+  reaches the same judgment through the same path at every call of a row that
+  carries it — the three acquiring rows, `fixed_vector` carrying none because
+  its count is a type constant [STOR-6] governs, and the two cell rows carrying
+  none because they take no count — so an undischarged one is the ordinary
+  static [OP-9] rejection and the call is not prepared. No rule text changes for
+  this: the specification already said it.
+- CONSEQUENCE (B7c4a, six compiler defects the corpus and the limit probes
+  found, each fixed against the rule that states the answer):
+  [BLK-4] refuses the `&uniq` of a run and nothing else, so a *shared* borrow of
+  one is an ordinary borrow; three shapes stopped as unsupported instead — a
+  `&FixedVector<T, n>` parameter, a reference holder over a run, and a run
+  reached through a shared borrow of the nominal that owns it. All three are one
+  gap: a run's storage lives in its owner, inline slots for the frame-resident
+  run and the descriptor for the store-resident one, so a borrow of either is
+  the address of that storage exactly as a borrow of a struct is, and both runs
+  now reach it through that one path. A run is indexable storage [OP-4, BLK-1],
+  so a run holder written where the run is required is the ordinary [TYPE-7]
+  missing dereference, as a `buffer` holder already was.
+  [MSR-4]'s interval step named an atom's term through the binding whose image
+  it is; a measure has no binding, so every measure entered every interval
+  substitution at the complete `u64` range however tightly the closed state had
+  bounded it, and [MSR-2]'s additive identity could not close a one-premise
+  residual. The step now names a measure atom through its own measure term,
+  which is the same candidate set the affine index already builds; no route is
+  added.
+  [FN-9]'s return-position judgment recognized the array, buffer and slice
+  measures and not the run or bump-extent one, so `return len_of(taken);` under
+  any `ensures` was refused for a `FixedVector<T, n>` while the same body over
+  `buffer<u8>` was accepted. A run's measure is the same [CALL-4] return datum
+  and is admitted on the same terms.
+  A container nominal at a `const` item type stopped as an internal resolution
+  failure, a cell type being interned per (store region, referent) and a `const`
+  item being no position the interning pass visits. None of the five
+  compiler-owned container nominals is const-eligible, so the question is
+  decided on the resolved declaration class and `Box` reaches the [CONST-2]
+  rejection the other four already reached.
+  A const parameter a generic instance's caller supplied from a const parameter
+  of its own kept the callee's declaration identity at every position that read
+  it as a value, so an instance's own header invariants compared a run's
+  capacity against a constant nothing outside the callee can name. Both
+  positions now read the parameter the substitution supplies.
+  An elided view region at a parameter position is a region of its own
+  [FORM-8], incomparable inside the callee with every other formal region
+  [OWN-3]; a view argument whose origin was the enclosing declaration's own view
+  parameter instead claimed an origin overlapping every other argument, making
+  `input: own Slice<u8>` beside `store: &uniq Heap<'s>` an [OWN-12] conflict at
+  every recursive call. Such an argument now claims exactly the place that one
+  parameter binding reaches, and the concrete overlap is refused where it is
+  written, at the caller that formed the view over the storage it lends
+  uniquely.
+  A source `fn` carrying any generic parameter beside written `region_params`
+  stopped outright, and so did every call cycle among generic functions.
+  Neither is what the rules say. An instance is keyed on its type and const
+  arguments while a region parameter is substituted positionally from the call's
+  own actuals [FORM-8, FN-2], so the two axes are independent; and [FN-6] has
+  already refused every cycle whose call writes anything but the caller's own
+  type parameters, so a surviving cycle that repeats the caller's whole
+  parameter list is the caller's own instance and is finite. The one cycle that
+  still stops is one varying a *const* argument, which [FN-6]'s syntactic rule
+  does not speak about and whose instance set is unbounded; that is reported as
+  the compiler capability it is and is recorded as a defect of this document in
+  the design.
+  [MSR-3]'s placements minted a datum only where the operand's own type was
+  measured, so a construct over a struct whose own field is a run carried
+  nothing and the run arrived at its new path with no measures at all. A
+  placement is per placement and not per depth: [MSR-1] admits a measure place
+  formed with any number of field-selection `psuffix`es, so a struct operand
+  names one measured place per run beneath it and each is carried to the
+  destination's matching path. The walk descends through source `struct` fields
+  only, a cell, a run element and an enum payload each being reached by a step a
+  field path does not take.
+- CONSEQUENCE, WHAT DID NOT LAND (B7c4a): four `accept-par3-staged-*`
+  destinations keep `buffer<u8>`. [SYS-8]'s intended destination for them is a
+  `filled` inline run viewed by `mut_slice_of`, which this compiler still stops
+  as `ExclusiveViewOverInlineRun`, and the only alternative — a store-resident
+  run — introduces a general-store loan that changes exactly the [PAR-3]
+  property those cases are evidence for. The two `view2-pos-an-exclusive-view-*`
+  cases keep their `pending` status and their recorded `run` expectation for the
+  same reason; the `reason` of `view2-pos-an-exclusive-view-over-an-array` is
+  brought current and now names the stop the migrated source actually reaches.
+  A generic call cycle that varies a const argument stays an explicit
+  unsupported capability. Checking a long chain of measured commits is
+  quadratic in memory and quartic in time; the local half of that is fixed and
+  the rest is measured and recorded in the design rather than attempted.
+- CONFORMANCE BOUNDARY (B7c4a): thirteen added cases, no deleted case, no
+  rename, and thirty-three modified case sources whose recorded expectations are
+  unchanged. One further manifest row, `view2-pos-an-exclusive-view-over-an-array`
+  (`{"kind": "run", "exit": 0}`, status `pending`), has its `reason` prose
+  brought current with no change to its id, expectation or status.
+  Added:
+  `blk4-pos-a-reference-holder-over-a-store-resident-run`
+  (`{"kind": "run", "exit": 0}`),
+  `blk4-pos-a-run-reached-through-a-shared-borrow-of-a-nominal`
+  (`{"kind": "run", "exit": 0}`),
+  `blk4-pos-a-shared-borrow-of-a-run-parameter`
+  (`{"kind": "run", "exit": 0}`),
+  `const2-neg-a-cell-is-not-const-eligible`
+  (`{"kind": "reject", "rule": "CONST-2"}`),
+  `fn2-pos-a-const-parameter-beside-a-region-parameter`
+  (`{"kind": "run", "exit": 0}`),
+  `fn6-pos-a-generic-cycle-at-the-callers-own-parameters`
+  (`{"kind": "run", "exit": 0}`),
+  `fn9-pos-a-measure-reader-in-return-position-over-a-run`
+  (`{"kind": "run", "exit": 0}`),
+  `msr3-pos-a-construct-carries-a-measure-two-levels-down`
+  (`{"kind": "run", "exit": 0}`),
+  `op9-neg-kernel-acquisition-without-a-fit-proof`
+  (`{"kind": "reject", "rule": "OP-9"}`),
+  `op9-pos-kernel-acquisition-with-a-fit-proof`
+  (`{"kind": "accept"}`),
+  `own12-neg-a-view-argument-beside-a-unique-borrow-of-itself`
+  (`{"kind": "reject", "rule": "OWN-12"}`),
+  `own12-pos-a-view-parameter-beside-a-unique-store`
+  (`{"kind": "run", "exit": 0}`),
+  and `type7-neg-a-run-holder-written-where-the-run-is-required`
+  (`{"kind": "reject", "rule": "TYPE-7"}`).
+  Modified, source only, every recorded expectation, rule list and status
+  unchanged: thirty-three cases. Thirty-one of them are the blocked system-I/O
+  corpus, whose only remaining use of the old container surface was the operand
+  of a range-bearing operation and which now writes the view its direction
+  names — a source or a name is a shared view over an inline run, a destination
+  is an exclusive view over a store-resident run — with the four
+  `accept-par3-staged-denied-*` cases keeping the exact condition they denied
+  on. The other two are
+  `msr4-pos-capacity-requirement-discharges-a-length-obligation`, which moves
+  off `buffer` with the same verdict — a run's `room_of` is an ordinary
+  killable term rather than a fixed cell, so its callee now states the
+  requirement and its caller discharges it from the counted fill's own
+  invariants — and `type7-neg-index-reference-holder`, which reaches the same
+  undereferenced index base over a run now that a holder over one is supported.
+  They are
+  `accept-par3-staged-denied-carried-scratch-byte`
+  (`{"kind": "accept"}`),
+  `accept-par3-staged-denied-exit-in-remainder`
+  (`{"kind": "accept"}`),
+  `accept-par3-staged-denied-hoisted-scratch`
+  (`{"kind": "accept"}`),
+  `accept-par3-staged-denied-read-before-write`
+  (`{"kind": "accept"}`),
+  `accept-par3-staged-iteration-own-scratch`
+  (`{"kind": "accept"}`),
+  `accept-par3-staged-loop-with-prologue-break`
+  (`{"kind": "accept"}`),
+  `msr4-pos-capacity-requirement-discharges-a-length-obligation`
+  (`{"kind": "run", "exit": 0}`),
+  `reject-sys14-list-end-beyond-buffer`
+  (`{"kind": "reject", "rule": "SYS-8"}`),
+  `reject-syshost-copybytes-end-beyond-buffer`
+  (`{"kind": "reject", "rule": "SYS-8"}`),
+  `reject-syshost-copybytes-start-after-end`
+  (`{"kind": "reject", "rule": "SYS-8"}`),
+  `reject-syshost-copybytes-start-beyond-buffer`
+  (`{"kind": "reject", "rule": "SYS-8"}`),
+  `run-sysfile-empty`
+  (`{"kind": "run", "exit": 0}`),
+  `run-sysfile-exact`
+  (`{"kind": "run", "exit": 0}`),
+  `run-sysfile-multichunk`
+  (`{"kind": "run", "exit": 0}`),
+  `run-sysfile-short`
+  (`{"kind": "run", "exit": 0}`),
+  `run-syshost-copybytes-toosmall-unchanged`
+  (`{"kind": "run", "exit": 0}`),
+  `run-syshost-copyutf8-invalid-unchanged`
+  (`{"kind": "run", "exit": 0}`),
+  `run-syshost-copyutf8-toosmall-unchanged`
+  (`{"kind": "run", "exit": 0}`),
+  `run-syshost-nontext-argv-bytes-roundtrip`
+  (`{"kind": "run", "exit": 0}`),
+  `run-sysout-basic-write`
+  (`{"kind": "run", "exit": 0}`),
+  `run-sysout-redirect-same-sink-order`
+  (`{"kind": "run", "exit": 0}`),
+  `sys14-entry-kind-closed`
+  (`{"kind": "run", "exit": 0}`),
+  `sys14-list-handle-affine`
+  (`{"kind": "reject", "rule": "OWN-1"}`),
+  `sys14-list-handle-unique`
+  (`{"kind": "reject", "rule": "OWN-5"}`),
+  `sys14-list-outcome-exhaustive`
+  (`{"kind": "run", "exit": 0}`),
+  `sys14-list-zero-range`
+  (`{"kind": "run", "exit": 0}`),
+  `sys14-open-directory-component`
+  (`{"kind": "run", "exit": 0}`),
+  `sys14-open-directory-empty-name`
+  (`{"kind": "run", "exit": 0}`),
+  `sys14-open-directory-success`
+  (`{"kind": "run", "exit": 0}`),
+  `type7-neg-index-reference-holder`
+  (`{"kind": "reject", "rule": "TYPE-7"}`),
+  `v033-run-open-file-directory`
+  (`{"kind": "run", "exit": 0}`),
+  `v033-run-open-file-regular`
+  (`{"kind": "run", "exit": 0}`),
+  and `v033-run-system-nonzero-next`
+  (`{"kind": "run", "exit": 0}`).
+  Before this batch the corpus holds 680 cases with the native adapter
+  reporting Pass=676, Xfail=1, Skip=3; after it the corpus holds 693 with the
+  adapter reporting Pass=689, Xfail=1, Skip=3. The one xfail
+  (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the three skips are
+  unchanged in id, expectation and status. Rule coverage stays complete at
+  153/153, and the recorded-verdict snapshot corpus reports Pass=491, Flip=0
+  before and after. Three snapshot sources are modified with no verdict moved:
+  the two `writer-r1__r13_system_range_unproved` and
+  `writer-r2__r06_world_value_sysrange_no_branch` diagnostics cases still reject
+  under SYS-8 over the view forms, and `joins__writer-r2__p09_struct_field_join`
+  still accepts with its struct field written as a run rather than a buffer.
+  Three executable-corpus programs — `completion_read_boundary.wf`,
+  `completion_windows_capacity.wf` and `host_string_bytes.wf` — take the view
+  forms at the same operations and keep their exit codes; no other program of
+  that corpus changed behaviour or exit code, and none was added or removed.
 ACTIVE-SPEC: v0.45 e10d73f10fd761a859a26f9e81f03f339b2f032006170bf1a741a5635c2ea73c 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
