@@ -42,8 +42,7 @@ use super::model::{
     CheckedNominal, CheckedNominalKind, CheckedParameter, CheckedProgramData,
     CheckedResultStateOrigin, CheckedSetTarget, CheckedSliceOrigin, CheckedStateOrigins,
     CheckedStatement, CheckedType, CheckedValue, DerivedConst, DerivedConstId, FunctionId,
-    LoanStrength,
-    NominalId, ValueInitializerKind, evaluate_const_operation,
+    LoanStrength, NominalId, ValueInitializerKind, evaluate_const_operation,
 };
 use super::permission::{PermissionSignature, analyze_permission};
 use super::permission_ledger::{LedgerSource, render_ledger};

@@ -421,7 +421,11 @@ inside the `region` block whose region it takes",
         // and a child of a view is a second view of the parent's own range.
         if strength == LoanStrength::Exclusive {
             return self
-                .issue_node(SemanticRule::Own5, operand, SemanticIssueKind::BorrowConflict)
+                .issue_node(
+                    SemanticRule::Own5,
+                    operand,
+                    SemanticIssueKind::BorrowConflict,
+                )
                 .map(Some);
         }
         // [OWN-10] the child's loan may not outlive the parent's own.
