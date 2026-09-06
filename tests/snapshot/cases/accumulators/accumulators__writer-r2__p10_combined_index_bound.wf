@@ -4,44 +4,57 @@ const second_batch: FixedVector<u8, 3> =[1_u8, 1_u8, 1_u8];
 
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: two loops each fill a count accumulator, the counts combine after both loops, and the combined total becomes the write index into a heap buffer.";
-  let dest = buffer_new(8_u64, 0_u8);
-  let first_count = 0_u64;
-  for (
-    i in 0_u64..3_u64,
-    invariant first_bound: first_count <= i
-  ) {
-    let byte = first_batch[i];
-    let is_nine = byte == 9_u8;
-    if is_nine {
-      set first_count = first_count + 1_u64;
+  region 'w {
+    let workspace = arena_frame::<8, 1, 'w>();
+    region {
+      let dest = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
+      for @fill_dest (
+        at in 0_u64..8_u64,
+        invariant grown_dest: len_of(dest) >= at,
+        invariant spare_dest: room_of(dest) + at >= 8_u64,
+        invariant flat_dest: head_of(dest) <= 0_u64
+      ) {
+        set dest = place_back(vector: move dest, value: 0_u8);
+      }
+      let first_count = 0_u64;
+      for (
+        i in 0_u64..3_u64,
+        invariant first_bound: first_count <= i
+      ) {
+        let byte = first_batch[i];
+        let is_nine = byte == 9_u8;
+        if is_nine {
+          set first_count = first_count + 1_u64;
+        }
+      }
+      let second_count = 0_u64;
+      for (
+        i in 0_u64..3_u64,
+        invariant second_bound: second_count <= i
+      ) {
+        let byte = second_batch[i];
+        let is_one = byte == 1_u8;
+        if is_one {
+          set second_count = second_count + 1_u64;
+        }
+      }
+      let total = first_count + second_count;
+      let index_ok = total < 8_u64;
+      if index_ok {
+      } else {
+        return exit_status(code: 2_u8);
+      }
+      set dest[total] = 42_u8;
+      if total == 6_u64 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      let marker = dest[total];
+      if marker == 42_u8 {
+      } else {
+        return exit_status(code: 3_u8);
+      }
+      return exit_status(code: 0_u8);
     }
   }
-  let second_count = 0_u64;
-  for (
-    i in 0_u64..3_u64,
-    invariant second_bound: second_count <= i
-  ) {
-    let byte = second_batch[i];
-    let is_one = byte == 1_u8;
-    if is_one {
-      set second_count = second_count + 1_u64;
-    }
-  }
-  let total = first_count + second_count;
-  let index_ok = total < 8_u64;
-  if index_ok {
-  } else {
-    return exit_status(code: 2_u8);
-  }
-  set dest[total] = 42_u8;
-  if total == 6_u64 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  let marker = dest[total];
-  if marker == 42_u8 {
-  } else {
-    return exit_status(code: 3_u8);
-  }
-  return exit_status(code: 0_u8);
 }

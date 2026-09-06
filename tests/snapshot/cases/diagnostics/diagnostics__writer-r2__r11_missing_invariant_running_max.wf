@@ -1,4 +1,4 @@
-fn value_at_max(scores: own buffer<u32>) -> value: own u32 reads(scores) contract {
+fn value_at_max(scores: own Slice<u32>) -> value: own u32 reads(scores) contract {
   define count = len_of(scores);
   requires count >= 1_u64;
 } {

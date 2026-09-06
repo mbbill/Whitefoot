@@ -1,4 +1,4 @@
-fn indexed_byte(b: own buffer<u8>, flag: own Bool) -> result: own u8 reads(b) contract {
+fn indexed_byte(b: own Slice<u8>, flag: own Bool) -> result: own u8 reads(b) contract {
   define spare = len_of(b);
   requires spare == 5_u64;
 } {

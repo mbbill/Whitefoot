@@ -3,7 +3,7 @@ enum Pick {
   Wide();
 }
 
-fn get(b: own buffer<u8>, i: own u64, choice: own Pick) -> result: own u8 reads(b) {
+fn get(b: own Slice<u8>, i: own u64, choice: own Pick) -> result: own u8 reads(b) {
   doc "expect ACCEPT: both match arms independently establish i < spare before falling through, so the join keeps that common strict bound and b[i] discharges.";
   let spare = len_of(b);
   match choice {

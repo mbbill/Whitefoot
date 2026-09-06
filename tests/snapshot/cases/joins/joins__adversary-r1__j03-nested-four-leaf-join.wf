@@ -5,7 +5,7 @@ enum Combo {
   BothFalse();
 }
 
-fn get(b: own buffer<u8>, i: own u64, combo: own Combo) -> result: own u8 reads(b) {
+fn get(b: own Slice<u8>, i: own u64, combo: own Combo) -> result: own u8 reads(b) {
   doc "expect ACCEPT: a four-variant match stands in for a nested if/if join; every one of the four leaves independently checks i < spare before falling through, so the join keeps the common bound and b[i] discharges.";
   let spare = len_of(b);
   match combo {

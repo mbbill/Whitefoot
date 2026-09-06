@@ -3,7 +3,7 @@ enum Selector {
   Second();
 }
 
-fn fetch(b: own buffer<u8>, i: own u64, pick: own Selector) -> result: own u8 reads(b) {
+fn fetch(b: own Slice<u8>, i: own u64, pick: own Selector) -> result: own u8 reads(b) {
   doc "expected ACCEPT: match on a two-variant enum has arms that each establish i < spare from a different derivation before the shared subscript.";
   let spare = len_of(b);
   match pick {

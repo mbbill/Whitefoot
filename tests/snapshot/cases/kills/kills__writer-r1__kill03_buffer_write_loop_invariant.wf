@@ -1,4 +1,4 @@
-fn fill_running_sum(out: &uniq buffer<u64>, count: own u64) -> result: own unit reads(out), writes(out) {
+fn fill_running_sum(out: &uniq MutSlice<u64>, count: own u64) -> result: own unit reads(out), writes(out) {
   doc "expect ACCEPT: every iteration writes deref(out)[i], killing that element's prior fact, but the header invariant is proved fresh against the current header batch each time, per P8.";
   let capacity = len_of(deref(out));
   let spare = count < capacity;
@@ -18,13 +18,29 @@ fn fill_running_sum(out: &uniq buffer<u64>, count: own u64) -> result: own unit 
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let scratch = buffer_new(6_u64, 0_u64);
-  region {
-    let done = fill_running_sum(out: &uniq scratch, count: 5_u64);
+  region 'w {
+    let workspace = arena_frame::<48, 8, 'w>();
+    region {
+      let scratch = arena_vector_proved::<u64>(store: &uniq workspace, count: 6_u64);
+      for @fill_scratch (
+        at in 0_u64..6_u64,
+        invariant grown_scratch: len_of(scratch) >= at,
+        invariant spare_scratch: room_of(scratch) + at >= 6_u64,
+        invariant flat_scratch: head_of(scratch) <= 0_u64
+      ) {
+        set scratch = place_back(vector: move scratch, value: 0_u64);
+      }
+      region {
+        let view_scratch = mut_slice_of(&uniq scratch);
+        region {
+          let done = fill_running_sum(out: &uniq view_scratch, count: 5_u64);
+        }
+      }
+      if scratch[4_u64] == 10_u64 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      return exit_status(code: 0_u8);
+    }
   }
-  if scratch[4_u64] == 10_u64 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  return exit_status(code: 0_u8);
 }

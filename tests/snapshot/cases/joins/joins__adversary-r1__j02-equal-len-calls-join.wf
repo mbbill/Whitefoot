@@ -1,4 +1,4 @@
-fn get(b: own buffer<u8>, i: own u64, pick: own Bool) -> result: own u8 reads(b) {
+fn get(b: own Slice<u8>, i: own u64, pick: own Bool) -> result: own u8 reads(b) {
   doc "expect ACCEPT: both arms call len_of(b) independently (same pure argument) and check i < that_len; the two lens are equal so the join keeps a common bound and b[i] discharges.";
   if pick {
     let room_a = len_of(b);

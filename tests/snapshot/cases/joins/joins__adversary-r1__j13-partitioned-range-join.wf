@@ -1,4 +1,4 @@
-fn get(b: own buffer<u8>, i: own u64, half: own u64) -> result: own u8 reads(b) {
+fn get(b: own Slice<u8>, i: own u64, half: own u64) -> result: own u8 reads(b) {
   doc "expect ACCEPT: one arm proves i < half, the other proves half <= i and i < spare; both partitions independently imply i < spare given half <= spare, so the join keeps the common bound and b[i] discharges.";
   let spare = len_of(b);
   let half_ok = half <= spare;

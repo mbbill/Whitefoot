@@ -1,4 +1,4 @@
-fn last_written(xs: own buffer<u8>) -> value: own u8 reads(xs) contract {
+fn last_written(xs: own Slice<u8>) -> value: own u8 reads(xs) contract {
   define n0 = len_of(xs);
   requires n0 >= 1_u64;
 } {

@@ -2,48 +2,69 @@ const hex_digits: FixedVector<u8, 16> =[48_u8, 49_u8, 50_u8, 51_u8, 52_u8, 53_u8
 
 command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- formats each byte of a buffer as two lowercase hex ASCII characters into a bounds-proved output";
-  let input = buffer_new(3_u64, 0_u8);
-  set input[0_u64] = 0_u8;
-  set input[1_u64] = 175_u8;
-  set input[2_u64] = 255_u8;
-  let input_length = len_of(input);
-  let output = buffer_new(6_u64, 0_u8);
-  let output_room = len_of(output);
-  let digit_room = len_of(hex_digits);
-  for (i in 0_u64..input_length) {
-    let byte = input[i];
-    let high_nibble = ishr.wrap(byte, 4_u32);
-    let low_nibble = iand(byte, 15_u8);
-    let high_index = cvt::<u8, u64>(high_nibble);
-    let low_index = cvt::<u8, u64>(low_nibble);
-    let high_ok = high_index < digit_room;
-    let low_ok = low_index < digit_room;
-    if band(high_ok, low_ok) {
-    } else {
-      return exit_status(code: 1_u8);
+  region 'w {
+    let workspace = arena_frame::<9, 1, 'w>();
+    region {
+      let input = arena_vector_proved::<u8>(store: &uniq workspace, count: 3_u64);
+      for @fill_input (
+        at in 0_u64..3_u64,
+        invariant grown_input: len_of(input) >= at,
+        invariant spare_input: room_of(input) + at >= 3_u64,
+        invariant flat_input: head_of(input) <= 0_u64
+      ) {
+        set input = place_back(vector: move input, value: 0_u8);
+      }
+      set input[0_u64] = 0_u8;
+      set input[1_u64] = 175_u8;
+      set input[2_u64] = 255_u8;
+      let input_length = len_of(input);
+      let output = arena_vector_proved::<u8>(store: &uniq workspace, count: 6_u64);
+      for @fill_output (
+        at in 0_u64..6_u64,
+        invariant grown_output: len_of(output) >= at,
+        invariant spare_output: room_of(output) + at >= 6_u64,
+        invariant flat_output: head_of(output) <= 0_u64
+      ) {
+        set output = place_back(vector: move output, value: 0_u8);
+      }
+      let output_room = len_of(output);
+      let digit_room = len_of(hex_digits);
+      for (i in 0_u64..input_length) {
+        let byte = input[i];
+        let high_nibble = ishr.wrap(byte, 4_u32);
+        let low_nibble = iand(byte, 15_u8);
+        let high_index = cvt::<u8, u64>(high_nibble);
+        let low_index = cvt::<u8, u64>(low_nibble);
+        let high_ok = high_index < digit_room;
+        let low_ok = low_index < digit_room;
+        if band(high_ok, low_ok) {
+        } else {
+          return exit_status(code: 1_u8);
+        }
+        let out_high = i *wrap 2_u64;
+        let out_low = out_high +wrap 1_u64;
+        let out_high_ok = out_high < output_room;
+        let out_low_ok = out_low < output_room;
+        if band(out_high_ok, out_low_ok) {
+        } else {
+          return exit_status(code: 2_u8);
+        }
+        set output[out_high] = hex_digits[high_index];
+        set output[out_low] = hex_digits[low_index];
+      }
+      let zero_ok = output[0_u64] == 48_u8;
+      let one_ok = output[1_u64] == 48_u8;
+      let two_ok = output[2_u64] == 97_u8;
+      let three_ok = output[3_u64] == 102_u8;
+      let five_ok = output[5_u64] == 102_u8;
+      let low_pair_ok = band(zero_ok, one_ok);
+      let high_pair_ok = band(two_ok, three_ok);
+      let tail_ok = band(low_pair_ok, high_pair_ok);
+      if band(tail_ok, five_ok) {
+      } else {
+        return exit_status(code: 3_u8);
+      }
+      return exit_status(code: 0_u8);
     }
-    let out_high = i *wrap 2_u64;
-    let out_low = out_high +wrap 1_u64;
-    let out_high_ok = out_high < output_room;
-    let out_low_ok = out_low < output_room;
-    if band(out_high_ok, out_low_ok) {
-    } else {
-      return exit_status(code: 2_u8);
-    }
-    set output[out_high] = hex_digits[high_index];
-    set output[out_low] = hex_digits[low_index];
   }
-  let zero_ok = output[0_u64] == 48_u8;
-  let one_ok = output[1_u64] == 48_u8;
-  let two_ok = output[2_u64] == 97_u8;
-  let three_ok = output[3_u64] == 102_u8;
-  let five_ok = output[5_u64] == 102_u8;
-  let low_pair_ok = band(zero_ok, one_ok);
-  let high_pair_ok = band(two_ok, three_ok);
-  let tail_ok = band(low_pair_ok, high_pair_ok);
-  if band(tail_ok, five_ok) {
-  } else {
-    return exit_status(code: 3_u8);
-  }
-  return exit_status(code: 0_u8);
 }

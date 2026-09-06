@@ -1,6 +1,6 @@
 # The snapshot corpus
 
-This corpus records what the current compiler does with 491 programs — a
+This corpus records what the current compiler does with 484 programs — a
 snapshot of today's verdicts, nothing more. It is **not specification
 evidence** and it lives **outside the conformance boundary**: no row here
 states what the language requires, no row may be cited as a rule, and the
@@ -77,6 +77,48 @@ case, the recorded verdict, the reached verdict, and the first diagnostic line.
   survive.
 
 Never delete a case or edit a verdict merely to get a green run.
+
+## What B7c4b-1 moved
+
+The retiring `buffer<T>` surface left this corpus in three ways.
+
+**Fifty-two rows kept their source's meaning and their verdict.** A read-only
+`buffer<T>` parameter became a `Slice<T>`, a written one became a
+`&uniq MutSlice<T>`, and a `buffer_new` at a literal count became a run taken
+from one bump extent reserved in the entry's own frame and viewed where the
+program wrote through it.
+
+**Seven rows moved from `reject` to `accept`, and the move is [CALL-3]
+working.** `contracts__writer-r1__10_append_within_capacity`,
+`indexing__writer-r1__subslice_copy`,
+`indexing__writer-r2__01_offset_length_window_copy`,
+`indexing__writer-r2__07_bucket_index_from_hash`,
+`indexing__writer-r2__11_ring_buffer_wrap_read`,
+`joins__writer-r1__r12_writes_join_common_bound_accept` and
+`kills__writer-r1__kill03_buffer_write_loop_invariant` each recorded a
+rejection whose cause was a caller's measure dying at a call through a
+`&uniq buffer<T>`. A write through a view reaches the viewed range's element
+storage and no measure of the origin place, so the measure now stands and the
+program is accepted. Each row's `doc` says so. One further row,
+`contracts__writer-r1__02_buffer_capacity_copy`, keeps its `reject` and moves
+the rule it cites from `OP-4` to `FN-8` for the same reason: the missing
+premise is now the caller's own capacity bound at the call rather than the
+subscript.
+
+**Seven rows were retired**, because their program cannot be written on the run
+surface without changing what the row records:
+`indexing__writer-r1__chunk_reader`,
+`indexing__writer-r2__02_ring_buffer_slot_write`,
+`kills__adversary-r1__k10_loop_buffer_write_kills_length_fact`,
+`kills__writer-r1__kill12_replace_buffer_field_kill`,
+`kills__writer-r2__08_callee_write_kills_caller_fact`,
+`diagnostics__writer-r1__r03_allocation_fit_unproved` and
+`diagnostics__writer-r2__r05_world_value_allocation_no_branch`. The first five
+lend a run, or a struct holding one, through a `&uniq` parameter, which
+[BLK-4] refuses; the hand-back or view restructure changes the kill each row
+was written to record. The last two allocate at a runtime count in an entry
+with no store, and their successor's entry row carries `command.heap`, which is
+a different program. Their sources are deleted with their rows.
 
 ## The case sources
 

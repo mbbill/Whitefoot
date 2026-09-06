@@ -1,4 +1,4 @@
-fn shift_tail(input: &uniq buffer<u8>, available: own u64, scan: own u64) -> moved: own u64 reads(input), writes(input) {
+fn shift_tail(input: &uniq MutSlice<u8>, available: own u64, scan: own u64) -> moved: own u64 reads(input), writes(input) {
   doc "expect ACCEPT: moved <= source_index throughout, so the compaction write index never runs ahead of the read index it copies from";
   let spare = len_of(deref(input));
   let available_fits = available <= spare;
@@ -20,13 +20,29 @@ fn shift_tail(input: &uniq buffer<u8>, available: own u64, scan: own u64) -> mov
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let buf = buffer_new(16_u64, 5_u8);
-  region {
-    let moved = shift_tail(input: &uniq buf, available: 16_u64, scan: 6_u64);
-    if moved == 10_u64 {
-    } else {
-      return exit_status(code: 1_u8);
+  region 'w {
+    let workspace = arena_frame::<16, 1, 'w>();
+    region {
+      let buf = arena_vector_proved::<u8>(store: &uniq workspace, count: 16_u64);
+      for @fill_buf (
+        at in 0_u64..16_u64,
+        invariant grown_buf: len_of(buf) >= at,
+        invariant spare_buf: room_of(buf) + at >= 16_u64,
+        invariant flat_buf: head_of(buf) <= 0_u64
+      ) {
+        set buf = place_back(vector: move buf, value: 5_u8);
+      }
+      region {
+        let view_buf = mut_slice_of(&uniq buf);
+        region {
+          let moved = shift_tail(input: &uniq view_buf, available: 16_u64, scan: 6_u64);
+          if moved == 10_u64 {
+          } else {
+            return exit_status(code: 1_u8);
+          }
+        }
+      }
+      return exit_status(code: 0_u8);
     }
   }
-  return exit_status(code: 0_u8);
 }

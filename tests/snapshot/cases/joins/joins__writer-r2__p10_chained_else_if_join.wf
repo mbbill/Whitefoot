@@ -1,4 +1,4 @@
-fn classify(table: own buffer<u8>, x: own u64, thresh: own u64) -> result: own u8 reads(table) {
+fn classify(table: own Slice<u8>, x: own u64, thresh: own u64) -> result: own u8 reads(table) {
   doc "expected ACCEPT: a three-way else-if chain has each terminal leaf establish x < spare from a different comparison against thresh, and the joined bound alone discharges the trailing subscript's [OP-4] obligation.";
   let spare = len_of(table);
   let small = x <= thresh;

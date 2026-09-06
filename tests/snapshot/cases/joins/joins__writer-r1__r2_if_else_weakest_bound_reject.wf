@@ -1,4 +1,4 @@
-fn pick_byte(b: own buffer<u8>, i: own u64, pick: own Bool) -> result: own u8 reads(b) {
+fn pick_byte(b: own Slice<u8>, i: own u64, pick: own Bool) -> result: own u8 reads(b) {
   doc "REJECT: one arm proves the strict i < spare and the other only the non-strict i <= spare, so ENT-5's join carries the weaker non-strict bound and the trailing subscript's OP-4 is undischarged (i == spare satisfies the joined fact).";
   let spare = len_of(b);
   if pick {

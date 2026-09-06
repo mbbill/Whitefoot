@@ -4,7 +4,7 @@ enum Zone {
   Tail();
 }
 
-fn pick_byte(b: own buffer<u8>, i: own u64, zone: own Zone) -> result: own u8 reads(b) {
+fn pick_byte(b: own Slice<u8>, i: own u64, zone: own Zone) -> result: own u8 reads(b) {
   doc "ACCEPT: every match arm independently proves i < spare before the shared subscript, so ENT-5's all-predecessor join carries the common bound out of the exhaustive match.";
   let spare = len_of(b);
   match zone {

@@ -1,4 +1,4 @@
-fn compact(buf: &uniq buffer<u8>) -> result: own u64 reads(buf), writes(buf) {
+fn compact(buf: &uniq MutSlice<u8>) -> result: own u64 reads(buf), writes(buf) {
   doc "expected ACCEPT: an in-place two-pointer compaction. The else-free if inside the loop body either bumps sum and re-proves sum <= i+1 directly, or leaves sum unchanged so the header invariant weakens across i to i+1; both joined edges maintain the same header invariant, which then discharges every write's subscript.";
   let n = len_of(deref(buf));
   let sum = 0_u64;
@@ -17,13 +17,29 @@ fn compact(buf: &uniq buffer<u8>) -> result: own u64 reads(buf), writes(buf) {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let buf = buffer_new(4_u64, 0_u8);
-  region {
-    let kept = compact(buf: &uniq buf);
-    if kept == 0_u64 {
-    } else {
-      return exit_status(code: 1_u8);
+  region 'w {
+    let workspace = arena_frame::<4, 1, 'w>();
+    region {
+      let buf = arena_vector_proved::<u8>(store: &uniq workspace, count: 4_u64);
+      for @fill_buf (
+        at in 0_u64..4_u64,
+        invariant grown_buf: len_of(buf) >= at,
+        invariant spare_buf: room_of(buf) + at >= 4_u64,
+        invariant flat_buf: head_of(buf) <= 0_u64
+      ) {
+        set buf = place_back(vector: move buf, value: 0_u8);
+      }
+      region {
+        let view_buf = mut_slice_of(&uniq buf);
+        region {
+          let kept = compact(buf: &uniq view_buf);
+          if kept == 0_u64 {
+          } else {
+            return exit_status(code: 1_u8);
+          }
+        }
+      }
+      return exit_status(code: 0_u8);
     }
   }
-  return exit_status(code: 0_u8);
 }

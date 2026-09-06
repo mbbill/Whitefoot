@@ -1,4 +1,4 @@
-fn bucket_of(counts: &uniq buffer<u32>, hash: own u64) -> result: own unit reads(counts), writes(counts) contract {
+fn bucket_of(counts: &uniq MutSlice<u32>, hash: own u64) -> result: own unit reads(counts), writes(counts) contract {
   define buckets = len_of(deref(counts));
   requires buckets > 0_u64;
 } {
@@ -15,15 +15,31 @@ fn bucket_of(counts: &uniq buffer<u32>, hash: own u64) -> result: own unit reads
 
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: a nonzero constant-length bucket table plus a runtime-value modulus keeps the remainder inside [0, buckets) automatically under [OP-2, OP-4]; a plain buffer literal always has that fact, no invariant needed.";
-  let counts = buffer_new(8_u64, 0_u32);
-  region {
-    bucket_of(counts: &uniq counts, hash: 19_u64);
-    bucket_of(counts: &uniq counts, hash: 27_u64);
+  region 'w {
+    let workspace = arena_frame::<32, 4, 'w>();
+    region {
+      let counts = arena_vector_proved::<u32>(store: &uniq workspace, count: 8_u64);
+      for @fill_counts (
+        at in 0_u64..8_u64,
+        invariant grown_counts: len_of(counts) >= at,
+        invariant spare_counts: room_of(counts) + at >= 8_u64,
+        invariant flat_counts: head_of(counts) <= 0_u64
+      ) {
+        set counts = place_back(vector: move counts, value: 0_u32);
+      }
+      region {
+        let view_counts = mut_slice_of(&uniq counts);
+        region {
+          bucket_of(counts: &uniq view_counts, hash: 19_u64);
+          bucket_of(counts: &uniq view_counts, hash: 27_u64);
+        }
+      }
+      let landed = counts[3_u64];
+      if landed == 2_u32 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      return exit_status(code: 0_u8);
+    }
   }
-  let landed = counts[3_u64];
-  if landed == 2_u32 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  return exit_status(code: 0_u8);
 }

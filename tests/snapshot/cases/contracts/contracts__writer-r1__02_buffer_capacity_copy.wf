@@ -1,4 +1,4 @@
-fn fill_prefix(out: &uniq buffer<u8>, source: own buffer<u8>) -> written: own u64 reads(source), writes(out) contract {
+fn fill_prefix(out: &uniq MutSlice<u8>, source: own Slice<u8>) -> written: own u64 reads(source), writes(out) contract {
   define spare = len_of(deref(out));
   define amount = len_of(source);
   requires amount <= spare;
@@ -13,20 +13,45 @@ fn fill_prefix(out: &uniq buffer<u8>, source: own buffer<u8>) -> written: own u6
 
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: requires uses a len_of(deref(out)) definition to bound the write loop.";
-  let source = buffer_new(3_u64, 9_u8);
-  let target = buffer_new(5_u64, 0_u8);
-  region {
-    let handle = &uniq target;
-    let written = fill_prefix(out: move handle, source: move source);
-    if written == 3_u64 {
-    } else {
-      return exit_status(code: 1_u8);
+  region 'w {
+    let workspace = arena_frame::<8, 1, 'w>();
+    region {
+      let source = arena_vector_proved::<u8>(store: &uniq workspace, count: 3_u64);
+      for @fill_source (
+        at in 0_u64..3_u64,
+        invariant grown_source: len_of(source) >= at,
+        invariant spare_source: room_of(source) + at >= 3_u64,
+        invariant flat_source: head_of(source) <= 0_u64
+      ) {
+        set source = place_back(vector: move source, value: 9_u8);
+      }
+      let target = arena_vector_proved::<u8>(store: &uniq workspace, count: 5_u64);
+      for @fill_target (
+        at in 0_u64..5_u64,
+        invariant grown_target: len_of(target) >= at,
+        invariant spare_target: room_of(target) + at >= 5_u64,
+        invariant flat_target: head_of(target) <= 0_u64
+      ) {
+        set target = place_back(vector: move target, value: 0_u8);
+      }
+      region {
+        let view_target = mut_slice_of(&uniq target);
+        let read_source = slice_of(&source);
+        region {
+          let handle = &uniq view_target;
+          let written = fill_prefix(out: move handle, source: read_source);
+          if written == 3_u64 {
+          } else {
+            return exit_status(code: 1_u8);
+          }
+        }
+      }
+      let last = target[2_u64];
+      if last == 9_u8 {
+      } else {
+        return exit_status(code: 2_u8);
+      }
+      return exit_status(code: 0_u8);
     }
   }
-  let last = target[2_u64];
-  if last == 9_u8 {
-  } else {
-    return exit_status(code: 2_u8);
-  }
-  return exit_status(code: 0_u8);
 }

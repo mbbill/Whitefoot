@@ -1,4 +1,4 @@
-fn copy_window(src: own buffer<u8>, start: own u64, width: own u64, dst: &uniq buffer<u8>) -> written: own u64 reads(src, dst), writes(dst) {
+fn copy_window(src: own Slice<u8>, start: own u64, width: own u64, dst: &uniq MutSlice<u8>) -> written: own u64 reads(src, dst), writes(dst) {
   doc "ACCEPT: copies one start..start+width window into a caller-owned destination buffer; both the source and destination subscripts are tested against their real lengths before every store, so a short destination or a runaway width simply stops the copy early.";
   let capacity = len_of(src);
   let spare = len_of(deref(dst));
@@ -36,27 +36,52 @@ fn copy_window(src: own buffer<u8>, start: own u64, width: own u64, dst: &uniq b
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let src = buffer_new(10_u64, 0_u8);
-  set src[3_u64] = 5_u8;
-  set src[4_u64] = 6_u8;
-  set src[5_u64] = 7_u8;
-  let dst = buffer_new(3_u64, 0_u8);
-  region {
-    let written = copy_window(src: move src, start: 3_u64, width: 3_u64, dst: &uniq dst);
-    if written == 3_u64 {
-    } else {
-      return exit_status(code: 1_u8);
+  region 'w {
+    let workspace = arena_frame::<13, 1, 'w>();
+    region {
+      let src = arena_vector_proved::<u8>(store: &uniq workspace, count: 10_u64);
+      for @fill_src (
+        at in 0_u64..10_u64,
+        invariant grown_src: len_of(src) >= at,
+        invariant spare_src: room_of(src) + at >= 10_u64,
+        invariant flat_src: head_of(src) <= 0_u64
+      ) {
+        set src = place_back(vector: move src, value: 0_u8);
+      }
+      set src[3_u64] = 5_u8;
+      set src[4_u64] = 6_u8;
+      set src[5_u64] = 7_u8;
+      let dst = arena_vector_proved::<u8>(store: &uniq workspace, count: 3_u64);
+      for @fill_dst (
+        at in 0_u64..3_u64,
+        invariant grown_dst: len_of(dst) >= at,
+        invariant spare_dst: room_of(dst) + at >= 3_u64,
+        invariant flat_dst: head_of(dst) <= 0_u64
+      ) {
+        set dst = place_back(vector: move dst, value: 0_u8);
+      }
+      region {
+        let view_dst = mut_slice_of(&uniq dst);
+        let read_src = slice_of(&src);
+        region {
+          let written = copy_window(src: read_src, start: 3_u64, width: 3_u64, dst: &uniq view_dst);
+          if written == 3_u64 {
+          } else {
+            return exit_status(code: 1_u8);
+          }
+        }
+      }
+      let first = dst[0_u64];
+      if first == 5_u8 {
+      } else {
+        return exit_status(code: 2_u8);
+      }
+      let last = dst[2_u64];
+      if last == 7_u8 {
+      } else {
+        return exit_status(code: 3_u8);
+      }
+      return exit_status(code: 0_u8);
     }
   }
-  let first = dst[0_u64];
-  if first == 5_u8 {
-  } else {
-    return exit_status(code: 2_u8);
-  }
-  let last = dst[2_u64];
-  if last == 7_u8 {
-  } else {
-    return exit_status(code: 3_u8);
-  }
-  return exit_status(code: 0_u8);
 }

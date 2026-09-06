@@ -2,45 +2,66 @@ const fir_weights: FixedVector<u32, 3> =[1_u32, 2_u32, 1_u32];
 
 command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- slides a fixed 3-tap integer FIR window across a sample buffer with bounds-checked reads";
-  let samples = buffer_new(6_u64, 0_u32);
-  set samples[0_u64] = 1_u32;
-  set samples[1_u64] = 2_u32;
-  set samples[2_u64] = 3_u32;
-  set samples[3_u64] = 4_u32;
-  set samples[4_u64] = 5_u32;
-  set samples[5_u64] = 6_u32;
-  let sample_count = len_of(samples);
-  let tap_count = len_of(fir_weights);
-  let output = buffer_new(4_u64, 0_u32);
-  let output_room = len_of(output);
-  for (center in 0_u64..4_u64) {
-    let output_ok = center < output_room;
-    if output_ok {
-    } else {
-      return exit_status(code: 1_u8);
-    }
-    let acc = 0_u32;
-    for (tap in 0_u64..tap_count) {
-      let source_index = center +wrap tap;
-      let source_ok = source_index < sample_count;
-      if source_ok {
-      } else {
-        return exit_status(code: 2_u8);
+  region 'w {
+    let workspace = arena_frame::<40, 4, 'w>();
+    region {
+      let samples = arena_vector_proved::<u32>(store: &uniq workspace, count: 6_u64);
+      for @fill_samples (
+        at in 0_u64..6_u64,
+        invariant grown_samples: len_of(samples) >= at,
+        invariant spare_samples: room_of(samples) + at >= 6_u64,
+        invariant flat_samples: head_of(samples) <= 0_u64
+      ) {
+        set samples = place_back(vector: move samples, value: 0_u32);
       }
-      let weight = fir_weights[tap];
-      let sample = samples[source_index];
-      let product = weight *wrap sample;
-      set acc = acc +wrap product;
+      set samples[0_u64] = 1_u32;
+      set samples[1_u64] = 2_u32;
+      set samples[2_u64] = 3_u32;
+      set samples[3_u64] = 4_u32;
+      set samples[4_u64] = 5_u32;
+      set samples[5_u64] = 6_u32;
+      let sample_count = len_of(samples);
+      let tap_count = len_of(fir_weights);
+      let output = arena_vector_proved::<u32>(store: &uniq workspace, count: 4_u64);
+      for @fill_output (
+        at in 0_u64..4_u64,
+        invariant grown_output: len_of(output) >= at,
+        invariant spare_output: room_of(output) + at >= 4_u64,
+        invariant flat_output: head_of(output) <= 0_u64
+      ) {
+        set output = place_back(vector: move output, value: 0_u32);
+      }
+      let output_room = len_of(output);
+      for (center in 0_u64..4_u64) {
+        let output_ok = center < output_room;
+        if output_ok {
+        } else {
+          return exit_status(code: 1_u8);
+        }
+        let acc = 0_u32;
+        for (tap in 0_u64..tap_count) {
+          let source_index = center +wrap tap;
+          let source_ok = source_index < sample_count;
+          if source_ok {
+          } else {
+            return exit_status(code: 2_u8);
+          }
+          let weight = fir_weights[tap];
+          let sample = samples[source_index];
+          let product = weight *wrap sample;
+          set acc = acc +wrap product;
+        }
+        set output[center] = acc;
+      }
+      if output[0_u64] == 8_u32 {
+      } else {
+        return exit_status(code: 3_u8);
+      }
+      if output[3_u64] == 20_u32 {
+      } else {
+        return exit_status(code: 3_u8);
+      }
+      return exit_status(code: 0_u8);
     }
-    set output[center] = acc;
   }
-  if output[0_u64] == 8_u32 {
-  } else {
-    return exit_status(code: 3_u8);
-  }
-  if output[3_u64] == 20_u32 {
-  } else {
-    return exit_status(code: 3_u8);
-  }
-  return exit_status(code: 0_u8);
 }

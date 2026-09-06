@@ -1,4 +1,4 @@
-fn checked_sum(weights: own buffer<u8>) -> result: own u64 reads(weights) contract {
+fn checked_sum(weights: own Slice<u8>) -> result: own u64 reads(weights) contract {
   define bound = len_of(weights);
   requires bound <= 100_u64;
 } {
