@@ -1,34 +1,54 @@
-command fn main(command.stdin as input: own InputStream) -> status: own ExitStatus reads(input), writes(input) {
+command fn main(command.stdin as input: own InputStream, command.heap as heap: own Heap) -> status: own ExitStatus reads(input, heap), writes(input, heap), allocates(heap) {
   doc "SYS-15: `read_next` reads the entry's standard input at the stream's own position, advancing it by exactly `next - start` on each `ReadBytes`, and reports `ReadEnd` exactly once the stream has no further byte [SYS-8]. The loop counts what it observed and returns 0 only when the count equals the arranged body.";
-  let chunk = buffer_new(8_u64, 0_u8);
-  let total = 0_u64;
-  let outcome = 0_u8;
-  loop @chunks {
-    let ended = 0_u8;
-    region {
-      match read_next(input: &uniq input, destination: &uniq chunk, start: 0_u64, end: 8_u64) {
-        ReadBytes(next: endpoint) => {
-          set total = total +wrap endpoint;
+  region {
+    match heap_vector::<u8>(store: &uniq heap, count: 8_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let chunk = move fresh;
+        for @scratch (
+          at in 0_u64..8_u64,
+          invariant grown: len_of(chunk) >= at,
+          invariant spare: room_of(chunk) + at >= 8_u64,
+          invariant flat: head_of(chunk) <= 0_u64
+        ) {
+          set chunk = place_back(vector: move chunk, value: 0_u8);
         }
-        ReadEnd() => {
-          set ended = 1_u8;
+        let total = 0_u64;
+        let outcome = 0_u8;
+        region {
+          let window = mut_slice_of(&uniq chunk);
+          loop @chunks {
+            let ended = 0_u8;
+            region {
+              match read_next(input: &uniq input, destination: &uniq window, start: 0_u64, end: 8_u64) {
+                ReadBytes(next: endpoint) => {
+                  set total = total +wrap endpoint;
+                }
+                ReadEnd() => {
+                  set ended = 1_u8;
+                }
+                ReadFailed(error: problem) => {
+                  set outcome = 3_u8;
+                  set ended = 1_u8;
+                }
+              }
+            }
+            if ended == 1_u8 {
+              break @chunks;
+            }
+          }
         }
-        ReadFailed(error: problem) => {
-          set outcome = 3_u8;
-          set ended = 1_u8;
+        if outcome == 0_u8 {
+          let complete = total == 21_u64;
+          if complete {
+          } else {
+            set outcome = 4_u8;
+          }
         }
+        return exit_status(code: outcome);
       }
     }
-    if ended == 1_u8 {
-      break @chunks;
-    }
   }
-  if outcome == 0_u8 {
-    let complete = total == 21_u64;
-    if complete {
-    } else {
-      set outcome = 4_u8;
-    }
-  }
-  return exit_status(code: outcome);
 }

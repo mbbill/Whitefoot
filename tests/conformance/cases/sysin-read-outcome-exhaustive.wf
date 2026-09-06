@@ -1,13 +1,33 @@
-command fn main(command.stdin as input: own InputStream) -> status: own ExitStatus reads(input), writes(input) {
+command fn main(command.stdin as input: own InputStream, command.heap as heap: own Heap) -> status: own ExitStatus reads(input, heap), writes(input, heap), allocates(heap) {
   doc "ERR-2: `read_next` answers the same three-variant `ReadOutcome` `read_at` answers [SYS-6], so a match over it must write all three arms. This one omits `ReadFailed`, which is exactly the failure a stream can report, and is rejected.";
-  let chunk = buffer_new(4_u64, 0_u8);
   region {
-    match read_next(input: &uniq input, destination: &uniq chunk, start: 0_u64, end: 4_u64) {
-      ReadBytes(next: endpoint) => {
+    match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
       }
-      ReadEnd() => {
+      Some(value: fresh) => {
+        let chunk = move fresh;
+        for @scratch (
+          at in 0_u64..4_u64,
+          invariant grown: len_of(chunk) >= at,
+          invariant spare: room_of(chunk) + at >= 4_u64,
+          invariant flat: head_of(chunk) <= 0_u64
+        ) {
+          set chunk = place_back(vector: move chunk, value: 0_u8);
+        }
+        region {
+          let window = mut_slice_of(&uniq chunk);
+          region {
+            match read_next(input: &uniq input, destination: &uniq window, start: 0_u64, end: 4_u64) {
+              ReadBytes(next: endpoint) => {
+              }
+              ReadEnd() => {
+              }
+            }
+          }
+        }
+        return exit_status(code: 0_u8);
       }
     }
   }
-  return exit_status(code: 0_u8);
 }
