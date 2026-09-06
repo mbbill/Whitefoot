@@ -42,15 +42,15 @@ probably not the next work.
 
 ## Authority and reading
 
-- `docs/roadmap.md` records the project's current landscape: active
-  specification, direction status, gaps, evidence links, and candidate
-  projects. It does not grant or withhold permission to work on a branch. Work
-  is not planned in a document up front: a selected direction goes to
-  `research/investigations/<name>/` for its design, measurements, and
-  rejected alternatives, and the reasoning that survives it is written to
-  `mcts_mem/`.
-- The active specification at `spec/kernel-spec.md`, named by
-  `docs/roadmap.md`, defines the language. Compiler behavior, tests, archived
+- Work is not planned in a document up front. A selected direction goes to
+  `research/investigations/<name>/` for its design, measurements, and rejected
+  alternatives, and the reasoning that survives it is written to `mcts_mem/`.
+- `docs/roadmap.md` is a reference map of long-range directions and candidate
+  projects. It is not part of this loop: nothing waits on it, no step updates
+  it, and it grants or withholds nothing. Read it for orientation; do not treat
+  a line in it as a statement of what the compiler currently does, which is the
+  specification's and `compiler/README.md`'s to say.
+- The active specification at `spec/kernel-spec.md` defines the language. Compiler behavior, tests, archived
   code, and design prose do not.
 - `docs/constitution.md` records project law and `docs/patterns.md` records writer
   forms.

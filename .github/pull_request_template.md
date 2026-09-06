@@ -81,8 +81,6 @@ not before.
 
 - [ ] `mcts_mem/<area>.md` updated with what was decided and why, including the
       designs that were built and rejected.
-- [ ] `docs/roadmap.md`: the affected item's `Current` and `Missing / next` are
-      in the present tense. No per-version paragraph anywhere in the file.
 - [ ] The investigation under `research/investigations/` is archived if the
       capability it studied has landed.
 

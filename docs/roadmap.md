@@ -1,14 +1,16 @@
 # Whitefoot Direction Outline
 
-Status: CANONICAL DIRECTION OUTLINE
-Revision: 70 (the per-version paragraphs are evicted; a landing amendment is
-written into the affected item's present-tense state, and what each version
-changed lives in its approval record, its archive, and its batch record)
+Status: REFERENCE. Long-range directions and candidate projects, kept for
+orientation. Not an authority and not part of the working loop: nothing waits
+on this file, no step in `CLAUDE.md` updates it, and it grants or withholds
+nothing.
+Revision: 71 (taken out of the working loop; a direction's `Current` line is
+orientation, and what the compiler does today is the specification's and
+`compiler/README.md`'s to say)
 
-The active language authority is the specification carried by the stable path
-[`spec/kernel-spec.md`](../spec/kernel-spec.md); its version and exact digest
-are the tail of the `ACTIVE-SPEC:` chain in
-its own bytes. Superseded versions are archived byte-for-byte as
+The language is defined by the specification at
+[`spec/kernel-spec.md`](../spec/kernel-spec.md), whose own bytes are its
+identity. Superseded versions are archived byte-for-byte as
 `spec/kernel-spec-vN.md`. Project law is the
 [`Constitution`](constitution.md), and the operational process is
 [`CLAUDE.md`](../CLAUDE.md).
@@ -24,25 +26,28 @@ proof-object or runtime self-validation layer.
 
 ## How to read this outline
 
-This file is the owner-facing map of Whitefoot's live directions. It answers:
+This file is a map of where the project might go: which ideas, requirements
+and open questions belong together, what evidence exists for each, and what
+would have to be true before a direction could advance. It is read for
+orientation and nothing more.
 
-- what the project can already do;
-- which ideas, requirements, and open questions belong together;
-- what evidence exists and whether it is current or historical; and
-- what is missing before a direction can advance.
-
-This outline records the landscape. A selected direction is worked in
+It is deliberately outside the working loop. A selected direction is worked in
 `research/investigations/<name>/`, where its design, measurements and rejected
 alternatives live, and what is settled by it is written to `mcts_mem/`. Neither
-this outline nor those records grants or withholds permission to work on a
-branch or adds a merge condition beyond the four rules in `CLAUDE.md`. A project can
+this file nor those records grants or withholds permission to work on a branch
+or adds a merge condition beyond the four rules in `CLAUDE.md`. A project can
 expose a missing capability, but cannot by itself change the language or
 justify a project-shaped compiler special case.
 
+A `Current` line here is orientation, not a status report. What the compiler
+does today is stated by the specification, by `compiler/README.md`, and by the
+tests; a line here that disagrees with them is this file being stale, which it
+is allowed to be.
+
 Each item has one canonical home. Other directions link to its ID instead of
-copying its status. Tags are scanning aids. The `Current` sentence is this
-outline's canonical status summary, but the linked specification, code/tests,
-RESULTS, project law, or design memory remains authority for the underlying
+copying its status. Tags are scanning aids. The linked specification,
+code/tests, RESULTS, project law, or design memory is the authority for the
+underlying
 fact:
 
 - `[current: ...]` — some stated part exists now; the suffix names its factual
