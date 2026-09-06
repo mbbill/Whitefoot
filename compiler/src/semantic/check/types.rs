@@ -1828,6 +1828,29 @@ extent's region is one the caller must choose, so it is written at every positio
                 SemanticIssueKind::InvalidConstValue,
             );
         }
+        // [CONST-2] none of the compiler-owned container nominals is
+        // const-eligible: a const is pure static rodata, and each of the five
+        // names storage, a store region, or a release action. The question is
+        // decided here, on the resolved declaration class and before the
+        // type's own arguments are parsed, because a cell type is interned
+        // per (store region, referent) and a `const` item is not one of the
+        // positions the interning pass visits — parsing one there reported an
+        // internal deferred-nominal failure instead of this rejection.
+        if self
+            .tree
+            .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
+            .is_some()
+            && matches!(
+                self.use_at(node, LexicalUseRole::Type)?.target(),
+                ResolvedTarget::Container(_)
+            )
+        {
+            return self.issue_node(
+                SemanticRule::Const2,
+                node,
+                SemanticIssueKind::InvalidConstValue,
+            );
+        }
         let ty = self.parse_type(node)?;
         if self.const_eligible_type(ty)? {
             Ok(ty)
