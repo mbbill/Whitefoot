@@ -243,7 +243,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<ResultValue, CheckStop> {
         let node = self.tree.path(node)?.clone();
         if std::env::var_os("WF_TRACE_UNSUPPORTED").is_some() {
-            eprintln!("unsupported {feature:?} at {node:?}\n{}", std::backtrace::Backtrace::force_capture());
+            eprintln!(
+                "unsupported {feature:?} at {node:?}\n{}",
+                std::backtrace::Backtrace::force_capture()
+            );
         }
         Err(CheckStop::Unsupported(SemanticUnsupported {
             feature,

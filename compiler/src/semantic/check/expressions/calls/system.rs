@@ -345,28 +345,32 @@ occurs at one parameter position, so this call's own arguments determine it",
     ) -> Result<bool, CheckStop> {
         let element = CheckedFlatElement::Integer(crate::semantic::model::IntegerType::U8);
         Ok(match declared {
-            crate::SystemTypeRef::DestinationU8 => matches!(
-                actual,
-                CheckedType::Buffer { element: actual_element } if actual_element == element
-            ) || matches!(
-                actual,
-                CheckedType::Slice {
-                    element: actual_element,
-                    strength: LoanStrength::Exclusive,
-                    ..
-                } if actual_element == element
-            ),
-            crate::SystemTypeRef::SourceU8 => matches!(
-                actual,
-                CheckedType::Buffer { element: actual_element } if actual_element == element
-            ) || matches!(
-                actual,
-                CheckedType::Slice {
-                    element: actual_element,
-                    strength: LoanStrength::Shared,
-                    ..
-                } if actual_element == element
-            ),
+            crate::SystemTypeRef::DestinationU8 => {
+                matches!(
+                    actual,
+                    CheckedType::Buffer { element: actual_element } if actual_element == element
+                ) || matches!(
+                    actual,
+                    CheckedType::Slice {
+                        element: actual_element,
+                        strength: LoanStrength::Exclusive,
+                        ..
+                    } if actual_element == element
+                )
+            }
+            crate::SystemTypeRef::SourceU8 => {
+                matches!(
+                    actual,
+                    CheckedType::Buffer { element: actual_element } if actual_element == element
+                ) || matches!(
+                    actual,
+                    CheckedType::Slice {
+                        element: actual_element,
+                        strength: LoanStrength::Shared,
+                        ..
+                    } if actual_element == element
+                )
+            }
             _ => self.system_type(declared)? == Some(actual),
         })
     }

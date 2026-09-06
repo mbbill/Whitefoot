@@ -8193,11 +8193,8 @@ impl Analyzer<'_, '_> {
         // [SYS-8, VIEW-7] the row's own range-bearing parameter: the operand
         // class this row writes or reads, whose `len_of` the second
         // obligation is stated over.
-        let Some((buffer_ordinal, buffer_parameter)) = row
-            .parameters
-            .iter()
-            .enumerate()
-            .find(|(_, parameter)| {
+        let Some((buffer_ordinal, buffer_parameter)) =
+            row.parameters.iter().enumerate().find(|(_, parameter)| {
                 matches!(
                     parameter.ty,
                     crate::SystemTypeRef::DestinationU8 | crate::SystemTypeRef::SourceU8

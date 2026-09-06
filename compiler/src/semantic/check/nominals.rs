@@ -1,8 +1,8 @@
 use crate::{PreludeDeclarationId, SemanticCompilerFailure, UnsupportedSemanticFeature};
 
 use super::super::model::{
-    CheckedConstructor, CheckedField, CheckedNominal, CheckedNominalKind,
-    CheckedType, CheckedVariant, IntegerType, LoanStrength, NominalId,
+    CheckedConstructor, CheckedField, CheckedNominal, CheckedNominalKind, CheckedType,
+    CheckedVariant, IntegerType, LoanStrength, NominalId,
 };
 use super::{CheckStop, Checker, PendingNominal, PreludeType};
 
