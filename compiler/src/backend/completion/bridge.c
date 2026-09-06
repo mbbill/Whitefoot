@@ -744,13 +744,15 @@ static uint64_t wf_bridge_ring_submission_enters(void) {
     return 0u;
 }
 
-#else
-
+/* The port's counters are the probe's to print; the observer's ring line is
+ * the Linux ring's alone. */
 int wf__bridge_report(char *buffer, size_t capacity) {
     (void)buffer;
     (void)capacity;
     return 0;
 }
+
+#else
 
 /* A target with no kernel completion ring in the supported set: its qualified
  * path is the bounded typed adapter, and every one of these answers "no".
