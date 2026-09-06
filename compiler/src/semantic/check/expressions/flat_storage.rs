@@ -443,7 +443,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let ty = self.retained_operation_type_argument(node, function)?;
         let element = match self.buffer_element(ty)? {
             Some(_) => ty,
-            None if matches!(ty, CheckedType::Array { .. } | CheckedType::Buffer { .. }) => ty,
+            None if matches!(ty, CheckedType::Buffer { .. }) => ty,
             None => {
                 return self.issue_node(
                     SemanticRule::Op1,

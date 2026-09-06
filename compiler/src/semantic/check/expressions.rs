@@ -1540,9 +1540,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 if matches!(
                     constant.ty,
-                    CheckedType::Array { .. }
-                        | CheckedType::Slice { .. }
-                        | CheckedType::Buffer { .. }
+                    CheckedType::Slice { .. }
                 ) {
                     return self.issue_node(
                         SemanticRule::Own1,
