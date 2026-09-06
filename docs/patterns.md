@@ -1726,7 +1726,7 @@ Replaces: taking a run or a buffer by value in order to write it, passing a
 `&uniq buffer<T>` where the callee only needs a window, and the `Option<T>`
 slot that stood in for a writable view.
 
-## P26. Pass the destination on, and hand its reader back as the child
+## P32. Pass the destination on, and hand its reader back as the child
 
 Status: active in v0.45 (B7c4b-1). Two forms a helper handed a writable view
 could not write until this batch.
@@ -1779,7 +1779,7 @@ window; and the ceiling half that admits the result is a shared result only, so
 Replaces: the hand-the-length-back workaround two diagnostics helpers took in
 B3, and the `&uniq buffer<u8>` spelling a chained output destination kept.
 
-## P27. A full fixed run of literals is a `const`
+## P33. A full fixed run of literals is a `const`
 
 Status: active in v0.45 (B7c4b-1).
 
