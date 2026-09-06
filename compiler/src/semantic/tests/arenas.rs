@@ -6,12 +6,19 @@ use super::{assert_rule, assert_rule_kind, assert_unsupported, with_semantics};
 /// type naming an arena is rejected at the callable boundary — and the
 /// rejection is reported even though the unit also lacks `main`, because a
 /// declaration's own established violation is ordered before the FN-7
-/// whole-unit rejection [DIAG-1]. This is the stor4-neg-arena-escape
-/// conformance case byte for byte.
+/// whole-unit rejection [DIAG-1]. It was the stor4-neg-arena-escape
+/// conformance case byte for byte until B7c4b-1 took that corpus off
+/// `arena<'r, T>`; the rule and the type are untouched by that batch, so the
+/// program is kept here rather than lost with the case.
 #[test]
 fn arena_results_reject_citing_stor4_before_missing_main() {
     assert_rule(
-        include_bytes!("../../../../tests/conformance/cases/stor4-neg-arena-escape.wf"),
+        br#"fn make['r]() -> function_result: own arena<'r, i32> allocates(arena 'r) {
+  doc "A value of type arena<'r,T> may not be returned outside 'r's block [STOR-4]; returning it escapes the region.";
+  let a = arena_new::<'r, i32>(3_i32);
+  return a;
+}
+"#,
         SemanticRule::Stor4,
         SemanticIssueKind::ArenaEscape {
             mechanical_fix: "keep the arena value inside its region's block; \
@@ -76,14 +83,23 @@ fn missing_main_wins_over_an_unsupported_capability() {
 
 /// [FN-1] an `arena<'r, U>` parameter is not an input-slice supplier: a view
 /// formed over its content has a resolved source-place origin outside the
-/// return-origin ceiling, rejected at the `return_stmt`. This is the
-/// fn1-neg-returned-slice-arena-origin conformance case byte for byte.
+/// return-origin ceiling, rejected at the `return_stmt`. It was the
+/// fn1-neg-returned-slice-arena-origin conformance case byte for byte until
+/// B7c4b-1 took that corpus off `arena<'r, T>` and recorded that no program on
+/// the run surface reaches this refusal — [OWN-10] gets there first. The
+/// program is kept here because the refusal itself is untouched.
 #[test]
 fn arena_content_views_stay_outside_the_slice_return_ceiling() {
     assert_rule(
-        include_bytes!(
-            "../../../../tests/conformance/cases/fn1-neg-returned-slice-arena-origin.wf"
-        ),
+        br#"fn arena_view['r](storage: own arena<'r, array<u8, 2>>) -> result: own Slice<'r, u8> pure {
+  let view = slice_of(&'r deref(storage));
+  return view;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
         SemanticRule::Fn1,
         SemanticIssueKind::InvalidSliceReturnOrigin {
             mechanical_fix: "accept an exact direct input slice in the result region or keep \
