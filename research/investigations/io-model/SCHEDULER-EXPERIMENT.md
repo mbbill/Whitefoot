@@ -2123,3 +2123,12 @@ output. Buffer sizes and zero initialization remain identical. This experiment
 can remove idle-stack startup cost; it does not by itself establish efficient
 storage for a thousand live connection buffers. Both storage flags remain
 experimental and default to zero until native results are assessed.
+
+The first native run at `41ff2330766bc07dce6697f7726930434021bb8f`
+passed all three Linux candidate completion suites and all Windows memory/
+pinned IOCP checks. Gate, io-hosts and all io-bench jobs also passed. The memory
+measurement job stopped before timing: the network launcher omitted `compact`
+and `small` from its WF executable cases and returned status 2 at the first
+compact preflight. The launcher now dispatches both already-built candidates.
+No timing or memory conclusion is drawn from that incomplete job; its logs
+remain in [run 34055042189](https://github.com/mbbill/Whitefoot/actions/runs/34055042189).
