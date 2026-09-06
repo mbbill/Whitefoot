@@ -1,9 +1,9 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 69 (the specification identity lives only in the approval chain and
-the generated compiler identity; the candidate status is retired, so an
-amendment lands and activates in one change)
+Revision: 70 (the per-version paragraphs are evicted; a landing amendment is
+written into the affected item's present-tense state, and what each version
+changed lives in its approval record, its archive, and its batch record)
 
 The active language authority is the specification carried by the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md); its version and exact digest
@@ -17,165 +17,14 @@ remains [batch 0091](done/0091-par3-judgment.md). The execution plan is
 [`Constitution`](constitution.md), and the operational process is
 [`WORKFLOW.md`](WORKFLOW.md).
 
-v0.42 adds [FORM-8], one canonical region spelling. A REGIONID is written
-exactly where the document does not otherwise fix the region: a declaration
-writes a name only to relate two of its own positions or to name an
-output-position region no parameter determines; a `borrow_expr` writes its
-region only when it is not the innermost enclosing `region_stmt`'s; a
-`region_stmt` writes its name only when its body still references it; and a
-call writes exactly the callee region parameters no parameter position
-determines, so a call whose regions are all determined writes no `::`
-application at all. No liveness, outlives, exclusivity, storage-duration,
-provenance, effect, or confinement judgment changes. Over the four `.wf` test
-corpora the rule takes 2623 written region tokens in 261 files to 260 in 75,
-and every remaining one carries a relation, a caller's choice, or an outer
-block a deeper one encloses.
-
-v0.43 carries two independent amendments and adds or retires no rule id.
-The first makes every `loop_stmt` and `for_stmt` body a region block
-[OWN-3, OWN-11]. The body introduces one unnamed local region whose block is
-that body, so a `borrow_expr` written directly in the body takes it, is written
-bare, and dies with the iteration — exactly the guarantee OWN-11 already gave,
-now with no writer ceremony. Because that region exists, a `region_stmt` that is
-the body's only statement is a second spelling of it and a hard error citing
-[FORM-8]; a block the body writes another statement beside is strictly narrower,
-is what [OWN-6]'s statement-scope judgment needs for a child reborrow, and stays
-legal. Across the four `.wf` test corpora exactly four blocks are the body's
-only statement.
-The second repairs [ENT-6]'s control-flow join, which was not associative: a
-delta atom minted by an earlier join counted as an ordinary nonconstant term at
-the next one, so two nested joins lost a binding image one flat join over the
-same branches kept, and a three-way demux was accepted written as a `match` and
-refused written as nested `if`/`else`. Each input image is now normalized before
-the comparison by folding every earlier delta atom back into the constant
-interval it stands for, so nested joins reach the flat join's image and
-acceptance stops depending on the shape of the control join. The repair only
-adds images: no program v0.42 accepted is refused.
-
-v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
-or `ensures` operand be a measure of a place, so `ensures len(rest) >= len(out);`
-is a written clause where it was a parse rejection, and the define-per-measure
-spelling is gone. [MSR-3] gives every contract operand one denotation keyed on
-its parameter's mode: an `own` operand read at a caller denotes the call datum,
-the value at transfer, which no consume and no later write kills; a `&uniq`
-parameter's measure is inadmissible in a source-declared `ensures`, because the
-callee cannot name the caller's object at a point after its own writes.
-[CALL-4] states the contract vocabulary over the one result a declaration has
-and records the deferred widenings. [CALL-6] states once how a declared
-relation is instantiated at the call, established on the normal continuation,
-and restricted to its routed arm, and refuses at the declaration a contract
-whose published relations contradict each other. The batch that carried it is
-B1 of the container and resource design under
-`research/investigations/containers-and-resources/`.
-
-v0.40 carries source proof through the
-ordinary semantic compiler. It checks contracts, explicit loop-header
-invariants, and local invariants with optional `use` steps; submits every
-supported partial operation to the same deterministic proof context; proves
-selected-target layout and address domains before emission; and erases proof
-syntax before lowering. It contains no writer-accessible runtime assertion;
-internal inconsistencies are ordinary compiler defects owned by implementation
-repair and tests, not another proof-object or runtime self-validation layer.
-
-v0.45 adds and retires no rule (136 remain) and amends [ENT-6] and [ENT-3] in
-place. [ENT-6]'s fixed interval-product rule proves an inclusive interval for
-each operand of a non-constant multiplication and forms the four products of
-their endpoint pairs; the multiplication is admitted exactly when all four lie
-in the result type, and the rule then discarded them. [ENT-3]'s new source S14
-establishes the least and greatest of those same four products on the value
-the multiplication binds, so an admitted product no longer produces a value
-with no bound and the operation that follows it has the premise the checker
-had already proved. Both published relations are constant bounds against the
-distinguished zero term, so their [ENT-5] support is the bound value alone: a
-later write to an operand leaves them true, a write to the bound place kills
-them, and no relation over the operands, new term, or automatic premise route
-is added. A written `use` remains the only way a product participates in a
-certificate, and a domain discharged by the finite L0 or affine-clause route
-publishes nothing. The evidence that selected it is in
-`research/investigations/binary-arithmetic/`.
-
-v0.46 adds and retires no rule (136 remain) and amends [FN-8], [ENT-3] and
-[ENT-6] in place. Three sentences move together because none is useful alone.
-[FN-8] admits exact addition, subtraction and multiplication in a clause and
-reads them over the mathematical integers, the carve-out [INV-1] already gives
-an `affine_expr`; a clause is erased before lowering and evaluates nothing, so
-a row total over the mathematical integers states a relation where it would
-otherwise request an operation. Division, remainder, negation, absolute value
-and the shifts stay inadmissible. [ENT-3] makes a measure term an affine atom,
-one per measured place, identified by its root binding and tightened by the
-L0-to-affine index, which is the admission v0.44 recorded as deferred. And
-[ENT-6]'s affine route discharges a comparison goal whose normalization is
-affine whether or not it also projects to L0, the projection being what the
-evidence names rather than what the route requires. Together they make
-`requires len(out) >= 2 * len(src)` — the precondition of every expansion
-codec — writable and dischargeable; each alone leaves it refused. The evidence
-is in `research/investigations/binary-arithmetic/`.
-
-v0.47 adds and retires no rule (136 remain) and amends [INV-1] in place. An
-integer-typed named const is an affine atom, folded at formation to the one
-closed value it declares. It was already an [ENT-2] constant term, so the
-exclusion made one declared value mean a number everywhere except in the
-relations written about it: a limit declared once had its digits rewritten
-inline in every invariant and every `use` that named it, and a stale digit is
-a silent divergence between what the code enforces and what the proof states.
-Folding at formation keeps the admission free of consequence — no atom kind,
-image, kill, or join changes, and the same relation over a const and over its
-literal is byte-identical, including in a failure's rendered residual. A
-const-generic parameter is symbolic rather than closed and is not this
-admission.
-
-v0.48 adds and retires no rule (136 remain) and amends [GRAM-4] and [PRF-1] in
-place. A `proof_use` cites exactly one premise — the new `use_premise`
-production, an invariant name or a delimited relation — and states its
-multiplicity as `N times` before it, so `proof_use := "use" (("[0-9]+" | IDENT)
-"times")? use_premise ";"`. The multiplicity had been spelled with `*`, which
-claimed it was a multiplication whose right operand is a relation: the form
-read as `n * bool`, a term multiplicity was undecidable in the strong-LL(2)
-tables because after `use IDENT *` the token separating a certificate step from
-an affine relation source is arbitrarily far away, and the [FORM-2] stated
-space before `(` existed to carry that distinction where the parser could not
-see it. The whitespace rule becomes the ordinary keyword-paren space a
-`for_stmt` header already states, and parentheses become mandatory on the
-relation premise, which removes the second spelling split from the same
-ambiguity. Grammar productions go 84 to 85 and unique fixed lowercase atoms 54
-to 55.
-
-The multiplicity may now name an unsigned integer value. Scaling a normalized
-premise by a value makes the accumulated certificate sum a polynomial of degree
-at most two; every nonlinear monomial must fold to the value image an admitted
-exact multiplication [ENT-6] already bound, and a sum that keeps one rejects.
-The fold direction is what keeps it complete — folding the sum only removes
-monomials, while expanding the target would rewrite a proposition that is
-already affine — and what comes out reaches the same residual, integer
-tightenings and L0 route a bare-decimal certificate uses. No fact, published
-conclusion, invariant target, or `affine_expr` carries a nonlinear term. The
-unsigned restriction makes the scaling step sound without an obligation. The
-capability is a matrix multiply's inner index at a runtime stride, `n*p + j <
-n*k`, whose certificate is one term-scaled premise and one plain one and whose
-residual cancels to zero; the same certificate at a literal stride already
-compiled. The evidence is in `research/investigations/binary-arithmetic/`, with
-the design and its measured alternatives in its `PROOF-SURFACE.md`.
-
-v0.49 adds and retires no rule (136 remain) and amends [PRF-1] in place. A
-multiplication's operand and a written multiplicity name the same value when
-they name the same declaration, not when their images coincide. v0.48 folded by
-the images, and a local's image is transparent — `let stride = width +
-padding;` gives `stride` the image `width + padding` — so a product over
-`stride` and a certificate scaling by `stride` arrived at the fold as different
-arithmetic and nothing matched. Measured on one shape with only the derivation
-varying, a stride copied from a parameter accepted while `width + padding`,
-`width + 4`, and `2 * width` all rejected; a stride is definitionally derived,
-so the feature reached matrix multiply, where the stride happens to be a
-parameter, and nothing else in its own domain. Each such binding now
-contributes one opaque handle that both sides name. The handle exists between
-the fold and the residual and is replaced by the image it stands for before
-anything is proved, so every other premise, the target, and the residual read
-exactly what they read before — which is why no snapshot or conformance verdict
-moves. Publishing the handle's defining equality as a fact and replacing the
-binding's image with it were both built first: the first is invisible to the
-residual, which is the direct L0 route by rule, and the second makes every
-ordinary premise about the binding need that equality to prove. The evidence is
-in `research/investigations/binary-arithmetic/`.
+Source proof runs in the ordinary semantic compiler. It checks contracts,
+explicit loop-header invariants, and local invariants with optional `use`
+steps; submits every supported partial operation to the same deterministic
+proof context; proves selected-target layout and address domains before
+emission; and erases proof syntax before lowering. It contains no
+writer-accessible runtime assertion; internal inconsistencies are ordinary
+compiler defects owned by implementation repair and tests, not another
+proof-object or runtime self-validation layer.
 
 ## How to read this outline
 
@@ -213,7 +62,13 @@ fact:
 The file is updated in place. Increment `Revision` when an item's goal,
 evidence-backed current state, next gate, or candidate-project disposition
 changes. Git is the version history; do not create versioned copies of this
-file. Detailed semantics, measurements, design rationale, and implementation
+file, and do not record here what a specification version changed. A landing
+amendment is written into the affected item's `Current` and `Missing / next`
+in the present tense, as what the project can now do and what is still open;
+what each version changed belongs to its `governance/APPROVALS.md` record, its
+`spec/kernel-spec-vN.md` archive, and its batch record in `done/`. A per-version
+paragraph here is a log entry, and the cost of keeping one is that the `Current`
+sentence beside it stops being maintained. Detailed semantics, measurements, design rationale, and implementation
 inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
@@ -230,10 +85,10 @@ unsupported rather than invalid source.
 The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
-belong in the [compiler README](../compiler/README.md). v0.40 retains
-v0.39's system interface around formal state paths, ordinary ownership, and
-completion-only lowering, with no separate world region, capability class,
-blocking-call family, or `Ordered` relation.
+belong in the [compiler README](../compiler/README.md). The system interface is
+built around formal state paths, ordinary ownership, and completion-only
+lowering, with no separate world region, capability class, blocking-call
+family, or `Ordered` relation.
 Which gap matters next is selected by a project, never by checklist length.
 
 ## Dependency rules
@@ -301,11 +156,21 @@ creating writer trust or weakening the checked safety envelope.
   proved `requires` goal as the callee-body S4 axiom. Ordinary callers prove
   that complete goal before transfer; no callee prologue or `llvm.assume` is
   emitted. Opaque Boolean goal identity adds no Boolean decomposition or new
-  optimizer authority.
+  optimizer authority. Above L0 an affine layer carries integer relations whose
+  atoms include measure terms and integer-typed named consts, so a contract
+  clause states an exact affine relation over what a caller can measure. An
+  admitted non-constant multiplication publishes the interval its own domain
+  decision already proved, so the value it binds carries a bound. A writer
+  directs a certificate with `use` steps whose multiplicity may name an
+  unsigned value as well as a decimal; the accumulator is then a degree-two
+  polynomial, every nonlinear monomial folds to the value image of an admitted
+  product matched by the declaration each side names, and a sum that keeps one
+  rejects.
 - **Missing / next:** a selected workload must first show a concrete proof gap
   or hot repeated-check pressure; then build one finite proof family with exact
   producers, invalidators, negative canaries, facts-off identity, and
-  attribution. O11
+  attribution. Products of two premises — where Handelman completeness would
+  come from — are not admitted and no evidence has asked for them. O11
   Boolean-goal composition stays an open question with four recorded findings
   and a de-pairing ruling (`governance/APPROVALS.md`); its trigger is a real
   program whose discharge needs a composed Boolean goal, and it re-enters only
@@ -913,28 +778,26 @@ and every slower-but-accepted divergence becomes a measured finding.
 
 ### outline:FLOOR-5 — Spelling rule and surface relief
 
-`[v0.23: class deletions and infix arithmetic]` `[v0.41: comparison symbols and the call-site delimiter]` `[v0.42: forced region spelling]` `[v0.43: loop-body regions]`
+`[current: class deletions, infix arithmetic, comparison symbols, the call-site delimiter, forced region spelling, loop-body regions, one use-premise shape]`
 
 - **Goal:** every surface byte carries a decision the checker cannot
   reconstruct (tests T1 decision / T2 boundary / T3 uniqueness / T4
   globality, plus no-optionality); relieve ceremony strictly per grammar
   class while boundaries stay fully explicit.
-- **Current:** v0.23 landed the sweep's whole-class deletions and infix
-  arithmetic; its comparison row was cancelled on the `<` collision with
-  call-site type arguments. v0.41 lands that row under the owner rulings of
-  2026-09-03: the six integer comparisons are `== != < <= > >=`, call-site
-  type application takes the `::` delimiter (`cvt::<u8, u32>(w)`) so
-  `IDENT <` is always a comparison and the parser stays two-token, `!` enters
-  the alphabet only inside `!=`, and a multiplied `use` relation is
-  parenthesized. Bool logic, the bit family, float and enum comparison, and
-  every unary operation stay named by ruling; ANF relaxation stays deferred.
-  v0.42 lands the third batch as [FORM-8]: a REGIONID is written exactly where
-  the surrounding text does not already fix the region denoted, and is absent
-  everywhere else, so each region position has one legal spelling. v0.43
-  carries the same rule to loop bodies: the body of a `loop_stmt` or `for_stmt`
-  is itself a region block, so the borrow inside it is written bare and a
-  `region_stmt` that is the body's only statement is a second spelling and a
-  [FORM-8] rejection.
+- **Current:** the sweep's whole-class deletions are landed and arithmetic is
+  infix. The six integer comparisons are `== != < <= > >=`; call-site type
+  application takes the `::` delimiter (`cvt::<u8, u32>(w)`) so `IDENT <` is
+  always a comparison and the parser stays two-token, and `!` is in the
+  alphabet only inside `!=`. Bool logic, the bit family, float and enum
+  comparison, and every unary operation stay named by ruling; ANF relaxation
+  stays deferred. [FORM-8] gives each region position one legal spelling: a
+  REGIONID is written exactly where the surrounding text does not already fix
+  the region denoted and is absent everywhere else, and a loop body is itself a
+  region block, so a `region_stmt` that is the body's only statement is a
+  second spelling and a rejection. A `use` premise has one shape — a name or a
+  parenthesized relation, with any multiplicity written as `N times` before it
+  — which removed the multiplied-versus-bare split and the stated space that
+  had carried a distinction the parser could not see.
 - **Missing / next:** nothing is open in this row; the retired comparison
   names are free identifiers, the corpus, snapshot index, conformance
   manifest, and live documentation are respelled, and the writer trial that
