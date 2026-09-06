@@ -1368,7 +1368,7 @@ fn the_bootstrap_selects_one_world_once() {
     // recursion.
     assert_eq!(
         overlapped
-            .matches("call i32 @wf__par_pool_active()")
+            .matches("call i32 @wf__par_pool_active(i32 2)")
             .count(),
         1,
         "the world must be selected exactly once per process:\n{overlapped}"
@@ -1378,7 +1378,7 @@ fn the_bootstrap_selects_one_world_once() {
     // on a stack the compiler sized.
     let bootstrap = function_body(&overlapped, "@wf__main_body");
     assert!(
-        bootstrap.contains("  %par.pool = call i32 @wf__par_pool_active()")
+        bootstrap.contains("  %par.pool = call i32 @wf__par_pool_active(i32 2)")
             && bootstrap.contains("call i8 @wf_main(")
             && bootstrap.contains("call i8 @wf__par_seq_main("),
         "the bootstrap must branch between the two lowerings of the entry:\n{bootstrap}"
@@ -1386,7 +1386,7 @@ fn the_bootstrap_selects_one_world_once() {
     // With no runtime linked no pool can start, so the module's own answer is
     // the honest one and such a program runs the sequential lowering of itself.
     assert!(
-        overlapped.contains("define weak i32 @wf__par_pool_active() #0 {\nentry:\n  ret i32 0\n}"),
+        overlapped.contains("define weak i32 @wf__par_pool_active(i32 %minimum_workers) #0 {\nentry:\n  ret i32 0\n}"),
         "the module must carry its own answer:\n{overlapped}"
     );
     for weak in [
@@ -1448,7 +1448,7 @@ fn windows_parallel_modules_fail_closed_at_the_link_boundary() {
         "declare void @wf__par_publish(ptr, ptr)",
         "declare void @wf__par_join(ptr)",
         "declare void @wf__par_release(ptr)",
-        "declare i32 @wf__par_pool_active()",
+        "declare i32 @wf__par_pool_active(i32)",
     ] {
         assert!(
             module.contains(declaration),
@@ -2485,14 +2485,15 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
 /// published where the iteration is issued, and joined, read, and released in
 /// the exact drain — so the loop's back edge is crossed with the call still
 /// running, which is the whole of what [PAR-3] grants here. The observable
-/// half says taking that grant changes nothing: `WF_WORKERS=0` and `1` are the
-/// opt-out, so every iteration takes the refused edge and runs its own call
-/// where it is written, and `4` starts a pool that grants — and all of them
-/// publish the same status. The default compilation names no lane entry at
-/// all, because a hand-out exists only in the world that asked for one.
+/// half says taking that grant changes nothing: `WF_WORKERS=0` opts out,
+/// `1` advances staged calls cooperatively, and `4` also starts workers that
+/// can steal — and all of them publish the same status. The default compilation
+/// names no lane entry at all, because a hand-out exists only in the world
+/// that asked for one.
 #[test]
 fn a_staged_may_suspend_call_is_offered_to_a_lane_and_refused_to_the_same_bytes() {
     let overlapped = emit_with_overlap(STAGED_MAY_SUSPEND_CALL);
+    assert!(overlapped.contains("call i32 @wf__par_pool_active(i32 1)"));
     let body = function_body(&overlapped, "@wf_main");
     let acquisition = body
         .find("= call ptr @wf__par_acquire_lane(i64 ")

@@ -143,9 +143,10 @@ void wf__par_publish(void *frame, void (*run)(void *));
 void wf__par_join(void *frame);
 void wf__par_release(void *frame);
 
-/* Whether this run was asked for a pool, answered from the setting and not
- * from the pool, once per process at the emitted bootstrap. */
-int wf__par_pool_active(void);
+/* Whether this run requested enough workers for this module's overlap:
+ * one for staged I/O, two for compute-only hand-outs. Answered from the
+ * setting, once at bootstrap, before lazy worker creation. Zero opts out. */
+int wf__par_pool_active(unsigned minimum_workers);
 
 /* How many times a permitted counted loop's range may be halved [PAR-2]. */
 unsigned long wf__par_split_budget(unsigned long span, unsigned long weight);

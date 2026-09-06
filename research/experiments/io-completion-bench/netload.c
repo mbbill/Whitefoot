@@ -9,6 +9,12 @@
  * with.
  *
  *   netload PORT CONNECTIONS ROUNDTRIPS BYTES [--threads T]
+ *           [--compute ROUNDS] [--heavy-every N]
+ *
+ * Compute mode uses compute_protocol.h: every Nth connection requests ROUNDS
+ * recurrence steps, the others request zero. Expected results are computed
+ * before timing. Class tails and spans describe this closed-loop burst,
+ * not an open-loop service-level latency guarantee.
  *
  * It opens CONNECTIONS connections to 127.0.0.1:PORT, spread over T client
  * threads each holding its own epoll instance, and reports two phases:
@@ -54,6 +60,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "compute_protocol.h"
+
 struct connection {
     int descriptor;
     int established;
@@ -64,6 +72,8 @@ struct connection {
     uint64_t received;
     uint64_t round;
     struct timespec started;
+    struct timespec first_started;
+    struct timespec last_finished;
     uint64_t index;
 };
 
@@ -83,6 +93,10 @@ static uint32_t *latency_us;
 static struct connection *connections;
 static struct client *clients;
 static pthread_barrier_t gate;
+static int option_compute;
+static uint64_t option_compute_rounds;
+static uint64_t option_heavy_every = 4;
+static uint64_t *expected_compute;
 
 /* One line on stderr and out, from whichever thread reached the failure
  * first. A run that cannot publish the right bytes must not publish a time,
@@ -164,8 +178,14 @@ static void fill_message(struct connection *link) {
 static void begin_round(struct connection *link) {
     link->sent = 0;
     link->received = 0;
-    link->outgoing[0] = (unsigned char)(link->round * 17u + 3u);
+    if (option_compute) {
+        uint64_t rounds = link->index % option_heavy_every == 0 ? option_compute_rounds : 0;
+        compute_request(link->outgoing, compute_seed(link->index, link->round), rounds);
+    } else {
+        link->outgoing[0] = (unsigned char)(link->round * 17u + 3u);
+    }
     clock_gettime(CLOCK_MONOTONIC, &link->started);
+    if (link->round == 0) link->first_started = link->started;
 }
 
 /* Drives one connection as far as it will go without blocking: send what is
@@ -206,14 +226,20 @@ static void pump(struct client *owner, struct connection *link) {
             fail("connection %llu: receive failed: %s", (unsigned long long)link->index,
                  strerror(errno));
         }
-        if (memcmp(link->incoming, link->outgoing, (size_t)option_bytes) != 0) {
+        unsigned char computed[COMPUTE_BYTES];
+        const unsigned char *expected = link->outgoing;
+        if (option_compute) {
+            compute_encode(computed, expected_compute[link->index * option_roundtrips + link->round]);
+            expected = computed;
+        }
+        if (memcmp(link->incoming, expected, (size_t)option_bytes) != 0) {
             uint64_t at = 0;
-            while (at < option_bytes && link->incoming[at] == link->outgoing[at]) {
+            while (at < option_bytes && link->incoming[at] == expected[at]) {
                 at++;
             }
             fail("connection %llu round %llu: byte %llu is 0x%02x, expected 0x%02x",
                  (unsigned long long)link->index, (unsigned long long)link->round,
-                 (unsigned long long)at, link->incoming[at], link->outgoing[at]);
+                 (unsigned long long)at, link->incoming[at], expected[at]);
         }
         struct timespec now;
         clock_gettime(CLOCK_MONOTONIC, &now);
@@ -222,6 +248,7 @@ static void pump(struct client *owner, struct connection *link) {
             elapsed > UINT32_MAX ? UINT32_MAX : (uint32_t)elapsed;
         link->round++;
         if (link->round == option_roundtrips) {
+            link->last_finished = now;
             link->finished = 1;
             owner->outstanding--;
             return;
@@ -233,6 +260,20 @@ static void pump(struct client *owner, struct connection *link) {
 static void *client_main(void *raw) {
     struct client *owner = raw;
     struct epoll_event events[256];
+
+    /* The checksum oracle runs before connect timing, once per sample. It
+     * never competes with the server during the measured exchange. Seeds
+     * differ for every request; no shortened recurrence is substituted. */
+    if (option_compute) {
+        for (uint64_t at = 0; at < owner->count; at++) {
+            struct connection *link = &owner->first[at];
+            uint64_t rounds = link->index % option_heavy_every == 0 ? option_compute_rounds : 0;
+            for (uint64_t round = 0; round < option_roundtrips; round++) {
+                expected_compute[link->index * option_roundtrips + round] =
+                    compute_churn(compute_seed(link->index, round), rounds);
+            }
+        }
+    }
 
     /* Phase one: every socket is created before any connect call, so the
      * connect phase measures connects and not socket creation. */
@@ -247,6 +288,8 @@ static void *client_main(void *raw) {
     }
 
     pthread_barrier_wait(&gate);
+
+    pthread_barrier_wait(&gate); /* release after the connect start timestamp */
 
     struct sockaddr_in address;
     memset(&address, 0, sizeof address);
@@ -301,6 +344,8 @@ static void *client_main(void *raw) {
 
     pthread_barrier_wait(&gate);
 
+    pthread_barrier_wait(&gate); /* release after the exchange CPU snapshot */
+
     /* Phase two: every connection is armed edge triggered for both directions
      * and starts its first round, so all of them are in flight at once. */
     for (uint64_t at = 0; at < owner->count; at++) {
@@ -336,6 +381,7 @@ static void *client_main(void *raw) {
 
     pthread_barrier_wait(&gate);
 
+    pthread_barrier_wait(&gate); /* cleanup follows the final CPU snapshot */
     for (uint64_t at = 0; at < owner->count; at++) {
         close(owner->first[at].descriptor);
     }
@@ -344,7 +390,7 @@ static void *client_main(void *raw) {
 
 int main(int argc, char **argv) {
     if (argc < 5) {
-        fprintf(stderr, "usage: netload PORT CONNECTIONS ROUNDTRIPS BYTES [--threads T]\n");
+        fprintf(stderr, "usage: netload PORT CONNECTIONS ROUNDTRIPS BYTES [--threads T] [--compute ROUNDS] [--heavy-every N]\n");
         return 2;
     }
     unsigned long port = strtoul(argv[1], NULL, 10);
@@ -358,6 +404,15 @@ int main(int argc, char **argv) {
             threads = strtoull(argv[++at], NULL, 10);
             continue;
         }
+        if (strcmp(argv[at], "--compute") == 0 && at + 1 < argc) {
+            option_compute = 1;
+            option_compute_rounds = strtoull(argv[++at], NULL, 10);
+            continue;
+        }
+        if (strcmp(argv[at], "--heavy-every") == 0 && at + 1 < argc) {
+            option_heavy_every = strtoull(argv[++at], NULL, 10);
+            continue;
+        }
         fprintf(stderr, "netload: unknown argument %s\n", argv[at]);
         return 2;
     }
@@ -367,6 +422,11 @@ int main(int argc, char **argv) {
         return 2;
     }
     option_port = (uint16_t)port;
+    if (option_compute && (option_bytes != COMPUTE_BYTES ||
+        option_compute_rounds > COMPUTE_MAX_ROUNDS || option_heavy_every == 0)) {
+        fprintf(stderr, "netload: compute mode requires 64 bytes, at most 16777216 rounds and a positive heavy interval\n");
+        return 2;
+    }
     if (threads > option_connections) {
         threads = option_connections;
     }
@@ -376,7 +436,9 @@ int main(int argc, char **argv) {
     clients = calloc((size_t)threads, sizeof *clients);
     latency_us = calloc((size_t)(option_connections * option_roundtrips), sizeof *latency_us);
     unsigned char *payloads = malloc((size_t)option_connections * (size_t)option_bytes * 2);
-    if (connections == NULL || clients == NULL || latency_us == NULL || payloads == NULL) {
+    if (option_compute) expected_compute = calloc((size_t)(option_connections * option_roundtrips), sizeof *expected_compute);
+    if (connections == NULL || clients == NULL || latency_us == NULL || payloads == NULL ||
+        (option_compute && expected_compute == NULL)) {
         fprintf(stderr, "netload: out of memory\n");
         return 1;
     }
@@ -418,18 +480,55 @@ int main(int argc, char **argv) {
     struct timespec connect_start;
     struct timespec connect_end;
     struct timespec exchange_end;
+    struct rusage exchange_cpu_start;
+    struct rusage exchange_cpu_end;
     pthread_barrier_wait(&gate);
     clock_gettime(CLOCK_MONOTONIC, &connect_start);
     pthread_barrier_wait(&gate);
+    pthread_barrier_wait(&gate);
+    getrusage(RUSAGE_SELF, &exchange_cpu_start);
     clock_gettime(CLOCK_MONOTONIC, &connect_end);
     pthread_barrier_wait(&gate);
+    pthread_barrier_wait(&gate);
     clock_gettime(CLOCK_MONOTONIC, &exchange_end);
+    getrusage(RUSAGE_SELF, &exchange_cpu_end);
+    pthread_barrier_wait(&gate);
     for (uint64_t at = 0; at < threads; at++) {
         pthread_join(clients[at].thread, NULL);
     }
     pthread_barrier_destroy(&gate);
 
     uint64_t total = option_connections * option_roundtrips;
+    if (option_compute) {
+        /* Preserve the per-class tails before sorting the aggregate. A class
+         * owns disjoint connection blocks in latency_us; the temporary array
+         * is allocated only after all client threads have joined. */
+        uint32_t *class_latency = malloc((size_t)total * sizeof *class_latency);
+        if (class_latency == NULL) fail("out of memory for class latencies");
+        for (unsigned heavy = 0; heavy < 2; heavy++) {
+            uint64_t count = 0;
+            struct timespec first = exchange_end;
+            struct timespec last = connect_end;
+            for (uint64_t connection = 0; connection < option_connections; connection++) {
+                if ((connection % option_heavy_every == 0) != (heavy != 0)) continue;
+                if (seconds_between(connections[connection].first_started, first) > 0)
+                    first = connections[connection].first_started;
+                if (seconds_between(last, connections[connection].last_finished) > 0)
+                    last = connections[connection].last_finished;
+                memcpy(class_latency + count, latency_us + connection * option_roundtrips,
+                       (size_t)option_roundtrips * sizeof *class_latency);
+                count += option_roundtrips;
+            }
+            qsort(class_latency, (size_t)count, sizeof *class_latency, compare_u32);
+            printf("%s_count=%llu\t%s_p50_us=%u\t%s_p99_us=%u\t%s_max_us=%u\t%s_span_us=%llu\t",
+                   heavy ? "heavy" : "light", (unsigned long long)count,
+                   heavy ? "heavy" : "light", percentile(class_latency, count, 50),
+                   heavy ? "heavy" : "light", percentile(class_latency, count, 99),
+                   heavy ? "heavy" : "light", count ? class_latency[count - 1] : 0,
+                   heavy ? "heavy" : "light", (unsigned long long)(count ? microseconds_between(first, last) : 0));
+        }
+        free(class_latency);
+    }
     qsort(latency_us, (size_t)total, sizeof *latency_us, compare_u32);
     uint64_t connect_us = microseconds_between(connect_start, connect_end);
     double exchange_seconds = seconds_between(connect_end, exchange_end);
@@ -438,13 +537,19 @@ int main(int argc, char **argv) {
     double bytes_per_second =
         exchange_seconds > 0.0 ? (double)total * (double)option_bytes / exchange_seconds : 0.0;
     printf("connect_us=%llu\texchange_us=%llu\troundtrips=%llu\trt_per_s=%.1f"
-           "\tbytes_per_s=%.1f\tp50_us=%u\tp90_us=%u\tp99_us=%u\tmax_us=%u\n",
+           "\tbytes_per_s=%.1f\tp50_us=%u\tp90_us=%u\tp99_us=%u\tmax_us=%u"
+           "\tclient_exchange_user_us=%lld\tclient_exchange_system_us=%lld\n",
            (unsigned long long)connect_us, (unsigned long long)exchange_us,
            (unsigned long long)total, per_second, bytes_per_second,
            percentile(latency_us, total, 50), percentile(latency_us, total, 90),
-           percentile(latency_us, total, 99), total > 0 ? latency_us[total - 1] : 0);
+           percentile(latency_us, total, 99), total > 0 ? latency_us[total - 1] : 0,
+           (long long)(exchange_cpu_end.ru_utime.tv_sec - exchange_cpu_start.ru_utime.tv_sec) * 1000000
+               + exchange_cpu_end.ru_utime.tv_usec - exchange_cpu_start.ru_utime.tv_usec,
+           (long long)(exchange_cpu_end.ru_stime.tv_sec - exchange_cpu_start.ru_stime.tv_sec) * 1000000
+               + exchange_cpu_end.ru_stime.tv_usec - exchange_cpu_start.ru_stime.tv_usec);
     fflush(stdout);
     free(payloads);
+    free(expected_compute);
     free(latency_us);
     free(clients);
     free(connections);

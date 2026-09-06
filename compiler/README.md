@@ -181,6 +181,15 @@ reductions. A denied permission leaves the program sequential; it does not
 change source acceptance. Proof-only statements introduce no runtime branch,
 lock, dependency, scheduling event, or task edge.
 
+For a `--par` module with reachable staged I/O hand-outs, `WF_WORKERS=1`
+keeps cooperative I/O overlap on the entry worker. A compute-only module
+still takes its sequential clone at one worker. `WF_WORKERS=0` explicitly
+selects sequential execution in both cases. The bootstrap passes this minimum
+worker count through an internal runtime query; source function signatures
+do not change. This separates CPU parallelism from I/O concurrency but does
+not guarantee progress when the configured window or stack capacity is too
+small for a peer protocol.
+
 The first multi-operation loop path is deliberately specific: one
 source-derived fixed two-slot bounded batch for the direct staged counted-loop
 shape. On native POSIX completion targets the runtime window is bounded to

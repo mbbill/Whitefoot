@@ -21,14 +21,17 @@
 ROOT := $(abspath ../../..)
 .DEFAULT_GOAL := build
 
-# Locality experiment: exhaustive correctness is a canonical check stage;
+# Scheduler experiment: exhaustive correctness is a canonical check stage;
 # timings run separately on a Linux CI host and never select acceptance.
-.PHONY: scheduler-check scheduler-bench
+.PHONY: scheduler-check scheduler-bench scheduler-mixed
 scheduler-check:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" bash scheduler-bench.sh check
 
 scheduler-bench:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" bash scheduler-bench.sh bench
+
+scheduler-mixed:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" EXPERIMENT=mixed bash scheduler-bench.sh bench
 
 WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
 WORK := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-io-completion-bench
@@ -526,10 +529,10 @@ net-tools: $(BUILD)/uring_echo $(BUILD)/epoll_echo $(BUILD)/netload
 $(BUILD)/uring_echo: uring_echo.c | prepare
 	$(CLANG) $(CFLAGS) -pthread $< -o $@
 
-$(BUILD)/epoll_echo: epoll_echo.c | prepare
+$(BUILD)/epoll_echo: epoll_echo.c compute_protocol.h | prepare
 	$(CLANG) $(CFLAGS) -pthread $< -o $@
 
-$(BUILD)/netload: netload.c | prepare
+$(BUILD)/netload: netload.c compute_protocol.h | prepare
 	$(CLANG) $(CFLAGS) -pthread $< -o $@
 
 $(BUILD)/wf_echo: programs/tcp_echo_server.wf compiler | prepare

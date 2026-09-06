@@ -8,6 +8,11 @@ on:
     branches: ['codex/io-scheduler-experiments']
     paths:
       - 'compiler/src/backend/sched/**'
+      - 'compiler/src/backend/emitter/**'
+      - 'compiler/src/backend/emitter.rs'
+      - 'research/experiments/io-completion-bench/*.c'
+      - 'research/experiments/io-completion-bench/*.h'
+      - 'research/experiments/io-completion-bench/programs/tcp*_server.wf'
       - 'research/experiments/io-completion-bench/scheduler-bench.sh'
       - '.github/workflows/io-scheduler.yml'
 
@@ -17,6 +22,11 @@ concurrency:
 
 jobs:
   measure:
+    name: measure (${{ matrix.experiment }})
+    strategy:
+      fail-fast: false
+      matrix:
+        experiment: [idle, mixed]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -34,13 +44,14 @@ jobs:
           CARGO_TARGET_DIR: ${{ github.workspace }}/compiler/target
           ROUNDS: '7'
           WARMUP: '2'
+          EXPERIMENT: ${{ matrix.experiment }}
         run: bash research/experiments/io-completion-bench/scheduler-bench.sh bench
       - name: Publish measurement summary
         if: always()
         run: |
           {
-            echo '## Scheduler idle-progress experiment'
-            echo 'Forms: base 256/16; sleep 0/0; short 16/0; spin 256/0; poll1 16/0 with progress each look; poll16 256/0 with progress every 16 looks. Shared global queue and ring throughout.'
+            echo '## Scheduler experiment: ${{ matrix.experiment }}'
+            echo 'Paired within this job and CPU cohort. Idle: six policies and four placements. Mixed network/compute: base, sleep, poll1 and inline epoll, shared4 and split2. See the investigation for the protocol and scope.'
             echo '```text'
             for file in host.txt cohorts.tsv network-summary.txt compute.txt mixed.txt; do
               cat "$RUNNER_TEMP/io-scheduler/$file" 2>/dev/null || echo "$file was not produced"
@@ -50,7 +61,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: io-scheduler
+          name: io-scheduler-${{ matrix.experiment }}
           path: |
             ${{ runner.temp }}/io-scheduler/host.txt
             ${{ runner.temp }}/io-scheduler/*.tsv

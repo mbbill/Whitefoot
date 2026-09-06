@@ -12,6 +12,7 @@ BACKEND=$ROOT/compiler/src/backend
 MODE=${1:-bench}
 ROUNDS=${ROUNDS:-7}
 WARMUP=${WARMUP:-2}
+EXPERIMENT=${EXPERIMENT:-idle}
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
 
@@ -60,6 +61,7 @@ if [[ $MODE != bench || $(uname -s) != Linux ]]; then
     echo 'scheduler-bench: use check on POSIX, or bench on Linux with io_uring' >&2
     exit 2
 fi
+[[ $EXPERIMENT == idle || $EXPERIMENT == mixed ]] || exit 2
 [[ $ROUNDS =~ ^[1-9][0-9]*$ && $WARMUP =~ ^[0-9]+$ ]] || exit 2
 [[ $(nproc) -ge 4 ]] || { echo 'scheduler-bench: this CPU-placement experiment needs four logical CPUs' >&2; exit 2; }
 mkdir -p "$OUT/bin" "$OUT/samples" "$OUT/observed" "$OUT/tree"
@@ -72,7 +74,7 @@ WFC=$CARGO_TARGET_DIR/gate/whitefootc
     uname -a
     "$CLANG" --version
     lscpu
-    echo "rounds=$ROUNDS warmup=$WARMUP"
+    echo "experiment=$EXPERIMENT rounds=$ROUNDS warmup=$WARMUP"
     echo "io_uring_disabled=$(cat /proc/sys/kernel/io_uring_disabled 2>/dev/null || echo absent)"
     echo "affinity=$(taskset -pc $$)"
     lscpu -e=CPU,CORE,SOCKET,NODE,ONLINE
@@ -99,6 +101,11 @@ printf 'shared4\t4\t4\t%s\t%s\nshared2\t2\t2\t%s\t%s\nsplit2\t2\t2\t%s\t%s\nspli
     "$allowed" "$allowed" "$allowed" "$allowed" "$server_two" "$client_two" "$server_one" "$client_one" > "$OUT/cohorts.tsv"
 
 forms=(base sleep short spin poll1 poll16)
+if [[ $EXPERIMENT == mixed ]]; then
+    forms=(base sleep poll1)
+    awk '$1=="shared4" || $1=="split2"' "$OUT/cohorts.tsv" > "$OUT/cohorts-selected.tsv"
+    mv "$OUT/cohorts-selected.tsv" "$OUT/cohorts.tsv"
+fi
 form_flags() {
     case $1 in
         base) spin=256; yields=16; progress=0 ;;
@@ -127,15 +134,26 @@ link_form() {
         "${observer[@]}" -x ir "$module" -Wno-override-module -lm -o "$output"
 }
 
-"$WFC" --par --emit-llvm -o "$OUT/echo.ll" "$HERE/programs/tcp_echo_server.wf"
-"$WFC" --par --emit-llvm -o "$OUT/compute.ll" "$ROOT/tests/programs/par_layout.wf"
-"$WFC" --par --emit-llvm -o "$OUT/mixed.ll" "$HERE/programs/windows_runtime_mixed.wf"
+programs=(echo compute mixed)
+echo_source="$HERE/programs/tcp_echo_server.wf"
+if [[ $EXPERIMENT == mixed ]]; then
+    echo_source="$HERE/programs/tcp_compute_server.wf"
+    programs=(echo)
+else
+    "$WFC" --par --emit-llvm -o "$OUT/compute.ll" "$ROOT/tests/programs/par_layout.wf"
+    "$WFC" --par --emit-llvm -o "$OUT/mixed.ll" "$HERE/programs/windows_runtime_mixed.wf"
+fi
+"$WFC" --par --emit-llvm -o "$OUT/echo.ll" "$echo_source"
 for policy in "${forms[@]}"; do
-    for program in echo compute mixed; do
+    for program in "${programs[@]}"; do
         link_form "$OUT/$program.ll" "$OUT/bin/$program-$policy" "$policy" 0
     done
     link_form "$OUT/echo.ll" "$OUT/bin/echo-$policy-observed" "$policy" 1
 done
+if [[ $EXPERIMENT == mixed ]]; then
+    "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread -DWF_BENCH_COMPUTE \
+        "$HERE/epoll_echo.c" -o "$OUT/bin/epoll_compute"
+fi
 for tool in netload uring_echo epoll_echo runner gen; do
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread "$HERE/$tool.c" -o "$OUT/bin/$tool"
 done
@@ -174,13 +192,14 @@ network_case() {
     local form=$1 connections=$2 trips=$3 bytes=$4 pass=$5 observed=$6
     local binary environment=() arguments=() directory port
     sample=$((sample + 1))
-    directory="$OUT/samples/$sample-$cohort-$form-k$connections-b$bytes"
+    directory="$OUT/samples/$sample-$cohort-$form-k$connections-b$bytes-r$compute_rounds"
     if [[ $observed == 1 ]]; then directory="$OUT/observed/$cohort-$form-k$connections"; fi
     mkdir -p "$directory"
     port=$(free_port)
     case $form in
         uring|epoll)
             binary="$OUT/bin/${form}_echo"
+            if [[ $EXPERIMENT == mixed ]]; then binary="$OUT/bin/epoll_compute"; fi
             arguments=(--threads "$server_workers") ;;
         base|sleep|short|spin|poll1|poll16)
             binary="$OUT/bin/echo-$form"
@@ -188,8 +207,10 @@ network_case() {
             environment=("WF_WORKERS=$server_workers" WF_STACKS=1100 "WF_SCHED_REPORT=$observed") ;;
         *) return 2 ;;
     esac
-    setsid /usr/bin/time -f '%U\t%S\t%M\t%w\t%c' -o "$directory/resources.tsv" \
-        taskset -c "$server_cpus" env "${environment[@]}" "$binary" "$port" "$connections" "${arguments[@]}" \
+    echo "sample=$sample pass=$pass cohort=$cohort form=$form connections=$connections compute=$compute_rounds observed=$observed"
+    setsid timeout --signal=TERM --kill-after=5s 120s \
+        /usr/bin/time -f '%U\t%S\t%M\t%w\t%c' -o "$directory/resources.tsv" taskset -c "$server_cpus" \
+        env "${environment[@]}" "$binary" "$port" "$connections" "${arguments[@]}" \
         > "$directory/server.out" 2> "$directory/server.err" &
     server_pid=$!
     while ! port_present "$port" 1; do
@@ -200,30 +221,41 @@ network_case() {
         fi
         sleep 0.01
     done
-    /usr/bin/time -f '%U\t%S\t%M\t%w\t%c' -o "$directory/client-resources.tsv" \
-        taskset -c "$client_cpus" "$OUT/bin/netload" "$port" "$connections" "$trips" "$bytes" --threads "$client_workers" \
+    local client_arguments=()
+    if [[ $EXPERIMENT == mixed ]]; then client_arguments=(--compute "$compute_rounds" --heavy-every 4); fi
+    timeout --signal=TERM --kill-after=5s 120s \
+        /usr/bin/time -f '%U\t%S\t%M\t%w\t%c' -o "$directory/client-resources.tsv" taskset -c "$client_cpus" \
+        "$OUT/bin/netload" "$port" "$connections" "$trips" "$bytes" --threads "$client_workers" "${client_arguments[@]}" \
         > "$directory/client.tsv" 2> "$directory/client.err"
     if ! wait "$server_pid"; then cat "$directory/server.err" >&2; return 1; fi
     server_pid=''
     [[ ! -s $directory/server.out && ! -s $directory/client.err ]]
     if [[ $observed == 0 ]]; then [[ ! -s $directory/server.err ]]; fi
     if [[ $pass -ge 0 ]]; then
-        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
             "$pass" "$form" "$connections" "$bytes" "$trips" \
             "$(field "$directory/client.tsv" rt_per_s)" \
             "$(field "$directory/client.tsv" p50_us)" "$(field "$directory/client.tsv" p99_us)" \
             "$(cat "$directory/resources.tsv")" "$directory" "$cohort" \
-            "$(cat "$directory/client-resources.tsv")" >> "$OUT/network.tsv"
+            "$(cat "$directory/client-resources.tsv")" "$compute_rounds" \
+            "$(field "$directory/client.tsv" light_p99_us)" "$(field "$directory/client.tsv" heavy_p99_us)" \
+            "$(field "$directory/client.tsv" light_span_us)" "$(field "$directory/client.tsv" heavy_span_us)" \
+            "$(field "$directory/client.tsv" client_exchange_user_us)" "$(field "$directory/client.tsv" client_exchange_system_us)" >> "$OUT/network.tsv"
     fi
 }
 
 # Correctness and migration counters are outside the timed cohort. Verify the
 # io_uring reference as well: absence of the native engine is a failed run.
+references=(uring epoll)
+compute_rounds=0
+if [[ $EXPERIMENT == mixed ]]; then references=(epoll); compute_rounds=262144; fi
 while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
-    for form in uring epoll "${forms[@]}"; do network_case "$form" 4 200 64 -1 0; done
+    for form in "${references[@]}" "${forms[@]}"; do network_case "$form" 4 20 64 -1 0; done
     for form in "${forms[@]}"; do
       for connections in 4 64; do
-        network_case "$form" "$connections" 2000 64 -1 1
+        observed_trips=2000
+        if [[ $EXPERIMENT == mixed ]]; then observed_trips=64; fi
+        network_case "$form" "$connections" "$observed_trips" 64 -1 1
         # A Linux reading must actually use the native ring. Keep these
         # observations separate from the timed binaries and their diagnostics.
         awk '/^sched:/ { scheduler=1 }
@@ -234,30 +266,47 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
     done
 done < "$OUT/cohorts.tsv"
 
-printf 'pass\tform\tconnections\tbytes\ttrips\trt_per_s\tp50_us\tp99_us\tuser_s\tsystem_s\tmax_rss_kib\tvoluntary_switches\tinvoluntary_switches\tsample\tcohort\tclient_user_s\tclient_system_s\tclient_max_rss_kib\tclient_voluntary_switches\tclient_involuntary_switches\n' > "$OUT/network.tsv"
-forward=("${forms[@]}" uring epoll)
-reverse=(epoll uring poll16 poll1 spin short sleep base)
+printf 'pass\tform\tconnections\tbytes\ttrips\trt_per_s\tp50_us\tp99_us\tuser_s\tsystem_s\tmax_rss_kib\tvoluntary_switches\tinvoluntary_switches\tsample\tcohort\tclient_user_s\tclient_system_s\tclient_max_rss_kib\tclient_voluntary_switches\tclient_involuntary_switches\tcompute_rounds\tlight_p99_us\theavy_p99_us\tlight_span_us\theavy_span_us\tclient_exchange_user_us\tclient_exchange_system_us\n' > "$OUT/network.tsv"
+forward=("${forms[@]}" "${references[@]}")
+reverse=()
+for ((at=${#forward[@]}-1;at>=0;at--)); do reverse+=("${forward[at]}"); done
+if [[ $EXPERIMENT == mixed ]]; then
+    cat > "$OUT/cases.tsv" <<'CASES'
+4 2000 64 0
+64 2000 64 0
+4 256 64 16384
+64 64 64 16384
+4 256 64 262144
+64 64 64 262144
+4 128 64 2097152
+64 32 64 2097152
+CASES
+else
+    cat > "$OUT/cases.tsv" <<'CASES'
+1 10000 64 0
+4 10000 64 0
+64 2000 64 0
+CASES
+fi
 for ((pass=-WARMUP; pass<ROUNDS; pass++)); do
     order=("${forward[@]}")
     if (( (pass + WARMUP) % 2 )); then order=("${reverse[@]}"); fi
   while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
-    while read -r connections trips bytes; do
+    while read -r connections trips bytes compute_rounds; do
         for form in "${order[@]}"; do
-            echo "network pass=$pass cohort=$cohort form=$form connections=$connections bytes=$bytes"
+            echo "network pass=$pass cohort=$cohort form=$form connections=$connections bytes=$bytes compute=$compute_rounds"
             network_case "$form" "$connections" "$trips" "$bytes" "$pass" 0
         done
-    done <<'CASES'
-1 10000 64
-4 10000 64
-64 2000 64
-CASES
+    done < "$OUT/cases.tsv"
   done < "$OUT/cohorts.tsv"
 done
 
 # Existing compiler-independent expected bytes from the Windows qualification.
 # Warm positioned reads plus compute measure coexistence; they do not establish
 # a bound on network latency while every worker runs a long computation.
-for program in compute mixed; do
+cpu_programs=(compute mixed)
+if [[ $EXPERIMENT == mixed ]]; then cpu_programs=(); fi
+for program in "${cpu_programs[@]}"; do
     : > "$OUT/$program.plan"
     for workers in 2 4 8; do
         for policy in "${forms[@]}"; do
@@ -281,11 +330,13 @@ done
 # the global FIFO measured in the same pass, connection count and payload.
 awk -F '\t' '
     NR == 1 { next }
-    { key=$15 "/" $3 "/" $4; cohort=$1 SUBSEP key; group=$2 SUBSEP key
+    { key=$15 "/" $3 "/" $4 "/" ($21+0); cohort=$1 SUBSEP key; group=$2 SUBSEP key
       count[group]++; rates[group,count[group]]=$6; lat[group,count[group]]=$7;
       tail[group,count[group]]=$8; cpu[group,count[group]]=($9+$10)*1e6/($3*$5);
       rss[group,count[group]]=$11; switches[group,count[group]]=($12+$13)/($3*$5);
       client_cpu[group,count[group]]=($16+$17)*1e6/($3*$5);
+      light_tail[group,count[group]]=$22+0; heavy_tail[group,count[group]]=$23+0;
+      exchange_cpu[group,count[group]]=($26+$27)/($3*$5);
       if ($2 == "base") base[cohort]=$6;
       samples[cohort,$2]=$6; groups[group]=1; cohorts[cohort]=1; }
     function summary(values,g, n,i,j,t) {
@@ -294,13 +345,15 @@ awk -F '\t' '
       return n%2 ? sorted[(n+1)/2] : (sorted[n/2]+sorted[n/2+1])/2;
     }
     END {
-      print "form case median_rt/s min_rt/s max_rt/s p50_us p99_us server_cpu_us/trip peak_rss_kib switches/trip paired_rate_ratio client_cpu_us/trip";
+      print "form case median_rt/s min_rt/s max_rt/s p50_us p99_us server_cpu_us/trip peak_rss_kib switches/trip paired_rate_ratio client_lifetime_cpu_us/trip light_p99_us heavy_p99_us client_exchange_cpu_us/trip";
       for(g in groups) {
         split(g,parts,SUBSEP); form=parts[1]; key=parts[2]; n=0;
         for(c in cohorts) { split(c,p,SUBSEP); if(p[2]==key) ratios[g,++n]=samples[c,form]/base[c]; }
         rate=summary(rates,g); low=sorted[1]; high=sorted[count[g]];
-        printf "%s %s %.1f %.1f %.1f %.1f %.1f %.3f %.0f %.4f %.3f %.3f\n", form,key,rate,low,high,
-          summary(lat,g),summary(tail,g),summary(cpu,g),summary(rss,g),summary(switches,g),summary(ratios,g),summary(client_cpu,g);
+        printf "%s %s %.1f %.1f %.1f %.1f %.1f %.3f %.0f %.4f %.3f %.3f %.1f %.1f %.3f\n", form,key,rate,low,high,
+          summary(lat,g),summary(tail,g),summary(cpu,g),summary(rss,g),summary(switches,g),summary(ratios,g),summary(client_cpu,g),
+          summary(light_tail,g),summary(heavy_tail,g),summary(exchange_cpu,g);
       }
     }' "$OUT/network.tsv" > "$OUT/network-summary.txt"
-cat "$OUT/network-summary.txt" "$OUT/compute.txt" "$OUT/mixed.txt"
+cat "$OUT/network-summary.txt"
+for program in "${cpu_programs[@]}"; do cat "$OUT/$program.txt"; done

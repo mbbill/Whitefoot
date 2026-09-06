@@ -292,7 +292,7 @@ before selection. Network samples retain separate server and client CPU/RSS
 and context-switch measurements, and every echo is still verified. Compute
 and warm-read mixed workloads run for all six forms at 2, 4, 8 workers with
 the established expected output bytes. The true network/long-compute mixed
-workload remains outstanding.
+workload is the third experiment below.
 
 Separate untimed observed links record migration, idle steps, idle looks,
 progress passes and waits, plus the existing ring counters. Observed builds
@@ -304,7 +304,101 @@ needed. The snapshot is defined but is not simultaneous across workers, and
 the enumerator still excludes diagnostic counters from its state digest.
 Timed links compile out the extra idle counters and migration tracking.
 
-Results are pending. This experiment changes no source semantics or function
-signatures and leaves the default idle policy unchanged. The owner's broader
+Results are pending after the failed first attempt below. This experiment
+leaves source function signatures and the default idle policy unchanged. The owner's broader
 research instruction permits changing language design if measurements later
 show a need; the current experiment does not assume that need in advance.
+
+### Failed first attempt: one worker disabled I/O concurrency
+
+The c088f4f0 run [34028842218](https://github.com/mbbill/Whitefoot/actions/runs/34028842218)
+stalled before the timed cohort. Its gate and Linux/Windows host qualification
+passed, which did not establish progress for this new protocol configuration.
+The unchanged-runtime diagnostic e4a1d47f added sample logging and a 120-second
+process deadline. [Run 34030120197](https://github.com/mbbill/Whitefoot/actions/runs/34030120197)
+completed samples 1 through 62, then failed sample 63: split1/base, four
+connections. Its [artifact](https://github.com/mbbill/Whitefoot/actions/runs/34030120197/artifacts/9988428245)
+retains the reset on connection 1 and the server deadline. This is a failed
+experiment, not a slow throughput sample; no timed policy ranking exists for
+that revision.
+
+The runtime normalized both `WF_WORKERS=0` and `1` to zero. The bootstrap then
+selected the entire sequential clone, including connection handling. Netload
+keeps every connection open until all exchanges finish: the sequential server
+waits for the first peer's EOF while another peer waits for its response.
+A native macOS two-peer reproduction independently confirmed that the second
+response required the first EOF at one worker, but not at two.
+
+The correction preserves a requested one worker and asks the bootstrap for
+the minimum appropriate to its reachable lowering: one for staged I/O
+hand-outs, two for compute-only hand-outs. Zero remains explicit sequential
+opt-out. The query is an internal compiler/runtime ABI, with both target
+bootstraps and the optional weak implementation changed together. Source
+signatures are unchanged. The same native reproduction now verifies both
+responses before either EOF. The maintained four-peer reverse-order test
+also runs at both one and three workers, on both completion routes.
+
+This is a configuration/lowering defect, not evidence that one worker can
+support arbitrary I/O concurrency. A bounded window, exhausted frame slots,
+or exhausted stacks can still postpone a callee whose peer is needed by
+another callee. Optional compute scheduling and externally required I/O
+progress are therefore distinct design obligations. The present measurements
+reserve 1100 stacks and use at most 64 peers; they do not settle admission or
+progress at capacity exhaustion.
+
+Every network sample now has a 120-second external deadline. A deadline
+fails the job and preserves diagnostics; it never produces a timing result
+or changes compiler acceptance. Timing and resource collection run inside
+the deadline wrapper. A 20-trip initial screen precedes the unchanged 2000-trip
+idle observations and full timed passes. Client phase barriers now prevent
+requests preceding the start timestamp or cleanup preceding the final CPU
+snapshot. New baseline measurements are required after these harness changes.
+
+## Third experiment: network service while connections compute
+
+Question: does a long ordinary compute call prevent unrelated connections
+from making progress, and how do throughput and short-request tail latency
+trade off? `make -C research/experiments/io-completion-bench scheduler-mixed`
+selects this mode of the same runner. CI runs idle and mixed in separate jobs;
+each comparison uses one job's host and one CPU cohort, never absolute rates
+from the other host.
+
+`tcp_compute_server.wf` keeps sequential source inside each connection:
+receive a complete request, compute, send a complete response, repeat. Its
+outer accept loop uses the existing staged permission. Requests contain a
+big-endian u64 seed and round count, followed by 48 reserved bytes. The
+response contains the result's 64 bits as 64 bytes of zero or one. Each round
+rotates the previous value left by 17, xors it with that value, multiplies
+modulo 2^64 by 6364136223846793005, and adds 1442695040888963407 modulo 2^64.
+The dependent recurrence cannot be replaced by independent parallel loop
+iterations. TCP fragmentation is handled explicitly. The protocol refuses
+more than 16777216 rounds as an ordinary input error.
+
+Every fourth connection requests compute; other connections request zero
+rounds. Seeds depend on the full connection and request indexes. The client
+computes expected results before any connections are opened and verifies
+every response byte. A separate Ruby calculation checked five C known answers
+and native WF replies, including fragmented requests. Examples: seed zero
+after one round is 1442695040888963407; seed 11400714819323198485 after seven
+rounds is 2323064754341931374 and after 65536 rounds is 14034923464053623880.
+
+The initial screen compares base, sleep, and poll1 with the epoll reference
+performing the identical recurrence inline. It covers 4 and 64 connections,
+0, 16384, 262144, and 2097152 rounds, under shared4 and split2 placement, with
+two warm-up and seven alternating recorded passes. Separate observed builds
+check real native-ring activity. The C protocol header, new WF program, and
+conditional reference path belong to this comparison and are removed or
+superseded with it.
+
+The artifact retains aggregate and light/heavy p99 latency, each class's
+exchange span, server CPU/RSS/switches, and client exchange CPU. Whole-process
+client CPU includes preparing the oracle, so it is labeled lifetime CPU and
+must not be interpreted as exchange cost. Server resource counters likewise
+cover its lifetime, including startup and waiting for client preparation.
+The mixed epoll reference uses 64-byte buffers, as the WF program does.
+This is a finite closed-loop burst:
+light connections may finish earlier than heavy ones, and the spans expose
+that difference. It does not establish steady-state open-loop SLOs. Inline
+epoll is a reference control, not an assertion of the best mixed-load design;
+CPU offload, prioritization, full per-worker ownership, and continuation
+representation remain candidates if losses justify them.

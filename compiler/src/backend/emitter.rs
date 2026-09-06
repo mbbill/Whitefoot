@@ -58,8 +58,8 @@ pub use parallel::module_requires_parallel_runtime;
 use parallel::{
     HandedOut, LoopSplitSite, PARALLEL_POOL_QUERY_DECLARATION, PARALLEL_POOL_QUERY_FALLBACK,
     PARALLEL_RUNTIME_DECLARATIONS, PARALLEL_RUNTIME_FALLBACK, PARALLEL_SPLIT_BUDGET_DECLARATION,
-    PARALLEL_SPLIT_BUDGET_FALLBACK, ParallelThunks, compute_join_order, par_done_label,
-    sequential_clone_set, sequential_clone_symbol,
+    PARALLEL_SPLIT_BUDGET_FALLBACK, ParallelThunks, compute_join_order, overlap_minimum_workers,
+    par_done_label, sequential_clone_set, sequential_clone_symbol,
 };
 pub use system::{WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE};
 
@@ -196,7 +196,12 @@ fn emit_llvm_for(
             );
         }
     }
-    let entry = system::emit_entry(program, &qualification, main, !clones.is_empty())?;
+    let entry = system::emit_entry(
+        program,
+        &qualification,
+        main,
+        overlap_minimum_workers(program, &clones),
+    )?;
     let has_matches = program.functions().iter().any(|function| {
         function
             .blocks()

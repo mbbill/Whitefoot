@@ -3813,8 +3813,8 @@ fn emit_utf8_validator() -> String {
 ///
 /// This is the one [QUAL-3] command bootstrap [FN-7, PROG-3].
 ///
-/// `two_worlds` says the module carries a sequential clone of the entry
-/// function, in which case the bootstrap also makes the one selection between
+/// `minimum_workers` is present when the module carries a sequential clone of
+/// the entry function, in which case the bootstrap makes one selection between
 /// the two lowerings — `parallel::sequential_clone_set` records why the second
 /// one exists. It belongs here because here is the only place in the program
 /// that runs exactly once and is inside no loop and no recursion: the clone set
@@ -3826,7 +3826,7 @@ pub(super) fn emit_entry(
     program: &IrProgram<'_, '_, '_>,
     qualification: &Qualification,
     main: &IrFunction,
-    two_worlds: bool,
+    minimum_workers: Option<u32>,
 ) -> Result<String, BackendFailure> {
     let IrEntry::Command { inputs, .. } = program.entry();
     if qualification.kind() != ProgramKind::Command || main.parameters().len() != inputs.len() {
@@ -3838,7 +3838,7 @@ pub(super) fn emit_entry(
     }
     let target = qualification.target();
     if target.is_windows() {
-        return emit_windows_entry(program, main, two_worlds, status);
+        return emit_windows_entry(program, main, minimum_workers, status);
     }
     let mut body = String::new();
     // [QUAL-2]: a qualified target that cannot establish command-lifetime
@@ -3938,13 +3938,13 @@ pub(super) fn emit_entry(
     }
     let symbol = source_symbol(main.name());
     let arguments = supplied.join(", ");
-    if two_worlds {
+    if let Some(minimum_workers) = minimum_workers {
         // This run either asked for a pool or it did not, and it cannot change
         // its mind afterwards, so this is the whole of the decision.
         writeln!(
             body,
             "enter:\n  \
-             %par.pool = call i32 @wf__par_pool_active()\n  \
+             %par.pool = call i32 @wf__par_pool_active(i32 {minimum_workers})\n  \
              %par.requested = icmp ne i32 %par.pool, 0\n  \
              br i1 %par.requested, label %enter.overlapped, label %enter.sequential\n\
              enter.overlapped:\n  \
@@ -3997,7 +3997,7 @@ pub(super) fn emit_entry(
 fn emit_windows_entry(
     program: &IrProgram<'_, '_, '_>,
     main: &IrFunction,
-    two_worlds: bool,
+    minimum_workers: Option<u32>,
     status: &str,
 ) -> Result<String, BackendFailure> {
     let IrEntry::Command { inputs, .. } = program.entry();
@@ -4083,11 +4083,11 @@ fn emit_windows_entry(
 
     let symbol = source_symbol(main.name());
     let arguments = supplied.join(", ");
-    if two_worlds {
+    if let Some(minimum_workers) = minimum_workers {
         writeln!(
             body,
             "enter:\n  \
-             %par.pool = call i32 @wf__par_pool_active()\n  \
+             %par.pool = call i32 @wf__par_pool_active(i32 {minimum_workers})\n  \
              %par.requested = icmp ne i32 %par.pool, 0\n  \
              br i1 %par.requested, label %enter.overlapped, label %enter.sequential\n\
              enter.overlapped:\n  \

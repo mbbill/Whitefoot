@@ -383,43 +383,50 @@ fn a_refused_connect_hands_its_permit_back_on_both_routes() {
 /// server that serves peers in turn fails this case in bounded time rather
 /// than hanging it.
 ///
-/// Three workers, on both routes, because the property is about what the
+/// One and three workers, on both routes, because the property is about what the
 /// runtime does with a wait and not about how many cores the runner has. A
 /// pool sized to a large machine gives each of the four peers a worker of its
 /// own, so a runtime that let every one of those workers block inside its own
 /// peer's `receive_next` would still answer all four here and fail only on a
-/// three-core host. Pinned below the peer count, the fourth peer is answered
-/// only if the waits are carried by something other than the workers.
+/// three-core host. One worker also detects a bootstrap that disables I/O
+/// overlap along with CPU parallelism. Pinned below the peer count, the fourth
+/// peer is answered only if waits are carried by something other than workers.
 #[test]
 fn four_peers_are_served_at_once_under_par_on_both_routes() {
     let llvm = compile_program_with_overlap("tcp_fanout.wf");
     let program = build_program(&llvm);
-    for native_ring in [true, false] {
-        let port = free_port();
-        let text = port.to_string();
-        let child = program.spawn_on_route_with_workers(native_ring, Some("3"), &[text.as_bytes()]);
-        let mut streams = (0..4_u8)
-            .map(|_| connect_when_ready(port))
-            .collect::<Vec<_>>();
-        for peer in (0..4_u8).rev() {
-            let stream = &mut streams[usize::from(peer)];
-            stream
-                .set_read_timeout(Some(Duration::from_secs(20)))
-                .expect("bound the wait for this peer's answer");
-            let sent = [peer, peer + 1, peer + 2];
-            stream.write_all(&sent).expect("send this peer's bytes");
-            let mut returned = Vec::new();
-            stream.read_to_end(&mut returned).unwrap_or_else(|error| {
-                panic!(
-                    "peer {peer} was not answered while earlier peers were still silent \
-                     (native ring: {native_ring}): {error}"
-                )
-            });
-            assert_eq!(returned, sent, "peer {peer} (native ring: {native_ring})");
+    for workers in ["1", "3"] {
+        for native_ring in [true, false] {
+            let port = free_port();
+            let text = port.to_string();
+            let child =
+                program.spawn_on_route_with_workers(native_ring, Some(workers), &[text.as_bytes()]);
+            let mut streams = (0..4_u8)
+                .map(|_| connect_when_ready(port))
+                .collect::<Vec<_>>();
+            for peer in (0..4_u8).rev() {
+                let stream = &mut streams[usize::from(peer)];
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(20)))
+                    .expect("bound the wait for this peer's answer");
+                let sent = [peer, peer + 1, peer + 2];
+                stream.write_all(&sent).expect("send this peer's bytes");
+                let mut returned = Vec::new();
+                stream.read_to_end(&mut returned).unwrap_or_else(|error| {
+                    panic!(
+                        "peer {peer} was not answered while earlier peers were still silent \
+                         (native ring: {native_ring}, workers: {workers}): {error}"
+                    )
+                });
+                assert_eq!(
+                    returned, sent,
+                    "peer {peer} (native ring: {native_ring}, workers: {workers})"
+                );
+            }
+            drop(streams);
+            let (status, _) = finished(child);
+            assert_eq!(status, 0, "native ring: {native_ring}");
         }
-        drop(streams);
-        let (status, _) = finished(child);
-        assert_eq!(status, 0, "native ring: {native_ring}");
     }
 }
 

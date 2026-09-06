@@ -191,9 +191,8 @@ __attribute__((weak)) unsigned long wf__sched_helper_ceiling(void) {
  *
  * The count is `wf_prim_online_cpus`, which reports the cores this process may
  * be scheduled on right now -- `hw.logicalcpu` on Darwin, `_SC_NPROCESSORS_ONLN`
- * elsewhere, `GetActiveProcessorCount` on Windows. A machine that reports
- * fewer than two gets 0, which is what an explicit opt-out gets, because one
- * thread of execution is the sequential world either way.
+ * elsewhere, `GetActiveProcessorCount` on Windows. At least one scheduler
+ * worker remains available: one CPU can advance several suspended I/O calls.
  *
  * Naming every core rather than only the performance ones is a measured
  * choice, not an assumption: on the 4P+6E machine this was built on, the coarse
@@ -204,21 +203,21 @@ __attribute__((weak)) unsigned long wf__sched_helper_ceiling(void) {
  * starting it. */
 static int wf__sched_default_lanes(void) {
     unsigned online = wf_prim_online_cpus();
-    if (online < 2u) {
-        return 0;
+    if (online == 0u) {
+        return 1;
     }
     return online > (unsigned)WF_PAR_MAX_LANES ? WF_PAR_MAX_LANES : (int)online;
 }
 
-/* The lane count this run asked for: 0 for the sequential world, or at least
- * two. A written 0 or 1 is the explicit opt-out, which is what the corpus and
- * every sequential reference build use. */
+/* Zero explicitly selects sequential execution. One retains staged I/O
+ * overlap on the entry worker; compute-only modules still select their
+ * sequential clone because their bootstrap asks for at least two workers. */
 static int wf__sched_requested_lanes(void) {
     unsigned long requested = 0;
     if (!wf__sched_setting("WF_WORKERS", (unsigned long)WF_PAR_MAX_LANES, &requested)) {
         return wf__sched_default_lanes();
     }
-    return requested < 2u ? 0 : (int)requested;
+    return (int)requested;
 }
 
 /* The stack count: WF_STACKS when it is written, otherwise the thread count
@@ -563,8 +562,8 @@ void wf__par_release(void *frame) {
  * The one case where "asked for" and "got" differ is a pool that was requested
  * and failed to start. That run takes the overlapped world and has every
  * acquisition refused, which is a correct schedule. */
-int wf__par_pool_active(void) {
-    return wf__sched_requested_lanes() >= 2;
+int wf__par_pool_active(unsigned minimum_workers) {
+    return (unsigned)wf__sched_requested_lanes() >= minimum_workers;
 }
 
 /* The lane count, settled once per process.

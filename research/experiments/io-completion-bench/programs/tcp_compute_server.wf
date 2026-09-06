@@ -1,0 +1,312 @@
+fn byte_at(store: &buffer<u8>, index: own u64) -> result: own u8 reads(store) {
+  doc "Reads one stored byte, delivering zero for a position the buffer does not hold.";
+  let room = len(deref(store));
+  let inside = index < room;
+  if inside {
+    let value = deref(store)[index];
+    return value;
+  }
+  return 0_u8;
+}
+
+fn parse_number(digits: &buffer<u8>, length: own u64) -> result: own u64 reads(digits) {
+  doc "Reads one decimal number out of the argument bytes the invocation supplied; a byte that is not a digit ends the number.";
+  let value = 0_u64;
+  let ended = 0_u8;
+  let index = 0_u64;
+  loop @scan {
+    let more = index < length;
+    if more {
+    } else {
+      break @scan;
+    }
+    let byte = byte_at(store: digits, index: index);
+    let low = byte >= 48_u8;
+    let high = byte <= 57_u8;
+    let digit = band(low, high);
+    if digit {
+      let value_byte = byte -wrap 48_u8;
+      let widened = cvt::<u8, u64>(value_byte);
+      let scaled = value *wrap 10_u64;
+      set value = scaled +wrap widened;
+    } else {
+      set ended = 1_u8;
+    }
+    if ended == 0_u8 {
+      set index = index +wrap 1_u64;
+    } else {
+      break @scan;
+    }
+  }
+  return value;
+}
+
+fn argument(args: &Args, position: own u64) -> result: own u64 reads(args), allocates(heap) {
+  doc "One decimal invocation argument, through the text route, so the digits are the same bytes on every host string family [HOST-2]; zero when the argument is absent or not text.";
+  let digits = buffer_new(24_u64, 0_u8);
+  let carried = 0_u64;
+  region {
+    match arg_get(args: args, position: position) {
+      Ok(value: text) => {
+        region {
+          match host_copy_utf8(value: &text, destination: &uniq digits, start: 0_u64, end: 24_u64) {
+            Ok(value: written) => {
+              set carried = written;
+            }
+            Err(error: problem) => {
+              set carried = 0_u64;
+            }
+          }
+        }
+      }
+      Err(error: problem) => {
+        set carried = 0_u64;
+      }
+    }
+  }
+  let value = 0_u64;
+  region {
+    set value = parse_number(digits: &digits, length: carried);
+  }
+  return value;
+}
+
+fn send_all(send: &uniq TcpSend, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(send, source), writes(send) contract {
+  define source_length = len(deref(source));
+  requires length <= source_length;
+} {
+  doc "Sends one prefix of the source buffer, reattempting until the connection has accepted every byte or refused it.";
+  let sent = 0_u64;
+  loop @sending {
+    let pending = sent < length;
+    if pending {
+    } else {
+      break @sending;
+    }
+    region {
+      match send_once(send: &uniq deref(send), source: source, start: sent, end: length) {
+        Ok(value: next) => {
+          set sent = next;
+        }
+        Err(error: problem) => {
+          return Err<unit, IoError>(error: move problem);
+        }
+      }
+    }
+  }
+  return Ok<unit, IoError>(value: unit);
+}
+
+fn decode_word(source: &buffer<u8>, start: own u64) -> result: own u64 reads(source) {
+  doc "Decodes eight big-endian request bytes, treating missing bytes as zero.";
+  let value = 0_u64;
+  for (index in 0_u64..8_u64) {
+    let at = start +wrap index;
+    let byte = byte_at(store: source, index: at);
+    let widened = cvt::<u8, u64>(byte);
+    let shifted = value *wrap 256_u64;
+    set value = shifted +wrap widened;
+  }
+  return value;
+}
+
+fn churn(seed: own u64, rounds: own u64) -> result: own u64 pure {
+  doc "Computes a dependent integer recurrence whose seed and iteration count arrive in the request.";
+  let value = seed;
+  let round = 0_u64;
+  loop @rounds {
+    if round == rounds {
+      break @rounds;
+    }
+    let rotated = irotl(value, 17_u32);
+    set value = ixor(value, rotated);
+    set value = value *wrap 6364136223846793005_u64;
+    set value = value +wrap 1442695040888963407_u64;
+    set round = round +wrap 1_u64;
+  }
+  return value;
+}
+
+fn encode_bits(destination: &uniq buffer<u8>, value: own u64) -> result: own unit writes(destination) contract {
+  define room = len(deref(destination));
+  requires 64_u64 <= room;
+} {
+  doc "Encodes the result as sixty-four bytes of zero or one, least significant bit first.";
+  let remaining = value;
+  for (index in 0_u64..64_u64) {
+    let bit = iand(remaining, 1_u64);
+    if bit == 0_u64 {
+      set deref(destination)[index] = 0_u8;
+    } else {
+      set deref(destination)[index] = 1_u8;
+    }
+    set remaining = ishr(remaining, 1_u32);
+  }
+  return unit;
+}
+
+fn serve_one(listener: &TcpListener, permit: own HandlePermit, scratch: &uniq buffer<u8>) -> result: own u8 reads(listener, permit, scratch), writes(permit, scratch) contract {
+  define room = len(deref(scratch));
+  requires 64_u64 <= room;
+} {
+  doc "Receives one complete sixty-four-byte request, computes its recurrence, and sends the encoded result. A request carries a big-endian seed and round count; counts above sixteen million and truncated requests are protocol errors.";
+  let outcome = 0_u8;
+  region {
+    match tcp_accept(permit: move permit, listener: listener) {
+      Accepted(connection: link, peer: from) => {
+        loop @requests {
+          let available = 0_u64;
+          let ended = 0_u8;
+          loop @packet {
+            let pending = available < 64_u64;
+            if pending {
+            } else {
+              break @packet;
+            }
+            region {
+              match receive_next(receive: &uniq link.receive, destination: &uniq deref(scratch), start: available, end: 64_u64) {
+                ReadBytes(next: endpoint) => {
+                  set available = endpoint;
+                }
+                ReadEnd() => {
+                  if available == 0_u64 {
+                  } else {
+                    set outcome = 9_u8;
+                  }
+                  set ended = 1_u8;
+                }
+                ReadFailed(error: problem) => {
+                  set outcome = 3_u8;
+                  set ended = 2_u8;
+                }
+              }
+            }
+            if ended == 0_u8 {
+            } else {
+              break @packet;
+            }
+          }
+          if ended == 0_u8 {
+          } else {
+            break @requests;
+          }
+          let seed = 0_u64;
+          let rounds = 0_u64;
+          region {
+            set seed = decode_word(source: &deref(scratch), start: 0_u64);
+          }
+          region {
+            set rounds = decode_word(source: &deref(scratch), start: 8_u64);
+          }
+          if rounds <= 16777216_u64 {
+          } else {
+            set outcome = 10_u8;
+            break @requests;
+          }
+          let checksum = churn(seed: seed, rounds: rounds);
+          region {
+            let encoded = encode_bits(destination: &uniq deref(scratch), value: checksum);
+          }
+          region {
+            match send_all(send: &uniq link.send, source: &deref(scratch), length: 64_u64) {
+              Ok(value: delivered) => {
+              }
+              Err(error: problem) => {
+                set outcome = 4_u8;
+                set ended = 2_u8;
+              }
+            }
+          }
+          if ended == 0_u8 {
+          } else {
+            break @requests;
+          }
+        }
+        let credit = close_connection(connection: move link);
+      }
+      AcceptFailed(error: problem, permit: handed_back) => {
+        set outcome = 5_u8;
+      }
+    }
+  }
+  return outcome;
+}
+
+command fn main(command.args as args: own Args, command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(args, handles), writes(handles), allocates(heap) {
+  doc "The mixed compute/network experiment: one sequential request loop per connection, with independently verifiable CPU results and explicit stream framing.";
+  let arguments = 0_u64;
+  region {
+    set arguments = args_count(args: &args);
+  }
+  let named = arguments >= 3_u64;
+  if named {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let port_value = 0_u64;
+  let count = 0_u64;
+  region {
+    set port_value = argument(args: &args, position: 1_u64);
+    set count = argument(args: &args, position: 2_u64);
+  }
+  let port_named = port_value <= 65535_u64;
+  let count_named = count >= 1_u64;
+  let usable = band(port_named, count_named);
+  if usable {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  let port = 0_u16;
+  region {
+    match cvt::<u64, u16>(port_value) {
+      Ok(value: narrowed) => {
+        set port = narrowed;
+      }
+      Err(error: problem) => {
+        return exit_status(code: 2_u8);
+      }
+    }
+  }
+  let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: port);
+  let outcome = 0_u8;
+  region {
+    match reserve_handle(factory: &uniq handles) {
+      Ok(value: listen_permit) => {
+        region {
+          match tcp_listen(permit: move listen_permit, address: &address) {
+            Listening(listener: bound) => {
+              for (
+                served in 0_u64..count,
+                invariant progress: served <= count
+              ) {
+                let scratch = buffer_new(64_u64, 0_u8);
+                region {
+                  match reserve_handle(factory: &uniq handles) {
+                    Ok(value: accept_permit) => {
+                      let reported = serve_one(listener: &bound, permit: move accept_permit, scratch: &uniq scratch);
+                      if reported == 0_u8 {
+                      } else {
+                        set outcome = reported;
+                      }
+                    }
+                    Err(error: problem) => {
+                      return exit_status(code: 6_u8);
+                    }
+                  }
+                }
+              }
+              let listener_credit = close_listener(listener: move bound);
+            }
+            ListenFailed(error: problem, permit: handed_back) => {
+              set outcome = 7_u8;
+            }
+          }
+        }
+      }
+      Err(error: problem) => {
+        set outcome = 8_u8;
+      }
+    }
+  }
+  return exit_status(code: outcome);
+}

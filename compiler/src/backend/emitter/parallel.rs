@@ -93,7 +93,7 @@ pub(super) struct LoopSplitSite<'ir> {
 pub(crate) const PARALLEL_RUNTIME_DECLARATIONS: &str = "declare ptr @wf__par_acquire_lane(i64)\ndeclare void @wf__par_publish(ptr, ptr)\ndeclare void @wf__par_join(ptr)\ndeclare void @wf__par_release(ptr)\n";
 
 /// The fail-closed Windows declaration of the once-per-process backend query.
-pub(crate) const PARALLEL_POOL_QUERY_DECLARATION: &str = "declare i32 @wf__par_pool_active()\n";
+pub(crate) const PARALLEL_POOL_QUERY_DECLARATION: &str = "declare i32 @wf__par_pool_active(i32)\n";
 
 /// The fail-closed Windows declaration of the loop split budget query.
 pub(crate) const PARALLEL_SPLIT_BUDGET_DECLARATION: &str =
@@ -151,7 +151,26 @@ pub fn module_requires_parallel_runtime(module: &str) -> bool {
 /// of the lane protocol — it takes no frame, moves no work, and starts nothing
 /// — so it remains separate from the four protocol signatures.
 pub(crate) const PARALLEL_POOL_QUERY_FALLBACK: &str =
-    "define weak i32 @wf__par_pool_active() {\nentry:\n  ret i32 0\n}\n\n";
+    "define weak i32 @wf__par_pool_active(i32 %minimum_workers) {\nentry:\n  ret i32 0\n}\n\n";
+
+/// CPU hand-outs need two workers to buy overlap; a staged may-suspend call
+/// can make progress alongside another such call on one scheduler worker.
+/// Only reachable functions in the clone closure affect the bootstrap, so an
+/// unused I/O function cannot change a compute program's one-worker path.
+pub(crate) fn overlap_minimum_workers(
+    program: &IrProgram<'_, '_, '_>,
+    clones: &HashSet<u32>,
+) -> Option<u32> {
+    if clones.is_empty() {
+        return None;
+    }
+    let stages_io = clones.iter().any(|ordinal| {
+        program.functions()[*ordinal as usize]
+            .driven_completion_pipeline()
+            .is_some_and(crate::IrCompletionPipeline::lane_handout)
+    });
+    Some(if stages_io { 1 } else { 2 })
+}
 
 /// The runtime's answer to "how many times may a split of this span halve",
 /// and a non-Windows module's own weak answer of "not at all".

@@ -48,17 +48,28 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#if defined(WF_BENCH_COMPUTE)
+#include "compute_protocol.h"
+#endif
+
 /* One receive per thread and one pending buffer per connection, both this
  * size. The loop reads only when the pending buffer is empty, so what a short
  * write leaves behind is at most one receive and the pending buffer can never
  * overflow. */
+#if defined(WF_BENCH_COMPUTE)
+#define TRANSFER_BYTES COMPUTE_BYTES
+#else
 #define TRANSFER_BYTES 65536u
+#endif
 
 struct connection {
     int active;
     unsigned char *pending;
     uint32_t offset;
     uint32_t length;
+#if defined(WF_BENCH_COMPUTE)
+    unsigned received;
+#endif
 };
 
 struct worker {
@@ -177,6 +188,28 @@ static void service(struct worker *worker, int descriptor) {
         }
         link->offset = 0;
         link->length = 0;
+#if defined(WF_BENCH_COMPUTE)
+        while (link->received < COMPUTE_BYTES) {
+            ssize_t taken = recv(descriptor, link->pending + link->received,
+                                 COMPUTE_BYTES - link->received, 0);
+            if (taken > 0) {
+                link->received += (unsigned)taken;
+                continue;
+            }
+            if (taken < 0 && errno == EINTR) continue;
+            if (taken < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return;
+            if (taken == 0 && link->received != 0) mark_failed();
+            close_connection(worker, descriptor);
+            return;
+        }
+        if (!compute_response(link->pending)) {
+            mark_failed();
+            close_connection(worker, descriptor);
+            return;
+        }
+        link->received = 0;
+        link->length = COMPUTE_BYTES;
+#else
         ssize_t taken = recv(descriptor, worker->scratch, TRANSFER_BYTES, 0);
         if (taken == 0) {
             close_connection(worker, descriptor);
@@ -212,6 +245,7 @@ static void service(struct worker *worker, int descriptor) {
             link->length = (uint32_t)((size_t)taken - handed);
             return;
         }
+#endif
     }
 }
 
@@ -239,6 +273,9 @@ static void accept_ready(struct worker *worker) {
         link->active = 1;
         link->offset = 0;
         link->length = 0;
+#if defined(WF_BENCH_COMPUTE)
+        link->received = 0;
+#endif
         struct epoll_event registration;
         registration.events = EPOLLIN | EPOLLOUT | EPOLLET;
         registration.data.fd = descriptor;
