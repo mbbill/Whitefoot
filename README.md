@@ -52,7 +52,7 @@ map of capabilities, open directions, evidence, and candidate projects.
 It does not grant or withhold permission to work on a branch. A selected
 direction is worked in [research/investigations/](research/investigations/),
 and what it settles is written to [mcts_mem/](mcts_mem/).
-[docs/WORKFLOW.md](docs/WORKFLOW.md) defines the complete four-rule branch and
+[CLAUDE.md](CLAUDE.md) defines the complete four-rule branch and
 `main` boundary. [AGENTS.md](AGENTS.md) records the project's technical
 priorities and repository discipline.
 

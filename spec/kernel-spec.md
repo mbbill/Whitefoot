@@ -3432,7 +3432,7 @@ Its unique machine-checked content is that no rule ID is defined twice and every
 [META-4] Every normative fact is stated once; other mentions are rule-ID cross-references.
 [META-5] Every change to this artifact declares its spec delta (rules ±, tokens ±, spellings ±, exceptions ±) and its SELECTION GROUND (evidence-selected vs minimality-selected) in the change that makes it.
 This document states the language and carries no commentary about its own versions: no delta declaration, no description of what a version changed, and no selection ground appear in these bytes, and a version's own such text is not retained here after it activates.
-`docs/WORKFLOW.md` defines the repository's four branch-and-main rules: work-branch changes need no approval, while merging into `main` requires owner approval of the exact tested revision and the records those rules require.
+`CLAUDE.md` defines the repository's four branch-and-main rules: work-branch changes need no approval, while merging into `main` requires owner approval of the exact tested revision and the records those rules require.
 DEFERRED markers are tracked specification-delta obligations and do not create another approval point.
 [META-6] Every rule carries an entry in `spec/derivation/derivation-ledger.md` tracing it to `docs/constitution.md`; a rule whose chain is refuted or orphaned (evidence card dies, constitutional premise amended) is flagged for re-grounding, and underived rules may not ratify.
 The native `whitefoot-spec` gate checks that every active rule ID has a ledger row.

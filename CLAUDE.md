@@ -92,6 +92,34 @@ These are the complete approval and workflow rules:
    specification's bytes are its identity, the released archives are
    immutable, and git is the history.
 
+What the four rules mean exactly:
+
+- **Work branch** is any branch other than `main`. Branch work never pauses for
+  approval, including when it edits a specification, conformance evidence, or
+  these rules.
+- **Exact revision** is the complete tree that will enter `main`. If that tree
+  changes after approval or after its successful test run, rules 2 and 3 apply
+  to the new revision.
+- **All repository tests** is the root `make check` target: the compiler build,
+  format and lint, every maintained executable test target in the compiler and
+  the active research experiments, the specification checks, conformance
+  structure and coverage, and the full native conformance adapter including the
+  case ordinary Cargo runs mark ignored. A file retained as a deferred or
+  historical artifact that cannot run against the current toolchain is
+  evidence, not a test target.
+- **Conformance evidence** is `tests/conformance` case source and manifest
+  content, its runner and adapter, and any collection or invocation wiring that
+  can change which cases run or how their results are read.
+
+A specification amendment lands as one change: the active file retitled and
+redeclared vN+1, and the outgoing vN bytes archived as
+`spec/kernel-spec-vN.md`. Its identity follows its bytes without being
+recorded anywhere — `compiler/build.rs` derives it. The version number is
+claimed on the branch and settled at merge: two branches archive the same
+outgoing bytes under the same name, so only the new number collides, and the
+second to merge retitles two lines and rebuilds. There is no candidate state;
+a branch carrying an amendment is merge-ready when its gate is green.
+
 No plan status, branch charter, batch record, worktree arrangement, audit,
 packet, rebase method, commit shape, or other workflow step is an additional
 approval or merge precondition. The technical rules below define correct

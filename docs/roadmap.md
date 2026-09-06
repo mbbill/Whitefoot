@@ -11,7 +11,7 @@ are the tail of the `ACTIVE-SPEC:` chain in
 its own bytes. Superseded versions are archived byte-for-byte as
 `spec/kernel-spec-vN.md`. Project law is the
 [`Constitution`](constitution.md), and the operational process is
-[`WORKFLOW.md`](WORKFLOW.md).
+[`CLAUDE.md`](../CLAUDE.md).
 
 Source proof runs in the ordinary semantic compiler. It checks contracts,
 explicit loop-header invariants, and local invariants with optional `use`
@@ -35,7 +35,7 @@ This outline records the landscape. A selected direction is worked in
 `research/investigations/<name>/`, where its design, measurements and rejected
 alternatives live, and what is settled by it is written to `mcts_mem/`. Neither
 this outline nor those records grants or withholds permission to work on a
-branch or adds a merge condition beyond the four rules in `WORKFLOW.md`. A project can
+branch or adds a merge condition beyond the four rules in `CLAUDE.md`. A project can
 expose a missing capability, but cannot by itself change the language or
 justify a project-shaped compiler special case.
 
@@ -652,7 +652,7 @@ writer.
   the exact v0.40 revision. Any
   expectation, source, status, collection, or invocation change is conformance
   evidence whose exact before/after content is recorded under merge rule 4.
-- **Facts:** [conformance corpus](../tests/conformance) · [workflow](WORKFLOW.md).
+- **Facts:** [conformance corpus](../tests/conformance) · [practice](practice.md).
 
 ### outline:VERIFY-3 — Facts-on/facts-off differential trust
 
