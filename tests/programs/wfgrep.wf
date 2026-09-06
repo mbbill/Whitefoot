@@ -128,7 +128,7 @@ fn io_class(error: own IoError) -> result: own u8 pure {
   }
 }
 
-fn append_slice(destination: &uniq buffer<u8>, capacity: own u64, filled: own u64, text: own Slice<u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
+fn append_slice(destination: &uniq MutSlice<u8>, capacity: own u64, filled: own u64, text: own Slice<u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
   requires capacity == len_of(deref(destination));
   requires filled <= capacity;
   ensures result <= capacity;
@@ -153,7 +153,7 @@ fn append_slice(destination: &uniq buffer<u8>, capacity: own u64, filled: own u6
   }
 }
 
-fn copy_range(destination: &uniq buffer<u8>, at: own u64, source: &buffer<u8>, from: own u64, to: own u64) -> result: own u64 reads(destination, source), writes(destination) {
+fn copy_range(destination: &uniq MutSlice<u8>, at: own u64, source: &buffer<u8>, from: own u64, to: own u64) -> result: own u64 reads(destination, source), writes(destination) {
   doc "Copies one half-open source range into the destination at one offset.";
   let source_room = len_of(deref(source));
   let destination_room = len_of(deref(destination));
@@ -182,11 +182,11 @@ fn copy_range(destination: &uniq buffer<u8>, at: own u64, source: &buffer<u8>, f
   return target;
 }
 
-fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
-  define source_length = len_of(deref(source));
+fn publish_all(output: &uniq Output, source: own Slice<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+  define source_length = len_of(source);
   requires length <= source_length;
 } {
-  doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
+  doc "Publishes one prefix of the source view, reattempting until the host has accepted every byte or refused it. The view is copy [OWN-1], so handing it over at an own parameter leaves the caller's own storage and its facts untouched [CALL-2].";
   let sent = 0_u64;
   loop @publish {
     let pending = sent < length;
@@ -195,7 +195,7 @@ fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> re
       break @publish;
     }
     region {
-      match write_once(output: &uniq deref(output), source: source, start: sent, end: length) {
+      match write_once(output: &uniq deref(output), source: &source, start: sent, end: length) {
         Ok(value: next) => {
           set sent = next;
         }
@@ -267,7 +267,7 @@ fn name_before(names: &buffer<u8>, left: own u64, right: own u64) -> result: own
   return left_count < right_count;
 }
 
-fn put_decimal(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn put_decimal(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   doc "Writes the decimal spelling of one unsigned value at one offset and reports the offset just past it, counting its digits first so it needs no scratch storage.";
   let digits = 1_u64;
   let probe = value;
@@ -304,14 +304,17 @@ fn put_decimal(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> re
   return end;
 }
 
-fn report_failure(err: &uniq Output, report: &uniq buffer<u8>, path: &buffer<u8>, path_length: own u64, status: own u8) -> result: own unit reads(err, report, path), writes(err, report) {
-  doc "Assembles one `wfgrep: PATH: reason` diagnostic in the report buffer and publishes it with a single write, copying the caller's path bytes and clamping the assembled length against the report's capacity.";
+fn assemble_failure(report: own MutSlice<u8>, capacity: own u64, path: &buffer<u8>, path_length: own u64, status: own u8) -> result: own u64 reads(report, path), writes(report) contract {
+  requires capacity == len_of(report);
+  ensures result <= capacity;
+} {
+  doc "Assembles one `wfgrep: PATH: reason` diagnostic in the report view and hands back the assembled length, copying the caller's path bytes and clamping that length against the view's capacity. Publishing is the caller's, because a helper handed a view cannot form the shared child a write_once source needs [VIEW-2].";
   let length = 0_u64;
-  let report_capacity = len_of(deref(report));
+  let report_capacity = len_of(report);
   region {
     let view = slice_of(&error_prefix);
     region {
-      set length = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: length, text: view);
+      set length = append_slice(destination: &uniq report, capacity: report_capacity, filled: length, text: view);
     }
   }
   let prior_length = length;
@@ -334,7 +337,7 @@ fn report_failure(err: &uniq Output, report: &uniq buffer<u8>, path: &buffer<u8>
       break @name;
     }
     let byte = deref(path)[copied_count];
-    set deref(report)[target_at] = byte;
+    set report[target_at] = byte;
     set copied_count = copied_count +wrap 1_u64;
   }
   let candidate_length = prior_length +wrap copied_count;
@@ -347,7 +350,7 @@ fn report_failure(err: &uniq Output, report: &uniq buffer<u8>, path: &buffer<u8>
   region {
     let view = slice_of(&error_separator);
     region {
-      set tail = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: tail, text: view);
+      set tail = append_slice(destination: &uniq report, capacity: report_capacity, filled: tail, text: view);
     }
   }
   let named = 0_u8;
@@ -356,7 +359,7 @@ fn report_failure(err: &uniq Output, report: &uniq buffer<u8>, path: &buffer<u8>
     region {
       let view = slice_of(&reason_missing);
       region {
-        set tail = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: tail, text: view);
+        set tail = append_slice(destination: &uniq report, capacity: report_capacity, filled: tail, text: view);
       }
     }
   }
@@ -365,7 +368,7 @@ fn report_failure(err: &uniq Output, report: &uniq buffer<u8>, path: &buffer<u8>
     region {
       let view = slice_of(&reason_denied);
       region {
-        set tail = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: tail, text: view);
+        set tail = append_slice(destination: &uniq report, capacity: report_capacity, filled: tail, text: view);
       }
     }
   }
@@ -374,7 +377,7 @@ fn report_failure(err: &uniq Output, report: &uniq buffer<u8>, path: &buffer<u8>
     region {
       let view = slice_of(&reason_directory);
       region {
-        set tail = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: tail, text: view);
+        set tail = append_slice(destination: &uniq report, capacity: report_capacity, filled: tail, text: view);
       }
     }
   }
@@ -383,7 +386,7 @@ fn report_failure(err: &uniq Output, report: &uniq buffer<u8>, path: &buffer<u8>
     region {
       let view = slice_of(&reason_invalid_path);
       region {
-        set tail = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: tail, text: view);
+        set tail = append_slice(destination: &uniq report, capacity: report_capacity, filled: tail, text: view);
       }
     }
   }
@@ -392,7 +395,7 @@ fn report_failure(err: &uniq Output, report: &uniq buffer<u8>, path: &buffer<u8>
     region {
       let view = slice_of(&reason_long_line);
       region {
-        set tail = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: tail, text: view);
+        set tail = append_slice(destination: &uniq report, capacity: report_capacity, filled: tail, text: view);
       }
     }
   }
@@ -400,22 +403,14 @@ fn report_failure(err: &uniq Output, report: &uniq buffer<u8>, path: &buffer<u8>
     region {
       let view = slice_of(&reason_unreadable);
       region {
-        set tail = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: tail, text: view);
+        set tail = append_slice(destination: &uniq report, capacity: report_capacity, filled: tail, text: view);
       }
     }
   }
-  region {
-    match publish_all(output: &uniq deref(err), source: &deref(report), length: tail) {
-      Ok(value: published) => {
-      }
-      Err(error: problem) => {
-      }
-    }
-  }
-  return unit;
+  return tail;
 }
 
-fn append_trailing_newline(input: &uniq buffer<u8>, carry: own u64) -> result: own TrailingChunk reads(input), writes(input) {
+fn append_trailing_newline(input: &uniq MutSlice<u8>, carry: own u64) -> result: own TrailingChunk reads(input), writes(input) {
   let input_room = len_of(deref(input));
   let carry_ok = carry < input_room;
   if carry_ok {
@@ -504,7 +499,7 @@ fn scan_line(input: &buffer<u8>, available: own u64, scan: own u64, pattern: &bu
   return move accepted;
 }
 
-fn shift_input_tail(input: &uniq buffer<u8>, available: own u64, scan: own u64) -> result: own ShiftedTail reads(input), writes(input) {
+fn shift_input_tail(input: &uniq MutSlice<u8>, available: own u64, scan: own u64) -> result: own ShiftedTail reads(input), writes(input) {
   let input_room = len_of(deref(input));
   let available_fits = available <= input_room;
   if available_fits {
@@ -589,9 +584,12 @@ fn search_file(file: &ReadFile, pattern: &buffer<u8>, pattern_length: own u64, p
         let trailing_available = carry;
         let trailing_status = 0_u8;
         region {
-          let result = append_trailing_newline(input: &uniq input, carry: carry);
-          set trailing_available = result.available;
-          set trailing_status = result.status;
+          let input_window = mut_slice_of(&uniq input);
+          region {
+            let result = append_trailing_newline(input: &uniq input_window, carry: carry);
+            set trailing_available = result.available;
+            set trailing_status = result.status;
+          }
         }
         if trailing_status == 0_u8 {
           set available = trailing_available;
@@ -635,11 +633,14 @@ fn search_file(file: &ReadFile, pattern: &buffer<u8>, pattern_length: own u64, p
           let batch_fits = filled <= batch_room;
           if batch_fits {
             region {
-              match publish_all(output: &uniq deref(out), source: &batch, length: filled) {
-                Ok(value: published) => {
-                }
-                Err(error: problem) => {
-                  set status = io_class(error: move problem);
+              let publish_view = slice_of(&batch);
+              region {
+                match publish_all(output: &uniq deref(out), source: publish_view, length: filled) {
+                  Ok(value: published) => {
+                  }
+                  Err(error: problem) => {
+                    set status = io_class(error: move problem);
+                  }
                 }
               }
             }
@@ -650,7 +651,10 @@ fn search_file(file: &ReadFile, pattern: &buffer<u8>, pattern_length: own u64, p
         }
         if status == 0_u8 {
           region {
-            set filled = copy_range(destination: &uniq batch, at: filled, source: &deref(path), from: 0_u64, to: path_length);
+            let batch_window = mut_slice_of(&uniq batch);
+            region {
+              set filled = copy_range(destination: &uniq batch_window, at: filled, source: &deref(path), from: 0_u64, to: path_length);
+            }
           }
           let colon_room = filled < batch_room;
           if colon_room {
@@ -658,7 +662,10 @@ fn search_file(file: &ReadFile, pattern: &buffer<u8>, pattern_length: own u64, p
             set filled = filled +wrap 1_u64;
           }
           region {
-            set filled = put_decimal(destination: &uniq batch, at: filled, value: line_number);
+            let batch_window = mut_slice_of(&uniq batch);
+            region {
+              set filled = put_decimal(destination: &uniq batch_window, at: filled, value: line_number);
+            }
           }
           let second_room = filled < batch_room;
           if second_room {
@@ -666,7 +673,10 @@ fn search_file(file: &ReadFile, pattern: &buffer<u8>, pattern_length: own u64, p
             set filled = filled +wrap 1_u64;
           }
           region {
-            set filled = copy_range(destination: &uniq batch, at: filled, source: &input, from: scan, to: stop);
+            let batch_window = mut_slice_of(&uniq batch);
+            region {
+              set filled = copy_range(destination: &uniq batch_window, at: filled, source: &input, from: scan, to: stop);
+            }
           }
         } else {
           break @lines;
@@ -684,9 +694,12 @@ fn search_file(file: &ReadFile, pattern: &buffer<u8>, pattern_length: own u64, p
     let tail = 0_u64;
     let shift_status = 0_u8;
     region {
-      let result = shift_input_tail(input: &uniq input, available: available, scan: scan);
-      set tail = result.tail;
-      set shift_status = result.status;
+      let input_window = mut_slice_of(&uniq input);
+      region {
+        let result = shift_input_tail(input: &uniq input_window, available: available, scan: scan);
+        set tail = result.tail;
+        set shift_status = result.status;
+      }
     }
     if shift_status == 0_u8 {
       set carry = tail;
@@ -700,11 +713,14 @@ fn search_file(file: &ReadFile, pattern: &buffer<u8>, pattern_length: own u64, p
     let final_fits = filled <= batch_room;
     if final_fits {
       region {
-        match publish_all(output: &uniq deref(out), source: &batch, length: filled) {
-          Ok(value: published) => {
-          }
-          Err(error: problem) => {
-            set status = io_class(error: move problem);
+        let publish_view = slice_of(&batch);
+        region {
+          match publish_all(output: &uniq deref(out), source: publish_view, length: filled) {
+            Ok(value: published) => {
+            }
+            Err(error: problem) => {
+              set status = io_class(error: move problem);
+            }
           }
         }
       }
@@ -757,6 +773,7 @@ fn walk(factory: &uniq FileFactory, dir: &DirectoryRead, prefix: &buffer<u8>, pr
   let order = buffer_new(64_u64, 0_u64);
   let child = buffer_new(1024_u64, 0_u8);
   let report = buffer_new(1280_u64, 0_u8);
+  let report_room = len_of(report);
   let entries_room = len_of(entries);
   let names_room = len_of(names);
   let order_room = len_of(order);
@@ -1128,7 +1145,17 @@ fn walk(factory: &uniq FileFactory, dir: &DirectoryRead, prefix: &buffer<u8>, pr
       if reportable {
         set failed = 1_u8;
         region {
-          report_failure(err: &uniq deref(err), report: &uniq report, path: &child, path_length: cursor, status: status);
+          let report_window = mut_slice_of(&uniq report);
+          let assembled = assemble_failure(report: move report_window, capacity: report_room, path: &child, path_length: cursor, status: status);
+          let publish_view = slice_of(&report);
+          region {
+            match publish_all(output: &uniq deref(err), source: publish_view, length: assembled) {
+              Ok(value: published) => {
+              }
+              Err(error: problem) => {
+              }
+            }
+          }
         }
       }
     }
@@ -1160,7 +1187,17 @@ fn walk(factory: &uniq FileFactory, dir: &DirectoryRead, prefix: &buffer<u8>, pr
       if reportable {
         set failed = 1_u8;
         region {
-          report_failure(err: &uniq deref(err), report: &uniq report, path: &child, path_length: cursor, status: status);
+          let report_window = mut_slice_of(&uniq report);
+          let assembled = assemble_failure(report: move report_window, capacity: report_room, path: &child, path_length: cursor, status: status);
+          let publish_view = slice_of(&report);
+          region {
+            match publish_all(output: &uniq deref(err), source: publish_view, length: assembled) {
+              Ok(value: published) => {
+              }
+              Err(error: problem) => {
+              }
+            }
+          }
         }
       }
     }
@@ -1242,26 +1279,38 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     if startup == 1_u8 {
       region {
         let view = slice_of(&usage_text);
-        set length = append_slice(destination: &uniq report, capacity: report_room, filled: length, text: view);
+        let report_window = mut_slice_of(&uniq report);
+        region {
+          set length = append_slice(destination: &uniq report_window, capacity: report_room, filled: length, text: view);
+        }
       }
     }
     if startup == 2_u8 {
       region {
         let view = slice_of(&reason_pattern_too_long);
-        set length = append_slice(destination: &uniq report, capacity: report_room, filled: length, text: view);
+        let report_window = mut_slice_of(&uniq report);
+        region {
+          set length = append_slice(destination: &uniq report_window, capacity: report_room, filled: length, text: view);
+        }
       }
     }
     if startup == 3_u8 {
       region {
         let view = slice_of(&reason_root_too_long);
-        set length = append_slice(destination: &uniq report, capacity: report_room, filled: length, text: view);
+        let report_window = mut_slice_of(&uniq report);
+        region {
+          set length = append_slice(destination: &uniq report_window, capacity: report_room, filled: length, text: view);
+        }
       }
     }
     region {
-      match publish_all(output: &uniq err, source: &report, length: length) {
-        Ok(value: published) => {
-        }
-        Err(error: problem) => {
+      let publish_view = slice_of(&report);
+      region {
+        match publish_all(output: &uniq err, source: publish_view, length: length) {
+          Ok(value: published) => {
+          }
+          Err(error: problem) => {
+          }
         }
       }
     }
@@ -1274,13 +1323,19 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     let length = 0_u64;
     region {
       let view = slice_of(&reason_root_too_long);
-      set length = append_slice(destination: &uniq report, capacity: report_room, filled: length, text: view);
+      let report_window = mut_slice_of(&uniq report);
+      region {
+        set length = append_slice(destination: &uniq report_window, capacity: report_room, filled: length, text: view);
+      }
     }
     region {
-      match publish_all(output: &uniq err, source: &report, length: length) {
-        Ok(value: published) => {
-        }
-        Err(error: problem) => {
+      let publish_view = slice_of(&report);
+      region {
+        match publish_all(output: &uniq err, source: publish_view, length: length) {
+          Ok(value: published) => {
+          }
+          Err(error: problem) => {
+          }
         }
       }
     }
@@ -1374,7 +1429,17 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   if reportable {
     set failed = 1_u8;
     region {
-      report_failure(err: &uniq err, report: &uniq report, path: &root_path, path_length: copied, status: root_status);
+      let report_window = mut_slice_of(&uniq report);
+      let assembled = assemble_failure(report: move report_window, capacity: report_room, path: &root_path, path_length: copied, status: root_status);
+      let publish_view = slice_of(&report);
+      region {
+        match publish_all(output: &uniq err, source: publish_view, length: assembled) {
+          Ok(value: published) => {
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
     }
   }
   if failed == 0_u8 {
