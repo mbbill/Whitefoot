@@ -1528,7 +1528,7 @@ revision preserves the experiment for reproduction. This result rejects this
 particular offset policy; it does not compare stackful and stackless task
 representations or show that their locality costs are identical.
 
-## Fifteenth experiment: independently locked worker ready queues
+## Fifteenth experiment: independently locked worker ready queues (retired)
 
 Experiment 1 changed queue preference while retaining one mutex. Its negative
 result therefore did not test independent queue synchronization. The current
@@ -1582,6 +1582,53 @@ mixed-compute checks subsequently passed every response in all three final
 forms at one and two workers, with actual cooperative switches in the mixed
 case. All three final policy-numbered completion suites then passed on the M1, including every maintained enumeration configuration with zero bounded states. The shared-lock and independent-lock forms both reach 4656736 states for S24 at two threads/four stacks; each list mutation remains one protected operation in this model, so physical lock contention is measured separately.
 
+### Ready-queue results and retirement
+
+Revision `2f9468788790ca466a53e88d3b4f14634fe9c4ad` completed
+[Linux run 34046410559](https://github.com/mbbill/Whitefoot/actions/runs/34046410559),
+artifact `9993544474`: 700 timed network samples on an AMD EPYC 9V74 VM with
+four logical CPUs/two SMT cores and clang 18.1.3. Both candidate completion
+suites passed before timing. The same run's native Windows job passed all
+three policies at two/four workers with exact output, actual IOCP traffic and
+park/resume activity. The revision's canonical gate (`34046410524`), host
+qualification (`34046410580`) and cross-platform performance qualification
+(`34046410531`) also completed successfully.
+
+Seven-pass median paired throughput ratios to the original FIFO are:
+
+| CPU placement | Shared-lock queues, 64 peers | Independent queues, 64 peers | Shared-lock queues, 1024 peers | Independent queues, 1024 peers |
+| --- | ---: | ---: | ---: | ---: |
+| shared4 | 0.9900 | 0.9810 | 0.9946 | 0.9866 |
+| shared2 | 0.9976 | 1.0042 | 0.9999 | 0.9985 |
+| split2 | 0.9972 | 0.9996 | 1.0072 | 1.0150 |
+| split1 | 0.9991 | 0.9984 | 1.0008 | 1.0104 |
+
+Each cell's paired range includes one. At split2/64, independently locking
+the worker queues versus sharing their mutex gives 1.0003, range
+0.9982..1.0053. Base/independent/epoll rates are 212646/213390/237208 trips/s,
+with median server CPU costs 8.672/8.594/7.969 microseconds per trip. The
+independent queues do not close that rate/cost gap. At one peer, independent
+locks recover much of the shared-lock queues' regression: on shared4 their
+paired ratio to shared-lock queues is 1.4948, but only 0.9387 to the original
+FIFO. Splitting a lock can repair overhead introduced by extra queue scans
+without improving the original design.
+
+Pure-compute base/shared-lock/independent medians are 2109.40/2108.52/2106.87 ms
+at two workers, 1165.16/1174.54/1151.87 at four, and
+1188.86/1416.18/1225.91 at eight. The independent variant helps the four-worker
+control modestly but regresses the oversubscribed one; the shared-lock scan
+is especially costly there. Warm-file medians are 153.57/151.08/152.49,
+157.41/162.53/162.45 and 171.56/159.51/157.94 ms respectively. These local
+tradeoffs do not select either queue variant as the default.
+
+Retire both variants and their extra mutex/enumerator state. Restore the
+single FIFO and original primitives while retaining all original schedules,
+checkpoint tests and stack-bound checks. This result is scoped to stealable
+parking-worker queues with the existing shared completion engine and wake
+protocol. It does not test persistent connection ownership, a fully local I/O
+engine, or a different continuation representation. The measured revision
+retains the exact prototype and Windows checks for reproduction.
+
 ### Continuation-lowering feasibility probe
 
 A separate temporary LLVM probe tested whether a general backend facility can
@@ -1612,3 +1659,84 @@ they do not establish that source-visible suspension annotations are needed.
 Current SCOPE-3 permits host resource exhaustion outside the source outcome
 model, but a future backed-concurrency promise still needs explicit capacity
 reasoning. No source rule or public ABI is changed by this temporary probe.
+
+A follow-up probe used LLVM's switched-resume ABI, with the intrinsic forms
+observed in this installed clang's own C++20 coroutine output. The same nested
+loop/branch/addressed-value cases, plus cancellation while a child is suspended,
+passed 200 independent checks with all allocations reclaimed. Unlike retcon,
+this form needed neither the variadic-ID adjustment nor a `noinline` child.
+At `-O2`, LLVM embedded the child's state in the parent's frame: the external
+allocator was called once per parent activation, for 88 bytes, and no child
+allocation remained. This resolves one feasibility concern on the M1; it is
+still not a WF coroutine emitter, a multithreaded completion publication test,
+or a throughput comparison. Normal completion and premature destruction were
+both tested because a parent must retain a suspended child's borrowed storage
+until that child has ceased accessing it.
+
+## Sixteenth experiment: sequential functions on an owner-local event loop
+
+The preceding queue experiments retain the shared completion engine and
+stealable stacks. They cannot distinguish the cost of retaining ordinary
+call stacks from the cost of sharing and migrating connection work. This
+comparison changes the continuation representation inside the native epoll
+reference, while keeping its connection ownership and event loop.
+
+`WF_BENCH_STACKFUL` includes `epoll_stackful.h` from the existing reference.
+Each accepted connection runs a sequential handler with ordinary nested
+receive/send calls. Receive offsets, send offsets, recurrence values and
+remaining loop iterations are automatic locals spanning any number of
+suspensions. The handler uses the exact `sched/switch.h` context switch used
+by WF. Each descriptor slot has a guarded 64 KiB stack, reserved before the
+listeners start and prepared only when accepted. This size is sufficient for
+this measured C program, not a general bound on WF call depth.
+
+The original SO_REUSEPORT listeners, per-worker epoll instances, edge-triggered
+draining, read scratch, pending-send buffers, owner FIFO and wake channels
+remain. The new handler copies the unsent suffix out of shared receive scratch
+before its first blocked send, so another connection can reuse that scratch
+while it waits. A final switch returns to the owning event loop before the
+descriptor is closed and available for reuse. No connection migrates and no
+hot operation allocates. These are properties of this native reference, not
+newly proved properties of the WF compiler.
+
+The compute form preserves the manual handler's queue turns: a nonzero
+request yields before the first chunk, and each unfinished chunk yields
+again. Both forms use the same 16384-step quantum, at most eight completed
+replies per turn, and polling between groups of at most eight FIFO turns.
+The sequential handler's reply budget belongs to the current owner turn and
+resets on every resume, including a resume inside a nested I/O call.
+
+`scheduler-stackful` compares ordinary echo in the manual epoll and stackful
+forms, plus WF and native io_uring, at all four CPU placements and five
+connection/payload cases (560 timed rows). `scheduler-stackful-paced` compares
+inline and 16384-step manual/stackful handlers, plus base WF and canonically
+chunked WF, at all four placements. It retains a zero-compute control and
+long-compute loads at 4800/24000 fixed light arrivals/s (504 timed rows).
+Both use two warm-ups and seven alternating passes. The difference of interest
+is stackful/manual under the same engine and quantum; a WF comparison still
+includes engine and scheduler differences. CPU/request, peak RSS, class
+capacity, scheduled-arrival tails and per-peer tails remain reported.
+
+On the M1, a temporary kqueue compatibility layer allowed correctness-only
+execution: echo, inline compute and quantum compute all passed every byte
+with one/two/four configured workers. This layer is not shipped and supplies
+no Linux performance evidence. The maintained `stream_check.c` then passed
+all 20 fixture invocations through the exact `stackful-check` target: delayed
+readers with forced small send buffers, 2 MiB independently patterned streams
+per peer, half-close after the complete stream, byte-fragmented compute
+requests with three fixed independent answers, and premature close within a
+frame. Observed stackful echo had thousands of actual blocked sends; quantum
+cases resumed both I/O and compute suspensions. The send-buffer override and
+observer are absent from timed binaries. Linux `scheduler-check` runs these
+checks in addition to every existing enumeration, and each measuring job runs
+them before timing.
+
+All three original manual forms produce byte-identical optimized LLVM on the
+M1 before/after this change, excluding the module/source-file name lines.
+The measurement runner repeats that comparison on its Linux clang against
+`2f9468788790ca466a53e88d3b4f14634fe9c4ad` and saves the modules. The restored
+baseline scheduler also passed the complete M1 completion suite after
+experiment 15's retirement. This experiment does not yet implement a new WF
+backend or select stackful versus stackless lowering; it measures whether an
+ordinary sequential call representation can approach the hand-written state
+machine when ownership and the I/O engine are local.

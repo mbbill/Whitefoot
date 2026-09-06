@@ -5,7 +5,7 @@
  *   2. the stack switch, with the floor bounds it writes on the way;
  *   3. the sleep and the wake on the one epoch;
  *   4. the stack reservation, made once at the core's entry;
- *   5. lock and unlock of the core's list mutexes;
+ *   5. lock and unlock of the core's one mutex;
  *   6. the yield the exhausted compute arm keeps, and the pause of a spin;
  *   7. target progress and the drain.
  *
@@ -52,7 +52,7 @@ enum wf_prim_order {
  * aborts, the enumerator records the failure and stops the execution. */
 void wf_prim_fail(const char *reason);
 
-/* What a critical section of a list mutex is for (item 5). The host ignores
+/* What a critical section of the one mutex is for (item 5). The host ignores
  * it; the enumerator classifies the section by it: a push always writes its
  * list, a pop writes only when the list is non-empty, and two sections that
  * only read commute, which is what keeps two idle threads' polling from
@@ -295,10 +295,9 @@ int wf__sched_host_wake(void);
 unsigned char *wf_prim_reserve(unsigned count, size_t bytes);
 size_t wf_prim_stack_stride(size_t bytes);
 
-/* 5. A list mutex. Zero is the baseline/free-list mutex; independent ready
- * shards assign worker i's queue mutex i+1. No core path nests locks. */
-void wf_prim_lock(enum wf_prim_section section, unsigned mutex);
-void wf_prim_unlock(unsigned mutex);
+/* 5. The core's one mutex. The lock names the section it opens. */
+void wf_prim_lock(enum wf_prim_section section);
+void wf_prim_unlock(void);
 
 /* 6. The yield the exhausted compute arm keeps, and the pause a bounded spin
  * puts between two of its looks. The pause reaches no shared state and can

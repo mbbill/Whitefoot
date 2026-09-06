@@ -23,7 +23,7 @@ ROOT := $(abspath ../../..)
 
 # Scheduler experiment: exhaustive correctness is a canonical check stage;
 # timings run separately on a Linux CI host and never select acceptance.
-.PHONY: scheduler-check scheduler-bench scheduler-mixed scheduler-fairness scheduler-inline scheduler-sustain scheduler-checkpoint scheduler-footprint scheduler-paced scheduler-chunks scheduler-canonical scheduler-shards
+.PHONY: scheduler-check scheduler-bench scheduler-mixed scheduler-fairness scheduler-inline scheduler-sustain scheduler-checkpoint scheduler-footprint scheduler-paced scheduler-chunks scheduler-canonical scheduler-stackful scheduler-stackful-paced stackful-check
 scheduler-check:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" bash scheduler-bench.sh check
 
@@ -57,8 +57,11 @@ scheduler-chunks:
 scheduler-canonical:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" EXPERIMENT=canonical bash scheduler-bench.sh bench
 
-scheduler-shards:
-	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" EXPERIMENT=shards bash scheduler-bench.sh bench
+scheduler-stackful:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" EXPERIMENT=stackful bash scheduler-bench.sh bench
+
+scheduler-stackful-paced:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" EXPERIMENT=stackful-paced bash scheduler-bench.sh bench
 
 WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
 WORK := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-io-completion-bench
@@ -561,6 +564,36 @@ $(BUILD)/epoll_echo: epoll_echo.c compute_protocol.h | prepare
 
 $(BUILD)/netload: netload.c compute_protocol.h | prepare
 	$(CLANG) $(CFLAGS) -pthread $< -o $@
+
+# Linux-only reference correctness, also reached by scheduler-check on Linux.
+# The send-buffer override and observers never enter timed binaries.
+stackful-check: prepare
+	@set -e; \
+	$(CLANG) $(CFLAGS) -Wpedantic -pthread stream_check.c -o "$(BUILD)/stream_check"; \
+	for mode in echo compute quantum; do \
+	  flags=''; \
+	  if [ "$$mode" != echo ]; then flags='-DWF_BENCH_COMPUTE'; fi; \
+	  if [ "$$mode" = quantum ]; then flags="$$flags -DWF_BENCH_QUANTUM"; fi; \
+	  for form in manual stackful; do \
+	    extra=''; \
+	    if [ "$$form" = stackful ]; then extra='-DWF_BENCH_STACKFUL -DWF_BENCH_OBSERVE'; fi; \
+	    binary="$(BUILD)/check-$$mode-$$form"; \
+	    $(CLANG) $(CFLAGS) -Wpedantic -pthread -DWF_BENCH_SNDBUF=4096 $$flags $$extra epoll_echo.c -o "$$binary"; \
+	    cases='compute truncated'; \
+	    if [ "$$mode" = echo ]; then cases=echo; fi; \
+	    for workers in 1 4; do \
+	      for case_name in $$cases; do \
+	        log="$(BUILD)/check-$$mode-$$form-w$$workers-$$case_name.log"; \
+	        if ! "$(BUILD)/stream_check" "$$binary" "$$case_name" "$$workers" > "$$log" 2>&1; then cat "$$log"; exit 1; fi; \
+	        cat "$$log"; \
+	        if [ "$$form" = stackful ] && [ "$$case_name" != truncated ]; then \
+	          awk -v mode="$$mode" '/^stackful:/ {for(i=2;i<=NF;i++) {split($$i,a,"=");v[a[1]]+=a[2]+0}} \
+	            END {exit !(v["resumes"]>0 && v["waits"]>0 && (mode!="echo" || v["send_waits"]>0) && (mode!="quantum" || v["yields"]>0))}' "$$log"; \
+	        fi; \
+	      done; \
+	    done; \
+	  done; \
+	done
 
 $(BUILD)/wf_echo: programs/tcp_echo_server.wf compiler | prepare
 	$(WFC) --par -o $@ $<

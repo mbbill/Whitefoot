@@ -48,6 +48,11 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#if defined(WF_BENCH_STACKFUL)
+#include <sys/mman.h>
+#include "../../../compiler/src/backend/sched/switch.h"
+#endif
+
 #if defined(WF_BENCH_COMPUTE)
 #include "compute_protocol.h"
 #endif
@@ -68,6 +73,12 @@
 struct connection {
     int active;
     unsigned char *pending;
+#if defined(WF_BENCH_STACKFUL)
+    struct worker *owner;
+    void *saved_sp;
+    int descriptor;
+    int done;
+#else
     uint32_t offset;
     uint32_t length;
 #if defined(WF_BENCH_COMPUTE)
@@ -79,6 +90,10 @@ struct connection {
     uint64_t value;
     uint64_t remaining;
 #endif
+#endif
+#if defined(WF_BENCH_STACKFUL) && defined(WF_BENCH_QUANTUM)
+    int queued;
+#endif
 };
 
 struct worker {
@@ -88,6 +103,18 @@ struct worker {
     int listener;
     int wake;
     unsigned char *scratch;
+#if defined(WF_BENCH_STACKFUL)
+    void *saved_sp;
+#if defined(WF_BENCH_QUANTUM)
+    unsigned replies;
+#endif
+#if defined(WF_BENCH_OBSERVE)
+    uint64_t resumes;
+    uint64_t waits;
+    uint64_t send_waits;
+    uint64_t yields;
+#endif
+#endif
 #if defined(WF_BENCH_QUANTUM)
     int *queue;
     unsigned head;
@@ -103,6 +130,10 @@ static unsigned descriptor_capacity;
 static struct connection *table;
 static struct worker *workers;
 static unsigned char *pending_memory;
+#if defined(WF_BENCH_STACKFUL)
+static unsigned char *stack_memory;
+static size_t stack_stride;
+#endif
 static _Atomic uint64_t accepted_total;
 static _Atomic uint64_t closed_total;
 static _Atomic int finished;
@@ -172,8 +203,10 @@ static void check_finished(void) {
 static void close_connection(struct worker *worker, int descriptor) {
     epoll_ctl(worker->epoll, EPOLL_CTL_DEL, descriptor, NULL);
     table[descriptor].active = 0;
+#if !defined(WF_BENCH_STACKFUL)
     table[descriptor].offset = 0;
     table[descriptor].length = 0;
+#endif
     close(descriptor);
     atomic_fetch_add_explicit(&closed_total, 1, memory_order_relaxed);
     check_finished();
@@ -198,6 +231,9 @@ static void enqueue(struct worker *worker, int descriptor) {
 }
 #endif
 
+#if defined(WF_BENCH_STACKFUL)
+#include "epoll_stackful.h"
+#else
 /* Drives one connection as far as it will go without blocking: flush what a
  * short write left behind, then read until EAGAIN, echoing each arrival as it
  * comes. A read happens only with the pending buffer empty, which is what
@@ -329,6 +365,7 @@ static void service(struct worker *worker, int descriptor) {
 #endif
     }
 }
+#endif
 
 static void accept_ready(struct worker *worker) {
     for (;;) {
@@ -351,7 +388,23 @@ static void accept_ready(struct worker *worker) {
             return;
         }
         struct connection *link = &table[descriptor];
+#if defined(WF_BENCH_SNDBUF)
+        int send_bytes = WF_BENCH_SNDBUF;
+        if (setsockopt(descriptor, SOL_SOCKET, SO_SNDBUF, &send_bytes, sizeof send_bytes) != 0) {
+            report("setsockopt of the test send buffer", errno);
+            close(descriptor);
+            mark_failed();
+            return;
+        }
+#endif
         link->active = 1;
+#if defined(WF_BENCH_STACKFUL)
+        link->owner = worker;
+        link->descriptor = descriptor;
+        link->done = 0;
+        link->saved_sp = wf_switch_prepare(stack_memory + ((size_t)descriptor + 1u) * stack_stride,
+                                          connection_main, link);
+#else
         link->offset = 0;
         link->length = 0;
 #if defined(WF_BENCH_COMPUTE)
@@ -360,6 +413,10 @@ static void accept_ready(struct worker *worker) {
 #if defined(WF_BENCH_QUANTUM)
         link->queued = 0;
         link->computing = 0;
+#endif
+#endif
+#if defined(WF_BENCH_STACKFUL) && defined(WF_BENCH_QUANTUM)
+        link->queued = 0;
 #endif
         struct epoll_event registration;
         registration.events = EPOLLIN | EPOLLOUT | EPOLLET;
@@ -513,6 +570,23 @@ int main(int argc, char **argv) {
     for (unsigned at = 0; at < descriptor_capacity; at++) {
         table[at].pending = pending_memory + (size_t)at * TRANSFER_BYTES;
     }
+#if defined(WF_BENCH_STACKFUL)
+    /* Reserve before accepting. Only accepted connections touch a context
+     * page; each slot has a low guard and 64 KiB of usable stack. Descriptor
+     * reuse is safe because close happens after the final switch returns. */
+    long page = sysconf(_SC_PAGESIZE);
+    if (page <= 0) return 1;
+    size_t usable = (65536u + (size_t)page - 1u) / (size_t)page * (size_t)page;
+    stack_stride = usable + (size_t)page;
+    if (descriptor_capacity > SIZE_MAX / stack_stride) return 1;
+    stack_memory = mmap(NULL, (size_t)descriptor_capacity * stack_stride, PROT_NONE,
+                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (stack_memory == MAP_FAILED) return 1;
+    for (unsigned at = 0; at < descriptor_capacity; at++) {
+        if (mprotect(stack_memory + (size_t)at * stack_stride + (size_t)page,
+                     usable, PROT_READ | PROT_WRITE) != 0) return 1;
+    }
+#endif
 
     /* Every listener is bound before any thread runs, so a client that finds
      * the port listening finds all of them listening. */
@@ -560,6 +634,13 @@ int main(int argc, char **argv) {
         pthread_join(workers[at].thread, NULL);
     }
     for (unsigned at = 0; at < option_threads; at++) {
+#if defined(WF_BENCH_STACKFUL) && defined(WF_BENCH_OBSERVE)
+        fprintf(stderr, "stackful: worker=%u resumes=%llu waits=%llu send_waits=%llu yields=%llu\n", at,
+                (unsigned long long)workers[at].resumes,
+                (unsigned long long)workers[at].waits,
+                (unsigned long long)workers[at].send_waits,
+                (unsigned long long)workers[at].yields);
+#endif
         free(workers[at].scratch);
 #if defined(WF_BENCH_QUANTUM)
         free(workers[at].queue);
@@ -574,6 +655,9 @@ int main(int argc, char **argv) {
     free(pending_memory);
     free(workers);
     free(table);
+#if defined(WF_BENCH_STACKFUL)
+    munmap(stack_memory, (size_t)descriptor_capacity * stack_stride);
+#endif
     if (broken || accepted < option_connections || closed < option_connections) {
         fprintf(stderr, "epoll_echo: accepted %llu and closed %llu of %llu connections\n",
                 (unsigned long long)accepted, (unsigned long long)closed,

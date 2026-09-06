@@ -55,15 +55,19 @@ check() {
 
 if [[ $MODE == check ]]; then
     check
+    if [[ $(uname -s) == Linux ]]; then
+        make -C "$HERE" stackful-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/stream-check"
+    fi
     exit 0
 fi
 if [[ $MODE != bench || $(uname -s) != Linux ]]; then
     echo 'scheduler-bench: use check on POSIX, or bench on Linux with io_uring' >&2
     exit 2
 fi
-[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == footprint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical || $EXPERIMENT == shards ]] || exit 2
+[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == footprint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical || $EXPERIMENT == stackful || $EXPERIMENT == stackful-paced ]] || exit 2
 network_compute=0
 if [[ $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical ]]; then network_compute=1; fi
+if [[ $EXPERIMENT == stackful-paced ]]; then network_compute=1; fi
 [[ $ROUNDS =~ ^[1-9][0-9]*$ && $WARMUP =~ ^[0-9]+$ ]] || exit 2
 [[ $(nproc) -ge 4 ]] || { echo 'scheduler-bench: this CPU-placement experiment needs four logical CPUs' >&2; exit 2; }
 mkdir -p "$OUT/bin" "$OUT/samples" "$OUT/observed" "$OUT/tree"
@@ -98,16 +102,12 @@ if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint ]]; then
     fi
 fi
 
-if [[ $EXPERIMENT == shards ]]; then
-    for queue_policy in 1 2; do
-        if ! make -C "$ROOT/compiler" completion-test CC="$CLANG" \
-            COMPLETION_TMP="$OUT/shards-check-$queue_policy" \
-            COMPLETION_BASE_CFLAGS="-std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread -DWF_SCHED_READY_SHARDS=$queue_policy" \
-            > "$OUT/shards-check-$queue_policy.log" 2>&1; then
-            cat "$OUT/shards-check-$queue_policy.log"
-            exit 1
-        fi
-    done
+if [[ $EXPERIMENT == stackful || $EXPERIMENT == stackful-paced ]]; then
+    if ! make -C "$HERE" stackful-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/stream-check" \
+        > "$OUT/stackful-check.log" 2>&1; then
+        cat "$OUT/stackful-check.log"
+        exit 1
+    fi
 fi
 
 {
@@ -145,8 +145,10 @@ printf 'shared4\t4\t4\t%s\t%s\nshared2\t2\t2\t%s\t%s\nsplit2\t2\t2\t%s\t%s\nspli
 forms=(base sleep short spin poll1 poll16)
 if [[ $network_compute == 1 ]]; then
     forms=(base sleep poll1)
-    awk '$1=="shared4" || $1=="split2"' "$OUT/cohorts.tsv" > "$OUT/cohorts-selected.tsv"
-    mv "$OUT/cohorts-selected.tsv" "$OUT/cohorts.tsv"
+    if [[ $EXPERIMENT != stackful-paced ]]; then
+        awk '$1=="shared4" || $1=="split2"' "$OUT/cohorts.tsv" > "$OUT/cohorts-selected.tsv"
+        mv "$OUT/cohorts-selected.tsv" "$OUT/cohorts.tsv"
+    fi
 fi
 if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain ]]; then forms=(base); fi
 if [[ $EXPERIMENT == inline ]]; then forms=(base local); fi
@@ -154,16 +156,14 @@ if [[ $EXPERIMENT == checkpoint || $EXPERIMENT == paced ]]; then forms=(base cq1
 if [[ $EXPERIMENT == chunks ]]; then forms=(base cq16384 ch1024 ch16384 ch65536); fi
 if [[ $EXPERIMENT == canonical ]]; then forms=(base old1024 old16384 ch1024 ch16384); fi
 if [[ $EXPERIMENT == footprint ]]; then forms=(base lanes); fi
-if [[ $EXPERIMENT == shards ]]; then forms=(base localq shardq); fi
+if [[ $EXPERIMENT == stackful ]]; then forms=(base); fi
+if [[ $EXPERIMENT == stackful-paced ]]; then forms=(base ch16384); fi
 form_flags() {
     local_inline=0
     init_used=0
-    ready_shards=0
     case $1 in
         base) spin=256; yields=16; progress=0 ;;
         lanes) spin=256; yields=16; progress=0; init_used=1 ;;
-        localq) spin=256; yields=16; progress=0; ready_shards=1 ;;
-        shardq) spin=256; yields=16; progress=0; ready_shards=2 ;;
         cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|old1024|old16384) spin=256; yields=16; progress=0 ;;
         local) spin=256; yields=16; progress=0; local_inline=1 ;;
         sleep) spin=0; yields=0; progress=0 ;;
@@ -176,7 +176,7 @@ form_flags() {
 }
 link_form() {
     local module=$1 output=$2 policy=$3 observed=$4
-    local observer=() spin yields progress local_inline init_used ready_shards
+    local observer=() spin yields progress local_inline init_used
     form_flags "$policy"
     if [[ $observed == 1 ]]; then observer=("$BACKEND/sched/grant_observer.c"); fi
     "$CLANG" -std=c11 -O2 -pthread -I "$BACKEND" -I "$BACKEND/completion" \
@@ -184,7 +184,6 @@ link_form() {
         "-DWF_SCHED_IDLE_YIELD_ROUNDS=$yields" "-DWF_SCHED_IDLE_PROGRESS_INTERVAL=$progress" \
         "-DWF_SCHED_OBSERVE=$observed" "-DWF_COMPLETION_LOCAL_INLINE=$local_inline" \
         "-DWF_SCHED_INIT_USED_LANES=$init_used" \
-        "-DWF_SCHED_READY_SHARDS=$ready_shards" \
         -x c "$BACKEND/wf_floor.c" "$BACKEND/sched/core.c" \
         "$BACKEND/sched/prim_host.c" "$BACKEND/sched/entry.c" \
         "$BACKEND/completion/runtime.c" "$BACKEND/completion/wait_host.c" \
@@ -198,7 +197,7 @@ echo_source="$HERE/programs/tcp_echo_server.wf"
 if [[ $network_compute == 1 ]]; then
     echo_source="$HERE/programs/tcp_compute_server.wf"
     programs=(echo)
-elif [[ $EXPERIMENT == inline || $EXPERIMENT == footprint ]]; then
+elif [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == stackful ]]; then
     programs=(echo)
 else
     "$WFC" --par --emit-llvm -o "$OUT/compute.ll" "$ROOT/tests/programs/par_layout.wf"
@@ -275,13 +274,42 @@ if [[ $network_compute == 1 ]]; then
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread -DWF_BENCH_COMPUTE \
         "$HERE/epoll_echo.c" -o "$OUT/bin/epoll_compute"
 fi
-if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical ]]; then
+if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical || $EXPERIMENT == stackful-paced ]]; then
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread -DWF_BENCH_COMPUTE -DWF_BENCH_QUANTUM \
         "$HERE/epoll_echo.c" -o "$OUT/bin/epoll_quantum"
 fi
 for tool in netload uring_echo epoll_echo runner gen; do
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread "$HERE/$tool.c" -o "$OUT/bin/$tool"
 done
+if [[ $EXPERIMENT == stackful || $EXPERIMENT == stackful-paced ]]; then
+    # The reference engine must remain the measured prior implementation.
+    # Check all three manual forms on this toolchain, not only the M1 probe.
+    mkdir -p "$OUT/codegen"
+    git -C "$ROOT" show 2f9468788790ca466a53e88d3b4f14634fe9c4ad:research/experiments/io-completion-bench/epoll_echo.c \
+        > "$OUT/codegen/epoll-before.c"
+    for reference_mode in echo compute quantum; do
+        reference_flags=()
+        if [[ $reference_mode != echo ]]; then reference_flags=(-DWF_BENCH_COMPUTE); fi
+        if [[ $reference_mode == quantum ]]; then reference_flags+=(-DWF_BENCH_QUANTUM); fi
+        for revision in before after; do
+            reference_source="$OUT/codegen/epoll-before.c"
+            if [[ $revision == after ]]; then reference_source="$HERE/epoll_echo.c"; fi
+            "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread -S -emit-llvm -I "$HERE" \
+                "${reference_flags[@]}" "$reference_source" -o "$OUT/codegen/$reference_mode-$revision.ll"
+            sed '/^; ModuleID =/d; /^source_filename =/d' "$OUT/codegen/$reference_mode-$revision.ll" \
+                > "$OUT/codegen/$reference_mode-$revision.normalized.ll"
+        done
+        cmp "$OUT/codegen/$reference_mode-before.normalized.ll" "$OUT/codegen/$reference_mode-after.normalized.ll"
+    done
+    stackful_flags=()
+    if [[ $network_compute == 1 ]]; then stackful_flags=(-DWF_BENCH_COMPUTE); fi
+    "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread -DWF_BENCH_STACKFUL \
+        "${stackful_flags[@]}" "$HERE/epoll_echo.c" -o "$OUT/bin/epoll_stackful"
+    if [[ $network_compute == 1 ]]; then
+        "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread -DWF_BENCH_STACKFUL \
+            -DWF_BENCH_COMPUTE -DWF_BENCH_QUANTUM "$HERE/epoll_echo.c" -o "$OUT/bin/epoll_stackful_quantum"
+    fi
+fi
 "$OUT/bin/gen" "$OUT/tree" 2 65536 fixed
 
 server_pid=''
@@ -329,7 +357,13 @@ network_case() {
         q1024|q16384|q65536)
             binary="$OUT/bin/epoll_quantum"
             arguments=(--threads "$server_workers" --quantum "${form#q}") ;;
-        base|local|lanes|localq|shardq|sleep|short|spin|poll1|poll16|cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|old1024|old16384)
+        fiber)
+            binary="$OUT/bin/epoll_stackful"
+            arguments=(--threads "$server_workers") ;;
+        f16384)
+            binary="$OUT/bin/epoll_stackful_quantum"
+            arguments=(--threads "$server_workers" --quantum 16384) ;;
+        base|local|lanes|sleep|short|spin|poll1|poll16|cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|old1024|old16384)
             binary="$OUT/bin/echo-$form"
             if [[ $observed == 1 ]]; then binary="$binary-observed"; fi
             environment=("WF_WORKERS=$server_workers" WF_STACKS=1100 "WF_SCHED_REPORT=$observed") ;;
@@ -395,6 +429,8 @@ if [[ $EXPERIMENT == fairness ]]; then admissions=(0 1); fi
 if [[ $network_compute == 1 ]]; then references=(epoll); compute_rounds=262144; fi
 if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks ]]; then references=(epoll q1024 q16384 q65536); fi
 if [[ $EXPERIMENT == canonical ]]; then references=(q1024 q16384); fi
+if [[ $EXPERIMENT == stackful ]]; then references=(uring epoll fiber); fi
+if [[ $EXPERIMENT == stackful-paced ]]; then references=(epoll fiber q16384 f16384); fi
 while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
     for admitted in "${admissions[@]}"; do
         for form in "${references[@]}" "${forms[@]}"; do network_case "$form" 4 20 64 -1 0; done
@@ -414,14 +450,6 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
         if [[ ( $form == cq* || $form == ch* || $form == old* ) && $connections == 64 ]]; then
             awk '/^sched:/ { for(i=2;i<=NF;i++) { split($i,a,"="); value[a[1]]=a[2]+0 } }
                  END { exit !(value["checkpoints"] > 0 && value["checkpoint_switches"] > 0) }' \
-                "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
-        fi
-        if [[ $EXPERIMENT == shards ]]; then
-            expected_shards=0
-            if [[ $form == localq ]]; then expected_shards=1; fi
-            if [[ $form == shardq ]]; then expected_shards=2; fi
-            awk -v shards="$expected_shards" '/^sched:/ { for(i=2;i<=NF;i++) { split($i,a,"="); value[a[1]]=a[2]+0 } }
-                 END { exit !(("ready_shards" in value) && value["ready_shards"]==shards) }' \
                 "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
         fi
       done
@@ -450,7 +478,7 @@ else
 64 2000 64 0
 CASES
 fi
-if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == shards ]]; then
+if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == stackful ]]; then
     printf '1024 200 64 0\n64 500 65536 0\n' >> "$OUT/cases.tsv"
 fi
 if [[ $EXPERIMENT == fairness ]]; then
@@ -458,7 +486,7 @@ if [[ $EXPERIMENT == fairness ]]; then
     awk '$4 != 16384' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
     mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
 fi
-if [[ $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical ]]; then
+if [[ $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical || $EXPERIMENT == stackful-paced ]]; then
     # Both request classes stay active for a common interval. The count is a
     # storage ceiling, not a target; an early ceiling hit fails the sample.
     cat > "$OUT/cases.tsv" <<'CASES'
@@ -476,7 +504,7 @@ if [[ $EXPERIMENT == chunks ]]; then
     awk '$1==64' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
     mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
 fi
-if [[ $EXPERIMENT == paced || $EXPERIMENT == canonical ]]; then
+if [[ $EXPERIMENT == paced || $EXPERIMENT == canonical || $EXPERIMENT == stackful-paced ]]; then
     # Fix light arrivals independently of service speed. Keep every scheduled
     # request, including client backlog, while heavy peers remain saturated.
     cat > "$OUT/cases.tsv" <<'CASES'
@@ -489,7 +517,7 @@ if [[ $EXPERIMENT == paced || $EXPERIMENT == canonical ]]; then
 64 100000 64 2097152 500
 CASES
 fi
-if [[ $EXPERIMENT == canonical ]]; then
+if [[ $EXPERIMENT == canonical || $EXPERIMENT == stackful-paced ]]; then
     awk '$4==0 || ($4==2097152 && $5>=100)' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
     mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
 fi
@@ -512,7 +540,7 @@ done
 # Warm positioned reads plus compute measure coexistence; they do not establish
 # a bound on network latency while every worker runs a long computation.
 cpu_programs=(compute mixed)
-if [[ $EXPERIMENT != idle && $EXPERIMENT != checkpoint && $EXPERIMENT != chunks && $EXPERIMENT != canonical && $EXPERIMENT != shards ]]; then cpu_programs=(); fi
+if [[ $EXPERIMENT != idle && $EXPERIMENT != checkpoint && $EXPERIMENT != chunks && $EXPERIMENT != canonical ]]; then cpu_programs=(); fi
 for program in "${cpu_programs[@]}"; do
     : > "$OUT/$program.plan"
     for workers in 2 4 8; do

@@ -98,7 +98,6 @@ typedef struct op {
     uint64_t observed;           /* the park's epoch */
     unsigned record;             /* the device step's record */
     enum wf_prim_section section; /* the lock's section */
-    unsigned mutex;              /* the selected list mutex */
 } op;
 
 /* What a shared word is, so the checks can name it. */
@@ -202,7 +201,7 @@ static actor actors[ENUM_MAX_THREADS];
 static io_record records[ENUM_MAX_RECORDS];
 static unsigned record_count;
 static unsigned long long completion_serial;
-static int lock_holders[WF_SCHED_LOCK_COUNT];
+static int lock_holder = -1;
 static word words[ENUM_MAX_WORDS];
 static unsigned word_count;
 static stack_info stacks[ENUM_MAX_STACKS];
@@ -264,7 +263,7 @@ static void print_state(FILE *out) {
     unsigned index;
     char name[16];
     (void)fprintf(out, "enumerate: execution %llu, step %u, lock %d\n",
-        execution_serial, depth, lock_holders[0]);
+        execution_serial, depth, lock_holder);
     for (index = 0; index < cfg_threads; index += 1u) {
         const actor *a = &actors[index];
         int on = a->state == A_RUNNABLE ? stack_index_of(a->sp) : -2;
@@ -295,7 +294,7 @@ static void print_state(FILE *out) {
         );
     }
     (void)fprintf(out, "enumerate:   ready_head=%d free_head=%d status_posted=%u idle=%llx\n",
-        wf_enum_core.ready[0].head == NULL ? -1 : (int)wf_enum_core.ready[0].head->index,
+        wf_enum_core.ready_head == NULL ? -1 : (int)wf_enum_core.ready_head->index,
         wf_enum_core.free_head == NULL ? -1 : (int)wf_enum_core.free_head->index,
         wf_enum_core.status_posted, wf_enum_core.idle);
 }
@@ -1158,35 +1157,27 @@ unsigned char *wf_prim_reserve(unsigned count, size_t bytes) {
     return pool_arena;
 }
 
-void wf_prim_lock(enum wf_prim_section section, unsigned mutex) {
+void wf_prim_lock(enum wf_prim_section section) {
     op o;
     memset(&o, 0, sizeof o);
     o.kind = OP_LOCK;
     o.section = section;
-    o.mutex = mutex;
-    if (mutex >= WF_SCHED_LOCK_COUNT) {
-        fail_execution("core: absent list mutex %u", mutex);
-    }
     announce(&o);
-    if (lock_holders[mutex] >= 0) {
+    if (lock_holder >= 0) {
         fail_execution("harness: a lock was granted while held");
     }
-    lock_holders[mutex] = (int)current_index();
+    lock_holder = (int)current_index();
 }
 
-void wf_prim_unlock(unsigned mutex) {
+void wf_prim_unlock(void) {
     op o;
     memset(&o, 0, sizeof o);
     o.kind = OP_UNLOCK;
-    o.mutex = mutex;
-    if (mutex >= WF_SCHED_LOCK_COUNT) {
-        fail_execution("core: absent list mutex %u", mutex);
-    }
     announce(&o);
-    if (lock_holders[mutex] != (int)current_index()) {
+    if (lock_holder != (int)current_index()) {
         fail_execution("core: thread %u unlocked a mutex it does not hold", current_index());
     }
-    lock_holders[mutex] = -1;
+    lock_holder = -1;
 }
 
 void wf_prim_yield(void) {
@@ -1460,26 +1451,9 @@ static void check_state(void) {
     int is_io;
 
     on_free = walk_list(wf_enum_core.free_head, WF_SCHED_STACK_EMPTY, "free", &last);
-    on_ready = 0;
-    for (index = 0; index < WF_SCHED_READY_QUEUE_COUNT; index += 1u) {
-        unsigned members = walk_list(wf_enum_core.ready[index].head, WF_SCHED_STACK_READY, "ready", &last);
-        if (wf_enum_core.ready[index].tail != last) {
-            fail_execution("ready queue %u's tail does not name its last stack", index);
-        }
-        if (on_ready & members) {
-            fail_execution("a stack is on two ready queues");
-        }
-#if WF_SCHED_READY_SHARDS
-        if (index >= wf_enum_core.thread_count && members != 0u) {
-            fail_execution("ready work is assigned to an absent worker");
-        }
-        for (unsigned item = 0; item < wf_enum_core.stack_count; item += 1u) {
-            if (((members >> item) & 1u) && wf_enum_core.stacks[item]->park_thread != index) {
-                fail_execution("ready queue %u contains another worker's stack", index);
-            }
-        }
-#endif
-        on_ready |= members;
+    on_ready = walk_list(wf_enum_core.ready_head, WF_SCHED_STACK_READY, "ready", &last);
+    if (wf_enum_core.ready_tail != last) {
+        fail_execution("the ready list's tail does not name its last stack");
     }
     if (on_free & on_ready) {
         fail_execution("a stack is on both lists");
@@ -1607,7 +1581,7 @@ static void check_state(void) {
                 }
             }
         }
-        if (on_ready != 0u) {
+        if (wf_enum_core.ready_head != NULL) {
             fail_execution("every thread is asleep with a non-empty ready list (item 20)");
         }
         if (wf_enum_core.status_posted != 0u && actors[0].state == A_RUNNABLE && entry_idle) {
@@ -1730,7 +1704,7 @@ static unsigned enabled_set(void) {
         }
         switch (a->pending.kind) {
         case OP_LOCK:
-            enabled = lock_holders[a->pending.mutex] < 0;
+            enabled = lock_holder < 0;
             break;
         case OP_PARK:
             enabled = a->wake_flag;
@@ -1866,9 +1840,7 @@ static void reset_execution(void) {
     failed = 0;
     failure[0] = 0;
     current = NULL;
-    for (index = 0; index < WF_SCHED_LOCK_COUNT; index += 1u) {
-        lock_holders[index] = -1;
-    }
+    lock_holder = -1;
     record_count = 0;
     completion_serial = 0;
     depth = 0;
@@ -2050,8 +2022,8 @@ static unsigned collect_regions(region *out) {
     out[n++].bytes = sizeof record_count;
     out[n].base = (unsigned char *)&completion_serial;
     out[n++].bytes = sizeof completion_serial;
-    out[n].base = (unsigned char *)lock_holders;
-    out[n++].bytes = sizeof lock_holders;
+    out[n].base = (unsigned char *)&lock_holder;
+    out[n++].bytes = sizeof lock_holder;
     out[n].base = (unsigned char *)words;
     out[n++].bytes = sizeof words[0] * word_count;
     out[n].base = (unsigned char *)&word_count;

@@ -337,14 +337,20 @@ point is the fastest shape that kernel offers.
 The current scheduler experiments and their controls are described in
 [`SCHEDULER-EXPERIMENT.md`](../../investigations/io-model/SCHEDULER-EXPERIMENT.md).
 `scheduler-checkpoint`, `scheduler-footprint`, `scheduler-paced`,
-`scheduler-chunks`, `scheduler-canonical` and `scheduler-shards` run their
-respective Linux cohorts. The measured priority, counter-stripe and stack-offset
+`scheduler-chunks`, `scheduler-canonical`, `scheduler-stackful` and
+`scheduler-stackful-paced` run their respective Linux cohorts. The measured
+priority, counter-stripe, stack-offset and independently locked ready-queue
 prototypes were retired; their results and exact revisions remain in the investigation. The canonical
 comparison also builds the recorded prior compiler revision from local Git
 history; use a checkout containing it.
 The paced client requires Linux 5.11 or newer and
 glibc with `epoll_pwait2` (2.35 or newer); it measures scheduled arrival
 latency including client backlog, with heavy peers remaining closed-loop.
+The stackful comparison keeps the native epoll engine and connection ownership,
+replacing manual continuation fields with sequential functions on guarded
+stacks. `stackful-check` verifies back pressure, fragmented compute frames and
+premature close for both representations; Linux `scheduler-check` also runs it.
+The comparison's small-send-buffer override and observer are correctness-only.
 
 On native Windows, `windows-bench.ps1` owns a separate production
 qualification:

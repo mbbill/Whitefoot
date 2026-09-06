@@ -314,33 +314,15 @@ unsigned char *wf_prim_reserve(unsigned count, size_t bytes) {
 
 /* -------------------------------------------------------------- 5. lock */
 
-#if WF_SCHED_READY_SHARDS == 2
-/* Static zero initialization is SRWLOCK_INIT; each lock has its own line. */
-typedef struct wf_prim_list_mutex {
-    _Alignas(128) SRWLOCK value;
-} wf_prim_list_mutex;
-static wf_prim_list_mutex wf_prim_list_locks[WF_SCHED_LOCK_COUNT];
-#else
 static SRWLOCK wf_prim_core_lock = SRWLOCK_INIT;
-#endif
 
-void wf_prim_lock(enum wf_prim_section section, unsigned mutex) {
+void wf_prim_lock(enum wf_prim_section section) {
     (void)section;
-#if WF_SCHED_READY_SHARDS == 2
-    AcquireSRWLockExclusive(&wf_prim_list_locks[mutex].value);
-#else
-    (void)mutex;
     AcquireSRWLockExclusive(&wf_prim_core_lock);
-#endif
 }
 
-void wf_prim_unlock(unsigned mutex) {
-#if WF_SCHED_READY_SHARDS == 2
-    ReleaseSRWLockExclusive(&wf_prim_list_locks[mutex].value);
-#else
-    (void)mutex;
+void wf_prim_unlock(void) {
     ReleaseSRWLockExclusive(&wf_prim_core_lock);
-#endif
 }
 
 /* ------------------------------------------------------ 6. yield, pause */

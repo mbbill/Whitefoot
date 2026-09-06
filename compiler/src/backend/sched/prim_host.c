@@ -162,8 +162,6 @@ static size_t wf_prim_page(void) {
     return page > 0 ? (size_t)page : 4096u;
 }
 
-static void wf_prim_init_list_locks(void);
-
 size_t wf_prim_stack_stride(size_t bytes) {
     size_t page = wf_prim_page();
     size_t rounded = (bytes + page - 1u) / page * page;
@@ -187,7 +185,6 @@ unsigned char *wf_prim_reserve(unsigned count, size_t bytes) {
     size_t total = stride * (size_t)count;
     unsigned char *base;
     unsigned index;
-    wf_prim_init_list_locks();
 #if defined(MAP_NORESERVE)
     int flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE;
 #else
@@ -208,45 +205,15 @@ unsigned char *wf_prim_reserve(unsigned count, size_t bytes) {
 
 /* -------------------------------------------------------------- 5. lock */
 
-#if WF_SCHED_READY_SHARDS == 2
-typedef struct wf_prim_list_mutex {
-    _Alignas(128) pthread_mutex_t value;
-} wf_prim_list_mutex;
-static wf_prim_list_mutex wf_prim_list_locks[WF_SCHED_LOCK_COUNT];
-static pthread_once_t wf_prim_list_once = PTHREAD_ONCE_INIT;
-static void wf_prim_create_list_locks(void) {
-    unsigned index;
-    for (index = 0; index < WF_SCHED_LOCK_COUNT; index += 1u) {
-        if (pthread_mutex_init(&wf_prim_list_locks[index].value, NULL) != 0) {
-            wf_prim_fail("a list mutex could not be initialized");
-        }
-    }
-}
-static void wf_prim_init_list_locks(void) {
-    (void)pthread_once(&wf_prim_list_once, wf_prim_create_list_locks);
-}
-#else
 static pthread_mutex_t wf_prim_core_lock = PTHREAD_MUTEX_INITIALIZER;
-static void wf_prim_init_list_locks(void) {}
-#endif
 
-void wf_prim_lock(enum wf_prim_section section, unsigned mutex) {
+void wf_prim_lock(enum wf_prim_section section) {
     (void)section;
-#if WF_SCHED_READY_SHARDS == 2
-    pthread_mutex_lock(&wf_prim_list_locks[mutex].value);
-#else
-    (void)mutex;
     pthread_mutex_lock(&wf_prim_core_lock);
-#endif
 }
 
-void wf_prim_unlock(unsigned mutex) {
-#if WF_SCHED_READY_SHARDS == 2
-    pthread_mutex_unlock(&wf_prim_list_locks[mutex].value);
-#else
-    (void)mutex;
+void wf_prim_unlock(void) {
     pthread_mutex_unlock(&wf_prim_core_lock);
-#endif
 }
 
 /* ------------------------------------------------------ 6. yield, pause */
