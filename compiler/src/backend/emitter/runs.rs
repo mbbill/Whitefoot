@@ -136,12 +136,16 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         ty: IrType,
         take: crate::IrStoreTake,
     ) -> Result<(), BackendFailure> {
+        // The element type, its layout ceilings and the retained count bound
+        // are the target stage's own [STOR-6]; emission reads the stride they
+        // qualified and nothing else of them.
         let crate::IrStoreTake {
             store,
             count,
             stride,
             extent,
             refusal,
+            ..
         } = take;
         if self.value_type(store) != Some(IrType::Address(crate::IrAddressed::Provider))
             || self.value_type(count)
@@ -227,6 +231,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             bytes,
             extent,
             outcome,
+            ..
         } = cell;
         if self.value_type(store) != Some(IrType::Address(crate::IrAddressed::Provider)) {
             return Err(BackendFailure::InvalidIr);

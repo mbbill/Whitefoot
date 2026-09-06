@@ -143,6 +143,14 @@ pub struct IrStoreTake {
     /// store's state and writes it back through the same borrow.
     pub store: IrValueId,
     pub count: IrValueId,
+    /// The slot's own type, which the target stage lays out to check its
+    /// actual size, alignment and stride against the ceilings below [STOR-6].
+    pub element: IrType,
+    /// [OP-9]'s language ceilings for that element type.
+    pub layout_ceiling: IrLayoutCeiling,
+    /// The upper bound [OP-9]'s accepted judgment retained for `count`, which
+    /// target qualification scales by the actual stride [STOR-6].
+    pub count_upper_bound: u64,
     /// The stride one slot occupies [OP-9], which is the spacing a run's
     /// window is laid out at [BLK-1].
     pub stride: u64,
@@ -170,6 +178,12 @@ pub struct IrStoreBox {
     pub store: IrValueId,
     /// The value the cell takes, consumed by this operation.
     pub value: IrValueId,
+    /// The cell's referent type, laid out by the target stage to check its
+    /// actual size and alignment against the ceilings below and against the
+    /// store's own [STOR-6].
+    pub element: IrType,
+    /// [OP-9]'s language ceilings for that referent type.
+    pub layout_ceiling: IrLayoutCeiling,
     /// The bytes one cell occupies, which is one stride rounded up to the
     /// store's own alignment where it has one [OP-9].
     pub bytes: u64,

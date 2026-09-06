@@ -773,6 +773,112 @@ fn validate_target_obligation(
                 ));
             }
         }
+        // [BLK-2] the run's own take from a store, validated on the same terms
+        // the retiring fill was: the element's actual layout against [OP-9]'s
+        // language ceilings, its alignment against what the storage can
+        // promise, and the retained source bound scaled by the actual stride
+        // [STOR-6].
+        //
+        // What it does *not* carry is the retiring row's byte ceiling against
+        // the allocator parameter domain, and the difference is the refusal.
+        // A take that the store cannot satisfy hands back `None`, which is an
+        // arm of the source program [BLK-2], so an unproved runtime count is
+        // an ordinary program rather than a target stop; every run that is
+        // materialized at all satisfies the successful-allocation invariant
+        // [STOR-6], and a bump take is bounded by its extent's own byte
+        // constant. The scaling is still checked for representability, because
+        // that is the joint fact [OP-9]'s obligation and this qualification
+        // establish together and neither establishes alone.
+        IrOperation::StoreTake(take) => {
+            let actual = layouts.layout(take.element)?;
+            let stride = align_up(
+                layouts.target,
+                actual.size,
+                actual.align,
+                TargetObject::Representation,
+            )?;
+            if !take.layout_ceiling.size.permits(actual.size)
+                || actual.align > take.layout_ceiling.align
+                || !take.layout_ceiling.stride.permits(stride)
+            {
+                return Err(TargetLayoutFailure::Unrepresentable(
+                    TargetObject::Representation,
+                ));
+            }
+            match take.extent {
+                // A bump extent hands out storage at its own alignment
+                // constant, which [BLK-2] requires to be at least the
+                // element's language ceiling; the actual alignment must fit
+                // the same constant before a cursor advance can carry it.
+                Some(extent) => {
+                    if actual.align > extent.align.max(1) {
+                        return Err(TargetLayoutFailure::Unrepresentable(
+                            TargetObject::Representation,
+                        ));
+                    }
+                }
+                None => {
+                    if actual.align > layouts.target.runtime_allocation_alignment() {
+                        return Err(TargetLayoutFailure::Unrepresentable(
+                            TargetObject::RuntimeSizedAllocation,
+                        ));
+                    }
+                }
+            }
+            if function.value_type(take.count)
+                != Some(IrType::Integer {
+                    width: 64,
+                    signed: false,
+                })
+            {
+                return Err(TargetLayoutFailure::InvalidIr);
+            }
+            let count_upper_bound = integer_upper_bounds
+                .get(&take.count)
+                .copied()
+                .map_or(take.count_upper_bound, |target_upper_bound| {
+                    take.count_upper_bound.min(target_upper_bound)
+                });
+            // Mathematical arithmetic, and only the wrap is a stop: the
+            // address-index domain is what a *materialized* run's own element
+            // addressing is judged against, and every run that exists at all
+            // came back through the row's `Some` arm [BLK-2, STOR-6].
+            if count_upper_bound.checked_mul(stride).is_none() {
+                return Err(TargetLayoutFailure::Unrepresentable(
+                    TargetObject::RuntimeSizedAllocation,
+                ));
+            }
+        }
+        // S39 the cell's own take. Its size is one referent and is fixed at
+        // compile time, so the ceiling comparison is the whole of it; the
+        // refusal arm carries a store that cannot satisfy it, exactly as the
+        // run's does.
+        IrOperation::StoreBox(cell) => {
+            let actual = layouts.layout(cell.element)?;
+            if !cell.layout_ceiling.size.permits(actual.size)
+                || actual.align > cell.layout_ceiling.align
+            {
+                return Err(TargetLayoutFailure::Unrepresentable(
+                    TargetObject::Representation,
+                ));
+            }
+            match cell.extent {
+                Some(extent) => {
+                    if actual.align > extent.align.max(1) {
+                        return Err(TargetLayoutFailure::Unrepresentable(
+                            TargetObject::Representation,
+                        ));
+                    }
+                }
+                None => {
+                    if actual.align > layouts.target.runtime_allocation_alignment() {
+                        return Err(TargetLayoutFailure::Unrepresentable(
+                            TargetObject::RuntimeSizedAllocation,
+                        ));
+                    }
+                }
+            }
+        }
         IrOperation::ArrayIndex {
             root,
             target_domain,

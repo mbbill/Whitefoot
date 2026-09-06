@@ -417,6 +417,8 @@ impl IrBuilder<'_> {
             IrOperation::StoreBox(crate::IrStoreBox {
                 store,
                 value,
+                element: lower_type(self.erasure, instance.element)?,
+                layout_ceiling: instance.element_ceiling.into(),
                 bytes,
                 extent,
                 outcome,
@@ -501,11 +503,20 @@ impl IrBuilder<'_> {
             crate::KernelRow::ArenaVectorProved => None,
             _ => Some(self.refusal_of(result)?),
         };
+        // [OP-9] every acquiring row carries the allocation-fit obligation, so
+        // an accepted call has the bound its judgment retained; a call reaching
+        // here without one is a checked program this lowering cannot honour.
+        let count_upper_bound = instance
+            .count_upper_bound
+            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
         self.define(
             lower_type(self.erasure, result)?,
             IrOperation::StoreTake(crate::IrStoreTake {
                 store,
                 count,
+                element: lower_type(self.erasure, instance.element)?,
+                layout_ceiling: instance.element_ceiling.into(),
+                count_upper_bound,
                 stride,
                 extent,
                 refusal,
