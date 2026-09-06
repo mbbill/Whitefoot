@@ -655,7 +655,11 @@ impl FunctionEmitter<'_, '_> {
         // being that same rendered type whichever descriptor the caller hands
         // it.
         let buffer_type = match self.value_type(*buffer) {
-            Some(ty @ (IrType::Buffer { element } | IrType::Slice { element })) if element == byte => ty,
+            Some(ty @ (IrType::Buffer { element } | IrType::Slice { element }))
+                if element == byte =>
+            {
+                ty
+            }
             _ => return Err(BackendFailure::InvalidIr),
         };
         if self.value_type(*start) != Some(u64_type)

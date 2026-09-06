@@ -11,6 +11,29 @@
 //! fixed input/output/status triples;
 //! the compiler has no optimizer-fact channel, so this single ordinary
 //! mode is the facts-off mode.
+//!
+//! **LEFT ON `buffer<T>` DELIBERATELY, and the reason is the probe itself.**
+//! The subject of this oracle is the wide probe, and the wide probe is a
+//! buffer-only lowering at both ends: the recognizer matches a
+//! `CheckedExpression::BufferIndex` walk and nothing else, and the emitter
+//! refuses any operand whose IR type is not `IrType::Buffer`. A run walk is
+//! therefore not recognized at all, so a migrated oracle would assert three
+//! wide loads and find none, and the case would stop being evidence of
+//! anything.
+//!
+//! Extending the probe to a run is not a rename. A buffer is one contiguous
+//! range whose descriptor's second word is its length, which is exactly what
+//! the probe's window guard reads; a run is a *window* — `len_of` slots
+//! beginning at `head_of` modulo `cap_of` [BLK-1] — so `base + index` is the
+//! right address only where `head_of` is proved identically zero, and the
+//! guard needs the run's own three measure words rather than one. That is a
+//! backend change with its own proof obligation and its own cases, and it is
+//! a precondition of the retirement rather than part of this batch.
+//!
+//! The other two blockers this file was expected to have are real but
+//! secondary: `publish_all`'s `&uniq buffer<u8>` source becomes a
+//! `&Slice<u8>` and every fixture becomes a store take, which needs a
+//! `command.heap` entry row.
 
 use super::support::{build_program, compile_sources, fixture_directory};
 
