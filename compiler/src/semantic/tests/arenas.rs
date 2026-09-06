@@ -70,7 +70,7 @@ fn missing_main_still_rejects_when_nothing_else_does() {
 #[test]
 fn missing_main_wins_over_an_unsupported_capability() {
     with_semantics(
-        b"fn quiet(storage: own arena<i32>) -> result: own unit pure {\n  return unit;\n}\n",
+        b"fn quiet(storage: own FixedVector<Slice<u8>, 1>) -> result: own unit pure {\n  return unit;\n}\n",
         |outcome| {
             let SemanticOutcome::SourceIssue { issue } = outcome else {
                 panic!("a main-less unit must reject: {outcome:?}");
@@ -88,6 +88,11 @@ fn missing_main_wins_over_an_unsupported_capability() {
 /// B7c4b-1 took that corpus off `arena<'r, T>` and recorded that no program on
 /// the run surface reaches this refusal — [OWN-10] gets there first. The
 /// program is kept here because the refusal itself is untouched.
+///
+/// Its content type stays `array<u8, 2>` for the same reason: an arena of a
+/// run is a composite value the checker stops on before [FN-1] is reached, so
+/// the migrated program would record a different verdict. Both spellings
+/// retire together.
 #[test]
 fn arena_content_views_stay_outside_the_slice_return_ceiling() {
     assert_rule(
@@ -114,7 +119,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn arena_content_borrows_obey_own10_with_the_arena_region() {
     assert_rule_kind(
-        br#"fn views['s](storage: own arena<array<u8, 2>>) -> result: own Slice<'s, u8> pure {
+        br#"fn views['s](storage: own arena<FixedVector<u8, 2>>) -> result: own Slice<'s, u8> pure {
   let view = slice_of(&'s deref(storage));
   return view;
 }
@@ -132,6 +137,10 @@ command fn main() -> status: own ExitStatus pure {
 /// the explicit temporary arena-runtime capability gate rather than lowering
 /// wrong code, and the manifest keeps such positives pending until the
 /// region-tied release lowering lands.
+///
+/// The content type stays `array<u8, 2>`: an arena of a run stops earlier as
+/// a composite value, which is a different verdict, so this program keeps the
+/// one it records and retires with `arena<'r, T>`.
 #[test]
 fn checked_arena_parameters_stop_at_the_explicit_runtime_gate() {
     assert_unsupported(
@@ -158,9 +167,9 @@ command fn main() -> status: own ExitStatus pure {
 fn local_arena_content_views_stop_at_the_explicit_runtime_gate() {
     assert_unsupported(
         br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 2>(7_u8);
+  let values = fixed_vector::<u8, 2>();
   region 'r {
-    let a = arena_new::<'r, array<u8, 2>>(move values);
+    let a = arena_new::<'r, FixedVector<u8, 2>>(move values);
     let view = slice_of(&deref(a));
   }
   return exit_status(code: 0_u8);
@@ -393,9 +402,9 @@ command fn main() -> status: own ExitStatus pure {
     );
     assert_unsupported(
         br#"command fn main() -> status: own ExitStatus pure {
-  let boxed = box_new(9_i32);
+  let run = fixed_vector::<u8, 1>();
   region 'r {
-    let a = arena_new::<'r, box<i32>>(move boxed);
+    let a = arena_new::<'r, FixedVector<u8, 1>>(move run);
   }
   return exit_status(code: 0_u8);
 }
