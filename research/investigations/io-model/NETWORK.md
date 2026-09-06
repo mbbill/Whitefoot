@@ -8,10 +8,11 @@ under [SYS-15] through [SYS-18], with the merge-time record in
 `spec/derivation/derivation-ledger.md`. Slice 2 landed on the same branch on
 2026-09-05: every TCP operation lowers and runs on POSIX, on both the ring and
 the adapter routes §5 names. Slice 3 landed on 2026-09-06: every TCP operation
-runs on Windows too, on the completion port and on the adapter. Slices 4 and 5
-are open, and the owner decisions at the end are the ones the amendment
-implements. Where this
-document and the specification differ, the specification is the language.
+runs on Windows too, on the completion port and on the adapter. Slice 4, the
+control test, and slice 5, the batch record `docs/done/0108-streams-and-tcp.md`,
+landed on 2026-09-06 and close the batch; the owner decisions at the end are
+the ones the amendment implements. Where this document and the specification
+differ, the specification is the language.
 
 ## 1. Why the network first
 
@@ -199,7 +200,13 @@ receive, send, stream read, half-close) and the routes are:
   so no submission's enter would ever flush it, and the descriptor's readiness
   alone would wake a sleeper to reap nothing. The control test found exactly
   that at 129 connections against a 128-entry queue, and the probe's overflow
-  case pins the flush.
+  case pins the flush. On the adapter route the same test shows the helper
+  bound as a window: `wf__completion_window` caps a staged loop at
+  `WF_BRIDGE_MAX_HELPERS` when no ring is the engine, so a server on that route
+  keeps eight connections open at once and issues its ninth accept only when
+  one of them ends, which a peer that closes everything at the end never lets
+  happen. That is the ring-less host's limit until the readiness-driven
+  adapter below exists.
 - Windows: `ConnectEx`, `WSARecv`, `WSASend` on the completion port; the
   standard input handle through the adapter (a console handle has no
   overlapped form).

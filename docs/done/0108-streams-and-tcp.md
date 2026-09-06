@@ -339,9 +339,23 @@ worktree for every landed slice.
   next PR's, by the owner's decision of 2026-09-06.
 - **The readiness-driven adapter for ring-less hosts.** On Darwin, and on
   Windows for the accept, a socket wait is a blocking host call on some
-  thread, so the adapter route's socket concurrency is the helper cap. A poll,
-  kqueue or WSAPoll over the queued descriptors inside the park is the proper
-  engine and is recorded in NETWORK.md §5; a new PR.
+  thread, so the adapter route's socket concurrency is the helper cap. The
+  control test shows the consequence: `wf__completion_window` caps a staged
+  loop's window at `WF_BRIDGE_MAX_HELPERS` when no ring is the engine, so on
+  the adapter route the echo server keeps eight accepts in flight, the eight
+  connections it serves stay open until the generator closes everything at
+  the end, the ninth accept is never issued, and the run holds until the
+  generator gives up (traced: eight `accept4` calls in two minutes, every
+  helper inside a `recvfrom`). The same holds in the sequential world at a
+  window of one. Four peers pass because four is under eight. A poll, kqueue
+  or WSAPoll over the queued descriptors inside the park is the proper engine
+  and is recorded in NETWORK.md §5; a new PR.
+- **The Whitefoot line's two steady states.** The same configuration measured
+  twice at 64 connections gave 95 thousand and 36 thousand round trips a
+  second, and the ring-required setting 81 and 35 thousand, with nothing
+  changed between the runs; this is the first variable to isolate before any
+  of the structure above is changed, and it is why the runner's ratios and
+  this host's differ by about two.
 - **§12 item 1 of PARK-ON-MISS.md, the compute-miss regression**, narrowed to
   11 and 17 percent by the spin and still the owner's decision; the colouring
   design is sequenced after this batch; a new PR.
