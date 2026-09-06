@@ -4,8 +4,8 @@ use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 use super::super::entailment::{CallGoalDisposition, CallGoalEvidence};
 use super::super::goal::{GoalDatum, GoalExpression, GoalOperation, GoalProjection};
 use super::super::model::{
-    CheckedConst, CheckedExpression, CheckedFlatElement, CheckedIntegerOperation,
-    CheckedNominalKind, CheckedStatement, CheckedType, CheckedValue, IntegerType,
+    CheckedConst, CheckedElement, CheckedExpression, CheckedFlatElement, CheckedIntegerOperation,
+    CheckedNominalKind, CheckedStatement, CheckedType, CheckedValue, IntegerType, MeasuredKind,
 };
 use super::{assert_rule, with_semantics, with_semantics_dark};
 
@@ -251,7 +251,7 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
     );
     // Reached only through the infix tail's own atom, never the expr's.
     assert_rule(
-        b"fn f(xs: own array<u64, 4>, a: own u64) -> result: own u64 pure contract {\n  \
+        b"fn f(xs: own FixedVector<u64, 4>, a: own u64) -> result: own u64 pure contract {\n  \
           define sum = a +wrap xs[1_u64];\n  \
           requires sum <= 8_u64;\n} {\n  \
           return a;\n}\n\n\
@@ -281,11 +281,11 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
 /// and the value it yields is still not a copy type.
 #[test]
 fn requires_holds_a_clause_local_to_a_copy_type() {
-    // Non-copy by shape: `array_new` is the reachable aggregate row, since
+    // Non-copy by shape: `fixed_vector` is the reachable aggregate row, since
     // `slice_of` needs a borrow operand the clause subset already rejects.
     assert_rule(
         b"fn f(a: own u64) -> result: own u64 pure contract {\n  \
-          define xs = array_new::<i32, 4>(0_i32);\n  \
+          define xs = fixed_vector::<i32, 4>();\n  \
           requires a < 8_u64;\n} {\n  \
           return a;\n}\n\n\
           command fn main() -> status: own ExitStatus pure {\n  \
@@ -496,8 +496,11 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn goal_box_deref_projection_retains_the_selected_referent_type() {
-    let source = br#"fn positive(owner: own box<i32>) -> result: own box<i32> pure contract {
+fn goal_cell_deref_projection_retains_the_selected_referent_type() {
+    // The holder is a store cell [S39] where it was the retiring `box<i32>`.
+    // A cell carries no measure and its referent read is the same `deref`
+    // projection, so the retained goal datum is unchanged.
+    let source = br#"fn positive(owner: own Box<i32>) -> result: own Box<i32> pure contract {
   requires deref(owner) > 0_i32;
 } {
   return move owner;
@@ -509,7 +512,7 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("an admitted box-referent goal must check: {outcome:?}");
+            panic!("an admitted cell-referent goal must check: {outcome:?}");
         };
         let root = &checked.data.functions[0]
             .requirements
@@ -524,7 +527,7 @@ command fn main() -> status: own ExitStatus pure {
             projections, ty, ..
         }) = &arguments[0]
         else {
-            panic!("box referent must remain the first formal datum");
+            panic!("cell referent must remain the first formal datum");
         };
         assert_eq!(projections, &[GoalProjection::Deref]);
         assert_eq!(*ty, CheckedType::Integer(IntegerType::I32));
@@ -532,9 +535,9 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn goal_field_projection_retains_the_selected_array_type() {
+fn goal_field_projection_retains_the_selected_run_type() {
     let source = br#"struct Envelope {
-  values: array<u8, 2>;
+  values: FixedVector<u8, 2>;
 }
 
 fn measured(envelope: own Envelope) -> result: own Envelope pure contract {
@@ -550,7 +553,7 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("an admitted projected-array goal must check: {outcome:?}");
+            panic!("an admitted projected-run goal must check: {outcome:?}");
         };
         let GoalExpression::Operation { arguments, .. } = &checked.data.functions[0]
             .requirements
@@ -572,13 +575,13 @@ command fn main() -> status: own ExitStatus pure {
             projections, ty, ..
         }) = &length_arguments[0]
         else {
-            panic!("projected array must remain the formal datum");
+            panic!("projected run must remain the formal datum");
         };
         assert_eq!(projections, &[GoalProjection::Field(0)]);
         assert_eq!(
             *ty,
-            CheckedType::Array {
-                element: CheckedFlatElement::Integer(IntegerType::U8),
+            CheckedType::FixedVector {
+                element: CheckedElement::Flat(CheckedFlatElement::Integer(IntegerType::U8)),
                 length: CheckedConst::Value(2),
             }
         );
@@ -588,21 +591,21 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn concrete_equal_const_arguments_produce_equal_goal_templates() {
     let source =
-        br#"fn left<const n: u64>(value: own array<u8, n>) -> result: own array<u8, n> pure contract {
+        br#"fn left<const n: u64>(value: own FixedVector<u8, n>) -> result: own FixedVector<u8, n> pure contract {
   define size = len_of(value);
   requires size == size;
 } {
   return move value;
 }
 
-fn right<const count: u64>(input: own array<u8, count>) -> result: own array<u8, count> pure contract {
+fn right<const count: u64>(input: own FixedVector<u8, count>) -> result: own FixedVector<u8, count> pure contract {
   define extent = len_of(input);
   requires extent == extent;
 } {
   return move input;
 }
 
-fn different<const width: u64>(items: own array<u8, width>) -> result: own array<u8, width> pure contract {
+fn different<const width: u64>(items: own FixedVector<u8, width>) -> result: own FixedVector<u8, width> pure contract {
   define amount = len_of(items);
   requires amount == amount;
 } {
@@ -610,11 +613,11 @@ fn different<const width: u64>(items: own array<u8, width>) -> result: own array
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let left_input = array_new::<u8, 2>(1_u8);
+  let left_input = fixed_vector::<u8, 2>();
   let left_output = left::<2>(value: move left_input);
-  let right_input = array_new::<u8, 2>(1_u8);
+  let right_input = fixed_vector::<u8, 2>();
   let right_output = right::<2>(input: move right_input);
-  let different_input = array_new::<u8, 3>(1_u8);
+  let different_input = fixed_vector::<u8, 3>();
   let different_output = different::<3>(items: move different_input);
   let left_size = len_of(left_output);
   let right_size = len_of(right_output);
@@ -729,7 +732,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_derived_const_in_generic_requirement_has_checked_program_owned_structure() {
-    let source = br#"fn need<const n: u64>(value: own array<u8, n + 1>) -> result: own array<u8, n + 1> pure contract {
+    let source = br#"fn need<const n: u64>(value: own FixedVector<u8, n + 1>) -> result: own FixedVector<u8, n + 1> pure contract {
   define size = len_of(value);
   requires size == size;
 } {
@@ -1221,7 +1224,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn call_goal_substitutes_type_const_and_slice_region_arguments() {
-    let source = br#"const bytes: array<u8, 2> =[4_u8, 9_u8];
+    let source = br#"const bytes: FixedVector<u8, 2> =[4_u8, 9_u8];
 
 fn inspect(values: own Slice<u8>) -> result: own unit pure contract {
   define size = len_of(values);
@@ -1230,7 +1233,7 @@ fn inspect(values: own Slice<u8>) -> result: own unit pure contract {
   return unit;
 }
 
-fn guarded<T: Int, const n: u64>(value: own T, values: own array<u8, n>) -> result: own T pure contract {
+fn guarded<T: Int, const n: u64>(value: own T, values: own FixedVector<u8, n>) -> result: own T pure contract {
   define positive = value > 0_T;
   define size = len_of(values);
   define exact = size == size;
@@ -1245,7 +1248,7 @@ command fn main() -> status: own ExitStatus pure {
     let view = slice_of(&bytes);
     inspect(values: view);
   }
-  let values = array_new::<u8, 3>(1_u8);
+  let values = fixed_vector::<u8, 3>();
   let result = guarded::<i32, 3>(value: 4_i32, values: move values);
   return exit_status(code: 0_u8);
 }
@@ -1338,7 +1341,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_ne!(*call, argument_nodes[1]);
         assert!(matches!(
             goal_arguments[1].ty(),
-            CheckedType::Array {
+            CheckedType::FixedVector {
                 length: CheckedConst::Value(3),
                 ..
             }
@@ -1382,8 +1385,9 @@ command fn main() -> status: own ExitStatus pure {
             assert!(matches!(
                 length,
                 GoalExpression::Operation {
-                    row: GoalOperation::ArrayMeasure {
-                        length: CheckedConst::Value(3),
+                    row: GoalOperation::ContainerMeasure {
+                        measured: MeasuredKind::FixedVector,
+                        constant: Some(CheckedConst::Value(3)),
                         ..
                     },
                     ..

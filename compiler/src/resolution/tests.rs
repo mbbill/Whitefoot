@@ -1970,6 +1970,11 @@ fn probe() -> result: own unit pure {
 /// that keeps its operation-name route.
 #[test]
 fn complete_role_fixture_materializes_every_d_u_and_x_family() {
+    // B7c4b left `viewer` on the retiring surface: the fixture has to
+    // materialize `LexicalUseRole::EffectAllocationRegion`, and the only
+    // spelling that produces it is the region-keyed `allocates(arena 'r)`
+    // entry, which has no path form on the container surface and retires with
+    // `arena<'r, T>` itself.
     let source = br#"contract Bound {
   fn member(value: &i32) -> result: own i32 reads(value);
   law identity(member, 0_i32);
@@ -1981,7 +1986,7 @@ contract Numeric<T: Int> {
 }
 
 struct Package<T: Bound, const n: i32> {
-  items: array<T, n>;
+  items: FixedVector<T, n>;
 }
 
 enum Choice<T: affine> {
