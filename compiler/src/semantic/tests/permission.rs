@@ -1515,35 +1515,40 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(*form, "a statement that forms a borrow");
 }
 
-/// A borrow-moded actual whose place the judgment cannot resolve: a `&uniq`
-/// of an own slice binding anchors nowhere `argument_place` reaches, and the
-/// loans half fails closed on it even though both rows are `pure` and project
+/// A borrow-moded actual whose place the judgment cannot resolve: a borrow of
+/// a view *parameter* anchors nowhere `argument_place` reaches, and the loans
+/// half fails closed on it even though both rows are `pure` and project
 /// nothing.
 #[test]
 fn an_unresolvable_loan_actual_denies_rather_than_dropping_the_loan() {
-    // [BLK-4] refuses the `&uniq Slice<u8>` parameter this fixture used to
-    // take, so the loan actual is a shared borrow of the same view binding.
-    // The denial is the one this test is about and is unchanged: the
-    // borrow's place is unresolvable at either strength.
+    // [BLK-4] refuses the `&uniq Slice<u8>` parameter this fixture first
+    // took, so the loan actual is a shared borrow of a view binding. The view
+    // is the *parameter* rather than a local formed over named storage: a
+    // view is a claim on the storage it was formed over [VIEW-1], and the
+    // judgment now reads a local formation through to that origin, so a view
+    // this function received is the shape whose place stays unresolvable.
     let source = br#"fn touch_slice(v: &Slice<u8>) -> result: own u64 pure {
   return 3_u64;
 }
 
-fn a_pure_uniqslice() -> result: own u64 pure {
-  let buf = buffer_new(8_u64, 1_u8);
+fn a_pure_uniqslice(handed: own Slice<u8>) -> result: own u64 pure {
   region {
-    let v = slice_of(&buf);
-    region {
-      let a = touch_slice(v: &v);
-      let b = touch_slice(v: &v);
-      let s = a +wrap b;
-      return s;
-    }
+    let a = touch_slice(v: &handed);
+    let b = touch_slice(v: &handed);
+    let s = a +wrap b;
+    return s;
   }
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let p = a_pure_uniqslice();
+  let backing = fixed_vector::<u8, 8>();
+  let p = 0_u64;
+  region {
+    let v = slice_of(&backing);
+    region {
+      set p = a_pure_uniqslice(handed: v);
+    }
+  }
   return exit_status(code: 0_u8);
 }
 "#;

@@ -598,6 +598,129 @@ pub(super) fn call_projection(value: &CheckedExpression) -> Option<CallProjectio
     }
 }
 
+/// One [BLK-0] kernel-domain call, reduced to what the boundary projection
+/// reads.
+///
+/// A kernel row is not an admitted member of a [PAR-1] window — that rule's
+/// members are one call of a declared function [FN-1] or one system operation
+/// [SYS-2] — so this is deliberately not a [`CallProjection`] and the window
+/// judgment keeps refusing the form. The staged permission [PAR-3] states no
+/// such enumeration: it asks of every statement of the body only that its
+/// footprint and its loans resolve, and a row's declared effect row and
+/// parameter modes are exactly what that projection needs.
+pub(super) struct KernelProjection<'check> {
+    pub(super) row: crate::KernelRow,
+    pub(super) call: &'check NodePath,
+    pub(super) arguments: &'check [CheckedExpression],
+    pub(super) argument_nodes: &'check [NodePath],
+}
+
+/// The kernel-domain call one expression is, or `None` for every other form.
+pub(super) fn kernel_projection(value: &CheckedExpression) -> Option<KernelProjection<'_>> {
+    match value {
+        CheckedExpression::KernelCall {
+            row,
+            call,
+            arguments,
+            argument_nodes,
+            ..
+        } => Some(KernelProjection {
+            row: *row,
+            call,
+            arguments,
+            argument_nodes,
+        }),
+        _ => None,
+    }
+}
+
+/// The written and read footprints of one [BLK-0] row, by the same [EFF-2]
+/// boundary projection [`Program::footprint`] applies to a declared callee.
+///
+/// The record supplies both halves. Its parameter modes give the loans — an
+/// acquiring row takes its store's provider by `&uniq` [BLK-2], so the take
+/// holds one exclusive loan on that store for the duration of the call,
+/// exactly as a `&uniq` factory argument does. Its declared effect row gives
+/// the accesses: `reads(store)`, `writes(store)` and `allocates(store)` each
+/// name a value parameter, and each projects onto that parameter's actual
+/// place, so two takes from one store conflict and two from distinct stores do
+/// not. The run or cell the row hands back is a fresh value the caller binds;
+/// it is storage the statement introduces and no footprint element of the
+/// caller's.
+pub(super) fn kernel_footprint(places: &PlaceMap, candidate: &KernelProjection<'_>) -> Footprint {
+    let mut footprint = Footprint::default();
+    let signature = super::kernel::kernel_signature(candidate.row);
+    if signature.parameters.len() != candidate.arguments.len()
+        || candidate.arguments.len() != candidate.argument_nodes.len()
+    {
+        footprint.unresolved = Some(candidate.call.clone());
+        return footprint;
+    }
+    for (index, parameter) in signature.parameters.iter().enumerate() {
+        let argument = &candidate.arguments[index];
+        let node = &candidate.argument_nodes[index];
+        let strength = match parameter.mode {
+            super::kernel::KernelMode::Own => None,
+            super::kernel::KernelMode::Shared => Some(LoanStrength::Shared),
+            super::kernel::KernelMode::Unique => Some(LoanStrength::Exclusive),
+        };
+        if let Some(strength) = strength {
+            match argument_place(places, argument) {
+                Some(place) => footprint.loans.push(Loan {
+                    strength,
+                    place,
+                    argument: node.clone(),
+                }),
+                None => footprint.unresolved = Some(node.clone()),
+            }
+        }
+        // A consumed `own` actual transfers caller storage into the row, and
+        // the boundary rows [BLK-3] take their run exactly that way.
+        if matches!(parameter.mode, super::kernel::KernelMode::Own)
+            && let Some(place) = consumed_place(places, argument)
+        {
+            footprint.writes.push(Access::Place {
+                place,
+                argument: node.clone(),
+            });
+        }
+    }
+    // `allocates(P)` names the same operand its `writes(P)` does on every row
+    // of this domain, so the two are one access rather than two.
+    for (written, ordinal) in [
+        (false, signature.effects.reads),
+        (true, signature.effects.writes),
+        (true, signature.effects.allocates),
+    ] {
+        let Some(ordinal) = ordinal else { continue };
+        let (Some(argument), Some(node)) = (
+            candidate.arguments.get(ordinal as usize),
+            candidate.argument_nodes.get(ordinal as usize),
+        ) else {
+            footprint.unresolved = Some(candidate.call.clone());
+            continue;
+        };
+        match argument_place(places, argument).or_else(|| consumed_place(places, argument)) {
+            Some(place) => {
+                let access = Access::Place {
+                    place,
+                    argument: node.clone(),
+                };
+                if written {
+                    footprint.writes.push(access);
+                } else {
+                    footprint.reads.push(access);
+                }
+            }
+            None => footprint.unresolved = Some(node.clone()),
+        }
+    }
+    for (argument, node) in candidate.arguments.iter().zip(candidate.argument_nodes) {
+        collect_operand_reads(places, argument, node, &mut footprint);
+    }
+    footprint
+}
+
 /// One statement written between the two judged calls, reduced to what the
 /// window rule asks of it.
 struct Interposed {

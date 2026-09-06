@@ -1112,7 +1112,7 @@ const A23_GIVE_INSIDE: &[u8] = br#"command fn main(command.cwd as cwd: own Direc
 "#;
 
 const A24_SLICE_READONLY: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  doc "A shared slice of an enclosing buffer the body never writes.";
+  doc "A shared slice of an enclosing buffer the body never writes, which resolves to that buffer and is read-only.";
   let table = buffer_new(16_u64, 97_u8);
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
@@ -1601,13 +1601,16 @@ const CORPUS: &[CorpusCase] = &[
         function: "main",
         outcome: Outcome::Staged(&[Expected::Permitted]),
     },
-    // The second sanctioned over-denial: a slice of enclosing storage the body
-    // never writes is a footprint element this judgment does not resolve.
+    // The over-denial this corpus recorded here is repaired: a view is a claim
+    // on the storage it was formed over [VIEW-1], so a shared view of an
+    // enclosing buffer the body never writes resolves to that buffer and takes
+    // condition 5's read-only disposition. The row moved from Denied(7) to
+    // Permitted when the resolver landed.
     CorpusCase {
         name: "A24-slice-readonly.wf",
         source: A24_SLICE_READONLY,
         function: "main",
-        outcome: Outcome::Staged(&[Expected::Denied(7)]),
+        outcome: Outcome::Staged(&[Expected::Permitted]),
     },
     // The discriminator behind serialized-P: two `reserve_handle` calls in one
     // region are accepted, so the factory's unique loan is call-scoped rather
