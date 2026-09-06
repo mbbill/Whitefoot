@@ -1437,12 +1437,20 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ..
                 } = detail.as_ref();
                 assert_relation_terms_resolve(summary, relation);
-                let crate::semantic::entailment::RelationProvenance::Verified(published) =
-                    &reference.summary
-                else {
-                    panic!("a source call publishes a verified summary");
-                };
-                assert!(!published.block.components().is_empty());
+                // A source callee publishes a verified summary and a
+                // kernel-domain row publishes its own declaration data
+                // [ENT-3.S13, CALL-6]; both reach this node, and B7c4b-1 is
+                // where the second one does, because these frozen sources now
+                // take their runs from a store or an extent rather than from
+                // an [OP-1] `buffer_new`.
+                match &reference.summary {
+                    crate::semantic::entailment::RelationProvenance::Verified(published) => {
+                        assert!(!published.block.components().is_empty());
+                    }
+                    crate::semantic::entailment::RelationProvenance::Kernel { .. } => {
+                        assert!(substitutions.is_empty());
+                    }
+                }
                 for parent in parents {
                     assert!(summary.derivations.nodes.get(parent.0 as usize).is_some());
                 }
@@ -1721,49 +1729,61 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 }
                 assert_eq!(outcome.derivation, Some(root.node));
                 assert!(!outcome.node_path.components().is_empty());
-                let [requested] = outcome.components.as_slice() else {
-                    panic!("a bounds obligation has one normalized relation");
-                };
-                retained_term(summary, requested.right);
-                match conclusion {
-                    DerivationConclusion::Relation(relation) => {
-                        let left = requested
-                            .left
-                            .expect("noncontradictory accepted bound has a tracked offset");
-                        retained_term(summary, left);
-                        let expected = if requested.distinct {
-                            Relation::Distinct {
-                                left,
-                                right: requested.right,
-                                difference: 0,
-                            }
-                        } else {
-                            Relation::Bound {
-                                left,
-                                right: requested.right,
-                                bound: requested.bound,
-                            }
-                        };
-                        assert_eq!(relation, &expected);
-                        assert!(!outcome.contradictory);
-                    }
-                    DerivationConclusion::Contradiction => assert!(outcome.contradictory),
-                    DerivationConclusion::Goal {
-                        goal,
-                        sign: GoalSign::Positive,
-                    } if matches!(
-                        outcome.family,
-                        ObligationFamily::AllocationFit | ObligationFamily::SystemRange
-                    ) =>
-                    {
-                        assert!(summary.inventory.goals.get(goal.0 as usize).is_some());
-                        assert!(!outcome.contradictory);
-                    }
-                    DerivationConclusion::Goal { .. }
-                    | DerivationConclusion::IntegerDomain(_)
-                    | DerivationConclusion::AffineConsequence
-                    | DerivationConclusion::PostconditionAggregate => {
-                        panic!("this obligation root cannot conclude that goal")
+                // [BLK-0] a row requirement whose instantiated goal is closed
+                // by the operand's own standing facts normalizes to no
+                // relation at all — the difference bound has nothing to
+                // request — so a kernel requirement is the one family whose
+                // component list may be empty. B7c4b-1 is where these frozen
+                // sources first carry one, because their runs now come from a
+                // store or an extent.
+                if outcome.components.is_empty() {
+                    assert_eq!(outcome.family, ObligationFamily::KernelRequirement);
+                    assert!(!outcome.contradictory);
+                } else {
+                    let [requested] = outcome.components.as_slice() else {
+                        panic!("a bounds obligation has one normalized relation");
+                    };
+                    retained_term(summary, requested.right);
+                    match conclusion {
+                        DerivationConclusion::Relation(relation) => {
+                            let left = requested
+                                .left
+                                .expect("noncontradictory accepted bound has a tracked offset");
+                            retained_term(summary, left);
+                            let expected = if requested.distinct {
+                                Relation::Distinct {
+                                    left,
+                                    right: requested.right,
+                                    difference: 0,
+                                }
+                            } else {
+                                Relation::Bound {
+                                    left,
+                                    right: requested.right,
+                                    bound: requested.bound,
+                                }
+                            };
+                            assert_eq!(relation, &expected);
+                            assert!(!outcome.contradictory);
+                        }
+                        DerivationConclusion::Contradiction => assert!(outcome.contradictory),
+                        DerivationConclusion::Goal {
+                            goal,
+                            sign: GoalSign::Positive,
+                        } if matches!(
+                            outcome.family,
+                            ObligationFamily::AllocationFit | ObligationFamily::SystemRange
+                        ) =>
+                        {
+                            assert!(summary.inventory.goals.get(goal.0 as usize).is_some());
+                            assert!(!outcome.contradictory);
+                        }
+                        DerivationConclusion::Goal { .. }
+                        | DerivationConclusion::IntegerDomain(_)
+                        | DerivationConclusion::AffineConsequence
+                        | DerivationConclusion::PostconditionAggregate => {
+                            panic!("this obligation root cannot conclude that goal")
+                        }
                     }
                 }
             }
@@ -8053,19 +8073,25 @@ fn frozen_real_sources_retain_complete_proof_roots_without_counted_false_positiv
         crate::Inventory::ACTIVE,
         crate::Inventory::ACTIVE,
     ];
-    for (inputs, inventory) in bundles.into_iter().zip(inventories) {
+    // Bundle 0 is `utf8parse.wf`, bundle 1 the raw DEFLATE chain, bundle 2
+    // `wfgrep.wf`; the expectation is keyed on the bundle because B7c4b-1 gave
+    // exactly one of the three mains a counted loop of its own — utf8parse's
+    // output run is taken from a bump extent and filled by a counted `for`
+    // where it was a `buffer_new` with an initial value.
+    for (bundle, (inputs, inventory)) in bundles.into_iter().zip(inventories).enumerate() {
         super::with_semantics_inputs_for(inputs, inventory, |outcome| {
             let SemanticOutcome::Complete(program) = outcome else {
                 panic!("frozen real source bundle must remain accepted: {outcome:?}");
             };
             for function in &program.data.functions {
                 validate_derivations(&function.entailment);
-                let expected_counted = match function.name.as_str() {
-                    "parse" => 1,
-                    "append_slice" => 1,
-                    "scan_line" => 1,
-                    "shift_input_tail" => 1,
-                    "build_huffman_table" => 2,
+                let expected_counted = match (bundle, function.name.as_str()) {
+                    (_, "parse") => 1,
+                    (0, "main") => 1,
+                    (_, "append_slice") => 1,
+                    (_, "scan_line") => 1,
+                    (_, "shift_input_tail") => 1,
+                    (_, "build_huffman_table") => 2,
                     _ => 0,
                 };
                 assert_eq!(

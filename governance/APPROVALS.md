@@ -4651,9 +4651,10 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   `set` destination through the same result-list route a destructuring `let`
   and a `set` target list take, and the const run as element storage whose
   measures are read off its type.
-- CONFORMANCE BOUNDARY (B7c4b-1): nine added cases, six deleted cases, and
-  fifty-one modified case sources whose recorded expectations are unchanged.
-  No case is renamed and no status changes.
+- CONFORMANCE BOUNDARY (B7c4b-1): twelve added cases, seven deleted cases, and
+  forty-nine modified case sources, every one of whose recorded expectations is
+  unchanged except `call5-neg-a-bound-borrow-actual-kills-the-same`, whose
+  change is stated below. No case is renamed and no status changes.
   Added:
   `own6-pos-a-helper-re-lends-its-view-destination`
   (`{"kind": "run", "exit": 0}`),

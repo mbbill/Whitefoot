@@ -354,11 +354,14 @@ fn borrowed_columns_cross_helpers_without_transferring_ownership() {
     // second comparison remains for either proved buffer bound.
     assert_eq!(fill.matches("icmp ult i64").count(), 1);
     assert_eq!(fold.matches("icmp ult i64").count(), 1);
-    // Four ordinary requirement branches plus the terminal checksum branch
-    // give six exits. Every exit releases both owned buffers.
+    // B7c4b-1: the two columns are store runs held in one struct and lent as
+    // views, so the requirement branches are the four length checks, the two
+    // non-wrap checks the view formations submit, the two store refusals, the
+    // checksum branch and the success exit — ten in all — and the releases are
+    // the general store's, one per run on each edge that leaves holding them.
     assert!(!main.contains("call void @wf_trap"));
-    assert_eq!(main.matches("call i8 @wf.sys.exit_status.v1").count(), 6);
-    assert_eq!(main.matches("call void @free").count(), 12);
+    assert_eq!(main.matches("call i8 @wf.sys.exit_status.v1").count(), 10);
+    assert_eq!(main.matches("call void @free").count(), 17);
     assert!(main.contains("call i8 @wf_fill"));
     assert!(main.contains("call i64 @wf_fold"));
 
@@ -444,20 +447,26 @@ fn compiler_independent_borrowed_pool_tree_executes() {
     let build = emitted_function(&llvm, "build");
     let checksum = emitted_function(&llvm, "checksum");
     let main = emitted_function(&llvm, "main");
-    assert!(build.starts_with("define internal %wf.t5 @wf_build(ptr "));
+    // B7c4b-1: [BLK-4] refuses a `&uniq` whose referent reaches a run, so the
+    // pool is lent as two views and a scalar borrow rather than as one struct;
+    // each helper therefore takes two descriptors by value where it took one
+    // struct pointer.
+    assert!(build.starts_with("define internal %wf.t4 @wf_build({ ptr, i64 } "));
     assert!(build.contains(", i32 "));
-    assert!(checksum.starts_with("define internal %wf.t5 @wf_checksum(ptr "));
+    assert!(checksum.starts_with("define internal %wf.t4 @wf_checksum({ ptr, i64 } "));
     assert!(checksum.contains(", i64 "));
     assert!(!build.contains("call void @free"));
     assert!(!checksum.contains("call void @free"));
-    // Bounds and arithmetic failures are typed results rather than written proofs.
-    // Build and checksum therefore contain no trap edge, and each of main's
-    // five status exits still releases both pool buffers.
+    // Bounds and arithmetic failures are typed results rather than written proofs,
+    // so build and checksum contain no trap edge and main still has its five
+    // status exits. B7c4b-1: the two runs come from one bump extent laid out in
+    // this activation's frame, so the program reaches the host allocator on no
+    // path and there is no free to count.
     assert!(!build.contains("call void @wf_trap"));
     assert!(!checksum.contains("call void @wf_trap"));
     assert!(!main.contains("call void @wf_trap"));
     assert_eq!(main.matches("call i8 @wf.sys.exit_status.v1").count(), 5);
-    assert_eq!(main.matches("call void @free").count(), 10);
+    assert_eq!(main.matches("call void @free").count(), 0);
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());
