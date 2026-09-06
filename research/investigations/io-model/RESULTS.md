@@ -2572,10 +2572,11 @@ and the program read the direction's end and exited zero; the peer now
 peeks one echoed byte before it closes, so the queue holds data at the close
 on every host.
 
-The ratio is the batch's result, and the plan carries what it points at:
-the connection that stays on its reaping thread, the per-thread ready list
-and the steal from idleness are scheduler structure the design did not have
-to decide for files, where every operation of a program went through one
-thread's submissions; they are the next performance work on this line, in a
-new PR by the owner's decision.
-
+The ratio is this series's result; keeping connections local was its proposed
+next hypothesis, not an established solution. The follow-up in
+[SCHEDULER-EXPERIMENT.md](SCHEDULER-EXPERIMENT.md) measures ready-queue preference
+while holding the shared mutex, shared ring and wake policy constant. It finds
+no gain, and distinguishes enqueue-worker preference from persistent
+connection affinity. That result supersedes the prediction above that local
+ready queues would answer the gap; complete per-worker execution and the cost
+of shared synchronization remain unmeasured by that isolated change.
