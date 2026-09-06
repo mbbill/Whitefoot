@@ -1,8 +1,8 @@
-fn publish_all(output: &uniq OutputStream, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+fn publish_all(output: &uniq OutputStream, source: &Slice<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
   define source_length = len_of(deref(source));
   requires length <= source_length;
 } {
-  doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
+  doc "Publishes one prefix of the source view, reattempting until the host has accepted every byte or refused it.";
   let sent = 0_u64;
   loop @publish {
     let pending = sent < length;
@@ -24,43 +24,67 @@ fn publish_all(output: &uniq OutputStream, source: &buffer<u8>, length: own u64)
   return Ok<unit, IoError>(value: unit);
 }
 
-command fn main(command.stdout as out: own OutputStream, command.stdin as input: own InputStream) -> status: own ExitStatus reads(out, input), writes(out, input) {
-  doc "Reads the entry's standard input to its end with read_next and publishes every byte it observed to standard output, so one run states both halves of the stream pair [SYS-8, SYS-12, SYS-15].";
-  let chunk = buffer_new(4096_u64, 0_u8);
-  let outcome = 0_u8;
-  loop @chunks {
-    let available = 0_u64;
-    let ended = 0_u8;
-    region {
-      match read_next(input: &uniq input, destination: &uniq chunk, start: 0_u64, end: 4096_u64) {
-        ReadBytes(next: endpoint) => {
-          set available = endpoint;
-        }
-        ReadEnd() => {
-          set ended = 1_u8;
-        }
-        ReadFailed(error: problem) => {
-          set outcome = 3_u8;
-          set ended = 2_u8;
-        }
+command fn main(command.stdout as out: own OutputStream, command.stdin as input: own InputStream, command.heap as heap: own Heap) -> status: own ExitStatus reads(out, input, heap), writes(out, input, heap), allocates(heap) {
+  doc "Reads the entry's standard input to its end with read_next and publishes every byte it observed to standard output, so one run states both halves of the stream pair [SYS-8, SYS-12, SYS-15]. The chunk is a store-resident run: the read fills it through an exclusive view of it and the publish reads it back through a shared one, and the two views live in sibling regions because a run is viewed one way at a time [VIEW-2, OWN-5].";
+  region {
+    match heap_vector::<u8>(store: &uniq heap, count: 4096_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
       }
-    }
-    if ended == 0_u8 {
-      region {
-        match publish_all(output: &uniq out, source: &chunk, length: available) {
-          Ok(value: published) => {
+      Some(value: fresh_chunk) => {
+        let chunk = move fresh_chunk;
+        for @fill (
+          at in 0_u64..4096_u64,
+          invariant grown: len_of(chunk) >= at,
+          invariant spare: room_of(chunk) + at >= 4096_u64,
+          invariant flat: head_of(chunk) <= 0_u64
+        ) {
+          set chunk = place_back(vector: move chunk, value: 0_u8);
+        }
+        let held = len_of(chunk);
+        let outcome = 0_u8;
+        loop @chunks {
+          let available = 0_u64;
+          let ended = 0_u8;
+          region {
+            let sink = mut_slice_of(&uniq chunk);
+            region {
+              match read_next(input: &uniq input, destination: &uniq sink, start: 0_u64, end: held) {
+                ReadBytes(next: endpoint) => {
+                  set available = endpoint;
+                }
+                ReadEnd() => {
+                  set ended = 1_u8;
+                }
+                ReadFailed(error: problem) => {
+                  set outcome = 3_u8;
+                  set ended = 2_u8;
+                }
+              }
+            }
           }
-          Err(error: problem) => {
-            set outcome = 4_u8;
-            set ended = 2_u8;
+          if ended == 0_u8 {
+            region {
+              let payload = slice_of(&chunk);
+              region {
+                match publish_all(output: &uniq out, source: &payload, length: available) {
+                  Ok(value: published) => {
+                  }
+                  Err(error: problem) => {
+                    set outcome = 4_u8;
+                    set ended = 2_u8;
+                  }
+                }
+              }
+            }
+          }
+          if ended == 0_u8 {
+          } else {
+            break @chunks;
           }
         }
+        return exit_status(code: outcome);
       }
-    }
-    if ended == 0_u8 {
-    } else {
-      break @chunks;
     }
   }
-  return exit_status(code: outcome);
 }
