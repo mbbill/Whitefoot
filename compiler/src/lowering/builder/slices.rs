@@ -20,17 +20,17 @@ impl IrBuilder<'_> {
                     length: actual_length,
                 } = ty
                 else {
-                    return Err(crate::lowering::traced_invalid_checked_program());
+                    return Err(LoweringFailure::InvalidCheckedProgram);
                 };
                 if actual != element || Some(actual_length) != length.value() {
-                    return Err(crate::lowering::traced_invalid_checked_program());
+                    return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 IrOperation::SliceFromArray { array }
             }
             CheckedSliceSource::Buffer(root) => {
                 let buffer = self.lower_buffer_borrow(root)?;
                 if self.value_type(buffer)? != (IrType::Buffer { element }) {
-                    return Err(crate::lowering::traced_invalid_checked_program());
+                    return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 IrOperation::SliceFromBuffer { buffer }
             }
@@ -46,7 +46,7 @@ impl IrBuilder<'_> {
             // at the arena-parameter gate that ends the whole function. So
             // reaching it is an invariant failure, not a silent miscompile.
             CheckedSliceSource::ArenaContent { .. } => {
-                return Err(crate::lowering::traced_invalid_checked_program());
+                return Err(LoweringFailure::InvalidCheckedProgram);
             }
         };
         self.define(IrType::Slice { element }, operation)
@@ -81,7 +81,7 @@ impl IrBuilder<'_> {
                 signed: false,
             })
         {
-            return Err(crate::lowering::traced_invalid_checked_program());
+            return Err(LoweringFailure::InvalidCheckedProgram);
         }
         self.define(
             element.ty(),
@@ -115,10 +115,10 @@ impl IrBuilder<'_> {
                 signed: false,
             })
         {
-            return Err(crate::lowering::traced_invalid_checked_program());
+            return Err(LoweringFailure::InvalidCheckedProgram);
         }
         if self.value_type(value)? != element.ty() {
-            return Err(crate::lowering::traced_invalid_checked_program());
+            return Err(LoweringFailure::InvalidCheckedProgram);
         }
         self.current_block_mut()?
             .instructions
@@ -137,7 +137,7 @@ impl IrBuilder<'_> {
                 element: lower_flat_element(self.erasure, root.element)?,
             })
         {
-            return Err(crate::lowering::traced_invalid_checked_program());
+            return Err(LoweringFailure::InvalidCheckedProgram);
         }
         Ok(slice)
     }

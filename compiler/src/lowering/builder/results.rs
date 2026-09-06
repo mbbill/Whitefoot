@@ -26,12 +26,12 @@ impl IrBuilder<'_> {
             || context.function.is_empty()
             || context.node_path.components().is_empty()
         {
-            return Err(crate::lowering::traced_invalid_checked_program());
+            return Err(LoweringFailure::InvalidCheckedProgram);
         }
 
         let scrutinee = self.expression(scrutinee)?;
         if self.value_type(scrutinee)? != IrType::Nominal(result_nominal) {
-            return Err(crate::lowering::traced_invalid_checked_program());
+            return Err(LoweringFailure::InvalidCheckedProgram);
         }
         let base_bindings = self.bindings.clone();
         let ok_block = self.new_block(&[])?.0;
@@ -88,7 +88,7 @@ impl IrBuilder<'_> {
             },
         )?;
         if self.bindings.insert(binding, value).is_some() {
-            return Err(crate::lowering::traced_invalid_checked_program());
+            return Err(LoweringFailure::InvalidCheckedProgram);
         }
         self.promote_binding_if_needed(binding)
     }

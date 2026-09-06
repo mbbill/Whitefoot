@@ -212,7 +212,10 @@ pub enum IrAddressed {
     /// One `FixedVector<T, n>` [BLK-1]. A frame-resident run is inline
     /// storage in its owner, exactly as a struct is, so a borrow of one is
     /// the address of that storage rather than a copy of the run.
-    FixedVector { element: IrElement, length: u64 },
+    FixedVector {
+        element: IrElement,
+        length: u64,
+    },
     /// One `Vector<'s, T>` [BLK-1]. Its descriptor is storage in its owner's
     /// frame, and a borrow of the run is the address of that descriptor, so
     /// both runs are borrowed through one path.
@@ -2073,18 +2076,6 @@ impl IrProgram<'_, '_, '_> {
 pub enum LoweringFailure {
     InvalidCheckedProgram,
     CounterOverflow,
-}
-
-#[track_caller]
-pub(crate) fn traced_invalid_checked_program() -> LoweringFailure {
-    if std::env::var_os("WF_TRACE_LOWERING").is_some() {
-        eprintln!(
-            "InvalidCheckedProgram at {}\n{}",
-            std::panic::Location::caller(),
-            std::backtrace::Backtrace::force_capture()
-        );
-    }
-    LoweringFailure::InvalidCheckedProgram
 }
 
 mod builder;
