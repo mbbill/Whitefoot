@@ -529,6 +529,23 @@ impl CompiledProgram {
     /// default, `false` sets `WF_IO_NO_NATIVE_RING` so the same program runs
     /// through the shared file adapter instead of the kernel completion ring.
     pub fn spawn_on_route(&self, native_ring: bool, arguments: &[&[u8]]) -> Child {
+        self.spawn_on_route_with_workers(native_ring, None, arguments)
+    }
+
+    /// Starts the program on one runtime route with the worker count named.
+    ///
+    /// A case whose property is about several peers being served at once has
+    /// to state the pool it is served by, because the shipped default sizes it
+    /// to the machine: a host with many cores serves four peers on four
+    /// workers whatever the runtime does with a wait, so the property would be
+    /// proved by the runner rather than by the program. `workers` is `None`
+    /// for that default and `Some(count)` for a case that pins it.
+    pub fn spawn_on_route_with_workers(
+        &self,
+        native_ring: bool,
+        workers: Option<&str>,
+        arguments: &[&[u8]],
+    ) -> Child {
         let mut command = Command::new(&self.executable);
         command
             .current_dir(&self.directory)
@@ -541,6 +558,10 @@ impl CompiledProgram {
         } else {
             command.env("WF_IO_NO_NATIVE_RING", "1");
         }
+        match workers {
+            Some(count) => command.env("WF_WORKERS", count),
+            None => command.env_remove("WF_WORKERS"),
+        };
         command.spawn().expect("spawn compiled program")
     }
 

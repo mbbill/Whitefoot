@@ -866,6 +866,23 @@ cold read waits briefly and uniformly.
 
 ## Batch 3: streams and TCP (specification v0.46)
 
+**Status 2026-09-06, peer-bound requests are a helper's: landed on this
+branch.** On the shared file adapter — every socket on Darwin and Windows
+accept, and `WF_IO_NO_NATIVE_RING` on Linux — a request whose kind waits on a
+peer (accept, receive, connect, send) now grows a helper on submission
+whatever the measured verdict says, is skipped by a scheduler thread's
+progress pass and by a pool stack's claim of its own record while a helper
+exists, and is left out of the execution average; the pinned zero-helper
+policy is unchanged, because there the waiting thread is the queue's only
+engine. Before it, three workers of `tcp_fanout.wf` each sat inside a receive
+from a silent peer with no thread left to accept the fourth connection, which
+failed `four_peers_are_served_at_once_under_par_on_both_routes` on a
+three-core runner; that case now pins `WF_WORKERS=3` so the property does not
+depend on the host's core count. Adapter-route socket concurrency is therefore
+`WF_BRIDGE_MAX_HELPERS`, and the readiness-driven adapter that would remove
+that bound is the open design item recorded in
+`research/investigations/io-model/NETWORK.md` §5.
+
 **Status 2026-09-06, the staged hand-out: landed on this branch.** A staged
 step whose call is a may-suspend *user* call is now handed to a compute lane,
 so the fixed-trip accept loop of `tcp_fanout.wf` keeps four accepts in flight

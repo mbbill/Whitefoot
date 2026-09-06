@@ -1092,21 +1092,53 @@ static void wf_bridge_wait_in_place(wf_completion_record *record) {
  * plain threads; a linked program never does, because the floor runs its entry
  * on a pool stack and every worker's loop lives on one (design §5).
  *
- * The one thing both arms do before anything else is run this thread's *own*
- * submission, if it is still queued.  It is the engine executing an operation
- * that has no other engine, not a schedule decision and not a fallback: with
- * the helper count pinned, an ordinary write can sit in the queue behind an
- * unrelated blocked one, and no helper, no ring and no progress pass will ever
- * reach it -- `wf_bridge_progress` deliberately takes nothing from the queue
- * while helpers exist, because an unrelated request could block the exact
- * frame whose completion they have already published.  The record is this
- * frame's own and this thread has nothing else to do until it is DONE, so
+ * Before either arm, this thread runs its *own* submission if it is still
+ * queued.  It is the engine executing an operation that has no other engine,
+ * not a schedule decision and not a fallback: with the helper count pinned, an
+ * ordinary write can sit in the queue behind an unrelated blocked one, and no
+ * helper, no ring and no progress pass will ever reach it --
+ * `wf_bridge_progress` deliberately takes nothing from the queue while helpers
+ * exist, because an unrelated request could block the exact frame whose
+ * completion they have already published.  The record is this frame's own, so
  * taking it here takes nothing that belongs to another frame.  One attempt is
  * the whole of it: after it, the record is either DONE, or owned by an engine
- * that will finish it, and the rule below waits for that. */
+ * that will finish it, and the rule below waits for that.
+ *
+ * What licenses that host call is the second half of the sentence: this thread
+ * has nothing else to do until the record is DONE.  On the wait-in-place arm
+ * that is simply true -- there is no stack to park and no other work reachable
+ * from here.  On a pool stack it is not: the join below parks this stack and
+ * the thread goes on to another, so a host call made here holds a *worker*,
+ * and with it every continuation that worker would have run.  For a wait this
+ * runtime can end that costs some overlap; for a peer-bound wait, which
+ * another program ends whenever it likes, it costs the worker for as long as
+ * that program is quiet.  Three workers each inside a receive from a silent
+ * peer is `tests/programs/tcp_fanout.wf` with nobody left to accept its fourth
+ * connection.
+ *
+ * So a pool stack leaves a peer-bound record to the helper pool -- once there
+ * is a pool.  With no helper the claim happens on either arm, because then
+ * nothing else would run it: the pool may be pinned at zero, which makes the
+ * waiting thread the queue's own engine, or a helper start may have failed,
+ * and in both cases refusing the record here would strand it.  That is the
+ * same condition `wf_bridge_progress` asks before it takes anything, and it is
+ * why the adapter's growth rule starts a helper on the peer-bound submission
+ * itself (`file_adapter.c`). */
+static int wf_bridge_own_runs_on_this_thread(
+    const wf_completion_record *record,
+    int on_pool_stack
+) {
+    return on_pool_stack == 0
+        || !wf_file_request_is_peer_bound(&record->request)
+        || wf_file_adapter_helper_count(&wf_bridge_adapter) == 0;
+}
+
 static void wf_bridge_join(wf_completion_record *record) {
-    (void)wf_bridge_run_own(record);
-    if (wf__sched_current_stack() != NULL) {
+    int on_pool_stack = wf__sched_current_stack() != NULL;
+    if (wf_bridge_own_runs_on_this_thread(record, on_pool_stack)) {
+        (void)wf_bridge_run_own(record);
+    }
+    if (on_pool_stack) {
         wf_sched_join(&wf__sched_core, &record->sched, 1);
         return;
     }

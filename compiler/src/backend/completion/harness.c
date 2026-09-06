@@ -2816,6 +2816,179 @@ static int test_socket_lifecycle_and_the_pair_two_count(void) {
     return 0;
 }
 
+/* Opens one listening socket on the loopback and reports the port the host
+ * chose, for the peer-bound case below.
+ *
+ * It is the host's own three calls rather than the bridge's socket kinds
+ * because the case under it is about the adapter's queue and not about the
+ * submitted listen: a listener built here is one this frame can hand to an
+ * adapter it made itself, with the helper policy the case names rather than
+ * the process-wide one. */
+static int harness_open_listener(unsigned *port) {
+    struct sockaddr_in address;
+    socklen_t length = (socklen_t)sizeof(address);
+    int listener = socket(AF_INET, SOCK_STREAM, 0);
+    if (listener < 0) {
+        return -1;
+    }
+    memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = 0;
+    if (bind(listener, (struct sockaddr *)&address, sizeof(address)) != 0
+        || listen(listener, 8) != 0
+        || getsockname(listener, (struct sockaddr *)&address, &length) != 0) {
+        (void)close(listener);
+        return -1;
+    }
+    *port = (unsigned)ntohs(address.sin_port);
+    return listener;
+}
+
+/* Connects one peer to the loopback port, and leaves it silent. */
+static int harness_connect_peer(unsigned port) {
+    struct sockaddr_in address;
+    int peer = socket(AF_INET, SOCK_STREAM, 0);
+    if (peer < 0) {
+        return -1;
+    }
+    memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = htons((unsigned short)port);
+    if (connect(peer, (struct sockaddr *)&address, sizeof(address)) != 0) {
+        (void)close(peer);
+        return -1;
+    }
+    return peer;
+}
+
+/* A request whose kind waits on a peer is a helper's work, not a scheduler
+ * thread's.
+ *
+ * The wait an accept or a receive makes is ended by another program, so no
+ * measurement of this adapter's own host calls can see it coming and nothing
+ * this runtime does can shorten it. A scheduler thread that enters one is a
+ * thread another program has taken, along with every continuation it was
+ * holding, which is exactly how `tests/programs/tcp_fanout.wf` lost its fourth
+ * peer: three workers inside receives from silent peers and no thread left to
+ * accept the connection whose peer was about to speak.
+ *
+ * So the kind is the whole rule, and this case is its three halves. The
+ * submission of a peer-bound request starts a helper whatever the measured
+ * verdict says -- here it says nothing at all, because this adapter has
+ * executed nothing. The scheduler thread's progress pass then leaves the
+ * queued accept alone and reports that it moved nothing, rather than blocking
+ * in it. And a pool pinned at zero helpers, which is a policy that makes the
+ * calling thread the queue's only engine, still runs one on the calling
+ * thread, because there refusing it would leave it with no engine at all.
+ *
+ * The queue is brought to a state the rule can be read off by filling the pool
+ * first: two helpers, both inside an accept of a listener no peer has reached,
+ * and a third accept behind them that no helper can take. What is queued at
+ * the progress call is therefore exactly one peer-bound request, and a
+ * regression that takes it does not fail this check -- it blocks in the host
+ * call and the watchdog reports the case by name. */
+static int test_a_peer_bound_request_is_left_to_a_helper(void) {
+    wf_completion_runtime runtime;
+    wf_file_adapter adapter;
+    wf_completion_record accepts[3];
+    wf_completion_record pinned;
+    struct timespec delay = {.tv_sec = 0, .tv_nsec = 1000000};
+    unsigned port = 0;
+    unsigned index;
+    unsigned attempts;
+    int listener;
+    int peers[3];
+
+    listener = harness_open_listener(&port);
+    CHECK(listener >= 0);
+    CHECK(wf_completion_runtime_init(&runtime) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 2, 0) == 0);
+    CHECK(wf_file_adapter_set_helper_cap(&adapter, 2) == 0);
+    CHECK(wf_file_adapter_helper_count(&adapter) == 0);
+
+    /* (a) The first peer-bound submission starts the first helper, under the
+     * queue lock, before it returns.  Nothing has been executed, so the
+     * measured verdict is the one that stops every other growth. */
+    CHECK(wf_file_adapter_wait_verdict(&adapter) == WF_FILE_WAIT_UNMEASURED);
+    for (index = 0; index < 3; ++index) {
+        harness_record_init(&accepts[index], WF_FILE_SOCKET_ACCEPT);
+        accepts[index].request.operation.accept.descriptor = listener;
+        CHECK(
+            wf_file_adapter_submit(&adapter, &accepts[index])
+            == WF_FILE_TARGET_OWNS
+        );
+        /* One helper per submission, and never past the cap. */
+        CHECK(wf_file_adapter_helper_count(&adapter) == (index < 2 ? index + 1 : 2));
+    }
+    CHECK(wf_file_adapter_wait_verdict(&adapter) == WF_FILE_WAIT_UNMEASURED);
+
+    /* Both helpers are inside an accept of a listener no peer has reached, so
+     * the third submission is the one thing left on the queue. */
+    for (attempts = 0; attempts < 5000u; ++attempts) {
+        if (wf_file_adapter_queued(&adapter) == 1) {
+            break;
+        }
+        (void)nanosleep(&delay, NULL);
+    }
+    CHECK(wf_file_adapter_queued(&adapter) == 1);
+
+    /* (b) The progress pass leaves it there and says so. */
+    CHECK(wf_file_adapter_progress(&adapter, 1) == 0);
+    CHECK(wf_file_adapter_queued(&adapter) == 1);
+    for (index = 0; index < 3; ++index) {
+        CHECK(!harness_record_done(&accepts[index]));
+    }
+
+    /* (c) Every one of them completes once the peers act. */
+    for (index = 0; index < 3; ++index) {
+        peers[index] = harness_connect_peer(port);
+        CHECK(peers[index] >= 0);
+    }
+    for (index = 0; index < 3; ++index) {
+        for (attempts = 0; attempts < 20000u; ++attempts) {
+            if (harness_record_done(&accepts[index])) {
+                break;
+            }
+            (void)nanosleep(&delay, NULL);
+        }
+        CHECK(harness_record_done(&accepts[index]));
+        CHECK(accepts[index].result.error_code == 0);
+        CHECK(accepts[index].result.value >= 0);
+        CHECK(close((int)accepts[index].result.value) == 0);
+        CHECK(close(peers[index]) == 0);
+    }
+    CHECK(wf_file_adapter_shutdown(&adapter) == 0);
+    CHECK(close(listener) == 0);
+
+    /* (d) A pool pinned at zero helpers keeps the calling thread as the
+     * queue's engine for a peer-bound request too.  The peer is connected
+     * first, so what this asserts is which thread ran the accept and not how
+     * long one waits. */
+    listener = harness_open_listener(&port);
+    CHECK(listener >= 0);
+    peers[0] = harness_connect_peer(port);
+    CHECK(peers[0] >= 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 2, 0) == 0);
+    CHECK(wf_file_adapter_set_helper_cap(&adapter, 0) == 0);
+    harness_record_init(&pinned, WF_FILE_SOCKET_ACCEPT);
+    pinned.request.operation.accept.descriptor = listener;
+    CHECK(wf_file_adapter_submit(&adapter, &pinned) == WF_FILE_TARGET_OWNS);
+    CHECK(wf_file_adapter_helper_count(&adapter) == 0);
+    CHECK(wf_file_adapter_progress(&adapter, 1) == 1);
+    CHECK(harness_record_done(&pinned));
+    CHECK(pinned.result.error_code == 0);
+    CHECK(pinned.result.value >= 0);
+    CHECK(close((int)pinned.result.value) == 0);
+    CHECK(close(peers[0]) == 0);
+    CHECK(wf_file_adapter_shutdown(&adapter) == 0);
+    CHECK(close(listener) == 0);
+
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    return 0;
+}
+
 static int test_native_contract_inventory(void) {
     wf_completion_target_contract darwin = wf_completion_target_contract_for(
         WF_TARGET_DARWIN_FILE_FALLBACK
@@ -3046,6 +3219,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_completion_window_answers_at_the_boundaries());
     RUN_TEST(test_a_submitted_operation_is_kicked_before_it_waits(argv[1]));
     RUN_TEST(test_socket_lifecycle_and_the_pair_two_count());
+    RUN_TEST(test_a_peer_bound_request_is_left_to_a_helper());
     RUN_TEST(test_native_contract_inventory());
     RUN_TEST(test_directory_progress_is_internal());
     RUN_TEST(benchmark_record_roundtrip(&roundtrip_ns));

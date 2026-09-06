@@ -2080,6 +2080,32 @@ fn a_join_waits_in_place_and_sleeps_on_the_one_primitive() {
         dispatch.contains("wf_bridge_wait_in_place(record)"),
         "a thread with no pool stack waits in place: {dispatch}"
     );
+    // Running one's own still-queued submission here is licensed by having
+    // nothing else to do until it is DONE, which is true of the in-place arm
+    // and false of a pool stack: the join below parks that stack and the
+    // thread goes on to other work, so a host call made here holds a worker.
+    // For a peer-bound wait, which another program ends whenever it likes,
+    // that is a worker held for as long as the far side stays quiet, so a pool
+    // stack leaves such a record to the helper pool -- once there is one.
+    let own = bridge
+        .split_once("static int wf_bridge_own_runs_on_this_thread(")
+        .expect("one rule decides whether the claim happens here")
+        .1
+        .split_once("\n}\n")
+        .expect("the rule ends with the function")
+        .0;
+    assert!(
+        own.contains("on_pool_stack == 0"),
+        "a thread with nothing else to run always claims its own: {own}"
+    );
+    assert!(
+        own.contains("!wf_file_request_is_peer_bound(&record->request)"),
+        "only a peer-bound record is withheld from a pool stack: {own}"
+    );
+    assert!(
+        own.contains("wf_file_adapter_helper_count(&wf_bridge_adapter) == 0"),
+        "with no helper the claim happens anyway, or nothing would run it: {own}"
+    );
 }
 
 /// A positioned read the submitting thread would run itself is executed there
@@ -2248,6 +2274,18 @@ fn a_positioned_read_the_submitting_thread_would_run_itself_runs_there() {
 /// never grows at all. On the quiet macOS host that left the four-wide program
 /// at 919 ms against 625 ms for the depth rule. Queue depth is a lagging
 /// signal, but it is a true one.
+///
+/// Both of those facts are about a wait that has already happened, which is
+/// exactly what a peer-bound request does not have. Its wait is ended by
+/// another program, so no execution this adapter has finished can see it
+/// coming and the queue is not deep yet at the submission that will occupy a
+/// helper for as long as the far side stays quiet. So an accept, a receive, a
+/// connect or a send grows a helper on the cap alone. Without that, the second
+/// concurrent accept found one helper held and one entry queued, the depth
+/// term refused it, and the two accepts ran one after the other on a pool
+/// whose one helper was inside the first of them: three workers of
+/// `tests/programs/tcp_fanout.wf` inside receives from silent peers and no
+/// thread left to accept the fourth connection.
 #[test]
 fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
     let bridge = crate::COMPLETION_BRIDGE_SOURCE;
@@ -2280,7 +2318,7 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
     );
 
     let growth = adapter
-        .split_once("static void wf_file_grow_helpers_locked(wf_file_adapter *adapter) {")
+        .split_once("static void wf_file_grow_helpers_locked(\n    wf_file_adapter *adapter,\n    int peer_bound\n) {")
         .expect("growth is one named function")
         .1
         .split_once("\n}\n")
@@ -2298,6 +2336,25 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
         growth.contains("wf_file_adapter_wait_verdict(adapter) != WF_FILE_WAIT_LONG"),
         "growth must also require a measured wait to overlap: {growth}"
     );
+    // Both of those terms are about a wait this adapter has already seen, and
+    // a peer-bound request's wait has not started: it is ended by another
+    // program, so the kind is the only thing that can know it is coming. A
+    // peer-bound submission therefore takes neither term and grows on the cap
+    // alone, which is what keeps the two terms above from serializing several
+    // connections onto one helper.
+    assert!(
+        growth.contains("if (peer_bound == 0) {"),
+        "the two measured terms must be the non-peer-bound arm: {growth}"
+    );
+    let peer_bound_arm = growth
+        .split_once("if (peer_bound == 0) {")
+        .expect("the measured terms are one arm")
+        .1;
+    assert!(
+        peer_bound_arm.contains("adapter->queue_count <= held")
+            && peer_bound_arm.contains("WF_FILE_WAIT_LONG"),
+        "both measured terms belong inside that arm: {growth}"
+    );
     // Growth runs inside the one enqueue that already holds the queue lock,
     // so it creates at most one helper per submission and needs no second
     // lock, and every kind of queued work reaches the pool the same way.
@@ -2309,8 +2366,9 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
         .expect("the enqueue ends with the function")
         .0;
     assert!(
-        enqueue.contains("wf_file_grow_helpers_locked(adapter)"),
-        "the enqueue is where growth happens: {enqueue}"
+        enqueue.contains("wf_file_grow_helpers_locked(")
+            && enqueue.contains("wf_file_request_is_peer_bound(&record->request)"),
+        "the enqueue is where growth happens, and it is what reads the kind: {enqueue}"
     );
     // One queued request wakes one helper, never every helper, only a helper
     // that is actually asleep, and never from inside the queue lock: a signal

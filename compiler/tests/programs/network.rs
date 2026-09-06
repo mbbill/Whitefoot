@@ -374,6 +374,14 @@ fn a_refused_connect_hands_its_permit_back_on_both_routes() {
 /// parked callee per peer, run overlapped. The reads carry a deadline so a
 /// server that serves peers in turn fails this case in bounded time rather
 /// than hanging it.
+///
+/// Three workers, on both routes, because the property is about what the
+/// runtime does with a wait and not about how many cores the runner has. A
+/// pool sized to a large machine gives each of the four peers a worker of its
+/// own, so a runtime that let every one of those workers block inside its own
+/// peer's `receive_next` would still answer all four here and fail only on a
+/// three-core host. Pinned below the peer count, the fourth peer is answered
+/// only if the waits are carried by something other than the workers.
 #[test]
 fn four_peers_are_served_at_once_under_par_on_both_routes() {
     let llvm = compile_program_with_overlap("tcp_fanout.wf");
@@ -381,7 +389,7 @@ fn four_peers_are_served_at_once_under_par_on_both_routes() {
     for native_ring in [true, false] {
         let port = free_port();
         let text = port.to_string();
-        let child = program.spawn_on_route(native_ring, &[text.as_bytes()]);
+        let child = program.spawn_on_route_with_workers(native_ring, Some("3"), &[text.as_bytes()]);
         let mut streams = (0..4_u8)
             .map(|_| connect_when_ready(port))
             .collect::<Vec<_>>();

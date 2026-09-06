@@ -226,6 +226,57 @@ receive, send, stream read, half-close) and the routes are:
   kqueue route exists; this is the route `WF_IO_NO_NATIVE_RING` runs on Linux
   and is not a second lowering.
 
+  **Peer-bound requests are a helper's, 2026-09-06.** On that route a socket
+  wait is a blocking host call on some thread, so *which* thread makes it is
+  the whole of the route's concurrency. A request is peer-bound when its kind
+  is accept, receive, connect or send: each waits on another program, so no
+  measurement of this adapter's own host calls sees the wait coming and nothing
+  this runtime does shortens it. Listen and shutdown act on this program's own
+  socket and are not. `wf_file_request_is_peer_bound` in `file_adapter.c` is
+  that switch, and three rules read it.
+
+  Growth: a peer-bound submission starts a helper whenever `helper_count <
+  helper_cap`, taking neither of the two terms an ordinary submission takes.
+  The measured verdict and the queue depth are both about a wait that has
+  already happened; the kind is about the one that is about to. The depth term
+  in particular would defeat the rule outright, because the second concurrent
+  accept finds one helper held and one entry queued and would be refused, on a
+  pool whose one helper is inside the first accept.
+
+  Progress: while `helper_cap` is above zero, a scheduler thread's pass
+  (`wf_file_adapter_progress`) takes the first queued request that is *not*
+  peer-bound and leaves the rest, oldest first. With `helper_cap` at zero —
+  `WF_IO_HELPERS=0`, an explicit policy that makes the waiting thread the
+  queue's own engine — it takes anything, because nothing else could run it.
+  For the same reason the joining thread's claim of its own record
+  (`wf_bridge_run_own`) is unchanged for a thread waiting in place, which has
+  no stack to park and nothing else to run, and is withheld for a peer-bound
+  record on a pool stack once a helper exists: there the join parks the stack
+  and the worker goes on to other work, so a host call made there holds a
+  worker and every continuation it was carrying. That was the defect — three
+  workers of `tests/programs/tcp_fanout.wf` each inside a receive from a silent
+  peer, and no thread left to accept the fourth connection, which on a
+  three-core runner failed about half of all runs.
+
+  Measurement: a peer-bound execution is not sampled into `mean_execute_ns`. A
+  receive that waits seconds for a quiet peer measures the peer, not the host,
+  and letting one in would make the verdict LONG for every file operation after
+  it — and that verdict decides whether an ordinary read is queued or executed
+  where it was stated.
+
+  The bound this leaves is explicit and is not worked around: adapter-route
+  socket concurrency is `WF_BRIDGE_MAX_HELPERS`, and a program needing more
+  peer waits in flight than that waits. There is no fallback that puts a
+  peer-bound request back on a scheduler thread when the pool is at its cap,
+  because that is the defect returning at exactly the moment the program is
+  widest. **Open design item:** the bound is a property of an engine built out
+  of blocking calls and threads to make them on. The ring-less host's proper
+  engine is a readiness-driven adapter — one `poll`, `kqueue` or `WSAPoll` over
+  the descriptors of every queued request, made inside the park a thread with
+  nothing to run already enters — which waits for any number of peers on one
+  thread with no host call per peer. That is the next step for Darwin and for
+  `WF_IO_NO_NATIVE_RING`, and it is not the kind rule above.
+
 Each new kind is one more case in the two host leaves (`file_posix.c`,
 `file_windows.c`) and the two rings; nothing in the core or the bridge's
 routing changes shape. The two halves of a connection share one descriptor

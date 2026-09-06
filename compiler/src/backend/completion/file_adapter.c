@@ -76,6 +76,29 @@ int wf_file_request_valid(const wf_file_request *request) {
     }
 }
 
+/* Whether this request's kind waits on a peer; see the header for what the
+ * four kinds have in common and why a listen and a shutdown are not among
+ * them.
+ *
+ * It is a switch over the kind and nothing else.  A wait this adapter cannot
+ * end is a property of what the request asks the host for, so knowing it needs
+ * no clock, no history and no host call, and the answer is the same on the
+ * first operation of a program as on its thousandth. */
+int wf_file_request_is_peer_bound(const wf_file_request *request) {
+    if (request == NULL) {
+        return 0;
+    }
+    switch (request->kind) {
+    case WF_FILE_SOCKET_ACCEPT:
+    case WF_FILE_SOCKET_RECEIVE:
+    case WF_FILE_SOCKET_CONNECT:
+    case WF_FILE_SOCKET_SEND:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 /* The two-count of every connection descriptor, one byte each: zero when
  * neither direction has been released and one when exactly one has.  See
  * `wf_file_connection_release` in the header for what it promises and why it
@@ -157,49 +180,98 @@ static int wf_file_execution_should_be_timed(wf_file_adapter *adapter) {
     return tick % WF_FILE_EXECUTE_SAMPLE_INTERVAL == 0;
 }
 
-/* Takes one queued record off this adapter's list.
+/* Removes one record from the pending list, with the queue lock held.
  *
- * `from_head` chooses which end.  A joining thread's visit takes the newest
- * request, so a blocked earlier host facility cannot hide every later free
- * operation behind it, and helper threads take the oldest, so several target
- * contexts spread across both ends of the list.
+ * `previous` is the record before it, or NULL when it is the head.  The three
+ * places that take a record off this list -- the scheduler's progress pass,
+ * the joining thread's claim of its own, and a shutdown's drain through the
+ * first of those -- all unlink through here, so the head, the tail and the
+ * count are maintained in exactly one place. */
+static void wf_file_unlink_locked(
+    wf_file_adapter *adapter,
+    wf_completion_record *previous,
+    wf_completion_record *record
+) {
+    if (previous == NULL) {
+        adapter->queue_head = record->next;
+    } else {
+        previous->next = record->next;
+    }
+    if (adapter->queue_tail == record) {
+        adapter->queue_tail = previous;
+    }
+    record->next = NULL;
+    atomic_store_explicit(
+        &adapter->queue_count,
+        atomic_load_explicit(&adapter->queue_count, memory_order_relaxed) - 1u,
+        memory_order_seq_cst
+    );
+}
+
+/* Takes one queued record off this adapter's list for a scheduler thread.
  *
- * The list is singly linked through each record's own `next`, so taking the
- * newest walks it; that walk is bounded by what this program has outstanding,
- * which is bounded by the frames that hold the records, and it costs nothing
- * at all in the common case of one queued operation.  Nothing is copied out:
- * the record is the submitting frame's and outlives the operation, so the
- * executing thread runs it in place (design §5, §7).
+ * A scheduler thread is not a helper: it has a program's own continuations to
+ * run, and a host call it makes here holds all of them.  So while this adapter
+ * has a helper pool to grow at all -- `helper_cap` above zero -- this pass
+ * leaves every peer-bound request alone and takes a queued request no peer
+ * can hold up, from the end `from_head` names.  A peer-bound wait is ended by another
+ * program, so a scheduler thread inside one is a scheduler thread another
+ * program has taken, and the four peers of `tests/programs/tcp_fanout.wf` are
+ * exactly that: three workers each inside a receive whose peer is silent, and
+ * a fourth connection nobody is left to accept.
+ *
+ * With `helper_cap` at zero this takes anything, because nothing else could
+ * run it: a pinned zero-helper pool is an explicit policy that makes the
+ * waiting thread the queue's only engine, and refusing a request there would
+ * leave it with no engine at all.
+ *
+ * `from_head` chooses which end, among the requests this pass may take.  A
+ * joining thread's visit takes the newest, so a blocked earlier host
+ * facility cannot hide every later free operation behind it, and helper
+ * threads take the oldest, so several target contexts spread across both ends
+ * of the list.
+ *
+ * The list is singly linked through each record's own `next`, so both the walk
+ * to the newest and the walk past the peer-bound entries are bounded by what
+ * this program has outstanding, which is bounded by the frames that hold the
+ * records, and cost nothing at all in the common case of one queued operation.
+ * Nothing is copied out: the record is the submitting frame's and outlives the
+ * operation, so the executing thread runs it in place (design §5, §7).
  */
 static wf_completion_record *wf_file_take_work(
     wf_file_adapter *adapter,
     int from_head
 ) {
+    wf_completion_record *previous = NULL;
     wf_completion_record *taken = NULL;
     wf_completion_wait_lock(&adapter->queue_wait);
-    if (adapter->queue_head != NULL) {
+    if (adapter->helper_cap != 0) {
+        wf_completion_record *before = NULL;
+        wf_completion_record *scan = adapter->queue_head;
+        while (scan != NULL) {
+            if (!wf_file_request_is_peer_bound(&scan->request)) {
+                previous = before;
+                taken = scan;
+                if (from_head != 0) {
+                    break;
+                }
+            }
+            before = scan;
+            scan = scan->next;
+        }
+    } else if (adapter->queue_head != NULL) {
         if (from_head != 0 || adapter->queue_head == adapter->queue_tail) {
             taken = adapter->queue_head;
-            adapter->queue_head = taken->next;
-            if (adapter->queue_head == NULL) {
-                adapter->queue_tail = NULL;
-            }
         } else {
-            wf_completion_record *previous = adapter->queue_head;
+            previous = adapter->queue_head;
             while (previous->next != adapter->queue_tail) {
                 previous = previous->next;
             }
             taken = adapter->queue_tail;
-            previous->next = NULL;
-            adapter->queue_tail = previous;
         }
-        taken->next = NULL;
-        atomic_store_explicit(
-            &adapter->queue_count,
-            atomic_load_explicit(&adapter->queue_count, memory_order_relaxed)
-                - 1u,
-            memory_order_seq_cst
-        );
+    }
+    if (taken != NULL) {
+        wf_file_unlink_locked(adapter, previous, taken);
     }
     wf_completion_wait_unlock(&adapter->queue_wait);
     return taken;
@@ -256,7 +328,18 @@ wf_file_result wf_file_execute_timed(
     if (!wf_file_adapter_initialized(adapter)) {
         return wf_file_execute_direct(request);
     }
-    timed = wf_file_execution_should_be_timed(adapter);
+    /* A peer-bound execution is not part of the population this average is
+     * about.  The average answers one question -- whether this program's own
+     * host calls wait long enough for a handoff to be worth its cost -- and a
+     * receive that sits for seconds because its peer is quiet answers a
+     * different one: it measures the peer, not the host.  Letting one in would
+     * make the verdict LONG for every file operation that followed it, and the
+     * verdict is what decides whether an ordinary read is queued or executed
+     * where it was stated.  The kind test comes first, so a peer-bound
+     * execution does not advance the sample counter either: the sample is one
+     * in sixteen of the executions the average is about. */
+    timed = !wf_file_request_is_peer_bound(request)
+        && wf_file_execution_should_be_timed(adapter);
     started = timed ? wf_file_monotonic_ns() : 0u;
     result = wf_file_execute_direct(request);
     if (timed) {
@@ -537,18 +620,45 @@ size_t wf_file_adapter_helper_count(const wf_file_adapter *adapter) {
  * runs on the submitting thread with the queue lock already held, so at most
  * one helper appears per submission and the count never passes the policy's
  * cap. A pinned helper policy sets the cap equal to the initial count, making
- * this a no-op. */
-static void wf_file_grow_helpers_locked(wf_file_adapter *adapter) {
+ * this a no-op.
+ *
+ * A peer-bound submission takes neither of those two terms, and that is the
+ * rule this pool needs for sockets.  Both terms are about a wait this adapter
+ * has already seen: the verdict is a measurement of executions that have
+ * finished, and the depth is a queue that has already outrun the pool.
+ * Neither can see the wait a receive is about to make, because that wait has
+ * not started and is ended by another program.  The kind says it outright, so
+ * a peer-bound submission grows a helper whenever there is room in the pool
+ * for one, and `n` connections open at once get `min(n, helper_cap)` helpers
+ * to wait in.
+ *
+ * The depth term in particular would defeat the whole rule: the second
+ * concurrent accept finds one helper held and one entry queued, so depth would
+ * refuse it and the two accepts would run one after the other -- on a pool
+ * whose one helper is inside the first of them, waiting for a peer that may
+ * speak last.  The cost of dropping both terms is a pool that can reach its
+ * cap for a program whose sockets are used strictly one at a time; those
+ * helpers sleep on the queue condition and the cap is `WF_BRIDGE_MAX_HELPERS`,
+ * so it is a bounded and idle cost against a class of program that otherwise
+ * cannot make progress at all. */
+static void wf_file_grow_helpers_locked(
+    wf_file_adapter *adapter,
+    int peer_bound
+) {
     size_t held = atomic_load_explicit(
         &adapter->helper_count,
         memory_order_relaxed
     );
-    if (held >= adapter->helper_cap
-        || adapter->queue_count <= held) {
+    if (held >= adapter->helper_cap) {
         return;
     }
-    if (wf_file_adapter_wait_verdict(adapter) != WF_FILE_WAIT_LONG) {
-        return;
+    if (peer_bound == 0) {
+        if (adapter->queue_count <= held) {
+            return;
+        }
+        if (wf_file_adapter_wait_verdict(adapter) != WF_FILE_WAIT_LONG) {
+            return;
+        }
     }
     if (wf_file_start_helper_locked(adapter) != 0) {
         return;
@@ -602,7 +712,10 @@ static int wf_file_enqueue_locked(
      * that wakes on its own between here and the caller's signal only makes
      * that signal a spurious one, which its predicate loop already tolerates. */
     wake = adapter->blocked_helpers != 0;
-    wf_file_grow_helpers_locked(adapter);
+    wf_file_grow_helpers_locked(
+        adapter,
+        wf_file_request_is_peer_bound(&record->request)
+    );
     return wake;
 }
 
@@ -656,10 +769,7 @@ int wf_file_adapter_claim_own(
     }
     wf_completion_wait_lock(&adapter->queue_wait);
     if (adapter->queue_head == record) {
-        adapter->queue_head = record->next;
-        if (adapter->queue_head == NULL) {
-            adapter->queue_tail = NULL;
-        }
+        wf_file_unlink_locked(adapter, NULL, record);
         claimed = 1;
     } else {
         wf_completion_record *previous = adapter->queue_head;
@@ -667,21 +777,9 @@ int wf_file_adapter_claim_own(
             previous = previous->next;
         }
         if (previous != NULL) {
-            previous->next = record->next;
-            if (adapter->queue_tail == record) {
-                adapter->queue_tail = previous;
-            }
+            wf_file_unlink_locked(adapter, previous, record);
             claimed = 1;
         }
-    }
-    if (claimed != 0) {
-        record->next = NULL;
-        atomic_store_explicit(
-            &adapter->queue_count,
-            atomic_load_explicit(&adapter->queue_count, memory_order_relaxed)
-                - 1u,
-            memory_order_seq_cst
-        );
     }
     wf_completion_wait_unlock(&adapter->queue_wait);
     return claimed;
@@ -699,6 +797,27 @@ void wf_file_adapter_run_claimed(
     wf_file_run_work(adapter, record, 0);
 }
 
+/* Executes at most `budget` queued requests on the calling thread, taking
+ * only what `wf_file_take_work` will hand a scheduler thread.
+ *
+ * There is no second attempt for what it leaves behind.  A peer-bound request
+ * this pass skips waits in the queue for a helper, and nothing runs it on a
+ * scheduler thread when the pool is already at its cap: a fallback that did
+ * would put a scheduler thread back inside a wait another program ends, which
+ * is the whole defect this rule removes, and it would do it at exactly the
+ * moment the program is widest.
+ *
+ * So on a host with no kernel completion ring, the number of socket operations
+ * this route can have waiting at once is `WF_BRIDGE_MAX_HELPERS`, and a
+ * program that needs more of them in flight than that waits.  That bound is a
+ * property of an engine built out of blocking host calls and threads to make
+ * them on.  The engine that removes it is a readiness-driven adapter -- one
+ * `poll`, `kqueue` or `WSAPoll` over the descriptors of every queued request,
+ * made inside the park a thread with nothing to run already enters, so waiting
+ * for any number of peers costs one thread and no host call per peer.  That is
+ * the ring-less host's proper engine and it is the open design item here; it
+ * is not this change, which is the kind rule that makes the present engine
+ * correct within its bound. */
 size_t wf_file_adapter_progress(wf_file_adapter *adapter, size_t budget) {
     size_t executed = 0;
     if (!wf_file_adapter_initialized(adapter)) {

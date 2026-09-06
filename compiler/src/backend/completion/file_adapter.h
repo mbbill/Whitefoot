@@ -221,6 +221,23 @@ wf_file_result wf_file_execute_direct(wf_file_request *request);
  * it before it makes any host call. */
 int wf_file_request_valid(const wf_file_request *request);
 
+/* Whether this request's kind waits on a peer.
+ *
+ * An accept waits for a connection nobody in this program makes, a receive for
+ * bytes the far side has not sent, a connect for the far side to answer, and a
+ * send for room in a window the far side has not drained.  Every one of those
+ * waits is ended by another program, so nothing this runtime does shortens it
+ * and no measurement is needed to know it is there: the kind is the whole
+ * condition.  A listen and a shutdown act on this program's own socket and
+ * answer at once, so they are not peer-bound.
+ *
+ * Three rules read it: growth adds a helper for a peer-bound submission
+ * whatever the measured verdict says, a scheduler thread's progress pass
+ * leaves a peer-bound request for a helper, and a peer-bound execution is left
+ * out of the measured average.  All three are in `file_adapter.c` beside the
+ * code that applies them. */
+int wf_file_request_is_peer_bound(const wf_file_request *request);
+
 /* Records one direction of one connection as released, and answers whether it
  * was the pair's second release [SYS-18].
  *
