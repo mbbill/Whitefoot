@@ -12,7 +12,9 @@ use super::{
 
 #[test]
 fn a_failed_length_expression_prevents_the_unreached_allocation_fit_obligation() {
-    let source = br#"fn allocate(lengths: own array<u64, 1>) -> result: own unit pure {
+    let source = br#"const lengths: FixedVector<u64, 1> =[0_u64];
+
+fn allocate() -> result: own unit pure {
   let values = buffer_new(lengths[1_u64], 0_u8);
   return unit;
 }

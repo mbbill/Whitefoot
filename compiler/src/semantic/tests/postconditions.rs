@@ -125,13 +125,16 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_uncomputed_fn9_relation_still_publishes_to_its_caller() {
-    let source = br#"fn identity(value: own u64) -> result: own u64 pure contract {
+    let source =
+        br#"const values: FixedVector<u8, 8> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
+
+fn identity(value: own u64) -> result: own u64 pure contract {
   ensures result == value;
 } {
   return value;
 }
 
-fn select(values: own array<u8, 8>, index: own u64) -> result: own u8 pure contract {
+fn select(index: own u64) -> result: own u8 pure contract {
   requires index < 8_u64;
 } {
   let selected = identity(value: index);
@@ -151,7 +154,9 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn contract_clauses_remain_available_to_the_originating_proof_context() {
     let source =
-        br#"fn pick(table: own array<u8, 8>, index: own u64) -> value: own u64 pure contract {
+        br#"const lookup: FixedVector<u8, 8> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
+
+fn pick(table: own array<u8, 8>, index: own u64) -> value: own u64 pure contract {
   requires index < 8_u64;
   ensures value <= 7_u64;
 } {
@@ -164,7 +169,7 @@ fn contract_clauses_remain_available_to_the_originating_proof_context() {
   }
 }
 
-fn caller(table: own array<u8, 8>, lookup: own array<u8, 8>) -> result: own u8 pure {
+fn caller(table: own array<u8, 8>) -> result: own u8 pure {
   let value = pick(table: move table, index: 0_u64);
   return lookup[value];
 }

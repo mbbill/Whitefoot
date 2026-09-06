@@ -363,8 +363,9 @@ fn a_ground_obligation_discharges_in_range_and_rejects_on_inevitable_overflow() 
 /// makes the operand a term, mirroring the subscript-offset fallback.
 #[test]
 fn a_subscripted_class_operand_is_underivable_and_rejects() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
-  let a = array_new::<u8, 2>(7_u8);
+    let source = br#"const a: FixedVector<u8, 2> =[7_u8, 7_u8];
+
+command fn main() -> status: own ExitStatus pure {
   let y = a[0_u64] + 1_u8;
   return exit_status(code: 0_u8);
 }

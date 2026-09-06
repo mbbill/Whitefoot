@@ -106,8 +106,9 @@ fn an_out_of_bounds_array_read_is_an_op4_compile_rejection() {
     // Under discharge-or-reject [OP-4] no runtime bounds trap exists: the
     // underivable obligation rejects at compile time with the exact
     // [ENT-6] residual.
-    let source = br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 2>(7_u8);
+    let source = br#"const values: FixedVector<u8, 2> =[7_u8, 7_u8];
+
+command fn main() -> status: own ExitStatus pure {
   let value = values[2_u64];
   return exit_status(code: 0_u8);
 }

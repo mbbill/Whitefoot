@@ -435,9 +435,11 @@ fn replace_of_a_region_bearing_place_rejects_citing_set2() {
     let expected_fix = "a slice's static origin set and an arena's confinement are fixed at \
                         initialization; bind a new slice or arena under a new let";
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
-  let left = array_new::<u8, 2>(11_u8);
-  let right = array_new::<u8, 2>(29_u8);
+        br#"const left: FixedVector<u8, 2> =[11_u8, 11_u8];
+
+const right: FixedVector<u8, 2> =[29_u8, 29_u8];
+
+command fn main() -> status: own ExitStatus pure {
   region {
     let view = slice_of(&left);
     let previous = replace view = slice_of(&right);

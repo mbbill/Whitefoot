@@ -418,10 +418,11 @@ const A13_PROOF_REMAINDER: &[u8] = br#"command fn main(command.cwd as cwd: own D
 }
 "#;
 
-const A13A_REMAINDER_PROLOGUE: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+const A13A_REMAINDER_PROLOGUE: &[u8] = br#"const table: FixedVector<u8, 8> =[3_u8, 3_u8, 3_u8, 3_u8, 3_u8, 3_u8, 3_u8, 3_u8];
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   doc "An automatically proved remainder bound admits a prologue subscript before staged permission computes its footprint.";
   let total = 0_u64;
-  let table = array_new::<u8, 8>(3_u8);
   for @scan (index in 0_u64..4_u64) {
     let seed = index *wrap 3_u64;
     let slot = seed % 8_u64;
@@ -446,10 +447,11 @@ const A13A_REMAINDER_PROLOGUE: &[u8] = br#"command fn main(command.cwd as cwd: o
 
 // This paired case uses a dominating branch instead of the automatic remainder
 // interval. Both proof routes must produce the same staged footprint.
-const A13C_PROVED_PROLOGUE: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+const A13C_PROVED_PROLOGUE: &[u8] = br#"const table: FixedVector<u8, 8> =[3_u8, 3_u8, 3_u8, 3_u8, 3_u8, 3_u8, 3_u8, 3_u8];
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   doc "A branch-proved subscript in the prologue. Permission is determined by its checked footprint, not by the proof route that admitted the partial operation.";
   let total = 0_u64;
-  let table = array_new::<u8, 8>(3_u8);
   for @scan (index in 0_u64..4_u64) {
     let seed = index *wrap 3_u64;
     let slot = seed % 8_u64;

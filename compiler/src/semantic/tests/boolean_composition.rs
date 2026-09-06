@@ -159,7 +159,10 @@ fn assert_comparison_member(
 /// subscripts discharge.
 #[test]
 fn passed_band_guard_establishes_positive_conjuncts_and_discharges_both() {
-    let source = br#"fn read_pair(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 pure {
+    let source =
+        br#"const table: FixedVector<u8, 8> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
+
+fn read_pair(low: own u64, high: own u64) -> result: own u8 pure {
   let low_ok = low < 8_u64;
   let high_ok = high < 8_u64;
   let both = band(low_ok, high_ok);
@@ -189,7 +192,9 @@ command fn main() -> status: own ExitStatus pure {
 /// on the edge the guard protects.
 #[test]
 fn bor_guard_false_edge_establishes_negative_disjuncts_and_discharges() {
-    let source = br#"fn get(table: own array<u8, 4>, symbol: own u64) -> result: own u8 pure {
+    let source = br#"const table: FixedVector<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
+
+fn get(symbol: own u64) -> result: own u8 pure {
   let below = symbol < 0_u64;
   let above = symbol >= 4_u64;
   let invalid = bor(below, above);
@@ -300,7 +305,10 @@ command fn main() -> status: own ExitStatus pure {
 /// the child.
 #[test]
 fn bnot_flips_recursively_without_rewriting() {
-    let source = br#"fn guard(table: own array<u8, 8>, index: own u64) -> result: own u8 pure {
+    let source =
+        br#"const table: FixedVector<u8, 8> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
+
+fn guard(index: own u64) -> result: own u8 pure {
   let low = index < 4_u64;
   let high = index >= 8_u64;
   let outside = bor(low, high);

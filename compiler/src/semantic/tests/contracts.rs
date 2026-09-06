@@ -140,8 +140,12 @@ command fn main() -> status: own ExitStatus pure {
 fn affine_const_is_not_usable_as_an_owned_law_identity() {
     let source = br#"const zero: array<u8, 1> =[0_u8];
 
+const x: FixedVector<u8, 1> =[0_u8];
+
+const y: FixedVector<u8, 1> =[0_u8];
+
 contract InvalidIdentity {
-  fn combine(x: own array<u8, 1>, y: own array<u8, 1>) -> result: own array<u8, 1> pure;
+  fn combine() -> result: own array<u8, 1> pure;
   law identity(combine, zero);
 }
 

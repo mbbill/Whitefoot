@@ -21,7 +21,9 @@ fn accepts(source: &[u8]) {
 
 #[test]
 fn an_unproved_array_bound_rejects_under_op4() {
-    let source = br#"fn read(values: own array<i32, 4>, input: own u64) -> result: own i32 pure {
+    let source = br#"const values: FixedVector<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
+
+fn read(input: own u64) -> result: own i32 pure {
   let bounded = imin(input, 3_u64);
   return values[bounded];
 }
@@ -106,7 +108,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_unproved_loop_header_fact_rejects_under_inv1() {
-    let source = br#"fn read(values: own array<i32, 4>, input: own u64) -> result: own unit pure {
+    let source = br#"const values: FixedVector<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
+
+fn read(input: own u64) -> result: own unit pure {
   let bounded = imin(input, 3_u64);
   for (
     i in 0_u64..1_u64,

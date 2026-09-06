@@ -165,8 +165,9 @@ fn named_constants_remain_lexically_declaration_before_use() {
 
 #[test]
 fn decimal_array_sizes_need_no_lexical_target() {
-    let source = br#"fn probe() -> result: own unit pure {
-  let values = array_new::<i32, 4>(0_i32);
+    let source = br#"const values: FixedVector<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
+
+fn probe() -> result: own unit pure {
   return unit;
 }
 "#;

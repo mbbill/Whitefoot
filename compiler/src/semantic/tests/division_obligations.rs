@@ -1082,7 +1082,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn different_index_offsets_do_not_share_a_defined_fact() {
-    let source = br#"fn increment_other(values: own array<u8, 2>) -> result: own u8 pure {
+    let source = br#"const values: FixedVector<u8, 2> =[0_u8, 0_u8];
+
+fn increment_other() -> result: own u8 pure {
   if values[0_u64] +defined 1_u8 {
     let result = values[1_u64] + 1_u8;
     return result;
@@ -1113,8 +1115,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn writing_the_index_binding_invalidates_its_old_indexed_defined_fact() {
-    let source =
-        br#"fn increment_after_index_write(values: own array<u8, 2>) -> result: own u8 pure {
+    let source = br#"const values: FixedVector<u8, 2> =[0_u8, 0_u8];
+
+fn increment_after_index_write() -> result: own u8 pure {
   let offset = 1_u64;
   if values[offset] +defined 1_u8 {
     set offset = 0_u64;

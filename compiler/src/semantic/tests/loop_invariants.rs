@@ -1227,8 +1227,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn active_invariant_proves_a_real_array_index_obligation() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 4>(0_u8);
+    let source = br#"const values: FixedVector<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
+
+command fn main() -> status: own ExitStatus pure {
   let at = 0_u64;
   for (
     i in 0_u64..4_u64,

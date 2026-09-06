@@ -975,14 +975,15 @@ fn below(value: own u64) -> result: own u64 pure contract {
 
 #[test]
 fn call_front_end_captures_a_subscript_until_entailment_admits_its_identity() {
-    let source = br#"fn positive(value: own u8) -> result: own unit pure contract {
+    let source = br#"const values: FixedVector<u8, 2> =[3_u8, 3_u8];
+
+fn positive(value: own u8) -> result: own unit pure contract {
   requires value < 10_u8;
 } {
   return unit;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 2>(3_u8);
   positive(value: values[0_u64]);
   return exit_status(code: 0_u8);
 }
@@ -997,7 +998,7 @@ command fn main() -> status: own ExitStatus pure {
             .iter()
             .find(|function| function.name == "main")
             .expect("main function");
-        let CheckedStatement::Evaluate(call @ CheckedExpression::UserCall { .. }) = &main.body[1]
+        let CheckedStatement::Evaluate(call @ CheckedExpression::UserCall { .. }) = &main.body[0]
         else {
             panic!("main must retain the call expression");
         };
@@ -1060,14 +1061,15 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn proved_subscript_actual_reuses_its_stable_goal_identity_at_fn8() {
-    let source = br#"fn positive(value: own u8) -> result: own unit pure contract {
+    let source = br#"const values: FixedVector<u8, 2> =[3_u8, 3_u8];
+
+fn positive(value: own u8) -> result: own unit pure contract {
   requires value < 10_u8;
 } {
   return unit;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 2>(3_u8);
   if values[0_u64] < 10_u8 {
     positive(value: values[0_u64]);
   }

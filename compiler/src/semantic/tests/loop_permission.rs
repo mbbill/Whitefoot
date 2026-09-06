@@ -1441,8 +1441,10 @@ command fn main() -> status: own ExitStatus pure {
 /// independent reduction remains eligible.
 #[test]
 fn an_automatic_remainder_bound_in_the_body_preserves_reduction_permission() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 8>(0_u8);
+    let source =
+        br#"const values: FixedVector<u8, 8> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
+
+command fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
     let bounded = i % 8_u64;
@@ -1467,8 +1469,10 @@ fn an_automatic_remainder_bound_in_the_body_preserves_reduction_permission() {
 /// and the loop's independent reduction remains eligible and actualized.
 #[test]
 fn a_branch_proved_subscript_in_the_body_is_permitted() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 8>(0_u8);
+    let source =
+        br#"const values: FixedVector<u8, 8> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
+
+command fn main() -> status: own ExitStatus pure {
   let size = len_of(values);
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
@@ -1499,8 +1503,9 @@ fn a_branch_proved_subscript_in_the_body_is_permitted() {
 /// permission. This keeps the negative boundary entirely in source semantics.
 #[test]
 fn an_unproved_accumulator_subscript_is_rejected_before_permission() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 128>(0_u8);
+    let source = br#"const values: FixedVector<u8, 128> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
+
+command fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
     let picked = values[total];
@@ -1522,8 +1527,9 @@ fn an_unproved_accumulator_subscript_is_rejected_before_permission() {
 /// reads and refuse the reduction.
 #[test]
 fn a_guard_reading_the_accumulator_is_still_a_read() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 128>(0_u8);
+    let source = br#"const values: FixedVector<u8, 128> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
+
+command fn main() -> status: own ExitStatus pure {
   let size = len_of(values);
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
@@ -1554,8 +1560,9 @@ fn a_guard_reading_the_accumulator_is_still_a_read() {
 /// treat the call closure as complete.
 #[test]
 fn an_unproved_subscript_in_the_call_closure_is_rejected() {
-    let source = br#"fn narrow(v: own u64) -> result: own u64 pure {
-  let values = array_new::<u64, 8>(1_u64);
+    let source = br#"const values: FixedVector<u64, 8> =[1_u64, 1_u64, 1_u64, 1_u64, 1_u64, 1_u64, 1_u64, 1_u64];
+
+fn narrow(v: own u64) -> result: own u64 pure {
   let bounded = imin(v, 7_u64);
   return values[bounded];
 }
@@ -1582,8 +1589,9 @@ command fn main() -> status: own ExitStatus pure {
 /// actualization.
 #[test]
 fn a_proof_complete_call_closure_is_permitted() {
-    let source = br#"fn narrow(v: own u64) -> result: own u64 pure {
-  let values = array_new::<u64, 8>(1_u64);
+    let source = br#"const values: FixedVector<u64, 8> =[1_u64, 1_u64, 1_u64, 1_u64, 1_u64, 1_u64, 1_u64, 1_u64];
+
+fn narrow(v: own u64) -> result: own u64 pure {
   let size = len_of(values);
   if v < size {
     return values[v];

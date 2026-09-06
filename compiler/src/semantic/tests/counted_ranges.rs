@@ -147,7 +147,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn counted_endpoints_require_a_preceding_term_or_constant() {
-    let subscript = br#"fn probe(bounds: own array<u64, 2>) -> result: own unit pure {
+    let subscript = br#"const bounds: FixedVector<u64, 2> =[0_u64, 0_u64];
+
+fn probe() -> result: own unit pure {
   for @items (i in bounds[0_u64]..bounds[1_u64]) {
   }
   return unit;

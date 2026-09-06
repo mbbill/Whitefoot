@@ -406,7 +406,9 @@ fn assert_unsupported(source: &[u8], feature: UnsupportedSemanticFeature) {
 
 #[test]
 fn a_branch_fact_discharges_the_protected_array_read() {
-    let source = br#"fn read(values: own array<i32, 8>, i: own u64) -> result: own i32 pure {
+    let source = br#"const values: FixedVector<i32, 8> =[0_i32, 0_i32, 0_i32, 0_i32, 0_i32, 0_i32, 0_i32, 0_i32];
+
+fn read(i: own u64) -> result: own i32 pure {
   let length = len_of(values);
   if i < length {
     return values[i];
