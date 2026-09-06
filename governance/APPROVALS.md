@@ -2965,7 +2965,7 @@ ACTIVE-SPEC: v0.48 1df543b91d20e7f5800bc0fea79b5154ae7bf9bda265e45491e2170bf5a70
   record creates no separate approval step, and nothing in this record asserts
   that the approval has been given.
 - SPECIFICATION: activate Whitefoot v0.49 at exact SHA-256
-  `ba0d9e277c3c0d2d46123a6cc12869d8ffbbab7e9c922a03bb165259cc5ce696`.
+  `8e09ef0c1b220e9e057f7590540ecd2c9042725ad7c6710c3e59fe6f3174b39a`.
   It supersedes active v0.48 at SHA-256
   `1df543b91d20e7f5800bc0fea79b5154ae7bf9bda265e45491e2170bf5a70dcc`;
   those outgoing bytes are preserved byte-for-byte as
@@ -2976,10 +2976,32 @@ ACTIVE-SPEC: v0.48 1df543b91d20e7f5800bc0fea79b5154ae7bf9bda265e45491e2170bf5a70
   binding's image; the handle exists between the fold and the residual and is
   replaced by the image it stands for before anything is proved, so every
   other premise, the target, and the residual are written in exactly the terms
-  they were written in before. An operand that is not a plain read of a
-  binding names no declaration, contributes no handle, and folds nothing. No
-  numbered rule is added or retired, no grammar production, atom, or token
-  changes, and [ENT-3] gains no source.
+  they were written in before.
+  [META-5] is amended in the same activation and moves its own declaration
+  here. It required the delta and the selection ground "in this document's
+  status header"; it now requires them in the change's `governance/APPROVALS.md`
+  record, and states that the specification carries no commentary about its own
+  versions — no delta declaration, no description of what a version changed, no
+  selection ground, and nothing retained after a version activates. The header
+  is now the title, the status line, and one line naming where prior versions
+  and every version's declaration live. This completes the v0.30 representation
+  rework, which evicted twenty-one accumulated header paragraphs on the ground
+  that history lives in the archives and the chain, and whose own tooling
+  comment already records that the delta inventory belongs to the approval
+  record and "never in the normative bytes"; META-5's text was the one place
+  still pointing back at the header, and the practice drifted back to it. The
+  five blocks this branch had accumulated for v0.44 through v0.48 go with it,
+  each preserved byte-for-byte in its own immutable `spec/kernel-spec-vN.md`
+  archive.
+- DELTA DECLARATION (recorded here under the amended [META-5]): numbered rules
+  +0/-0 (136 remain); grammar productions +0/-0 (85 remain); changed
+  productions 0; unique fixed lowercase grammar atoms +0/-0 (55 remain);
+  compound punctuation tokens +0/-0 (8 remain); token bytes +0/-0; writer
+  operation spellings +0/-0; opaque system nominal spellings +0/-0;
+  runtime-trap families +0/-0 (0 remain); entry forms +0/-0 (1 remains);
+  contract block forms +0/-0; system operations and declaration records +0/-0
+  (203 remain); exception clauses +0/-0. [ENT-3] gains no source. [PRF-1] and
+  [META-5] are amended; no rule id is added or retired.
 - SELECTION GROUND: evidence-selected, recorded in
   `research/investigations/binary-arithmetic/`. v0.48 folded by operand
   images, and a local's image is transparent, so a product over a derived
@@ -2998,4 +3020,4 @@ ACTIVE-SPEC: v0.48 1df543b91d20e7f5800bc0fea79b5154ae7bf9bda265e45491e2170bf5a70
   `prf1-pos-derived-multiplicity`, rules PRF-1, ENT-6, expect run exit 0: a
   padded-bitmap row offset over a computed stride. Rule coverage is 136/136
   before and after.
-ACTIVE-SPEC: v0.49 ba0d9e277c3c0d2d46123a6cc12869d8ffbbab7e9c922a03bb165259cc5ce696 1df543b91d20e7f5800bc0fea79b5154ae7bf9bda265e45491e2170bf5a70dcc
+ACTIVE-SPEC: v0.49 8e09ef0c1b220e9e057f7590540ecd2c9042725ad7c6710c3e59fe6f3174b39a 1df543b91d20e7f5800bc0fea79b5154ae7bf9bda265e45491e2170bf5a70dcc
