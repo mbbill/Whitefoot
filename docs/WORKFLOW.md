@@ -14,7 +14,7 @@ adds another process requirement.
 3. The exact revision merged into `main` must pass all repository tests before
    the merge. The canonical command is `make check`.
 4. If the merge changes `spec/kernel-spec.md` or conformance evidence,
-   `governance/APPROVALS.md` records the content the owner approved as part of
+   the pull request states what changed and its selection ground, answered against
    the merge.
 
 These four conditions are sufficient. No plan status, branch charter, batch
@@ -155,16 +155,14 @@ directions at once.
 
 ## Specification identity (not a separate workflow)
 
-`spec/kernel-spec.md` always declares `Status: ACTIVE vN` and hashes to the
-tail of the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`. An amendment
-lands as one change on a work branch: the amended active file titled and
-declared vN+1; the outgoing vN bytes archived as `spec/kernel-spec-vN.md`; the
-appended approval record, ending in its
-`ACTIVE-SPEC: vN+1 <sha256 of vN+1> <sha256 of vN>` line; and
-`compiler/src/spec_identity.rs` regenerated with
+`spec/kernel-spec.md` always declares `Status: ACTIVE vN`, and its bytes are
+that version's identity. An amendment lands as one change on a work branch:
+the amended active file titled and declared vN+1; the outgoing vN bytes
+archived as `spec/kernel-spec-vN.md`; and `compiler/src/spec_identity.rs`
+regenerated with
 `cargo run --bin whitefoot-spec -- --emit-identity src/spec_identity.rs`.
-`make spec-archive-integrity` checks the first three and `make -C compiler
-static` the fourth. There is no separate candidate state: a branch carrying an
+`make spec-append-only` checks that no released archive changed, and `make -C
+compiler static` that the generated identity names the installed bytes. There is no separate candidate state: a branch carrying an
 amended specification is merge-ready the moment its gate is green, and the
 owner's merge approval of that exact revision is the activation. No live
 document quotes the version or digest as the active authority; they live in

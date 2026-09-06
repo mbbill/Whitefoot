@@ -3,7 +3,7 @@
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
 the active specification at `spec/kernel-spec.md`, whose version and digest
-are the chain tail in `governance/APPROVALS.md`; each superseded version is
+are its own bytes; each superseded version is
 archived at `spec/kernel-spec-vN.md`, and the v0.40 through v0.49 amendments
 at the end of this file bind their changed derivations.
 Requirement (META-6): every rule is provably

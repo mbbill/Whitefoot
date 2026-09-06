@@ -67,9 +67,10 @@ probably not the next work.
   defines live approval or workflow requirements. Any imperative process
   wording retained in those evidence artifacts is historical and superseded by
   the four rules below.
-- `governance/APPROVALS.md` is an append-only historical record and the home
-  for the merge-time records required below. Historical entries do not impose
-  current process.
+- `archive/APPROVALS.md` is the retired approval ledger, frozen with the rest
+  of `archive/`. It recorded merge-time content when approval ran ahead of
+  implementation; that loop is gone, and the specification's bytes are now its
+  own identity.
 
 Read only the material relevant to the current task. Do not turn historical
 research into an implied implementation requirement.
@@ -85,11 +86,11 @@ These are the complete approval and workflow rules:
    revision to be merged.
 3. The exact revision merged into `main` must pass all repository tests through
    the canonical `make check` entry point before the merge.
-4. If the merge changes `spec/kernel-spec.md` or conformance evidence,
-   `governance/APPROVALS.md` records the content the owner approved as part of
-   the merge. A specification record identifies the exact specification bytes;
-   a conformance record identifies the exact added, modified, deleted, or
-   renamed conformance content and its before/after boundary.
+4. If the merge changes `spec/kernel-spec.md` or conformance evidence, the
+   pull request states what changed and its selection ground, answered against
+   the exact revision being merged. There is no separate ledger: the
+   specification's bytes are its identity, the released archives are
+   immutable, and git is the history.
 
 No plan status, branch charter, batch record, worktree arrangement, audit,
 packet, rebase method, commit shape, or other workflow step is an additional

@@ -69,7 +69,7 @@ initial directory, so a case may also name that label as a path and read the
 combined bytes back. Absent keys mean the default arrangement — the default
 argument vector, an empty standard input, no fixtures, and separate sinks.
 """
-import hashlib, json, re, subprocess, sys
+import json, re, subprocess, sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -77,7 +77,6 @@ ROOT = HERE.parent.parent
 CASES = HERE / "cases"
 MANIFEST = HERE / "manifest.jsonl"
 ACTIVE_SPEC = Path("spec/kernel-spec.md")
-APPROVALS = Path("governance/APPROVALS.md")
 # The named native adapter is compiler/tests/conformance.rs, reached through
 # `make conformance-run` and therefore root `make check`; this hook stays open for a future non-native
 # toolchain. Keeping it explicit prevents a missing compiler, crash, or broad
@@ -131,49 +130,12 @@ def run_cases(cases):
     return results
 
 
-def activation_chain_tail(root=ROOT):
-    """(version, digest) of the last `ACTIVE-SPEC:` identity record.
-
-    The chain tail is the sole authority for the active specification's identity.
-    Reading the pin from the chain replaced a hardcoded digest constant here,
-    turning one hand edit per activation forever into none."""
-    tail = None
-    for line in (root / APPROVALS).read_text().splitlines():
-        if not line.startswith("ACTIVE-SPEC: "):
-            continue
-        fields = line.split(" ")
-        if len(fields) != 4 or not re.fullmatch(r"[0-9a-f]{64}", fields[2]):
-            raise ValueError(f"malformed activation record: {line}")
-        tail = (fields[1], fields[2])
-    if tail is None:
-        raise ValueError("governance/APPROVALS.md has no activation chain")
-    return tail
-
-
-def declared_candidate_supersedes(text):
-    """The supersedes digest of a `Status: CANDIDATE vM supersedes vN <sha>`
-    declaration, or None for any other status. A declared candidate is
-    accepted exactly when this digest equals the chain tail; every other
-    candidate property (version arithmetic, title, self-consistency) is judged
-    by the compiled `whitefoot-spec` gate, not re-implemented here."""
-    for line in text.splitlines():
-        if not line.startswith("Status: "):
-            continue
-        fields = line.split()
-        if len(fields) >= 6 and fields[1] == "CANDIDATE" and fields[3] == "supersedes":
-            return fields[5]
-        return None
-    return None
-
-
 def spec_rule_ids(root=ROOT):
+    # The specification's bytes are its identity; no separate record pins them,
+    # so there is nothing here to agree with. The compiled `whitefoot-spec`
+    # gate checks that the generated identity module names these bytes.
     spec = root / ACTIVE_SPEC
-    raw = spec.read_bytes()
-    digest = hashlib.sha256(raw).hexdigest()
-    _, expected = activation_chain_tail(root)
-    text = raw.decode("utf-8")
-    if digest != expected and declared_candidate_supersedes(text) != expected:
-        raise ValueError(f"active specification digest mismatch: {digest}")
+    text = spec.read_bytes().decode("utf-8")
     # Rule ids at line starts. A `[FAM-N.Sk]` sub-id line is an addressable
     # citation anchor inside its parent rule, not a rule of its own: the
     # coverage denominator stays the base rules, and a citation of a sub-id

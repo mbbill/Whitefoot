@@ -4,20 +4,16 @@
 // the test `committed_identity_is_fresh` in `src/bin/spec.rs` byte-compare
 // this file against a fresh generation.
 
-//! Machine-derived identity of the embedded active specification and its
-//! `governance/APPROVALS.md` activation chain. Each value is computed from
-//! those embedded bytes at generation time, so no activation hand-bumps a
-//! scalar here or at a consumer.
+//! Machine-derived identity of the embedded active specification. Each value
+//! is computed from those bytes at generation time, so an amendment never
+//! hand-bumps a scalar here or at a consumer.
 
 /// Version token on the embedded specification's title line.
 pub const SPEC_VERSION: &str = "v0.49";
 
 /// Lowercase SHA-256 hex of the embedded specification bytes.
 pub const SPEC_SHA256_HEX: &str =
-    "8e09ef0c1b220e9e057f7590540ecd2c9042725ad7c6710c3e59fe6f3174b39a";
-
-/// Number of `ACTIVE-SPEC:` records in the embedded activation chain.
-pub const ACTIVATION_CHAIN_LENGTH: usize = 41;
+    "cbc3644642e11192d0b39df6b3f1233d5303cebbb693ab47a0bd321a596cffdb";
 
 /// Number of bracketed rule definitions in the embedded specification.
 pub const RULE_COUNT: usize = 136;

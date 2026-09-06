@@ -19,14 +19,24 @@ developer's absolute directory.
   `/THE-PLAN.md`.
 - `tools/verify_performance_research_status.py` — the old duplicated-status
   verifier, replaced by `/tools/verify_project_state.py`.
+- `APPROVALS.md` — the approval ledger, retired 2026-09-06. Its purpose was an
+  asynchronous loop: plans were researched, the owner approved them one at a
+  time, and approved ones were then executed. That loop is gone — work now runs
+  research to implementation to specification — so the merge-time prose it
+  carried is read by nothing. Its `ACTIVE-SPEC:` digest chain went with it: the
+  chain verified a total order over versions, which nothing consumed for any
+  decision and which made two concurrent specification branches structurally
+  impossible, since the second to merge had to renumber, re-digest, re-parent
+  and re-archive. A specification version's identity is now its own bytes, and
+  `make spec-append-only` still forbids a released archive from changing. The
+  seven `docs/done/` citations inside it stay as written: it is history now.
 - `done/` — the per-batch record, retired 2026-09-06 when `mcts_mem/` became
   the single home for decisions. One hundred records, moved from `docs/done/`
   with their filenames unchanged, so a citation written as `docs/done/0024`
-  resolves here as `archive/done/0024`. They are still cited: seven times by
-  `governance/APPROVALS.md`, which is append-only and whose existing paths
-  therefore keep the old spelling, once by `spec/derivation/derivation-ledger.md`,
-  and once by a comment in `compiler/src/backend/completion/file_adapter.h`
-  naming the measurement that justifies the code. Frozen; not written to again.
+  resolves here as `archive/done/0024`. Nothing live cites them any more: a
+  finished task is not evidence, so every citation was removed from the tree
+  rather than repointed, and the only remaining ones are inside `APPROVALS.md`
+  above, which is itself history. Frozen; not written to again.
 - `current-plan.md` — the rolling execution plan, retired 2026-09-06. Its own
   plan was delivered as v0.40 and never replaced, so it survived by having each
   later version appended to it as a changelog. Work is no longer planned in a

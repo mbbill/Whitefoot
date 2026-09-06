@@ -60,7 +60,7 @@ priorities and repository discipline.
 
 The active kernel specification is [`spec/kernel-spec.md`](spec/kernel-spec.md).
 Its version and exact SHA-256 are the tail of the `ACTIVE-SPEC:` chain in
-[governance/APPROVALS.md](governance/APPROVALS.md), generated into the compiler
+the specification's own bytes, generated into the compiler
 as `compiler/src/spec_identity.rs` and checked against the bytes by the gate;
 no other document quotes them. Every superseded version is archived
 byte-for-byte as `spec/kernel-spec-vN.md`. A specification change lands as one

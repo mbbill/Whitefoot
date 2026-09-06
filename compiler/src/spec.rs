@@ -85,7 +85,7 @@ const fn hex_value(digit: u8) -> u8 {
 /// SHA-256 of the embedded active specification, computed from its bytes.
 ///
 /// The one quantity in this module that no one transcribes. Comparing it with
-/// the digest recorded in `governance/APPROVALS.md`, which the `whitefoot-spec`
+/// the digest the generated identity module names, which the `whitefoot-spec`
 /// gate does, compares this implementation against the independently measured
 /// `shasum -a 256` the record was written from.
 #[must_use]
@@ -101,7 +101,7 @@ mod tests {
     };
 
     /// The decoded constant is checked against the bytes, never trusted. The
-    /// independent measurement enters through `governance/APPROVALS.md`: its
+    /// independent measurement enters through the generated identity module: its
     /// digests were recorded from `shasum -a 256`, the archive gate hashes the
     /// same file with `shasum`, and `whitefoot-spec` compares this computed
     /// value against that chain tail, so a wrong SHA-256 implementation cannot

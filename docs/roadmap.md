@@ -8,10 +8,8 @@ changed lives in its approval record, its archive, and its batch record)
 The active language authority is the specification carried by the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md); its version and exact digest
 are the tail of the `ACTIVE-SPEC:` chain in
-[`governance/APPROVALS.md`](../governance/APPROVALS.md), where each
-activation's merge-time record lives and becomes effective with the owner's
-merge approval of the exact revision containing it. Superseded versions are
-archived byte-for-byte as `spec/kernel-spec-vN.md`. Project law is the
+its own bytes. Superseded versions are archived byte-for-byte as
+`spec/kernel-spec-vN.md`. Project law is the
 [`Constitution`](constitution.md), and the operational process is
 [`WORKFLOW.md`](WORKFLOW.md).
 
@@ -65,8 +63,8 @@ changes. Git is the version history; do not create versioned copies of this
 file, and do not record here what a specification version changed. A landing
 amendment is written into the affected item's `Current` and `Missing / next`
 in the present tense, as what the project can now do and what is still open;
-what each version changed belongs to its `governance/APPROVALS.md` record, its
-`spec/kernel-spec-vN.md` archive, and its batch record in `done/`. A per-version
+what each version changed belongs to the change that made it and to its
+`spec/kernel-spec-vN.md` archive. A per-version
 paragraph here is a log entry, and the cost of keeping one is that the `Current`
 sentence beside it stops being maintained. Detailed semantics, measurements, design rationale, and implementation
 inventories remain in their canonical owners and are linked rather than copied.
@@ -172,7 +170,7 @@ creating writer trust or weakening the checked safety envelope.
   attribution. Products of two premises — where Handelman completeness would
   come from — are not admitted and no evidence has asked for them. O11
   Boolean-goal composition stays an open question with four recorded findings
-  and a de-pairing ruling (`governance/APPROVALS.md`); its trigger is a real
+  and a de-pairing ruling; its trigger is a real
   program whose discharge needs a composed Boolean goal, and it re-enters only
   through the specification workflow.
 - **Facts:** [compiler `requires` boundary](../compiler/README.md) ·
@@ -337,8 +335,7 @@ creating writer trust or weakening the checked safety envelope.
   the separately invoked adapter remains `Pass=393 Fail=1 Skip=13`, with only
   the pre-existing OWN-3 unsupported boundary. Commit `d495d8c` records the
   paired requirement-enforcement re-decision and passes MCTS lint. Task 0048 is
-  terminal. Exact-approved v0.27 became active (its identity is the v0.27
-  line of the chain in `governance/APPROVALS.md`), with byte-identical outgoing v0.26 archived at
+  terminal. Exact-approved v0.27 became active, with byte-identical outgoing v0.26 archived at
   `spec/kernel-spec-v0.26.md`. It activates the bounded PRV-1/PRV-2/PRV-3
   explicit-dataflow gate over the retained requirement bridge. The approved
   real-program migration replaces eleven DEFLATE claims with value branches,
@@ -510,7 +507,7 @@ creating writer trust or weakening the checked safety envelope.
   participates in ordinary source acceptance.
 - **Historical result:** v0.34 introduced this direction, and v0.39 preserved it.
   The exact activation identities and conformance boundaries remain in
-  `governance/APPROVALS.md`. The residual lifecycle, contribution basis,
+  the change that made it. The residual lifecycle, contribution basis,
   reconstruction, fixed eligible set, component/occurrence necessity, stable
   terminal evidence, generic
   schema and concrete-instance checks, and unchanged retained lowering path

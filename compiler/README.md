@@ -8,7 +8,7 @@ this README.
 
 The frontend targets the exact bytes at `../spec/kernel-spec.md`. Their
 version and SHA-256 are generated into `src/spec_identity.rs` from the
-activation chain in `../governance/APPROVALS.md`
+bytes of `../spec/kernel-spec.md`
 (`cargo run --bin whitefoot-spec -- --emit-identity src/spec_identity.rs`),
 and every other identity constant in the crate is derived from that module.
 `whitefoot-spec` checks the selected identity, activation chain,
