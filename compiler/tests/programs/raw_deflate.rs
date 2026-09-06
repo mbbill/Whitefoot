@@ -108,8 +108,21 @@ fn stored_fixed_and_dynamic_blocks_execute_with_data_failures() {
         "raw_deflate_dynamic_decode.wf",
         "raw_deflate_vectors.wf",
     ]);
+    // The decoder owns no storage any more, so the three assertions this case
+    // used to make about the allocator have one replacement that is stronger
+    // than all of them. Its compressed input is a `Slice<u8>` copied from a
+    // const table, its destination is an exclusive view of a run its caller
+    // reserved, `build_huffman_table` builds its two columns as inline
+    // `FixedVector` runs of its own frame, and `decode_dynamic` takes the three
+    // code-length runs from a region-confined bump extent that its region exit
+    // reclaims. Nothing in the group therefore reaches the general allocator,
+    // where the retired `buffer<T>` shape had `inflate` free the owned input
+    // buffer, `build_huffman_table` allocate its columns, and `decode_dynamic`
+    // release the length buffers.
+    assert!(!llvm.contains("call ptr @malloc"));
+    assert!(!llvm.contains("call void @free"));
     let inflate = emitted_function(&llvm, "inflate");
-    assert!(inflate.contains("call void @free"));
+    assert!(!inflate.contains("call void @wf_trap"));
     let length = emitted_function(&llvm, "decode_length");
     let distance = emitted_function(&llvm, "copy_distance");
     assert!(length.contains("icmp ult i64"));
@@ -121,10 +134,9 @@ fn stored_fixed_and_dynamic_blocks_execute_with_data_failures() {
     let fixed = emitted_function(&llvm, "decode_fixed");
     assert!(!fixed.contains("call void @wf_trap"));
     let table = emitted_function(&llvm, "build_huffman_table");
-    assert!(table.contains("call ptr @malloc"));
     assert!(!table.contains("call void @wf_trap"));
     let dynamic = emitted_function(&llvm, "decode_dynamic");
-    assert!(dynamic.contains("call void @free"));
+    assert!(!dynamic.contains("call void @wf_trap"));
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());
@@ -217,59 +229,89 @@ fn boundary_append_preserves_its_clause_stripped_invalid_domain_behavior() {
     let declaration = format!("{} {}", &declaration[..clauses], &declaration[body + 2..])
         .trim_end()
         .to_owned();
+    // The control program moved off `buffer<T>` with the corpus: its two
+    // destinations are runs of one region-confined bump extent, because
+    // `mut_slice_of` forms no exclusive view over an inline run, and its two
+    // message tables are inline runs held at the length each case needs. The
+    // lengths, the arguments, and the eight statuses are the ones the
+    // pre-migration control used, so the invalid-domain behaviour this case
+    // pins is unchanged.
     let control = format!(
         r#"{declaration}
 
 command fn main() -> status: own ExitStatus pure {{
-  let empty_text = buffer_new(0_u64, 1_u8);
-  let empty_destination = buffer_new(3_u64, 9_u8);
-  region {{
-    let text = slice_of(&empty_text);
-    let window = mut_slice_of(&uniq empty_destination);
+  region 'destinations {{
+    let workspace = arena_frame::<6, 1, 'destinations>();
     region {{
-      let result = append_slice(destination: &uniq window, capacity: 3_u64, filled: 4_u64, text: text);
-      if result == 4_u64 {{
+      let empty_text = fixed_vector::<u8, 1>();
+      let empty_destination = arena_vector_proved::<u8>(store: &uniq workspace, count: 3_u64);
+      for @fill_empty_destination (
+        at in 0_u64..3_u64,
+        invariant grown: len_of(empty_destination) >= at,
+        invariant spare: room_of(empty_destination) + at >= 3_u64,
+        invariant flat: head_of(empty_destination) <= 0_u64
+      ) {{
+        set empty_destination = place_back(vector: move empty_destination, value: 9_u8);
+      }}
+      region {{
+        let text = slice_of(&empty_text);
+        let window = mut_slice_of(&uniq empty_destination);
+        region {{
+          let result = append_slice(destination: &uniq window, capacity: 3_u64, filled: 4_u64, text: text);
+          if result == 4_u64 {{
+          }} else {{
+            return exit_status(code: 1_u8);
+          }}
+        }}
+      }}
+      if empty_destination[0_u64] == 9_u8 {{
       }} else {{
-        return exit_status(code: 1_u8);
+        return exit_status(code: 2_u8);
+      }}
+      if empty_destination[1_u64] == 9_u8 {{
+      }} else {{
+        return exit_status(code: 3_u8);
+      }}
+      if empty_destination[2_u64] == 9_u8 {{
+      }} else {{
+        return exit_status(code: 4_u8);
+      }}
+      let nonempty_text = fixed_vector::<u8, 2>();
+      set nonempty_text = place_back(vector: move nonempty_text, value: 1_u8);
+      set nonempty_text = place_back(vector: move nonempty_text, value: 1_u8);
+      let nonempty_destination = arena_vector_proved::<u8>(store: &uniq workspace, count: 3_u64);
+      for @fill_nonempty_destination (
+        at in 0_u64..3_u64,
+        invariant grown: len_of(nonempty_destination) >= at,
+        invariant spare: room_of(nonempty_destination) + at >= 3_u64,
+        invariant flat: head_of(nonempty_destination) <= 0_u64
+      ) {{
+        set nonempty_destination = place_back(vector: move nonempty_destination, value: 9_u8);
+      }}
+      region {{
+        let text = slice_of(&nonempty_text);
+        let window = mut_slice_of(&uniq nonempty_destination);
+        region {{
+          let result = append_slice(destination: &uniq window, capacity: 3_u64, filled: 4_u64, text: text);
+          if result == 4_u64 {{
+          }} else {{
+            return exit_status(code: 5_u8);
+          }}
+        }}
+      }}
+      if nonempty_destination[0_u64] == 9_u8 {{
+      }} else {{
+        return exit_status(code: 6_u8);
+      }}
+      if nonempty_destination[1_u64] == 9_u8 {{
+      }} else {{
+        return exit_status(code: 7_u8);
+      }}
+      if nonempty_destination[2_u64] == 9_u8 {{
+      }} else {{
+        return exit_status(code: 8_u8);
       }}
     }}
-  }}
-  if empty_destination[0_u64] == 9_u8 {{
-  }} else {{
-    return exit_status(code: 2_u8);
-  }}
-  if empty_destination[1_u64] == 9_u8 {{
-  }} else {{
-    return exit_status(code: 3_u8);
-  }}
-  if empty_destination[2_u64] == 9_u8 {{
-  }} else {{
-    return exit_status(code: 4_u8);
-  }}
-  let nonempty_text = buffer_new(2_u64, 1_u8);
-  let nonempty_destination = buffer_new(3_u64, 9_u8);
-  region {{
-    let text = slice_of(&nonempty_text);
-    let window = mut_slice_of(&uniq nonempty_destination);
-    region {{
-      let result = append_slice(destination: &uniq window, capacity: 3_u64, filled: 4_u64, text: text);
-      if result == 4_u64 {{
-      }} else {{
-        return exit_status(code: 5_u8);
-      }}
-    }}
-  }}
-  if nonempty_destination[0_u64] == 9_u8 {{
-  }} else {{
-    return exit_status(code: 6_u8);
-  }}
-  if nonempty_destination[1_u64] == 9_u8 {{
-  }} else {{
-    return exit_status(code: 7_u8);
-  }}
-  if nonempty_destination[2_u64] == 9_u8 {{
-  }} else {{
-    return exit_status(code: 8_u8);
   }}
   return exit_status(code: 0_u8);
 }}
