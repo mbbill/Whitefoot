@@ -98,6 +98,11 @@ command fn main() -> status: own ExitStatus pure {
       }
     }
   }
+  let valid_output_room = len_of(valid_output);
+  if valid_output_room == 5_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let valid_zero = valid_output[0_u64];
   let valid_one = valid_output[1_u64];
   let valid_two = valid_output[2_u64];
@@ -184,6 +189,11 @@ command fn main() -> status: own ExitStatus pure {
       }
     }
   }
+  let invalid_length_output_room = len_of(invalid_length_output);
+  if invalid_length_output_room == 1_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let invalid_length_sentinel = invalid_length_output[0_u64];
   if invalid_length_sentinel == 9_u8 {
   } else {
@@ -247,6 +257,11 @@ command fn main() -> status: own ExitStatus pure {
         }
       }
     }
+  }
+  let truncated_output_room = len_of(truncated_output);
+  if truncated_output_room == 2_u64 {
+  } else {
+    return exit_status(code: 1_u8);
   }
   let truncated_sentinel = truncated_output[0_u64];
   if truncated_sentinel == 7_u8 {
@@ -315,6 +330,11 @@ command fn main() -> status: own ExitStatus pure {
       }
     }
   }
+  let full_output_room = len_of(full_output);
+  if full_output_room == 1_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let full_sentinel = full_output[0_u64];
   if full_sentinel == 11_u8 {
   } else {
@@ -345,6 +365,11 @@ command fn main() -> status: own ExitStatus pure {
         }
       }
     }
+  }
+  let fixed_literal_output_room = len_of(fixed_literal_output);
+  if fixed_literal_output_room == 5_u64 {
+  } else {
+    return exit_status(code: 1_u8);
   }
   let fixed_literal_zero = fixed_literal_output[0_u64];
   let fixed_literal_one = fixed_literal_output[1_u64];
@@ -395,6 +420,11 @@ command fn main() -> status: own ExitStatus pure {
       }
     }
   }
+  let fixed_match_output_room = len_of(fixed_match_output);
+  if fixed_match_output_room == 16_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let fixed_match_index = 0_u64;
   loop @check_fixed_match {
     let fixed_match_done = fixed_match_index == 16_u64;
@@ -444,6 +474,11 @@ command fn main() -> status: own ExitStatus pure {
       }
     }
   }
+  let fixed_phrase_output_room = len_of(fixed_phrase_output);
+  if fixed_phrase_output_room == 17_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let fixed_phrase_index = 0_u64;
   loop @check_fixed_phrase {
     let fixed_phrase_done = fixed_phrase_index == 17_u64;
@@ -483,6 +518,11 @@ command fn main() -> status: own ExitStatus pure {
         }
       }
     }
+  }
+  let dynamic_output_room = len_of(dynamic_output);
+  if dynamic_output_room == 100_u64 {
+  } else {
+    return exit_status(code: 1_u8);
   }
   let dynamic_output_index = 0_u64;
   loop @check_dynamic_output {
@@ -524,6 +564,11 @@ command fn main() -> status: own ExitStatus pure {
       }
     }
   }
+  let literal_only_output_room = len_of(literal_only_output);
+  if literal_only_output_room == 1_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let literal_only_byte = literal_only_output[0_u64];
   if literal_only_byte == 65_u8 {
   } else {
@@ -547,6 +592,11 @@ command fn main() -> status: own ExitStatus pure {
         }
       }
     }
+  }
+  let dynamic_match_output_room = len_of(dynamic_match_output);
+  if dynamic_match_output_room == 400_u64 {
+  } else {
+    return exit_status(code: 1_u8);
   }
   let dynamic_match_repeat = 0_u64;
   loop @check_dynamic_match_repeats {
@@ -619,6 +669,11 @@ command fn main() -> status: own ExitStatus pure {
         }
       }
     }
+  }
+  let mixed_block_output_room = len_of(mixed_block_output);
+  if mixed_block_output_room == 105_u64 {
+  } else {
+    return exit_status(code: 1_u8);
   }
   let mixed_block_index = 0_u64;
   loop @check_mixed_block_prefix {

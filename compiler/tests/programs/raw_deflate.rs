@@ -225,8 +225,9 @@ command fn main() -> status: own ExitStatus pure {{
   let empty_destination = buffer_new(3_u64, 9_u8);
   region {{
     let text = slice_of(&empty_text);
+    let window = mut_slice_of(&uniq empty_destination);
     region {{
-      let result = append_slice(destination: &uniq empty_destination, capacity: 3_u64, filled: 4_u64, text: text);
+      let result = append_slice(destination: &uniq window, capacity: 3_u64, filled: 4_u64, text: text);
       if result == 4_u64 {{
       }} else {{
         return exit_status(code: 1_u8);
@@ -249,8 +250,9 @@ command fn main() -> status: own ExitStatus pure {{
   let nonempty_destination = buffer_new(3_u64, 9_u8);
   region {{
     let text = slice_of(&nonempty_text);
+    let window = mut_slice_of(&uniq nonempty_destination);
     region {{
-      let result = append_slice(destination: &uniq nonempty_destination, capacity: 3_u64, filled: 4_u64, text: text);
+      let result = append_slice(destination: &uniq window, capacity: 3_u64, filled: 4_u64, text: text);
       if result == 4_u64 {{
       }} else {{
         return exit_status(code: 5_u8);

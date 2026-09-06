@@ -1,4 +1,4 @@
-fn store_dynamic_length(literal_lengths: &uniq buffer<u8>, distance_lengths: &uniq buffer<u8>, literal_count: own u64, position: own u64, value: own u8) -> result: own Result<unit, InflateError> reads(distance_lengths), writes(literal_lengths, distance_lengths) contract {
+fn store_dynamic_length(literal_lengths: &uniq MutSlice<u8>, distance_lengths: &uniq MutSlice<u8>, literal_count: own u64, position: own u64, value: own u8) -> result: own Result<unit, InflateError> reads(distance_lengths), writes(literal_lengths, distance_lengths) contract {
   define literal_room = len_of(deref(literal_lengths));
   define enough_literals = literal_count <= literal_room;
   requires enough_literals;
@@ -39,7 +39,7 @@ fn ordered_code_symbol(index: own u64) -> result: own Result<u64, InflateError> 
   return Ok<u64, InflateError>(value: ordered_symbol);
 }
 
-fn read_dynamic_code_lengths(state: &uniq InflateState, input: &buffer<u8>, code_lengths: &uniq buffer<u8>, code_count: own u64) -> result: own Result<unit, InflateError> reads(state.input_offset, state.hold, state.bits, input, code_lengths), writes(state.input_offset, state.hold, state.bits, code_lengths) contract {
+fn read_dynamic_code_lengths(state: &uniq InflateState, input: &buffer<u8>, code_lengths: &uniq MutSlice<u8>, code_count: own u64) -> result: own Result<unit, InflateError> reads(state.input_offset, state.hold, state.bits, input, code_lengths), writes(state.input_offset, state.hold, state.bits, code_lengths) contract {
   define code_count_fits = code_count <= 19_u64;
   define code_room = len_of(deref(code_lengths));
   define order_fits = 19_u64 <= code_room;
@@ -144,7 +144,10 @@ fn decode_dynamic(state: &uniq InflateState, input: &buffer<u8>, out: &uniq buff
   }
   let code_lengths = buffer_new(19_u64, 0_u8);
   region {
-    let filled = propagate read_dynamic_code_lengths(state: &uniq deref(state), input: &deref(input), code_lengths: &uniq code_lengths, code_count: code_count);
+    let code_window = mut_slice_of(&uniq code_lengths);
+    region {
+      let filled = propagate read_dynamic_code_lengths(state: &uniq deref(state), input: &deref(input), code_lengths: &uniq code_window, code_count: code_count);
+    }
   }
   let code_tree_allow_single = False();
   let code_tree_allow_empty = False();
@@ -154,101 +157,51 @@ fn decode_dynamic(state: &uniq InflateState, input: &buffer<u8>, out: &uniq buff
   let total_lengths = literal_count +wrap distance_count;
   let position = 0_u64;
   let previous_length = 0_u8;
-  loop @expand_lengths {
-    let lengths_done = position == total_lengths;
-    if lengths_done {
-      break @expand_lengths;
-    } else {
-      let length_symbol = 0_u64;
-      region {
-        match decode_table_symbol(state: &uniq deref(state), input: &deref(input), table: &code_table) {
-          Ok(value: decoded_symbol) => {
-            set length_symbol = decoded_symbol;
-          }
-          Err(error: symbol_error) => {
-            return Err<unit, InflateError>(error: symbol_error);
-          }
-        }
-      }
-      let direct_length = length_symbol <= 15_u64;
-      if direct_length {
-        match cvt::<u64, u8>(length_symbol) {
-          Ok(value: length) => {
-            region {
-              let stored = propagate store_dynamic_length(literal_lengths: &uniq literal_lengths, distance_lengths: &uniq distance_lengths, literal_count: literal_count, position: position, value: length);
-            }
-            set previous_length = length;
-            set position = position +wrap 1_u64;
-          }
-          Err(error: conversion_error) => {
-            let error = InvalidHuffmanTree();
-            return Err<unit, InflateError>(error: error);
-          }
-        }
+  region {
+    let literal_window = mut_slice_of(&uniq literal_lengths);
+    let distance_window = mut_slice_of(&uniq distance_lengths);
+    loop @expand_lengths {
+      let lengths_done = position == total_lengths;
+      if lengths_done {
+        break @expand_lengths;
       } else {
-        let repeat_previous = length_symbol == 16_u64;
-        if repeat_previous {
-          let no_previous = position == 0_u64;
-          if no_previous {
-            let error = InvalidHuffmanTree();
-            return Err<unit, InflateError>(error: error);
-          }
-          let repeat_bits = 0_u64;
-          region {
-            match read_bits(state: &uniq deref(state), input: &deref(input), count: 2_u32, mask: 3_u64) {
-              Ok(value: read_repeat) => {
-                set repeat_bits = read_repeat;
-              }
-              Err(error: repeat_error) => {
-                return Err<unit, InflateError>(error: repeat_error);
-              }
+        let length_symbol = 0_u64;
+        region {
+          match decode_table_symbol(state: &uniq deref(state), input: &deref(input), table: &code_table) {
+            Ok(value: decoded_symbol) => {
+              set length_symbol = decoded_symbol;
+            }
+            Err(error: symbol_error) => {
+              return Err<unit, InflateError>(error: symbol_error);
             }
           }
-          let repeat_count = repeat_bits +wrap 3_u64;
-          let remaining = total_lengths -wrap position;
-          let overrun = repeat_count > remaining;
-          if overrun {
-            let error = InvalidHuffmanTree();
-            return Err<unit, InflateError>(error: error);
-          }
-          let repeated = 0_u64;
-          loop @repeat_previous_length {
-            let repeated_all = repeated == repeat_count;
-            if repeated_all {
-              break @repeat_previous_length;
-            } else {
+        }
+        let direct_length = length_symbol <= 15_u64;
+        if direct_length {
+          match cvt::<u64, u8>(length_symbol) {
+            Ok(value: length) => {
               region {
-                let stored = propagate store_dynamic_length(literal_lengths: &uniq literal_lengths, distance_lengths: &uniq distance_lengths, literal_count: literal_count, position: position, value: previous_length);
+                let stored = propagate store_dynamic_length(literal_lengths: &uniq literal_window, distance_lengths: &uniq distance_window, literal_count: literal_count, position: position, value: length);
               }
+              set previous_length = length;
               set position = position +wrap 1_u64;
-              set repeated = repeated +wrap 1_u64;
             }
-          }
-        } else {
-          let short_zero = length_symbol == 17_u64;
-          let repeat_bits = 0_u64;
-          let repeat_base = 0_u64;
-          if short_zero {
-            region {
-              match read_bits(state: &uniq deref(state), input: &deref(input), count: 3_u32, mask: 7_u64) {
-                Ok(value: read_repeat) => {
-                  set repeat_bits = read_repeat;
-                }
-                Err(error: repeat_error) => {
-                  return Err<unit, InflateError>(error: repeat_error);
-                }
-              }
-            }
-            set repeat_base = 3_u64;
-          } else {
-            let long_zero = length_symbol == 18_u64;
-            if long_zero {
-            } else {
+            Err(error: conversion_error) => {
               let error = InvalidHuffmanTree();
               return Err<unit, InflateError>(error: error);
             }
+          }
+        } else {
+          let repeat_previous = length_symbol == 16_u64;
+          if repeat_previous {
+            let no_previous = position == 0_u64;
+            if no_previous {
+              let error = InvalidHuffmanTree();
+              return Err<unit, InflateError>(error: error);
+            }
+            let repeat_bits = 0_u64;
             region {
-              match read_bits(state: &uniq deref(state), input: &deref(input), count: 7_u32, mask: 127_u64) {
+              match read_bits(state: &uniq deref(state), input: &deref(input), count: 2_u32, mask: 3_u64) {
                 Ok(value: read_repeat) => {
                   set repeat_bits = read_repeat;
                 }
@@ -257,29 +210,83 @@ fn decode_dynamic(state: &uniq InflateState, input: &buffer<u8>, out: &uniq buff
                 }
               }
             }
-            set repeat_base = 11_u64;
-          }
-          let repeat_count = repeat_bits +wrap repeat_base;
-          let remaining = total_lengths -wrap position;
-          let overrun = repeat_count > remaining;
-          if overrun {
-            let error = InvalidHuffmanTree();
-            return Err<unit, InflateError>(error: error);
-          }
-          let repeated = 0_u64;
-          loop @repeat_zero_length {
-            let repeated_all = repeated == repeat_count;
-            if repeated_all {
-              break @repeat_zero_length;
-            } else {
-              region {
-                let stored = propagate store_dynamic_length(literal_lengths: &uniq literal_lengths, distance_lengths: &uniq distance_lengths, literal_count: literal_count, position: position, value: 0_u8);
-              }
-              set position = position +wrap 1_u64;
-              set repeated = repeated +wrap 1_u64;
+            let repeat_count = repeat_bits +wrap 3_u64;
+            let remaining = total_lengths -wrap position;
+            let overrun = repeat_count > remaining;
+            if overrun {
+              let error = InvalidHuffmanTree();
+              return Err<unit, InflateError>(error: error);
             }
+            let repeated = 0_u64;
+            loop @repeat_previous_length {
+              let repeated_all = repeated == repeat_count;
+              if repeated_all {
+                break @repeat_previous_length;
+              } else {
+                region {
+                  let stored = propagate store_dynamic_length(literal_lengths: &uniq literal_window, distance_lengths: &uniq distance_window, literal_count: literal_count, position: position, value: previous_length);
+                }
+                set position = position +wrap 1_u64;
+                set repeated = repeated +wrap 1_u64;
+              }
+            }
+          } else {
+            let short_zero = length_symbol == 17_u64;
+            let repeat_bits = 0_u64;
+            let repeat_base = 0_u64;
+            if short_zero {
+              region {
+                match read_bits(state: &uniq deref(state), input: &deref(input), count: 3_u32, mask: 7_u64) {
+                  Ok(value: read_repeat) => {
+                    set repeat_bits = read_repeat;
+                  }
+                  Err(error: repeat_error) => {
+                    return Err<unit, InflateError>(error: repeat_error);
+                  }
+                }
+              }
+              set repeat_base = 3_u64;
+            } else {
+              let long_zero = length_symbol == 18_u64;
+              if long_zero {
+              } else {
+                let error = InvalidHuffmanTree();
+                return Err<unit, InflateError>(error: error);
+              }
+              region {
+                match read_bits(state: &uniq deref(state), input: &deref(input), count: 7_u32, mask: 127_u64) {
+                  Ok(value: read_repeat) => {
+                    set repeat_bits = read_repeat;
+                  }
+                  Err(error: repeat_error) => {
+                    return Err<unit, InflateError>(error: repeat_error);
+                  }
+                }
+              }
+              set repeat_base = 11_u64;
+            }
+            let repeat_count = repeat_bits +wrap repeat_base;
+            let remaining = total_lengths -wrap position;
+            let overrun = repeat_count > remaining;
+            if overrun {
+              let error = InvalidHuffmanTree();
+              return Err<unit, InflateError>(error: error);
+            }
+            let repeated = 0_u64;
+            loop @repeat_zero_length {
+              let repeated_all = repeated == repeat_count;
+              if repeated_all {
+                break @repeat_zero_length;
+              } else {
+                region {
+                  let stored = propagate store_dynamic_length(literal_lengths: &uniq literal_window, distance_lengths: &uniq distance_window, literal_count: literal_count, position: position, value: 0_u8);
+                }
+                set position = position +wrap 1_u64;
+                set repeated = repeated +wrap 1_u64;
+              }
+            }
+            set previous_length = 0_u8;
           }
-          set previous_length = 0_u8;
         }
       }
     }
