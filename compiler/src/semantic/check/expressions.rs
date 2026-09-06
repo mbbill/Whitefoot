@@ -552,7 +552,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticRule::Own1,
                 use_node,
                 SemanticIssueKind::BareAffineUse {
-                    mechanical_fix: "read a const array through `index` or `len`",
+                    mechanical_fix: "read a const FixedVector<T, n> through a subscript, one of `len_of`, `cap_of`, `room_of` and `head_of`, or a shared `slice_of` view",
                 },
             ),
             scalar => Ok(TypedExpression::owned(
@@ -1548,7 +1548,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         SemanticRule::Own1,
                         use_node,
                         SemanticIssueKind::BareAffineUse {
-                            mechanical_fix: "read a const array through `index` or `len`",
+                            mechanical_fix: "read a const FixedVector<T, n> through a subscript, one of `len_of`, `cap_of`, `room_of` and `head_of`, or a shared `slice_of` view",
                         },
                     );
                 }
