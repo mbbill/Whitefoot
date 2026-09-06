@@ -1,5 +1,5 @@
-fn record(destination: &uniq buffer<u8>, value: own u8) -> written: own u64 reads(destination), writes(destination) contract {
-  ensures written <= len_of(deref(destination));
+fn record['s](destination: &uniq 's Arena<'s, 4, 1>, value: own u8) -> written: own u64 reads(destination), writes(destination) contract {
+  ensures written <= room_of(deref(destination));
 } {
   doc "An ensures names a measure of a &uniq state parameter, which denotes no state this body can name.";
   return 0_u64;
@@ -7,7 +7,11 @@ fn record(destination: &uniq buffer<u8>, value: own u8) -> written: own u64 read
 
 command fn main() -> status: own ExitStatus pure {
   doc "MSR-3: a &uniq parameter's measure is inadmissible in a source-declared ensures.";
-  let run = buffer_new(4_u64, 0_u8);
-  let written = record(destination: &uniq run, value: 1_u8);
+  region 'w {
+    let workspace = arena_frame::<4, 1, 'w>();
+    region {
+      let written = record(destination: &uniq workspace, value: 1_u8);
+    }
+  }
   return exit_status(code: 0_u8);
 }

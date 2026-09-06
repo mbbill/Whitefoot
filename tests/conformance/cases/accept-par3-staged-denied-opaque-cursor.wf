@@ -6,15 +6,31 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
     match open_directory_source(permit: move permit, directory: &cwd) {
       Ok(value: list) => {
         for @scan (index in 0_u64..4_u64) {
-          let entries = buffer_new(1024_u64, 0_u8);
-          region {
-            match directory_next(source: &uniq list, destination: &uniq entries, start: 0_u64, end: 1024_u64) {
-              ListBytes(next: bytes, entries: reported) => {
-                set total = total +wrap reported;
+          region 'w {
+            let workspace = arena_frame::<1024, 1, 'w>();
+            region {
+              let entries = arena_vector_proved::<u8>(store: &uniq workspace, count: 1024_u64);
+              for @prime (
+                at in 0_u64..1024_u64,
+                invariant grown: len_of(entries) >= at,
+                invariant spare: room_of(entries) + at >= 1024_u64,
+                invariant flat: head_of(entries) <= 0_u64
+              ) {
+                set entries = place_back(vector: move entries, value: 0_u8);
               }
-              ListEnd() => {
-              }
-              ListFailed(error: problem) => {
+              region {
+                let destination = mut_slice_of(&uniq entries);
+                region {
+                  match directory_next(source: &uniq list, destination: &uniq destination, start: 0_u64, end: 1024_u64) {
+                    ListBytes(next: bytes, entries: reported) => {
+                      set total = total +wrap reported;
+                    }
+                    ListEnd() => {
+                    }
+                    ListFailed(error: problem) => {
+                    }
+                  }
+                }
               }
             }
           }

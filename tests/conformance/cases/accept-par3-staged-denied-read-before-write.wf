@@ -3,7 +3,7 @@ fn component() -> made: own FixedVector<u8, 16> pure contract {
   ensures room_of(made) <= 0_u64;
   ensures head_of(made) <= 0_u64;
 } {
-  doc "One name range, built by the ordinary counted fill.";
+  doc "The fold of the hoisted destination is written before the transfer that fills it, so on every path through the body the read of that storage precedes any write of it in the same iteration. No coverage proof can ever admit this shape, and PAR-3 denies it. Over the view surface the reported stage condition is 7 rather than 3, because the judgment does not resolve a footprint element reached through a MutSlice.";
   let built = fixed_vector::<u8, 16>();
   for @fill (
     at in 0_u64..16_u64,
@@ -16,9 +16,9 @@ fn component() -> made: own FixedVector<u8, 16> pure contract {
   return move built;
 }
 
-fn fold_prefix(source: &buffer<u8>, produced: own u64, seed: own u64) -> result: own u64 reads(source) {
+fn fold_prefix(source: own Slice<u8>, produced: own u64, seed: own u64) -> result: own u64 reads(source) {
   doc "Folds one read prefix into a running order-sensitive checksum.";
-  let spare = len_of(deref(source));
+  let spare = len_of(source);
   let sum = seed;
   let at = 0_u64;
   loop @fold {
@@ -31,7 +31,7 @@ fn fold_prefix(source: &buffer<u8>, produced: own u64, seed: own u64) -> result:
     } else {
       break @fold;
     }
-    let byte = deref(source)[at];
+    let byte = source[at];
     let widened = cvt::<u8, u64>(byte);
     set sum = sum *wrap 31_u64;
     set sum = sum +wrap widened;
@@ -41,36 +41,53 @@ fn fold_prefix(source: &buffer<u8>, produced: own u64, seed: own u64) -> result:
 }
 
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  doc "The fold of the hoisted destination is written before the transfer that fills it, so on every path through the body the read of that storage precedes any write of it in the same iteration. No coverage proof can ever admit this shape; PAR-3 denies it here for the stage-one reason it denies every hoisted destination, that the body writes storage the iteration does not introduce and a may-suspend call retains a borrow of it.";
-  let name = component();
-  let data = buffer_new(64_u64, 0_u8);
-  let total = 0_u64;
-  for @scan (index in 0_u64..4_u64) {
-    let permit = reserve_file(factory: &uniq files);
-    let window = slice_of(&name);
+  doc "DOC_BEFORE";
+  region 'w {
+    let workspace = arena_frame::<64, 1, 'w>();
     region {
-      match open_file(permit: move permit, root: &cwd, name: &window, start: 0_u64, end: 4_u64) {
-        Ok(value: handle) => {
-          let digest = 0_u64;
-          region {
-            set digest = fold_prefix(source: &data, produced: 64_u64, seed: 0_u64);
-          }
-          set total = total +wrap digest;
-          region 'h {
-            region {
-              match read_at(file: &'h handle, destination: &uniq data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
-                ReadBytes(next: produced) => {
-                  set total = total +wrap produced;
-                }
-                ReadEnd() => {
-                }
-                ReadFailed(error: problem) => {
+      let data = arena_vector_proved::<u8>(store: &uniq workspace, count: 64_u64);
+      for @prime (
+        at in 0_u64..64_u64,
+        invariant grown: len_of(data) >= at,
+        invariant spare: room_of(data) + at >= 64_u64,
+        invariant flat: head_of(data) <= 0_u64
+      ) {
+        set data = place_back(vector: move data, value: 0_u8);
+      }
+      let name = component();
+      let total = 0_u64;
+      for @scan (index in 0_u64..4_u64) {
+        let permit = reserve_file(factory: &uniq files);
+        let window = slice_of(&name);
+        region {
+          match open_file(permit: move permit, root: &cwd, name: &window, start: 0_u64, end: 4_u64) {
+            Ok(value: handle) => {
+              let digest = 0_u64;
+              region {
+                let source = slice_of(&data);
+                set digest = fold_prefix(source: source, produced: 64_u64, seed: 0_u64);
+              }
+              set total = total +wrap digest;
+              region 'h {
+                region {
+                  let destination = mut_slice_of(&uniq data);
+                  region {
+                    match read_at(file: &'h handle, destination: &uniq destination, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+                      ReadBytes(next: produced) => {
+                        set total = total +wrap produced;
+                      }
+                      ReadEnd() => {
+                      }
+                      ReadFailed(error: problem) => {
+                      }
+                    }
+                  }
                 }
               }
             }
+            Err(error: problem) => {
+            }
           }
-        }
-        Err(error: problem) => {
         }
       }
     }

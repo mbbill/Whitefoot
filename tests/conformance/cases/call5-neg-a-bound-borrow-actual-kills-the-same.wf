@@ -1,17 +1,21 @@
-fn shrink(handle: &uniq buffer<u8>) -> discarded: own buffer<u8> reads(handle), writes(handle) {
-  doc "Replaces the whole referent and hands the old run back.";
-  let smaller = buffer_new(2_u64, 0_u8);
-  let old = replace deref(handle) = move smaller;
-  return move old;
+fn reserve['s](store: &uniq 's Arena<'s, 64, 1>) -> taken: own Option<Vector<'s, u8>> reads(store), writes(store), allocates(store) {
+  doc "Takes eight bytes from the extent it was handed and hands the run back, which moves the extent's own cursor.";
+  region {
+    return arena_vector::<u8>(store: &uniq deref(store), count: 8_u64);
+  }
 }
 
 command fn main() -> status: own ExitStatus pure {
-  doc "[CALL-5] no transport reads the actual's spelling. This is the D1 program with the borrow bound to a name and moved into the call rather than written at the argument position, which is a different checked argument shape reaching the same declared parameter. The two spellings differ in nothing a transport may read, so this program reaches the same [OP-4] rejection with the residual 9_u64 < len_of(line) that the directly spelled one does: the classification belongs to the callee's declaration and the caller's borrow form moves nothing.";
-  let line = buffer_new(10_u64, 0_u8);
-  region {
-    let handle = &uniq line;
-    let dropped = shrink(handle: move handle);
+  doc "[CALL-5] no transport reads the actual's spelling. This is the extent program with the borrow bound to a name and moved into the call rather than written at the argument position, which is a different checked argument shape reaching the same declared parameter. The two spellings differ in nothing a transport may read, so this program reaches the same [BLK-0] rejection with the residual room_of(workspace) >= 64_u64 that the directly spelled one does: the classification belongs to the callee's declaration and the caller's borrow form moves nothing.";
+  region 'w {
+    let workspace = arena_frame::<64, 1, 'w>();
+    region {
+      region {
+        let handle = &uniq workspace;
+        let taken = reserve(store: move handle);
+      }
+      let run = arena_vector_proved::<u8>(store: &uniq workspace, count: 64_u64);
+    }
   }
-  let tail = line[9_u64];
   return exit_status(code: 0_u8);
 }

@@ -3,7 +3,7 @@ fn component() -> made: own FixedVector<u8, 16> pure contract {
   ensures room_of(made) <= 0_u64;
   ensures head_of(made) <= 0_u64;
 } {
-  doc "One name range, built by the ordinary counted fill.";
+  doc "The marker byte one iteration writes into the hoisted scratch survives into the next, because stamp writes it only on odd indices. Executing the prologue in index order preserves that carried byte, but the remainder reads the same storage, so no single segment serializes it and PAR-3 denies the stage. Whole-place write-before-read would admit this program and publish a different total. Over the view surface the reported stage condition is 7 rather than 5: this judgment does not resolve a footprint element reached through a MutSlice handed to a helper, which is a permission-judgment gap and not a change of what the program does.";
   let built = fixed_vector::<u8, 16>();
   for @fill (
     at in 0_u64..16_u64,
@@ -16,7 +16,7 @@ fn component() -> made: own FixedVector<u8, 16> pure contract {
   return move built;
 }
 
-fn stamp(slot: &uniq buffer<u8>, index: own u64) -> result: own unit reads(slot), writes(slot) {
+fn stamp(slot: &uniq MutSlice<u8>, index: own u64) -> result: own unit reads(slot), writes(slot) {
   doc "Writes one marker byte on odd indices only, so its written extent is not a fact of the signature.";
   let spare = len_of(deref(slot));
   let sized = 0_u64 < spare;
@@ -30,40 +30,57 @@ fn stamp(slot: &uniq buffer<u8>, index: own u64) -> result: own unit reads(slot)
   return unit;
 }
 
-fn first_byte(source: &buffer<u8>) -> result: own u64 reads(source) {
-  doc "Reports the first byte of a buffer, or zero when it has none.";
-  let spare = len_of(deref(source));
+fn first_byte(source: own Slice<u8>) -> result: own u64 reads(source) {
+  doc "Reports the first byte of the viewed range, or zero when it has none.";
+  let spare = len_of(source);
   let sized = 0_u64 < spare;
   if sized {
   } else {
     return 0_u64;
   }
-  let byte = deref(source)[0_u64];
+  let byte = source[0_u64];
   return cvt::<u8, u64>(byte);
 }
 
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   doc "The marker byte one iteration writes into the hoisted scratch survives into the next, because stamp writes it only on odd indices. Executing the prologue in index order preserves that carried byte, but the remainder reads the same storage, so no single segment serializes it and PAR-3 denies with condition 5. Whole-place write-before-read would admit this program and publish a different total.";
-  let scratch = buffer_new(1_u64, 0_u8);
-  let name = component();
-  let total = 0_u64;
-  for @scan (index in 0_u64..4_u64) {
+  region 'w {
+    let workspace = arena_frame::<1, 1, 'w>();
     region {
-      let stamped = stamp(slot: &uniq scratch, index: index);
-    }
-    region 'f {
-      let permit = reserve_file(factory: &uniq files);
-      let window = slice_of(&name);
-      region {
-        match open_file(permit: move permit, root: &'f cwd, name: &window, start: 0_u64, end: 4_u64) {
-          Ok(value: handle) => {
-            let seen = 0_u64;
-            region {
-              set seen = first_byte(source: &scratch);
-            }
-            set total = total +wrap seen;
+      let scratch = arena_vector_proved::<u8>(store: &uniq workspace, count: 1_u64);
+      for @prime (
+        at in 0_u64..1_u64,
+        invariant grown: len_of(scratch) >= at,
+        invariant spare: room_of(scratch) + at >= 1_u64,
+        invariant flat: head_of(scratch) <= 0_u64
+      ) {
+        set scratch = place_back(vector: move scratch, value: 0_u8);
+      }
+      let name = component();
+      let total = 0_u64;
+      for @scan (index in 0_u64..4_u64) {
+        region {
+          let slot = mut_slice_of(&uniq scratch);
+          region {
+            let stamped = stamp(slot: &uniq slot, index: index);
           }
-          Err(error: problem) => {
+        }
+        region 'f {
+          let permit = reserve_file(factory: &uniq files);
+          let window = slice_of(&name);
+          region {
+            match open_file(permit: move permit, root: &'f cwd, name: &window, start: 0_u64, end: 4_u64) {
+              Ok(value: handle) => {
+                let seen = 0_u64;
+                region {
+                  let source = slice_of(&scratch);
+                  set seen = first_byte(source: source);
+                }
+                set total = total +wrap seen;
+              }
+              Err(error: problem) => {
+              }
+            }
           }
         }
       }
