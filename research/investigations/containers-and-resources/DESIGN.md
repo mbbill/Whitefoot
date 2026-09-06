@@ -8028,7 +8028,8 @@ the answer.**
 **One performance defect was measured rather than argued, and only its local half is
 fixed.** A body of chained `set v = place_back(vector: move v, value: x);` commits takes
 0.22 s at 10 commits, 0.82 s at 20, 7.0 s at 40 and 32.8 s at 60, at 97 MB, 97 MB, 348 MB
-and 1150 MB peak; the counted `filled` loop over the same 100 elements takes 20 ms. The
+and 1150 MB peak; the counted `filled` loop that fills 100 slots with the same row takes
+0.21 s and 97 MB, which is one compiler invocation's floor. The
 cause is exact and instrumented. Each commit adds four terms and two kill events; every
 kill materializes the `[ENT-4]` closure; and the closure over these terms is **complete** —
 after k commits every measure of the run has a known constant value, so all `V^2` ordered
