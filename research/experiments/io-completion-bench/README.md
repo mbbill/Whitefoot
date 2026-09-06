@@ -338,7 +338,8 @@ The current scheduler experiments and their controls are described in
 [`SCHEDULER-EXPERIMENT.md`](../../investigations/io-model/SCHEDULER-EXPERIMENT.md).
 `scheduler-checkpoint`, `scheduler-footprint`, `scheduler-paced`,
 `scheduler-chunks`, `scheduler-canonical`, `scheduler-stackful` and
-`scheduler-stackful-paced` and `scheduler-nodelay` run their respective Linux cohorts. The measured
+`scheduler-stackful-paced`, `scheduler-nodelay`, `scheduler-owner` and
+`scheduler-owner-paced` run their respective Linux cohorts. The measured
 priority, counter-stripe, stack-offset and independently locked ready-queue
 prototypes were retired; their results and exact revisions remain in the investigation. The canonical
 comparison also builds the recorded prior compiler revision from local Git
@@ -355,6 +356,11 @@ The TCP policy comparison measures WF, native epoll and native io_uring with
 `TCP_NODELAY` off/on, including both small and large payloads. It reads back
 accepted socket options outside timing and runs the full candidate completion
 suite. The WF default remains unchanged pending this measurement.
+The owner comparison separates pinned ready continuations from per-worker
+Linux rings, then combines them. Its paced form retains the same emitted
+16384-step chunk module and fixed light arrivals. Every candidate runs the
+full completion suite before timing; native probes also check the lifetime
+of two independent ring wake descriptors sharing one logical wake epoch.
 
 On native Windows, `windows-bench.ps1` owns a separate production
 qualification:

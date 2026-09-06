@@ -67,11 +67,18 @@ int wf_completion_set_wake_callback(
     if (runtime == NULL || runtime->initialized == 0 || wake == NULL) {
         return EINVAL;
     }
+    /* The bridge starts its native engine lazily, after core workers can
+     * already park on this epoch. Publish the callback/context pair under
+     * the same lock used by notifications, including a second installer's
+     * refusal, so no publisher can observe a partial registration. */
+    wf_completion_wait_lock(&runtime->wait);
     if (runtime->wake_callback != NULL) {
+        wf_completion_wait_unlock(&runtime->wait);
         return EBUSY;
     }
     runtime->wake_context = context;
     runtime->wake_callback = wake;
+    wf_completion_wait_unlock(&runtime->wait);
     return 0;
 }
 

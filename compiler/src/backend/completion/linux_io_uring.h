@@ -21,6 +21,14 @@
 extern "C" {
 #endif
 
+/* Experimental per-worker bridge rings. The default retains one shared ring. */
+#ifndef WF_IO_OWNER_RINGS
+#define WF_IO_OWNER_RINGS 0
+#endif
+#if WF_IO_OWNER_RINGS != 0 && WF_IO_OWNER_RINGS != 1
+#error "WF_IO_OWNER_RINGS must be zero or one"
+#endif
+
 /* The ring's depth: how many submission entries the kernel keeps for this
  * process, asked for once at `io_uring_setup`.
  *
@@ -109,6 +117,10 @@ typedef struct wf_linux_io_uring_adapter {
     unsigned *completion_overflow;
     struct io_uring_cqe *completion_entries;
 
+#if WF_IO_OWNER_RINGS
+    /* Protected by runtime->wait; each eventfd has its own broadcast lifetime. */
+    unsigned parked_schedulers;
+#endif
     pthread_mutex_t submission_lock;
     pthread_mutex_t completion_lock;
     unsigned initialized;

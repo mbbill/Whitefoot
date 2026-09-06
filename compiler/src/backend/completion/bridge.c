@@ -359,6 +359,10 @@ static int wf_bridge_native_ring_refused(void) {
 
 #if defined(__linux__)
 
+#if WF_IO_OWNER_RINGS
+#include "bridge_linux_owner.h"
+#else
+
 static wf_linux_io_uring_adapter wf_bridge_linux_adapter;
 static _Atomic unsigned wf_bridge_linux_ready;
 /* Diagnostic counters have static storage and survive engine teardown. A
@@ -539,6 +543,8 @@ int wf__bridge_report(char *buffer, size_t capacity) {
     );
     return written > 0 && (size_t)written < capacity;
 }
+
+#endif
 
 #elif defined(_WIN32)
 

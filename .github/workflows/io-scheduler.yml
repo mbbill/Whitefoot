@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        experiment: [nodelay]
+        experiment: [owner, owner-paced]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -58,9 +58,9 @@ jobs:
         run: |
           {
             echo '## Scheduler experiment: ${{ matrix.experiment }}'
-            echo 'Paired within this job and CPU cohort. Align TCP_NODELAY on WF, native epoll and native io_uring; each engine is measured with the option off and on. Echo: 1/4/64/1024 peers and small/large payloads. Read back accepted socket options outside timing and run the full candidate completion suite. See the investigation for scope.'
+            echo 'Paired within this job and CPU cohort. Separate pinned continuations from per-worker Linux rings, then combine them; every form enables TCP_NODELAY. Echo includes small/large payloads and compute/file controls. Paced compares identical 16384-step WF modules with native C under fixed light arrivals. Each candidate runs the full completion suite before timing. See the investigation for scope.'
             echo '```text'
-            for file in host.txt cohorts.tsv network-summary.txt nodelay-check.log; do
+            for file in host.txt cohorts.tsv network-summary.txt compute.txt mixed.txt pinned-check.log rings-check.log owner-check.log; do
               cat "$RUNNER_TEMP/io-scheduler/$file" 2>/dev/null || echo "$file was not produced"
             done
             echo '```'
@@ -79,3 +79,65 @@ jobs:
             ${{ runner.temp }}/io-scheduler/observed/
             ${{ runner.temp }}/io-scheduler/samples/
             ${{ runner.temp }}/io-scheduler/codegen/
+
+  windows-owner:
+    name: native Windows pinned continuation checks
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build compiler and fixed input
+        run: |
+          rustup default stable
+          cargo fetch --locked --manifest-path compiler/Cargo.toml
+          cargo build --profile gate --locked --offline --manifest-path compiler/Cargo.toml --bin whitefootc
+          mkdir -p "$RUNNER_TEMP/owner"
+          clang -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+            research/experiments/io-completion-bench/gen.c -o "$RUNNER_TEMP/owner/gen.exe"
+          "$RUNNER_TEMP/owner/gen.exe" "$RUNNER_TEMP/owner/tree" 2 65536 fixed
+          compiler/target/gate/whitefootc.exe --par --emit-llvm \
+            research/experiments/io-completion-bench/programs/windows_runtime_mixed.wf \
+            -o "$RUNNER_TEMP/owner/mixed.ll"
+      - name: Check pinned continuations with actual IOCP traffic
+        run: |
+          backend="$GITHUB_WORKSPACE/compiler/src/backend"
+          units=(sched/core.c sched/prim_windows.c sched/entry.c
+                 completion/runtime.c completion/wait_windows.c completion/file_adapter.c
+                 completion/file_windows.c completion/bridge.c completion/windows_iocp.c
+                 windows_runtime.c wf_floor_windows.c sched/grant_observer.c)
+          sources=()
+          for unit in "${units[@]}"; do sources+=("$backend/$unit"); done
+          for policy in 0 1; do
+            shards=0
+            if [[ $policy == 1 ]]; then shards=2; fi
+            clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
+              -I "$backend" -I "$backend/completion" -DWF_SCHED_OBSERVE=1 \
+              "-DWF_SCHED_READY_SHARDS=$shards" "-DWF_SCHED_READY_PINNED=$policy" -x c "${sources[@]}" \
+              -x ir "$RUNNER_TEMP/owner/mixed.ll" -Wno-override-module \
+              -o "$RUNNER_TEMP/owner/mixed-$policy.exe" -lws2_32
+            for workers in 2 4; do
+              record="$RUNNER_TEMP/owner/p$policy-w$workers"
+              (cd "$RUNNER_TEMP/owner/tree" && \
+                WF_WORKERS="$workers" WF_SCHED_REPORT=1 WF_REQUIRE_WINDOWS_IOCP=1 \
+                "$RUNNER_TEMP/owner/mixed-$policy.exe" f00000.dat f00001.dat) \
+                > "$record.out" 2> "$record.err"
+              tr -d '\r' < "$record.out" > "$record.actual"
+              printf '17574306422404092952\n' > "$record.expected"
+              cmp "$record.expected" "$record.actual"
+              awk -v policy="$policy" '/^sched:/ { seen=1; for(i=2;i<=NF;i++) {split($i,a,"=");v[a[1]]=a[2]+0} }
+                END {exit !(seen && ("ready_pinned" in v) && v["ready_pinned"]==policy && v["parks"]>0 && v["resumes"]>0 && (!policy || v["resume_migrations"]==0))}' "$record.err"
+              cat "$record.err"
+            done
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: io-scheduler-windows-owner
+          path: |
+            ${{ runner.temp }}/owner/*.out
+            ${{ runner.temp }}/owner/*.err
+            ${{ runner.temp }}/owner/*.actual
+            ${{ runner.temp }}/owner/*.expected

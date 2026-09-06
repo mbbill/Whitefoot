@@ -683,7 +683,7 @@ int wf__sched_report(char *buffer, size_t capacity) {
         "late_parks=%llu line_one=%llu spin_rounds=%u yield_rounds=%u "
         "progress_interval=%u observed=%u resume_migrations=%llu "
         "idle_steps=%llu idle_looks=%llu idle_progress=%llu idle_waits=%llu "
-        "checkpoints=%llu checkpoint_switches=%llu",
+        "checkpoints=%llu checkpoint_switches=%llu ready_shards=%u ready_pinned=%u",
         wf__sched_threads,
         wf_prim_load_u(&wf__sched_workers, WF_PRIM_ACQUIRE),
         counts.parks,
@@ -705,7 +705,9 @@ int wf__sched_report(char *buffer, size_t capacity) {
         counts.idle_progress,
         counts.idle_waits,
         counts.checkpoints,
-        counts.checkpoint_switches
+        counts.checkpoint_switches,
+        (unsigned)WF_SCHED_READY_SHARDS,
+        (unsigned)WF_SCHED_READY_PINNED
     );
     return written > 0 && (size_t)written < capacity;
 }

@@ -496,6 +496,34 @@ static int test_unified_wake_epoch(void) {
     return 0;
 }
 
+/* The lazy bridge installs its native wake endpoint after core workers may
+ * already be sleeping on the condition variable. Installation and ordinary
+ * notifications therefore share the wait lock, and replacement is refused. */
+static int test_native_wake_endpoint_joins_an_active_epoch(void) {
+    wf_completion_runtime runtime;
+    park_context parked;
+    pthread_t thread;
+    _Atomic unsigned host_wakes;
+    _Atomic unsigned replacement_wakes;
+    atomic_init(&host_wakes, 0u);
+    atomic_init(&replacement_wakes, 0u);
+    CHECK(wf_completion_runtime_init(&runtime) == 0);
+    parked.runtime = &runtime;
+    parked.epoch = wf_completion_wake_epoch(&runtime);
+    parked.result = WF_COMPLETION_PARK_FAILED;
+    CHECK(pthread_create(&thread, NULL, park_thread, &parked) == 0);
+    CHECK(wait_until_parked(&runtime) == 0);
+    CHECK(wf_completion_set_wake_callback(&runtime, record_host_wake, &host_wakes) == 0);
+    CHECK(wf_completion_set_wake_callback(&runtime, record_host_wake, &replacement_wakes) == EBUSY);
+    wf_completion_notify_compute(&runtime);
+    CHECK(pthread_join(thread, NULL) == 0);
+    CHECK(parked.result == WF_COMPLETION_PARK_WOKEN);
+    CHECK(atomic_load_explicit(&host_wakes, memory_order_relaxed) == 1u);
+    CHECK(atomic_load_explicit(&replacement_wakes, memory_order_relaxed) == 0u);
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    return 0;
+}
+
 static int test_one_epoch_wakes_every_announced_thread(void) {
     wf_completion_runtime runtime;
     wf_completion_statistics before;
@@ -3196,6 +3224,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_exactly_one_completion_per_submission_under_race(argv[1]));
     RUN_TEST(test_a_completion_claims_an_in_place_registration());
     RUN_TEST(test_unified_wake_epoch());
+    RUN_TEST(test_native_wake_endpoint_joins_an_active_epoch());
     RUN_TEST(test_one_epoch_wakes_every_announced_thread());
     RUN_TEST(test_linux_independent_operations_use_available_target(argv[1]));
     RUN_TEST(test_single_thread_file_progress(argv[1]));

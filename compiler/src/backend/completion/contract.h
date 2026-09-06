@@ -489,8 +489,9 @@ int wf_completion_runtime_init(wf_completion_runtime *runtime);
  * on success and EBUSY/EINVAL otherwise. */
 int wf_completion_runtime_destroy(wf_completion_runtime *runtime);
 
-/* Installs the target's host-wait announcer before any scheduler can park.
- * At most one announcer may be installed. */
+/* Installs the target's host-wait announcer under the epoch wait lock.
+ * Existing condition-variable sleepers remain valid; at most one announcer
+ * may be installed, and its context lives until runtime destruction. */
 int wf_completion_set_wake_callback(
     wf_completion_runtime *runtime,
     wf_completion_wake_callback wake,

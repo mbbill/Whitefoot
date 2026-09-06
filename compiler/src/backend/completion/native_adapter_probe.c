@@ -122,6 +122,59 @@ static int probe_wait_until_announced(wf_completion_runtime *runtime) {
     return 1;
 }
 
+#if WF_IO_OWNER_RINGS
+/* Two independent eventfds share one logical epoch. Each must stay readable
+ * for its own announced waiters, and both must be drained after they leave. */
+static void probe_notify_two_rings(void *context) {
+    wf_linux_io_uring_adapter *adapters = context;
+    wf_linux_io_uring_notify(&adapters[0]);
+    wf_linux_io_uring_notify(&adapters[1]);
+}
+
+static int probe_two_rings_share_one_epoch(void) {
+    wf_completion_runtime runtime;
+    wf_linux_io_uring_adapter adapters[2];
+    probe_park_context contexts[4];
+    pthread_t threads[4];
+    unsigned announced = 0;
+    PROBE_CHECK(wf_completion_runtime_init(&runtime) == 0);
+    for (unsigned index = 0; index < 2u; ++index) {
+        PROBE_CHECK(wf_linux_io_uring_init(&adapters[index], &runtime, 8u, 16u) == 0);
+    }
+    PROBE_CHECK(wf_completion_set_wake_callback(&runtime, probe_notify_two_rings, adapters) == 0);
+    for (unsigned index = 0; index < 4u; ++index) {
+        contexts[index].adapter = &adapters[index / 2u];
+        contexts[index].epoch = wf_completion_wake_epoch(&runtime);
+        contexts[index].result = -1;
+        PROBE_CHECK(pthread_create(&threads[index], NULL, probe_park_thread, &contexts[index]) == 0);
+    }
+    for (unsigned attempt = 0; attempt < 1000000u; ++attempt) {
+        if (wf_completion_parked_scheduler_count(&runtime) == 4u) {
+            announced = 1u;
+            break;
+        }
+        (void)sched_yield();
+    }
+    PROBE_CHECK(announced != 0u);
+    wf_completion_notify_compute(&runtime);
+    for (unsigned index = 0; index < 4u; ++index) {
+        PROBE_CHECK(pthread_join(threads[index], NULL) == 0);
+        PROBE_CHECK(contexts[index].result == 0);
+    }
+    PROBE_CHECK(wf_completion_parked_scheduler_count(&runtime) == 0u);
+    for (unsigned index = 0; index < 2u; ++index) {
+        uint64_t counter;
+        errno = 0;
+        PROBE_CHECK(read(adapters[index].wake_descriptor, &counter, sizeof(counter)) < 0 && errno == EAGAIN);
+        PROBE_CHECK(wf_linux_io_uring_statistics_snapshot(&adapters[index]).host_wake_writes == 1u);
+        PROBE_CHECK(wf_linux_io_uring_destroy(&adapters[index]) == 0);
+    }
+    PROBE_CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    return 0;
+}
+
+#endif
+
 /* A real delayed CQE lets the probe distinguish a ring-fd wake from the
  * completion runtime's eventfd.  It is not an adapter operation and is
  * consumed directly by this target-contract probe. */
@@ -702,6 +755,9 @@ int main(int argc, char **argv) {
         PROBE_CHECK(wf_completion_runtime_destroy(&runtime) == 0);
         return 77;
     }
+#if WF_IO_OWNER_RINGS
+    PROBE_CHECK(probe_two_rings_share_one_epoch() == 0);
+#endif
     probe_runtime = &runtime;
     probe_adapter = &adapter;
     PROBE_CHECK(

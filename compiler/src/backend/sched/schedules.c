@@ -236,7 +236,11 @@ static const char *s4_covered(const wf_enum_coverage *cov) {
     if (cov->stats.parks == 0ull) {
         return "no execution parked with the hand-out unjoined";
     }
-    if (wf_enum_threads() >= 2u && cov->resume_foreign == 0ull) {
+    if (WF_SCHED_READY_PINNED) {
+        if (cov->resume_foreign != 0ull || cov->resume == 0ull) {
+            return "pinned resumes were absent or migrated to another worker";
+        }
+    } else if (wf_enum_threads() >= 2u && cov->resume_foreign == 0ull) {
         return "no execution resumed the stack on a foreign thread";
     }
     return NULL;
@@ -457,7 +461,11 @@ static const char *s13_covered(const wf_enum_coverage *cov) {
     if (cov->stats.parks == 0ull) {
         return "no execution parked before the exit edge";
     }
-    if (wf_enum_threads() >= 2u && cov->resume_foreign == 0ull) {
+    if (WF_SCHED_READY_PINNED) {
+        if (cov->resume_foreign != 0ull || cov->resume == 0ull) {
+            return "pinned resumes were absent or migrated to another worker";
+        }
+    } else if (wf_enum_threads() >= 2u && cov->resume_foreign == 0ull) {
         return "no execution ran the exit edge on a foreign thread";
     }
     return NULL;
@@ -527,7 +535,11 @@ static const char *s16_covered(const wf_enum_coverage *cov) {
     if (wf_enum_threads() >= 2u && cov->stats.steals == 0ull) {
         return "no thief took an entry off the parked stack's lane";
     }
-    if (wf_enum_threads() >= 2u && cov->resume_foreign == 0ull) {
+    if (WF_SCHED_READY_PINNED) {
+        if (cov->resume_foreign != 0ull || cov->resume == 0ull) {
+            return "pinned resumes were absent or migrated to another worker";
+        }
+    } else if (wf_enum_threads() >= 2u && cov->resume_foreign == 0ull) {
         return "no execution resumed the stack on a foreign thread";
     }
     return NULL;
@@ -540,6 +552,19 @@ static const char *s16_covered(const wf_enum_coverage *cov) {
  * is walked on both sides of that thread's epoch capture, which is the whole
  * of the answer: either the sleeper is woken or the capture sees the post. */
 static const char *s17_covered(const wf_enum_coverage *cov) {
+    /* Under pinning the entry continuation cannot post from another thread
+     * or while its own thread sleeps. Keep all original coverage below for
+     * the migrating policy, and assert the opposite affinity invariant here. */
+    if (WF_SCHED_READY_PINNED) {
+        if (cov->resume_foreign != 0ull || cov->post_by_worker != 0ull
+            || cov->post_in_window != 0ull || cov->post_while_asleep != 0ull) {
+            return "the pinned entry continuation escaped its running owner";
+        }
+        if (cov->stats.parks == 0ull || cov->resume == 0ull || cov->post_elsewhere == 0ull) {
+            return "no pinned entry parked, resumed and posted its exit";
+        }
+        return NULL;
+    }
     if (cov->post_by_worker == 0ull) {
         return "no execution posted the status from a worker";
     }

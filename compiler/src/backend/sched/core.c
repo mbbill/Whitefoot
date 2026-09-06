@@ -33,62 +33,95 @@ wf_sched_stack *wf_sched_current_stack(wf_sched_core *core) {
 
 /* ------------------------------------------------------------ the lists */
 
-/* Both lists are under the one mutex (§5, §7.1 item 5). The mutex says who
- * may touch their words; when a stack may be offered is the switch's rule
+/* Each list is under its assigned mutex (§5, §7.1 item 5). That mutex says
+ * who may touch its words; when a stack may be offered is the switch's rule
  * below, and it is the reason every EMPTY push is made from the stack switched
  * to. */
 
 static wf_sched_stack *wf_sched_pool_pop(wf_sched_core *core) {
     wf_sched_stack *stack;
-    wf_prim_lock(WF_PRIM_SECTION_FREE_POP);
+    wf_prim_lock(WF_PRIM_SECTION_FREE_POP, 0);
     stack = core->free_head;
     if (stack != NULL) {
         core->free_head = stack->next;
         stack->next = NULL;
     }
-    wf_prim_unlock();
+    wf_prim_unlock(0);
     return stack;
 }
 
 static void wf_sched_pool_push(wf_sched_core *core, wf_sched_stack *stack) {
-    wf_prim_lock(WF_PRIM_SECTION_FREE_PUSH);
+    wf_prim_lock(WF_PRIM_SECTION_FREE_PUSH, 0);
     stack->next = core->free_head;
     core->free_head = stack;
-    wf_prim_unlock();
+    wf_prim_unlock(0);
 }
 
-/* Links one READY stack at the tail. Only the empty-to-nonempty transition
- * bumps the epoch; a later sleeper's last look finds an existing stack (§6). */
+/* A ready shard belongs to the parking worker. The stealing policy scans all
+ * shards before sleeping; the pinned policy resumes only its own shard.
+ * Every shard's empty-to-nonempty transition wakes the shared epoch: no global
+ * ready counter or cross-shard lock is needed. */
 static void wf_sched_ready_push(wf_sched_core *core, wf_sched_stack *stack) {
+    unsigned owner = 0;
+    unsigned mutex = 0;
     int was_empty;
-    wf_prim_lock(WF_PRIM_SECTION_READY_PUSH);
-    stack->next = NULL;
-    was_empty = core->ready_head == NULL;
-    if (was_empty) {
-        core->ready_head = stack;
-    } else {
-        core->ready_tail->next = stack;
+    wf_sched_ready_queue *queue;
+#if WF_SCHED_READY_SHARDS
+    owner = stack->park_thread;
+#endif
+#if WF_SCHED_READY_SHARDS == 2
+    mutex = owner + 1u;
+#endif
+    if (owner >= core->thread_count) {
+        wf_prim_fail("a ready queue names an absent worker");
     }
-    core->ready_tail = stack;
-    wf_prim_unlock();
+    queue = &core->ready[owner];
+    wf_prim_lock(WF_PRIM_SECTION_READY_PUSH, mutex);
+    stack->next = NULL;
+    was_empty = queue->head == NULL;
+    if (was_empty) {
+        queue->head = stack;
+    } else {
+        queue->tail->next = stack;
+    }
+    queue->tail = stack;
+    wf_prim_unlock(mutex);
     if (was_empty) {
         wf_prim_wake();
     }
 }
 
 static wf_sched_stack *wf_sched_ready_pop(wf_sched_core *core) {
-    wf_sched_stack *stack;
-    wf_prim_lock(WF_PRIM_SECTION_READY_POP);
-    stack = core->ready_head;
-    if (stack != NULL) {
-        core->ready_head = stack->next;
-        if (core->ready_head == NULL) {
-            core->ready_tail = NULL;
+    unsigned count = 1;
+    unsigned owner = 0;
+    unsigned offset;
+#if WF_SCHED_READY_SHARDS
+    count = core->thread_count;
+    owner = wf_prim_thread_index();
+#endif
+    for (offset = 0; offset < (WF_SCHED_READY_PINNED ? 1u : count); offset += 1u) {
+        unsigned index = (owner + offset) % count;
+        unsigned mutex = 0;
+        wf_sched_ready_queue *queue = &core->ready[index];
+        wf_sched_stack *stack;
+#if WF_SCHED_READY_SHARDS == 2
+        mutex = index + 1u;
+#endif
+        wf_prim_lock(WF_PRIM_SECTION_READY_POP, mutex);
+        stack = queue->head;
+        if (stack != NULL) {
+            queue->head = stack->next;
+            if (queue->head == NULL) {
+                queue->tail = NULL;
+            }
+            stack->next = NULL;
         }
-        stack->next = NULL;
+        wf_prim_unlock(mutex);
+        if (stack != NULL) {
+            return stack;
+        }
     }
-    wf_prim_unlock();
-    return stack;
+    return NULL;
 }
 
 /* ----------------------------------------------------------- the switch */
@@ -335,6 +368,9 @@ void wf_sched_checkpoint(wf_sched_core *core) {
     if (target == NULL) {
         return;
     }
+#if WF_SCHED_READY_SHARDS
+    stack->park_thread = thread->index;
+#endif
     /* The current stack owns its readiness: no completion record is involved.
      * NOTIFIED defers READY and the enqueue until after its registers and SP
      * have been saved, using the same far-side commit as an early I/O wake.
@@ -366,7 +402,7 @@ static int wf_sched_park(
     wf_sched_stack *stack = thread->stack;
     unsigned expected = WF_SCHED_STACK_RUNNING;
 
-#if WF_SCHED_OBSERVE
+#if WF_SCHED_OBSERVE || WF_SCHED_READY_SHARDS
     stack->park_thread = thread->index;
 #endif
 

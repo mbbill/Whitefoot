@@ -20,6 +20,8 @@ pub const COMPLETION_FILE_ADAPTER_HEADER: &str = include_str!("../completion/fil
 pub const COMPLETION_BRIDGE_HEADER: &str = include_str!("../completion/bridge.h");
 /// The target-guarded Linux io_uring adapter contract embedded in the compiler.
 pub const COMPLETION_LINUX_IO_URING_HEADER: &str = include_str!("../completion/linux_io_uring.h");
+/// The experimental owner-local Linux bridge policy embedded in the compiler.
+pub const COMPLETION_LINUX_OWNER_HEADER: &str = include_str!("../completion/bridge_linux_owner.h");
 /// The Windows IOCP ring's contract embedded in the compiler.
 pub const COMPLETION_WINDOWS_IOCP_HEADER: &str = include_str!("../completion/windows_iocp.h");
 /// The typed file-adapter's POSIX leaf contract embedded in the compiler.

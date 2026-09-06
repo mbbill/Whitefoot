@@ -8,13 +8,13 @@ use std::process::{Command, Stdio};
 use whitefoot::{
     Architecture, COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
-    COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
-    COMPLETION_WINDOWS_IOCP_HEADER, CompilerLimits, FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS,
-    OverlapLowering, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
-    SCHED_PRIM_HEADER, SCHED_SWITCH_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER,
-    compile_with_checkpoint_chunks, compile_with_checkpoints, compile_with_io_notices,
-    compile_with_permission_ledger, module_requires_completion_runtime,
-    module_requires_parallel_runtime, stack_ledger,
+    COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_OWNER_HEADER, COMPLETION_RUNTIME_SOURCE,
+    COMPLETION_SOCKET_ADDRESS_HEADER, COMPLETION_WINDOWS_IOCP_HEADER, CompilerLimits,
+    FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, SCHED_CORE_HEADER,
+    SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER,
+    SCHED_SWITCH_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER, compile_with_checkpoint_chunks,
+    compile_with_checkpoints, compile_with_io_notices, compile_with_permission_ledger,
+    module_requires_completion_runtime, module_requires_parallel_runtime, stack_ledger,
 };
 
 // `HOST_LINK_LIBRARIES` is here rather than above because its one reader is
@@ -135,6 +135,10 @@ const COMPLETION_SHARED_UNITS: &[RuntimeUnit] = &[
     unit("completion/contract.h", COMPLETION_CONTRACT_HEADER),
     unit("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
     unit("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
+    unit(
+        "completion/bridge_linux_owner.h",
+        COMPLETION_LINUX_OWNER_HEADER,
+    ),
     unit("completion/file_posix.h", COMPLETION_FILE_POSIX_HEADER),
     unit(
         "completion/socket_address.h",

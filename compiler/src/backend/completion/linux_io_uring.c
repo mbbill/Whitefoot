@@ -1208,6 +1208,9 @@ int wf_linux_io_uring_park(
         1,
         memory_order_relaxed
     );
+#if WF_IO_OWNER_RINGS
+    adapter->parked_schedulers += 1u;
+#endif
     announced = 1;
     if (atomic_load_explicit(
             &adapter->runtime->wake_epoch,
@@ -1222,6 +1225,9 @@ int wf_linux_io_uring_park(
             1,
             memory_order_relaxed
         );
+#if WF_IO_OWNER_RINGS
+        adapter->parked_schedulers -= 1u;
+#endif
         wf_completion_wait_unlock(&adapter->runtime->wait);
         return 0;
     }
@@ -1283,6 +1289,11 @@ int wf_linux_io_uring_park(
             1,
             memory_order_relaxed
         );
+#if WF_IO_OWNER_RINGS
+        if (adapter->parked_schedulers == 0u) {
+            abort();
+        }
+#endif
         if (previous == 0) {
             abort();
         }
@@ -1291,7 +1302,12 @@ int wf_linux_io_uring_park(
          * scheduler that was announced has left epoll; otherwise a lane
          * waiting for unrelated capacity can steal the only wake from the lane
          * that owns a completed token. */
+#if WF_IO_OWNER_RINGS
+        /* Other rings' sleepers do not extend this eventfd's lifetime. */
+        if (--adapter->parked_schedulers == 0u) {
+#else
         if (previous == 1) {
+#endif
             int drain_error = wf_linux_drain_wake_descriptor(adapter);
             if (error == 0 && drain_error != 0) {
                 error = drain_error;

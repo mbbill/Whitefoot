@@ -1833,3 +1833,82 @@ The native epoll option readback and delayed-reader patterned stream passed
 with both policies and one/four workers through the temporary kqueue shim.
 All three default manual reference forms still produce the exact earlier
 optimized LLVM. These local checks are correctness evidence only.
+
+## Eighteenth experiment: persistent continuations and worker-owned rings
+
+The sequential native handler in experiment 16 motivates a WF runtime
+comparison that combines persistent execution ownership with a local engine.
+The new comparison keeps the WF source and emitted modules unchanged. It
+separates two changes: resume a suspended stack only on its parking worker,
+and submit/progress I/O through that worker's own Linux ring. Initial compute
+hand-outs remain stealable. This is a scheduler policy, not a new source
+effect, a restriction on resource moves, or a proof of bounded progress.
+
+The pinned policy uses the independently locked queues from experiment 15,
+but stops stealing READY stacks. Every queue's empty-to-nonempty transition
+still wakes the shared epoch. A temporary M1 prototype passed the complete
+completion suite and six emitted echo/mixed-program checks with one/two/four
+workers and no observed resume migrations. Its first enumeration run refused
+the new policy because four coverage requirements demanded migrations that
+pinning forbids. The policy-specific coverage now requires resumes and zero
+foreign resumes; S17 also requires the entry continuation to post only while
+its own worker is running. The original migration coverage remains intact
+for the default policy. The enumerator additionally rejects every individual
+READY-to-RUNNING transition on a different worker. Every original schedule,
+terminal assertion, replay and exhaustion check remains enabled; the four
+configured pinned searches completed with zero bounded executions. The
+two-worker/four-stack S24 search explored 2108545 states.
+
+`WF_IO_OWNER_RINGS=1` selects `completion/bridge_linux_owner.h`, a private
+Linux bridge policy embedded and staged with the compiler runtime. It is
+kept only for this engine comparison and is removed or superseded when that
+comparison is settled. Each core worker initializes a ring once on its own
+thread before its first native submission. Host callers outside the core
+share a separate slot and retain the adapter's locks. Pure computation does
+not create a ring. Existing operation records, completion publication,
+typed fallback, deferred-doorbell flush points and shutdown discipline
+remain. Diagnostic totals sum the rings and survive teardown. The prototype
+retains the global wake epoch and adapter mutexes; it does not yet measure
+targeted owner wakes, lock removal, SINGLE_ISSUER or DEFER_TASKRUN.
+
+A global wake callback reaches each ring with announced sleepers. Each
+eventfd's readable lifetime is now counted per ring under the shared wait
+lock; another ring's sleeper must not leave this ring's notification
+permanently readable. A native probe creates two rings on one epoch, parks
+two threads on each, broadcasts once, and requires all four to wake and both
+descriptors to be empty afterwards. This probe is required by each Linux
+candidate using multiple rings, before any timing.
+
+The work also exposed a registration race in the existing lazy bridge:
+the wake callback and context were assigned without the lock used by their
+readers, although workers could already be sleeping on the condition
+variable. Registration now takes that lock. A maintained completion case
+installs the native endpoint while a thread is already parked, refuses a
+replacement, and checks that the original endpoint and sleeper are notified.
+The M1 prototype and restored default both passed the complete completion
+suite; all 36 compiler completion integration tests also passed after adding
+the new header to runtime staging. These local results do not qualify the
+Linux-only ring implementation.
+
+`scheduler-owner` measures base, pinning alone, worker rings alone and the
+combined owner policy against native epoll/io_uring: five echo cases, four
+CPU placements, two warm-ups and seven alternating passes (840 timed network
+rows), plus the existing compute and warm-file controls at two/four/eight
+workers. `scheduler-owner-paced` compares base/chunked WF under the original
+and combined policies against inline/quantum C (504 rows). Its two chunked
+modules must be byte-identical. All these forms enable TCP_NODELAY so the
+engine comparison uses the native references' packet policy. The three
+runtime candidates run full completion suites on each measuring host;
+observations require real native traffic, at least two rings in multi-worker
+64-peer owner runs, and no migration under pinning. A separate Windows job
+checks original/pinned execution with actual IOCP traffic and fixed output.
+Defaults remain unchanged pending native qualification and measurements.
+
+The integrated tree additionally passed 16 M1 emitted-program checks: echo
+and long-compute/light-arrival workloads, all four policy configurations,
+and one/four workers. Every byte matched, cooperative mixed cases actually
+switched, and pinned configurations reported no resume migration. Darwin
+uses the bounded adapter in every configuration, so these checks supply no
+evidence about the new Linux ring code. The owner comparison is published
+on `codex/io-owner-experiments` so its qualification can run while the
+independent TCP policy measurement finishes on the preceding branch.
