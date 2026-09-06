@@ -148,6 +148,10 @@ int main(void) {
     unsigned index;
     int status;
     wf_sched_statistics counts;
+    /* Initialization must establish every live field itself. In the used-lane
+     * footprint experiment, inactive lanes retain this poison and must never
+     * be consulted by an active worker or a resumed stack. */
+    memset(&core, 0xa5, sizeof(core));
     if (wf_sched_init(&core, WORKERS + 1u, STACKS, STACK_BYTES) != 0) {
         (void)fprintf(stderr, "core init failed\n");
         return 1;

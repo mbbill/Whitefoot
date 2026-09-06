@@ -150,6 +150,11 @@ typedef struct wf_sched_lane {
 #if !defined(WF_SCHED_MAX_THREADS)
 #define WF_SCHED_MAX_THREADS 64u
 #endif
+/* Startup footprint experiment: reserve the same maximum layout, but only
+ * initialize lane storage belonging to configured workers. */
+#if !defined(WF_SCHED_INIT_USED_LANES)
+#define WF_SCHED_INIT_USED_LANES 0
+#endif
 /* The most stacks WF_STACKS may ask for. A parked callee holds a pool stack,
  * so a server keeping 1024 connections in flight needs 1024 of them beside
  * the entry thread's own and the workers', which is why the ceiling is above

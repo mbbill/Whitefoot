@@ -751,7 +751,17 @@ int wf_sched_init(
     if (stack_count > WF_SCHED_MAX_STACKS) {
         return 1;
     }
+#if WF_SCHED_INIT_USED_LANES
+    /* Unconfigured lanes are unreachable: every worker/lane lookup is bounded
+     * by thread_count, and no hand-out can carry an unconfigured lane's home.
+     * Keep the fixed ABI layout without faulting its unused pages into RAM.
+     * Clear the trailing status/idle fields too, including on reinitialization. */
+    memset(core, 0, offsetof(wf_sched_core, lanes));
+    memset(core->lanes, 0, sizeof(core->lanes[0]) * thread_count);
+    memset(&core->status_posted, 0, sizeof(*core) - offsetof(wf_sched_core, status_posted));
+#else
     memset(core, 0, sizeof(*core));
+#endif
     core->thread_count = thread_count;
     core->stack_count = stack_count;
     core->stack_bytes = stack_bytes;

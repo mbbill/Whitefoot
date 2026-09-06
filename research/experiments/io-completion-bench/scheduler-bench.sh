@@ -61,7 +61,7 @@ if [[ $MODE != bench || $(uname -s) != Linux ]]; then
     echo 'scheduler-bench: use check on POSIX, or bench on Linux with io_uring' >&2
     exit 2
 fi
-[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint ]] || exit 2
+[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == footprint ]] || exit 2
 network_compute=0
 if [[ $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint ]]; then network_compute=1; fi
 [[ $ROUNDS =~ ^[1-9][0-9]*$ && $WARMUP =~ ^[0-9]+$ ]] || exit 2
@@ -71,14 +71,16 @@ export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$ROOT/compiler/target}
 (cd "$ROOT/compiler" && cargo build --profile gate --bin whitefootc --locked --offline)
 WFC=$CARGO_TARGET_DIR/gate/whitefootc
 
-if [[ $EXPERIMENT == inline ]]; then
+if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint ]]; then
     # The experimental path keeps every existing harness assertion, including
     # completion counts, and also runs the core's maintained enumeration.
+    check_define='-DWF_COMPLETION_LOCAL_INLINE=1'
+    if [[ $EXPERIMENT == footprint ]]; then check_define='-DWF_SCHED_INIT_USED_LANES=1'; fi
     if ! make -C "$ROOT/compiler" completion-test CC="$CLANG" \
-        COMPLETION_TMP="$OUT/inline-check" \
-        COMPLETION_BASE_CFLAGS='-std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread -DWF_COMPLETION_LOCAL_INLINE=1' \
-        > "$OUT/inline-check.log" 2>&1; then
-        cat "$OUT/inline-check.log"
+        COMPLETION_TMP="$OUT/$EXPERIMENT-check" \
+        COMPLETION_BASE_CFLAGS="-std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread $check_define" \
+        > "$OUT/$EXPERIMENT-check.log" 2>&1; then
+        cat "$OUT/$EXPERIMENT-check.log"
         exit 1
     fi
 fi
@@ -123,10 +125,13 @@ fi
 if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain ]]; then forms=(base); fi
 if [[ $EXPERIMENT == inline ]]; then forms=(base local); fi
 if [[ $EXPERIMENT == checkpoint ]]; then forms=(base cq1024 cq16384 cq65536); fi
+if [[ $EXPERIMENT == footprint ]]; then forms=(base lanes); fi
 form_flags() {
     local_inline=0
+    init_used=0
     case $1 in
         base) spin=256; yields=16; progress=0 ;;
+        lanes) spin=256; yields=16; progress=0; init_used=1 ;;
         cq1024|cq16384|cq65536) spin=256; yields=16; progress=0 ;;
         local) spin=256; yields=16; progress=0; local_inline=1 ;;
         sleep) spin=0; yields=0; progress=0 ;;
@@ -139,13 +144,14 @@ form_flags() {
 }
 link_form() {
     local module=$1 output=$2 policy=$3 observed=$4
-    local observer=() spin yields progress local_inline
+    local observer=() spin yields progress local_inline init_used
     form_flags "$policy"
     if [[ $observed == 1 ]]; then observer=("$BACKEND/sched/grant_observer.c"); fi
     "$CLANG" -std=c11 -O2 -pthread -I "$BACKEND" -I "$BACKEND/completion" \
         -I "$BACKEND/sched" "-DWF_SCHED_IDLE_SPIN_ROUNDS=$spin" \
         "-DWF_SCHED_IDLE_YIELD_ROUNDS=$yields" "-DWF_SCHED_IDLE_PROGRESS_INTERVAL=$progress" \
         "-DWF_SCHED_OBSERVE=$observed" "-DWF_COMPLETION_LOCAL_INLINE=$local_inline" \
+        "-DWF_SCHED_INIT_USED_LANES=$init_used" \
         -x c "$BACKEND/wf_floor.c" "$BACKEND/sched/core.c" \
         "$BACKEND/sched/prim_host.c" "$BACKEND/sched/entry.c" \
         "$BACKEND/completion/runtime.c" "$BACKEND/completion/wait_host.c" \
@@ -159,7 +165,7 @@ echo_source="$HERE/programs/tcp_echo_server.wf"
 if [[ $network_compute == 1 ]]; then
     echo_source="$HERE/programs/tcp_compute_server.wf"
     programs=(echo)
-elif [[ $EXPERIMENT == inline ]]; then
+elif [[ $EXPERIMENT == inline || $EXPERIMENT == footprint ]]; then
     programs=(echo)
 else
     "$WFC" --par --emit-llvm -o "$OUT/compute.ll" "$ROOT/tests/programs/par_layout.wf"
@@ -247,7 +253,7 @@ network_case() {
         q1024|q16384|q65536)
             binary="$OUT/bin/epoll_quantum"
             arguments=(--threads "$server_workers" --quantum "${form#q}") ;;
-        base|local|sleep|short|spin|poll1|poll16|cq1024|cq16384|cq65536)
+        base|local|lanes|sleep|short|spin|poll1|poll16|cq1024|cq16384|cq65536)
             binary="$OUT/bin/echo-$form"
             if [[ $observed == 1 ]]; then binary="$binary-observed"; fi
             environment=("WF_WORKERS=$server_workers" WF_STACKS=1100 "WF_SCHED_REPORT=$observed") ;;
@@ -354,7 +360,7 @@ else
 64 2000 64 0
 CASES
 fi
-if [[ $EXPERIMENT == inline ]]; then
+if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint ]]; then
     printf '1024 200 64 0\n64 500 65536 0\n' >> "$OUT/cases.tsv"
 fi
 if [[ $EXPERIMENT == fairness ]]; then

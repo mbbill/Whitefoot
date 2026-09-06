@@ -816,3 +816,43 @@ Iteration counts do not bound elapsed time when a loop body has variable cost.
 It tests whether compiler-chosen checkpoints can recover the measured service
 opportunity while preserving sequential source, and what they cost pure
 computation and oversubscription. No checkpoint interval is selected yet.
+
+## Eighth experiment: initialize only configured worker lanes
+
+The scheduler reserves one fixed core containing 64 worker lanes, but the
+baseline clears all of them even when only one or four workers are configured.
+On the local arm64 ABI, the core is 20478032 bytes and each lane is 319520
+bytes. This is an implementation startup cost, not a requirement of source
+ownership or of stackful suspension.
+
+`WF_SCHED_INIT_USED_LANES=1` preserves the structure layout and all capacity
+limits. It clears the prefix, exactly `thread_count` lanes, and the trailing
+status/idle fields. Initialization of every configured lane, slot, thread and
+stack remains unchanged. Unconfigured lanes are unreachable: worker lookups
+are bounded by the configured count and only initialized slots can be handed
+out. The default remains zero during comparison.
+
+A local one-shot initialization probe checked live metadata from both zeroed
+and deliberately poisoned storage at 1/4/8/64 workers and 1100 stacks. Median
+peak RSS from three measured launches after one warm-up, in KiB, was
+38880/19264, 38880/20192, 38880/21440 and 38880/38896 for baseline/candidate.
+The lack of a saving at 64 workers is expected. The maintained completion-test
+target passed with the candidate enabled, including all S24 enumeration and
+the threaded smoke test, which now begins with poisoned core storage.
+
+The real WF compute-protocol server, built from the same emitted module and
+runtime sources with only this define changed, then verified four admitted
+peers for 100 ms at zero compute through the macOS client compatibility shim.
+With 1100 stacks in both forms, median peak RSS over three measured launches
+after one warm-up was 39152/19520 KiB at one worker and 39152/20432 KiB at
+four workers. These establish the local memory effect, not a Linux throughput
+result. macOS's 16 KiB pages also make touching 1100 stack headers expensive;
+the remaining footprint is not all used-lane storage.
+
+`scheduler-footprint` compares base/lanes with native uring/epoll controls in
+the same four CPU placements and five echo cases as the inline experiment.
+All WF samples retain 1100 stacks, the baseline idle and completion protocols,
+and no compiler checkpoints. It runs the full candidate completion checks
+before timing, then two warm-ups and seven alternating measured passes. The
+define can be removed once this implementation choice is selected or rejected;
+the existing investigation and runner own its evidence.
