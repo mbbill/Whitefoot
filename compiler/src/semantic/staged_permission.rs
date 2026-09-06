@@ -1381,7 +1381,7 @@ impl<'check> StagedSurvey<'check, '_> {
             | CheckedType::Bool
             | CheckedType::Integer(_)
             | CheckedType::Float(_) => true,
-            CheckedType::Buffer { element } => {
+            CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
                 is_copy_element(element)
             }
             // A run carries a window descriptor whose replication this

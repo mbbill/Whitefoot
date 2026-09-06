@@ -2714,7 +2714,9 @@ fn collect_operation_nominals(operation: GoalOperation, output: &mut Vec<Nominal
 fn collect_type_nominals(ty: CheckedType, output: &mut Vec<NominalId>) {
     match ty {
         CheckedType::Nominal(id) => output.push(id),
-        CheckedType::Slice { element, .. } => collect_flat_element_nominals(element, output),
+        CheckedType::Array { element, .. }
+        | CheckedType::Slice { element, .. }
+        | CheckedType::Buffer { element } => collect_flat_element_nominals(element, output),
         CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
             collect_element_nominals(element, output);
         }
@@ -2861,7 +2863,9 @@ fn rewrite_type_nominals(
                 .get(id)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         }
-        CheckedType::Slice { element, .. } => {
+        CheckedType::Array { element, .. }
+        | CheckedType::Slice { element, .. }
+        | CheckedType::Buffer { element } => {
             rewrite_flat_element_nominals(element, checkpoint, replacements)?;
         }
         CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {

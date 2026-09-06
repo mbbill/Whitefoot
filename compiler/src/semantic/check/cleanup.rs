@@ -54,9 +54,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ty: CheckedType,
         visited: &mut HashSet<NominalId>,
     ) -> Result<SystemReleaseRow, CheckStop> {
+        if let CheckedType::Buffer { element } = ty {
+            // An affine buffer element drops with its owning buffer
+            // [STOR-3], so a contained resource row reaches the buffer's
+            // release contribution exactly as a box referent's does.
+            return self.release_row_of_type(element.ty(), visited);
+        }
         let CheckedType::Nominal(id) = ty else {
-            // Scalars carry no release action, and a view's elements are
-            // storage it does not own [PROV-3].
+            // Scalars carry no release action, and array and slice elements
+            // are flat copy data with no release of their own.
             return Ok(SystemReleaseRow::EMPTY);
         };
         if !visited.insert(id) {
@@ -408,7 +414,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // released with its own region, so neither derives an owner-
                 // scope drop [STOR-3, BLK-2].
                 CheckedType::Heap { .. } | CheckedType::Extent { .. } => {}
-                CheckedType::Slice { .. }
+                CheckedType::Array { .. }
+                | CheckedType::Slice { .. }
+                | CheckedType::Buffer { .. }
                 | CheckedType::FixedVector { .. }
                 | CheckedType::Vector { .. } => {
                     drops.push((path, current));
@@ -476,7 +484,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedType::GenericInt(_)
                 | CheckedType::GenericFloat(_)
                 | CheckedType::Generic(_)
+                | CheckedType::Array { .. }
                 | CheckedType::Slice { .. }
+                | CheckedType::Buffer { .. }
                 | CheckedType::FixedVector { .. }
                 | CheckedType::Vector { .. }
                 | CheckedType::Heap { .. }
@@ -496,7 +506,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // released with its own region, so neither derives an owner-
                 // scope drop [STOR-3, BLK-2].
                 CheckedType::Heap { .. } | CheckedType::Extent { .. } => {}
-                CheckedType::Slice { .. }
+                CheckedType::Array { .. }
+                | CheckedType::Slice { .. }
+                | CheckedType::Buffer { .. }
                 | CheckedType::FixedVector { .. }
                 | CheckedType::Vector { .. } => {
                     drops.push((path, current));

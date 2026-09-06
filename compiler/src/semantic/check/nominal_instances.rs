@@ -1108,7 +1108,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedType::Float(_)
             | CheckedType::Generic(_)
             | CheckedType::GenericInt(_)
-            | CheckedType::GenericFloat(_) => ty,
+            | CheckedType::GenericFloat(_)
+            | CheckedType::Array { .. }
+            | CheckedType::Buffer { .. } => ty,
             CheckedType::Nominal(id) => self.substitute_nominal_regions(id, regions)?,
             CheckedType::Slice {
                 region,

@@ -511,6 +511,15 @@ fn lower_type(erasure: &[IrNominalId], value: CheckedType) -> Result<IrType, Low
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         CheckedType::Nominal(id) => IrType::Nominal(erased_nominal(erasure, id)),
+        CheckedType::Array { element, length } => IrType::Array {
+            element: lower_flat_element(erasure, element)?,
+            length: length
+                .value()
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+        },
+        CheckedType::Buffer { element } => IrType::Buffer {
+            element: lower_flat_element(erasure, element)?,
+        },
         CheckedType::Slice { element, .. } => IrType::Slice {
             element: lower_flat_element(erasure, element)?,
         },

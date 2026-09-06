@@ -8454,7 +8454,7 @@ impl Analyzer<'_, '_> {
             }
             CheckedExpression::Binding {
                 binding,
-                ty: CheckedType::Slice { .. },
+                ty: CheckedType::Buffer { .. } | CheckedType::Slice { .. },
                 ..
             } => Some((*binding, Vec::new())),
             _ => None,
@@ -14872,7 +14872,7 @@ fn invalidate_goal_origin_for_set(state: &mut FactState, target: &CheckedSetTarg
 /// The type one slot of an indexable base holds [OP-4, BLK-1].
 fn element_type(input: CheckedType) -> Option<CheckedType> {
     match input {
-        CheckedType::Buffer { element } => Some(element.ty()),
+        CheckedType::Array { element, .. } | CheckedType::Buffer { element } => Some(element.ty()),
         CheckedType::Slice { element, .. } => Some(element.ty()),
         CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
             Some(element.ty())
@@ -15172,7 +15172,7 @@ mod affine_pair_tests {
 /// [MSR-1] row is that constant [MSR-2].
 const fn type_constant(ty: CheckedType) -> Option<CheckedConst> {
     match ty {
-        CheckedType::FixedVector { length, .. } => Some(length),
+        CheckedType::Array { length, .. } | CheckedType::FixedVector { length, .. } => Some(length),
         CheckedType::Extent { bytes, .. } => Some(bytes),
         _ => None,
     }

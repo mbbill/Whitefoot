@@ -97,7 +97,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<bool, CheckStop> {
         match ty {
             CheckedType::Slice { .. } => Ok(true),
-            CheckedType::Buffer { element } => {
+            CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
                 self.loan_bearing_with(element.ty(), visited)
             }
             CheckedType::Nominal(id) => {
@@ -158,7 +158,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 nodes.push(current);
             }
             match current {
-                CheckedType::Buffer { element } => {
+                CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
                     pending.push(element.ty());
                 }
                 // A run owns the elements of its window [BLK-1], so its
