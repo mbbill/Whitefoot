@@ -1,3 +1,31 @@
+const valid_input_bytes: FixedVector<u8, 15> =[0_u8, 2_u8, 0_u8, 253_u8, 255_u8, 104_u8, 101_u8, 1_u8, 3_u8, 0_u8, 252_u8, 255_u8, 108_u8, 108_u8, 111_u8];
+
+const invalid_length_input_bytes: FixedVector<u8, 6> =[1_u8, 1_u8, 0_u8, 255_u8, 255_u8, 65_u8];
+
+const truncated_input_bytes: FixedVector<u8, 4> =[1_u8, 2_u8, 0_u8, 253_u8];
+
+const full_input_bytes: FixedVector<u8, 7> =[1_u8, 2_u8, 0_u8, 253_u8, 255_u8, 65_u8, 66_u8];
+
+const fixed_literal_input_bytes: FixedVector<u8, 7> =[203_u8, 72_u8, 205_u8, 201_u8, 201_u8, 7_u8, 0_u8];
+
+const fixed_match_input_bytes: FixedVector<u8, 5> =[75_u8, 76_u8, 68_u8, 5_u8, 0_u8];
+
+const fixed_phrase_input_bytes: FixedVector<u8, 10> =[203_u8, 72_u8, 205_u8, 201_u8, 201_u8, 87_u8, 200_u8, 64_u8, 144_u8, 0_u8];
+
+const invalid_tree_input_bytes: FixedVector<u8, 4> =[5_u8, 0_u8, 0_u8, 0_u8];
+
+const dynamic_truncated_input_bytes: FixedVector<u8, 10> =[13_u8, 202_u8, 91_u8, 2_u8, 128_u8, 32_u8, 8_u8, 4_u8, 64_u8, 158_u8];
+
+const reserved_block_input_bytes: FixedVector<u8, 1> =[7_u8];
+
+const fixed_truncated_input_bytes: FixedVector<u8, 1> =[203_u8];
+
+const invalid_huffman_input_bytes: FixedVector<u8, 2> =[27_u8, 3_u8];
+
+const invalid_distance_input_bytes: FixedVector<u8, 2> =[3_u8, 2_u8];
+
+const fixed_full_input_bytes: FixedVector<u8, 7> =[203_u8, 72_u8, 205_u8, 201_u8, 201_u8, 7_u8, 0_u8];
+
 const fixed_phrase_expected: FixedVector<u8, 17> =[104_u8, 101_u8, 108_u8, 108_u8, 111_u8, 32_u8, 104_u8, 101_u8, 108_u8, 108_u8, 111_u8, 32_u8, 104_u8, 101_u8, 108_u8, 108_u8, 111_u8];
 
 const dynamic_input_bytes: FixedVector<u8, 72> =[13_u8, 202_u8, 91_u8, 2_u8, 128_u8, 32_u8, 8_u8, 4_u8, 64_u8, 158_u8, 139_u8, 152_u8, 160_u8, 213_u8, 253_u8, 239_u8, 90_u8, 243_u8, 61_u8, 103_u8, 19_u8, 173_u8, 28_u8, 26_u8, 17_u8, 236_u8, 150_u8, 207_u8, 134_u8, 11_u8, 145_u8, 171_u8, 21_u8, 32_u8, 164_u8, 140_u8, 119_u8, 112_u8, 93_u8, 217_u8, 243_u8, 178_u8, 251_u8, 240_u8, 76_u8, 135_u8, 55_u8, 150_u8, 85_u8, 121_u8, 116_u8, 186_u8, 104_u8, 114_u8, 75_u8, 235_u8, 73_u8, 96_u8, 132_u8, 10_u8, 118_u8, 208_u8, 159_u8, 101_u8, 210_u8, 80_u8, 41_u8, 198_u8, 18_u8, 41_u8, 203_u8, 15_u8];
@@ -9,33 +37,6 @@ const mixed_block_input_bytes: FixedVector<u8, 78> =[12_u8, 202_u8, 91_u8, 2_u8,
 const literal_only_dynamic_input_bytes: FixedVector<u8, 13> =[5_u8, 192_u8, 129_u8, 8_u8, 0_u8, 0_u8, 0_u8, 0_u8, 32_u8, 182_u8, 253_u8, 165_u8, 78_u8];
 
 const dynamic_expected_bytes: FixedVector<u8, 100> =[16_u8, 15_u8, 0_u8, 0_u8, 12_u8, 9_u8, 8_u8, 3_u8, 7_u8, 7_u8, 7_u8, 1_u8, 5_u8, 4_u8, 9_u8, 18_u8, 15_u8, 6_u8, 5_u8, 2_u8, 0_u8, 0_u8, 5_u8, 3_u8, 4_u8, 13_u8, 6_u8, 6_u8, 2_u8, 0_u8, 3_u8, 1_u8, 6_u8, 19_u8, 8_u8, 1_u8, 13_u8, 11_u8, 9_u8, 14_u8, 10_u8, 11_u8, 4_u8, 17_u8, 16_u8, 1_u8, 10_u8, 9_u8, 5_u8, 6_u8, 5_u8, 14_u8, 6_u8, 12_u8, 4_u8, 13_u8, 13_u8, 5_u8, 7_u8, 14_u8, 9_u8, 5_u8, 2_u8, 3_u8, 9_u8, 1_u8, 14_u8, 2_u8, 14_u8, 3_u8, 16_u8, 9_u8, 6_u8, 6_u8, 8_u8, 7_u8, 3_u8, 2_u8, 6_u8, 15_u8, 7_u8, 0_u8, 11_u8, 9_u8, 14_u8, 2_u8, 10_u8, 0_u8, 8_u8, 3_u8, 2_u8, 13_u8, 1_u8, 6_u8, 12_u8, 2_u8, 2_u8, 13_u8, 4_u8, 9_u8];
-
-fn make_dynamic_input() -> result: own buffer<u8> pure {
-  let input = buffer_new(72_u64, 0_u8);
-  for @fill_dynamic_source (index_value in 0_u64..72_u64) {
-    let byte = dynamic_input_bytes[index_value];
-    set input[index_value] = byte;
-  }
-  return move input;
-}
-
-fn make_dynamic_match_input() -> result: own buffer<u8> pure {
-  let input = buffer_new(82_u64, 0_u8);
-  for @fill_dynamic_match_source (index_value in 0_u64..82_u64) {
-    let byte = dynamic_match_input_bytes[index_value];
-    set input[index_value] = byte;
-  }
-  return move input;
-}
-
-fn make_literal_only_dynamic_input() -> result: own buffer<u8> pure {
-  let input = buffer_new(13_u64, 0_u8);
-  for @fill_literal_only_dynamic_source (index_value in 0_u64..13_u64) {
-    let byte = literal_only_dynamic_input_bytes[index_value];
-    set input[index_value] = byte;
-  }
-  return move input;
-}
 
 fn error_code(error: own InflateError) -> result: own u8 pure {
   match error {
@@ -63,856 +64,1253 @@ fn error_code(error: own InflateError) -> result: own u8 pure {
   }
 }
 
+fn check_valid() -> result: own u8 pure {
+  doc "Two stored blocks decode to their five bytes.";
+  region 'valid {
+    let workspace = arena_frame::<5, 1, 'valid>();
+    region {
+      let valid_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 5_u64);
+      for @fill_valid_output (
+        at in 0_u64..5_u64,
+        invariant grown: len_of(valid_output) >= at,
+        invariant spare: room_of(valid_output) + at >= 5_u64,
+        invariant flat: head_of(valid_output) <= 0_u64
+      ) {
+        set valid_output = place_back(vector: move valid_output, value: 0_u8);
+      }
+      region {
+        let valid_view = slice_of(&valid_input_bytes);
+        let valid_window = mut_slice_of(&uniq valid_output);
+        region {
+          let valid_result = inflate(out: &uniq valid_window, input: valid_view);
+          match move valid_result {
+            Ok(value: valid_length) => {
+              if valid_length == 5_u64 {
+              } else {
+                return 1_u8;
+              }
+            }
+            Err(error: valid_error) => {
+              if False() {
+              } else {
+                return 1_u8;
+              }
+            }
+          }
+        }
+      }
+      let valid_output_room = len_of(valid_output);
+      if valid_output_room == 5_u64 {
+      } else {
+        return 1_u8;
+      }
+      let valid_zero = valid_output[0_u64];
+      let valid_one = valid_output[1_u64];
+      let valid_two = valid_output[2_u64];
+      let valid_three = valid_output[3_u64];
+      let valid_four = valid_output[4_u64];
+      if valid_zero == 104_u8 {
+      } else {
+        return 1_u8;
+      }
+      if valid_one == 101_u8 {
+      } else {
+        return 1_u8;
+      }
+      if valid_two == 108_u8 {
+      } else {
+        return 1_u8;
+      }
+      if valid_three == 108_u8 {
+      } else {
+        return 1_u8;
+      }
+      if valid_four == 111_u8 {
+      } else {
+        return 1_u8;
+      }
+    }
+  }
+  return 0_u8;
+}
+
+fn check_invalid_length() -> result: own u8 pure {
+  doc "A stored block whose complement does not match the length is refused and publishes nothing.";
+  region 'invalid_length {
+    let workspace = arena_frame::<1, 1, 'invalid_length>();
+    region {
+      let invalid_length_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 1_u64);
+      for @fill_invalid_length_output (
+        at in 0_u64..1_u64,
+        invariant grown: len_of(invalid_length_output) >= at,
+        invariant spare: room_of(invalid_length_output) + at >= 1_u64,
+        invariant flat: head_of(invalid_length_output) <= 0_u64
+      ) {
+        set invalid_length_output = place_back(vector: move invalid_length_output, value: 9_u8);
+      }
+      region {
+        let invalid_length_view = slice_of(&invalid_length_input_bytes);
+        let invalid_length_window = mut_slice_of(&uniq invalid_length_output);
+        region {
+          let invalid_length_result = inflate(out: &uniq invalid_length_window, input: invalid_length_view);
+          match move invalid_length_result {
+            Ok(value: invalid_length_value) => {
+              if False() {
+              } else {
+                return 1_u8;
+              }
+            }
+            Err(error: invalid_length_error) => {
+              match invalid_length_error {
+                InvalidStoredLength() => {
+                }
+                Truncated() => {
+                  if False() {
+                  } else {
+                    return 1_u8;
+                  }
+                }
+                OutputFull() => {
+                  if False() {
+                  } else {
+                    return 1_u8;
+                  }
+                }
+                InvalidHuffmanCode() => {
+                  if False() {
+                  } else {
+                    return 1_u8;
+                  }
+                }
+                InvalidHuffmanTree() => {
+                  if False() {
+                  } else {
+                    return 1_u8;
+                  }
+                }
+                InvalidDistance() => {
+                  if False() {
+                  } else {
+                    return 1_u8;
+                  }
+                }
+                InvalidBlockType() => {
+                  if False() {
+                  } else {
+                    return 1_u8;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      let invalid_length_output_room = len_of(invalid_length_output);
+      if invalid_length_output_room == 1_u64 {
+      } else {
+        return 1_u8;
+      }
+      let invalid_length_sentinel = invalid_length_output[0_u64];
+      if invalid_length_sentinel == 9_u8 {
+      } else {
+        return 1_u8;
+      }
+    }
+  }
+  return 0_u8;
+}
+
+fn check_truncated() -> result: own u8 pure {
+  doc "A stored header that ends inside itself is refused and publishes nothing.";
+  region 'truncated {
+    let workspace = arena_frame::<2, 1, 'truncated>();
+    region {
+      let truncated_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 2_u64);
+      for @fill_truncated_output (
+        at in 0_u64..2_u64,
+        invariant grown: len_of(truncated_output) >= at,
+        invariant spare: room_of(truncated_output) + at >= 2_u64,
+        invariant flat: head_of(truncated_output) <= 0_u64
+      ) {
+        set truncated_output = place_back(vector: move truncated_output, value: 7_u8);
+      }
+      region {
+        let truncated_view = slice_of(&truncated_input_bytes);
+        let truncated_window = mut_slice_of(&uniq truncated_output);
+        region {
+          let truncated_result = inflate(out: &uniq truncated_window, input: truncated_view);
+          match move truncated_result {
+            Ok(value: truncated_value) => {
+              if False() {
+              } else {
+                return 1_u8;
+              }
+            }
+            Err(error: truncated_error) => {
+              match truncated_error {
+                Truncated() => {
+                }
+                InvalidStoredLength() => {
+                  if False() {
+                  } else {
+                    return 1_u8;
+                  }
+                }
+                OutputFull() => {
+                  if False() {
+                  } else {
+                    return 1_u8;
+                  }
+                }
+                InvalidHuffmanCode() => {
+                  if False() {
+                  } else {
+                    return 1_u8;
+                  }
+                }
+                InvalidHuffmanTree() => {
+                  if False() {
+                  } else {
+                    return 1_u8;
+                  }
+                }
+                InvalidDistance() => {
+                  if False() {
+                  } else {
+                    return 1_u8;
+                  }
+                }
+                InvalidBlockType() => {
+                  if False() {
+                  } else {
+                    return 1_u8;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      let truncated_output_room = len_of(truncated_output);
+      if truncated_output_room == 2_u64 {
+      } else {
+        return 1_u8;
+      }
+      let truncated_sentinel = truncated_output[0_u64];
+      if truncated_sentinel == 7_u8 {
+      } else {
+        return 1_u8;
+      }
+    }
+  }
+  return 0_u8;
+}
+
+fn check_full() -> result: own u8 pure {
+  doc "A stored block larger than the destination is refused and publishes nothing.";
+  region 'full {
+    let workspace = arena_frame::<1, 1, 'full>();
+    region {
+      let full_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 1_u64);
+      for @fill_full_output (
+        at in 0_u64..1_u64,
+        invariant grown: len_of(full_output) >= at,
+        invariant spare: room_of(full_output) + at >= 1_u64,
+        invariant flat: head_of(full_output) <= 0_u64
+      ) {
+        set full_output = place_back(vector: move full_output, value: 11_u8);
+      }
+      region {
+        let full_view = slice_of(&full_input_bytes);
+        let full_window = mut_slice_of(&uniq full_output);
+        region {
+          let full_result = inflate(out: &uniq full_window, input: full_view);
+          match move full_result {
+            Ok(value: full_value) => {
+              if False() {
+              } else {
+                return 1_u8;
+              }
+            }
+            Err(error: full_error) => {
+              match full_error {
+                OutputFull() => {
+                }
+                Truncated() => {
+                  if False() {
+                  } else {
+                    return 1_u8;
+                  }
+                }
+                InvalidStoredLength() => {
+                  if False() {
+                  } else {
+                    return 1_u8;
+                  }
+                }
+                InvalidHuffmanCode() => {
+                  if False() {
+                  } else {
+                    return 1_u8;
+                  }
+                }
+                InvalidHuffmanTree() => {
+                  if False() {
+                  } else {
+                    return 1_u8;
+                  }
+                }
+                InvalidDistance() => {
+                  if False() {
+                  } else {
+                    return 1_u8;
+                  }
+                }
+                InvalidBlockType() => {
+                  if False() {
+                  } else {
+                    return 1_u8;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      let full_output_room = len_of(full_output);
+      if full_output_room == 1_u64 {
+      } else {
+        return 1_u8;
+      }
+      let full_sentinel = full_output[0_u64];
+      if full_sentinel == 11_u8 {
+      } else {
+        return 1_u8;
+      }
+    }
+  }
+  return 0_u8;
+}
+
+fn check_fixed_literal() -> result: own u8 pure {
+  doc "A fixed block of literals decodes to its five bytes.";
+  region 'fixed_literal {
+    let workspace = arena_frame::<5, 1, 'fixed_literal>();
+    region {
+      let fixed_literal_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 5_u64);
+      for @fill_fixed_literal_output (
+        at in 0_u64..5_u64,
+        invariant grown: len_of(fixed_literal_output) >= at,
+        invariant spare: room_of(fixed_literal_output) + at >= 5_u64,
+        invariant flat: head_of(fixed_literal_output) <= 0_u64
+      ) {
+        set fixed_literal_output = place_back(vector: move fixed_literal_output, value: 0_u8);
+      }
+      region {
+        let fixed_literal_view = slice_of(&fixed_literal_input_bytes);
+        let fixed_literal_window = mut_slice_of(&uniq fixed_literal_output);
+        region {
+          let fixed_literal_result = inflate(out: &uniq fixed_literal_window, input: fixed_literal_view);
+          match move fixed_literal_result {
+            Ok(value: fixed_literal_length) => {
+              if fixed_literal_length == 5_u64 {
+              } else {
+                return 1_u8;
+              }
+            }
+            Err(error: fixed_literal_error) => {
+              if False() {
+              } else {
+                return 1_u8;
+              }
+            }
+          }
+        }
+      }
+      let fixed_literal_output_room = len_of(fixed_literal_output);
+      if fixed_literal_output_room == 5_u64 {
+      } else {
+        return 1_u8;
+      }
+      let fixed_literal_zero = fixed_literal_output[0_u64];
+      let fixed_literal_one = fixed_literal_output[1_u64];
+      let fixed_literal_two = fixed_literal_output[2_u64];
+      let fixed_literal_three = fixed_literal_output[3_u64];
+      let fixed_literal_four = fixed_literal_output[4_u64];
+      if fixed_literal_zero == 104_u8 {
+      } else {
+        return 1_u8;
+      }
+      if fixed_literal_one == 101_u8 {
+      } else {
+        return 1_u8;
+      }
+      if fixed_literal_two == 108_u8 {
+      } else {
+        return 1_u8;
+      }
+      if fixed_literal_three == 108_u8 {
+      } else {
+        return 1_u8;
+      }
+      if fixed_literal_four == 111_u8 {
+      } else {
+        return 1_u8;
+      }
+    }
+  }
+  return 0_u8;
+}
+
+fn check_fixed_match() -> result: own u8 pure {
+  doc "A fixed block whose match repeats one byte fills the destination.";
+  region 'fixed_match {
+    let workspace = arena_frame::<16, 1, 'fixed_match>();
+    region {
+      let fixed_match_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 16_u64);
+      for @fill_fixed_match_output (
+        at in 0_u64..16_u64,
+        invariant grown: len_of(fixed_match_output) >= at,
+        invariant spare: room_of(fixed_match_output) + at >= 16_u64,
+        invariant flat: head_of(fixed_match_output) <= 0_u64
+      ) {
+        set fixed_match_output = place_back(vector: move fixed_match_output, value: 0_u8);
+      }
+      region {
+        let fixed_match_view = slice_of(&fixed_match_input_bytes);
+        let fixed_match_window = mut_slice_of(&uniq fixed_match_output);
+        region {
+          let fixed_match_result = inflate(out: &uniq fixed_match_window, input: fixed_match_view);
+          match move fixed_match_result {
+            Ok(value: fixed_match_length) => {
+              if fixed_match_length == 16_u64 {
+              } else {
+                return 1_u8;
+              }
+            }
+            Err(error: fixed_match_error) => {
+              if False() {
+              } else {
+                return 1_u8;
+              }
+            }
+          }
+        }
+      }
+      let fixed_match_output_room = len_of(fixed_match_output);
+      if fixed_match_output_room == 16_u64 {
+      } else {
+        return 1_u8;
+      }
+      let fixed_match_index = 0_u64;
+      loop @check_fixed_match {
+        let fixed_match_done = fixed_match_index == 16_u64;
+        if fixed_match_done {
+          break @check_fixed_match;
+        } else {
+          let fixed_match_room = len_of(fixed_match_output);
+          let fixed_match_ok = fixed_match_index < fixed_match_room;
+          if fixed_match_ok {
+          } else {
+            return 1_u8;
+          }
+          let fixed_match_byte = fixed_match_output[fixed_match_index];
+          if fixed_match_byte == 97_u8 {
+          } else {
+            return 1_u8;
+          }
+          set fixed_match_index = fixed_match_index +wrap 1_u64;
+        }
+      }
+    }
+  }
+  return 0_u8;
+}
+
+fn check_fixed_phrase() -> result: own u8 pure {
+  doc "A fixed block whose match repeats a phrase decodes to the recorded bytes.";
+  region 'fixed_phrase {
+    let workspace = arena_frame::<17, 1, 'fixed_phrase>();
+    region {
+      let fixed_phrase_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 17_u64);
+      for @fill_fixed_phrase_output (
+        at in 0_u64..17_u64,
+        invariant grown: len_of(fixed_phrase_output) >= at,
+        invariant spare: room_of(fixed_phrase_output) + at >= 17_u64,
+        invariant flat: head_of(fixed_phrase_output) <= 0_u64
+      ) {
+        set fixed_phrase_output = place_back(vector: move fixed_phrase_output, value: 0_u8);
+      }
+      region {
+        let fixed_phrase_view = slice_of(&fixed_phrase_input_bytes);
+        let fixed_phrase_window = mut_slice_of(&uniq fixed_phrase_output);
+        region {
+          let fixed_phrase_result = inflate(out: &uniq fixed_phrase_window, input: fixed_phrase_view);
+          match move fixed_phrase_result {
+            Ok(value: fixed_phrase_length) => {
+              if fixed_phrase_length == 17_u64 {
+              } else {
+                return 1_u8;
+              }
+            }
+            Err(error: fixed_phrase_error) => {
+              if False() {
+              } else {
+                return 1_u8;
+              }
+            }
+          }
+        }
+      }
+      let fixed_phrase_output_room = len_of(fixed_phrase_output);
+      if fixed_phrase_output_room == 17_u64 {
+      } else {
+        return 1_u8;
+      }
+      let fixed_phrase_index = 0_u64;
+      loop @check_fixed_phrase {
+        let fixed_phrase_done = fixed_phrase_index == 17_u64;
+        if fixed_phrase_done {
+          break @check_fixed_phrase;
+        } else {
+          let fixed_phrase_room = len_of(fixed_phrase_output);
+          let fixed_phrase_out_ok = fixed_phrase_index < fixed_phrase_room;
+          if fixed_phrase_out_ok {
+          } else {
+            return 1_u8;
+          }
+          let fixed_phrase_actual = fixed_phrase_output[fixed_phrase_index];
+          let fixed_phrase_wanted = fixed_phrase_expected[fixed_phrase_index];
+          if fixed_phrase_actual == fixed_phrase_wanted {
+          } else {
+            return 1_u8;
+          }
+          set fixed_phrase_index = fixed_phrase_index +wrap 1_u64;
+        }
+      }
+    }
+  }
+  return 0_u8;
+}
+
+fn check_dynamic() -> result: own u8 pure {
+  doc "A dynamic block decodes to the recorded hundred bytes.";
+  region 'dynamic {
+    let workspace = arena_frame::<100, 1, 'dynamic>();
+    region {
+      let dynamic_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 100_u64);
+      for @fill_dynamic_output (
+        at in 0_u64..100_u64,
+        invariant grown: len_of(dynamic_output) >= at,
+        invariant spare: room_of(dynamic_output) + at >= 100_u64,
+        invariant flat: head_of(dynamic_output) <= 0_u64
+      ) {
+        set dynamic_output = place_back(vector: move dynamic_output, value: 0_u8);
+      }
+      region {
+        let dynamic_view = slice_of(&dynamic_input_bytes);
+        let dynamic_window = mut_slice_of(&uniq dynamic_output);
+        region {
+          let dynamic_result = inflate(out: &uniq dynamic_window, input: dynamic_view);
+          match move dynamic_result {
+            Ok(value: dynamic_length) => {
+              if dynamic_length == 100_u64 {
+              } else {
+                return 1_u8;
+              }
+            }
+            Err(error: dynamic_error) => {
+              if False() {
+              } else {
+                return 1_u8;
+              }
+            }
+          }
+        }
+      }
+      let dynamic_output_room = len_of(dynamic_output);
+      if dynamic_output_room == 100_u64 {
+      } else {
+        return 1_u8;
+      }
+      let dynamic_output_index = 0_u64;
+      loop @check_dynamic_output {
+        let dynamic_output_done = dynamic_output_index == 100_u64;
+        if dynamic_output_done {
+          break @check_dynamic_output;
+        } else {
+          let dynamic_room = len_of(dynamic_output);
+          let dynamic_out_ok = dynamic_output_index < dynamic_room;
+          if dynamic_out_ok {
+          } else {
+            return 1_u8;
+          }
+          let dynamic_actual = dynamic_output[dynamic_output_index];
+          let dynamic_wanted = dynamic_expected_bytes[dynamic_output_index];
+          if dynamic_actual == dynamic_wanted {
+          } else {
+            return 1_u8;
+          }
+          set dynamic_output_index = dynamic_output_index +wrap 1_u64;
+        }
+      }
+    }
+  }
+  return 0_u8;
+}
+
+fn check_literal_only() -> result: own u8 pure {
+  doc "A dynamic block whose literal tree holds one symbol decodes to that byte.";
+  region 'literal_only {
+    let workspace = arena_frame::<1, 1, 'literal_only>();
+    region {
+      let literal_only_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 1_u64);
+      for @fill_literal_only_output (
+        at in 0_u64..1_u64,
+        invariant grown: len_of(literal_only_output) >= at,
+        invariant spare: room_of(literal_only_output) + at >= 1_u64,
+        invariant flat: head_of(literal_only_output) <= 0_u64
+      ) {
+        set literal_only_output = place_back(vector: move literal_only_output, value: 0_u8);
+      }
+      region {
+        let literal_only_view = slice_of(&literal_only_dynamic_input_bytes);
+        let literal_only_window = mut_slice_of(&uniq literal_only_output);
+        region {
+          let literal_only_result = inflate(out: &uniq literal_only_window, input: literal_only_view);
+          match move literal_only_result {
+            Ok(value: literal_only_length) => {
+              if literal_only_length == 1_u64 {
+              } else {
+                return 1_u8;
+              }
+            }
+            Err(error: literal_only_error) => {
+              if False() {
+              } else {
+                return 1_u8;
+              }
+            }
+          }
+        }
+      }
+      let literal_only_output_room = len_of(literal_only_output);
+      if literal_only_output_room == 1_u64 {
+      } else {
+        return 1_u8;
+      }
+      let literal_only_byte = literal_only_output[0_u64];
+      if literal_only_byte == 65_u8 {
+      } else {
+        return 1_u8;
+      }
+    }
+  }
+  return 0_u8;
+}
+
+fn check_dynamic_match() -> result: own u8 pure {
+  doc "A dynamic block whose matches repeat the recorded hundred bytes four times.";
+  region 'dynamic_match {
+    let workspace = arena_frame::<400, 1, 'dynamic_match>();
+    region {
+      let dynamic_match_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 400_u64);
+      for @fill_dynamic_match_output (
+        at in 0_u64..400_u64,
+        invariant grown: len_of(dynamic_match_output) >= at,
+        invariant spare: room_of(dynamic_match_output) + at >= 400_u64,
+        invariant flat: head_of(dynamic_match_output) <= 0_u64
+      ) {
+        set dynamic_match_output = place_back(vector: move dynamic_match_output, value: 0_u8);
+      }
+      region {
+        let dynamic_match_view = slice_of(&dynamic_match_input_bytes);
+        let dynamic_match_window = mut_slice_of(&uniq dynamic_match_output);
+        region {
+          let dynamic_match_result = inflate(out: &uniq dynamic_match_window, input: dynamic_match_view);
+          match move dynamic_match_result {
+            Ok(value: dynamic_match_length) => {
+              if dynamic_match_length == 400_u64 {
+              } else {
+                return 1_u8;
+              }
+            }
+            Err(error: dynamic_match_error) => {
+              if False() {
+              } else {
+                return 1_u8;
+              }
+            }
+          }
+        }
+      }
+      let dynamic_match_output_room = len_of(dynamic_match_output);
+      if dynamic_match_output_room == 400_u64 {
+      } else {
+        return 1_u8;
+      }
+      let dynamic_match_repeat = 0_u64;
+      loop @check_dynamic_match_repeats {
+        let all_repeats_checked = dynamic_match_repeat == 4_u64;
+        if all_repeats_checked {
+          break @check_dynamic_match_repeats;
+        } else {
+          let dynamic_match_base = dynamic_match_repeat *wrap 100_u64;
+          let dynamic_match_index = 0_u64;
+          loop @check_dynamic_match_chunk {
+            let chunk_checked = dynamic_match_index == 100_u64;
+            if chunk_checked {
+              break @check_dynamic_match_chunk;
+            } else {
+              let output_index = dynamic_match_base +wrap dynamic_match_index;
+              let dynamic_match_room = len_of(dynamic_match_output);
+              let dynamic_match_out_ok = output_index < dynamic_match_room;
+              if dynamic_match_out_ok {
+              } else {
+                return 1_u8;
+              }
+              let dynamic_match_actual = dynamic_match_output[output_index];
+              let dynamic_match_exp_ok = dynamic_match_index < 100_u64;
+              if dynamic_match_exp_ok {
+              } else {
+                return 1_u8;
+              }
+              let dynamic_match_wanted = dynamic_expected_bytes[dynamic_match_index];
+              if dynamic_match_actual == dynamic_match_wanted {
+              } else {
+                return 1_u8;
+              }
+              set dynamic_match_index = dynamic_match_index +wrap 1_u64;
+            }
+          }
+          set dynamic_match_repeat = dynamic_match_repeat +wrap 1_u64;
+        }
+      }
+    }
+  }
+  return 0_u8;
+}
+
+fn check_mixed_block() -> result: own u8 pure {
+  doc "A dynamic block followed by a fixed block decodes to both parts.";
+  region 'mixed_block {
+    let workspace = arena_frame::<105, 1, 'mixed_block>();
+    region {
+      let mixed_block_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 105_u64);
+      for @fill_mixed_block_output (
+        at in 0_u64..105_u64,
+        invariant grown: len_of(mixed_block_output) >= at,
+        invariant spare: room_of(mixed_block_output) + at >= 105_u64,
+        invariant flat: head_of(mixed_block_output) <= 0_u64
+      ) {
+        set mixed_block_output = place_back(vector: move mixed_block_output, value: 0_u8);
+      }
+      region {
+        let mixed_block_view = slice_of(&mixed_block_input_bytes);
+        let mixed_block_window = mut_slice_of(&uniq mixed_block_output);
+        region {
+          let mixed_block_result = inflate(out: &uniq mixed_block_window, input: mixed_block_view);
+          match move mixed_block_result {
+            Ok(value: mixed_block_length) => {
+              if mixed_block_length == 105_u64 {
+              } else {
+                return 1_u8;
+              }
+            }
+            Err(error: mixed_block_error) => {
+              if False() {
+              } else {
+                return 1_u8;
+              }
+            }
+          }
+        }
+      }
+      let mixed_block_output_room = len_of(mixed_block_output);
+      if mixed_block_output_room == 105_u64 {
+      } else {
+        return 1_u8;
+      }
+      let mixed_block_index = 0_u64;
+      loop @check_mixed_block_prefix {
+        let mixed_block_prefix_done = mixed_block_index == 100_u64;
+        if mixed_block_prefix_done {
+          break @check_mixed_block_prefix;
+        } else {
+          let mixed_room = len_of(mixed_block_output);
+          let mixed_out_ok = mixed_block_index < mixed_room;
+          if mixed_out_ok {
+          } else {
+            return 1_u8;
+          }
+          let mixed_block_actual = mixed_block_output[mixed_block_index];
+          let mixed_exp_ok = mixed_block_index < 100_u64;
+          if mixed_exp_ok {
+          } else {
+            return 1_u8;
+          }
+          let mixed_block_wanted = dynamic_expected_bytes[mixed_block_index];
+          if mixed_block_actual == mixed_block_wanted {
+          } else {
+            return 1_u8;
+          }
+          set mixed_block_index = mixed_block_index +wrap 1_u64;
+        }
+      }
+      let mixed_block_h = mixed_block_output[100_u64];
+      let mixed_block_e = mixed_block_output[101_u64];
+      let mixed_block_l0 = mixed_block_output[102_u64];
+      let mixed_block_l1 = mixed_block_output[103_u64];
+      let mixed_block_o = mixed_block_output[104_u64];
+      if mixed_block_h == 104_u8 {
+      } else {
+        return 1_u8;
+      }
+      if mixed_block_e == 101_u8 {
+      } else {
+        return 1_u8;
+      }
+      if mixed_block_l0 == 108_u8 {
+      } else {
+        return 1_u8;
+      }
+      if mixed_block_l1 == 108_u8 {
+      } else {
+        return 1_u8;
+      }
+      if mixed_block_o == 111_u8 {
+      } else {
+        return 1_u8;
+      }
+    }
+  }
+  return 0_u8;
+}
+
+fn check_invalid_tree() -> result: own u8 pure {
+  doc "A dynamic block whose code lengths do not form a tree is refused.";
+  region 'invalid_tree {
+    let workspace = arena_frame::<1, 1, 'invalid_tree>();
+    region {
+      let invalid_tree_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 1_u64);
+      for @fill_invalid_tree_output (
+        at in 0_u64..1_u64,
+        invariant grown: len_of(invalid_tree_output) >= at,
+        invariant spare: room_of(invalid_tree_output) + at >= 1_u64,
+        invariant flat: head_of(invalid_tree_output) <= 0_u64
+      ) {
+        set invalid_tree_output = place_back(vector: move invalid_tree_output, value: 0_u8);
+      }
+      region {
+        let invalid_tree_view = slice_of(&invalid_tree_input_bytes);
+        let invalid_tree_window = mut_slice_of(&uniq invalid_tree_output);
+        region {
+          let invalid_tree_result = inflate(out: &uniq invalid_tree_window, input: invalid_tree_view);
+          match move invalid_tree_result {
+            Ok(value: invalid_tree_length) => {
+              if False() {
+              } else {
+                return 1_u8;
+              }
+            }
+            Err(error: invalid_tree_error) => {
+              let invalid_tree_code = error_code(error: invalid_tree_error);
+              if invalid_tree_code == 3_u8 {
+              } else {
+                return 1_u8;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return 0_u8;
+}
+
+fn check_dynamic_truncated() -> result: own u8 pure {
+  doc "A dynamic block whose stream ends inside the code lengths is refused.";
+  region 'dynamic_truncated {
+    let workspace = arena_frame::<100, 1, 'dynamic_truncated>();
+    region {
+      let dynamic_truncated_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 100_u64);
+      for @fill_dynamic_truncated_output (
+        at in 0_u64..100_u64,
+        invariant grown: len_of(dynamic_truncated_output) >= at,
+        invariant spare: room_of(dynamic_truncated_output) + at >= 100_u64,
+        invariant flat: head_of(dynamic_truncated_output) <= 0_u64
+      ) {
+        set dynamic_truncated_output = place_back(vector: move dynamic_truncated_output, value: 0_u8);
+      }
+      region {
+        let dynamic_truncated_view = slice_of(&dynamic_truncated_input_bytes);
+        let dynamic_truncated_window = mut_slice_of(&uniq dynamic_truncated_output);
+        region {
+          let dynamic_truncated_result = inflate(out: &uniq dynamic_truncated_window, input: dynamic_truncated_view);
+          match move dynamic_truncated_result {
+            Ok(value: dynamic_truncated_length) => {
+              if False() {
+              } else {
+                return 1_u8;
+              }
+            }
+            Err(error: dynamic_truncated_error) => {
+              let dynamic_truncated_code = error_code(error: dynamic_truncated_error);
+              if dynamic_truncated_code == 1_u8 {
+              } else {
+                return 1_u8;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return 0_u8;
+}
+
+fn check_dynamic_full() -> result: own u8 pure {
+  doc "A dynamic block larger than the destination is refused.";
+  region 'dynamic_full {
+    let workspace = arena_frame::<99, 1, 'dynamic_full>();
+    region {
+      let dynamic_full_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 99_u64);
+      for @fill_dynamic_full_output (
+        at in 0_u64..99_u64,
+        invariant grown: len_of(dynamic_full_output) >= at,
+        invariant spare: room_of(dynamic_full_output) + at >= 99_u64,
+        invariant flat: head_of(dynamic_full_output) <= 0_u64
+      ) {
+        set dynamic_full_output = place_back(vector: move dynamic_full_output, value: 0_u8);
+      }
+      region {
+        let dynamic_full_view = slice_of(&dynamic_input_bytes);
+        let dynamic_full_window = mut_slice_of(&uniq dynamic_full_output);
+        region {
+          let dynamic_full_result = inflate(out: &uniq dynamic_full_window, input: dynamic_full_view);
+          match move dynamic_full_result {
+            Ok(value: dynamic_full_length) => {
+              if False() {
+              } else {
+                return 1_u8;
+              }
+            }
+            Err(error: dynamic_full_error) => {
+              let dynamic_full_code = error_code(error: dynamic_full_error);
+              if dynamic_full_code == 7_u8 {
+              } else {
+                return 1_u8;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return 0_u8;
+}
+
+fn check_reserved_block() -> result: own u8 pure {
+  doc "The reserved block type is refused.";
+  region 'reserved_block {
+    let workspace = arena_frame::<1, 1, 'reserved_block>();
+    region {
+      let reserved_block_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 1_u64);
+      for @fill_reserved_block_output (
+        at in 0_u64..1_u64,
+        invariant grown: len_of(reserved_block_output) >= at,
+        invariant spare: room_of(reserved_block_output) + at >= 1_u64,
+        invariant flat: head_of(reserved_block_output) <= 0_u64
+      ) {
+        set reserved_block_output = place_back(vector: move reserved_block_output, value: 0_u8);
+      }
+      region {
+        let reserved_block_view = slice_of(&reserved_block_input_bytes);
+        let reserved_block_window = mut_slice_of(&uniq reserved_block_output);
+        region {
+          let reserved_block_result = inflate(out: &uniq reserved_block_window, input: reserved_block_view);
+          match move reserved_block_result {
+            Ok(value: reserved_block_length) => {
+              if False() {
+              } else {
+                return 1_u8;
+              }
+            }
+            Err(error: reserved_block_error) => {
+              let reserved_block_code = error_code(error: reserved_block_error);
+              if reserved_block_code == 6_u8 {
+              } else {
+                return 1_u8;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return 0_u8;
+}
+
+fn check_fixed_truncated() -> result: own u8 pure {
+  doc "A fixed block whose stream ends inside a code is refused.";
+  region 'fixed_truncated {
+    let workspace = arena_frame::<5, 1, 'fixed_truncated>();
+    region {
+      let fixed_truncated_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 5_u64);
+      for @fill_fixed_truncated_output (
+        at in 0_u64..5_u64,
+        invariant grown: len_of(fixed_truncated_output) >= at,
+        invariant spare: room_of(fixed_truncated_output) + at >= 5_u64,
+        invariant flat: head_of(fixed_truncated_output) <= 0_u64
+      ) {
+        set fixed_truncated_output = place_back(vector: move fixed_truncated_output, value: 0_u8);
+      }
+      region {
+        let fixed_truncated_view = slice_of(&fixed_truncated_input_bytes);
+        let fixed_truncated_window = mut_slice_of(&uniq fixed_truncated_output);
+        region {
+          let fixed_truncated_result = inflate(out: &uniq fixed_truncated_window, input: fixed_truncated_view);
+          match move fixed_truncated_result {
+            Ok(value: fixed_truncated_length) => {
+              if False() {
+              } else {
+                return 1_u8;
+              }
+            }
+            Err(error: fixed_truncated_error) => {
+              let fixed_truncated_code = error_code(error: fixed_truncated_error);
+              if fixed_truncated_code == 1_u8 {
+              } else {
+                return 1_u8;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return 0_u8;
+}
+
+fn check_invalid_huffman() -> result: own u8 pure {
+  doc "A fixed block holding no admissible code is refused.";
+  region 'invalid_huffman {
+    let workspace = arena_frame::<1, 1, 'invalid_huffman>();
+    region {
+      let invalid_huffman_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 1_u64);
+      for @fill_invalid_huffman_output (
+        at in 0_u64..1_u64,
+        invariant grown: len_of(invalid_huffman_output) >= at,
+        invariant spare: room_of(invalid_huffman_output) + at >= 1_u64,
+        invariant flat: head_of(invalid_huffman_output) <= 0_u64
+      ) {
+        set invalid_huffman_output = place_back(vector: move invalid_huffman_output, value: 0_u8);
+      }
+      region {
+        let invalid_huffman_view = slice_of(&invalid_huffman_input_bytes);
+        let invalid_huffman_window = mut_slice_of(&uniq invalid_huffman_output);
+        region {
+          let invalid_huffman_result = inflate(out: &uniq invalid_huffman_window, input: invalid_huffman_view);
+          match move invalid_huffman_result {
+            Ok(value: invalid_huffman_length) => {
+              if False() {
+              } else {
+                return 1_u8;
+              }
+            }
+            Err(error: invalid_huffman_error) => {
+              let invalid_huffman_code = error_code(error: invalid_huffman_error);
+              if invalid_huffman_code == 4_u8 {
+              } else {
+                return 1_u8;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return 0_u8;
+}
+
+fn check_invalid_distance() -> result: own u8 pure {
+  doc "A fixed block naming a distance before the history is refused.";
+  region 'invalid_distance {
+    let workspace = arena_frame::<3, 1, 'invalid_distance>();
+    region {
+      let invalid_distance_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 3_u64);
+      for @fill_invalid_distance_output (
+        at in 0_u64..3_u64,
+        invariant grown: len_of(invalid_distance_output) >= at,
+        invariant spare: room_of(invalid_distance_output) + at >= 3_u64,
+        invariant flat: head_of(invalid_distance_output) <= 0_u64
+      ) {
+        set invalid_distance_output = place_back(vector: move invalid_distance_output, value: 0_u8);
+      }
+      region {
+        let invalid_distance_view = slice_of(&invalid_distance_input_bytes);
+        let invalid_distance_window = mut_slice_of(&uniq invalid_distance_output);
+        region {
+          let invalid_distance_result = inflate(out: &uniq invalid_distance_window, input: invalid_distance_view);
+          match move invalid_distance_result {
+            Ok(value: invalid_distance_length) => {
+              if False() {
+              } else {
+                return 1_u8;
+              }
+            }
+            Err(error: invalid_distance_error) => {
+              let invalid_distance_code = error_code(error: invalid_distance_error);
+              if invalid_distance_code == 5_u8 {
+              } else {
+                return 1_u8;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return 0_u8;
+}
+
+fn check_fixed_full() -> result: own u8 pure {
+  doc "A fixed block larger than the destination is refused.";
+  region 'fixed_full {
+    let workspace = arena_frame::<4, 1, 'fixed_full>();
+    region {
+      let fixed_full_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 4_u64);
+      for @fill_fixed_full_output (
+        at in 0_u64..4_u64,
+        invariant grown: len_of(fixed_full_output) >= at,
+        invariant spare: room_of(fixed_full_output) + at >= 4_u64,
+        invariant flat: head_of(fixed_full_output) <= 0_u64
+      ) {
+        set fixed_full_output = place_back(vector: move fixed_full_output, value: 0_u8);
+      }
+      region {
+        let fixed_full_view = slice_of(&fixed_full_input_bytes);
+        let fixed_full_window = mut_slice_of(&uniq fixed_full_output);
+        region {
+          let fixed_full_result = inflate(out: &uniq fixed_full_window, input: fixed_full_view);
+          match move fixed_full_result {
+            Ok(value: fixed_full_length) => {
+              if False() {
+              } else {
+                return 1_u8;
+              }
+            }
+            Err(error: fixed_full_error) => {
+              let fixed_full_code = error_code(error: fixed_full_error);
+              if fixed_full_code == 7_u8 {
+              } else {
+                return 1_u8;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return 0_u8;
+}
+
 command fn main() -> status: own ExitStatus pure {
-  let valid_input = buffer_new(15_u64, 0_u8);
-  set valid_input[0_u64] = 0_u8;
-  set valid_input[1_u64] = 2_u8;
-  set valid_input[2_u64] = 0_u8;
-  set valid_input[3_u64] = 253_u8;
-  set valid_input[4_u64] = 255_u8;
-  set valid_input[5_u64] = 104_u8;
-  set valid_input[6_u64] = 101_u8;
-  set valid_input[7_u64] = 1_u8;
-  set valid_input[8_u64] = 3_u8;
-  set valid_input[9_u64] = 0_u8;
-  set valid_input[10_u64] = 252_u8;
-  set valid_input[11_u64] = 255_u8;
-  set valid_input[12_u64] = 108_u8;
-  set valid_input[13_u64] = 108_u8;
-  set valid_input[14_u64] = 111_u8;
-  let valid_output = buffer_new(5_u64, 0_u8);
-  region {
-    let valid_result = inflate(out: &uniq valid_output, input: move valid_input);
-    match move valid_result {
-      Ok(value: valid_length) => {
-        if valid_length == 5_u64 {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-      Err(error: valid_error) => {
-        if False() {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-    }
-  }
-  let valid_output_room = len_of(valid_output);
-  if valid_output_room == 5_u64 {
+  doc "Runs the recorded raw DEFLATE vectors, one case per function: every compressed input is a const table viewed as a run, and every destination is one run of that case's own bump extent, viewed exclusively for the decode and read back after the loan ends.";
+  let valid_status = check_valid();
+  if valid_status == 0_u8 {
   } else {
-    return exit_status(code: 1_u8);
+    return exit_status(code: valid_status);
   }
-  let valid_zero = valid_output[0_u64];
-  let valid_one = valid_output[1_u64];
-  let valid_two = valid_output[2_u64];
-  let valid_three = valid_output[3_u64];
-  let valid_four = valid_output[4_u64];
-  if valid_zero == 104_u8 {
+  let invalid_length_status = check_invalid_length();
+  if invalid_length_status == 0_u8 {
   } else {
-    return exit_status(code: 1_u8);
+    return exit_status(code: invalid_length_status);
   }
-  if valid_one == 101_u8 {
+  let truncated_status = check_truncated();
+  if truncated_status == 0_u8 {
   } else {
-    return exit_status(code: 1_u8);
+    return exit_status(code: truncated_status);
   }
-  if valid_two == 108_u8 {
+  let full_status = check_full();
+  if full_status == 0_u8 {
   } else {
-    return exit_status(code: 1_u8);
+    return exit_status(code: full_status);
   }
-  if valid_three == 108_u8 {
+  let fixed_literal_status = check_fixed_literal();
+  if fixed_literal_status == 0_u8 {
   } else {
-    return exit_status(code: 1_u8);
+    return exit_status(code: fixed_literal_status);
   }
-  if valid_four == 111_u8 {
+  let fixed_match_status = check_fixed_match();
+  if fixed_match_status == 0_u8 {
   } else {
-    return exit_status(code: 1_u8);
+    return exit_status(code: fixed_match_status);
   }
-  let invalid_length_input = buffer_new(6_u64, 0_u8);
-  set invalid_length_input[0_u64] = 1_u8;
-  set invalid_length_input[1_u64] = 1_u8;
-  set invalid_length_input[2_u64] = 0_u8;
-  set invalid_length_input[3_u64] = 255_u8;
-  set invalid_length_input[4_u64] = 255_u8;
-  set invalid_length_input[5_u64] = 65_u8;
-  let invalid_length_output = buffer_new(1_u64, 9_u8);
-  region {
-    let invalid_length_result = inflate(out: &uniq invalid_length_output, input: move invalid_length_input);
-    match move invalid_length_result {
-      Ok(value: invalid_length_value) => {
-        if False() {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-      Err(error: invalid_length_error) => {
-        match invalid_length_error {
-          InvalidStoredLength() => {
-          }
-          Truncated() => {
-            if False() {
-            } else {
-              return exit_status(code: 1_u8);
-            }
-          }
-          OutputFull() => {
-            if False() {
-            } else {
-              return exit_status(code: 1_u8);
-            }
-          }
-          InvalidHuffmanCode() => {
-            if False() {
-            } else {
-              return exit_status(code: 1_u8);
-            }
-          }
-          InvalidHuffmanTree() => {
-            if False() {
-            } else {
-              return exit_status(code: 1_u8);
-            }
-          }
-          InvalidDistance() => {
-            if False() {
-            } else {
-              return exit_status(code: 1_u8);
-            }
-          }
-          InvalidBlockType() => {
-            if False() {
-            } else {
-              return exit_status(code: 1_u8);
-            }
-          }
-        }
-      }
-    }
-  }
-  let invalid_length_output_room = len_of(invalid_length_output);
-  if invalid_length_output_room == 1_u64 {
+  let fixed_phrase_status = check_fixed_phrase();
+  if fixed_phrase_status == 0_u8 {
   } else {
-    return exit_status(code: 1_u8);
+    return exit_status(code: fixed_phrase_status);
   }
-  let invalid_length_sentinel = invalid_length_output[0_u64];
-  if invalid_length_sentinel == 9_u8 {
+  let dynamic_status = check_dynamic();
+  if dynamic_status == 0_u8 {
   } else {
-    return exit_status(code: 1_u8);
+    return exit_status(code: dynamic_status);
   }
-  let truncated_input = buffer_new(4_u64, 0_u8);
-  set truncated_input[0_u64] = 1_u8;
-  set truncated_input[1_u64] = 2_u8;
-  set truncated_input[2_u64] = 0_u8;
-  set truncated_input[3_u64] = 253_u8;
-  let truncated_output = buffer_new(2_u64, 7_u8);
-  region {
-    let truncated_result = inflate(out: &uniq truncated_output, input: move truncated_input);
-    match move truncated_result {
-      Ok(value: truncated_value) => {
-        if False() {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-      Err(error: truncated_error) => {
-        match truncated_error {
-          Truncated() => {
-          }
-          InvalidStoredLength() => {
-            if False() {
-            } else {
-              return exit_status(code: 1_u8);
-            }
-          }
-          OutputFull() => {
-            if False() {
-            } else {
-              return exit_status(code: 1_u8);
-            }
-          }
-          InvalidHuffmanCode() => {
-            if False() {
-            } else {
-              return exit_status(code: 1_u8);
-            }
-          }
-          InvalidHuffmanTree() => {
-            if False() {
-            } else {
-              return exit_status(code: 1_u8);
-            }
-          }
-          InvalidDistance() => {
-            if False() {
-            } else {
-              return exit_status(code: 1_u8);
-            }
-          }
-          InvalidBlockType() => {
-            if False() {
-            } else {
-              return exit_status(code: 1_u8);
-            }
-          }
-        }
-      }
-    }
-  }
-  let truncated_output_room = len_of(truncated_output);
-  if truncated_output_room == 2_u64 {
+  let literal_only_status = check_literal_only();
+  if literal_only_status == 0_u8 {
   } else {
-    return exit_status(code: 1_u8);
+    return exit_status(code: literal_only_status);
   }
-  let truncated_sentinel = truncated_output[0_u64];
-  if truncated_sentinel == 7_u8 {
+  let dynamic_match_status = check_dynamic_match();
+  if dynamic_match_status == 0_u8 {
   } else {
-    return exit_status(code: 1_u8);
+    return exit_status(code: dynamic_match_status);
   }
-  let full_input = buffer_new(7_u64, 0_u8);
-  set full_input[0_u64] = 1_u8;
-  set full_input[1_u64] = 2_u8;
-  set full_input[2_u64] = 0_u8;
-  set full_input[3_u64] = 253_u8;
-  set full_input[4_u64] = 255_u8;
-  set full_input[5_u64] = 65_u8;
-  set full_input[6_u64] = 66_u8;
-  let full_output = buffer_new(1_u64, 11_u8);
-  region {
-    let full_result = inflate(out: &uniq full_output, input: move full_input);
-    match move full_result {
-      Ok(value: full_value) => {
-        if False() {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-      Err(error: full_error) => {
-        match full_error {
-          OutputFull() => {
-          }
-          Truncated() => {
-            if False() {
-            } else {
-              return exit_status(code: 1_u8);
-            }
-          }
-          InvalidStoredLength() => {
-            if False() {
-            } else {
-              return exit_status(code: 1_u8);
-            }
-          }
-          InvalidHuffmanCode() => {
-            if False() {
-            } else {
-              return exit_status(code: 1_u8);
-            }
-          }
-          InvalidHuffmanTree() => {
-            if False() {
-            } else {
-              return exit_status(code: 1_u8);
-            }
-          }
-          InvalidDistance() => {
-            if False() {
-            } else {
-              return exit_status(code: 1_u8);
-            }
-          }
-          InvalidBlockType() => {
-            if False() {
-            } else {
-              return exit_status(code: 1_u8);
-            }
-          }
-        }
-      }
-    }
-  }
-  let full_output_room = len_of(full_output);
-  if full_output_room == 1_u64 {
+  let mixed_block_status = check_mixed_block();
+  if mixed_block_status == 0_u8 {
   } else {
-    return exit_status(code: 1_u8);
+    return exit_status(code: mixed_block_status);
   }
-  let full_sentinel = full_output[0_u64];
-  if full_sentinel == 11_u8 {
+  let invalid_tree_status = check_invalid_tree();
+  if invalid_tree_status == 0_u8 {
   } else {
-    return exit_status(code: 1_u8);
+    return exit_status(code: invalid_tree_status);
   }
-  let fixed_literal_input = buffer_new(7_u64, 0_u8);
-  set fixed_literal_input[0_u64] = 203_u8;
-  set fixed_literal_input[1_u64] = 72_u8;
-  set fixed_literal_input[2_u64] = 205_u8;
-  set fixed_literal_input[3_u64] = 201_u8;
-  set fixed_literal_input[4_u64] = 201_u8;
-  set fixed_literal_input[5_u64] = 7_u8;
-  set fixed_literal_input[6_u64] = 0_u8;
-  let fixed_literal_output = buffer_new(5_u64, 0_u8);
-  region {
-    let fixed_literal_result = inflate(out: &uniq fixed_literal_output, input: move fixed_literal_input);
-    match move fixed_literal_result {
-      Ok(value: fixed_literal_length) => {
-        if fixed_literal_length == 5_u64 {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-      Err(error: fixed_literal_error) => {
-        if False() {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-    }
-  }
-  let fixed_literal_output_room = len_of(fixed_literal_output);
-  if fixed_literal_output_room == 5_u64 {
+  let dynamic_truncated_status = check_dynamic_truncated();
+  if dynamic_truncated_status == 0_u8 {
   } else {
-    return exit_status(code: 1_u8);
+    return exit_status(code: dynamic_truncated_status);
   }
-  let fixed_literal_zero = fixed_literal_output[0_u64];
-  let fixed_literal_one = fixed_literal_output[1_u64];
-  let fixed_literal_two = fixed_literal_output[2_u64];
-  let fixed_literal_three = fixed_literal_output[3_u64];
-  let fixed_literal_four = fixed_literal_output[4_u64];
-  if fixed_literal_zero == 104_u8 {
+  let dynamic_full_status = check_dynamic_full();
+  if dynamic_full_status == 0_u8 {
   } else {
-    return exit_status(code: 1_u8);
+    return exit_status(code: dynamic_full_status);
   }
-  if fixed_literal_one == 101_u8 {
+  let reserved_block_status = check_reserved_block();
+  if reserved_block_status == 0_u8 {
   } else {
-    return exit_status(code: 1_u8);
+    return exit_status(code: reserved_block_status);
   }
-  if fixed_literal_two == 108_u8 {
+  let fixed_truncated_status = check_fixed_truncated();
+  if fixed_truncated_status == 0_u8 {
   } else {
-    return exit_status(code: 1_u8);
+    return exit_status(code: fixed_truncated_status);
   }
-  if fixed_literal_three == 108_u8 {
+  let invalid_huffman_status = check_invalid_huffman();
+  if invalid_huffman_status == 0_u8 {
   } else {
-    return exit_status(code: 1_u8);
+    return exit_status(code: invalid_huffman_status);
   }
-  if fixed_literal_four == 111_u8 {
+  let invalid_distance_status = check_invalid_distance();
+  if invalid_distance_status == 0_u8 {
   } else {
-    return exit_status(code: 1_u8);
+    return exit_status(code: invalid_distance_status);
   }
-  let fixed_match_input = buffer_new(5_u64, 0_u8);
-  set fixed_match_input[0_u64] = 75_u8;
-  set fixed_match_input[1_u64] = 76_u8;
-  set fixed_match_input[2_u64] = 68_u8;
-  set fixed_match_input[3_u64] = 5_u8;
-  set fixed_match_input[4_u64] = 0_u8;
-  let fixed_match_output = buffer_new(16_u64, 0_u8);
-  region {
-    let fixed_match_result = inflate(out: &uniq fixed_match_output, input: move fixed_match_input);
-    match move fixed_match_result {
-      Ok(value: fixed_match_length) => {
-        if fixed_match_length == 16_u64 {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-      Err(error: fixed_match_error) => {
-        if False() {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-    }
-  }
-  let fixed_match_output_room = len_of(fixed_match_output);
-  if fixed_match_output_room == 16_u64 {
+  let fixed_full_status = check_fixed_full();
+  if fixed_full_status == 0_u8 {
   } else {
-    return exit_status(code: 1_u8);
-  }
-  let fixed_match_index = 0_u64;
-  loop @check_fixed_match {
-    let fixed_match_done = fixed_match_index == 16_u64;
-    if fixed_match_done {
-      break @check_fixed_match;
-    } else {
-      let fixed_match_room = len_of(fixed_match_output);
-      let fixed_match_ok = fixed_match_index < fixed_match_room;
-      if fixed_match_ok {
-      } else {
-        return exit_status(code: 1_u8);
-      }
-      let fixed_match_byte = fixed_match_output[fixed_match_index];
-      if fixed_match_byte == 97_u8 {
-      } else {
-        return exit_status(code: 1_u8);
-      }
-      set fixed_match_index = fixed_match_index +wrap 1_u64;
-    }
-  }
-  let fixed_phrase_input = buffer_new(10_u64, 0_u8);
-  set fixed_phrase_input[0_u64] = 203_u8;
-  set fixed_phrase_input[1_u64] = 72_u8;
-  set fixed_phrase_input[2_u64] = 205_u8;
-  set fixed_phrase_input[3_u64] = 201_u8;
-  set fixed_phrase_input[4_u64] = 201_u8;
-  set fixed_phrase_input[5_u64] = 87_u8;
-  set fixed_phrase_input[6_u64] = 200_u8;
-  set fixed_phrase_input[7_u64] = 64_u8;
-  set fixed_phrase_input[8_u64] = 144_u8;
-  set fixed_phrase_input[9_u64] = 0_u8;
-  let fixed_phrase_output = buffer_new(17_u64, 0_u8);
-  region {
-    let fixed_phrase_result = inflate(out: &uniq fixed_phrase_output, input: move fixed_phrase_input);
-    match move fixed_phrase_result {
-      Ok(value: fixed_phrase_length) => {
-        if fixed_phrase_length == 17_u64 {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-      Err(error: fixed_phrase_error) => {
-        if False() {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-    }
-  }
-  let fixed_phrase_output_room = len_of(fixed_phrase_output);
-  if fixed_phrase_output_room == 17_u64 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  let fixed_phrase_index = 0_u64;
-  loop @check_fixed_phrase {
-    let fixed_phrase_done = fixed_phrase_index == 17_u64;
-    if fixed_phrase_done {
-      break @check_fixed_phrase;
-    } else {
-      let fixed_phrase_room = len_of(fixed_phrase_output);
-      let fixed_phrase_out_ok = fixed_phrase_index < fixed_phrase_room;
-      if fixed_phrase_out_ok {
-      } else {
-        return exit_status(code: 1_u8);
-      }
-      let fixed_phrase_actual = fixed_phrase_output[fixed_phrase_index];
-      let fixed_phrase_wanted = fixed_phrase_expected[fixed_phrase_index];
-      if fixed_phrase_actual == fixed_phrase_wanted {
-      } else {
-        return exit_status(code: 1_u8);
-      }
-      set fixed_phrase_index = fixed_phrase_index +wrap 1_u64;
-    }
-  }
-  let dynamic_input = make_dynamic_input();
-  let dynamic_output = buffer_new(100_u64, 0_u8);
-  region {
-    let dynamic_result = inflate(out: &uniq dynamic_output, input: move dynamic_input);
-    match move dynamic_result {
-      Ok(value: dynamic_length) => {
-        if dynamic_length == 100_u64 {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-      Err(error: dynamic_error) => {
-        if False() {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-    }
-  }
-  let dynamic_output_room = len_of(dynamic_output);
-  if dynamic_output_room == 100_u64 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  let dynamic_output_index = 0_u64;
-  loop @check_dynamic_output {
-    let dynamic_output_done = dynamic_output_index == 100_u64;
-    if dynamic_output_done {
-      break @check_dynamic_output;
-    } else {
-      let dynamic_room = len_of(dynamic_output);
-      let dynamic_out_ok = dynamic_output_index < dynamic_room;
-      if dynamic_out_ok {
-      } else {
-        return exit_status(code: 1_u8);
-      }
-      let dynamic_actual = dynamic_output[dynamic_output_index];
-      let dynamic_wanted = dynamic_expected_bytes[dynamic_output_index];
-      if dynamic_actual == dynamic_wanted {
-      } else {
-        return exit_status(code: 1_u8);
-      }
-      set dynamic_output_index = dynamic_output_index +wrap 1_u64;
-    }
-  }
-  let literal_only_input = make_literal_only_dynamic_input();
-  let literal_only_output = buffer_new(1_u64, 0_u8);
-  region {
-    let literal_only_result = inflate(out: &uniq literal_only_output, input: move literal_only_input);
-    match move literal_only_result {
-      Ok(value: literal_only_length) => {
-        if literal_only_length == 1_u64 {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-      Err(error: literal_only_error) => {
-        if False() {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-    }
-  }
-  let literal_only_output_room = len_of(literal_only_output);
-  if literal_only_output_room == 1_u64 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  let literal_only_byte = literal_only_output[0_u64];
-  if literal_only_byte == 65_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  let dynamic_match_input = make_dynamic_match_input();
-  let dynamic_match_output = buffer_new(400_u64, 0_u8);
-  region {
-    let dynamic_match_result = inflate(out: &uniq dynamic_match_output, input: move dynamic_match_input);
-    match move dynamic_match_result {
-      Ok(value: dynamic_match_length) => {
-        if dynamic_match_length == 400_u64 {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-      Err(error: dynamic_match_error) => {
-        if False() {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-    }
-  }
-  let dynamic_match_output_room = len_of(dynamic_match_output);
-  if dynamic_match_output_room == 400_u64 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  let dynamic_match_repeat = 0_u64;
-  loop @check_dynamic_match_repeats {
-    let all_repeats_checked = dynamic_match_repeat == 4_u64;
-    if all_repeats_checked {
-      break @check_dynamic_match_repeats;
-    } else {
-      let dynamic_match_base = dynamic_match_repeat *wrap 100_u64;
-      let dynamic_match_index = 0_u64;
-      loop @check_dynamic_match_chunk {
-        let chunk_checked = dynamic_match_index == 100_u64;
-        if chunk_checked {
-          break @check_dynamic_match_chunk;
-        } else {
-          let output_index = dynamic_match_base +wrap dynamic_match_index;
-          let dynamic_match_room = len_of(dynamic_match_output);
-          let dynamic_match_out_ok = output_index < dynamic_match_room;
-          if dynamic_match_out_ok {
-          } else {
-            return exit_status(code: 1_u8);
-          }
-          let dynamic_match_actual = dynamic_match_output[output_index];
-          let dynamic_match_exp_ok = dynamic_match_index < 100_u64;
-          if dynamic_match_exp_ok {
-          } else {
-            return exit_status(code: 1_u8);
-          }
-          let dynamic_match_wanted = dynamic_expected_bytes[dynamic_match_index];
-          if dynamic_match_actual == dynamic_match_wanted {
-          } else {
-            return exit_status(code: 1_u8);
-          }
-          set dynamic_match_index = dynamic_match_index +wrap 1_u64;
-        }
-      }
-      set dynamic_match_repeat = dynamic_match_repeat +wrap 1_u64;
-    }
-  }
-  let mixed_block_input = buffer_new(78_u64, 0_u8);
-  let mixed_block_input_index = 0_u64;
-  loop @fill_mixed_block_input {
-    let mixed_block_input_done = mixed_block_input_index == 78_u64;
-    if mixed_block_input_done {
-      break @fill_mixed_block_input;
-    } else {
-      let mixed_fill_ok = mixed_block_input_index < 78_u64;
-      if mixed_fill_ok {
-      } else {
-        return exit_status(code: 1_u8);
-      }
-      let mixed_block_input_byte = mixed_block_input_bytes[mixed_block_input_index];
-      set mixed_block_input[mixed_block_input_index] = mixed_block_input_byte;
-      set mixed_block_input_index = mixed_block_input_index +wrap 1_u64;
-    }
-  }
-  let mixed_block_output = buffer_new(105_u64, 0_u8);
-  region {
-    let mixed_block_result = inflate(out: &uniq mixed_block_output, input: move mixed_block_input);
-    match move mixed_block_result {
-      Ok(value: mixed_block_length) => {
-        if mixed_block_length == 105_u64 {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-      Err(error: mixed_block_error) => {
-        if False() {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-    }
-  }
-  let mixed_block_output_room = len_of(mixed_block_output);
-  if mixed_block_output_room == 105_u64 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  let mixed_block_index = 0_u64;
-  loop @check_mixed_block_prefix {
-    let mixed_block_prefix_done = mixed_block_index == 100_u64;
-    if mixed_block_prefix_done {
-      break @check_mixed_block_prefix;
-    } else {
-      let mixed_room = len_of(mixed_block_output);
-      let mixed_out_ok = mixed_block_index < mixed_room;
-      if mixed_out_ok {
-      } else {
-        return exit_status(code: 1_u8);
-      }
-      let mixed_block_actual = mixed_block_output[mixed_block_index];
-      let mixed_exp_ok = mixed_block_index < 100_u64;
-      if mixed_exp_ok {
-      } else {
-        return exit_status(code: 1_u8);
-      }
-      let mixed_block_wanted = dynamic_expected_bytes[mixed_block_index];
-      if mixed_block_actual == mixed_block_wanted {
-      } else {
-        return exit_status(code: 1_u8);
-      }
-      set mixed_block_index = mixed_block_index +wrap 1_u64;
-    }
-  }
-  let mixed_block_h = mixed_block_output[100_u64];
-  let mixed_block_e = mixed_block_output[101_u64];
-  let mixed_block_l0 = mixed_block_output[102_u64];
-  let mixed_block_l1 = mixed_block_output[103_u64];
-  let mixed_block_o = mixed_block_output[104_u64];
-  if mixed_block_h == 104_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if mixed_block_e == 101_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if mixed_block_l0 == 108_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if mixed_block_l1 == 108_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if mixed_block_o == 111_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  let invalid_tree_input = buffer_new(4_u64, 0_u8);
-  set invalid_tree_input[0_u64] = 5_u8;
-  let invalid_tree_output = buffer_new(1_u64, 0_u8);
-  region {
-    let invalid_tree_result = inflate(out: &uniq invalid_tree_output, input: move invalid_tree_input);
-    match move invalid_tree_result {
-      Ok(value: invalid_tree_length) => {
-        if False() {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-      Err(error: invalid_tree_error) => {
-        let invalid_tree_code = error_code(error: invalid_tree_error);
-        if invalid_tree_code == 3_u8 {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-    }
-  }
-  let dynamic_truncated_input = buffer_new(10_u64, 0_u8);
-  let dynamic_truncated_index = 0_u64;
-  loop @fill_dynamic_truncated {
-    let dynamic_truncated_filled = dynamic_truncated_index == 10_u64;
-    if dynamic_truncated_filled {
-      break @fill_dynamic_truncated;
-    } else {
-      let truncated_fill_ok = dynamic_truncated_index < 10_u64;
-      if truncated_fill_ok {
-      } else {
-        return exit_status(code: 1_u8);
-      }
-      let dynamic_truncated_byte = dynamic_input_bytes[dynamic_truncated_index];
-      set dynamic_truncated_input[dynamic_truncated_index] = dynamic_truncated_byte;
-      set dynamic_truncated_index = dynamic_truncated_index +wrap 1_u64;
-    }
-  }
-  let dynamic_truncated_output = buffer_new(100_u64, 0_u8);
-  region {
-    let dynamic_truncated_result = inflate(out: &uniq dynamic_truncated_output, input: move dynamic_truncated_input);
-    match move dynamic_truncated_result {
-      Ok(value: dynamic_truncated_length) => {
-        if False() {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-      Err(error: dynamic_truncated_error) => {
-        let dynamic_truncated_code = error_code(error: dynamic_truncated_error);
-        if dynamic_truncated_code == 1_u8 {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-    }
-  }
-  let dynamic_full_input = make_dynamic_input();
-  let dynamic_full_output = buffer_new(99_u64, 0_u8);
-  region {
-    let dynamic_full_result = inflate(out: &uniq dynamic_full_output, input: move dynamic_full_input);
-    match move dynamic_full_result {
-      Ok(value: dynamic_full_length) => {
-        if False() {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-      Err(error: dynamic_full_error) => {
-        let dynamic_full_code = error_code(error: dynamic_full_error);
-        if dynamic_full_code == 7_u8 {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-    }
-  }
-  let reserved_block_input = buffer_new(1_u64, 7_u8);
-  let reserved_block_output = buffer_new(1_u64, 0_u8);
-  region {
-    let reserved_block_result = inflate(out: &uniq reserved_block_output, input: move reserved_block_input);
-    match move reserved_block_result {
-      Ok(value: reserved_block_length) => {
-        if False() {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-      Err(error: reserved_block_error) => {
-        let reserved_block_code = error_code(error: reserved_block_error);
-        if reserved_block_code == 6_u8 {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-    }
-  }
-  let fixed_truncated_input = buffer_new(1_u64, 203_u8);
-  let fixed_truncated_output = buffer_new(5_u64, 0_u8);
-  region {
-    let fixed_truncated_result = inflate(out: &uniq fixed_truncated_output, input: move fixed_truncated_input);
-    match move fixed_truncated_result {
-      Ok(value: fixed_truncated_length) => {
-        if False() {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-      Err(error: fixed_truncated_error) => {
-        let fixed_truncated_code = error_code(error: fixed_truncated_error);
-        if fixed_truncated_code == 1_u8 {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-    }
-  }
-  let invalid_huffman_input = buffer_new(2_u64, 0_u8);
-  set invalid_huffman_input[0_u64] = 27_u8;
-  set invalid_huffman_input[1_u64] = 3_u8;
-  let invalid_huffman_output = buffer_new(1_u64, 0_u8);
-  region {
-    let invalid_huffman_result = inflate(out: &uniq invalid_huffman_output, input: move invalid_huffman_input);
-    match move invalid_huffman_result {
-      Ok(value: invalid_huffman_length) => {
-        if False() {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-      Err(error: invalid_huffman_error) => {
-        let invalid_huffman_code = error_code(error: invalid_huffman_error);
-        if invalid_huffman_code == 4_u8 {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-    }
-  }
-  let invalid_distance_input = buffer_new(2_u64, 0_u8);
-  set invalid_distance_input[0_u64] = 3_u8;
-  set invalid_distance_input[1_u64] = 2_u8;
-  let invalid_distance_output = buffer_new(3_u64, 0_u8);
-  region {
-    let invalid_distance_result = inflate(out: &uniq invalid_distance_output, input: move invalid_distance_input);
-    match move invalid_distance_result {
-      Ok(value: invalid_distance_length) => {
-        if False() {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-      Err(error: invalid_distance_error) => {
-        let invalid_distance_code = error_code(error: invalid_distance_error);
-        if invalid_distance_code == 5_u8 {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-    }
-  }
-  let fixed_full_input = buffer_new(7_u64, 0_u8);
-  set fixed_full_input[0_u64] = 203_u8;
-  set fixed_full_input[1_u64] = 72_u8;
-  set fixed_full_input[2_u64] = 205_u8;
-  set fixed_full_input[3_u64] = 201_u8;
-  set fixed_full_input[4_u64] = 201_u8;
-  set fixed_full_input[5_u64] = 7_u8;
-  set fixed_full_input[6_u64] = 0_u8;
-  let fixed_full_output = buffer_new(4_u64, 0_u8);
-  region {
-    let fixed_full_result = inflate(out: &uniq fixed_full_output, input: move fixed_full_input);
-    match move fixed_full_result {
-      Ok(value: fixed_full_length) => {
-        if False() {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-      Err(error: fixed_full_error) => {
-        let fixed_full_code = error_code(error: fixed_full_error);
-        if fixed_full_code == 7_u8 {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-      }
-    }
+    return exit_status(code: fixed_full_status);
   }
   return exit_status(code: 0_u8);
 }
