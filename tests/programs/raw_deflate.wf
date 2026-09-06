@@ -23,7 +23,7 @@ const distance_bases: FixedVector<u16, 30> =[1_u16, 2_u16, 3_u16, 4_u16, 5_u16, 
 
 const distance_extras: FixedVector<u8, 30> =[0_u8, 0_u8, 0_u8, 0_u8, 1_u8, 1_u8, 2_u8, 2_u8, 3_u8, 3_u8, 4_u8, 4_u8, 5_u8, 5_u8, 6_u8, 6_u8, 7_u8, 7_u8, 8_u8, 8_u8, 9_u8, 9_u8, 10_u8, 10_u8, 11_u8, 11_u8, 12_u8, 12_u8, 13_u8, 13_u8];
 
-fn read_bits(state: &uniq InflateState, input: &buffer<u8>, count: own u32, mask: own u64) -> outcome: own Result<u64, InflateError> reads(state.input_offset, state.hold, state.bits, input), writes(state.input_offset, state.hold, state.bits) contract {
+fn read_bits(state: &uniq InflateState, input: own Slice<u8>, count: own u32, mask: own u64) -> outcome: own Result<u64, InflateError> reads(state.input_offset, state.hold, state.bits, input), writes(state.input_offset, state.hold, state.bits) contract {
   ensures when Ok(value: result): result <= mask;
 } {
   loop @fill_bits {
@@ -31,13 +31,13 @@ fn read_bits(state: &uniq InflateState, input: &buffer<u8>, count: own u32, mask
     if enough {
       break @fill_bits;
     } else {
-      let input_length = len_of(deref(input));
+      let input_length = len_of(input);
       let input_done = deref(state).input_offset >= input_length;
       if input_done {
         let error = Truncated();
         return Err<u64, InflateError>(error: error);
       }
-      let next_byte = deref(input)[deref(state).input_offset];
+      let next_byte = input[deref(state).input_offset];
       let next_word = cvt::<u8, u64>(next_byte);
       let shifted = ishl.wrap(next_word, deref(state).bits);
       set deref(state).hold = ior(deref(state).hold, shifted);
@@ -51,7 +51,7 @@ fn read_bits(state: &uniq InflateState, input: &buffer<u8>, count: own u32, mask
   return Ok<u64, InflateError>(value: value);
 }
 
-fn decode_fixed_symbol(state: &uniq InflateState, input: &buffer<u8>) -> result: own Result<u64, InflateError> reads(state.input_offset, state.hold, state.bits, input), writes(state.input_offset, state.hold, state.bits) {
+fn decode_fixed_symbol(state: &uniq InflateState, input: own Slice<u8>) -> result: own Result<u64, InflateError> reads(state.input_offset, state.hold, state.bits, input), writes(state.input_offset, state.hold, state.bits) {
   let code = 0_u64;
   let first = 0_u64;
   let symbol_index = 0_u64;
@@ -60,7 +60,7 @@ fn decode_fixed_symbol(state: &uniq InflateState, input: &buffer<u8>) -> result:
   loop @code_lengths {
     let bit = 0_u64;
     region {
-      match read_bits(state: &uniq deref(state), input: &deref(input), count: 1_u32, mask: 1_u64) {
+      match read_bits(state: &uniq deref(state), input: input, count: 1_u32, mask: 1_u64) {
         Ok(value: read_bit) => {
           set bit = read_bit;
         }
@@ -113,7 +113,7 @@ fn decode_fixed_symbol(state: &uniq InflateState, input: &buffer<u8>) -> result:
   return Ok<u64, InflateError>(value: decoded);
 }
 
-fn emit_byte(state: &uniq InflateState, out: &uniq buffer<u8>, value: own u8) -> result: own Result<unit, InflateError> reads(state.output_offset, out), writes(state.output_offset, out) {
+fn emit_byte(state: &uniq InflateState, out: &uniq MutSlice<u8>, value: own u8) -> result: own Result<unit, InflateError> reads(state.output_offset, out), writes(state.output_offset, out) {
   let output_length = len_of(deref(out));
   let output_full = deref(state).output_offset >= output_length;
   if output_full {
@@ -125,11 +125,11 @@ fn emit_byte(state: &uniq InflateState, out: &uniq buffer<u8>, value: own u8) ->
   return Ok<unit, InflateError>(value: unit);
 }
 
-fn decode_fixed(state: &uniq InflateState, input: &buffer<u8>, out: &uniq buffer<u8>) -> result: own Result<unit, InflateError> reads(state.input_offset, state.output_offset, state.hold, state.bits, input, out), writes(state.input_offset, state.output_offset, state.hold, state.bits, out) {
+fn decode_fixed(state: &uniq InflateState, input: own Slice<u8>, out: &uniq MutSlice<u8>) -> result: own Result<unit, InflateError> reads(state.input_offset, state.output_offset, state.hold, state.bits, input, out), writes(state.input_offset, state.output_offset, state.hold, state.bits, out) {
   loop @fixed_codes {
     let symbol = 0_u64;
     region {
-      match decode_fixed_symbol(state: &uniq deref(state), input: &deref(input)) {
+      match decode_fixed_symbol(state: &uniq deref(state), input: input) {
         Ok(value: decoded_symbol) => {
           set symbol = decoded_symbol;
         }
@@ -164,7 +164,7 @@ fn decode_fixed(state: &uniq InflateState, input: &buffer<u8>, out: &uniq buffer
       } else {
         let copy_length = 0_u64;
         region {
-          match decode_length(state: &uniq deref(state), input: &deref(input), symbol: symbol) {
+          match decode_length(state: &uniq deref(state), input: input, symbol: symbol) {
             Ok(value: decoded_length) => {
               set copy_length = decoded_length;
             }
@@ -175,7 +175,7 @@ fn decode_fixed(state: &uniq InflateState, input: &buffer<u8>, out: &uniq buffer
         }
         let distance_symbol = 0_u64;
         region {
-          match read_bits(state: &uniq deref(state), input: &deref(input), count: 5_u32, mask: 31_u64) {
+          match read_bits(state: &uniq deref(state), input: input, count: 5_u32, mask: 31_u64) {
             Ok(value: distance_code) => {
               set distance_symbol = distance_code;
             }
@@ -185,7 +185,7 @@ fn decode_fixed(state: &uniq InflateState, input: &buffer<u8>, out: &uniq buffer
           }
         }
         region {
-          match copy_distance(state: &uniq deref(state), input: &deref(input), out: &uniq deref(out), copy_length: copy_length, distance_symbol: distance_symbol) {
+          match copy_distance(state: &uniq deref(state), input: input, out: &uniq deref(out), copy_length: copy_length, distance_symbol: distance_symbol) {
             Ok(value: copied) => {
             }
             Err(error: copy_error) => {
@@ -199,14 +199,14 @@ fn decode_fixed(state: &uniq InflateState, input: &buffer<u8>, out: &uniq buffer
   return Ok<unit, InflateError>(value: unit);
 }
 
-fn inflate(out: &uniq buffer<u8>, input: own buffer<u8>) -> result: own Result<u64, InflateError> reads(out, input), writes(out) {
+fn inflate(out: &uniq MutSlice<u8>, input: own Slice<u8>) -> result: own Result<u64, InflateError> reads(out, input), writes(out) {
   let input_length = len_of(input);
   let output_length = len_of(deref(out));
   let state = InflateState(input_offset: 0_u64, output_offset: 0_u64, hold: 0_u64, bits: 0_u32);
   loop @blocks {
     let final_value = 0_u64;
     region {
-      match read_bits(state: &uniq state, input: &input, count: 1_u32, mask: 1_u64) {
+      match read_bits(state: &uniq state, input: input, count: 1_u32, mask: 1_u64) {
         Ok(value: final_bit) => {
           set final_value = final_bit;
         }
@@ -218,7 +218,7 @@ fn inflate(out: &uniq buffer<u8>, input: own buffer<u8>) -> result: own Result<u
     let final_block = final_value == 1_u64;
     let block_type = 0_u64;
     region {
-      match read_bits(state: &uniq state, input: &input, count: 2_u32, mask: 3_u64) {
+      match read_bits(state: &uniq state, input: input, count: 2_u32, mask: 3_u64) {
         Ok(value: block_type_bits) => {
           set block_type = block_type_bits;
         }
@@ -330,7 +330,7 @@ fn inflate(out: &uniq buffer<u8>, input: own buffer<u8>) -> result: own Result<u
       let fixed_block = block_type == 1_u64;
       if fixed_block {
         region {
-          match decode_fixed(state: &uniq state, input: &input, out: &uniq deref(out)) {
+          match decode_fixed(state: &uniq state, input: input, out: &uniq deref(out)) {
             Ok(value: decoded) => {
             }
             Err(error: decode_error) => {
@@ -342,7 +342,7 @@ fn inflate(out: &uniq buffer<u8>, input: own buffer<u8>) -> result: own Result<u
         let dynamic_block = block_type == 2_u64;
         if dynamic_block {
           region {
-            match decode_dynamic(state: &uniq state, input: &input, out: &uniq deref(out)) {
+            match decode_dynamic(state: &uniq state, input: input, out: &uniq deref(out)) {
               Ok(value: decoded) => {
               }
               Err(error: decode_error) => {

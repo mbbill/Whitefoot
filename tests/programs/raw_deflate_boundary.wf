@@ -39,9 +39,9 @@ fn append_slice(destination: &uniq MutSlice<u8>, capacity: own u64, filled: own 
   }
 }
 
-fn copy_range(destination: &uniq MutSlice<u8>, at: own u64, source: &buffer<u8>, from: own u64, to: own u64) -> result: own u64 reads(destination, source), writes(destination) {
+fn copy_range(destination: &uniq MutSlice<u8>, at: own u64, source: own Slice<u8>, from: own u64, to: own u64) -> result: own u64 reads(destination, source), writes(destination) {
   doc "Copies one half-open source range into the destination at one offset.";
-  let source_room = len_of(deref(source));
+  let source_room = len_of(source);
   let destination_room = len_of(deref(destination));
   let target = at;
   let cursor = from;
@@ -55,7 +55,7 @@ fn copy_range(destination: &uniq MutSlice<u8>, at: own u64, source: &buffer<u8>,
     } else {
       return target;
     }
-    let byte = deref(source)[cursor];
+    let byte = source[cursor];
     let write_ok = target < destination_room;
     if write_ok {
     } else {
@@ -197,226 +197,273 @@ fn assemble_reason(report: own MutSlice<u8>, capacity: own u64, reason: own u8) 
 
 command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(cwd, out, err, files) {
   doc "Reads one raw DEFLATE file named on the command line through the system read path; every boundary outcome reaches its own status.";
-  let scratch = buffer_new(4097_u64, 0_u8);
-  let report = buffer_new(128_u64, 0_u8);
-  let report_room = len_of(report);
-  let arguments = 0_u64;
-  region {
-    set arguments = args_count(args: &args);
-  }
-  let named = arguments >= 2_u64;
-  if named {
-  } else {
+  region 'workspace {
+    let workspace = arena_frame::<131072, 1, 'workspace>();
     region {
-      let report_window = mut_slice_of(&uniq report);
-      let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: 1_u8);
-      let publish_view = slice_of(&report);
-      region {
-        match publish_all(output: &uniq err, source: publish_view, length: assembled) {
-          Ok(value: published) => {
-          }
-          Err(error: problem) => {
-          }
-        }
+      let scratch = arena_vector_proved::<u8>(store: &uniq workspace, count: 4097_u64);
+      for @reserve_scratch (
+        at in 0_u64..4097_u64,
+        invariant grown: len_of(scratch) >= at,
+        invariant spare: room_of(scratch) + at >= 4097_u64,
+        invariant flat: head_of(scratch) <= 0_u64
+      ) {
+        set scratch = place_back(vector: move scratch, value: 0_u8);
       }
-    }
-    return exit_status(code: 1_u8);
-  }
-  let status = 0_u8;
-  let filled = 0_u64;
-  let file_offset = 0_u64;
-  region {
-    match arg_get(args: &args, position: 1_u64) {
-      Ok(value: text) => {
-        match relative_path(value: move text) {
-          Ok(value: path) => {
-            region {
-              let permit = reserve_file(factory: &uniq files);
-              match open_read(permit: move permit, root: &cwd, path: &path) {
-                Ok(value: file) => {
-                  let ended = 0_u8;
-                  loop @chunks {
-                    let within_scratch = filled <= 4097_u64;
-                    if within_scratch {
-                    } else {
-                      set ended = 2_u8;
-                      break @chunks;
-                    }
-                    let spare = 4097_u64 -wrap filled;
-                    let full = spare == 0_u64;
-                    if full {
-                      break @chunks;
-                    }
-                    region {
-                      match read_at(file: &file, destination: &uniq scratch, file_offset: file_offset, start: filled, end: 4097_u64) {
-                        ReadBytes(next: endpoint) => {
-                          let received = endpoint -wrap filled;
-                          set file_offset = file_offset +wrap received;
-                          set filled = endpoint;
-                        }
-                        ReadEnd() => {
-                          set ended = 1_u8;
-                        }
-                        ReadFailed(error: problem) => {
-                          set ended = 2_u8;
-                        }
-                      }
-                    }
-                    if ended != 0_u8 {
-                      break @chunks;
-                    }
-                  }
-                  if ended == 2_u8 {
-                    set status = 2_u8;
-                  }
-                }
-                Err(error: problem) => {
-                  set status = 2_u8;
-                }
+      let report = arena_vector_proved::<u8>(store: &uniq workspace, count: 128_u64);
+      for @reserve_report (
+        at in 0_u64..128_u64,
+        invariant grown: len_of(report) >= at,
+        invariant spare: room_of(report) + at >= 128_u64,
+        invariant flat: head_of(report) <= 0_u64
+      ) {
+        set report = place_back(vector: move report, value: 0_u8);
+      }
+      let report_room = len_of(report);
+      let arguments = 0_u64;
+      region {
+        set arguments = args_count(args: &args);
+      }
+      let named = arguments >= 2_u64;
+      if named {
+      } else {
+        region {
+          let report_window = mut_slice_of(&uniq report);
+          let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: 1_u8);
+          let publish_view = slice_of(&report);
+          region {
+            match publish_all(output: &uniq err, source: publish_view, length: assembled) {
+              Ok(value: published) => {
+              }
+              Err(error: problem) => {
               }
             }
           }
-          Err(error: rejected) => {
-            set status = 2_u8;
-          }
         }
+        return exit_status(code: 1_u8);
       }
-      Err(error: absent) => {
-        set status = 1_u8;
-      }
-    }
-  }
-  if status != 0_u8 {
-    region {
-      let report_window = mut_slice_of(&uniq report);
-      let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: status);
-      let publish_view = slice_of(&report);
+      let status = 0_u8;
+      let filled = 0_u64;
+      let file_offset = 0_u64;
       region {
-        match publish_all(output: &uniq err, source: publish_view, length: assembled) {
-          Ok(value: published) => {
+        match arg_get(args: &args, position: 1_u64) {
+          Ok(value: text) => {
+            match relative_path(value: move text) {
+              Ok(value: path) => {
+                region {
+                  let permit = reserve_file(factory: &uniq files);
+                  match open_read(permit: move permit, root: &cwd, path: &path) {
+                    Ok(value: file) => {
+                      let ended = 0_u8;
+                      region {
+                        let scratch_window = mut_slice_of(&uniq scratch);
+                        loop @chunks {
+                          let within_scratch = filled <= 4097_u64;
+                          if within_scratch {
+                          } else {
+                            set ended = 2_u8;
+                            break @chunks;
+                          }
+                          let spare = 4097_u64 -wrap filled;
+                          let full = spare == 0_u64;
+                          if full {
+                            break @chunks;
+                          }
+                          region {
+                            match read_at(file: &file, destination: &uniq scratch_window, file_offset: file_offset, start: filled, end: 4097_u64) {
+                              ReadBytes(next: endpoint) => {
+                                let received = endpoint -wrap filled;
+                                set file_offset = file_offset +wrap received;
+                                set filled = endpoint;
+                              }
+                              ReadEnd() => {
+                                set ended = 1_u8;
+                              }
+                              ReadFailed(error: problem) => {
+                                set ended = 2_u8;
+                              }
+                            }
+                          }
+                          if ended != 0_u8 {
+                            break @chunks;
+                          }
+                        }
+                      }
+                      if ended == 2_u8 {
+                        set status = 2_u8;
+                      }
+                    }
+                    Err(error: problem) => {
+                      set status = 2_u8;
+                    }
+                  }
+                }
+              }
+              Err(error: rejected) => {
+                set status = 2_u8;
+              }
+            }
           }
-          Err(error: problem) => {
+          Err(error: absent) => {
+            set status = 1_u8;
           }
         }
       }
-    }
-    return exit_status(code: status);
-  }
-  let empty = filled == 0_u64;
-  if empty {
-    region {
-      let report_window = mut_slice_of(&uniq report);
-      let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: 3_u8);
-      let publish_view = slice_of(&report);
+      if status != 0_u8 {
+        region {
+          let report_window = mut_slice_of(&uniq report);
+          let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: status);
+          let publish_view = slice_of(&report);
+          region {
+            match publish_all(output: &uniq err, source: publish_view, length: assembled) {
+              Ok(value: published) => {
+              }
+              Err(error: problem) => {
+              }
+            }
+          }
+        }
+        return exit_status(code: status);
+      }
+      let empty = filled == 0_u64;
+      if empty {
+        region {
+          let report_window = mut_slice_of(&uniq report);
+          let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: 3_u8);
+          let publish_view = slice_of(&report);
+          region {
+            match publish_all(output: &uniq err, source: publish_view, length: assembled) {
+              Ok(value: published) => {
+              }
+              Err(error: problem) => {
+              }
+            }
+          }
+        }
+        return exit_status(code: 3_u8);
+      }
+      let too_large = filled > 4096_u64;
+      if too_large {
+        region {
+          let report_window = mut_slice_of(&uniq report);
+          let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: 4_u8);
+          let publish_view = slice_of(&report);
+          region {
+            match publish_all(output: &uniq err, source: publish_view, length: assembled) {
+              Ok(value: published) => {
+              }
+              Err(error: problem) => {
+              }
+            }
+          }
+        }
+        return exit_status(code: 4_u8);
+      }
+      let stream = arena_vector_proved::<u8>(store: &uniq workspace, count: 4096_u64);
+      for @reserve_stream (
+        at in 0_u64..filled,
+        invariant made_lo: len_of(stream) >= at,
+        invariant made_hi: len_of(stream) <= at,
+        invariant spare_lo: room_of(stream) + at >= 4096_u64,
+        invariant spare_hi: room_of(stream) + at <= 4096_u64,
+        invariant flat: head_of(stream) <= 0_u64
+      ) {
+        set stream = place_back(vector: move stream, value: 0_u8);
+      }
       region {
-        match publish_all(output: &uniq err, source: publish_view, length: assembled) {
-          Ok(value: published) => {
-          }
-          Err(error: problem) => {
-          }
+        let scratch_view = slice_of(&scratch);
+        let stream_window = mut_slice_of(&uniq stream);
+        region {
+          let copied = copy_range(destination: &uniq stream_window, at: 0_u64, source: scratch_view, from: 0_u64, to: filled);
         }
       }
-    }
-    return exit_status(code: 3_u8);
-  }
-  let too_large = filled > 4096_u64;
-  if too_large {
-    region {
-      let report_window = mut_slice_of(&uniq report);
-      let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: 4_u8);
-      let publish_view = slice_of(&report);
+      let decoded = arena_vector_proved::<u8>(store: &uniq workspace, count: 65536_u64);
+      for @reserve_decoded (
+        at in 0_u64..65536_u64,
+        invariant grown: len_of(decoded) >= at,
+        invariant spare: room_of(decoded) + at >= 65536_u64,
+        invariant flat: head_of(decoded) <= 0_u64
+      ) {
+        set decoded = place_back(vector: move decoded, value: 0_u8);
+      }
+      let decoded_length = 0_u64;
       region {
-        match publish_all(output: &uniq err, source: publish_view, length: assembled) {
-          Ok(value: published) => {
-          }
-          Err(error: problem) => {
+        let stream_view = slice_of(&stream);
+        let decoded_window = mut_slice_of(&uniq decoded);
+        region {
+          match inflate(out: &uniq decoded_window, input: stream_view) {
+            Ok(value: produced) => {
+              set decoded_length = produced;
+            }
+            Err(error: failure) => {
+              set status = inflate_status(error: failure);
+            }
           }
         }
       }
-    }
-    return exit_status(code: 4_u8);
-  }
-  let stream = buffer_new(filled, 0_u8);
-  region {
-    let stream_window = mut_slice_of(&uniq stream);
-    region {
-      let copied = copy_range(destination: &uniq stream_window, at: 0_u64, source: &scratch, from: 0_u64, to: filled);
-    }
-  }
-  let decoded = buffer_new(65536_u64, 0_u8);
-  let decoded_length = 0_u64;
-  region {
-    match inflate(out: &uniq decoded, input: move stream) {
-      Ok(value: produced) => {
-        set decoded_length = produced;
+      if status != 0_u8 {
+        region {
+          let report_window = mut_slice_of(&uniq report);
+          let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: status);
+          let publish_view = slice_of(&report);
+          region {
+            match publish_all(output: &uniq err, source: publish_view, length: assembled) {
+              Ok(value: published) => {
+              }
+              Err(error: problem) => {
+              }
+            }
+          }
+        }
+        return exit_status(code: status);
       }
-      Err(error: failure) => {
-        set status = inflate_status(error: failure);
+      let decoded_room = len_of(decoded);
+      let decoded_fits = decoded_length <= decoded_room;
+      if decoded_fits {
+      } else {
+        region {
+          let report_window = mut_slice_of(&uniq report);
+          let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: 7_u8);
+          let publish_view = slice_of(&report);
+          region {
+            match publish_all(output: &uniq err, source: publish_view, length: assembled) {
+              Ok(value: published) => {
+              }
+              Err(error: problem) => {
+              }
+            }
+          }
+        }
+        return exit_status(code: 7_u8);
       }
-    }
-  }
-  if status != 0_u8 {
-    region {
-      let report_window = mut_slice_of(&uniq report);
-      let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: status);
-      let publish_view = slice_of(&report);
       region {
-        match publish_all(output: &uniq err, source: publish_view, length: assembled) {
-          Ok(value: published) => {
-          }
-          Err(error: problem) => {
-          }
-        }
-      }
-    }
-    return exit_status(code: status);
-  }
-  let decoded_room = len_of(decoded);
-  let decoded_fits = decoded_length <= decoded_room;
-  if decoded_fits {
-  } else {
-    region {
-      let report_window = mut_slice_of(&uniq report);
-      let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: 7_u8);
-      let publish_view = slice_of(&report);
-      region {
-        match publish_all(output: &uniq err, source: publish_view, length: assembled) {
-          Ok(value: published) => {
-          }
-          Err(error: problem) => {
+        let decoded_view = slice_of(&decoded);
+        region {
+          match publish_all(output: &uniq out, source: decoded_view, length: decoded_length) {
+            Ok(value: published) => {
+            }
+            Err(error: problem) => {
+              set status = 8_u8;
+            }
           }
         }
       }
-    }
-    return exit_status(code: 7_u8);
-  }
-  region {
-    let decoded_view = slice_of(&decoded);
-    region {
-      match publish_all(output: &uniq out, source: decoded_view, length: decoded_length) {
-        Ok(value: published) => {
-        }
-        Err(error: problem) => {
-          set status = 8_u8;
-        }
-      }
-    }
-  }
-  if status != 0_u8 {
-    region {
-      let report_window = mut_slice_of(&uniq report);
-      let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: status);
-      let publish_view = slice_of(&report);
-      region {
-        match publish_all(output: &uniq err, source: publish_view, length: assembled) {
-          Ok(value: published) => {
-          }
-          Err(error: problem) => {
+      if status != 0_u8 {
+        region {
+          let report_window = mut_slice_of(&uniq report);
+          let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: status);
+          let publish_view = slice_of(&report);
+          region {
+            match publish_all(output: &uniq err, source: publish_view, length: assembled) {
+              Ok(value: published) => {
+              }
+              Err(error: problem) => {
+              }
+            }
           }
         }
+        return exit_status(code: status);
       }
+      return exit_status(code: 0_u8);
     }
-    return exit_status(code: status);
   }
-  return exit_status(code: 0_u8);
 }
