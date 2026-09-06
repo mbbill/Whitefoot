@@ -128,7 +128,9 @@ fn byte_string_builds_searches_and_publishes_its_report() {
 /// store rather than a `buffer<u8>` a pure entry could construct on its own.
 fn search_layer_with_entry() -> String {
     let source = include_str!("../../../tests/programs/byte_string.wf");
-    let start = source.find("enum Grown {").expect("byte-string growth outcome");
+    let start = source
+        .find("enum Grown {")
+        .expect("byte-string growth outcome");
     let end = source
         .find("\nfn bs_push_decimal")
         .expect("search-layer end");
