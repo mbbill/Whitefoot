@@ -26,11 +26,15 @@ use super::support::{
 };
 use whitefoot::Inventory;
 
-/// The reusable input buffer length in `tests/programs/wfgrep.wf`.
+/// The reusable input run length in `tests/programs/wfgrep.wf`.
 ///
-/// The corpus needs it to build a file that is exactly one buffer long and a
-/// match that straddles a read boundary; nothing in the program's contract
-/// exposes it.
+/// The corpus needs it to build a file that is exactly one read window long
+/// and a match that straddles a read boundary; nothing in the program's
+/// contract exposes it.
+///
+/// B7c4b: the window is a `Vector<u8>` at the general store rather than a
+/// `buffer<u8>`, and the length is unchanged, so every boundary case here
+/// still lands where it did.
 const BUFFER_LENGTH: usize = 4096;
 
 /// One emitted module shared by every case in this module.
