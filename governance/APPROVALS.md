@@ -4215,4 +4215,4 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   executable corpus changed behaviour or exit code; `tests/programs/heap_run.wf`
   is added and runs to exit 12, and `tests/programs/recursive_tree.wf` is
   migrated to `Box<'s, Tree<'s>>` and keeps its exit 0.
-ACTIVE-SPEC: v0.45 c41f36dde1e089a97a8d94f88f7b63dcac2e2dd29ade95ce62cc1be25732b36e 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+ACTIVE-SPEC: v0.45 e10d73f10fd761a859a26f9e81f03f339b2f032006170bf1a741a5635c2ea73c 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
