@@ -1492,6 +1492,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let ty = self.const_generic_type(declaration)?;
                 let value = match function.substitution.const_argument(declaration) {
                     Some(CheckedConst::Value(value)) => CheckedValue::Integer { ty, bits: value },
+                    // [FN-2, MSR-6] a const parameter this instance's caller
+                    // supplied from a const parameter of its own is that
+                    // caller's parameter here. Keeping this declaration would
+                    // anchor the constant to a parameter nothing outside this
+                    // instance can name, and every relation published over it
+                    // would be dropped at the call.
+                    Some(CheckedConst::Parameter(supplied)) => CheckedValue::ConstGeneric {
+                        declaration: supplied,
+                        ty,
+                    },
                     // The one source-canonical symbolic instance keeps the
                     // declaration-anchored constant [ENT-2] clause (c) fixes.
                     _ => CheckedValue::ConstGeneric { declaration, ty },

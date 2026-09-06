@@ -608,6 +608,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         ty,
                     }
                 }
+                // [FN-2] a const parameter this instance's caller supplied
+                // from a const parameter of its own is that caller's
+                // parameter here, exactly as it is in every other position
+                // this instance reads it.
+                Some(crate::semantic::CheckedConst::Parameter(supplied)) => {
+                    CheckedAffineExpressionKind::ConstGeneric {
+                        declaration: supplied,
+                        ty,
+                        name: self.declaration_spelling(supplied)?,
+                    }
+                }
                 _ => CheckedAffineExpressionKind::ConstGeneric {
                     declaration,
                     ty,
