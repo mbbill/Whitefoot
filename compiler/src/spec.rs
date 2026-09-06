@@ -1,5 +1,17 @@
 use core::fmt;
 
+/// SHA-256, so the active specification's identity can be derived from its own
+/// bytes instead of being taken on trust.
+///
+/// The crate has no dependencies and keeps none, so this is written by hand.
+/// It is a `const fn` and usable in constant position for small inputs, but the
+/// active specification is hashed at runtime: see `computed_active_spec_hash`
+/// for why. Names inside the compression function follow FIPS 180-4 section 6.2
+/// so the code can be read against the standard.
+///
+/// The documentation lives here rather than as a `//!` header inside the file
+/// because `build.rs` includes those same bytes to derive the identity, and an
+/// inner attribute cannot appear in an `include!` expansion.
 mod sha256;
 
 /// The SHA-256 identity of one exact kernel specification.

@@ -80,8 +80,7 @@ spec-append-only-staged:
 	@echo "spec append-only: no released kernel specification was modified or removed"
 
 # The specification's own bytes are its identity, and the generated
-# compiler/src/spec_identity.rs names them, machine-checked against those
-# bytes. Live prose quotes neither: a quoted digest or an "active vN" sentence
+# build.rs derives them on every build that touches those bytes. Live prose quotes neither: a quoted digest or an "active vN" sentence
 # went stale at every activation and forced a six-file edit to keep in step
 # (found landed: the derivation ledger still described v0.28 as the installed
 # authority after the v0.29 activation; retired 2026-09-04 in favour of this
@@ -94,7 +93,7 @@ spec-prose-integrity:
 	@failed=0; \
 	for file in README.md AGENTS.md CLAUDE.md compiler/README.md docs/*.md; do \
 		if grep -nE '(^|[^0-9a-f])[0-9a-f]{64}([^0-9a-f]|$$)' "$$file"; then \
-			echo "spec prose integrity: $$file quotes a specification digest; the identity lives in compiler/src/spec_identity.rs" >&2; failed=1; \
+			echo "spec prose integrity: $$file quotes a specification digest; the identity is derived from the specification's own bytes" >&2; failed=1; \
 		fi; \
 	done; \
 	for file in README.md AGENTS.md CLAUDE.md compiler/README.md docs/*.md spec/derivation/derivation-ledger.md; do \

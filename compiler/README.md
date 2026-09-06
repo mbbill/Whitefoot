@@ -7,10 +7,10 @@ private implementation choices; the active language is defined by
 this README.
 
 The frontend targets the exact bytes at `../spec/kernel-spec.md`. Their
-version and SHA-256 are generated into `src/spec_identity.rs` from the
-bytes of `../spec/kernel-spec.md`
-(`cargo run --bin whitefoot-spec -- --emit-identity src/spec_identity.rs`),
-and every other identity constant in the crate is derived from that module.
+version and SHA-256 are derived from those bytes by `build.rs` on every build
+that touches them, and every other identity constant in the crate reads that
+generated module. Nothing is committed, so nothing can go stale: amending the
+specification changes the identity in the same build.
 `whitefoot-spec` checks the selected identity, activation chain,
 rule inventory, and generated syntax identity as one compiler gate.
 

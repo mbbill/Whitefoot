@@ -65,8 +65,9 @@ what to defer, what earns a file.
 ## Specification
 
 - [ ] `spec/kernel-spec.md` unchanged, **or**: the outgoing bytes archived as
-      `spec/kernel-spec-vN.md` and `compiler/src/spec_identity.rs` regenerated
-      with `whitefoot-spec --emit-identity` rather than edited by hand.
+      `spec/kernel-spec-vN.md`, and the new version number is free — if another
+      branch took it first, retitle and rebuild. The identity needs no action:
+      `build.rs` derives it from the bytes.
 - [ ] Everything derived from the specification moved with it in this change:
       conformance cases and verdicts, generated syntax data, tests, docs.
 - [ ] The specification carries no commentary about its own versions.

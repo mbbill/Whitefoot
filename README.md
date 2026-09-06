@@ -59,10 +59,9 @@ priorities and repository discipline.
 ## Current state
 
 The active kernel specification is [`spec/kernel-spec.md`](spec/kernel-spec.md).
-Its version and exact SHA-256 are the tail of the `ACTIVE-SPEC:` chain in
-the specification's own bytes, generated into the compiler
-as `compiler/src/spec_identity.rs` and checked against the bytes by the gate;
-no other document quotes them. Every superseded version is archived
+Its version and exact SHA-256 are derived from the specification's own bytes
+by `compiler/build.rs` at build time; no file records them and no other
+document quotes them. Every superseded version is archived
 byte-for-byte as `spec/kernel-spec-vN.md`. A specification change lands as one
 change: the amended active file with its `Status: ACTIVE vN` line, the archive
 of the outgoing bytes, the appended approval record ending in its chain line,

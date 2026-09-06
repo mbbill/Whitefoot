@@ -157,12 +157,17 @@ directions at once.
 
 `spec/kernel-spec.md` always declares `Status: ACTIVE vN`, and its bytes are
 that version's identity. An amendment lands as one change on a work branch:
-the amended active file titled and declared vN+1; the outgoing vN bytes
-archived as `spec/kernel-spec-vN.md`; and `compiler/src/spec_identity.rs`
-regenerated with
-`cargo run --bin whitefoot-spec -- --emit-identity src/spec_identity.rs`.
-`make spec-append-only` checks that no released archive changed, and `make -C
-compiler static` that the generated identity names the installed bytes. There is no separate candidate state: a branch carrying an
+the amended active file titled and declared vN+1, and the outgoing vN bytes
+archived as `spec/kernel-spec-vN.md`. The identity follows the bytes by
+itself: `compiler/build.rs` derives it on the next build. `make
+spec-append-only` checks that no released archive changed, and `make -C
+compiler static` that the specification names one version in both places it
+states one.
+
+The version number is claimed on the branch and settled at merge. Two branches
+amending the specification both archive the same outgoing bytes under the same
+name, so only the new number collides; the second to merge retitles two lines
+and rebuilds. There is no separate candidate state: a branch carrying an
 amended specification is merge-ready the moment its gate is green, and the
 owner's merge approval of that exact revision is the activation. No live
 document quotes the version or digest as the active authority; they live in
