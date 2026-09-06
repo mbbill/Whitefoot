@@ -112,6 +112,21 @@ pub(crate) fn emit_llvm_with_checkpoints(
     program: &IrProgram<'_, '_, '_>,
     checkpoint_interval: Option<NonZeroU32>,
 ) -> Result<LlvmModule, BackendFailure> {
+    emit_llvm_checkpoint_policy(program, checkpoint_interval, false)
+}
+
+pub(crate) fn emit_llvm_with_checkpoint_chunks(
+    program: &IrProgram<'_, '_, '_>,
+    interval: NonZeroU32,
+) -> Result<LlvmModule, BackendFailure> {
+    emit_llvm_checkpoint_policy(program, Some(interval), true)
+}
+
+fn emit_llvm_checkpoint_policy(
+    program: &IrProgram<'_, '_, '_>,
+    checkpoint_interval: Option<NonZeroU32>,
+    chunks: bool,
+) -> Result<LlvmModule, BackendFailure> {
     let target = TargetLayout::host().map_err(BackendFailure::TargetLayout)?;
     // [QUAL-1] consults the qualification table after the exact target and ABI
     // are selected and before emitting any use of an operation. It runs before
@@ -120,7 +135,7 @@ pub(crate) fn emit_llvm_with_checkpoints(
     let system_target = SystemTarget::for_triple(target.triple()).ok_or(
         BackendFailure::TargetLayout(TargetLayoutFailure::UnsupportedHost),
     )?;
-    emit_llvm_for(program, system_target, checkpoint_interval)
+    emit_llvm_for(program, system_target, checkpoint_interval, chunks)
 }
 
 /// Emits one program against an explicitly selected system target.
@@ -133,13 +148,14 @@ pub(crate) fn emit_llvm_for_target(
     program: &IrProgram<'_, '_, '_>,
     system_target: SystemTarget,
 ) -> Result<LlvmModule, BackendFailure> {
-    emit_llvm_for(program, system_target, None)
+    emit_llvm_for(program, system_target, None, false)
 }
 
 fn emit_llvm_for(
     program: &IrProgram<'_, '_, '_>,
     system_target: SystemTarget,
     checkpoint_interval: Option<NonZeroU32>,
+    chunks: bool,
 ) -> Result<LlvmModule, BackendFailure> {
     let target = TargetLayout::host().map_err(BackendFailure::TargetLayout)?;
     let qualification = qualify_program(system_target, program)?;
@@ -156,6 +172,12 @@ fn emit_llvm_for(
     let mut checkpoints_used = false;
     let mut functions = String::new();
     for function in program.functions() {
+        let chunked = checkpoint_interval
+            .filter(|_| chunks)
+            .and_then(|interval| crate::lowering::checkpoint_chunks::chunk(function, interval));
+        let function = chunked
+            .as_ref()
+            .map_or(function, |chunked| &chunked.function);
         let emitter = FunctionEmitter::new(
             program,
             &qualification,
@@ -167,6 +189,7 @@ fn emit_llvm_for(
                 completion_used: &mut completion_used,
                 sequential_clones: None,
                 checkpoint_interval,
+                chunked: chunked.as_ref(),
                 checkpoints_used: &mut checkpoints_used,
             },
         )?;
@@ -192,6 +215,12 @@ fn emit_llvm_for(
     }
     for (ordinal, function) in program.functions().iter().enumerate() {
         if u32::try_from(ordinal).is_ok_and(|ordinal| clones.contains(&ordinal)) {
+            let chunked = checkpoint_interval
+                .filter(|_| chunks)
+                .and_then(|interval| crate::lowering::checkpoint_chunks::chunk(function, interval));
+            let function = chunked
+                .as_ref()
+                .map_or(function, |chunked| &chunked.function);
             functions.push_str(
                 &FunctionEmitter::new(
                     program,
@@ -204,6 +233,7 @@ fn emit_llvm_for(
                         completion_used: &mut completion_used,
                         sequential_clones: Some(&clones),
                         checkpoint_interval,
+                        chunked: chunked.as_ref(),
                         checkpoints_used: &mut checkpoints_used,
                     },
                 )?
@@ -1160,6 +1190,7 @@ struct FunctionEmitter<'program, 'state> {
     /// rather than of the iteration count. Stores stay at the use site.
     entry_prelude: String,
     checkpoint_edges: HashSet<usize>,
+    chunk_checkpoints: HashSet<usize>,
     /// The validated physical frame which supplied `entry_prelude` and every
     /// pointer returned to an operation emitter.
     frame: FunctionFramePlan,
@@ -1270,6 +1301,7 @@ struct ModuleState<'state> {
     /// `None` emits the ordinary lowering; `Some` emits the sequential clone.
     sequential_clones: Option<&'state HashSet<u32>>,
     checkpoint_interval: Option<NonZeroU32>,
+    chunked: Option<&'state crate::lowering::checkpoint_chunks::ChunkedFunction>,
     checkpoints_used: &'state mut bool,
 }
 
@@ -1287,6 +1319,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             completion_used,
             sequential_clones,
             checkpoint_interval,
+            chunked,
             checkpoints_used,
         } = module;
         // The staged call of a driven [PAR-3] loop, when that call is a
@@ -1426,10 +1459,21 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let checkpoint_edges: HashSet<usize> = if checkpoint_interval.is_some() {
             crate::lowering::control_flow::backedge_sources(function.blocks())
                 .into_iter()
+                .filter(|edge| {
+                    chunked.is_none_or(|chunked| {
+                        !chunked.inner_backedges.contains(edge)
+                            && !chunked.checkpoints.contains(edge)
+                    })
+                })
                 .collect()
         } else {
             HashSet::new()
         };
+        let chunk_checkpoints =
+            chunked.map_or_else(HashSet::new, |chunked| chunked.checkpoints.clone());
+        if !chunk_checkpoints.is_empty() {
+            *checkpoints_used = true;
+        }
         let frame = FunctionFramePlan::build(
             target,
             program,
@@ -1463,6 +1507,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             output: String::new(),
             entry_prelude,
             checkpoint_edges,
+            chunk_checkpoints,
             frame,
             temporary: 0,
             parallel,

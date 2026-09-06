@@ -20,8 +20,8 @@ use crate::{
     FinalizeOutcome, LexLimits, LexOutcome, LoweringFailure, ParseLimits, ParseOutcome,
     ResolutionOutcome, SemanticLocation, SemanticOutcome, SourceBundle, SourceInput, SourceLimits,
     TerminalLimits, TerminalOutcome, audit_canonical, check_semantics, classify_terminals,
-    emit_llvm, emit_llvm_with_checkpoints, finalize, lex, lower_checked, parse,
-    resolve_with_inventory,
+    emit_llvm, emit_llvm_with_checkpoint_chunks, emit_llvm_with_checkpoints, finalize, lex,
+    lower_checked, parse, resolve_with_inventory,
 };
 
 /// Host-compiler optimization arguments for every Whitefoot executable.
@@ -383,7 +383,24 @@ pub fn compile_with_checkpoints(
         limits,
         crate::Inventory::ACTIVE,
         overlap,
-        Some(interval),
+        Some((interval, false)),
+    )
+}
+
+/// Experimental checkpoint policy that keeps recognized unit-stride loops
+/// intact inside bounded chunks. Other loops retain backedge counters.
+pub fn compile_with_checkpoint_chunks(
+    inputs: &[SourceInput<'_>],
+    limits: CompilerLimits,
+    overlap: crate::OverlapLowering,
+    interval: NonZeroU32,
+) -> Result<CompilationReport, CompilationFailure> {
+    compile_reporting_with_checkpoints(
+        inputs,
+        limits,
+        crate::Inventory::ACTIVE,
+        overlap,
+        Some((interval, true)),
     )
 }
 
@@ -404,7 +421,7 @@ fn compile_reporting_with_checkpoints(
     limits: CompilerLimits,
     inventory: crate::Inventory,
     overlap: crate::OverlapLowering,
-    checkpoint_interval: Option<NonZeroU32>,
+    checkpoint_interval: Option<(NonZeroU32, bool)>,
 ) -> Result<CompilationReport, CompilationFailure> {
     let bundle = SourceBundle::with_limits(inputs, limits.source).map_err(|failure| {
         CompilationFailure::new(
@@ -632,7 +649,8 @@ fn compile_reporting_with_checkpoints(
     ledger.extend_from_slice(ir.actualization_ledger());
     let emitted = match checkpoint_interval {
         None => emit_llvm(&ir),
-        Some(_) => emit_llvm_with_checkpoints(&ir, checkpoint_interval),
+        Some((interval, false)) => emit_llvm_with_checkpoints(&ir, Some(interval)),
+        Some((interval, true)) => emit_llvm_with_checkpoint_chunks(&ir, interval),
     };
     emitted
         .map(|module| CompilationReport {

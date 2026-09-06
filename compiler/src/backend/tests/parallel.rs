@@ -690,6 +690,218 @@ fn cooperative_checkpoints_preserve_permissions_and_loop_results() {
     }
 }
 
+#[test]
+fn chunked_checkpoints_preserve_empty_ranges_wrap_boundaries_and_early_exits() {
+    use std::fmt::Write;
+    use std::num::NonZeroU32;
+
+    let mut source = String::from(
+        r#"fn counted(lo: own u64, hi: own u64, cut: own u64) -> result: own u64 pure {
+  let total = 7_u64;
+  for @scan (index in lo..hi) {
+    let stop = index == cut;
+    if stop {
+      break @scan;
+    }
+    let product = total *wrap 33_u64;
+    set total = product +wrap index;
+  }
+  return total;
+}
+
+fn walked(lo: own u64, hi: own u64, cut: own u64) -> result: own u64 pure {
+  let total = 7_u64;
+  let index = lo;
+  loop @scan {
+    let done = index >= hi;
+    if done {
+      break @scan;
+    }
+    let stop = index == cut;
+    if stop {
+      break @scan;
+    }
+    let product = total *wrap 33_u64;
+    set total = product +wrap index;
+    set index = index +wrap 1_u64;
+  }
+  return total;
+}
+
+fn equalled(hi: own u64, cut: own u64) -> result: own u64 pure {
+  let total = 7_u64;
+  let index = 0_u64;
+  loop @scan {
+    if index == hi {
+      break @scan;
+    }
+    let stop = index == cut;
+    if stop {
+      break @scan;
+    }
+    let product = total *wrap 33_u64;
+    set total = product +wrap index;
+    set index = index +wrap 1_u64;
+  }
+  return total;
+}
+
+fn wrapped(lo: own u64, hi: own u64) -> result: own u64 pure {
+  let index = lo;
+  let count = 0_u64;
+  loop @scan {
+    if index == hi {
+      break @scan;
+    }
+    set count = count +wrap 1_u64;
+    set index = index +wrap 1_u64;
+  }
+  return count;
+}
+
+fn changing(hi: own u64) -> result: own u64 pure {
+  let index = 0_u64;
+  loop @scan {
+    let done = index >= hi;
+    if done {
+      break @scan;
+    }
+    set hi = hi -wrap 1_u64;
+    set index = index +wrap 1_u64;
+  }
+  return index;
+}
+
+fn reversed(lo: own u64, hi: own u64) -> result: own u64 pure {
+  let index = lo;
+  let count = 0_u64;
+  loop @scan {
+    let stop = index < hi;
+    if stop {
+      break @scan;
+    }
+    set count = count +wrap 1_u64;
+    set index = index +wrap 1_u64;
+  }
+  return count;
+}
+
+fn nested(lo: own u64, hi: own u64, cut: own u64) -> result: own u64 pure {
+  let total = 7_u64;
+  for @outer (row in lo..hi) {
+    let stop_row = row == cut;
+    if stop_row {
+      break @outer;
+    }
+    for @inner (column in lo..hi) {
+      let stop_column = column == cut;
+      if stop_column {
+        break @inner;
+      }
+      let product = total *wrap 33_u64;
+      let combined = product +wrap row;
+      set total = combined +wrap column;
+    }
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus pure {
+"#,
+    );
+    let cases = [
+        (5, 3, u64::MAX),
+        (0, 0, u64::MAX),
+        (0, 19, u64::MAX),
+        (2, 23, 7),
+        (u64::MAX - 5, u64::MAX, u64::MAX),
+    ];
+    for (case, (lo, hi, cut)) in cases.into_iter().enumerate() {
+        let expected = (lo..hi)
+            .take_while(|&index| index != cut)
+            .fold(7_u64, |total, index| {
+                total.wrapping_mul(33).wrapping_add(index)
+            });
+        for function in ["counted", "walked"] {
+            writeln!(source,
+                "  let {function}_{case} = {function}(lo: {lo}_u64, hi: {hi}_u64, cut: {cut}_u64);\n  let wrong_{function}_{case} = {function}_{case} != {expected}_u64;\n  if wrong_{function}_{case} {{\n    return exit_status(code: 1_u8);\n  }}"
+            ).expect("write independent expected fold");
+        }
+        if lo == 0 {
+            writeln!(source, "  let equalled_{case} = equalled(hi: {hi}_u64, cut: {cut}_u64);\n  let wrong_equalled_{case} = equalled_{case} != {expected}_u64;\n  if wrong_equalled_{case} {{\n    return exit_status(code: 6_u8);\n  }}")
+                .expect("write equality-terminated fold oracle");
+        }
+    }
+    let mut nested = 7_u64;
+    for row in 0..3 {
+        for column in 0..3 {
+            nested = nested
+                .wrapping_mul(33)
+                .wrapping_add(row)
+                .wrapping_add(column);
+        }
+    }
+    writeln!(source, "  let nested_result = nested(lo: 0_u64, hi: 7_u64, cut: 3_u64);\n  let wrong_nested = nested_result != {nested}_u64;\n  if wrong_nested {{\n    return exit_status(code: 4_u8);\n  }}")
+        .expect("write nested fold oracle");
+    source.push_str("  let changed = changing(hi: 19_u64);\n  let wrong = changed != 10_u64;\n  if wrong {\n    return exit_status(code: 2_u8);\n  }\n  let reverse = reversed(lo: 18446744073709551612_u64, hi: 1_u64);\n  let wrong_reverse = reverse != 4_u64;\n  if wrong_reverse {\n    return exit_status(code: 3_u8);\n  }\n  let wrapped_count = wrapped(lo: 18446744073709551613_u64, hi: 1_u64);\n  let wrong_wrap = wrapped_count != 4_u64;\n  if wrong_wrap {\n    return exit_status(code: 5_u8);\n  }\n  return exit_status(code: 42_u8);\n}\n");
+    with_parallel_ir(source.as_bytes(), |program| {
+        for function in program.functions() {
+            let transformed = crate::lowering::checkpoint_chunks::chunk(
+                function,
+                NonZeroU32::new(3).expect("positive interval"),
+            );
+            match function.name() {
+                "counted" | "walked" | "equalled" => {
+                    let transformed = transformed.expect("unit-stride loop must be chunked");
+                    assert_eq!(transformed.inner_backedges.len(), 1);
+                    assert_eq!(transformed.checkpoints.len(), 1);
+                }
+                "changing" | "reversed" | "wrapped" => assert!(
+                    transformed.is_none(),
+                    "changing bounds require the counter fallback"
+                ),
+                "nested" => {
+                    let transformed = transformed.expect("both nested ranges must be chunked");
+                    assert_eq!(transformed.inner_backedges.len(), 2);
+                    assert_eq!(transformed.checkpoints.len(), 2);
+                }
+                _ => {}
+            }
+        }
+    });
+    let inputs = [crate::SourceInput::new("chunks.wf", source.as_bytes())];
+    let (_, ledger) = crate::compile_with_permission_ledger(
+        &inputs,
+        crate::CompilerLimits::default(),
+        crate::OverlapLowering::On,
+    )
+    .expect("ordinary loop program");
+    for interval in [1, 3, 16384, u32::MAX] {
+        let report = crate::compile_with_checkpoint_chunks(
+            &inputs,
+            crate::CompilerLimits::default(),
+            crate::OverlapLowering::On,
+            NonZeroU32::new(interval).expect("positive interval"),
+        )
+        .expect("chunked loop program");
+        assert_eq!(report.ledger, ledger);
+        let directory = test_directory();
+        let executable = build_executable(&report.module, &directory);
+        for workers in [1, 2] {
+            let output = Command::new(&executable)
+                .env("WF_WORKERS", workers.to_string())
+                .output()
+                .expect("run chunked loop boundaries");
+            assert_eq!(
+                output.status.code(),
+                Some(42),
+                "interval={interval} workers={workers}"
+            );
+        }
+        std::fs::remove_dir_all(directory).expect("remove chunked loop test link");
+    }
+}
+
 /// A group's compute members are joined newest first, and the block continues
 /// at the *first* published member's `par.done`.
 ///

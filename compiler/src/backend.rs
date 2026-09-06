@@ -5,7 +5,7 @@ mod qualification;
 mod stack_ledger;
 mod target;
 
-pub(crate) use emitter::emit_llvm_with_checkpoints;
+pub(crate) use emitter::{emit_llvm_with_checkpoint_chunks, emit_llvm_with_checkpoints};
 
 #[cfg(test)]
 mod tests;

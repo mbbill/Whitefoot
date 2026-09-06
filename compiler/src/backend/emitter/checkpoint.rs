@@ -28,6 +28,10 @@ pub(super) fn helper(interval: NonZeroU32) -> String {
 
 impl FunctionEmitter<'_, '_> {
     pub(super) fn emit_checkpoint(&mut self, block: IrBlockId) -> Result<(), BackendFailure> {
+        if self.chunk_checkpoints.contains(&block.index()) {
+            writeln!(self.output, "  call void @wf__sched_checkpoint()")
+                .map_err(|_| BackendFailure::TextEmission)?;
+        }
         if self.checkpoint_edges.contains(&block.index()) {
             let counter = self.frame.slot(FunctionSlot::CheckpointBudget)?;
             writeln!(

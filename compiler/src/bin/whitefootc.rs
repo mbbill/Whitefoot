@@ -12,8 +12,9 @@ use whitefoot::{
     COMPLETION_WINDOWS_IOCP_HEADER, CompilerLimits, FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS,
     OverlapLowering, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
     SCHED_PRIM_HEADER, SCHED_SWITCH_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER,
-    compile_with_checkpoints, compile_with_io_notices, compile_with_permission_ledger,
-    module_requires_completion_runtime, module_requires_parallel_runtime, stack_ledger,
+    compile_with_checkpoint_chunks, compile_with_checkpoints, compile_with_io_notices,
+    compile_with_permission_ledger, module_requires_completion_runtime,
+    module_requires_parallel_runtime, stack_ledger,
 };
 
 // `HOST_LINK_LIBRARIES` is here rather than above because its one reader is
@@ -32,7 +33,7 @@ use whitefoot::{
     FLOOR_WINDOWS_RUNTIME_SOURCE, SCHED_PRIM_WINDOWS_SOURCE, WINDOWS_RUNTIME_SOURCE,
 };
 
-const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--sched-quantum N] [--no-overlap] [--par-ledger] \
+const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--sched-quantum N | --sched-chunks N] [--no-overlap] [--par-ledger] \
 [--stack-ledger] [-o OUTPUT] SOURCE...";
 
 // The compiler walks typed source and lowering trees recursively. Windows
@@ -243,9 +244,13 @@ fn run() -> Result<(), String> {
         .collect();
     let overlap = options.overlap();
     let module = if let Some(interval) = options.sched_quantum {
-        let report =
-            compile_with_checkpoints(&inputs, CompilerLimits::default(), overlap, interval)
-                .map_err(|failure| failure.to_string())?;
+        let compile = if options.sched_chunks {
+            compile_with_checkpoint_chunks
+        } else {
+            compile_with_checkpoints
+        };
+        let report = compile(&inputs, CompilerLimits::default(), overlap, interval)
+            .map_err(|failure| failure.to_string())?;
         if options.par_ledger {
             for line in &report.ledger {
                 println!("{line}");
@@ -548,6 +553,7 @@ struct Options {
     emit_llvm: bool,
     /// Experimental backedge interval; no source proof or progress contract.
     sched_quantum: Option<NonZeroU32>,
+    sched_chunks: bool,
     /// Actualize the permission judgment's eligible groups on worker lanes.
     ///
     /// Compute outlining is off by default; compiler-owned completion I/O
@@ -625,6 +631,7 @@ impl Options {
     fn parse(arguments: &[String]) -> Result<Self, String> {
         let mut emit_llvm = false;
         let mut sched_quantum = None;
+        let mut sched_chunks = false;
         let mut par = false;
         let mut no_overlap = false;
         let mut par_ledger = false;
@@ -636,16 +643,17 @@ impl Options {
             match arguments[cursor].as_str() {
                 "--emit-llvm" => emit_llvm = true,
                 "--par" => par = true,
-                "--sched-quantum" => {
+                "--sched-quantum" | "--sched-chunks" => {
+                    sched_chunks = arguments[cursor] == "--sched-chunks";
                     cursor += 1;
                     let interval = arguments
                         .get(cursor)
                         .and_then(|value| value.parse::<NonZeroU32>().ok())
                         .ok_or_else(|| {
-                            "--sched-quantum requires an integer in 1..4294967295".to_owned()
+                            "scheduler checkpoints require an integer in 1..4294967295".to_owned()
                         })?;
                     if sched_quantum.replace(interval).is_some() {
-                        return Err("--sched-quantum may be written only once".to_owned());
+                        return Err("write one scheduler checkpoint policy once".to_owned());
                     }
                 }
                 "--no-overlap" => no_overlap = true,
@@ -695,11 +703,12 @@ impl Options {
             return Err("--no-overlap and --par select opposite lowerings: write one".to_owned());
         }
         if sched_quantum.is_some() && !par {
-            return Err("--sched-quantum requires --par for this experiment".to_owned());
+            return Err("scheduler checkpoints require --par for this experiment".to_owned());
         }
         Ok(Self {
             emit_llvm,
             sched_quantum,
+            sched_chunks,
             par,
             no_overlap,
             par_ledger,
@@ -761,10 +770,28 @@ mod tests {
             options.sched_quantum.map(std::num::NonZeroU32::get),
             Some(16384)
         );
+        assert!(!options.sched_chunks);
+        let chunked = parse(&["--par", "--sched-chunks", "3", "value.wf"])
+            .expect("valid chunked checkpoint invocation");
+        assert!(chunked.sched_chunks);
+        assert_eq!(
+            chunked.sched_quantum.map(std::num::NonZeroU32::get),
+            Some(3)
+        );
         for arguments in [
             vec!["--sched-quantum", "16", "value.wf"],
             vec!["--par", "--sched-quantum", "0", "value.wf"],
             vec!["--par", "--sched-quantum", "4294967296", "value.wf"],
+            vec!["--sched-chunks", "3", "value.wf"],
+            vec!["--par", "--sched-chunks", "0", "value.wf"],
+            vec![
+                "--par",
+                "--sched-chunks",
+                "3",
+                "--sched-quantum",
+                "3",
+                "value.wf",
+            ],
             vec![
                 "--par",
                 "--sched-quantum",

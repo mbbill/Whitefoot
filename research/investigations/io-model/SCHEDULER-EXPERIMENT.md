@@ -915,6 +915,40 @@ before timing, then two warm-ups and seven alternating measured passes. The
 define can be removed once this implementation choice is selected or rejected;
 the existing investigation and runner own its evidence.
 
+### Eighth measurement: 87585b8e
+
+[Run 34036774493](https://github.com/mbbill/Whitefoot/actions/runs/34036774493)
+and [artifact 9990555530](https://github.com/mbbill/Whitefoot/actions/runs/34036774493/artifacts/9990555530)
+contain all 560 verified timed samples and the full candidate completion
+checks. The host reports Xeon 6973P-C, four logical CPUs on two physical
+cores with SMT, Linux 6.17 and clang 18. The gate and native-host workflows
+passed. The separate Windows benchmark failed its unchanged `io-warm`
+stability qualification after two cohorts, artifact 9990475456; this revision
+does not have every workflow green.
+
+At 64 peers and 64 bytes, median peak RSS in KiB changes from 35712 to 18672
+in shared4, 36220 to 18460 in shared2, 35760 to 18472 in split2, and 35884
+to 17972 in split1. At 1024 peers the corresponding baseline/candidate pairs
+are 79204/62512, 79360/61984, 79732/61900 and 79228/61584. The remaining
+per-connection storage cost is substantial even after removing the unused
+worker initialization.
+
+Paired candidate/base rate medians for 1/4/64/1024 peers with 64-byte payloads,
+then 64 peers with 64 KiB payloads, are:
+
+| placement | 1 | 4 | 64 | 1024 | 64 KiB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| shared4 | 0.998 | 0.922 | 1.024 | 1.002 | 0.996 |
+| shared2 | 1.028 | 1.019 | 0.996 | 0.976 | 1.002 |
+| split2 | 0.992 | 0.998 | 1.001 | 0.987 | 0.995 |
+| split1 | 1.014 | 1.010 | 1.005 | 1.001 | 0.970 |
+
+Shared4 at four peers spans 0.664..1.075; split2 at 64 peers spans
+0.989..1.006, and split2 at 1024 spans 0.949..1.029. The memory saving is
+clear, while these timings do not establish universal throughput equivalence
+or improvement. Keep both initialization forms available and hold the
+baseline initialization fixed during the independent loop-codegen experiment.
+
 ## Ninth experiment: fix the light request arrival schedule
 
 `scheduler-paced` keeps 64 admitted peers and a one-second arrival interval,
@@ -961,3 +995,112 @@ before the 100 ms deadline; dispatch p99 exceeded 638 ms and total p99 exceeded
 verification without printing a result table. A known-arithmetic fixture
 checked the 44-column raw table and 26-column summary, including separate
 rate cohorts, actual-count CPU divisors, paired ratios and deadline backlog.
+
+### Ninth measurement: 609e4437
+
+[Run 34037031772](https://github.com/mbbill/Whitefoot/actions/runs/34037031772)
+and [artifact 9991023131](https://github.com/mbbill/Whitefoot/actions/runs/34037031772/artifacts/9991023131)
+contain all 784 verified timed samples. Every row retains exactly
+`48 * light_per_second` completed and verified light arrivals. This VM reports
+AMD EPYC 9V74, four logical CPUs on two physical cores with SMT, Linux 6.17
+and clang 18. The gate and native-host workflows passed at this revision.
+The separate full benchmark ran on parent 93d280f5 (the only intervening
+change enabled this temporary CI branch) and its Windows qualification failed;
+it is not represented as a successful qualification at 609e4437.
+
+For 2097152 heavy compute steps on split2, heavy rates below count completions
+inside the fixed one-second interval. Light tails include dispatch/backlog,
+and all outstanding requests are subsequently drained and verified:
+
+| light arrivals/s | form | heavy completions/s | light p99 us | worst light-peer p99 us | light pending at deadline |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 960 | WF base | 572 | 26988 | 28074 | 4 |
+| 960 | WF cq1024 | 528 | 624 | 991 | 0 |
+| 960 | WF cq16384 | 560 | 1272 | 1909 | 0 |
+| 960 | C q1024 | 559 | 135 | 185 | 0 |
+| 960 | C q16384 | 560 | 540 | 579 | 0 |
+| 4800 | WF base | 571 | 635639 | 635930 | 3007 |
+| 4800 | WF cq1024 | 496 | 733 | 989 | 0 |
+| 4800 | WF cq16384 | 544 | 1039 | 1234 | 1 |
+| 4800 | C q1024 | 536 | 130 | 170 | 0 |
+| 4800 | C q16384 | 550 | 566 | 582 | 2 |
+| 24000 | WF base | 572 | 941338 | 941338 | 22176 |
+| 24000 | WF cq1024 | 400 | 293 | 356 | 1 |
+| 24000 | WF cq16384 | 464 | 576 | 731 | 7 |
+| 24000 | C q1024 | 470 | 113 | 156 | 1 |
+| 24000 | C q16384 | 492 | 548 | 579 | 8 |
+
+At 960/4800/24000 light arrivals per second, paired WF/C heavy-rate ratios at
+interval 16384 are 1.000 [0.989, 1.002], 0.989 [0.978, 1.000], and 0.951
+[0.924, 0.984]. Matching interval 1024 ratios are 0.945, 0.925, and 0.851.
+At 262144 compute steps the 16384 ratios are 0.989, 0.982, and 0.949.
+On shared4 with long compute, the 16384 ratios are 0.984, 0.981, and 0.945;
+light p99 is approximately 2.6..3.3 ms and dispatch delay contributes
+approximately 1.8..2.0 ms. That client/server CPU competition is visible in
+the protocol instead of being mislabeled entirely as server service latency.
+
+Selection: under bounded identical light demand, cooperative service can
+retain most heavy capacity. The severe heavy-rate loss in the unpaced cohort
+was partly the changed offered workload. There is still a real implementation
+gap: WF can approach the native heavy rate while having materially worse light
+tails, especially at low light rates and small quanta. Near-equal heavy rates
+alone do not meet the performance goal. Keep the fixed-arrival protocol as a
+control for further compiler and ready-queue changes; do not infer a universal
+best interval from the non-monotone light tails in these cells.
+
+## Tenth experiment: keep checkpoint bookkeeping out of the inner loop
+
+The seventh cohort's larger-interval pure-compute loss did not require a
+runtime checkpoint call. A local observed build of the same layout program
+at four workers and interval 16384 reported zero calls and zero switches,
+matching the source's 8192/4096-iteration leaf loops. Their activation-local
+counters never expire. Optimized LLVM nevertheless retains the decrement
+and conditional branch in every iteration. Increasing the interval alone
+does not remove that code-generation cost.
+
+`--par --sched-chunks N` performs a post-checking IR transformation of
+unsigned unit-stride natural loops. The header must consist of its bound
+comparison, that comparison's exhaustion edge must leave the natural loop,
+the bound must be invariant through every forwarded block parameter, and
+the latch must increment the tested index by one. No function or source
+name selects the transformation. A loop driven by a completion pipeline is
+left to that driver and the existing counter fallback.
+Equality/inequality termination is also eligible when the initial index is
+the unsigned constant zero, which proves it cannot start above its bound.
+A dynamic-start equality loop may intentionally wrap; it keeps the fallback.
+
+The transformed loop compares its index against
+`min(upper, saturating_add(start, N))`. On exhaustion, it either takes the
+original exit or checkpoints and starts the next chunk. The inner body,
+its source operations, early exits, drops and carried values are retained.
+An empty or reversed range stays empty; saturation avoids wrapping a chunk
+limit near the u64 maximum. The transformation adds ordinary IR blocks and
+SSA values, not an acceptance rule or a writer-visible effect. Other loops
+retain the existing counter prototype and all progress-contract limitations.
+
+The native boundary test compares both counted and ordinary natural loops
+with independent wrapping-fold results at intervals 1/3/16384/u32::MAX and
+one/two workers. It includes empty/reversed ranges, near-maximum indices,
+early breaks and nested loops. A changing bound and reversed comparison
+polarity must decline chunking while preserving their native results, as must
+a dynamic-start equality loop that actually wraps through the u64 maximum.
+The permission ledger is unchanged. All 32 parallel backend tests passed.
+The extended equality-termination case, all 15 loop-splitting backend tests,
+and all 12 command-line tests also passed. Native four-peer network exchanges
+with the new recurrence lowering verified every byte at one/two workers and
+reported 2286/2540 checkpoint calls with 1612/1211 actual switches. The calls
+equal exactly 127 inter-chunk checks per completed heavy request. A positive
+runtime count alone had initially exercised the counter fallback; the runner
+now also requires the measured recurrence's emitted body to use chunk checks.
+
+On the M1, a local one-batch four-worker check with one warm-up and three
+alternating measured passes gave median wall times of 488.75 ms base,
+496.45 ms counter16384 and 497.42 ms chunks16384, with identical independent
+expected bytes. This host does not reproduce the Linux four-worker counter
+loss and does not establish that chunking recovers it. The Linux experiment
+therefore compares base, counter16384 and chunks1024/16384/65536 on one host,
+plus the existing four native C references. It retains the three 64-peer
+common-duration network cases, and pure-compute/warm-file controls at two,
+four and eight workers. Untimed observations must confirm zero runtime calls
+in both 16384 pure-compute forms and positive switches in the mixed network
+forms. Default compilation and source progress semantics remain unchanged.

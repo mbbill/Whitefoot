@@ -197,6 +197,12 @@ gives an already-ready stack a turn. It does not guarantee admission, preempt
 arbitrary recursion or long host calls, or establish a wall-clock service
 bound. The default emits no checkpoint counter or calls. Measurement and
 selection live in `research/investigations/io-model/SCHEDULER-EXPERIMENT.md`.
+The alternative `--par --sched-chunks N` keeps recognized unsigned unit-stride
+loops intact within chunks of at most N iterations and checkpoints between
+chunks. Their upper bound must be invariant and the bound test must leave the
+loop. Empty ranges, early exits and integer limits retain their source
+behavior; other loops use the existing counter fallback. This also remains
+an experimental scheduling policy without a source progress guarantee.
 
 The first multi-operation loop path is deliberately specific: one
 source-derived fixed two-slot bounded batch for the direct staged counted-loop
