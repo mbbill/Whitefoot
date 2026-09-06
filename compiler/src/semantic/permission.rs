@@ -721,6 +721,55 @@ pub(super) fn kernel_footprint(places: &PlaceMap, candidate: &KernelProjection<'
     footprint
 }
 
+/// The store a [BLK-2] acquisition's own release returns its storage to, when
+/// that release spends the store's provider capability.
+///
+/// A `Vector<'s, T>` and a `Box<'s, T>` are store-owned [STOR-1]: the value's
+/// scope exit runs one compiler-derived release back to the store `'s` names,
+/// which for a **general** store spends that store's capability [PROV-6] and
+/// therefore writes the same place the take wrote. For a **bump extent** the
+/// release is empty, the extent's reclamation being its own region reset
+/// [BLK-2], so those rows return `None` and cost their store nothing.
+///
+/// The release is not a statement, so no walk over the body reaches it. A
+/// judgment that reads a body's statements alone would attribute the take and
+/// miss the give-back, which is the one direction it must never fail in.
+pub(super) fn kernel_release_footprint(
+    places: &PlaceMap,
+    candidate: &KernelProjection<'_>,
+) -> Option<Footprint> {
+    match candidate.row {
+        crate::KernelRow::HeapVector | crate::KernelRow::HeapBox => {}
+        crate::KernelRow::FixedVector
+        | crate::KernelRow::ArenaVector
+        | crate::KernelRow::ArenaVectorProved
+        | crate::KernelRow::ArenaBox
+        | crate::KernelRow::ArenaFrame
+        | crate::KernelRow::PlaceBack
+        | crate::KernelRow::PlaceFront
+        | crate::KernelRow::TakeBack
+        | crate::KernelRow::TakeFront
+        | crate::KernelRow::SliceOf
+        | crate::KernelRow::MutSliceOf => return None,
+    }
+    let mut footprint = Footprint::default();
+    let (Some(argument), Some(node)) = (
+        candidate.arguments.first(),
+        candidate.argument_nodes.first(),
+    ) else {
+        footprint.unresolved = Some(candidate.call.clone());
+        return Some(footprint);
+    };
+    match argument_place(places, argument) {
+        Some(place) => footprint.writes.push(Access::Place {
+            place,
+            argument: node.clone(),
+        }),
+        None => footprint.unresolved = Some(node.clone()),
+    }
+    Some(footprint)
+}
+
 /// One statement written between the two judged calls, reduced to what the
 /// window rule asks of it.
 struct Interposed {
