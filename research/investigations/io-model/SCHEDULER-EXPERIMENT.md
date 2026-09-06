@@ -2064,6 +2064,64 @@ and documentation rather than the measured runtime, passed gate, io-hosts and
 all io-bench jobs. Keep the failed cohort visible rather than treating it as a
 valid Windows performance table.
 
+### Qualified repeat and fixed-arrival mixed load
+
+[Run 34053944411](https://github.com/mbbill/Whitefoot/actions/runs/34053944411)
+at `7421a2580eaa8741b58728d3cee68a3e50327852` completed both Linux cohorts,
+the Windows check, and all gate/io-hosts/io-bench workflows. Every ring policy
+passed the independent two-ring wake test and four-thread native bridge read.
+The [echo artifact](https://github.com/mbbill/Whitefoot/actions/runs/34053944411/artifacts/9995817394)
+has 840 rows on EPYC 7763. It reproduces the first result: split2 rings/base
+paired rate is 1.1411 [1.1334, 1.1429] at 64 peers and
+1.1214 [1.0849, 1.1338] at 1024, while p99 ratios are
+1.1491 [1.1463, 1.1545] and 1.4139 [1.1912, 1.5840]. The combined owner/base
+rates are 0.5890 [0.5299, 0.9262] and 0.4796 [0.4287, 0.5590]. Ring throughput
+and tail tradeoffs, and the large pinning loss, survive the qualification fix.
+
+The [paced artifact](https://github.com/mbbill/Whitefoot/actions/runs/34053944411/artifacts/9995745423)
+has 504 rows on a different host, EPYC 9V74, with four logical CPUs/two SMT
+cores. Compare forms within that job; do not compare its absolute rate with
+the 7763 echo job. The table uses medians of **heavy completions before the
+one-second deadline** and light p99 measured from scheduled arrival. All
+requests are subsequently drained and byte-checked. Light offers are the
+aggregate across 48 light peers; 16 heavy peers remain saturated at 2097152
+compute rounds/request. `Chunk` and `chunk+owner` use identical 16384-step WF
+modules; `native chunk` is the existing epoll reference at that quantum.
+
+| Placement | Light offer/s | Chunk heavy/s | Chunk light p99 us | Chunk+owner heavy/s | Chunk+owner light p99 us | Native chunk heavy/s | Native light p99 us |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| shared2 | 4800 | 416 | 656 | 192 | 1112 | 417 | 687 |
+| shared2 | 24000 | 352 | 662 | 144 | 1128 | 366 | 705 |
+| shared4 | 4800 | 816 | 3114 | 192 | 1101 | 831 | 2875 |
+| shared4 | 24000 | 656 | 2879 | 144 | 1154 | 698 | 3048 |
+| split2 | 4800 | 416 | 651 | 192 | 1053 | 420 | 722 |
+| split2 | 24000 | 352 | 753 | 128 | 1113 | 367 | 706 |
+| split1 | 4800 | 208 | 1104 | 208 | 1039 | 208 | 915 |
+| split1 | 24000 | 160 | 1029 | 160 | 1043 | 160 | 983 |
+
+Every multi-worker paired heavy-capacity ratio is below one. Split2
+chunk+owner/chunk ratios are 0.4615 [0.4615, 0.9952] and
+0.3765 [0.3636, 0.9716] at the two offers. Shared4 medians are 0.2353 and
+0.2195: better light latency there accompanies a roughly three-quarter loss
+of heavy capacity, not a Pareto improvement. One-worker capacity is near
+identical, consistent with assignment/wake interaction rather than an
+intrinsic cost of the chunked ordinary callee.
+
+Aggregate rate conceals this failure. At split2/24000, chunk and chunk+owner
+report 23758.6/23683.7 total exchanges/s, while heavy deadline completions
+fall from 352 to 128. CPU per completed request also falls when fewer expensive
+requests complete; that is not evidence of better execution efficiency.
+Unchunked base/owner have 0.72..1.03-second light tails in the multi-worker
+long-compute cases. Ownership placement alone does not supply preemption.
+The zero-compute split2 control also loses rate with pinning:
+base/chunk/owner/chunk+owner/native inline/native chunk are
+141248/140416/83346/85967/191212/192023 exchanges/s.
+
+These results reject opportunistic initial stealing plus permanent affinity
+as the next runtime choice. They strengthen the separate experiment in
+deliberate initial distribution, while leaving dynamic load imbalance and
+wake cost open. Equal numbers of connections need not have equal CPU demand.
+
 ## Nineteenth experiment: compact stack metadata and first-use contexts
 
 A reserved stack currently receives both a state header and an initial switch
@@ -2134,3 +2192,71 @@ Its final control selection also now includes memory, so the already-built
 compute/file controls actually run for that experiment.
 No timing or memory conclusion is drawn from that incomplete job; its logs
 remain in [run 34055042189](https://github.com/mbbill/Whitefoot/actions/runs/34055042189).
+
+## Twentieth experiment: deliberate initial I/O placement
+
+Experiment 18 pins an accidental initial assignment. The next candidate gives
+compiler-admitted staged may-suspend calls an explicit initial owner before
+using that same pinned continuation/per-worker-ring policy. `WF_SCHED_IO_ROUND_ROBIN=1`
+is experimental and requires independently locked pinned ready queues. Its
+zero default delegates to the original publisher. No source annotation,
+public function signature, callee body or proof acceptance rule changes.
+The staged lowering now calls the internal `wf__par_publish_staged` entry;
+ordinary compute hand-outs retain `wf__par_publish` and their Chase-Lev deques.
+The fallback module still refuses lane acquisition when no runtime is linked.
+
+Each publishing worker advances its own initial-owner cursor across the
+actually started contiguous worker prefix. Startup publishes that prefix
+before the first acquisition returns; a configured but uncreated worker is
+not a dispatch destination. Each owner queue holds an intrusive FIFO of initial
+calls alongside its ready continuations, under the existing queue mutex.
+Starting a call and resuming a stack alternate when both are available. An
+in-place I/O join never starts another initial call above its borrowed buffer;
+an exhausted compute join can execute an assigned initial call without asking
+for another stack. Both completion paths retain the original record protocol.
+Free-list and incoming-list membership are exclusive, so their slot link shares
+storage. A local ABI probe confirms the original 304-byte slot and 48-byte
+frame offset in both policies. Counters record starts per owner, independently
+of steals; the timed candidate also retains this once-per-start count.
+
+The enumerator now checks incoming-list ownership, state, duplicates, cycles,
+tails, simultaneous compute-deque membership, and sleeping with runnable
+initial work. S25 joins two such calls in reverse order and requires actual
+park/resume coverage. S26 constrains the available prefix to one and requires
+both calls there; it tests prefix routing, not an injected native thread-create
+failure. Existing schedules and replay checks remain. Full integrated M1
+completion suites pass with default counts 17/17/20/19 and candidate counts
+18/18/21/20, all with zero bounded executions. The real-thread smoke requires
+40 calls on each of four workers and the original exact compute/I/O results.
+
+Actual compiler emission, without LLVM text rewriting, passes 18 local socket
+runs: echo and long-compute chunked server, base/owner/balanced, one/two/four
+workers, eight peers. Each balanced run reports exactly 8/workers calls on
+every worker, correct response bytes, no resume migration, and real checkpoint
+switches for the mixed program. All 45 staged library checks, the staged TCP
+program integration check, 33 parallel backend tests and 10 cost-shape tests
+pass. These Darwin fallback checks establish correctness, not native Linux
+throughput or IOCP behavior.
+
+`scheduler-dispatch` compares base/rings/owner/balanced plus native io_uring
+and epoll over the five echo cases and four placements (840 timed rows), with
+compute/file controls. `scheduler-dispatch-paced` compares base/chunk/
+chunk+owner/chunk+balanced plus native inline/chunked epoll at fixed light
+arrivals (504 rows). All three chunked WF modules must be byte-identical.
+Memory policies remain off, all forms reserve 1100 stacks, and TCP_NODELAY is
+on. Each candidate runs the full completion suite before timing, including
+independent two-ring wake and four-thread native submission probes. Untimed
+network observations require the exact initial distribution and zero pinned
+resume migrations. Each assigned handler performs its own native accept, so
+these observations also require at least one ring per participating worker.
+Windows retains all prior memory/pinning checks and additionally runs the
+existing four-peer staged source through actual IOCP under opportunistic and
+round-robin initial placement at one/two/four workers.
+
+This policy equalizes call counts for a single producer, not CPU demand.
+Different connection classes, periodic arrival order, multiple producers,
+nested hand-outs and changing workload phases can still create imbalance.
+The mixed result must therefore be judged by heavy deadline capacity and light
+tails together. It tests whether removing the demonstrated initial-assignment
+defect makes the owner-local policy competitive; it does not select permanent
+affinity, the current global wake mechanism or the per-ring locking overhead.

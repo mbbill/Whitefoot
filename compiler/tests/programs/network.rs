@@ -457,7 +457,7 @@ fn the_fanout_loop_offers_its_staged_call_to_a_lane_and_retires_it_in_the_drain(
     );
     let offer = labelled_block(main, "par.staged.offer.");
     assert!(
-        offer.contains("call void @wf__par_publish("),
+        offer.contains("call void @wf__par_publish_staged("),
         "the carrying block must publish the staged call's frame:\n{main}"
     );
     let wait = labelled_block(main, "par.staged.wait.");

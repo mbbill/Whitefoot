@@ -90,7 +90,7 @@ pub(super) struct LoopSplitSite<'ir> {
 /// `sched/entry.c` every other target links -- Windows is done as shared code
 /// (design section 7) -- so what this fail-closed choice selects is a staging
 /// predicate rather than a second implementation.
-pub(crate) const PARALLEL_RUNTIME_DECLARATIONS: &str = "declare ptr @wf__par_acquire_lane(i64)\ndeclare void @wf__par_publish(ptr, ptr)\ndeclare void @wf__par_join(ptr)\ndeclare void @wf__par_release(ptr)\n";
+pub(crate) const PARALLEL_RUNTIME_DECLARATIONS: &str = "declare ptr @wf__par_acquire_lane(i64)\ndeclare void @wf__par_publish(ptr, ptr)\ndeclare void @wf__par_publish_staged(ptr, ptr)\ndeclare void @wf__par_join(ptr)\ndeclare void @wf__par_release(ptr)\n";
 
 /// The fail-closed Windows declaration of the once-per-process backend query.
 pub(crate) const PARALLEL_POOL_QUERY_DECLARATION: &str = "declare i32 @wf__par_pool_active(i32)\n";
@@ -107,7 +107,7 @@ pub(crate) const PARALLEL_SPLIT_BUDGET_DECLARATION: &str =
 /// no runtime linked, every acquisition is refused, so no frame is ever built, no
 /// task is ever published, and every handed-out call runs on its own thread at
 /// its own fallback edge — exactly today's schedule. Linking the runtime
-/// replaces all four with its strong definitions, and only then can a lane be
+/// replaces these entries with its strong definitions, and only then can a lane be
 /// granted. Windows deliberately takes the external declarations above and
 /// cannot link without the scheduler core.
 ///
@@ -115,7 +115,7 @@ pub(crate) const PARALLEL_SPLIT_BUDGET_DECLARATION: &str =
 /// would make the runtime a link obligation of every path that ever builds a
 /// Whitefoot program rather than an option of the paths that want lanes. The
 /// Windows production contract deliberately chooses that obligation.
-pub(crate) const PARALLEL_RUNTIME_FALLBACK: &str = "define weak ptr @wf__par_acquire_lane(i64 %bytes) {\nentry:\n  ret ptr null\n}\n\ndefine weak void @wf__par_publish(ptr %frame, ptr %fn) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__par_join(ptr %frame) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__par_release(ptr %frame) {\nentry:\n  ret void\n}\n\n";
+pub(crate) const PARALLEL_RUNTIME_FALLBACK: &str = "define weak ptr @wf__par_acquire_lane(i64 %bytes) {\nentry:\n  ret ptr null\n}\n\ndefine weak void @wf__par_publish(ptr %frame, ptr %fn) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__par_publish_staged(ptr %frame, ptr %fn) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__par_join(ptr %frame) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__par_release(ptr %frame) {\nentry:\n  ret void\n}\n\n";
 
 /// The first line of [`PARALLEL_RUNTIME_FALLBACK`], and so the marker a
 /// non-Windows link path reads.
@@ -146,11 +146,11 @@ pub fn module_requires_parallel_runtime(module: &str) -> bool {
 /// process, and a non-Windows module's own weak answer of "no".
 ///
 /// The optional-runtime path carries this for the same reason it carries the
-/// four entry points: with no runtime linked, no pool can ever start, so the
+/// task protocol entry points: with no runtime linked, no pool can ever start, so the
 /// honest answer is a constant zero and the program is complete on its own.
 /// Windows emits the external declaration above instead. The query is not part
 /// of the lane protocol — it takes no frame, moves no work, and starts nothing
-/// — so it remains separate from the four protocol signatures.
+/// — so it remains separate from the task protocol signatures.
 pub(crate) const PARALLEL_POOL_QUERY_FALLBACK: &str =
     "define weak i32 @wf__par_pool_active(i32 %minimum_workers) {\nentry:\n  ret i32 0\n}\n\n";
 
@@ -181,9 +181,9 @@ pub(crate) fn overlap_minimum_workers(
 /// and a splitter that gets it descends straight to its leaf — one call, then
 /// the loop. Windows leaves the external query unresolved until native link.
 ///
-/// It is a separate definition rather than a fifth lane-protocol entry point
+/// It is a separate definition rather than another lane-protocol entry point
 /// because it takes no frame, publishes nothing, and moves no work; keeping it
-/// apart also leaves the four protocol signatures' bytes exactly as they were.
+/// apart also leaves the task protocol signatures' bytes exactly as they were.
 pub(crate) const PARALLEL_SPLIT_BUDGET_FALLBACK: &str =
     "define weak i64 @wf__par_split_budget(i64 %span, i64 %weight) {\nentry:\n  ret i64 0\n}\n\n";
 
@@ -703,7 +703,7 @@ impl FunctionEmitter<'_, '_> {
         let refused = format!("%{}", self.next_temporary()?);
         writeln!(
             self.output,
-            "  call void @wf__par_publish(ptr {frame}, ptr {thunk})\n  \
+            "  call void @wf__par_publish_staged(ptr {frame}, ptr {thunk})\n  \
              br label %{offered}\n\
              {inline}:\n  \
              {refused} = call {result_type} @{callee}({rendered_arguments})\n  \

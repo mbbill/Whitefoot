@@ -339,7 +339,8 @@ The current scheduler experiments and their controls are described in
 `scheduler-checkpoint`, `scheduler-footprint`, `scheduler-paced`,
 `scheduler-chunks`, `scheduler-canonical`, `scheduler-stackful` and
 `scheduler-stackful-paced`, `scheduler-nodelay`, `scheduler-owner` and
-`scheduler-owner-paced`, and `scheduler-memory` run their respective Linux cohorts. The measured
+`scheduler-owner-paced`, `scheduler-memory`, `scheduler-dispatch` and
+`scheduler-dispatch-paced` run their respective Linux cohorts. The measured
 priority, counter-stripe, stack-offset and independently locked ready-queue
 prototypes were retired; their results and exact revisions remain in the investigation. The canonical
 comparison also builds the recorded prior compiler revision from local Git
@@ -365,6 +366,12 @@ Linux rings, then combines them. Its paced form retains the same emitted
 16384-step chunk module and fixed light arrivals. Every candidate runs the
 full completion suite before timing; native probes also check the lifetime
 of two independent ring wake descriptors sharing one logical wake epoch.
+The dispatch comparison assigns initial staged I/O calls round-robin before
+pinning continuations. It checks actual per-worker starts separately from
+steals, retains pure-compute stealing, and compares identical WF chunk modules
+under different placement policies. Equal connection counts do not guarantee
+equal CPU demand; the fixed-arrival cohort measures heavy deadline capacity
+and light tails together.
 
 On native Windows, `windows-bench.ps1` owns a separate production
 qualification:

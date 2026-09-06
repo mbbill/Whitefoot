@@ -102,10 +102,21 @@ static void wf_sched_ready_push(wf_sched_core *core, wf_sched_stack *stack) {
     }
 }
 
-static wf_sched_stack *wf_sched_ready_pop(wf_sched_core *core) {
+/* A scheduler stack may start a queued call or resume a parked stack. When
+ * both are available, alternate them so a busy ready list cannot indefinitely
+ * postpone new calls. An in-place I/O join never asks for an initial call. */
+static wf_sched_stack *wf_sched_ready_pop(
+    wf_sched_core *core, wf_sched_slot **initial, int allow_stack
+) {
     unsigned count = 1;
     unsigned owner = 0;
     unsigned offset;
+    if (initial != NULL) {
+        *initial = NULL;
+    }
+#if !WF_SCHED_IO_ROUND_ROBIN
+    (void)allow_stack;
+#endif
 #if WF_SCHED_READY_SHARDS
     count = core->thread_count;
     owner = wf_prim_thread_index();
@@ -119,13 +130,34 @@ static wf_sched_stack *wf_sched_ready_pop(wf_sched_core *core) {
         mutex = index + 1u;
 #endif
         wf_prim_lock(WF_PRIM_SECTION_READY_POP, mutex);
+#if WF_SCHED_IO_ROUND_ROBIN
+        if (initial != NULL && queue->incoming_head != NULL
+            && (!allow_stack || queue->head == NULL || queue->prefer_incoming)) {
+            wf_sched_slot *slot = queue->incoming_head;
+            queue->incoming_head = slot->next_ready;
+            if (queue->incoming_head == NULL) {
+                queue->incoming_tail = NULL;
+            }
+            slot->next_ready = NULL;
+            queue->prefer_incoming = 0u;
+            *initial = slot;
+            wf_prim_unlock(mutex);
+            return NULL;
+        }
+        stack = allow_stack ? queue->head : NULL;
+#else
         stack = queue->head;
+#endif
+
         if (stack != NULL) {
             queue->head = stack->next;
             if (queue->head == NULL) {
                 queue->tail = NULL;
             }
             stack->next = NULL;
+#if WF_SCHED_IO_ROUND_ROBIN
+            queue->prefer_incoming = 1u;
+#endif
         }
         wf_prim_unlock(mutex);
         if (stack != NULL) {
@@ -271,8 +303,18 @@ static wf_sched_slot *wf_sched_find(wf_sched_core *core, wf_sched_thread *thread
 
 /* ------------------------------------------------------- the publisher */
 
-/* Runs one hand-out and publishes it: the compute side of the one protocol. */
+/* Runs one handed-out call and publishes its result through the one protocol. */
 static void wf_sched_execute(wf_sched_core *core, wf_sched_slot *slot) {
+#if WF_SCHED_IO_ROUND_ROBIN
+    if (slot->io_owner != WF_SCHED_NO_SLOT) {
+        wf_sched_thread *thread = wf_sched_current_thread(core);
+        if (slot->io_owner != thread->index) {
+            wf_prim_fail("an initial I/O task ran on another worker");
+        }
+        unsigned long long started = __atomic_load_n(&thread->io_started, __ATOMIC_RELAXED);
+        __atomic_store_n(&thread->io_started, started + 1u, __ATOMIC_RELAXED);
+    }
+#endif
     slot->run(slot->frame);
     wf_sched_complete(core, &slot->record);
 }
@@ -373,7 +415,7 @@ void wf_sched_checkpoint(wf_sched_core *core) {
     wf_sched_count(&thread->counts.checkpoints, 1u);
 #endif
     (void)wf_prim_progress(core);
-    target = wf_sched_ready_pop(core);
+    target = wf_sched_ready_pop(core, NULL, 1);
     if (target == NULL) {
         return;
     }
@@ -477,7 +519,7 @@ static int wf_sched_park(
 
 /* Line three's precondition: a switch target, READY first, else free. */
 static wf_sched_stack *wf_sched_take_target(wf_sched_core *core, int *was_ready) {
-    wf_sched_stack *target = wf_sched_ready_pop(core);
+    wf_sched_stack *target = wf_sched_ready_pop(core, NULL, 1);
     if (target != NULL) {
         *was_ready = 1;
         return target;
@@ -520,6 +562,7 @@ static int wf_sched_idle_looks(
     wf_sched_thread *thread = wf_sched_current_thread(core);
     unsigned long long bit = 1ull << thread->index;
     wf_sched_stack *ready;
+    wf_sched_slot *initial = NULL;
 #if WF_SCHED_OBSERVE
     wf_sched_count(&thread->counts.idle_looks, 1u);
 #endif
@@ -530,7 +573,12 @@ static int wf_sched_idle_looks(
             return 1;
         }
     }
-    ready = wf_sched_ready_pop(core);
+    ready = wf_sched_ready_pop(core, on_record == NULL ? &initial : NULL, 1);
+    if (initial != NULL) {
+        wf_sched_idle_end(core, on_record, bit);
+        wf_sched_execute(core, initial);
+        return 1;
+    }
     if (ready != NULL) {
         wf_sched_idle_end(core, on_record, bit);
         if (on_record != NULL) {
@@ -702,7 +750,13 @@ void wf_sched_join(wf_sched_core *core, wf_sched_record *record, int is_io) {
         }
         wf_sched_count(&thread->counts.exhausted_compute_waits, 1u);
         {
-            wf_sched_slot *slot = wf_sched_pop(thread->lane);
+            wf_sched_slot *slot = NULL;
+#if WF_SCHED_IO_ROUND_ROBIN
+            (void)wf_sched_ready_pop(core, &slot, 0);
+#endif
+            if (slot == NULL) {
+                slot = wf_sched_pop(thread->lane);
+            }
             if (slot == NULL) {
                 slot = wf_sched_find(core, thread);
             }
@@ -738,8 +792,12 @@ static void wf_sched_scheduler_loop(void *argument) {
             entry(entry_argument);
             continue;
         }
-        /* 1. a READY stack */
-        ready = wf_sched_ready_pop(core);
+        /* 1. a READY stack or an initial call assigned to this worker */
+        ready = wf_sched_ready_pop(core, &slot, 1);
+        if (slot != NULL) {
+            wf_sched_execute(core, slot);
+            continue;
+        }
         if (ready != NULL) {
             thread->pending_empty = thread->stack;
             wf_prim_store_u(&thread->stack->phase, WF_SCHED_STACK_EMPTY, WF_PRIM_RELAXED);
@@ -808,6 +866,9 @@ int wf_sched_init(
     memset(core, 0, sizeof(*core));
 #endif
     core->thread_count = thread_count;
+#if WF_SCHED_IO_ROUND_ROBIN
+    core->io_dispatch_threads = thread_count;
+#endif
     core->stack_count = stack_count;
     core->stack_bytes = stack_bytes;
     core->stack_stride = wf_prim_stack_stride(stack_bytes);
@@ -856,6 +917,9 @@ int wf_sched_init(
         lane->free_head = 0;
         core->threads[index].lane = lane;
         core->threads[index].index = index;
+#if WF_SCHED_IO_ROUND_ROBIN
+        core->threads[index].next_io_thread = index;
+#endif
     }
     return 0;
 }
@@ -951,6 +1015,10 @@ void *wf_sched_acquire(wf_sched_core *core, unsigned long bytes) {
     slot = &lane->slots[head];
     slot->record.state = WF_SCHED_PENDING;
     slot->record.waiter = NULL;
+#if WF_SCHED_IO_ROUND_ROBIN
+    slot->io_owner = WF_SCHED_NO_SLOT;
+    slot->next_ready = NULL;
+#endif
     return slot->frame;
 }
 
@@ -962,6 +1030,36 @@ void wf_sched_publish(wf_sched_core *core, void *frame, void (*run)(void *)) {
     if (wf_prim_load_q(&core->idle, WF_PRIM_SEQ_CST) != 0ull) {
         wf_prim_wake();
     }
+}
+
+void wf_sched_publish_staged(wf_sched_core *core, void *frame, void (*run)(void *)) {
+#if WF_SCHED_IO_ROUND_ROBIN
+    wf_sched_thread *thread = wf_sched_current_thread(core);
+    unsigned owner = thread->next_io_thread;
+    unsigned mutex = owner + 1u;
+    wf_sched_slot *slot = wf_sched_slot_of(frame);
+    wf_sched_ready_queue *queue = &core->ready[owner];
+    int was_empty;
+    thread->next_io_thread = (owner + 1u) % core->io_dispatch_threads;
+    slot->run = run;
+    slot->io_owner = owner;
+    slot->next_ready = NULL;
+    wf_prim_store_u(&slot->record.state, WF_SCHED_PENDING, WF_PRIM_RELAXED);
+    wf_prim_lock(WF_PRIM_SECTION_READY_PUSH, mutex);
+    was_empty = queue->incoming_head == NULL;
+    if (was_empty) {
+        queue->incoming_head = slot;
+    } else {
+        queue->incoming_tail->next_ready = slot;
+    }
+    queue->incoming_tail = slot;
+    wf_prim_unlock(mutex);
+    if (was_empty) {
+        wf_prim_wake();
+    }
+#else
+    wf_sched_publish(core, frame, run);
+#endif
 }
 
 void wf_sched_join_frame(wf_sched_core *core, void *frame) {

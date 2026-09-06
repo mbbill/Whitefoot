@@ -426,6 +426,11 @@ static void wf__sched_start_workers(unsigned threads) {
         }
         started += 1u;
     }
+#if WF_SCHED_IO_ROUND_ROBIN
+    /* No task can be published until this startup once returns. A failed
+     * thread creation leaves only this contiguous prefix available. */
+    wf__sched_core.io_dispatch_threads = started + 1u;
+#endif
     wf_prim_store_u(&wf__sched_workers, started, WF_PRIM_RELEASE);
     wf__sched_ready_await(started);
 }
@@ -537,6 +542,10 @@ void *wf__par_acquire_lane(unsigned long bytes) {
 
 void wf__par_publish(void *frame, void (*run)(void *)) {
     wf_sched_publish(&wf__sched_core, frame, run);
+}
+
+void wf__par_publish_staged(void *frame, void (*run)(void *)) {
+    wf_sched_publish_staged(&wf__sched_core, frame, run);
 }
 
 void wf__par_join(void *frame) {
@@ -671,10 +680,26 @@ unsigned long wf__par_grants(void) {
 int wf__sched_report(char *buffer, size_t capacity) {
     wf_sched_statistics counts;
     int written;
+    unsigned io_workers = 0u;
+    unsigned dispatch_workers = 0u;
+    unsigned long long io_started = 0u;
+    unsigned long long io_min = 0u;
+    unsigned long long io_max = 0u;
     if (wf__sched_report_wanted == 0ul || buffer == NULL || capacity == 0u) {
         return 0;
     }
     wf_sched_statistics_sum(&wf__sched_core, &counts);
+#if WF_SCHED_IO_ROUND_ROBIN
+    dispatch_workers = wf__sched_core.io_dispatch_threads;
+    for (unsigned index = 0; index < dispatch_workers; ++index) {
+        unsigned long long started = __atomic_load_n(
+            &wf__sched_core.threads[index].io_started, __ATOMIC_RELAXED);
+        io_started += started;
+        io_workers += started != 0u;
+        if (index == 0u || started < io_min) io_min = started;
+        if (started > io_max) io_max = started;
+    }
+#endif
     written = snprintf(
         buffer,
         capacity,
@@ -684,7 +709,8 @@ int wf__sched_report(char *buffer, size_t capacity) {
         "progress_interval=%u observed=%u resume_migrations=%llu "
         "idle_steps=%llu idle_looks=%llu idle_progress=%llu idle_waits=%llu "
         "checkpoints=%llu checkpoint_switches=%llu ready_shards=%u ready_pinned=%u "
-        "compact_stacks=%u init_used_lanes=%u",
+        "compact_stacks=%u init_used_lanes=%u io_dispatch=%u dispatch_workers=%u "
+        "io_started=%llu io_workers=%u io_min=%llu io_max=%llu",
         wf__sched_threads,
         wf_prim_load_u(&wf__sched_workers, WF_PRIM_ACQUIRE),
         counts.parks,
@@ -710,7 +736,13 @@ int wf__sched_report(char *buffer, size_t capacity) {
         (unsigned)WF_SCHED_READY_SHARDS,
         (unsigned)WF_SCHED_READY_PINNED,
         (unsigned)WF_SCHED_COMPACT_STACKS,
-        (unsigned)WF_SCHED_INIT_USED_LANES
+        (unsigned)WF_SCHED_INIT_USED_LANES,
+        (unsigned)WF_SCHED_IO_ROUND_ROBIN,
+        dispatch_workers,
+        io_started,
+        io_workers,
+        io_min,
+        io_max
     );
     return written > 0 && (size_t)written < capacity;
 }

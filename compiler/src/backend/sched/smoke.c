@@ -104,7 +104,7 @@ static void hand_out_group(unsigned count) {
             continue;
         }
         *(unsigned long long *)frames[index] = 0;
-        wf_sched_publish(&core, frames[index], read_then_add);
+        wf_sched_publish_staged(&core, frames[index], read_then_add);
     }
     while (index > 0u) {
         index -= 1u;
@@ -232,6 +232,14 @@ int main(void) {
         (void)fprintf(stderr, "sched smoke: FAIL\n");
         return 1;
     }
+#if WF_SCHED_IO_ROUND_ROBIN
+    for (index = 0; index < WORKERS + 1u; ++index) {
+        if (__atomic_load_n(&core.threads[index].io_started, __ATOMIC_RELAXED) != 40u) {
+            fputs("initial I/O hand-outs were not distributed evenly\n", stderr);
+            return 1;
+        }
+    }
+#endif
     printf("sched smoke: PASS\n");
     return 0;
 }

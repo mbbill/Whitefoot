@@ -110,6 +110,7 @@ void wf_enum_io(wf_sched_record *record);
  * written by the caller before the join, because a thief may be running the
  * body. */
 void *wf_enum_hand_out(void (*run)(void *payload), unsigned long payload_bytes);
+void *wf_enum_hand_out_io(void (*run)(void *payload), unsigned long payload_bytes);
 void wf_enum_join(void *payload);
 void wf_enum_release(void *payload);
 

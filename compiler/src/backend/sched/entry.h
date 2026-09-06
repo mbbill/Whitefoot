@@ -144,6 +144,9 @@ int wf__sched_report(char *buffer, size_t capacity);
  * gives the slot back once the caller has read the result out. */
 void *wf__par_acquire_lane(unsigned long bytes);
 void wf__par_publish(void *frame, void (*run)(void *));
+/* Same owned frame and join protocol, with an initial-placement policy for a
+ * staged may-suspend call. This does not change the callee's source ABI. */
+void wf__par_publish_staged(void *frame, void (*run)(void *));
 void wf__par_join(void *frame);
 void wf__par_release(void *frame);
 

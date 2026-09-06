@@ -849,6 +849,62 @@ static const char *s24_covered(const wf_enum_coverage *cov) {
     return NULL;
 }
 
+/* Two initial I/O calls exercise owner queues, FIFO links, wake publication,
+ * and the no-free-stack compute join. Normal policies keep the same calls on
+ * their ordinary deques; round-robin placement has an exact owner count. */
+static void s25_main(void *argument) {
+    unsigned long long *first;
+    unsigned long long *second;
+    (void)argument;
+    first = wf_enum_hand_out_io(read_then_add, sizeof *first);
+    second = wf_enum_hand_out_io(read_then_add, sizeof *second);
+    if (first == NULL || second == NULL) {
+        wf_enum_fail("two available initial I/O slots were refused");
+    }
+    join_release(second);
+    join_release(first);
+    wf_sched_post_status(&wf_enum_core, STATUS);
+}
+
+static const char *s25_check(void) {
+    if (st.compute_done != 2u) return "an initial I/O call did not return exactly once";
+#if WF_SCHED_IO_ROUND_ROBIN
+    for (unsigned index = 0; index < wf_enum_core.thread_count; ++index) {
+        if (wf_enum_core.threads[index].io_started != 2u / wf_enum_core.thread_count) {
+            return "initial I/O calls did not run on their assigned workers";
+        }
+    }
+#endif
+    return check_io(2u);
+}
+
+static const char *s25_covered(const wf_enum_coverage *cov) {
+    if (cov->stats.parks == 0u || cov->resume == 0u) {
+        return "no initial I/O task parked and resumed";
+    }
+    return NULL;
+}
+
+#if WF_SCHED_IO_ROUND_ROBIN
+/* The startup seam publishes a contiguous prefix after thread creation. An
+ * idle configured worker outside that prefix must receive no initial task. */
+static void s26_main(void *argument) {
+    wf_enum_core.io_dispatch_threads = 1u;
+    s25_main(argument);
+}
+
+static const char *s26_check(void) {
+    if (st.compute_done != 2u) return "a prefix-assigned I/O call was lost";
+    for (unsigned index = 0; index < wf_enum_core.thread_count; ++index) {
+        unsigned expected = index == 0u ? 2u : 0u;
+        if (wf_enum_core.threads[index].io_started != expected) {
+            return "an initial I/O task was assigned outside the available prefix";
+        }
+    }
+    return check_io(2u);
+}
+#endif
+
 /* ------------------------------------------------------------- the table */
 
 /* Three of §10's schedules are not enumerable here and are absent for that
@@ -880,6 +936,10 @@ const wf_enum_schedule wf_enum_schedules[] = {
     {"S22", 2u, 0u, 2u, 0u, reset_counts, s22_main, s22_check, s22_covered},
     {"S23", 1u, 0u, 2u, 3u, reset_counts, s23_main, s23_check, s23_covered},
     {"S24", 1u, 0u, 2u, 0u, reset_counts, s24_main, s24_check, s24_covered},
+    {"S25", 1u, 0u, 1u, 0u, reset_counts, s25_main, s25_check, s25_covered},
+#if WF_SCHED_IO_ROUND_ROBIN
+    {"S26", 1u, 0u, 1u, 0u, reset_counts, s26_main, s26_check, s25_covered},
+#endif
 };
 
 const unsigned wf_enum_schedule_count = sizeof wf_enum_schedules / sizeof wf_enum_schedules[0];

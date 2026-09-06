@@ -1361,7 +1361,7 @@ static void hand_out_trampoline(void *frame) {
     f->run(f->payload);
 }
 
-void *wf_enum_hand_out(void (*run)(void *payload), unsigned long payload_bytes) {
+static void *hand_out(void (*run)(void *payload), unsigned long payload_bytes, int is_io) {
     hand_out_frame *f = wf_sched_acquire(&wf_enum_core, payload_bytes + offsetof(hand_out_frame, payload));
     if (f == NULL) {
         return NULL;
@@ -1372,8 +1372,20 @@ void *wf_enum_hand_out(void (*run)(void *payload), unsigned long payload_bytes) 
     memset(f, 0, WF_SCHED_FRAME_BYTES);
     f->run = run;
     f->reserved = NULL;
-    wf_sched_publish(&wf_enum_core, f, hand_out_trampoline);
+    if (is_io) {
+        wf_sched_publish_staged(&wf_enum_core, f, hand_out_trampoline);
+    } else {
+        wf_sched_publish(&wf_enum_core, f, hand_out_trampoline);
+    }
     return f->payload;
+}
+
+void *wf_enum_hand_out(void (*run)(void *payload), unsigned long payload_bytes) {
+    return hand_out(run, payload_bytes, 0);
+}
+
+void *wf_enum_hand_out_io(void (*run)(void *payload), unsigned long payload_bytes) {
+    return hand_out(run, payload_bytes, 1);
 }
 
 void wf_enum_join(void *payload) {
@@ -1466,6 +1478,10 @@ static void check_state(void) {
     unsigned alive = 0;
     unsigned asleep = 0;
     int is_io;
+#if WF_SCHED_IO_ROUND_ROBIN
+    unsigned incoming[WF_SCHED_MAX_THREADS][WF_SCHED_LANE_SLOTS] = {{0}};
+    unsigned incoming_count[WF_SCHED_MAX_THREADS] = {0};
+#endif
 
     on_free = walk_list(wf_enum_core.free_head, WF_SCHED_STACK_EMPTY, "free", &last);
     on_ready = 0;
@@ -1488,7 +1504,42 @@ static void check_state(void) {
         }
 #endif
         on_ready |= members;
+#if WF_SCHED_IO_ROUND_ROBIN
+        const wf_sched_slot *slot = wf_enum_core.ready[index].incoming_head;
+        const wf_sched_slot *tail = NULL;
+        while (slot != NULL) {
+            unsigned home = WF_SCHED_NO_SLOT;
+            unsigned position = WF_SCHED_NO_SLOT;
+            for (unsigned lane = 0; lane < wf_enum_core.thread_count; ++lane) {
+                for (unsigned at = 0; at < WF_SCHED_LANE_SLOTS; ++at) {
+                    if (slot == &wf_enum_core.lanes[lane].slots[at]) {
+                        home = lane;
+                        position = at;
+                    }
+                }
+            }
+            if (home == WF_SCHED_NO_SLOT) {
+                fail_execution("an incoming I/O queue names no live slot");
+                break;
+            }
+            if (incoming[home][position]++) {
+                fail_execution("an I/O hand-out is queued twice or forms a cycle");
+                break;
+            }
+            if (index >= wf_enum_core.thread_count || slot->io_owner != index
+                || slot->record.state != WF_SCHED_PENDING) {
+                fail_execution("an incoming I/O hand-out has the wrong owner or state");
+            }
+            incoming_count[index] += 1u;
+            tail = slot;
+            slot = slot->next_ready;
+        }
+        if (wf_enum_core.ready[index].incoming_tail != tail) {
+            fail_execution("an incoming I/O queue has the wrong tail");
+        }
+#endif
     }
+
     if (on_free & on_ready) {
         fail_execution("a stack is on both lists");
     }
@@ -1615,6 +1666,15 @@ static void check_state(void) {
                 }
             }
         }
+#if WF_SCHED_IO_ROUND_ROBIN
+        for (index = 0; index < cfg_threads; ++index) {
+            const actor *a = &actors[index];
+            int on = stack_index_of(a->sp);
+            if (is_asleep(a) && on >= 0 && stacks[on].io_depth == 0u && incoming_count[index] != 0u) {
+                fail_execution("an idle owner sleeps with an initial I/O task queued");
+            }
+        }
+#endif
         if (on_ready != 0u) {
             fail_execution("every thread is asleep with a non-empty ready list (item 20)");
         }
@@ -1643,6 +1703,11 @@ static void check_state(void) {
             if (slot < lane->slots || slot >= lane->slots + WF_SCHED_LANE_SLOTS) {
                 fail_execution("lane %u's deque names a slot of another lane", index);
             }
+#if WF_SCHED_IO_ROUND_ROBIN
+            if (incoming[index][(unsigned)(slot - lane->slots)] != 0u) {
+                fail_execution("a hand-out is both incoming and on its compute deque");
+            }
+#endif
             for (later = position + 1u; (long long)(lane->bottom - later) > 0; later += 1u) {
                 if (lane->buffer[later & (WF_SCHED_LANE_SLOTS - 1u)] == slot) {
                     fail_execution("lane %u's deque holds one slot twice (I4)", index);

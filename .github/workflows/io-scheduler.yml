@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        experiment: [memory]
+        experiment: [dispatch, dispatch-paced]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -58,9 +58,9 @@ jobs:
         run: |
           {
             echo '## Scheduler experiment: ${{ matrix.experiment }}'
-            echo 'Paired within this job and CPU cohort. Cross compact stack metadata/first-use contexts with used-lane initialization; keep 1100 reserved stacks, identical WF modules and TCP_NODELAY in every form. Echo includes small/large payloads and compute/file controls. Each candidate runs the full completion suite before timing. See the investigation for scope.'
+            echo 'Paired within this job and CPU cohort. Compare deliberate initial I/O distribution with pinned continuations and per-worker rings. Keep 1100 reserved stacks and TCP_NODELAY in every form. Echo includes small/large payloads and compute/file controls; paced load compares identical chunk modules at fixed light arrivals. Each candidate runs the full completion suite before timing. See the investigation for scope.'
             echo '```text'
-            for file in host.txt cohorts.tsv network-summary.txt compute.txt mixed.txt lanes-check.log compact-check.log small-check.log; do
+            for file in host.txt cohorts.tsv network-summary.txt compute.txt mixed.txt rings-check.log owner-check.log balanced-check.log; do
               cat "$RUNNER_TEMP/io-scheduler/$file" 2>/dev/null || echo "$file was not produced"
             done
             echo '```'
@@ -81,7 +81,7 @@ jobs:
             ${{ runner.temp }}/io-scheduler/codegen/
 
   windows-owner:
-    name: native Windows memory and pinned continuation checks
+    name: native Windows memory and I/O placement checks
     runs-on: windows-latest
     timeout-minutes: 20
     defaults:
@@ -101,6 +101,9 @@ jobs:
           compiler/target/gate/whitefootc.exe --par --emit-llvm \
             research/experiments/io-completion-bench/programs/windows_runtime_mixed.wf \
             -o "$RUNNER_TEMP/owner/mixed.ll"
+          compiler/target/gate/whitefootc.exe --par --emit-llvm tests/programs/tcp_fanout.wf \
+            -o "$RUNNER_TEMP/owner/fanout.ll"
+          grep -q 'call void @wf__par_publish_staged(' "$RUNNER_TEMP/owner/fanout.ll"
       - name: Check memory and pinned policies with actual IOCP traffic
         run: |
           backend="$GITHUB_WORKSPACE/compiler/src/backend"
@@ -145,6 +148,92 @@ jobs:
               cat "$record.err"
             done
           done
+          for dispatch in 0 1; do
+            clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
+              -I "$backend" -I "$backend/completion" -DWF_SCHED_OBSERVE=1 \
+              -DWF_SCHED_READY_SHARDS=2 -DWF_SCHED_READY_PINNED=1 \
+              "-DWF_SCHED_IO_ROUND_ROBIN=$dispatch" -x c "${sources[@]}" \
+              -x ir "$RUNNER_TEMP/owner/fanout.ll" -Wno-override-module \
+              -o "$RUNNER_TEMP/owner/fanout-$dispatch.exe" -lws2_32
+          done
+      - name: Check sequential staged calls on native Windows sockets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $directory = Join-Path $env:RUNNER_TEMP 'owner'
+          foreach ($dispatch in 0, 1) {
+            foreach ($workers in 1, 2, 4) {
+              $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+              $listener.Start()
+              $port = $listener.LocalEndpoint.Port
+              $listener.Stop()
+              $record = Join-Path $directory "fanout-d$dispatch-w$workers"
+              $env:WF_WORKERS = "$workers"
+              $env:WF_STACKS = '64'
+              $env:WF_SCHED_REPORT = '1'
+              $env:WF_REQUIRE_WINDOWS_IOCP = '1'
+              $server = Start-Process -FilePath (Join-Path $directory "fanout-$dispatch.exe") `
+                -ArgumentList "$port" -PassThru -RedirectStandardOutput "$record.out" `
+                -RedirectStandardError "$record.err"
+              $clients = [Collections.Generic.List[Net.Sockets.TcpClient]]::new()
+              try {
+                for ($index = 0; $index -lt 4; $index++) {
+                  $connected = $false
+                  for ($attempt = 0; $attempt -lt 100; $attempt++) {
+                    $client = [Net.Sockets.TcpClient]::new()
+                    try {
+                      $pending = $client.ConnectAsync([Net.IPAddress]::Loopback, $port)
+                      if (-not $pending.Wait(1000)) { throw 'connect timed out' }
+                      $pending.GetAwaiter().GetResult()
+                      $connected = $true
+                      break
+                    } catch {
+                      $client.Dispose()
+                      if ($server.HasExited) { throw "server exited during connect: $(Get-Content "$record.err")" }
+                      Start-Sleep -Milliseconds 10
+                    }
+                  }
+                  if (-not $connected) { throw 'listener never accepted a connection' }
+                  $client.ReceiveTimeout = 5000
+                  $client.SendTimeout = 5000
+                  $clients.Add($client)
+                }
+                # Hold all four accepted calls live before any peer sends.
+                for ($index = 0; $index -lt 4; $index++) {
+                  $clients[$index].GetStream().WriteByte([byte](101 + $index))
+                }
+                for ($index = 0; $index -lt 4; $index++) {
+                  if ($clients[$index].GetStream().ReadByte() -ne 101 + $index) {
+                    throw "incorrect byte from peer $index"
+                  }
+                }
+                if (-not $server.WaitForExit(10000)) { throw 'server did not finish all staged calls' }
+                if ($server.ExitCode -ne 0) { throw "server status $($server.ExitCode)" }
+                if ((Get-Item "$record.out").Length -ne 0) { throw 'unexpected server output' }
+                $report = Get-Content "$record.err"
+                $scheduler = $report | Where-Object { $_.StartsWith('sched:') }
+                $values = @{}
+                foreach ($match in [regex]::Matches($scheduler, '(\w+)=(\d+)')) {
+                  $values[$match.Groups[1].Value] = [long]$match.Groups[2].Value
+                }
+                if ($values['ready_pinned'] -ne 1 -or $values['io_dispatch'] -ne $dispatch -or
+                    $values['parks'] -le 0 -or $values['resumes'] -le 0 -or $values['resume_migrations'] -ne 0) {
+                  throw "incorrect scheduler path: $scheduler"
+                }
+                if ($dispatch -eq 1 -and ($values['dispatch_workers'] -ne $workers -or
+                    $values['io_started'] -ne 4 -or $values['io_workers'] -ne $workers -or
+                    $values['io_min'] -ne 4 / $workers -or $values['io_max'] -ne 4 / $workers)) {
+                  throw "incorrect initial placement: $scheduler"
+                }
+                $report
+                Write-Host "native IOCP staged fanout PASS dispatch=$dispatch workers=$workers"
+              } finally {
+                foreach ($client in $clients) { $client.Dispose() }
+                if (-not $server.HasExited) { $server.Kill($true); $server.WaitForExit() }
+                $server.Dispose()
+              }
+            }
+          }
       - uses: actions/upload-artifact@v4
         if: always()
         with:

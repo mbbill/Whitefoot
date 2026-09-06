@@ -461,6 +461,7 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
     for weak in [
         "define weak ptr @wf__par_acquire_lane(i64 %bytes) #0 {",
         "define weak void @wf__par_publish(ptr %frame, ptr %fn) #0 {",
+        "define weak void @wf__par_publish_staged(ptr %frame, ptr %fn) #0 {",
         "define weak void @wf__par_join(ptr %frame) #0 {",
         "define weak void @wf__par_release(ptr %frame) #0 {",
     ] {
@@ -1697,6 +1698,7 @@ fn the_bootstrap_selects_one_world_once() {
     for weak in [
         "define weak ptr @wf__par_acquire_lane(i64 %bytes) #0 {",
         "define weak void @wf__par_publish(ptr %frame, ptr %fn) #0 {",
+        "define weak void @wf__par_publish_staged(ptr %frame, ptr %fn) #0 {",
         "define weak void @wf__par_join(ptr %frame) #0 {",
         "define weak void @wf__par_release(ptr %frame) #0 {",
     ] {
@@ -1751,6 +1753,7 @@ fn windows_parallel_modules_fail_closed_at_the_link_boundary() {
     for declaration in [
         "declare ptr @wf__par_acquire_lane(i64)",
         "declare void @wf__par_publish(ptr, ptr)",
+        "declare void @wf__par_publish_staged(ptr, ptr)",
         "declare void @wf__par_join(ptr)",
         "declare void @wf__par_release(ptr)",
         "declare i32 @wf__par_pool_active(i32)",
@@ -2804,7 +2807,7 @@ fn a_staged_may_suspend_call_is_offered_to_a_lane_and_refused_to_the_same_bytes(
         .find("= call ptr @wf__par_acquire_lane(i64 ")
         .expect("the staged call must acquire a lane frame");
     let publish = body
-        .find("call void @wf__par_publish(ptr")
+        .find("call void @wf__par_publish_staged(ptr")
         .expect("the acquired frame must be given the outlined call");
     let refused = body
         .find("\npar.staged.inline.")
@@ -2863,6 +2866,56 @@ fn a_staged_may_suspend_call_is_offered_to_a_lane_and_refused_to_the_same_bytes(
     identical(&runs).expect("a refused lane must publish the granted lane's bytes");
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// The ordinary staged source uses the runtime's initial-placement policy;
+/// no signature annotation or different callee body selects that policy.
+#[test]
+fn staged_io_calls_start_on_each_available_worker() {
+    let module = emit_with_overlap(STAGED_MAY_SUSPEND_CALL);
+    let directory = test_directory();
+    let executable = super::build_linked_executable(
+        &module,
+        Some(GRANT_OBSERVER),
+        &[
+            "WF_SCHED_IO_ROUND_ROBIN=1".to_owned(),
+            "WF_SCHED_READY_SHARDS=2".to_owned(),
+            "WF_SCHED_READY_PINNED=1".to_owned(),
+        ],
+        &directory,
+    );
+    for workers in [1_u64, 4] {
+        let output = Command::new(&executable)
+            .current_dir(&directory)
+            .env("WF_WORKERS", workers.to_string())
+            .env("WF_STACKS", "64")
+            .env("WF_SCHED_REPORT", "1")
+            .output()
+            .expect("run staged I/O with deliberate initial placement");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(32), "{stderr}");
+        let report = stderr
+            .lines()
+            .find(|line| line.starts_with("sched:"))
+            .expect("the linked runtime must report its placement");
+        for (name, expected) in [
+            ("io_dispatch", 1),
+            ("dispatch_workers", workers),
+            ("io_started", 4),
+            ("io_workers", workers),
+            ("io_min", 4 / workers),
+            ("io_max", 4 / workers),
+            ("resume_migrations", 0),
+        ] {
+            let prefix = format!("{name}=");
+            let actual = report
+                .split_whitespace()
+                .find_map(|field| field.strip_prefix(&prefix))
+                .and_then(|value| value.parse::<u64>().ok());
+            assert_eq!(actual, Some(expected), "{name}: {stderr}");
+        }
+    }
+    std::fs::remove_dir_all(directory).expect("remove the placement fixture");
 }
 
 /// The compile-time window ceiling of a staged lane hand-out is the runtime's

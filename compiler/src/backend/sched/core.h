@@ -50,6 +50,18 @@
 #error "WF_SCHED_READY_SHARDS must be zero, one or two"
 #endif
 
+/* Initial placement of compiler-admitted staged I/O calls. Pure compute
+ * hand-outs keep their existing deque and stealing policy. */
+#ifndef WF_SCHED_IO_ROUND_ROBIN
+#define WF_SCHED_IO_ROUND_ROBIN 0
+#endif
+#if WF_SCHED_IO_ROUND_ROBIN != 0 && WF_SCHED_IO_ROUND_ROBIN != 1
+#error "WF_SCHED_IO_ROUND_ROBIN must be zero or one"
+#endif
+#if WF_SCHED_IO_ROUND_ROBIN && !WF_SCHED_READY_PINNED
+#error "Round-robin I/O dispatch requires pinned worker queues"
+#endif
+
 /* Experimental compact metadata and first-use context preparation. */
 #ifndef WF_SCHED_COMPACT_STACKS
 #define WF_SCHED_COMPACT_STACKS 0
@@ -88,7 +100,7 @@ typedef struct wf_sched_record {
     struct wf_sched_stack *waiter;
 } wf_sched_record;
 
-/* A compute hand-out: the record, then the outlined call and its frame. The
+/* A handed-out call: the record, then the outlined call and its frame. The
  * emitted module names the frame; `wf_sched_slot_of` recovers the slot. */
 #define WF_SCHED_FRAME_BYTES 256u
 /* The enumerator builds with the smaller constant (design §11: two slots, a
@@ -115,7 +127,18 @@ typedef struct wf_sched_slot {
     void (*run)(void *frame);
     struct wf_sched_lane *home;
     /* Free-list link, valid while the slot is free; WF_SCHED_NO_SLOT ends it. */
+#if WF_SCHED_IO_ROUND_ROBIN
+    /* A slot cannot be free and queued at once. Reuse that link storage so
+     * the experiment keeps the original frame offset and lane-slot stride. */
+    union {
+        unsigned next_free;
+        struct wf_sched_slot *next_ready;
+    };
+    unsigned io_owner;
+#else
     unsigned next_free;
+#endif
+
     _Alignas(16) unsigned char frame[WF_SCHED_FRAME_BYTES];
 } wf_sched_slot;
 
@@ -296,6 +319,11 @@ typedef struct wf_sched_thread {
     void *entry_argument;
     wf_sched_stack *pending_empty;
     wf_sched_stack *pending_commit;
+#if WF_SCHED_IO_ROUND_ROBIN
+    unsigned next_io_thread;
+    /* One writer, atomically read by the optional exit report. */
+    unsigned long long io_started;
+#endif
     wf_sched_statistics counts;
 } wf_sched_thread;
 
@@ -308,6 +336,11 @@ typedef struct wf_sched_ready_queue {
 #endif
     wf_sched_stack *head;
     wf_sched_stack *tail;
+#if WF_SCHED_IO_ROUND_ROBIN
+    wf_sched_slot *incoming_head;
+    wf_sched_slot *incoming_tail;
+    unsigned prefer_incoming;
+#endif
 } wf_sched_ready_queue;
 
 #if WF_SCHED_READY_SHARDS
@@ -339,6 +372,9 @@ typedef struct wf_sched_core {
 #endif
     /* Threads and their lanes; index 0 is the entry thread's. */
     unsigned thread_count;
+#if WF_SCHED_IO_ROUND_ROBIN
+    unsigned io_dispatch_threads;
+#endif
     wf_sched_thread threads[WF_SCHED_MAX_THREADS];
     wf_sched_lane lanes[WF_SCHED_MAX_THREADS];
     /* The exit status once posted. */
@@ -398,9 +434,10 @@ void wf_sched_checkpoint(wf_sched_core *core);
  * it for a compute slot. */
 void wf_sched_complete(wf_sched_core *core, wf_sched_record *record);
 
-/* Compute hand-outs, the module's ABI. */
+/* Handed-out calls, the module's ABI. */
 void *wf_sched_acquire(wf_sched_core *core, unsigned long bytes);
 void wf_sched_publish(wf_sched_core *core, void *frame, void (*run)(void *));
+void wf_sched_publish_staged(wf_sched_core *core, void *frame, void (*run)(void *));
 void wf_sched_join_frame(wf_sched_core *core, void *frame);
 void wf_sched_release(wf_sched_core *core, void *frame);
 

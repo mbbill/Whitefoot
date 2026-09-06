@@ -1002,7 +1002,7 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             // module's own weak definitions: lane acquisition refuses every lane and
             // the rest return, `wf__par_pool_active` answers that no pool
             // started — so that build runs its own sequential clone, which
-            // reaches no host facility either, and the four protocol entries
+            // reaches no host facility either, and the task protocol entries
             // go unused. That is a statement about the emitted module, not
             // about every link of it — with the parallel runtime linked,
             // `wf__par_pool_active` and `wf__par_acquire_lane` both reach
@@ -1012,7 +1012,7 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             // target may take, not an operation of the first slice, so no
             // §9.1 count moves with it.
             | "wf__par_acquire_lane" | "wf__par_publish" | "wf__par_join" | "wf__par_release"
-            | "wf__par_pool_active"
+            | "wf__par_publish_staged" | "wf__par_pool_active"
             // The compiler's own cold [SYS-7] class mapper, which reaches no
             // host object at all: it turns one native error code into one
             // portable class. It is a call target here on a host whose
