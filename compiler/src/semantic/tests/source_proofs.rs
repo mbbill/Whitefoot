@@ -616,7 +616,8 @@ fn one_source_proof_fact_discharges_multiple_bounds_and_a_call_requirement() {
   return unit;
 }}
 
-fn read(values: own array<u8, 255>, first: own u8, first_limit: own u8, second: own u8, second_limit: own u8, third: own u8, third_limit: own u8) -> result: own u8 pure contract {{
+fn read(values: own FixedVector<u8, 255>, first: own u8, first_limit: own u8, second: own u8, second_limit: own u8, third: own u8, third_limit: own u8) -> result: own u8 reads(values) contract {{
+  requires len_of(values) >= 255_u64;
   requires first <= first_limit;
   requires second <= second_limit;
   requires third <= third_limit;
@@ -841,8 +842,8 @@ fn three_written_uses_follow_the_certificate_when_auto_stops_at_two() {
 #[test]
 fn a_midpoint_certificate_halves_its_doubled_sum_and_discharges_the_subscript() {
     let source = format!(
-        r#"fn probe(table: &buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {{
-  define spare = len_of(deref(table));
+        r#"fn probe(table: own Slice<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {{
+  define spare = len_of(table);
   requires lo < hi;
   requires hi <= spare;
 }} {{
@@ -853,7 +854,7 @@ fn a_midpoint_certificate_halves_its_doubled_sum_and_discharges_the_subscript() 
     use (lo < hi);
     use (2_u64 * half <= span);
   }}
-  let byte = deref(table)[mid];
+  let byte = table[mid];
   return byte;
 }}
 

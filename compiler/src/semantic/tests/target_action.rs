@@ -145,18 +145,18 @@ command fn main() -> status: own ExitStatus pure {
 fn residual_projection_releases_contribute_to_target_action() {
     let source = br#"struct Holder {
   file: ReadFile;
-  data: buffer<u8>;
+  data: FixedVector<u8, 2>;
 }
 
-fn take_data(holder: own Holder) -> result: own buffer<u8> writes(holder.file) {
+fn take_data(holder: own Holder) -> result: own FixedVector<u8, 2> writes(holder.file) {
   return move holder.data;
 }
 
-fn forward(holder: own Holder) -> result: own buffer<u8> writes(holder.file) {
+fn forward(holder: own Holder) -> result: own FixedVector<u8, 2> writes(holder.file) {
   return take_data(holder: move holder);
 }
 
-fn consume(data: own buffer<u8>) -> result: own unit pure {
+fn consume(data: own FixedVector<u8, 2>) -> result: own unit pure {
   return unit;
 }
 
