@@ -160,14 +160,23 @@ impl IrBuilder<'_> {
         )
     }
 
-    /// Lowers the first complete multi-slot completion schedule.
+    /// Lowers the complete multi-slot staged schedule of one counted loop.
     ///
     /// The admitted IR topology is deliberately narrow: a straight-line
-    /// prologue ending in the selected result match, no loop-body cleanup, and
-    /// a remainder that does not read the counted binder or a prologue-local
-    /// value. Those are implementation limits, not source-language
-    /// rejections. A loop outside this subset continues through the ordinary
-    /// graph and the complete one-slot driver below.
+    /// prologue ending at the staged call, and a remainder that does not read
+    /// the counted binder or a prologue-local value. Those are implementation
+    /// limits, not source-language rejections. A loop outside this subset
+    /// continues through the ordinary graph and the complete one-slot driver
+    /// below.
+    ///
+    /// Two things can be at the staged call, and they take the same schedule:
+    /// a system operation submitted to the completion runtime, whose slot
+    /// holds its record and whose remainder is the arms of a `match` on it;
+    /// and a may-suspend user call handed to a compute lane, whose slot holds
+    /// its frame and whose remainder is the statements written after the `let`
+    /// that binds it. The lane form is the one that may carry the iteration's
+    /// own storage, because its drain reads that storage back out of the ring
+    /// before the remainder runs.
     #[allow(clippy::too_many_arguments)]
     fn lower_bounded_completion_range(
         &mut self,
@@ -190,10 +199,37 @@ impl IrBuilder<'_> {
         let Some(direct) = direct_staged_match(body, &cut, id) else {
             return Ok(false);
         };
-        if give_target.is_some()
-            || !backedge_drops.is_empty()
-            || self.addressed_bindings.contains(&binder)
-        {
+        // Which form this is is decided by the cut's own kind and never by how
+        // the tail is written. A may-suspend *user* call has a lane hand-out:
+        // the frame is what the slot holds, and the drain defines the result
+        // before the remainder that reads it. A submitted system operation has
+        // no lane frame and its drain publishes its outcome at the block
+        // boundary, after every instruction of that block, so a remainder
+        // written after it in the same block would read a value that does not
+        // exist yet — which is why the bound tail is admitted for the first
+        // and declined for the second, exactly as it was declined before this
+        // form existed. A hand-out also exists only in the world that asked
+        // for one, so the ordinary build keeps the loop it always had.
+        let lane = match &direct.tail {
+            StagedTail::Dispatch { .. } => false,
+            StagedTail::Bound { call, .. } => {
+                if !matches!(call, CheckedExpression::UserCall { .. }) {
+                    return Ok(false);
+                }
+                true
+            }
+        };
+        if lane && self.overlap != crate::OverlapLowering::On {
+            return Ok(false);
+        }
+        if give_target.is_some() || self.addressed_bindings.contains(&binder) {
+            return Ok(false);
+        }
+        // A submitted operation's driver carries no iteration-own storage, so
+        // its loop still has to leave its back edge bare. The lane form may
+        // carry one: the iteration's own releases run in the drain, after the
+        // join, from the ring element the issue stage stored them in.
+        if !lane && !backedge_drops.is_empty() {
             return Ok(false);
         }
 
@@ -220,17 +256,66 @@ impl IrBuilder<'_> {
                 }
             }
         }
-        if unavailable_in_remainder
-            .iter()
-            .any(|binding| self.addressed_bindings.contains(binding))
-            || direct.arms.iter().any(|arm| {
+        let remainder_reads_the_issue_stage = match &direct.tail {
+            StagedTail::Dispatch { arms, .. } => arms.iter().any(|arm| {
                 arm.body
                     .iter()
                     .any(|statement| statement_uses_any(statement, &unavailable_in_remainder))
                     || drops_use_any(&arm.fallthrough_drops, &unavailable_in_remainder)
-            })
+            }),
+            StagedTail::Bound { remainder, .. } => remainder
+                .iter()
+                .any(|statement| statement_uses_any(statement, &unavailable_in_remainder)),
+        };
+        if unavailable_in_remainder
+            .iter()
+            .any(|binding| self.addressed_bindings.contains(binding))
+            || remainder_reads_the_issue_stage
         {
             return Ok(false);
+        }
+        // The one thing the drain does read out of the issue stage: the
+        // compiler-derived release of the iteration's own storage. Each such
+        // binding becomes a ring element, so the release runs in the drain on
+        // the value that iteration allocated. A release that performs a system
+        // action is refused here rather than reordered, on the same rule an
+        // exiting arm's own binders take.
+        let mut carried_bindings_in_drain = Vec::new();
+        for drop in backedge_drops {
+            if !unavailable_in_remainder.contains(&drop.binding)
+                || !release_emits_nothing(&drop.release)
+            {
+                return Ok(false);
+            }
+            if !carried_bindings_in_drain.contains(&drop.binding) {
+                carried_bindings_in_drain.push(drop.binding);
+            }
+        }
+        // An exiting gate arm leaves before this iteration submitted anything,
+        // so its releases of the issue stage's own bindings run there, where
+        // the values are. Only a release that emits nothing may run early.
+        for item in &direct.prologue {
+            let PrologueItem::Gate(gate) = item else {
+                continue;
+            };
+            for (index, arm) in gate.arms.iter().enumerate() {
+                if index == gate.continuing {
+                    continue;
+                }
+                let exiting_drops = match arm.body.last() {
+                    Some(
+                        CheckedStatement::Return { drops, .. }
+                        | CheckedStatement::Break { drops, .. },
+                    ) => drops,
+                    _ => return Ok(false),
+                };
+                if exiting_drops.iter().any(|drop| {
+                    unavailable_in_remainder.contains(&drop.binding)
+                        && !release_emits_nothing(&drop.release)
+                }) {
+                    return Ok(false);
+                }
+            }
         }
 
         let base_bindings = self.bindings.clone();
@@ -416,24 +501,45 @@ impl IrBuilder<'_> {
             }
         }
         let issue_tail = self.current.ok_or(LoweringFailure::InvalidCheckedProgram)?;
-        let result = self.expression(direct.scrutinee)?;
-        self.note_call_result(direct.scrutinee, result)?;
+        let staged_call = match &direct.tail {
+            StagedTail::Dispatch { scrutinee, .. } => *scrutinee,
+            StagedTail::Bound { call, .. } => *call,
+        };
+        let result = self.expression(staged_call)?;
+        self.note_call_result(staged_call, result)?;
         let call_is_last = self
             .blocks
             .get(issue_tail.index())
             .and_then(|block| block.instructions.last())
-            .is_some_and(|instruction| {
-                matches!(
-                    instruction,
-                    crate::IrInstruction::Define {
-                        result: defined,
-                        operation: IrOperation::SystemCall { target_action, .. },
-                        ..
-                    } if *defined == result && target_action.may_suspend()
-                )
+            .is_some_and(|instruction| match instruction {
+                crate::IrInstruction::Define {
+                    result: defined,
+                    operation: IrOperation::SystemCall { target_action, .. },
+                    ..
+                } => *defined == result && target_action.may_suspend(),
+                crate::IrInstruction::Define {
+                    result: defined,
+                    operation: IrOperation::Call { function, .. },
+                    ..
+                } => {
+                    lane && *defined == result
+                        && self
+                            .function_actions
+                            .get(*function as usize)
+                            .is_some_and(|action| action.may_suspend())
+                }
+                _ => false,
             });
         if !call_is_last {
             return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        // The ring elements the drain reads back, chosen now because the issue
+        // stage's own definitions are exactly the values live here.
+        let mut staged_carries = Vec::with_capacity(carried_bindings_in_drain.len());
+        for binding in &carried_bindings_in_drain {
+            let origin = self.binding_value(*binding)?;
+            let reload = self.new_value(self.value_type(origin)?)?;
+            staged_carries.push((*binding, origin, reload));
         }
         let next_index = self.define(
             U64,
@@ -528,7 +634,42 @@ impl IrBuilder<'_> {
         self.current = Some(drain);
         self.bindings = base_bindings.clone();
         self.bind_parameters(&carried_bindings, drain_state)?;
-        self.lower_match_from_value(result, direct.enum_type, direct.arms, true, None, None)?;
+        match &direct.tail {
+            StagedTail::Dispatch {
+                enum_type, arms, ..
+            } => {
+                self.lower_match_from_value(result, *enum_type, arms, true, None, None)?;
+            }
+            StagedTail::Bound {
+                binding, remainder, ..
+            } => {
+                // The retired result is the `let`'s value, and the iteration's
+                // own storage is what the ring element holds; both are bound
+                // here, so the remainder is the statements the writer wrote
+                // after the call, lowered once and read once per slot.
+                for (carried, _, reload) in &staged_carries {
+                    if self.bindings.insert(*carried, *reload).is_some() {
+                        return Err(LoweringFailure::InvalidCheckedProgram);
+                    }
+                }
+                if self.bindings.insert(*binding, result).is_some() {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                self.lower_statements(remainder, None)?;
+                if self.current.is_none() {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                // [FN-1]'s edge releases for this iteration, run where the
+                // iteration ends: after the join, on the ring element that
+                // iteration owns, once per retired slot.
+                let drops = self.lower_drops(backedge_drops)?;
+                for drop in drops {
+                    self.current_block_mut()?
+                        .instructions
+                        .push(crate::IrInstruction::Drop(drop));
+                }
+            }
+        }
         if self.current.is_none() {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
@@ -715,7 +856,6 @@ impl IrBuilder<'_> {
             self.current = Some(*block);
             self.bindings = base_bindings.clone();
             self.bind_parameters(&carried_bindings, parameters)?;
-            let binders = arm_binders(arm);
             let Some((last, prefix)) = arm.body.split_last() else {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             };
@@ -724,15 +864,15 @@ impl IrBuilder<'_> {
             if self.current != before {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
-            // The arm's own binders were released in the issue stage; the
-            // remaining releases and the exit itself run here, after the
-            // drain, in source order.
+            // Everything the issue stage owned was released there; the
+            // remaining releases — the carried bindings' — and the exit
+            // itself run here, after the drain, in source order.
             match last {
                 CheckedStatement::Return { value, drops, .. } => {
                     let value = self.expression(value)?;
                     let remaining = drops
                         .iter()
-                        .filter(|drop| !binders.contains(&drop.binding))
+                        .filter(|drop| carried_bindings.contains(&drop.binding))
                         .cloned()
                         .collect::<Vec<_>>();
                     let drops = self.lower_drops(&remaining)?;
@@ -741,7 +881,7 @@ impl IrBuilder<'_> {
                 CheckedStatement::Break { target, drops } if *target == id => {
                     let remaining = drops
                         .iter()
-                        .filter(|drop| !binders.contains(&drop.binding))
+                        .filter(|drop| carried_bindings.contains(&drop.binding))
                         .cloned()
                         .collect::<Vec<_>>();
                     let arguments = self.binding_values(&carried_bindings)?;
@@ -769,14 +909,25 @@ impl IrBuilder<'_> {
             slot_index.push((block, issue_count));
         }
         slot_index.push((drain, drain_slot));
+        // The compiler's own ceiling, and the ring it sizes. A submitted
+        // operation's driver has carried two since it shipped. A lane
+        // hand-out's ceiling is the lane's own slot count: every iteration in
+        // flight holds one frame slot of the offering thread's lane, so a
+        // window past that is a window whose extra iterations are refused a
+        // frame and run inline.
+        let (ceiling, slots) = if lane {
+            (crate::LANE_SLOTS, crate::LANE_SLOTS)
+        } else {
+            (2, 2)
+        };
         let mut pipeline = IrCompletionPipeline::pending(
             id,
             window_entry,
-            IrCompletionWindow::new(counted_span(lower, upper), 0, 2),
+            IrCompletionWindow::new(counted_span(lower, upper), 0, ceiling),
         );
         pipeline.plan_bounded_batch(
             carrying,
-            2,
+            slots,
             slot_index,
             window_value,
             issue,
@@ -784,6 +935,14 @@ impl IrBuilder<'_> {
             result,
             pending_exit_edges,
         );
+        if lane {
+            pipeline.plan_lane_handout(
+                staged_carries
+                    .iter()
+                    .map(|(_, origin, reload)| (*origin, *reload))
+                    .collect(),
+            );
+        }
         self.completion_pipeline = Some(pipeline);
         self.staged_cut = Some(cut);
 
@@ -1063,16 +1222,45 @@ struct GateContext<'a> {
     exit_targets: &'a [(u64, IrBlockId)],
 }
 
+/// What the drain does with the staged call's result, which is the one thing
+/// the two admitted written forms differ in.
+///
+/// Both are the same schedule: a prologue that ends at the staged call, and a
+/// remainder the drain runs once per retired slot in iteration order. Which
+/// one a loop is written in decides nothing about permission — [PAR-3] already
+/// cut the body at the same call either way — and nothing about the driver.
+enum StagedTail<'body> {
+    /// The staged call is the scrutinee of a continuing `match`: the drain
+    /// dispatches its arms on the retired result, as a submitted system
+    /// operation's outcome is dispatched today.
+    Dispatch {
+        scrutinee: &'body CheckedExpression,
+        enum_type: crate::semantic::CheckedEnumType,
+        arms: &'body [CheckedMatchArm],
+    },
+    /// The staged call is bound by a `let`: the drain binds the retired result
+    /// and runs the statements written after it. This is the shape a server
+    /// loop takes when the may-suspend work is one call — `let reported =
+    /// serve_one(...)` — and the remainder is what the iteration does with the
+    /// answer.
+    ///
+    /// `call` is kept because the cut's kind, not this tail's shape, is what
+    /// decides between the lane hand-out and the submitted operation.
+    Bound {
+        binding: BindingId,
+        call: &'body CheckedExpression,
+        remainder: &'body [CheckedStatement],
+    },
+}
+
 struct DirectStagedMatch<'body> {
     prologue: Vec<PrologueItem<'body>>,
-    scrutinee: &'body CheckedExpression,
-    enum_type: crate::semantic::CheckedEnumType,
-    arms: &'body [CheckedMatchArm],
+    tail: StagedTail<'body>,
 }
 
 /// Recognizes the target-independent topology the bounded-batch driver owns:
 /// a prologue of straight-line statements and exiting gates, followed by the
-/// selected, continuing result dispatch. This is an optimization eligibility
+/// selected staged call and its remainder. This is an optimization eligibility
 /// check only; returning `None` keeps the ordinary accepted program and its
 /// one-slot completion schedule.
 fn direct_staged_match<'body>(
@@ -1081,13 +1269,32 @@ fn direct_staged_match<'body>(
     loop_id: CheckedLoopId,
 ) -> Option<DirectStagedMatch<'body>> {
     let mut prologue = Vec::new();
-    let (scrutinee, enum_type, arms) = direct_staged_tail(body, cut, loop_id, &mut prologue)?;
-    Some(DirectStagedMatch {
-        prologue,
-        scrutinee,
-        enum_type,
-        arms,
-    })
+    let tail = direct_staged_tail(body, cut, loop_id, &mut prologue)?;
+    Some(DirectStagedMatch { prologue, tail })
+}
+
+/// The staged call bound by this statement, when this statement is the `let`
+/// of the cut.
+///
+/// The occurrence is the checker's own: the cut names one call site, and this
+/// only asks whether that site is this statement's right-hand side. No name,
+/// signature, or shape is read.
+fn staged_let_binding<'body>(
+    statement: &'body CheckedStatement,
+    cut: &NodePath,
+) -> Option<(BindingId, &'body CheckedExpression)> {
+    let CheckedStatement::Let { binding, value, .. } = statement else {
+        return None;
+    };
+    match value {
+        CheckedExpression::UserCall { call, .. } if call == cut => Some((*binding, value)),
+        CheckedExpression::SystemCall {
+            call,
+            target_action,
+            ..
+        } if call == cut && target_action.may_suspend() => Some((*binding, value)),
+        _ => None,
+    }
 }
 
 fn direct_staged_tail<'body>(
@@ -1095,11 +1302,23 @@ fn direct_staged_tail<'body>(
     cut: &NodePath,
     loop_id: CheckedLoopId,
     prologue: &mut Vec<PrologueItem<'body>>,
-) -> Option<(
-    &'body CheckedExpression,
-    crate::semantic::CheckedEnumType,
-    &'body [CheckedMatchArm],
-)> {
+) -> Option<StagedTail<'body>> {
+    // The bound form first, because the cut is then in the middle of this
+    // block rather than at its end: everything before it is prologue and
+    // everything after it is the remainder. The cut names one occurrence, so
+    // at most one statement of one block can answer here.
+    if let Some((index, (binding, call))) = body
+        .iter()
+        .enumerate()
+        .find_map(|(index, statement)| Some((index, staged_let_binding(statement, cut)?)))
+    {
+        prologue.extend(body[..index].iter().map(PrologueItem::Statement));
+        return Some(StagedTail::Bound {
+            binding,
+            call,
+            remainder: &body[index + 1..],
+        });
+    }
     let (last, prefix) = body.split_last()?;
     prologue.extend(prefix.iter().map(PrologueItem::Statement));
     if let CheckedStatement::Region {
@@ -1129,7 +1348,11 @@ fn direct_staged_tail<'body>(
         return None;
     };
     if call == cut && target_action.may_suspend() {
-        return Some((scrutinee, *enum_type, arms));
+        return Some(StagedTail::Dispatch {
+            scrutinee,
+            enum_type: *enum_type,
+            arms,
+        });
     }
     if target_action.may_suspend() {
         return None;
@@ -1223,16 +1446,18 @@ impl IrBuilder<'_> {
                 continuing = Some((*block, self.bindings.clone()));
                 continue;
             }
-            // The exit's releases of this arm's own binders run here, where the
-            // values are; the recognizer admitted only releases that emit
-            // nothing, so running them before the drain moves nothing
-            // observable.
-            let binders = arm_binders(arm);
+            // The exit's releases of everything the issue stage owns — this
+            // arm's own binders and the iteration's own storage alike — run
+            // here, where the values are. The exit itself waits for the batch,
+            // and the caller admitted only releases that emit nothing, so
+            // running them before the drain moves nothing observable. What
+            // stays for the exit block is exactly the releases of the carried
+            // bindings, which live on past the loop.
             let binder_drops = match arm.body.last() {
                 Some(CheckedStatement::Return { drops, .. })
                 | Some(CheckedStatement::Break { drops, .. }) => drops
                     .iter()
-                    .filter(|drop| binders.contains(&drop.binding))
+                    .filter(|drop| !context.carried_bindings.contains(&drop.binding))
                     .cloned()
                     .collect::<Vec<_>>(),
                 _ => return Err(LoweringFailure::InvalidCheckedProgram),

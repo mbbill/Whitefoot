@@ -261,14 +261,27 @@ flight: a fixed-trip loop over accepts staged under [PAR-3], or an overlap
 group of accepts. Widening those shapes to a real server loop is the
 language work this batch exposes, and it is the point of doing the network
 now rather than later. Slice 2 found where the widening starts: [PAR-3]
-stages `tcp_fanout.wf`'s accept loop as written, but the lowering hands out
+stages `tcp_fanout.wf`'s accept loop as written, but the lowering handed out
 only a system operation at the staged point, so a may-suspend user call there
-runs on the loop's own stack and the peers are served in turn. The hand-out
-form for that call, one pool stack per in-flight iteration joined where the
-remainder's result is consumed, is the compiler work the control test needs
-first; the runtime's window (32 iterations by default) and the stack pool bound
-it above, and a loop stopped by data a remainder produced is the one shape the
-rule itself does not stage.
+ran on the loop's own stack and the peers were served in turn.
+
+That hand-out form landed on 2026-09-06 and is no longer the missing piece.
+A staged step whose call is a may-suspend user call is offered a lane frame at
+the staged point and retired by `wf__par_join` in the exact drain, so the
+callee runs on a pool stack and parks on its own I/O without holding the loop;
+the frame's address is what the pipeline slot holds for the iteration, exactly
+as a record's address is what it holds for a system operation. `tcp_fanout.wf`
+now keeps four accepts in flight in a `--par` build, and
+`four_peers_are_served_at_once_under_par_on_both_routes` is the case that says
+so: four peers connect before any of them speaks and the last to connect is
+answered first, on both routes, which a server that takes the connections one
+at a time cannot do. The bounds above it are the ones this section named — the
+runtime's window through `wf__completion_window` under a compiler ceiling of
+`WF_SCHED_LANE_SLOTS`, and the stack pool, since a parked callee holds a pool
+stack — and a loop stopped by data a remainder produced is still the one shape
+the rule itself does not stage. What the control test needs next is therefore
+the language work rather than the lowering: a server loop whose trip count is
+not fixed.
 
 ## 7. Slices
 

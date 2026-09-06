@@ -866,6 +866,36 @@ cold read waits briefly and uniformly.
 
 ## Batch 3: streams and TCP (specification v0.46)
 
+**Status 2026-09-06, the staged hand-out: landed on this branch.** A staged
+step whose call is a may-suspend *user* call is now handed to a compute lane,
+so the fixed-trip accept loop of `tcp_fanout.wf` keeps four accepts in flight
+at once in a `--par` build and four peers that connect before any of them
+speaks are answered in the order they speak
+(`four_peers_are_served_at_once_under_par_on_both_routes`). At the staged
+point the emitter acquires a lane frame sized for `{ arguments..., result }`,
+stores the arguments and publishes it with the same thunk the [PAR-1] compute
+hand-out uses, so the callee runs on a pool stack and parks on its own I/O
+without holding the loop; the frame's address is what the pipeline slot holds
+for that iteration, exactly as a record's address is what it holds for a
+system operation, and the exact drain joins the frame, reads the result out of
+it, releases it, and runs the remainder in iteration order. A refused
+acquisition runs the same call on the same operands where it is written and
+leaves its answer in the same ring element, which is the permitted sequential
+form and changes no observable; the sequential clone and the `--no-overlap`
+build take exactly that edge and name no lane entry at all. The lowering side
+is `lowering/builder/loops.rs`: the bounded-batch recognizer admits a staged
+tail written as `let reported = call(...)` followed by the statements after
+it, and the iteration's own compiler-derived releases ride the ring so a
+per-iteration `buffer_new` is released in the drain, after the join, on the
+value that iteration allocated. The window is the runtime's own answer through
+`wf__completion_window` under a compiler ceiling of `WF_SCHED_LANE_SLOTS`,
+because every iteration in flight holds one frame slot of the offering
+thread's lane; the fanout's trip count of four is the binding term, so it gets
+K = 4. Above that the bound is the stack pool — a parked callee holds a pool
+stack, so `WF_STACKS`, defaulting to the thread count plus eight and capped by
+`WF_SCHED_MAX_STACKS`, is how many can be parked at once, and a program past
+it waits on PARK-ON-MISS.md §2's fourth line rather than failing.
+
 **Status 2026-09-06, slice 3: landed on this branch.** Every TCP operation
 runs on Windows, on both routes. `backend/qualification.rs` maps ordinals 22
 through 28 on the Windows column to the same ABI symbols the native column
@@ -929,23 +959,10 @@ spends the credit. `tests/programs/` gains `tcp_echo.wf`, `tcp_client.wf`,
 `unsupported` now expect `accept` — the subject moved from unsupported to
 supported and no expectation about the language changed.
 
-What the slice leaves open is not the program shape and not the judgment: the
-fixed-trip accept loop of `tcp_fanout.wf` is staged by [PAR-3] as written
-now, at `serve_one(listener: &bound, permit: move accept_permit, scratch:
-&uniq scratch)`, with the factory serialized to the prologue, the listener
-read-only, the status serialized to the remainder and the per-iteration
-scratch replicated; the two edits that admitted it were an `Err` arm that
-returns from the prologue instead of writing a status from a path that never
-submits, and a scratch buffer the iteration owns. What is open is the
-lowering: the backend hands out only a system operation at the staged point
-(`backend/emitter.rs`, `IrCompletionStep::without_submission`), and a
-may-suspend user call there keeps its qualified wrapper and runs on the loop's
-own stack, so the four peers are still served in turn. The hand-out form for a
-may-suspend call in a staged loop, which is the form a server's accept loop
-takes, is the next compiler work §6 of NETWORK.md says this batch exposes; the
-bound above it is the runtime's window (`WF_BRIDGE_WINDOW_DEFAULT`, 32 in
-`bridge.c`) and the stack pool, and a loop whose stop condition is data a
-remainder produced is the one shape [PAR-3] itself does not stage.
+What the slice left open was the lowering rather than the program shape or the
+judgment, and the staged hand-out below closes it. The one shape [PAR-3]
+itself does not stage remains what it was: a loop whose stop condition is data
+a remainder produced.
 
 **Status 2026-09-05, slice 1: landed on this branch.** The amendment and
 everything derived from it are in the tree: `spec/kernel-spec.md` declares

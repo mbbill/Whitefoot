@@ -2402,3 +2402,251 @@ fn a_fold_whose_calls_are_separated_by_a_builtin_hands_out_and_agrees() {
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
+
+/// A fixed-trip loop whose staged call is a may-suspend *user* call, with an
+/// iteration-own buffer the callee writes and the iteration releases.
+///
+/// This is the shape [PAR-3] stages for a server loop, reduced to what the
+/// schedule needs: a prologue that takes this iteration's permit and allocates
+/// this iteration's storage, one may-suspend call, and a remainder that folds
+/// the answer into a place the loop outlives. `probe` opens a name that is not
+/// there, so every iteration reports the same refusal and the published status
+/// is a function of the trip count alone — which is what makes a run that lost
+/// an iteration, ran one twice, or read another iteration's buffer a different
+/// number rather than a different timing.
+const STAGED_MAY_SUSPEND_CALL: &[u8] = br#"fn probe(root: &DirectoryRead, permit: own HandlePermit, name: &buffer<u8>, scratch: &uniq buffer<u8>, mark: own u8) -> result: own u8 reads(root, permit, name, scratch), writes(permit, scratch) contract {
+  define room = len(deref(scratch));
+  define named = len(deref(name));
+  requires 1_u64 <= room;
+  requires 4_u64 <= named;
+} {
+  doc "Opens one name and answers what the open reported, marked with this iteration's own byte.";
+  let answer = mark;
+  set deref(scratch)[0_u64] = mark;
+  region {
+    match open_file(permit: move permit, root: root, name: name, start: 0_u64, end: 4_u64) {
+      FileOpened(value: handle) => {
+        set answer = answer +wrap 1_u8;
+      }
+      FileOpenFailed(error: problem, permit: refused) => {
+        set answer = answer +wrap 2_u8;
+      }
+    }
+  }
+  let stored = deref(scratch)[0_u64];
+  return answer +wrap stored;
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  doc "Probes four names in a fixed-trip loop whose staged call is a may-suspend user call [PAR-3].";
+  let name = buffer_new(4_u64, 97_u8);
+  let total = 0_u8;
+  for @scan (index in 0_u64..4_u64) {
+    let scratch = buffer_new(8_u64, 0_u8);
+    region {
+      match reserve_handle(factory: &uniq files) {
+        Ok(value: permit) => {
+          let reported = probe(root: &cwd, permit: move permit, name: &name, scratch: &uniq scratch, mark: 3_u8);
+          set total = total +wrap reported;
+        }
+        Err(error: spent) => {
+          return exit_status(code: 9_u8);
+        }
+      }
+    }
+  }
+  return exit_status(code: total);
+}
+"#;
+
+/// The staged call of a permitted loop is offered to a lane, and the refused
+/// edge is the same call publishing the same bytes.
+///
+/// Both halves matter and they fail differently. The shape half says the
+/// hand-out is where the schedule needs it: the frame is acquired and
+/// published where the iteration is issued, and joined, read, and released in
+/// the exact drain — so the loop's back edge is crossed with the call still
+/// running, which is the whole of what [PAR-3] grants here. The observable
+/// half says taking that grant changes nothing: `WF_WORKERS=0` and `1` are the
+/// opt-out, so every iteration takes the refused edge and runs its own call
+/// where it is written, and `4` starts a pool that grants — and all of them
+/// publish the same status. The default compilation names no lane entry at
+/// all, because a hand-out exists only in the world that asked for one.
+#[test]
+fn a_staged_may_suspend_call_is_offered_to_a_lane_and_refused_to_the_same_bytes() {
+    let overlapped = emit_with_overlap(STAGED_MAY_SUSPEND_CALL);
+    let body = function_body(&overlapped, "@wf_main");
+    let acquisition = body
+        .find("= call ptr @wf__par_acquire_lane(i64 ")
+        .expect("the staged call must acquire a lane frame");
+    let publish = body
+        .find("call void @wf__par_publish(ptr")
+        .expect("the acquired frame must be given the outlined call");
+    let refused = body
+        .find("\npar.staged.inline.")
+        .expect("a refused acquisition must run the call where it is written");
+    let join = body
+        .find("call void @wf__par_join(ptr")
+        .expect("the drain must join the frame");
+    let release = body
+        .find("call void @wf__par_release(ptr")
+        .expect("the drain must give the frame back");
+    assert!(
+        acquisition < publish && publish < refused && refused < join && join < release,
+        "the offer is in the carrying block and the retirement in the drain:\n{body}"
+    );
+    // The retirement is in a different block from the offer, which is what
+    // says an iteration is carried across the loop's back edge.
+    assert!(
+        body[publish..join].contains("par.staged.offered."),
+        "the join must be reached only after the issue stage has left:\n{body}"
+    );
+
+    let sequential = emit(STAGED_MAY_SUSPEND_CALL);
+    for entry in [
+        "@wf__par_acquire_lane",
+        "@wf__par_publish",
+        "@wf__par_join",
+        "@wf__par_release",
+    ] {
+        assert!(
+            !sequential.contains(entry),
+            "the default compilation must name no lane entry, found {entry}"
+        );
+    }
+
+    let directory = test_directory();
+    let executable = build_executable(&overlapped, &directory);
+    let mut runs = Vec::new();
+    for workers in ["0", "1", "4"] {
+        let output = Command::new(&executable)
+            // The probed name is absent from this directory, so every
+            // iteration reports the same refusal on every run.
+            .current_dir(&directory)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run the staged may-suspend probe");
+        assert_eq!(
+            output.status.code(),
+            Some(32),
+            "WF_WORKERS={workers} published the wrong status"
+        );
+        runs.push((
+            format!("WF_WORKERS={workers}"),
+            output.status.code().unwrap_or(-1).to_le_bytes().to_vec(),
+        ));
+    }
+    identical(&runs).expect("a refused lane must publish the granted lane's bytes");
+
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// The compile-time window ceiling of a staged lane hand-out is the runtime's
+/// own lane slot count.
+///
+/// Two numbers that have to agree and live in two languages: the lowering
+/// sizes the ring and states the ceiling from one, and the runtime refuses an
+/// acquisition past the other. A ceiling above the runtime's would buy a
+/// window whose extra iterations are refused a frame and run inline, which is
+/// depth the ring paid for and never got; a ceiling below it would leave depth
+/// the lane could have granted.
+#[test]
+fn the_staged_lane_window_ceiling_is_the_runtimes() {
+    let declared = crate::SCHED_CORE_HEADER
+        .lines()
+        .find_map(|line| line.strip_prefix("#define WF_SCHED_LANE_SLOTS "))
+        .expect("the core must state its lane slot count");
+    assert_eq!(
+        declared
+            .trim()
+            .trim_end_matches('u')
+            .parse::<u64>()
+            .expect("a decimal count"),
+        crate::LANE_SLOTS,
+        "the lowering's staged window ceiling has drifted from the runtime's"
+    );
+}
+
+/// The same staged loop shape with a submitted *system* operation at the cut,
+/// written as a `let` and a remainder rather than as a result dispatch.
+///
+/// [PAR-3] stages this loop exactly as it stages the one above; only the cut's
+/// kind differs.
+const STAGED_SYSTEM_OPERATION_BOUND_BY_A_LET: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  doc "Opens four names in a fixed-trip loop whose staged call is a system operation bound by a let.";
+  let name = buffer_new(4_u64, 97_u8);
+  let total = 0_u8;
+  for @scan (index in 0_u64..4_u64) {
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: permit) => {
+        let outcome = open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64);
+        match outcome {
+          FileOpened(value: handle) => {
+            set total = total +wrap 1_u8;
+          }
+          FileOpenFailed(error: problem, permit: refused) => {
+            set total = total +wrap 2_u8;
+          }
+        }
+      }
+      Err(error: spent) => {
+        return exit_status(code: 9_u8);
+      }
+    }
+  }
+  return exit_status(code: total);
+}
+"#;
+
+/// The lane form is selected by the cut's kind, never by how the tail is
+/// written.
+///
+/// A submitted system operation has no lane frame, and its drain publishes its
+/// outcome at the block boundary — after every instruction of that block — so
+/// a remainder written after it in the same block would read a value that does
+/// not exist yet. The bound tail is therefore declined for it and the loop
+/// keeps the lowering it had, which is what this case pins: no lane entry, no
+/// staged block, and the same status at every worker count. Without the
+/// decline the sizing alone would move, since a lane hand-out's ring is
+/// `WF_SCHED_LANE_SLOTS` elements and a submitted operation's is two.
+#[test]
+fn a_system_operation_bound_by_a_let_is_not_the_lane_form() {
+    let overlapped = emit_with_overlap(STAGED_SYSTEM_OPERATION_BOUND_BY_A_LET);
+    assert!(
+        !overlapped.contains("@wf__par_acquire_lane"),
+        "a submitted operation at the cut must take no lane:\n{overlapped}"
+    );
+    assert!(
+        !overlapped.contains("par.staged."),
+        "a submitted operation at the cut must open no staged block:\n{overlapped}"
+    );
+    assert!(
+        !overlapped.contains(&format!("[{} x ", crate::LANE_SLOTS)),
+        "a submitted operation's ring is not the lane hand-out's:\n{overlapped}"
+    );
+
+    let directory = test_directory();
+    let executable = build_executable(&overlapped, &directory);
+    let mut runs = Vec::new();
+    for workers in ["0", "1", "4"] {
+        let output = Command::new(&executable)
+            // The opened name is absent from this directory, so every
+            // iteration reports the same refusal on every run.
+            .current_dir(&directory)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run the let-bound system operation probe");
+        assert_eq!(
+            output.status.code(),
+            Some(8),
+            "WF_WORKERS={workers} published the wrong status"
+        );
+        runs.push((
+            format!("WF_WORKERS={workers}"),
+            output.status.code().unwrap_or(-1).to_le_bytes().to_vec(),
+        ));
+    }
+    identical(&runs).expect("the declined form must publish the bytes it always did");
+
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}

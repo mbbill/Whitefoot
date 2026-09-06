@@ -899,6 +899,27 @@ Several folds may be outstanding, one per slot. The owner joins and commits
 them **in index order**, so no associativity is used and no combination tree is
 built.
 
+**The compute lane now also carries a may-suspend call as a pipeline slot**
+(landed 2026-09-06). This section was written about the *pure* per-iteration
+fold, and the mechanism it names turns out to be the whole of what a staged
+loop needs when the staged call itself is a may-suspend user call rather than a
+system operation: the emitter acquires a lane frame sized for
+`{ arguments..., result }` at the staged point, publishes it with the same
+thunk, and the frame's address is what the slot holds for that iteration —
+exactly as the record's address is what it holds for a submitted operation. The
+callee then runs on a pool stack and parks on its own I/O without holding the
+loop (`PARK-ON-MISS.md` §2, §5), and the exact drain joins it with
+`wf__par_join`, loads the result out of the frame, releases it, and runs the
+remainder in index order. So the lane is not only where the fold goes; it is
+where an iteration's *whole* suspending body goes when that body is one call.
+`wf__par_acquire_lane` answering null still runs the call inline, which is the
+same decline path the fold takes. The compiler's ceiling on such a loop's
+window is `WF_SCHED_LANE_SLOTS`, because each in-flight iteration holds one
+frame slot of the offering thread's lane; the runtime's own answer through
+`wf__completion_window` and the stack pool bound it from the other side.
+`tests/programs/tcp_fanout.wf` is the shipped instance: four accepts in flight
+in a `--par` build.
+
 ### 3.6 Two latent bugs the barrier is currently hiding
 
 Whoever removes `emit_all_completion_joins` from the back-edge must fix these

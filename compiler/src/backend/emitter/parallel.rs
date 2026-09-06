@@ -53,11 +53,15 @@
 //! before this module existed. That is a reserved namespace, not a name check
 //! — nothing here inspects a source function's spelling.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
 use super::{BackendFailure, FunctionEmitter, llvm_type, source_symbol, value_name};
-use crate::{IrFunction, IrInstruction, IrOperation, IrProgram, IrSynthesis, IrType, IrValueId};
+use super::{Qualification, TargetLayout};
+use crate::{
+    IrCompletionStep, IrFunction, IrInstruction, IrOperation, IrProgram, IrSynthesis, IrType,
+    IrValueId,
+};
 
 /// The counted loop's index type [FN-1], which fixes every width question the
 /// split could otherwise have.
@@ -216,22 +220,31 @@ pub(crate) fn sequential_clone_set(program: &IrProgram<'_, '_, '_>) -> HashSet<u
     let mut callees: Vec<Vec<u32>> = vec![Vec::new(); functions.len()];
     let mut hands_out = Vec::with_capacity(functions.len());
     for (ordinal, function) in functions.iter().enumerate() {
-        hands_out.push(function.overlaps().iter().any(|overlap| {
-            overlap.handed_out().iter().any(|member| {
-                function.blocks().iter().any(|block| {
-                    block.instructions().iter().any(|instruction| {
-                        matches!(
-                            instruction,
-                            IrInstruction::Define {
-                                result,
-                                operation: IrOperation::Call { .. },
-                                ..
-                            } if result == member
-                        )
+        // A driven [PAR-3] loop whose staged call is handed to a lane is a
+        // hand-out like any other, so the function that carries it needs the
+        // second copy for the world that was not asked for a pool.
+        let stages_a_lane = function
+            .driven_completion_pipeline()
+            .is_some_and(crate::IrCompletionPipeline::lane_handout);
+        hands_out.push(
+            stages_a_lane
+                || function.overlaps().iter().any(|overlap| {
+                    overlap.handed_out().iter().any(|member| {
+                        function.blocks().iter().any(|block| {
+                            block.instructions().iter().any(|instruction| {
+                                matches!(
+                                    instruction,
+                                    IrInstruction::Define {
+                                        result,
+                                        operation: IrOperation::Call { .. },
+                                        ..
+                                    } if result == member
+                                )
+                            })
+                        })
                     })
-                })
-            })
-        }));
+                }),
+        );
         for block in function.blocks() {
             for instruction in block.instructions() {
                 let IrInstruction::Define { operation, .. } = instruction else {
@@ -385,6 +398,49 @@ pub(crate) enum HandedOut {
     Completion(Box<super::completion::CompletionHandedOut>),
 }
 
+/// The staged call of a [PAR-3] loop the pipeline drives, where that call is a
+/// may-suspend call handed to a compute lane.
+///
+/// This is the third thing a pipeline slot can hold and the second thing that
+/// can be in flight across a loop's back edge. A submitted system operation
+/// leaves the target its record's address; a staged lane hand-out leaves the
+/// pool its frame's address, and the ring holds that address for the iteration
+/// exactly as it holds a record for the other form. The callee then runs on a
+/// pool stack — stolen by a worker, or run by the offering thread's own
+/// scheduler loop once that thread's stack parks — and parks on its own I/O
+/// without holding the loop
+/// (`research/investigations/io-model/PARK-ON-MISS.md` §2, §5).
+///
+/// One thing is rendered here rather than at two sites: the frame's shape.
+/// The published edge stores into it, the drain reads the result out of it,
+/// and a drift between the two would be a wrong load from a live frame.
+#[derive(Clone, Debug)]
+pub(crate) struct StagedLane {
+    /// The call's result, which the drain defines and the remainder reads.
+    pub(super) result: IrValueId,
+    pub(super) result_type: IrType,
+    pub(super) result_llvm: String,
+    /// The callee's ordinal and symbol, and the call's operand values.
+    pub(super) callee_ordinal: u32,
+    pub(super) callee: String,
+    pub(super) arguments: Vec<IrValueId>,
+    /// The frame's LLVM struct type, `{ arguments..., result }`, and the field
+    /// the result occupies.
+    pub(super) field_types: Vec<String>,
+    pub(super) frame_type: String,
+    pub(super) result_field: usize,
+    /// How many iterations the ring holds.
+    pub(super) slots: u64,
+    /// The lane frame this world offers, in bytes, or `None` where it offers
+    /// none: a sequential clone actualizes nothing, and a frame the runtime's
+    /// slot cannot hold would be refused every lane at run time anyway. Either
+    /// way the call runs where it is written and the ring element holds its
+    /// answer, which is the permitted sequential form.
+    pub(super) frame_bytes: Option<u64>,
+    /// The issue stage's own values the drain reads back, `(origin, reload)`.
+    pub(super) carries: Vec<(IrValueId, IrValueId)>,
+}
+
 impl FunctionEmitter<'_, '_> {
     /// Hands one member of an overlap group to a worker lane.
     ///
@@ -467,6 +523,253 @@ impl FunctionEmitter<'_, '_> {
             callee,
             arguments: operands.join(", "),
         }));
+        Ok(())
+    }
+
+    /// The ring element this block addresses for one staged-lane reservation.
+    ///
+    /// The array is an entry-block reservation and the index is the slot the
+    /// block being emitted owns — the issue stage's count for a submission,
+    /// the drain's own slot for a retirement — so a hand-out addresses the
+    /// element its iteration took and a join addresses the element it is
+    /// retiring, exactly as a completion ring is addressed.
+    fn staged_ring_element(
+        &mut self,
+        key: super::FunctionSlot,
+        element_type: &str,
+        slots: u64,
+    ) -> Result<String, BackendFailure> {
+        let array = self.frame.slot(key)?;
+        let slot = match self.block_slot {
+            Some(value) => self.value_name(value),
+            None if slots == 1 => "0".to_owned(),
+            None => return Err(BackendFailure::MisaddressedCompletionSlot),
+        };
+        let element = format!("%{}", self.next_temporary()?);
+        writeln!(
+            self.output,
+            "  {element} = getelementptr inbounds [{slots} x {element_type}], ptr {array}, \
+             i64 0, i64 {slot}"
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        Ok(element)
+    }
+
+    /// Stores one issue-stage value into the ring element its iteration owns.
+    ///
+    /// A carrying block is emitted once and reached once per iteration, so a
+    /// value the prologue defines is gone by the time the drain runs that
+    /// iteration's remainder. This is where it is kept, and the drain's own
+    /// load is the only reader.
+    pub(super) fn store_staged_carry(&mut self, value: IrValueId) -> Result<(), BackendFailure> {
+        let Some(plan) = self.staged_lane.clone() else {
+            return Ok(());
+        };
+        if !plan.carries.iter().any(|(origin, _)| *origin == value) {
+            return Ok(());
+        }
+        let ty = self.value_type(value).ok_or(BackendFailure::InvalidIr)?;
+        let rendered = llvm_type(self.program, ty)?;
+        let element = self.staged_ring_element(
+            super::FunctionSlot::StagedCarry(value),
+            &rendered,
+            plan.slots,
+        )?;
+        writeln!(
+            self.output,
+            "  store {rendered} {}, ptr {element}",
+            self.value_name(value)
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        Ok(())
+    }
+
+    /// Hands the staged call of a driven [PAR-3] loop to a compute lane.
+    ///
+    /// Acquires a frame first and fills it only inside the granted edge, as
+    /// every hand-out does; what differs is where the frame's address goes and
+    /// where the answer is read. The address goes into the iteration's ring
+    /// element, because the loop's back edge is crossed with the call still
+    /// running, and the answer is read in the exact drain rather than here.
+    /// A refused acquisition runs the same call on the same operands where it
+    /// is written and leaves its answer in the same ring element, so the drain
+    /// has one thing to do either way and the two edges cannot drift apart.
+    pub(super) fn emit_staged_lane_call(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        function: u32,
+        arguments: &[IrValueId],
+    ) -> Result<(), BackendFailure> {
+        let plan = self.staged_lane.clone().ok_or(BackendFailure::InvalidIr)?;
+        if plan.result != result
+            || plan.callee_ordinal != function
+            || plan.arguments != arguments
+            || plan.result_type != ty
+        {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let target = self
+            .program
+            .functions()
+            .get(function as usize)
+            .ok_or(BackendFailure::InvalidIr)?;
+        if target.result() != ty || target.parameters().len() != arguments.len() {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let mut operands = Vec::with_capacity(arguments.len());
+        for (argument, (_, parameter_type)) in arguments.iter().zip(target.parameters()) {
+            if self.value_type(*argument) != Some(*parameter_type) {
+                return Err(BackendFailure::InvalidIr);
+            }
+            operands.push(format!(
+                "{} {}",
+                llvm_type(self.program, *parameter_type)?,
+                self.value_name(*argument)
+            ));
+        }
+        let rendered_arguments = operands.join(", ");
+        let result_type = plan.result_llvm.clone();
+        let answer = self.staged_ring_element(
+            super::FunctionSlot::StagedResult(result),
+            &result_type,
+            plan.slots,
+        )?;
+        let callee = plan.callee.clone();
+        let Some(frame_bytes) = plan.frame_bytes else {
+            let inline = format!("%{}", self.next_temporary()?);
+            writeln!(
+                self.output,
+                "  {inline} = call {result_type} @{callee}({rendered_arguments})\n  \
+                 store {result_type} {inline}, ptr {answer}"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+            return Ok(());
+        };
+        let thunk = self.parallel.register(|symbol| {
+            thunk_definition(
+                symbol,
+                &plan.frame_type,
+                &plan.field_types,
+                &callee,
+                &result_type,
+            )
+        })?;
+        let held =
+            self.staged_ring_element(super::FunctionSlot::StagedFrame(result), "ptr", plan.slots)?;
+        let frame = format!("%{}", self.next_temporary()?);
+        let granted = format!("%{}", self.next_temporary()?);
+        let offer = par_staged_offer_label(result);
+        let inline = par_staged_inline_label(result);
+        let offered = par_staged_offered_label(result);
+        writeln!(
+            self.output,
+            "  {frame} = call ptr @wf__par_acquire_lane(i64 {frame_bytes})\n  \
+             store ptr {frame}, ptr {held}\n  \
+             {granted} = icmp ne ptr {frame}, null\n  \
+             br i1 {granted}, label %{offer}, label %{inline}\n{offer}:"
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        let frame_type = plan.frame_type.clone();
+        for (index, operand) in operands.iter().enumerate() {
+            let field = format!("%{}", self.next_temporary()?);
+            writeln!(
+                self.output,
+                "  {field} = getelementptr inbounds {frame_type}, ptr {frame}, i32 0, i32 {index}\n  \
+                 store {operand}, ptr {field}"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+        }
+        let refused = format!("%{}", self.next_temporary()?);
+        writeln!(
+            self.output,
+            "  call void @wf__par_publish(ptr {frame}, ptr {thunk})\n  \
+             br label %{offered}\n\
+             {inline}:\n  \
+             {refused} = call {result_type} @{callee}({rendered_arguments})\n  \
+             store {result_type} {refused}, ptr {answer}\n  \
+             br label %{offered}\n\
+             {offered}:"
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        Ok(())
+    }
+
+    /// Retires the staged lane hand-out of the slot this drain block owns, and
+    /// reads back that iteration's own values.
+    ///
+    /// Emitted before the drain's own instructions, because the remainder they
+    /// are is what reads the retired result. A granted frame is joined, read,
+    /// and given back; a refused one already left its answer in the ring. The
+    /// remainder then runs with the result in iteration order, exactly as it
+    /// runs on a submitted operation's outcome.
+    pub(super) fn emit_staged_lane_retirement(&mut self) -> Result<(), BackendFailure> {
+        let Some(plan) = self.staged_lane.clone() else {
+            return Ok(());
+        };
+        for (origin, reload) in &plan.carries {
+            let ty = self.value_type(*origin).ok_or(BackendFailure::InvalidIr)?;
+            if self.value_type(*reload) != Some(ty) {
+                return Err(BackendFailure::InvalidIr);
+            }
+            let rendered = llvm_type(self.program, ty)?;
+            let element = self.staged_ring_element(
+                super::FunctionSlot::StagedCarry(*origin),
+                &rendered,
+                plan.slots,
+            )?;
+            writeln!(
+                self.output,
+                "  {} = load {rendered}, ptr {element}",
+                self.value_name(*reload)
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+        }
+        let result_type = plan.result_llvm.clone();
+        let answer = self.staged_ring_element(
+            super::FunctionSlot::StagedResult(plan.result),
+            &result_type,
+            plan.slots,
+        )?;
+        if plan.frame_bytes.is_none() {
+            writeln!(
+                self.output,
+                "  {} = load {result_type}, ptr {answer}",
+                value_name(plan.result)
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+            return Ok(());
+        }
+        let held = self.staged_ring_element(
+            super::FunctionSlot::StagedFrame(plan.result),
+            "ptr",
+            plan.slots,
+        )?;
+        let frame = format!("%{}", self.next_temporary()?);
+        let condition = format!("%{}", self.next_temporary()?);
+        let direct = format!("%{}", self.next_temporary()?);
+        let waited = format!("%{}", self.next_temporary()?);
+        let field = format!("%{}", self.next_temporary()?);
+        let inline = par_staged_refused_label(plan.result);
+        let wait = par_staged_wait_label(plan.result);
+        let done = par_staged_done_label(plan.result);
+        writeln!(
+            self.output,
+            "  {frame} = load ptr, ptr {held}\n  \
+             {condition} = icmp eq ptr {frame}, null\n  \
+             br i1 {condition}, label %{inline}, label %{wait}\n\
+             {inline}:\n  {direct} = load {result_type}, ptr {answer}\n  \
+             br label %{done}\n\
+             {wait}:\n  call void @wf__par_join(ptr {frame})\n  \
+             {field} = getelementptr inbounds {}, ptr {frame}, i32 0, i32 {}\n  \
+             {waited} = load {result_type}, ptr {field}\n  \
+             call void @wf__par_release(ptr {frame})\n  br label %{done}\n\
+             {done}:\n  {} = phi {result_type} [ {direct}, %{inline} ], [ {waited}, %{wait} ]",
+            plan.frame_type,
+            plan.result_field,
+            value_name(plan.result),
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
         Ok(())
     }
 
@@ -740,6 +1043,120 @@ fn par_wait_label(value: IrValueId) -> String {
 /// its predecessor when the join is the last split of its block.
 pub(super) fn par_done_label(value: IrValueId) -> String {
     format!("par.done.v{}", value.ordinal())
+}
+
+/// The staged hand-out's four labels. They are its own rather than the compute
+/// group's because a staged hand-out splits its block twice — once where it is
+/// offered and once where it is retired — and the two are different blocks.
+fn par_staged_offer_label(value: IrValueId) -> String {
+    format!("par.staged.offer.v{}", value.ordinal())
+}
+
+/// The label a refused acquisition runs the call in, at the staged point.
+fn par_staged_inline_label(value: IrValueId) -> String {
+    format!("par.staged.inline.v{}", value.ordinal())
+}
+
+/// The label both edges of the acquisition continue in, and so the block the
+/// rest of the issue stage runs in.
+pub(super) fn par_staged_offered_label(value: IrValueId) -> String {
+    format!("par.staged.offered.v{}", value.ordinal())
+}
+
+/// The label the drain reads a refused iteration's own answer in.
+fn par_staged_refused_label(value: IrValueId) -> String {
+    format!("par.staged.refused.v{}", value.ordinal())
+}
+
+/// The label the drain joins a granted frame in.
+fn par_staged_wait_label(value: IrValueId) -> String {
+    format!("par.staged.wait.v{}", value.ordinal())
+}
+
+/// The label the retired result is defined in, and so the block the drain's
+/// own remainder runs in.
+pub(super) fn par_staged_done_label(value: IrValueId) -> String {
+    format!("par.staged.done.v{}", value.ordinal())
+}
+
+/// The staged lane hand-out this world emits for this function, or `None`
+/// where the function drives no such loop.
+///
+/// The plan is built once, before any text is written, because the frame's
+/// shape has to be the same at the offer and at the retirement and those are
+/// two different blocks. `hands_out` is the world: a sequential clone
+/// actualizes nothing, so it plans no frame and every iteration runs its call
+/// where it is written — the permitted sequential form, and the same one a
+/// frame too large for the runtime's slot takes.
+pub(super) fn staged_lane_plan(
+    program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
+    target: TargetLayout,
+    function: &IrFunction,
+    pipeline: Option<&crate::IrCompletionPipeline>,
+    completion_steps: &HashMap<IrValueId, IrCompletionStep>,
+    hands_out: bool,
+) -> Result<Option<StagedLane>, BackendFailure> {
+    let Some(pipeline) = pipeline.filter(|pipeline| pipeline.lane_handout()) else {
+        return Ok(None);
+    };
+    let Some(result) = pipeline.driven_result() else {
+        return Ok(None);
+    };
+    // The step is what selects the hand-out, exactly as it selects a typed
+    // adapter's submission: a descriptor whose step does not submit keeps the
+    // ordinary call.
+    if !completion_steps
+        .get(&result)
+        .is_some_and(crate::IrCompletionStep::submit)
+    {
+        return Ok(None);
+    }
+    let Some(IrOperation::Call {
+        function: callee_ordinal,
+        arguments,
+    }) = super::definition_operation(function, result)
+    else {
+        return Ok(None);
+    };
+    let callee = program
+        .functions()
+        .get(*callee_ordinal as usize)
+        .ok_or(BackendFailure::InvalidIr)?;
+    let result_type = function
+        .value_type(result)
+        .ok_or(BackendFailure::InvalidIr)?;
+    if callee.result() != result_type || callee.parameters().len() != arguments.len() {
+        return Err(BackendFailure::InvalidIr);
+    }
+    let mut field_types = Vec::with_capacity(arguments.len() + 1);
+    for (_, parameter_type) in callee.parameters() {
+        field_types.push(llvm_type(program, *parameter_type)?);
+    }
+    let result_llvm = llvm_type(program, result_type)?;
+    let result_field = field_types.len();
+    field_types.push(result_llvm.clone());
+    let frame_bytes = if hands_out {
+        super::parallel_lane_frame_layout(target, qualification, program, callee)
+            .map_err(BackendFailure::TargetLayout)?
+            .map(|layout| layout.size())
+    } else {
+        None
+    };
+    Ok(Some(StagedLane {
+        result,
+        result_type,
+        result_llvm,
+        callee_ordinal: *callee_ordinal,
+        callee: source_symbol(callee.name()),
+        arguments: arguments.clone(),
+        frame_type: format!("{{ {} }}", field_types.join(", ")),
+        field_types,
+        result_field,
+        slots: pipeline.slots(),
+        frame_bytes,
+        carries: pipeline.staged_carries().to_vec(),
+    }))
 }
 
 #[cfg(test)]

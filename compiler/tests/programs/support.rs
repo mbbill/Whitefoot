@@ -250,6 +250,19 @@ pub fn compile_programs_with_overlap(names: &[&str]) -> String {
     try_compile_programs_with_overlap(names).expect("program corpus source must compile")
 }
 
+/// Compiles one corpus program with no permission group actualized at all,
+/// which is what `whitefootc --no-overlap` compiles.
+///
+/// It is the exact sequential reference: a case that asks whether a schedule
+/// exists only in the world that asked for it reads this module beside the
+/// `--par` one, and neither is inferred from the other.
+pub fn compile_program_without_overlap(name: &str) -> String {
+    let source = read_program(name);
+    let inputs = [SourceInput::new(name, &source)];
+    compile_with_overlap(&inputs, CompilerLimits::default(), OverlapLowering::Off)
+        .expect("program corpus source must compile")
+}
+
 /// Every `.wf` file the program corpus holds, in one stable order.
 ///
 /// Read from the directory rather than listed, so a case intended to cover

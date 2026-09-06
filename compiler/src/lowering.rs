@@ -1243,6 +1243,26 @@ pub struct IrCompletionPipeline {
     /// The blocks a prologue gate leaves through when the batch still has
     /// operations in flight; each jumps into the drain before the exit runs.
     pending_exit_edges: Vec<IrBlockId>,
+    /// Whether the staged call is handed to a compute lane rather than
+    /// submitted to the completion runtime.
+    ///
+    /// The two forms differ only in what the slot holds for an iteration and
+    /// in how the drain consumes it: a completion operation's record block, or
+    /// a lane frame's address. Everything else about the schedule — the
+    /// window, the ring, the in-order retirement, the exact drain — is one
+    /// mechanism.
+    lane_handout: bool,
+    /// Values the issue stage defines and the drain reads back, one ring
+    /// element each.
+    ///
+    /// A carrying block is emitted once and reached once per iteration, so a
+    /// value the prologue defines is gone by the time the drain runs that
+    /// iteration's remainder. The pairs are `(origin, reload)`: `origin` is
+    /// the issue stage's own definition, and `reload` is the value the drain
+    /// binds instead. This is the same per-slot storage a submitted
+    /// operation's captured scalars take, named at the IR level because a
+    /// compiler-derived release rides one of them.
+    staged_carries: Vec<(IrValueId, IrValueId)>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1275,6 +1295,8 @@ impl IrCompletionPipeline {
             slot_index: Vec::new(),
             window_value: None,
             pending_exit_edges: Vec::new(),
+            lane_handout: false,
+            staged_carries: Vec::new(),
         }
     }
 
@@ -1338,6 +1360,27 @@ impl IrCompletionPipeline {
             drain,
             result,
         });
+    }
+
+    /// Records that this batch's staged call is handed to a compute lane, and
+    /// the values its drain reads back per slot.
+    ///
+    /// Called only beside [`Self::plan_bounded_batch`], because the lane form
+    /// is the same bounded batch with a different thing in the slot.
+    pub(crate) fn plan_lane_handout(&mut self, staged_carries: Vec<(IrValueId, IrValueId)>) {
+        self.lane_handout = true;
+        self.staged_carries = staged_carries;
+    }
+
+    /// Whether the staged call is a lane hand-out rather than a submitted
+    /// system operation.
+    pub(crate) const fn lane_handout(&self) -> bool {
+        self.lane_handout
+    }
+
+    /// The `(origin, reload)` pairs the drain reads back from the ring.
+    pub(crate) fn staged_carries(&self) -> &[(IrValueId, IrValueId)] {
+        &self.staged_carries
     }
 
     pub(crate) const fn planned_batch_driver(&self) -> Option<IrCompletionBatchDriver> {
@@ -1492,6 +1535,20 @@ impl IrCompletionBatchDriver {
 /// numbers live in two languages and are pinned to each other by
 /// `the_compile_time_frame_bound_is_the_runtimes`.
 pub const LANE_FRAME_BYTES: u64 = 256;
+
+/// How many hand-outs one thread's lane can hold at once, and so the
+/// compiler's own ceiling on the window of a loop whose staged call is a lane
+/// hand-out.
+///
+/// Every iteration a staged loop carries in flight holds one frame slot of the
+/// offering thread's lane, so a window past this one is a window whose extra
+/// iterations are refused a frame and run inline. This restates
+/// `WF_SCHED_LANE_SLOTS` in `backend/sched/core.h` for the same reason
+/// [`LANE_FRAME_BYTES`] restates `WF_SCHED_FRAME_BYTES` — the ring is a static
+/// reservation the emitter makes long before a runtime exists — and the two
+/// numbers are pinned to each other by
+/// `the_staged_lane_window_ceiling_is_the_runtimes`.
+pub const LANE_SLOTS: u64 = 64;
 
 /// Why a function exists, for the one consumer that has to tell the two worlds
 /// apart: a source function is emitted into both, while the two halves of a
