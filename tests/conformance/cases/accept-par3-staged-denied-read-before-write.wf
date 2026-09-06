@@ -3,7 +3,7 @@ fn component() -> made: own FixedVector<u8, 16> pure contract {
   ensures room_of(made) <= 0_u64;
   ensures head_of(made) <= 0_u64;
 } {
-  doc "The fold of the hoisted destination is written before the transfer that fills it, so on every path through the body the read of that storage precedes any write of it in the same iteration. No coverage proof can ever admit this shape, and PAR-3 denies it. Over the view surface the reported stage condition is 7 rather than 3, because the judgment does not resolve a footprint element reached through a MutSlice.";
+  doc "The fold of the hoisted destination is written before the transfer that fills it, so on every path through the body the read of that storage precedes any write of it in the same iteration. No coverage proof can ever admit this shape, and PAR-3 denies it. The reported condition is 3 over the view surface as over the buffer one, because the destination view resolves to the run it was formed over [VIEW-1].";
   let built = fixed_vector::<u8, 16>();
   for @fill (
     at in 0_u64..16_u64,
@@ -41,7 +41,7 @@ fn fold_prefix(source: own Slice<u8>, produced: own u64, seed: own u64) -> resul
 }
 
 command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  doc "The fold of the hoisted destination is written before the transfer that fills it, so on every path through the body the read of that storage precedes any write of it in the same iteration. No coverage proof can ever admit this shape, and PAR-3 denies it. Over the view surface the reported stage condition is 7 rather than 3, because the judgment does not resolve a footprint element reached through a MutSlice.";
+  doc "The fold of the hoisted destination is written before the transfer that fills it, so on every path through the body the read of that storage precedes any write of it in the same iteration. No coverage proof can ever admit this shape, and PAR-3 denies it. The reported condition is 3 over the view surface as over the buffer one, because the destination view resolves to the run it was formed over [VIEW-1].";
   region 'w {
     let workspace = arena_frame::<64, 1, 'w>();
     region {

@@ -1,0 +1,81 @@
+fn component() -> made: own FixedVector<u8, 16> pure contract {
+  ensures len_of(made) >= 16_u64;
+  ensures room_of(made) <= 0_u64;
+  ensures head_of(made) <= 0_u64;
+} {
+  doc "One fixed name the loop opens by, built once outside it.";
+  let built = fixed_vector::<u8, 16>();
+  for @fill (
+    at in 0_u64..16_u64,
+    invariant grown: len_of(built) >= at,
+    invariant spare: room_of(built) + at >= 16_u64,
+    invariant flat: head_of(built) <= 0_u64
+  ) {
+    set built = place_back(vector: move built, value: 97_u8);
+  }
+  return move built;
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+  doc "[PAR-3] a run the iteration takes from a store is iteration-own storage, exactly as a filled buffer was, and the provider borrow the take holds is the serialized provider access. The extent is reserved outside the loop, so the row's `&uniq` operand puts it in the disposition table: every footprint element and loan touching it belongs to the prologue, prologues run in index order and never overlap, so the take is serialized-P, and the run it hands back is replicated iteration-own storage with copy elements. The extent is the store whose release is empty [BLK-2], so nothing gives storage back in the remainder; a take from the general store would put that store on both sides of the cut instead, because a store-owned run's release spends that store's own capability [PROV-6, STOR-1]. The program runs against a directory holding no such name, takes the refusal arm of every open, and exits 0.";
+  region 'a {
+    let workspace = arena_frame::<256, 1, 'a>();
+    region {
+      let name = component();
+      let total = 0_u64;
+      for @scan (index in 0_u64..4_u64) {
+        match arena_vector::<u8>(store: &uniq workspace, count: 64_u64) {
+          None() => {
+            return exit_status(code: 70_u8);
+          }
+          Some(value: taken) => {
+            let data = move taken;
+            for @prime (
+              at in 0_u64..64_u64,
+              invariant grown: len_of(data) >= at,
+              invariant spare: room_of(data) + at >= 64_u64,
+              invariant flat: head_of(data) <= 0_u64
+            ) {
+              set data = place_back(vector: move data, value: 0_u8);
+            }
+            region 'f {
+              match reserve_handle(factory: &uniq files) {
+                Ok(value: permit) => {
+                  let window = slice_of(&name);
+                  region {
+                    match open_file(permit: move permit, root: &'f cwd, name: &window, start: 0_u64, end: 4_u64) {
+                      FileOpened(value: handle) => {
+                        region 'h {
+                          region {
+                            let destination = mut_slice_of(&uniq data);
+                            region {
+                              match read_at(file: &'h handle, destination: &uniq destination, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+                                ReadBytes(next: produced) => {
+                                  set total = total +wrap produced;
+                                }
+                                ReadEnd() => {
+                                }
+                                ReadFailed(error: problem) => {
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                      FileOpenFailed(error: problem, permit: refused) => {
+                      }
+                    }
+                  }
+                }
+                Err(error: spent) => {
+                  return exit_status(code: 1_u8);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

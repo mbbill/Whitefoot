@@ -3,7 +3,7 @@ fn component() -> made: own FixedVector<u8, 16> pure contract {
   ensures room_of(made) <= 0_u64;
   ensures head_of(made) <= 0_u64;
 } {
-  doc "Each iteration constructs the name, the extent and the destination it uses, so the only storage outside the loop the body reaches is the factory it reserves through, the directory it reads, and the total it commits. This is the shape PAR-3 is meant to grant: read-only cwd, prologue-serialized files, remainder-serialized total, and per-iteration storage nothing outside the iteration names. The judgment denies it for condition 7, a footprint element it does not resolve, before and after the migration alike.";
+  doc "Each iteration constructs the name, the extent and the destination it uses, so the only storage outside the loop the body reaches is the factory it reserves through, the directory it reads, and the total it commits. This is the shape PAR-3 is meant to grant: read-only cwd, prologue-serialized files, remainder-serialized total, and per-iteration storage nothing outside the iteration names. The judgment grants it: a view is a claim on the storage it was formed over [VIEW-1], so the per-iteration destination resolves to the extent-reserved run, and that run is storage the iteration introduces [BLK-2].";
   let built = fixed_vector::<u8, 16>();
   for @fill (
     at in 0_u64..16_u64,

@@ -172,7 +172,8 @@ use super::model::{
 };
 use super::permission::{
     Access, Footprint, LoanStrength, Program, call_projection, collect_consumed_places,
-    collect_operand_reads, kernel_footprint, kernel_projection, set_target_place,
+    collect_operand_reads, kernel_footprint, kernel_projection, kernel_release_footprint,
+    set_target_place,
 };
 use super::places::{PlaceMap, PlaceRoot, ResolvedPlace};
 use crate::NodePath;
@@ -1132,6 +1133,7 @@ impl<'check> StagedSurvey<'check, '_> {
                 let mut footprint = Footprint::default();
                 set_target_place(self.places, target, &citation, &mut footprint, false);
                 self.record(&footprint, segment, false);
+                self.construction(value, &citation);
                 self.value(value, &citation, segment);
             }
             // [CALL-4] a binder or target list defines more than one place in
@@ -1151,9 +1153,14 @@ impl<'check> StagedSurvey<'check, '_> {
                 "a `dispose` statement",
                 "release the value at its scope exit, so no written statement performs a walk this judgment must describe",
             ),
+            // A construction is a construction wherever the body writes it:
+            // a refusing acquisition [BLK-2] is matched rather than bound, so
+            // a judgment that read only `let` initializers would print no row
+            // for the very rows whose refusal is a value.
             CheckedStatement::PropagateLet { scrutinee, .. }
             | CheckedStatement::Match { scrutinee, .. }
             | CheckedStatement::ValueMatchLet { scrutinee, .. } => {
+                self.construction(scrutinee, &citation);
                 self.value(scrutinee, &citation, segment);
             }
             CheckedStatement::Return { value, .. } | CheckedStatement::Give { value, .. } => {
@@ -1243,6 +1250,21 @@ impl<'check> StagedSurvey<'check, '_> {
         if let Some(projection) = kernel_projection(expression) {
             let footprint = kernel_footprint(self.places, &projection);
             self.record(&footprint, segment, false);
+            // The give-back, which is not a statement and which no walk over
+            // the body reaches. A run or a cell the iteration took from a
+            // **general** store is released to that store when the value's
+            // scope exits [PROV-6, STOR-1], and every scope of the body exits
+            // on the iteration's own edge, which is after the cut. So the
+            // release is recorded in the remainder whatever segment the take
+            // is in: a take in the prologue then puts its store on both sides
+            // and condition 5 denies, which is the honest answer, because two
+            // overlapped iterations would give storage back to one store at
+            // once. A bump extent's release is empty [BLK-2] and records
+            // nothing, which is what leaves the extent's own take serialized
+            // in the prologue alone.
+            if let Some(release) = kernel_release_footprint(self.places, &projection) {
+                self.record(&release, Segment::Remainder, false);
+            }
         }
         for child in super::model::expression_children(expression) {
             self.calls(child, segment);
@@ -1769,9 +1791,9 @@ fn statement_citation(statement: &CheckedStatement) -> Option<NodePath> {
 /// The first source node one expression tree carries, in evaluation order.
 fn expression_citation(expression: &CheckedExpression) -> Option<NodePath> {
     let own = match expression {
-        CheckedExpression::UserCall { call, .. } | CheckedExpression::SystemCall { call, .. } => {
-            Some(call.clone())
-        }
+        CheckedExpression::UserCall { call, .. }
+        | CheckedExpression::SystemCall { call, .. }
+        | CheckedExpression::KernelCall { call, .. } => Some(call.clone()),
         CheckedExpression::Binding { carrier, .. }
         | CheckedExpression::Project { carrier, .. }
         | CheckedExpression::IntegerOperation { carrier, .. }

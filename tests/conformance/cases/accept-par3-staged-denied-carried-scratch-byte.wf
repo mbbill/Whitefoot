@@ -3,7 +3,7 @@ fn component() -> made: own FixedVector<u8, 16> pure contract {
   ensures room_of(made) <= 0_u64;
   ensures head_of(made) <= 0_u64;
 } {
-  doc "The marker byte one iteration writes into the hoisted scratch survives into the next, because stamp writes it only on odd indices. Executing the prologue in index order preserves that carried byte, but the remainder reads the same storage, so no single segment serializes it and PAR-3 denies the stage. Whole-place write-before-read would admit this program and publish a different total. Over the view surface the reported stage condition is 7 rather than 5: this judgment does not resolve a footprint element reached through a MutSlice handed to a helper, which is a permission-judgment gap and not a change of what the program does.";
+  doc "The marker byte one iteration writes into the hoisted scratch survives into the next, because stamp writes it only on odd indices. Executing the prologue in index order preserves that carried byte, but the remainder reads the same storage, so no single segment serializes it and PAR-3 denies the stage. Whole-place write-before-read would admit this program and publish a different total. The reported condition is 5 over the view surface as over the buffer one, because the view handed to the helper resolves to the run it was formed over [VIEW-1].";
   let built = fixed_vector::<u8, 16>();
   for @fill (
     at in 0_u64..16_u64,

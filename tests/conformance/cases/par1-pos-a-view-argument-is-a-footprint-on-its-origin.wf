@@ -1,0 +1,54 @@
+fn fill(destination: &uniq MutSlice<u8>, value: own u8) -> result: own unit writes(destination) contract {
+  requires 2_u64 <= len_of(deref(destination));
+} {
+  doc "Writes two elements through the view it was handed, so what it writes is the storage that view was formed over.";
+  set deref(destination)[0_u64] = value;
+  set deref(destination)[1_u64] = value;
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "[PAR-1] a view argument is a footprint on the storage the view was formed over [VIEW-1, VIEW-2], whether the formation is written at the call or bound by a `let` and handed on. The two `fill` calls hand on two views bound above them; their written footprints resolve to `left` and `right`, which are disjoint, so the pair is permitted. Before the footprint resolver reached a bound view, both calls carried an unresolved element and every pair handing a view on was denied for that instead of for its own reason.";
+  region 'a {
+    let workspace = arena_frame::<8, 1, 'a>();
+    region {
+      let left = arena_vector_proved::<u8>(store: &uniq workspace, count: 2_u64);
+      for @fill_left (
+        at in 0_u64..2_u64,
+        invariant grown_left: len_of(left) >= at,
+        invariant spare_left: room_of(left) + at >= 2_u64,
+        invariant flat_left: head_of(left) <= 0_u64
+      ) {
+        set left = place_back(vector: move left, value: 0_u8);
+      }
+      let right = arena_vector_proved::<u8>(store: &uniq workspace, count: 2_u64);
+      for @fill_right (
+        at in 0_u64..2_u64,
+        invariant grown_right: len_of(right) >= at,
+        invariant spare_right: room_of(right) + at >= 2_u64,
+        invariant flat_right: head_of(right) <= 0_u64
+      ) {
+        set right = place_back(vector: move right, value: 0_u8);
+      }
+      region {
+        let left_window = mut_slice_of(&uniq left);
+        let right_window = mut_slice_of(&uniq right);
+        region {
+          let wrote_left = fill(destination: &uniq left_window, value: 3_u8);
+          let wrote_right = fill(destination: &uniq right_window, value: 5_u8);
+        }
+      }
+      let first = left[0_u64];
+      if first == 3_u8 {
+      } else {
+        return exit_status(code: 201_u8);
+      }
+      let second = right[1_u64];
+      if second == 5_u8 {
+      } else {
+        return exit_status(code: 202_u8);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
