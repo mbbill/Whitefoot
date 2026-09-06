@@ -1,67 +1,10 @@
-struct ByteString {
-  buf: buffer<u8>;
-  fill: u64;
-}
+const empty_prefix: FixedVector<u8, 1> =[0_u8];
 
-fn bs_new() -> result: own ByteString pure {
-  doc "Builds one empty byte string over a zero-length backing buffer.";
-  let empty = buffer_new(0_u64, 0_u8);
-  return ByteString(buf: move empty, fill: 0_u64);
-}
-
-fn bs_len(s: &ByteString) -> result: own u64 reads(s.fill) {
-  doc "Reports how many bytes the string holds.";
-  return deref(s).fill;
-}
-
-fn bs_byte(s: &ByteString, index: own u64) -> result: own Option<u8> reads(s.buf, s.fill) {
-  doc "Reads one stored byte, delivering None for a position the string does not hold.";
-  let stored = deref(s).fill;
-  let within = index < stored;
-  if within {
-    let capacity = len_of(deref(s).buf);
-    let addressable = index < capacity;
-    if addressable {
-      let value = deref(s).buf[index];
-      return Some<u8>(value: value);
-    }
-  }
-  return None<u8>();
-}
-
-fn bs_push(s: &uniq ByteString, value: own u8) -> result: own unit reads(s.buf, s.fill), writes(s.buf, s.fill) {
-  doc "Appends one byte, growing the backing buffer by one step when it is full.";
-  let count = deref(s).fill;
-  let capacity = len_of(deref(s).buf);
-  let headroom = capacity <= 9223372036854775679_u64;
-  if headroom {
-  } else {
-    return unit;
-  }
-  let full = count >= capacity;
-  if full {
-    let grown = capacity + 128_u64;
-    let fresh = buffer_new(grown, value);
-    for @copy (at in 0_u64..capacity) {
-      let byte = deref(s).buf[at];
-      set fresh[at] = byte;
-    }
-    let old = replace deref(s).buf = move fresh;
-    let stored = capacity + 1_u64;
-    set deref(s).fill = stored;
-    return unit;
-  }
-  set deref(s).buf[count] = value;
-  let stored = count + 1_u64;
-  set deref(s).fill = stored;
-  return unit;
-}
-
-fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
-  define source_length = len_of(deref(source));
+fn publish_all(output: &uniq Output, source: own Slice<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+  define source_length = len_of(source);
   requires length <= source_length;
 } {
-  doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
+  doc "Publishes one prefix of the source view, reattempting until the host has accepted every byte or refused it.";
   let sent = 0_u64;
   loop @publish {
     let pending = sent < length;
@@ -70,7 +13,7 @@ fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> re
       break @publish;
     }
     region {
-      match write_once(output: &uniq deref(output), source: source, start: sent, end: length) {
+      match write_once(output: &uniq deref(output), source: &source, start: sent, end: length) {
         Ok(value: next) => {
           set sent = next;
         }
@@ -83,19 +26,18 @@ fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> re
   return Ok<unit, IoError>(value: unit);
 }
 
-fn stored_byte(records: &ByteString, index: own u64) -> result: own u8 reads(records.buf, records.fill) {
+fn stored_byte(records: &Vector<u8>, index: own u64) -> result: own u8 reads(records) {
   doc "Reads one record byte, delivering zero for a position the record table does not hold.";
-  match bs_byte(s: records, index: index) {
-    Some(value: byte) => {
-      return byte;
-    }
-    None() => {
-      return 0_u8;
-    }
+  let held = len_of(deref(records));
+  let inside = index < held;
+  if inside {
+    let value = deref(records)[index];
+    return value;
   }
+  return 0_u8;
 }
 
-fn record_before(records: &ByteString, left: own u64, right: own u64) -> result: own Bool reads(records.buf, records.fill) {
+fn record_before(records: &Vector<u8>, left: own u64, right: own u64) -> result: own Bool reads(records) {
   doc "Orders two fixed-stride records by their stored path bytes, a shorter prefix first.";
   let left_base = left *wrap 128_u64;
   let right_base = right *wrap 128_u64;
@@ -133,7 +75,7 @@ fn record_before(records: &ByteString, left: own u64, right: own u64) -> result:
   return left_count < right_count;
 }
 
-fn record_line(records: &ByteString, index: own u64, destination: &uniq MutSlice<u8>, at: own u64) -> result: own u64 reads(records.buf, records.fill, destination), writes(destination) {
+fn record_line(records: &Vector<u8>, index: own u64, destination: &uniq MutSlice<u8>, at: own u64) -> result: own u64 reads(records, destination), writes(destination) {
   doc "Renders one record as its kind glyph, one space, its relative path, and one newline.";
   let base = index *wrap 128_u64;
   let kind = stored_byte(records: records, index: base);
@@ -179,57 +121,12 @@ fn record_line(records: &ByteString, index: own u64, destination: &uniq MutSlice
   return cursor;
 }
 
-fn record_entry(records: &uniq ByteString, path: &buffer<u8>, length: own u64, kind: own u8) -> result: own unit reads(records.buf, records.fill, path), writes(records.buf, records.fill) {
-  doc "Appends one fixed-stride record holding an entry kind and its relative path.";
-  region {
-    let pushed = bs_push(s: &uniq deref(records), value: kind);
-  }
-  let stored = if length <= 126_u64 {
-    give length;
-  } else {
-    give 126_u64;
-  }
-  let narrowed = cvt::<u64, u8>(stored);
-  let byte_length = match narrowed {
-    Ok(value: exact) => {
-      give exact;
-    }
-    Err(error: failure) => {
-      give 0_u8;
-    }
-  }
-  region {
-    let pushed = bs_push(s: &uniq deref(records), value: byte_length);
-  }
-  let spare = len_of(deref(path));
-  let at = 0_u64;
-  loop @body {
-    let done = at >= 126_u64;
-    if done {
-      break @body;
-    }
-    let byte = 0_u8;
-    let inside = at < stored;
-    if inside {
-      let readable = at < spare;
-      if readable {
-        set byte = deref(path)[at];
-      }
-    }
-    region {
-      let pushed = bs_push(s: &uniq deref(records), value: byte);
-    }
-    set at = at +wrap 1_u64;
-  }
-  return unit;
-}
-
 fn open_source_from_factory(factory: &uniq FileFactory, directory: &DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(factory, directory), writes(factory) {
   let permit = reserve_file(factory: move factory);
   return open_directory_source(permit: move permit, directory: directory);
 }
 
-fn open_directory_from_factory(factory: &uniq FileFactory, root: &DirectoryRead, name: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(factory, root, name), writes(factory) contract {
+fn open_directory_from_factory(factory: &uniq FileFactory, root: &DirectoryRead, name: &Slice<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(factory, root, name), writes(factory) contract {
   define ordered = start <= end;
   define capacity = len_of(deref(name));
   define within = end <= capacity;
@@ -240,203 +137,294 @@ fn open_directory_from_factory(factory: &uniq FileFactory, root: &DirectoryRead,
   return open_directory(permit: move permit, root: root, name: name, start: start, end: end);
 }
 
-fn walk(factory: &uniq FileFactory, dir: &DirectoryRead, prefix: &buffer<u8>, prefix_length: own u64, records: &uniq ByteString, used: own u64, depth: own u64) -> result: own u64 reads(factory, dir, prefix, records.buf, records.fill), writes(factory, records.buf, records.fill) {
-  doc "Enumerates one directory, records every entry's relative path, and descends into every subdirectory it names.";
-  let count = used;
+fn walk(factory: &uniq FileFactory, dir: &DirectoryRead, prefix: own Slice<u8>, prefix_length: own u64, records: own Vector<u8>, used: own u64, depth: own u64, store: &uniq Heap) -> (rest: own Vector<u8>, count: own u64) reads(factory, dir, prefix, records, store), writes(factory, records, store), allocates(store) {
+  doc "Enumerates one directory, records every entry's relative path, and descends into every subdirectory it names. The record table travels by value because a &uniq parameter whose referent reaches a container nominal is refused, and the two scratch runs are taken from the general store once per activation.";
+  let held = move records;
+  let total = used;
   let too_deep = depth >= 8_u64;
   if too_deep {
-    return count;
+    return move held, total;
   }
-  let entries = buffer_new(4096_u64, 0_u8);
-  let child = buffer_new(256_u64, 0_u8);
-  let prefix_room = len_of(deref(prefix));
-  let entries_room = len_of(entries);
-  let child_room = len_of(child);
   region {
-    match open_source_from_factory(factory: &uniq deref(factory), directory: &deref(dir)) {
-      Ok(value: list) => {
-        loop @batches {
-          let produced = 0_u64;
-          let ended = 0_u8;
-          region {
-            match directory_next(source: &uniq list, destination: &uniq entries, start: 0_u64, end: 4096_u64) {
-              ListBytes(next: endpoint, entries: reported) => {
-                set produced = endpoint;
+    match heap_vector::<u8>(store: &uniq deref(store), count: 4096_u64) {
+      None() => {
+        return move held, total;
+      }
+      Some(value: fresh_entries) => {
+        let entries = move fresh_entries;
+        for @fill_entries (
+          at in 0_u64..4096_u64,
+          invariant grown_entries: len_of(entries) >= at,
+          invariant spare_entries: room_of(entries) + at >= 4096_u64,
+          invariant flat_entries: head_of(entries) <= 0_u64
+        ) {
+          set entries = place_back(vector: move entries, value: 0_u8);
+        }
+        region {
+          match heap_vector::<u8>(store: &uniq deref(store), count: 256_u64) {
+            None() => {
+              return move held, total;
+            }
+            Some(value: fresh_child) => {
+              let child = move fresh_child;
+              for @fill_child (
+                at in 0_u64..256_u64,
+                invariant grown_child: len_of(child) >= at,
+                invariant spare_child: room_of(child) + at >= 256_u64,
+                invariant flat_child: head_of(child) <= 0_u64
+              ) {
+                set child = place_back(vector: move child, value: 0_u8);
               }
-              ListEnd() => {
-                set ended = 1_u8;
-              }
-              ListFailed(error: problem) => {
-                set ended = 2_u8;
-              }
-            }
-          }
-          if ended == 0_u8 {
-          } else {
-            break @batches;
-          }
-          let empty_batch = produced == 0_u64;
-          if empty_batch {
-            break @batches;
-          }
-          let at = 0_u64;
-          loop @entry {
-            let header_end = at +wrap 3_u64;
-            let complete = header_end <= produced;
-            if complete {
-            } else {
-              break @entry;
-            }
-            let kind_readable = at < entries_room;
-            if kind_readable {
-            } else {
-              break @entry;
-            }
-            let kind = entries[at];
-            let length_low_at = at +wrap 1_u64;
-            let length_low_readable = length_low_at < entries_room;
-            if length_low_readable {
-            } else {
-              break @entry;
-            }
-            let length_high_at = at +wrap 2_u64;
-            let length_high_readable = length_high_at < entries_room;
-            if length_high_readable {
-            } else {
-              break @entry;
-            }
-            let name_length_low = entries[length_low_at];
-            let name_length_high = entries[length_high_at];
-            let name_count_low = cvt::<u8, u64>(name_length_low);
-            let name_count_high = cvt::<u8, u64>(name_length_high);
-            let name_count_high_shifted = ishl.wrap(name_count_high, 8_u32);
-            let name_count = ior(name_count_low, name_count_high_shifted);
-            let name_at = at +wrap 3_u64;
-            let name_end = name_at +wrap name_count;
-            let bounded = name_end <= produced;
-            if bounded {
-            } else {
-              break @entry;
-            }
-            let ordered = name_at <= name_end;
-            if ordered {
-            } else {
-              break @entry;
-            }
-            let addressable = name_end <= entries_room;
-            if addressable {
-            } else {
-              break @entry;
-            }
-            set at = name_end;
-            let dotted = 0_u8;
-            let single = name_count == 1_u64;
-            if single {
-              let first_readable = name_at < entries_room;
-              if first_readable {
-                let first = entries[name_at];
-                if first == 46_u8 {
-                  set dotted = 1_u8;
-                }
-              }
-            }
-            let paired = name_count == 2_u64;
-            if paired {
-              let second_at = name_at +wrap 1_u64;
-              let first_readable = name_at < entries_room;
-              let second_readable = second_at < entries_room;
-              if first_readable {
-                if second_readable {
-                  let first = entries[name_at];
-                  let second = entries[second_at];
-                  if first == 46_u8 {
-                    if second == 46_u8 {
-                      set dotted = 1_u8;
-                    }
-                  }
-                }
-              }
-            }
-            let separated = prefix_length > 0_u64;
-            let separated_length = prefix_length +wrap 1_u64;
-            let child_length = if separated {
-              give separated_length +wrap name_count;
-            } else {
-              give name_count;
-            }
-            let fits = child_length <= 126_u64;
-            let usable = dotted == 0_u8;
-            if usable {
-              if fits {
-                let cursor = 0_u64;
-                loop @prefix_copy {
-                  let done = cursor >= prefix_length;
-                  if done {
-                    break @prefix_copy;
-                  }
-                  let readable = cursor < prefix_room;
-                  if readable {
-                  } else {
-                    break @prefix_copy;
-                  }
-                  let writable = cursor < child_room;
-                  if writable {
-                  } else {
-                    break @prefix_copy;
-                  }
-                  let byte = deref(prefix)[cursor];
-                  set child[cursor] = byte;
-                  set cursor = cursor +wrap 1_u64;
-                }
-                if separated {
-                  let separator_fits = cursor < child_room;
-                  if separator_fits {
-                    set child[cursor] = 47_u8;
-                    set cursor = cursor +wrap 1_u64;
-                  }
-                }
-                let taken = 0_u64;
-                loop @name_copy {
-                  let done = taken >= name_count;
-                  if done {
-                    break @name_copy;
-                  }
-                  let source_at = name_at +wrap taken;
-                  let readable = source_at < entries_room;
-                  if readable {
-                  } else {
-                    break @name_copy;
-                  }
-                  let writable = cursor < child_room;
-                  if writable {
-                  } else {
-                    break @name_copy;
-                  }
-                  let byte = entries[source_at];
-                  set child[cursor] = byte;
-                  set cursor = cursor +wrap 1_u64;
-                  set taken = taken +wrap 1_u64;
-                }
-                let room_left = count < 64_u64;
-                if room_left {
-                  region {
-                    let recorded = record_entry(records: &uniq deref(records), path: &child, length: cursor, kind: kind);
-                  }
-                  set count = count +wrap 1_u64;
-                }
-                let descending = kind == 2_u8;
-                if descending {
-                  region {
-                    match open_directory_from_factory(factory: &uniq deref(factory), root: &deref(dir), name: &entries, start: name_at, end: name_end) {
-                      Ok(value: opened) => {
-                        let deeper = depth +wrap 1_u64;
+              region {
+                match open_source_from_factory(factory: &uniq deref(factory), directory: &deref(dir)) {
+                  Ok(value: list) => {
+                    loop @batches {
+                      let produced = 0_u64;
+                      let ended = 0_u8;
+                      region {
+                        let window_room = len_of(entries);
+                        let window = mut_slice_of(&uniq entries);
                         region {
-                          set count = walk(factory: &uniq deref(factory), dir: &opened, prefix: &child, prefix_length: cursor, records: &uniq deref(records), used: count, depth: deeper);
+                          match directory_next(source: &uniq list, destination: &uniq window, start: 0_u64, end: window_room) {
+                            ListBytes(next: endpoint, entries: reported) => {
+                              set produced = endpoint;
+                            }
+                            ListEnd() => {
+                              set ended = 1_u8;
+                            }
+                            ListFailed(error: problem) => {
+                              set ended = 2_u8;
+                            }
+                          }
                         }
                       }
-                      Err(error: problem) => {
+                      if ended == 0_u8 {
+                      } else {
+                        break @batches;
+                      }
+                      let empty_batch = produced == 0_u64;
+                      if empty_batch {
+                        break @batches;
+                      }
+                      let at = 0_u64;
+                      loop @entry {
+                        let entries_room = len_of(entries);
+                        let child_room = len_of(child);
+                        let prefix_room = len_of(prefix);
+                        let header_end = at +wrap 3_u64;
+                        let complete = header_end <= produced;
+                        if complete {
+                        } else {
+                          break @entry;
+                        }
+                        let kind_readable = at < entries_room;
+                        if kind_readable {
+                        } else {
+                          break @entry;
+                        }
+                        let kind = entries[at];
+                        let length_low_at = at +wrap 1_u64;
+                        let length_low_readable = length_low_at < entries_room;
+                        if length_low_readable {
+                        } else {
+                          break @entry;
+                        }
+                        let length_high_at = at +wrap 2_u64;
+                        let length_high_readable = length_high_at < entries_room;
+                        if length_high_readable {
+                        } else {
+                          break @entry;
+                        }
+                        let name_length_low = entries[length_low_at];
+                        let name_length_high = entries[length_high_at];
+                        let name_count_low = cvt::<u8, u64>(name_length_low);
+                        let name_count_high = cvt::<u8, u64>(name_length_high);
+                        let name_count_high_shifted = ishl.wrap(name_count_high, 8_u32);
+                        let name_count = ior(name_count_low, name_count_high_shifted);
+                        let name_at = at +wrap 3_u64;
+                        let name_end = name_at +wrap name_count;
+                        let bounded = name_end <= produced;
+                        if bounded {
+                        } else {
+                          break @entry;
+                        }
+                        let ordered = name_at <= name_end;
+                        if ordered {
+                        } else {
+                          break @entry;
+                        }
+                        let addressable = name_end <= entries_room;
+                        if addressable {
+                        } else {
+                          break @entry;
+                        }
+                        set at = name_end;
+                        let dotted = 0_u8;
+                        let single = name_count == 1_u64;
+                        if single {
+                          let first_readable = name_at < entries_room;
+                          if first_readable {
+                            let first = entries[name_at];
+                            if first == 46_u8 {
+                              set dotted = 1_u8;
+                            }
+                          }
+                        }
+                        let paired = name_count == 2_u64;
+                        if paired {
+                          let second_at = name_at +wrap 1_u64;
+                          let first_readable = name_at < entries_room;
+                          let second_readable = second_at < entries_room;
+                          if first_readable {
+                            if second_readable {
+                              let first = entries[name_at];
+                              let second = entries[second_at];
+                              if first == 46_u8 {
+                                if second == 46_u8 {
+                                  set dotted = 1_u8;
+                                }
+                              }
+                            }
+                          }
+                        }
+                        let separated = prefix_length > 0_u64;
+                        let separated_length = prefix_length +wrap 1_u64;
+                        let child_length = if separated {
+                          give separated_length +wrap name_count;
+                        } else {
+                          give name_count;
+                        }
+                        let fits = child_length <= 126_u64;
+                        let usable = dotted == 0_u8;
+                        if usable {
+                          if fits {
+                            let cursor = 0_u64;
+                            loop @prefix_copy {
+                              let done = cursor >= prefix_length;
+                              if done {
+                                break @prefix_copy;
+                              }
+                              let readable = cursor < prefix_room;
+                              if readable {
+                              } else {
+                                break @prefix_copy;
+                              }
+                              let writable = cursor < child_room;
+                              if writable {
+                              } else {
+                                break @prefix_copy;
+                              }
+                              let byte = prefix[cursor];
+                              set child[cursor] = byte;
+                              set cursor = cursor +wrap 1_u64;
+                            }
+                            if separated {
+                              let separator_fits = cursor < child_room;
+                              if separator_fits {
+                                set child[cursor] = 47_u8;
+                                set cursor = cursor +wrap 1_u64;
+                              }
+                            }
+                            let taken = 0_u64;
+                            loop @name_copy {
+                              let done = taken >= name_count;
+                              if done {
+                                break @name_copy;
+                              }
+                              let source_at = name_at +wrap taken;
+                              let readable = source_at < entries_room;
+                              if readable {
+                              } else {
+                                break @name_copy;
+                              }
+                              let writable = cursor < child_room;
+                              if writable {
+                              } else {
+                                break @name_copy;
+                              }
+                              let byte = entries[source_at];
+                              set child[cursor] = byte;
+                              set cursor = cursor +wrap 1_u64;
+                              set taken = taken +wrap 1_u64;
+                            }
+                            let room_left = total < 64_u64;
+                            if room_left {
+                              let stored = if cursor <= 126_u64 {
+                                give cursor;
+                              } else {
+                                give 126_u64;
+                              }
+                              let narrowed = cvt::<u64, u8>(stored);
+                              let byte_length = match narrowed {
+                                Ok(value: exact) => {
+                                  give exact;
+                                }
+                                Err(error: failure) => {
+                                  give 0_u8;
+                                }
+                              }
+                              let spare = room_of(held);
+                              let record_fits = spare >= 128_u64;
+                              if record_fits {
+                                let start = len_of(held);
+                                for @record (
+                                  slot in 0_u64..128_u64,
+                                  invariant filled_lo: len_of(held) >= start + slot,
+                                  invariant filled_hi: len_of(held) <= start + slot,
+                                  invariant spare_lo: room_of(held) + slot >= spare,
+                                  invariant spare_hi: room_of(held) + slot <= spare
+                                ) {
+                                  let byte = 0_u8;
+                                  let heading = slot < 2_u64;
+                                  if heading {
+                                    if slot == 0_u64 {
+                                      set byte = kind;
+                                    } else {
+                                      set byte = byte_length;
+                                    }
+                                  } else {
+                                    let body_at = slot -wrap 2_u64;
+                                    let inside = body_at < stored;
+                                    if inside {
+                                      let room_now = len_of(child);
+                                      let readable = body_at < room_now;
+                                      if readable {
+                                        set byte = child[body_at];
+                                      }
+                                    }
+                                  }
+                                  set held = place_back(vector: move held, value: byte);
+                                }
+                              }
+                              set total = total +wrap 1_u64;
+                            }
+                            let descending = kind == 2_u8;
+                            if descending {
+                              region {
+                                let name_view = slice_of(&entries);
+                                region {
+                                  match open_directory_from_factory(factory: &uniq deref(factory), root: &deref(dir), name: &name_view, start: name_at, end: name_end) {
+                                    Ok(value: opened) => {
+                                      let deeper = depth +wrap 1_u64;
+                                      region {
+                                        let child_view = slice_of(&child);
+                                        region {
+                                          set (held, total) = walk(factory: &uniq deref(factory), dir: &opened, prefix: child_view, prefix_length: cursor, records: move held, used: total, depth: deeper, store: &uniq deref(store));
+                                        }
+                                      }
+                                    }
+                                    Err(error: problem) => {
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
                       }
                     }
+                  }
+                  Err(error: problem) => {
                   }
                 }
               }
@@ -444,129 +432,176 @@ fn walk(factory: &uniq FileFactory, dir: &DirectoryRead, prefix: &buffer<u8>, pr
           }
         }
       }
-      Err(error: problem) => {
-      }
     }
   }
-  return count;
+  return move held, total;
 }
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files) {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(cwd, out, files, heap), writes(cwd, out, files, heap), allocates(heap) {
   doc "Walks the invocation directory recursively and publishes every entry's kind and relative path in sorted order.";
-  let records = bs_new();
-  let root_prefix = buffer_new(1_u64, 0_u8);
-  let line = buffer_new(256_u64, 0_u8);
-  let order = buffer_new(64_u64, 0_u64);
-  let order_room = len_of(order);
-  let stored = 0_u64;
-  region {
-    set stored = walk(factory: &uniq files, dir: &cwd, prefix: &root_prefix, prefix_length: 0_u64, records: &uniq records, used: 0_u64, depth: 0_u64);
-  }
-  let seed = 0_u64;
-  loop @seed_order {
-    let done = seed >= stored;
-    if done {
-      break @seed_order;
-    }
-    let writable = seed < order_room;
-    if writable {
-    } else {
-      break @seed_order;
-    }
-    set order[seed] = seed;
-    set seed = seed +wrap 1_u64;
-  }
-  let selected = 0_u64;
-  loop @sort {
-    let done = selected >= stored;
-    if done {
-      break @sort;
-    }
-    let selected_readable = selected < order_room;
-    if selected_readable {
-    } else {
-      break @sort;
-    }
-    let best = selected;
-    let probe = selected +wrap 1_u64;
-    loop @scan {
-      let scanned = probe >= stored;
-      if scanned {
-        break @scan;
-      }
-      let probe_readable = probe < order_room;
-      if probe_readable {
-      } else {
-        break @scan;
-      }
-      let best_readable = best < order_room;
-      if best_readable {
-      } else {
-        break @scan;
-      }
-      let candidate = order[probe];
-      let incumbent = order[best];
-      let earlier = 0_u8;
-      region {
-        let closer = record_before(records: &records, left: candidate, right: incumbent);
-        if closer {
-          set earlier = 1_u8;
-        }
-      }
-      if earlier == 1_u8 {
-        set best = probe;
-      }
-      set probe = probe +wrap 1_u64;
-    }
-    let best_readable = best < order_room;
-    if best_readable {
-      let held = order[selected];
-      let winner = order[best];
-      set order[best] = held;
-      set order[selected] = winner;
-    }
-    set selected = selected +wrap 1_u64;
-  }
   let status = 0_u8;
-  let emitted = 0_u64;
-  loop @emit {
-    let done = emitted >= stored;
-    if done {
-      break @emit;
-    }
-    let readable = emitted < order_room;
-    if readable {
-    } else {
-      break @emit;
-    }
-    let index = order[emitted];
-    let length = 0_u64;
-    region {
-      let line_window = mut_slice_of(&uniq line);
-      region {
-        set length = record_line(records: &records, index: index, destination: &uniq line_window, at: 0_u64);
+  region {
+    match heap_vector::<u8>(store: &uniq heap, count: 8192_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
       }
-    }
-    let line_room = len_of(line);
-    let length_fits = length <= line_room;
-    if length_fits {
-      region {
-        match publish_all(output: &uniq out, source: &line, length: length) {
-          Ok(value: published) => {
+      Some(value: fresh_records) => {
+        let records = move fresh_records;
+        match heap_vector::<u8>(store: &uniq heap, count: 256_u64) {
+          None() => {
+            return exit_status(code: 70_u8);
           }
-          Err(error: problem) => {
-            set status = 2_u8;
+          Some(value: fresh_line) => {
+            let line = move fresh_line;
+            for @fill_line (
+              at in 0_u64..256_u64,
+              invariant grown_line: len_of(line) >= at,
+              invariant spare_line: room_of(line) + at >= 256_u64,
+              invariant flat_line: head_of(line) <= 0_u64
+            ) {
+              set line = place_back(vector: move line, value: 0_u8);
+            }
+            match heap_vector::<u64>(store: &uniq heap, count: 64_u64) {
+              None() => {
+                return exit_status(code: 70_u8);
+              }
+              Some(value: fresh_order) => {
+                let order = move fresh_order;
+                for @fill_order (
+                  at in 0_u64..64_u64,
+                  invariant grown_order: len_of(order) >= at,
+                  invariant spare_order: room_of(order) + at >= 64_u64,
+                  invariant flat_order: head_of(order) <= 0_u64
+                ) {
+                  set order = place_back(vector: move order, value: 0_u64);
+                }
+                let stored = 0_u64;
+                region {
+                  let root_view = slice_of(&empty_prefix);
+                  set (records, stored) = walk(factory: &uniq files, dir: &cwd, prefix: root_view, prefix_length: 0_u64, records: move records, used: 0_u64, depth: 0_u64, store: &uniq heap);
+                }
+                let seed = 0_u64;
+                loop @seed_order {
+                  let order_room = len_of(order);
+                  let done = seed >= stored;
+                  if done {
+                    break @seed_order;
+                  }
+                  let writable = seed < order_room;
+                  if writable {
+                  } else {
+                    break @seed_order;
+                  }
+                  set order[seed] = seed;
+                  set seed = seed +wrap 1_u64;
+                }
+                let selected = 0_u64;
+                loop @sort {
+                  let order_room = len_of(order);
+                  let done = selected >= stored;
+                  if done {
+                    break @sort;
+                  }
+                  let selected_readable = selected < order_room;
+                  if selected_readable {
+                  } else {
+                    break @sort;
+                  }
+                  let best = selected;
+                  let probe = selected +wrap 1_u64;
+                  loop @scan {
+                    let scan_room = len_of(order);
+                    let scanned = probe >= stored;
+                    if scanned {
+                      break @scan;
+                    }
+                    let probe_readable = probe < scan_room;
+                    if probe_readable {
+                    } else {
+                      break @scan;
+                    }
+                    let best_readable = best < scan_room;
+                    if best_readable {
+                    } else {
+                      break @scan;
+                    }
+                    let candidate = order[probe];
+                    let incumbent = order[best];
+                    let earlier = 0_u8;
+                    region {
+                      let closer = record_before(records: &records, left: candidate, right: incumbent);
+                      if closer {
+                        set earlier = 1_u8;
+                      }
+                    }
+                    if earlier == 1_u8 {
+                      set best = probe;
+                    }
+                    set probe = probe +wrap 1_u64;
+                  }
+                  let swap_room = len_of(order);
+                  let best_readable = best < swap_room;
+                  let selected_writable = selected < swap_room;
+                  if best_readable {
+                    if selected_writable {
+                      let standing = order[selected];
+                      let winner = order[best];
+                      set order[best] = standing;
+                      set order[selected] = winner;
+                    }
+                  }
+                  set selected = selected +wrap 1_u64;
+                }
+                let emitted = 0_u64;
+                loop @emit {
+                  let order_room = len_of(order);
+                  let done = emitted >= stored;
+                  if done {
+                    break @emit;
+                  }
+                  let readable = emitted < order_room;
+                  if readable {
+                  } else {
+                    break @emit;
+                  }
+                  let index = order[emitted];
+                  let length = 0_u64;
+                  region {
+                    let line_window = mut_slice_of(&uniq line);
+                    region {
+                      set length = record_line(records: &records, index: index, destination: &uniq line_window, at: 0_u64);
+                    }
+                  }
+                  region {
+                    let payload = slice_of(&line);
+                    let payload_length = len_of(payload);
+                    let length_fits = length <= payload_length;
+                    if length_fits {
+                      region {
+                        match publish_all(output: &uniq out, source: payload, length: length) {
+                          Ok(value: published) => {
+                          }
+                          Err(error: problem) => {
+                            set status = 2_u8;
+                          }
+                        }
+                      }
+                    } else {
+                      set status = 2_u8;
+                    }
+                  }
+                  if status == 0_u8 {
+                  } else {
+                    break @emit;
+                  }
+                  set emitted = emitted +wrap 1_u64;
+                }
+              }
+            }
           }
         }
       }
-    } else {
-      set status = 2_u8;
     }
-    if status == 0_u8 {
-    } else {
-      break @emit;
-    }
-    set emitted = emitted +wrap 1_u64;
   }
   return exit_status(code: status);
 }
