@@ -4,137 +4,15 @@ Status: IMPLEMENTED AND ACTIVATED as v0.40 on
 `codex/source-proof`.
 
 The active language authority is the specification at `spec/kernel-spec.md`;
-its version and digest are the chain tail in `governance/APPROVALS.md`. On top
-of the v0.40 proof surface this plan delivered, v0.41 added the comparison
-symbols and the call-site `::` delimiter, v0.42 the canonical region spelling,
-v0.43 the loop-body region block and the associative join, v0.44 the fact
-machinery ([MSR-3], [MSR-5], [CALL-4], [CALL-6]), v0.45 the interval an
-admitted product already proved ([ENT-3.S14]), v0.46 the clause relation
-and the measure atom that discharges it, v0.47 the named const as an affine
-atom, v0.48 the `use` premise and its named multiplicity, and v0.49 the fold
-that names a declaration rather than its expansion. Each superseded version is
-archived at `spec/kernel-spec-vN.md` with its merge-time record in
-`governance/APPROVALS.md`. Nothing merges to `main` until the owner approves
-the exact revision and canonical `make check` passes on that revision. This
-document records technical direction and sequencing; it grants no permission
-and adds no workflow gate.
-
-v0.43 carries two independent amendments. The first makes every `loop_stmt` and
-`for_stmt` body a region block [OWN-3, OWN-11]: the body introduces one unnamed
-region over exactly that body, a borrow written directly in the body takes it
-and is written bare, and a `region_stmt` that is the body's only statement is a
-second spelling of that one region and a hard error citing [FORM-8]. A block the
-body writes another statement beside is strictly narrower, is what [OWN-6]'s
-statement-scope judgment needs, and stays legal. The second repairs [ENT-6]'s
-control-flow join, which was not associative: a delta atom an earlier join
-minted counted as an ordinary nonconstant term at the next one, so a three-way
-demux was accepted written as a flat `match` and refused written as nested
-`if`/`else`. Each input image is now normalized by folding earlier delta atoms
-back into the constant interval they stand for, so acceptance no longer depends
-on the shape of the join.
-
-v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
-or `ensures` operand be a measure of a place, so `ensures len(rest) >= len(out);`
-is a written clause where it was a parse rejection, and the define-per-measure
-spelling is gone. [MSR-3] gives every contract operand one denotation keyed on
-its parameter's mode: an `own` operand read at a caller denotes the call datum,
-the value at transfer, which no consume and no later write kills; a `&uniq`
-parameter's measure is inadmissible in a source-declared `ensures`, because the
-callee cannot name the caller's object at a point after its own writes.
-[CALL-4] states the contract vocabulary over the one result a declaration has
-and records the deferred widenings. [CALL-6] states once how a declared
-relation is instantiated at the call, established on the normal continuation,
-and restricted to its routed arm, and refuses at the declaration a contract
-whose published relations contradict each other. The batch that carried it is
-B1 of the container and resource design under
-`research/investigations/containers-and-resources/`.
-
-v0.45 adds and retires no rule (136 remain) and amends [ENT-6] and [ENT-3] in
-place. [ENT-6]'s fixed interval-product rule proves an inclusive interval for
-each operand of a non-constant multiplication and forms the four products of
-their endpoint pairs; the multiplication is admitted exactly when all four lie
-in the result type, and the rule then discarded them. [ENT-3]'s new source S14
-establishes the least and greatest of those same four products on the value
-the multiplication binds, so an admitted product no longer produces a value
-with no bound and the operation that follows it has the premise the checker
-had already proved. Both published relations are constant bounds against the
-distinguished zero term, so their [ENT-5] support is the bound value alone: a
-later write to an operand leaves them true, a write to the bound place kills
-them, and no relation over the operands, new term, or automatic premise route
-is added. A written `use` remains the only way a product participates in a
-certificate, and a domain discharged by the finite L0 or affine-clause route
-publishes nothing. The evidence that selected it is in
-`research/investigations/binary-arithmetic/`.
-
-v0.46 adds and retires no rule (136 remain) and amends [FN-8], [ENT-3] and
-[ENT-6] in place. Three sentences move together because none is useful alone.
-[FN-8] admits exact addition, subtraction and multiplication in a clause and
-reads them over the mathematical integers, the carve-out [INV-1] already gives
-an `affine_expr`; a clause is erased before lowering and evaluates nothing, so
-a row total over the mathematical integers states a relation where it would
-otherwise request an operation. Division, remainder, negation, absolute value
-and the shifts stay inadmissible. [ENT-3] makes a measure term an affine atom,
-one per measured place, identified by its root binding and tightened by the
-L0-to-affine index, which is the admission v0.44 recorded as deferred. And
-[ENT-6]'s affine route discharges a comparison goal whose normalization is
-affine whether or not it also projects to L0, the projection being what the
-evidence names rather than what the route requires. Together they make
-`requires len(out) >= 2 * len(src)` — the precondition of every expansion
-codec — writable and dischargeable; each alone leaves it refused. The evidence
-is in `research/investigations/binary-arithmetic/`.
-
-v0.47 adds and retires no rule (136 remain) and amends [INV-1] in place. An
-integer-typed named const is an affine atom, folded at formation to the one
-closed value it declares. It was already an [ENT-2] constant term, so the
-exclusion made one declared value mean a number everywhere except in the
-relations written about it: a limit declared once had its digits rewritten
-inline in every invariant and every `use` that named it, and a stale digit is
-a silent divergence between what the code enforces and what the proof states.
-Folding at formation keeps the admission free of consequence — no atom kind,
-image, kill, or join changes, and the same relation over a const and over its
-literal is byte-identical, including in a failure's rendered residual. A
-const-generic parameter is symbolic rather than closed and is not this
-admission.
-
-v0.48 adds and retires no rule (136 remain) and amends [GRAM-4] and [PRF-1] in
-place. A `proof_use` cites exactly one premise — the new `use_premise`
-production, an invariant name or a delimited relation — and states its
-multiplicity as `N times` before it. The multiplicity was spelled with `*`,
-which claimed it was a multiplication whose right operand is a relation; the
-form read as `n * bool`, a term multiplicity was undecidable in strong-LL(2)
-because after `use IDENT *` the separating token is arbitrarily far away, and
-the [FORM-2] stated space before `(` existed to carry a distinction the parser
-could not see. Naming it removes all three, and the whitespace rule becomes the
-ordinary keyword-paren space a `for_stmt` header already states. The
-multiplicity may now name an unsigned integer value: the accumulated sum is
-then a polynomial of degree at most two, every nonlinear monomial must fold to
-the value image an admitted exact multiplication already bound, and a sum that
-keeps one rejects. Nothing else in the language carries a nonlinear term. The
-capability is a matrix multiply's inner index at a runtime stride, whose
-certificate is one term-scaled premise and one plain one; the evidence is in
-`research/investigations/binary-arithmetic/`, with the design in its
-`PROOF-SURFACE.md`.
-
-v0.49 adds and retires no rule (136 remain) and amends [PRF-1] in place. A
-multiplication's operand and a written multiplicity name the same value when
-they name the same declaration, not when their images coincide. v0.48 folded by
-the images, and a local's image is transparent — `let stride = width +
-padding;` gives `stride` the image `width + padding` — so a product over
-`stride` and a certificate scaling by `stride` arrived at the fold as different
-arithmetic and nothing matched. Measured on one shape with only the derivation
-varying, a stride copied from a parameter accepted while `width + padding`,
-`width + 4`, and `2 * width` all rejected; a stride is definitionally derived,
-so the feature reached matrix multiply, where the stride happens to be a
-parameter, and nothing else in its own domain. Each such binding now
-contributes one opaque handle that both sides name. The handle exists between
-the fold and the residual and is replaced by the image it stands for before
-anything is proved, so every other premise, the target, and the residual read
-exactly what they read before — which is why no snapshot or conformance verdict
-moves. Publishing the handle's defining equality as a fact and replacing the
-binding's image with it were both built first: the first is invisible to the
-residual, which is the direct L0 route by rule, and the second makes every
-ordinary premise about the binding need that equality to prove. The evidence is
-in `research/investigations/binary-arithmetic/`.
+its version and digest are the chain tail in `governance/APPROVALS.md`, where
+each activation's merge-time record lives, and each superseded version is
+archived at `spec/kernel-spec-vN.md`. Amendments landed on top of this plan's
+proof surface are not recited here: that history has those two homes and a
+batch record in `done/`, and what the project can do now is
+[`roadmap.md`](roadmap.md)'s job, stated there in the present tense. Nothing
+merges to `main` until the owner approves the exact revision and canonical
+`make check` passes on that revision. This document records technical
+direction and sequencing; it grants no permission and adds no workflow gate.
 
 ## Outcome
 
