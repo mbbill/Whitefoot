@@ -64,7 +64,7 @@ if [[ $MODE != bench || $(uname -s) != Linux ]]; then
     echo 'scheduler-bench: use check on POSIX, or bench on Linux with io_uring' >&2
     exit 2
 fi
-[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == footprint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical || $EXPERIMENT == stackful || $EXPERIMENT == stackful-paced || $EXPERIMENT == nodelay || $EXPERIMENT == owner || $EXPERIMENT == owner-paced ]] || exit 2
+[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == footprint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical || $EXPERIMENT == stackful || $EXPERIMENT == stackful-paced || $EXPERIMENT == nodelay || $EXPERIMENT == owner || $EXPERIMENT == owner-paced || $EXPERIMENT == memory ]] || exit 2
 network_compute=0
 if [[ $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical ]]; then network_compute=1; fi
 if [[ $EXPERIMENT == stackful-paced || $EXPERIMENT == owner-paced ]]; then network_compute=1; fi
@@ -101,6 +101,23 @@ if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == nodela
         cat "$OUT/$EXPERIMENT-check.log"
         exit 1
     fi
+fi
+
+if [[ $EXPERIMENT == memory ]]; then
+    for policy in lanes compact small; do
+        case $policy in
+            lanes) candidate_flags='-DWF_SCHED_INIT_USED_LANES=1' ;;
+            compact) candidate_flags='-DWF_SCHED_COMPACT_STACKS=1' ;;
+            small) candidate_flags='-DWF_SCHED_COMPACT_STACKS=1 -DWF_SCHED_INIT_USED_LANES=1' ;;
+        esac
+        if ! make -C "$ROOT/compiler" completion-test CC="$CLANG" \
+            COMPLETION_TMP="$OUT/$policy-check" \
+            COMPLETION_BASE_CFLAGS="-std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread -DWF_TCP_NODELAY=1 $candidate_flags" \
+            > "$OUT/$policy-check.log" 2>&1; then
+            cat "$OUT/$policy-check.log"
+            exit 1
+        fi
+    done
 fi
 
 if [[ $EXPERIMENT == owner || $EXPERIMENT == owner-paced ]]; then
@@ -183,6 +200,7 @@ if [[ $EXPERIMENT == stackful-paced ]]; then forms=(base ch16384); fi
 if [[ $EXPERIMENT == nodelay ]]; then forms=(base nodelay); fi
 if [[ $EXPERIMENT == owner ]]; then forms=(base pinned rings owner); fi
 if [[ $EXPERIMENT == owner-paced ]]; then forms=(base ch16384 owner chowner16384); fi
+if [[ $EXPERIMENT == memory ]]; then forms=(base lanes compact small); fi
 form_flags() {
     local_inline=0
     init_used=0
@@ -190,7 +208,8 @@ form_flags() {
     ready_shards=0
     ready_pinned=0
     owner_rings=0
-    if [[ $EXPERIMENT == owner || $EXPERIMENT == owner-paced ]]; then tcp_nodelay=1; fi
+    compact_stacks=0
+    if [[ $EXPERIMENT == owner || $EXPERIMENT == owner-paced || $EXPERIMENT == memory ]]; then tcp_nodelay=1; fi
     case $1 in
         base) spin=256; yields=16; progress=0 ;;
         pinned) spin=256; yields=16; progress=0; ready_shards=2; ready_pinned=1 ;;
@@ -198,6 +217,8 @@ form_flags() {
         owner|chowner16384) spin=256; yields=16; progress=0; ready_shards=2; ready_pinned=1; owner_rings=1 ;;
         nodelay) spin=256; yields=16; progress=0; tcp_nodelay=1 ;;
         lanes) spin=256; yields=16; progress=0; init_used=1 ;;
+        compact) spin=256; yields=16; progress=0; compact_stacks=1 ;;
+        small) spin=256; yields=16; progress=0; compact_stacks=1; init_used=1 ;;
         cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|old1024|old16384) spin=256; yields=16; progress=0 ;;
         local) spin=256; yields=16; progress=0; local_inline=1 ;;
         sleep) spin=0; yields=0; progress=0 ;;
@@ -210,7 +231,7 @@ form_flags() {
 }
 link_form() {
     local module=$1 output=$2 policy=$3 observed=$4
-    local observer=() spin yields progress local_inline init_used tcp_nodelay ready_shards ready_pinned owner_rings
+    local observer=() spin yields progress local_inline init_used tcp_nodelay ready_shards ready_pinned owner_rings compact_stacks
     form_flags "$policy"
     if [[ $observed == 1 ]]; then observer=("$BACKEND/sched/grant_observer.c"); fi
     "$CLANG" -std=c11 -O2 -pthread -I "$BACKEND" -I "$BACKEND/completion" \
@@ -220,6 +241,7 @@ link_form() {
         "-DWF_SCHED_INIT_USED_LANES=$init_used" "-DWF_TCP_NODELAY=$tcp_nodelay" \
         "-DWF_SCHED_READY_SHARDS=$ready_shards" "-DWF_SCHED_READY_PINNED=$ready_pinned" \
         "-DWF_IO_OWNER_RINGS=$owner_rings" \
+        "-DWF_SCHED_COMPACT_STACKS=$compact_stacks" \
         -x c "$BACKEND/wf_floor.c" "$BACKEND/sched/core.c" \
         "$BACKEND/sched/prim_host.c" "$BACKEND/sched/entry.c" \
         "$BACKEND/completion/runtime.c" "$BACKEND/completion/wait_host.c" \
@@ -511,6 +533,17 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
              /^ring:/ { ring=1; for(i=2;i<=NF;i++) { split($i,a,"="); value[a[1]]=a[2]+0 } }
              END { exit !(scheduler && ring && value["submissions"] > 0 && value["completions"] > 0) }' \
             "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
+        if [[ $EXPERIMENT == memory ]]; then
+            compact=0
+            used=0
+            if [[ $form == compact || $form == small ]]; then compact=1; fi
+            if [[ $form == lanes || $form == small ]]; then used=1; fi
+            awk -v compact="$compact" -v used="$used" '
+                 /^sched:|^ring:/ { for(i=2;i<=NF;i++) { split($i,a,"="); value[a[1]]=a[2]+0 } }
+                 END { exit !(value["tcp_nodelay"]==1 && ("compact_stacks" in value) &&
+                     ("init_used_lanes" in value) && value["compact_stacks"]==compact && value["init_used_lanes"]==used) }' \
+                "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
+        fi
         if [[ $EXPERIMENT == nodelay ]]; then
             expected=0
             if [[ $form == nodelay ]]; then expected=1; fi
@@ -572,7 +605,7 @@ else
 64 2000 64 0
 CASES
 fi
-if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == stackful || $EXPERIMENT == nodelay || $EXPERIMENT == owner ]]; then
+if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == stackful || $EXPERIMENT == nodelay || $EXPERIMENT == owner || $EXPERIMENT == memory ]]; then
     printf '1024 200 64 0\n64 500 65536 0\n' >> "$OUT/cases.tsv"
 fi
 if [[ $EXPERIMENT == fairness ]]; then

@@ -1989,3 +1989,137 @@ four-thread bridge test above, while the preflight retains and prints the
 actual ring/steal counts, including the unbalanced case. There is no retry
 until distribution happens to improve, and timed runs retain this policy's
 load-balancing cost. The two-ring/four-sleeper wake test remains required.
+
+### First complete echo result
+
+At `2c5d7f947e2b123dbce07ceb96de6e15e1f5a7e0`, the echo job
+[completed](https://github.com/mbbill/Whitefoot/actions/runs/34052879865/job/101539509498)
+all 840 timed rows plus compute/file controls. Its
+[artifact](https://github.com/mbbill/Whitefoot/actions/runs/34052879865/artifacts/9995525626)
+contains every seven-pass cell and preflight. This is an AMD EPYC 7763 host,
+four logical CPUs/two SMT cores, Linux 6.17.0-1022-azure, clang 18.1.3.
+Ratios below are medians of same-pass ratios, with their full ranges.
+
+| Placement / small-payload peers | Pinned/base rate | Rings/base rate | Combined owner/base rate |
+| --- | --- | --- | --- |
+| shared2 / 64 | 0.5612 [0.5421, 0.6695] | 1.1350 [1.0949, 1.1495] | 0.5658 [0.4863, 0.6940] |
+| shared2 / 1024 | 0.6121 [0.4627, 0.6566] | 1.1288 [1.0899, 1.1420] | 0.5820 [0.5219, 0.7446] |
+| split2 / 64 | 0.5667 [0.4982, 0.6746] | 1.1390 [1.1284, 1.1478] | 0.7294 [0.5119, 1.0593] |
+| split2 / 1024 | 0.5374 [0.4695, 0.5542] | 1.1228 [1.1136, 1.1329] | 0.5106 [0.4740, 0.6817] |
+| shared4 / 64 | 0.7247 [0.5341, 0.8220] | 1.0178 [0.9926, 1.0461] | 0.9023 [0.5578, 1.0868] |
+| shared4 / 1024 | 0.8657 [0.5084, 0.9268] | 1.1300 [1.0984, 1.1531] | 1.0699 [0.8009, 1.1469] |
+
+Independent rings with migration improve two-worker throughput in every
+paired 64/1024-peer sample, but worsen tails: split2 p99 ratios are 1.1522
+[1.1200, 1.1772] and 1.3817 [1.1835, 1.6580]. At split2/1024, baseline,
+rings, native io_uring and epoll median rates are 152706/170583/170642/179783;
+p99 values are 8044/11114/6697/8559 us and CPU costs
+11.963/11.768/10.400/10.645 us per actual exchange. Equal capacity against one
+reference does not remove the CPU, tail or memory gap.
+
+The same ring policy loses every paired one/four-peer throughput sample on
+multi-worker placements: split2 ratios are 0.7760 and 0.8763, shared2 0.7479
+and 0.8754, shared4 0.8658 and 0.7750. With one server worker, rings/base is
+0.9986 and 0.9992 at 64/1024 peers, with ranges crossing one. Four-worker
+64-peer tails also worsen strongly despite unresolved throughput change.
+No fixed replacement is selected from the ring throughput wins.
+
+Pinning is substantially worse at high small-payload concurrency. Initial
+hand-outs remain stealable, but stealing does not imply a balanced assignment:
+one worker can take nearly all connection handlers. In the untimed shared2
+64-peer combined run, 64 hand-outs were stolen, no resume migrated, and the
+runtime made 2013 kernel waits/2017 host wake writes, against the baseline's
+136/139. The split2 combined counts are 1551/1532, against 166/80. These are
+separate observations, not counters collected inside the timed runs, and do
+not by themselves prove that wake cost explains all of the loss. Together
+with the one-ring paced preflight they identify placement and wake policy as
+necessary work before persistent ownership can be competitive. This rejects
+the tested combination, not the owner-local engine demonstrated in experiment
+16. A future owner policy must distribute initial I/O tasks deliberately or
+permit an explicit rebalancing mechanism.
+
+Large transfers do not give a general owner win. Split2 combined/base rate
+is 0.9650 [0.8662, 0.9758], with p99 ratio 1.0886; combined CPU falls to
+39.688 us/exchange from 65.625, close to epoll's 40.312, but throughput remains
+27884 versus epoll 30742. With one worker, WF remains about 22k large exchanges/s
+against epoll's median 39.9k, so a single shared queue lock cannot explain that
+engine/workload gap. One epoll sample is slow; do not present its median as an
+all-pass superiority claim.
+
+Compute controls are unchanged at two workers (~2415 ms). At eight workers,
+pinning/combined reduce median time from 1383.55 to 1348.21/1347.31 ms. Warm
+file plus compute medians for base/pinned/rings/combined are
+179.62/175.38/169.55/165.99 ms at two workers,
+185.90/179.92/195.47/174.29 at four, and
+193.53/172.48/214.08/171.65 at eight. The controls therefore also show a
+workload-dependent tradeoff. The first paced job is the failed preflight
+above; its subsequent qualified run is required before drawing a mixed-load
+conclusion.
+
+The exact 2c revision passed the canonical gate and host qualifications; its
+broad Windows benchmark rejected an unstable compute cohort after two complete
+attempts (the Linux and macOS benchmark jobs succeeded). The subsequent
+`7421a2580eaa8741b58728d3cee68a3e50327852` revision, which changes qualification
+and documentation rather than the measured runtime, passed gate, io-hosts and
+all io-bench jobs. Keep the failed cohort visible rather than treating it as a
+valid Windows performance table.
+
+## Nineteenth experiment: compact stack metadata and first-use contexts
+
+A reserved stack currently receives both a state header and an initial switch
+frame during core initialization. With 1100 reserved stacks this touches a
+page in every slot even when a program uses only a few of them. The existing
+used-lane experiment addresses a different cost: clearing all maximum lane
+storage instead of only configured lanes.
+
+`WF_SCHED_COMPACT_STACKS=1` stores state headers in contiguous, 128-byte-aligned
+cells in the core. The raw stack reservation and guard geometry are unchanged;
+the old header gap remains unused so usable depth is not silently reduced.
+An unused EMPTY stack has a null context. Its first exclusive free-list pop
+prepares that context after releasing the list mutex; recycled stacks retain
+the context saved by their scheduler loop. On Windows the same primitive
+creates a fiber on first use instead of creating every reserved fiber at
+startup. This is runtime storage policy and changes neither source effects
+nor the emitted module ABI.
+
+The enumerator snapshots compact headers with the core and skips raw stack
+bytes only for an unprepared EMPTY context. A later first use initializes that
+context before reading it. Existing schedule invariants and completion checks
+remain. The smoke test retains the original layout assertions for the default,
+checks initially null contexts and compact header alignment for the candidate,
+and checks prepared context bounds for the entry and each worker before use.
+Its pointer alignment check is native-word alignment: x86-64's initial switch
+frame is 56 bytes below a 16-byte-aligned top, unlike AArch64's 176-byte frame.
+
+The integrated compact+used-lane candidate passed the full M1 completion suite
+and all four enumerations (16/16/19/18 schedules, zero bounded executions).
+All 36 compiler completion integration tests passed with the updated embedded
+runtime. Both default and compact smoke geometries passed their final checks.
+The earlier compact-only prototype also passed the full suite. A separate
+three-pass, alternating M1 check used the same emitted echo module, two workers,
+1100 reserved stacks, TCP_NODELAY, 64 verified exchanges per peer and
+`/usr/bin/time -l` process peak RSS. These are memory readings, not Linux
+throughput evidence:
+
+| Peers | Original RSS bytes | Used lanes | Compact stacks | Both |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 40075264 | 20267008 | 22380544 | 2555904 |
+| 4 | 40157184 | 20332544 | 22511616 | 2686976 |
+| 8 | 40206336 | 20398080 | 22642688 | 2818048 |
+
+All 36 runs completed byte validation; within-cell ranges are at most 32768
+bytes. An attempted 64-peer local cohort stalled in the original fallback
+before any candidate ran and was stopped. This is the previously identified
+bounded-helper progress problem, not a passed high-concurrency check or a
+compact-stack regression. Native Linux is needed for the high-peer readings.
+
+`scheduler-memory` crosses base/used-lanes/compact/both against the same native
+references: five echo cases, four placements, two warm-ups and seven paired
+passes (840 rows), plus compute/file controls. Every candidate runs the full
+completion suite before timing. Untimed observations require the selected
+storage flags and actual Linux native traffic. The Windows job retains pinned
+continuation checks and adds all memory forms with actual IOCP reads and fixed
+output. Buffer sizes and zero initialization remain identical. This experiment
+can remove idle-stack startup cost; it does not by itself establish efficient
+storage for a thousand live connection buffers. Both storage flags remain
+experimental and default to zero until native results are assessed.

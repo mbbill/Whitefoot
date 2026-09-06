@@ -31,6 +31,8 @@ wf_sched_stack *wf_sched_current_stack(wf_sched_core *core) {
     return wf_sched_current_thread(core)->stack;
 }
 
+static void wf_sched_scheduler_loop(void *argument);
+
 /* ------------------------------------------------------------ the lists */
 
 /* Each list is under its assigned mutex (§5, §7.1 item 5). That mutex says
@@ -47,6 +49,15 @@ static wf_sched_stack *wf_sched_pool_pop(wf_sched_core *core) {
         stack->next = NULL;
     }
     wf_prim_unlock(0);
+#if WF_SCHED_COMPACT_STACKS
+    /* The pop transferred exclusive ownership. Preparing here avoids touching
+     * an unused raw stack (or creating an unused Windows fiber). A recycled
+     * stack retains the context saved when its scheduler loop became EMPTY. */
+    if (stack != NULL && stack->saved_sp == NULL) {
+        unsigned char *top = (unsigned char *)((uintptr_t)(stack->high - sizeof(*stack)) & ~(uintptr_t)15);
+        stack->saved_sp = wf_prim_prepare_stack(top, core->stack_bytes, wf_sched_scheduler_loop, core);
+    }
+#endif
     return stack;
 }
 
@@ -125,8 +136,6 @@ static wf_sched_stack *wf_sched_ready_pop(wf_sched_core *core) {
 }
 
 /* ----------------------------------------------------------- the switch */
-
-static void wf_sched_scheduler_loop(void *argument);
 
 /* What every thread does on the far side of any switch: the obligations the
  * switching thread left it. An EMPTY stack is pushed to the pool here, after
@@ -809,16 +818,24 @@ int wf_sched_init(
     for (index = 0; index < stack_count; index += 1u) {
         unsigned char *low = core->reservation + (size_t)index * core->stack_stride;
         unsigned char *high = low + core->stack_stride;
+#if WF_SCHED_COMPACT_STACKS
+        wf_sched_stack *stack = &core->stack_cells[index].value;
+#else
         wf_sched_stack *stack = (wf_sched_stack *)(high - sizeof(wf_sched_stack));
         unsigned char *top = (unsigned char *)((uintptr_t)stack & ~(uintptr_t)15);
+#endif
         memset(stack, 0, sizeof(*stack));
         stack->phase = WF_SCHED_STACK_EMPTY;
         stack->low = low;
         stack->high = high;
         stack->index = index;
+#if WF_SCHED_COMPACT_STACKS
+        stack->saved_sp = NULL;
+#else
         stack->saved_sp = wf_prim_prepare_stack(
             top, core->stack_bytes, wf_sched_scheduler_loop, core
         );
+#endif
         stack->next = core->free_head;
         core->free_head = stack;
         core->stacks[index] = stack;

@@ -117,10 +117,23 @@ static void hand_out_group(unsigned count) {
     }
 }
 
+static void check_prepared_context(const wf_sched_stack *stack) {
+    long host_page = sysconf(_SC_PAGESIZE);
+    size_t page = host_page > 0 ? (size_t)host_page : 4096u;
+    const unsigned char *top = stack->high - sizeof(*stack);
+    if ((const unsigned char *)stack->saved_sp < stack->low + page
+        || (const unsigned char *)stack->saved_sp >= top
+        || (uintptr_t)stack->saved_sp % sizeof(void *) != 0u) {
+        fputs("first-use context escaped its guarded stack\n", stderr);
+        abort();
+    }
+}
+
 /* Two I/O records outstanding together in one frame (S18), then a group. */
 static void main_body(void *argument) {
     unsigned round;
     (void)argument;
+    check_prepared_context(wf_sched_current_stack(&core));
     for (round = 0; round < 40u; round += 1u) {
         wf_sched_record first;
         wf_sched_record second;
@@ -161,10 +174,17 @@ int main(void) {
         long host_page = sysconf(_SC_PAGESIZE);
         size_t page = host_page > 0 ? (size_t)host_page : 4096u;
         if ((size_t)(stack->high - stack->low) < STACK_BYTES + page
+#if WF_SCHED_COMPACT_STACKS
+            || stack != &core.stack_cells[index].value
+            || stack->saved_sp != NULL
+            || (uintptr_t)stack % 128u != 0u
+#else
             || (unsigned char *)stack + sizeof(*stack) != stack->high
             || (unsigned char *)stack->saved_sp < stack->low + page
             || (unsigned char *)stack->saved_sp >= (unsigned char *)stack
-            || (uintptr_t)stack % 16u != 0u) {
+            || (uintptr_t)stack % 16u != 0u
+#endif
+        ) {
             (void)fprintf(stderr, "stack layout lost usable depth or frame bounds\n");
             return 1;
         }
@@ -178,6 +198,7 @@ int main(void) {
             (void)fprintf(stderr, "no stack for worker %u\n", index + 1u);
             return 1;
         }
+        check_prepared_context(core.threads[index + 1u].stack);
         pthread_attr_init(&attributes);
         pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED);
         if (pthread_create(&workers[index], &attributes, worker_main, (void *)(uintptr_t)(index + 1u)) != 0) {

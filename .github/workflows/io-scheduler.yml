@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        experiment: [owner, owner-paced]
+        experiment: [memory]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -58,9 +58,9 @@ jobs:
         run: |
           {
             echo '## Scheduler experiment: ${{ matrix.experiment }}'
-            echo 'Paired within this job and CPU cohort. Separate pinned continuations from per-worker Linux rings, then combine them; every form enables TCP_NODELAY. Echo includes small/large payloads and compute/file controls. Paced compares identical 16384-step WF modules with native C under fixed light arrivals. Each candidate runs the full completion suite before timing. See the investigation for scope.'
+            echo 'Paired within this job and CPU cohort. Cross compact stack metadata/first-use contexts with used-lane initialization; keep 1100 reserved stacks, identical WF modules and TCP_NODELAY in every form. Echo includes small/large payloads and compute/file controls. Each candidate runs the full completion suite before timing. See the investigation for scope.'
             echo '```text'
-            for file in host.txt cohorts.tsv network-summary.txt compute.txt mixed.txt pinned-check.log rings-check.log owner-check.log; do
+            for file in host.txt cohorts.tsv network-summary.txt compute.txt mixed.txt lanes-check.log compact-check.log small-check.log; do
               cat "$RUNNER_TEMP/io-scheduler/$file" 2>/dev/null || echo "$file was not produced"
             done
             echo '```'
@@ -81,7 +81,7 @@ jobs:
             ${{ runner.temp }}/io-scheduler/codegen/
 
   windows-owner:
-    name: native Windows pinned continuation checks
+    name: native Windows memory and pinned continuation checks
     runs-on: windows-latest
     timeout-minutes: 20
     defaults:
@@ -101,7 +101,7 @@ jobs:
           compiler/target/gate/whitefootc.exe --par --emit-llvm \
             research/experiments/io-completion-bench/programs/windows_runtime_mixed.wf \
             -o "$RUNNER_TEMP/owner/mixed.ll"
-      - name: Check pinned continuations with actual IOCP traffic
+      - name: Check memory and pinned policies with actual IOCP traffic
         run: |
           backend="$GITHUB_WORKSPACE/compiler/src/backend"
           units=(sched/core.c sched/prim_windows.c sched/entry.c
@@ -110,25 +110,38 @@ jobs:
                  windows_runtime.c wf_floor_windows.c sched/grant_observer.c)
           sources=()
           for unit in "${units[@]}"; do sources+=("$backend/$unit"); done
-          for policy in 0 1; do
+          for policy in base pinned lanes compact small; do
             shards=0
-            if [[ $policy == 1 ]]; then shards=2; fi
+            pinned=0
+            compact=0
+            used=0
+            case "$policy" in
+              pinned) shards=2; pinned=1 ;;
+              lanes) used=1 ;;
+              compact) compact=1 ;;
+              small) compact=1; used=1 ;;
+            esac
             clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
               -I "$backend" -I "$backend/completion" -DWF_SCHED_OBSERVE=1 \
-              "-DWF_SCHED_READY_SHARDS=$shards" "-DWF_SCHED_READY_PINNED=$policy" -x c "${sources[@]}" \
+              "-DWF_SCHED_READY_SHARDS=$shards" "-DWF_SCHED_READY_PINNED=$pinned" \
+              "-DWF_SCHED_COMPACT_STACKS=$compact" "-DWF_SCHED_INIT_USED_LANES=$used" -x c "${sources[@]}" \
               -x ir "$RUNNER_TEMP/owner/mixed.ll" -Wno-override-module \
               -o "$RUNNER_TEMP/owner/mixed-$policy.exe" -lws2_32
             for workers in 2 4; do
               record="$RUNNER_TEMP/owner/p$policy-w$workers"
               (cd "$RUNNER_TEMP/owner/tree" && \
-                WF_WORKERS="$workers" WF_SCHED_REPORT=1 WF_REQUIRE_WINDOWS_IOCP=1 \
+                WF_WORKERS="$workers" WF_STACKS=1100 WF_SCHED_REPORT=1 WF_REQUIRE_WINDOWS_IOCP=1 \
                 "$RUNNER_TEMP/owner/mixed-$policy.exe" f00000.dat f00001.dat) \
                 > "$record.out" 2> "$record.err"
               tr -d '\r' < "$record.out" > "$record.actual"
               printf '17574306422404092952\n' > "$record.expected"
               cmp "$record.expected" "$record.actual"
-              awk -v policy="$policy" '/^sched:/ { seen=1; for(i=2;i<=NF;i++) {split($i,a,"=");v[a[1]]=a[2]+0} }
-                END {exit !(seen && ("ready_pinned" in v) && v["ready_pinned"]==policy && v["parks"]>0 && v["resumes"]>0 && (!policy || v["resume_migrations"]==0))}' "$record.err"
+              awk -v pinned="$pinned" -v compact="$compact" -v used="$used" '
+                /^sched:/ { seen=1; for(i=2;i<=NF;i++) {split($i,a,"=");v[a[1]]=a[2]+0} }
+                END {exit !(seen && ("ready_pinned" in v) && v["ready_pinned"]==pinned &&
+                  v["parks"]>0 && v["resumes"]>0 && (!pinned || v["resume_migrations"]==0) &&
+                  ("compact_stacks" in v) && v["compact_stacks"]==compact &&
+                  ("init_used_lanes" in v) && v["init_used_lanes"]==used)}' "$record.err"
               cat "$record.err"
             done
           done

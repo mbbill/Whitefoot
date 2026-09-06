@@ -50,6 +50,14 @@
 #error "WF_SCHED_READY_SHARDS must be zero, one or two"
 #endif
 
+/* Experimental compact metadata and first-use context preparation. */
+#ifndef WF_SCHED_COMPACT_STACKS
+#define WF_SCHED_COMPACT_STACKS 0
+#endif
+#if WF_SCHED_COMPACT_STACKS != 0 && WF_SCHED_COMPACT_STACKS != 1
+#error "WF_SCHED_COMPACT_STACKS must be zero or one"
+#endif
+
 #if defined(__cplusplus)
 extern "C" {
 #endif
@@ -126,12 +134,13 @@ typedef struct wf_sched_slot {
 #define WF_SCHED_STACK_READY 5u
 #define WF_SCHED_STACK_EMPTY 6u
 
-/* The state header at the top of every pool stack: a stack handle and a
- * header pointer are the same address, and the stack grows down from just
- * below it. */
+/* A stack handle is its state header's address. Normally that header sits at
+ * the raw stack's top. The compact experiment keeps headers together in the
+ * core and leaves the original top gap unused, preserving usable depth. */
 typedef struct wf_sched_stack {
     unsigned phase;
-    /* The stack pointer saved by the last switch away from this stack. */
+    /* The opaque context saved by the last switch. In the compact experiment,
+     * NULL means this EMPTY stack has never been taken from the free list. */
     void *saved_sp;
     /* Ready-list and free-list link. A stack is on at most one list. */
     struct wf_sched_stack *next;
@@ -147,6 +156,12 @@ typedef struct wf_sched_stack {
     unsigned park_thread;
 #endif
 } wf_sched_stack;
+
+#if WF_SCHED_COMPACT_STACKS
+typedef struct wf_sched_stack_cell {
+    _Alignas(128) wf_sched_stack value;
+} wf_sched_stack_cell;
+#endif
 
 /* ------------------------------------------------------------- the lanes */
 
@@ -313,12 +328,15 @@ typedef struct wf_sched_core {
     wf_sched_ready_queue ready[WF_SCHED_READY_QUEUE_COUNT];
     /* The stack free list always uses mutex zero. */
     wf_sched_stack *free_head;
-    /* The reservation: `stack_count` stacks, headers at their tops. */
+    /* The raw reservation and state headers for `stack_count` stacks. */
     unsigned char *reservation;
     size_t stack_bytes;
     size_t stack_stride;
     unsigned stack_count;
     wf_sched_stack *stacks[WF_SCHED_MAX_STACKS];
+#if WF_SCHED_COMPACT_STACKS
+    wf_sched_stack_cell stack_cells[WF_SCHED_MAX_STACKS];
+#endif
     /* Threads and their lanes; index 0 is the entry thread's. */
     unsigned thread_count;
     wf_sched_thread threads[WF_SCHED_MAX_THREADS];

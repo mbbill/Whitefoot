@@ -339,11 +339,15 @@ The current scheduler experiments and their controls are described in
 `scheduler-checkpoint`, `scheduler-footprint`, `scheduler-paced`,
 `scheduler-chunks`, `scheduler-canonical`, `scheduler-stackful` and
 `scheduler-stackful-paced`, `scheduler-nodelay`, `scheduler-owner` and
-`scheduler-owner-paced` run their respective Linux cohorts. The measured
+`scheduler-owner-paced`, and `scheduler-memory` run their respective Linux cohorts. The measured
 priority, counter-stripe, stack-offset and independently locked ready-queue
 prototypes were retired; their results and exact revisions remain in the investigation. The canonical
 comparison also builds the recorded prior compiler revision from local Git
 history; use a checkout containing it.
+The memory cohort crosses compact stack metadata/first-use contexts with
+used-lane initialization, keeps 1,100 reserved stacks in every form, and
+measures echo plus compute/file controls. The source, I/O protocol, payload
+initialization, and TCP_NODELAY policy are identical across its WF forms.
 The paced client requires Linux 5.11 or newer and
 glibc with `epoll_pwait2` (2.35 or newer); it measures scheduled arrival
 latency including client backlog, with heavy peers remaining closed-loop.

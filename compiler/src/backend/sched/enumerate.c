@@ -252,6 +252,9 @@ static int stack_index_of(const void *pointer) {
     unsigned index;
     for (index = 0; index < wf_enum_core.stack_count; index += 1u) {
         const wf_sched_stack *stack = wf_enum_core.stacks[index];
+#if WF_SCHED_COMPACT_STACKS
+        if (pointer == stack) return (int)index;
+#endif
         if ((const unsigned char *)pointer >= stack->low
             && (const unsigned char *)pointer < stack->high) {
             return (int)index;
@@ -2095,6 +2098,13 @@ static unsigned collect_regions(region *out) {
                 base = actors[t].sp;
             }
         }
+#if WF_SCHED_COMPACT_STACKS
+        /* All compact headers are in the core snapshot. An unprepared EMPTY
+         * raw stack has no live context bytes to copy, restore, or hash. */
+        if (base == NULL && stack->saved_sp == NULL && stack->phase == WF_SCHED_STACK_EMPTY) {
+            continue;
+        }
+#endif
         if (base < stack->low || base > stack->high) {
             fail_execution("harness: stack %u's saved pointer is out of its range", index);
             return n;
