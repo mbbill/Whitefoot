@@ -1146,14 +1146,14 @@ compute performance and has not removed the network implementation gap.
 Use it in the next fixed-arrival queue experiment while keeping its interval
 and emitted module identical within each runtime-policy comparison.
 
-## Eleventh experiment: bounded preference for completion-ready stacks
+## Eleventh experiment: bounded preference for completion-ready stacks (retired)
 
 The paced cohort leaves a latency gap even when WF retains almost the native
 heavy rate. A completion-ready stack can wait in the same FIFO as heavy
 stacks that voluntarily yielded at a checkpoint. Test this scheduling
 opportunity independently of the compiler's interval and generated code.
 
-`WF_SCHED_COMPLETION_READY_BURST=B` defaults to zero, the original single
+At revision `6380a17a`, `WF_SCHED_COMPLETION_READY_BURST=B` defaulted to zero, the original single
 FIFO. Positive B separates record-completion resumptions and voluntary
 checkpoint resumptions into two FIFOs under the existing mutex. This is a
 completion class, including compute joins, not an I/O-only classification.
@@ -1178,7 +1178,7 @@ forced selection for B=8. Thus the local check exercised the actual policy,
 not merely its configuration. These kqueue client-shim runs establish native
 correctness observations, not a Linux performance comparison.
 
-`scheduler-priority` compares chunks1024/16384, each with B=0/1/8, and native
+`scheduler-priority` at that revision compared chunks1024/16384, each with B=0/1/8, and native
 C at both matching quanta. The compiler-emitted modules must be byte-identical
 between queue policies at each interval. Keep the zero-compute paced control,
 262144 steps at 4800 total light arrivals/s, and 2097152 steps at 960/4800/
@@ -1190,8 +1190,63 @@ interval, including for each native C quantum. Pure-compute and warm-file
 controls remain at two/four/eight workers. Untimed observations report both
 readiness classes and actual preferred/forced selections. Neither a positive
 checkpoint count nor a policy flag alone establishes that prioritization
-changed a particular execution. No default or source rule is selected before
-these measurements.
+changed a particular execution.
+
+Measured Linux run
+[`34040650208`](https://github.com/mbbill/Whitefoot/actions/runs/34040650208),
+artifact `9992033955`, completed with 560 timed samples on a Xeon 6973P-C,
+four logical CPUs on two physical SMT cores, Linux 6.17 and clang 18. Every
+planned light arrival was retained and verified. The gate and host checks
+passed. The separate Windows benchmark failed its unchanged compute-stability
+criterion: attempt one had relative p90-p10 spread 0.1553, attempt two 0.4218,
+against a 0.10 limit; parallel wall times ranged 1321..1723 and 1322..2041 ms.
+It did not produce a qualified Windows table. That is not a wrong-byte report
+or evidence establishing the cause of the instability.
+
+Long-compute split2 results at interval 16384:
+
+| Total light arrivals/s | Form | Heavy completed by deadline/s | Light p99 us | Worst peer p99 us |
+| --- | --- | ---: | ---: | ---: |
+| 960 | Single FIFO | 636 | 1271 | 3827 |
+| 960 | B=1 | 639 | 1101 | 2417 |
+| 960 | B=8 | 624 | 1077 | 2994 |
+| 960 | Native C | 642 | 498 | 538 |
+| 4800 | Single FIFO | 620 | 1181 | 2081 |
+| 4800 | B=1 | 624 | 1009 | 1119 |
+| 4800 | B=8 | 624 | 1049 | 1532 |
+| 4800 | Native C | 638 | 497 | 510 |
+| 24000 | Single FIFO | 560 | 487 | 533 |
+| 24000 | B=1 | 560 | 1028 | 1228 |
+| 24000 | B=8 | 560 | 993 | 1124 |
+| 24000 | Native C | 598 | 482 | 514 |
+
+At the highest arrival rate, the paired B=1/B=8 light-p99 ratios to single
+FIFO are 2.218 [1.440, 4.277] and 2.093 [1.431, 3.109]. This regression occurs
+in every paired pass. Paired heavy-rate medians are 1.000/1.007. At the lowest
+rate, B=8 improves light p99 in every paired pass, ratio 0.859 [0.629, 0.887],
+so the policy's effect depends on the offered load. At interval 1024 and the
+highest rate, single FIFO/B=1/B=8 light p99 is 195/176/495 us with identical
+median heavy rates of 416/s, versus native C's 101 us and 578/s. Shared4
+retains substantial client dispatch delay and shows no consistent priority
+gain. Untimed split2 64-peer observations at 16384 recorded 4089 preferred /
+3548 forced selections for B=1, and 4093 / 388 for B=8; the policies were
+actually exercised.
+
+Pure-compute times at four workers and interval 16384 are 1339.59/1346.52/
+1348.97 ms for B=0/1/8, and at eight workers 1385.49/1393.70/1388.94 ms.
+The corresponding warm-file medians are 129.00/132.96/131.34 and 156.17/
+160.56/159.39 ms, with wide ranges in several cells. No general control
+improvement compensates for the high-arrival network regression.
+
+Selection: retire this fixed completion-class preference and its experiment
+target. Restore the single FIFO, retaining cooperative checkpoints and all
+original protocol tests. Remove the extra readiness tag, FIFO, budget and
+their class-specific enumeration assertions because those states no longer
+exist; do not remove any original ownership, waiter, completion or wake
+assertion. Revision `6380a17a` and this result retain the reproducible trial.
+This rejects the tested policy, not every possible fairness policy or I/O
+priority design. Move to the measured code-generation issue and shared
+diagnostic writes rather than accumulating an unused runtime policy.
 
 ## Twelfth experiment: give the chunk loop a separate header
 
@@ -1245,3 +1300,100 @@ the baseline's assembly. There are two warm-ups and seven alternating passes.
 The prior compiler build is temporary measurement machinery, removed when
 this lowering question is settled; the active implementation is superseded
 in place rather than keeping two compiler passes.
+
+Measured revision `f6b80173`, Linux run
+[`34041692801`](https://github.com/mbbill/Whitefoot/actions/runs/34041692801),
+artifact `9992147472`, completed with 294 timed samples on a Xeon Platinum
+8370C, four logical CPUs on two physical SMT cores, Linux 6.17 and clang 18.
+Every planned light arrival was retained and verified. Host qualification
+and every platform I/O benchmark passed. Thirteen gate jobs passed; the
+macOS scheduler job hit the workflow's existing eight-minute limit during
+the progress-policy two-thread/four-stack enumeration. That is an incomplete
+gate, not a source rejection or a reported incorrect execution. No test was
+disabled or narrowed; the next revision reruns the full gate.
+
+The measured clang 18 assembly confirms the diagnosis: former chunks put
+the checkpoint call in the inner cycle, while canonical chunks restore the
+two-element metric-table loop with the call on the outer cycle. Both observed
+16384 compute forms execute zero checkpoint calls and switches. Median wall
+times in milliseconds:
+
+| Workers | Base | Former 1024 | Former 16384 | Canonical 1024 | Canonical 16384 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 2 | 2957.18 | 3268.20 | 3248.81 | 2985.18 | 2955.18 |
+| 4 | 1609.99 | 1876.50 | 1764.58 | 1724.41 | 1616.22 |
+| 8 | 1678.21 | 1953.73 | 1839.89 | 1793.98 | 1681.94 |
+
+Canonical16384 is within 0.4% of base at each worker count, while the former
+16384 form costs about 10% on this host. The smaller interval still has real
+runtime opportunities in these leaf loops and remains slower at four/eight
+workers. Warm-file medians at four workers are 160.80/185.71/165.80/186.57/
+167.10 ms in table order, and at eight 180.57/235.96/189.53/234.08/190.40 ms.
+There is no corresponding warm-file improvement from the topology change.
+
+Long-compute split2 results:
+
+| Light arrivals/s | Form | Heavy by deadline/s | Light p99 us | Worst peer p99 us |
+| --- | --- | ---: | ---: | ---: |
+| 4800 | Former 1024 | 400 | 1336 | 2163 |
+| 4800 | Canonical 1024 | 416 | 245 | 388 |
+| 4800 | Native C 1024 | 496 | 125 | 137 |
+| 4800 | Former 16384 | 480 | 1312 | 3042 |
+| 4800 | Canonical 16384 | 496 | 1109 | 1443 |
+| 4800 | Native C 16384 | 504 | 588 | 615 |
+| 24000 | Former 1024 | 336 | 430 | 718 |
+| 24000 | Canonical 1024 | 352 | 631 | 961 |
+| 24000 | Native C 1024 | 445 | 117 | 130 |
+| 24000 | Former 16384 | 416 | 880 | 1605 |
+| 24000 | Canonical 16384 | 432 | 1448 | 2002 |
+| 24000 | Native C 16384 | 464 | 577 | 617 |
+
+Paired canonical/former heavy-rate ratios on split2 are 1.040/1.033 at 4800
+arrivals/s for intervals 1024/16384, and 1.048/1.022 at 24000. Against native
+C they are 0.839/0.982 and 0.786/0.929 respectively. Shared4 canonical/former
+ratios are 1.044/1.037 and 1.035/1.039. Improved compute capacity does not
+uniformly improve tails; do not rank the change by heavy throughput alone.
+
+Selection: keep the canonical topology in the experimental chunk lowering.
+It removes the measured no-call compute penalty without changing source
+signatures or permission judgments, and recovers some mixed-load capacity.
+It does not select a universal quantum, close the network tail/CPU gap, or
+establish backed admission or general progress. The former topology remains
+only in the explicitly versioned comparison build while this result is used
+to separate compiler cost from subsequent runtime changes.
+
+## Thirteenth experiment: retain counters without one shared write location
+
+Every bridge publication updates one global diagnostic counter; inline
+operations update a second. These relaxed atomic RMWs do not select a
+protocol action, but their shared cache lines can still be contested. Test
+their placement before attributing the remaining I/O cost entirely to the
+completion representation or language design.
+
+`WF_COMPLETION_COUNTER_STRIPES` defaults to one, retaining the original two
+atomic counters. A positive value up to 64 provides that many static pairs,
+each 128 bytes apart and aligned accordingly. The M1 reports a 128-byte cache
+line; this spacing also separates the measured x86 host's 64-byte lines.
+Each host thread obtains a stripe on its first update using a relaxed ticket,
+then keeps the index in TLS. Collisions and ticket wrap remain correct because
+updates remain atomic RMWs. Counter observations sum relaxed loads, exactly
+recovering the completed counts once writers quiesce. Publication order,
+records, completion states, stack switching and public counter functions are
+unchanged. No counter is disabled to make a candidate faster.
+
+The final 16-stripe layout passed the complete maintained completion suite
+on the M1, including its full enumeration and all count assertions. The
+four-lane default-route probe also passed with two stripes, forcing shared
+slots while checking all 16000 lane operations and its additional route
+probes. The default remains one pending measurement.
+
+`scheduler-counters` compares one and 16 stripes using identical emitted
+modules and otherwise fixed runtime policies. The Linux cohort keeps all
+four CPU placements, 1/4/64/1024 peers with 64-byte messages, and 64 peers
+with 64-KiB messages, plus native io_uring and epoll references. Pure-compute
+and warm-file controls remain at two/four/eight workers. Two warm-ups and
+seven alternating passes give 560 timed network samples. Untimed observations
+must show the selected stripe count, inline completions and actual native-ring
+traffic. The complete 16-stripe suite and two-stripe collision probe run on
+the measuring Linux host before sampling. This is a counter-contention
+experiment, not evidence yet that the language or completion ABI must change.

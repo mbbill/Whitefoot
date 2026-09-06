@@ -61,9 +61,9 @@ if [[ $MODE != bench || $(uname -s) != Linux ]]; then
     echo 'scheduler-bench: use check on POSIX, or bench on Linux with io_uring' >&2
     exit 2
 fi
-[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == footprint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == priority || $EXPERIMENT == canonical ]] || exit 2
+[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == footprint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical || $EXPERIMENT == counters ]] || exit 2
 network_compute=0
-if [[ $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == priority || $EXPERIMENT == canonical ]]; then network_compute=1; fi
+if [[ $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical ]]; then network_compute=1; fi
 [[ $ROUNDS =~ ^[1-9][0-9]*$ && $WARMUP =~ ^[0-9]+$ ]] || exit 2
 [[ $(nproc) -ge 4 ]] || { echo 'scheduler-bench: this CPU-placement experiment needs four logical CPUs' >&2; exit 2; }
 mkdir -p "$OUT/bin" "$OUT/samples" "$OUT/observed" "$OUT/tree"
@@ -84,29 +84,29 @@ if [[ $EXPERIMENT == canonical ]]; then
     OLD_WFC=$OUT/compiler-before/target/gate/whitefootc
 fi
 
-if [[ $EXPERIMENT == priority ]]; then
-    for burst in 1 8; do
-        if ! make -C "$ROOT/compiler" completion-test CC="$CLANG" \
-            COMPLETION_TMP="$OUT/priority-b$burst-check" \
-            COMPLETION_BASE_CFLAGS="-std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread -DWF_SCHED_COMPLETION_READY_BURST=$burst" \
-            > "$OUT/priority-b$burst-check.log" 2>&1; then
-            cat "$OUT/priority-b$burst-check.log"
-            exit 1
-        fi
-    done
-fi
-
-if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint ]]; then
+if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == counters ]]; then
     # The experimental path keeps every existing harness assertion, including
     # completion counts, and also runs the core's maintained enumeration.
     check_define='-DWF_COMPLETION_LOCAL_INLINE=1'
     if [[ $EXPERIMENT == footprint ]]; then check_define='-DWF_SCHED_INIT_USED_LANES=1'; fi
+    if [[ $EXPERIMENT == counters ]]; then check_define='-DWF_COMPLETION_COUNTER_STRIPES=16'; fi
     if ! make -C "$ROOT/compiler" completion-test CC="$CLANG" \
         COMPLETION_TMP="$OUT/$EXPERIMENT-check" \
         COMPLETION_BASE_CFLAGS="-std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread $check_define" \
         > "$OUT/$EXPERIMENT-check.log" 2>&1; then
         cat "$OUT/$EXPERIMENT-check.log"
         exit 1
+    fi
+    if [[ $EXPERIMENT == counters ]]; then
+        # Four probe lanes must also retain exact counts when sharing two
+        # stripes. Collisions are valid; the RMWs remain atomic.
+        if ! make -C "$ROOT/compiler" completion-default-route-test CC="$CLANG" \
+            COMPLETION_TMP="$OUT/counters-collision-check" \
+            COMPLETION_BASE_CFLAGS="-std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread -DWF_COMPLETION_COUNTER_STRIPES=2" \
+            > "$OUT/counters-collision-check.log" 2>&1; then
+            cat "$OUT/counters-collision-check.log"
+            exit 1
+        fi
     fi
 fi
 
@@ -152,18 +152,18 @@ if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain ]]; then forms=(base); f
 if [[ $EXPERIMENT == inline ]]; then forms=(base local); fi
 if [[ $EXPERIMENT == checkpoint || $EXPERIMENT == paced ]]; then forms=(base cq1024 cq16384 cq65536); fi
 if [[ $EXPERIMENT == chunks ]]; then forms=(base cq16384 ch1024 ch16384 ch65536); fi
-if [[ $EXPERIMENT == priority ]]; then forms=(ch1024 ch1024b1 ch1024b8 ch16384 ch16384b1 ch16384b8); fi
 if [[ $EXPERIMENT == canonical ]]; then forms=(base old1024 old16384 ch1024 ch16384); fi
 if [[ $EXPERIMENT == footprint ]]; then forms=(base lanes); fi
+if [[ $EXPERIMENT == counters ]]; then forms=(base striped); fi
 form_flags() {
     local_inline=0
     init_used=0
-    ready_burst=0
+    counter_stripes=1
     case $1 in
         base) spin=256; yields=16; progress=0 ;;
         lanes) spin=256; yields=16; progress=0; init_used=1 ;;
+        striped) spin=256; yields=16; progress=0; counter_stripes=16 ;;
         cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|old1024|old16384) spin=256; yields=16; progress=0 ;;
-        ch1024b1|ch1024b8|ch16384b1|ch16384b8) spin=256; yields=16; progress=0; ready_burst=${1##*b} ;;
         local) spin=256; yields=16; progress=0; local_inline=1 ;;
         sleep) spin=0; yields=0; progress=0 ;;
         short) spin=16; yields=0; progress=0 ;;
@@ -175,14 +175,15 @@ form_flags() {
 }
 link_form() {
     local module=$1 output=$2 policy=$3 observed=$4
-    local observer=() spin yields progress local_inline init_used ready_burst
+    local observer=() spin yields progress local_inline init_used counter_stripes
     form_flags "$policy"
     if [[ $observed == 1 ]]; then observer=("$BACKEND/sched/grant_observer.c"); fi
     "$CLANG" -std=c11 -O2 -pthread -I "$BACKEND" -I "$BACKEND/completion" \
         -I "$BACKEND/sched" "-DWF_SCHED_IDLE_SPIN_ROUNDS=$spin" \
         "-DWF_SCHED_IDLE_YIELD_ROUNDS=$yields" "-DWF_SCHED_IDLE_PROGRESS_INTERVAL=$progress" \
         "-DWF_SCHED_OBSERVE=$observed" "-DWF_COMPLETION_LOCAL_INLINE=$local_inline" \
-        "-DWF_SCHED_INIT_USED_LANES=$init_used" "-DWF_SCHED_COMPLETION_READY_BURST=$ready_burst" \
+        "-DWF_SCHED_INIT_USED_LANES=$init_used" \
+        "-DWF_COMPLETION_COUNTER_STRIPES=$counter_stripes" \
         -x c "$BACKEND/wf_floor.c" "$BACKEND/sched/core.c" \
         "$BACKEND/sched/prim_host.c" "$BACKEND/sched/entry.c" \
         "$BACKEND/completion/runtime.c" "$BACKEND/completion/wait_host.c" \
@@ -202,7 +203,7 @@ else
     "$WFC" --par --emit-llvm -o "$OUT/compute.ll" "$ROOT/tests/programs/par_layout.wf"
     "$WFC" --par --emit-llvm -o "$OUT/mixed.ll" "$HERE/programs/windows_runtime_mixed.wf"
 fi
-if [[ $EXPERIMENT == checkpoint || $EXPERIMENT == chunks || $EXPERIMENT == priority || $EXPERIMENT == canonical ]]; then
+if [[ $EXPERIMENT == checkpoint || $EXPERIMENT == chunks || $EXPERIMENT == canonical ]]; then
     programs=(echo compute mixed)
     "$WFC" --par --emit-llvm -o "$OUT/compute.ll" "$ROOT/tests/programs/par_layout.wf"
     "$WFC" --par --emit-llvm -o "$OUT/mixed.ll" "$HERE/programs/windows_runtime_mixed.wf"
@@ -221,7 +222,6 @@ for policy in "${forms[@]}"; do
             checkpoint_option=--sched-quantum
             if [[ $policy == ch* ]]; then checkpoint_option=--sched-chunks; fi
             checkpoint_interval=${policy:2}
-            checkpoint_interval=${checkpoint_interval%b*}
             checkpoint_compiler=$WFC
             if [[ $policy == old* ]]; then
                 checkpoint_compiler=$OLD_WFC
@@ -229,10 +229,6 @@ for policy in "${forms[@]}"; do
                 checkpoint_interval=${policy#old}
             fi
             "$checkpoint_compiler" --par "$checkpoint_option" "$checkpoint_interval" --emit-llvm -o "$module" "$source"
-            if [[ $policy == ch*b* ]]; then
-                # Only the C queue policy may differ in this paired cohort.
-                cmp "$OUT/$program-${policy%b*}.ll" "$module"
-            fi
             if [[ ( $policy == ch* || $policy == old* ) && $program == echo ]]; then
                 # This protocol's dependent recurrence must actually use the
                 # new lowering; positive runtime calls alone also fit fallback.
@@ -278,7 +274,7 @@ if [[ $network_compute == 1 ]]; then
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread -DWF_BENCH_COMPUTE \
         "$HERE/epoll_echo.c" -o "$OUT/bin/epoll_compute"
 fi
-if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == priority || $EXPERIMENT == canonical ]]; then
+if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical ]]; then
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread -DWF_BENCH_COMPUTE -DWF_BENCH_QUANTUM \
         "$HERE/epoll_echo.c" -o "$OUT/bin/epoll_quantum"
 fi
@@ -332,7 +328,7 @@ network_case() {
         q1024|q16384|q65536)
             binary="$OUT/bin/epoll_quantum"
             arguments=(--threads "$server_workers" --quantum "${form#q}") ;;
-        base|local|lanes|sleep|short|spin|poll1|poll16|cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|ch1024b1|ch1024b8|ch16384b1|ch16384b8|old1024|old16384)
+        base|local|lanes|striped|sleep|short|spin|poll1|poll16|cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|old1024|old16384)
             binary="$OUT/bin/echo-$form"
             if [[ $observed == 1 ]]; then binary="$binary-observed"; fi
             environment=("WF_WORKERS=$server_workers" WF_STACKS=1100 "WF_SCHED_REPORT=$observed") ;;
@@ -397,7 +393,7 @@ admissions=(0)
 if [[ $EXPERIMENT == fairness ]]; then admissions=(0 1); fi
 if [[ $network_compute == 1 ]]; then references=(epoll); compute_rounds=262144; fi
 if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks ]]; then references=(epoll q1024 q16384 q65536); fi
-if [[ $EXPERIMENT == priority || $EXPERIMENT == canonical ]]; then references=(q1024 q16384); fi
+if [[ $EXPERIMENT == canonical ]]; then references=(q1024 q16384); fi
 while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
     for admitted in "${admissions[@]}"; do
         for form in "${references[@]}" "${forms[@]}"; do network_case "$form" 4 20 64 -1 0; done
@@ -419,14 +415,11 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
                  END { exit !(value["checkpoints"] > 0 && value["checkpoint_switches"] > 0) }' \
                 "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
         fi
-        if [[ $EXPERIMENT == priority && $connections == 64 ]]; then
-            burst=0
-            if [[ $form == ch*b* ]]; then burst=${form##*b}; fi
-            # Observe the route separately from timings. Both sources of
-            # readiness must be exercised; selection counts remain evidence,
-            # not an assumption that every run reaches a particular ordering.
-            awk -v burst="$burst" '/^sched:/ { for(i=2;i<=NF;i++) { split($i,a,"="); value[a[1]]=a[2]+0 } }
-                 END { exit !(("completion_ready_burst" in value) && value["completion_ready_burst"]==burst && value["ready_completions"]>0 && value["ready_yields"]>0) }' \
+        if [[ $EXPERIMENT == counters ]]; then
+            stripes=1
+            if [[ $form == striped ]]; then stripes=16; fi
+            awk -v stripes="$stripes" '/^ring:/ { for(i=2;i<=NF;i++) { split($i,a,"="); value[a[1]]=a[2]+0 } }
+                 END { exit !(("counter_stripes" in value) && value["counter_stripes"]==stripes && value["inline"]>0) }' \
                 "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
         fi
       done
@@ -455,7 +448,7 @@ else
 64 2000 64 0
 CASES
 fi
-if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint ]]; then
+if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == counters ]]; then
     printf '1024 200 64 0\n64 500 65536 0\n' >> "$OUT/cases.tsv"
 fi
 if [[ $EXPERIMENT == fairness ]]; then
@@ -463,7 +456,7 @@ if [[ $EXPERIMENT == fairness ]]; then
     awk '$4 != 16384' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
     mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
 fi
-if [[ $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == priority || $EXPERIMENT == canonical ]]; then
+if [[ $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical ]]; then
     # Both request classes stay active for a common interval. The count is a
     # storage ceiling, not a target; an early ceiling hit fails the sample.
     cat > "$OUT/cases.tsv" <<'CASES'
@@ -481,7 +474,7 @@ if [[ $EXPERIMENT == chunks ]]; then
     awk '$1==64' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
     mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
 fi
-if [[ $EXPERIMENT == paced || $EXPERIMENT == priority || $EXPERIMENT == canonical ]]; then
+if [[ $EXPERIMENT == paced || $EXPERIMENT == canonical ]]; then
     # Fix light arrivals independently of service speed. Keep every scheduled
     # request, including client backlog, while heavy peers remain saturated.
     cat > "$OUT/cases.tsv" <<'CASES'
@@ -493,11 +486,6 @@ if [[ $EXPERIMENT == paced || $EXPERIMENT == priority || $EXPERIMENT == canonica
 64 100000 64 2097152 100
 64 100000 64 2097152 500
 CASES
-fi
-if [[ $EXPERIMENT == priority ]]; then
-    # Retain all long-compute arrival rates and one shorter-compute control.
-    awk '$4!=262144 || $5==100' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
-    mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
 fi
 if [[ $EXPERIMENT == canonical ]]; then
     awk '$4==0 || ($4==2097152 && $5>=100)' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
@@ -522,7 +510,7 @@ done
 # Warm positioned reads plus compute measure coexistence; they do not establish
 # a bound on network latency while every worker runs a long computation.
 cpu_programs=(compute mixed)
-if [[ $EXPERIMENT != idle && $EXPERIMENT != checkpoint && $EXPERIMENT != chunks && $EXPERIMENT != priority && $EXPERIMENT != canonical ]]; then cpu_programs=(); fi
+if [[ $EXPERIMENT != idle && $EXPERIMENT != checkpoint && $EXPERIMENT != chunks && $EXPERIMENT != canonical && $EXPERIMENT != counters ]]; then cpu_programs=(); fi
 for program in "${cpu_programs[@]}"; do
     : > "$OUT/$program.plan"
     for workers in 2 4 8; do
@@ -543,10 +531,9 @@ for program in "${cpu_programs[@]}"; do
         > "$OUT/$program.txt" 2> "$OUT/$program.err"
 done
 
-# Keep raw samples; summarize ranges as well as medians. Priority ratios use
-# the single FIFO at the matching chunk interval; other experiments use base.
-# Every denominator is measured in the same pass and complete workload cohort.
-awk -F '\t' -v priority="$([[ $EXPERIMENT == priority ]] && echo 1 || echo 0)" '
+# Keep raw samples; summarize ranges as well as medians. Ratios use base,
+# measured in the same pass and complete workload cohort.
+awk -F '\t' '
     NR == 1 { next }
     { key=$15 "/" $3 "/" $4 "/" ($21+0) "/" ($28+0) "/" ($30+0) "/" ($39+0); cohort=$1 SUBSEP key; group=$2 SUBSEP key
       count[group]++; rates[group,count[group]]=$6; lat[group,count[group]]=$7;
@@ -564,10 +551,6 @@ awk -F '\t' -v priority="$([[ $EXPERIMENT == priority ]] && echo 1 || echo 0)" '
       heavy_ontime[group,count[group]]=$30 ? ($44+0)*1000/$30 : 0;
       backlog[group,count[group]]=$39 ? $40-$43 : 0;
       samples[cohort,$2]=$6; groups[group]=1; cohorts[cohort]=1; }
-    function reference(form) {
-      if (!priority) return "base";
-      sub(/b[18]$/, "", form); sub(/^q/, "ch", form); return form;
-    }
     function summary(values,g, n,i,j,t) {
       n=count[g]; for(i=1;i<=n;i++) sorted[i]=values[g,i];
       for(i=1;i<=n;i++) for(j=i+1;j<=n;j++) if(sorted[j]<sorted[i]) {t=sorted[i];sorted[i]=sorted[j];sorted[j]=t}
@@ -578,7 +561,7 @@ awk -F '\t' -v priority="$([[ $EXPERIMENT == priority ]] && echo 1 || echo 0)" '
       for(g in groups) {
         split(g,parts,SUBSEP); form=parts[1]; key=parts[2]; n=0;
         for(c in cohorts) { split(c,p,SUBSEP); if(p[2]==key) {
-          denominator=samples[c,reference(form)];
+          denominator=samples[c,"base"];
           if(denominator<=0) { print "scheduler-bench: missing paired reference" > "/dev/stderr"; exit 1 }
           ratios[g,++n]=samples[c,form]/denominator;
         } }

@@ -107,22 +107,11 @@ typedef struct wf_sched_slot {
 #define WF_SCHED_STACK_READY 5u
 #define WF_SCHED_STACK_EMPTY 6u
 
-/* Completion-ready stacks and voluntarily yielded CPU stacks may use separate
- * FIFOs. A positive burst limits consecutive completion pops while both are
- * nonempty; zero keeps the original single FIFO. This is runtime policy. */
-#if !defined(WF_SCHED_COMPLETION_READY_BURST)
-#define WF_SCHED_COMPLETION_READY_BURST 0u
-#endif
-
 /* The state header at the top of every pool stack: a stack handle and a
  * header pointer are the same address, and the stack grows down from just
  * below it. */
 typedef struct wf_sched_stack {
     unsigned phase;
-    /* Written by the running owner before publishing its next park/yield.
-     * The phase handshake and queue mutex publish it to the eventual pop.
-     * This occupies the former padding before saved_sp on supported ABIs. */
-    unsigned yielded;
     /* The stack pointer saved by the last switch away from this stack. */
     void *saved_sp;
     /* Ready-list and free-list link. A stack is on at most one list. */
@@ -257,10 +246,6 @@ typedef struct wf_sched_statistics {
     unsigned long long idle_waits;
     unsigned long long checkpoints;
     unsigned long long checkpoint_switches;
-    unsigned long long ready_completions;
-    unsigned long long ready_yields;
-    unsigned long long ready_completion_preferred;
-    unsigned long long ready_yield_forced;
 } wf_sched_statistics;
 
 /* What one thread knows: its lane, the stack it is on, the host stack it
@@ -284,12 +269,9 @@ typedef struct wf_sched_thread {
  * one per execution. Every word two threads touch is reached through a
  * primitive of `prim.h`; the lists are touched under the one mutex. */
 typedef struct wf_sched_core {
-    /* Under the one mutex: the ready FIFOs and the stack free list. */
+    /* Under the one mutex: the ready list and the stack free list. */
     wf_sched_stack *ready_head;
     wf_sched_stack *ready_tail;
-    wf_sched_stack *yield_head;
-    wf_sched_stack *yield_tail;
-    unsigned completion_ready_budget;
     wf_sched_stack *free_head;
     /* The reservation: `stack_count` stacks, headers at their tops. */
     unsigned char *reservation;

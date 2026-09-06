@@ -118,9 +118,60 @@ static _Atomic int wf_bridge_helpers_pinned;
 static _Atomic unsigned wf_bridge_ready;
 static _Atomic unsigned wf_bridge_file_ready;
 /* Records completed, and of those the ones the engine executed inside the
- * submitting call itself. */
+ * submitting call itself. These counters never select a protocol action. */
+#if !defined(WF_COMPLETION_COUNTER_STRIPES)
+#define WF_COMPLETION_COUNTER_STRIPES 1u
+#endif
+_Static_assert(WF_COMPLETION_COUNTER_STRIPES >= 1u && WF_COMPLETION_COUNTER_STRIPES <= 64u,
+    "completion counter stripes must be between one and 64");
+#define WF_BRIDGE_COUNT_PUBLICATION 0u
+#define WF_BRIDGE_COUNT_INLINE 1u
+#if WF_COMPLETION_COUNTER_STRIPES == 1
 static _Atomic uint64_t wf_bridge_publications;
 static _Atomic uint64_t wf_bridge_inline_executions;
+static _Atomic uint64_t *wf_bridge_counter(unsigned kind) {
+    return kind == WF_BRIDGE_COUNT_PUBLICATION
+        ? &wf_bridge_publications : &wf_bridge_inline_executions;
+}
+#else
+/* Separate worker diagnostic RMWs by 128 bytes, covering the cache lines on
+ * the measured M1 and x86 hosts.
+ * Assignment is once per host thread; overflow/collisions remain correct
+ * because each stripe still uses atomic increments. Counters use static
+ * storage; thread teardown and completion publication are unchanged. */
+typedef struct wf_bridge_counter_stripe {
+    _Atomic uint64_t values[2];
+    unsigned char padding[128u - 2u * sizeof(_Atomic uint64_t)];
+} wf_bridge_counter_stripe;
+_Static_assert(sizeof(wf_bridge_counter_stripe) == 128u, "one 128-byte counter stripe");
+static _Alignas(128) wf_bridge_counter_stripe wf_bridge_counters[WF_COMPLETION_COUNTER_STRIPES];
+static _Atomic unsigned wf_bridge_counter_ticket;
+static _Thread_local unsigned wf_bridge_counter_slot;
+static _Atomic uint64_t *wf_bridge_counter(unsigned kind) {
+    if (wf_bridge_counter_slot == 0u) {
+        unsigned ticket = atomic_fetch_add_explicit(&wf_bridge_counter_ticket, 1u, memory_order_relaxed);
+        wf_bridge_counter_slot = ticket % WF_COMPLETION_COUNTER_STRIPES + 1u;
+    }
+    return &wf_bridge_counters[wf_bridge_counter_slot - 1u].values[kind];
+}
+#endif
+static void wf_bridge_count(unsigned kind) {
+    atomic_fetch_add_explicit(wf_bridge_counter(kind), 1u, memory_order_relaxed);
+}
+static uint64_t wf_bridge_count_read(unsigned kind) {
+#if WF_COMPLETION_COUNTER_STRIPES == 1
+    return atomic_load_explicit(wf_bridge_counter(kind), memory_order_relaxed);
+#else
+    uint64_t total = 0;
+    unsigned index;
+    /* A relaxed observation while work is active; exact after writers have
+     * quiesced, with the same unsigned wrap as the original counters. */
+    for (index = 0; index < WF_COMPLETION_COUNTER_STRIPES; index += 1u) {
+        total += atomic_load_explicit(&wf_bridge_counters[index].values[kind], memory_order_relaxed);
+    }
+    return total;
+#endif
+}
 #if !defined(WF_COMPLETION_LOCAL_INLINE)
 #define WF_COMPLETION_LOCAL_INLINE 0
 #endif
@@ -519,7 +570,7 @@ int wf__bridge_report(char *buffer, size_t capacity) {
         capacity,
         "ring: submissions=%llu submission_enters=%llu completions=%llu "
         "kernel_waits=%llu kernel_wakes=%llu host_wake_writes=%llu "
-        "overflow_flushes=%llu runtime_parks=%llu inline=%llu",
+        "overflow_flushes=%llu runtime_parks=%llu inline=%llu counter_stripes=%u",
         (unsigned long long)ring.submissions,
         (unsigned long long)ring.submission_enters,
         (unsigned long long)ring.completions,
@@ -531,10 +582,8 @@ int wf__bridge_report(char *buffer, size_t capacity) {
             &wf_bridge_runtime.stat_parks,
             memory_order_relaxed
         ),
-        (unsigned long long)atomic_load_explicit(
-            &wf_bridge_inline_executions,
-            memory_order_relaxed
-        )
+        (unsigned long long)wf_bridge_count_read(WF_BRIDGE_COUNT_INLINE),
+        (unsigned)WF_COMPLETION_COUNTER_STRIPES
     );
     return written > 0 && (size_t)written < capacity;
 }
@@ -898,11 +947,7 @@ static void wf_bridge_require(void) {
  * touches the record no further -- which is what lets the joiner's frame die
  * the moment DONE is read. */
 void wf_completion_record_complete(wf_completion_record *record) {
-    atomic_fetch_add_explicit(
-        &wf_bridge_publications,
-        1,
-        memory_order_relaxed
-    );
+    wf_bridge_count(WF_BRIDGE_COUNT_PUBLICATION);
     wf_sched_complete(&wf__sched_core, &record->sched);
 }
 
@@ -1377,11 +1422,7 @@ static int wf_bridge_file_request_is_empty(const wf_file_request *request) {
 static void wf_bridge_execute_here(wf_completion_record *record) {
     wf_file_result result;
     record->route = WF_COMPLETION_ROUTE_INLINE;
-    atomic_fetch_add_explicit(
-        &wf_bridge_inline_executions,
-        1,
-        memory_order_relaxed
-    );
+    wf_bridge_count(WF_BRIDGE_COUNT_INLINE);
     /* The host call below is outside every path the ring can see through. */
     wf_bridge_flush_target();
     result = wf_file_execute_timed(&wf_bridge_adapter, &record->request);
@@ -1396,11 +1437,7 @@ static void wf_bridge_complete_empty(wf_completion_record *record) {
     result.head.kind = record->request.kind;
     result.head.value = 0;
     record->route = WF_COMPLETION_ROUTE_INLINE;
-    atomic_fetch_add_explicit(
-        &wf_bridge_inline_executions,
-        1,
-        memory_order_relaxed
-    );
+    wf_bridge_count(WF_BRIDGE_COUNT_INLINE);
     wf_file_complete_record(record, &result);
 }
 
@@ -1488,11 +1525,7 @@ static int wf_bridge_transfer_now(wf_completion_record *record) {
         return 0;
     }
     record->route = WF_COMPLETION_ROUTE_INLINE;
-    atomic_fetch_add_explicit(
-        &wf_bridge_inline_executions,
-        1,
-        memory_order_relaxed
-    );
+    wf_bridge_count(WF_BRIDGE_COUNT_INLINE);
 #if WF_COMPLETION_LOCAL_INLINE
     /* The fresh record has never been offered to an engine or a waiter.
      * This call is still inside submit; its caller cannot reach join until
@@ -1501,7 +1534,7 @@ static int wf_bridge_transfer_now(wf_completion_record *record) {
      * COMPLETING/waiter-claim protocol. The pending path below still uses
      * that full protocol. Keep diagnostic counts identical in both forms. */
     record->result = result.head;
-    atomic_fetch_add_explicit(&wf_bridge_publications, 1, memory_order_relaxed);
+    wf_bridge_count(WF_BRIDGE_COUNT_PUBLICATION);
     wf_prim_store_u(&record->sched.state, WF_SCHED_DONE, WF_PRIM_RELEASE);
 #else
     wf_file_complete_record(record, &result);
@@ -1964,14 +1997,11 @@ uint64_t wf__completion_target_helper_executions(void) {
 }
 
 uint64_t wf__completion_publications(void) {
-    return atomic_load_explicit(&wf_bridge_publications, memory_order_relaxed);
+    return wf_bridge_count_read(WF_BRIDGE_COUNT_PUBLICATION);
 }
 
 uint64_t wf__completion_inline_executions(void) {
-    return atomic_load_explicit(
-        &wf_bridge_inline_executions,
-        memory_order_relaxed
-    );
+    return wf_bridge_count_read(WF_BRIDGE_COUNT_INLINE);
 }
 
 uint64_t wf__completion_native_ring_submissions(void) {

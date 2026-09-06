@@ -1455,28 +1455,6 @@ static void check_state(void) {
     if (wf_enum_core.ready_tail != last) {
         fail_execution("the ready list's tail does not name its last stack");
     }
-    {
-        unsigned on_yield = walk_list(wf_enum_core.yield_head, WF_SCHED_STACK_READY, "yield", &last);
-        if (wf_enum_core.yield_tail != last || (on_yield & on_ready)) {
-            fail_execution("the yielded list has a wrong tail or duplicates a completion-ready stack");
-        }
-        if (wf_enum_core.completion_ready_budget > WF_SCHED_COMPLETION_READY_BURST) {
-            fail_execution("the completion-ready burst budget exceeds its configured bound");
-        }
-#if WF_SCHED_COMPLETION_READY_BURST > 0
-        for (index = 0; index < wf_enum_core.stack_count; index += 1u) {
-            if (((on_ready >> index) & 1u) && wf_enum_core.stacks[index]->yielded) {
-                fail_execution("a yielded stack is on the completion-ready list");
-            }
-            if (((on_yield >> index) & 1u) && !wf_enum_core.stacks[index]->yielded) {
-                fail_execution("a completion-ready stack is on the yielded list");
-            }
-        }
-#else
-        if (on_yield) fail_execution("the single-FIFO policy populated the yielded list");
-#endif
-        on_ready |= on_yield;
-    }
     if (on_free & on_ready) {
         fail_execution("a stack is on both lists");
     }
@@ -1603,7 +1581,7 @@ static void check_state(void) {
                 }
             }
         }
-        if (wf_enum_core.ready_head != NULL || wf_enum_core.yield_head != NULL) {
+        if (wf_enum_core.ready_head != NULL) {
             fail_execution("every thread is asleep with a non-empty ready list (item 20)");
         }
         if (wf_enum_core.status_posted != 0u && actors[0].state == A_RUNNABLE && entry_idle) {
