@@ -20,14 +20,14 @@ use super::super::{Architecture, FLOOR_STACK_BYTES, stack_ledger};
 use super::exhaustion::spine_source;
 use super::{build_executable, compile, test_directory};
 
-/// A recursion whose activation carries a fixed array, so its frame is six
+/// A recursion whose activation carries a fixed run, so its frame is six
 /// hundred times the tight spine's and its ceiling a hundred thousand levels
 /// rather than sixty-seven million.
 ///
 /// The pair of widths is the point: the model under test is one division, and
 /// checking it at two frame sizes six hundred times apart says far more about
-/// the division than checking it twice at one size would. The array
-/// is 256 elements because the host compiler spends nine seconds vectorizing
+/// the division than checking it twice at one size would. The run
+/// is 256 slots because the host compiler spends nine seconds vectorizing
 /// the fill of a seven-thousand-element one and a tenth of a second on this,
 /// for the same arithmetic under test.
 ///
@@ -37,7 +37,15 @@ use super::{build_executable, compile, test_directory};
 fn wide_frame_source(depth: u64) -> Vec<u8> {
     format!(
         r#"fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {{
-  let pad = array_new::<u64, 256>(v);
+  let pad = fixed_vector::<u64, 256>();
+  for @fill (
+    at in 0_u64..256_u64,
+    invariant grown: len_of(pad) >= at,
+    invariant spare: room_of(pad) + at >= 256_u64,
+    invariant flat: head_of(pad) <= 0_u64
+  ) {{
+    set pad = place_back(vector: move pad, value: v);
+  }}
   let wide = cvt::<u8, u64>(i);
   set pad[wide] = depth;
   let done = depth == 0_u64;
@@ -302,18 +310,63 @@ fn the_compilers_own_drop_glue_has_rows_and_reports_its_cycle() {
 }
 
 /// A recursive nominal, built and destroyed, with nothing recursive written.
-const RECURSIVE_VALUE: &[u8] = br#"enum Tree {
+const RECURSIVE_VALUE: &[u8] = br#"enum Tree['s] {
   Leaf();
-  Branch(left: box<Tree>, right: box<Tree>);
+  Branch(left: Box<'s, Tree<'s>>, right: Box<'s, Tree<'s>>);
 }
 
-command fn main() -> status: own ExitStatus pure {
-  let left = Leaf();
-  let right = Leaf();
-  let boxed_left = box_new(move left);
-  let boxed_right = box_new(move right);
-  let branch = Branch(left: move boxed_left, right: move boxed_right);
-  let root = box_new(move branch);
-  return exit_status(code: 0_u8);
+fn boxed_leaf['s](store: &uniq Heap<'s>) -> made: own Option<Box<'s, Tree<'s>>> reads(store), writes(store), allocates(store) {
+  let leaf = Leaf<'s>();
+  region {
+    match heap_box(store: &uniq deref(store), value: move leaf) {
+      Ok(value: cell) => {
+        return Some<Box<'s, Tree<'s>>>(value: move cell);
+      }
+      Err(error: back) => {
+        return None<Box<'s, Tree<'s>>>();
+      }
+    }
+  }
+}
+
+fn boxed_branch['s](store: &uniq Heap<'s>, left: own Box<'s, Tree<'s>>, right: own Box<'s, Tree<'s>>) -> made: own Option<Box<'s, Tree<'s>>> reads(store), writes(store), allocates(store) {
+  let branch = Branch(left: move left, right: move right);
+  region {
+    match heap_box(store: &uniq deref(store), value: move branch) {
+      Ok(value: cell) => {
+        return Some<Box<'s, Tree<'s>>>(value: move cell);
+      }
+      Err(error: back) => {
+        return None<Box<'s, Tree<'s>>>();
+      }
+    }
+  }
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    match boxed_leaf(store: &uniq heap) {
+      None() => {
+        return exit_status(code: 2_u8);
+      }
+      Some(value: boxed_left) => {
+        match boxed_leaf(store: &uniq heap) {
+          None() => {
+            return exit_status(code: 2_u8);
+          }
+          Some(value: boxed_right) => {
+            match boxed_branch(store: &uniq heap, left: move boxed_left, right: move boxed_right) {
+              None() => {
+                return exit_status(code: 2_u8);
+              }
+              Some(value: root) => {
+                return exit_status(code: 0_u8);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 }
 "#;
