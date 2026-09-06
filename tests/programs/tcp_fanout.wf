@@ -1,5 +1,5 @@
-fn byte_at(store: &buffer<u8>, index: own u64) -> result: own u8 reads(store) {
-  doc "Reads one stored byte, delivering zero for a position the buffer does not hold.";
+fn byte_at(store: &Slice<u8>, index: own u64) -> result: own u8 reads(store) {
+  doc "Reads one stored byte, delivering zero for a position the view does not hold.";
   let room = len_of(deref(store));
   let inside = index < room;
   if inside {
@@ -9,7 +9,7 @@ fn byte_at(store: &buffer<u8>, index: own u64) -> result: own u8 reads(store) {
   return 0_u8;
 }
 
-fn parse_port(digits: &buffer<u8>, length: own u64) -> result: own u16 reads(digits) {
+fn parse_port(digits: &Slice<u8>, length: own u64) -> result: own u16 reads(digits) {
   doc "Reads one decimal port out of the argument bytes the invocation supplied; a byte that is not a digit ends the number.";
   let port = 0_u16;
   let ended = 0_u8;
@@ -45,7 +45,7 @@ fn send_all(send: &uniq TcpSend, source: &buffer<u8>, length: own u64) -> result
   define source_length = len_of(deref(source));
   requires length <= source_length;
 } {
-  doc "Sends one prefix of the source buffer, reattempting until the connection has accepted every byte or refused it.";
+  doc "Sends one prefix of the source run, reattempting until the connection has accepted every byte or refused it.";
   let sent = 0_u64;
   loop @sending {
     let pending = sent < length;
@@ -71,7 +71,7 @@ fn serve_one(listener: &TcpListener, permit: own HandlePermit, scratch: &uniq bu
   define room = len_of(deref(scratch));
   requires 256_u64 <= room;
 } {
-  doc "Takes one connection from the listener, returns the first chunk the peer sent, and releases the pair, so the caller's fixed-trip loop serves one peer per iteration [SYS-17, SYS-18].";
+  doc "Takes one connection from the listener, returns the first chunk the peer sent, and releases the pair, so the caller's fixed-trip loop serves one peer per iteration [SYS-17, SYS-18]. The destination stays the run itself rather than a view of it: this is the one call the fixed-trip loop stages, and the staged permission judgment resolves a run as a place where it resolves no view descriptor as a place at all, so a view destination here would cost the loop the staging it exists to obtain.";
   let outcome = 0_u8;
   region {
     match tcp_accept(permit: move permit, listener: listener) {
@@ -114,84 +114,106 @@ fn serve_one(listener: &TcpListener, permit: own HandlePermit, scratch: &uniq bu
 }
 
 command fn main(command.args as args: own Args, command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(args, handles), writes(handles) {
-  doc "Listens on the loopback port named by the invocation and serves four connections in a fixed-trip loop the staged permission admits: each iteration owns its scratch, takes its own permit before its accept, and leaves the loop only from its prologue, so the four accepts may be in flight at once and several peers reach one listener together [PAR-3, SYS-17].";
-  let digits = buffer_new(16_u64, 0_u8);
-  let port = 0_u16;
-  let arguments = 0_u64;
-  region {
-    set arguments = args_count(args: &args);
-  }
-  let named = arguments >= 2_u64;
-  if named {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  let carried = 0_u64;
-  region {
-    match arg_get(args: &args, position: 1_u64) {
-      Ok(value: text) => {
-        region {
-          match host_copy_utf8(value: &text, destination: &uniq digits, start: 0_u64, end: 16_u64) {
-            Ok(value: written) => {
-              set carried = written;
-            }
-            Err(error: problem) => {
-              set carried = 0_u64;
-            }
-          }
-        }
+  doc "Listens on the loopback port named by the invocation and serves four connections in a fixed-trip loop the staged permission admits: each iteration owns its scratch, takes its own permit before its accept, and leaves the loop only from its prologue, so the four accepts may be in flight at once and several peers reach one listener together [PAR-3, SYS-17]. The argument scratch is an arena extent viewed exclusively where the argument is copied into it and shared where the port is read out. The per-connection scratch stays a `buffer_new` run handed to the callee as the run itself: the staged permission judgment resolves that construction as iteration-own storage and resolves no view descriptor as a place at all, so both a store-resident replacement and a view destination would cost this loop the staging it exists to obtain.";
+  region 'arguments {
+    let names = arena_frame::<16, 8, 'arguments>();
+    region {
+      let digits = arena_vector_proved::<u8>(store: &uniq names, count: 16_u64);
+      for @fill_digits (
+        at in 0_u64..16_u64,
+        invariant grown_digits: len_of(digits) >= at,
+        invariant spare_digits: room_of(digits) + at >= 16_u64,
+        invariant flat_digits: head_of(digits) <= 0_u64
+      ) {
+        set digits = place_back(vector: move digits, value: 0_u8);
       }
-      Err(error: problem) => {
-        set carried = 0_u64;
+      let room = len_of(digits);
+      let port = 0_u16;
+      let arguments = 0_u64;
+      region {
+        set arguments = args_count(args: &args);
       }
-    }
-  }
-  if carried == 0_u64 {
-    return exit_status(code: 2_u8);
-  }
-  region {
-    set port = parse_port(digits: &digits, length: carried);
-  }
-  let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: port);
-  let outcome = 0_u8;
-  region {
-    match reserve_handle(factory: &uniq handles) {
-      Ok(value: listen_permit) => {
-        region {
-          match tcp_listen(permit: move listen_permit, address: &address) {
-            Listening(listener: bound) => {
-              for (
-                served in 0_u64..4_u64,
-                invariant progress: served <= 4_u64
-              ) {
-                let scratch = buffer_new(256_u64, 0_u8);
+      let named = arguments >= 2_u64;
+      if named {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      let carried = 0_u64;
+      region {
+        match arg_get(args: &args, position: 1_u64) {
+          Ok(value: text) => {
+            region 'v {
+              region {
+                let window = mut_slice_of(&uniq digits);
                 region {
-                  match reserve_handle(factory: &uniq handles) {
-                    Ok(value: accept_permit) => {
-                      let reported = serve_one(listener: &bound, permit: move accept_permit, scratch: &uniq scratch);
-                      if reported == 0_u8 {
-                      } else {
-                        set outcome = reported;
-                      }
+                  match host_copy_utf8(value: &'v text, destination: &uniq window, start: 0_u64, end: room) {
+                    Ok(value: written) => {
+                      set carried = written;
                     }
                     Err(error: problem) => {
-                      return exit_status(code: 6_u8);
+                      set carried = 0_u64;
                     }
                   }
                 }
               }
-              let listener_credit = close_listener(listener: move bound);
             }
-            ListenFailed(error: problem, permit: handed_back) => {
-              set outcome = 7_u8;
-            }
+          }
+          Err(error: problem) => {
+            set carried = 0_u64;
           }
         }
       }
-      Err(error: problem) => {
-        set outcome = 8_u8;
+      if carried == 0_u64 {
+        return exit_status(code: 2_u8);
       }
+      region {
+        let named_port = slice_of(&digits);
+        region {
+          set port = parse_port(digits: &named_port, length: carried);
+        }
+      }
+      let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: port);
+      let outcome = 0_u8;
+      region {
+        match reserve_handle(factory: &uniq handles) {
+          Ok(value: listen_permit) => {
+            region {
+              match tcp_listen(permit: move listen_permit, address: &address) {
+                Listening(listener: bound) => {
+                  for (
+                    served in 0_u64..4_u64,
+                    invariant progress: served <= 4_u64
+                  ) {
+                    let scratch = buffer_new(256_u64, 0_u8);
+                    region {
+                      match reserve_handle(factory: &uniq handles) {
+                        Ok(value: accept_permit) => {
+                          let reported = serve_one(listener: &bound, permit: move accept_permit, scratch: &uniq scratch);
+                          if reported == 0_u8 {
+                          } else {
+                            set outcome = reported;
+                          }
+                        }
+                        Err(error: problem) => {
+                          return exit_status(code: 6_u8);
+                        }
+                      }
+                    }
+                  }
+                  let listener_credit = close_listener(listener: move bound);
+                }
+                ListenFailed(error: problem, permit: handed_back) => {
+                  set outcome = 7_u8;
+                }
+              }
+            }
+          }
+          Err(error: problem) => {
+            set outcome = 8_u8;
+          }
+        }
+      }
+      return exit_status(code: outcome);
     }
   }
-  return exit_status(code: outcome);
 }
