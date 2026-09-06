@@ -138,14 +138,14 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn affine_const_is_not_usable_as_an_owned_law_identity() {
-    let source = br#"const zero: array<u8, 1> =[0_u8];
+    let source = br#"const zero: FixedVector<u8, 1> =[0_u8];
 
 const x: FixedVector<u8, 1> =[0_u8];
 
 const y: FixedVector<u8, 1> =[0_u8];
 
 contract InvalidIdentity {
-  fn combine() -> result: own array<u8, 1> pure;
+  fn combine() -> result: own FixedVector<u8, 1> pure;
   law identity(combine, zero);
 }
 
@@ -475,16 +475,16 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn positional_region_alpha_equality_covers_modes_and_normalized_effect_sets() {
     let source = br#"contract LengthSum {
-  fn sum(x: &buffer<u8>, y: &buffer<u8>) -> result: own u64 reads(x, y);
+  fn sum(x: &Vector<u8>, y: &Vector<u8>) -> result: own u64 reads(x, y);
 }
 
-fn add_lengths(first: &buffer<u8>, second: &buffer<u8>) -> result: own u64 reads(second, first) {
+fn add_lengths(first: &Vector<u8>, second: &Vector<u8>) -> result: own u64 reads(second, first) {
   let first_length = len_of(deref(first));
   let second_length = len_of(deref(second));
   return first_length +wrap second_length;
 }
 
-conform buffer<u8>: LengthSum {
+conform Vector<u8>: LengthSum {
   sum = add_lengths;
 }
 
@@ -535,14 +535,14 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn positional_region_ordinal_swap_is_not_alpha_equal() {
     let source = br#"contract FirstLength {
-  fn length(x: &buffer<u8>, y: &buffer<u8>) -> result: own u64 reads(x);
+  fn length(x: &Vector<u8>, y: &Vector<u8>) -> result: own u64 reads(x);
 }
 
-fn second_length(first: &buffer<u8>, second: &buffer<u8>) -> result: own u64 reads(second) {
+fn second_length(first: &Vector<u8>, second: &Vector<u8>) -> result: own u64 reads(second) {
   return len_of(deref(second));
 }
 
-conform buffer<u8>: FirstLength {
+conform Vector<u8>: FirstLength {
   length = second_length;
 }
 

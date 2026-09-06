@@ -130,7 +130,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_nullary_prelude_construction_types_itself_from_written_arguments() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
-  let absent = None<buffer<u8>>();
+  let absent = None<FixedVector<u8, 2>>();
   let present = Some<i32>(value: 7_i32);
   return exit_status(code: 0_u8);
 }
@@ -145,7 +145,7 @@ fn a_nullary_prelude_construction_types_itself_from_written_arguments() {
             .iter()
             .map(|nominal| nominal.name.as_str())
             .collect::<Vec<_>>();
-        for expected in ["Option<buffer<u8>>", "Option<i32>"] {
+        for expected in ["Option<FixedVector<u8, 2>>", "Option<i32>"] {
             assert!(
                 names.contains(&expected),
                 "missing instance {expected} derived from written arguments: {names:?}"
@@ -274,6 +274,12 @@ command fn main() -> status: own ExitStatus pure {
 
 /// [OP-9] `buffer_new(n, v)` is the one deleted-class row that selects from
 /// its second operand, and `len` then derives from the place it is given.
+///
+/// B7c4b left this case on the retiring surface deliberately: no row of the
+/// container surface selects an element type from an operand. A run's element
+/// is written at `fixed_vector::<T, n>()` or comes from the run the operand
+/// already is, so this property has no twin to be rewritten as. It retires
+/// with `buffer_new` itself.
 #[test]
 fn buffer_new_selects_its_element_from_the_fill_value() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
@@ -291,12 +297,17 @@ fn buffer_new_selects_its_element_from_the_fill_value() {
 
 /// [STOR-5] the written referent type used to carry the box-content
 /// judgment. With it deleted the derived referent carries it, cited at the
-/// operand that supplied it.
+/// operand that supplied it. The cell is taken from a store [S39] rather than
+/// from the retiring ambient `box_new`, which is why the function receives the
+/// store's provider and declares the write the allocation spends; the referent
+/// judgment and its citation are unchanged.
 #[test]
-fn box_content_that_bears_a_region_still_rejects_under_stor5() {
+fn cell_content_that_bears_a_region_still_rejects_under_stor5() {
     assert_rule_at(
-        br#"fn invalid(value: own Slice<u8>) -> result: own unit pure {
-  box_new(value);
+        br#"fn invalid(value: own Slice<u8>, store: &uniq Heap) -> result: own unit writes(store) {
+  region {
+    heap_box(store: &uniq deref(store), value: value);
+  }
   return unit;
 }
 
