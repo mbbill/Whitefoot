@@ -61,7 +61,7 @@ if [[ $MODE != bench || $(uname -s) != Linux ]]; then
     echo 'scheduler-bench: use check on POSIX, or bench on Linux with io_uring' >&2
     exit 2
 fi
-[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == footprint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical || $EXPERIMENT == counters ]] || exit 2
+[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == footprint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical || $EXPERIMENT == stacks ]] || exit 2
 network_compute=0
 if [[ $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical ]]; then network_compute=1; fi
 [[ $ROUNDS =~ ^[1-9][0-9]*$ && $WARMUP =~ ^[0-9]+$ ]] || exit 2
@@ -84,29 +84,18 @@ if [[ $EXPERIMENT == canonical ]]; then
     OLD_WFC=$OUT/compiler-before/target/gate/whitefootc
 fi
 
-if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == counters ]]; then
+if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == stacks ]]; then
     # The experimental path keeps every existing harness assertion, including
     # completion counts, and also runs the core's maintained enumeration.
     check_define='-DWF_COMPLETION_LOCAL_INLINE=1'
     if [[ $EXPERIMENT == footprint ]]; then check_define='-DWF_SCHED_INIT_USED_LANES=1'; fi
-    if [[ $EXPERIMENT == counters ]]; then check_define='-DWF_COMPLETION_COUNTER_STRIPES=16'; fi
+    if [[ $EXPERIMENT == stacks ]]; then check_define='-DWF_SCHED_STACK_SPREAD_BYTES=4096'; fi
     if ! make -C "$ROOT/compiler" completion-test CC="$CLANG" \
         COMPLETION_TMP="$OUT/$EXPERIMENT-check" \
         COMPLETION_BASE_CFLAGS="-std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread $check_define" \
         > "$OUT/$EXPERIMENT-check.log" 2>&1; then
         cat "$OUT/$EXPERIMENT-check.log"
         exit 1
-    fi
-    if [[ $EXPERIMENT == counters ]]; then
-        # Four probe lanes must also retain exact counts when sharing two
-        # stripes. Collisions are valid; the RMWs remain atomic.
-        if ! make -C "$ROOT/compiler" completion-default-route-test CC="$CLANG" \
-            COMPLETION_TMP="$OUT/counters-collision-check" \
-            COMPLETION_BASE_CFLAGS="-std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread -DWF_COMPLETION_COUNTER_STRIPES=2" \
-            > "$OUT/counters-collision-check.log" 2>&1; then
-            cat "$OUT/counters-collision-check.log"
-            exit 1
-        fi
     fi
 fi
 
@@ -154,15 +143,15 @@ if [[ $EXPERIMENT == checkpoint || $EXPERIMENT == paced ]]; then forms=(base cq1
 if [[ $EXPERIMENT == chunks ]]; then forms=(base cq16384 ch1024 ch16384 ch65536); fi
 if [[ $EXPERIMENT == canonical ]]; then forms=(base old1024 old16384 ch1024 ch16384); fi
 if [[ $EXPERIMENT == footprint ]]; then forms=(base lanes); fi
-if [[ $EXPERIMENT == counters ]]; then forms=(base striped); fi
+if [[ $EXPERIMENT == stacks ]]; then forms=(base spread); fi
 form_flags() {
     local_inline=0
     init_used=0
-    counter_stripes=1
+    stack_spread=0
     case $1 in
         base) spin=256; yields=16; progress=0 ;;
         lanes) spin=256; yields=16; progress=0; init_used=1 ;;
-        striped) spin=256; yields=16; progress=0; counter_stripes=16 ;;
+        spread) spin=256; yields=16; progress=0; stack_spread=4096 ;;
         cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|old1024|old16384) spin=256; yields=16; progress=0 ;;
         local) spin=256; yields=16; progress=0; local_inline=1 ;;
         sleep) spin=0; yields=0; progress=0 ;;
@@ -175,7 +164,7 @@ form_flags() {
 }
 link_form() {
     local module=$1 output=$2 policy=$3 observed=$4
-    local observer=() spin yields progress local_inline init_used counter_stripes
+    local observer=() spin yields progress local_inline init_used stack_spread
     form_flags "$policy"
     if [[ $observed == 1 ]]; then observer=("$BACKEND/sched/grant_observer.c"); fi
     "$CLANG" -std=c11 -O2 -pthread -I "$BACKEND" -I "$BACKEND/completion" \
@@ -183,7 +172,7 @@ link_form() {
         "-DWF_SCHED_IDLE_YIELD_ROUNDS=$yields" "-DWF_SCHED_IDLE_PROGRESS_INTERVAL=$progress" \
         "-DWF_SCHED_OBSERVE=$observed" "-DWF_COMPLETION_LOCAL_INLINE=$local_inline" \
         "-DWF_SCHED_INIT_USED_LANES=$init_used" \
-        "-DWF_COMPLETION_COUNTER_STRIPES=$counter_stripes" \
+        "-DWF_SCHED_STACK_SPREAD_BYTES=$stack_spread" \
         -x c "$BACKEND/wf_floor.c" "$BACKEND/sched/core.c" \
         "$BACKEND/sched/prim_host.c" "$BACKEND/sched/entry.c" \
         "$BACKEND/completion/runtime.c" "$BACKEND/completion/wait_host.c" \
@@ -415,11 +404,11 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
                  END { exit !(value["checkpoints"] > 0 && value["checkpoint_switches"] > 0) }' \
                 "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
         fi
-        if [[ $EXPERIMENT == counters ]]; then
-            stripes=1
-            if [[ $form == striped ]]; then stripes=16; fi
-            awk -v stripes="$stripes" '/^ring:/ { for(i=2;i<=NF;i++) { split($i,a,"="); value[a[1]]=a[2]+0 } }
-                 END { exit !(("counter_stripes" in value) && value["counter_stripes"]==stripes && value["inline"]>0) }' \
+        if [[ $EXPERIMENT == stacks ]]; then
+            spread_bytes=0
+            if [[ $form == spread ]]; then spread_bytes=4096; fi
+            awk -v spread="$spread_bytes" '/^sched:/ { for(i=2;i<=NF;i++) { split($i,a,"="); value[a[1]]=a[2]+0 } }
+                 END { exit !(("stack_spread_bytes" in value) && value["stack_spread_bytes"]==spread) }' \
                 "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
         fi
       done
@@ -448,7 +437,7 @@ else
 64 2000 64 0
 CASES
 fi
-if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == counters ]]; then
+if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == stacks ]]; then
     printf '1024 200 64 0\n64 500 65536 0\n' >> "$OUT/cases.tsv"
 fi
 if [[ $EXPERIMENT == fairness ]]; then
@@ -510,7 +499,7 @@ done
 # Warm positioned reads plus compute measure coexistence; they do not establish
 # a bound on network latency while every worker runs a long computation.
 cpu_programs=(compute mixed)
-if [[ $EXPERIMENT != idle && $EXPERIMENT != checkpoint && $EXPERIMENT != chunks && $EXPERIMENT != canonical && $EXPERIMENT != counters ]]; then cpu_programs=(); fi
+if [[ $EXPERIMENT != idle && $EXPERIMENT != checkpoint && $EXPERIMENT != chunks && $EXPERIMENT != canonical && $EXPERIMENT != stacks ]]; then cpu_programs=(); fi
 for program in "${cpu_programs[@]}"; do
     : > "$OUT/$program.plan"
     for workers in 2 4 8; do

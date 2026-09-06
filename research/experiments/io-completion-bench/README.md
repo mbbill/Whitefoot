@@ -337,7 +337,7 @@ point is the fastest shape that kernel offers.
 The current scheduler experiments and their controls are described in
 [`SCHEDULER-EXPERIMENT.md`](../../investigations/io-model/SCHEDULER-EXPERIMENT.md).
 `scheduler-checkpoint`, `scheduler-footprint`, `scheduler-paced`,
-`scheduler-chunks`, `scheduler-canonical` and `scheduler-counters` run their
+`scheduler-chunks`, `scheduler-canonical` and `scheduler-stacks` run their
 respective Linux cohorts. The measured priority prototype was retired; its
 results and exact revision remain in the investigation. The canonical
 comparison also builds the recorded prior compiler revision from local Git

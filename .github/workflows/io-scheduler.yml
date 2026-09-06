@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        experiment: [counters]
+        experiment: [stacks]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -58,7 +58,7 @@ jobs:
         run: |
           {
             echo '## Scheduler experiment: ${{ matrix.experiment }}'
-            echo 'Paired within this job and CPU cohort. Original global diagnostic counters versus 16 aligned atomic counter stripes, with all completion counts retained. Identical emitted programs and runtime policies; 1/4/64/1024 connections, small/large payloads, pure-compute and warm-file controls. See the investigation for scope.'
+            echo 'Paired within this job and CPU cohort. Identical stack-top offsets versus 32 offsets spaced 128 bytes apart, with additional reservation space preserving usable stack depth. Identical emitted programs and runtime policies; 1/4/64/1024 connections, small/large payloads, pure-compute and warm-file controls. See the investigation for scope.'
             echo '```text'
             for file in host.txt cohorts.tsv network-summary.txt compute.txt mixed.txt; do
               cat "$RUNNER_TEMP/io-scheduler/$file" 2>/dev/null || echo "$file was not produced"

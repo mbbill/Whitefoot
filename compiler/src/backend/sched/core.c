@@ -742,6 +742,7 @@ int wf_sched_init(
     size_t stack_bytes
 ) {
     unsigned index;
+    size_t reservation_bytes;
     if (thread_count == 0u || thread_count > WF_SCHED_MAX_THREADS) {
         return 1;
     }
@@ -751,6 +752,10 @@ int wf_sched_init(
     if (stack_count > WF_SCHED_MAX_STACKS) {
         return 1;
     }
+    if (stack_bytes > SIZE_MAX - WF_SCHED_STACK_SPREAD_BYTES) {
+        return 1;
+    }
+    reservation_bytes = stack_bytes + WF_SCHED_STACK_SPREAD_BYTES;
 #if WF_SCHED_INIT_USED_LANES
     /* Unconfigured lanes are unreachable: every worker/lane lookup is bounded
      * by thread_count, and no hand-out can carry an unconfigured lane's home.
@@ -765,14 +770,20 @@ int wf_sched_init(
     core->thread_count = thread_count;
     core->stack_count = stack_count;
     core->stack_bytes = stack_bytes;
-    core->stack_stride = wf_prim_stack_stride(stack_bytes);
-    core->reservation = wf_prim_reserve(stack_count, stack_bytes);
+    core->stack_stride = wf_prim_stack_stride(reservation_bytes);
+    core->reservation = wf_prim_reserve(stack_count, reservation_bytes);
     if (core->reservation == NULL) {
         return 1;
     }
     for (index = 0; index < stack_count; index += 1u) {
         unsigned char *low = core->reservation + (size_t)index * core->stack_stride;
         unsigned char *high = low + core->stack_stride;
+#if WF_SCHED_STACK_SPREAD_BYTES
+        /* The header and initial SP move together. The unoccupied suffix is
+         * outside this stack's live bounds; snapshots still end at its header.
+         * At most 3968 of the additional 4096 bytes are skipped. */
+        high -= (index % (WF_SCHED_STACK_SPREAD_BYTES / 128u)) * 128u;
+#endif
         wf_sched_stack *stack = (wf_sched_stack *)(high - sizeof(wf_sched_stack));
         unsigned char *top = (unsigned char *)((uintptr_t)stack & ~(uintptr_t)15);
         memset(stack, 0, sizeof(*stack));

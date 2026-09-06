@@ -1397,3 +1397,86 @@ must show the selected stripe count, inline completions and actual native-ring
 traffic. The complete 16-stripe suite and two-stripe collision probe run on
 the measuring Linux host before sampling. This is a counter-contention
 experiment, not evidence yet that the language or completion ABI must change.
+
+### Counter results and retirement
+
+Revision `9479d624aa8994db2872e95f6f1d0a5df62bb30f`, Linux run
+[34043256139](https://github.com/mbbill/Whitefoot/actions/runs/34043256139),
+artifact `9992567181` (`io-scheduler-counters`), completed on an EPYC 7763 VM
+with four logical CPUs, two SMT cores and clang 18.1.3. All 560 timed samples,
+the complete 16-stripe completion suite, the two-stripe collision probe and
+native-ring observations passed. The repository gate and host matrix passed;
+the Windows qualification job in run `34043256138` rejected two complete
+compute cohorts as unstable, so that workflow provides no qualified Windows
+performance table. Its Linux and macOS jobs passed.
+
+| Placement | 64 peers: striped/base paired rate | 1024 peers: striped/base paired rate |
+| --- | ---: | ---: |
+| Shared four CPUs | 1.0030 | 0.9988 |
+| Shared two CPUs | 0.9984 | 1.0023 |
+| Split two server/two client CPUs | 1.0008 | 1.0004 |
+| Split one server/one client CPU | 0.9995 | 0.9972 |
+
+These are medians of seven within-pass ratios for 64-byte messages. Every
+cell has paired samples on both sides of one. At 64 peers on split2, server
+CPU is 11.250/11.172 us per trip for base/striped, while native io_uring is
+9.844 us; throughput remains about 163k versus 192k trips/s. At 1024 peers,
+base/striped/native rates are about 158k/156k/179k. Distributing the diagnostics
+does not close this gap. The 64-KiB split2 paired rate ratio is 1.026, within
+wide sample variation; its p99 remains about 41.5 ms in both WF forms. The
+four-peer shared4 ratio is 0.958, not a general benefit either.
+
+Pure-compute base/striped medians at two/four/eight workers are
+2412.24/2415.77, 1337.60/1342.75 and 1375.84/1382.73 ms. Warm-file medians
+are 177.25/178.16, 183.79/183.58 and 190.96/197.95 ms. Neither control
+selects the added machinery.
+
+Retire the stripe storage, ticket, TLS index, summation helpers, diagnostic
+field and temporary comparison mode. Restore the original two atomic
+counters and every increment and count assertion. The collision invocation
+existed only to validate the retired multi-stripe representation; the full
+original route probe and completion tests remain maintained. Reproduce this
+experiment by checking out its measured revision. This result rejects a
+specific diagnostic-contention explanation on the measured workload, not
+all possible shared-cache effects.
+
+## Fourteenth experiment: spread stack-top offsets
+
+Every POSIX pool slot has the same page-aligned stride. Consequently every
+stack header and initial stack pointer has the same page offset. Test whether
+this layout contributes to the cost of cycling through many small connection
+frames. No queue or completion protocol change is needed for this experiment.
+
+`WF_SCHED_STACK_SPREAD_BYTES=4096` adds 4096 bytes to each slot's requested
+reservation before the platform rounds it to pages. Stack index modulo 32
+selects an offset in 128-byte steps from zero through 3968. Both the header
+and initial stack pointer move down by that amount. The stack's upper bound
+ends immediately after its header, so the existing enumerator snapshots and
+digests still cover all live stack bytes and use the actual header. The
+lower guard stays at the slot's original beginning. Additional reservation
+space ensures that no stack loses usable depth; page rounding can add more
+than 4096 bytes on the M1. The unoccupied suffix is not live stack storage.
+
+The default is zero. A nonzero setting is rejected on Windows because
+Windows fibers own separate stacks; moving their reservation metadata would
+not test the intended execution-stack layout. This is a POSIX implementation
+experiment with unchanged source signatures, frame lifetimes, stack phases,
+mutex, ring, idle policy, counter implementation and compiler lowering. A
+positive result alone would not distinguish cache conflicts from other
+address-layout effects.
+
+`scheduler-stacks` supersedes the retired counter comparison in the maintained
+runner. It uses the same four CPU placements, five connection/payload cases,
+native io_uring and epoll references, pure-compute and warm-file controls,
+two warm-ups and seven alternating passes (560 timed network samples).
+Observed links verify the selected stack layout and real ring traffic. The
+complete completion suite runs with the candidate before Linux timing; the
+host smoke additionally checks usable depth, header/frame bounds and distinct
+successive stack offsets. The original interleaving invariants remain intact.
+A native M1 eight-peer TCP check has already verified every reply in both
+layouts at one and two workers; timing conclusions await Linux CI.
+The complete candidate completion suite subsequently passed on the M1,
+including every maintained schedule configuration with zero bounded states,
+all helper configurations and the exact completion count checks. The default
+layout also passed the amended host smoke. These are correctness results;
+the M1 compatibility load client is not used for Linux performance claims.

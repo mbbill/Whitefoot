@@ -156,6 +156,26 @@ int main(void) {
         (void)fprintf(stderr, "core init failed\n");
         return 1;
     }
+    for (index = 0; index < STACKS; index += 1u) {
+        const wf_sched_stack *stack = core.stacks[index];
+        long host_page = sysconf(_SC_PAGESIZE);
+        size_t page = host_page > 0 ? (size_t)host_page : 4096u;
+        if ((size_t)(stack->high - stack->low) < STACK_BYTES + page
+            || (unsigned char *)stack + sizeof(*stack) != stack->high
+            || (unsigned char *)stack->saved_sp < stack->low + page
+            || (unsigned char *)stack->saved_sp >= (unsigned char *)stack
+            || (uintptr_t)stack % 16u != 0u) {
+            (void)fprintf(stderr, "stack layout lost usable depth or frame bounds\n");
+            return 1;
+        }
+#if WF_SCHED_STACK_SPREAD_BYTES
+        if (index != 0u && (uintptr_t)stack % 4096u
+            == (uintptr_t)core.stacks[index - 1u] % 4096u) {
+            (void)fprintf(stderr, "successive stack tops were not spread\n");
+            return 1;
+        }
+#endif
+    }
     if (pthread_create(&device, NULL, device_main, NULL) != 0) {
         return 1;
     }

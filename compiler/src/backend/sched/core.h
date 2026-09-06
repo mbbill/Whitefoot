@@ -31,6 +31,19 @@
 #define WF_SCHED_OBSERVE 0
 #endif
 
+/* Experimental POSIX stack layout: spread successive stack tops over 32
+ * offsets, 128 bytes apart. Extra reservation bytes preserve usable depth.
+ * Windows fibers own different stacks, so this does not test their layout. */
+#ifndef WF_SCHED_STACK_SPREAD_BYTES
+#define WF_SCHED_STACK_SPREAD_BYTES 0u
+#endif
+#if WF_SCHED_STACK_SPREAD_BYTES != 0 && WF_SCHED_STACK_SPREAD_BYTES != 4096
+#error "WF_SCHED_STACK_SPREAD_BYTES must be zero or 4096"
+#endif
+#if defined(_WIN32) && WF_SCHED_STACK_SPREAD_BYTES != 0
+#error "Stack spreading is a POSIX experiment; Windows fibers own their stacks"
+#endif
+
 #if defined(__cplusplus)
 extern "C" {
 #endif
