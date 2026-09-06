@@ -510,6 +510,10 @@ pub(crate) enum CheckedType {
     GenericInt(DeclarationId),
     GenericFloat(DeclarationId),
     Nominal(NominalId),
+    Array {
+        element: CheckedFlatElement,
+        length: CheckedConst,
+    },
     /// One view [VIEW-1]: `Slice<'r, T>` at shared strength and
     /// `MutSlice<'r, T>` at exclusive strength.
     ///
@@ -522,6 +526,9 @@ pub(crate) enum CheckedType {
         region: DeclarationId,
         element: CheckedFlatElement,
         strength: LoanStrength,
+    },
+    Buffer {
+        element: CheckedFlatElement,
     },
     /// One `FixedVector<T, n>` [BLK-1]: a frame-resident run of `n` slots
     /// whose initialized storage is the window `len` slots wide beginning at
