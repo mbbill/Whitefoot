@@ -8091,7 +8091,17 @@ fn frozen_real_sources_retain_complete_proof_roots_without_counted_false_positiv
                     (_, "append_slice") => 1,
                     (_, "scan_line") => 1,
                     (_, "shift_input_tail") => 1,
-                    (_, "build_huffman_table") => 2,
+                    // B7c4b's migration of the raw DEFLATE chain: the Huffman
+                    // table reserves its three inline runs by counted loops,
+                    // `decode_dynamic` its three length runs, and the boundary
+                    // driver's `main` its four extent-resident runs.
+                    (1, "build_huffman_table") => 5,
+                    (1, "decode_dynamic") => 3,
+                    (1, "main") => 4,
+                    // `wfgrep.wf`'s two fill helpers, which carry the zero
+                    // fill its runs took from `buffer_new` before B7c4b.
+                    (2, "zeroed_bytes") => 1,
+                    (2, "zeroed_words") => 1,
                     _ => 0,
                 };
                 assert_eq!(
@@ -8325,8 +8335,12 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
     // that clause. Five call sites and the two returns of the clause's own
     // proof were the seven B3 counted; B7c4b-1 made a `set` target the same
     // [ENT-3.S12] destination a `let` binder is, so every `set x = helper(...)`
-    // of these sources publishes on this route too. `give` and delivery-join
-    // routes stay absent.
+    // of these sources publishes on this route too. The raw DEFLATE chain's
+    // migration off `buffer<T>` (B7c4b) then made every helper hand its run
+    // back by value under an `ensures` over that result, and every caller
+    // commits it with `set`, so the direct-result roots of the two bundles
+    // are now counted in the hundreds rather than the tens. `give` and
+    // delivery-join routes stay absent.
     assert_eq!(
         program
             .functions
@@ -8337,7 +8351,7 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
                 DerivationRootKind::PostconditionDirectResult { .. }
             ))
             .count(),
-        15
+        215
     );
     assert!(program.functions.iter().all(|function| {
         function.entailment.derivations.roots.iter().all(|root| {
