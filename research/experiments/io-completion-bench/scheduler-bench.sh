@@ -504,7 +504,7 @@ if [[ $coroutine_experiment == 1 ]]; then
                 if [[ $observed == 1 ]]; then output="$output-observed"; observe_flags=(-DWF_BENCH_OBSERVE -DWF_BENCH_STORAGE_OBSERVE); fi
                 "$CORO_CXX" -std=c++20 -O2 -Wall -Wextra -Werror -Wpedantic -fno-exceptions -pthread \
                     "${cpp_flags[@]}" "${cpp_protocol[@]}" "${observe_flags[@]}" "-DWF_BENCH_RECEIVE_STORAGE=$storage" \
-                    -x c++ "$HERE/epoll_echo.c" -x none -o "$output"
+                    -x c++ "$HERE/epoll_echo.c" -o "$output"
             done
             "$CORO_CXX" -std=c++20 -O2 -Wall -Wextra -Werror -Wpedantic -fno-exceptions -pthread \
                 "${cpp_flags[@]}" "${cpp_protocol[@]}" "-DWF_BENCH_RECEIVE_STORAGE=$storage" \

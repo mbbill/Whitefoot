@@ -628,7 +628,7 @@ coroutine-check: prepare
 	    for storage in $$storage_policies; do \
 	      binary="$(BUILD)/coro-$$mode-$$form-s$$storage"; \
 	      $(CORO_CXX) $(CORO_FLAGS) -DWF_BENCH_SNDBUF=4096 -DWF_BENCH_STORAGE_OBSERVE \
-	        "-DWF_BENCH_RECEIVE_STORAGE=$$storage" $$flags $$extra -x c++ epoll_echo.c -x none -o "$$binary"; \
+	        "-DWF_BENCH_RECEIVE_STORAGE=$$storage" $$flags $$extra -x c++ epoll_echo.c -o "$$binary"; \
 	      for workers in 1 4; do \
 	       for case_name in $$cases; do \
 	        log="$$binary-w$$workers-$$case_name.log"; \

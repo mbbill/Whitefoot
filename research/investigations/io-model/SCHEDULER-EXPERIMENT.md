@@ -3029,3 +3029,16 @@ unpressured observed companions pass, including exact elided allocation counts
 and truncated-stream exits. Workflow YAML, embedded shell and runner syntax
 checks pass. A registration failure explicitly retires both coroutine handles
 and marks the connection inactive before returning to the event loop.
+
+The first Linux coroutine qualification at `b5aceb4c` stops before running a
+C++ case: clang 20 rejects the command's trailing `-x none` as an unused
+argument under Werror. Both the canonical Linux scheduler job `101573950449`
+and paced job `101573950304` report that exact error. The M1 compatibility
+wrapper had appended object files after the flag, masking the invalid native
+invocation. Remove the unnecessary trailing flag from both maintained build
+commands; the local wrapper alone resets language selection immediately before
+its own object inputs. No warning is suppressed and no check is removed.
+There is no coroutine timing result from those failed jobs.
+The corrected commands pass all 48 local protocol cases and both sanitizer
+lifetime probes again. A direct compile-only invocation, without the local
+wrapper's appended objects, also passes with Werror retained.
