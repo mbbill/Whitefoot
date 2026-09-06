@@ -1,6 +1,6 @@
 command fn main() -> status: own ExitStatus pure {
   doc "TYPE-7 applies to an index base: a reference holder requires explicit deref(.) before indexing its referent.";
-  let items = buffer_new(2_u64, 0_u8);
+  let items = fixed_vector::<u8, 2>();
   region {
     let holder = &items;
     let value = holder[0_u64];

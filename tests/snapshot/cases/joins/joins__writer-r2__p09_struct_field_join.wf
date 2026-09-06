@@ -1,5 +1,5 @@
 struct Cursor {
-  buf: buffer<u8>;
+  buf: FixedVector<u8, 4>;
   pos: u64;
 }
 
