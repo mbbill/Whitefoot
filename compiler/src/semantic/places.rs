@@ -223,6 +223,20 @@ pub(crate) struct BindingSummary {
     pub(crate) implicit_deref: bool,
     /// Exact [GIVE-1] source class admitted as a bounded-delivery carrier.
     pub(crate) delivery_carrier: bool,
+    /// The storage a bound view value was formed over [VIEW-1, VIEW-2].
+    ///
+    /// A view is a value that reaches storage it does not own, and the loan it
+    /// holds is on the range of its **origin** place, not on the descriptor
+    /// word the binding occupies. Every judgment that asks what storage an
+    /// argument reaches therefore has to read through the binding to that
+    /// origin: `mut_slice_of(&uniq report)` bound to `window` and then handed
+    /// on as `&uniq window` reaches `report`, exactly as the inline formation
+    /// written at the call does.
+    ///
+    /// `None` means this binding is not a view, or is a view whose origin this
+    /// prepass does not resolve — a view parameter, or one a callee returned.
+    /// Every consumer reads that as unresolved and fails closed.
+    pub(crate) view_origin: Option<ResolvedPlace>,
 }
 
 /// Dense per-binding structural summaries for one checked function, and the
@@ -278,11 +292,16 @@ impl PlaceMap {
                         }
                         _ => (holder_from_value(value), value_has_implicit_deref(value)),
                     };
+                    // Resolved before the summary is taken, because resolving
+                    // the origin reads the summaries of the bindings the
+                    // formation names, and each of those was declared earlier.
+                    let view_origin = self.view_origin_of(value);
                     let summary = self.summary_mut(*binding);
                     summary.ty = Some(value.ty());
                     summary.holder = holder;
                     summary.implicit_deref = implicit_deref;
                     summary.delivery_carrier = summary.holder.is_none();
+                    summary.view_origin = view_origin;
                 }
                 // [CALL-4] every binder of a destructuring `let` is an
                 // ordinary fresh binding of its result ordinal's type.
@@ -359,6 +378,36 @@ impl PlaceMap {
     pub(crate) fn is_holder(&self, binding: BindingId) -> bool {
         self.summary(binding)
             .is_some_and(|summary| summary.holder.is_some())
+    }
+
+    /// The storage one view binding was formed over [VIEW-1, VIEW-2], when
+    /// this prepass resolves it.
+    pub(crate) fn view_origin(&self, binding: BindingId) -> Option<ResolvedPlace> {
+        self.summary(binding)
+            .and_then(|summary| summary.view_origin.clone())
+    }
+
+    /// The origin a `let` right-hand side gives the view it binds.
+    ///
+    /// Exactly two right-hand sides carry one. A formation [VIEW-2] views the
+    /// storage its operand names, which is the place [`super::permission::
+    /// slice_source_place`] already resolves for an inline formation; and a
+    /// copy of a shared view is a second loan on the same range [VIEW-1], so
+    /// it carries its source's origin unchanged. Everything else — a view
+    /// parameter, a view a callee returned — leaves this `None`, and the
+    /// judgments that read it deny rather than guess.
+    fn view_origin_of(&self, value: &CheckedExpression) -> Option<ResolvedPlace> {
+        match value {
+            CheckedExpression::SliceOf { source, .. } => {
+                Some(super::permission::slice_source_place(self, source))
+            }
+            CheckedExpression::Binding {
+                binding,
+                ty: CheckedType::Slice { .. },
+                ..
+            } => self.view_origin(*binding),
+            _ => None,
+        }
     }
 
     /// Resolves a spelled place to its [OWN-5] resolved place, reading

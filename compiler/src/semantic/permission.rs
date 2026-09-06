@@ -105,7 +105,8 @@
 use super::loop_permission::LoopPermission;
 use super::model::{
     BindingId, CheckedArrayRoot, CheckedExpression, CheckedFunction, CheckedMode, CheckedSetTarget,
-    CheckedSliceSource, CheckedStatePath, CheckedStatement, FunctionId, expression_children,
+    CheckedSliceSource, CheckedStatePath, CheckedStatement, CheckedType, FunctionId,
+    expression_children,
 };
 use super::places::{PlaceMap, PlaceRoot, PlaceTerm, ResolvedPlace};
 use super::staged_permission::StagedPermission;
@@ -1643,13 +1644,18 @@ pub(super) fn set_target_place(
             collect_operand_reads(places, &target.offset, node, footprint);
             rooted_container_place(places, &target.root)
         }
-        // [PAR-2] a view element store writes the origin, which the view's
-        // descriptor place stands for here exactly as a buffer's does: a
+        // [PAR-2] a view element store writes the origin, and [VIEW-1] says
+        // which storage that is: the range the view was formed over. A
         // resolved place carries no index segment, so one element write
-        // conflicts with any access to the view.
+        // conflicts with any access to that origin. Where this prepass does
+        // not resolve the origin the descriptor's own place stands for it, as
+        // it did before, because a view whose origin is a caller's storage
+        // anchors at the binding exactly as an opaque holder does [OWN-6].
         CheckedSetTarget::SliceIndex(target) => {
             collect_operand_reads(places, &target.offset, node, footprint);
-            rooted_place(places, target.root.binding, &[])
+            places
+                .view_origin(target.root.binding)
+                .unwrap_or_else(|| rooted_place(places, target.root.binding, &[]))
         }
     };
     if reads_target {
@@ -1930,11 +1936,16 @@ pub(super) fn collect_operand_reads(
         CheckedExpression::SliceOf { source, .. } => {
             read(footprint, node, slice_source_place(places, source));
         }
-        // A slice descriptor names storage this analysis does not resolve, so
-        // reading through one fails closed.
-        CheckedExpression::SliceMeasure { .. } | CheckedExpression::SliceIndex { .. } => {
-            footprint.operand_unresolved = Some(node.clone());
-        }
+        // A read through a view is a read of the storage the view was formed
+        // over [VIEW-1]: the element the subscript selects is a byte of that
+        // origin, and a measure read is a read of the same claim. Where this
+        // prepass does not resolve the origin — a view parameter, or one a
+        // callee returned — the read fails closed exactly as it did before.
+        CheckedExpression::SliceMeasure { root, .. }
+        | CheckedExpression::SliceIndex { root, .. } => match places.view_origin(root.binding) {
+            Some(place) => read(footprint, node, place),
+            None => footprint.operand_unresolved = Some(node.clone()),
+        },
         // [GRAM-9] forbids a call in argument position; if one ever reaches
         // here its whole footprint is unaccounted for.
         CheckedExpression::UserCall { .. }
@@ -1958,6 +1969,19 @@ fn argument_place(places: &PlaceMap, argument: &CheckedExpression) -> Option<Res
     }
     match argument {
         CheckedExpression::SliceOf { source, .. } => Some(slice_source_place(places, source)),
+        // [VIEW-1] a view is a claim on the storage it was formed over, and
+        // [VIEW-2] puts the loan on that origin range rather than on the
+        // descriptor the value occupies. A view written at the call and a
+        // view bound by a `let` and handed on are therefore one footprint on
+        // one place, and this arm is what makes the second read as the first.
+        // A borrow of a view is the descriptor read once more [VIEW-2, OWN-6]
+        // and reaches this same arm, because that is the shape the checked
+        // tree gives `&uniq window`.
+        CheckedExpression::Binding {
+            binding,
+            ty: CheckedType::Slice { .. },
+            ..
+        } => places.view_origin(*binding),
         _ => None,
     }
 }
