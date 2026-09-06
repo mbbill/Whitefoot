@@ -242,6 +242,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
     ) -> Result<ResultValue, CheckStop> {
         let node = self.tree.path(node)?.clone();
-        Err(CheckStop::Unsupported(SemanticUnsupported { feature, node }))
+        Err(CheckStop::Unsupported(SemanticUnsupported {
+            feature,
+            node,
+        }))
     }
 }
