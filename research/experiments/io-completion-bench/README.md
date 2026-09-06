@@ -336,8 +336,9 @@ point is the fastest shape that kernel offers.
 
 The current scheduler experiments and their controls are described in
 [`SCHEDULER-EXPERIMENT.md`](../../investigations/io-model/SCHEDULER-EXPERIMENT.md).
-`scheduler-checkpoint`, `scheduler-footprint` and `scheduler-paced` run their
-respective Linux cohorts. The paced client requires Linux 5.11 or newer and
+`scheduler-checkpoint`, `scheduler-footprint`, `scheduler-paced`,
+`scheduler-chunks` and `scheduler-priority` run their respective Linux cohorts.
+The paced client requires Linux 5.11 or newer and
 glibc with `epoll_pwait2` (2.35 or newer); it measures scheduled arrival
 latency including client backlog, with heavy peers remaining closed-loop.
 

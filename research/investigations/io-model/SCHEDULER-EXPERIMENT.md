@@ -1104,3 +1104,91 @@ common-duration network cases, and pure-compute/warm-file controls at two,
 four and eight workers. Untimed observations must confirm zero runtime calls
 in both 16384 pure-compute forms and positive switches in the mixed network
 forms. Default compilation and source progress semantics remain unchanged.
+
+Measured revision `32220011`, Linux run
+[`34039331365`](https://github.com/mbbill/Whitefoot/actions/runs/34039331365),
+artifact `9991458745`, completed with 378 timed network samples. This runner
+was an AMD EPYC 7763 with four logical CPUs on two physical SMT cores,
+Linux 6.17 and clang 18. Both observed 16384 compute forms reported exactly
+zero checkpoint calls and switches. The gate, host qualification, scheduler
+experiment and all platform I/O benchmarks passed at this revision.
+
+Pure-compute median wall times in milliseconds:
+
+| Workers | Base | Counter 16384 | Chunks 1024 | Chunks 16384 | Chunks 65536 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 2 | 2415.58 | 2448.58 | 2443.73 | 2416.06 | 2417.84 |
+| 4 | 1347.32 | 1886.52 | 1519.90 | 1442.73 | 1442.81 |
+| 8 | 1383.70 | 1937.28 | 1558.66 | 1483.83 | 1481.77 |
+
+The counter costs about 40% at four/eight workers on this host. Chunking
+reduces that excess to about 7%, recovering most, but not all, of the lost
+compute performance. At two workers chunks16384 matches base within 0.1%.
+The warm-file mixed control at four workers is 188.23/190.31/206.01/189.54/
+192.13 ms in the same column order; at eight it is 193.00/204.45/230.68/
+202.29/201.27 ms. A remaining pure-compute cost without any runtime calls
+still points to generated code or its effects on execution, not switch cost.
+
+With 64 peers and 2097152 compute steps, split2 chunks16384 sustains 207.6
+heavy requests/s and light p99 780 us; counter16384 gives 206.6 and 718 us.
+Their paired heavy-rate ratio is 1.006 [0.952, 1.059]. Shared4 gives 270.6
+heavy requests/s for both, with light p99 1162/1125 us and paired heavy ratio
+1.000 [0.965, 1.012]. There is no measured network gain from this compiler
+change. Against matching native C quanta, the chunks1024/16384/65536 paired
+heavy-rate ratios are 0.797/0.828/0.968 on split2 and 0.135/0.629/0.883 on
+shared4. As before, these unpaced cells serve different amounts of light
+work; they do not compare capacity at equal demand. The zero-compute split2
+base sustains 155291 total requests/s versus inline C's approximately 192009.
+
+Selection: retain chunking as an experimental lowering with materially less
+compute damage than per-iteration counters. It has not reached the original
+compute performance and has not removed the network implementation gap.
+Use it in the next fixed-arrival queue experiment while keeping its interval
+and emitted module identical within each runtime-policy comparison.
+
+## Eleventh experiment: bounded preference for completion-ready stacks
+
+The paced cohort leaves a latency gap even when WF retains almost the native
+heavy rate. A completion-ready stack can wait in the same FIFO as heavy
+stacks that voluntarily yielded at a checkpoint. Test this scheduling
+opportunity independently of the compiler's interval and generated code.
+
+`WF_SCHED_COMPLETION_READY_BURST=B` defaults to zero, the original single
+FIFO. Positive B separates record-completion resumptions and voluntary
+checkpoint resumptions into two FIFOs under the existing mutex. This is a
+completion class, including compute joins, not an I/O-only classification.
+When both classes remain ready, at most B completion pops precede a yielded
+stack's turn. A yielded pop resets the budget. Each class preserves FIFO
+order, and the union's empty-to-nonempty transition performs the wake.
+
+The running owner writes its next readiness class before publishing its
+park/yield phase. The existing phase handshake and queue mutex publish this
+field; READY is still offered only after the far-side stack-switch commit.
+The field occupies existing stack-header padding on the supported ABIs.
+Enumeration now checks disjoint lists, phases, class membership, both tails,
+the budget range and the union's sleeping/wake invariant. Existing waiter,
+stack-ownership, switch and completion checks remain in force. Both B=1 and
+B=8 passed the complete maintained completion suite on the M1, including all
+four enumeration configurations with no bounded executions. Their S24
+two-thread/four-stack searches visited 3012673 and 3421427 states respectively.
+Native four/eight-peer fixed-arrival exchanges at one/two workers verified
+every response for B=0/1/8. The eight-peer one-worker observations reported
+589 preferred and 108 forced selections for B=1, and 593 preferred and one
+forced selection for B=8. Thus the local check exercised the actual policy,
+not merely its configuration. These kqueue client-shim runs establish native
+correctness observations, not a Linux performance comparison.
+
+`scheduler-priority` compares chunks1024/16384, each with B=0/1/8, and native
+C at both matching quanta. The compiler-emitted modules must be byte-identical
+between queue policies at each interval. Keep the zero-compute paced control,
+262144 steps at 4800 total light arrivals/s, and 2097152 steps at 960/4800/
+24000 arrivals/s. All 64 peers are admitted before the one-second interval;
+every planned light request is retained and independently verified after
+timing. Shared4 and split2 use two warm-ups and seven alternating passes.
+The summary's paired reference is the single-FIFO chunk form at the matching
+interval, including for each native C quantum. Pure-compute and warm-file
+controls remain at two/four/eight workers. Untimed observations report both
+readiness classes and actual preferred/forced selections. Neither a positive
+checkpoint count nor a policy flag alone establishes that prioritization
+changed a particular execution. No default or source rule is selected before
+these measurements.

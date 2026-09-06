@@ -23,7 +23,7 @@ ROOT := $(abspath ../../..)
 
 # Scheduler experiment: exhaustive correctness is a canonical check stage;
 # timings run separately on a Linux CI host and never select acceptance.
-.PHONY: scheduler-check scheduler-bench scheduler-mixed scheduler-fairness scheduler-inline scheduler-sustain scheduler-checkpoint scheduler-footprint scheduler-paced scheduler-chunks
+.PHONY: scheduler-check scheduler-bench scheduler-mixed scheduler-fairness scheduler-inline scheduler-sustain scheduler-checkpoint scheduler-footprint scheduler-paced scheduler-chunks scheduler-priority
 scheduler-check:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" bash scheduler-bench.sh check
 
@@ -53,6 +53,9 @@ scheduler-paced:
 
 scheduler-chunks:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" EXPERIMENT=chunks bash scheduler-bench.sh bench
+
+scheduler-priority:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" EXPERIMENT=priority bash scheduler-bench.sh bench
 
 WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
 WORK := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-io-completion-bench

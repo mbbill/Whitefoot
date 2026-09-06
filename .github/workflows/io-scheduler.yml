@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        experiment: [chunks]
+        experiment: [priority]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -56,7 +56,7 @@ jobs:
         run: |
           {
             echo '## Scheduler experiment: ${{ matrix.experiment }}'
-            echo 'Paired within this job and CPU cohort. Baseline, per-backedge counters and compiler-derived loop chunks versus native C. Common-duration mixed network load plus pure-compute and warm-file controls. Untimed observations distinguish absent runtime calls from code-generation cost. See the investigation for scope.'
+            echo 'Paired within this job and CPU cohort. Identical emitted modules at each chunk interval, with single-FIFO or bounded completion-ready preference, versus matching native C quanta. Fixed light arrivals plus saturated heavy peers; all scheduled work is retained. Pure-compute and warm-file controls remain. See the investigation for scope.'
             echo '```text'
             for file in host.txt cohorts.tsv network-summary.txt compute.txt mixed.txt; do
               cat "$RUNNER_TEMP/io-scheduler/$file" 2>/dev/null || echo "$file was not produced"

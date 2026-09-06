@@ -33,7 +33,7 @@ wf_sched_stack *wf_sched_current_stack(wf_sched_core *core) {
 
 /* ------------------------------------------------------------ the lists */
 
-/* Both lists are under the one mutex (§5, §7.1 item 5). The mutex says who
+/* All lists are under the one mutex (§5, §7.1 item 5). The mutex says who
  * may touch their words; when a stack may be offered is the switch's rule
  * below, and it is the reason every EMPTY push is made from the stack switched
  * to. */
@@ -57,19 +57,28 @@ static void wf_sched_pool_push(wf_sched_core *core, wf_sched_stack *stack) {
     wf_prim_unlock();
 }
 
-/* Links one READY stack at the tail. Only the empty-to-nonempty transition
- * bumps the epoch; a later sleeper's last look finds an existing stack (§6). */
+/* Links one READY stack at its FIFO's tail. Only the union's transition from
+ * empty to nonempty bumps the epoch; the last look checks both queues (§6). */
 static void wf_sched_ready_push(wf_sched_core *core, wf_sched_stack *stack) {
     int was_empty;
+    wf_sched_stack **head = &core->ready_head;
+    wf_sched_stack **tail = &core->ready_tail;
     wf_prim_lock(WF_PRIM_SECTION_READY_PUSH);
     stack->next = NULL;
     was_empty = core->ready_head == NULL;
-    if (was_empty) {
-        core->ready_head = stack;
-    } else {
-        core->ready_tail->next = stack;
+#if WF_SCHED_COMPLETION_READY_BURST > 0
+    was_empty = was_empty && core->yield_head == NULL;
+    if (stack->yielded) {
+        head = &core->yield_head;
+        tail = &core->yield_tail;
     }
-    core->ready_tail = stack;
+#endif
+    if (*head == NULL) {
+        *head = stack;
+    } else {
+        (*tail)->next = stack;
+    }
+    *tail = stack;
     wf_prim_unlock();
     if (was_empty) {
         wf_prim_wake();
@@ -78,14 +87,38 @@ static void wf_sched_ready_push(wf_sched_core *core, wf_sched_stack *stack) {
 
 static wf_sched_stack *wf_sched_ready_pop(wf_sched_core *core) {
     wf_sched_stack *stack;
+    wf_sched_stack **head = &core->ready_head;
+    wf_sched_stack **tail = &core->ready_tail;
     wf_prim_lock(WF_PRIM_SECTION_READY_POP);
-    stack = core->ready_head;
+#if WF_SCHED_COMPLETION_READY_BURST > 0
+    if (core->yield_head != NULL &&
+        (core->ready_head == NULL || core->completion_ready_budget == 0u)) {
+        head = &core->yield_head;
+        tail = &core->yield_tail;
+        core->completion_ready_budget = WF_SCHED_COMPLETION_READY_BURST;
+#if WF_SCHED_OBSERVE
+        if (core->ready_head != NULL)
+            wf_sched_count(&wf_sched_current_thread(core)->counts.ready_yield_forced, 1u);
+#endif
+    } else if (core->ready_head != NULL) {
+        if (core->completion_ready_budget != 0u) core->completion_ready_budget -= 1u;
+#if WF_SCHED_OBSERVE
+        if (core->yield_head != NULL)
+            wf_sched_count(&wf_sched_current_thread(core)->counts.ready_completion_preferred, 1u);
+#endif
+    }
+#endif
+    stack = *head;
     if (stack != NULL) {
-        core->ready_head = stack->next;
-        if (core->ready_head == NULL) {
-            core->ready_tail = NULL;
+        *head = stack->next;
+        if (*head == NULL) {
+            *tail = NULL;
         }
         stack->next = NULL;
+#if WF_SCHED_OBSERVE
+        wf_sched_statistics *counts = &wf_sched_current_thread(core)->counts;
+        wf_sched_count(stack->yielded ? &counts->ready_yields : &counts->ready_completions, 1u);
+#endif
     }
     wf_prim_unlock();
     return stack;
@@ -335,6 +368,9 @@ void wf_sched_checkpoint(wf_sched_core *core) {
     if (target == NULL) {
         return;
     }
+#if WF_SCHED_COMPLETION_READY_BURST > 0 || WF_SCHED_OBSERVE
+    stack->yielded = 1u;
+#endif
     /* The current stack owns its readiness: no completion record is involved.
      * NOTIFIED defers READY and the enqueue until after its registers and SP
      * have been saved, using the same far-side commit as an early I/O wake.
@@ -368,6 +404,9 @@ static int wf_sched_park(
 
 #if WF_SCHED_OBSERVE
     stack->park_thread = thread->index;
+#endif
+#if WF_SCHED_COMPLETION_READY_BURST > 0 || WF_SCHED_OBSERVE
+    stack->yielded = 0u;
 #endif
 
     /* 1. mark SUSPENDING */
@@ -763,6 +802,7 @@ int wf_sched_init(
     memset(core, 0, sizeof(*core));
 #endif
     core->thread_count = thread_count;
+    core->completion_ready_budget = WF_SCHED_COMPLETION_READY_BURST;
     core->stack_count = stack_count;
     core->stack_bytes = stack_bytes;
     core->stack_stride = wf_prim_stack_stride(stack_bytes);
@@ -955,5 +995,9 @@ void wf_sched_statistics_sum(const wf_sched_core *core, wf_sched_statistics *out
         out->idle_waits += __atomic_load_n(&counts->idle_waits, __ATOMIC_RELAXED);
         out->checkpoints += __atomic_load_n(&counts->checkpoints, __ATOMIC_RELAXED);
         out->checkpoint_switches += __atomic_load_n(&counts->checkpoint_switches, __ATOMIC_RELAXED);
+        out->ready_completions += __atomic_load_n(&counts->ready_completions, __ATOMIC_RELAXED);
+        out->ready_yields += __atomic_load_n(&counts->ready_yields, __ATOMIC_RELAXED);
+        out->ready_completion_preferred += __atomic_load_n(&counts->ready_completion_preferred, __ATOMIC_RELAXED);
+        out->ready_yield_forced += __atomic_load_n(&counts->ready_yield_forced, __ATOMIC_RELAXED);
     }
 }

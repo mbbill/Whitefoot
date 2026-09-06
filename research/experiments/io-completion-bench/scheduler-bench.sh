@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Paired idle-progress and CPU-placement experiment. Every form uses the same
-# emitted programs, global queue, mutex, completion engine and stacks.
+# Paired compiler/runtime experiments and CPU placement. Candidate differences
+# are explicit; each cohort keeps the completion engine and source workload.
 # Owned by io-model/SCHEDULER-EXPERIMENT.md; replace after the next decision.
 set -euo pipefail
 
@@ -61,15 +61,27 @@ if [[ $MODE != bench || $(uname -s) != Linux ]]; then
     echo 'scheduler-bench: use check on POSIX, or bench on Linux with io_uring' >&2
     exit 2
 fi
-[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == footprint || $EXPERIMENT == paced || $EXPERIMENT == chunks ]] || exit 2
+[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == footprint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == priority ]] || exit 2
 network_compute=0
-if [[ $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks ]]; then network_compute=1; fi
+if [[ $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == priority ]]; then network_compute=1; fi
 [[ $ROUNDS =~ ^[1-9][0-9]*$ && $WARMUP =~ ^[0-9]+$ ]] || exit 2
 [[ $(nproc) -ge 4 ]] || { echo 'scheduler-bench: this CPU-placement experiment needs four logical CPUs' >&2; exit 2; }
 mkdir -p "$OUT/bin" "$OUT/samples" "$OUT/observed" "$OUT/tree"
 export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$ROOT/compiler/target}
 (cd "$ROOT/compiler" && cargo build --profile gate --bin whitefootc --locked --offline)
 WFC=$CARGO_TARGET_DIR/gate/whitefootc
+
+if [[ $EXPERIMENT == priority ]]; then
+    for burst in 1 8; do
+        if ! make -C "$ROOT/compiler" completion-test CC="$CLANG" \
+            COMPLETION_TMP="$OUT/priority-b$burst-check" \
+            COMPLETION_BASE_CFLAGS="-std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread -DWF_SCHED_COMPLETION_READY_BURST=$burst" \
+            > "$OUT/priority-b$burst-check.log" 2>&1; then
+            cat "$OUT/priority-b$burst-check.log"
+            exit 1
+        fi
+    done
+fi
 
 if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint ]]; then
     # The experimental path keeps every existing harness assertion, including
@@ -126,14 +138,17 @@ if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain ]]; then forms=(base); f
 if [[ $EXPERIMENT == inline ]]; then forms=(base local); fi
 if [[ $EXPERIMENT == checkpoint || $EXPERIMENT == paced ]]; then forms=(base cq1024 cq16384 cq65536); fi
 if [[ $EXPERIMENT == chunks ]]; then forms=(base cq16384 ch1024 ch16384 ch65536); fi
+if [[ $EXPERIMENT == priority ]]; then forms=(ch1024 ch1024b1 ch1024b8 ch16384 ch16384b1 ch16384b8); fi
 if [[ $EXPERIMENT == footprint ]]; then forms=(base lanes); fi
 form_flags() {
     local_inline=0
     init_used=0
+    ready_burst=0
     case $1 in
         base) spin=256; yields=16; progress=0 ;;
         lanes) spin=256; yields=16; progress=0; init_used=1 ;;
         cq1024|cq16384|cq65536|ch1024|ch16384|ch65536) spin=256; yields=16; progress=0 ;;
+        ch1024b1|ch1024b8|ch16384b1|ch16384b8) spin=256; yields=16; progress=0; ready_burst=${1##*b} ;;
         local) spin=256; yields=16; progress=0; local_inline=1 ;;
         sleep) spin=0; yields=0; progress=0 ;;
         short) spin=16; yields=0; progress=0 ;;
@@ -145,14 +160,14 @@ form_flags() {
 }
 link_form() {
     local module=$1 output=$2 policy=$3 observed=$4
-    local observer=() spin yields progress local_inline init_used
+    local observer=() spin yields progress local_inline init_used ready_burst
     form_flags "$policy"
     if [[ $observed == 1 ]]; then observer=("$BACKEND/sched/grant_observer.c"); fi
     "$CLANG" -std=c11 -O2 -pthread -I "$BACKEND" -I "$BACKEND/completion" \
         -I "$BACKEND/sched" "-DWF_SCHED_IDLE_SPIN_ROUNDS=$spin" \
         "-DWF_SCHED_IDLE_YIELD_ROUNDS=$yields" "-DWF_SCHED_IDLE_PROGRESS_INTERVAL=$progress" \
         "-DWF_SCHED_OBSERVE=$observed" "-DWF_COMPLETION_LOCAL_INLINE=$local_inline" \
-        "-DWF_SCHED_INIT_USED_LANES=$init_used" \
+        "-DWF_SCHED_INIT_USED_LANES=$init_used" "-DWF_SCHED_COMPLETION_READY_BURST=$ready_burst" \
         -x c "$BACKEND/wf_floor.c" "$BACKEND/sched/core.c" \
         "$BACKEND/sched/prim_host.c" "$BACKEND/sched/entry.c" \
         "$BACKEND/completion/runtime.c" "$BACKEND/completion/wait_host.c" \
@@ -172,7 +187,7 @@ else
     "$WFC" --par --emit-llvm -o "$OUT/compute.ll" "$ROOT/tests/programs/par_layout.wf"
     "$WFC" --par --emit-llvm -o "$OUT/mixed.ll" "$HERE/programs/windows_runtime_mixed.wf"
 fi
-if [[ $EXPERIMENT == checkpoint || $EXPERIMENT == chunks ]]; then
+if [[ $EXPERIMENT == checkpoint || $EXPERIMENT == chunks || $EXPERIMENT == priority ]]; then
     programs=(echo compute mixed)
     "$WFC" --par --emit-llvm -o "$OUT/compute.ll" "$ROOT/tests/programs/par_layout.wf"
     "$WFC" --par --emit-llvm -o "$OUT/mixed.ll" "$HERE/programs/windows_runtime_mixed.wf"
@@ -190,7 +205,13 @@ for policy in "${forms[@]}"; do
             module="$OUT/$program-$policy.ll"
             checkpoint_option=--sched-quantum
             if [[ $policy == ch* ]]; then checkpoint_option=--sched-chunks; fi
-            "$WFC" --par "$checkpoint_option" "${policy:2}" --emit-llvm -o "$module" "$source"
+            checkpoint_interval=${policy:2}
+            checkpoint_interval=${checkpoint_interval%b*}
+            "$WFC" --par "$checkpoint_option" "$checkpoint_interval" --emit-llvm -o "$module" "$source"
+            if [[ $policy == ch*b* ]]; then
+                # Only the C queue policy may differ in this paired cohort.
+                cmp "$OUT/$program-${policy%b*}.ll" "$module"
+            fi
             if [[ $policy == ch* && $program == echo ]]; then
                 # This protocol's dependent recurrence must actually use the
                 # new lowering; positive runtime calls alone also fit fallback.
@@ -222,7 +243,7 @@ if [[ $network_compute == 1 ]]; then
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread -DWF_BENCH_COMPUTE \
         "$HERE/epoll_echo.c" -o "$OUT/bin/epoll_compute"
 fi
-if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks ]]; then
+if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == priority ]]; then
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread -DWF_BENCH_COMPUTE -DWF_BENCH_QUANTUM \
         "$HERE/epoll_echo.c" -o "$OUT/bin/epoll_quantum"
 fi
@@ -276,7 +297,7 @@ network_case() {
         q1024|q16384|q65536)
             binary="$OUT/bin/epoll_quantum"
             arguments=(--threads "$server_workers" --quantum "${form#q}") ;;
-        base|local|lanes|sleep|short|spin|poll1|poll16|cq1024|cq16384|cq65536|ch1024|ch16384|ch65536)
+        base|local|lanes|sleep|short|spin|poll1|poll16|cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|ch1024b1|ch1024b8|ch16384b1|ch16384b8)
             binary="$OUT/bin/echo-$form"
             if [[ $observed == 1 ]]; then binary="$binary-observed"; fi
             environment=("WF_WORKERS=$server_workers" WF_STACKS=1100 "WF_SCHED_REPORT=$observed") ;;
@@ -341,6 +362,7 @@ admissions=(0)
 if [[ $EXPERIMENT == fairness ]]; then admissions=(0 1); fi
 if [[ $network_compute == 1 ]]; then references=(epoll); compute_rounds=262144; fi
 if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks ]]; then references=(epoll q1024 q16384 q65536); fi
+if [[ $EXPERIMENT == priority ]]; then references=(q1024 q16384); fi
 while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
     for admitted in "${admissions[@]}"; do
         for form in "${references[@]}" "${forms[@]}"; do network_case "$form" 4 20 64 -1 0; done
@@ -360,6 +382,16 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
         if [[ ( $form == cq* || $form == ch* ) && $connections == 64 ]]; then
             awk '/^sched:/ { for(i=2;i<=NF;i++) { split($i,a,"="); value[a[1]]=a[2]+0 } }
                  END { exit !(value["checkpoints"] > 0 && value["checkpoint_switches"] > 0) }' \
+                "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
+        fi
+        if [[ $EXPERIMENT == priority && $connections == 64 ]]; then
+            burst=0
+            if [[ $form == ch*b* ]]; then burst=${form##*b}; fi
+            # Observe the route separately from timings. Both sources of
+            # readiness must be exercised; selection counts remain evidence,
+            # not an assumption that every run reaches a particular ordering.
+            awk -v burst="$burst" '/^sched:/ { for(i=2;i<=NF;i++) { split($i,a,"="); value[a[1]]=a[2]+0 } }
+                 END { exit !(("completion_ready_burst" in value) && value["completion_ready_burst"]==burst && value["ready_completions"]>0 && value["ready_yields"]>0) }' \
                 "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
         fi
       done
@@ -396,7 +428,7 @@ if [[ $EXPERIMENT == fairness ]]; then
     awk '$4 != 16384' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
     mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
 fi
-if [[ $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks ]]; then
+if [[ $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == priority ]]; then
     # Both request classes stay active for a common interval. The count is a
     # storage ceiling, not a target; an early ceiling hit fails the sample.
     cat > "$OUT/cases.tsv" <<'CASES'
@@ -414,7 +446,7 @@ if [[ $EXPERIMENT == chunks ]]; then
     awk '$1==64' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
     mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
 fi
-if [[ $EXPERIMENT == paced ]]; then
+if [[ $EXPERIMENT == paced || $EXPERIMENT == priority ]]; then
     # Fix light arrivals independently of service speed. Keep every scheduled
     # request, including client backlog, while heavy peers remain saturated.
     cat > "$OUT/cases.tsv" <<'CASES'
@@ -426,6 +458,11 @@ if [[ $EXPERIMENT == paced ]]; then
 64 100000 64 2097152 100
 64 100000 64 2097152 500
 CASES
+fi
+if [[ $EXPERIMENT == priority ]]; then
+    # Retain all long-compute arrival rates and one shorter-compute control.
+    awk '$4!=262144 || $5==100' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
+    mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
 fi
 for ((pass=-WARMUP; pass<ROUNDS; pass++)); do
     order=("${forward[@]}")
@@ -446,7 +483,7 @@ done
 # Warm positioned reads plus compute measure coexistence; they do not establish
 # a bound on network latency while every worker runs a long computation.
 cpu_programs=(compute mixed)
-if [[ $EXPERIMENT != idle && $EXPERIMENT != checkpoint && $EXPERIMENT != chunks ]]; then cpu_programs=(); fi
+if [[ $EXPERIMENT != idle && $EXPERIMENT != checkpoint && $EXPERIMENT != chunks && $EXPERIMENT != priority ]]; then cpu_programs=(); fi
 for program in "${cpu_programs[@]}"; do
     : > "$OUT/$program.plan"
     for workers in 2 4 8; do
@@ -467,9 +504,10 @@ for program in "${cpu_programs[@]}"; do
         > "$OUT/$program.txt" 2> "$OUT/$program.err"
 done
 
-# Keep raw samples; summarize ranges as well as medians. All rate ratios use
-# the global FIFO measured in the same pass, connection count and payload.
-awk -F '\t' '
+# Keep raw samples; summarize ranges as well as medians. Priority ratios use
+# the single FIFO at the matching chunk interval; other experiments use base.
+# Every denominator is measured in the same pass and complete workload cohort.
+awk -F '\t' -v priority="$([[ $EXPERIMENT == priority ]] && echo 1 || echo 0)" '
     NR == 1 { next }
     { key=$15 "/" $3 "/" $4 "/" ($21+0) "/" ($28+0) "/" ($30+0) "/" ($39+0); cohort=$1 SUBSEP key; group=$2 SUBSEP key
       count[group]++; rates[group,count[group]]=$6; lat[group,count[group]]=$7;
@@ -486,8 +524,11 @@ awk -F '\t' '
       light_ontime[group,count[group]]=$30 ? ($43+0)*1000/$30 : 0;
       heavy_ontime[group,count[group]]=$30 ? ($44+0)*1000/$30 : 0;
       backlog[group,count[group]]=$39 ? $40-$43 : 0;
-      if ($2 == "base") base[cohort]=$6;
       samples[cohort,$2]=$6; groups[group]=1; cohorts[cohort]=1; }
+    function reference(form) {
+      if (!priority) return "base";
+      sub(/b[18]$/, "", form); sub(/^q/, "ch", form); return form;
+    }
     function summary(values,g, n,i,j,t) {
       n=count[g]; for(i=1;i<=n;i++) sorted[i]=values[g,i];
       for(i=1;i<=n;i++) for(j=i+1;j<=n;j++) if(sorted[j]<sorted[i]) {t=sorted[i];sorted[i]=sorted[j];sorted[j]=t}
@@ -497,7 +538,11 @@ awk -F '\t' '
       print "form case median_rt/s min_rt/s max_rt/s p50_us p99_us server_cpu_us/trip peak_rss_kib switches/trip paired_rate_ratio client_lifetime_cpu_us/trip light_p99_us heavy_p99_us client_exchange_cpu_us/trip light_rt/s heavy_rt/s light_min_count light_worst_peer_p99_us heavy_min_count heavy_worst_peer_p99_us light_dispatch_p99_us light_service_p99_us light_before_deadline/s heavy_before_deadline/s light_pending_at_deadline";
       for(g in groups) {
         split(g,parts,SUBSEP); form=parts[1]; key=parts[2]; n=0;
-        for(c in cohorts) { split(c,p,SUBSEP); if(p[2]==key) ratios[g,++n]=samples[c,form]/base[c]; }
+        for(c in cohorts) { split(c,p,SUBSEP); if(p[2]==key) {
+          denominator=samples[c,reference(form)];
+          if(denominator<=0) { print "scheduler-bench: missing paired reference" > "/dev/stderr"; exit 1 }
+          ratios[g,++n]=samples[c,form]/denominator;
+        } }
         rate=summary(rates,g); low=sorted[1]; high=sorted[count[g]];
         printf "%s %s %.1f %.1f %.1f %.1f %.1f %.3f %.0f %.4f %.3f %.3f %.1f %.1f %.3f %.1f %.1f %.0f %.0f %.0f %.0f %.0f %.0f %.1f %.1f %.0f\n", form,key,rate,low,high,
           summary(lat,g),summary(tail,g),summary(cpu,g),summary(rss,g),summary(switches,g),summary(ratios,g),summary(client_cpu,g),
