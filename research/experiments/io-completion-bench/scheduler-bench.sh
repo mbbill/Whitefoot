@@ -117,6 +117,9 @@ if [[ $EXPERIMENT == owner || $EXPERIMENT == owner-paced ]]; then
             cat "$OUT/$policy-check.log"
             exit 1
         fi
+        if [[ $policy == rings || $policy == owner ]]; then
+            grep -q '^native-adapter-probe two-ring-epoch=pass$' "$OUT/$policy-check.log"
+        fi
     done
 fi
 
@@ -521,10 +524,10 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
             if [[ $form == rings || $form == owner || $form == chowner16384 ]]; then rings=1; fi
             awk -v pinned="$pinned" -v rings="$rings" -v workers="$server_workers" -v peers="$connections" '
                  /^sched:|^ring:/ { for(i=2;i<=NF;i++) { split($i,a,"="); value[a[1]]=a[2]+0 } }
-                 END { exit !(value["tcp_nodelay"]==1 && ("ready_pinned" in value)
-                     && value["ready_pinned"]==pinned
-                     && (!pinned || (value["ready_shards"]==2 && value["resumes"]>0 && value["resume_migrations"]==0))
-                     && (!rings || value["owner_rings"] >= (workers>1 && peers==64 ? 2 : 1))) }' \
+                 END { exit !(value["tcp_nodelay"]==1 && ("ready_pinned" in value) &&
+                     value["ready_pinned"]==pinned &&
+                     (!pinned || (value["ready_shards"]==2 && value["resumes"]>0 && value["resume_migrations"]==0)) &&
+                     (!rings || value["owner_rings"] >= (workers>1 && peers==64 ? 2 : 1))) }' \
                 "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
         fi
         if [[ ( $form == cq* || $form == ch* || $form == old* ) && $connections == 64 ]]; then

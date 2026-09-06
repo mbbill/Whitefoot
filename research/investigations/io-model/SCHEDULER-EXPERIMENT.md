@@ -1912,3 +1912,19 @@ uses the bounded adapter in every configuration, so these checks supply no
 evidence about the new Linux ring code. The owner comparison is published
 on `codex/io-owner-experiments` so its qualification can run while the
 independent TCP policy measurement finishes on the preceding branch.
+
+At `24b967fbfd5c64f9c48d3781e69e038ce4ce70db`, the canonical gate and host
+qualification passed. In [run 34052295820](https://github.com/mbbill/Whitefoot/actions/runs/34052295820),
+all three candidate Linux completion suites completed successfully, including
+the two-ring/four-sleeper native probe for the ring candidates. The original
+and candidate emitted programs passed the initial four-peer checks. The
+Windows mixed program produced its fixed expected result at two/four workers
+under both policies; original execution reported 1468/176 resume migrations,
+while pinned execution reported zero in both cases with actual parks/resumes.
+Artifacts `9994963374`, `9994965569` and `9994933984` retain those checks.
+
+Both measuring jobs then stopped before timing because the new AWK observer
+assertion put a continuation operator at the beginning of a line. The
+expression is corrected, and an explicit two-ring-probe success marker is
+required so future measuring logs show that the candidate check actually ran.
+No performance conclusion is drawn from these preflight runs.

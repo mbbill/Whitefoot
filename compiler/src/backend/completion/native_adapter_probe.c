@@ -170,6 +170,7 @@ static int probe_two_rings_share_one_epoch(void) {
         PROBE_CHECK(wf_linux_io_uring_destroy(&adapters[index]) == 0);
     }
     PROBE_CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    (void)printf("native-adapter-probe two-ring-epoch=pass\n");
     return 0;
 }
 
