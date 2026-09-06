@@ -1825,6 +1825,7 @@ pub enum LoweringFailure {
 }
 
 mod builder;
+pub(crate) mod control_flow;
 
 #[cfg(test)]
 mod tests;

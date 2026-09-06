@@ -11,6 +11,10 @@ on:
       - 'compiler/src/backend/completion/**'
       - 'compiler/src/backend/emitter/**'
       - 'compiler/src/backend/emitter.rs'
+      - 'compiler/src/lowering/**'
+      - 'compiler/src/lowering.rs'
+      - 'compiler/src/driver.rs'
+      - 'compiler/src/bin/whitefootc.rs'
       - 'research/experiments/io-completion-bench/*.c'
       - 'research/experiments/io-completion-bench/*.h'
       - 'research/experiments/io-completion-bench/programs/tcp*_server.wf'
@@ -27,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        experiment: [sustain]
+        experiment: [checkpoint]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -52,7 +56,7 @@ jobs:
         run: |
           {
             echo '## Scheduler experiment: ${{ matrix.experiment }}'
-            echo 'Paired within this job and CPU cohort. Admitted connections keep both request classes active for one common duration. WF baseline versus inline and three cooperative C forms. Every captured result is verified after timing; both class rates and tails are retained. See the investigation for scope.'
+            echo 'Paired within this job and CPU cohort. WF baseline and three compiler-inserted loop checkpoint intervals versus inline and cooperative C forms. Both request classes stay active for one common duration. Pure compute and warm-file mixed controls include oversubscription. See the investigation for scope.'
             echo '```text'
             for file in host.txt cohorts.tsv network-summary.txt compute.txt mixed.txt; do
               cat "$RUNNER_TEMP/io-scheduler/$file" 2>/dev/null || echo "$file was not produced"

@@ -631,6 +631,15 @@ static void note_phase(const word *w, unsigned old, unsigned new, enum op_kind k
         return;
     }
     rec_note_transition(REC_T_PHASE, index, old, new);
+    if (old == WF_SCHED_STACK_RUNNING && new == WF_SCHED_STACK_NOTIFIED && kind == OP_CAS) {
+        if (!on_it || record_waited_by(wf_enum_core.stacks[index], &is_io) != NULL
+            || info->claimed_by >= 0 || info->ready_owed) {
+            fail_execution("stack %u yielded without exclusive running ownership", index);
+        }
+        info->parked_by = (int)current_index();
+        cov.cooperative += 1u;
+        return;
+    }
     if (old == WF_SCHED_STACK_RUNNING && new == WF_SCHED_STACK_SUSPENDING && kind == OP_CAS) {
         if (!on_it) {
             fail_execution("a park began on stack %u from another stack", index);
@@ -2629,7 +2638,7 @@ static void print_coverage(FILE *out) {
         " parks=%llu cancels=%llu resumes=%llu steals=%llu inline_runs=%llu exhausted_io=%llu"
         " exhausted_compute=%llu late_parks=%llu line_one=%llu max_parked=%llu all_asleep=%llu"
         " sleeps=%llu states=%llu pruned=%llu replay_steps=%u replay_completions=%u"
-        " replay_transitions=%u\n",
+        " replay_transitions=%u cooperative=%llu\n",
         schedule->name, cfg_threads, cfg_stacks, cfg_search == SEARCH_STATE ? "state" : "dfs",
         cov.executions, cov.bounded,
         cov.max_steps, cov.begin, cov.suspended, cov.notified, cov.ready_from_suspended,
@@ -2640,7 +2649,7 @@ static void print_coverage(FILE *out) {
         cov.stats.cancels, cov.stats.resumes, cov.stats.steals, cov.stats.inline_runs,
         cov.stats.exhausted_io_waits, cov.stats.exhausted_compute_waits, cov.stats.late_parks,
         cov.stats.line_one, cov.max_parked, cov.all_asleep, cov.sleeps, states_seen, states_pruned,
-        rec_step_count, rec_completions, rec_transition_count);
+        rec_step_count, rec_completions, rec_transition_count, cov.cooperative);
 }
 
 /* Every interleaving of one schedule at the configured T and S. Returns 0

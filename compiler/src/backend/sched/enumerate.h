@@ -25,6 +25,7 @@ typedef struct wf_enum_coverage {
     unsigned long long begin;                 /* RUNNING -> SUSPENDING */
     unsigned long long suspended;             /* SUSPENDING -> SUSPENDED, at the commit */
     unsigned long long notified;              /* SUSPENDING -> NOTIFIED, by the publisher */
+    unsigned long long cooperative;           /* RUNNING -> NOTIFIED, by the current stack */
     unsigned long long ready_from_suspended;  /* SUSPENDED -> READY, by the publisher */
     unsigned long long ready_from_notified;   /* NOTIFIED -> READY, at the commit */
     unsigned long long cancel_suspending_io;  /* SUSPENDING -> RUNNING on an I/O record */

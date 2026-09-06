@@ -95,7 +95,9 @@ typedef struct wf_sched_slot {
 /* ------------------------------------------------------------- the stack */
 
 /* A stack's phase. RUNNING while a thread executes on it; SUSPENDING,
- * SUSPENDED and NOTIFIED are the park handshake's (§6); READY once its event
+ * SUSPENDED and NOTIFIED are the park handshake's (§6); a cooperative yield
+ * also enters NOTIFIED, owing its enqueue to the far side of the switch.
+ * READY once its event
  * has arrived and it waits on the ready list; EMPTY when its scheduler loop
  * found nothing and it is in the pool. */
 #define WF_SCHED_STACK_RUNNING 1u
@@ -237,6 +239,8 @@ typedef struct wf_sched_statistics {
     unsigned long long idle_looks;
     unsigned long long idle_progress;
     unsigned long long idle_waits;
+    unsigned long long checkpoints;
+    unsigned long long checkpoint_switches;
 } wf_sched_statistics;
 
 /* What one thread knows: its lane, the stack it is on, the host stack it
@@ -320,6 +324,11 @@ void wf_sched_post_status(wf_sched_core *core, int status);
  * newest entry of this thread's own deque; else park this stack; else the
  * exhausted arm the record's kind selects. `is_io` names that kind. */
 void wf_sched_join(wf_sched_core *core, wf_sched_record *record, int is_io);
+
+/* Progress I/O and give an already-ready stack a turn, if one exists. The
+ * caller is on a running pool stack. This does not start an unstarted callee
+ * or promise admission when the bounded stack/window capacity is exhausted. */
+void wf_sched_checkpoint(wf_sched_core *core);
 
 /* The one publisher call: store DONE, load the waiter, and mark that stack
  * READY (§6). The drain calls it for an I/O record; `wf_sched_execute` calls

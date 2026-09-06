@@ -322,6 +322,35 @@ static void wf_sched_commit_park(wf_sched_core *core, wf_sched_stack *parked) {
     wf_sched_ready_push(core, parked);
 }
 
+void wf_sched_checkpoint(wf_sched_core *core) {
+    wf_sched_thread *thread = wf_sched_current_thread(core);
+    wf_sched_stack *stack = thread->stack;
+    wf_sched_stack *target;
+    unsigned expected = WF_SCHED_STACK_RUNNING;
+#if WF_SCHED_OBSERVE
+    wf_sched_count(&thread->counts.checkpoints, 1u);
+#endif
+    (void)wf_prim_progress(core);
+    target = wf_sched_ready_pop(core);
+    if (target == NULL) {
+        return;
+    }
+    /* The current stack owns its readiness: no completion record is involved.
+     * NOTIFIED defers READY and the enqueue until after its registers and SP
+     * have been saved, using the same far-side commit as an early I/O wake.
+     * Publishing READY before the switch would let another worker run a stack
+     * whose old owner still executes on it. */
+    if (!wf_prim_cas_u(&stack->phase, &expected, WF_SCHED_STACK_NOTIFIED,
+            WF_PRIM_ACQ_REL, WF_PRIM_ACQUIRE)) {
+        wf_prim_fail("a checkpoint began on a stack that was not RUNNING");
+    }
+#if WF_SCHED_OBSERVE
+    wf_sched_count(&thread->counts.checkpoint_switches, 1u);
+#endif
+    thread->pending_commit = stack;
+    wf_sched_switch_to(core, target);
+}
+
 /* Parks the calling stack on `record` and switches to `target`, which the
  * caller has already taken from the ready list or the pool (§6's five steps).
  * Returns 1 when the stack parked and has now been resumed, 0 when step 3
@@ -914,5 +943,7 @@ void wf_sched_statistics_sum(const wf_sched_core *core, wf_sched_statistics *out
         out->idle_looks += __atomic_load_n(&counts->idle_looks, __ATOMIC_RELAXED);
         out->idle_progress += __atomic_load_n(&counts->idle_progress, __ATOMIC_RELAXED);
         out->idle_waits += __atomic_load_n(&counts->idle_waits, __ATOMIC_RELAXED);
+        out->checkpoints += __atomic_load_n(&counts->checkpoints, __ATOMIC_RELAXED);
+        out->checkpoint_switches += __atomic_load_n(&counts->checkpoint_switches, __ATOMIC_RELAXED);
     }
 }

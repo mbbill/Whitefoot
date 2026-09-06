@@ -8,6 +8,7 @@ mod arena;
 mod array;
 mod boxes;
 mod buffer;
+mod checkpoint;
 mod cleanup;
 mod completion;
 mod conversion;
@@ -22,6 +23,7 @@ mod system;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write;
+use std::num::NonZeroU32;
 
 use super::qualification::{
     Qualification, QualificationFailure, SystemTarget, qualified_representation, qualify_program,
@@ -103,6 +105,13 @@ impl LlvmModule {
 }
 
 pub fn emit_llvm(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendFailure> {
+    emit_llvm_with_checkpoints(program, None)
+}
+
+pub(crate) fn emit_llvm_with_checkpoints(
+    program: &IrProgram<'_, '_, '_>,
+    checkpoint_interval: Option<NonZeroU32>,
+) -> Result<LlvmModule, BackendFailure> {
     let target = TargetLayout::host().map_err(BackendFailure::TargetLayout)?;
     // [QUAL-1] consults the qualification table after the exact target and ABI
     // are selected and before emitting any use of an operation. It runs before
@@ -111,7 +120,7 @@ pub fn emit_llvm(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendF
     let system_target = SystemTarget::for_triple(target.triple()).ok_or(
         BackendFailure::TargetLayout(TargetLayoutFailure::UnsupportedHost),
     )?;
-    emit_llvm_for(program, system_target)
+    emit_llvm_for(program, system_target, checkpoint_interval)
 }
 
 /// Emits one program against an explicitly selected system target.
@@ -124,12 +133,13 @@ pub(crate) fn emit_llvm_for_target(
     program: &IrProgram<'_, '_, '_>,
     system_target: SystemTarget,
 ) -> Result<LlvmModule, BackendFailure> {
-    emit_llvm_for(program, system_target)
+    emit_llvm_for(program, system_target, None)
 }
 
 fn emit_llvm_for(
     program: &IrProgram<'_, '_, '_>,
     system_target: SystemTarget,
+    checkpoint_interval: Option<NonZeroU32>,
 ) -> Result<LlvmModule, BackendFailure> {
     let target = TargetLayout::host().map_err(BackendFailure::TargetLayout)?;
     let qualification = qualify_program(system_target, program)?;
@@ -143,6 +153,7 @@ fn emit_llvm_for(
     let mut intrinsics = BTreeSet::new();
     let mut thunks = ParallelThunks::default();
     let mut completion_used = false;
+    let mut checkpoints_used = false;
     let mut functions = String::new();
     for function in program.functions() {
         let emitter = FunctionEmitter::new(
@@ -155,6 +166,8 @@ fn emit_llvm_for(
                 parallel: &mut thunks,
                 completion_used: &mut completion_used,
                 sequential_clones: None,
+                checkpoint_interval,
+                checkpoints_used: &mut checkpoints_used,
             },
         )?;
         functions.push_str(&emitter.emit()?);
@@ -190,6 +203,8 @@ fn emit_llvm_for(
                         parallel: &mut thunks,
                         completion_used: &mut completion_used,
                         sequential_clones: Some(&clones),
+                        checkpoint_interval,
+                        checkpoints_used: &mut checkpoints_used,
                     },
                 )?
                 .emit()?,
@@ -416,6 +431,11 @@ fn emit_llvm_for(
     }
     if !functions.is_empty() {
         text.push('\n');
+        if checkpoints_used {
+            text.push_str(&checkpoint::helper(
+                checkpoint_interval.ok_or(BackendFailure::InvalidIr)?,
+            ));
+        }
         text.push_str(&functions);
     }
     // Unconditional, unlike the parallel runtime's: every program can run out
@@ -660,6 +680,7 @@ enum IntrinsicDeclaration {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum FunctionSlot {
+    CheckpointBudget,
     ArrayFillValue(IrValueId),
     ArrayFillIndex(IrValueId),
     ArrayRoot(IrValueId),
@@ -713,6 +734,12 @@ struct FunctionFramePlan {
     ordered: Vec<FunctionSlot>,
 }
 
+struct RuntimeFrameNeeds<'a> {
+    pipeline: Option<&'a crate::IrCompletionPipeline>,
+    staged_lane: Option<&'a parallel::StagedLane>,
+    checkpoint: bool,
+}
+
 impl FunctionFramePlan {
     fn build(
         target: TargetLayout,
@@ -720,9 +747,13 @@ impl FunctionFramePlan {
         qualification: &Qualification,
         function: &IrFunction,
         completion_steps: &HashMap<IrValueId, IrCompletionStep>,
-        pipeline: Option<&crate::IrCompletionPipeline>,
-        staged_lane: Option<&parallel::StagedLane>,
+        runtime: RuntimeFrameNeeds<'_>,
     ) -> Result<Self, BackendFailure> {
+        let RuntimeFrameNeeds {
+            pipeline,
+            staged_lane,
+            checkpoint,
+        } = runtime;
         let mut specifications = Vec::new();
         let mut ordered = Vec::new();
         for (block_index, block) in function.blocks().iter().enumerate() {
@@ -866,6 +897,15 @@ impl FunctionFramePlan {
             }
         }
 
+        if checkpoint {
+            push_function_slot(
+                &mut specifications,
+                &mut ordered,
+                FunctionSlot::CheckpointBudget,
+                TargetStorageType::integer(32),
+                None,
+            )?;
+        }
         let target_plan = plan_target_frame(target, qualification, program, &specifications)
             .map_err(BackendFailure::TargetLayout)?;
         let mut slots = HashMap::with_capacity(ordered.len());
@@ -1119,6 +1159,7 @@ struct FunctionEmitter<'program, 'state> {
     /// exactly once per call, keeps frame size a property of the function
     /// rather than of the iteration count. Stores stay at the use site.
     entry_prelude: String,
+    checkpoint_edges: HashSet<usize>,
     /// The validated physical frame which supplied `entry_prelude` and every
     /// pointer returned to an operation emitter.
     frame: FunctionFramePlan,
@@ -1228,6 +1269,8 @@ struct ModuleState<'state> {
     completion_used: &'state mut bool,
     /// `None` emits the ordinary lowering; `Some` emits the sequential clone.
     sequential_clones: Option<&'state HashSet<u32>>,
+    checkpoint_interval: Option<NonZeroU32>,
+    checkpoints_used: &'state mut bool,
 }
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
@@ -1243,6 +1286,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             parallel,
             completion_used,
             sequential_clones,
+            checkpoint_interval,
+            checkpoints_used,
         } = module;
         // The staged call of a driven [PAR-3] loop, when that call is a
         // may-suspend user call. It has a hand-out form of its own — the lane
@@ -1378,16 +1423,37 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             &completion_steps,
             sequential_clones.is_none(),
         )?;
+        let checkpoint_edges: HashSet<usize> = if checkpoint_interval.is_some() {
+            crate::lowering::control_flow::backedge_sources(function.blocks())
+                .into_iter()
+                .collect()
+        } else {
+            HashSet::new()
+        };
         let frame = FunctionFramePlan::build(
             target,
             program,
             qualification,
             function,
             &completion_steps,
-            pipeline,
-            staged_lane.as_ref(),
+            RuntimeFrameNeeds {
+                pipeline,
+                staged_lane: staged_lane.as_ref(),
+                checkpoint: !checkpoint_edges.is_empty(),
+            },
         )?;
-        let entry_prelude = frame.render(program)?;
+        let mut entry_prelude = frame.render(program)?;
+        if !checkpoint_edges.is_empty() {
+            let interval = checkpoint_interval.ok_or(BackendFailure::InvalidIr)?;
+            let counter = frame.slot(FunctionSlot::CheckpointBudget)?;
+            writeln!(
+                entry_prelude,
+                "  store i32 {}, ptr {counter}, align 4",
+                interval.get()
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+            *checkpoints_used = true;
+        }
         Ok(Self {
             program,
             qualification,
@@ -1396,6 +1462,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             incoming: Vec::new(),
             output: String::new(),
             entry_prelude,
+            checkpoint_edges,
             frame,
             temporary: 0,
             parallel,
@@ -2003,6 +2070,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     }
                 }
                 self.emit_drops(drops)?;
+                self.emit_checkpoint(block)?;
                 writeln!(self.output, "  br label %{}", block_label(*target))
                     .map_err(|_| BackendFailure::TextEmission)
             }

@@ -610,6 +610,8 @@ int main(int argc, char **argv) {
         if (class_latency == NULL) fail("out of memory for class latencies");
         for (unsigned heavy = 0; heavy < 2; heavy++) {
             uint64_t count = 0;
+            uint64_t minimum_count = UINT64_MAX;
+            uint32_t worst_peer_p99 = 0;
             struct timespec first = exchange_end;
             struct timespec last = connect_end;
             for (uint64_t connection = 0; connection < option_connections; connection++) {
@@ -618,6 +620,12 @@ int main(int argc, char **argv) {
                     first = connections[connection].first_started;
                 if (seconds_between(last, connections[connection].last_finished) > 0)
                     last = connections[connection].last_finished;
+                uint64_t peer_count = connections[connection].round;
+                uint32_t *peer_latency = latency_us + connection * option_roundtrips;
+                qsort(peer_latency, (size_t)peer_count, sizeof *peer_latency, compare_u32);
+                uint32_t peer_p99 = percentile(peer_latency, peer_count, 99);
+                if (peer_count < minimum_count) minimum_count = peer_count;
+                if (peer_p99 > worst_peer_p99) worst_peer_p99 = peer_p99;
                 memcpy(class_latency + count, latency_us + connection * option_roundtrips,
                        (size_t)connections[connection].round * sizeof *class_latency);
                 count += connections[connection].round;
@@ -629,6 +637,9 @@ int main(int argc, char **argv) {
                    heavy ? "heavy" : "light", percentile(class_latency, count, 99),
                    heavy ? "heavy" : "light", count ? class_latency[count - 1] : 0,
                    heavy ? "heavy" : "light", (unsigned long long)(count ? microseconds_between(first, last) : 0));
+            printf("%s_min_count=%llu\t%s_worst_peer_p99_us=%u\t",
+                   heavy ? "heavy" : "light", (unsigned long long)(count ? minimum_count : 0),
+                   heavy ? "heavy" : "light", worst_peer_p99);
         }
         free(class_latency);
     }

@@ -795,6 +795,35 @@ static const char *s23_covered(const wf_enum_coverage *cov) {
     return NULL;
 }
 
+/* ------------------------------------------------------------------- S24 */
+
+/* The child can be parked on its own I/O when the parent resumes. The
+ * parent's checkpoint drains that completion and yields to the child, without
+ * making the parent's live stack available before its switch has committed. */
+static void s24_main(void *argument) {
+    unsigned long long *child;
+    (void)argument;
+    child = hand_out_only(read_then_add);
+    one_io();
+    wf_sched_checkpoint(&wf_enum_core);
+    join_release(child);
+    wf_sched_post_status(&wf_enum_core, STATUS);
+}
+
+static const char *s24_check(void) {
+    if (st.compute_done != 1u) {
+        return "the yielded-to child did not complete exactly once";
+    }
+    return check_io(2u);
+}
+
+static const char *s24_covered(const wf_enum_coverage *cov) {
+    if (cov->cooperative == 0ull) {
+        return "no checkpoint yielded to a READY stack";
+    }
+    return NULL;
+}
+
 /* ------------------------------------------------------------- the table */
 
 /* Three of §10's schedules are not enumerable here and are absent for that
@@ -825,6 +854,7 @@ const wf_enum_schedule wf_enum_schedules[] = {
     {"S21", 2u, 0u, 2u, 0u, reset_counts, s21_main, s21_check, s21_covered},
     {"S22", 2u, 0u, 2u, 0u, reset_counts, s22_main, s22_check, s22_covered},
     {"S23", 1u, 0u, 2u, 3u, reset_counts, s23_main, s23_check, s23_covered},
+    {"S24", 1u, 0u, 2u, 0u, reset_counts, s24_main, s24_check, s24_covered},
 };
 
 const unsigned wf_enum_schedule_count = sizeof wf_enum_schedules / sizeof wf_enum_schedules[0];

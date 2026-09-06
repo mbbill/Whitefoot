@@ -112,6 +112,10 @@ int wf__sched_enter(unsigned thread, void (*entry)(void *), void *argument);
  * stack. */
 wf_sched_stack *wf__sched_current_stack(void);
 
+/* Compiler-inserted cooperative point; a direct host invocation has no pool
+ * stack and returns immediately. Source function signatures are unchanged. */
+void wf__sched_checkpoint(void);
+
 /* How many worker threads this process started, 0 when it started none. */
 unsigned wf__sched_pool_running(void);
 

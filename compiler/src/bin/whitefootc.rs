@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use std::io::Write;
+use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -11,8 +12,8 @@ use whitefoot::{
     COMPLETION_WINDOWS_IOCP_HEADER, CompilerLimits, FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS,
     OverlapLowering, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
     SCHED_PRIM_HEADER, SCHED_SWITCH_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER,
-    compile_with_io_notices, compile_with_permission_ledger, module_requires_completion_runtime,
-    module_requires_parallel_runtime, stack_ledger,
+    compile_with_checkpoints, compile_with_io_notices, compile_with_permission_ledger,
+    module_requires_completion_runtime, module_requires_parallel_runtime, stack_ledger,
 };
 
 // `HOST_LINK_LIBRARIES` is here rather than above because its one reader is
@@ -31,7 +32,7 @@ use whitefoot::{
     FLOOR_WINDOWS_RUNTIME_SOURCE, SCHED_PRIM_WINDOWS_SOURCE, WINDOWS_RUNTIME_SOURCE,
 };
 
-const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--no-overlap] [--par-ledger] \
+const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--sched-quantum N] [--no-overlap] [--par-ledger] \
 [--stack-ledger] [-o OUTPUT] SOURCE...";
 
 // The compiler walks typed source and lowering trees recursively. Windows
@@ -241,7 +242,21 @@ fn run() -> Result<(), String> {
         .map(|((logical, display), bytes)| SourceInput::from_host_path(logical, display, bytes))
         .collect();
     let overlap = options.overlap();
-    let module = if options.par_ledger {
+    let module = if let Some(interval) = options.sched_quantum {
+        let report =
+            compile_with_checkpoints(&inputs, CompilerLimits::default(), overlap, interval)
+                .map_err(|failure| failure.to_string())?;
+        if options.par_ledger {
+            for line in &report.ledger {
+                println!("{line}");
+            }
+        } else {
+            for line in io_notice_report(options.no_overlap, &report.notices) {
+                eprintln!("{line}");
+            }
+        }
+        report.module
+    } else if options.par_ledger {
         // The permission ledger is developer output. It goes to stdout, which
         // `Options::parse` has already kept clear of the emitted module, and
         // never to the mandatory record channel. Its judgment lines are the
@@ -531,6 +546,8 @@ fn portable_logical_path(path: &str) -> bool {
 
 struct Options {
     emit_llvm: bool,
+    /// Experimental backedge interval; no source proof or progress contract.
+    sched_quantum: Option<NonZeroU32>,
     /// Actualize the permission judgment's eligible groups on worker lanes.
     ///
     /// Compute outlining is off by default; compiler-owned completion I/O
@@ -566,8 +583,10 @@ struct Options {
     /// The permission is never an obligation, so the default compilation takes
     /// none of it and emits exactly the module it emitted before this path
     /// existed, with one world in it. `WF_WORKERS` remains the runtime knob. On
-    /// the optional POSIX path, `0`, `1`, or an unparsable value keeps the
-    /// sequential world. A Windows module that actually hands work out has a
+    /// both host paths, `0` selects the sequential world, and `1` keeps staged
+    /// I/O active while compute-only modules select the sequential clone.
+    /// Malformed settings fail runtime configuration. A Windows module that
+    /// actually hands work out has a
     /// stricter production contract: its native runtime must initialize usable
     /// worker lanes or terminate when the pool is first required; it cannot
     /// silently select the sequential world.
@@ -605,6 +624,7 @@ struct Options {
 impl Options {
     fn parse(arguments: &[String]) -> Result<Self, String> {
         let mut emit_llvm = false;
+        let mut sched_quantum = None;
         let mut par = false;
         let mut no_overlap = false;
         let mut par_ledger = false;
@@ -616,6 +636,18 @@ impl Options {
             match arguments[cursor].as_str() {
                 "--emit-llvm" => emit_llvm = true,
                 "--par" => par = true,
+                "--sched-quantum" => {
+                    cursor += 1;
+                    let interval = arguments
+                        .get(cursor)
+                        .and_then(|value| value.parse::<NonZeroU32>().ok())
+                        .ok_or_else(|| {
+                            "--sched-quantum requires an integer in 1..4294967295".to_owned()
+                        })?;
+                    if sched_quantum.replace(interval).is_some() {
+                        return Err("--sched-quantum may be written only once".to_owned());
+                    }
+                }
                 "--no-overlap" => no_overlap = true,
                 "--par-ledger" => par_ledger = true,
                 "--stack-ledger" => stack_ledger = true,
@@ -662,8 +694,12 @@ impl Options {
         if par && no_overlap {
             return Err("--no-overlap and --par select opposite lowerings: write one".to_owned());
         }
+        if sched_quantum.is_some() && !par {
+            return Err("--sched-quantum requires --par for this experiment".to_owned());
+        }
         Ok(Self {
             emit_llvm,
+            sched_quantum,
             par,
             no_overlap,
             par_ledger,
@@ -715,6 +751,31 @@ mod tests {
     fn parse(arguments: &[&str]) -> Result<Options, String> {
         let owned: Vec<String> = arguments.iter().map(|value| (*value).to_owned()).collect();
         Options::parse(&owned)
+    }
+
+    #[test]
+    fn experimental_scheduler_quantum_requires_a_positive_explicit_parallel_build() {
+        let options = parse(&["--par", "--sched-quantum", "16384", "value.wf"])
+            .expect("valid checkpoint invocation");
+        assert_eq!(
+            options.sched_quantum.map(std::num::NonZeroU32::get),
+            Some(16384)
+        );
+        for arguments in [
+            vec!["--sched-quantum", "16", "value.wf"],
+            vec!["--par", "--sched-quantum", "0", "value.wf"],
+            vec!["--par", "--sched-quantum", "4294967296", "value.wf"],
+            vec![
+                "--par",
+                "--sched-quantum",
+                "2",
+                "--sched-quantum",
+                "3",
+                "value.wf",
+            ],
+        ] {
+            assert!(parse(&arguments).is_err(), "{arguments:?}");
+        }
     }
 
     /// The link stages the scheduler core on exactly the marker the emitter

@@ -352,6 +352,12 @@ wf_sched_stack *wf__sched_current_stack(void) {
     return wf_sched_current_stack(&wf__sched_core);
 }
 
+void wf__sched_checkpoint(void) {
+    if (wf__sched_current_stack() != NULL) {
+        wf_sched_checkpoint(&wf__sched_core);
+    }
+}
+
 unsigned wf__sched_pool_running(void) {
     return wf_prim_load_u(&wf__sched_workers, WF_PRIM_ACQUIRE);
 }
@@ -676,7 +682,8 @@ int wf__sched_report(char *buffer, size_t capacity) {
         "steals=%llu inline_runs=%llu exhausted_io=%llu exhausted_compute=%llu "
         "late_parks=%llu line_one=%llu spin_rounds=%u yield_rounds=%u "
         "progress_interval=%u observed=%u resume_migrations=%llu "
-        "idle_steps=%llu idle_looks=%llu idle_progress=%llu idle_waits=%llu",
+        "idle_steps=%llu idle_looks=%llu idle_progress=%llu idle_waits=%llu "
+        "checkpoints=%llu checkpoint_switches=%llu",
         wf__sched_threads,
         wf_prim_load_u(&wf__sched_workers, WF_PRIM_ACQUIRE),
         counts.parks,
@@ -696,7 +703,9 @@ int wf__sched_report(char *buffer, size_t capacity) {
         counts.idle_steps,
         counts.idle_looks,
         counts.idle_progress,
-        counts.idle_waits
+        counts.idle_waits,
+        counts.checkpoints,
+        counts.checkpoint_switches
     );
     return written > 0 && (size_t)written < capacity;
 }

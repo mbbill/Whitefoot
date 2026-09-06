@@ -650,6 +650,46 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
 
+/// Checkpoints preserve the checked permission report, loop-carried values,
+/// and both runtime worker selections. LLVM must update the backedge phis
+/// correctly when the always-inline tick opens its own control flow.
+#[test]
+fn cooperative_checkpoints_preserve_permissions_and_loop_results() {
+    let inputs = [crate::SourceInput::new(
+        "checkpoint.wf",
+        THREE_MEMBER_GROUP_BEFORE_A_LOOP,
+    )];
+    let (_, ledger) = crate::compile_with_permission_ledger(
+        &inputs,
+        crate::CompilerLimits::default(),
+        crate::OverlapLowering::On,
+    )
+    .expect("compile the ordinary loop");
+    for interval in [1, 3, 16384] {
+        let report = crate::compile_with_checkpoints(
+            &inputs,
+            crate::CompilerLimits::default(),
+            crate::OverlapLowering::On,
+            std::num::NonZeroU32::new(interval).expect("positive test interval"),
+        )
+        .expect("compile the checkpointed loop");
+        assert_eq!(report.ledger, ledger);
+        let directory = test_directory();
+        let executable = build_executable(&report.module, &directory);
+        for workers in [1, 2] {
+            let output = Command::new(&executable)
+                .env("WF_WORKERS", workers.to_string())
+                .env("WF_STACKS", "8")
+                .output()
+                .expect("run checkpointed loop");
+            assert_eq!(output.status.code(), Some(7), "{output:?}");
+            assert!(output.stdout.is_empty());
+            assert!(output.stderr.is_empty());
+        }
+        std::fs::remove_dir_all(directory).expect("remove checkpoint test link");
+    }
+}
+
 /// A group's compute members are joined newest first, and the block continues
 /// at the *first* published member's `par.done`.
 ///

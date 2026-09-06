@@ -5,6 +5,7 @@
 //! failures distinct while returning owned LLVM assembly to callers.
 
 use core::fmt;
+use std::num::NonZeroU32;
 
 mod rejection;
 
@@ -19,7 +20,8 @@ use crate::{
     FinalizeOutcome, LexLimits, LexOutcome, LoweringFailure, ParseLimits, ParseOutcome,
     ResolutionOutcome, SemanticLocation, SemanticOutcome, SourceBundle, SourceInput, SourceLimits,
     TerminalLimits, TerminalOutcome, audit_canonical, check_semantics, classify_terminals,
-    emit_llvm, finalize, lex, lower_checked, parse, resolve_with_inventory,
+    emit_llvm, emit_llvm_with_checkpoints, finalize, lex, lower_checked, parse,
+    resolve_with_inventory,
 };
 
 /// Host-compiler optimization arguments for every Whitefoot executable.
@@ -358,10 +360,31 @@ pub fn compile_with_inventory(
 /// for by flag; `notices` is the subset every compile reports without one.
 /// They are projections of the same rendered lines, so a notice can never say
 /// something the full report does not.
-struct Reported {
-    module: String,
-    ledger: Vec<String>,
-    notices: Vec<String>,
+pub struct CompilationReport {
+    /// The emitted LLVM module.
+    pub module: String,
+    /// The complete non-normative permission and actualization report.
+    pub ledger: Vec<String>,
+    /// The denied I/O loop permissions shown during ordinary compilation.
+    pub notices: Vec<String>,
+}
+
+/// Experimental code-generation policy: a scheduler check after this many
+/// natural-loop backedges per activation. It changes neither source checking
+/// nor the permission ledger, and imposes no source progress guarantee.
+pub fn compile_with_checkpoints(
+    inputs: &[SourceInput<'_>],
+    limits: CompilerLimits,
+    overlap: crate::OverlapLowering,
+    interval: NonZeroU32,
+) -> Result<CompilationReport, CompilationFailure> {
+    compile_reporting_with_checkpoints(
+        inputs,
+        limits,
+        crate::Inventory::ACTIVE,
+        overlap,
+        Some(interval),
+    )
 }
 
 /// The one compilation path, returning the module and the developer-channel
@@ -372,7 +395,17 @@ fn compile_reporting(
     limits: CompilerLimits,
     inventory: crate::Inventory,
     overlap: crate::OverlapLowering,
-) -> Result<Reported, CompilationFailure> {
+) -> Result<CompilationReport, CompilationFailure> {
+    compile_reporting_with_checkpoints(inputs, limits, inventory, overlap, None)
+}
+
+fn compile_reporting_with_checkpoints(
+    inputs: &[SourceInput<'_>],
+    limits: CompilerLimits,
+    inventory: crate::Inventory,
+    overlap: crate::OverlapLowering,
+    checkpoint_interval: Option<NonZeroU32>,
+) -> Result<CompilationReport, CompilationFailure> {
     let bundle = SourceBundle::with_limits(inputs, limits.source).map_err(|failure| {
         CompilationFailure::new(
             CompilationStage::SourceEnvelope,
@@ -597,8 +630,12 @@ fn compile_reporting(
         .map(|line| line.text)
         .collect();
     ledger.extend_from_slice(ir.actualization_ledger());
-    emit_llvm(&ir)
-        .map(|module| Reported {
+    let emitted = match checkpoint_interval {
+        None => emit_llvm(&ir),
+        Some(_) => emit_llvm_with_checkpoints(&ir, checkpoint_interval),
+    };
+    emitted
+        .map(|module| CompilationReport {
             module: module.into_string(),
             ledger,
             notices,

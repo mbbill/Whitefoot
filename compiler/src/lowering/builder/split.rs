@@ -931,11 +931,11 @@ fn cost(function: &IrFunction) -> Cost {
 /// getting it wrong is a factor of thousands rather than of a few instructions.
 fn loop_depths(blocks: &[IrBlock]) -> Vec<u8> {
     let mut depths = vec![0_u8; blocks.len()];
-    for (index, block) in blocks.iter().enumerate() {
-        let IrTerminator::Jump { target, .. } = block.terminator() else {
+    for index in crate::lowering::control_flow::backedge_sources(blocks) {
+        let IrTerminator::Jump { target, .. } = blocks[index].terminator() else {
             continue;
         };
-        if target.index() > index || reachable_without(blocks, target.index(), index) {
+        if target.index() > index {
             continue;
         }
         for depth in &mut depths[target.index()..=index] {
@@ -943,43 +943,6 @@ fn loop_depths(blocks: &[IrBlock]) -> Vec<u8> {
         }
     }
     depths
-}
-
-/// Whether `goal` is reachable from the entry block without passing through
-/// `removed`.
-fn reachable_without(blocks: &[IrBlock], removed: usize, goal: usize) -> bool {
-    if removed == 0 || goal == removed {
-        return false;
-    }
-    let mut seen = vec![false; blocks.len()];
-    let mut pending = vec![0_usize];
-    seen[0] = true;
-    while let Some(index) = pending.pop() {
-        if index == goal {
-            return true;
-        }
-        let Some(block) = blocks.get(index) else {
-            continue;
-        };
-        let successors: Vec<usize> = match block.terminator() {
-            IrTerminator::Jump { target, .. } => vec![target.index()],
-            IrTerminator::Match { targets, .. } => targets
-                .iter()
-                .map(|target| target.block().index())
-                .collect(),
-            IrTerminator::Return { .. } | IrTerminator::Unreachable => Vec::new(),
-        };
-        for successor in successors {
-            if successor != removed
-                && let Some(visited) = seen.get_mut(successor)
-                && !*visited
-            {
-                *visited = true;
-                pending.push(successor);
-            }
-        }
-    }
-    false
 }
 
 /// The shared synthesis cell one lowering threads through every builder it

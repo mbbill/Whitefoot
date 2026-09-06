@@ -139,6 +139,7 @@ pub(crate) const PARALLEL_LANE_ACQUISITION_DECLARATION: &str =
 pub fn module_requires_parallel_runtime(module: &str) -> bool {
     module.contains(PARALLEL_LANE_ACQUISITION_SYMBOL)
         || module.contains(PARALLEL_LANE_ACQUISITION_DECLARATION)
+        || module.contains(super::checkpoint::DECLARATION)
 }
 
 /// The runtime's answer to "was this run asked for a pool", put once per

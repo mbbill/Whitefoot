@@ -635,7 +635,42 @@ windows explicitly.
 The maintained macOS `completion-test` target also passed with the candidate
 enabled: all core enumeration configurations, the default-route probe, helper
 counts 0/1/4, the uncached case, and the pure-compute link boundary. Linux
-qualification and paired timing remain pending.
+qualification and paired timing completed in the following cohort.
+
+### Fifth measurement: 95ba7202
+
+[Run 34033148357](https://github.com/mbbill/Whitefoot/actions/runs/34033148357)
+and [artifact 9989517524](https://github.com/mbbill/Whitefoot/actions/runs/34033148357/artifacts/9989517524)
+contain 560 verified timed samples and the successful Linux completion harness,
+native-adapter probe and core enumeration with the candidate enabled. This VM
+reports AMD EPYC 7763, four logical CPUs on two physical cores with SMT, Linux
+6.17.0-1022-azure and clang 18.1.3. Its absolute rates must not be compared with
+the preceding Intel cohorts as though only the code changed.
+
+Median within-pass local/base rate ratios:
+
+| peers / bytes | shared4 | shared2 | split2 | split1 |
+| --- | ---: | ---: | ---: | ---: |
+| 1 / 64 | 1.008 | 1.003 | 1.001 | 1.005 |
+| 4 / 64 | 0.989 | 1.001 | 1.005 | 1.011 |
+| 64 / 64 | 1.006 | 1.017 | 1.007 | 1.005 |
+| 1024 / 64 | 1.000 | 1.003 | 1.001 | 1.004 |
+| 64 / 65536 | 0.991 | 1.022 | 1.002 | 1.000 |
+
+The 64-peer shared4 improvement is small but consistent in these seven pairs,
+1.001..1.009. Split2 at that size ranges 0.992..1.011. Large-payload ratios
+are noisy, including 0.796..1.116 in shared2 and 0.585..1.110 in split1, so
+their medians do not establish an improvement. At 64 peers, the local/uring
+paired rate ratios remain 0.852 shared4 and 0.864 split2. Split2 server CPU
+changes from 11.563 to 11.406 us/trip; shared4 remains 13.047 us/trip. Removing
+the private record's shared completion handshake alone does not close the gap.
+
+Selection: keep the production baseline while isolating CPU checkpoints.
+The private completion simplification is a qualified small optimization
+candidate, not evidence that source coloring is needed or that the entire
+completion runtime should use the relaxed path. Only records still private
+to their submitter support that argument; pending and published records retain
+their cross-thread protocol.
 
 ## Sixth experiment: keeping both request classes active
 
@@ -673,4 +708,111 @@ compute steps with four peers and two workers, with both class spans exceeding
 confirmed that a wrong canonical value fails the deferred verification, a
 non-bit response fails immediately, and reaching the sample capacity early
 fails without printing a result. Its fixed-count control verified 100000
-requests. Native Linux validation remains part of the upcoming CI experiment.
+requests. Native Linux validation completed in the following cohort.
+
+### Sixth measurement: 4e874daa
+
+[Run 34033979883](https://github.com/mbbill/Whitefoot/actions/runs/34033979883)
+and [artifact 9989792739](https://github.com/mbbill/Whitefoot/actions/runs/34033979883/artifacts/9989792739)
+contain all 420 verified timed samples. This VM reports Xeon Platinum 8573C,
+four logical CPUs on two physical cores with SMT, Linux 6.17 and clang 18.
+The gate, native-host and full benchmark workflows also passed at this revision.
+Both classes remain active for approximately the full one-second interval;
+the drain is reported separately rather than hidden in a fixed requested rate.
+
+At 64 peers with 2097152 recurrence steps per heavy request, class rates use
+the same exchange interval, including drain. Values below are medians of
+seven samples, not ratios computed by dividing unrelated cohorts:
+
+| placement / form | light requests/s | heavy requests/s | light p99 us | heavy p99 us |
+| --- | ---: | ---: | ---: | ---: |
+| shared4 / WF | 3852 | 928 | 257914 | 266752 |
+| shared4 / inline C | 6394 | 934 | 244140 | 444489 |
+| shared4 / q1024 | 218769 | 246 | 3058 | 116116 |
+| shared4 / q16384 | 147416 | 479 | 2865 | 65992 |
+| shared4 / q65536 | 102112 | 639 | 3054 | 49124 |
+| split2 / WF | 1530 | 478 | 33842 | 34239 |
+| split2 / inline C | 1447 | 479 | 37804 | 37837 |
+| split2 / q1024 | 267366 | 67 | 221 | 329514 |
+| split2 / q16384 | 95141 | 296 | 680 | 65112 |
+| split2 / q65536 | 34049 | 410 | 2099 | 48204 |
+
+In split2, paired native heavy-rate/WF ratios are 1.003 [0.991, 1.011] inline,
+0.141 [0.129, 0.153] q1024, 0.619 [0.593, 0.627] q16384, and 0.858
+[0.756, 0.869] q65536. At 262144 steps the three quantum ratios are 0.134,
+0.636, and 0.875. The smallest quantum buys rapid light service partly by
+spending most CPU on that much larger flow of light responses. Aggregate
+requests/s and CPU/request are therefore not comparable measures of useful
+heavy work when the served mix changes. WF's finite-burst throughput advantage
+does not establish a sustained heavy-throughput advantage over inline C.
+
+In the zero-compute split2 control, WF serves about 245515 total requests/s
+versus 320451 inline C, spending 7.29 versus 6.17 server CPU us/request. There
+is still a per-request implementation gap when the service mix is the same.
+In the long-compute split2 case the median drain is 31.2 ms WF, 35.0 ms inline,
+39.0 ms q1024, 17.2 ms q16384, and 17.9 ms q65536.
+
+Selection: compare the WF checkpoint prototype against this class-specific
+tradeoff, not the finite-burst aggregate ranking. Another limitation must be
+measured: a request-weighted class percentile can hide a slow connection that
+contributes very few responses. The next client revision also reports each
+class's minimum per-peer completion count and maximum per-peer p99. These
+cannot be reconstructed from this cohort's retained aggregate latency fields.
+
+## Seventh experiment: compiler-inserted cooperative loop checkpoints
+
+The compiler experiment `--par --sched-quantum N` runs the same semantic
+checker and lowering, then adds a checkpoint to natural-loop jump backedges.
+The dominance test is shared with the existing loop cost estimator; a break
+to an earlier-numbered exit block is not a backedge. One private i32 counter
+per activation belongs to the ordinary target-validated frame plan. An
+always-inline LLVM helper decrements it and calls the runtime every N ticks;
+LLVM updates the loop phis when inlining its control flow. No source proof is
+replaced by that counter, and no source signature acquires a suspension effect.
+Default compilation adds neither a counter nor a checkpoint call.
+
+The runtime checkpoint drains completions and pops one already-READY stack.
+With none ready it returns. Otherwise the running stack marks itself NOTIFIED
+and owes its enqueue to the target stack's existing far-side commit. Only after
+its SP and registers have been saved does that commit publish READY and enqueue
+it. Enqueuing before the switch would permit two workers to execute one stack.
+This path owns its readiness without a completion record. The enumerator
+checks that the yielding stack has exclusive running ownership, no registered
+waiter or claimed registration, and no previous enqueue owed; all existing
+record and stack checks remain active.
+
+New schedule S24 places a child's I/O completion beside a resumed parent and
+requires the checkpoint yield transition to be reached. It passed full state
+enumeration at (threads, stacks) = (1,2), (1,3), (2,3), (2,4), including 1.15
+and 2.81 million states in the two-thread configurations with zero bounded
+executions. The maintained completion-test target also passed with S24 added
+to every configuration. Thirty-one parallel backend tests and all twelve
+compiler invocation tests passed, including native loop-result and unchanged
+permission-ledger checks at intervals 1/3/16384 and one/two workers. The real
+checkpointed compute server passed four-peer admitted duration exchanges at
+0/262144/2097152 steps with one/two workers through the previously checked
+macOS client shim; these are correctness checks, not Linux timing evidence.
+
+`scheduler-checkpoint` compares base with intervals 1024/16384/65536, plus the
+same inline and three cooperative C references. Network cases use the sixth
+experiment's common-duration admitted protocol and both class rates/tails.
+Untimed observed 64-peer runs must report actual checkpoint switches as well
+as native-ring activity. The pure-compute and warm-file mixed programs return
+as controls at two/four/eight workers, with their independent expected bytes.
+Network baseline and checkpoint forms share idle policy, global queue, ring,
+stack representation, and completion protocol.
+The client additionally records minimum completed requests per connection and
+the worst individual connection's p99 in each class. Sorting for these metrics
+occurs after timing and verification. Local observed runs confirmed 2560/2944
+checkpoint calls and 1859/1149 actual switches with one/two workers, after
+correcting the observer's omitted summation of the two new counters. Its
+initial zero report did not establish that the optimizer removed checkpoints;
+the mandatory positive-counter check caught that reporting defect before CI.
+
+This prototype is deliberately not a progress contract. It does not start an
+unstarted callee when no stack is ready, cannot repair bounded admission, and
+does not cover arbitrary recursive CPU work or an uninterrupted host call.
+Iteration counts do not bound elapsed time when a loop body has variable cost.
+It tests whether compiler-chosen checkpoints can recover the measured service
+opportunity while preserving sequential source, and what they cost pure
+computation and oversubscription. No checkpoint interval is selected yet.

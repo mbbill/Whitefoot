@@ -61,9 +61,9 @@ if [[ $MODE != bench || $(uname -s) != Linux ]]; then
     echo 'scheduler-bench: use check on POSIX, or bench on Linux with io_uring' >&2
     exit 2
 fi
-[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain ]] || exit 2
+[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint ]] || exit 2
 network_compute=0
-if [[ $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == sustain ]]; then network_compute=1; fi
+if [[ $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint ]]; then network_compute=1; fi
 [[ $ROUNDS =~ ^[1-9][0-9]*$ && $WARMUP =~ ^[0-9]+$ ]] || exit 2
 [[ $(nproc) -ge 4 ]] || { echo 'scheduler-bench: this CPU-placement experiment needs four logical CPUs' >&2; exit 2; }
 mkdir -p "$OUT/bin" "$OUT/samples" "$OUT/observed" "$OUT/tree"
@@ -122,10 +122,12 @@ if [[ $network_compute == 1 ]]; then
 fi
 if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain ]]; then forms=(base); fi
 if [[ $EXPERIMENT == inline ]]; then forms=(base local); fi
+if [[ $EXPERIMENT == checkpoint ]]; then forms=(base cq1024 cq16384 cq65536); fi
 form_flags() {
     local_inline=0
     case $1 in
         base) spin=256; yields=16; progress=0 ;;
+        cq1024|cq16384|cq65536) spin=256; yields=16; progress=0 ;;
         local) spin=256; yields=16; progress=0; local_inline=1 ;;
         sleep) spin=0; yields=0; progress=0 ;;
         short) spin=16; yields=0; progress=0 ;;
@@ -163,18 +165,35 @@ else
     "$WFC" --par --emit-llvm -o "$OUT/compute.ll" "$ROOT/tests/programs/par_layout.wf"
     "$WFC" --par --emit-llvm -o "$OUT/mixed.ll" "$HERE/programs/windows_runtime_mixed.wf"
 fi
+if [[ $EXPERIMENT == checkpoint ]]; then
+    programs=(echo compute mixed)
+    "$WFC" --par --emit-llvm -o "$OUT/compute.ll" "$ROOT/tests/programs/par_layout.wf"
+    "$WFC" --par --emit-llvm -o "$OUT/mixed.ll" "$HERE/programs/windows_runtime_mixed.wf"
+fi
 "$WFC" --par --emit-llvm -o "$OUT/echo.ll" "$echo_source"
 for policy in "${forms[@]}"; do
     for program in "${programs[@]}"; do
-        link_form "$OUT/$program.ll" "$OUT/bin/$program-$policy" "$policy" 0
+        module="$OUT/$program.ll"
+        if [[ $policy == cq* ]]; then
+            case $program in
+                echo) source="$echo_source" ;;
+                compute) source="$ROOT/tests/programs/par_layout.wf" ;;
+                mixed) source="$HERE/programs/windows_runtime_mixed.wf" ;;
+            esac
+            module="$OUT/$program-$policy.ll"
+            "$WFC" --par --sched-quantum "${policy#cq}" --emit-llvm -o "$module" "$source"
+        fi
+        link_form "$module" "$OUT/bin/$program-$policy" "$policy" 0
     done
-    link_form "$OUT/echo.ll" "$OUT/bin/echo-$policy-observed" "$policy" 1
+    module="$OUT/echo.ll"
+    if [[ $policy == cq* ]]; then module="$OUT/echo-$policy.ll"; fi
+    link_form "$module" "$OUT/bin/echo-$policy-observed" "$policy" 1
 done
 if [[ $network_compute == 1 ]]; then
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread -DWF_BENCH_COMPUTE \
         "$HERE/epoll_echo.c" -o "$OUT/bin/epoll_compute"
 fi
-if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain ]]; then
+if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint ]]; then
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread -DWF_BENCH_COMPUTE -DWF_BENCH_QUANTUM \
         "$HERE/epoll_echo.c" -o "$OUT/bin/epoll_quantum"
 fi
@@ -228,7 +247,7 @@ network_case() {
         q1024|q16384|q65536)
             binary="$OUT/bin/epoll_quantum"
             arguments=(--threads "$server_workers" --quantum "${form#q}") ;;
-        base|local|sleep|short|spin|poll1|poll16)
+        base|local|sleep|short|spin|poll1|poll16|cq1024|cq16384|cq65536)
             binary="$OUT/bin/echo-$form"
             if [[ $observed == 1 ]]; then binary="$binary-observed"; fi
             environment=("WF_WORKERS=$server_workers" WF_STACKS=1100 "WF_SCHED_REPORT=$observed") ;;
@@ -261,7 +280,7 @@ network_case() {
     [[ ! -s $directory/server.out && ! -s $directory/client.err ]]
     if [[ $observed == 0 ]]; then [[ ! -s $directory/server.err ]]; fi
     if [[ $pass -ge 0 ]]; then
-        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
             "$pass" "$form" "$connections" "$bytes" "$trips" \
             "$(field "$directory/client.tsv" rt_per_s)" \
             "$(field "$directory/client.tsv" p50_us)" "$(field "$directory/client.tsv" p99_us)" \
@@ -272,7 +291,9 @@ network_case() {
             "$(field "$directory/client.tsv" client_exchange_user_us)" "$(field "$directory/client.tsv" client_exchange_system_us)" "$admitted" \
             "$(field "$directory/client.tsv" roundtrips)" "$duration_ms" "$(field "$directory/client.tsv" exchange_us)" \
             "$(field "$directory/client.tsv" drain_us)" "$(field "$directory/client.tsv" light_count)" \
-            "$(field "$directory/client.tsv" heavy_count)" >> "$OUT/network.tsv"
+            "$(field "$directory/client.tsv" heavy_count)" \
+            "$(field "$directory/client.tsv" light_min_count)" "$(field "$directory/client.tsv" light_worst_peer_p99_us)" \
+            "$(field "$directory/client.tsv" heavy_min_count)" "$(field "$directory/client.tsv" heavy_worst_peer_p99_us)" >> "$OUT/network.tsv"
     fi
 }
 
@@ -285,7 +306,7 @@ duration_ms=0
 admissions=(0)
 if [[ $EXPERIMENT == fairness ]]; then admissions=(0 1); fi
 if [[ $network_compute == 1 ]]; then references=(epoll); compute_rounds=262144; fi
-if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain ]]; then references=(epoll q1024 q16384 q65536); fi
+if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint ]]; then references=(epoll q1024 q16384 q65536); fi
 while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
     for admitted in "${admissions[@]}"; do
         for form in "${references[@]}" "${forms[@]}"; do network_case "$form" 4 20 64 -1 0; done
@@ -302,11 +323,16 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
              /^ring:/ { ring=1; for(i=2;i<=NF;i++) { split($i,a,"="); value[a[1]]=a[2]+0 } }
              END { exit !(scheduler && ring && value["submissions"] > 0 && value["completions"] > 0) }' \
             "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
+        if [[ $form == cq* && $connections == 64 ]]; then
+            awk '/^sched:/ { for(i=2;i<=NF;i++) { split($i,a,"="); value[a[1]]=a[2]+0 } }
+                 END { exit !(value["checkpoints"] > 0 && value["checkpoint_switches"] > 0) }' \
+                "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
+        fi
       done
     done
 done < "$OUT/cohorts.tsv"
 
-printf 'pass\tform\tconnections\tbytes\ttrips\trt_per_s\tp50_us\tp99_us\tuser_s\tsystem_s\tmax_rss_kib\tvoluntary_switches\tinvoluntary_switches\tsample\tcohort\tclient_user_s\tclient_system_s\tclient_max_rss_kib\tclient_voluntary_switches\tclient_involuntary_switches\tcompute_rounds\tlight_p99_us\theavy_p99_us\tlight_span_us\theavy_span_us\tclient_exchange_user_us\tclient_exchange_system_us\tadmitted\ttotal_roundtrips\tduration_ms\texchange_us\tdrain_us\tlight_count\theavy_count\n' > "$OUT/network.tsv"
+printf 'pass\tform\tconnections\tbytes\ttrips\trt_per_s\tp50_us\tp99_us\tuser_s\tsystem_s\tmax_rss_kib\tvoluntary_switches\tinvoluntary_switches\tsample\tcohort\tclient_user_s\tclient_system_s\tclient_max_rss_kib\tclient_voluntary_switches\tclient_involuntary_switches\tcompute_rounds\tlight_p99_us\theavy_p99_us\tlight_span_us\theavy_span_us\tclient_exchange_user_us\tclient_exchange_system_us\tadmitted\ttotal_roundtrips\tduration_ms\texchange_us\tdrain_us\tlight_count\theavy_count\tlight_min_count\tlight_worst_peer_p99_us\theavy_min_count\theavy_worst_peer_p99_us\n' > "$OUT/network.tsv"
 forward=("${forms[@]}" "${references[@]}")
 reverse=()
 for ((at=${#forward[@]}-1;at>=0;at--)); do reverse+=("${forward[at]}"); done
@@ -336,7 +362,7 @@ if [[ $EXPERIMENT == fairness ]]; then
     awk '$4 != 16384' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
     mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
 fi
-if [[ $EXPERIMENT == sustain ]]; then
+if [[ $EXPERIMENT == sustain || $EXPERIMENT == checkpoint ]]; then
     # Both request classes stay active for a common interval. The count is a
     # storage ceiling, not a target; an early ceiling hit fails the sample.
     cat > "$OUT/cases.tsv" <<'CASES'
@@ -369,7 +395,7 @@ done
 # Warm positioned reads plus compute measure coexistence; they do not establish
 # a bound on network latency while every worker runs a long computation.
 cpu_programs=(compute mixed)
-if [[ $EXPERIMENT != idle ]]; then cpu_programs=(); fi
+if [[ $EXPERIMENT != idle && $EXPERIMENT != checkpoint ]]; then cpu_programs=(); fi
 for program in "${cpu_programs[@]}"; do
     : > "$OUT/$program.plan"
     for workers in 2 4 8; do
@@ -403,6 +429,8 @@ awk -F '\t' '
       exchange_cpu[group,count[group]]=($26+$27)/$29;
       light_rate[group,count[group]]=($33+0)*1e6/$31;
       heavy_rate[group,count[group]]=($34+0)*1e6/$31;
+      light_min[group,count[group]]=$35+0; light_worst[group,count[group]]=$36+0;
+      heavy_min[group,count[group]]=$37+0; heavy_worst[group,count[group]]=$38+0;
       if ($2 == "base") base[cohort]=$6;
       samples[cohort,$2]=$6; groups[group]=1; cohorts[cohort]=1; }
     function summary(values,g, n,i,j,t) {
@@ -411,14 +439,15 @@ awk -F '\t' '
       return n%2 ? sorted[(n+1)/2] : (sorted[n/2]+sorted[n/2+1])/2;
     }
     END {
-      print "form case median_rt/s min_rt/s max_rt/s p50_us p99_us server_cpu_us/trip peak_rss_kib switches/trip paired_rate_ratio client_lifetime_cpu_us/trip light_p99_us heavy_p99_us client_exchange_cpu_us/trip light_rt/s heavy_rt/s";
+      print "form case median_rt/s min_rt/s max_rt/s p50_us p99_us server_cpu_us/trip peak_rss_kib switches/trip paired_rate_ratio client_lifetime_cpu_us/trip light_p99_us heavy_p99_us client_exchange_cpu_us/trip light_rt/s heavy_rt/s light_min_count light_worst_peer_p99_us heavy_min_count heavy_worst_peer_p99_us";
       for(g in groups) {
         split(g,parts,SUBSEP); form=parts[1]; key=parts[2]; n=0;
         for(c in cohorts) { split(c,p,SUBSEP); if(p[2]==key) ratios[g,++n]=samples[c,form]/base[c]; }
         rate=summary(rates,g); low=sorted[1]; high=sorted[count[g]];
-        printf "%s %s %.1f %.1f %.1f %.1f %.1f %.3f %.0f %.4f %.3f %.3f %.1f %.1f %.3f %.1f %.1f\n", form,key,rate,low,high,
+        printf "%s %s %.1f %.1f %.1f %.1f %.1f %.3f %.0f %.4f %.3f %.3f %.1f %.1f %.3f %.1f %.1f %.0f %.0f %.0f %.0f\n", form,key,rate,low,high,
           summary(lat,g),summary(tail,g),summary(cpu,g),summary(rss,g),summary(switches,g),summary(ratios,g),summary(client_cpu,g),
-          summary(light_tail,g),summary(heavy_tail,g),summary(exchange_cpu,g),summary(light_rate,g),summary(heavy_rate,g);
+          summary(light_tail,g),summary(heavy_tail,g),summary(exchange_cpu,g),summary(light_rate,g),summary(heavy_rate,g),
+          summary(light_min,g),summary(light_worst,g),summary(heavy_min,g),summary(heavy_worst,g);
       }
     }' "$OUT/network.tsv" > "$OUT/network-summary.txt"
 cat "$OUT/network-summary.txt"

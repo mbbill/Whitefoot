@@ -190,6 +190,14 @@ do not change. This separates CPU parallelism from I/O concurrency but does
 not guarantee progress when the configured window or stack capacity is too
 small for a peer protocol.
 
+The work-branch experiment `--par --sched-quantum N` inserts a cooperative
+checkpoint after N natural-loop backedges per function activation. It keeps
+source signatures and proof checking unchanged, progresses completions, and
+gives an already-ready stack a turn. It does not guarantee admission, preempt
+arbitrary recursion or long host calls, or establish a wall-clock service
+bound. The default emits no checkpoint counter or calls. Measurement and
+selection live in `research/investigations/io-model/SCHEDULER-EXPERIMENT.md`.
+
 The first multi-operation loop path is deliberately specific: one
 source-derived fixed two-slot bounded batch for the direct staged counted-loop
 shape. On native POSIX completion targets the runtime window is bounded to
