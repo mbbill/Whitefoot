@@ -2193,6 +2193,57 @@ compute/file controls actually run for that experiment.
 No timing or memory conclusion is drawn from that incomplete job; its logs
 remain in [run 34055042189](https://github.com/mbbill/Whitefoot/actions/runs/34055042189).
 
+### Native memory results
+
+The corrected revision `a88eedd0549b175db74775f6cc27e3f320c86150` passed all
+four workflows, including [memory run 34057509092](https://github.com/mbbill/Whitefoot/actions/runs/34057509092).
+Its [Linux artifact](https://github.com/mbbill/Whitefoot/actions/runs/34057509092/artifacts/9996807148)
+contains all 840 timed rows, candidate completion qualifications and compute/file
+controls. The host is EPYC 9V74, four logical CPUs/two SMT cores, Linux 6.17
+and clang 18. Compare paired forms in this job, not absolute rates with the
+7763 jobs. Median peak RSS in KiB shows the two independent startup costs:
+
+| Placement / peers | Base | Used lanes | Compact stacks | Both | Native epoll |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| split1 / 1 | 32768 | 13044 | 24536 | 6928 | 1980 |
+| split1 / 64 | 35560 | 15904 | 27848 | 7956 | 1992 |
+| split1 / 1024 | 79228 | 61580 | 79236 | 59588 | 1980 |
+| split2 / 1 | 32824 | 13524 | 24596 | 8516 | 1980 |
+| split2 / 64 | 36020 | 18504 | 27784 | 12064 | 1980 |
+| split2 / 1024 | 79456 | 61932 | 79364 | 60028 | 1980 |
+
+Used-lane initialization saves roughly 17..20 MiB, including at 1024 peers.
+Compact metadata/first-use preparation saves about 8 MiB when few stacks are
+used, but essentially nothing at 1024 live peers. Combining them lowers the
+one-peer split1 reading from 32 MiB to 6.8 MiB; the remaining roughly 58 MiB
+at 1024 peers still needs a live-context/buffer explanation. Reserving a stack
+and making every reserved stack resident are different costs.
+
+This is principally a memory/startup result. For split2 at 64/1024 small
+peers, both/base paired throughput is 1.0015 [0.9933, 1.0223] and
+0.9996 [0.9807, 1.0054]. Corresponding p99 ratios are
+0.9826 [0.8125, 1.0030] and 0.9507 [0.7485, 1.1305]. One-worker small-peer
+medians remain within about 0.6% of base. There are qualifications: compact
+alone loses every split1 one-peer pair (0.9955 [0.9668, 0.9990]); shared2/1024
+compact and combined medians are 0.9828 and 0.9875. The noisy shared4/four-peer
+combined ratio is 0.8006 [0.7244, 1.1465], so the result is not an unconditional
+Pareto improvement. No general network-throughput replacement is selected.
+
+The finite-process controls expose startup savings more clearly.
+Base/compact/both compute medians are 2107.21/2094.08/2090.95 ms at two
+workers, 1164.92/1155.58/1154.04 at four, and 1193.49/1180.04/1182.43 at eight.
+Warm file+compute medians are 151.36/136.01/135.09,
+159.24/143.45/141.42 and 171.81/154.76/152.76 ms. Every compact file-control
+sample is faster than every corresponding base sample; system CPU falls by
+roughly 13..18 ms while user work stays similar. These finite programs include
+startup; do not call that a 10% sustained server-throughput gain. Used lanes
+alone leave the controls near baseline, consistent with a residency saving.
+
+Keep the two storage policies available for a later combined-runtime comparison,
+without confusing their substantial cold/reserved-memory improvement with the
+still-large live-connection footprint. Buffers and their initialized-byte
+contract were unchanged throughout this experiment.
+
 ## Twentieth experiment: deliberate initial I/O placement
 
 Experiment 18 pins an accidental initial assignment. The next candidate gives
