@@ -1547,8 +1547,11 @@ pub const LANE_FRAME_BYTES: u64 = 256;
 /// [`LANE_FRAME_BYTES`] restates `WF_SCHED_FRAME_BYTES` — the ring is a static
 /// reservation the emitter makes long before a runtime exists — and the two
 /// numbers are pinned to each other by
-/// `the_staged_lane_window_ceiling_is_the_runtimes`.
-pub const LANE_SLOTS: u64 = 64;
+/// `the_staged_lane_window_ceiling_is_the_runtimes`. It is 1024 because that
+/// is the connection count the network control test keeps in flight, and a
+/// staged loop's ring in the frame is sized by it: one address, one answer
+/// and the iteration's own carries per slot.
+pub const LANE_SLOTS: u64 = 1024;
 
 /// Why a function exists, for the one consumer that has to tell the two worlds
 /// apart: a source function is emitted into both, while the two halves of a

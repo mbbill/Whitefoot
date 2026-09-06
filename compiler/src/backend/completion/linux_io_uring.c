@@ -165,13 +165,15 @@ static void wf_linux_init_statistics(wf_linux_io_uring_adapter *adapter) {
     atomic_init(&adapter->stat_kernel_waits, 0);
     atomic_init(&adapter->stat_kernel_wakes, 0);
     atomic_init(&adapter->stat_host_wake_writes, 0);
+    atomic_init(&adapter->stat_overflow_flushes, 0);
     atomic_init(&adapter->progress_error, 0);
 }
 
 int wf_linux_io_uring_init(
     wf_linux_io_uring_adapter *adapter,
     wf_completion_runtime *runtime,
-    size_t depth
+    size_t depth,
+    size_t completions
 ) {
     struct io_uring_params parameters;
     size_t submission_size;
@@ -179,7 +181,8 @@ int wf_linux_io_uring_init(
     int error;
 
     if (adapter == NULL || runtime == NULL || depth == 0
-        || depth > UINT_MAX) {
+        || depth > UINT_MAX || completions < depth
+        || completions > UINT_MAX) {
         return EINVAL;
     }
     memset(adapter, 0, sizeof(*adapter));
@@ -195,6 +198,12 @@ int wf_linux_io_uring_init(
     wf_linux_init_statistics(adapter);
 
     memset(&parameters, 0, sizeof(parameters));
+    /* The completion queue is sized by the caller rather than left at the
+     * kernel's twice-the-depth default, because the depth is a throughput
+     * choice about submission and the queue's size is a bound on how many
+     * completions can be posted before the overflow path. */
+    parameters.flags = IORING_SETUP_CQSIZE;
+    parameters.cq_entries = (unsigned)completions;
     adapter->ring_descriptor = (int)syscall(
         __NR_io_uring_setup,
         (unsigned)depth,
@@ -206,7 +215,8 @@ int wf_linux_io_uring_init(
         return error;
     }
     if ((parameters.features & IORING_FEAT_NODROP) == 0
-        || parameters.sq_entries < depth) {
+        || parameters.sq_entries < depth
+        || parameters.cq_entries < completions) {
         (void)close(adapter->ring_descriptor);
         adapter->ring_descriptor = -1;
         return ENOTSUP;
@@ -314,6 +324,11 @@ int wf_linux_io_uring_init(
     adapter->submission_array = WF_RING_POINTER(
         adapter->submission_mapping,
         parameters.sq_off.array,
+        unsigned
+    );
+    adapter->submission_flags = WF_RING_POINTER(
+        adapter->submission_mapping,
+        parameters.sq_off.flags,
         unsigned
     );
     adapter->completion_head = WF_RING_POINTER(
@@ -994,24 +1009,71 @@ int wf_linux_io_uring_progress(
         tail = wf_linux_load_acquire(adapter->completion_tail);
     }
 
-    while (head != tail && processed < budget) {
-        unsigned completion_index = head & *adapter->completion_mask;
-        struct io_uring_cqe completion =
-            adapter->completion_entries[completion_index];
-        int terminal_published = 0;
-        int error = wf_linux_publish_completion(
-            adapter,
-            &completion,
-            &terminal_published
-        );
-        head += 1u;
-        wf_linux_store_release(adapter->completion_head, head);
-        if (first_error == 0 && error != 0) {
-            first_error = error;
+    for (;;) {
+        while (head != tail && processed < budget) {
+            unsigned completion_index = head & *adapter->completion_mask;
+            struct io_uring_cqe completion =
+                adapter->completion_entries[completion_index];
+            int terminal_published = 0;
+            int error = wf_linux_publish_completion(
+                adapter,
+                &completion,
+                &terminal_published
+            );
+            head += 1u;
+            wf_linux_store_release(adapter->completion_head, head);
+            if (first_error == 0 && error != 0) {
+                first_error = error;
+            }
+            total += (size_t)terminal_published;
+            processed += 1;
+            tail = wf_linux_load_acquire(adapter->completion_tail);
         }
-        total += (size_t)terminal_published;
-        processed += 1;
-        tail = wf_linux_load_acquire(adapter->completion_tail);
+        /* The queue is drained, or the budget is spent.  A queue the kernel
+         * overflowed holds its remaining completions on the kernel's own
+         * list, and nothing but an `io_uring_enter` moves them into the
+         * queue: not a submission, since every submitter may be parked on
+         * one of them, and not the ring descriptor's readiness, which stays
+         * raised for exactly that reason.  So an empty queue under the
+         * overflow flag is entered once, for no minimum, and reaped again.
+         * A kick that leaves the flag raised and the queue empty is a
+         * kernel that has nothing more to move, and the loop ends. */
+        if (processed >= budget || head != tail
+            || (wf_linux_load_acquire(adapter->submission_flags)
+                & IORING_SQ_CQ_OVERFLOW) == 0) {
+            break;
+        }
+        {
+            int entered;
+            atomic_fetch_add_explicit(
+                &adapter->stat_overflow_flushes,
+                1,
+                memory_order_relaxed
+            );
+            do {
+                entered = wf_linux_enter(
+                    adapter->ring_descriptor,
+                    0,
+                    0,
+                    IORING_ENTER_GETEVENTS
+                );
+            } while (entered == -EINTR);
+            if (entered < 0) {
+                if (first_error == 0) {
+                    first_error = -entered;
+                }
+                atomic_fetch_add_explicit(
+                    &adapter->stat_enter_failures,
+                    1,
+                    memory_order_relaxed
+                );
+                break;
+            }
+            tail = wf_linux_load_acquire(adapter->completion_tail);
+            if (head == tail) {
+                break;
+            }
+        }
     }
     (void)pthread_mutex_unlock(&adapter->completion_lock);
 
@@ -1100,9 +1162,15 @@ int wf_linux_io_uring_park(
      * no host wake. A publisher after the second recheck sees the announced
      * sleeper and leaves a level-readable eventfd. */
     wf_completion_wait_lock(&adapter->runtime->wait);
+    /* Completions the kernel holds on its overflow list are completions the
+     * reaper has not seen, so the overflow flag is a non-empty queue here and
+     * below: a sleeper would otherwise be woken at once by the descriptor's
+     * readiness and reap nothing, over and over. */
     if (wf_completion_wake_epoch(adapter->runtime) != observed_epoch
         || wf_linux_load_acquire(adapter->completion_head)
-            != wf_linux_load_acquire(adapter->completion_tail)) {
+            != wf_linux_load_acquire(adapter->completion_tail)
+        || (wf_linux_load_acquire(adapter->submission_flags)
+            & IORING_SQ_CQ_OVERFLOW) != 0) {
         wf_completion_wait_unlock(&adapter->runtime->wait);
         return 0;
     }
@@ -1126,7 +1194,9 @@ int wf_linux_io_uring_park(
             memory_order_seq_cst
         ) != observed_epoch
         || wf_linux_load_acquire(adapter->completion_head)
-            != wf_linux_load_acquire(adapter->completion_tail)) {
+            != wf_linux_load_acquire(adapter->completion_tail)
+        || (wf_linux_load_acquire(adapter->submission_flags)
+            & IORING_SQ_CQ_OVERFLOW) != 0) {
         atomic_fetch_sub_explicit(
             &adapter->runtime->parked_schedulers,
             1,
@@ -1319,6 +1389,10 @@ wf_linux_io_uring_statistics wf_linux_io_uring_statistics_snapshot(
     );
     statistics.enter_failures = atomic_load_explicit(
         &adapter->stat_enter_failures,
+        memory_order_relaxed
+    );
+    statistics.overflow_flushes = atomic_load_explicit(
+        &adapter->stat_overflow_flushes,
         memory_order_relaxed
     );
     statistics.kernel_waits = atomic_load_explicit(

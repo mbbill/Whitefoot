@@ -866,6 +866,32 @@ cold read waits briefly and uniformly.
 
 ## Batch 3: streams and TCP (specification v0.46)
 
+**Status 2026-09-06, slice 4, the control test: landed on this branch, and
+the batch is closed by `docs/done/0108-streams-and-tcp.md`.** The TCP echo
+control test of NETWORK.md §6 is in `research/experiments/io-completion-bench`:
+`uring_echo.c` (raw io_uring, multishot accept and receive into a registered
+buffer ring, one ring and `SO_REUSEPORT` listener per thread), `epoll_echo.c`,
+`netload.c` as the one load generator, `linux-net-bench.sh` as the protocol,
+`programs/tcp_echo_server.wf` as the Whitefoot line, and a step in io-bench's
+Linux job. The result on the development host, at `ROUNDS=3`: the Whitefoot
+line is 0.54 of the io_uring reference at one connection, 0.11 at 64, 0.08 at
+1024, and 0.31 on the 64 KiB payload, staying at 27 to 36 thousand round trips
+a second whatever the connection count while the references reach 330 to 344
+thousand; the record says what is serial in the runtime, read from the code
+and not yet measured apart. The bounds were set to the test's numbers: the
+lane holds 1024 slots, the bridge's default window is 1024, `WF_STACKS` may
+name 2048 stacks, and the harness pins the window at the lane's slot count.
+The test found and the slice fixed a stall in the Linux ring at exactly 129
+connections: the 129th completion went to the kernel's overflow list, which
+only an `io_uring_enter` moves into the queue, and no submission was coming
+because every callee was parked; `linux_io_uring.c` now reads
+`IORING_SQ_CQ_OVERFLOW`, flushes inside the non-waiting progress pass, treats
+the flag as a non-empty queue in the park, and sizes the completion queue by
+the caller, 2048 for the bridge. 8192 connections in flight is outside the
+shapes and the stack pool. The performance work the ratio points at, one ring
+per thread and no wake per completion, and the open items of the record's
+§8, are the next PRs by the owner's decision of 2026-09-06.
+
 **Status 2026-09-06, peer-bound requests are a helper's: landed on this
 branch.** On the shared file adapter — every socket on Darwin and Windows
 accept, and `WF_IO_NO_NATIVE_RING` on Linux — a request whose kind waits on a
@@ -1023,7 +1049,9 @@ move kills the whole binding under [OWN-1], and no `split` or `join` exists.
    adapter's for the record-size reason the status above states.
 4. **The control benchmark** against the io_uring and epoll references, in
    `io-completion-bench`, reported as a ratio to the io_uring reference.
-5. **Batch record.**
+   Done; the status above and `docs/done/0108-streams-and-tcp.md` carry the
+   table.
+5. **Batch record.** Done: `docs/done/0108-streams-and-tcp.md`.
 
 ### What slice 1 revealed
 

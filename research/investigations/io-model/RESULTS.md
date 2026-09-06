@@ -8,9 +8,11 @@ then against a read-dominated workload whose files are opened once and
 whose reads are taken past the page cache, and finally re-measured on 2026-08-28
 after the Darwin helper path's per-operation cost was rebuilt.
 
-Read the batch-0096 section last and the batch-0092 section first. Batch 0092
-is the only workload here whose operations genuinely wait, and it is where the
-design's own question is answered; batch 0096 is the same workload re-measured
+Read the batch-0108 section at the end for the network control test, the first
+workload here whose peer decides when an operation completes. Of the file
+workloads, read the batch-0096 section last and the batch-0092 section first.
+Batch 0092 is the only file workload whose operations genuinely wait, and it
+is where the design's own question is answered; batch 0096 is the same workload re-measured
 after the Darwin adapter was changed, and it is the current reading of the
 standing bar. Read the batch-0090 section for the Linux-hardware result that the
 container's headline ratio does not reproduce, the batch-0086 one for absolute
@@ -2243,3 +2245,53 @@ native io_uring throughput, Windows IOCP execution, scheduler contention in a
 complete Whitefoot program, or continuation-frame resume cost. Cached
 operations produced no helper crossover; that observation does not imply that
 high-latency operations have none.
+
+## TCP echo control test, batch 0108 (2026-09-06)
+
+The control test `NETWORK.md` §6 asks for, in
+`research/experiments/io-completion-bench/`: `uring_echo.c` is the io_uring
+reference (raw ABI, multishot accept and receive into a registered buffer
+ring, one ring and one `SO_REUSEPORT` listener per thread, single-issuer
+deferred task running), `epoll_echo.c` the second reference (one
+edge-triggered epoll and listener per thread), `programs/tcp_echo_server.wf`
+the Whitefoot line (a fixed-trip accept loop over the connection count the
+invocation names, one parked callee per connection, built with `--par` and
+run with `WF_STACKS=1100`), `netload.c` the one load generator, and
+`linux-net-bench.sh` the protocol: warm-up and recorded passes in alternating
+order, medians over the recorded passes, every echoed byte verified, no
+timeout deciding anything. `io-bench.yml`'s Linux job runs it after the file
+tables; the table below is the development host, Linux 6.18 on four cores,
+`ROUNDS=3 WARMUP=1`.
+
+```text
+line                conns   bytes    trips     rt_per_s     p50_us     p99_us   connect_us   vs_uring   vs_epoll
+uring.k1                1      64    20000      28538.2       33.0       63.0         81.0       1.00       0.98
+epoll.k1                1      64    20000      29235.4       32.0       62.0         26.0       1.02       1.00
+wf.k1                   1      64    20000      15354.3       48.0      234.0        101.0       0.54       0.53
+uring.k64              64      64     2000     329876.3       64.0     2070.0        440.0       1.00       1.12
+epoll.k64              64      64     2000     294618.1       51.0     3532.0        520.0       0.89       1.00
+wf.k64                 64      64     2000      35993.9     1862.0     2792.0        636.0       0.11       0.12
+uring.k1024          1024      64      200     343760.3     1481.0    10234.0       5370.0       1.00       1.04
+epoll.k1024          1024      64      200     330230.5     1634.0    10224.0       3305.0       0.96       1.00
+wf.k1024             1024      64      200      26782.6    38105.0    43023.0       3771.0       0.08       0.08
+uring.k64.64k          64   65536      200      59161.2      696.0     4131.0        423.0       1.00       0.79
+epoll.k64.64k          64   65536      200      74564.0      324.0     5362.0        501.0       1.26       1.00
+wf.k64.64k             64   65536      200      18242.5     3302.0     8699.0        539.0       0.31       0.24
+
+line                  bytes_per_s
+uring.k64.64k        3877187281.9
+epoll.k64.64k        4886625315.3
+wf.k64.64k           1195542174.9
+```
+
+The Whitefoot line stays at 27 to 36 thousand round trips a second whatever
+the connection count while the references reach 330 to 344 thousand, which is
+the mark of one serial resource rather than of the number of peers; what is
+serial in the runtime, read from the code and not yet measured apart, is one
+ring under one submission lock and one completion lock for the whole pool and
+one wake through the runtime's eventfd per completion. At one connection the
+gap is about one park-and-wake per operation. The test also found the ring's
+completion-queue overflow stall at 129 connections, fixed in the same slice;
+`docs/done/0108-streams-and-tcp.md` §6 carries the reading of this table and
+§5 the defect. 8192 connections in flight is outside the shapes and the stack
+pool, and the table stops at 1024.

@@ -191,7 +191,15 @@ receive, send, stream read, half-close) and the routes are:
   object, and which comes first is the program's own release order.
   `native_adapter_probe.c` runs a loopback connect, accept, send and receive on
   the ring; `harness.c` runs the whole lifecycle and the pair's accounting at
-  the bridge's own ABI.
+  the bridge's own ABI. The completion queue's size is the caller's, through
+  `IORING_SETUP_CQSIZE`, 2048 for the bridge, and a completion the kernel
+  holds past it on its overflow list is moved into the queue by the reaper's
+  own `io_uring_enter` whenever the kernel raises `IORING_SQ_CQ_OVERFLOW`: a
+  program whose every callee is parked on such a completion submits nothing,
+  so no submission's enter would ever flush it, and the descriptor's readiness
+  alone would wake a sleeper to reap nothing. The control test found exactly
+  that at 129 connections against a 128-entry queue, and the probe's overflow
+  case pins the flush.
 - Windows: `ConnectEx`, `WSARecv`, `WSASend` on the completion port; the
   standard input handle through the adapter (a console handle has no
   overlapped form).
@@ -330,9 +338,19 @@ at a time cannot do. The bounds above it are the ones this section named — the
 runtime's window through `wf__completion_window` under a compiler ceiling of
 `WF_SCHED_LANE_SLOTS`, and the stack pool, since a parked callee holds a pool
 stack — and a loop stopped by data a remainder produced is still the one shape
-the rule itself does not stage. What the control test needs next is therefore
-the language work rather than the lowering: a server loop whose trip count is
-not fixed.
+the rule itself does not stage. For the control test those bounds are set to
+its own numbers: the lane holds 1024 slots and the bridge's default window is
+1024, so a fixed-trip accept loop naming 1024 connections keeps every one of
+them in flight, and `WF_STACKS` may name up to 2048 stacks, which the
+protocol sets to 1100 so 1024 parked callees have a stack each beside the
+entry thread's and the workers'. The server the protocol measures is
+`research/experiments/io-completion-bench/programs/tcp_echo_server.wf`: the
+connection count arrives as an argument and bounds the staged `for`, which
+[PAR-3] stages as it does the literal, and each callee's own receive-and-send
+loop is that connection's sequential loop. 8192 connections in flight is
+outside these shapes, by the stack pool before anything else, and the table
+says so. What the control test needs beyond that is the language work rather
+than the lowering: a server loop whose trip count is not fixed.
 
 ## 7. Slices
 

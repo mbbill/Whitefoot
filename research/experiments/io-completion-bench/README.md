@@ -207,6 +207,114 @@ starts and something making it resident while the table runs. `probe-warm` is
 the same check in the other direction, so the warm tables are labelled by
 measurement too.
 
+### The TCP echo workload
+
+The control test `research/investigations/io-model/NETWORK.md` section 6 asks
+for, and the bar it sets: the reference is the fastest existing solution
+regardless of language, because the target is first place, and the gap is the
+batch's result rather than something to hide.
+
+Three servers, one contract, one load generator. The contract is what makes
+the three comparable and what keeps the generator from telling them apart:
+a server takes `PORT` and `CONNECTIONS`, listens on `127.0.0.1:PORT`, echoes
+every byte of every connection back to that connection, and exits zero once
+`CONNECTIONS` connections have been accepted in total and every one of them
+has closed. A server that echoes the wrong bytes, drops a byte, reorders one,
+or leaves a connection unserved fails the run instead of reporting a fast
+time.
+
+- **`uring_echo`**: the io_uring reference, and the number every other line is
+  a ratio to. Written against the kernel ABI directly rather than liburing, as
+  the read baselines are.
+- **`epoll_echo`**: the second reference, the shape most deployed servers
+  still have: one epoll instance and one `SO_REUSEPORT` listener per thread,
+  edge triggered, reading until `EAGAIN` and carrying a per-connection buffer
+  for what a short write leaves behind.
+- **`wf_echo`**: `programs/tcp_echo_server.wf` built with `--par`, the
+  Whitefoot line. It runs with `WF_STACKS=1100` and otherwise the shipped
+  defaults, because a parked callee holds a pool stack for as long as its
+  connection lives and the widest case here holds 1024 connections at once.
+
+What the io_uring reference does that a portable server cannot, which is what
+the ratio is against:
+
+- **multishot accept.** One `IORING_OP_ACCEPT` with `IORING_ACCEPT_MULTISHOT`
+  per listener yields a completion per connection. There is no accept call and
+  no submission per connection at all.
+- **multishot receive.** One `IORING_OP_RECV` with `IORING_RECV_MULTISHOT` per
+  connection yields a completion per arrival, so a server that is echoing does
+  not submit a read between one message and the next.
+- **a provided buffer ring.** `IORING_REGISTER_PBUF_RING` hands the kernel a
+  ring of buffers and lets it choose the destination when the bytes arrive,
+  rather than committing a buffer per connection before there is anything to
+  put in it. The echo is then sent straight out of the buffer the kernel
+  filled, so the data is not copied on either side of the exchange. Exhaustion
+  is real and is handled rather than avoided: a receive that finds no buffer
+  answers `-ENOBUFS`, and that connection waits for a buffer to come back
+  instead of spinning on a re-arm.
+- **one ring per core.** Each thread owns its ring, its buffer ring and its own
+  `SO_REUSEPORT` listening socket, so a connection is accepted, received and
+  echoed on one thread with nothing shared on the path.
+- **a ring the kernel need not interrupt.** `IORING_SETUP_SINGLE_ISSUER` with
+  `IORING_SETUP_DEFER_TASKRUN` says one thread submits and the same thread
+  waits, which lets the kernel defer completion work to the moment that thread
+  asks for it. It is worth about a quarter of the small-message rate here, and
+  it is what puts the io_uring line ahead of the epoll line at 64 and 1024
+  connections instead of level with it.
+
+`--sqpoll` adds `IORING_SETUP_SQPOLL` and is off by default. The development
+host admits it; whether another host does is what `uring_echo --sqpoll` says
+there, since a kernel that refuses the flag refuses it at `io_uring_setup` and
+the server reports that and exits. The protocol does not run it, because a
+poll thread per ring costs a core each and on a four-core host it loses to the
+default by a third. It cannot be combined with the deferred task work above,
+since there the submitting task is the kernel's own.
+
+Everything each server needs is sized from `CONNECTIONS` before the first
+accept: the connection tables are indexed by descriptor, the buffer rings and
+echo queues are fixed arrays, and no server allocates per operation.
+
+`netload` is the one generator all three are measured with:
+
+    netload PORT CONNECTIONS ROUNDTRIPS BYTES [--threads T]
+
+It opens `CONNECTIONS` connections spread over `T` client threads, each with
+its own epoll, and times two phases. The connect phase runs from the first
+connect call until every connection is established, which is the
+connections-per-second measure. The exchange phase then has every connection
+perform `ROUNDTRIPS` round trips of a `BYTES`-byte message with all
+connections active at once, which is the round-trips-per-second, the
+bytes-per-second and the latency-distribution measure. Every echoed byte is
+compared with the byte that was sent, and a refused connect, a peer that
+closes mid-exchange, or one wrong byte prints one line and exits nonzero. The
+whole result is one line of tab-separated `key=value` fields, and the latency
+samples live in one array of `CONNECTIONS*ROUNDTRIPS` 32-bit microsecond
+values allocated before the first connect.
+
+`linux-net-bench.sh` is the protocol, and one protocol for every host that can
+run it, as `read-bench.sh` is for the read tables. It builds the compiler and
+the three tools from one worktree, checks that every server echoes what the
+generator sent at four connections before any of them reports a time, and then
+runs the plan: four cases -- one connection at 20000 round trips, 64 at 2000,
+1024 at 200, all of 64-byte messages, and then 64 connections at 200 round
+trips of 65536 bytes for the bytes-per-second line -- across every server
+line. A run picks a port below the kernel's ephemeral range, starts the server
+for exactly that case's connection count, waits for the listening socket to
+exist, runs the generator, and requires the server's own exit status to be
+zero. Nothing here is decided by a timeout: the only waits are for a port to
+appear and for a child to exit, and the wait for the port ends early if the
+server process is gone, with the server's diagnostic channel printed.
+
+`WARMUP` unrecorded passes are followed by `ROUNDS` recorded ones, a pass
+being every line of every case once, with alternate passes in reverse order,
+for the reason `runner.c` states: a host drifts over the minutes a table
+takes, and a grouped schedule turns that drift into a difference between
+lines. The table reports the median of each measure over the recorded passes
+and the ratio of each line's round-trip rate to the io_uring reference and to
+the epoll one. `NET_LINES` names a subset of `uring epoll wf` when one server
+cannot complete a run yet and the others still owe a table; the table names
+the lines it holds.
+
 ## Reproducing
 
     make -C research/experiments/io-completion-bench verify       # bytes only
@@ -217,6 +325,14 @@ measurement too.
     make -C research/experiments/io-completion-bench read-verify  # bytes only
     make -C research/experiments/io-completion-bench bench-read   # macOS tables
     make -C research/experiments/io-completion-bench linux-read   # Linux tables
+
+    make -C research/experiments/io-completion-bench net-tools    # the C tools
+    make -C research/experiments/io-completion-bench net-verify   # bytes only
+    make -C research/experiments/io-completion-bench linux-net    # the TCP table
+
+The TCP targets are Linux-only, as `linux` and `linux-read` are: `epoll_echo`
+and `uring_echo` are written against Linux interfaces, and the workload's
+point is the fastest shape that kernel offers.
 
 On native Windows, `windows-bench.ps1` owns a separate production
 qualification:

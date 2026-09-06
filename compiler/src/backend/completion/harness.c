@@ -42,9 +42,10 @@
  *
  * It used to be half the process-wide operation capacity.  There is no
  * operation capacity any more -- the record is a block of the submitting frame
- * -- so the number is now a throughput choice of the bridge's own, and it is
- * the same number (design §7). */
-#define WF_HARNESS_WINDOW_DEFAULT 32u
+ * -- and every submitted operation's batch carries the compiler's ceiling of
+ * two, so the only form this number reaches is a staged loop whose call is a
+ * lane hand-out, and it is the lane's own slot count (design §7). */
+#define WF_HARNESS_WINDOW_DEFAULT 1024u
 /* The private storage the window query affords one loop before the compiler's
  * ceiling and the loop's own slot size apply.  A test which means to reach
  * that boundary must name the same number the bridge does. */
@@ -2489,7 +2490,9 @@ static int test_completion_window_answers_at_the_boundaries(void) {
      * used to be half the process operation capacity, because a loop holding
      * every record would have pushed the rest of the program onto the
      * capacity-wait path; there is no capacity and no wait to be pushed onto
-     * any more, and the number is unchanged (design §7). */
+     * any more, and the number is the lane's slot count, since a staged lane
+     * hand-out is the one form no compiler ceiling bounds below it (design
+     * §7). */
     CHECK(unconstrained >= 1u);
     CHECK(unconstrained <= WF_HARNESS_WINDOW_DEFAULT);
 

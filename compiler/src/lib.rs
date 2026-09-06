@@ -38,7 +38,7 @@ pub use driver::*;
 pub use lexer::*;
 /// The compile-time choice of whether the backend actualizes the permission
 /// judgment's overlap groups.
-pub use lowering::OverlapLowering;
+pub use lowering::{LANE_SLOTS, OverlapLowering};
 pub use resolution::*;
 pub use source::*;
 pub use spec::*;

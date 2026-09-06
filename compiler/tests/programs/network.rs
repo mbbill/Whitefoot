@@ -434,7 +434,10 @@ fn the_fanout_loop_offers_its_staged_call_to_a_lane_and_retires_it_in_the_drain(
     // source states and the compiler's own ceiling: one lane frame slot per
     // in-flight iteration.
     assert!(
-        main.contains("call i64 @wf__completion_window(i64 4, i64 0, i64 64)"),
+        main.contains(&format!(
+            "call i64 @wf__completion_window(i64 4, i64 0, i64 {})",
+            whitefoot::LANE_SLOTS
+        )),
         "the staged loop must ask for its window once at entry:\n{main}"
     );
     let offer = labelled_block(main, "par.staged.offer.");

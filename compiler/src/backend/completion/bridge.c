@@ -76,11 +76,14 @@ _Static_assert(
  * It was half the process-wide operation capacity, because a loop that owned
  * every record would push every other operation in the program onto the
  * capacity-wait path.  There is no operation capacity any more and no capacity
- * wait to be pushed onto, so this is now a throughput choice of its own.  It
- * keeps the number the old rule produced -- half of 64 -- which is also where
- * the hand-written ceiling program measured its optimum (LOOP-PIPELINE.md
- * §9.2), so the change moves no measurement. */
-#define WF_BRIDGE_WINDOW_DEFAULT 32u
+ * wait to be pushed onto, and every submitted operation's batch carries the
+ * compiler's own ceiling of two, so this number reaches one form only: a
+ * staged loop whose call is a lane hand-out, whose ceiling is the lane's slot
+ * count.  It is that count, so that a server keeping 1024 connections in
+ * flight is bounded by its own trip count and its stacks rather than by a
+ * number chosen here; it moves no file measurement because no file batch
+ * reaches it. */
+#define WF_BRIDGE_WINDOW_DEFAULT 1024u
 static wf_completion_runtime wf_bridge_runtime;
 static wf_file_adapter wf_bridge_adapter;
 static unsigned wf_bridge_once;
@@ -364,7 +367,8 @@ static int wf_bridge_ring_start(void) {
     if (wf_linux_io_uring_init(
             &wf_bridge_linux_adapter,
             &wf_bridge_runtime,
-            WF_LINUX_IO_URING_DEPTH
+            WF_LINUX_IO_URING_DEPTH,
+            WF_LINUX_IO_URING_COMPLETIONS
         ) != 0) {
         return 0;
     }

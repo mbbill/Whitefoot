@@ -59,9 +59,19 @@ typedef struct wf_sched_record {
  * emitted module names the frame; `wf_sched_slot_of` recovers the slot. */
 #define WF_SCHED_FRAME_BYTES 256u
 /* The enumerator builds with the smaller constant (design §11: two slots, a
- * power of two and never three); the runtime with this one. */
+ * power of two and never three); the runtime with this one.
+ *
+ * It is also the ceiling on a staged loop's window when the staged call is a
+ * lane hand-out, because every iteration in flight holds one slot of the
+ * offering thread's lane; the compiler restates it as `LANE_SLOTS` and a
+ * test pins the two to each other. 1024 is the connection count the network
+ * control test measures at (`research/investigations/io-model/NETWORK.md`
+ * section 6), so a server whose fixed-trip accept loop names that many can
+ * keep every one of them in flight. A lane is about 320 bytes per slot, so a
+ * started thread's lane is about 320 KiB, and only the started threads'
+ * lanes are ever touched. */
 #if !defined(WF_SCHED_LANE_SLOTS)
-#define WF_SCHED_LANE_SLOTS 64u
+#define WF_SCHED_LANE_SLOTS 1024u
 #endif
 #define WF_SCHED_NO_SLOT (~0u)
 
@@ -127,8 +137,13 @@ typedef struct wf_sched_lane {
 #if !defined(WF_SCHED_MAX_THREADS)
 #define WF_SCHED_MAX_THREADS 64u
 #endif
+/* The most stacks WF_STACKS may ask for. A parked callee holds a pool stack,
+ * so a server keeping 1024 connections in flight needs 1024 of them beside
+ * the entry thread's own and the workers', which is why the ceiling is above
+ * the lane's 1024 slots. The default count stays the thread count plus the
+ * spare in `entry.c`; this is only what a written setting may reach. */
 #if !defined(WF_SCHED_MAX_STACKS)
-#define WF_SCHED_MAX_STACKS 1024u
+#define WF_SCHED_MAX_STACKS 2048u
 #endif
 
 /* The bounded spin before the idle park. A turn of the idle window whose

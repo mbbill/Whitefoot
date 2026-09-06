@@ -488,6 +488,65 @@ static int probe_more_in_flight_than_the_ring_is_deep(
     return 0;
 }
 
+/* More completions than the completion queue holds, reaped without a wait.
+ *
+ * The queue is sixteen entries here.  Twenty-four one-byte reads are staged
+ * and kicked together, so the kernel posts sixteen completions into the queue
+ * and keeps eight on its overflow list under IORING_FEAT_NODROP.  Nothing but
+ * an `io_uring_enter` moves those eight into the queue, and a program whose
+ * every submitter is parked on one of them makes no further submission, so
+ * the reaper has to make that call itself when the kernel raises
+ * IORING_SQ_CQ_OVERFLOW.  This is the stall the network control test found
+ * at 129 connections against a 128-entry queue: every thread idle, the ring
+ * descriptor readable, and nothing reaped.  The reap here is the
+ * non-waiting pass, which is the one a scheduler thread's progress makes. */
+static int probe_completions_past_the_queue_are_flushed_from_the_kernel(
+    wf_linux_io_uring_adapter *adapter,
+    int descriptor
+) {
+    enum { OPERATIONS = 24 };
+    wf_completion_record records[OPERATIONS];
+    unsigned char bytes[OPERATIONS];
+    wf_linux_io_uring_statistics before;
+    wf_linux_io_uring_statistics after;
+    size_t published = 0;
+    unsigned attempt;
+    unsigned index;
+
+    PROBE_CHECK(*adapter->completion_count < OPERATIONS);
+    before = wf_linux_io_uring_statistics_snapshot(adapter);
+    for (index = 0; index < OPERATIONS; ++index) {
+        bytes[index] = 0x5au;
+        probe_record_init(&records[index], WF_FILE_PREAD);
+        records[index].request.operation.pread.descriptor = descriptor;
+        records[index].request.operation.pread.buffer = &bytes[index];
+        records[index].request.operation.pread.count = 1;
+        records[index].request.operation.pread.offset = (int64_t)(index % 8u);
+        PROBE_CHECK(
+            wf_linux_io_uring_submit(adapter, &records[index])
+            == WF_LINUX_IO_URING_TARGET_OWNS
+        );
+    }
+    PROBE_CHECK(wf_linux_io_uring_flush(adapter) == 0);
+    for (attempt = 0; attempt < 100000u && published < OPERATIONS; ++attempt) {
+        size_t step = 0;
+        PROBE_CHECK(
+            wf_linux_io_uring_progress(adapter, OPERATIONS, 0, &step) == 0
+        );
+        published += step;
+    }
+    PROBE_CHECK(published == OPERATIONS);
+    for (index = 0; index < OPERATIONS; ++index) {
+        PROBE_CHECK(probe_record_done(&records[index]));
+        PROBE_CHECK(records[index].result.value == 1);
+        PROBE_CHECK(records[index].result.error_code == 0);
+        PROBE_CHECK(bytes[index] == (unsigned char)('a' + (index % 8u)));
+    }
+    after = wf_linux_io_uring_statistics_snapshot(adapter);
+    PROBE_CHECK(after.overflow_flushes > before.overflow_flushes);
+    return 0;
+}
+
 /* One loopback round trip on the ring: connect, accept, send, receive.
  *
  * This is the harness's own shape as a runtime probe -- the peer is the same
@@ -622,7 +681,7 @@ int main(int argc, char **argv) {
     /* The ring is deliberately shallower than the number of operations this
      * probe puts in flight, so that the submitting call's own kick is what
      * makes room rather than a capacity answer that no longer exists. */
-    error = wf_linux_io_uring_init(&adapter, &runtime, 8u);
+    error = wf_linux_io_uring_init(&adapter, &runtime, 8u, 16u);
     if (error != 0) {
         fprintf(
             stderr,
@@ -702,6 +761,12 @@ int main(int argc, char **argv) {
 
     PROBE_CHECK(
         probe_more_in_flight_than_the_ring_is_deep(&adapter, descriptor) == 0
+    );
+    PROBE_CHECK(
+        probe_completions_past_the_queue_are_flushed_from_the_kernel(
+            &adapter,
+            descriptor
+        ) == 0
     );
 
     PROBE_CHECK(probe_loopback_round_trip(&adapter) == 0);

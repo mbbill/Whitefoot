@@ -34,6 +34,18 @@ extern "C" {
  * `wf_linux_io_uring_init`; nothing else sets it. */
 #define WF_LINUX_IO_URING_DEPTH 64u
 
+/* The completion queue's size, which is the number of completions the kernel
+ * can post before it has to keep the rest on its own overflow list.  With
+ * IORING_FEAT_NODROP nothing is lost past it, but an overflowed completion
+ * reaches the queue only through an `io_uring_enter`, so the reaper flushes
+ * the overflow whenever the kernel raises IORING_SQ_CQ_OVERFLOW.  This is
+ * sized so the network control test's 1024 connections in flight, one
+ * receive each, never reach that path: twice the lane's slot count, at
+ * sixteen bytes an entry.  The bridge passes it at `wf_linux_io_uring_init`;
+ * the native adapter probe passes a small one to reach the overflow path on
+ * purpose. */
+#define WF_LINUX_IO_URING_COMPLETIONS 2048u
+
 enum wf_linux_io_uring_submit_result {
     WF_LINUX_IO_URING_TARGET_OWNS = 0,
     WF_LINUX_IO_URING_SUBMIT_INVALID = 1,
@@ -55,6 +67,10 @@ typedef struct wf_linux_io_uring_statistics {
     uint64_t kernel_waits;
     uint64_t kernel_wakes;
     uint64_t host_wake_writes;
+    /* `io_uring_enter` calls made only to move completions off the kernel's
+     * overflow list into the queue.  Zero in a program whose in-flight count
+     * stayed under the queue's size. */
+    uint64_t overflow_flushes;
 } wf_linux_io_uring_statistics;
 
 /* Target-private protocol state.  The mmap pointers below name shared
@@ -82,6 +98,10 @@ typedef struct wf_linux_io_uring_adapter {
     unsigned *submission_mask;
     unsigned *submission_count;
     unsigned *submission_array;
+    /* The kernel's flags word on the submission ring, read for
+     * IORING_SQ_CQ_OVERFLOW: completions the kernel is holding on its
+     * overflow list because the completion queue was full. */
+    unsigned *submission_flags;
     unsigned *completion_head;
     unsigned *completion_tail;
     unsigned *completion_mask;
@@ -100,18 +120,22 @@ typedef struct wf_linux_io_uring_adapter {
     _Atomic uint64_t stat_kernel_waits;
     _Atomic uint64_t stat_kernel_wakes;
     _Atomic uint64_t stat_host_wake_writes;
+    _Atomic uint64_t stat_overflow_flushes;
     _Atomic int progress_error;
 } wf_linux_io_uring_adapter;
 
 /* `depth` is the ring's submission-queue depth, a throughput parameter and
- * not a bound on operations in flight.  Initialization requires
+ * not a bound on operations in flight; `completions` is the completion
+ * queue's size, at least `depth`, past which the kernel holds completions on
+ * its overflow list until the reaper flushes them.  Initialization requires
  * IORING_FEAT_NODROP so an accepted operation can never silently lose its
  * unique CQE.  Any setup or qualification failure occurs before a record is
  * touched. */
 int wf_linux_io_uring_init(
     wf_linux_io_uring_adapter *adapter,
     wf_completion_runtime *runtime,
-    size_t depth
+    size_t depth,
+    size_t completions
 );
 
 /* Whether this adapter has a ring form for the record's request kind.  Asked
