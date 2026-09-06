@@ -24,10 +24,20 @@
 #include "socket_address.h"
 
 #include <fcntl.h>
+#include <netinet/tcp.h>
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+
+/* Experiment control: match the native network references' TCP policy.
+ * It changes packet coalescing, not source bytes or socket error outcomes. */
+#ifndef WF_TCP_NODELAY
+#define WF_TCP_NODELAY 0
+#endif
+#if WF_TCP_NODELAY != 0 && WF_TCP_NODELAY != 1
+#error "WF_TCP_NODELAY must be zero or one"
+#endif
 
 #if defined(__cplusplus)
 extern "C" {
@@ -69,14 +79,23 @@ static inline int wf_file_open_kind_flags(enum wf_file_expected_kind expected) {
 static inline int wf_socket_open(const wf_socket_address *address) {
     int family = wf_socket_address_family(address);
 #if defined(SOCK_CLOEXEC)
-    return socket(family, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    int descriptor = socket(family, SOCK_STREAM | SOCK_CLOEXEC, 0);
 #else
     int descriptor = socket(family, SOCK_STREAM, 0);
     if (descriptor >= 0) {
         (void)fcntl(descriptor, F_SETFD, FD_CLOEXEC);
     }
-    return descriptor;
 #endif
+#if WF_TCP_NODELAY
+    if (descriptor >= 0) {
+        int one = 1;
+        /* Set on the listener before accept, and on outgoing sockets before
+         * connect. The native probes verify both the setting and inheritance
+         * on the measuring host. An unsupported hint invents no IoError. */
+        (void)setsockopt(descriptor, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+    }
+#endif
+    return descriptor;
 }
 
 /* WF_IO_NOCACHE: a target policy that makes a program's reads genuinely wait.

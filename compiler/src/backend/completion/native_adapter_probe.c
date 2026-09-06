@@ -617,6 +617,17 @@ static int probe_loopback_round_trip(wf_linux_io_uring_adapter *adapter) {
     connected = (int)connecting.result.value;
     taken = (int)accepting.result.value;
     PROBE_CHECK(connected >= 0 && taken >= 0);
+#if WF_TCP_NODELAY
+    {
+        int sockets[3] = {listener, connected, taken};
+        for (unsigned index = 0; index < 3u; index++) {
+            int enabled = 0;
+            socklen_t bytes = (socklen_t)sizeof(enabled);
+            PROBE_CHECK(getsockopt(sockets[index], IPPROTO_TCP, TCP_NODELAY, &enabled, &bytes) == 0);
+            PROBE_CHECK(enabled != 0);
+        }
+    }
+#endif
     /* The accept published the peer's own address in the portable form the
      * accept join reads, and a loopback peer is 127.0.0.1 with an ephemeral
      * port the target chose. */

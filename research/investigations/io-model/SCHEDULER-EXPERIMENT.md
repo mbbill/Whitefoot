@@ -1740,3 +1740,96 @@ experiment 15's retirement. This experiment does not yet implement a new WF
 backend or select stackful versus stackless lowering; it measures whether an
 ordinary sequential call representation can approach the hand-written state
 machine when ownership and the I/O engine are local.
+
+### Sixteenth result: ordinary call stacks do not impose the measured gap
+
+Revision `001262a39276b6dda6f3aa1da794a41f94f4eb0e` completed all 560 echo and
+504 paced rows in [run 34048405406](https://github.com/mbbill/Whitefoot/actions/runs/34048405406).
+The two jobs each reported AMD EPYC 7763, four logical CPUs on two physical
+cores, and clang 18.1.3. They are separate VMs; only within-job comparisons
+are paired. Artifacts `9994002749` and `9994113353` retain raw samples,
+observers, native checks and optimized modules. The canonical gate, host
+qualification and all-platform I/O benchmark workflows also passed at this
+revision. All 20 Linux stream checks passed, including actual blocked sends
+and compute yields; the optimized manual reference modules were unchanged.
+
+With one server CPU on a different physical core from the client, the median
+paired stackful/manual echo throughput ratios were 0.9962, 0.9946, 0.9995 and
+0.9972 at 1/4/64/1024 small-payload peers. At 64 peers the rates were
+128833/128932 requests/s, p99 536/542 us and CPU/request 7.734/7.734 us.
+At 1024 peers, rates were 125558/125730 and peak RSS 5804/1864 KiB; retaining
+ordinary stacks costs resident memory even when capacity is nearly equal.
+The large-payload ratio was 1.0192, with a wide 0.8927..1.6484 paired range.
+Multi-worker cells also varied substantially: split2/64 small peers had a
+0.9538 median ratio and 0.6938..1.2951 range. These samples do not resolve
+small multi-worker representation differences or isolate their variability.
+
+The fixed-arrival comparison is more decisive about compute suspension. With
+long computation and split2 placement, the 16384-step sequential/manual
+heavy-rate paired ratios were 1.0000 (0.9812..1.0191) at 4800 light arrivals/s
+and 0.9976 (0.9951..1.0146) at 24000. Median heavy completions/s and scheduled
+light p99 are:
+
+| Light arrivals/s | WF base | WF chunks 16384 | Manual C 16384 | Sequential C 16384 |
+| --- | --- | --- | --- | --- |
+| 4800 | 502 / 685123 us | 464 / 1086 us | 480 / 680 us | 480 / 674 us |
+| 24000 | 502 / 953385 us | 384 / 640 us | 415 / 729 us | 416 / 639 us |
+
+Inline sequential/manual C both retained about 502 heavy completions/s while
+allowing roughly 0.7..1.0-second light tails. Under split1 the two quantum
+forms had exactly equal heavy capacity in every paired pass at both offered
+rates. Shared2/shared4 quantum capacity medians were also within 0.4%; tails
+were not uniformly equal or better. The sequential representation preserves
+the capacity/latency tradeoff of the same owner-local engine in these cases.
+This is evidence against attributing the existing WF runtime gap to ordinary
+sequential call stacks alone. It does not select a general stackful backend,
+prove an arbitrary call-depth bound, or establish universal performance.
+
+The full WF runtime still has a measurable gap. In the echo job at split2/64
+small peers, WF/manual C rates were 157541/184524 and CPU/request
+11.562/10.391 us. At 1024 peers, WF/manual/sequential RSS was
+79288/1852/5740 KiB. Both task storage and buffer policy differ, so this is
+not an isolated measurement of stack memory. Keep the sequential native
+reference while investigating persistent ownership in WF itself.
+
+One further control was missing from every earlier echo comparison: the two
+native C servers and the client enable `TCP_NODELAY`, while WF leaves the
+host default. In this job split2/64 large-payload p99 was 41628 us for WF
+and 1893/1848 us for manual/sequential C. That difference cannot yet be
+assigned to the scheduler. The next comparison isolates the TCP option.
+
+## Seventeenth experiment: align TCP packet coalescing policy
+
+`WF_TCP_NODELAY=1` sets the option once when a POSIX listener or outgoing
+socket is created. The default remains zero while the comparison is open.
+This is a target packetization policy, with no new source annotation or
+operation outcome. The default-route and Linux native-adapter probes read
+back the option on the listener, connected socket and accepted socket; no
+assumption of inheritance substitutes for a measuring-host check.
+
+The first M1 probe failed because its new assertion required exactly one.
+Darwin returned four: [XNU's TCP option getter](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/netinet/tcp_usrreq.c)
+returns the nonzero flag bit for `TCP_NODELAY`. The probe now checks the
+boolean property, rather than a Linux-specific representation. This was a
+test defect, not evidence of failed inheritance. The candidate's complete
+M1 completion suite passed after this correction, including the actual option
+on all three sockets and every original scheduler enumeration.
+
+`scheduler-nodelay` compares base WF, WF with the option enabled, native epoll
+with it enabled/disabled, and native io_uring with it enabled/disabled. All six
+forms use the same client (which retains `TCP_NODELAY`), four CPU placements,
+1/4/64/1024 small-payload peers and 64 large-payload peers, two warm-ups and
+seven alternating passes: 840 timed rows. Native option verification runs in
+separate binaries before timing, reading back each accepted descriptor. The
+WF candidate runs its full completion suite on the measuring host, and
+observed network runs also report the selected policy and require actual
+native ring submissions/completions. Neither verification calls nor observers
+are present in timed native binaries. No TCP result is inferred before the
+CI samples exist.
+
+The emitted WF echo module passed every byte on the M1 under both policies,
+with eight peers, one/four workers and 64/65536-byte payloads (eight cases).
+The native epoll option readback and delayed-reader patterned stream passed
+with both policies and one/four workers through the temporary kqueue shim.
+All three default manual reference forms still produce the exact earlier
+optimized LLVM. These local checks are correctness evidence only.

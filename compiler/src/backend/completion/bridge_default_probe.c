@@ -20,6 +20,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(WF_TCP_NODELAY) && WF_TCP_NODELAY && !defined(_WIN32)
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/socket.h>
+#endif
+
 /* ------------------------------------------------- the probe's host leaf */
 
 /* The four host calls this scaffold makes, and the only place it names a
@@ -340,6 +346,22 @@ static int probe_loopback_round_trip(unsigned *chosen_port) {
         );
         return 1;
     }
+#if defined(WF_TCP_NODELAY) && WF_TCP_NODELAY && !defined(_WIN32)
+    {
+        int sockets[3] = {(int)listener, (int)client, (int)served};
+        for (index = 0; index < 3u; index++) {
+            int enabled = 0;
+            socklen_t bytes = (socklen_t)sizeof(enabled);
+            /* A boolean socket option can be any nonzero value: Darwin
+             * reports its TCP flag bit, rather than normalizing to one. */
+            if (getsockopt(sockets[index], IPPROTO_TCP, TCP_NODELAY, &enabled, &bytes) != 0 || enabled == 0) {
+                fprintf(stderr, "bridge default probe: TCP_NODELAY socket %u descriptor %d value %d was not enabled or inherited\n",
+                    (unsigned)index, sockets[index], enabled);
+                return 1;
+            }
+        }
+    }
+#endif
     /* The peer of a loopback connection is 127.0.0.1 on a port the host chose,
      * in the same portable form on every engine: this is the one place the
      * accept join's three scalars are read, and a target whose rewrite of the

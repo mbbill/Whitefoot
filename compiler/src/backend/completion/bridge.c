@@ -519,7 +519,7 @@ int wf__bridge_report(char *buffer, size_t capacity) {
         capacity,
         "ring: submissions=%llu submission_enters=%llu completions=%llu "
         "kernel_waits=%llu kernel_wakes=%llu host_wake_writes=%llu "
-        "overflow_flushes=%llu runtime_parks=%llu inline=%llu",
+        "overflow_flushes=%llu runtime_parks=%llu inline=%llu tcp_nodelay=%u",
         (unsigned long long)ring.submissions,
         (unsigned long long)ring.submission_enters,
         (unsigned long long)ring.completions,
@@ -534,7 +534,8 @@ int wf__bridge_report(char *buffer, size_t capacity) {
         (unsigned long long)atomic_load_explicit(
             &wf_bridge_inline_executions,
             memory_order_relaxed
-        )
+        ),
+        (unsigned)WF_TCP_NODELAY
     );
     return written > 0 && (size_t)written < capacity;
 }

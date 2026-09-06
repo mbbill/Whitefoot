@@ -387,6 +387,22 @@ static void accept_ready(struct worker *worker) {
             mark_failed();
             return;
         }
+#if defined(WF_BENCH_TCP_VERIFY)
+        int enabled = 0;
+        socklen_t option_bytes = sizeof(enabled);
+#if defined(WF_BENCH_NAGLE)
+        const int expected = 0;
+#else
+        const int expected = 1;
+#endif
+        if (getsockopt(descriptor, IPPROTO_TCP, TCP_NODELAY, &enabled, &option_bytes) != 0 ||
+            (enabled != 0) != expected) {
+            fprintf(stderr, "epoll_echo: accepted TCP_NODELAY does not match the requested policy\n");
+            close(descriptor);
+            mark_failed();
+            return;
+        }
+#endif
         struct connection *link = &table[descriptor];
 #if defined(WF_BENCH_SNDBUF)
         int send_bytes = WF_BENCH_SNDBUF;
@@ -509,7 +525,9 @@ static int listener_for(uint16_t port) {
     /* Set on the listener, where an accepted connection inherits it, rather
      * than once per accepted descriptor: the connect rate is one of the
      * measures, and a per-connection setsockopt would be charged to it. */
+#if !defined(WF_BENCH_NAGLE)
     setsockopt(descriptor, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
+#endif
     struct sockaddr_in address;
     memset(&address, 0, sizeof address);
     address.sin_family = AF_INET;

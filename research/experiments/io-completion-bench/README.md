@@ -338,7 +338,7 @@ The current scheduler experiments and their controls are described in
 [`SCHEDULER-EXPERIMENT.md`](../../investigations/io-model/SCHEDULER-EXPERIMENT.md).
 `scheduler-checkpoint`, `scheduler-footprint`, `scheduler-paced`,
 `scheduler-chunks`, `scheduler-canonical`, `scheduler-stackful` and
-`scheduler-stackful-paced` run their respective Linux cohorts. The measured
+`scheduler-stackful-paced` and `scheduler-nodelay` run their respective Linux cohorts. The measured
 priority, counter-stripe, stack-offset and independently locked ready-queue
 prototypes were retired; their results and exact revisions remain in the investigation. The canonical
 comparison also builds the recorded prior compiler revision from local Git
@@ -351,6 +351,10 @@ replacing manual continuation fields with sequential functions on guarded
 stacks. `stackful-check` verifies back pressure, fragmented compute frames and
 premature close for both representations; Linux `scheduler-check` also runs it.
 The comparison's small-send-buffer override and observer are correctness-only.
+The TCP policy comparison measures WF, native epoll and native io_uring with
+`TCP_NODELAY` off/on, including both small and large payloads. It reads back
+accepted socket options outside timing and runs the full candidate completion
+suite. The WF default remains unchanged pending this measurement.
 
 On native Windows, `windows-bench.ps1` owns a separate production
 qualification:

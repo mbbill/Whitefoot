@@ -64,7 +64,7 @@ if [[ $MODE != bench || $(uname -s) != Linux ]]; then
     echo 'scheduler-bench: use check on POSIX, or bench on Linux with io_uring' >&2
     exit 2
 fi
-[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == footprint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical || $EXPERIMENT == stackful || $EXPERIMENT == stackful-paced ]] || exit 2
+[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == footprint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical || $EXPERIMENT == stackful || $EXPERIMENT == stackful-paced || $EXPERIMENT == nodelay ]] || exit 2
 network_compute=0
 if [[ $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical ]]; then network_compute=1; fi
 if [[ $EXPERIMENT == stackful-paced ]]; then network_compute=1; fi
@@ -88,11 +88,12 @@ if [[ $EXPERIMENT == canonical ]]; then
     OLD_WFC=$OUT/compiler-before/target/gate/whitefootc
 fi
 
-if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint ]]; then
+if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == nodelay ]]; then
     # The experimental path keeps every existing harness assertion, including
     # completion counts, and also runs the core's maintained enumeration.
     check_define='-DWF_COMPLETION_LOCAL_INLINE=1'
     if [[ $EXPERIMENT == footprint ]]; then check_define='-DWF_SCHED_INIT_USED_LANES=1'; fi
+    if [[ $EXPERIMENT == nodelay ]]; then check_define='-DWF_TCP_NODELAY=1'; fi
     if ! make -C "$ROOT/compiler" completion-test CC="$CLANG" \
         COMPLETION_TMP="$OUT/$EXPERIMENT-check" \
         COMPLETION_BASE_CFLAGS="-std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread $check_define" \
@@ -158,11 +159,14 @@ if [[ $EXPERIMENT == canonical ]]; then forms=(base old1024 old16384 ch1024 ch16
 if [[ $EXPERIMENT == footprint ]]; then forms=(base lanes); fi
 if [[ $EXPERIMENT == stackful ]]; then forms=(base); fi
 if [[ $EXPERIMENT == stackful-paced ]]; then forms=(base ch16384); fi
+if [[ $EXPERIMENT == nodelay ]]; then forms=(base nodelay); fi
 form_flags() {
     local_inline=0
     init_used=0
+    tcp_nodelay=0
     case $1 in
         base) spin=256; yields=16; progress=0 ;;
+        nodelay) spin=256; yields=16; progress=0; tcp_nodelay=1 ;;
         lanes) spin=256; yields=16; progress=0; init_used=1 ;;
         cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|old1024|old16384) spin=256; yields=16; progress=0 ;;
         local) spin=256; yields=16; progress=0; local_inline=1 ;;
@@ -176,14 +180,14 @@ form_flags() {
 }
 link_form() {
     local module=$1 output=$2 policy=$3 observed=$4
-    local observer=() spin yields progress local_inline init_used
+    local observer=() spin yields progress local_inline init_used tcp_nodelay
     form_flags "$policy"
     if [[ $observed == 1 ]]; then observer=("$BACKEND/sched/grant_observer.c"); fi
     "$CLANG" -std=c11 -O2 -pthread -I "$BACKEND" -I "$BACKEND/completion" \
         -I "$BACKEND/sched" "-DWF_SCHED_IDLE_SPIN_ROUNDS=$spin" \
         "-DWF_SCHED_IDLE_YIELD_ROUNDS=$yields" "-DWF_SCHED_IDLE_PROGRESS_INTERVAL=$progress" \
         "-DWF_SCHED_OBSERVE=$observed" "-DWF_COMPLETION_LOCAL_INLINE=$local_inline" \
-        "-DWF_SCHED_INIT_USED_LANES=$init_used" \
+        "-DWF_SCHED_INIT_USED_LANES=$init_used" "-DWF_TCP_NODELAY=$tcp_nodelay" \
         -x c "$BACKEND/wf_floor.c" "$BACKEND/sched/core.c" \
         "$BACKEND/sched/prim_host.c" "$BACKEND/sched/entry.c" \
         "$BACKEND/completion/runtime.c" "$BACKEND/completion/wait_host.c" \
@@ -197,7 +201,7 @@ echo_source="$HERE/programs/tcp_echo_server.wf"
 if [[ $network_compute == 1 ]]; then
     echo_source="$HERE/programs/tcp_compute_server.wf"
     programs=(echo)
-elif [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == stackful ]]; then
+elif [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == stackful || $EXPERIMENT == nodelay ]]; then
     programs=(echo)
 else
     "$WFC" --par --emit-llvm -o "$OUT/compute.ll" "$ROOT/tests/programs/par_layout.wf"
@@ -281,6 +285,22 @@ fi
 for tool in netload uring_echo epoll_echo runner gen; do
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread "$HERE/$tool.c" -o "$OUT/bin/$tool"
 done
+if [[ $EXPERIMENT == nodelay ]]; then
+    for engine in epoll uring; do
+        for nagle in 0 1; do
+            option_flags=()
+            output="$OUT/bin/${engine}_echo"
+            if [[ $nagle == 1 ]]; then option_flags=(-DWF_BENCH_NAGLE); output="$output-nagle"; fi
+            if [[ $nagle == 1 ]]; then
+                "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread "${option_flags[@]}" \
+                    "$HERE/${engine}_echo.c" -o "$output"
+            fi
+            # Read back the actual accepted socket option outside timing.
+            "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread "${option_flags[@]}" \
+                -DWF_BENCH_TCP_VERIFY "$HERE/${engine}_echo.c" -o "$output-verified"
+        done
+    done
+fi
 if [[ $EXPERIMENT == stackful || $EXPERIMENT == stackful-paced ]]; then
     # The reference engine must remain the measured prior implementation.
     # Check all three manual forms on this toolchain, not only the M1 probe.
@@ -350,8 +370,10 @@ network_case() {
     mkdir -p "$directory"
     port=$(free_port)
     case $form in
-        uring|epoll)
-            binary="$OUT/bin/${form}_echo"
+        uring|epoll|uring-nagle|epoll-nagle)
+            binary="$OUT/bin/${form%-nagle}_echo"
+            if [[ $form == *-nagle ]]; then binary="$binary-nagle"; fi
+            if [[ $EXPERIMENT == nodelay && $observed == 1 ]]; then binary="$binary-verified"; fi
             if [[ $network_compute == 1 ]]; then binary="$OUT/bin/epoll_compute"; fi
             arguments=(--threads "$server_workers") ;;
         q1024|q16384|q65536)
@@ -363,7 +385,7 @@ network_case() {
         f16384)
             binary="$OUT/bin/epoll_stackful_quantum"
             arguments=(--threads "$server_workers" --quantum 16384) ;;
-        base|local|lanes|sleep|short|spin|poll1|poll16|cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|old1024|old16384)
+        base|nodelay|local|lanes|sleep|short|spin|poll1|poll16|cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|old1024|old16384)
             binary="$OUT/bin/echo-$form"
             if [[ $observed == 1 ]]; then binary="$binary-observed"; fi
             environment=("WF_WORKERS=$server_workers" WF_STACKS=1100 "WF_SCHED_REPORT=$observed") ;;
@@ -431,9 +453,14 @@ if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkp
 if [[ $EXPERIMENT == canonical ]]; then references=(q1024 q16384); fi
 if [[ $EXPERIMENT == stackful ]]; then references=(uring epoll fiber); fi
 if [[ $EXPERIMENT == stackful-paced ]]; then references=(epoll fiber q16384 f16384); fi
+if [[ $EXPERIMENT == nodelay ]]; then references=(uring uring-nagle epoll epoll-nagle); fi
 while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
     for admitted in "${admissions[@]}"; do
-        for form in "${references[@]}" "${forms[@]}"; do network_case "$form" 4 20 64 -1 0; done
+        for form in "${references[@]}" "${forms[@]}"; do
+            preflight_observed=0
+            if [[ $EXPERIMENT == nodelay ]]; then preflight_observed=1; fi
+            network_case "$form" 4 20 64 -1 "$preflight_observed"
+        done
     done
     admitted=0
     for form in "${forms[@]}"; do
@@ -447,6 +474,13 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
              /^ring:/ { ring=1; for(i=2;i<=NF;i++) { split($i,a,"="); value[a[1]]=a[2]+0 } }
              END { exit !(scheduler && ring && value["submissions"] > 0 && value["completions"] > 0) }' \
             "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
+        if [[ $EXPERIMENT == nodelay ]]; then
+            expected=0
+            if [[ $form == nodelay ]]; then expected=1; fi
+            awk -v expected="$expected" '/^ring:/ { for(i=2;i<=NF;i++) { split($i,a,"="); value[a[1]]=a[2]+0 } }
+                 END { exit !(("tcp_nodelay" in value) && value["tcp_nodelay"]==expected) }' \
+                "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
+        fi
         if [[ ( $form == cq* || $form == ch* || $form == old* ) && $connections == 64 ]]; then
             awk '/^sched:/ { for(i=2;i<=NF;i++) { split($i,a,"="); value[a[1]]=a[2]+0 } }
                  END { exit !(value["checkpoints"] > 0 && value["checkpoint_switches"] > 0) }' \
@@ -478,7 +512,7 @@ else
 64 2000 64 0
 CASES
 fi
-if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == stackful ]]; then
+if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == stackful || $EXPERIMENT == nodelay ]]; then
     printf '1024 200 64 0\n64 500 65536 0\n' >> "$OUT/cases.tsv"
 fi
 if [[ $EXPERIMENT == fairness ]]; then

@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        experiment: [stackful, stackful-paced]
+        experiment: [nodelay]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -58,9 +58,9 @@ jobs:
         run: |
           {
             echo '## Scheduler experiment: ${{ matrix.experiment }}'
-            echo 'Paired within this job and CPU cohort. Owner-local epoll with manual continuations versus sequential functions on guarded stacks, using the same context switch as WF. Echo: 1/4/64/1024 peers and small/large payloads. Paced: fixed light arrivals and saturated heavy work, with matching 16384-step turns. WF and native controls remain in each cohort. See the investigation for scope.'
+            echo 'Paired within this job and CPU cohort. Align TCP_NODELAY on WF, native epoll and native io_uring; each engine is measured with the option off and on. Echo: 1/4/64/1024 peers and small/large payloads. Read back accepted socket options outside timing and run the full candidate completion suite. See the investigation for scope.'
             echo '```text'
-            for file in host.txt cohorts.tsv network-summary.txt stackful-check.log; do
+            for file in host.txt cohorts.tsv network-summary.txt nodelay-check.log; do
               cat "$RUNNER_TEMP/io-scheduler/$file" 2>/dev/null || echo "$file was not produced"
             done
             echo '```'
