@@ -168,13 +168,6 @@ int main(void) {
             (void)fprintf(stderr, "stack layout lost usable depth or frame bounds\n");
             return 1;
         }
-#if WF_SCHED_STACK_SPREAD_BYTES
-        if (index != 0u && (uintptr_t)stack % 4096u
-            == (uintptr_t)core.stacks[index - 1u] % 4096u) {
-            (void)fprintf(stderr, "successive stack tops were not spread\n");
-            return 1;
-        }
-#endif
     }
     if (pthread_create(&device, NULL, device_main, NULL) != 0) {
         return 1;

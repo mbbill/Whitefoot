@@ -1486,3 +1486,129 @@ complete candidate suite and the io_uring, epoll and baseline correctness
 runs, then stopped before starting the candidate. The benchmark dispatcher
 still listed the retired `striped` form and rejected `spread` with exit 2.
 Correct that form name and rerun; no timed cohort was produced by this launch.
+
+### Stack-layout results and retirement
+
+The corrected revision `bc748c302de39d8279019c075a45b78190bf5544` completed
+Linux run [34045212729](https://github.com/mbbill/Whitefoot/actions/runs/34045212729),
+artifact `9993142659` (`io-scheduler-stacks`), on an EPYC 9V74 VM with four
+logical CPUs and clang 18.1.3. All 560 timed network samples and the complete
+candidate suite passed. The repository gate and native host matrix passed.
+The separate Windows qualification again rejected two unstable compute
+cohorts; its Linux/macOS jobs passed, but there is no qualified Windows
+performance table for this revision.
+
+| Placement | 64 peers: spread/base paired rate | 1024 peers: spread/base paired rate |
+| --- | ---: | ---: |
+| Shared four CPUs | 1.0068 | 0.9993 |
+| Shared two CPUs | 0.9987 | 1.0086 |
+| Split two server/two client CPUs | 1.0000 | 0.9885 |
+| Split one server/one client CPU | 1.0032 | 1.0002 |
+
+These are medians of seven within-pass ratios with 64-byte messages. At
+1024 peers on split2 all paired rates are below one (range 0.9625..0.9999),
+and p99 changes from 7211 to 8083 us. At 64 peers on split2 p99 is 441/443 us.
+The 64-KiB split2 paired rate median is 1.0512, but its range is
+0.7573..1.1517 and p99 is 1680/1690 us; this does not select a gain.
+
+Peak RSS increases: at 64 peers on split2, base/spread medians are
+36248/39892 KiB; at 1024 they are 79220/85720 KiB. Other placements show
+similar increases. The mechanism behind the extra residency is not isolated
+by this experiment; do not infer a particular cache or page-table cause.
+Pure-compute medians at two/four/eight workers are 2717.25/2718.54,
+1499.22/1496.12 and 1550.98/1555.10 ms. Warm-file medians are
+195.24/195.37, 201.54/202.18 and 217.68/217.94 ms. Neither control supplies
+a compensating benefit.
+
+Retire stack spreading, its extra reservation bytes, diagnostic field and
+comparison mode. Keep the smoke test's general usable-depth and frame-bound
+checks; remove only its retired-layout-specific offset assertion. The default
+layout and original guard/reservation geometry remain, and the measured
+revision preserves the experiment for reproduction. This result rejects this
+particular offset policy; it does not compare stackful and stackless task
+representations or show that their locality costs are identical.
+
+## Fifteenth experiment: independently locked worker ready queues
+
+Experiment 1 changed queue preference while retaining one mutex. Its negative
+result therefore did not test independent queue synchronization. The current
+candidate compares three forms: the original global FIFO, one FIFO per parking
+worker under the original mutex, and those same worker FIFOs under independent
+mutexes. `WF_SCHED_READY_SHARDS` selects 0, 1 or 2 respectively; zero remains
+the default. The second and third forms have identical queue layout, routing,
+scan order and wake rules, so their paired difference isolates the lock
+assignment and native mutex storage more closely than the earlier experiment.
+
+A running owner records its worker index before an I/O park's phase transfer,
+and before a cooperative checkpoint's corresponding transfer. The existing
+phase protocol publishes this field to the enqueuer. Enqueue appends to that
+worker's FIFO; pop first checks its own FIFO, then scans every other configured
+worker's FIFO. Stealing remains permitted, so this is parking-worker preference,
+not persistent connection affinity. Both worker-queue forms wake the shared
+epoch on each queue's empty-to-nonempty transition. There is no global ready
+counter. Compared with the global FIFO this can wake more often; it is an
+explicit part of both worker-queue controls, not an unreported constant.
+
+Mutex zero always protects the free-stack list. In form 1 it also protects
+all ready queues; in form 2 worker i's ready queue uses mutex i+1. Native mutexes
+and queue heads/tails are separated by 128-byte alignment. The POSIX mutex
+array is initialized once during reservation, before any worker can run, with
+no once check in the hot lock path. Windows uses statically initialized SRW
+locks. No core path holds two list locks. Stack reservations, completion
+records and their ordering, ring topology, compute deques and idle policy
+are unchanged. The experiment uses the original stack-top layout and keeps
+used-lane initialization off in every timed form.
+
+The enumerator's lock operation now names a mutex. Its state snapshot includes
+every lock holder, and a lock step is enabled only when that mutex is free.
+Every original phase, list, wake and lifetime check remains. Ready membership
+is the disjoint union of every FIFO; the checker validates each tail, routing
+to the recorded worker, absence of work on unconfigured queues, and the
+original prohibition on sleeping with any ready work. No schedule or state
+limit is narrowed to admit the candidate.
+
+`scheduler-shards` is wired to the existing runner. Three WF forms and the
+native io_uring/epoll references run at all four CPU placements, five
+connection/payload cases, two warm-ups and seven alternating passes (700 timed
+network samples). The pure-compute and warm-file controls retain two/four/eight
+workers. Both worker-queue forms run the complete completion suite on the
+measuring Linux host before sampling; observed runs verify the selected
+policy and native-ring traffic. An additional Windows CI job links the same compiler-emitted mixed I/O/compute module against all three runtime forms, checks its independent expected output at two/four workers, requires real IOCP submissions to be fully reaped, and verifies actual park/resume activity and the selected queue policy. It is correctness evidence, not a Windows timing comparison. The one-worker Linux case is retained: independent
+locks cannot assume that compute parallelism requires two workers for I/O.
+
+The initial independent-lock implementation passed the complete M1 completion
+suite before adding the shared-lock control. Native eight-peer echo and paced
+mixed-compute checks subsequently passed every response in all three final
+forms at one and two workers, with actual cooperative switches in the mixed
+case. All three final policy-numbered completion suites then passed on the M1, including every maintained enumeration configuration with zero bounded states. The shared-lock and independent-lock forms both reach 4656736 states for S24 at two threads/four stacks; each list mutation remains one protected operation in this model, so physical lock contention is measured separately.
+
+### Continuation-lowering feasibility probe
+
+A separate temporary LLVM probe tested whether a general backend facility can
+replace the former restricted source-shaped continuation emitter. It uses a
+loop with two suspension sites, branching, an addressed value retained across
+suspension, and a parent calling a suspending child. Two hundred independently
+checked executions with varying zero/nonzero trip counts passed on the M1,
+using caller-owned 256/512-byte frame buffers without allocator calls. This is
+an ABI/code-generation feasibility result, not a WF compiler path, native I/O
+benchmark, or evidence that arbitrary frames fit those buffers.
+
+The [LLVM coroutine documentation](https://llvm.org/docs/Coroutines.html)
+describes splitting ordinary LLVM functions at suspension intrinsics and
+retaining live state in coroutine frames. Its returned-continuation form can
+use caller-provided storage and allocate when that storage is insufficient.
+That offers a route to general CFGs without hand-spelling a state machine for
+every source pattern, but requires a precise allocation/lifetime contract and
+integration with the completion publication protocol.
+
+The installed Apple clang 21.0.0 (`clang-2100.1.1.101`) differs from the upstream
+18.x/21.x retcon test signatures: the fixed-signature `coro.id.retcon` call is
+rejected, while a variadic declaration/call passes that check. The nested
+probe then reaches a backend error about multiple defining `coro.begin` calls
+unless the child is marked `noinline`. With that restriction the complete
+probe runs correctly and lowers to ordinary ramp/resume functions. These
+observations require toolchain qualification before using this ABI in WF;
+they do not establish that source-visible suspension annotations are needed.
+Current SCOPE-3 permits host resource exhaustion outside the source outcome
+model, but a future backed-concurrency promise still needs explicit capacity
+reasoning. No source rule or public ABI is changed by this temporary probe.

@@ -31,17 +31,13 @@
 #define WF_SCHED_OBSERVE 0
 #endif
 
-/* Experimental POSIX stack layout: spread successive stack tops over 32
- * offsets, 128 bytes apart. Extra reservation bytes preserve usable depth.
- * Windows fibers own different stacks, so this does not test their layout. */
-#ifndef WF_SCHED_STACK_SPREAD_BYTES
-#define WF_SCHED_STACK_SPREAD_BYTES 0u
+/* 0: baseline FIFO; 1: worker queues sharing the free-list mutex;
+ * 2: the same worker queues with independent mutexes. */
+#ifndef WF_SCHED_READY_SHARDS
+#define WF_SCHED_READY_SHARDS 0
 #endif
-#if WF_SCHED_STACK_SPREAD_BYTES != 0 && WF_SCHED_STACK_SPREAD_BYTES != 4096
-#error "WF_SCHED_STACK_SPREAD_BYTES must be zero or 4096"
-#endif
-#if defined(_WIN32) && WF_SCHED_STACK_SPREAD_BYTES != 0
-#error "Stack spreading is a POSIX experiment; Windows fibers own their stacks"
+#if WF_SCHED_READY_SHARDS < 0 || WF_SCHED_READY_SHARDS > 2
+#error "WF_SCHED_READY_SHARDS must be zero, one or two"
 #endif
 
 #if defined(__cplusplus)
@@ -135,7 +131,7 @@ typedef struct wf_sched_stack {
     unsigned char *high;
     /* Its position in the reservation, so a test can name it. */
     unsigned index;
-#if WF_SCHED_OBSERVE
+#if WF_SCHED_OBSERVE || WF_SCHED_READY_SHARDS
     /* Written by the running owner before publishing SUSPENDING; the park
      * handshake publishes it to the enqueue, then the queue mutex to pop. */
     unsigned park_thread;
@@ -278,13 +274,34 @@ typedef struct wf_sched_thread {
     wf_sched_statistics counts;
 } wf_sched_thread;
 
+/* The baseline has one ready queue sharing the free-list mutex. The shard
+ * candidate has one separately locked queue per configured worker. Padding
+ * keeps different queues' head/tail writes on different cache lines. */
+typedef struct wf_sched_ready_queue {
+#if WF_SCHED_READY_SHARDS
+    _Alignas(128)
+#endif
+    wf_sched_stack *head;
+    wf_sched_stack *tail;
+} wf_sched_ready_queue;
+
+#if WF_SCHED_READY_SHARDS
+#define WF_SCHED_READY_QUEUE_COUNT WF_SCHED_MAX_THREADS
+#else
+#define WF_SCHED_READY_QUEUE_COUNT 1u
+#endif
+#if WF_SCHED_READY_SHARDS == 2
+#define WF_SCHED_LOCK_COUNT (WF_SCHED_MAX_THREADS + 1u)
+#else
+#define WF_SCHED_LOCK_COUNT 1u
+#endif
+
 /* The core's one instance. The runtime has exactly one; the enumerator makes
- * one per execution. Every word two threads touch is reached through a
- * primitive of `prim.h`; the lists are touched under the one mutex. */
+ * one per execution. Shared words are reached through prim.h; each list is
+ * protected by its assigned mutex. */
 typedef struct wf_sched_core {
-    /* Under the one mutex: the ready list and the stack free list. */
-    wf_sched_stack *ready_head;
-    wf_sched_stack *ready_tail;
+    wf_sched_ready_queue ready[WF_SCHED_READY_QUEUE_COUNT];
+    /* The stack free list always uses mutex zero. */
     wf_sched_stack *free_head;
     /* The reservation: `stack_count` stacks, headers at their tops. */
     unsigned char *reservation;
