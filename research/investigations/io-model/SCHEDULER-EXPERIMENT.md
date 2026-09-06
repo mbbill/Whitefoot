@@ -354,6 +354,24 @@ idle observations and full timed passes. Client phase barriers now prevent
 requests preceding the start timestamp or cleanup preceding the final CPU
 snapshot. New baseline measurements are required after these harness changes.
 
+The e3fa2a6a retry passed every four-peer screen, including split1, then
+failed the first split1 observer check. [Its artifact](https://github.com/mbbill/Whitefoot/actions/runs/34031265140/artifacts/9988702498)
+shows 8000 verified round trips, 8007 scheduler parks/resumes, and no ring
+report. This was exit-observer ordering: without detached workers, bridge
+shutdown destroys the engine before the constructor-registered observer runs.
+The diagnostic report now remembers successful ring initialization separately
+from current engine readiness. Atomic counters in static storage survive
+teardown; the report reads those counters only, never destroyed descriptors
+or mappings. The native-ring activity check remains mandatory. This retry
+also reached no timed idle cohort.
+
+A separate native macOS capacity probe with four open peers and one worker
+verified 1, 2, 3, 4, 4, 4 responses before any EOF at stack counts 2, 3, 4, 5,
+6, 9 respectively (500 ms observation window, correct response bytes in every
+completed exchange). This is a concrete capacity witness, not a general
+formula or a measured latency bound. Below five stacks, pending peers waited
+while completed peers remained open, as the exhaustion path predicts.
+
 ## Third experiment: network service while connections compute
 
 Question: does a long ordinary compute call prevent unrelated connections

@@ -358,6 +358,11 @@ static int wf_bridge_native_ring_refused(void) {
 
 static wf_linux_io_uring_adapter wf_bridge_linux_adapter;
 static _Atomic unsigned wf_bridge_linux_ready;
+/* Diagnostic counters have static storage and survive engine teardown. A
+ * one-worker process tears down its ring before the constructor-registered
+ * exit observer runs; it must still report that ring's actual activity.
+ * This flag never selects an operation route or authorizes a ring access. */
+static _Atomic unsigned wf_bridge_linux_reportable;
 /* The one piece of bridge readiness a thread may observe without running the
  * initializer itself.  `wf_bridge_ring_flush` must not create a ring for a
  * program that only ever makes direct calls, so it cannot go through the
@@ -390,6 +395,7 @@ static int wf_bridge_ring_start(void) {
         return 0;
     }
     wf_bridge_linux_ready = 1;
+    atomic_store_explicit(&wf_bridge_linux_reportable, 1u, memory_order_release);
     atomic_store_explicit(&wf_bridge_doorbell_ready, 1, memory_order_release);
     return 1;
 }
@@ -500,7 +506,8 @@ static uint64_t wf_bridge_ring_submission_enters(void) {
 int wf__bridge_report(char *buffer, size_t capacity) {
     wf_linux_io_uring_statistics ring;
     int written;
-    if (buffer == NULL || capacity == 0u || !wf_bridge_ring_ready()) {
+    if (buffer == NULL || capacity == 0u
+        || atomic_load_explicit(&wf_bridge_linux_reportable, memory_order_acquire) == 0u) {
         return 0;
     }
     ring = wf_linux_io_uring_statistics_snapshot(&wf_bridge_linux_adapter);

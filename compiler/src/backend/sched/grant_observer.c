@@ -37,10 +37,11 @@
  * `.CRT$XCU` initializer on MSVC and to `.init_array` on ELF, both of which
  * run before `main`; `atexit` handlers run first in the exit sequence on both
  * platforms, before any terminator and with the streams intact. The LIFO order
- * against the bridge's own `atexit(wf_bridge_shutdown)` does not matter: that
- * handler returns at once while the scheduler pool is still running
- * (`completion/bridge.c`), so whichever way round they fall, this one finds a
- * live stream and a live core.
+ * against the bridge's own `atexit(wf_bridge_shutdown)` matters for a run with
+ * no additional workers: that handler tears down the ring before this report.
+ * The bridge therefore retains reportability of its static atomic counters
+ * after teardown. With workers still running it leaves the engine intact.
+ * Both cases find live stdio and counters whose storage outlives teardown.
  *
  * The core's counter writes and this snapshot's reads are relaxed atomic.
  * Each counter has one writer, and its static storage outlives every thread.
