@@ -52,7 +52,7 @@ pub(crate) enum KernelShape {
     /// formed over.
     ///
     /// It is a class rather than one parameter because the class is wider
-    /// than any one type — the two runs [BLK-1] and, until [S34] retires
+    /// than any one type — the two runs [BLK-1] and, until S34 retires
     /// them, `array<T, N>` and `buffer<T>` — and because nothing in the
     /// formation reads what that storage is made of. The row's element type
     /// is the operand's own element, so the class supplies `T`, and the
@@ -1323,7 +1323,7 @@ const MUT_SLICE_OF: KernelSignature = KernelSignature {
 /// and the four published relations — while their *spelling* is still the
 /// [OP-1] family entry every existing program writes, because the transitional
 /// operand domain includes `array<T, N>` and `buffer<T>` and those two types
-/// retire with [S34]. Two domains may not claim one spelling [TYPE-6], so the
+/// retire with S34. Two domains may not claim one spelling [TYPE-6], so the
 /// spelling passes to the kernel IDENT domain in the same change that retires
 /// them, and until then these two rows carry no resolver entry.
 pub(crate) const KERNEL_SIGNATURES: [KernelSignature; 13] = [

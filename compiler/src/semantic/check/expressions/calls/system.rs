@@ -332,9 +332,9 @@ occurs at one parameter position, so this call's own arguments determine it",
     ///
     /// Every parameter but the range-bearing ones names one exact type and is
     /// admitted by equality. A range-bearing parameter names an operand class
-    /// [VIEW-7], which is admitted by membership: a destination takes the
+    /// [SYS-8], which is admitted by membership: a destination takes the
     /// exclusive view, a source takes the shared one, and both take
-    /// `buffer<u8>` until [S34] retires the old container surface. Nothing in
+    /// `buffer<u8>` until S34 retires the old container surface. Nothing in
     /// the row reads what the storage is made of, and the region a view
     /// carries relates to nothing the row declares, so no member's region is
     /// constrained here.

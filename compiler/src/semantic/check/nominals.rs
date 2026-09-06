@@ -498,7 +498,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// Maps one written [SYS-2] table type to its checked type, interning
     /// every system nominal and prelude `Result` instantiation it needs.
-    /// `None` for an operand class [VIEW-7]: a class is admitted by
+    /// `None` for an operand class [SYS-8]: a class is admitted by
     /// membership rather than by type equality, so it has no one checked type
     /// and interns nothing of its own.
     pub(super) fn ensure_system_type(
@@ -531,7 +531,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// Read-only variant of [`Self::ensure_system_type`] for use during
     /// function checking, after the mutable pre-pass interned every needed
     /// instance.
-    /// `None` for an operand class [VIEW-7], exactly as above.
+    /// `None` for an operand class [SYS-8], exactly as above.
     pub(super) fn system_type(
         &self,
         ty: crate::SystemTypeRef,

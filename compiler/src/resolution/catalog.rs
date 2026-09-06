@@ -354,18 +354,18 @@ pub enum SystemTypeRef {
     U32,
     /// `u64`.
     U64,
-    /// [VIEW-7] the **destination** operand class of a range-bearing
+    /// [SYS-8] the **destination** operand class of a range-bearing
     /// operation [SYS-8]: the storage that operation writes.
     ///
     /// It is a class rather than one type for the reason [VIEW-2]'s viewable
     /// class is one — the class is wider than any one type. Its member is the
-    /// exclusive view `MutSlice<'r, u8>`, and, until [S34] retires the old
+    /// exclusive view `MutSlice<'r, u8>`, and, until S34 retires the old
     /// container surface, `buffer<u8>` as well. Nothing in a row reads what
     /// the storage is made of: the operation writes element storage through
     /// the descriptor it is handed, and its two range obligations are stated
     /// over `len_of` of whichever member the call supplied.
     DestinationU8,
-    /// [VIEW-7] the **source** operand class of a range-bearing operation
+    /// [SYS-8] the **source** operand class of a range-bearing operation
     /// [SYS-8]: the storage that operation reads. Its member is the shared
     /// view `Slice<'r, u8>` and, transitionally, `buffer<u8>`.
     SourceU8,

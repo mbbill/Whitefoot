@@ -8190,7 +8190,7 @@ impl Analyzer<'_, '_> {
         else {
             return;
         };
-        // [SYS-8, VIEW-7] the row's own range-bearing parameter: the operand
+        // [SYS-8] the row's own range-bearing parameter: the operand
         // class this row writes or reads, whose `len_of` the second
         // obligation is stated over.
         let Some((buffer_ordinal, buffer_parameter)) =
@@ -8266,7 +8266,7 @@ impl Analyzer<'_, '_> {
             }),
             None => buffer_parameter.name.to_owned(),
         };
-        // [VIEW-7] the obligation is `end <= len_of(<the range-bearing
+        // [SYS-8] the obligation is `end <= len_of(<the range-bearing
         // operand>)`, stated over the measure-table row that operand's own
         // type has [MSR-1]: a view is measured as a view and a `buffer` as a
         // buffer, and neither reading is the other's.

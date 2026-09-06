@@ -640,7 +640,7 @@ fn catalog_ir_type(
             width: 64,
             signed: false,
         },
-        // [VIEW-7] an operand class has no one IR type: a range-bearing
+        // [SYS-8] an operand class has no one IR type: a range-bearing
         // operand is a `MutSlice<u8>` or a `Slice<u8>` descriptor, or, until
         // the old surface retires, a `buffer<u8>` one. Each member renders as
         // the same `{ ptr, i64 }` pair, which is what the approved
@@ -680,7 +680,7 @@ fn catalog_ir_type(
 }
 
 /// Whether one emitted argument's IR type is a member of one [SYS-2] operand
-/// class [VIEW-7]. A parameter naming an exact type is not a class and is
+/// class [SYS-8]. A parameter naming an exact type is not a class and is
 /// judged by [`catalog_ir_type`] equality instead.
 fn system_operand_admits(
     declared: crate::SystemTypeRef,
