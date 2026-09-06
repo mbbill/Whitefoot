@@ -764,7 +764,7 @@ fn paired(value: own u8) -> result: own u8 pure {
   return left +wrap right;
 }
 
-fn publish(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
+fn publish(output: &uniq Output, source: &Slice<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
   define ordered = start <= end;
   define capacity = len_of(deref(source));
   requires ordered;
@@ -775,9 +775,13 @@ fn publish(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u
 
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let fill = paired(value: 32_u8);
-  let bytes = buffer_new(1_u64, fill);
+  let empty = fixed_vector::<u8, 1>();
+  let bytes = place_back(vector: move empty, value: fill);
   region {
-    let outcome = publish(output: &uniq out, source: &bytes, start: 0_u64, end: 1_u64);
+    let payload = slice_of(&bytes);
+    region {
+      let outcome = publish(output: &uniq out, source: &payload, start: 0_u64, end: 1_u64);
+    }
   }
   return exit_status(code: 0_u8);
 }
@@ -1090,9 +1094,20 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
     /// because the judgment is pure.
     const DENIED_OUTPUT_LOOP: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   doc "Writes one line per iteration to standard output.";
-  let page = buffer_new(8_u64, 0_u8);
-  for @scan (index in 0_u64..4_u64) {
-    let written = write_once(output: &uniq out, source: &page, start: 0_u64, end: 8_u64);
+  let page = fixed_vector::<u8, 8>();
+  for @fill (
+    at in 0_u64..8_u64,
+    invariant grown: len_of(page) >= at,
+    invariant spare: room_of(page) + at >= 8_u64,
+    invariant flat: head_of(page) <= 0_u64
+  ) {
+    set page = place_back(vector: move page, value: 0_u8);
+  }
+  region {
+    let window = slice_of(&page);
+    for @scan (index in 0_u64..4_u64) {
+      let written = write_once(output: &uniq out, source: &window, start: 0_u64, end: 8_u64);
+    }
   }
   return exit_status(code: 0_u8);
 }
