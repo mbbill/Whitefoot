@@ -6,7 +6,7 @@
 #endif
 
 /*
- * Windows's one wait set: an SRWLOCK and a CONDITION_VARIABLE.
+ * Windows's epoch wait set: an SRWLOCK and a CONDITION_VARIABLE.
  *
  * This is `wait_host.c`'s twin and the whole of what `runtime.c` cannot write
  * once for both platforms (`contract.h`, "the wait").  Nothing here knows
@@ -16,7 +16,9 @@
  * this condition variable, because the bridge supplies the one park (design
  * §7, platform item 2).  This is still needed there: it is the lock a
  * publisher and a sleeper announce themselves under, and it is the park a run
- * with no ring at all takes (`WF_IO_NO_NATIVE_RING`).
+ * with no ring at all takes (`WF_IO_NO_NATIVE_RING`). New native park calls
+ * also wait here while a previously notified IOCP cohort drains its packets;
+ * that cohort's last returning waiter broadcasts on this same condition.
  */
 
 #include "contract.h"

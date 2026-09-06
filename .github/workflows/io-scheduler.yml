@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -27,6 +27,9 @@ concurrency:
 
 jobs:
   measure:
+    # This branch qualifies a Windows wake fix. Storage timings retain their
+    # own running revision; canonical and native correctness jobs still run.
+    if: github.ref != 'refs/heads/codex/io-windows-wake-fix'
     name: measure (${{ matrix.experiment }})
     strategy:
       fail-fast: false
@@ -131,7 +134,11 @@ jobs:
               -x ir "$RUNNER_TEMP/owner/mixed.ll" -Wno-override-module \
               -o "$RUNNER_TEMP/owner/mixed-$policy.exe" -lws2_32
             for workers in 2 4; do
-              record="$RUNNER_TEMP/owner/p$policy-w$workers"
+             repetitions=(0)
+             if [[ $policy == pinned && $workers == 4 ]]; then repetitions=({0..31}); fi
+             for repetition in "${repetitions[@]}"; do
+              echo "memory-check policy=$policy workers=$workers repetition=$repetition"
+              record="$RUNNER_TEMP/owner/p$policy-w$workers-r$repetition"
               (cd "$RUNNER_TEMP/owner/tree" && \
                 WF_WORKERS="$workers" WF_STACKS=1100 WF_SCHED_REPORT=1 WF_REQUIRE_WINDOWS_IOCP=1 \
                 "$RUNNER_TEMP/owner/mixed-$policy.exe" f00000.dat f00001.dat) \
@@ -146,6 +153,7 @@ jobs:
                   ("compact_stacks" in v) && v["compact_stacks"]==compact &&
                   ("init_used_lanes" in v) && v["init_used_lanes"]==used)}' "$record.err"
               cat "$record.err"
+             done
             done
           done
           for policy in '0 0 0 1' '1 0 0 1' '1 1 0 1' '1 0 1 1' '1 0 16 1' '1 0 16 0'; do

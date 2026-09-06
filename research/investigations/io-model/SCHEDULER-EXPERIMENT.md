@@ -2729,6 +2729,27 @@ and the existing Windows memory and staged-IOCP qualification remains wired.
 Other placement and paced-load comparisons are deferred until this narrower
 experiment can distinguish receive storage from execution representation.
 
+An exploratory M1 C++20 coroutine variant of the same native engine passes
+30 manual/stackful/coroutine protocol cases, including short writes, truncated
+compute messages and one/four workers. Two complete local RSS batches, 36
+byte-checked runs with the same one-worker, two-client-thread, 100-trip setup,
+compare shared scratch and private arena storage. At 1024 connections, C++
+manual/shared uses 1408..1424 KiB, stackful/shared 17808 KiB and
+coroutine/shared 1600 KiB. With private arena receives, they use
+17776..17792, 34192 and 17952..17968 KiB respectively. These results separate
+the live stack-page cost from receive storage on this M1 host; they do not
+qualify a WF lowering or establish native Linux throughput.
+
+The coroutine prototype is not yet a strongest native reference. Its local
+optimized LLVM retains a 72-byte root malloc per connection and a 104-byte
+child malloc in each send-response call. The observed short-write echo case
+performs 138 allocations/frees for four connections, and the mixed quantum
+case 32/32. Correct nested lifetimes alone did not cause this compiler to
+eliminate the child allocations. A packed-frame lowering still needs an
+allocation-placement experiment and real network measurements before it can
+replace the existing representation comparison. No C++ source or coroutine
+library has been introduced into the WF compiler.
+
 ## Twenty-fourth experiment: Windows wake ownership under re-entry
 
 The Windows timeout above makes progress qualification the immediate next
@@ -2755,3 +2776,33 @@ This first revision adds the reproducer without changing the wake protocol.
 Native Windows execution is required to confirm the proposed interleaving;
 the M1 host has neither the Windows headers nor the Windows kernel. No timeout
 is added to a runtime progress or source-acceptance path.
+
+The baseline replay is now confirmed on native Windows:
+`3821ce739d9414aa41d8d08123e2b66ce52bec23`, io-hosts job
+[`101567339867`](https://github.com/mbbill/Whitefoot/actions/runs/34063211463/job/101567339867),
+reports `wake-replay expected=2 received=0` and exits 1 at the exact wake-count
+assertion. Its Linux companion passes. An independent storage-revision
+Windows scheduler job `101564979181` passes the original full qualification,
+so ordinary repeat success does not remove this deterministic counterexample.
+The replay proves a notification defect, while attributing the earlier full
+program stall to that defect still requires further execution evidence.
+
+The repair candidate records native wait calls in an intrusive list protected
+by the existing runtime wait lock. Each node lives in its active native park
+call and records whether publication has already assigned it a notification.
+Publication posts once per previously unnotified node. Until the notified
+cohort drains, a new park uses the runtime condition instead of entering the
+port; the last notified call to leave wakes that condition. Zero-timeout calls
+return immediately without taking old packets. A polling reaper returns a
+wake only while notified native waiters remain, allowing surplus packets to
+drain after that cohort ends. Native completion packets still publish through
+the original record path. No writer-frame layout or generated entry changes.
+
+The regression also covers an intervening reaper and an actual new condition
+waiter, requiring both old native wake packets and a real condition wake for
+the new waiter. Test timeouts satisfy none of those assertions. The new branch
+retains the existing Windows memory and all staged socket policy checks and
+repeats the previously stalled pinned/four-worker file+compute case 32 times;
+Linux storage timings continue on their original revision instead of being
+rerun for a Windows-only change. The repair still requires native CI, and no
+performance claim is made for its altered wake traffic.

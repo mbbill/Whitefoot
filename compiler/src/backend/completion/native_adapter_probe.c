@@ -1084,6 +1084,10 @@ typedef struct probe_wake_context {
     HANDLE release;
     int result;
     int received_wake;
+    unsigned kernel_entries;
+    unsigned gate_entries;
+    int gate_woken;
+    int gate_only;
 } probe_wake_context;
 
 static _Thread_local probe_wake_context *probe_current_waiter;
@@ -1091,6 +1095,11 @@ static _Thread_local probe_wake_context *probe_current_waiter;
 void wf_windows_iocp_probe_before_park(void) {
     probe_wake_context *context = probe_current_waiter;
     if (context == NULL) return;
+    context->kernel_entries++;
+    if (context->gate_only != 0) {
+        if (SetEvent(context->announced) == FALSE) ExitProcess(2u);
+        return;
+    }
     if (SetEvent(context->announced) == FALSE ||
         WaitForSingleObject(context->release, 5000u) != WAIT_OBJECT_0) {
         ExitProcess(2u);
@@ -1103,6 +1112,17 @@ void wf_windows_iocp_probe_after_park(int received_wake) {
     }
 }
 
+void wf_windows_iocp_probe_before_gate(void) {
+    probe_wake_context *context = probe_current_waiter;
+    if (context == NULL) return;
+    context->gate_entries++;
+    if (SetEvent(context->announced) == FALSE) ExitProcess(2u);
+}
+
+void wf_windows_iocp_probe_after_gate(int received_wake) {
+    if (probe_current_waiter != NULL) probe_current_waiter->gate_woken = received_wake;
+}
+
 static DWORD WINAPI probe_wake_thread(LPVOID opaque) {
     probe_wake_context *context = (probe_wake_context *)opaque;
     probe_current_waiter = context;
@@ -1111,11 +1131,11 @@ static DWORD WINAPI probe_wake_thread(LPVOID opaque) {
     return 0u;
 }
 
-static int probe_wake_survives_new_waiter(void) {
+static int probe_wake_survives_new_waiter(int with_gate) {
     wf_completion_runtime runtime;
     wf_windows_iocp_adapter adapter;
-    probe_wake_context contexts[2];
-    HANDLE threads[2];
+    probe_wake_context contexts[3];
+    HANDLE threads[3];
     HANDLE release = CreateEventW(NULL, TRUE, FALSE, NULL);
     unsigned received = 0u;
     PROBE_CHECK(release != NULL);
@@ -1140,6 +1160,22 @@ static int probe_wake_survives_new_waiter(void) {
     for (unsigned index = 0u; index < 2u; index++) {
         PROBE_CHECK(wf_windows_iocp_park(&adapter, wf_completion_wake_epoch(&runtime), 0u) == 0);
     }
+    if (with_gate != 0) {
+        size_t published = 99u;
+        /* A nonblocking reaper must also preserve the old cohort's packet. */
+        PROBE_CHECK(wf_windows_iocp_progress(&adapter, 4u, &published) == 0);
+        PROBE_CHECK(published == 0u);
+        contexts[2].adapter = &adapter;
+        contexts[2].epoch = wf_completion_wake_epoch(&runtime);
+        contexts[2].announced = CreateEventW(NULL, TRUE, FALSE, NULL);
+        contexts[2].release = release;
+        contexts[2].result = -1;
+        contexts[2].gate_only = 1;
+        PROBE_CHECK(contexts[2].announced != NULL);
+        threads[2] = CreateThread(NULL, 0u, probe_wake_thread, &contexts[2], 0u, NULL);
+        PROBE_CHECK(threads[2] != NULL);
+        PROBE_CHECK(WaitForSingleObject(contexts[2].announced, 5000u) == WAIT_OBJECT_0);
+    }
     PROBE_CHECK(SetEvent(release) != FALSE);
     for (unsigned index = 0u; index < 2u; index++) {
         PROBE_CHECK(WaitForSingleObject(threads[index], 5000u) == WAIT_OBJECT_0);
@@ -1148,11 +1184,19 @@ static int probe_wake_survives_new_waiter(void) {
         PROBE_CHECK(CloseHandle(threads[index]) != FALSE);
         PROBE_CHECK(CloseHandle(contexts[index].announced) != FALSE);
     }
+    if (with_gate != 0) {
+        PROBE_CHECK(WaitForSingleObject(threads[2], 5000u) == WAIT_OBJECT_0);
+        PROBE_CHECK(contexts[2].result == 0);
+        PROBE_CHECK(contexts[2].gate_entries == 1u && contexts[2].kernel_entries == 0u);
+        PROBE_CHECK(contexts[2].gate_woken != 0);
+        PROBE_CHECK(CloseHandle(threads[2]) != FALSE);
+        PROBE_CHECK(CloseHandle(contexts[2].announced) != FALSE);
+    }
     PROBE_CHECK(CloseHandle(release) != FALSE);
     PROBE_CHECK(wf_completion_parked_scheduler_count(&runtime) == 0u);
     PROBE_CHECK(wf_windows_iocp_destroy(&adapter) == 0);
     PROBE_CHECK(wf_completion_runtime_destroy(&runtime) == 0);
-    (void)printf("native-adapter-probe wake-replay expected=2 received=%u\n", received);
+    (void)printf("native-adapter-probe wake-replay gate=%d expected=2 received=%u\n", with_gate, received);
     PROBE_CHECK(received == 2u);
     return 0;
 }
@@ -1176,7 +1220,8 @@ int main(int argc, char **argv) {
         return 2;
     }
 #if defined(WF_WINDOWS_IOCP_WAKE_REPLAY)
-    PROBE_CHECK(probe_wake_survives_new_waiter() == 0);
+    PROBE_CHECK(probe_wake_survives_new_waiter(0) == 0);
+    PROBE_CHECK(probe_wake_survives_new_waiter(1) == 0);
 #endif
     PROBE_CHECK(contract.implemented == 1);
     PROBE_CHECK(contract.native_completion == 1);

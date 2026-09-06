@@ -711,19 +711,24 @@ static int wf_windows_publish_packet(
     return 0;
 }
 
-/* Puts one wake packet back for the sleeper it belongs to.
- *
- * A wake is a consumable packet on this port, not a level fact as the Linux
- * eventfd is, so a reaping thread that swallowed one would leave an announced
- * sleeper asleep. It is re-posted while a sleeper is announced and dropped
- * when none is: the epoch, and never the packet, is the durable wake fact. */
+typedef struct wf_windows_iocp_waiter {
+    struct wf_windows_iocp_waiter *next;
+    unsigned notified;
+} wf_windows_iocp_waiter;
+
+/* Polling may take a packet intended for a notified native sleeper. Preserve
+ * it until that cohort has left its kernel waits. A merely announced newer
+ * sleeper does not require an old packet to remain in circulation. */
 static void wf_windows_return_wake(wf_windows_iocp_adapter *adapter) {
-    if (wf_completion_parked_scheduler_count(adapter->runtime) == 0u) {
-        return;
+    int error = 0;
+    wf_completion_wait_lock(&adapter->runtime->wait);
+    if (adapter->notified_waiters != 0u &&
+        PostQueuedCompletionStatus(adapter->port, 0, adapter->wake_key, NULL) == FALSE) {
+        error = (int)GetLastError();
     }
-    if (PostQueuedCompletionStatus(adapter->port, 0, adapter->wake_key, NULL)
-        == FALSE) {
-        wf_windows_record_progress_error(adapter, (int)GetLastError());
+    wf_completion_wait_unlock(&adapter->runtime->wait);
+    if (error != 0) {
+        wf_windows_record_progress_error(adapter, error);
     }
 }
 
@@ -809,19 +814,18 @@ int wf_windows_iocp_progress(
     return first_error;
 }
 
-/* One packet per announced sleeper, because a posted packet wakes exactly one
- * `GetQueuedCompletionStatus` waiter.  It is called by the completion core
- * under the wait lock a sleeper announces itself under, so the count read here
- * is the set of sleepers this wake has to reach. */
+/* Called under the runtime wait lock. A packet is assigned to the existing
+ * native cohort, although the port itself cannot address an individual worker.
+ * New kernel waiters are gated until all notified calls have returned. */
 void wf_windows_iocp_notify(void *context) {
     wf_windows_iocp_adapter *adapter = (wf_windows_iocp_adapter *)context;
-    unsigned parked;
-    unsigned index;
     if (adapter == NULL || adapter->initialized == 0) {
         return;
     }
-    parked = wf_completion_parked_scheduler_count(adapter->runtime);
-    for (index = 0; index < parked; index += 1u) {
+    for (wf_windows_iocp_waiter *waiter = adapter->waiters; waiter != NULL; waiter = waiter->next) {
+        if (waiter->notified != 0u) continue;
+        waiter->notified = 1u;
+        adapter->notified_waiters++;
         if (PostQueuedCompletionStatus(
                 adapter->port,
                 0,
@@ -847,6 +851,8 @@ void wf_windows_iocp_notify(void *context) {
 /* Native regression scheduling only; absent from production and timed links. */
 void wf_windows_iocp_probe_before_park(void);
 void wf_windows_iocp_probe_after_park(int received_wake);
+void wf_windows_iocp_probe_before_gate(void);
+void wf_windows_iocp_probe_after_gate(int received_wake);
 #endif
 
 int wf_windows_iocp_park(
@@ -861,6 +867,7 @@ int wf_windows_iocp_park(
     BOOL succeeded;
     DWORD error_code;
     int error;
+    wf_windows_iocp_waiter waiter = {NULL, 0u};
 
     if (adapter == NULL || adapter->initialized == 0) {
         return EINVAL;
@@ -903,6 +910,31 @@ int wf_windows_iocp_park(
         wf_completion_wait_unlock(&adapter->runtime->wait);
         return 0;
     }
+    if (adapter->notified_waiters != 0u) {
+        /* IOCP packets have no recipient identity. Entering the port with a
+         * newer epoch could steal the old cohort's entire broadcast. Block
+         * here instead; the last notified native waiter wakes this condition.
+         * A new epoch or a spurious condition wake simply retries scheduling. */
+        enum wf_completion_wait_result waited = WF_COMPLETION_WAIT_WOKEN;
+        if (timeout_milliseconds != 0u) {
+#if defined(WF_WINDOWS_IOCP_WAKE_REPLAY)
+            wf_windows_iocp_probe_before_gate();
+#endif
+            waited = wf_completion_wait_sleep(&adapter->runtime->wait, timeout_milliseconds);
+#if defined(WF_WINDOWS_IOCP_WAKE_REPLAY)
+            wf_windows_iocp_probe_after_gate(waited == WF_COMPLETION_WAIT_WOKEN);
+#endif
+        }
+        atomic_fetch_sub_explicit(&adapter->runtime->parked_schedulers, 1, memory_order_relaxed);
+        wf_completion_wait_unlock(&adapter->runtime->wait);
+        if (waited == WF_COMPLETION_WAIT_FAILED) {
+            wf_windows_record_progress_error(adapter, EPROTO);
+            return EPROTO;
+        }
+        return 0;
+    }
+    waiter.next = adapter->waiters;
+    adapter->waiters = &waiter;
     wf_completion_wait_unlock(&adapter->runtime->wait);
 
     timeout = timeout_milliseconds == UINT32_MAX
@@ -931,6 +963,19 @@ int wf_windows_iocp_park(
 #endif
 
     wf_completion_wait_lock(&adapter->runtime->wait);
+    {
+        wf_windows_iocp_waiter **link = &adapter->waiters;
+        while (*link != NULL && *link != &waiter) link = &(*link)->next;
+        if (*link == NULL) wf_windows_iocp_fail("a native waiter lost its registration");
+        *link = waiter.next;
+        if (waiter.notified != 0u) {
+            if (adapter->notified_waiters == 0u) wf_windows_iocp_fail("a notification cohort underflowed");
+            adapter->notified_waiters--;
+            if (adapter->notified_waiters == 0u) {
+                wf_completion_wait_wake(&adapter->runtime->wait, 1);
+            }
+        }
+    }
     {
         unsigned previous = atomic_fetch_sub_explicit(
             &adapter->runtime->parked_schedulers,
@@ -962,7 +1007,8 @@ int wf_windows_iocp_park(
         return error;
     }
     if (succeeded != FALSE) {
-        /* A wake packet: this thread's own, consumed here. */
+        /* This call belonged to the native cohort eligible to take a packet.
+         * Surplus packets may also wake a later call after that cohort drains. */
         if (key != adapter->wake_key) {
             wf_windows_record_progress_error(adapter, EPROTO);
             return EPROTO;
