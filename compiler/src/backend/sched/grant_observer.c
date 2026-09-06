@@ -55,6 +55,7 @@
 
 extern unsigned long wf__par_grants(void);
 extern int wf__sched_report(char *buffer, size_t capacity);
+extern int wf__bridge_report(char *buffer, size_t capacity);
 
 /* The grant line is the one line every judge of this observer reads, and it
  * stays one line. The core's own counters follow it only when the run asked
@@ -65,6 +66,9 @@ static void wf__par_report(void) {
     (void)fprintf(stderr, "grants=%lu\n", wf__par_grants());
     if (wf__sched_report(counters, sizeof(counters))) {
         (void)fprintf(stderr, "%s\n", counters);
+        if (wf__bridge_report(counters, sizeof(counters))) {
+            (void)fprintf(stderr, "%s\n", counters);
+        }
     }
 }
 

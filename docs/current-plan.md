@@ -882,12 +882,18 @@ it cannot be, isolated one variable at a time (the record's §6): the progress
 pass reaped one completion under the ring's two locks per idle turn, and 64
 instead of one doubled the rate; a socket transfer the host answers at once
 was parked and woken like one that waits, and completing it on the submitting
-thread tripled it. The line at the batch's last revision is 1.08 of io_uring
-at one connection, 0.68 at 64, 0.48 at 1024 and 0.78 on the 64 KiB payload;
-what remains on the ring is the receive whose peer has not sent yet, and the
-gap that grows with the peers waiting at once is the shared ring's locks and
-the wake per completion, read from the structure and not measured apart. The
-bounds were set to the test's numbers: the
+thread tripled it; `IORING_SETUP_COOP_TASKRUN` added a tenth. The line at the
+batch's last revision is 1.26 of io_uring at one connection, 0.74 at 64, 0.58
+at 1024 and 0.86 on the 64 KiB payload. What remains on the ring is the
+receive whose peer has not sent yet, and the record's second series measured
+its cost: the `io_uring_enter` that hands staged receives to the kernel is a
+microsecond an entry and 22 percent of the wall time, serialized on the
+pool's one ring, and two threads reach 85 percent of four. The reference
+arms one multishot receive per connection on a ring per thread and submits
+no receive; a ring per thread and a receive that completes more than once
+change what a record is for the emitter, the core and the bridge, which is
+the reason and the data for the next version. The bounds were set to the
+test's numbers: the
 lane holds 1024 slots, the bridge's default window is 1024, `WF_STACKS` may
 name 2048 stacks, and the harness pins the window at the lane's slot count.
 The test found and the slice fixed a stall in the Linux ring at exactly 129

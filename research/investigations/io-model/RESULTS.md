@@ -2261,38 +2261,43 @@ run with `WF_STACKS=1100`), `netload.c` the one load generator, and
 order, medians over the recorded passes, every echoed byte verified, no
 timeout deciding anything. `io-bench.yml`'s Linux job runs it after the file
 tables; the tables below are the development host, Linux 6.18 on four cores,
-`ROUNDS=3 WARMUP=1`. First the batch's last revision, after the two runtime
+`ROUNDS=3 WARMUP=1`. First the batch's last revision, after the three runtime
 changes the single-variable isolation in `docs/done/0108-streams-and-tcp.md`
-§6 arrived at (the progress pass reaps 64 completions instead of one, and a
+§6 arrived at (the progress pass reaps 64 completions instead of one, a
 socket transfer the host answers at once completes on the submitting thread
-without the ring):
+without the ring, and the ring is set up with `IORING_SETUP_COOP_TASKRUN`):
 
 ```text
 line                conns   bytes    trips     rt_per_s     p50_us     p99_us   connect_us   vs_uring   vs_epoll
-uring.k1                1      64    20000      29233.9       32.0       62.0         89.0       1.00       0.99
-epoll.k1                1      64    20000      29520.5       32.0       57.0         62.0       1.01       1.00
-wf.k1                   1      64    20000      31653.1        6.0      186.0         73.0       1.08       1.07
-uring.k64              64      64     2000     318424.6       62.0     2403.0        462.0       1.00       0.98
-epoll.k64              64      64     2000     325926.7       50.0     2772.0        527.0       1.02       1.00
-wf.k64                 64      64     2000     218075.9      250.0      841.0        608.0       0.68       0.67
-uring.k1024          1024      64      200     346920.2     1760.0     8738.0       4017.0       1.00       1.07
-epoll.k1024          1024      64      200     324860.8     1750.0    10554.0       5385.0       0.94       1.00
-wf.k1024             1024      64      200     166786.8     5966.0    11299.0       5608.0       0.48       0.51
-uring.k64.64k          64   65536      200      62160.7      661.0     4714.0        434.0       1.00       0.88
-epoll.k64.64k          64   65536      200      70539.5      329.0     4561.0        467.0       1.13       1.00
-wf.k64.64k             64   65536      200      48220.6     1099.0     3575.0        574.0       0.78       0.68
+uring.k1                1      64    20000      28086.8       33.0       62.0         87.0       1.00       0.95
+epoll.k1                1      64    20000      29613.8       32.0       57.0         79.0       1.05       1.00
+wf.k1                   1      64    20000      35468.5        6.0      188.0        122.0       1.26       1.20
+uring.k64              64      64     2000     314881.9       60.0     2204.0        497.0       1.00       1.02
+epoll.k64              64      64     2000     307524.1       53.0     2834.0        457.0       0.98       1.00
+wf.k64                 64      64     2000     232273.0      245.0      714.0        497.0       0.74       0.76
+uring.k1024          1024      64      200     349084.5     2408.0     9383.0       5056.0       1.00       1.08
+epoll.k1024          1024      64      200     323565.8     1403.0    12823.0       3341.0       0.93       1.00
+wf.k1024             1024      64      200     201527.1     4870.0     7192.0       5445.0       0.58       0.62
+uring.k64.64k          64   65536      200      60512.3      576.0     4476.0        348.0       1.00       0.80
+epoll.k64.64k          64   65536      200      75730.4      305.0     5189.0        494.0       1.25       1.00
+wf.k64.64k             64   65536      200      52176.5     1064.0     3572.0        436.0       0.86       0.69
 
 line                  bytes_per_s
-uring.k64.64k        4073761479.3
-epoll.k64.64k        4622877114.9
-wf.k64.64k           3160188417.8
+uring.k64.64k        3965736271.7
+epoll.k64.64k        4963069082.4
+wf.k64.64k           3419437103.7
 ```
 
 The Whitefoot line leads both references at one connection, where nearly
-every operation is answered at once, and is 0.68 of io_uring at 64
-connections, 0.48 at 1024 and 0.78 on the 64 KiB payload; what remains on the
-ring is the receive whose peer has not sent yet, one submission, park, reap
-and wake each, on one ring under two locks for the whole pool. The first
+every operation is answered at once, and is 0.74 of io_uring at 64
+connections, 0.58 at 1024 and 0.86 on the 64 KiB payload (after the first two
+changes alone: 1.08, 0.68, 0.48, 0.78). What remains on the ring is the
+receive whose peer has not sent yet, and the record's second series measured
+where its cost is: the `io_uring_enter` that hands staged receives to the
+kernel takes a microsecond an entry, 22 percent of the wall time, serialized
+on the pool's one ring, and two threads reach 85 percent of four; the
+reference arms one multishot receive per connection on a ring per thread and
+submits no receive at all. The first
 reading of the same protocol, at a6b31b5 before either change:
 
 ```text

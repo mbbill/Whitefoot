@@ -495,6 +495,40 @@ static uint64_t wf_bridge_ring_submission_enters(void) {
         : 0u;
 }
 
+/* The ring's counters as one line, for the same observer that prints the
+ * core's: what the kernel was asked and how often a thread slept for it. */
+int wf__bridge_report(char *buffer, size_t capacity) {
+    wf_linux_io_uring_statistics ring;
+    int written;
+    if (buffer == NULL || capacity == 0u || !wf_bridge_ring_ready()) {
+        return 0;
+    }
+    ring = wf_linux_io_uring_statistics_snapshot(&wf_bridge_linux_adapter);
+    written = snprintf(
+        buffer,
+        capacity,
+        "ring: submissions=%llu submission_enters=%llu completions=%llu "
+        "kernel_waits=%llu kernel_wakes=%llu host_wake_writes=%llu "
+        "overflow_flushes=%llu runtime_parks=%llu inline=%llu",
+        (unsigned long long)ring.submissions,
+        (unsigned long long)ring.submission_enters,
+        (unsigned long long)ring.completions,
+        (unsigned long long)ring.kernel_waits,
+        (unsigned long long)ring.kernel_wakes,
+        (unsigned long long)ring.host_wake_writes,
+        (unsigned long long)ring.overflow_flushes,
+        (unsigned long long)atomic_load_explicit(
+            &wf_bridge_runtime.stat_parks,
+            memory_order_relaxed
+        ),
+        (unsigned long long)atomic_load_explicit(
+            &wf_bridge_inline_executions,
+            memory_order_relaxed
+        )
+    );
+    return written > 0 && (size_t)written < capacity;
+}
+
 #elif defined(_WIN32)
 
 static wf_windows_iocp_adapter wf_bridge_windows_adapter;
@@ -712,6 +746,12 @@ static uint64_t wf_bridge_ring_submission_enters(void) {
 
 #else
 
+int wf__bridge_report(char *buffer, size_t capacity) {
+    (void)buffer;
+    (void)capacity;
+    return 0;
+}
+
 /* A target with no kernel completion ring in the supported set: its qualified
  * path is the bounded typed adapter, and every one of these answers "no".
  *
@@ -751,6 +791,12 @@ static uint64_t wf_bridge_ring_submissions(void) {
 
 static uint64_t wf_bridge_ring_submission_enters(void) {
     return 0u;
+}
+
+int wf__bridge_report(char *buffer, size_t capacity) {
+    (void)buffer;
+    (void)capacity;
+    return 0;
 }
 
 #endif
