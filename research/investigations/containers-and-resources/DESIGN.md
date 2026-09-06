@@ -8510,6 +8510,99 @@ corrected in the manifest and in their own sources where they had been rewritten
 to describe condition 7. No case flips a verdict. The recorded-verdict snapshot
 corpus is **Pass=484 Flip=0**, unchanged: no row moves, silently or otherwise.
 
+### 6.0y B7c4b-4b landed in part (v0.51)
+
+**The last writer program off the retiring surface, one lowering defect closed,
+and the retirement itself not landed — stopped on evidence.** Numbered rules
++0, grammar productions +0, atoms +0, writer operation spellings +0: this batch
+changes no rule of the specification. What it does is take the flagship's
+scratch off `buffer_new`, close the first half of 6.0x's third defect, and
+report two findings that change what the retirement costs. The retirement's
+own specification text and its first compiler cut were written, measured, and
+reverted in the same branch; the two commits are `a15613e7` and its inverse,
+kept so the next batch starts from the text rather than from the brief.
+
+- **`tests/programs/tcp_fanout.wf` leaves the retiring surface, and its scratch
+  moves into the callee.** `serve_one` reserves its own 256-byte bump extent,
+  takes a run from it, opens the run's capacity through a `zero_fill` helper,
+  and writes it through the exclusive view the run hands back; the caller's
+  fixed-trip loop keeps its staged hand-out, the ledger still reports it
+  permitted, `@wf__par_publish` is still in the `--par` module, and
+  `four_peers_are_served_at_once_under_par_on_both_routes` still passes on both
+  routes. The program names no retiring type or row, so `tests/programs` is
+  complete on the new surface.
+
+- **The staged walk stopped counting a release that performs nothing.**
+  `direct_staged_tail` walked into a `region` only when its `fallthrough_drops`
+  were empty, which counted a record for a value that releases nothing — a
+  view owns no storage [VIEW-1, PROV-3] and a bump extent's run is reclaimed by
+  its own region reset [BLK-2] — as work a split body would lose. It now asks
+  whether each record performs anything, through one reading of that question
+  shared with the target stage: `type_derives_release` moved into `lowering.rs`
+  and `type_requires_cleanup` delegates to it. This is the first half of 6.0x's
+  defect 3 and it is real, but it is **not** what was holding `tcp_fanout.wf`
+  back; the finding below is.
+
+**Two findings, and they are why the batch stopped.**
+
+1. **A staged loop can carry no iteration-own storage at all once `buffer<T>`
+   retires, and the flagship's fourth disposition goes with it.** The staged
+   lowering refuses a prologue-declared binding whose address is taken, because
+   an addressed binding is one frame slot and four in-flight iterations cannot
+   share it. A borrow of either run **is** the address of the run's own storage
+   [OWN-2, and the compiler's own `borrow_addresses_storage`], while a borrow of
+   a `buffer<T>` was a descriptor by value — so `mut_slice_of(&uniq scratch)`
+   over an iteration-own run disqualifies the hand-out where
+   `&uniq scratch` over an iteration-own buffer did not. Handing the run to the
+   callee **by value** avoids the borrow and was tried: it fails on [FORM-8],
+   because a region name may be written only where two or more positions of one
+   declaration mean it, so an owned `Vector<'s, T>` parameter occurring once can
+   carry no region name and therefore no `'s: affine` bound, its store region is
+   the fail-closed general one, and the value is linear in a callee that holds
+   no `Heap<'s>` [PROV-6]. Returning it in a result or a region-bearing struct
+   closes the [FORM-8] hole and reopens the first one, because the returned run
+   is then a remainder binding with a backedge drop the drain refuses.
+   Three shapes, three different rules, no route. `tcp_fanout.wf` therefore
+   loses its `replicated` place: the ledger classifies three places where it
+   classified four, and the assertion that pinned the fourth is retired at
+   `the_fanout_loop_states_its_permission_verdict` with this reason written out.
+   The classification itself stays covered by
+   `par3-pos-a-per-iteration-run-from-the-store-is-iteration-own`, which is a
+   permission case and takes no hand-out. **`STAGED_MAY_SUSPEND_CALL` in
+   `backend/tests/parallel.rs` has the same subject and will lose the same
+   half**, and `compiler/tests/programs/wide_scan.rs` is still 6.0x's defect 4.
+   Whether the language wants a run whose borrow is not an address, or a staged
+   lowering that gives each in-flight iteration its own slot, is an owner
+   question and not a batch's to settle.
+
+2. **An extent reserved outside a loop and taken from per trip is provable, and
+   that is the shape a staged loop's iteration-own run has to take.** The
+   obligation `arena_vector_proved` submits is `room_of(store) >= advance<T>(n)`
+   at every trip, and the entailment carries it from the header invariant
+   `len_of(workspace) <= served * 256_u64` — a linear invariant over the store's
+   own `len_of`, not its `room_of`, because [BLK-2]'s rows publish the post-take
+   `len_of` and leave `room_of` to [MSR-2]'s standing identity. The `room_of`
+   spelling of the same invariant does not discharge. Recorded because it is the
+   writer form the retirement's migrations need and it is not obvious.
+
+**What did not land, measured rather than estimated.** Every rule the
+retirement touches, its grammar productions, its generated syntax data, the
+operation-family table and the `CheckedType` variants were changed, built, and
+reverted; 54 compiler build errors remained at the stop, before the checked
+expression variants, the IR operations, the emitters and the target arms were
+touched at all. Across `compiler/src` **923 occurrences** of the four retiring
+type spellings and their seven formation rows remain, of which about six
+hundred are embedded test sources in 41 modules. Each such source needs a
+migration decision rather than a rename, because the replacement of a
+`buffer_new` is a store, a take, a fill loop with three invariants and a
+re-derived verdict — the two worked examples are `tcp_fanout.wf`'s `zero_fill`
+and finding 2's header invariant. `tests/codegen/cases/bounds/**` (94 fixtures,
+no runner) is untouched and is with the owner.
+
+**Verdicts.** Unchanged: the adapter at Pass=730 Skip=3 over 733 with coverage
+161/161, and the recorded-verdict corpus at Pass=484 Flip=0. No conformance
+case is added, modified, deleted or renamed by this batch.
+
 ### 6.1 What the compiler did in this session
 
 ```text
