@@ -4459,4 +4459,143 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   `completion_windows_capacity.wf` and `host_string_bytes.wf` — take the view
   forms at the same operations and keep their exit codes; no other program of
   that corpus changed behaviour or exit code, and none was added or removed.
+- CONTENT (B3, the type-derived call transports):
+  Four rules state what a call transports and what it kills, and each of the
+  three transports is selected by the callee's declaration alone.
+  [CALL-1] states that an argument whose declared parameter mode is `&'r` is a
+  kill event for no fact supported by its actual's resolved place, on the whole
+  ground of [OWN-5]'s shared-holder prohibition and [EFF-2]'s both-ways row
+  check: no write through a shared holder is admissible, so no `writes`
+  occurrence projects onto that place and no [MSR-2] kill fires.
+  [CALL-2] states the value transport in two halves. An `own` argument whose
+  type is affine or linear is a consuming use, so every fact whose support
+  contains its root dies at the call, that place's measures included; an `own`
+  argument whose type is copy is a duplicate, so the caller's place and its
+  facts survive and are available at the next call. The result is a fresh
+  binding carrying exactly the callee's declared relations and no fact of any
+  argument, and a relation naming a consumed operand's measure denotes that
+  call's call datum [MSR-3], which has empty support and therefore survives the
+  consume the same statement performs.
+  [CALL-3] states the kill classification over **storage**. For a parameter of
+  loan-bearing type [VIEW-1], own or behind a borrow, a projected callee
+  `writes` occurrence kills every fact whose support overlaps the viewed range's
+  storage — which for an element type having descriptor storage of its own
+  includes that element's measures — and kills no measure term over the origin
+  place itself and none over the view. For every other parameter the projected
+  write kills as an ordinary descriptor-storage-overlapping [ENT-5] event
+  [MSR-2]. Stating it over storage rather than over the word *element* is what
+  makes `len_of(origin)` survive while `len_of(origin[i])` dies once the element
+  type is itself measured; this version's view element domain is the flat one
+  [TYPE-2] gives it, so no measured element reaches a view yet and the surviving
+  half is the whole of the rule's effect here.
+  [CALL-5] states that no transport reads the actual's spelling, the callee's
+  body, its name, or any per-parameter summary derived from a body, and that a
+  parameter for which no transport is selected kills conservatively. A `&uniq`
+  parameter whose referent type is measured and is not a view selects no
+  transport, because a body that replaces the referent and a body that writes
+  one element are the same declaration to every reader of the signature.
+  [ENT-5]'s clause (b) is amended in place so that what a projected callee write
+  reaches is [CALL-1] through [CALL-3]'s classification and nothing else;
+  [FN-9]'s entry-image sentence reads the same classification at a call; and
+  [SYS-8] states that the declared half-open `[start, end)` extent is the
+  complete extent a member of its range-bearing family may change in its
+  range-bearing operand and that the extent is element storage, which is what
+  makes those rows viewed-range writes whichever member of the operand class the
+  call supplied — the declaration-site reading [CALL-5] requires of a callee
+  with no body. [META-5] declares numbered rules +21/-0 (157 remain); no
+  grammar, spelling, token or record count changes.
+  Together these close the unsound accept this design records as D1: the sweep
+  of 2026-09-03 recorded an accepted out-of-bounds heap read in which a callee
+  replaced the referent of its `&uniq buffer<u8>` parameter while its caller
+  kept the length it had before, and the classification that admitted it read
+  the argument expression's shape, which is the one selector [CALL-5] removes.
+- CONSEQUENCE (B3, what the corpus paid and what it could not write):
+  Seventeen corpus sources lost a caller's measure at a call and were migrated:
+  a helper that fills a caller's storage now takes `&uniq MutSlice<u8>` and its
+  caller forms the view, and a helper that reads one takes the view by value,
+  which is copy and therefore not a consume [CALL-2]. Two limits were found and
+  neither is a rule defect.
+  First, a helper handed `&uniq MutSlice<'r, T>` cannot pass its destination on:
+  the child reborrow `&uniq deref(destination)` is admitted by [OWN-6] and this
+  compiler stops it, semantic checking refusing the borrow of a view referent
+  and lowering refusing the addressed reborrow of a descriptor. The raw DEFLATE
+  decoder's `out` chain is three helpers deep, so it keeps its
+  `&uniq buffer<u8>` spelling and `raw_deflate_vectors.wf` reads its
+  destination's length again after `inflate`, reporting a mismatch with the
+  status every other check in that driver already uses. `x-child-reborrow-run`
+  takes its view by value for the same reason, keeping the struct half of its
+  child reborrow untouched.
+  Second, a helper handed a view cannot form the shared child a `write_once`
+  source needs, because [VIEW-2]'s viewable operand class is the storage and not
+  a view; `wfgrep`'s `report_failure` and the boundary driver's `publish_reason`
+  therefore hand their assembled length back and their callers publish.
+  A third, smaller finding: a relation published on a call result reaches a
+  `let` binder but not a `set` target, so the migrated callers bind rather than
+  assign.
+- CONFORMANCE BOUNDARY (B3): seven added cases, one status change, three
+  modified case sources whose recorded expectations are unchanged, no deleted
+  case and no rename.
+  Added:
+  `call1-pos-a-shared-borrow-keeps-every-fact`
+  (`{"kind": "run", "exit": 0}`),
+  `call2-neg-a-result-carries-only-the-contract`
+  (`{"kind": "reject", "rule": "OP-4"}`),
+  `call2-pos-a-copy-actual-at-an-own-parameter-is-not-a-consume`
+  (`{"kind": "run", "exit": 0}`),
+  `call2-pos-an-own-operand-measure-reaches-the-result`
+  (`{"kind": "run", "exit": 0}`),
+  `call3-pos-a-fill-through-an-exclusive-view-keeps-both-lengths`
+  (`{"kind": "run", "exit": 0}`),
+  and `call5-neg-a-bound-borrow-actual-kills-the-same`
+  (`{"kind": "reject", "rule": "OP-4"}`), together with
+  `call5-neg-an-element-only-body-kills-the-measure-the-same`
+  (`{"kind": "reject", "rule": "OP-4"}`). At least one added case names each
+  added rule id.
+  STATUS CHANGE: `ent5-neg-callee-uniq-buffer-replace-kills-length` moves from
+  `xfail` to `runnable`. Its id and its recorded expectation
+  (`{"kind": "reject", "rule": "OP-4"}`) are unchanged and its `reason` field is
+  removed, because the reason no longer exists: the compiler derived the element
+  flag of a projected callee write from the actual's syntactic shape, and
+  [CALL-5] removes that selector, so the program now rejects at [OP-4] with the
+  residual `9_u64 < len_of(line)` exactly as the case always required. Its rule
+  list gains `CALL-5` and `CALL-3` and its `doc` is rewritten to state the
+  reached mechanism rather than the tracked gap.
+  Modified, source only, every recorded expectation, rule list and status
+  unchanged:
+  `x-base64-rfc-vectors-run`
+  (`{"kind": "run", "exit": 0}`),
+  `x-child-reborrow-run`
+  (`{"kind": "run", "exit": 0}`),
+  and `x-requires-output-capacity-run`
+  (`{"kind": "run", "exit": 0}`).
+  Each hands a fill helper an exclusive view where it handed a `&uniq buffer<u8>`
+  borrow. `x-child-reborrow-run` additionally takes that view by value at
+  `proxy_byte`, because this compiler does not carry the child reborrow of a
+  view holder; its `Counter` half, which is what the case's manifest doc calls
+  an acyclic-struct holder, is untouched, and the manifest doc is brought
+  current in the same change with no change to its id, expectation, rule list or
+  status.
+  Before this batch the corpus holds 693 cases with the native adapter reporting
+  Pass=689, Xfail=1, Skip=3; after it the corpus holds 700 with the adapter
+  reporting Pass=697, Skip=3 and no xfail. The three skips are unchanged in id,
+  expectation and status. Rule coverage stays complete at 157/157.
+  Outside the conformance boundary, the recorded-verdict snapshot corpus reports
+  Pass=491, Flip=0 before and after, with eight rows moved from `accept` to
+  `reject` and their `rule`, `agreement` and `doc` cells updated in the same
+  commit: `contracts__writer-r1__02_buffer_capacity_copy` and
+  `indexing__writer-r1__subslice_copy`,
+  `indexing__writer-r2__01_offset_length_window_copy`,
+  `indexing__writer-r2__11_ring_buffer_wrap_read`,
+  `joins__writer-r1__r12_writes_join_common_bound_accept` and
+  `kills__writer-r1__kill03_buffer_write_loop_invariant` reject at [OP-4], and
+  `contracts__writer-r1__10_append_within_capacity` and
+  `indexing__writer-r2__07_bucket_index_from_hash` at [FN-8]. Each hands a
+  `&uniq buffer<u8>` to a helper, which selects no transport, so the caller's
+  length dies at the call; the sweep programs themselves are unchanged, as that
+  corpus's own model requires. Ten executable-corpus programs are migrated —
+  `dir_walk.wf`, `grayscale_pixels.wf`, `par_layout.wf`, `percent_decode.wf`,
+  `raw_deflate_boundary.wf`, `raw_deflate_dynamic_decode.wf`,
+  `raw_deflate_vectors.wf`, `telemetry_packet.wf`, `utf8parse.wf` and
+  `wfgrep.wf` — and every one of them keeps the exit code it had; no program of
+  that corpus was added or removed.
 ACTIVE-SPEC: v0.45 b3ae80744d881cbc83031047491a5cabf58c0a32d84ec8cf20aa512e453f998d 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
