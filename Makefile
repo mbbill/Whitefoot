@@ -42,6 +42,12 @@ check:
 	@echo "== WHITEFOOT ALL TESTS GREEN =="
 
 # Both supported agent entry points carry exactly the same project rules.
+# The repository-level stages that read the tree without running a compiled
+# program. CI's `static` job runs this instead of restating their names: a
+# second copy of the list is a copy that goes stale, and did — retiring two
+# stages left the workflow naming targets that no longer exist.
+static: repository-invariants spec-append-only spec-prose-integrity
+
 repository-invariants:
 	@test -s AGENTS.md -a -s CLAUDE.md || { echo "AGENTS.md or CLAUDE.md missing" >&2; exit 1; }
 	@cmp -s AGENTS.md CLAUDE.md || { echo "AGENTS.md and CLAUDE.md differ" >&2; exit 1; }
@@ -154,4 +160,4 @@ install-hooks:
 	git config core.hooksPath governance/hooks
 	@echo "installed governance/hooks (pre-commit, pre-merge-commit)"
 
-.PHONY: check repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity conformance compiler research-tests conformance-run snapshot-run install-hooks
+.PHONY: check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity conformance compiler research-tests conformance-run snapshot-run install-hooks
