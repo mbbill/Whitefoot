@@ -624,16 +624,13 @@ already uses for structural limits — the 4096-entry `proof_use` capacity and
 the parser and the semantic former actually overflows. Removed when that limit
 exists and a test pins it.
 
-### Known defect: a runtime-sized allocation fails with no rule and no location
+### Known defect: a runtime-sized `buffer_new` fails with no rule and no location
 
 ```
-fn make(capacity: own u64) -> result: own buffer<u8> allocates(heap) {
-  let backing = buffer_new(capacity, 0_u8);
-  return move backing;
-}
+let backing = buffer_new(capacity, 0_u8);
 ```
 
-stops with `TargetLayout/TargetLayout:
+at an unproved runtime `capacity` stops with `TargetLayout/TargetLayout:
 TargetLayout(Unrepresentable(RuntimeSizedAllocation))` — no rule id, no source
 coordinate, no line, no mechanical fix. The program's actual defect is an
 undischarged size obligation, and `requires capacity <= 1000_u64;` fixes it,
@@ -642,11 +639,17 @@ stops four stages later. A sweep of 22 struct-owning-buffer programs hit it in
 all 22, which is why the corpus carries `1000_u64` ceilings that read as style
 and are compensation for this.
 
-The stage taxonomy is right — this is not a `Compiler` channel failure — but
-for a writer it is indistinguishable from one. The obligation belongs in the
-semantic walk with the shape `[OP-4]` and `[OP-2]` already use: a rule, a
-residual, a mechanical fix. Pre-existing; reproduces on a pre-v0.48 build.
-Removed when the rejection carries a rule and a location.
+**It is a defect of the retiring rows only, and the store surface answers it.**
+`heap_vector::<u8>(store: heap, count: n)` at the same unproved `n` compiles
+and emits: the row hands back an `Option`, so a store that cannot satisfy the
+take is the `None` arm the writer already wrote [BLK-2], and there is no byte
+ceiling for the target stage to enforce. What still refuses an unproved count
+there is [OP-9] itself — at the source, with the rule, a residual and a line —
+whenever the element's stride makes the fit goal underivable;
+`op9-neg-kernel-acquisition-without-a-fit-proof` is the conformance witness and
+`a_store_take_of_an_unbounded_runtime_count_emits_rather_than_stopping_at_the_target`
+the compiler one. The paragraph stays because `buffer_new` and `buffer_vacant`
+are still writable; it is removed with them, not repaired separately.
 
 ### Known cost: a large `proof_use` block is impractical well below its ceiling
 
