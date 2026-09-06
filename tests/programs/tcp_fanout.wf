@@ -75,7 +75,7 @@ fn zero_fill['s: affine](vector: own Vector<'s, u8>) -> result: own Vector<'s, u
   ensures len_of(result) >= 256_u64;
   ensures head_of(result) <= 0_u64;
 } {
-  doc "Opens a fresh run's whole capacity, so a view formed over it holds the 256 slots one connection's scratch needs. The fill is a helper rather than a loop written at the call site because the staged hand-out reads the loop body before its cut as straight-line statements [PAR-3].";
+  doc "Opens a fresh run's whole capacity, so a view formed over it holds the 256 slots one connection's scratch needs. It is a helper rather than a loop written where the run is taken because its contract is what publishes the opened length: a caller reads `len_of(result) >= 256_u64` off the signature instead of re-deriving it from three loop invariants at every site [FN-9].";
   let run = move vector;
   for @fill_run (
     at in 0_u64..256_u64,
