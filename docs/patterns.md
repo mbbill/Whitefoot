@@ -1828,26 +1828,34 @@ run whose contents are literals.
 
 The stream operations `read_next` and `receive_next` have no offset: the
 position they advance is the stream's own [SYS-15, SYS-18]. A read to end is
-therefore an uncounted loop whose only exit is the `ReadEnd` arm, and the
-buffer it reads into is the loop's own.
+therefore an uncounted loop whose only exit is the `ReadEnd` arm, and the run
+it reads into is the loop's own — one store-resident `Vector` filled once
+before the loop, whose length the loop reads back as `held`.
 
 ```whitefoot
+let held = len_of(chunk);
 loop @chunks {
   let available = 0_u64;
   let ended = 0_u8;
   region {
-    match read_next(input: &uniq input, destination: &uniq chunk,
-                    start: 0_u64, end: 4096_u64) {
-      ReadBytes(next: endpoint) => { set available = endpoint; }
-      ReadEnd() => { set ended = 1_u8; }
-      ReadFailed(error: problem) => { set outcome = 3_u8; set ended = 2_u8; }
+    let sink = mut_slice_of(&uniq chunk);
+    region {
+      match read_next(input: &uniq input, destination: &uniq sink,
+                      start: 0_u64, end: held) {
+        ReadBytes(next: endpoint) => { set available = endpoint; }
+        ReadEnd() => { set ended = 1_u8; }
+        ReadFailed(error: problem) => { set outcome = 3_u8; set ended = 2_u8; }
+      }
     }
   }
   if ended == 0_u8 {
     region {
-      match publish_all(output: &uniq out, source: &chunk, length: available) {
-        Ok(value: published) => { }
-        Err(error: problem) => { set outcome = 4_u8; set ended = 2_u8; }
+      let payload = slice_of(&chunk);
+      region {
+        match publish_all(output: &uniq out, source: &payload, length: available) {
+          Ok(value: published) => { }
+          Err(error: problem) => { set outcome = 4_u8; set ended = 2_u8; }
+        }
       }
     }
   }
@@ -1855,16 +1863,27 @@ loop @chunks {
 }
 ```
 
-Two rules make it work, and both are forms to copy:
+Three rules make it work, and all three are forms to copy:
 
+- **One run, two views, one at a time.** The read needs the exclusive view and
+  the publish needs the shared one, and a run is viewed one way at a time
+  [VIEW-2, OWN-5]: a shared child of a live `MutSlice` freezes the parent for
+  as long as it lives, and a second exclusive view of a live one is refused
+  outright. Giving each view a region of its own — sibling regions, not nested
+  — ends each loan at the brace before the other view forms, so the loop body
+  reads and publishes the same storage without either view ever seeing the
+  other.
 - **Publish through the helper of P16's shape, not through a second inner
-  loop.** `write_once` over the same buffer the read filled needs
-  `available <= len_of(chunk)` at its call site. The read's own [SYS-8] relation
-  gives `available <= 4096` on the `ReadBytes` edge, and the buffer's
-  allocation gives `4096 <= len_of(chunk)`; both are live immediately after the
-  read region and neither survives a second loop header. A helper whose
-  contract states `requires length <= len_of(deref(source))` moves the obligation
-  to that one live point, and the writer never restates the bound.
+  loop.** `write_once` over the same run the read filled needs
+  `available <= len_of(payload)` at its call site. The read's own [SYS-8]
+  relation gives `available <= held` on the `ReadBytes` edge, and both views
+  carry their origin's length, so `len_of(sink) == len_of(payload) == held`;
+  the facts are live immediately after the read region and neither survives a
+  second loop header. A helper whose contract states
+  `requires length <= len_of(deref(source))` moves the obligation to that one
+  live point, and the writer never restates the bound. Reading `held` once,
+  before the loop, is what lets the bound be the run's own length rather than a
+  literal the writer must keep in step with the allocation.
 - **Leave through one flag, at the bottom.** The `ReadEnd` break is selected
   by the submission's own outcome, so it can never be taken in a staged
   prologue and the loop stays sequential ([PAR-3] says so in as many words).
@@ -1872,7 +1891,8 @@ Two rules make it work, and both are forms to copy:
   failure and the end on the same edge and keeps the body's shape readable.
 
 Current value: measured on the v0.46 batch branch, on `tests/programs/stdin_echo.wf`
-against a pipe and against a redirected file, on both runtime routes.
+against a pipe and against a redirected file, on both runtime routes; carried
+onto the view forms with the same two shapes and the same two routes.
 
 Replaces: a positioned read with a writer-tracked offset, which is the wrong
 operation for a stream, and an inner publish loop, which loses the length

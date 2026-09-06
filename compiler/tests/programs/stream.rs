@@ -37,12 +37,13 @@ fn the_stream_read_lowers_through_the_one_submit_and_join_shape() {
     assert!(llvm.contains("call void @wf__completion_file_join"));
     // The entry supplies the two standard handles the invocation already
     // holds — descriptor 1 for `command.stdout` and descriptor 0 for
-    // `command.stdin` — and opens nothing for either [SYS-15].
+    // `command.stdin` — and opens nothing for either [SYS-15]. The general
+    // store the chunk lives in follows them as the seventh row's operand.
     let entry = llvm
         .split("define i32 @wf__main_body")
         .nth(1)
         .expect("the emitted entry body");
-    assert!(entry.contains("call i8 @wf_main(i32 1, i32 0)"));
+    assert!(entry.contains("call i8 @wf_main(i32 1, i32 0, "));
     assert!(!entry.contains("@open"));
 }
 
