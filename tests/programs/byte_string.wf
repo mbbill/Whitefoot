@@ -18,101 +18,135 @@ const line_end: FixedVector<u8, 1> =[10_u8];
 
 const digit_glyphs: FixedVector<u8, 10> =[48_u8, 49_u8, 50_u8, 51_u8, 52_u8, 53_u8, 54_u8, 55_u8, 56_u8, 57_u8];
 
-struct ByteString {
-  buf: buffer<u8>;
-  fill: u64;
+enum Grown {
+  Grew(value: Vector<u8>);
+  Refused(value: Vector<u8>);
 }
 
-fn bs_new() -> result: own ByteString pure {
-  doc "Builds one empty byte string over a zero-length backing buffer.";
-  let empty = buffer_new(0_u64, 0_u8);
-  return ByteString(buf: move empty, fill: 0_u64);
+fn bs_reserve(s: own Vector<u8>, store: &uniq Heap, total: own u64) -> grown: own Grown reads(s, store), writes(s, store), allocates(store) contract {
+  requires total >= len_of(s);
+} {
+  doc "Grows the backing run to total slots, preserving byte order, or reports that the store refused. Growth is the drain-front, append-back walk, and the superseded run is disposed before the wider one is handed back. The four measures the Grew arm carries are not published here: a variant-routed measure clause is a deferred contract route, so the caller reads them back instead.";
+  let count = len_of(s);
+  region {
+    match heap_vector::<u8>(store: &uniq deref(store), count: total) {
+      None() => {
+        return Refused(value: move s);
+      }
+      Some(value: fresh) => {
+        let built = move fresh;
+        for @move (
+          at in 0_u64..count,
+          invariant left: len_of(s) + at >= count,
+          invariant gone: len_of(s) + at <= count,
+          invariant made_lo: len_of(built) >= at,
+          invariant made_hi: len_of(built) <= at,
+          invariant spare_lo: room_of(built) + at >= total,
+          invariant spare_hi: room_of(built) + at <= total,
+          invariant flat: head_of(built) <= 0_u64
+        ) {
+          set (s, byte) = take_front(vector: move s);
+          set built = place_back(vector: move built, value: byte);
+        }
+        dispose s;
+        return Grew(value: move built);
+      }
+    }
+  }
 }
 
-fn bs_len(s: &ByteString) -> result: own u64 reads(s.fill) {
+fn bs_len(s: &Vector<u8>) -> result: own u64 reads(s) {
   doc "Reports how many bytes the string holds.";
-  return deref(s).fill;
+  return len_of(deref(s));
 }
 
-fn bs_byte(s: &ByteString, index: own u64) -> result: own Option<u8> reads(s.buf, s.fill) {
+fn bs_byte(s: &Vector<u8>, index: own u64) -> result: own Option<u8> reads(s) {
   doc "Reads one stored byte, delivering None for a position the string does not hold.";
-  let stored = deref(s).fill;
+  let stored = len_of(deref(s));
   let within = index < stored;
   if within {
-    let capacity = len_of(deref(s).buf);
-    let addressable = index < capacity;
-    if addressable {
-      let value = deref(s).buf[index];
-      return Some<u8>(value: value);
-    }
+    let value = deref(s)[index];
+    return Some<u8>(value: value);
   }
   return None<u8>();
 }
 
-fn bs_push(s: &uniq ByteString, value: own u8) -> result: own unit reads(s.buf, s.fill), writes(s.buf, s.fill) {
-  doc "Appends one byte, growing the backing buffer by one step when it is full.";
-  let count = deref(s).fill;
-  let capacity = len_of(deref(s).buf);
-  let headroom = capacity <= 9223372036854775799_u64;
-  if headroom {
-  } else {
-    return unit;
-  }
-  let full = count >= capacity;
-  if full {
-    let grown = capacity + 8_u64;
-    let fresh = buffer_new(grown, value);
-    for @copy (at in 0_u64..capacity) {
-      let byte = deref(s).buf[at];
-      set fresh[at] = byte;
-    }
-    let old = replace deref(s).buf = move fresh;
-    let stored = capacity + 1_u64;
-    set deref(s).fill = stored;
-    return unit;
-  }
-  set deref(s).buf[count] = value;
-  let stored = count + 1_u64;
-  set deref(s).fill = stored;
-  return unit;
-}
-
-fn bs_append_slice(s: &uniq ByteString, text: own Slice<u8>) -> result: own unit reads(s.buf, s.fill, text), writes(s.buf, s.fill) {
-  doc "Appends every byte of one static message, growing the destination as needed.";
+fn bs_append_slice(s: own Vector<u8>, text: own Slice<u8>) -> result: own Vector<u8> reads(s, text), writes(s) contract {
+  requires head_of(s) <= 0_u64;
+  ensures head_of(result) <= 0_u64;
+} {
+  doc "Appends every byte of one static message, and hands the run back unchanged when it has no room for them. The run travels by value because a &uniq parameter whose referent reaches a container nominal is refused, and because only a consumed operand's measure can be published at all.";
   let count = len_of(text);
-  for @append (at in 0_u64..count) {
+  let built = move s;
+  let start = len_of(built);
+  let spare = room_of(built);
+  let admitted = spare >= count;
+  if admitted {
+  } else {
+    return move built;
+  }
+  for @append (
+    at in 0_u64..count,
+    invariant filled_lo: len_of(built) >= start + at,
+    invariant filled_hi: len_of(built) <= start + at,
+    invariant spare_lo: room_of(built) + at >= spare,
+    invariant spare_hi: room_of(built) + at <= spare,
+    invariant flat: head_of(built) <= 0_u64
+  ) {
     let byte = text[at];
-    region {
-      bs_push(s: &uniq deref(s), value: byte);
-    }
+    set built = place_back(vector: move built, value: byte);
   }
-  return unit;
+  return move built;
 }
 
-fn bs_concat(destination: &uniq ByteString, source: &ByteString) -> result: own unit reads(destination.buf, destination.fill, source.buf, source.fill), writes(destination.buf, destination.fill) {
-  doc "Appends every byte of one byte string to another.";
-  let count = 0_u64;
+fn bs_from(store: &uniq Heap, text: own Slice<u8>) -> made: own Option<Vector<u8>> reads(store, text), writes(store), allocates(store) {
+  doc "Builds one byte string holding exactly the bytes of one static message.";
+  let count = len_of(text);
   region {
-    set count = bs_len(s: &deref(source));
-  }
-  for @concat (at in 0_u64..count) {
-    match bs_byte(s: &deref(source), index: at) {
-      Some(value: byte) => {
-        region {
-          bs_push(s: &uniq deref(destination), value: byte);
-        }
-      }
+    match heap_vector::<u8>(store: &uniq deref(store), count: count) {
       None() => {
+        return None<Vector<u8>>();
+      }
+      Some(value: fresh) => {
+        let built = bs_append_slice(s: move fresh, text: text);
+        return Some<Vector<u8>>(value: move built);
       }
     }
   }
-  return unit;
 }
 
-fn bs_find(haystack: &ByteString, needle: &ByteString) -> result: own Option<u64> reads(haystack.buf, haystack.fill, needle.buf, needle.fill) {
+fn bs_concat(destination: own Vector<u8>, source: &Vector<u8>) -> result: own Vector<u8> reads(destination, source), writes(destination) contract {
+  requires head_of(destination) <= 0_u64;
+  ensures head_of(result) <= 0_u64;
+} {
+  doc "Appends every byte of one byte string to another, and hands the destination back unchanged when it has no room for them.";
+  let count = len_of(deref(source));
+  let built = move destination;
+  let start = len_of(built);
+  let spare = room_of(built);
+  let admitted = spare >= count;
+  if admitted {
+  } else {
+    return move built;
+  }
+  for @concat (
+    at in 0_u64..count,
+    invariant filled_lo: len_of(built) >= start + at,
+    invariant filled_hi: len_of(built) <= start + at,
+    invariant spare_lo: room_of(built) + at >= spare,
+    invariant spare_hi: room_of(built) + at <= spare,
+    invariant flat: head_of(built) <= 0_u64
+  ) {
+    let byte = deref(source)[at];
+    set built = place_back(vector: move built, value: byte);
+  }
+  return move built;
+}
+
+fn bs_find(haystack: &Vector<u8>, needle: &Vector<u8>) -> result: own Option<u64> reads(haystack, needle) {
   doc "Reports the first position where the needle bytes occur, by the naive left-to-right scan.";
-  let hay_length = deref(haystack).fill;
-  let needle_length = deref(needle).fill;
+  let hay_length = len_of(deref(haystack));
+  let needle_length = len_of(deref(needle));
   let longer = needle_length > hay_length;
   if longer {
     return None<u64>();
@@ -165,22 +199,23 @@ fn bs_find(haystack: &ByteString, needle: &ByteString) -> result: own Option<u64
   return None<u64>();
 }
 
-fn bs_push_decimal(s: &uniq ByteString, value: own u64) -> result: own unit reads(s.buf, s.fill), writes(s.buf, s.fill) {
-  doc "Appends the decimal spelling of one unsigned value, least significant digit extracted first.";
-  let scratch = buffer_new(20_u64, 48_u8);
-  let written = 0_u64;
+fn bs_push_decimal(s: own Vector<u8>, value: own u64) -> result: own Vector<u8> reads(s), writes(s) contract {
+  requires head_of(s) <= 0_u64;
+  ensures head_of(result) <= 0_u64;
+} {
+  doc "Appends the decimal spelling of one unsigned value, least significant digit extracted first into a fixed scratch run and drained from its back, which is the most significant digit.";
+  let scratch = fixed_vector::<u8, 20>();
   let rest = value;
   loop @extract {
     let digit = rest % 10_u64;
     let glyphs = len_of(digit_glyphs);
     let known = digit < glyphs;
-    let capacity = len_of(scratch);
-    let spare = written < capacity;
+    let spare = room_of(scratch);
+    let vacant = spare > 0_u64;
     if known {
-      if spare {
+      if vacant {
         let glyph = digit_glyphs[digit];
-        set scratch[written] = glyph;
-        set written = written +wrap 1_u64;
+        set scratch = place_back(vector: move scratch, value: glyph);
       } else {
         break @extract;
       }
@@ -193,30 +228,32 @@ fn bs_push_decimal(s: &uniq ByteString, value: own u64) -> result: own unit read
       break @extract;
     }
   }
-  let index = written;
-  loop @emit {
-    let done = index == 0_u64;
-    if done {
-      break @emit;
-    }
-    set index = index -wrap 1_u64;
-    let capacity = len_of(scratch);
-    let inside = index < capacity;
-    if inside {
-      let glyph = scratch[index];
-      region {
-        bs_push(s: &uniq deref(s), value: glyph);
-      }
-    }
+  let written = len_of(scratch);
+  let built = move s;
+  let spare = room_of(built);
+  let admitted = spare >= written;
+  if admitted {
+  } else {
+    return move built;
   }
-  return unit;
+  for @emit (
+    at in 0_u64..written,
+    invariant left_lo: len_of(scratch) + at >= written,
+    invariant left_hi: len_of(scratch) + at <= written,
+    invariant spare_lo: room_of(built) + at >= spare,
+    invariant flat: head_of(built) <= 0_u64
+  ) {
+    set (scratch, emitted) = take_back(vector: move scratch);
+    set built = place_back(vector: move built, value: emitted);
+  }
+  return move built;
 }
 
-fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
-  define source_length = len_of(deref(source));
+fn publish_all(output: &uniq Output, source: own Slice<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+  define source_length = len_of(source);
   requires length <= source_length;
 } {
-  doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
+  doc "Publishes one prefix of the source view, reattempting until the host has accepted every byte or refused it.";
   let sent = 0_u64;
   loop @publish {
     let pending = sent < length;
@@ -225,7 +262,7 @@ fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> re
       break @publish;
     }
     region {
-      match write_once(output: &uniq deref(output), source: source, start: sent, end: length) {
+      match write_once(output: &uniq deref(output), source: &source, start: sent, end: length) {
         Ok(value: next) => {
           set sent = next;
         }
@@ -238,168 +275,197 @@ fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> re
   return Ok<unit, IoError>(value: unit);
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
-  doc "Builds one byte string from literals, concatenates, searches it, and publishes the measured report.";
-  let subject = bs_new();
+command fn main(command.stdout as out: own Output, command.heap as heap: own Heap) -> status: own ExitStatus reads(out, heap), writes(out, heap), allocates(heap) {
+  doc "Builds one byte string from literals, grows its backing run, concatenates, searches it, and publishes the measured report.";
   region {
-    let view = slice_of(&subject_head);
-    region {
-      bs_append_slice(s: &uniq subject, text: view);
-    }
-  }
-  let tail = bs_new();
-  region {
-    let view = slice_of(&subject_tail);
-    region {
-      bs_append_slice(s: &uniq tail, text: view);
-    }
-  }
-  region {
-    bs_concat(destination: &uniq subject, source: &tail);
-  }
-  let total = 0_u64;
-  region {
-    set total = bs_len(s: &subject);
-  }
-  if total == 43_u64 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  region {
-    match bs_byte(s: &subject, index: 10_u64) {
-      Some(value: observed) => {
-        if observed == 98_u8 {
+    let head_view = slice_of(&subject_head);
+    match bs_from(store: &uniq heap, text: head_view) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: head_made) => {
+        let opening = move head_made;
+        let opening_length = len_of(opening);
+        if 43_u64 >= opening_length {
         } else {
           return exit_status(code: 1_u8);
         }
-      }
-      None() => {
-        return exit_status(code: 1_u8);
-      }
-    }
-  }
-  region {
-    match bs_byte(s: &subject, index: 43_u64) {
-      Some(value: observed) => {
-        return exit_status(code: 1_u8);
-      }
-      None() => {
-      }
-    }
-  }
-  let present = bs_new();
-  region {
-    let view = slice_of(&needle_present);
-    region {
-      bs_append_slice(s: &uniq present, text: view);
-    }
-  }
-  let absent = bs_new();
-  region {
-    let view = slice_of(&needle_absent);
-    region {
-      bs_append_slice(s: &uniq absent, text: view);
-    }
-  }
-  let present_at = 0_u64;
-  let present_found = 0_u8;
-  region {
-    match bs_find(haystack: &subject, needle: &present) {
-      Some(value: at) => {
-        set present_at = at;
-        set present_found = 1_u8;
-      }
-      None() => {
-      }
-    }
-  }
-  if present_found == 1_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if present_at == 10_u64 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  let absent_found = 0_u8;
-  region {
-    match bs_find(haystack: &subject, needle: &absent) {
-      Some(value: at) => {
-        set absent_found = 1_u8;
-      }
-      None() => {
-      }
-    }
-  }
-  if absent_found == 0_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  let report = bs_new();
-  region {
-    let view = slice_of(&label_length);
-    region {
-      bs_append_slice(s: &uniq report, text: view);
-    }
-  }
-  region {
-    bs_push_decimal(s: &uniq report, value: total);
-  }
-  region {
-    let view = slice_of(&label_present);
-    region {
-      bs_append_slice(s: &uniq report, text: view);
-    }
-  }
-  region {
-    bs_push_decimal(s: &uniq report, value: present_at);
-  }
-  region {
-    let view = slice_of(&label_absent);
-    region {
-      bs_append_slice(s: &uniq report, text: view);
-    }
-  }
-  if absent_found == 0_u8 {
-    region {
-      let view = slice_of(&word_none);
-      region {
-        bs_append_slice(s: &uniq report, text: view);
-      }
-    }
-  } else {
-    region {
-      bs_push_decimal(s: &uniq report, value: 0_u64);
-    }
-  }
-  region {
-    let view = slice_of(&line_end);
-    region {
-      bs_append_slice(s: &uniq report, text: view);
-    }
-  }
-  let published = 0_u64;
-  region {
-    set published = bs_len(s: &report);
-  }
-  if published == 28_u64 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  let report_capacity = len_of(report.buf);
-  let report_within_capacity = published <= report_capacity;
-  if report_within_capacity {
-    region {
-      match publish_all(output: &uniq out, source: &report.buf, length: published) {
-        Ok(value: done) => {
+        region {
+          match bs_reserve(s: move opening, store: &uniq heap, total: 43_u64) {
+            Refused(value: refused) => {
+              return exit_status(code: 71_u8);
+            }
+            Grew(value: ready) => {
+              let subject = move ready;
+              let flat = head_of(subject);
+              if flat == 0_u64 {
+              } else {
+                return exit_status(code: 1_u8);
+              }
+              region {
+                let tail_view = slice_of(&subject_tail);
+                match bs_from(store: &uniq heap, text: tail_view) {
+                  None() => {
+                    return exit_status(code: 70_u8);
+                  }
+                  Some(value: tail_made) => {
+                    let tail = move tail_made;
+                    region {
+                      set subject = bs_concat(destination: move subject, source: &tail);
+                    }
+                    let total = 0_u64;
+                    region {
+                      set total = bs_len(s: &subject);
+                    }
+                    if total == 43_u64 {
+                    } else {
+                      return exit_status(code: 1_u8);
+                    }
+                    region {
+                      match bs_byte(s: &subject, index: 10_u64) {
+                        Some(value: observed) => {
+                          if observed == 98_u8 {
+                          } else {
+                            return exit_status(code: 1_u8);
+                          }
+                        }
+                        None() => {
+                          return exit_status(code: 1_u8);
+                        }
+                      }
+                    }
+                    region {
+                      match bs_byte(s: &subject, index: 43_u64) {
+                        Some(value: observed) => {
+                          return exit_status(code: 1_u8);
+                        }
+                        None() => {
+                        }
+                      }
+                    }
+                    region {
+                      let present_view = slice_of(&needle_present);
+                      match bs_from(store: &uniq heap, text: present_view) {
+                        None() => {
+                          return exit_status(code: 70_u8);
+                        }
+                        Some(value: present_made) => {
+                          let present = move present_made;
+                          region {
+                            let absent_view = slice_of(&needle_absent);
+                            match bs_from(store: &uniq heap, text: absent_view) {
+                              None() => {
+                                return exit_status(code: 70_u8);
+                              }
+                              Some(value: absent_made) => {
+                                let absent = move absent_made;
+                                let present_at = 0_u64;
+                                let present_found = 0_u8;
+                                region {
+                                  match bs_find(haystack: &subject, needle: &present) {
+                                    Some(value: at) => {
+                                      set present_at = at;
+                                      set present_found = 1_u8;
+                                    }
+                                    None() => {
+                                    }
+                                  }
+                                }
+                                if present_found == 1_u8 {
+                                } else {
+                                  return exit_status(code: 1_u8);
+                                }
+                                if present_at == 10_u64 {
+                                } else {
+                                  return exit_status(code: 1_u8);
+                                }
+                                let absent_found = 0_u8;
+                                region {
+                                  match bs_find(haystack: &subject, needle: &absent) {
+                                    Some(value: at) => {
+                                      set absent_found = 1_u8;
+                                    }
+                                    None() => {
+                                    }
+                                  }
+                                }
+                                if absent_found == 0_u8 {
+                                } else {
+                                  return exit_status(code: 1_u8);
+                                }
+                                region {
+                                  match heap_vector::<u8>(store: &uniq heap, count: 28_u64) {
+                                    None() => {
+                                      return exit_status(code: 70_u8);
+                                    }
+                                    Some(value: report_made) => {
+                                      let report = move report_made;
+                                      region {
+                                        let view = slice_of(&label_length);
+                                        set report = bs_append_slice(s: move report, text: view);
+                                      }
+                                      set report = bs_push_decimal(s: move report, value: total);
+                                      region {
+                                        let view = slice_of(&label_present);
+                                        set report = bs_append_slice(s: move report, text: view);
+                                      }
+                                      set report = bs_push_decimal(s: move report, value: present_at);
+                                      region {
+                                        let view = slice_of(&label_absent);
+                                        set report = bs_append_slice(s: move report, text: view);
+                                      }
+                                      if absent_found == 0_u8 {
+                                        region {
+                                          let view = slice_of(&word_none);
+                                          set report = bs_append_slice(s: move report, text: view);
+                                        }
+                                      } else {
+                                        set report = bs_push_decimal(s: move report, value: 0_u64);
+                                      }
+                                      region {
+                                        let view = slice_of(&line_end);
+                                        set report = bs_append_slice(s: move report, text: view);
+                                      }
+                                      let published = len_of(report);
+                                      if published == 28_u64 {
+                                      } else {
+                                        return exit_status(code: 1_u8);
+                                      }
+                                      region {
+                                        let window = slice_of(&report);
+                                        let window_length = len_of(window);
+                                        let within_window = published <= window_length;
+                                        if within_window {
+                                          region {
+                                            match publish_all(output: &uniq out, source: window, length: published) {
+                                              Ok(value: done) => {
+                                              }
+                                              Err(error: problem) => {
+                                                return exit_status(code: 2_u8);
+                                              }
+                                            }
+                                          }
+                                        } else {
+                                          return exit_status(code: 3_u8);
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
-        Err(error: problem) => {
-          return exit_status(code: 2_u8);
-        }
       }
     }
-  } else {
-    return exit_status(code: 3_u8);
   }
   return exit_status(code: 0_u8);
 }

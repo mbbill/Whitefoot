@@ -91,10 +91,11 @@ fn recursively_boxed_tree_executes_with_derived_cleanup() {
     assert!(output.stderr.is_empty());
 }
 
-/// The byte-string layer over the [SET-2] growable buffer: construction from
-/// literal arrays, append and concat by buffer growth, length, bounds-safe
-/// byte access, a naive substring search, and decimal formatting, ending in
-/// one real publication to standard output.
+/// The byte-string layer over the general store's run: construction from
+/// literal runs, append and concat into reserved room, the growth walk that
+/// widens a run that already holds bytes, length, bounds-safe byte access, a
+/// naive substring search, and decimal formatting, ending in one real
+/// publication to standard output.
 ///
 /// The oracle is the published line itself. Intermediate result mismatches
 /// return a nonzero status before publication, and every partial operation is
@@ -102,8 +103,10 @@ fn recursively_boxed_tree_executes_with_derived_cleanup() {
 #[test]
 fn byte_string_builds_searches_and_publishes_its_report() {
     let llvm = compile_program("byte_string.wf");
-    // Growth allocates the wider buffer and releases the superseded one
-    // through the ordinary [SET-2], [STOR-3] path.
+    // B7c4b: the byte string is a `Vector<u8>` at the general store rather
+    // than a `buffer<u8>` field, so the acquisition is `heap_vector` and the
+    // superseded run of `bs_reserve`'s growth walk is released by `dispose`.
+    // Both remain the ordinary [STOR-3] store calls this row named before.
     assert!(llvm.contains("call ptr @malloc"));
     assert!(llvm.contains("call void @free"));
     let output = compile_and_run(&llvm);
@@ -114,31 +117,50 @@ fn byte_string_builds_searches_and_publishes_its_report() {
 
 /// The read-only search layer of `byte_string.wf`, with its own entry.
 ///
-/// Both negative directions below rewrite exactly one construct of these
-/// bytes, so each shows that the construct is load-bearing rather than
-/// decoration. The extraction ends before `bs_push_decimal`, the first
-/// declaration the search layer does not use.
+/// The negative direction below rewrites exactly one construct of these
+/// bytes, so it shows that the construct is load-bearing rather than
+/// decoration. The extraction runs from the growth outcome the layer's own
+/// helpers return and ends before `bs_push_decimal`, the first declaration
+/// the search layer does not use.
+///
+/// B7c4b: the entry builds its two subjects with `heap_vector` and one
+/// `place_back` each, because the byte string is now a run at the general
+/// store rather than a `buffer<u8>` a pure entry could construct on its own.
 fn search_layer_with_entry() -> String {
     let source = include_str!("../../../tests/programs/byte_string.wf");
-    let start = source
-        .find("struct ByteString {")
-        .expect("byte-string struct");
+    let start = source.find("enum Grown {").expect("byte-string growth outcome");
     let end = source
         .find("\nfn bs_push_decimal")
         .expect("search-layer end");
     let layer = &source[start..end];
     format!(
         "{layer}
-command fn main() -> status: own ExitStatus pure {{
-  let backing = buffer_new(1_u64, 7_u8);
-  let subject = ByteString(buf: move backing, fill: 1_u64);
-  let needle_backing = buffer_new(1_u64, 7_u8);
-  let needle = ByteString(buf: move needle_backing, fill: 1_u64);
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {{
   region {{
-    match bs_find(haystack: &subject, needle: &needle) {{
-      Some(value: at) => {{
-      }}
+    match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {{
       None() => {{
+        return exit_status(code: 70_u8);
+      }}
+      Some(value: fresh) => {{
+        let subject = place_back(vector: move fresh, value: 7_u8);
+        region {{
+          match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {{
+            None() => {{
+              return exit_status(code: 70_u8);
+            }}
+            Some(value: other) => {{
+              let needle = place_back(vector: move other, value: 7_u8);
+              region {{
+                match bs_find(haystack: &subject, needle: &needle) {{
+                  Some(value: at) => {{
+                  }}
+                  None() => {{
+                  }}
+                }}
+              }}
+            }}
+          }}
+        }}
       }}
     }}
   }}
@@ -148,33 +170,24 @@ command fn main() -> status: own ExitStatus pure {{
     )
 }
 
-/// The accessor's inner capacity branch is the bounds discharge itself.
+/// The accessor's length branch is the bounds discharge itself.
 ///
-/// Deleting it leaves the same subscript with no established bound, and the
-/// compiler rejects the program under [OP-4] rather than accepting it with a
-/// runtime check: the accessor is safe because the branch proves it, not
-/// because a check was left in.
+/// B7c4b: the accessor used to hold two branches, an outer one against the
+/// stored `fill` and an inner one against the backing buffer's capacity, and
+/// the negative direction deleted the inner one. A run's own `len_of` is now
+/// the only length there is, so there is one branch and the rewrite widens
+/// its comparison by a single byte. The subscript is then left with no
+/// established bound and the compiler rejects the program under [OP-4] rather
+/// than accepting it with a runtime check: the accessor is safe because the
+/// branch proves it, not because a check was left in.
 #[test]
-fn the_byte_accessor_without_its_capacity_branch_is_an_op4_rejection() {
-    let guarded = "  if within {
-    let capacity = len_of(deref(s).buf);
-    let addressable = index < capacity;
-    if addressable {
-      let value = deref(s).buf[index];
-      return Some<u8>(value: value);
-    }
-  }";
-    let unguarded = "  if within {
-    let value = deref(s).buf[index];
-    return Some<u8>(value: value);
-  }";
+fn the_byte_accessor_without_its_length_branch_is_an_op4_rejection() {
+    let guarded = "  let within = index < stored;";
+    let unguarded = "  let within = index <= stored;";
     let source = search_layer_with_entry();
     let stripped = source.replace(guarded, unguarded);
-    assert_ne!(stripped, source, "the capacity branch must have been found");
+    assert_ne!(stripped, source, "the length branch must have been found");
     let failure = compile_rejection(&[("byte_string_unguarded.wf", stripped.as_bytes())]);
     assert!(failure.contains("[OP-4]"), "{failure}");
-    assert!(
-        failure.contains("index < len_of(deref(s).buf)"),
-        "{failure}"
-    );
+    assert!(failure.contains("index < len_of(deref(s))"), "{failure}");
 }
