@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-paced-experiments']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-paced-experiments', 'codex/io-canonical-experiments']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -31,11 +31,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        experiment: [priority]
+        experiment: [canonical]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Install toolchain
         run: |
           sudo apt-get update
@@ -56,7 +58,7 @@ jobs:
         run: |
           {
             echo '## Scheduler experiment: ${{ matrix.experiment }}'
-            echo 'Paired within this job and CPU cohort. Identical emitted modules at each chunk interval, with single-FIFO or bounded completion-ready preference, versus matching native C quanta. Fixed light arrivals plus saturated heavy peers; all scheduled work is retained. Pure-compute and warm-file controls remain. See the investigation for scope.'
+            echo 'Paired within this job and CPU cohort. Former versus canonical chunk-loop topology, rebuilt on this host and linked to identical current C runtime policies. Fixed light arrivals plus saturated heavy peers; all scheduled work is retained. Pure-compute controls test the cost when no runtime checkpoint is called. See the investigation for scope.'
             echo '```text'
             for file in host.txt cohorts.tsv network-summary.txt compute.txt mixed.txt; do
               cat "$RUNNER_TEMP/io-scheduler/$file" 2>/dev/null || echo "$file was not produced"
@@ -76,3 +78,4 @@ jobs:
             ${{ runner.temp }}/io-scheduler/*.log
             ${{ runner.temp }}/io-scheduler/observed/
             ${{ runner.temp }}/io-scheduler/samples/
+            ${{ runner.temp }}/io-scheduler/codegen/

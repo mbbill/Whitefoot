@@ -806,7 +806,38 @@ fn nested(lo: own u64, hi: own u64, cut: own u64) -> result: own u64 pure {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn paint(values: &uniq buffer<u64>, cut: own u64) -> result: own u64 reads(values), writes(values) {
+  let room = len(deref(values));
+  let total = 0_u64;
+  for @scan (index in 0_u64..room) {
+    let stop = index == cut;
+    if stop {
+      break @scan;
+    }
+    let prior = deref(values)[index];
+    let next = prior +wrap index;
+    set deref(values)[index] = next;
+    set total = total +wrap next;
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let cells = buffer_new(17_u64, 7_u64);
+  region {
+    let painted = paint(values: &uniq cells, cut: 17_u64);
+    let wrong_painted = painted != 255_u64;
+    if wrong_painted {
+      return exit_status(code: 7_u8);
+    }
+  }
+  region {
+    let repainted = paint(values: &uniq cells, cut: 11_u64);
+    let wrong_repainted = repainted != 187_u64;
+    if wrong_repainted {
+      return exit_status(code: 8_u8);
+    }
+  }
 "#,
     );
     let cases = [
@@ -850,8 +881,30 @@ command fn main() -> status: own ExitStatus pure {
                 function,
                 NonZeroU32::new(3).expect("positive interval"),
             );
+            if let Some(chunked) = &transformed {
+                let blocks = chunked.function.blocks();
+                let backedges = crate::lowering::control_flow::backedge_sources(blocks);
+                for &latch in &chunked.inner_backedges {
+                    let crate::IrTerminator::Jump { target: header, .. } =
+                        blocks[latch].terminator()
+                    else {
+                        panic!("the inner latch must jump to its header");
+                    };
+                    let entering_backedges = backedges
+                        .iter()
+                        .filter(|&&source| {
+                            matches!(blocks[source].terminator(),
+                                crate::IrTerminator::Jump { target, .. } if target == header)
+                        })
+                        .count();
+                    assert_eq!(
+                        entering_backedges, 1,
+                        "the checkpoint cycle must have a separate outer header"
+                    );
+                }
+            }
             match function.name() {
-                "counted" | "walked" | "equalled" => {
+                "counted" | "walked" | "equalled" | "paint" => {
                     let transformed = transformed.expect("unit-stride loop must be chunked");
                     assert_eq!(transformed.inner_backedges.len(), 1);
                     assert_eq!(transformed.checkpoints.len(), 1);

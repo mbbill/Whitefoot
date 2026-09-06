@@ -1192,3 +1192,56 @@ readiness classes and actual preferred/forced selections. Neither a positive
 checkpoint count nor a policy flag alone establishes that prioritization
 changed a particular execution. No default or source rule is selected before
 these measurements.
+
+## Twelfth experiment: give the chunk loop a separate header
+
+The remaining no-call compute cost has a concrete code-generation lead.
+Local clang compilation of the emitted modules to x86 assembly unrolls the
+original metric-table loop twice. The first chunk representation instead
+forms its inner cycle around the checkpoint path and leaves the computation
+at one iteration per branch. Its source header receives both the ordinary
+latch and chunk-resume backedges. This is evidence about generated code, not
+yet a causal Linux timing measurement.
+
+The revised transformation gives the outer chunk loop its own header and
+carried parameters. That header computes the chunk limit and enters the
+original inner loop; its original latch remains the only inner backedge.
+Exhaustion either exits with the original carried values or checkpoints and
+returns to the outer header. The source body is not duplicated. Empty and
+reversed ranges, saturating limits near u64::MAX, early exits and the counter
+fallback retain their previous behavior. This agrees with LLVM's preference
+for a preheader and single latch in its
+[canonical loop forms](https://llvm.org/docs/LoopTerminology.html#loop-simplify-form).
+The local x86 assembly now restores two-iteration unrolling in the computation
+and places the checkpoint on the outer cycle.
+
+All 32 parallel backend tests and 15 loop-splitting tests passed, as did
+all-target clippy. The boundary test additionally checks that every inner
+header has exactly one natural backedge.
+The extended boundary case also passed with a uniquely borrowed buffer carried
+through chunks: two passes mutate the same storage, the second exits early,
+and their independent expected sums check that writes happen exactly once.
+Its early-stop branch keeps the ordinary reduction splitter from replacing
+the loop before the checkpoint pass, and the test requires actual chunking.
+Native eight-peer fixed-arrival exchanges at one/two workers verified every
+response and reported 3556/7112
+checkpoint calls, exactly 127 per completed heavy request. The observed
+four-worker metric-table program still reports zero calls and switches.
+A one-warm-up/three-alternating-pass M1 check gives 490.65 ms original,
+490.96 ms former chunks and 492.95 ms canonical chunks. This host again does
+not reproduce the Linux regression; assembly shape alone is not a speedup.
+
+`scheduler-canonical` rebuilds the former compiler at `6380a17a` from Git,
+checks that its uninstrumented module matches the current compiler byte for
+byte, and compares former/canonical chunk intervals 1024/16384 plus base on
+one Linux host. All forms link the current C runtime with B=0, the original
+idle policy, full lane initialization and the shared completion path. Native
+C at the two matching quanta remains in the network cohort. Keep 64 peers,
+the zero-compute fixed-arrival control, and long computation at 4800/24000
+total light arrivals/s, with shared4/split2 placement. Pure-compute and
+warm-file controls remain at two/four/eight workers. Both 16384 compute forms
+must report zero calls; the artifact includes their generated assembly and
+the baseline's assembly. There are two warm-ups and seven alternating passes.
+The prior compiler build is temporary measurement machinery, removed when
+this lowering question is settled; the active implementation is superseded
+in place rather than keeping two compiler passes.

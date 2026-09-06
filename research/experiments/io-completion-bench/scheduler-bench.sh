@@ -61,15 +61,28 @@ if [[ $MODE != bench || $(uname -s) != Linux ]]; then
     echo 'scheduler-bench: use check on POSIX, or bench on Linux with io_uring' >&2
     exit 2
 fi
-[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == footprint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == priority ]] || exit 2
+[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == footprint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == priority || $EXPERIMENT == canonical ]] || exit 2
 network_compute=0
-if [[ $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == priority ]]; then network_compute=1; fi
+if [[ $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == priority || $EXPERIMENT == canonical ]]; then network_compute=1; fi
 [[ $ROUNDS =~ ^[1-9][0-9]*$ && $WARMUP =~ ^[0-9]+$ ]] || exit 2
 [[ $(nproc) -ge 4 ]] || { echo 'scheduler-bench: this CPU-placement experiment needs four logical CPUs' >&2; exit 2; }
 mkdir -p "$OUT/bin" "$OUT/samples" "$OUT/observed" "$OUT/tree"
 export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$ROOT/compiler/target}
 (cd "$ROOT/compiler" && cargo build --profile gate --bin whitefootc --locked --offline)
 WFC=$CARGO_TARGET_DIR/gate/whitefootc
+
+if [[ $EXPERIMENT == canonical ]]; then
+    # Compare the prior lowering on this host, not a prior host's timing.
+    # Only compiler inputs are extracted; every binary links the current C
+    # runtime below. Remove this baseline build when the lowering is settled.
+    checkpoint_baseline=6380a17a800163c1ebd8c63ec1235432c444846b
+    git -C "$ROOT" cat-file -e "$checkpoint_baseline^{commit}"
+    mkdir -p "$OUT/compiler-before" "$OUT/codegen"
+    git -C "$ROOT" archive "$checkpoint_baseline" compiler spec | tar -x -C "$OUT/compiler-before"
+    (cd "$OUT/compiler-before/compiler" && CARGO_TARGET_DIR="$OUT/compiler-before/target" \
+        cargo build --profile gate --bin whitefootc --locked --offline)
+    OLD_WFC=$OUT/compiler-before/target/gate/whitefootc
+fi
 
 if [[ $EXPERIMENT == priority ]]; then
     for burst in 1 8; do
@@ -103,6 +116,7 @@ fi
     "$CLANG" --version
     lscpu
     echo "experiment=$EXPERIMENT rounds=$ROUNDS warmup=$WARMUP"
+    if [[ $EXPERIMENT == canonical ]]; then echo "checkpoint_baseline=$checkpoint_baseline"; fi
     echo "io_uring_disabled=$(cat /proc/sys/kernel/io_uring_disabled 2>/dev/null || echo absent)"
     echo "affinity=$(taskset -pc $$)"
     lscpu -e=CPU,CORE,SOCKET,NODE,ONLINE
@@ -139,6 +153,7 @@ if [[ $EXPERIMENT == inline ]]; then forms=(base local); fi
 if [[ $EXPERIMENT == checkpoint || $EXPERIMENT == paced ]]; then forms=(base cq1024 cq16384 cq65536); fi
 if [[ $EXPERIMENT == chunks ]]; then forms=(base cq16384 ch1024 ch16384 ch65536); fi
 if [[ $EXPERIMENT == priority ]]; then forms=(ch1024 ch1024b1 ch1024b8 ch16384 ch16384b1 ch16384b8); fi
+if [[ $EXPERIMENT == canonical ]]; then forms=(base old1024 old16384 ch1024 ch16384); fi
 if [[ $EXPERIMENT == footprint ]]; then forms=(base lanes); fi
 form_flags() {
     local_inline=0
@@ -147,7 +162,7 @@ form_flags() {
     case $1 in
         base) spin=256; yields=16; progress=0 ;;
         lanes) spin=256; yields=16; progress=0; init_used=1 ;;
-        cq1024|cq16384|cq65536|ch1024|ch16384|ch65536) spin=256; yields=16; progress=0 ;;
+        cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|old1024|old16384) spin=256; yields=16; progress=0 ;;
         ch1024b1|ch1024b8|ch16384b1|ch16384b8) spin=256; yields=16; progress=0; ready_burst=${1##*b} ;;
         local) spin=256; yields=16; progress=0; local_inline=1 ;;
         sleep) spin=0; yields=0; progress=0 ;;
@@ -187,7 +202,7 @@ else
     "$WFC" --par --emit-llvm -o "$OUT/compute.ll" "$ROOT/tests/programs/par_layout.wf"
     "$WFC" --par --emit-llvm -o "$OUT/mixed.ll" "$HERE/programs/windows_runtime_mixed.wf"
 fi
-if [[ $EXPERIMENT == checkpoint || $EXPERIMENT == chunks || $EXPERIMENT == priority ]]; then
+if [[ $EXPERIMENT == checkpoint || $EXPERIMENT == chunks || $EXPERIMENT == priority || $EXPERIMENT == canonical ]]; then
     programs=(echo compute mixed)
     "$WFC" --par --emit-llvm -o "$OUT/compute.ll" "$ROOT/tests/programs/par_layout.wf"
     "$WFC" --par --emit-llvm -o "$OUT/mixed.ll" "$HERE/programs/windows_runtime_mixed.wf"
@@ -196,7 +211,7 @@ fi
 for policy in "${forms[@]}"; do
     for program in "${programs[@]}"; do
         module="$OUT/$program.ll"
-        if [[ $policy == cq* || $policy == ch* ]]; then
+        if [[ $policy == cq* || $policy == ch* || $policy == old* ]]; then
             case $program in
                 echo) source="$echo_source" ;;
                 compute) source="$ROOT/tests/programs/par_layout.wf" ;;
@@ -207,12 +222,18 @@ for policy in "${forms[@]}"; do
             if [[ $policy == ch* ]]; then checkpoint_option=--sched-chunks; fi
             checkpoint_interval=${policy:2}
             checkpoint_interval=${checkpoint_interval%b*}
-            "$WFC" --par "$checkpoint_option" "$checkpoint_interval" --emit-llvm -o "$module" "$source"
+            checkpoint_compiler=$WFC
+            if [[ $policy == old* ]]; then
+                checkpoint_compiler=$OLD_WFC
+                checkpoint_option=--sched-chunks
+                checkpoint_interval=${policy#old}
+            fi
+            "$checkpoint_compiler" --par "$checkpoint_option" "$checkpoint_interval" --emit-llvm -o "$module" "$source"
             if [[ $policy == ch*b* ]]; then
                 # Only the C queue policy may differ in this paired cohort.
                 cmp "$OUT/$program-${policy%b*}.ll" "$module"
             fi
-            if [[ $policy == ch* && $program == echo ]]; then
+            if [[ ( $policy == ch* || $policy == old* ) && $program == echo ]]; then
                 # This protocol's dependent recurrence must actually use the
                 # new lowering; positive runtime calls alone also fit fallback.
                 awk '/^define internal i64 @wf_churn\(/ {body=1;seen=1}
@@ -223,11 +244,15 @@ for policy in "${forms[@]}"; do
             fi
         fi
         link_form "$module" "$OUT/bin/$program-$policy" "$policy" 0
+        if [[ $EXPERIMENT == canonical && $program == compute && ( $policy == base || $policy == old16384 || $policy == ch16384 ) ]]; then
+            "$CLANG" -O2 -S -x ir "$module" -Wno-override-module \
+                -o "$OUT/codegen/compute-$policy.s"
+        fi
     done
     module="$OUT/echo.ll"
-    if [[ $policy == cq* || $policy == ch* ]]; then module="$OUT/echo-$policy.ll"; fi
+    if [[ $policy == cq* || $policy == ch* || $policy == old* ]]; then module="$OUT/echo-$policy.ll"; fi
     link_form "$module" "$OUT/bin/echo-$policy-observed" "$policy" 1
-    if [[ $EXPERIMENT == chunks && ( $policy == cq16384 || $policy == ch16384 ) ]]; then
+    if [[ ( $EXPERIMENT == chunks && ( $policy == cq16384 || $policy == ch16384 ) ) || ( $EXPERIMENT == canonical && ( $policy == old16384 || $policy == ch16384 ) ) ]]; then
         link_form "$OUT/compute-$policy.ll" "$OUT/bin/compute-$policy-observed" "$policy" 1
         WF_WORKERS=4 WF_STACKS=1100 WF_SCHED_REPORT=1 "$OUT/bin/compute-$policy-observed" batch batch batch \
             > "$OUT/compute-$policy-observed.out" 2> "$OUT/compute-$policy-observed.err"
@@ -239,11 +264,21 @@ for policy in "${forms[@]}"; do
             "$OUT/compute-$policy-observed.err"
     fi
 done
+if [[ $EXPERIMENT == canonical ]]; then
+    # The uninstrumented compiler result is unchanged, and the candidate must
+    # actually differ from the former chunk topology.
+    "$OLD_WFC" --par --emit-llvm -o "$OUT/compute-before.ll" "$ROOT/tests/programs/par_layout.wf"
+    cmp "$OUT/compute-before.ll" "$OUT/compute.ll"
+    if cmp -s "$OUT/compute-old16384.ll" "$OUT/compute-ch16384.ll"; then
+        echo 'scheduler-bench: canonical lowering did not change the module' >&2
+        exit 1
+    fi
+fi
 if [[ $network_compute == 1 ]]; then
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread -DWF_BENCH_COMPUTE \
         "$HERE/epoll_echo.c" -o "$OUT/bin/epoll_compute"
 fi
-if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == priority ]]; then
+if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == priority || $EXPERIMENT == canonical ]]; then
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread -DWF_BENCH_COMPUTE -DWF_BENCH_QUANTUM \
         "$HERE/epoll_echo.c" -o "$OUT/bin/epoll_quantum"
 fi
@@ -297,7 +332,7 @@ network_case() {
         q1024|q16384|q65536)
             binary="$OUT/bin/epoll_quantum"
             arguments=(--threads "$server_workers" --quantum "${form#q}") ;;
-        base|local|lanes|sleep|short|spin|poll1|poll16|cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|ch1024b1|ch1024b8|ch16384b1|ch16384b8)
+        base|local|lanes|sleep|short|spin|poll1|poll16|cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|ch1024b1|ch1024b8|ch16384b1|ch16384b8|old1024|old16384)
             binary="$OUT/bin/echo-$form"
             if [[ $observed == 1 ]]; then binary="$binary-observed"; fi
             environment=("WF_WORKERS=$server_workers" WF_STACKS=1100 "WF_SCHED_REPORT=$observed") ;;
@@ -362,7 +397,7 @@ admissions=(0)
 if [[ $EXPERIMENT == fairness ]]; then admissions=(0 1); fi
 if [[ $network_compute == 1 ]]; then references=(epoll); compute_rounds=262144; fi
 if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks ]]; then references=(epoll q1024 q16384 q65536); fi
-if [[ $EXPERIMENT == priority ]]; then references=(q1024 q16384); fi
+if [[ $EXPERIMENT == priority || $EXPERIMENT == canonical ]]; then references=(q1024 q16384); fi
 while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
     for admitted in "${admissions[@]}"; do
         for form in "${references[@]}" "${forms[@]}"; do network_case "$form" 4 20 64 -1 0; done
@@ -379,7 +414,7 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
              /^ring:/ { ring=1; for(i=2;i<=NF;i++) { split($i,a,"="); value[a[1]]=a[2]+0 } }
              END { exit !(scheduler && ring && value["submissions"] > 0 && value["completions"] > 0) }' \
             "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
-        if [[ ( $form == cq* || $form == ch* ) && $connections == 64 ]]; then
+        if [[ ( $form == cq* || $form == ch* || $form == old* ) && $connections == 64 ]]; then
             awk '/^sched:/ { for(i=2;i<=NF;i++) { split($i,a,"="); value[a[1]]=a[2]+0 } }
                  END { exit !(value["checkpoints"] > 0 && value["checkpoint_switches"] > 0) }' \
                 "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
@@ -428,7 +463,7 @@ if [[ $EXPERIMENT == fairness ]]; then
     awk '$4 != 16384' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
     mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
 fi
-if [[ $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == priority ]]; then
+if [[ $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == priority || $EXPERIMENT == canonical ]]; then
     # Both request classes stay active for a common interval. The count is a
     # storage ceiling, not a target; an early ceiling hit fails the sample.
     cat > "$OUT/cases.tsv" <<'CASES'
@@ -446,7 +481,7 @@ if [[ $EXPERIMENT == chunks ]]; then
     awk '$1==64' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
     mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
 fi
-if [[ $EXPERIMENT == paced || $EXPERIMENT == priority ]]; then
+if [[ $EXPERIMENT == paced || $EXPERIMENT == priority || $EXPERIMENT == canonical ]]; then
     # Fix light arrivals independently of service speed. Keep every scheduled
     # request, including client backlog, while heavy peers remain saturated.
     cat > "$OUT/cases.tsv" <<'CASES'
@@ -462,6 +497,10 @@ fi
 if [[ $EXPERIMENT == priority ]]; then
     # Retain all long-compute arrival rates and one shorter-compute control.
     awk '$4!=262144 || $5==100' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
+    mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
+fi
+if [[ $EXPERIMENT == canonical ]]; then
+    awk '$4==0 || ($4==2097152 && $5>=100)' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
     mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
 fi
 for ((pass=-WARMUP; pass<ROUNDS; pass++)); do
@@ -483,7 +522,7 @@ done
 # Warm positioned reads plus compute measure coexistence; they do not establish
 # a bound on network latency while every worker runs a long computation.
 cpu_programs=(compute mixed)
-if [[ $EXPERIMENT != idle && $EXPERIMENT != checkpoint && $EXPERIMENT != chunks && $EXPERIMENT != priority ]]; then cpu_programs=(); fi
+if [[ $EXPERIMENT != idle && $EXPERIMENT != checkpoint && $EXPERIMENT != chunks && $EXPERIMENT != priority && $EXPERIMENT != canonical ]]; then cpu_programs=(); fi
 for program in "${cpu_programs[@]}"; do
     : > "$OUT/$program.plan"
     for workers in 2 4 8; do

@@ -31,8 +31,6 @@ struct Candidate {
     entry: usize,
     index: IrValueId,
     upper: IrValueId,
-    initial_index: IrValueId,
-    initial_upper: IrValueId,
     guard: IrValueId,
     exit_tag: u32,
     exit: IrBlockId,
@@ -228,8 +226,6 @@ fn candidates(function: &IrFunction) -> Vec<Candidate> {
                 entry,
                 index: *index,
                 upper: *upper,
-                initial_index: *initial.get(index_position)?,
-                initial_upper: *initial.get(upper_position)?,
                 guard: *guard,
                 exit_tag,
                 exit,
@@ -323,25 +319,41 @@ fn apply(result: &mut ChunkedFunction, candidate: Candidate, interval: NonZeroU3
         entry,
         index,
         upper,
-        initial_index,
-        initial_upper,
         guard,
         exit_tag,
         exit,
     } = candidate;
     let chunk_end = value(function, U64)?;
     let more = value(function, IrType::Bool)?;
-    let (first_limit, initialization) = limit(function, initial_index, initial_upper, interval)?;
-    let (next_limit, next_chunk) = limit(function, index, upper, interval)?;
-    let test = IrBlockId(u32::try_from(function.blocks.len()).ok()?);
-    let resume = IrBlockId(test.0.checked_add(1)?);
-
-    let mut resume_arguments: Vec<_> = function.blocks[header]
-        .parameters
+    let original_parameters = function.blocks[header].parameters.clone();
+    let resume_arguments: Vec<_> = original_parameters
         .iter()
         .map(|(value, _)| *value)
         .collect();
-    resume_arguments.push(next_limit);
+    let mut outer_parameters = Vec::new();
+    for (_, ty) in &original_parameters {
+        outer_parameters.push((value(function, *ty)?, *ty));
+    }
+    let outer_index = outer_parameters[original_parameters
+        .iter()
+        .position(|(value, _)| *value == index)?]
+    .0;
+    let outer_upper = outer_parameters[original_parameters
+        .iter()
+        .position(|(value, _)| *value == upper)?]
+    .0;
+    let (next_limit, next_chunk) = limit(function, outer_index, outer_upper, interval)?;
+    let mut inner_arguments: Vec<_> = outer_parameters.iter().map(|(value, _)| *value).collect();
+    inner_arguments.push(next_limit);
+    let outer = IrBlockId(u32::try_from(function.blocks.len()).ok()?);
+    let test = IrBlockId(outer.0.checked_add(1)?);
+    let resume = IrBlockId(test.0.checked_add(1)?);
+
+    // Give the chunk loop its own header. Reusing the source header for both
+    // backedges lets LLVM form a loop around the checkpoint path instead of
+    // the computation; even the no-checkpoint execution then loses ordinary
+    // inner-loop optimizations. The original latch now has exactly one entry
+    // from this outer header, with a chunk-invariant limit.
     function.blocks[header].parameters.push((chunk_end, U64));
     let [
         IrInstruction::Define {
@@ -364,16 +376,24 @@ fn apply(result: &mut ChunkedFunction, candidate: Candidate, interval: NonZeroU3
         .iter_mut()
         .find(|target| target.tag == exit_tag)?
         .block = test;
-    function.blocks[entry].instructions.extend(initialization);
-    let IrTerminator::Jump { arguments, .. } = &mut function.blocks[entry].terminator else {
+    let IrTerminator::Jump { target, .. } = &mut function.blocks[entry].terminator else {
         return None;
     };
-    arguments.push(first_limit);
+    *target = outer;
     let IrTerminator::Jump { arguments, .. } = &mut function.blocks[latch].terminator else {
         return None;
     };
     arguments.push(chunk_end);
 
+    function.blocks.push(IrBlock {
+        parameters: outer_parameters,
+        instructions: next_chunk,
+        terminator: IrTerminator::Jump {
+            target: IrBlockId(u32::try_from(header).ok()?),
+            arguments: inner_arguments,
+            drops: Vec::new(),
+        },
+    });
     function.blocks.push(IrBlock {
         parameters: Vec::new(),
         instructions: vec![IrInstruction::Define {
@@ -402,9 +422,9 @@ fn apply(result: &mut ChunkedFunction, candidate: Candidate, interval: NonZeroU3
     });
     function.blocks.push(IrBlock {
         parameters: Vec::new(),
-        instructions: next_chunk,
+        instructions: Vec::new(),
         terminator: IrTerminator::Jump {
-            target: IrBlockId(u32::try_from(header).ok()?),
+            target: outer,
             arguments: resume_arguments,
             drops: Vec::new(),
         },
