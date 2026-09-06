@@ -956,7 +956,12 @@ fn a_body_bound_borrow_of_iteration_own_storage_is_admitted() {
 /// Condition 7's other half, which the form refusal above does not reach: a
 /// footprint *element* whose caller place the judgment does not resolve.
 ///
-/// A slice reads through an origin this judgment holds no place for, so the
+/// A view is a claim on the storage it was formed over [VIEW-1], and this
+/// judgment reads a bound view through to that origin — the sibling case
+/// below is the witness. What it cannot read through is a view whose
+/// formation is not in this function's text at all: the helper here publishes
+/// the shared child of the destination it was handed [VIEW-6], so the caller
+/// binds a view naming storage no place of this function reaches. The
 /// projection produces an unresolved element rather than a place with a
 /// disposition. It must deny as [`StagedDenial::Unresolved`] rather than as
 /// [`StagedDenial::BodyForm`]: the two carry different writer advice and the
@@ -965,6 +970,100 @@ fn a_body_bound_borrow_of_iteration_own_storage_is_admitted() {
 /// storage the body never writes, so a resolving judgment would grant it.
 #[test]
 fn an_unresolved_footprint_element_denies_as_unresolved_rather_than_as_a_form() {
+    let source = br#"fn published['r](destination: &uniq MutSlice<'r, u8>) -> filled: own Slice<'r, u8> pure {
+  return slice_of(&'r deref(destination));
+}
+
+fn component() -> made: own FixedVector<u8, 16> pure contract {
+  ensures len_of(made) >= 16_u64;
+  ensures room_of(made) <= 0_u64;
+  ensures head_of(made) <= 0_u64;
+} {
+  let built = fixed_vector::<u8, 16>();
+  for @fill (
+    at in 0_u64..16_u64,
+    invariant grown: len_of(built) >= at,
+    invariant spare: room_of(built) + at >= 16_u64,
+    invariant flat: head_of(built) <= 0_u64
+  ) {
+    set built = place_back(vector: move built, value: 97_u8);
+  }
+  return move built;
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+  region 'a {
+    let workspace = arena_frame::<16, 1, 'a>();
+    region {
+      let table = arena_vector_proved::<u8>(store: &uniq workspace, count: 16_u64);
+      for @prime (
+        at in 0_u64..16_u64,
+        invariant grown: len_of(table) >= at,
+        invariant spare: room_of(table) + at >= 16_u64,
+        invariant flat: head_of(table) <= 0_u64
+      ) {
+        set table = place_back(vector: move table, value: 97_u8);
+      }
+      let name = component();
+      let total = 0_u64;
+      for @scan (index in 0_u64..4_u64) {
+        region {
+          let held = mut_slice_of(&uniq table);
+          region {
+            let view = published(destination: &uniq held);
+            let seen = len_of(view);
+            set total = total +wrap seen;
+          }
+        }
+        region 'f {
+          match reserve_handle(factory: &uniq files) {
+            Ok(value: permit) => {
+              region {
+                let window = slice_of(&name);
+                region {
+                  match open_file(permit: move permit, root: &'f cwd, name: &window, start: 0_u64, end: 4_u64) {
+                    FileOpened(value: handle) => {
+                    }
+                    FileOpenFailed(error: problem, permit: refused_2) => {
+                    }
+                  }
+                }
+              }
+            }
+            Err(error: spent) => {
+              return exit_status(code: 8_u8);
+            }
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let denial = denied(source, "main", 7);
+    let StagedDenial::Unresolved { .. } = denial else {
+        panic!("expected an unresolved-element denial: {denial:?}");
+    };
+    assert!(
+        denial.writer_form().contains("a callee handed back"),
+        "the advice must name the origin this judgment cannot reach: {}",
+        denial.writer_form()
+    );
+}
+
+/// The sibling of the case above, and the property this judgment gained when
+/// the view resolver landed: the same length read taken through a view *bound
+/// over storage this function names* resolves to that storage.
+///
+/// The two programs read a length through a `Slice` and differ only in where
+/// the view was formed. Here the formation is written in this function, so
+/// [VIEW-1]'s claim resolves to `table`, the body writes nothing of it, and
+/// condition 5's first alternative covers it. Before the resolver this loop
+/// was denied for condition 7, which was an over-denial the rule never asked
+/// for.
+#[test]
+fn a_length_read_through_a_view_of_named_storage_resolves_to_its_origin() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let table = buffer_new(16_u64, 97_u8);
   let total = 0_u64;
@@ -996,24 +1095,16 @@ fn an_unresolved_footprint_element_denies_as_unresolved_rather_than_as_a_form() 
   return exit_status(code: 0_u8);
 }
 "#;
-    let denial = denied(source, "main", 7);
-    let StagedDenial::Unresolved { .. } = denial else {
-        panic!("expected an unresolved-element denial: {denial:?}");
-    };
-    assert!(
-        denial.writer_form().contains("slice_of"),
-        "the advice must name the binding that stands in front of the storage: {}",
-        denial.writer_form()
-    );
+    permitted(source, "main");
 }
 
-/// The admitted direction of the same variant: the identical length read taken
-/// from the buffer itself resolves, so the loop is granted.
+/// The plainest admitted direction: the length read taken from the run itself,
+/// with no view standing anywhere between the read and the storage.
 ///
-/// The two programs read the same length of the same enclosing buffer and
-/// differ only in whether a slice stands between the read and the storage.
-/// That is what makes the denial above a resolution limit of this judgment and
-/// not a hazard of the program — and what makes it worth removing later.
+/// It was the control that showed the old slice denial to be a resolution
+/// limit rather than a hazard of the program. The limit is closed and the
+/// case is kept as what it always also was: the baseline this judgment's
+/// read-only disposition is measured against.
 #[test]
 fn the_same_length_read_taken_without_a_slice_resolves_and_is_admitted() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {

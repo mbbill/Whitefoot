@@ -172,7 +172,7 @@ use super::model::{
 };
 use super::permission::{
     Access, Footprint, LoanStrength, Program, call_projection, collect_consumed_places,
-    collect_operand_reads, set_target_place,
+    collect_operand_reads, kernel_footprint, kernel_projection, set_target_place,
 };
 use super::places::{PlaceMap, PlaceRoot, ResolvedPlace};
 use crate::NodePath;
@@ -442,12 +442,13 @@ impl StagedDenial {
                 "give the per-iteration storage an element type whose copy class this judgment resolves: a primitive, a tag-only enum, or a buffer or array of either"
             }
             Self::BodyForm { admits, .. } => admits,
-            // The fail-closed resolution limit, not a hazard: the sibling test
-            // proves the same length read taken from the buffer itself is
-            // granted, so the admitted form is to name the storage rather than
-            // a binding standing in front of it.
+            // The fail-closed resolution limit, not a hazard. A view is a
+            // claim on the storage it was formed over [VIEW-1], and this
+            // judgment reads a bound view through to that origin wherever the
+            // formation names a place it can resolve; what it cannot resolve
+            // is a view whose origin is nowhere in this function's text.
             Self::Unresolved { .. } => {
-                "name the storage the call reaches directly rather than through a binding whose extent this judgment does not resolve: `len_of(&'v table)` resolves where the same length taken through a `slice_of` binding does not"
+                "form the view over storage this function names and hand that binding on: `slice_of(&table)` bound to a local reaches `table` at every use of it, while a view a callee handed back and a view this function received as a parameter each name storage with no place here"
             }
         }
     }
@@ -1192,7 +1193,10 @@ impl<'check> StagedSurvey<'check, '_> {
         // where no loan is needed: a written borrow's shared-or-uniq mode is
         // erased from the checked tree, so the [OWN-5] loan it would hold
         // cannot be stated, and admitting one unstated would widen permission.
-        if call_projection(value).is_none() {
+        // A [BLK-0] row's arguments are atoms of the same shape [GRAM-11],
+        // and its own record states the loans its `&uniq` provider operand
+        // holds, so a kernel call hides no bare borrow either.
+        if call_projection(value).is_none() && kernel_projection(value).is_none() {
             let introduced = &self.introduced;
             let admitted =
                 borrows_only_iteration_own(self.places, value, &|place: &ResolvedPlace| {
@@ -1232,6 +1236,13 @@ impl<'check> StagedSurvey<'check, '_> {
         {
             let footprint = self.program.footprint(self.places, &projection);
             self.record(&footprint, segment, may_suspend);
+        }
+        // [BLK-0] a kernel row never suspends: no row of the inventory
+        // declares a `may-suspend` action, and the take an implementation
+        // performs is not one.
+        if let Some(projection) = kernel_projection(expression) {
+            let footprint = kernel_footprint(self.places, &projection);
+            self.record(&footprint, segment, false);
         }
         for child in super::model::expression_children(expression) {
             self.calls(child, segment);
@@ -1395,6 +1406,32 @@ impl<'check> StagedSurvey<'check, '_> {
             CheckedExpression::BufferVacant { element, .. } => {
                 Some(is_copy_element(CheckedFlatElement::Nominal(*element)))
             }
+            // [BLK-2] a run or a cell the iteration acquires from a store is
+            // iteration-own storage exactly as a filled buffer was: the row
+            // hands back a fresh value the statement binds, and what an
+            // implementation may reuse across iterations is decided by that
+            // storage's element type and by nothing else. The store the run
+            // came from is a different place, and the `&uniq` provider operand
+            // this same call takes is what puts it in the table.
+            CheckedExpression::KernelCall { row, instance, .. } => match row {
+                crate::KernelRow::FixedVector
+                | crate::KernelRow::ArenaVector
+                | crate::KernelRow::ArenaVectorProved
+                | crate::KernelRow::HeapVector
+                | crate::KernelRow::ArenaBox
+                | crate::KernelRow::HeapBox => Some(is_copy_type(instance.element)),
+                // A boundary row transforms a run it was handed and forms no
+                // storage [BLK-3]; a reservation is a provider and carries no
+                // element type at all [BLK-2]; the two view rows form a
+                // descriptor over storage they do not own [VIEW-1].
+                crate::KernelRow::ArenaFrame
+                | crate::KernelRow::PlaceBack
+                | crate::KernelRow::PlaceFront
+                | crate::KernelRow::TakeBack
+                | crate::KernelRow::TakeFront
+                | crate::KernelRow::SliceOf
+                | crate::KernelRow::MutSliceOf => return,
+            },
             _ => return,
         };
         self.replicated.push(Replicated {
@@ -1662,6 +1699,25 @@ fn is_iteration_own(introduced: &[BindingId], place: &ResolvedPlace) -> bool {
         // this arm exists to keep the classification total.
         PlaceRoot::Constant(_) => false,
     }
+}
+
+/// [OWN-1]'s copy classification over one complete element type.
+///
+/// The flat classification below is the same judgment over the flat domain;
+/// this one answers for a run's or a cell's element, which [BLK-1] admits at
+/// any nameable type. A nominal, a run, a view, a provider and an unbounded
+/// type parameter each read as not copy, which is the conservative half: it
+/// costs a construction the reuse freedom and costs the loop nothing.
+const fn is_copy_type(ty: CheckedType) -> bool {
+    matches!(
+        ty,
+        CheckedType::Unit
+            | CheckedType::Bool
+            | CheckedType::Integer(_)
+            | CheckedType::Float(_)
+            | CheckedType::GenericInt(_)
+            | CheckedType::GenericFloat(_)
+    )
 }
 
 /// [OWN-1]'s copy classification over one flat element domain: primitives and
