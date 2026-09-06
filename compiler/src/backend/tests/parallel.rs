@@ -2638,8 +2638,11 @@ fn a_system_operation_bound_by_a_let_is_not_the_lane_form() {
         !overlapped.contains("par.staged."),
         "a submitted operation at the cut must open no staged block:\n{overlapped}"
     );
+    // The lane hand-out's ring is an array of frame addresses, one per slot;
+    // the shape is named whole because a host may emit an array of the same
+    // length for something else (Darwin's path buffers are `[1024 x i8]`).
     assert!(
-        !overlapped.contains(&format!("[{} x ", crate::LANE_SLOTS)),
+        !overlapped.contains(&format!("[{} x ptr]", crate::LANE_SLOTS)),
         "a submitted operation's ring is not the lane hand-out's:\n{overlapped}"
     );
 

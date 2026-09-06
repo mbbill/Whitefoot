@@ -283,6 +283,29 @@ a completion-per-arrival pipeline for bulk transfer, and the two are level at
 a single connection. `--sqpoll` is admitted on this host and loses by a third
 with a poll thread per ring on four cores, so it is off.
 
+The runner's own reading, `io-bench.yml`'s Linux job on a6b31b5 (ubuntu-24.04,
+four cores, kernel 6.8, `ROUNDS=3 WARMUP=1`), where both references are
+slower than here and the Whitefoot line faster, so the ratios differ from this
+host's by about a factor of two:
+
+```text
+line                conns   bytes    trips     rt_per_s     p50_us     p99_us   connect_us   vs_uring   vs_epoll
+wf.k1                   1      64    20000      16179.3       60.0      116.0         89.0       0.80       0.71
+uring.k64              64      64     2000     186447.5      135.0     2717.0        796.0       1.00       1.05
+epoll.k64              64      64     2000     177846.4       89.0     4246.0       1021.0       0.95       1.00
+wf.k64                 64      64     2000      50283.0     1280.0     2080.0       1198.0       0.27       0.28
+uring.k1024          1024      64      200     193084.2     5090.0     9698.0       9489.0       1.00       1.03
+epoll.k1024          1024      64      200     187009.6     5333.0     9886.0       8694.0       0.97       1.00
+wf.k1024             1024      64      200      50056.8    20328.0    25674.0       9987.0       0.26       0.27
+uring.k64.64k          64   65536      200      23527.3     2313.0     6528.0       1147.0       1.00       0.64
+epoll.k64.64k          64   65536      200      36791.7     1032.0     5885.0        552.0       1.56       1.00
+wf.k64.64k             64   65536      200      19670.4     2556.0     5420.0         34.0       0.84       0.53
+```
+
+The shape is the same on both hosts: the Whitefoot line is flat across the
+connection counts while the references scale, and the ratio at one connection
+is the cost of one park-and-wake per operation on that host.
+
 The ratio is the batch's result, and the plan carries what it points at: the
 ring per thread, the locks, and the wake per completion are runtime structure
 the scheduler design did not have to decide for files, where every operation

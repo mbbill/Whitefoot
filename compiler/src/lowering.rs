@@ -1544,7 +1544,7 @@ pub const LANE_FRAME_BYTES: u64 = 256;
 /// offering thread's lane, so a window past this one is a window whose extra
 /// iterations are refused a frame and run inline. This restates
 /// `WF_SCHED_LANE_SLOTS` in `backend/sched/core.h` for the same reason
-/// [`LANE_FRAME_BYTES`] restates `WF_SCHED_FRAME_BYTES` — the ring is a static
+/// `LANE_FRAME_BYTES` restates `WF_SCHED_FRAME_BYTES` — the ring is a static
 /// reservation the emitter makes long before a runtime exists — and the two
 /// numbers are pinned to each other by
 /// `the_staged_lane_window_ceiling_is_the_runtimes`. It is 1024 because that
