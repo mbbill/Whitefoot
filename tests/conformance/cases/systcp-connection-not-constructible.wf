@@ -1,0 +1,5 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "SYS-2, SYS-18: a system-declared struct contributes one nominal-type entry and no constructor entry, so `TcpConnection` is not in the whole-unit constructor domain and no source expression constructs one. A connection value is produced only by `tcp_accept` or `tcp_connect`.";
+  let link = TcpConnection(receive: unit, send: unit);
+  return exit_status(code: 0_u8);
+}

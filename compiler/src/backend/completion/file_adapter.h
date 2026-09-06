@@ -2,393 +2,111 @@
 #define WHITEFOOT_COMPLETION_FILE_ADAPTER_H
 
 /*
- * Bounded POSIX file fallback adapter.
+ * The bounded file adapter, one implementation for every platform.
  *
- * A queue entry is a closed, typed descriptor.  There is no callback or
- * writer thunk in this interface.  Helper threads execute only the switch in
- * file_adapter.c, publish a terminal result into the completion core, and
- * return to the target queue.  A configuration with zero helpers is valid:
- * the scheduler advances the same queue with wf_file_adapter_progress.
+ * A queue entry is a completion record: the typed request it carries is a
+ * closed, typed descriptor and there is no callback or writer thunk in this
+ * interface.  Helper threads execute only `wf_file_execute_direct`, complete
+ * the record, and return to the queue.  A configuration with zero helpers is
+ * valid: the joining thread advances the same queue with
+ * wf_file_adapter_progress.
+ *
+ * The queue, the helpers, the claim of one's own queued record and the
+ * in-place progress are written once here.  The one thing that is not shared
+ * is the host call each request kind makes, which is `wf_file_execute_direct`
+ * below and lives in one leaf per platform (`file_posix.c`,
+ * `file_windows.c`).
+ *
+ * The queue is intrusive and threaded through the records themselves
+ * (`wf_completion_record::next`), so it has no capacity of its own: an
+ * operation that reaches here is queued, never refused
+ * (`research/investigations/io-model/PARK-ON-MISS.md` §7).
  */
 
 #include "contract.h"
+/* For `wf_prim_thread`, the caller-owned record one helper's start needs: this
+ * adapter's helpers are the runtime's own threads, and this adapter is where
+ * their entry records live (`../sched/prim.h`, P1). */
+#include "../sched/prim.h"
 
-#include <fcntl.h>
-#include <pthread.h>
 #include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 
 #if defined(__cplusplus)
 extern "C" {
 #endif
 
-/* Whether this build's family has the [QUAL-2] directory-enumeration
- * facility: one host call that reports a bounded batch of an open directory's
- * entries and advances that descriptor's own position.  Darwin and Linux both
- * do, through different calls writing different records; a family that has
- * neither compiles no enumeration request kind at all, which is the C side of
- * the same refusal `backend/qualification.rs` makes for such a target. */
-#if defined(__APPLE__) || defined(__linux__)
-#define WF_FILE_HAS_DIRECTORY_NEXT 1
-#endif
-
 #define WF_FILE_STATUS_CAPACITY 192u
 
-/* The path bytes one submitted open resolves, held by the operation record.
+/* The most helpers one adapter may ever hold.
  *
- * A submitted open outlives the call that formed it, so the caller's name
- * buffer must stop being the operation's storage the moment submission
- * returns: the writer regains that buffer then and may rewrite it while the
- * host is still resolving the name.  Every target adapter therefore copies
- * the bytes into its own record at submission and resolves that copy.
+ * It is here rather than at the caller because it sizes storage this record
+ * carries: one `wf_prim_thread` per helper, which is where a helper's entry
+ * pair lives for the life of that helper (`../sched/prim.h`, P1). The caller
+ * still states its own bound at `wf_file_adapter_init`, and a bound above this
+ * one is refused rather than clamped, because a caller asking for more helpers
+ * than this adapter can hold is asking for a pool it will not get. */
+#define WF_FILE_MAX_HELPERS 8u
+
+/* What one execution of a typed request produced.
  *
- * The bound is not every admitted name.  `open_file` and `open_directory`
- * resolve exactly one relative component, which the emitter clamps to the
- * target's own component limit — Darwin's 1023 bytes, the widest qualified
- * one, which this holds together with its terminator; the Linux family admits
- * 255.  `open_read` resolves the caller's whole path buffer, and [PATH-1]
- * admits a relative path of any length, so a name longer than this bound is
- * one a program can write.  The runtime's own harness resolves absolute
- * scratch paths as well, and 1024 is Darwin's whole `PATH_MAX`.  Storage is
- * bounded and static because a submission may not allocate.
- *
- * A name that does not fit is refused before an operation is claimed, and the
- * caller opens it directly instead — that path resolves the caller's buffer
- * inside its own call and needs no copy.  The outcome is the same open; what
- * the program loses is the completion path for it, so the demotion is a
- * throughput event of the same class as a full queue and is counted as one:
- * `wf__completion_file_demoted_opens` reports how many opens took it. */
-#define WF_FILE_PATH_CAPACITY 1024u
-
-/* Copies one path into an operation record's own storage.  Returns zero for a
- * name that does not fit, which every caller must answer before claiming an
- * operation; truncating a name would resolve a different file. */
-static inline int wf_file_stage_path(char *storage, const char *path) {
-    size_t length;
-    if (storage == NULL || path == NULL) {
-        return 0;
-    }
-    length = strlen(path);
-    if (length >= (size_t)WF_FILE_PATH_CAPACITY) {
-        return 0;
-    }
-    memcpy(storage, path, length + 1u);
-    return 1;
-}
-
-/* Whether one path can become an operation record's own bytes.  Asked before
- * an operation is claimed, so a refusal is an honest fallback to the direct
- * path rather than a fail-stop after ownership moved. */
-static inline int wf_file_path_fits(const char *path) {
-    return path != NULL && strlen(path) < (size_t)WF_FILE_PATH_CAPACITY;
-}
-
-enum wf_file_operation_kind {
-    WF_FILE_OPEN_AT = 1,
-    WF_FILE_READ = 2,
-    WF_FILE_WRITE = 3,
-    WF_FILE_PREAD = 4,
-    WF_FILE_PWRITE = 5,
-    WF_FILE_STATUS = 6,
-    WF_FILE_CLOSE = 7,
-#if defined(WF_FILE_HAS_DIRECTORY_NEXT)
-    /* One bounded batch of directory entries, advancing the descriptor's own
-     * enumeration position.  The host call behind it differs by family --
-     * `__getdirentries64` on Darwin, `getdents64` on Linux -- and so does the
-     * record it writes; the request record does not, because everything that
-     * differs is either the call itself or the emitted shim's decoding of the
-     * bytes it left behind. */
-    WF_FILE_DIRECTORY_NEXT = 8,
-#endif
-};
-
-enum wf_file_expected_kind {
-    WF_FILE_EXPECT_ANY = 0,
-    WF_FILE_EXPECT_REGULAR = 1,
-    WF_FILE_EXPECT_DIRECTORY = 2
-};
-
-enum wf_file_open_outcome {
-    WF_FILE_OPEN_SUCCEEDED = 0,
-    WF_FILE_OPEN_FAILED = 1,
-    WF_FILE_OPEN_STATUS_FAILED = 2,
-    WF_FILE_OPEN_IS_DIRECTORY = 3,
-    WF_FILE_OPEN_OTHER_KIND = 4
-};
-
-/* The one rule deciding whether an opened descriptor is the kind the
- * operation asked for.  Every target adapter answers with this function, so a
- * FIFO is refused identically whether the open ran on a helper thread, on the
- * scheduler itself, or on a kernel completion ring.  `file_mode` is the host
- * mode word of the descriptor that was actually opened, never of a path
- * inspected a second time. */
-static inline enum wf_file_open_outcome wf_file_kind_outcome(
-    enum wf_file_expected_kind expected,
-    unsigned int file_mode
-) {
-    if (expected == WF_FILE_EXPECT_ANY
-        || (expected == WF_FILE_EXPECT_REGULAR && S_ISREG(file_mode))
-        || (expected == WF_FILE_EXPECT_DIRECTORY && S_ISDIR(file_mode))) {
-        return WF_FILE_OPEN_SUCCEEDED;
-    }
-    return S_ISDIR(file_mode) ? WF_FILE_OPEN_IS_DIRECTORY
-                              : WF_FILE_OPEN_OTHER_KIND;
-}
-
-/* The extra open flag a kind-checked open needs so that opening a waiting
- * facility such as a FIFO cannot block before the kind is known. */
-static inline int wf_file_open_kind_flags(enum wf_file_expected_kind expected) {
-    return expected == WF_FILE_EXPECT_REGULAR ? O_NONBLOCK : 0;
-}
-
-/* WF_IO_NOCACHE: a target policy that makes a program's reads genuinely wait.
- *
- * This is runtime policy of the same class as WF_IO_HELPERS and WF_WORKERS,
- * not a language surface. No Whitefoot source names it, no accepted program
- * changes meaning under it, and no byte any read produces differs with it
- * set: it asks the host to keep this file's pages out of its cache, which
- * changes only how long a read takes. Absent — and any value other than the
- * exact text "1" — is today's behaviour exactly, with no host call made at
- * all.
- *
- * It exists because the file measurements this framework was tuned against
- * all ran with a warm page cache, where a read is a memory copy and a
- * completion model that overlaps waits has nothing to overlap. Measuring the
- * completion framework needs reads that wait on a device.
- *
- * Darwin gets F_NOCACHE, which is a mode of the descriptor: every read
- * through it bypasses the unified buffer cache for the whole life of the
- * open. Linux has no such per-descriptor mode, so it gets one
- * POSIX_FADV_DONTNEED of the whole file, which evicts what is cached at the
- * moment of the open. O_DIRECT is deliberately not used: it constrains
- * buffer address, offset, and length alignment, which would change the
- * program's own buffers and so change what is being measured.
- *
- * The setting is read once per process and cached. Two threads that race here
- * compute the same answer from the same environment, so the race is benign. */
-static inline int wf_file_uncached_reads_requested(void) {
-    /* 0 not yet decided, 1 asked for, 2 not asked for. */
-    static _Atomic int decided;
-    int state = atomic_load_explicit(&decided, memory_order_relaxed);
-    if (state == 0) {
-        const char *text = getenv("WF_IO_NOCACHE");
-        state = (text != NULL && text[0] == '1' && text[1] == 0) ? 1 : 2;
-        atomic_store_explicit(&decided, state, memory_order_relaxed);
-    }
-    return state == 1;
-}
-
-/* The one host call the policy makes, in one place so both adapters make the
- * same one. A build may name a different function here to observe it; the
- * observing build is expected to perform the same host call. */
-#if !defined(WF_FILE_UNCACHED_APPLY)
-#define WF_FILE_UNCACHED_APPLY wf_file_uncached_apply_host
-#else
-extern void WF_FILE_UNCACHED_APPLY(int);
-#endif
-
-static inline void wf_file_uncached_apply_host(int descriptor) {
-#if defined(__APPLE__)
-    (void)fcntl(descriptor, F_NOCACHE, 1);
-#elif defined(__linux__)
-    (void)posix_fadvise(descriptor, 0, 0, POSIX_FADV_DONTNEED);
-#else
-    (void)descriptor;
-#endif
-}
-
-/* Applied exactly once to each descriptor an open hands back, by whichever
- * adapter produced it. A descriptor the kind check refuses never reaches
- * here, so the count of applications equals the count of successful opens. */
-static inline void wf_file_apply_uncached_reads(int descriptor) {
-    if (descriptor < 0 || !wf_file_uncached_reads_requested()) {
-        return;
-    }
-    WF_FILE_UNCACHED_APPLY(descriptor);
-}
-
-typedef struct wf_file_request {
-    enum wf_file_operation_kind kind;
-    union {
-        struct {
-            int directory;
-            /* Names the operation record's own bytes once the request is
-             * queued; the caller's buffer only while the request is still the
-             * caller's, which is the direct path and the moment before
-             * `wf_file_work_bind_path` runs. */
-            const char *path;
-            int flags;
-            unsigned mode;
-            unsigned has_mode;
-            enum wf_file_expected_kind expected_kind;
-        } open_at;
-        struct {
-            int descriptor;
-            void *buffer;
-            size_t count;
-        } read;
-        struct {
-            int descriptor;
-            const void *buffer;
-            size_t count;
-        } write;
-        struct {
-            int descriptor;
-            void *buffer;
-            size_t count;
-            int64_t offset;
-        } pread;
-        struct {
-            int descriptor;
-            const void *buffer;
-            size_t count;
-            int64_t offset;
-        } pwrite;
-        struct {
-            int descriptor;
-        } status;
-        struct {
-            int descriptor;
-        } close;
-#if defined(WF_FILE_HAS_DIRECTORY_NEXT)
-        struct {
-            int descriptor;
-            void *buffer;
-            size_t count;
-            /* Darwin's facility requires a base-position cell and writes the
-             * position of the batch it reported into it.  Linux's takes no
-             * such argument and keeps the whole cursor in the descriptor, so
-             * on that family this cell is left exactly as the caller gave it.
-             * Either way it is scratch storage of the emitted shim's, never a
-             * component of the `DirectorySource` value. */
-            int64_t *position;
-        } directory_next;
-#endif
-    } operation;
-} wf_file_request;
-
+ * The head is what a completion record carries and what a join reads back.
+ * The status bytes below it are the direct executor's alone: a submitted
+ * status writes them into the destination its request names, so no frame pays
+ * 192 bytes per operation for a facility one direct call uses (design §7). */
 typedef struct wf_file_result {
-    enum wf_file_operation_kind kind;
-    int64_t value;
-    int error_code;
-    enum wf_file_open_outcome open_outcome;
+    wf_file_result_head head;
     size_t status_size;
     unsigned char status[WF_FILE_STATUS_CAPACITY];
 } wf_file_result;
 
-/* Whether this finished operation put a descriptor back in the host's table,
- * which is the one thing `wf_completion_operation_retired` asks of it.
- *
- * A close ran the host call that returns one.  An open whose descriptor this
- * runtime obtained and then disposed of returns one too: the kind check refused
- * the descriptor, and the close made for it is a descriptor coming back, which
- * a refused open waiting on the ledger is entitled to see.  Every other ending
- * returns nothing — an open the host refused never held one, an open the
- * program now holds has not given it back, and a transfer, a status and a
- * directory batch were only lent one.
- *
- * It reads the finished operation's own record, so the answer follows the
- * operation rather than the route it took; the ring answers the same question
- * from its entry. */
-static inline int wf_file_returned_a_descriptor(const wf_file_result *result) {
-    if (result == NULL) {
-        return 0;
-    }
-    if (result->kind == WF_FILE_CLOSE) {
-        /* Only a close the host performed put a descriptor back; a refused
-         * close (EBADF) freed nothing, and counting it spends a refused
-         * open's one re-attempt on a return that never happened. */
-        return result->error_code == 0;
-    }
-    return result->kind == WF_FILE_OPEN_AT && result->value >= 0
-        && result->open_outcome != WF_FILE_OPEN_SUCCEEDED;
-}
-
-/* Whether the host satisfied this open, which is the one thing
- * `wf_completion_retirement_open_took_a_descriptor` asks of it: there is a
- * descriptor in this open's hand that was in the host's table before it ran.
- *
- * The kind check does not come into it.  An open the check refuses held the
- * descriptor all the same, and the close made for it is reported separately as
- * the return it is — so such an open is charged once here and counted once
- * there, and the two cancel exactly as they should. */
-static inline int wf_file_open_took_a_descriptor(
-    const wf_file_result *result
-) {
-    return result != NULL && result->kind == WF_FILE_OPEN_AT
-        && result->value >= 0;
-}
-
-typedef struct wf_file_work {
-    wf_completion_token token;
-    wf_file_request request;
-    /* An open's path bytes, owned by this record. */
-    char path_storage[WF_FILE_PATH_CAPACITY];
-} wf_file_work;
-
-/* Points a staged open at this record's own path bytes.
- *
- * A work record is copied whenever it moves — into the bounded queue at
- * submission, out of it at execution — and a pointer into the record it was
- * copied *from* would name storage the queue is free to reuse.  Every copy
- * therefore rebinds, and the invariant is that a work record's open never
- * names bytes outside itself. */
-static inline void wf_file_work_bind_path(wf_file_work *work) {
-    if (work != NULL && work->request.kind == WF_FILE_OPEN_AT) {
-        work->request.operation.open_at.path = work->path_storage;
-    }
-}
-
 enum wf_file_submit_result {
     WF_FILE_TARGET_OWNS = 0,
-    WF_FILE_WAIT_CAPACITY = 1,
-    WF_FILE_SUBMIT_STALE = 2,
-    WF_FILE_SUBMIT_INVALID = 3,
-    WF_FILE_ADAPTER_STOPPING = 4
+    WF_FILE_SUBMIT_INVALID = 1,
+    WF_FILE_ADAPTER_STOPPING = 2
 };
 
 typedef struct wf_file_adapter_statistics {
     uint64_t submissions;
-    /* Opens refused for want of a host descriptor that this adapter asked the
-     * host about a second time, after running work it still owed or after
-     * waiting for an operation in flight anywhere else to retire.  A refusal
-     * published without a second attempt is not counted here. */
-    uint64_t exhaustion_retries;
-    uint64_t capacity_waits;
     uint64_t helper_executions;
     uint64_t scheduler_executions;
-    uint64_t publication_failures;
 } wf_file_adapter_statistics;
 
 typedef struct wf_file_adapter {
     wf_completion_runtime *runtime;
-    wf_file_work *queue;
-    size_t queue_capacity;
-    size_t queue_head;
-    size_t queue_tail;
-    /* Mutated only under queue_lock, and atomic so the retirement ledger can
-     * read it while holding its own lock instead of this one: a refused open
-     * deciding whether to sleep must read the queue at the moment it decides,
-     * and reaching for queue_lock there would invert the order every
-     * submission takes. */
+    /* The queue's lock and the condition a waiting helper sleeps on: the
+     * platform's one wait set, exactly as the completion runtime's is. */
+    wf_completion_wait queue_wait;
+    /* The pending list, oldest at `queue_head`, newest at `queue_tail`,
+     * threaded through each record's own `next`.  Mutated only under
+     * queue_lock. */
+    wf_completion_record *queue_head;
+    wf_completion_record *queue_tail;
+    /* Mutated only under queue_lock, and atomic so the decline check can read
+     * it without taking the lock. */
     _Atomic size_t queue_count;
-    pthread_t *helpers;
-    /* Grown under queue_lock by a submitting thread and read without it by a
-     * scheduler deciding whether it is itself this queue's engine. */
+    /* Grown under the queue lock by a submitting thread and read without it by
+     * a thread deciding whether it is itself this queue's engine. */
     _Atomic size_t helper_count;
     size_t helper_cap;
-    pthread_mutex_t queue_lock;
-    pthread_cond_t queue_available;
-    /* Helpers currently inside pthread_cond_wait, maintained under queue_lock
-     * by the waiter itself.  An enqueue holds that same lock, so it knows
-     * exactly whether a signal has anyone to reach: a helper still spinning
-     * for work needs no host wake, and issuing one for it was a system call
-     * per operation that woke a thread which was already awake. */
+    /* Helpers currently asleep on the queue condition, maintained under the
+     * queue lock by the sleeper itself.  An enqueue holds that same lock, so it
+     * knows exactly whether a signal has anyone to reach: a helper still
+     * spinning for work needs no host wake, and issuing one for it was a system
+     * call per operation that woke a thread which was already awake. */
     size_t blocked_helpers;
+    /* One entry record per helper, written by the starting thread under the
+     * queue lock before the helper exists and never written again. */
+    wf_prim_thread helper_threads[WF_FILE_MAX_HELPERS];
+    /* Helpers that have started and not yet returned, maintained under the
+     * queue lock.  Shutdown waits for this to reach zero rather than joining
+     * threads by handle: the helpers are detached, as every thread this
+     * runtime starts is, and a helper's last act under the lock is to drop
+     * this count and wake whoever is waiting for it. */
+    size_t live_helpers;
     /* What one host call on this adapter has recently cost, in nanoseconds, as
      * a smoothed average over sampled executions.  It is policy input only —
      * no operation's outcome depends on it — and it answers the one question
@@ -397,9 +115,9 @@ typedef struct wf_file_adapter {
     _Atomic uint64_t mean_execute_ns;
     _Atomic uint64_t execute_ticks;
     unsigned stopping;
-    /* How many helpers `helper_storage` can hold.  The growth rule writes
-     * `helpers[held]`, so this, and not the policy's wish, is what bounds the
-     * ceiling `wf_file_adapter_set_helper_cap` may install. */
+    /* How many helpers this adapter may ever hold.  It is the caller's stated
+     * bound on the pool rather than the policy's wish, so it, and not the wish,
+     * is what bounds the ceiling `wf_file_adapter_set_helper_cap` installs. */
     size_t helper_capacity;
     /* Whether every field above has been published.  It is atomic because the
      * direct execution route reads it on a thread that has run no
@@ -411,35 +129,33 @@ typedef struct wf_file_adapter {
     _Atomic unsigned initialized;
 
     _Atomic uint64_t stat_submissions;
-    _Atomic uint64_t stat_exhaustion_retries;
-    _Atomic uint64_t stat_capacity_waits;
     _Atomic uint64_t stat_helper_executions;
     _Atomic uint64_t stat_scheduler_executions;
-    _Atomic uint64_t stat_publication_failures;
 } wf_file_adapter;
 
-/* The caller owns queue_storage and helper_storage until shutdown completes.
- * helper_count is policy, not a fixed architecture constant; zero selects
- * scheduler-driven single-thread progress.
+/* helper_count is policy, not a fixed architecture constant; zero selects
+ * joiner-driven single-thread progress.
  *
- * helper_capacity is how many helpers `helper_storage` holds, which is a fact
- * about the caller's storage rather than a policy: the pool may later be told
- * to grow, and the only thing that can say how far is the array it grows
- * into.  It is refused below helper_count. */
+ * helper_capacity is how many helpers this adapter may ever hold: the pool may
+ * later be told to grow, and this is the bound that says how far.  It is
+ * refused below helper_count and above WF_FILE_MAX_HELPERS, which is the
+ * number of entry records this record carries.  The helper threads themselves are the
+ * platform's, started through `wf_prim_thread_start` and detached, so no
+ * caller owns storage for them. */
 int wf_file_adapter_init(
     wf_file_adapter *adapter,
     wf_completion_runtime *runtime,
-    wf_file_work *queue_storage,
-    size_t queue_capacity,
-    pthread_t *helper_storage,
     size_t helper_capacity,
     size_t helper_count
 );
 
+/* Queues one record.  There is no capacity answer: the list is threaded
+ * through the records and a record is the submitting frame's, so the only way
+ * this refuses is a request whose shape the ABI cannot mean, or an adapter
+ * that has stopped admitting. */
 enum wf_file_submit_result wf_file_adapter_submit(
     wf_file_adapter *adapter,
-    wf_completion_token token,
-    const wf_file_request *request
+    wf_completion_record *record
 );
 
 /* What this adapter has measured about how long its own host calls take.
@@ -462,21 +178,19 @@ enum wf_file_wait_verdict wf_file_adapter_wait_verdict(
 );
 
 /* Whether a transfer submitted now would simply be executed by the submitting
- * thread, so that submitting it can only add a queue crossing to a host call
+ * thread, so that queueing it can only add a queue crossing to a host call
  * the caller is about to make anyway.
  *
  * True when this adapter has no helper, nothing queued, and has measured its
  * own operations as not waiting.  It is the adapter's half of the answer; the
  * caller decides whether the operation is one whose wait no part of the same
- * program has to satisfy.
+ * program has to satisfy.  What the caller does with a yes is now to execute
+ * the operation inside submit and publish its completion, not to refuse it:
+ * the same host call on the same thread, with the record published at the end
+ * (design §7).
  *
  * Cost, stated because this is asked on a hot path: every term of it is an
- * atomic load of this record and none of them takes a lock, so a positioned
- * read that reaches this question pays a handful of loads and no lock at all.
- * The question is asked once per
- * positioned read on a program the bridge has not pinned, and only after the
- * two cheaper terms have both held; what it saves when it answers yes is a
- * queue crossing, a slot claim, four slot transitions and a drain. */
+ * atomic load of this record and none of them takes a lock. */
 int wf_file_adapter_transfer_runs_on_caller(const wf_file_adapter *adapter);
 
 /* Executes one typed request and records what the host call cost, from a
@@ -485,17 +199,114 @@ int wf_file_adapter_transfer_runs_on_caller(const wf_file_adapter *adapter);
  * of the program's operations and not of one route's. */
 wf_file_result wf_file_execute_timed(
     wf_file_adapter *adapter,
-    const wf_file_request *request
+    wf_file_request *request
 );
 
-/* Executes one typed request to its first terminal host answer. EINTR and
- * read/write/directory readiness refusal are adapter progress; close is never
- * retried because one ambiguous close attempt has already consumed authority.
- * Other non-transfer operations remain exactly one host attempt. */
-wf_file_result wf_file_execute_direct(const wf_file_request *request);
+/* The one platform leaf of this adapter: executes one typed request against
+ * the host and reports its first terminal answer.
+ *
+ * `file_posix.c` and `file_windows.c` are the two implementations, and each is
+ * exactly the switch of host calls its platform makes.  Interruption and
+ * readiness refusal are adapter progress and are absorbed there; close is never
+ * retried because one ambiguous close attempt has already consumed authority;
+ * other non-transfer operations remain exactly one host attempt.  A request
+ * kind a platform's qualified target row does not admit is reported as a failed
+ * outcome with the host's own refusal code, never as a terminated process: the
+ * emitter can produce a shape a target refuses, and refusing it is an outcome
+ * the program sees. */
+wf_file_result wf_file_execute_direct(wf_file_request *request);
 
-/* Executes at most `budget` typed requests on the calling scheduler thread.
- * It never runs a Whitefoot continuation. */
+/* Attempts one socket transfer without waiting, in the platform leaf.  Answers
+ * 1 with the operation's own outcome in `result` when the host answered at
+ * once, and 0 when the host would have to wait, leaving the record untouched
+ * for an engine that can wait on it. */
+int wf_file_transfer_now(const wf_file_request *request, wf_file_result *result);
+
+/* Whether one typed request's shape is one this ABI can mean at all.  It is
+ * the adapter's own check rather than a host's, so it is shared; the leaf runs
+ * it before it makes any host call. */
+int wf_file_request_valid(const wf_file_request *request);
+
+/* Whether this request's kind waits on a peer.
+ *
+ * An accept waits for a connection nobody in this program makes, a receive for
+ * bytes the far side has not sent, a connect for the far side to answer, and a
+ * send for room in a window the far side has not drained.  Every one of those
+ * waits is ended by another program, so nothing this runtime does shortens it
+ * and no measurement is needed to know it is there: the kind is the whole
+ * condition.  A listen and a shutdown act on this program's own socket and
+ * answer at once, so they are not peer-bound.
+ *
+ * Three rules read it: growth adds a helper for a peer-bound submission
+ * whatever the measured verdict says, a scheduler thread's progress pass
+ * leaves a peer-bound request for a helper, and a peer-bound execution is left
+ * out of the measured average.  All three are in `file_adapter.c` beside the
+ * code that applies them. */
+int wf_file_request_is_peer_bound(const wf_file_request *request);
+
+/* Records one direction of one connection as released, and answers whether it
+ * was the pair's second release [SYS-18].
+ *
+ * The two directions of one connection are two Whitefoot places and the
+ * target's object behind them is one, so the runtime keeps the "both halves
+ * gone" fact: the first release is that direction's half-close and reports
+ * nothing, and the second releases the target's object.  The count is the
+ * runtime's alone -- no checked program can name it -- and it is exactly two
+ * states per descriptor, so it is one byte per descriptor in a table this
+ * unit owns.  Nothing is allocated: the table is fixed storage, zero at
+ * start, and touched only at the descriptors a program actually holds.
+ *
+ * Which direction releases first is the program's own ordinary release order
+ * and changes no outcome, so this answers the same way whichever comes first.
+ * A pair is always released exactly twice -- by `close_connection`, or by
+ * derived release of both halves -- so a descriptor's byte returns to zero
+ * before the host can hand that descriptor out again.
+ *
+ * The table covers every descriptor the [SYS-10] handle factory can produce:
+ * that factory's own capacity ceiling is this same number less the reserve it
+ * keeps for the runtime's descriptors (`backend/wf_floor.c`), and the host
+ * hands out the lowest free descriptor, so a connection's descriptor is
+ * always below this bound.  A descriptor outside it is half-closed and never
+ * closed here, because closing a descriptor whose pair this runtime cannot
+ * count could reach an object the program still owns. */
+#define WF_FILE_CONNECTION_DESCRIPTORS (1u << 20)
+
+int wf_file_connection_release(int descriptor);
+
+/* The monotonic clock in nanoseconds, or zero when the host would not answer.
+ *
+ * It is a host call, so it is the platform leaf's like the execution switch
+ * above.  Its two readers are both shared: the helper policy's measurement of
+ * what this program's operations cost, and the bridge's bounded look at its own
+ * record before it announces sleep. */
+uint64_t wf_file_monotonic_ns(void);
+
+/* Stores one execution's answer into the record and publishes it: the status
+ * bytes go to the destination the request named, the head goes into the
+ * record, and `wf_completion_record_complete` stores DONE and wakes the
+ * waiter.  Exactly one call of this per submission. */
+void wf_file_complete_record(
+    wf_completion_record *record,
+    const wf_file_result *result
+);
+
+/* Executes at most `budget` queued requests on the calling thread.  It never
+ * runs a Whitefoot continuation. */
+/* Takes one still-queued record off the queue for the thread waiting on it,
+ * and runs a record so taken.
+ *
+ * The caller must be the thread waiting on this exact record, and must run
+ * every record the claim answered 1 for.  See the definitions for why this is
+ * the one queue visit a joining thread may make while helpers exist. */
+int wf_file_adapter_claim_own(
+    wf_file_adapter *adapter,
+    wf_completion_record *record
+);
+void wf_file_adapter_run_claimed(
+    wf_file_adapter *adapter,
+    wf_completion_record *record
+);
+
 size_t wf_file_adapter_progress(wf_file_adapter *adapter, size_t budget);
 
 size_t wf_file_adapter_queued(const wf_file_adapter *adapter);
@@ -506,41 +317,32 @@ size_t wf_file_adapter_queued(const wf_file_adapter *adapter);
  * for.
  *
  * A cap above the `helper_capacity` given to init is clamped to it rather than
- * refused: the caller is stating a policy, and the storage it handed over is
- * the fact that bounds it.  The clamp is the difference between a pool that
- * stops growing and a `pthread_create` past the end of the caller's array. */
+ * refused: the caller is stating a policy, and the bound it gave at init is the
+ * fact that limits it.  The clamp is the difference between a pool that stops
+ * growing and one that grows past the number of helpers this adapter was told
+ * it may ever hold. */
 int wf_file_adapter_set_helper_cap(wf_file_adapter *adapter, size_t cap);
 
-/* Read without the queue lock. Zero means the calling scheduler is itself the
+/* Read without the queue lock. Zero means the calling thread is itself the
  * only engine this queue has. */
 size_t wf_file_adapter_helper_count(const wf_file_adapter *adapter);
 
-/* Stops admission and drains accepted queue entries before joining helpers.
- * With zero helpers, the calling thread performs the bounded typed work one
- * entry at a time until the accepted queue is empty.
+/* Stops admission and drains accepted queue entries before waiting for the
+ * helpers to leave.  With zero helpers, the calling thread performs the bounded
+ * typed work one entry at a time until the accepted queue is empty.
  *
  * Precondition: no thread is inside any entry point of this adapter, and none
  * will enter one, when this is called.  That is not a caution, it is the
- * design.  The entry points that take `queue_lock` behind the record's
+ * design.  The entry points that take the queue lock behind the record's
  * `initialized` flag -- submission, the queue readers, the cap setter, the
- * decline check -- touch storage this call tears down.  The two described
- * below are the two whose windows are worth spelling out -- a signal issued
- * after the lock is released, and a lock taken after the flag was passed --
- * not the only two a program can be inside.
+ * decline check -- touch storage this call tears down.
  *
  * A submission announces its queue entry *after* releasing the queue lock, on
  * purpose -- signalling under the lock wakes a helper whose next act is to
  * block on the same lock, which is a system call spent to start a thread and
  * immediately stall it -- so between that release and that signal the
  * submitter holds no lock, and a shutdown running in the window destroys the
- * condition variable the submitter is about to signal.  The decline check is
- * named beside it because it is the other entry a delivered program reaches
- * without holding anything, and it holds nothing at any point: it asks
- * `wf_file_adapter_queued`, which is a plain atomic load of `queue_count` and
- * takes no lock — the retirement ledger requires exactly that of the same
- * read, because it asks for the count while holding its own lock — so a
- * shutdown in its window destroys nothing it touches, and the most it can do
- * to it is leave it a count nothing maintains any more.  Shutdown clears the
+ * condition variable the submitter is about to signal.  Shutdown clears the
  * record's `initialized` flag before destroying the condition variable and the
  * mutex, which is what bounds the submission window to a caller that had
  * already passed the flag.

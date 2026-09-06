@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, cwd, files, heap), writes(cwd, files, heap), allocates(heap) {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, cwd, files, heap), writes(cwd, files, heap), allocates(heap) {
   doc "SYS-8: the sharpest boundary of the family, and the one most likely to be miscoded as `a full buffer implies end of input`. A file whose size equals the requested range extent fills [start, end) exactly and returns next = end, which is a success and not an end, so a further call is required and only that call reports ReadEnd.";
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 8_u64) {
@@ -24,46 +24,52 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                   Ok(value: path) => {
                     region 'c {
                       region {
-                        let permit = reserve_file(factory: &uniq 'c files);
-                        match open_read(permit: move permit, root: &'c cwd, path: &path) {
-                          Ok(value: file) => {
-                            region 'f {
-                              region {
-                                match read_at(file: &'f file, destination: &uniq window, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
-                                  ReadBytes(next: n) => {
-                                    let filled = n == 8_u64;
-                                    if filled {
-                                    } else {
-                                      return exit_status(code: 10_u8);
+                        match reserve_handle(factory: &uniq 'c files) {
+                          Ok(value: permit) => {
+                            match open_read(permit: move permit, root: &'c cwd, path: &path) {
+                              FileOpened(value: file) => {
+                                region 'f {
+                                  region {
+                                    match read_at(file: &'f file, destination: &uniq window, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
+                                      ReadBytes(next: n) => {
+                                        let filled = n == 8_u64;
+                                        if filled {
+                                        } else {
+                                          return exit_status(code: 10_u8);
+                                        }
+                                      }
+                                      ReadEnd() => {
+                                        return exit_status(code: 11_u8);
+                                      }
+                                      ReadFailed(error: problem) => {
+                                        return exit_status(code: 12_u8);
+                                      }
                                     }
                                   }
-                                  ReadEnd() => {
-                                    return exit_status(code: 11_u8);
-                                  }
-                                  ReadFailed(error: problem) => {
-                                    return exit_status(code: 12_u8);
+                                }
+                                region 'g {
+                                  region {
+                                    match read_at(file: &'g file, destination: &uniq window, file_offset: 8_u64, start: 0_u64, end: 8_u64) {
+                                      ReadBytes(next: more) => {
+                                        return exit_status(code: 13_u8);
+                                      }
+                                      ReadEnd() => {
+                                        return exit_status(code: 0_u8);
+                                      }
+                                      ReadFailed(error: problem) => {
+                                        return exit_status(code: 14_u8);
+                                      }
+                                    }
                                   }
                                 }
                               }
-                            }
-                            region 'g {
-                              region {
-                                match read_at(file: &'g file, destination: &uniq window, file_offset: 8_u64, start: 0_u64, end: 8_u64) {
-                                  ReadBytes(next: more) => {
-                                    return exit_status(code: 13_u8);
-                                  }
-                                  ReadEnd() => {
-                                    return exit_status(code: 0_u8);
-                                  }
-                                  ReadFailed(error: problem) => {
-                                    return exit_status(code: 14_u8);
-                                  }
-                                }
+                              FileOpenFailed(error: problem, permit: refused) => {
+                                return exit_status(code: 15_u8);
                               }
                             }
                           }
-                          Err(error: problem) => {
-                            return exit_status(code: 15_u8);
+                          Err(error: spent) => {
+                            return exit_status(code: 18_u8);
                           }
                         }
                       }

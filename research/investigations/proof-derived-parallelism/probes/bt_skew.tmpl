@@ -121,7 +121,7 @@ fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) 
   return limit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus allocates(heap), external, blocks {
   let tree = build_skew(depth: SKEWDEPTH_u64, v: 512.0_f64);
   let i = 0_u64;
   let last = 0.0_f64;

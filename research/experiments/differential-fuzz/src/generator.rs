@@ -315,16 +315,16 @@ impl Gen {
             reads.push("cwd");
             writes.push("cwd");
         }
-        inputs.push("command.stdout as out: own Output");
+        inputs.push("command.stdout as out: own OutputStream");
         reads.push("out");
         writes.push("out");
         if self.used_err {
-            inputs.push("command.stderr as err: own Output");
+            inputs.push("command.stderr as err: own OutputStream");
             reads.push("err");
             writes.push("err");
         }
         if self.used_files {
-            inputs.push("command.files as files: own FileFactory");
+            inputs.push("command.handles as files: own HandleFactory");
             reads.push("files");
             writes.push("files");
         }
@@ -931,7 +931,7 @@ impl Gen {
         self.body.close();
     }
 
-    /// One publication through one `Output`, with both outcomes handled.
+    /// One publication through one `OutputStream`, with both outcomes handled.
     fn write_block(&mut self, to_error: bool) {
         let length = *self.rng.pick(&[4_u64, 8, 16, 24, 32]);
         let fill = self.rng.between(48, 90);
@@ -986,7 +986,7 @@ impl Gen {
     }
 
     /// Two adjacent publication statements. `independent` sends them to the two
-    /// distinct `Output` values, the pair [PAR-1] can permit; otherwise both go
+    /// distinct `OutputStream` values, the pair [PAR-1] can permit; otherwise both go
     /// to stdout, where one exclusive loan stands against the other and the
     /// published order is the source order. `shared_source` additionally has
     /// both read one buffer, so two shared loans meet on one place.
@@ -1119,7 +1119,7 @@ impl Gen {
             let permit = generator.name("permit");
             generator.body.open(&format!("region {factory} {{"));
             generator.body.line(&format!(
-                "let {permit} = reserve_file<{factory}>(factory: &uniq {factory} files);"
+                "let {permit} = reserve_handle<{factory}>(factory: &uniq {factory} files);"
             ));
             generator.body.open(&format!("region {name_region} {{"));
             generator.body.open(&format!(
@@ -1207,7 +1207,7 @@ impl Gen {
         self.spend();
         self.body.open(&format!("region {factory} {{"));
         self.body.line(&format!(
-            "let {permit} = reserve_file<{factory}>(factory: &uniq {factory} files);"
+            "let {permit} = reserve_handle<{factory}>(factory: &uniq {factory} files);"
         ));
         self.body.open(&format!("region {name_region} {{"));
         self.body.open(&format!(
@@ -1285,7 +1285,7 @@ impl Gen {
         self.spend();
         self.body.open(&format!("region {factory} {{"));
         self.body.line(&format!(
-            "let {permit} = reserve_file<{factory}>(factory: &uniq {factory} files);"
+            "let {permit} = reserve_handle<{factory}>(factory: &uniq {factory} files);"
         ));
         self.body.open(&format!(
             "match open_directory_source<{factory}>(permit: move {permit}, directory: &{factory} cwd) {{"

@@ -1,0 +1,214 @@
+fn socket_class(error: own IoError) -> result: own u8 pure {
+  doc "Reduces one portable IoError class to the distinctions a loopback program reports [SYS-7].";
+  match error {
+    NotFound(code: c, origin: o) => {
+      return 9_u8;
+    }
+    PermissionDenied(code: c, origin: o) => {
+      return 9_u8;
+    }
+    AlreadyExists(code: c, origin: o) => {
+      return 9_u8;
+    }
+    NotDirectory(code: c, origin: o) => {
+      return 9_u8;
+    }
+    IsDirectory(code: c, origin: o) => {
+      return 9_u8;
+    }
+    DirectoryNotEmpty(code: c, origin: o) => {
+      return 9_u8;
+    }
+    ReadOnly(code: c, origin: o) => {
+      return 9_u8;
+    }
+    ResourceBusy(code: c, origin: o) => {
+      return 9_u8;
+    }
+    InvalidInput(code: c, origin: o) => {
+      return 9_u8;
+    }
+    InvalidPath(code: c, origin: o) => {
+      return 9_u8;
+    }
+    Unsupported(code: c, origin: o) => {
+      return 9_u8;
+    }
+    TimedOut(code: c, origin: o) => {
+      return 9_u8;
+    }
+    BrokenPipe(code: c, origin: o) => {
+      return 4_u8;
+    }
+    WriteZero(code: c, origin: o) => {
+      return 9_u8;
+    }
+    UnexpectedEnd(code: c, origin: o) => {
+      return 9_u8;
+    }
+    ConnectionRefused(code: c, origin: o) => {
+      return 1_u8;
+    }
+    ConnectionReset(code: c, origin: o) => {
+      return 2_u8;
+    }
+    ConnectionAborted(code: c, origin: o) => {
+      return 3_u8;
+    }
+    NotConnected(code: c, origin: o) => {
+      return 5_u8;
+    }
+    AddressInUse(code: c, origin: o) => {
+      return 6_u8;
+    }
+    AddressUnavailable(code: c, origin: o) => {
+      return 7_u8;
+    }
+    ResourceExhausted(code: c, origin: o) => {
+      return 9_u8;
+    }
+    FileTooLarge(code: c, origin: o) => {
+      return 9_u8;
+    }
+    NoSpace(code: c, origin: o) => {
+      return 9_u8;
+    }
+    QuotaExceeded(code: c, origin: o) => {
+      return 9_u8;
+    }
+    CrossDevice(code: c, origin: o) => {
+      return 9_u8;
+    }
+    DeviceFailure(code: c, origin: o) => {
+      return 9_u8;
+    }
+    Other(code: c, origin: o) => {
+      return 9_u8;
+    }
+  }
+}
+
+fn byte_at(store: &buffer<u8>, index: own u64) -> result: own u8 reads(store) {
+  doc "Reads one stored byte, delivering zero for a position the buffer does not hold.";
+  let room = len_of(deref(store));
+  let inside = index < room;
+  if inside {
+    let value = deref(store)[index];
+    return value;
+  }
+  return 0_u8;
+}
+
+fn parse_port(digits: &buffer<u8>, length: own u64) -> result: own u16 reads(digits) {
+  doc "Reads one decimal port out of the argument bytes the invocation supplied; a byte that is not a digit ends the number.";
+  let port = 0_u16;
+  let ended = 0_u8;
+  let index = 0_u64;
+  loop @scan {
+    let more = index < length;
+    if more {
+    } else {
+      break @scan;
+    }
+    let byte = byte_at(store: digits, index: index);
+    let low = byte >= 48_u8;
+    let high = byte <= 57_u8;
+    let digit = band(low, high);
+    if digit {
+      let value = byte -wrap 48_u8;
+      let widened = cvt::<u8, u16>(value);
+      let scaled = port *wrap 10_u16;
+      set port = scaled +wrap widened;
+    } else {
+      set ended = 1_u8;
+    }
+    if ended == 0_u8 {
+      set index = index +wrap 1_u64;
+    } else {
+      break @scan;
+    }
+  }
+  return port;
+}
+
+command fn main(command.args as args: own Args, command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(args, handles), writes(handles) {
+  doc "Connects twice to a loopback port nobody listens on, with the very permit the first refusal handed back, so a refused connect is shown to take no handle and to leave the program's own capacity untouched [SYS-10, SYS-17].";
+  let digits = buffer_new(16_u64, 0_u8);
+  let port = 0_u16;
+  let arguments = 0_u64;
+  region {
+    set arguments = args_count(args: &args);
+  }
+  let named = arguments >= 2_u64;
+  if named {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let carried = 0_u64;
+  region {
+    match arg_get(args: &args, position: 1_u64) {
+      Ok(value: text) => {
+        region {
+          match host_copy_utf8(value: &text, destination: &uniq digits, start: 0_u64, end: 16_u64) {
+            Ok(value: written) => {
+              set carried = written;
+            }
+            Err(error: problem) => {
+              set carried = 0_u64;
+            }
+          }
+        }
+      }
+      Err(error: problem) => {
+        set carried = 0_u64;
+      }
+    }
+  }
+  if carried == 0_u64 {
+    return exit_status(code: 2_u8);
+  }
+  region {
+    set port = parse_port(digits: &digits, length: carried);
+  }
+  let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: port);
+  let outcome = 0_u8;
+  region {
+    match reserve_handle(factory: &uniq handles) {
+      Ok(value: permit) => {
+        region {
+          match tcp_connect(permit: move permit, address: &address) {
+            Connected(connection: link) => {
+              let credit = close_connection(connection: move link);
+              set outcome = 3_u8;
+            }
+            ConnectFailed(error: problem, permit: handed_back) => {
+              let first = socket_class(error: move problem);
+              region {
+                match tcp_connect(permit: move handed_back, address: &address) {
+                  Connected(connection: again) => {
+                    let credit = close_connection(connection: move again);
+                    set outcome = 4_u8;
+                  }
+                  ConnectFailed(error: second_problem, permit: spent) => {
+                    let second = socket_class(error: move second_problem);
+                    let refused = first == 1_u8;
+                    let twice = second == 1_u8;
+                    let both = band(refused, twice);
+                    if both {
+                    } else {
+                      set outcome = 40_u8 +wrap second;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      Err(error: problem) => {
+        set outcome = 5_u8;
+      }
+    }
+  }
+  return exit_status(code: outcome);
+}

@@ -9,8 +9,10 @@ Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
 This document carries guidance for the active specification at
-`spec/kernel-spec.md`, including the ordered result list and its destructuring
-`let` and `set` binder forms introduced by v0.45 — a transforming operation now
+`spec/kernel-spec.md`, including the readable byte stream, the socket address,
+and the two-field connection introduced by v0.46 (P34), the ordered result list
+and its destructuring `let` and `set` binder forms introduced by v0.45 — a
+transforming operation now
 hands back the value it was given beside what it computed, `-> (rest: own
 Vector<u8>, written: own u64)`, instead of a two-field struct per operation, and
 its caller writes `let (rest, written) = collect(...);` — and the four measure
@@ -481,13 +483,17 @@ for @scan (index in 0_u64..8192_u64) {
   let data = buffer_new(65536_u64, 0_u8);
   let rendered = name_at(name: &uniq name, index: index);
   region 'f {
-    let permit = reserve_file(factory: &uniq files);
-    region {
-      match open_file(permit: move permit, root: &'f cwd,
-                      name: &name, start: 0_u64, end: 10_u64) {
-        Ok(value: handle) => { /* read, fold, accumulate */ }
-        Err(error: problem) => { }
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: permit) => {
+        region {
+          match open_file(permit: move permit, root: &'f cwd,
+                          name: &name, start: 0_u64, end: 10_u64) {
+            FileOpened(value: handle) => { /* read, fold, accumulate */ }
+            FileOpenFailed(error: problem, permit: refused) => { }
+          }
+        }
       }
+      Err(error: spent) => { break; }   // the factory is out of credits: leave before any submission
     }
   }
 }
@@ -500,22 +506,36 @@ copy rather than a fact to rediscover:
   written after the submission denies the loop: with later iterations already
   in flight, the decision to leave would be taken after opens the source-order
   execution never performs. Write the guard and its `break` at the top of the
-  body, before any I/O. `let handle = propagate open_file(…);` is such an exit
-  and not an exception to it: the `Err` edge is selected by the submission's own
-  outcome, so it leaves from the remainder however early the statement is
-  written. Match on the result instead and handle the error inside the body.
+  body, before any I/O. `let written = propagate write_once(…);` is such an
+  exit and not an exception to it: the `Err` edge is selected by the
+  submission's own outcome, so it leaves from the remainder however early the
+  statement is written. Match on the outcome instead and handle the error
+  inside the body. An open has no `propagate` form at all: its outcome is
+  `FileOpened(value: …)` or `FileOpenFailed(error: …, permit: …)`, and the
+  failed arm hands the permit back, so the body decides what to do with the
+  error and the credit in the same place.
 - **Write the accumulator as an ordinary source-order `set`.** `set sum = sum
   +wrap digest;` needs no associativity, no identity element, and no
   combination tree, because [PAR-3] commits the remainder's writes to storage
   rooted outside the body in iteration order. This is strictly more general
   than [PAR-2]'s admitted operation set: a non-associative fold, a float fold,
   and a `Result` route are all admitted here.
-- **Reserve the file factory in the prologue, inline.** `reserve_file` takes
-  and returns a short unique `&uniq FileFactory` loan inline [SYS-10], and
+- **Reserve the handle factory in the prologue, inline.** `reserve_handle` takes
+  and returns a short unique `&uniq HandleFactory` loan inline [SYS-10], and
   prologues run in index order without overlapping, so one enclosing factory
-  serves every iteration with no replication and no [OWN-5] relaxation. Write
+  serves every iteration with no replication and no [OWN-5] relaxation. Its
+  `Err(ResourceExhausted)` edge is the program's own source-order outcome (the
+  factory's capacity is real: one credit per descriptor the target provides),
+  so match on it and take the exit there, before the open: that is an early
+  exit before the first submission, which the first rule admits. A program
+  that reuses its capacity closes explicitly (`close_read`,
+  `close_directory`, `close_directory_source`, `close_listener` and
+  `close_connection` return the permit); derived release closes but returns
+  nothing. One factory serves every handle the target counts, so a listener
+  and a connection draw from the same capacity a file open draws from
+  [SYS-10, SYS-17, SYS-18]. Write
   the reserve and the open in the loop body itself. Factoring the pair into a
-  helper — `fn open_source_from(factory: &uniq FileFactory, …)` — costs the
+  helper — `fn open_source_from(factory: &uniq HandleFactory, …)` — costs the
   loop its pipeline, because the callee's own retained loan is what
   the staged judgment then sees. Two programs identical except for that
   factoring (‹loop› stands for the writer's own file and line; the verdict text
@@ -1804,6 +1824,59 @@ travels into any consumer that takes a `Slice`; `mut_slice_of` over it and a
 
 Replaces: a `const` of `array<T, N>`, and the counted `place_back` fill of a
 run whose contents are literals.
+## P34. Read a stream to its end, and publish through a helper
+
+The stream operations `read_next` and `receive_next` have no offset: the
+position they advance is the stream's own [SYS-15, SYS-18]. A read to end is
+therefore an uncounted loop whose only exit is the `ReadEnd` arm, and the
+buffer it reads into is the loop's own.
+
+```whitefoot
+loop @chunks {
+  let available = 0_u64;
+  let ended = 0_u8;
+  region {
+    match read_next(input: &uniq input, destination: &uniq chunk,
+                    start: 0_u64, end: 4096_u64) {
+      ReadBytes(next: endpoint) => { set available = endpoint; }
+      ReadEnd() => { set ended = 1_u8; }
+      ReadFailed(error: problem) => { set outcome = 3_u8; set ended = 2_u8; }
+    }
+  }
+  if ended == 0_u8 {
+    region {
+      match publish_all(output: &uniq out, source: &chunk, length: available) {
+        Ok(value: published) => { }
+        Err(error: problem) => { set outcome = 4_u8; set ended = 2_u8; }
+      }
+    }
+  }
+  if ended == 0_u8 { } else { break @chunks; }
+}
+```
+
+Two rules make it work, and both are forms to copy:
+
+- **Publish through the helper of P16's shape, not through a second inner
+  loop.** `write_once` over the same buffer the read filled needs
+  `available <= len_of(chunk)` at its call site. The read's own [SYS-8] relation
+  gives `available <= 4096` on the `ReadBytes` edge, and the buffer's
+  allocation gives `4096 <= len_of(chunk)`; both are live immediately after the
+  read region and neither survives a second loop header. A helper whose
+  contract states `requires length <= len_of(deref(source))` moves the obligation
+  to that one live point, and the writer never restates the bound.
+- **Leave through one flag, at the bottom.** The `ReadEnd` break is selected
+  by the submission's own outcome, so it can never be taken in a staged
+  prologue and the loop stays sequential ([PAR-3] says so in as many words).
+  Writing the exit as a flag the body sets and one `break` at the end keeps the
+  failure and the end on the same edge and keeps the body's shape readable.
+
+Current value: measured on the v0.46 batch branch, on `tests/programs/stdin_echo.wf`
+against a pipe and against a redirected file, on both runtime routes.
+
+Replaces: a positioned read with a writer-tracked offset, which is the wrong
+operation for a stream, and an inner publish loop, which loses the length
+fact the read left behind.
 
 ## Known gaps (findings, not yet patterns)
 

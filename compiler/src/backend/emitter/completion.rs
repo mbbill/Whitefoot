@@ -18,121 +18,324 @@ pub const COMPLETION_CONTRACT_HEADER: &str = include_str!("../completion/contrac
 pub const COMPLETION_FILE_ADAPTER_HEADER: &str = include_str!("../completion/file_adapter.h");
 /// The compiler-owned file-completion bridge contract embedded in the compiler.
 pub const COMPLETION_BRIDGE_HEADER: &str = include_str!("../completion/bridge.h");
-/// The stackless writer scheduler ABI embedded in the compiler.
-pub const WRITER_SCHEDULER_HEADER: &str = include_str!("../completion/writer_scheduler.h");
 /// The target-guarded Linux io_uring adapter contract embedded in the compiler.
 pub const COMPLETION_LINUX_IO_URING_HEADER: &str = include_str!("../completion/linux_io_uring.h");
-/// The target-private completion ABI shared by the Windows core and IOCP adapter.
-pub const COMPLETION_WINDOWS_NATIVE_API_HEADER: &str =
-    include_str!("../completion/native_completion_api.h");
-/// The Windows completion core contract embedded in the compiler.
-pub const COMPLETION_WINDOWS_HEADER: &str = include_str!("../completion/windows_completion.h");
-/// The Windows IOCP adapter contract embedded in the compiler.
+/// The Windows IOCP ring's contract embedded in the compiler.
 pub const COMPLETION_WINDOWS_IOCP_HEADER: &str = include_str!("../completion/windows_iocp.h");
-/// The Windows bounded blocking-worker contract embedded in the compiler.
-pub const COMPLETION_WINDOWS_BLOCKING_HEADER: &str =
-    include_str!("../completion/windows_blocking.h");
+/// The typed file-adapter's POSIX leaf contract embedded in the compiler.
+pub const COMPLETION_FILE_POSIX_HEADER: &str = include_str!("../completion/file_posix.h");
+/// The address vocabulary every socket engine shares, on every platform.
+pub const COMPLETION_SOCKET_ADDRESS_HEADER: &str = include_str!("../completion/socket_address.h");
 /// The finite completion core implementation embedded in the compiler.
 pub const COMPLETION_RUNTIME_SOURCE: &str = include_str!("../completion/runtime.c");
+/// The host's one wait set, which `runtime.c` and the file adapter sleep on.
+pub const COMPLETION_WAIT_HOST_SOURCE: &str = include_str!("../completion/wait_host.c");
+/// Windows's one wait set, the twin of the above.
+pub const COMPLETION_WAIT_WINDOWS_SOURCE: &str = include_str!("../completion/wait_windows.c");
 /// The typed file-adapter implementation embedded in the compiler.
 pub const COMPLETION_FILE_ADAPTER_SOURCE: &str = include_str!("../completion/file_adapter.c");
+/// The file adapter's POSIX host leaf: one host call per request kind.
+pub const COMPLETION_FILE_POSIX_SOURCE: &str = include_str!("../completion/file_posix.c");
+/// The file adapter's Windows host leaf, the twin of the above.
+pub const COMPLETION_FILE_WINDOWS_SOURCE: &str = include_str!("../completion/file_windows.c");
 /// The compiler-owned file-completion bridge embedded in the compiler.
 pub const COMPLETION_BRIDGE_SOURCE: &str = include_str!("../completion/bridge.c");
-/// The bounded ready-frame scheduler implementation. It creates no thread.
-pub const WRITER_SCHEDULER_SOURCE: &str = include_str!("../completion/writer_scheduler.c");
 /// The target-guarded Linux io_uring adapter embedded in the compiler.
 pub const COMPLETION_LINUX_IO_URING_SOURCE: &str = include_str!("../completion/linux_io_uring.c");
-/// The Windows completion core embedded in the compiler.
-pub const COMPLETION_WINDOWS_SOURCE: &str = include_str!("../completion/windows_completion.c");
-/// The Windows IOCP adapter embedded in the compiler.
+/// The target-guarded Windows IOCP ring embedded in the compiler.
 pub const COMPLETION_WINDOWS_IOCP_SOURCE: &str = include_str!("../completion/windows_iocp.c");
-/// The Windows bounded blocking-worker adapter embedded in the compiler.
-pub const COMPLETION_WINDOWS_BLOCKING_SOURCE: &str =
-    include_str!("../completion/windows_blocking.c");
-/// The compiler-owned Windows completion bridge embedded in the compiler.
-pub const COMPLETION_WINDOWS_BRIDGE_SOURCE: &str = include_str!("../completion/windows_bridge.c");
-/// The Windows bounded ready-frame scheduler embedded in the compiler.
-pub const WRITER_SCHEDULER_WINDOWS_SOURCE: &str =
-    include_str!("../completion/writer_scheduler_windows.c");
 
-/// The marker definition carried only by a module that actualizes a typed
-/// target operation through completion.
-const COMPLETION_MARKER: &str = "define weak i32 @wf__completion_file_read_submit(i32 %descriptor, ptr %buffer, i64 %count, ptr %token)";
-
-/// Hard completion ABI for COFF modules.
+/// The scheduler core's contract embedded in the compiler.
 ///
-/// Windows has no optional completion backend: the compiler driver supplies
-/// the native core and IOCP bridge, and omitting either is a link error.  The
-/// capacity wait is part of that same contract.  It lets a submitter which
-/// owns no earlier token wait for another source owner to retire core
-/// capacity without interpreting pressure as permission to run the operation
-/// directly.
-pub(crate) const COMPLETION_WINDOWS_RUNTIME_DECLARATIONS: &str = concat!(
-    "declare i32 @wf__completion_file_read_submit(i32, ptr, i64, ptr)\n",
-    "declare i32 @wf__completion_file_pread_submit(i32, ptr, i64, i64, ptr)\n",
-    "declare i32 @wf__completion_file_write_submit(i32, ptr, i64, ptr)\n",
-    "declare i32 @wf__completion_file_open_at_submit(i32, ptr, i32, i32, i32, i32, i32, ptr)\n",
-    "declare i32 @wf__completion_file_status_submit(i32, ptr)\n",
-    "declare i32 @wf__completion_file_close_submit(i32, ptr)\n",
-    "declare i32 @wf__completion_directory_next_submit(i32, ptr, i64, ptr, ptr)\n",
+/// The completion record begins with a `wf_sched_record` and every publication
+/// goes through `wf_sched_complete`, so a link that carries the completion
+/// runtime carries the core beside it
+/// (`research/investigations/io-model/PARK-ON-MISS.md` §5, §7).
+pub const SCHED_CORE_HEADER: &str = include_str!("../sched/core.h");
+/// The scheduler core embedded in the compiler.
+pub const SCHED_CORE_SOURCE: &str = include_str!("../sched/core.c");
+/// The seven primitives the core reaches shared state through.
+pub const SCHED_PRIM_HEADER: &str = include_str!("../sched/prim.h");
+/// The host's implementation of those primitives.
+pub const SCHED_PRIM_HOST_SOURCE: &str = include_str!("../sched/prim_host.c");
+/// Windows's implementation of the same set, the twin of the above.
+pub const SCHED_PRIM_WINDOWS_SOURCE: &str = include_str!("../sched/prim_windows.c");
+/// The one stack switch, shared by the host primitives and the enumerator.
+pub const SCHED_SWITCH_HEADER: &str = include_str!("../sched/switch.h");
+/// The platform layer over the core: its one instance, the startup policy and
+/// the emitted module's `wf__par_*` ABI (design §7's platform layer).
+pub const SCHED_ENTRY_HEADER: &str = include_str!("../sched/entry.h");
+/// That layer's implementation, which replaces `par_runtime.c`.
+pub const SCHED_ENTRY_SOURCE: &str = include_str!("../sched/entry.c");
+
+/// Size in bytes of the opaque record block an emitted frame reserves for one
+/// outstanding completion operation.
+///
+/// This is the emitter's half of `WF_COMPLETION_RECORD_BYTES`: the frame
+/// reserves the block and passes its address to submit and to join, and the
+/// runtime owns whatever it keeps there. Neither side may state the number
+/// alone, so `the_record_block_abi_constants_agree_with_the_contract_header`
+/// below reads the header's own text and refuses a compilation in which the
+/// two have drifted apart.
+pub(crate) const COMPLETION_RECORD_BYTES: u64 = 160;
+
+/// Alignment of that same block, the emitter's half of
+/// `WF_COMPLETION_RECORD_ALIGN`. A byte block's natural alignment is one, so
+/// the reservation states this one explicitly.
+pub(crate) const COMPLETION_RECORD_ALIGN: u64 = 8;
+
+/// The element type an emitted frame reserves per outstanding operation.
+///
+/// It is a byte block and not a typed record on purpose: the emitted module
+/// holds one opaque pointer into it and never learns the layout.
+pub(crate) fn completion_record_element_type() -> String {
+    format!("[{COMPLETION_RECORD_BYTES} x i8]")
+}
+
+/// The name a qualified wrapper reserves its operation's record block under.
+pub(super) const WRAPPER_RECORD: &str = "%record";
+/// The raw target value the join publishes into.
+pub(super) const WRAPPER_RAW_VALUE: &str = "%raw.value";
+/// The raw target error the join publishes into.
+pub(super) const WRAPPER_RAW_ERROR: &str = "%raw.error";
+/// The open outcome the open join publishes into.
+pub(super) const WRAPPER_RAW_OUTCOME: &str = "%raw.outcome";
+
+/// Reserves one operation's record block and raw result slots in the entry
+/// block of the qualified wrapper that submits it.
+///
+/// A wrapper is `alwaysinline`, which is the condition [QUAL-3] states, so
+/// these reservations become blocks of the frame that called it — which is
+/// exactly where the record belongs
+/// (`research/investigations/io-model/PARK-ON-MISS.md` §5). A handed-out site
+/// reserves the same three things through `completion_entry_slot` instead,
+/// because its own frame may hold several operations of one call site at once;
+/// that is the whole difference between the two lowerings.
+pub(super) fn completion_wrapper_reservation(open: bool) -> String {
+    let element = completion_record_element_type();
+    let mut text = format!(
+        "  {WRAPPER_RECORD} = alloca {element}, align {COMPLETION_RECORD_ALIGN}\n  \
+         {WRAPPER_RAW_VALUE} = alloca i64, align 8\n  \
+         {WRAPPER_RAW_ERROR} = alloca i32, align 4\n"
+    );
+    if open {
+        text.push_str(&format!("  {WRAPPER_RAW_OUTCOME} = alloca i32, align 4\n"));
+    }
+    text
+}
+
+/// The submit call itself, which both lowerings render identically: the
+/// operation's own arguments, then the address of the record it is given.
+pub(super) fn completion_submit_call(symbol: &str, arguments: &str) -> String {
+    format!("  call void @{symbol}({arguments})\n")
+}
+
+/// The address one transfer starts at, from the buffer value and the proved
+/// start endpoint. Both lowerings render exactly this.
+pub(super) fn completion_transfer_target(
+    buffer_type: &str,
+    buffer: &str,
+    start: &str,
+    base: &str,
+    target: &str,
+) -> String {
+    format!(
+        "  {base} = extractvalue {buffer_type} {buffer}, 0\n  \
+         {target} = getelementptr inbounds i8, ptr {base}, i64 {start}\n"
+    )
+}
+
+/// One submitted operation's retirement: the join that consumes its terminal
+/// completion, the raw slots it published into, and the operation's own
+/// completion mapper.
+///
+/// This is the second half of the one lowering, and it is one text because
+/// there is nothing left to differ: a handed-out site and a qualified wrapper
+/// name different storage and put the result in different places, but the
+/// instructions between the record and the typed outcome are the same
+/// (design §8).
+pub(super) struct CompletionRetirement<'a> {
+    /// The join entry the record is consumed through.
+    pub(super) join: &'a str,
+    /// The record block address.
+    pub(super) record: &'a str,
+    /// The slot the raw target value is published into.
+    pub(super) raw_value: &'a str,
+    /// The slot the raw target error is published into.
+    pub(super) raw_error: &'a str,
+    /// The open outcome slot and the name its load takes, for an open only.
+    pub(super) open_outcome: Option<(&'a str, &'a str)>,
+    /// The names the loaded value and error take.
+    pub(super) value: &'a str,
+    pub(super) error: &'a str,
+    /// The operation's completion mapper and its complete argument list.
+    pub(super) mapper: &'a str,
+    pub(super) mapper_arguments: &'a str,
+    /// Where the typed outcome lands, and its type.
+    pub(super) result: &'a str,
+    pub(super) result_type: &'a str,
+}
+
+pub(super) fn completion_retirement(plan: &CompletionRetirement<'_>) -> String {
+    let CompletionRetirement {
+        join,
+        record,
+        raw_value,
+        raw_error,
+        open_outcome,
+        value,
+        error,
+        mapper,
+        mapper_arguments,
+        result,
+        result_type,
+    } = plan;
+    let (outcome_argument, outcome_load) = match open_outcome {
+        Some((slot, name)) => (
+            format!(", ptr {slot}"),
+            format!("  {name} = load i32, ptr {slot}\n"),
+        ),
+        None => (String::new(), String::new()),
+    };
+    format!(
+        "  call void @{join}(ptr {record}, ptr {raw_value}, ptr {raw_error}\
+         {outcome_argument})\n  \
+         {value} = load i64, ptr {raw_value}\n  \
+         {error} = load i32, ptr {raw_error}\n\
+         {outcome_load}  \
+         {result} = call {result_type} @{mapper}({mapper_arguments})\n"
+    )
+}
+
+/// The runtime's own enumeration submit and its two joins.
+///
+/// A target column redirects the file operations it answers itself; the
+/// directory enumeration has no such column, so its submit — and therefore the
+/// join that consumes the record it filled — is the runtime's on every target,
+/// exactly as its direct entry was before one lowering replaced it.
+pub(super) const DIRECTORY_NEXT_SUBMIT: &str = "wf__completion_directory_next_submit";
+/// The join the record that enumeration filled is consumed through.
+pub(super) const FILE_JOIN: &str = "wf__completion_file_join";
+
+/// The runtime's six TCP submits and the accept's own join [SYS-17, SYS-18].
+///
+/// Like the enumeration submit above, these are the runtime's on every target
+/// rather than a target column: a socket is one object with one contract on
+/// every host this compiler qualifies, and the differences between the two
+/// engines that carry it — the Linux ring for accept, connect, receive and
+/// send, the shared file adapter for listen, bind and the half-close — are
+/// inside the runtime, behind these names.
+pub(super) const SOCKET_LISTEN_SUBMIT: &str = "wf__completion_socket_listen_submit";
+pub(super) const SOCKET_ACCEPT_SUBMIT: &str = "wf__completion_socket_accept_submit";
+pub(super) const SOCKET_CONNECT_SUBMIT: &str = "wf__completion_socket_connect_submit";
+pub(super) const SOCKET_RECEIVE_SUBMIT: &str = "wf__completion_socket_receive_submit";
+pub(super) const SOCKET_SEND_SUBMIT: &str = "wf__completion_socket_send_submit";
+pub(super) const SOCKET_SHUTDOWN_SUBMIT: &str = "wf__completion_socket_shutdown_submit";
+/// The join that publishes the accepted descriptor and the peer's address.
+pub(super) const SOCKET_ACCEPT_JOIN: &str = "wf__completion_socket_accept_join";
+
+/// The emitted call spellings of the seven submit entries.
+///
+/// A module that contains one of these has handed an operation to the
+/// completion runtime and cannot run without it. There is nothing weaker to
+/// look for any more: the weak fallback definitions this used to key on are
+/// gone with the inline arm they selected, so a link without the runtime is an
+/// unresolved symbol rather than a program that silently runs the other arm
+/// (`research/investigations/io-model/PARK-ON-MISS.md` §8).
+const COMPLETION_SUBMIT_CALLS: [&str; 13] = [
+    "call void @wf__completion_file_read_submit(",
+    "call void @wf__completion_file_pread_submit(",
+    "call void @wf__completion_file_write_submit(",
+    "call void @wf__completion_file_open_at_submit(",
+    "call void @wf__completion_file_status_submit(",
+    "call void @wf__completion_file_close_submit(",
+    "call void @wf__completion_directory_next_submit(",
+    "call void @wf__completion_socket_listen_submit(",
+    "call void @wf__completion_socket_accept_submit(",
+    "call void @wf__completion_socket_connect_submit(",
+    "call void @wf__completion_socket_receive_submit(",
+    "call void @wf__completion_socket_send_submit(",
+    "call void @wf__completion_socket_shutdown_submit(",
+];
+
+/// The completion ABI an emitted module names.
+///
+/// Every submit answers nothing: the runtime either accepted the operation or
+/// executed it itself, and either way the record it was given is published and
+/// will be joined (design §7, "never with a 0 the caller must interpret").
+/// There is no verdict, and therefore no second lowering to select with one.
+pub(crate) const COMPLETION_RUNTIME_DECLARATIONS: &str = concat!(
+    "declare void @wf__completion_file_read_submit(i32, ptr, i64, ptr)\n",
+    "declare void @wf__completion_file_pread_submit(i32, ptr, i64, i64, ptr)\n",
+    "declare void @wf__completion_file_write_submit(i32, ptr, i64, ptr)\n",
+    "declare void @wf__completion_file_open_at_submit(i32, ptr, i32, i32, i32, i32, ptr)\n",
+    "declare void @wf__completion_file_status_submit(i32, ptr, i64, ptr)\n",
+    "declare void @wf__completion_file_close_submit(i32, ptr)\n",
+    "declare void @wf__completion_directory_next_submit(i32, ptr, i64, ptr, ptr)\n",
     "declare void @wf__completion_file_join(ptr, ptr, ptr)\n",
     "declare void @wf__completion_file_open_join(ptr, ptr, ptr, ptr)\n",
-    "declare void @wf__completion_wait_core_capacity()\n",
+);
+
+/// The same ABI for COFF modules, whose `open_at` carries one more argument.
+///
+/// Windows has no optional completion backend: the compiler driver supplies
+/// the native core and IOCP bridge, and omitting either is a link error. The
+/// capacity wait that used to be part of this contract is gone with the
+/// verdict fork that called it; core pressure is now the target runtime's own
+/// business and never reaches emitted code (design §8).
+pub(crate) const COMPLETION_WINDOWS_RUNTIME_DECLARATIONS: &str = concat!(
+    "declare void @wf__completion_file_read_submit(i32, ptr, i64, ptr)\n",
+    "declare void @wf__completion_file_pread_submit(i32, ptr, i64, i64, ptr)\n",
+    "declare void @wf__completion_file_write_submit(i32, ptr, i64, ptr)\n",
+    "declare void @wf__completion_file_open_at_submit(i32, ptr, i32, i32, i32, i32, i32, ptr)\n",
+    "declare void @wf__completion_file_status_submit(i32, ptr, i64, ptr)\n",
+    "declare void @wf__completion_file_close_submit(i32, ptr)\n",
+    "declare void @wf__completion_directory_next_submit(i32, ptr, i64, ptr, ptr)\n",
+    "declare void @wf__completion_file_join(ptr, ptr, ptr)\n",
+    "declare void @wf__completion_file_open_join(ptr, ptr, ptr, ptr)\n",
 );
 
 /// Hard Windows declaration for the staged completion-window query.
 pub(crate) const COMPLETION_WINDOWS_WINDOW_DECLARATION: &str =
     "declare i64 @wf__completion_window(i64, i64, i64)\n";
 
-const COMPLETION_WINDOWS_MARKER: &str =
-    "declare i32 @wf__completion_file_read_submit(i32, ptr, i64, ptr)";
-
-/// Weak direct-specialization answer for a link without the completion unit.
-/// Returning zero selects the already-qualified direct wrapper.  A standard
-/// compiler link detects this marker and supplies the strong runtime.
-pub(crate) const COMPLETION_RUNTIME_FALLBACK: &str = concat!(
-    "define weak i32 @wf__completion_file_read_submit(i32 %descriptor, ptr %buffer, i64 %count, ptr %token) {\nentry:\n  ret i32 0\n}\n\n",
-    "define weak i32 @wf__completion_file_pread_submit(i32 %descriptor, ptr %buffer, i64 %count, i64 %file_offset, ptr %token) {\nentry:\n  ret i32 0\n}\n\n",
-    "define weak i32 @wf__completion_file_write_submit(i32 %descriptor, ptr %buffer, i64 %count, ptr %token) {\nentry:\n  ret i32 0\n}\n\n",
-    "define weak i32 @wf__completion_file_open_at_submit(i32 %directory, ptr %path, i32 %flags, i32 %mode, i32 %has_mode, i32 %expected_kind, ptr %token) {\nentry:\n  ret i32 0\n}\n\n",
-    "define weak i32 @wf__completion_file_status_submit(i32 %descriptor, ptr %token) {\nentry:\n  ret i32 0\n}\n\n",
-    "define weak i32 @wf__completion_file_close_submit(i32 %descriptor, ptr %token) {\nentry:\n  ret i32 0\n}\n\n",
-    "define weak i32 @wf__completion_directory_next_submit(i32 %descriptor, ptr %buffer, i64 %count, ptr %position, ptr %token) {\nentry:\n  ret i32 0\n}\n\n",
-    "define weak void @wf__completion_file_join(ptr %token, ptr %value, ptr %error) {\nentry:\n  ret void\n}\n\n",
-    "define weak void @wf__completion_file_open_join(ptr %token, ptr %value, ptr %error, ptr %outcome) {\nentry:\n  ret void\n}\n\n",
-);
-
 /// Weak window answer for a link without the completion unit.
 ///
 /// One is always a legal window and reproduces the sequential program exactly,
 /// so a module that asks for one and finds no runtime to answer stages no loop
-/// and still publishes the same bytes.
+/// and still publishes the same bytes. This one stays where the submit
+/// fallbacks went, and for a reason they did not have: a module can ask for a
+/// window without submitting anything, and such a module does not select the
+/// runtime at link time, so nothing else would define this symbol for it.
 pub(crate) const COMPLETION_WINDOW_FALLBACK: &str = "define weak i64 @wf__completion_window(i64 %span, i64 %slot_bytes, i64 %ceiling) {\nentry:\n  ret i64 1\n}\n\n";
 
 /// True exactly when this emitted module contains a completion actualization.
+///
+/// One lowering means one question: does the module submit anything to the
+/// completion runtime? A handed-out operation and an ordinary qualified
+/// wrapper reach the same seven entries, so the submit calls are the whole
+/// test and the direct family has no spelling left to look for
+/// (`research/investigations/io-model/PARK-ON-MISS.md` §8).
 pub fn module_requires_completion_runtime(module: &str) -> bool {
-    module.contains(COMPLETION_MARKER)
-        || module.contains(COMPLETION_WINDOWS_MARKER)
-        || module.contains("@wf__completion_file_pread_submit_writer")
-        || module.contains("@wf__completion_file_write_submit_writer")
-        || module.contains("@wf__completion_file_pread_direct")
-        || module.contains("@wf__completion_file_write_direct")
-        || module.contains("@wf__completion_file_open_at_direct")
-        || module.contains("@wf__completion_file_status_direct")
-        || module.contains("@wf__completion_file_close_direct")
-        || module.contains("@wf__completion_directory_next_direct")
+    COMPLETION_SUBMIT_CALLS
+        .iter()
+        .any(|call| module.contains(call))
 }
 
-/// True exactly when this emitted module can publish a stackless writer frame.
+/// Whether this operation's completion lowering can reach its outcome without
+/// a submission, and therefore reserves a result slot and a `submitted` flag.
 ///
-/// Direct completion calls still need the completion runtime, but they never
-/// enqueue a continuation for a compute worker to resume.  Testing the actual
-/// submit calls, rather than any completion symbol or the weak definitions a
-/// stackless module carries, keeps the parallel runtime's hot steal loop free
-/// of an empty writer-queue probe for an ordinary direct I/O module.
-pub fn module_requires_writer_scheduler(module: &str) -> bool {
-    module.contains("call i32 @wf__completion_file_pread_submit_writer(")
-        || module.contains("call i32 @wf__completion_file_write_submit_writer(")
+/// Exactly one shape can: an open by component name whose name is empty, over
+/// the target family's limit, or carrying a separator. That name never reaches
+/// a host call, in either lowering, so there is no operation to submit and the
+/// typed invalid-path outcome is built where the name was refused. Every other
+/// shape submits on every path it can take, so its `submitted` is the constant
+/// true and is not represented at all (design §8).
+pub(super) const fn completion_may_skip_submission(operation: CompletionFileOperation) -> bool {
+    matches!(
+        operation,
+        CompletionFileOperation::OpenDirectory | CompletionFileOperation::OpenFile
+    )
 }
 
 #[derive(Clone, Debug)]
@@ -141,11 +344,24 @@ pub(crate) struct CompletionHandedOut {
     result_type: IrType,
     operation: CompletionFileOperation,
     token: CompletionStorage,
-    result_slot: CompletionStorage,
     raw_value: CompletionStorage,
     raw_error: CompletionStorage,
-    submitted: CompletionCaptured,
+    /// Present only where a route without a submission exists at all.
+    not_submitted: Option<CompletionNotSubmitted>,
     mapping: CompletionMapping,
+}
+
+/// The two elements the one not-submitted route needs, and nothing else has.
+///
+/// An open by an invalid component name produces its typed outcome where the
+/// name is refused, with no host call and no record: the outcome goes in
+/// `result_slot`, `submitted` says which route ran, and the join loads the
+/// slot instead of waiting. Every other shape submits on every path, so it
+/// carries no flag rather than a phi of one constant (design §8).
+#[derive(Clone, Debug)]
+struct CompletionNotSubmitted {
+    result_slot: CompletionStorage,
+    submitted: CompletionCaptured,
 }
 
 /// Where one kind of completion storage belonging to one call site lives.
@@ -200,27 +416,6 @@ enum CompletionCaptured {
 }
 
 impl FunctionEmitter<'_, '_> {
-    fn rendered_system_arguments(
-        &self,
-        arguments: &[IrValueId],
-    ) -> Result<Vec<String>, BackendFailure> {
-        let mut rendered = Vec::new();
-        for argument in arguments {
-            let ty = self
-                .value_type(*argument)
-                .ok_or(BackendFailure::InvalidIr)?;
-            if system::proof_only_resource(self.program, ty)? {
-                continue;
-            }
-            rendered.push(format!(
-                "{} {}",
-                llvm_type(self.program, ty)?,
-                self.value_name(*argument)
-            ));
-        }
-        Ok(rendered)
-    }
-
     /// Joins the named prior operations owned by this block, leaving every
     /// unrelated operation and a pipeline result protected for another exact
     /// drain in flight.
@@ -378,29 +573,10 @@ impl FunctionEmitter<'_, '_> {
     ) -> Result<CompletionCaptured, BackendFailure> {
         let uses_ring =
             self.pipeline.is_some_and(|pipeline| pipeline.slots() > 1) && self.block_carries;
-        let windows_submission =
-            self.qualification.target().is_windows() && role == CompletionSlot::Submitted;
-        if !uses_ring && !windows_submission {
+        if !uses_ring {
             return Ok(CompletionCaptured::Immediate(value));
         }
         let storage = self.completion_entry_slot(site, role, ty)?;
-        if windows_submission {
-            if storage.slots == 1 {
-                writeln!(
-                    self.entry_prelude,
-                    "  store i1 false, ptr {}",
-                    storage.reservation
-                )
-                .map_err(|_| BackendFailure::TextEmission)?;
-            } else {
-                writeln!(
-                    self.entry_prelude,
-                    "  store [{} x i1] zeroinitializer, ptr {}",
-                    storage.slots, storage.reservation
-                )
-                .map_err(|_| BackendFailure::TextEmission)?;
-            }
-        }
         let pointer = self.completion_storage_pointer(&storage)?;
         writeln!(self.output, "  store {ty} {value}, ptr {pointer}")
             .map_err(|_| BackendFailure::TextEmission)?;
@@ -426,185 +602,6 @@ impl FunctionEmitter<'_, '_> {
         }
     }
 
-    /// Branches on the complete Windows submit verdict without collapsing
-    /// core pressure into the direct route.
-    ///
-    /// A non-Windows target retains the original two-way optional-runtime
-    /// contract byte for byte.  On Windows, `2` means that the request was not
-    /// submitted because the finite core is full.  The source owner first
-    /// consumes the oldest earlier request it still owns, materializes that
-    /// request's typed result, and retries this exact submission.  If it owns
-    /// none, the runtime's unified capacity wait makes progress elsewhere and
-    /// the same submission is retried.  No pressure edge reaches `inline`.
-    fn emit_completion_submit_verdict(
-        &mut self,
-        result: IrValueId,
-        status: &str,
-        accepted: &str,
-        submit_label: &str,
-        inline_label: &str,
-        offered_label: &str,
-    ) -> Result<(), BackendFailure> {
-        if !self.qualification.target().is_windows() {
-            writeln!(
-                self.output,
-                "  {accepted} = icmp eq i32 {status}, 1\n  \
-                 br i1 {accepted}, label %{offered_label}, label %{inline_label}"
-            )
-            .map_err(|_| BackendFailure::TextEmission)?;
-            return Ok(());
-        }
-
-        let direct = format!("%{}", self.next_temporary()?);
-        let waiting = format!("%{}", self.next_temporary()?);
-        let verdict_label = completion_verdict_label(result);
-        let wait_verdict_label = completion_wait_verdict_label(result);
-        let invalid_label = completion_invalid_verdict_label(result);
-        let capacity_label = completion_capacity_label(result);
-        writeln!(
-            self.output,
-            "  {accepted} = icmp eq i32 {status}, 1\n  \
-             br i1 {accepted}, label %{offered_label}, label %{verdict_label}\n\
-             {verdict_label}:\n  \
-             {direct} = icmp eq i32 {status}, 0\n  \
-             br i1 {direct}, label %{inline_label}, label %{wait_verdict_label}\n\
-             {wait_verdict_label}:\n  \
-             {waiting} = icmp eq i32 {status}, 2\n  \
-             br i1 {waiting}, label %{capacity_label}, label %{invalid_label}\n\
-             {invalid_label}:\n  \
-             call void @abort()\n  \
-             unreachable\n\
-             {capacity_label}:"
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-
-        let owners = self
-            .handed_out
-            .iter()
-            .filter_map(|pending| match pending {
-                HandedOut::Completion(pending) => Some(pending.clone()),
-                HandedOut::Compute(_) => None,
-            })
-            .collect::<Vec<_>>();
-        for owner in owners {
-            let CompletionCaptured::PerSlot { ty, storage } = &owner.submitted else {
-                return Err(BackendFailure::InvalidIr);
-            };
-            if ty != "i1" {
-                return Err(BackendFailure::InvalidIr);
-            }
-            // A ring owner is retired by a distinct drain slot. The current
-            // submit block does not name that older slot, so global pressure
-            // waits for the normal drain instead of guessing an element.
-            if storage.slots > 1 {
-                continue;
-            }
-            let state = self.completion_storage_pointer(storage)?;
-            let target_owned = format!("%{}", self.next_temporary()?);
-            let consume_label = completion_capacity_consume_label(result, owner.result);
-            let next_label = completion_capacity_next_label(result, owner.result);
-            writeln!(
-                self.output,
-                "  {target_owned} = load i1, ptr {state}\n  \
-                 br i1 {target_owned}, label %{consume_label}, label %{next_label}\n\
-                 {consume_label}:"
-            )
-            .map_err(|_| BackendFailure::TextEmission)?;
-            self.emit_windows_completion_materialization(&owner, &state)?;
-            writeln!(
-                self.output,
-                "  br label %{submit_label}\n\
-                 {next_label}:"
-            )
-            .map_err(|_| BackendFailure::TextEmission)?;
-        }
-        writeln!(
-            self.output,
-            "  call void @wf__completion_wait_core_capacity()\n  \
-             br label %{submit_label}"
-        )
-        .map_err(|_| BackendFailure::TextEmission)
-    }
-
-    /// Consumes one target-owned Windows request and changes its later source
-    /// join into a load from the call site's existing typed result slot.
-    fn emit_windows_completion_materialization(
-        &mut self,
-        pending: &CompletionHandedOut,
-        state: &str,
-    ) -> Result<(), BackendFailure> {
-        let token = self.completion_storage_pointer(&pending.token)?;
-        let result_slot = self.completion_storage_pointer(&pending.result_slot)?;
-        let raw_value = self.completion_storage_pointer(&pending.raw_value)?;
-        let raw_error = self.completion_storage_pointer(&pending.raw_error)?;
-        let completed_value = format!("%{}", self.next_temporary()?);
-        let completed_error = format!("%{}", self.next_temporary()?);
-        let completed = format!("%{}", self.next_temporary()?);
-        let result_llvm = llvm_type(self.program, pending.result_type)?;
-        let (join_call, extra_load, mapper_arguments) = match &pending.mapping {
-            CompletionMapping::Open { outcome } => {
-                let outcome = self.completion_storage_pointer(outcome)?;
-                let completed_outcome = format!("%{}", self.next_temporary()?);
-                (
-                    format!(
-                        "call void @wf__completion_file_open_join(ptr {token}, ptr {raw_value}, \
-                         ptr {raw_error}, ptr {outcome})"
-                    ),
-                    format!("  {completed_outcome} = load i32, ptr {outcome}\n"),
-                    format!(
-                        "i64 {completed_value}, i32 {completed_error}, i32 {completed_outcome}"
-                    ),
-                )
-            }
-            CompletionMapping::Transfer { start, extent } => {
-                let start = self.load_completion_value(start.clone())?;
-                let extent = self.load_completion_value(extent.clone())?;
-                (
-                    format!(
-                        "call void @wf__completion_file_join(ptr {token}, ptr {raw_value}, \
-                         ptr {raw_error})"
-                    ),
-                    String::new(),
-                    format!(
-                        "i64 {completed_value}, i32 {completed_error}, i64 {start}, i64 {extent}"
-                    ),
-                )
-            }
-            CompletionMapping::DirectoryNext {
-                destination_type,
-                destination,
-                start,
-                extent,
-            } => {
-                let destination = self.load_completion_value(destination.clone())?;
-                let start = self.load_completion_value(start.clone())?;
-                let extent = self.load_completion_value(extent.clone())?;
-                (
-                    format!(
-                        "call void @wf__completion_file_join(ptr {token}, ptr {raw_value}, \
-                         ptr {raw_error})"
-                    ),
-                    String::new(),
-                    format!(
-                        "i64 {completed_value}, i32 {completed_error}, {destination_type} \
-                         {destination}, i64 {start}, i64 {extent}"
-                    ),
-                )
-            }
-        };
-        writeln!(
-            self.output,
-            "  {join_call}\n  \
-             {completed_value} = load i64, ptr {raw_value}\n  \
-             {completed_error} = load i32, ptr {raw_error}\n  \
-             {extra_load}\
-             {completed} = call {result_llvm} @{}({mapper_arguments})\n  \
-             store {result_llvm} {completed}, ptr {result_slot}\n  \
-             store i1 false, ptr {state}",
-            completion_mapper_symbol(pending.operation),
-        )
-        .map_err(|_| BackendFailure::TextEmission)
-    }
     /// Starts one direct file operation before the remaining independent
     /// members run.  All operation storage is allocated in the function entry
     /// block before the adapter can own the request.
@@ -627,7 +624,10 @@ impl FunctionEmitter<'_, '_> {
                 return self
                     .emit_handed_out_directory_next(result, ty, operation, arguments, completion);
             }
-            CompletionFileOperation::Read | CompletionFileOperation::Write => {}
+            CompletionFileOperation::Read
+            | CompletionFileOperation::Write
+            | CompletionFileOperation::Receive
+            | CompletionFileOperation::Send => {}
         }
         let (resource, buffer, file_offset, start, end) = match arguments {
             [resource, buffer, start, end] => (resource, buffer, None, start, end),
@@ -662,72 +662,30 @@ impl FunctionEmitter<'_, '_> {
             return Err(BackendFailure::InvalidIr);
         }
 
-        let token = self.completion_entry_slot(result, CompletionSlot::Token, "[2 x i64]")?;
-        let result_slot = self.completion_entry_slot(
+        let token = self.completion_entry_slot(
             result,
-            CompletionSlot::Result,
-            &llvm_type(self.program, ty)?,
+            CompletionSlot::Record,
+            &completion_record_element_type(),
         )?;
         let raw_value = self.completion_entry_slot(result, CompletionSlot::RawValue, "i64")?;
         let raw_error = self.completion_entry_slot(result, CompletionSlot::RawError, "i32")?;
         let token_pointer = self.completion_storage_pointer(&token)?;
-        let result_pointer = self.completion_storage_pointer(&result_slot)?;
         let extent = format!("%{}", self.next_temporary()?);
-        let vacant = format!("%{}", self.next_temporary()?);
-        let offset_too_large = file_offset
-            .map(|_| self.next_temporary().map(|name| format!("%{name}")))
-            .transpose()?;
-        let ineligible = file_offset
-            .map(|_| self.next_temporary().map(|name| format!("%{name}")))
-            .transpose()?;
         let base = format!("%{}", self.next_temporary()?);
         let target = format!("%{}", self.next_temporary()?);
-        let status = format!("%{}", self.next_temporary()?);
-        let accepted = format!("%{}", self.next_temporary()?);
-        let inline_result = format!("%{}", self.next_temporary()?);
-        let submitted = format!("%{}", self.next_temporary()?);
-        let submit_label = completion_submit_label(result);
-        let inline_label = completion_inline_label(result);
-        let offered_label = completion_offered_label(result);
         let submit_symbol = match (completion, file_offset) {
             (CompletionFileOperation::Read, Some(_)) => "wf__completion_file_pread_submit",
             (CompletionFileOperation::Read, None) => "wf__completion_file_read_submit",
             (CompletionFileOperation::Write, None) => "wf__completion_file_write_submit",
             (CompletionFileOperation::Write, Some(_)) => return Err(BackendFailure::InvalidIr),
+            (CompletionFileOperation::Receive, None) => SOCKET_RECEIVE_SUBMIT,
+            (CompletionFileOperation::Send, None) => SOCKET_SEND_SUBMIT,
             _ => return Err(BackendFailure::InvalidIr),
         };
-        let implementation = self.qualification.operation(operation)?;
-        let rendered_type = llvm_type(self.program, ty)?;
+        // The operation still has to be one this target qualifies, even though
+        // the handed-out lowering no longer names its direct wrapper.
+        let _qualified = self.qualification.operation(operation)?;
         let rendered_buffer = llvm_type(self.program, buffer_type)?;
-        let rendered_arguments = arguments
-            .iter()
-            .map(|argument| {
-                let argument_type = self
-                    .value_type(*argument)
-                    .ok_or(BackendFailure::InvalidIr)?;
-                Ok(format!(
-                    "{} {}",
-                    llvm_type(self.program, argument_type)?,
-                    self.value_name(*argument)
-                ))
-            })
-            .collect::<Result<Vec<_>, BackendFailure>>()?;
-        let (eligibility, ineligible) = match (
-            file_offset,
-            offset_too_large.as_deref(),
-            ineligible.as_deref(),
-        ) {
-            (Some(offset), Some(offset_too_large), Some(ineligible)) => (
-                format!(
-                    "  {offset_too_large} = icmp ugt i64 {}, 9223372036854775807\n  \
-                     {ineligible} = or i1 {vacant}, {offset_too_large}\n",
-                    self.value_name(*offset)
-                ),
-                ineligible.to_owned(),
-            ),
-            (None, None, None) => (String::new(), vacant.clone()),
-            _ => return Err(BackendFailure::InvalidIr),
-        };
         let submit_arguments = if let Some(offset) = file_offset {
             format!(
                 "i32 {}, ptr {target}, i64 {extent}, i64 {}, ptr {token_pointer}",
@@ -741,48 +699,25 @@ impl FunctionEmitter<'_, '_> {
             )
         };
 
-        writeln!(
+        // One lowering, and no branch before it (design §8). An empty transfer
+        // is completed by the runtime, and a file offset the target ABI cannot
+        // express is published by it as the host's own refusal, so neither is
+        // a reason to select a second arm here.
+        let prepared = completion_transfer_target(
+            &rendered_buffer,
+            &self.value_name(*buffer),
+            &self.value_name(*start),
+            &base,
+            &target,
+        );
+        write!(
             self.output,
-            "  {extent} = sub i64 {}, {}\n  \
-             {vacant} = icmp eq i64 {extent}, 0\n  \
-             {eligibility}  \
-             br i1 {ineligible}, label %{inline_label}, label %{submit_label}\n\
-             {submit_label}:\n  \
-             {base} = extractvalue {rendered_buffer} {}, 0\n  \
-             {target} = getelementptr inbounds i8, ptr {base}, i64 {}",
+            "  {extent} = sub i64 {}, {}\n{prepared}{}",
             self.value_name(*end),
             self.value_name(*start),
-            self.value_name(*buffer),
-            self.value_name(*start),
+            completion_submit_call(submit_symbol, &submit_arguments),
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        writeln!(
-            self.output,
-            "  {status} = call i32 @{submit_symbol}({submit_arguments})"
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        self.emit_completion_submit_verdict(
-            result,
-            &status,
-            &accepted,
-            &submit_label,
-            &inline_label,
-            &offered_label,
-        )?;
-        writeln!(
-            self.output,
-            "{inline_label}:\n  \
-             {inline_result} = call {rendered_type} @{}({})\n  \
-             store {rendered_type} {inline_result}, ptr {result_pointer}\n  \
-             br label %{offered_label}\n\
-             {offered_label}:\n  \
-             {submitted} = phi i1 [ true, %{submit_label} ], [ false, %{inline_label} ]",
-            implementation.symbol(),
-            rendered_arguments.join(", "),
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        let submitted =
-            self.capture_completion_value(result, CompletionSlot::Submitted, "i1", submitted)?;
         let captured_start = self.capture_completion_value(
             result,
             CompletionSlot::Start,
@@ -799,10 +734,9 @@ impl FunctionEmitter<'_, '_> {
                 result_type: ty,
                 operation: completion,
                 token,
-                result_slot,
                 raw_value,
                 raw_error,
-                submitted,
+                not_submitted: None,
                 mapping: CompletionMapping::Transfer {
                     start: captured_start,
                     extent: captured_extent,
@@ -820,21 +754,35 @@ impl FunctionEmitter<'_, '_> {
         completion: CompletionFileOperation,
     ) -> Result<(), BackendFailure> {
         let request_label = completion_submit_label(result);
-        let inline_label = completion_inline_label(result);
+        let not_submitted_label = completion_not_submitted_label(result);
         let offered_label = completion_offered_label(result);
         let rendered_type = llvm_type(self.program, ty)?;
-        // A component path may branch directly to the inline fallback before
-        // reaching `request_label`. Ring element pointers used by both paths
-        // must therefore be defined before path preparation opens that branch.
-        let token = self.completion_entry_slot(result, CompletionSlot::Token, "[2 x i64]")?;
-        let result_slot =
-            self.completion_entry_slot(result, CompletionSlot::Result, &rendered_type)?;
+        // Only an open by component name has a route that reaches an outcome
+        // without submitting, and only it reserves the two elements that route
+        // needs.
+        let refusable = completion_may_skip_submission(completion);
+        // A component path may branch to that route before reaching
+        // `request_label`. Ring element pointers used by both paths must
+        // therefore be defined before path preparation opens that branch.
+        let token = self.completion_entry_slot(
+            result,
+            CompletionSlot::Record,
+            &completion_record_element_type(),
+        )?;
+        let result_slot = if refusable {
+            Some(self.completion_entry_slot(result, CompletionSlot::Result, &rendered_type)?)
+        } else {
+            None
+        };
         let raw_value = self.completion_entry_slot(result, CompletionSlot::RawValue, "i64")?;
         let raw_error = self.completion_entry_slot(result, CompletionSlot::RawError, "i32")?;
         let open_outcome =
             self.completion_entry_slot(result, CompletionSlot::OpenOutcome, "i32")?;
         let token_pointer = self.completion_storage_pointer(&token)?;
-        let result_pointer = self.completion_storage_pointer(&result_slot)?;
+        let result_pointer = match &result_slot {
+            Some(slot) => Some(self.completion_storage_pointer(slot)?),
+            None => None,
+        };
         let (directory, path, flags) = match completion {
             CompletionFileOperation::OpenRead => {
                 let [.., directory, path] = arguments else {
@@ -844,7 +792,7 @@ impl FunctionEmitter<'_, '_> {
                 let text = format!("%{}", self.next_temporary()?);
                 writeln!(
                     self.output,
-                    "  {text} = extractvalue {} {}, 0\n  br label %{request_label}\n{request_label}:",
+                    "  {text} = extractvalue {} {}, 0",
                     llvm_type(self.program, path_ty)?,
                     self.value_name(*path)
                 )
@@ -859,8 +807,6 @@ impl FunctionEmitter<'_, '_> {
                 let [.., directory] = arguments else {
                     return Err(BackendFailure::InvalidIr);
                 };
-                writeln!(self.output, "  br label %{request_label}\n{request_label}:")
-                    .map_err(|_| BackendFailure::TextEmission)?;
                 (
                     *directory,
                     system::WORKING_DIRECTORY.to_owned(),
@@ -873,10 +819,12 @@ impl FunctionEmitter<'_, '_> {
                     arguments,
                     completion,
                     &request_label,
-                    &inline_label,
+                    &not_submitted_label,
                 )?,
             CompletionFileOperation::Read
             | CompletionFileOperation::Write
+            | CompletionFileOperation::Receive
+            | CompletionFileOperation::Send
             | CompletionFileOperation::DirectoryNext => {
                 return Err(BackendFailure::InvalidIr);
             }
@@ -887,12 +835,9 @@ impl FunctionEmitter<'_, '_> {
         if llvm_type(self.program, directory_ty)? != "i32" {
             return Err(BackendFailure::InvalidIr);
         }
-        let status = format!("%{}", self.next_temporary()?);
-        let accepted = format!("%{}", self.next_temporary()?);
-        let inline_result = format!("%{}", self.next_temporary()?);
-        let submitted = format!("%{}", self.next_temporary()?);
-        let implementation = self.qualification.operation(operation)?;
-        let rendered_arguments = self.rendered_system_arguments(arguments)?;
+        // The operation still has to be one this target qualifies, even though
+        // the handed-out lowering no longer names its direct wrapper.
+        let _qualified = self.qualification.operation(operation)?;
         let (expected_kind, descriptor_class) = match completion {
             CompletionFileOperation::OpenRead | CompletionFileOperation::OpenFile => (
                 system::OPEN_EXPECT_REGULAR,
@@ -913,36 +858,58 @@ impl FunctionEmitter<'_, '_> {
         } else {
             String::new()
         };
-        writeln!(
-            self.output,
-            "  {status} = call i32 @wf__completion_file_open_at_submit(i32 {}, ptr {path}, \
-             i32 {flags}, i32 0, i32 0, i32 {expected_kind}{descriptor_class_argument}, \
-             ptr {token_pointer})",
+        let submit_arguments = format!(
+            "i32 {}, ptr {path}, i32 {flags}, i32 0, i32 0, \
+             i32 {expected_kind}{descriptor_class_argument}, ptr {token_pointer}",
             self.value_name(directory),
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        self.emit_completion_submit_verdict(
-            result,
-            &status,
-            &accepted,
-            &request_label,
-            &inline_label,
-            &offered_label,
-        )?;
-        writeln!(
+        );
+        write!(
             self.output,
-            "{inline_label}:\n  \
-             {inline_result} = call {rendered_type} @{}({})\n  \
-             store {rendered_type} {inline_result}, ptr {result_pointer}\n  \
-             br label %{offered_label}\n\
-             {offered_label}:\n  \
-             {submitted} = phi i1 [ true, %{request_label} ], [ false, %{inline_label} ]",
-            implementation.symbol(),
-            rendered_arguments.join(", "),
+            "{}",
+            completion_submit_call(
+                self.qualification.target().file_open_at_submit_symbol(),
+                &submit_arguments,
+            ),
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        let submitted =
-            self.capture_completion_value(result, CompletionSlot::Submitted, "i1", submitted)?;
+        let not_submitted = match (result_slot, result_pointer) {
+            (Some(result_slot), Some(result_pointer)) => {
+                let submitted = format!("%{}", self.next_temporary()?);
+                writeln!(
+                    self.output,
+                    "  br label %{offered_label}\n\
+                     {not_submitted_label}:"
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+                let refusal = system::completion_invalid_component_outcome(
+                    self.program,
+                    ty,
+                    &completion_refusal_prefix(result),
+                    &result_pointer,
+                )?;
+                writeln!(
+                    self.output,
+                    "{refusal}  \
+                     br label %{offered_label}\n\
+                     {offered_label}:\n  \
+                     {submitted} = phi i1 [ true, %{request_label} ], \
+                     [ false, %{not_submitted_label} ]"
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+                let submitted = self.capture_completion_value(
+                    result,
+                    CompletionSlot::Submitted,
+                    "i1",
+                    submitted,
+                )?;
+                Some(CompletionNotSubmitted {
+                    result_slot,
+                    submitted,
+                })
+            }
+            (None, None) => None,
+            _ => return Err(BackendFailure::InvalidIr),
+        };
         *self.completion_used = true;
         self.handed_out
             .push(HandedOut::Completion(Box::new(CompletionHandedOut {
@@ -950,10 +917,9 @@ impl FunctionEmitter<'_, '_> {
                 result_type: ty,
                 operation: completion,
                 token,
-                result_slot,
                 raw_value,
                 raw_error,
-                submitted,
+                not_submitted,
                 mapping: CompletionMapping::Open {
                     outcome: open_outcome,
                 },
@@ -967,7 +933,7 @@ impl FunctionEmitter<'_, '_> {
         arguments: &[IrValueId],
         completion: CompletionFileOperation,
         request_label: &str,
-        inline_label: &str,
+        not_submitted_label: &str,
     ) -> Result<(IrValueId, String, i32), BackendFailure> {
         let [.., directory, name, start, end] = arguments else {
             return Err(BackendFailure::InvalidIr);
@@ -1023,7 +989,7 @@ impl FunctionEmitter<'_, '_> {
                  {misaligned} = icmp ne i64 {width_remainder}, 0\n  \
                  {size_unusable} = or i1 {oversize}, {vacant}\n  \
                  {unusable} = or i1 {size_unusable}, {misaligned}\n  \
-                 br i1 {unusable}, label %{inline_label}, label %{scan_entry}\n\
+                 br i1 {unusable}, label %{not_submitted_label}, label %{scan_entry}\n\
                  {scan_entry}:\n  \
                  {base} = extractvalue {} {}, 0\n  \
                  {text} = getelementptr inbounds i8, ptr {base}, i64 {}\n  \
@@ -1037,7 +1003,7 @@ impl FunctionEmitter<'_, '_> {
                  {backslash} = icmp eq i16 {unit}, 92\n  \
                  {separating} = or i1 {slash}, {backslash}\n  \
                  {refused} = or i1 {terminating}, {separating}\n  \
-                 br i1 {refused}, label %{inline_label}, label %{scan_step}\n\
+                 br i1 {refused}, label %{not_submitted_label}, label %{scan_step}\n\
                  {scan_step}:\n  \
                  {next} = add i64 {index}, 2\n  \
                  {scanned} = icmp uge i64 {next}, {extent}\n  \
@@ -1069,7 +1035,7 @@ impl FunctionEmitter<'_, '_> {
                  {oversize} = icmp ugt i64 {extent}, {limit}\n  \
                  {vacant} = icmp eq i64 {extent}, 0\n  \
                  {unusable} = or i1 {oversize}, {vacant}\n  \
-                 br i1 {unusable}, label %{inline_label}, label %{scan_entry}\n\
+                 br i1 {unusable}, label %{not_submitted_label}, label %{scan_entry}\n\
                  {scan_entry}:\n  \
                  {base} = extractvalue {} {}, 0\n  \
                  {text} = getelementptr inbounds i8, ptr {base}, i64 {}\n  \
@@ -1081,7 +1047,7 @@ impl FunctionEmitter<'_, '_> {
                  {terminating} = icmp eq i8 {byte}, 0\n  \
                  {separating} = icmp eq i8 {byte}, {}\n  \
                  {refused} = or i1 {terminating}, {separating}\n  \
-                 br i1 {refused}, label %{inline_label}, label %{scan_step}\n\
+                 br i1 {refused}, label %{not_submitted_label}, label %{scan_step}\n\
                  {scan_step}:\n  \
                  {next} = add i64 {index}, 1\n  \
                  {scanned} = icmp uge i64 {next}, {extent}\n  \
@@ -1132,76 +1098,44 @@ impl FunctionEmitter<'_, '_> {
             .value_type(*destination)
             .ok_or(BackendFailure::InvalidIr)?;
         let destination_llvm = llvm_type(self.program, destination_ty)?;
-        let token = self.completion_entry_slot(result, CompletionSlot::Token, "[2 x i64]")?;
-        let result_slot = self.completion_entry_slot(
+        let token = self.completion_entry_slot(
             result,
-            CompletionSlot::Result,
-            &llvm_type(self.program, ty)?,
+            CompletionSlot::Record,
+            &completion_record_element_type(),
         )?;
         let raw_value = self.completion_entry_slot(result, CompletionSlot::RawValue, "i64")?;
         let raw_error = self.completion_entry_slot(result, CompletionSlot::RawError, "i32")?;
         let cursor = self.completion_entry_slot(result, CompletionSlot::Cursor, "i64")?;
         let token_pointer = self.completion_storage_pointer(&token)?;
-        let result_pointer = self.completion_storage_pointer(&result_slot)?;
         let position = self.completion_storage_pointer(&cursor)?;
         let extent = format!("%{}", self.next_temporary()?);
-        let vacant = format!("%{}", self.next_temporary()?);
         let base = format!("%{}", self.next_temporary()?);
         let target = format!("%{}", self.next_temporary()?);
-        let status = format!("%{}", self.next_temporary()?);
-        let accepted = format!("%{}", self.next_temporary()?);
-        let inline_result = format!("%{}", self.next_temporary()?);
-        let submitted = format!("%{}", self.next_temporary()?);
-        let submit_label = completion_submit_label(result);
-        let inline_label = completion_inline_label(result);
-        let offered_label = completion_offered_label(result);
-        let implementation = self.qualification.operation(operation)?;
-        let rendered_type = llvm_type(self.program, ty)?;
-        let rendered_arguments = self.rendered_system_arguments(arguments)?;
-        writeln!(
+        // The operation still has to be one this target qualifies, even though
+        // the handed-out lowering no longer names its direct wrapper.
+        let _qualified = self.qualification.operation(operation)?;
+        // An empty destination range is submitted like any other and completed
+        // by the runtime, so there is no branch and no second arm (design §8).
+        let prepared = completion_transfer_target(
+            &destination_llvm,
+            &self.value_name(*destination),
+            &self.value_name(*start),
+            &base,
+            &target,
+        );
+        let submit_arguments = format!(
+            "i32 {}, ptr {target}, i64 {extent}, ptr {position}, ptr {token_pointer}",
+            self.value_name(*source),
+        );
+        write!(
             self.output,
-            "  {extent} = sub i64 {}, {}\n  \
-             {vacant} = icmp eq i64 {extent}, 0\n  \
-             br i1 {vacant}, label %{inline_label}, label %{submit_label}\n\
-             {submit_label}:\n  \
-             store i64 0, ptr {position}, align 8\n  \
-             {base} = extractvalue {destination_llvm} {}, 0\n  \
-             {target} = getelementptr inbounds i8, ptr {base}, i64 {}",
+            "  {extent} = sub i64 {}, {}\n  store i64 0, ptr {position}, align 8\n\
+             {prepared}{}",
             self.value_name(*end),
             self.value_name(*start),
-            self.value_name(*destination),
-            self.value_name(*start),
+            completion_submit_call(DIRECTORY_NEXT_SUBMIT, &submit_arguments),
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        writeln!(
-            self.output,
-            "  {status} = call i32 @wf__completion_directory_next_submit(i32 {}, ptr {target}, \
-             i64 {extent}, ptr {position}, ptr {token_pointer})",
-            self.value_name(*source),
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        self.emit_completion_submit_verdict(
-            result,
-            &status,
-            &accepted,
-            &submit_label,
-            &inline_label,
-            &offered_label,
-        )?;
-        writeln!(
-            self.output,
-            "{inline_label}:\n  \
-             {inline_result} = call {rendered_type} @{}({})\n  \
-             store {rendered_type} {inline_result}, ptr {result_pointer}\n  \
-             br label %{offered_label}\n\
-             {offered_label}:\n  \
-             {submitted} = phi i1 [ true, %{submit_label} ], [ false, %{inline_label} ]",
-            implementation.symbol(),
-            rendered_arguments.join(", "),
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        let submitted =
-            self.capture_completion_value(result, CompletionSlot::Submitted, "i1", submitted)?;
         let captured_destination = self.capture_completion_value(
             result,
             CompletionSlot::Destination,
@@ -1223,10 +1157,9 @@ impl FunctionEmitter<'_, '_> {
                 result_type: ty,
                 operation: completion,
                 token,
-                result_slot,
                 raw_value,
                 raw_error,
-                submitted,
+                not_submitted: None,
                 mapping: CompletionMapping::DirectoryNext {
                     destination_type: destination_llvm,
                     destination: captured_destination,
@@ -1246,10 +1179,9 @@ impl FunctionEmitter<'_, '_> {
             result_type,
             operation,
             token,
-            result_slot,
             raw_value,
             raw_error,
-            submitted,
+            not_submitted,
             mapping,
         } = pending;
         // The element pointers are materialized here rather than carried from
@@ -1257,28 +1189,30 @@ impl FunctionEmitter<'_, '_> {
         // submitted and, under a ring, need not mean the same slot: what it
         // retires is the operation the slot index of *this* block names.
         let token = self.completion_storage_pointer(&token)?;
-        let result_slot = self.completion_storage_pointer(&result_slot)?;
         let raw_value = self.completion_storage_pointer(&raw_value)?;
         let raw_error = self.completion_storage_pointer(&raw_error)?;
-        let submitted = self.load_completion_value(submitted)?;
-        let direct = format!("%{}", self.next_temporary()?);
+        let not_submitted = match not_submitted {
+            Some(CompletionNotSubmitted {
+                result_slot,
+                submitted,
+            }) => {
+                let result_slot = self.completion_storage_pointer(&result_slot)?;
+                let submitted = self.load_completion_value(submitted)?;
+                Some((result_slot, submitted))
+            }
+            None => None,
+        };
         let completed_value = format!("%{}", self.next_temporary()?);
         let completed_error = format!("%{}", self.next_temporary()?);
-        let completed = format!("%{}", self.next_temporary()?);
-        let inline_label = completion_join_inline_label(result);
-        let wait_label = completion_wait_label(result);
-        let done_label = par_done_label(result);
         let result_llvm = llvm_type(self.program, result_type)?;
-        let (join_call, extra_load, mapper_arguments) = match mapping {
+        let target = self.qualification.target();
+        let (join, open_outcome, mapper_arguments) = match mapping {
             CompletionMapping::Open { outcome } => {
                 let outcome = self.completion_storage_pointer(&outcome)?;
                 let completed_outcome = format!("%{}", self.next_temporary()?);
                 (
-                    format!(
-                        "call void @wf__completion_file_open_join(ptr {token}, ptr {raw_value}, \
-                         ptr {raw_error}, ptr {outcome})"
-                    ),
-                    format!("  {completed_outcome} = load i32, ptr {outcome}\n"),
+                    target.file_open_join_symbol(),
+                    Some((outcome, completed_outcome.clone())),
                     format!(
                         "i64 {completed_value}, i32 {completed_error}, i32 {completed_outcome}"
                     ),
@@ -1288,11 +1222,8 @@ impl FunctionEmitter<'_, '_> {
                 let start = self.load_completion_value(start)?;
                 let extent = self.load_completion_value(extent)?;
                 (
-                    format!(
-                        "call void @wf__completion_file_join(ptr {token}, ptr {raw_value}, \
-                         ptr {raw_error})"
-                    ),
-                    String::new(),
+                    target.file_join_symbol(),
+                    None,
                     format!(
                         "i64 {completed_value}, i32 {completed_error}, i64 {start}, i64 {extent}"
                     ),
@@ -1308,11 +1239,11 @@ impl FunctionEmitter<'_, '_> {
                 let start = self.load_completion_value(start)?;
                 let extent = self.load_completion_value(extent)?;
                 (
-                    format!(
-                        "call void @wf__completion_file_join(ptr {token}, ptr {raw_value}, \
-                     ptr {raw_error})"
-                    ),
-                    String::new(),
+                    // The enumeration submit is the runtime's own on every
+                    // target, so its record is consumed through the runtime's
+                    // own join beside it.
+                    FILE_JOIN,
+                    None,
                     format!(
                         "i64 {completed_value}, i32 {completed_error}, {destination_type} \
                          {destination}, i64 {start}, i64 {extent}"
@@ -1320,22 +1251,47 @@ impl FunctionEmitter<'_, '_> {
                 )
             }
         };
+        let mapper = completion_mapper_symbol(operation);
+        let retirement = |result: &str| {
+            completion_retirement(&CompletionRetirement {
+                join,
+                record: &token,
+                raw_value: &raw_value,
+                raw_error: &raw_error,
+                open_outcome: open_outcome
+                    .as_ref()
+                    .map(|(slot, name)| (slot.as_str(), name.as_str())),
+                value: &completed_value,
+                error: &completed_error,
+                mapper,
+                mapper_arguments: &mapper_arguments,
+                result,
+                result_type: &result_llvm,
+            })
+        };
+        let Some((result_slot, submitted)) = not_submitted else {
+            // Every path through this operation submitted, so the wait is the
+            // whole join: no branch, no phi and no block of its own.
+            return write!(self.output, "{}", retirement(&value_name(result)))
+                .map_err(|_| BackendFailure::TextEmission);
+        };
+        let direct = format!("%{}", self.next_temporary()?);
+        let completed = format!("%{}", self.next_temporary()?);
+        let inline_label = completion_join_inline_label(result);
+        let wait_label = completion_wait_label(result);
+        let done_label = par_done_label(result);
         writeln!(
             self.output,
             "  br i1 {submitted}, label %{wait_label}, label %{inline_label}\n\
              {inline_label}:\n  \
              {direct} = load {result_llvm}, ptr {result_slot}\n  \
              br label %{done_label}\n\
-             {wait_label}:\n  \
-             {join_call}\n  \
-             {completed_value} = load i64, ptr {raw_value}\n  \
-             {completed_error} = load i32, ptr {raw_error}\n  \
-             {extra_load}\
-             {completed} = call {result_llvm} @{}({mapper_arguments})\n  \
+             {wait_label}:\n\
+             {}  \
              br label %{done_label}\n\
              {done_label}:\n  \
              {} = phi {result_llvm} [ {direct}, %{inline_label} ], [ {completed}, %{wait_label} ]",
-            completion_mapper_symbol(operation),
+            retirement(&completed),
             value_name(result),
         )
         .map_err(|_| BackendFailure::TextEmission)
@@ -1346,40 +1302,15 @@ fn completion_submit_label(value: IrValueId) -> String {
     format!("completion.submit.v{}", value.ordinal())
 }
 
-fn completion_inline_label(value: IrValueId) -> String {
-    format!("completion.inline.v{}", value.ordinal())
+/// The one route that reaches an outcome without a submission: an open whose
+/// component name the target family cannot mean.
+fn completion_not_submitted_label(value: IrValueId) -> String {
+    format!("completion.not_submitted.v{}", value.ordinal())
 }
 
-fn completion_verdict_label(value: IrValueId) -> String {
-    format!("completion.verdict.v{}", value.ordinal())
-}
-
-fn completion_wait_verdict_label(value: IrValueId) -> String {
-    format!("completion.verdict.wait.v{}", value.ordinal())
-}
-
-fn completion_invalid_verdict_label(value: IrValueId) -> String {
-    format!("completion.verdict.invalid.v{}", value.ordinal())
-}
-
-fn completion_capacity_label(value: IrValueId) -> String {
-    format!("completion.capacity.v{}", value.ordinal())
-}
-
-fn completion_capacity_consume_label(current: IrValueId, owner: IrValueId) -> String {
-    format!(
-        "completion.capacity.consume.v{}.v{}",
-        current.ordinal(),
-        owner.ordinal()
-    )
-}
-
-fn completion_capacity_next_label(current: IrValueId, owner: IrValueId) -> String {
-    format!(
-        "completion.capacity.next.v{}.v{}",
-        current.ordinal(),
-        owner.ordinal()
-    )
+/// The unique name prefix that route's typed outcome is built under.
+fn completion_refusal_prefix(value: IrValueId) -> String {
+    format!("completion.refused.v{}", value.ordinal())
 }
 
 pub(super) fn completion_offered_label(value: IrValueId) -> String {
@@ -1392,4 +1323,54 @@ fn completion_join_inline_label(value: IrValueId) -> String {
 
 fn completion_wait_label(value: IrValueId) -> String {
     format!("completion.wait.v{}", value.ordinal())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{COMPLETION_CONTRACT_HEADER, COMPLETION_RECORD_ALIGN, COMPLETION_RECORD_BYTES};
+
+    /// The value of one `#define NAME <digits>u` in an embedded C header.
+    fn defined_unsigned(header: &str, name: &str) -> u64 {
+        let definition = format!("#define {name} ");
+        let mut matches = header.match_indices(&definition);
+        let (start, _) = matches.next().unwrap_or_else(|| {
+            panic!("the embedded header does not define {name}");
+        });
+        assert!(
+            matches.next().is_none(),
+            "{name} must be defined exactly once so the two sides cannot disagree"
+        );
+        let rest = &header[start + definition.len()..];
+        let line = rest.lines().next().unwrap_or_default().trim();
+        line.trim_end_matches('u')
+            .parse()
+            .unwrap_or_else(|_| panic!("{name} is not a plain unsigned literal: {line}"))
+    }
+
+    /// The emitter's half of the two-sided record-block assertion.
+    ///
+    /// The C side asserts that the record it stores fits the block and does
+    /// not out-align it. That assertion is only as good as the numbers the
+    /// emitter actually reserved by, and those live in Rust, so the header's
+    /// own text is read here and compared with them. A block reserved by one
+    /// number and written by another is a kernel write past the reservation,
+    /// which this turns into a failing build.
+    #[test]
+    fn the_record_block_abi_constants_agree_with_the_contract_header() {
+        assert_eq!(
+            defined_unsigned(COMPLETION_CONTRACT_HEADER, "WF_COMPLETION_RECORD_BYTES"),
+            COMPLETION_RECORD_BYTES
+        );
+        assert_eq!(
+            defined_unsigned(COMPLETION_CONTRACT_HEADER, "WF_COMPLETION_RECORD_ALIGN"),
+            COMPLETION_RECORD_ALIGN
+        );
+        // Both constants are read from `contract.h` and from nowhere else.
+        // A Windows translation unit used to reach them through a second
+        // header that mirrored this one because it could not include a
+        // contract naming `<pthread.h>`; that mirror went with the record
+        // pool it belonged to, and the shared contract names no host threading
+        // API at all now (design section 7), so there is one spelling of the
+        // ABI and one place this test can read it.
+    }
 }

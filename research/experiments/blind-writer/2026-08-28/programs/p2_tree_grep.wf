@@ -234,8 +234,14 @@ fn is_dot['e](entries: &'e buffer<u8>, name_at: own u64, name_length: own u64) -
 
 fn open_source_from['f, 'd](factory: &uniq 'f FileFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(factory, directory), writes(factory) {
   doc "Reserves one permit and opens one enumeration over the named directory.";
-  let permit = reserve_file<'f>(factory: move factory);
-  return open_directory_source<'d>(permit: move permit, directory: directory);
+  match reserve_file<'f>(factory: move factory) {
+    Ok(value: permit) => {
+      return open_directory_source<'d>(permit: move permit, directory: directory);
+    }
+    Err(error: spent) => {
+      return Err<DirectorySource, IoError>(error: move spent);
+    }
+  }
 }
 
 fn open_child_from['f, 'd, 'n](factory: &uniq 'f FileFactory, root: &'d DirectoryRead, name: &'n buffer<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(factory, root, name), writes(factory) contract {
@@ -246,8 +252,14 @@ fn open_child_from['f, 'd, 'n](factory: &uniq 'f FileFactory, root: &'d Director
   requires within;
 } {
   doc "Reserves one permit and opens one named subdirectory of the given directory.";
-  let permit = reserve_file<'f>(factory: move factory);
-  return open_directory<'d, 'n>(permit: move permit, root: root, name: name, start: start, end: end);
+  match reserve_file<'f>(factory: move factory) {
+    Ok(value: permit) => {
+      return open_directory<'d, 'n>(permit: move permit, root: root, name: name, start: start, end: end);
+    }
+    Err(error: spent) => {
+      return Err<DirectoryRead, IoError>(error: move spent);
+    }
+  }
 }
 
 fn open_regular_from['f, 'd, 'n](factory: &uniq 'f FileFactory, root: &'d DirectoryRead, name: &'n buffer<u8>, start: own u64, end: own u64) -> result: own Result<ReadFile, IoError> reads(factory, root, name), writes(factory) contract {
@@ -258,8 +270,14 @@ fn open_regular_from['f, 'd, 'n](factory: &uniq 'f FileFactory, root: &'d Direct
   requires within;
 } {
   doc "Reserves one permit and opens one named regular file of the given directory.";
-  let permit = reserve_file<'f>(factory: move factory);
-  return open_file<'d, 'n>(permit: move permit, root: root, name: name, start: start, end: end);
+  match reserve_file<'f>(factory: move factory) {
+    Ok(value: permit) => {
+      return open_file<'d, 'n>(permit: move permit, root: root, name: name, start: start, end: end);
+    }
+    Err(error: spent) => {
+      return Err<ReadFile, IoError>(error: move spent);
+    }
+  }
 }
 
 fn walk['f, 'c, 'p, 'o, 'b, 'n](factory: &uniq 'f FileFactory, dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_length: own u64, output: &uniq 'o Output, chunk: &uniq 'b buffer<u8>, pattern: &'n buffer<u8>, pattern_length: own u64, depth: own u64) -> result: own u64 reads(factory, dir, prefix, output, chunk, pattern), writes(factory, output, chunk), allocates(heap) {

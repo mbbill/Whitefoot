@@ -1,0 +1,91 @@
+fn grid_point(index: own u64) -> result: own u64 pure {
+  doc "The work at one point of a 512-wide grid. The grid width is a power of two, so the row and the column of a linear index come out of a mask and a shift and neither needs a claim. The orbit stops early once the state clears a threshold, so the cost of a point depends on where in the grid it is and a split that divides the range evenly does not divide the work evenly -- which is the load the scheduler is measured on.";
+  let column = iand(index, 511_u64);
+  let row = ishr.wrap(index, 9_u32);
+  let seeded = column *wrap 6364136223846793005_u64;
+  let state = seeded +wrap row;
+  let step = 0_u64;
+  let orbit = 0_u64;
+  loop @points {
+    let done = step == 96_u64;
+    if done {
+      break @points;
+    }
+    let shifted = irotl(state, 27_u32);
+    let scaled = state *wrap 6364136223846793005_u64;
+    set state = ixor(shifted, scaled);
+    set state = state +wrap 1442695040888963407_u64;
+    set orbit = orbit +wrap state;
+    let high = ishr.wrap(state, 58_u32);
+    let escaped = high == 0_u64;
+    if escaped {
+      break @points;
+    }
+    set step = step +wrap 1_u64;
+  }
+  return orbit;
+}
+
+fn counted(lo: own u64, hi: own u64) -> result: own u64 pure {
+  doc "Folds the grid over a half-open index range with one wrapping accumulator, which is the counted `for` [PAR-2] splits.";
+  let total = 0_u64;
+  for @points (i in lo..hi) {
+    let orbit = grid_point(index: i);
+    set total = total +wrap orbit;
+  }
+  return total;
+}
+
+fn low_byte(v: own u64) -> result: own u8 pure {
+  let low = iand(v, 255_u64);
+  match cvt::<u64, u8>(low) {
+    Ok(value: byte) => {
+      return byte;
+    }
+    Err(error: problem) => {
+      return 0_u8;
+    }
+  }
+}
+
+fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+  doc "Writes the fold as eight little-endian bytes, so a difference anywhere in the fold is a difference in the published bytes.";
+  let cursor = at;
+  let rest = value;
+  loop @octets {
+    let limit = at +wrap 8_u64;
+    let done = cursor >= limit;
+    if done {
+      break @octets;
+    }
+    let room = len(deref(destination));
+    let writable = cursor < room;
+    if writable {
+      let byte = low_byte(v: rest);
+      set deref(destination)[cursor] = byte;
+    }
+    set rest = irotr(rest, 8_u32);
+    set cursor = cursor +wrap 1_u64;
+  }
+  return at +wrap 8_u64;
+}
+
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+  let value = counted(lo: 0_u64, hi: 16777216_u64);
+  let report = buffer_new(8_u64, 0_u8);
+  region {
+    let filled = spell(destination: &uniq report, at: 0_u64, value: value);
+  }
+  region 'o {
+    region {
+      match write_once(output: &uniq 'o out, source: &report, start: 0_u64, end: 8_u64) {
+        Ok(value: next) => {
+          return exit_status(code: 0_u8);
+        }
+        Err(error: problem) => {
+          return exit_status(code: 1_u8);
+        }
+      }
+    }
+  }
+}

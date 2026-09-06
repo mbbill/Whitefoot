@@ -16,34 +16,53 @@
  * function pointer, or generic thunk in this ABI: a file helper can execute
  * only file_adapter.c's closed switch.
  *
- * A weak LLVM fallback makes an emitted module independently linkable.  When
- * this strong unit is linked, one bounded process runtime supplies stable
- * operation slots before target handoff.  A zero-helper configuration is a
- * real supported mode: the joining scheduler advances the same adapter queue.
+ * Every submit ends in a published record.  The record is a block of the
+ * submitting frame, so there is nothing to claim and nothing to refuse: the
+ * bridge either hands the record to the ring, or queues it on the bounded
+ * POSIX adapter, or executes the operation here and completes the record
+ * itself.  All three return 1 and the join reads the record
+ * (`research/investigations/io-model/PARK-ON-MISS.md` §7).
+ *
+ * A weak LLVM fallback makes an emitted module independently linkable.
+ *
+ * One implementation for every platform.  The routing, the in-place wait, the
+ * own-record run, the joins, the statistics and the `wf__sched_host_*` seam
+ * are written once; the only thing that differs is the platform's kernel
+ * completion ring, which is behind the eight names of "the ring" below --
+ * io_uring on Linux, the completion port on Windows, and none elsewhere.  The
+ * one `#if` outside that section is the extra `descriptor_class` argument the
+ * emitter emits per target on `wf__completion_file_open_at_submit`.
  */
 
 #include "contract.h"
 #include "bridge.h"
 #include "file_adapter.h"
-#include "writer_scheduler.h"
+#include "../sched/core.h"
+#include "../sched/entry.h"
+#include "../sched/prim.h"
 #if defined(__linux__)
 #include "linux_io_uring.h"
+#elif defined(_WIN32)
+#include "windows_iocp.h"
+#include "../windows_runtime.h"
 #endif
 
 #include <errno.h>
-#include <pthread.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
-#define WF_BRIDGE_OPERATION_CAPACITY WF_COMPLETION_SLOT_CAPACITY
-#define WF_BRIDGE_SLOT_COUNT WF_BRIDGE_OPERATION_CAPACITY
-#define WF_BRIDGE_QUEUE_COUNT WF_BRIDGE_OPERATION_CAPACITY
 #define WF_BRIDGE_MAX_HELPERS 8u
-#define WF_BRIDGE_DRAIN_BUDGET 16u
+/* The policy's ceiling and the adapter's storage are two names for one number,
+ * and the adapter's is the one that decides: it carries an entry record per
+ * helper (`file_adapter.h`), and a policy asking for more than it can hold
+ * would be refused at init rather than granted. */
+_Static_assert(
+    WF_BRIDGE_MAX_HELPERS <= WF_FILE_MAX_HELPERS,
+    "the helper policy may not ask for more helpers than the adapter holds"
+);
 /* Private storage one loop may hold for its in-flight iterations, before the
  * compiler's own ceiling and the loop's per-iteration size are applied.  It
  * exists so a loop whose iteration owns a large buffer gets a small window
@@ -51,114 +70,125 @@
  * budget affords 64 of them, and at 16 MiB it affords none, which the K >= 1
  * floor turns into the sequential program. */
 #define WF_BRIDGE_WINDOW_BYTE_BUDGET (4u * 1024u * 1024u)
-
-_Static_assert(
-    WF_BRIDGE_SLOT_COUNT == WF_WRITER_READY_CAPACITY,
-    "one writer-ready cell is required for each completion slot"
-);
-
+/* The runtime's own answer when no argument of `wf__completion_window` bounds
+ * it and the ring is the engine.
+ *
+ * It was half the process-wide operation capacity, because a loop that owned
+ * every record would push every other operation in the program onto the
+ * capacity-wait path.  There is no operation capacity any more and no capacity
+ * wait to be pushed onto, and every submitted operation's batch carries the
+ * compiler's own ceiling of two, so this number reaches one form only: a
+ * staged loop whose call is a lane hand-out, whose ceiling is the lane's slot
+ * count.  It is that count, so that a server keeping 1024 connections in
+ * flight is bounded by its own trip count and its stacks rather than by a
+ * number chosen here; it moves no file measurement because no file batch
+ * reaches it. */
+#define WF_BRIDGE_WINDOW_DEFAULT 1024u
+/* How many completions one progress pass reaps before it returns to the
+ * scheduler loop.  It was one, and one is what made the reap the serial
+ * resource of the TCP echo control test: every idle thread took the
+ * submission lock to kick and the completion lock to read a single entry,
+ * and 64 connections ping-ponging through one ring made 720 thousand futex
+ * calls a run.  At 64 the same run makes 19 thousand and the round-trip rate
+ * doubles, 35 to 69 thousand a second on the development host; 1024 measures
+ * the same as 64 (`research/investigations/io-model/RESULTS.md` section 6). */
+#define WF_BRIDGE_REAP_BUDGET 64u
 static wf_completion_runtime wf_bridge_runtime;
-static wf_completion_slot wf_bridge_slots[WF_BRIDGE_SLOT_COUNT];
 static wf_file_adapter wf_bridge_adapter;
-static wf_file_work wf_bridge_queue[WF_BRIDGE_QUEUE_COUNT];
-static pthread_t wf_bridge_helpers[WF_BRIDGE_MAX_HELPERS];
-static pthread_once_t wf_bridge_once = PTHREAD_ONCE_INIT;
-static pthread_once_t wf_bridge_file_once = PTHREAD_ONCE_INIT;
+static unsigned wf_bridge_once;
+static unsigned wf_bridge_file_once;
 static int wf_bridge_error;
 static int wf_bridge_file_error;
 /* The readiness flags below are atomic, and that is not decoration.
  *
  * Each is written by one of the once-initializers and read by entry points
  * that run no once at all: `wf__completion_file_pread_submit` asks whether the
- * pool is pinned and whether the adapter exists *before* it reaches
- * `wf_bridge_submit_file`, and the statistics entries read them from wherever
- * a program calls them.  A program with two threads therefore has an ordinary
+ * pool is pinned and whether the adapter exists *before* it reaches the
+ * routing decision, and the statistics entries read them from wherever a
+ * program calls them.  A program with two threads therefore has an ordinary
  * unsynchronized read of a flag another thread is writing, which is a data
  * race whatever the values happen to be.  Declaring them `_Atomic` makes the
  * plain reads and writes below sequentially consistent accesses, which on the
  * hosts this runs on is at worst a load-acquire instruction and on x86-64 an
- * ordinary load.  That is the whole cost, and it is paid on a path that is
- * about to make a host call.
+ * ordinary load.
  *
  * Whether WF_IO_HELPERS named the pool, which pins the route as well as the
  * count: see wf_bridge_helper_policy. */
 static _Atomic int wf_bridge_helpers_pinned;
 static _Atomic unsigned wf_bridge_ready;
 static _Atomic unsigned wf_bridge_file_ready;
-/* Opens the completion path refused because no operation record can hold the
- * name, each of which its caller then performs as a direct blocking open.
- * `open_read` resolves a caller path buffer of any admitted length [PATH-1],
- * so a program reaches this without writing anything wrong, and the demotion
- * is otherwise invisible: neither the completion counter nor the fallback
- * adapter's counter moves for an operation that was never submitted. */
-static _Atomic uint64_t wf_bridge_demoted_opens;
-/* Opens a blocking direct call made, which the host refused for want of a
- * descriptor and which asked it again after this runtime gave one back.  The
- * two target engines count their own; together the three are what
- * `wf__completion_open_exhaustion_retries` reports, because the rule they
- * follow is one rule. */
-static _Atomic uint64_t wf_bridge_direct_exhaustion_retries;
-#if defined(__linux__)
-static wf_linux_io_uring_adapter wf_bridge_linux_adapter;
-static wf_linux_io_uring_entry wf_bridge_linux_entries[WF_BRIDGE_SLOT_COUNT];
-static _Atomic unsigned wf_bridge_linux_ready;
-/* The one piece of bridge readiness a thread may observe without running the
- * initializer itself.  `wf_bridge_flush_target` must not create a ring for a
- * program that only ever makes direct calls, so it cannot go through
- * `pthread_once`; this release/acquire pair is what orders the ring's
- * construction before another thread's flush of it. */
-static _Atomic unsigned wf_bridge_doorbell_ready;
-#endif
+/* Records completed, and of those the ones the engine executed inside the
+ * submitting call itself. */
+static _Atomic uint64_t wf_bridge_publications;
+static _Atomic uint64_t wf_bridge_inline_executions;
+static int wf_bridge_progress(void);
+static void wf_bridge_park(uint64_t observed_epoch);
 
-enum wf_bridge_route {
-    WF_BRIDGE_ROUTE_NONE = 0,
-    WF_BRIDGE_ROUTE_FILE_FALLBACK = 1,
-    WF_BRIDGE_ROUTE_LINUX_IO_URING = 2
-};
-
-/* Supplied by the compute runtime when one is linked.  The bridge's own weak
- * answer keeps completion-only programs independent of that runtime. */
-__attribute__((weak)) int wf__par_help_once(void) {
-    return 0;
+/* The bridge's one fail-stop.
+ *
+ * Every `abort` in this unit is a trusted-computing-base defect rather than an
+ * operation outcome, and each one is reached from a different place, so the
+ * only thing that tells a reader of a crash log which one fired is the line it
+ * wrote on the way out.  A bare `abort` writes nothing, and on Windows the
+ * release UCRT ends such a process through the fast-fail path, which a shell
+ * reports as a bare status with no message at all -- a fail-stop nobody can
+ * diagnose.  This changes no control flow: it writes one line and then aborts
+ * exactly where the bare call did.
+ *
+ * The channel is `stderr` and the write is unbuffered, because the next thing
+ * this process does is die. */
+static _Noreturn void wf_bridge_fail(const char *reason) {
+    (void)fprintf(stderr, "whitefoot completion: %s\n", reason);
+    (void)fflush(stderr);
+    abort();
 }
+
+/* The platform's kernel completion ring, behind eight names; see "the ring"
+ * below for what each one owes and why this is the only part of the bridge
+ * that is written more than once. */
+static int wf_bridge_ring_start(void);
+static int wf_bridge_ring_ready(void);
+static int wf_bridge_ring_offer(wf_completion_record *record);
+static int wf_bridge_ring_progress(void);
+static void wf_bridge_ring_flush(void);
+static int wf_bridge_ring_park(uint64_t observed_epoch);
+static void wf_bridge_ring_shutdown(void);
+static uint64_t wf_bridge_ring_submissions(void);
+static uint64_t wf_bridge_ring_submission_enters(void);
+
 
 /* The helper policy, in one place.
  *
  * A written WF_IO_HELPERS pins the count: `*initial` and `*cap` are both the
  * written value, so a program asked for four helpers gets four and never a
  * fifth, and a program asked for none keeps the zero-helper path where a
- * waiting scheduler is itself the target engine.
+ * waiting thread is itself the target engine.
  *
  * Unset asks for demand-driven growth from one. One helper is the right
  * answer for a program with a single operation outstanding, and it was the
  * old fixed default; it is the wrong answer for a program that exposes real
- * width, because the submitting scheduler then waits on a queue only one
+ * width, because the submitting thread then waits on a queue only one
  * thread is draining. On the four-wide many-file workload the fixed default
  * finished 1.6x slower than the same program at four helpers, so growth is
  * bounded by the machine rather than pinned at one. */
 static void wf_bridge_helper_policy(size_t *initial, size_t *cap) {
-    const char *text = getenv("WF_IO_HELPERS");
-    char *end = NULL;
-    unsigned long parsed;
-    if (text != NULL && *text != 0) {
-        errno = 0;
-        parsed = strtoul(text, &end, 10);
-        if (errno == 0 && end != text && *end == 0) {
-            if (parsed > WF_BRIDGE_MAX_HELPERS) {
-                parsed = WF_BRIDGE_MAX_HELPERS;
-            }
-            *initial = (size_t)parsed;
-            *cap = (size_t)parsed;
-            /* A written setting is an instruction about how to run, so the
-             * runtime stops choosing: it pins the pool exactly and keeps every
-             * admitted operation on the completion path.  That is what makes a
-             * pinned line of a measurement a measurement of the completion
-             * path rather than of the policy that may decline it. */
-            wf_bridge_helpers_pinned = 1;
-            return;
-        }
+    unsigned long written = 0;
+    /* One rule for every startup setting this runtime reads (`sched/entry.h`):
+     * unset means the policy below chooses, an integer from 0 through this
+     * bridge's own ceiling pins the pool, and anything else has already ended
+     * the run at the core's entry. */
+    if (wf__sched_setting("WF_IO_HELPERS", WF_BRIDGE_MAX_HELPERS, &written)) {
+        *initial = (size_t)written;
+        *cap = (size_t)written;
+        /* A written setting is an instruction about how to run, so the
+         * runtime stops choosing: it pins the pool exactly and keeps every
+         * admitted operation on the queued completion path.  That is what
+         * makes a pinned line of a measurement a measurement of the
+         * completion path rather than of the policy that may run an
+         * operation inline instead. */
+        wf_bridge_helpers_pinned = 1;
+        return;
     }
-#if defined(__linux__)
     /* A ready ring already carries every transfer without a thread handoff, so
      * a helper can only serve the operations the ring does not take — today,
      * open and close. Those are exactly the operations a warm page cache
@@ -167,30 +197,29 @@ static void wf_bridge_helper_policy(size_t *initial, size_t *cap) {
      * workload with a warm cache: 115 ms at zero helpers against 171 ms at
      * one, two, or four, the whole difference being about 7 us per open. So a
      * host with a native completion path starts with none, and the waiting
-     * scheduler runs those operations itself. WF_IO_HELPERS still pins a pool
+     * thread runs those operations itself. WF_IO_HELPERS still pins a pool
      * for a target whose opens really do wait. */
-    if (wf_bridge_linux_ready != 0) {
+    if (wf_bridge_ring_ready()) {
         *initial = 0u;
         *cap = 0u;
         return;
     }
-#endif
     /* No helper until the adapter has measured an operation that waits.
      *
      * A helper exists to overlap a wait.  Starting with one and growing on
      * queue depth alone gave every program a thread handoff whether or not it
      * had anything to overlap, and on a warm page cache — where a read is a
      * memory copy — that handoff was the whole cost of the completion path.
-     * With none, a waiting scheduler is the queue's own engine and the path
+     * With none, a waiting thread is the queue's own engine and the path
      * costs a queue crossing; the adapter's growth rule adds the first helper
      * as soon as the operations it has executed show a real wait.
      *
      * The ceiling is the bridge's own, not the machine's core count.  A helper
      * inside a host call holds no CPU, so what bounds useful I/O concurrency
-     * here is how many operations a program can have outstanding, and that is
-     * the operation capacity.  Sizing the pool by cores capped a three-core
-     * host at three outstanding reads for a program that stated eight, which
-     * is a device left idle rather than a machine kept busy. */
+     * here is how many operations a program can have outstanding.  Sizing the
+     * pool by cores capped a three-core host at three outstanding reads for a
+     * program that stated eight, which is a device left idle rather than a
+     * machine kept busy. */
     *cap = WF_BRIDGE_MAX_HELPERS;
     *initial = 0u;
 }
@@ -202,8 +231,8 @@ static int wf_bridge_target_progress_one(void) {
 
 /* One newly queued request is announced once, under the queue lock the
  * enqueue already holds, and reaches exactly one helper.  With zero helpers a
- * sleeping scheduler is itself the target's engine, so the same announcement
- * has to reach the completion core's park endpoint as well. */
+ * sleeping thread is itself the target's engine, so the same announcement
+ * has to reach the wake epoch as well. */
 static void wf_bridge_notify_target(void) {
     wf_completion_notify_target(&wf_bridge_runtime);
 }
@@ -215,9 +244,6 @@ static void wf_bridge_initialize_file(void) {
     wf_bridge_file_error = wf_file_adapter_init(
         &wf_bridge_adapter,
         &wf_bridge_runtime,
-        wf_bridge_queue,
-        WF_BRIDGE_QUEUE_COUNT,
-        wf_bridge_helpers,
         WF_BRIDGE_MAX_HELPERS,
         requested
     );
@@ -228,37 +254,79 @@ static void wf_bridge_initialize_file(void) {
 }
 
 static int wf_bridge_ensure_file(void) {
-    return pthread_once(&wf_bridge_file_once, wf_bridge_initialize_file) == 0
-        && wf_bridge_file_ready != 0;
+    wf__sched_once(&wf_bridge_file_once, wf_bridge_initialize_file);
+    return wf_bridge_file_ready != 0;
 }
 
 static void wf_bridge_shutdown(void) {
     if (wf_bridge_ready == 0) {
         return;
     }
-    /* Nothing may announce on this runtime once it is being taken down. */
-    wf_completion_retirement_announces_on(NULL);
+    /* A pool the scheduler core started is detached and may be asleep inside
+     * the engine this handler would pull down: a thread with nothing to run
+     * sleeps on the one primitive (design §6), and on a completion link that
+     * primitive is this bridge's park -- the ring's own wait, on descriptors,
+     * mappings or a port this shutdown would take away.  There is no
+     * stop protocol for a detached worker and this handler is hygiene rather
+     * than contract -- `wf_bridge_initialize` already treats a failed `atexit`
+     * as changing cleanup and nothing else -- so a process whose pool is still
+     * running leaves its descriptors and mappings to the kernel instead of
+     * taking them out from under a sleeping worker. */
+    if (wf__sched_pool_running() != 0u) {
+        return;
+    }
     if (wf_bridge_file_ready != 0) {
         (void)wf_file_adapter_shutdown(&wf_bridge_adapter);
         wf_bridge_file_ready = 0;
     }
-#if defined(__linux__)
-    if (wf_bridge_linux_ready != 0) {
-        atomic_store_explicit(
-            &wf_bridge_doorbell_ready,
-            0,
-            memory_order_release
-        );
-        (void)wf_linux_io_uring_destroy(&wf_bridge_linux_adapter);
-        wf_bridge_linux_ready = 0;
-    }
-#endif
+    wf_bridge_ring_shutdown();
     (void)wf_completion_runtime_destroy(&wf_bridge_runtime);
     wf_bridge_ready = 0;
 }
 
-#if defined(__linux__)
-/* WF_IO_NO_NATIVE_RING: run this Linux process on the POSIX adapter route.
+/* ------------------------------------------------------------- the ring */
+
+/* The platform's kernel completion ring, behind eight names.
+ *
+ * This is the whole of what the bridge cannot write once.  Everything else in
+ * this unit -- the routing, the helper policy, the in-place wait, the
+ * own-record run, the joins, the window, the statistics and the
+ * `wf__sched_host_*` seam -- is one implementation, and each of the three arms
+ * below is exactly its platform's ring behind these names:
+ *
+ *   start      builds it, or answers that this run has none;
+ *   ready      whether it exists;
+ *   offer      hands it one record, or answers that it has no form for it;
+ *   progress   reaps what is ready, without waiting;
+ *   flush      rings a deferred doorbell before this thread blocks elsewhere;
+ *   park       sleeps on it until an event arrives;
+ *   shutdown   takes it down at process exit;
+ *   submissions / submission_enters, its two counters.
+ *
+ * A platform with no ring answers "no" to all of them and every operation
+ * takes the bounded adapter, which is the Darwin route and the route
+ * WF_IO_NO_NATIVE_RING selects on either of the other two. */
+
+#if defined(__linux__) || defined(_WIN32)
+
+/* `wf_bridge_fail` for a fail-stop whose site holds the code the target
+ * answered.  It lives with the ring rather than beside its sibling above
+ * because its every caller is one of the ring seam's calls, and a target with
+ * no ring makes none of them.
+ *
+ * The name of the site says which of the ring's calls failed; the code says
+ * what it failed with, and the two are different questions.  EPROTO from a
+ * reaping pass means the port handed back something that is not one of this
+ * runtime's records, which is a different defect from any Win32 or errno value
+ * in the same place -- and a log that carries only the site cannot tell them
+ * apart without another run. */
+static _Noreturn void wf_bridge_fail_with_code(const char *reason, int code) {
+    (void)fprintf(stderr, "whitefoot completion: %s: error %d\n", reason, code);
+    (void)fflush(stderr);
+    abort();
+}
+
+/* WF_IO_NO_NATIVE_RING: run this process on the bounded adapter route.
  *
  * Runtime policy of the same class as WF_IO_NOCACHE and WF_IO_HELPERS, and
  * test-only within that class: no Whitefoot source names it, no accepted
@@ -266,535 +334,622 @@ static void wf_bridge_shutdown(void) {
  * differs with it set.  Absent -- and any value other than the exact text "1"
  * -- is today's behaviour exactly.
  *
- * It exists because the route a Linux host takes is not a choice a test can
- * otherwise make.  A kernel with io_uring available takes every positioned
- * read into the ring, so the adapter branch of `bridge_default_probe`'s route
- * assertion -- the demand-driven policy declined a read, or grew a helper --
- * cannot fire there at all, and the negative control it provides was carried
- * by the Darwin CI host alone.  Skipping the ring init reaches the same state
- * a kernel without io_uring reaches, which is a path the runtime already has
- * rather than one this setting adds.
+ * It exists because the route a host takes is not a choice a test can
+ * otherwise make.  A host with a kernel completion ring takes every positioned
+ * read into it, so the adapter branch of `bridge_default_probe`'s route
+ * assertion cannot fire there at all, and the negative control it provides was
+ * carried by the Darwin CI host alone.  Skipping the ring's start reaches the
+ * same state a host without a ring reaches, which is a path the runtime
+ * already has rather than one this setting adds.
  *
- * It is read once, here, before the only call that starts the ring. */
+ * It is read once, before the only call that starts the ring, through the
+ * platform layer's own setting read (`../sched/prim.h`, P4) rather than
+ * `getenv`, because a shared unit that names `getenv` does not compile under
+ * the MSVC ucrt. */
 static int wf_bridge_native_ring_refused(void) {
-    const char *text = getenv("WF_IO_NO_NATIVE_RING");
-    return text != NULL && text[0] == '1' && text[1] == 0;
+    char text[WF_PRIM_SETTING_BYTES];
+    return wf_prim_setting_text("WF_IO_NO_NATIVE_RING", text, sizeof(text)) == 1
+        && text[0] == '1' && text[1] == 0;
 }
+
 #endif
 
-static void wf_bridge_initialize(void) {
-    wf_bridge_error = wf_completion_runtime_init(
-        &wf_bridge_runtime,
-        wf_bridge_slots,
-        WF_BRIDGE_SLOT_COUNT
-    );
-    if (wf_bridge_error != 0) {
-        return;
-    }
-    /* The ledger's second endpoint.  A refused open inside a blocking direct
-     * call parks on this runtime rather than sleeping on the ledger, because
-     * it may be the only thread that can reap the completion it is waiting
-     * for; a ledger transition that never reached this endpoint would leave it
-     * parked on an answer that has already changed.  This bridge owns the
-     * runtime, so this is where the ledger is told about it. */
-    wf_completion_retirement_announces_on(&wf_bridge_runtime);
 #if defined(__linux__)
-    if (!wf_bridge_native_ring_refused()
-        && wf_linux_io_uring_init(
+
+static wf_linux_io_uring_adapter wf_bridge_linux_adapter;
+static _Atomic unsigned wf_bridge_linux_ready;
+/* The one piece of bridge readiness a thread may observe without running the
+ * initializer itself.  `wf_bridge_ring_flush` must not create a ring for a
+ * program that only ever makes direct calls, so it cannot go through the
+ * once-control; this release/acquire pair is what orders the ring's
+ * construction before another thread's flush of it. */
+static _Atomic unsigned wf_bridge_doorbell_ready;
+
+static int wf_bridge_ring_ready(void) {
+    return wf_bridge_linux_ready != 0;
+}
+
+static int wf_bridge_ring_start(void) {
+    if (wf_bridge_native_ring_refused()) {
+        return 0;
+    }
+    if (wf_linux_io_uring_init(
             &wf_bridge_linux_adapter,
             &wf_bridge_runtime,
-            wf_bridge_linux_entries,
-            WF_BRIDGE_SLOT_COUNT
-        ) == 0) {
-        if (wf_completion_set_wake_callback(
-                &wf_bridge_runtime,
-                wf_linux_io_uring_notify,
-                &wf_bridge_linux_adapter
-            ) == 0) {
-            wf_bridge_linux_ready = 1;
-        } else {
-            (void)wf_linux_io_uring_destroy(&wf_bridge_linux_adapter);
+            WF_LINUX_IO_URING_DEPTH,
+            WF_LINUX_IO_URING_COMPLETIONS
+        ) != 0) {
+        return 0;
+    }
+    if (wf_completion_set_wake_callback(
+            &wf_bridge_runtime,
+            wf_linux_io_uring_notify,
+            &wf_bridge_linux_adapter
+        ) != 0) {
+        (void)wf_linux_io_uring_destroy(&wf_bridge_linux_adapter);
+        return 0;
+    }
+    wf_bridge_linux_ready = 1;
+    atomic_store_explicit(&wf_bridge_doorbell_ready, 1, memory_order_release);
+    return 1;
+}
+
+static int wf_bridge_ring_offer(wf_completion_record *record) {
+    if (!wf_bridge_ring_ready() || !wf_linux_io_uring_carries(record)) {
+        return 0;
+    }
+    if (wf_linux_io_uring_submit(&wf_bridge_linux_adapter, record)
+        != WF_LINUX_IO_URING_TARGET_OWNS) {
+        /* The kind and shape were both answered before the record was
+         * offered, so any other answer is a target-runtime failure. */
+        wf_bridge_fail(
+            "the io_uring target refused a record whose kind and shape it had already accepted"
+        );
+    }
+    {
+        int progress_error =
+            wf_linux_io_uring_progress_error(&wf_bridge_linux_adapter);
+        if (progress_error != 0) {
+            wf_bridge_fail_with_code(
+                "the io_uring target reported a failure while submitting",
+                progress_error
+            );
         }
     }
+    return 1;
+}
+
+static int wf_bridge_ring_progress(void) {
+    size_t published = 0;
+    if (!wf_bridge_ring_ready()) {
+        return 0;
+    }
+    {
+        int reap_error = wf_linux_io_uring_progress(
+            &wf_bridge_linux_adapter,
+            WF_BRIDGE_REAP_BUDGET,
+            0,
+            &published
+        );
+        if (reap_error != 0) {
+            /* Target ownership has already transferred. Falling back now would
+             * duplicate an operation, and ignoring the error would strand its
+             * owned operation forever. A target-runtime failure is a fail-stop
+             * TCB defect, not a writer-visible IoError. */
+            wf_bridge_fail_with_code(
+                "the io_uring target failed while reaping completions",
+                reap_error
+            );
+        }
+    }
+    return published != 0;
+}
+
+static void wf_bridge_ring_flush(void) {
+    if (atomic_load_explicit(&wf_bridge_doorbell_ready, memory_order_acquire)
+        != 0) {
+        (void)wf_linux_io_uring_flush(&wf_bridge_linux_adapter);
+    }
+}
+
+static int wf_bridge_ring_park(uint64_t observed_epoch) {
+    if (!wf_bridge_ring_ready()) {
+        return 0;
+    }
+    {
+        int park_error = wf_linux_io_uring_park(
+            &wf_bridge_linux_adapter,
+            observed_epoch,
+            UINT32_MAX
+        );
+        if (park_error != 0) {
+            wf_bridge_fail_with_code(
+                "the io_uring target failed while parking on the ring",
+                park_error
+            );
+        }
+    }
+    return 1;
+}
+
+static void wf_bridge_ring_shutdown(void) {
+    if (!wf_bridge_ring_ready()) {
+        return;
+    }
+    atomic_store_explicit(&wf_bridge_doorbell_ready, 0, memory_order_release);
+    (void)wf_linux_io_uring_destroy(&wf_bridge_linux_adapter);
+    wf_bridge_linux_ready = 0;
+}
+
+static uint64_t wf_bridge_ring_submissions(void) {
+    return wf_bridge_ring_ready()
+        ? wf_linux_io_uring_statistics_snapshot(&wf_bridge_linux_adapter)
+              .submissions
+        : 0u;
+}
+
+static uint64_t wf_bridge_ring_submission_enters(void) {
+    return wf_bridge_ring_ready()
+        ? wf_linux_io_uring_statistics_snapshot(&wf_bridge_linux_adapter)
+              .submission_enters
+        : 0u;
+}
+
+/* The ring's counters as one line, for the same observer that prints the
+ * core's: what the kernel was asked and how often a thread slept for it. */
+int wf__bridge_report(char *buffer, size_t capacity) {
+    wf_linux_io_uring_statistics ring;
+    int written;
+    if (buffer == NULL || capacity == 0u || !wf_bridge_ring_ready()) {
+        return 0;
+    }
+    ring = wf_linux_io_uring_statistics_snapshot(&wf_bridge_linux_adapter);
+    written = snprintf(
+        buffer,
+        capacity,
+        "ring: submissions=%llu submission_enters=%llu completions=%llu "
+        "kernel_waits=%llu kernel_wakes=%llu host_wake_writes=%llu "
+        "overflow_flushes=%llu runtime_parks=%llu inline=%llu",
+        (unsigned long long)ring.submissions,
+        (unsigned long long)ring.submission_enters,
+        (unsigned long long)ring.completions,
+        (unsigned long long)ring.kernel_waits,
+        (unsigned long long)ring.kernel_wakes,
+        (unsigned long long)ring.host_wake_writes,
+        (unsigned long long)ring.overflow_flushes,
+        (unsigned long long)atomic_load_explicit(
+            &wf_bridge_runtime.stat_parks,
+            memory_order_relaxed
+        ),
+        (unsigned long long)atomic_load_explicit(
+            &wf_bridge_inline_executions,
+            memory_order_relaxed
+        )
+    );
+    return written > 0 && (size_t)written < capacity;
+}
+
+#elif defined(_WIN32)
+
+static wf_windows_iocp_adapter wf_bridge_windows_adapter;
+static _Atomic unsigned wf_bridge_windows_ready;
+
+static int wf_bridge_ring_ready(void) {
+    return atomic_load_explicit(&wf_bridge_windows_ready, memory_order_acquire)
+        != 0u;
+}
+
+/* WF_REQUIRE_WINDOWS_IOCP: the one environment check this bridge makes that
+ * has no counterpart on the other platform.
+ *
+ * The POSIX side has no such facility -- its own required-ring runs are the
+ * harness's WF_REQUIRE_LINUX_IO_URING, which is the harness's setting and not
+ * the bridge's -- so this stays a Windows-only check rather than being given a
+ * shared name that one platform would never answer.  It exists because correct
+ * bytes alone would also be produced by a run that never reached the port at
+ * all: the `completion-windows` job's "Compile and run a real Whitefoot program
+ * through IOCP" and "Open target-native Windows components from compiler-emitted
+ * buffers" steps set it, and this exit-time assertion is what makes those steps
+ * evidence about the ring rather than about the adapter. */
+static unsigned wf_bridge_windows_require_ring;
+
+static void wf_bridge_verify_required_ring(void) {
+    wf_windows_iocp_statistics statistics;
+    if (wf_bridge_windows_require_ring == 0u) {
+        return;
+    }
+    statistics = wf_windows_iocp_statistics_snapshot(
+        &wf_bridge_windows_adapter
+    );
+    if (statistics.submissions == 0
+        || statistics.completions != statistics.submissions) {
+        wf_bridge_fail(
+            "WF_REQUIRE_WINDOWS_IOCP was set and this run did not complete every operation it submitted to the port"
+        );
+    }
+}
+
+static int wf_bridge_windows_ring_required(void) {
+    char required[WF_PRIM_SETTING_BYTES];
+    return wf_prim_setting_text(
+               "WF_REQUIRE_WINDOWS_IOCP",
+               required,
+               sizeof(required)
+           ) == 1
+        && required[0] == '1' && required[1] == 0;
+}
+
+static int wf_bridge_ring_start(void) {
+    if (wf_bridge_native_ring_refused()) {
+        return 0;
+    }
+    if (wf_windows_iocp_init(
+            &wf_bridge_windows_adapter,
+            &wf_bridge_runtime,
+            0
+        ) != 0) {
+        return 0;
+    }
+    if (wf_completion_set_wake_callback(
+            &wf_bridge_runtime,
+            wf_windows_iocp_notify,
+            &wf_bridge_windows_adapter
+        ) != 0) {
+        (void)wf_windows_iocp_destroy(&wf_bridge_windows_adapter);
+        return 0;
+    }
+    atomic_store_explicit(&wf_bridge_windows_ready, 1u, memory_order_release);
+    if (wf_bridge_windows_ring_required()) {
+        wf_bridge_windows_require_ring = 1u;
+        if (atexit(wf_bridge_verify_required_ring) != 0) {
+            wf_bridge_fail(
+                "the completion port's exit-time check could not be registered"
+            );
+        }
+    }
+    return 1;
+}
+
+/* Binds one handle to this run's port.  The body of the association, without
+ * the question of whether it has already been made: that question and this
+ * answer are one critical section, and the section is the descriptor table's,
+ * which is why this arrives there as a function rather than being written
+ * there (`../windows_runtime.h`, `wf__windows_completion_ring_handle`). */
+static int wf_bridge_windows_bind(HANDLE handle, void *context) {
+    (void)context;
+    return wf_windows_iocp_associate(&wf_bridge_windows_adapter, handle) == 0;
+}
+
+/* The handle the port may take for this descriptor, or none.
+ *
+ * A descriptor this runtime opened as a regular file for reading is the
+ * ordinary case and its class says so.  A descriptor the process made some
+ * other way -- a probe's own fixture -- is admitted on the one fact the port
+ * needs, that it names a disk file.  Either way the association is made once
+ * and remembered, because `CreateIoCompletionPort` takes a handle exactly once
+ * and no host call asks whether it already has; and it is made under the
+ * table's lock, because every lane of a program may offer its first record on
+ * one descriptor at the same moment. */
+static int wf_bridge_windows_port_handle(int descriptor, HANDLE *handle) {
+    return wf__windows_completion_ring_handle(
+        descriptor,
+        wf_bridge_windows_bind,
+        NULL,
+        handle
+    );
+}
+
+static int wf_bridge_ring_offer(wf_completion_record *record) {
+    HANDLE handle;
+    int descriptor;
+    if (!wf_bridge_ring_ready() || !wf_windows_iocp_carries(record)) {
+        return 0;
+    }
+    /* The descriptor this request will be issued on.  A connect has none until
+     * the ring makes its socket, which it does here for the same reason the
+     * Linux ring makes it in its own submit and for one more: the port takes a
+     * handle before a request is issued on it.  A record the port then refuses
+     * has that socket taken back, so the bounded adapter sees exactly what was
+     * offered (`windows_iocp.h`). */
+    descriptor = wf_windows_iocp_issue_descriptor(record);
+    if (descriptor < 0) {
+        return 0;
+    }
+    if (!wf_bridge_windows_port_handle(descriptor, &handle)) {
+        wf_windows_iocp_withdraw(record);
+        return 0;
+    }
+    if (wf_windows_iocp_submit(&wf_bridge_windows_adapter, record, handle)
+        != WF_WINDOWS_IOCP_TARGET_OWNS) {
+        wf_bridge_fail(
+            "the completion port refused a record whose kind and shape it had already accepted"
+        );
+    }
+    {
+        int progress_error =
+            wf_windows_iocp_progress_error(&wf_bridge_windows_adapter);
+        if (progress_error != 0) {
+            wf_bridge_fail_with_code(
+                "the completion port reported a failure while submitting",
+                progress_error
+            );
+        }
+    }
+    return 1;
+}
+
+static int wf_bridge_ring_progress(void) {
+    size_t published = 0;
+    if (!wf_bridge_ring_ready()) {
+        return 0;
+    }
+    {
+        int reap_error = wf_windows_iocp_progress(
+            &wf_bridge_windows_adapter,
+            1u,
+            &published
+        );
+        if (reap_error != 0) {
+            wf_bridge_fail_with_code(
+                "the completion port failed while reaping completions",
+                reap_error
+            );
+        }
+    }
+    return published != 0;
+}
+
+/* Nothing is deferred on this port: a request reaches the kernel inside the
+ * call that issues it, so there is no doorbell to ring. */
+static void wf_bridge_ring_flush(void) {}
+
+static int wf_bridge_ring_park(uint64_t observed_epoch) {
+    if (!wf_bridge_ring_ready()) {
+        return 0;
+    }
+    {
+        int park_error = wf_windows_iocp_park(
+            &wf_bridge_windows_adapter,
+            observed_epoch,
+            UINT32_MAX
+        );
+        if (park_error != 0) {
+            wf_bridge_fail_with_code(
+                "the completion port failed while parking on the port",
+                park_error
+            );
+        }
+    }
+    return 1;
+}
+
+static void wf_bridge_ring_shutdown(void) {
+    if (!wf_bridge_ring_ready()) {
+        return;
+    }
+    (void)wf_windows_iocp_destroy(&wf_bridge_windows_adapter);
+    atomic_store_explicit(&wf_bridge_windows_ready, 0u, memory_order_release);
+}
+
+static uint64_t wf_bridge_ring_submissions(void) {
+    return wf_bridge_ring_ready()
+        ? wf_windows_iocp_statistics_snapshot(&wf_bridge_windows_adapter)
+              .submissions
+        : 0u;
+}
+
+/* The port takes each request inside the call that issues it, so there is no
+ * deferred doorbell and no count of the calls that carried one. */
+static uint64_t wf_bridge_ring_submission_enters(void) {
+    return 0u;
+}
+
+/* The port's counters are the probe's to print; the observer's ring line is
+ * the Linux ring's alone. */
+int wf__bridge_report(char *buffer, size_t capacity) {
+    (void)buffer;
+    (void)capacity;
+    return 0;
+}
+
 #else
-    /* Darwin has no regular-file kernel completion facility in the supported
-     * target set, so its qualified path is the bounded typed adapter. */
-    if (!wf_bridge_ensure_file()) {
-        /* The endpoint is cleared before the storage it points at is
-         * destroyed, exactly as at shutdown: a ledger left holding this
-         * runtime would announce on freed storage the moment any adapter this
-         * bridge did not build refused an open. */
-        wf_completion_retirement_announces_on(NULL);
+
+/* A target with no kernel completion ring in the supported set: its qualified
+ * path is the bounded typed adapter, and every one of these answers "no".
+ *
+ * This arm consults WF_IO_NO_NATIVE_RING nowhere, and its reader is not
+ * compiled here: a run on a target with no ring is already the route that
+ * setting selects, so a start that read it could only agree with itself.  The
+ * reader sits above with the two arms that have something to refuse. */
+static int wf_bridge_ring_ready(void) {
+    return 0;
+}
+
+static int wf_bridge_ring_start(void) {
+    return 0;
+}
+
+static int wf_bridge_ring_offer(wf_completion_record *record) {
+    (void)record;
+    return 0;
+}
+
+static int wf_bridge_ring_progress(void) {
+    return 0;
+}
+
+static void wf_bridge_ring_flush(void) {}
+
+static int wf_bridge_ring_park(uint64_t observed_epoch) {
+    (void)observed_epoch;
+    return 0;
+}
+
+static void wf_bridge_ring_shutdown(void) {}
+
+static uint64_t wf_bridge_ring_submissions(void) {
+    return 0u;
+}
+
+static uint64_t wf_bridge_ring_submission_enters(void) {
+    return 0u;
+}
+
+int wf__bridge_report(char *buffer, size_t capacity) {
+    (void)buffer;
+    (void)capacity;
+    return 0;
+}
+
+#endif
+
+/* The wake epoch, and it comes up before everything else the bridge has.
+ *
+ * The core sleeps and wakes on one primitive (design §7, platform item 2), and
+ * "one" has to mean one for the life of the process rather than one at a time.
+ * The three seam functions below answer from `wf_bridge_runtime`, so a thread
+ * that parked before this unit had a runtime would sleep on `prim_host.c`'s own
+ * condition variable while every wake after it went to this one -- a lost wake
+ * and, with no timeout anywhere in this design, a hang.  Two things make that
+ * reachable rather than theoretical: a worker enters its scheduler loop at the
+ * core's entry, before the program's first operation, and the first operation's
+ * once-control is a window another thread can park inside.
+ *
+ * So the epoch has its own start, taken by whichever of the two arrives first:
+ * a seam call, or the bridge's own initializer.  It is a mutex, a condition
+ * variable and a counter -- no ring, no helper, no descriptor -- so a program
+ * that never submits anything pays for those and nothing else.  Both sleep
+ * mechanisms announce themselves against this one epoch under this one lock,
+ * the ring's `epoll_wait` included, so one wake reaches a sleeper on either. */
+static unsigned wf_bridge_wake_once;
+static int wf_bridge_wake_error;
+static _Atomic unsigned wf_bridge_wake_ready;
+
+static void wf_bridge_initialize_wake(void) {
+    wf_bridge_wake_error = wf_completion_runtime_init(&wf_bridge_runtime);
+    if (wf_bridge_wake_error == 0) {
+        wf_bridge_wake_ready = 1;
+    }
+}
+
+static int wf_bridge_ensure_wake(void) {
+    wf__sched_once(&wf_bridge_wake_once, wf_bridge_initialize_wake);
+    return wf_bridge_wake_ready != 0;
+}
+
+static void wf_bridge_initialize(void) {
+    if (!wf_bridge_ensure_wake()) {
+        wf_bridge_error = wf_bridge_wake_error != 0 ? wf_bridge_wake_error : EAGAIN;
+        return;
+    }
+    /* The ring where this run has one, and the bounded typed adapter where it
+     * does not: a target with no kernel completion facility for regular files
+     * -- Darwin in the supported set, and either of the other two under
+     * WF_IO_NO_NATIVE_RING -- must have the adapter before it is ready, because
+     * that adapter is then the whole engine. */
+    if (!wf_bridge_ring_start() && !wf_bridge_ensure_file()) {
         (void)wf_completion_runtime_destroy(&wf_bridge_runtime);
         return;
     }
-#endif
     wf_bridge_ready = 1;
-#if defined(__linux__)
-    atomic_store_explicit(
-        &wf_bridge_doorbell_ready,
-        wf_bridge_linux_ready,
-        memory_order_release
-    );
-#endif
     if (atexit(wf_bridge_shutdown) != 0) {
         /* Registration failure changes cleanup at process exit, not the
          * completion contract of any admitted operation. */
     }
 }
 
-static size_t wf_bridge_drain(void) {
-    wf_completion_event events[WF_BRIDGE_DRAIN_BUDGET];
-    return wf_completion_drain(
-        &wf_bridge_runtime,
-        events,
-        WF_BRIDGE_DRAIN_BUDGET,
-        WF_BRIDGE_DRAIN_BUDGET
-    );
+/* The bridge, or nothing.
+ *
+ * A bridge that cannot initialize leaves no engine to run the operation and
+ * no drain to publish it, so it is a trusted-computing-base failure and
+ * terminates deterministically where the floor does.  It is not an operation
+ * outcome and there is no arm left to fall to (design §7). */
+static void wf_bridge_require(void) {
+    wf__sched_once(&wf_bridge_once, wf_bridge_initialize);
+    if (wf_bridge_ready == 0) {
+        wf_bridge_fail(
+            "the completion bridge could not initialize"
+        );
+    }
 }
 
-/* How long a joining scheduler looks for a completion before announcing sleep.
- *
- * Announcing sleep and being woken is two system calls on Darwin, paid by the
- * waiter and by whichever thread publishes.  A helper pool only exists when
- * the adapter measured operations that wait, and those waits end while this
- * thread has nothing else to do, so a bounded look before sleeping trades a
- * little idle CPU for both of those calls.  It is a bound on wasted CPU: a
- * wait longer than this window still ends in a sleep, and one shorter than it
- * never becomes a pair of system calls. */
-#define WF_BRIDGE_JOIN_SPIN_NS 10000u
+/* -------------------------------------------------- the one publication */
 
-/* Zero means the clock could not be read.  A monotonic clock that answers
- * exactly zero is the same answer as a broken one for every use here, and both
- * have to end a bounded wait rather than extend it. */
-static uint64_t wf_bridge_monotonic_ns(void) {
-    struct timespec now;
-    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+/* Stores DONE into the record and wakes whoever waits on it.
+ *
+ * There is exactly one call of this per submission, made by whichever engine
+ * finished the operation: the CQE reaper, a helper thread, or the submitting
+ * thread itself.  The record is still there for it because the emitter joins
+ * every outstanding operation before any terminator, so no exit edge and
+ * therefore no frame teardown precedes the join that consumes the terminal
+ * (design §7, "Exactly one terminal completion per submission").
+ *
+ * `wf_sched_complete` stores COMPLETING, claims the waiter, stores DONE, and
+ * touches the record no further -- which is what lets the joiner's frame die
+ * the moment DONE is read. */
+void wf_completion_record_complete(wf_completion_record *record) {
+    atomic_fetch_add_explicit(
+        &wf_bridge_publications,
+        1,
+        memory_order_relaxed
+    );
+    wf_sched_complete(&wf__sched_core, &record->sched);
+}
+
+/* --------------------------------- the one wait and wake (§7, platform 2) */
+
+/* The scheduler core sleeps and wakes on one primitive, and on a completion
+ * link that primitive is the bridge's, not `prim_host.c`'s own epoch.  These
+ * three definitions are the mapping, stated here once:
+ *
+ *   epoch  -> `wf_completion_wake_epoch`, the runtime's own wake epoch, which
+ *             the Linux ring's park also announces itself against;
+ *   park   -> `wf_bridge_park`, which is the io_uring epoll wait over the CQ
+ *             and the wake eventfd where a ring exists, and the runtime's
+ *             condition-variable park everywhere else;
+ *   wake   -> `wf_completion_notify_target`, which raises that epoch and, when
+ *             a sleeper has announced itself, calls the installed wake
+ *             callback -- `wf_linux_io_uring_notify`, the eventfd write the
+ *             ring's park is waiting on -- before signalling the condition
+ *             variable.  So one call rings the ring's wake descriptor and the
+ *             condvar both, and the two routes agree in this one place.
+ *
+ * `prim_host.c` declares all three weak, so a core linked without a
+ * completion runtime -- the smoke build, the enumerator -- keeps its own
+ * epoch, and a completion link gets these. */
+int wf__sched_host_epoch(uint64_t *epoch) {
+    if (!wf_bridge_ensure_wake()) {
         return 0;
     }
-    return (uint64_t)now.tv_sec * 1000000000u + (uint64_t)now.tv_nsec;
-}
-
-/* Waits a bounded time for any completion event to appear.  Returns 1 when one
- * did, so the caller re-runs its ordinary harvest instead of parking.
- *
- * It reads only the durable ready-event count, which a publisher raises before
- * it announces the epoch.  Taking a lock here would put this thread in the way
- * of the very publication it is waiting for. */
-static int wf_bridge_spin_for_completion(void) {
-    uint64_t started = wf_bridge_monotonic_ns();
-    uint64_t deadline;
-    unsigned turn = 0;
-    /* A clock this thread cannot read is bounded by the `now == 0` term of
-     * the periodic sample below, not by this early return.  That sample
-     * treats a zero reading exactly as it treats a passed deadline, so a
-     * failed clock ends the spin within 64 turns whatever happens here; this
-     * early return only skips those 64 reads of a counter the loop would have
-     * read anyway.
-     *
-     * The term it defers to is load-bearing rather than defensive, because
-     * neither route's other exit is one this thread can cause on its own: a
-     * submitted operation becomes a ready event only when an engine moves --
-     * `wf_bridge_progress` reaping the ring or running a queued adapter
-     * entry, a helper thread publishing -- and this spin never calls the
-     * former, while the demand-driven policy often runs with no helper at
-     * all, executing declined reads inline before anything is queued.
-     * Measured on Linux with `wf_bridge_monotonic_ns` forced to answer
-     * zero, on the four-lane default probe: the shipped spin, and the spin
-     * with only this early return removed, both finish in about 110 ms;
-     * with the `now == 0` term removed as well, runs hang on BOTH routes
-     * (most of one 12-run ring sample; 2 of 44 forced-adapter runs, one
-     * self-reporting STUCK at its 180 s watchdog).  A run that finishes
-     * without the term owes it to another lane's publication or an inline
-     * decline, not to any bound; the counts above are draws, not rates.
-     *
-     * Leaving the spin early costs at worst a park this thread was about to
-     * make. */
-    if (started == 0) {
-        return wf_completion_ready_event_count(&wf_bridge_runtime) != 0;
-    }
-    deadline = started + WF_BRIDGE_JOIN_SPIN_NS;
-    for (;;) {
-        if (wf_completion_ready_event_count(&wf_bridge_runtime) != 0) {
-            return 1;
-        }
-        turn += 1;
-        if ((turn & 0x3fu) == 0) {
-            uint64_t now = wf_bridge_monotonic_ns();
-            if (now == 0 || now >= deadline) {
-                return 0;
-            }
-        }
-    }
-}
-
-/* Harvests the completion event of the operation this thread is waiting on,
- * without sweeping the slots every other operation lives in. */
-static void wf_bridge_drain_token(const void *token_storage) {
-    wf_completion_event event;
-    (void)wf_completion_drain_token(
-        &wf_bridge_runtime,
-        *(const wf_completion_token *)token_storage,
-        &event
-    );
-}
-
-/* Progresses both bounded target work and one ready compute offer before a
- * park.  The compute hook never enters file helpers and the file adapter never
- * receives a Whitefoot function pointer. */
-static int wf_bridge_progress(void) {
-    int progressed = 0;
-#if defined(__linux__)
-    if (wf_bridge_linux_ready != 0) {
-        size_t published = 0;
-        int error = wf_linux_io_uring_progress(
-            &wf_bridge_linux_adapter,
-            1u,
-            0,
-            &published
-        );
-        if (error != 0) {
-            /* Target ownership has already transferred. Falling back now
-             * would duplicate an operation, and ignoring the error would
-             * strand its owned operation forever. A target-runtime failure is a
-             * fail-stop TCB defect, not a writer-visible IoError. */
-            abort();
-        }
-        progressed |= published != 0;
-    }
-#endif
-    /* Native CQ reaping comes first after a kernel wake. It can make a saved
-     * writer frame ready before the bounded target/compute passes below. */
-    progressed |= wf_bridge_drain() != 0;
-    /* A scheduler lane executes a blocking fallback request only when no
-     * target helper exists. With helpers, taking an unrelated request here
-     * could block the exact writer which is waiting to consume a completion
-     * they have already published. */
-    if (wf_file_adapter_helper_count(&wf_bridge_adapter) == 0) {
-        progressed |= wf_bridge_target_progress_one();
-    }
-    progressed |= wf__par_help_once() != 0;
-    return progressed;
-}
-
-/* True exactly when this waiting scheduler is the only thread that can still
- * execute a queued target request, so parking here would strand it.
- *
- * That is the zero-helper configuration and nothing else. With no helper the
- * bounded target pass inside `wf_bridge_progress` is the engine, and a queued
- * request moves only when some scheduler runs it. With helpers the request
- * already has an owner: every enqueue signals one helper under the adapter's
- * own queue lock, that helper drains the queue before it sleeps again, and the
- * terminal publication is this waiter's wake.
- *
- * Treating a non-empty queue as a reason not to park regardless of helpers is
- * therefore not caution, it is a busy wait for exactly as long as a helper
- * keeps the queue non-empty. Measured on the four-wide many-file workload,
- * the one-helper default spun about 270 ms of user CPU against 71 ms for the
- * same run at four helpers, and finished 1.6x slower than its own best
- * setting. */
-static int wf_bridge_target_work_needs_this_thread(void) {
-    return wf_bridge_file_ready != 0
-        && wf_file_adapter_helper_count(&wf_bridge_adapter) == 0
-        && wf_file_adapter_queued(&wf_bridge_adapter) != 0;
-}
-
-static void wf_bridge_park(uint64_t observed_epoch) {
-#if defined(__linux__)
-    if (wf_bridge_linux_ready != 0) {
-        int error = wf_linux_io_uring_park(
-            &wf_bridge_linux_adapter,
-            observed_epoch,
-            UINT32_MAX
-        );
-        if (error != 0) {
-            abort();
-        }
-        /* Reap the CQ first, then rerun the bounded target/drain/compute pass.
-         * The caller's next loop iteration handles any writer-ready frame. */
-        (void)wf_bridge_progress();
-        return;
-    }
-#endif
-    {
-        enum wf_completion_park_result parked =
-            wf_completion_park_if_unchanged(
-                &wf_bridge_runtime,
-                observed_epoch,
-                UINT32_MAX
-            );
-        if (parked == WF_COMPLETION_PARK_FAILED) {
-            abort();
-        }
-    }
-}
-
-void wf__writer_scheduler_notify(void) {
-    if (wf_bridge_ready != 0) {
-        wf_completion_notify_compute(&wf_bridge_runtime);
-    }
-}
-
-static int wf_bridge_claim(wf_completion_token *token) {
-    return wf_completion_claim(&wf_bridge_runtime, token)
-        == WF_COMPLETION_CLAIMED;
-}
-
-static int wf_bridge_file_request_is_empty(const wf_file_request *request) {
-    switch (request->kind) {
-        case WF_FILE_READ:
-            return request->operation.read.count == 0;
-        case WF_FILE_WRITE:
-            return request->operation.write.count == 0;
-        case WF_FILE_PREAD:
-            return request->operation.pread.count == 0;
-        default:
-            return 0;
-    }
-}
-
-static int wf_bridge_publish_inline_file(
-    wf_completion_token token,
-    void *dependent_frame,
-    enum wf_file_operation_kind kind,
-    int64_t value,
-    int error_code
-) {
-    wf_file_result result;
-    wf_completion_publication publication;
-    memset(&result, 0, sizeof(result));
-    result.kind = kind;
-    result.value = value;
-    result.error_code = error_code;
-    if (wf_completion_set_adapter_tag(
-            &wf_bridge_runtime,
-            token,
-            WF_BRIDGE_ROUTE_FILE_FALLBACK
-        ) != WF_COMPLETION_TRANSITIONED) {
-        abort();
-    }
-    if (dependent_frame != NULL
-        && wf_completion_depend(
-            &wf_bridge_runtime,
-            token,
-            WF_COMPLETION_OWNERSHIP_COMPLETE,
-            dependent_frame
-        ) != WF_COMPLETION_DEPEND_REGISTERED) {
-        abort();
-    }
-    if (wf_completion_begin_submit(&wf_bridge_runtime, token)
-        != WF_COMPLETION_TRANSITIONED) {
-        abort();
-    }
-    publication.milestones = WF_COMPLETION_OWNERSHIP_COMPLETE;
-    publication.terminal_kind = error_code == 0 ? 1u : 2u;
-    publication.result = &result;
-    publication.result_size = sizeof(result);
-    if (wf_completion_publish_inline_terminal(
-            &wf_bridge_runtime,
-            token,
-            &publication
-        ) != WF_COMPLETION_PUBLISHED) {
-        abort();
-    }
+    *epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
     return 1;
 }
 
-static int wf_bridge_submit_file(
-    const wf_file_request *request,
-    wf_completion_token *token,
-    void *dependent_frame
-) {
-    if (pthread_once(&wf_bridge_once, wf_bridge_initialize) != 0
-        || wf_bridge_ready == 0 || !wf_bridge_ensure_file()) {
+int wf__sched_host_park(uint64_t observed) {
+    if (!wf_bridge_ensure_wake()) {
         return 0;
     }
-    if (!wf_bridge_claim(token)) {
+    wf_bridge_park(observed);
+    return 1;
+}
+
+int wf__sched_host_wake(void) {
+    if (!wf_bridge_ensure_wake()) {
         return 0;
     }
-    if (wf_bridge_file_request_is_empty(request)) {
-        return wf_bridge_publish_inline_file(
-            *token,
-            dependent_frame,
-            request->kind,
-            0,
-            0
-        );
-    }
-    if (wf_completion_set_adapter_tag(
-            &wf_bridge_runtime,
-            *token,
-            WF_BRIDGE_ROUTE_FILE_FALLBACK
-        ) != WF_COMPLETION_TRANSITIONED) {
-        abort();
-    }
-    if (dependent_frame != NULL
-        && wf_completion_depend(
-            &wf_bridge_runtime,
-            *token,
-            WF_COMPLETION_OWNERSHIP_COMPLETE,
-            dependent_frame
-        ) != WF_COMPLETION_DEPEND_REGISTERED) {
-        abort();
-    }
-    for (;;) {
-        uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
-        enum wf_file_submit_result submitted = wf_file_adapter_submit(
-            &wf_bridge_adapter,
-            *token,
-            request
-        );
-        if (submitted == WF_FILE_TARGET_OWNS) {
-            wf_bridge_notify_target();
-            return 1;
-        }
-        if (submitted != WF_FILE_WAIT_CAPACITY) {
-            return 0;
-        }
-        if (!wf_bridge_progress()) {
-            wf_bridge_park(epoch);
-        }
-    }
+    wf_completion_notify_target(&wf_bridge_runtime);
+    return 1;
 }
 
-#if defined(__linux__)
-/* Submits one typed request to the native ring.
- *
- * Returns -1 only while target ownership is still available to the caller, so
- * the caller may honestly choose the bounded POSIX adapter; 1 once the ring
- * owns the operation; 0 when the operation could not be claimed at all. */
-static int wf_bridge_submit_linux(
-    const wf_linux_file_request *request,
-    wf_completion_token *token,
-    void *dependent_frame
-) {
-    if (pthread_once(&wf_bridge_once, wf_bridge_initialize) != 0
-        || wf_bridge_ready == 0 || wf_bridge_linux_ready == 0) {
-        return -1;
-    }
-    if (!wf_bridge_claim(token)) {
-        return 0;
-    }
-    if (wf_completion_set_adapter_tag(
-            &wf_bridge_runtime,
-            *token,
-            WF_BRIDGE_ROUTE_LINUX_IO_URING
-        ) != WF_COMPLETION_TRANSITIONED) {
-        abort();
-    }
-    if (dependent_frame != NULL
-        && wf_completion_depend(
-            &wf_bridge_runtime,
-            *token,
-            WF_COMPLETION_OWNERSHIP_COMPLETE,
-            dependent_frame
-        ) != WF_COMPLETION_DEPEND_REGISTERED) {
-        abort();
-    }
-    for (;;) {
-        uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
-        enum wf_linux_io_uring_submit_result submitted =
-            wf_linux_io_uring_submit(
-                &wf_bridge_linux_adapter,
-                *token,
-                request
-            );
-        if (submitted == WF_LINUX_IO_URING_TARGET_OWNS) {
-            if (wf_linux_io_uring_progress_error(
-                    &wf_bridge_linux_adapter
-                ) != 0) {
-                abort();
-            }
-            return 1;
-        }
-        if (submitted != WF_LINUX_IO_URING_WAIT_CAPACITY) {
-            /* `linux_ready` and the request checks above close every honest
-             * pre-ownership fallback. Reaching another result after claiming
-             * the operation is an internal adapter/core contract defect. */
-            abort();
-        }
-        if (!wf_bridge_progress()) {
-            wf_bridge_park(epoch);
-        }
-    }
+/* Primitive 7 of §7.1: target progress and the drain, exported once where the
+ * bridge has statics.  Nothing calls the scheduler loop in this step, so this
+ * is the core's view of the same pass the in-place join arm runs. */
+int wf__sched_target_progress(struct wf_sched_core *core) {
+    (void)core;
+    return wf_bridge_progress();
 }
 
-/* The ring's READ_AT fixes an explicit offset, so only a nonempty,
- * representable positioned transfer qualifies for it. */
-static int wf_bridge_submit_linux_pread(
-    int descriptor,
-    void *buffer,
-    uint64_t count,
-    uint64_t file_offset,
-    wf_completion_token *token,
-    void *dependent_frame
-) {
-    wf_linux_file_request request;
-    /* Anything the ring would refuse is answered before an operation is
-     * claimed, so a refusal is an honest fallback to the bounded POSIX
-     * adapter rather than a fail-stop after ownership moved. */
-    if (count == 0 || count > UINT32_MAX || descriptor < 0) {
-        return -1;
-    }
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_LINUX_FILE_READ_AT;
-    request.descriptor = descriptor;
-    request.buffer.read_buffer = buffer;
-    request.count = (size_t)count;
-    request.offset = file_offset;
-    return wf_bridge_submit_linux(&request, token, dependent_frame);
-}
-
-/* An open reaches the ring as IORING_OP_OPENAT, and its kind check as a
- * further IORING_OP_STATX of the descriptor the open produced.  Both are
- * ordinary ring operations, so no scheduler thread blocks in `openat` and no
- * helper handoff stands between a program's independent opens. */
-static int wf_bridge_submit_linux_open_at(
-    int directory,
-    const char *path,
-    int flags,
-    unsigned mode,
-    unsigned has_mode,
-    unsigned expected_kind,
-    wf_completion_token *token,
-    void *dependent_frame
-) {
-    wf_linux_file_request request;
-    /* Anything the ring would refuse is answered before an operation is
-     * claimed, and a name the ring entry cannot hold is one of them. */
-    if (!wf_file_path_fits(path) || has_mode > 1u
-        || expected_kind > WF_FILE_EXPECT_DIRECTORY) {
-        return -1;
-    }
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_LINUX_FILE_OPEN_AT;
-    request.descriptor = directory;
-    request.buffer.path = path;
-    request.open_flags = flags;
-    request.open_mode = mode;
-    request.has_open_mode = has_mode;
-    request.expected_kind = (enum wf_file_expected_kind)expected_kind;
-    return wf_bridge_submit_linux(&request, token, dependent_frame);
-}
-
-static int wf_bridge_submit_linux_close(
-    int descriptor,
-    wf_completion_token *token,
-    void *dependent_frame
-) {
-    wf_linux_file_request request;
-    /* A descriptor this program never held is refused by the bounded POSIX
-     * adapter as an ordinary typed EBADF, which is a writer-visible outcome;
-     * the ring would refuse it as a request-shape defect, which is not. */
-    if (descriptor < 0) {
-        return -1;
-    }
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_LINUX_FILE_CLOSE;
-    request.descriptor = descriptor;
-    return wf_bridge_submit_linux(&request, token, dependent_frame);
-}
-#endif
+/* --------------------------------------------------------- target progress */
 
 /* Rings the deferred io_uring doorbell before this thread does something the
  * ring cannot see through.
@@ -804,24 +959,899 @@ static int wf_bridge_submit_linux_close(
  * eight-wide benchmark's wall time, and exactly what makes an unguarded
  * blocking call a hazard: an open the program has already submitted would sit
  * in the submission queue, untouched, for as long as this thread waits in a
- * direct `openat` that the completion path refused to carry.  Every entry
- * point below that can block outside the ring flushes first.  On a target with
- * no ring this is nothing. */
+ * direct `openat`.  Every entry point below that can block outside the ring
+ * flushes first.  On a target with no ring this is nothing. */
 static void wf_bridge_flush_target(void) {
-#if defined(__linux__)
-    if (atomic_load_explicit(&wf_bridge_doorbell_ready, memory_order_acquire)
-        != 0) {
-        (void)wf_linux_io_uring_flush(&wf_bridge_linux_adapter);
+    wf_bridge_ring_flush();
+}
+
+/* Flush the deferred doorbell, reap the ring, and run one queued request when
+ * this thread is the queue's only engine.  Returns nonzero when it moved
+ * something.
+ *
+ * This is primitive 7 (§7.1) and it may block: with no helper the bounded
+ * pass executes a queued host `open` or `close` on the calling thread.  That
+ * is now the only place a host call is made for a queued operation. */
+static int wf_bridge_progress(void) {
+    int progressed = wf_bridge_ring_progress();
+    /* A thread executes a queued request only when no target helper exists.
+     * With helpers, taking an unrelated request here could block the exact
+     * frame which is waiting on a completion they have already published. */
+    if (wf_file_adapter_helper_count(&wf_bridge_adapter) == 0) {
+        progressed |= wf_bridge_target_progress_one();
     }
+    return progressed;
+}
+
+static void wf_bridge_park(uint64_t observed_epoch) {
+    if (wf_bridge_ring_park(observed_epoch)) {
+        /* Reap what the ring has first; the caller's next turn re-reads its
+         * own record. */
+        (void)wf_bridge_progress();
+        return;
+    }
+    {
+        enum wf_completion_park_result parked =
+            wf_completion_park_if_unchanged(
+                &wf_bridge_runtime,
+                observed_epoch,
+                UINT32_MAX
+            );
+        if (parked == WF_COMPLETION_PARK_FAILED) {
+            wf_bridge_fail(
+                "the completion runtime's park failed"
+            );
+        }
+    }
+}
+
+/* ------------------------------------------------------------- the join */
+
+/* How long a joining thread looks at its own record before announcing sleep.
+ *
+ * The clock is `wf_file_monotonic_ns`, the adapter's platform leaf, because a
+ * monotonic clock is a host call: zero from it means the clock could not be
+ * read, which is the same answer as a broken one for every use here, and both
+ * have to end a bounded wait rather than extend it.
+ *
+ * Announcing sleep and being woken is two system calls, paid by the waiter and
+ * by whichever thread publishes.  A helper pool only exists when the adapter
+ * measured operations that wait, and those waits end while this thread has
+ * nothing else to do, so a bounded look before sleeping trades a little idle
+ * CPU for both of those calls.  It is a bound on wasted CPU: a wait longer
+ * than this window still ends in a sleep, and one shorter than it never
+ * becomes a pair of system calls.
+ *
+ * It watches the one record this thread is waiting on, where it used to watch
+ * a process-wide count of ready events that no longer exists (design §7: a
+ * completion is published straight into its record). */
+#define WF_BRIDGE_JOIN_SPIN_NS 10000u
+
+static unsigned wf_bridge_record_state(const wf_completion_record *record) {
+    return wf_prim_load_u(&record->sched.state, WF_PRIM_ACQUIRE);
+}
+
+/* Waits a bounded time for this record to be completed by someone else.
+ * Returns 1 when it was, so the caller re-reads it instead of parking. */
+static int wf_bridge_spin_for_completion(const wf_completion_record *record) {
+    uint64_t started = wf_file_monotonic_ns();
+    uint64_t deadline;
+    unsigned turn = 0;
+    /* A clock this thread cannot read is bounded by the `now == 0` term of
+     * the periodic sample below, not by this early return.  That sample
+     * treats a zero reading exactly as it treats a passed deadline, so a
+     * failed clock ends the spin within 64 turns whatever happens here. */
+    if (started == 0) {
+        return wf_bridge_record_state(record) != WF_SCHED_PENDING;
+    }
+    deadline = started + WF_BRIDGE_JOIN_SPIN_NS;
+    for (;;) {
+        if (wf_bridge_record_state(record) != WF_SCHED_PENDING) {
+            return 1;
+        }
+        turn += 1;
+        if ((turn & 0x3fu) == 0) {
+            uint64_t now = wf_file_monotonic_ns();
+            if (now == 0 || now >= deadline) {
+                return 0;
+            }
+        }
+    }
+}
+
+/* The I/O arm of §2's fourth line: wait in place on the record, with nothing
+ * running above this join.
+ *
+ * It is the scheduler core's own protocol with no stack to park (§6): read the
+ * record's state; yield through COMPLETING, which is DONE a few instructions
+ * away; make one pass of target progress; and only then register this thread
+ * as the record's in-place waiter, capture the wake epoch, re-check the state
+ * -- which catches a publisher that stored DONE before the registration -- and
+ * sleep on the one primitive.  A publisher that claims the registration calls
+ * `wf_prim_wake`, which on a completion link is the bridge's own wake, so the
+ * sleep ends.  The marker is taken back on every exit from the park; a failed
+ * compare-exchange there means the publisher took it and DONE follows.
+ *
+ * The registration goes up before the epoch is captured and before the last
+ * look at the state, so a publisher that misses the marker is one whose DONE
+ * that look finds. */
+/* Runs the waiting thread's own submission here, if it is still queued.
+ *
+ * A thread that has submitted an operation and is now waiting for exactly that
+ * operation runs it rather than waiting behind whatever the helpers are
+ * already inside.  It is the one queue visit a joining thread may make while
+ * helpers exist, and it takes nothing that belongs to another frame: the
+ * record is this frame's own and this thread has nothing else to do until it
+ * is DONE (design §7).  The host call it then makes is a blocking one, so the
+ * doorbell rings before it, exactly as it does for every other host call this
+ * bridge makes on a caller's thread. */
+static int wf_bridge_run_own(wf_completion_record *record) {
+    if (wf_bridge_file_ready == 0
+        || !wf_file_adapter_claim_own(&wf_bridge_adapter, record)) {
+        return 0;
+    }
+    /* The host call below is outside every path the ring can see through. */
+    wf_bridge_flush_target();
+    wf_file_adapter_run_claimed(&wf_bridge_adapter, record);
+    return 1;
+}
+
+static void wf_bridge_wait_in_place(wf_completion_record *record) {
+    for (;;) {
+        unsigned state = wf_bridge_record_state(record);
+        uint64_t epoch;
+        void *expected;
+        void *marker;
+        if (state == WF_SCHED_DONE) {
+            return;
+        }
+        if (state == WF_SCHED_COMPLETING) {
+            wf_prim_yield();
+            continue;
+        }
+        if (wf_bridge_run_own(record)) {
+            continue;
+        }
+        if (wf_bridge_progress()) {
+            continue;
+        }
+        expected = NULL;
+        (void)wf_prim_cas_p(
+            (void **)&record->sched.waiter,
+            &expected,
+            WF_SCHED_WAITER_IN_PLACE,
+            WF_PRIM_SEQ_CST,
+            WF_PRIM_SEQ_CST
+        );
+        epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
+        if (wf_bridge_record_state(record) == WF_SCHED_PENDING
+            && !wf_bridge_spin_for_completion(record)) {
+            wf_bridge_park(epoch);
+        }
+        marker = WF_SCHED_WAITER_IN_PLACE;
+        (void)wf_prim_cas_p(
+            (void **)&record->sched.waiter,
+            &marker,
+            NULL,
+            WF_PRIM_SEQ_CST,
+            WF_PRIM_SEQ_CST
+        );
+    }
+}
+
+/* Every join parks, and this is where the rule of design §2 is entered.
+ *
+ * A thread on a pool stack has a stack to park, so it runs the rule: read the
+ * record if it is DONE, else park this stack and continue on another, else --
+ * with no free stack and nothing READY -- the I/O arm of the fourth line,
+ * which is the same window `wf_bridge_wait_in_place` runs and nothing above
+ * the join.  A completion resumes the parked stack from wherever it is
+ * published, so a completed I/O's continuation is never buried.
+ *
+ * A thread that is not on a pool stack has no stack to park and waits in
+ * place.  That is the harness and the probes, which call these joins from
+ * plain threads; a linked program never does, because the floor runs its entry
+ * on a pool stack and every worker's loop lives on one (design §5).
+ *
+ * Before either arm, this thread runs its *own* submission if it is still
+ * queued.  It is the engine executing an operation that has no other engine,
+ * not a schedule decision and not a fallback: with the helper count pinned, an
+ * ordinary write can sit in the queue behind an unrelated blocked one, and no
+ * helper, no ring and no progress pass will ever reach it --
+ * `wf_bridge_progress` deliberately takes nothing from the queue while helpers
+ * exist, because an unrelated request could block the exact frame whose
+ * completion they have already published.  The record is this frame's own, so
+ * taking it here takes nothing that belongs to another frame.  One attempt is
+ * the whole of it: after it, the record is either DONE, or owned by an engine
+ * that will finish it, and the rule below waits for that.
+ *
+ * What licenses that host call is the second half of the sentence: this thread
+ * has nothing else to do until the record is DONE.  On the wait-in-place arm
+ * that is simply true -- there is no stack to park and no other work reachable
+ * from here.  On a pool stack it is not: the join below parks this stack and
+ * the thread goes on to another, so a host call made here holds a *worker*,
+ * and with it every continuation that worker would have run.  For a wait this
+ * runtime can end that costs some overlap; for a peer-bound wait, which
+ * another program ends whenever it likes, it costs the worker for as long as
+ * that program is quiet.  Three workers each inside a receive from a silent
+ * peer is `tests/programs/tcp_fanout.wf` with nobody left to accept its fourth
+ * connection.
+ *
+ * So a pool stack leaves a peer-bound record to the helper pool -- once there
+ * is a pool.  With no helper the claim happens on either arm, because then
+ * nothing else would run it: the pool may be pinned at zero, which makes the
+ * waiting thread the queue's own engine, or a helper start may have failed,
+ * and in both cases refusing the record here would strand it.  That is the
+ * same condition `wf_bridge_progress` asks before it takes anything, and it is
+ * why the adapter's growth rule starts a helper on the peer-bound submission
+ * itself (`file_adapter.c`). */
+static int wf_bridge_own_runs_on_this_thread(
+    const wf_completion_record *record,
+    int on_pool_stack
+) {
+    return on_pool_stack == 0
+        || !wf_file_request_is_peer_bound(&record->request)
+        || wf_file_adapter_helper_count(&wf_bridge_adapter) == 0;
+}
+
+static void wf_bridge_join(wf_completion_record *record) {
+    int on_pool_stack = wf__sched_current_stack() != NULL;
+    if (wf_bridge_own_runs_on_this_thread(record, on_pool_stack)) {
+        (void)wf_bridge_run_own(record);
+    }
+    if (on_pool_stack) {
+        wf_sched_join(&wf__sched_core, &record->sched, 1);
+        return;
+    }
+    wf_bridge_wait_in_place(record);
+}
+
+static wf_completion_record *wf_bridge_record_of(const void *record) {
+    if (record == NULL) {
+        wf_bridge_fail(
+            "a join was given no record"
+        );
+    }
+    return (wf_completion_record *)(uintptr_t)record;
+}
+
+void wf__completion_file_join(
+    const void *record,
+    int64_t *value,
+    int *error_code
+) {
+    wf_completion_record *held = wf_bridge_record_of(record);
+    if (value == NULL || error_code == NULL) {
+        wf_bridge_fail(
+            "a join was given no place to publish its result"
+        );
+    }
+    wf_bridge_join(held);
+    *value = held->result.value;
+    *error_code = held->result.error_code;
+}
+
+void wf__completion_file_open_join(
+    const void *record,
+    int64_t *value,
+    int *error_code,
+    unsigned *open_outcome
+) {
+    wf_completion_record *held = wf_bridge_record_of(record);
+    if (value == NULL || error_code == NULL || open_outcome == NULL) {
+        wf_bridge_fail(
+            "an open join was given no place to publish its result"
+        );
+    }
+    wf_bridge_join(held);
+    if (held->result.kind != WF_FILE_OPEN_AT) {
+        wf_bridge_fail(
+            "an open join was given a record that is not an open"
+        );
+    }
+    *value = held->result.value;
+    *error_code = held->result.error_code;
+    *open_outcome = (unsigned)held->result.open_outcome;
+}
+
+/* The accept's join.  The peer address is three scalars because that is what
+ * an emitted `SocketAddress` value is, so the emitted wrapper builds its own
+ * value out of them and neither side holds a pointer into the other's layout.
+ *
+ * A refused accept publishes the all-zero address, which the emitted mapper
+ * never reads: `AcceptFailed` carries the error and the permit and no peer
+ * [SYS-17]. */
+void wf__completion_socket_accept_join(
+    const void *record,
+    int64_t *value,
+    int *error_code,
+    uint64_t *peer_low,
+    uint64_t *peer_high,
+    uint32_t *peer_tag
+) {
+    wf_completion_record *held = wf_bridge_record_of(record);
+    if (value == NULL || error_code == NULL || peer_low == NULL
+        || peer_high == NULL || peer_tag == NULL) {
+        wf_bridge_fail(
+            "an accept join was given no place to publish its result"
+        );
+    }
+    wf_bridge_join(held);
+    if (held->result.kind != WF_FILE_SOCKET_ACCEPT) {
+        wf_bridge_fail(
+            "an accept join was given a record that is not an accept"
+        );
+    }
+    *value = held->result.value;
+    *error_code = held->result.error_code;
+    *peer_low = held->request.operation.accept.peer.portable.words[0];
+    *peer_high = held->request.operation.accept.peer.portable.words[1];
+    *peer_tag = held->request.operation.accept.peer.portable.port_and_family;
+}
+
+/* The status join copies nothing: the engine already wrote the bytes into the
+ * destination the submit named, and the record carries how many (design §7). */
+void wf__completion_file_status_join(
+    const void *record,
+    int64_t *value,
+    int *error_code,
+    void *status,
+    uint64_t status_capacity,
+    uint64_t *status_size
+) {
+    wf_completion_record *held = wf_bridge_record_of(record);
+    if (value == NULL || error_code == NULL || status == NULL
+        || status_size == NULL
+        || (uint64_t)(size_t)status_capacity != status_capacity) {
+        wf_bridge_fail(
+            "a status join was given no place to publish its result"
+        );
+    }
+    wf_bridge_join(held);
+    if (held->result.kind != WF_FILE_STATUS
+        || held->request.operation.status.destination != status
+        || held->request.operation.status.capacity != (size_t)status_capacity) {
+        wf_bridge_fail(
+            "a status join was given a record that is not the status it submitted"
+        );
+    }
+    *value = held->result.value;
+    *error_code = held->result.error_code;
+    *status_size = (uint64_t)held->status_written;
+}
+
+/* ----------------------------------------------------------- the submits */
+
+/* Whether the operation has no external action at all, because its transfer
+ * range is empty.
+ *
+ * The emitted code no longer holds this back: with one lowering per operation
+ * an empty range is submitted like any other and the runtime completes it, so
+ * every kind that carries a byte count answers here -- directory enumeration
+ * included, whose host facility refuses a zero-sized batch rather than
+ * reporting an empty one (design section 8, "One lowering for every I/O
+ * operation"). */
+static int wf_bridge_file_request_is_empty(const wf_file_request *request) {
+    switch (request->kind) {
+        case WF_FILE_READ:
+            return request->operation.read.count == 0;
+        case WF_FILE_WRITE:
+            return request->operation.write.count == 0;
+        case WF_FILE_PREAD:
+            return request->operation.pread.count == 0;
+        case WF_FILE_SOCKET_RECEIVE:
+            return request->operation.receive.count == 0;
+        case WF_FILE_SOCKET_SEND:
+            return request->operation.send.count == 0;
+#if defined(WF_FILE_HAS_DIRECTORY_NEXT)
+        case WF_FILE_DIRECTORY_NEXT:
+            return request->operation.directory_next.count == 0;
+#endif
+        default:
+            return 0;
+    }
+}
+
+/* Executes the record's operation here and publishes it.
+ *
+ * This is where an operation with no kernel completion form ends up, and it
+ * is the runtime's engine running the operation rather than a path an emitted
+ * program can take (design §7.1, primitive 7).  The blocking host call is the
+ * one the deleted direct family used to make on the caller's behalf; what
+ * changed is that the record is published at the end, so every submit path
+ * ends in a published record (design §7).  A refusal the host gives it,
+ * including an open that found no descriptor, is the outcome the program
+ * sees: the descriptor an open needs is owned by its `HandlePermit` [SYS-10],
+ * drawn from a factory whose capacity is inside what the host provides, so a
+ * refusal here is a genuine exhaustion and not a schedule's invention. */
+static void wf_bridge_execute_here(wf_completion_record *record) {
+    wf_file_result result;
+    record->route = WF_COMPLETION_ROUTE_INLINE;
+    atomic_fetch_add_explicit(
+        &wf_bridge_inline_executions,
+        1,
+        memory_order_relaxed
+    );
+    /* The host call below is outside every path the ring can see through. */
+    wf_bridge_flush_target();
+    result = wf_file_execute_timed(&wf_bridge_adapter, &record->request);
+    wf_file_complete_record(record, &result);
+}
+
+/* An empty transfer has no external action at all, so there is nothing to
+ * execute and nothing to overlap: the record is completed here. */
+static void wf_bridge_complete_empty(wf_completion_record *record) {
+    wf_file_result result;
+    memset(&result, 0, sizeof(result));
+    result.head.kind = record->request.kind;
+    result.head.value = 0;
+    record->route = WF_COMPLETION_ROUTE_INLINE;
+    atomic_fetch_add_explicit(
+        &wf_bridge_inline_executions,
+        1,
+        memory_order_relaxed
+    );
+    wf_file_complete_record(record, &result);
+}
+
+/* Queues the record on the bounded POSIX adapter, or executes it here when
+ * that adapter cannot be built.  Either way the record is the runtime's. */
+static void wf_bridge_submit_file(wf_completion_record *record) {
+    if (!wf_bridge_ensure_file()) {
+        wf_bridge_execute_here(record);
+        return;
+    }
+    if (wf_file_adapter_submit(&wf_bridge_adapter, record)
+        != WF_FILE_TARGET_OWNS) {
+        /* The shape was checked before the record was filled, so the only
+         * answer left is an adapter that has stopped admitting -- the process
+         * is exiting -- and the operation is executed here instead of being
+         * left unpublished. */
+        wf_bridge_execute_here(record);
+        return;
+    }
+    wf_bridge_notify_target();
+}
+
+/* Whether a positioned transfer is better made where it was stated than
+ * queued.
+ *
+ * The completion path exists so that a program is not stalled by a wait it
+ * could have overlapped.  When the bounded adapter holds no helper, has
+ * nothing queued, and has measured its own operations as not waiting, there is
+ * no wait to overlap and no other thread to overlap it on: the queued
+ * operation would be executed by this very thread, at its join, after a queue
+ * crossing.  Executing it here is the same host call without any of that, and
+ * the record is published at the end either way, so this is a throughput
+ * choice and never an outcome.
+ *
+ * Only a *positioned* transfer takes it, and that is the whole liveness
+ * argument.  An offset is meaningful only on a seekable object, and the typed
+ * opens that produce one admit nothing but a regular file, so a positioned
+ * read waits on storage.  A non-positioned read or write may be waiting on
+ * something another part of the same program has to do — a pipe the program
+ * itself must drain — and running one where it was stated could stall the very
+ * thread that would unblock it.  Those keep the queue.
+ *
+ * A written WF_IO_HELPERS takes nothing inline: it pins the route with the
+ * count.
+ *
+ * The measurement keeps running while this is true, because every inline
+ * execution is timed by the same adapter, so a program whose reads start
+ * waiting is queueing again within a few operations. */
+static int wf_bridge_positioned_read_runs_on_caller(uint64_t count) {
+    return count != 0
+        && wf_bridge_helpers_pinned == 0
+        && wf_bridge_file_ready != 0
+        && wf_file_adapter_transfer_runs_on_caller(&wf_bridge_adapter);
+}
+
+/* Fills the record's scheduler words and clears the engine state every route
+ * reads.  Called once, by submit, before any engine can see the record. */
+static wf_completion_record *wf_bridge_begin(void *record) {
+    wf_completion_record *held;
+    if (record == NULL) {
+        wf_bridge_fail(
+            "a submit was given no record"
+        );
+    }
+    wf_bridge_require();
+    held = (wf_completion_record *)record;
+    memset(held, 0, sizeof(*held));
+    wf_sched_record_init(&held->sched);
+    held->route = WF_COMPLETION_ROUTE_NONE;
+    held->opened_descriptor = -1;
+    held->open_outcome = WF_FILE_OPEN_SUCCEEDED;
+    return held;
+}
+
+/* Hands the record to whichever engine can take it, in the one order every
+ * submit uses: the ring where it has a form for this kind, then the bounded
+ * adapter, and the engine here when neither applies.  Every path ends in a
+ * record the runtime owns, so there is nothing to answer. */
+/* Completes a socket transfer here when the host answers it without waiting:
+ * the operation's outcome is the host's own, and nothing parks, wakes, or
+ * crosses a ring for an answer that was already there. */
+static int wf_bridge_transfer_now(wf_completion_record *record) {
+    wf_file_result result;
+    if (!wf_file_transfer_now(&record->request, &result)) {
+        return 0;
+    }
+    record->route = WF_COMPLETION_ROUTE_INLINE;
+    atomic_fetch_add_explicit(
+        &wf_bridge_inline_executions,
+        1,
+        memory_order_relaxed
+    );
+    wf_file_complete_record(record, &result);
+    return 1;
+}
+
+static void wf_bridge_dispatch(wf_completion_record *record) {
+    if (wf_bridge_file_request_is_empty(&record->request)) {
+        wf_bridge_complete_empty(record);
+        return;
+    }
+    if (wf_bridge_ring_offer(record)) {
+        return;
+    }
+    wf_bridge_submit_file(record);
+}
+
+void wf__completion_file_read_submit(
+    int descriptor,
+    void *buffer,
+    uint64_t count,
+    void *record
+) {
+    wf_completion_record *held = wf_bridge_begin(record);
+    if ((buffer == NULL && count != 0) || (uint64_t)(size_t)count != count) {
+        wf_bridge_fail(
+            "a read was submitted with a buffer and a count that do not describe a range"
+        );
+    }
+    held->request.kind = WF_FILE_READ;
+    held->request.operation.read.descriptor = descriptor;
+    held->request.operation.read.buffer = buffer;
+    held->request.operation.read.count = (size_t)count;
+    wf_bridge_dispatch(held);
+}
+
+/* Publishes a refusal the host itself would have made, without asking it.
+ *
+ * A failed outcome and a terminated process are different things, and only
+ * one of them is what an offset the target ABI cannot express deserves: the
+ * writer may spell any `u64` offset, and the host answers an offset above
+ * `INT64_MAX` with EINVAL.  The record is completed with exactly that answer,
+ * so the emitted mapper builds the same failed outcome it built when this
+ * shape still went to the direct wrapper (design section 8, "One lowering for
+ * every I/O operation").  Nothing is executed, so the inline-execution count
+ * is untouched; the publication count is not, because this is one record's
+ * one terminal completion. */
+static void wf_bridge_complete_refused(
+    wf_completion_record *record,
+    int error_code
+) {
+    record->route = WF_COMPLETION_ROUTE_INLINE;
+    record->result.kind = record->request.kind;
+    record->result.value = -1;
+    record->result.error_code = error_code;
+    wf_completion_record_complete(record);
+}
+
+void wf__completion_file_pread_submit(
+    int descriptor,
+    void *buffer,
+    uint64_t count,
+    uint64_t file_offset,
+    void *record
+) {
+    wf_completion_record *held = wf_bridge_begin(record);
+    if ((buffer == NULL && count != 0) || (uint64_t)(size_t)count != count) {
+        wf_bridge_fail(
+            "a positioned read was submitted with a buffer and a count that do not describe a range"
+        );
+    }
+    held->request.kind = WF_FILE_PREAD;
+    held->request.operation.pread.descriptor = descriptor;
+    held->request.operation.pread.buffer = buffer;
+    held->request.operation.pread.count = (size_t)count;
+    if (file_offset > (uint64_t)INT64_MAX) {
+        wf_bridge_complete_refused(held, EINVAL);
+        return;
+    }
+    held->request.operation.pread.offset = (int64_t)file_offset;
+    if (wf_bridge_file_request_is_empty(&held->request)) {
+        wf_bridge_complete_empty(held);
+        return;
+    }
+    /* The ring first, then the throughput choice below, then the queue.  A
+     * positioned read the ring takes is never a candidate for running inside
+     * submit: the ring has no wait for this thread to overlap. */
+    if (wf_bridge_ring_offer(held)) {
+        return;
+    }
+    if (wf_bridge_positioned_read_runs_on_caller(count)) {
+        wf_bridge_execute_here(held);
+        return;
+    }
+    wf_bridge_submit_file(held);
+}
+
+void wf__completion_file_write_submit(
+    int descriptor,
+    const void *buffer,
+    uint64_t count,
+    void *record
+) {
+    wf_completion_record *held = wf_bridge_begin(record);
+    if ((buffer == NULL && count != 0) || (uint64_t)(size_t)count != count) {
+        wf_bridge_fail(
+            "a write was submitted with a buffer and a count that do not describe a range"
+        );
+    }
+    /* write_once is an unpositioned OutputStream operation. The native adapter's
+     * write request fixes an explicit offset, which would change regular
+     * file-offset semantics and is not a meaningful stream offset. Until a
+     * Linux request kind is qualified for exact write(2) current-position and
+     * append/stream behavior, this stays on the bounded typed adapter, which
+     * `wf_linux_io_uring_carries` answers by having no form for WF_FILE_WRITE. */
+    held->request.kind = WF_FILE_WRITE;
+    held->request.operation.write.descriptor = descriptor;
+    held->request.operation.write.buffer = buffer;
+    held->request.operation.write.count = (size_t)count;
+    wf_bridge_dispatch(held);
+}
+
+/* The one place an ABI the emitter emits per target reaches this unit.
+ *
+ * A Windows open has to know which resource the descriptor will become before
+ * it opens, because the access and the create options it asks the namespace
+ * for differ by that answer; no other target's open does, and every other
+ * target's leaf ignores the field the argument fills.  So the emitter emits
+ * one more argument on that target alone (`emitter/completion.rs`,
+ * COMPLETION_WINDOWS_RUNTIME_DECLARATIONS) and this signature follows it.
+ * Nothing else in this unit is `#if`-forked, and this is a difference in an
+ * ABI rather than a fork of any logic: both arms fill the same record and both
+ * fall into the same routing below. */
+void wf__completion_file_open_at_submit(
+    int directory,
+    const char *path,
+    int flags,
+    unsigned mode,
+    unsigned has_mode,
+    unsigned expected_kind,
+#if defined(_WIN32)
+    unsigned descriptor_class,
+#endif
+    void *record
+) {
+    wf_completion_record *held = wf_bridge_begin(record);
+    if (path == NULL || has_mode > 1u
+        || expected_kind > WF_FILE_EXPECT_DIRECTORY) {
+        wf_bridge_fail(
+            "an open was submitted with no path, or with a mode or expected kind out of range"
+        );
+    }
+    /* The name is the submitting frame's own and stays live until the join,
+     * so nothing is copied and no length can refuse the completion path
+     * (design §5). */
+    held->request.kind = WF_FILE_OPEN_AT;
+    held->request.operation.open_at.directory = directory;
+    held->request.operation.open_at.path = path;
+    held->request.operation.open_at.flags = flags;
+    held->request.operation.open_at.mode = mode;
+    held->request.operation.open_at.has_mode = has_mode;
+    held->request.operation.open_at.expected_kind =
+        (enum wf_file_expected_kind)expected_kind;
+#if defined(_WIN32)
+    held->request.operation.open_at.descriptor_class = descriptor_class;
+#endif
+    wf_bridge_dispatch(held);
+}
+
+void wf__completion_file_status_submit(
+    int descriptor,
+    void *status,
+    uint64_t status_capacity,
+    void *record
+) {
+    wf_completion_record *held = wf_bridge_begin(record);
+    if (status == NULL
+        || (uint64_t)(size_t)status_capacity != status_capacity) {
+        wf_bridge_fail(
+            "a status was submitted with no destination, or with a capacity out of range"
+        );
+    }
+    held->request.kind = WF_FILE_STATUS;
+    held->request.operation.status.descriptor = descriptor;
+    held->request.operation.status.destination = status;
+    held->request.operation.status.capacity = (size_t)status_capacity;
+    wf_bridge_dispatch(held);
+}
+
+void wf__completion_file_close_submit(
+    int descriptor,
+    void *record
+) {
+    wf_completion_record *held = wf_bridge_begin(record);
+    held->request.kind = WF_FILE_CLOSE;
+    held->request.operation.close.descriptor = descriptor;
+    wf_bridge_dispatch(held);
+}
+
+/* The six TCP submits.
+ *
+ * Each fills one arm of the request union and falls into the one routing
+ * `wf_bridge_dispatch` performs for every kind: the ring where it has a form,
+ * the bounded adapter otherwise, and the engine here when neither applies.
+ * The addresses arrive as the three scalars an emitted `SocketAddress` value
+ * is and are stored in the record in that form; whichever engine takes the
+ * operation converts them into the host's own record, because the shape of
+ * that record is the leaf's business and not this unit's. */
+static void wf_bridge_socket_endpoint(
+    wf_completion_record *held,
+    uint64_t address_low,
+    uint64_t address_high,
+    uint32_t port_and_family
+) {
+    held->request.operation.endpoint.descriptor = -1;
+    held->request.operation.endpoint.address_length = 0u;
+    held->request.operation.endpoint.address.portable.words[0] = address_low;
+    held->request.operation.endpoint.address.portable.words[1] = address_high;
+    held->request.operation.endpoint.address.portable.port_and_family =
+        port_and_family;
+}
+
+void wf__completion_socket_listen_submit(
+    uint64_t address_low,
+    uint64_t address_high,
+    uint32_t port_and_family,
+    void *record
+) {
+    wf_completion_record *held = wf_bridge_begin(record);
+    held->request.kind = WF_FILE_SOCKET_LISTEN;
+    wf_bridge_socket_endpoint(held, address_low, address_high, port_and_family);
+    wf_bridge_dispatch(held);
+}
+
+void wf__completion_socket_accept_submit(
+    int listener,
+    void *record
+) {
+    wf_completion_record *held = wf_bridge_begin(record);
+    if (listener < 0) {
+        wf_bridge_fail(
+            "an accept was submitted with no listener"
+        );
+    }
+    held->request.kind = WF_FILE_SOCKET_ACCEPT;
+    held->request.operation.accept.descriptor = listener;
+    /* The whole of the storage the host may write, so a peer of either family
+     * fits and the host reports back what it actually used. */
+    held->request.operation.accept.peer_length =
+        (unsigned)sizeof(held->request.operation.accept.peer.native);
+    wf_bridge_dispatch(held);
+}
+
+void wf__completion_socket_connect_submit(
+    uint64_t address_low,
+    uint64_t address_high,
+    uint32_t port_and_family,
+    void *record
+) {
+    wf_completion_record *held = wf_bridge_begin(record);
+    held->request.kind = WF_FILE_SOCKET_CONNECT;
+    wf_bridge_socket_endpoint(held, address_low, address_high, port_and_family);
+    wf_bridge_dispatch(held);
+}
+
+void wf__completion_socket_receive_submit(
+    int descriptor,
+    void *buffer,
+    uint64_t count,
+    void *record
+) {
+    wf_completion_record *held = wf_bridge_begin(record);
+    if ((buffer == NULL && count != 0) || (uint64_t)(size_t)count != count) {
+        wf_bridge_fail(
+            "a receive was submitted with a buffer and a count that do not describe a range"
+        );
+    }
+    held->request.kind = WF_FILE_SOCKET_RECEIVE;
+    held->request.operation.receive.descriptor = descriptor;
+    held->request.operation.receive.buffer = buffer;
+    held->request.operation.receive.count = (size_t)count;
+    if (wf_bridge_transfer_now(held)) {
+        return;
+    }
+    wf_bridge_dispatch(held);
+}
+
+void wf__completion_socket_send_submit(
+    int descriptor,
+    const void *buffer,
+    uint64_t count,
+    void *record
+) {
+    wf_completion_record *held = wf_bridge_begin(record);
+    if ((buffer == NULL && count != 0) || (uint64_t)(size_t)count != count) {
+        wf_bridge_fail(
+            "a send was submitted with a buffer and a count that do not describe a range"
+        );
+    }
+    held->request.kind = WF_FILE_SOCKET_SEND;
+    held->request.operation.send.descriptor = descriptor;
+    held->request.operation.send.buffer = buffer;
+    held->request.operation.send.count = (size_t)count;
+    if (wf_bridge_transfer_now(held)) {
+        return;
+    }
+    wf_bridge_dispatch(held);
+}
+
+void wf__completion_socket_shutdown_submit(
+    int descriptor,
+    unsigned direction,
+    void *record
+) {
+    wf_completion_record *held = wf_bridge_begin(record);
+    if (direction > (unsigned)WF_SOCKET_DIRECTION_SEND) {
+        wf_bridge_fail(
+            "a half-close was submitted with a direction this contract cannot mean"
+        );
+    }
+    held->request.kind = WF_FILE_SOCKET_SHUTDOWN;
+    held->request.operation.shutdown.descriptor = descriptor;
+    held->request.operation.shutdown.direction =
+        (enum wf_socket_direction)direction;
+    wf_bridge_dispatch(held);
+}
+
+void wf__completion_directory_next_submit(
+    int descriptor,
+    void *buffer,
+    uint64_t count,
+    int64_t *position,
+    void *record
+) {
+#if defined(WF_FILE_HAS_DIRECTORY_NEXT)
+    wf_completion_record *held = wf_bridge_begin(record);
+    if (position == NULL || (buffer == NULL && count != 0)
+        || (uint64_t)(size_t)count != count) {
+        wf_bridge_fail(
+            "a directory read was submitted with no position, or with a buffer and a count that do not describe a range"
+        );
+    }
+    held->request.kind = WF_FILE_DIRECTORY_NEXT;
+    held->request.operation.directory_next.descriptor = descriptor;
+    held->request.operation.directory_next.buffer = buffer;
+    held->request.operation.directory_next.count = (size_t)count;
+    held->request.operation.directory_next.position = position;
+    wf_bridge_dispatch(held);
+#else
+    /* A family with no [QUAL-2] enumeration facility compiles no such request
+     * kind, and `backend/qualification.rs` refuses the operation for that
+     * target, so reaching this entry at all is a contract violation. */
+    (void)descriptor;
+    (void)buffer;
+    (void)count;
+    (void)position;
+    (void)record;
+    wf_bridge_fail(
+        "this target has no directory enumeration facility and no such request may reach this entry"
+    );
 #endif
 }
+
+/* ------------------------------------------------------------ the window */
 
 /* How many iterations of one loop the runtime will carry in flight at once.
  *
  * Asked once per loop entry and never per iteration, exactly as
- * `wf__par_split_budget` is (`par_runtime.c`).  The writer never sees this
- * number, never spells it, and cannot influence it: there is no attribute, no
- * environment variable, and no source form for a window.
+ * `wf__par_split_budget` is.  The writer never sees this number, never spells
+ * it, and cannot influence it: there is no attribute, no environment variable,
+ * and no source form for a window.
  *
  * `span` is the loop's trip count where it is statically known and zero where
  * it is not; `slot_bytes` is the private storage one in-flight iteration owns;
@@ -833,43 +1863,29 @@ static void wf_bridge_flush_target(void) {
  * exactly, so this query can never make a correct program fail.  That is why
  * the fallback a link without this unit gets returns one.
  *
- * The runtime's own bound is half its process-wide operation capacity.  The
- * whole capacity is the wrong answer: a loop that owned every record would
- * push every other operation in the program onto the capacity-wait path, and a
- * full ring degrades to a blocking direct call rather than to a slower
- * pipeline (LOOP-PIPELINE.md §3.9 item 6).  Half of 64 is 32, which is also
- * where the hand-written ceiling program measured its optimum (§9.2).
- *
- * Where the ring is the target engine the ring's capacity bounds it as well;
- * where a bounded helper pool is, the pool's width does. */
+ * Every term that read an operation capacity is gone with the capacity: the
+ * record is a block of the submitting frame, so no number of in-flight
+ * iterations can exhaust a pool, and the ring's depth is a throughput
+ * parameter rather than a bound on operations in flight (design §7).  What is
+ * left is the byte budget, the span, the compiler's ceiling, and — where a
+ * bounded helper pool is the engine — the pool's width. */
 uint64_t wf__completion_window(
     uint64_t span,
     uint64_t slot_bytes,
     uint64_t ceiling
 ) {
     uint64_t window;
-    if (pthread_once(&wf_bridge_once, wf_bridge_initialize) != 0
-        || wf_bridge_ready == 0) {
+    wf__sched_once(&wf_bridge_once, wf_bridge_initialize);
+    if (wf_bridge_ready == 0) {
         /* With no completion runtime every operation is a blocking direct
          * call, so depth buys nothing and one is the honest answer. */
         return 1;
     }
-    window = (uint64_t)WF_BRIDGE_OPERATION_CAPACITY / 2u;
-#if defined(__linux__)
-    if (wf_bridge_linux_ready != 0) {
-        uint64_t ring =
-            (uint64_t)wf_linux_io_uring_capacity(&wf_bridge_linux_adapter);
-        if (ring < window) {
-            window = ring;
-        }
-    } else if ((uint64_t)WF_BRIDGE_MAX_HELPERS < window) {
+    window = WF_BRIDGE_WINDOW_DEFAULT;
+    if (!wf_bridge_ring_ready()
+        && (uint64_t)WF_BRIDGE_MAX_HELPERS < window) {
         window = (uint64_t)WF_BRIDGE_MAX_HELPERS;
     }
-#else
-    if ((uint64_t)WF_BRIDGE_MAX_HELPERS < window) {
-        window = (uint64_t)WF_BRIDGE_MAX_HELPERS;
-    }
-#endif
     if (ceiling != 0 && ceiling < window) {
         window = ceiling;
     }
@@ -886,960 +1902,13 @@ uint64_t wf__completion_window(
     return window == 0 ? 1u : window;
 }
 
-int wf__completion_file_read_submit(
-    int descriptor,
-    void *buffer,
-    uint64_t count,
-    void *token_storage
-) {
-    wf_file_request request;
-    if (token_storage == NULL || (buffer == NULL && count != 0)) {
-        return 0;
-    }
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_READ;
-    request.operation.read.descriptor = descriptor;
-    request.operation.read.buffer = buffer;
-    request.operation.read.count = (size_t)count;
-    if ((uint64_t)request.operation.read.count != count) {
-        return 0;
-    }
-    return wf_bridge_submit_file(
-        &request,
-        (wf_completion_token *)token_storage,
-        NULL
-    );
-}
-
-/* Whether a positioned read is better made where it was stated than submitted.
- *
- * The completion path exists so that a program is not stalled by a wait it
- * could have overlapped.  When the bounded adapter holds no helper, has
- * nothing queued, and has measured its own operations as not waiting, there is
- * no wait to overlap and no other thread to overlap it on: the submitted
- * operation would be executed by this very thread, at its join, after a queue
- * crossing, a claim, four slot transitions and a drain.  Declining the
- * submission leaves the caller its ordinary direct call, which is the same
- * host call without any of that.  The refusal is a throughput event of the
- * same class as a full queue, and takes the same already-emitted route.
- *
- * Only a *positioned* transfer is declined, and that is the whole liveness
- * argument.  An offset is meaningful only on a seekable object, and the typed
- * opens that produce one admit nothing but a regular file, so a positioned
- * read waits on storage.  A non-positioned read or write may be waiting on
- * something another part of the same program has to do — a pipe the program
- * itself must drain — and running one where it was stated could stall the very
- * thread that would unblock it.  Those keep the queue.
- *
- * A read of nothing is not declined here, because there is nothing to decline:
- * it makes no host call at all, so there is nothing to run and nothing to
- * overlap, and the bridge already answers it inline without reaching the
- * adapter.
- *
- * A written WF_IO_HELPERS declines nothing: it pins the route with the count.
- *
- * The measurement keeps running while this is true, because every direct
- * execution is timed by the same adapter, so a program whose reads start
- * waiting is submitting again within a few operations. */
-static int wf_bridge_positioned_read_runs_on_caller(uint64_t count) {
-    return count != 0
-        && wf_bridge_helpers_pinned == 0
-        && wf_bridge_file_ready != 0
-        && wf_file_adapter_transfer_runs_on_caller(&wf_bridge_adapter);
-}
-
-int wf__completion_file_pread_submit(
-    int descriptor,
-    void *buffer,
-    uint64_t count,
-    uint64_t file_offset,
-    void *token_storage
-) {
-    wf_file_request request;
-    if (token_storage == NULL || (buffer == NULL && count != 0)
-        || file_offset > (uint64_t)INT64_MAX) {
-        return 0;
-    }
-#if defined(__linux__)
-    {
-        int native = wf_bridge_submit_linux_pread(
-            descriptor,
-            buffer,
-            count,
-            file_offset,
-            (wf_completion_token *)token_storage,
-            NULL
-        );
-        if (native >= 0) {
-            return native;
-        }
-    }
-#endif
-    if (wf_bridge_positioned_read_runs_on_caller(count)) {
-        return 0;
-    }
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_PREAD;
-    request.operation.pread.descriptor = descriptor;
-    request.operation.pread.buffer = buffer;
-    request.operation.pread.count = (size_t)count;
-    request.operation.pread.offset = (int64_t)file_offset;
-    if ((uint64_t)request.operation.pread.count != count) {
-        return 0;
-    }
-    return wf_bridge_submit_file(
-        &request,
-        (wf_completion_token *)token_storage,
-        NULL
-    );
-}
-
-int wf__completion_file_write_submit(
-    int descriptor,
-    const void *buffer,
-    uint64_t count,
-    void *token_storage
-) {
-    wf_file_request request;
-    if (token_storage == NULL || (buffer == NULL && count != 0)) {
-        return 0;
-    }
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_WRITE;
-    request.operation.write.descriptor = descriptor;
-    request.operation.write.buffer = buffer;
-    request.operation.write.count = (size_t)count;
-    if ((uint64_t)request.operation.write.count != count) {
-        return 0;
-    }
-    /* write_once is an unpositioned Output operation. The native adapter's
-     * WRITE_AT request fixes an explicit offset, which would change regular
-     * file-offset semantics and is not a meaningful stream offset. Until a
-     * Linux request kind is qualified for exact write(2) current-position and
-     * append/stream behavior, keep this on the bounded typed fallback. */
-    return wf_bridge_submit_file(
-        &request,
-        (wf_completion_token *)token_storage,
-        NULL
-    );
-}
-
-int wf__completion_file_open_at_submit(
-    int directory,
-    const char *path,
-    int flags,
-    unsigned mode,
-    unsigned has_mode,
-    unsigned expected_kind,
-    void *token_storage
-) {
-    wf_file_request request;
-    if (token_storage == NULL || has_mode > 1u
-        || expected_kind > WF_FILE_EXPECT_DIRECTORY) {
-        return 0;
-    }
-    /* A submitted open outlives this call, so its name must fit the operation
-     * record that will own the bytes.  A longer name is refused here, before
-     * anything is claimed, and the caller's direct open carries it instead —
-     * that path resolves the caller's buffer inside its own call and needs no
-     * copy at all.  It is counted apart from the shape refusals above because
-     * it is the one an admitted program reaches: the outcome is unchanged and
-     * only the completion path is lost, which is a throughput fact a reader
-     * measuring this runtime needs to see. */
-    if (!wf_file_path_fits(path)) {
-        atomic_fetch_add_explicit(
-            &wf_bridge_demoted_opens,
-            1,
-            memory_order_relaxed
-        );
-        /* The caller answers a refusal with a direct blocking open, so no
-         * already-submitted operation may be left waiting on a doorbell this
-         * thread is about to stop ringing. */
-        wf_bridge_flush_target();
-        return 0;
-    }
-#if defined(__linux__)
-    {
-        int native = wf_bridge_submit_linux_open_at(
-            directory,
-            path,
-            flags,
-            mode,
-            has_mode,
-            expected_kind,
-            (wf_completion_token *)token_storage,
-            NULL
-        );
-        if (native >= 0) {
-            return native;
-        }
-    }
-#endif
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_OPEN_AT;
-    request.operation.open_at.directory = directory;
-    request.operation.open_at.path = path;
-    request.operation.open_at.flags = flags;
-    request.operation.open_at.mode = mode;
-    request.operation.open_at.has_mode = has_mode;
-    request.operation.open_at.expected_kind =
-        (enum wf_file_expected_kind)expected_kind;
-    return wf_bridge_submit_file(
-        &request,
-        (wf_completion_token *)token_storage,
-        NULL
-    );
-}
-
-int wf__completion_file_status_submit(
-    int descriptor,
-    void *token_storage
-) {
-    wf_file_request request;
-    if (token_storage == NULL) {
-        return 0;
-    }
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_STATUS;
-    request.operation.status.descriptor = descriptor;
-    return wf_bridge_submit_file(
-        &request,
-        (wf_completion_token *)token_storage,
-        NULL
-    );
-}
-
-int wf__completion_file_close_submit(
-    int descriptor,
-    void *token_storage
-) {
-    wf_file_request request;
-    if (token_storage == NULL) {
-        return 0;
-    }
-#if defined(__linux__)
-    {
-        int native = wf_bridge_submit_linux_close(
-            descriptor,
-            (wf_completion_token *)token_storage,
-            NULL
-        );
-        if (native >= 0) {
-            return native;
-        }
-    }
-#endif
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_CLOSE;
-    request.operation.close.descriptor = descriptor;
-    return wf_bridge_submit_file(
-        &request,
-        (wf_completion_token *)token_storage,
-        NULL
-    );
-}
-
-int wf__completion_directory_next_submit(
-    int descriptor,
-    void *buffer,
-    uint64_t count,
-    int64_t *position,
-    void *token_storage
-) {
-#if defined(WF_FILE_HAS_DIRECTORY_NEXT)
-    wf_file_request request;
-    if (token_storage == NULL || position == NULL
-        || (buffer == NULL && count != 0)
-        || (uint64_t)(size_t)count != count) {
-        return 0;
-    }
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_DIRECTORY_NEXT;
-    request.operation.directory_next.descriptor = descriptor;
-    request.operation.directory_next.buffer = buffer;
-    request.operation.directory_next.count = (size_t)count;
-    request.operation.directory_next.position = position;
-    return wf_bridge_submit_file(
-        &request,
-        (wf_completion_token *)token_storage,
-        NULL
-    );
-#else
-    (void)descriptor;
-    (void)buffer;
-    (void)count;
-    (void)position;
-    (void)token_storage;
-    return 0;
-#endif
-}
-
-int wf__completion_file_pread_submit_writer(
-    int descriptor,
-    void *buffer,
-    uint64_t count,
-    uint64_t file_offset,
-    void *token_storage,
-    void *frame
-) {
-    wf_file_request request;
-    if (token_storage == NULL || frame == NULL
-        || (buffer == NULL && count != 0)
-        || file_offset > (uint64_t)INT64_MAX) {
-        return 0;
-    }
-#if defined(__linux__)
-    {
-        int native = wf_bridge_submit_linux_pread(
-            descriptor,
-            buffer,
-            count,
-            file_offset,
-            (wf_completion_token *)token_storage,
-            frame
-        );
-        if (native >= 0) {
-            return native;
-        }
-    }
-#endif
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_PREAD;
-    request.operation.pread.descriptor = descriptor;
-    request.operation.pread.buffer = buffer;
-    request.operation.pread.count = (size_t)count;
-    request.operation.pread.offset = (int64_t)file_offset;
-    if ((uint64_t)request.operation.pread.count != count) {
-        return 0;
-    }
-    return wf_bridge_submit_file(
-        &request,
-        (wf_completion_token *)token_storage,
-        frame
-    );
-}
-
-int wf__completion_file_write_submit_writer(
-    int descriptor,
-    const void *buffer,
-    uint64_t count,
-    void *token_storage,
-    void *frame
-) {
-    wf_file_request request;
-    if (token_storage == NULL || frame == NULL
-        || (buffer == NULL && count != 0)) {
-        return 0;
-    }
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_WRITE;
-    request.operation.write.descriptor = descriptor;
-    request.operation.write.buffer = buffer;
-    request.operation.write.count = (size_t)count;
-    if ((uint64_t)request.operation.write.count != count) {
-        return 0;
-    }
-    return wf_bridge_submit_file(
-        &request,
-        (wf_completion_token *)token_storage,
-        frame
-    );
-}
-
-/* True exactly for the result of an open the host refused because it had no
- * descriptor to give: the process limit and the system limit. */
-static int wf_bridge_open_lacked_a_descriptor(const wf_file_result *result) {
-    return result->kind == WF_FILE_OPEN_AT && result->value < 0
-        && (result->error_code == EMFILE || result->error_code == ENFILE);
-}
-
-/* Waits for this runtime to give a descriptor back, then re-attempts one open
- * a blocking direct call had refused.
- *
- * The rule stated in contract.h, on the third route an open can take.  What is
- * different here is only how the waiting is done: this thread cannot sleep on
- * the ledger, because on a target with a kernel completion ring it may be the
- * only thread that can reap the very completion it is waiting for.  So it
- * waits by driving the engines and parking on the runtime's own endpoint,
- * which every publication already wakes.  The epoch is read before the state,
- * so a retirement that lands between the two makes the park return at once
- * instead of sleeping through it.
- *
- * Exactly one re-attempt, as on either target engine, and made at the same
- * moment: a descriptor has come back, or nothing is left in this runtime that
- * could bring one and a later look could see no more than this one. */
-static wf_file_result wf_bridge_retire_and_retry_direct(
-    const wf_file_request *request,
-    uint64_t seen
-) {
-    wf_retirement_waiter waiter;
-    wf_file_result result;
-    wf_completion_retirement_wait_begin(&waiter, seen, NULL, NULL, 0);
-    for (;;) {
-        uint64_t epoch;
-        int progressed;
-        if (wf_bridge_ready == 0) {
-            /* No runtime to drive: whatever is in flight belongs to an
-             * adapter this bridge did not build, and the ledger's own wake is
-             * the only one there is. */
-            if (wf_completion_retirement_state(&waiter)
-                != WF_RETIREMENT_AWAITED) {
-                break;
-            }
-            wf_completion_retirement_sleep(&waiter);
-            continue;
-        }
-        /* Driving the engines runs other operations on this thread — with no
-         * helper, a queued adapter request, which can be an open that is
-         * refused in its turn and registers behind this waiter.  So this waiter
-         * stands aside for exactly as long as it is inside one of them, and has
-         * its place back before it decides or sleeps. */
-        wf_completion_retirement_defer_begin(&waiter);
-        progressed = wf_bridge_progress();
-        wf_completion_retirement_defer_end(&waiter);
-        /* The epoch after everything this thread does — the aside above
-         * included, which announces — and before the state it would park on.  A
-         * transition that lands after this read moves the epoch and the park
-         * returns at once; one that landed before it is in the state read
-         * below.  What this order rules out is the thread cancelling its own
-         * park: an announcement of its own between the two reads makes every
-         * park return immediately, which is not a wait but a spin.  Measured at
-         * the revision that read the epoch first, this loop never once reached
-         * a park that slept — tens of thousands of turns across runs, and zero
-         * sleeps in every one of them; here it sleeps. */
-        epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
-        if (wf_completion_retirement_state(&waiter) != WF_RETIREMENT_AWAITED) {
-            break;
-        }
-        if (progressed == 0) {
-            wf_bridge_park(epoch);
-        }
-    }
-    wf_completion_retirement_wait_end(&waiter);
-    atomic_fetch_add_explicit(
-        &wf_bridge_direct_exhaustion_retries,
-        1,
-        memory_order_relaxed
-    );
-    result = wf_file_execute_timed(&wf_bridge_adapter, request);
-    /* Charged for what it took, on the award it was granted or on none, the
-     * same way the bounded adapter's re-attempt is. */
-    if (wf_file_open_took_a_descriptor(&result)) {
-        wf_completion_retirement_open_took_a_descriptor(waiter.awarded);
-    }
-    return result;
-}
-
-/* One blocking direct host call, entered in the process-wide ledger.
- *
- * A direct call is an operation like any other while it runs: it can be
- * holding the descriptor a refused open elsewhere is waiting for, and when it
- * ends it may be giving one back.  Leaving it out of the ledger would make
- * both facts invisible and let another engine publish an exhaustion that this
- * call was about to answer. */
-static wf_file_result wf_bridge_execute_direct(
-    const wf_file_request *request
-) {
-    uint64_t seen = wf_completion_descriptor_returns();
-    wf_file_result result;
-    wf_completion_operation_accepted();
-    result = wf_file_execute_timed(&wf_bridge_adapter, request);
-    if (wf_bridge_open_lacked_a_descriptor(&result)) {
-        result = wf_bridge_retire_and_retry_direct(request, seen);
-    } else if (wf_file_open_took_a_descriptor(&result)) {
-        /* This route's non-registered open: satisfied at the first attempt, so
-         * it never became a waiter, and charged here for the descriptor it
-         * took so that no waiter is promised it as well. */
-        wf_completion_retirement_open_took_a_descriptor(0);
-    }
-    wf_completion_operation_retired(wf_file_returned_a_descriptor(&result));
-    /* A direct call publishes nothing, so nothing else tells a scheduler
-     * parked on the completion endpoint that this runtime just gave a
-     * descriptor back.  A held open waiting for exactly that is released by a
-     * scheduler asking the ledger again, and this is what gets it there. */
-    if (wf_bridge_ready != 0 && wf_completion_retirement_waiters() != 0) {
-        wf_completion_notify_capacity(&wf_bridge_runtime);
-    }
-    return result;
-}
-
-static int64_t wf_bridge_return_direct(wf_file_result result) {
-    if (result.value < 0) {
-        errno = result.error_code;
-    }
-    return result.value;
-}
-
-int64_t wf__completion_file_pread_direct(
-    int descriptor,
-    void *buffer,
-    uint64_t count,
-    int64_t file_offset
-) {
-    wf_file_request request;
-    /* The blocking host call below is outside every path the ring can see
-     * through, so the doorbell rings first. */
-    wf_bridge_flush_target();
-#if defined(__linux__)
-    if (file_offset >= 0) {
-        wf_completion_token token;
-        int submitted = wf_bridge_submit_linux_pread(
-            descriptor,
-            buffer,
-            count,
-            (uint64_t)file_offset,
-            &token,
-            NULL
-        );
-        if (submitted == 1) {
-            int64_t value;
-            int error_code;
-            wf__completion_file_join(&token, &value, &error_code);
-            if (value < 0) {
-                errno = error_code;
-            }
-            return value;
-        }
-    }
-#endif
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_PREAD;
-    request.operation.pread.descriptor = descriptor;
-    request.operation.pread.buffer = buffer;
-    request.operation.pread.count = (size_t)count;
-    request.operation.pread.offset = file_offset;
-    if ((uint64_t)request.operation.pread.count != count) {
-        errno = EINVAL;
-        return -1;
-    }
-    return wf_bridge_return_direct(wf_bridge_execute_direct(&request));
-}
-
-int64_t wf__completion_file_write_direct(
-    int descriptor,
-    const void *buffer,
-    uint64_t count
-) {
-    wf_file_request request;
-    /* The blocking host call below is outside every path the ring can see
-     * through, so the doorbell rings first. */
-    wf_bridge_flush_target();
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_WRITE;
-    request.operation.write.descriptor = descriptor;
-    request.operation.write.buffer = buffer;
-    request.operation.write.count = (size_t)count;
-    if ((uint64_t)request.operation.write.count != count) {
-        errno = EINVAL;
-        return -1;
-    }
-    return wf_bridge_return_direct(wf_bridge_execute_direct(&request));
-}
-
-int wf__completion_file_open_at_direct(
-    int directory,
-    const char *path,
-    int flags,
-    unsigned mode,
-    unsigned has_mode,
-    unsigned expected_kind,
-    int *error_code,
-    unsigned *open_outcome
-) {
-    wf_file_request request;
-    wf_file_result result;
-    if (path == NULL || has_mode > 1u
-        || expected_kind > WF_FILE_EXPECT_DIRECTORY || error_code == NULL
-        || open_outcome == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-    /* The blocking host call below is outside every path the ring can see
-     * through, so the doorbell rings first. */
-    wf_bridge_flush_target();
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_OPEN_AT;
-    request.operation.open_at.directory = directory;
-    request.operation.open_at.path = path;
-    request.operation.open_at.flags = flags;
-    request.operation.open_at.mode = mode;
-    request.operation.open_at.has_mode = has_mode;
-    request.operation.open_at.expected_kind =
-        (enum wf_file_expected_kind)expected_kind;
-    result = wf_bridge_execute_direct(&request);
-    *error_code = result.error_code;
-    *open_outcome = (unsigned)result.open_outcome;
-    return (int)wf_bridge_return_direct(result);
-}
-
-int wf__completion_file_status_direct(
-    int descriptor,
-    void *status,
-    uint64_t status_capacity
-) {
-    wf_file_request request;
-    wf_file_result result;
-    /* The blocking host call below is outside every path the ring can see
-     * through, so the doorbell rings first. */
-    wf_bridge_flush_target();
-    if (status == NULL
-        || (uint64_t)(size_t)status_capacity != status_capacity) {
-        errno = EINVAL;
-        return -1;
-    }
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_STATUS;
-    request.operation.status.descriptor = descriptor;
-    result = wf_bridge_execute_direct(&request);
-    if (result.value == 0) {
-        if ((uint64_t)result.status_size > status_capacity) {
-            errno = EOVERFLOW;
-            return -1;
-        }
-        memcpy(status, result.status, result.status_size);
-    }
-    return (int)wf_bridge_return_direct(result);
-}
-
-int wf__completion_file_close_direct(int descriptor) {
-    wf_file_request request;
-    /* The blocking host call below is outside every path the ring can see
-     * through, so the doorbell rings first. */
-    wf_bridge_flush_target();
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_CLOSE;
-    request.operation.close.descriptor = descriptor;
-    return (int)wf_bridge_return_direct(wf_bridge_execute_direct(&request));
-}
-
-
-int64_t wf__completion_directory_next_direct(
-    int descriptor,
-    void *buffer,
-    uint64_t count,
-    int64_t *position
-) {
-#if defined(WF_FILE_HAS_DIRECTORY_NEXT)
-    wf_file_request request;
-    if ((buffer == NULL && count != 0) || position == NULL
-        || (uint64_t)(size_t)count != count) {
-        errno = EINVAL;
-        return -1;
-    }
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_DIRECTORY_NEXT;
-    request.operation.directory_next.descriptor = descriptor;
-    request.operation.directory_next.buffer = buffer;
-    request.operation.directory_next.count = (size_t)count;
-    request.operation.directory_next.position = position;
-    return wf_bridge_return_direct(wf_bridge_execute_direct(&request));
-#else
-    (void)descriptor;
-    (void)buffer;
-    (void)count;
-    (void)position;
-    errno = ENOTSUP;
-    return -1;
-#endif
-}
-
-static int wf_bridge_take_file_result(
-    const void *token_storage,
-    wf_file_result *file_result
-) {
-    wf_completion_token token;
-    enum wf_bridge_route route;
-    union {
-        wf_file_result file;
-#if defined(__linux__)
-        /* Not `linux`: GNU C predefines that spelling as an object-like macro
-           on a Linux host outside a strict `-std=cNN` dialect, so a member of
-           that name compiles under the gate's `-std=c11` and fails wherever
-           the default dialect is in force. */
-        wf_linux_file_result ring;
-#endif
-        max_align_t alignment;
-        unsigned char bytes[WF_COMPLETION_RESULT_CAPACITY];
-    } result;
-    wf_completion_outcome outcome;
-    enum wf_completion_consume_result consumed;
-    if (token_storage == NULL || file_result == NULL) {
-        abort();
-    }
-    token = *(const wf_completion_token *)token_storage;
-    (void)wf_bridge_drain();
-    consumed = wf_completion_consume(
-        &wf_bridge_runtime,
-        token,
-        &result,
-        sizeof(result),
-        &outcome
-    );
-    if (consumed == WF_COMPLETION_CONSUME_NOT_TERMINAL
-        || consumed == WF_COMPLETION_CONSUME_NOT_DRAINED) {
-        return 0;
-    }
-    if (consumed != WF_COMPLETION_CONSUMED) {
-        abort();
-    }
-    route = (enum wf_bridge_route)outcome.adapter_tag;
-    if (route == WF_BRIDGE_ROUTE_FILE_FALLBACK) {
-        if (outcome.result_size != sizeof(result.file)) {
-            abort();
-        }
-        *file_result = result.file;
-#if defined(__linux__)
-    } else if (route == WF_BRIDGE_ROUTE_LINUX_IO_URING) {
-        if (outcome.result_size != sizeof(result.ring)) {
-            abort();
-        }
-        memset(file_result, 0, sizeof(*file_result));
-        switch (result.ring.kind) {
-        case WF_LINUX_FILE_READ_AT:
-            file_result->kind = WF_FILE_PREAD;
-            break;
-        case WF_LINUX_FILE_WRITE_AT:
-            file_result->kind = WF_FILE_PWRITE;
-            break;
-        case WF_LINUX_FILE_OPEN_AT:
-            file_result->kind = WF_FILE_OPEN_AT;
-            break;
-        case WF_LINUX_FILE_CLOSE:
-            file_result->kind = WF_FILE_CLOSE;
-            break;
-        default:
-            abort();
-        }
-        file_result->value = result.ring.value;
-        file_result->error_code = result.ring.error_code;
-        file_result->open_outcome = result.ring.open_outcome;
-#endif
-    } else {
-        abort();
-    }
-    return 1;
-}
-
-int wf__completion_file_take(
-    const void *token_storage,
-    int64_t *value,
-    int *error_code
-) {
-    wf_file_result result;
-    if (value == NULL || error_code == NULL) {
-        abort();
-    }
-    if (!wf_bridge_take_file_result(token_storage, &result)) {
-        return 0;
-    }
-    *value = result.value;
-    *error_code = result.error_code;
-    return 1;
-}
-
-int wf__completion_file_take_status(
-    const void *token_storage,
-    int64_t *value,
-    int *error_code,
-    void *status,
-    uint64_t status_capacity,
-    uint64_t *status_size
-) {
-    wf_file_result result;
-    if (value == NULL || error_code == NULL || status == NULL
-        || status_size == NULL
-        || (uint64_t)(size_t)status_capacity != status_capacity) {
-        abort();
-    }
-    if (!wf_bridge_take_file_result(token_storage, &result)) {
-        return 0;
-    }
-    if (result.kind != WF_FILE_STATUS
-        || (uint64_t)result.status_size > status_capacity) {
-        abort();
-    }
-    if (result.status_size != 0) {
-        memcpy(status, result.status, result.status_size);
-    }
-    *value = result.value;
-    *error_code = result.error_code;
-    *status_size = (uint64_t)result.status_size;
-    return 1;
-}
-
-static int wf_bridge_take_open(
-    const void *token_storage,
-    int64_t *value,
-    int *error_code,
-    unsigned *open_outcome
-) {
-    wf_file_result result;
-    if (value == NULL || error_code == NULL || open_outcome == NULL) {
-        abort();
-    }
-    if (!wf_bridge_take_file_result(token_storage, &result)) {
-        return 0;
-    }
-    if (result.kind != WF_FILE_OPEN_AT) {
-        abort();
-    }
-    *value = result.value;
-    *error_code = result.error_code;
-    *open_outcome = (unsigned)result.open_outcome;
-    return 1;
-}
-
-void wf__completion_file_join(
-    const void *token_storage,
-    int64_t *value,
-    int *error_code
-) {
-    for (;;) {
-        uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
-        wf_bridge_drain_token(token_storage);
-        if (wf__completion_file_take(token_storage, value, error_code)) {
-            return;
-        }
-        if (!wf_bridge_progress()) {
-            if (wf_bridge_drain() != 0) {
-                continue;
-            }
-            if (wf_completion_ready_event_count(&wf_bridge_runtime) == 0
-                && !wf_bridge_target_work_needs_this_thread()
-                && !wf_bridge_spin_for_completion()) {
-                enum wf_completion_consume_wait_result wait =
-                    wf_completion_wait_to_consume(
-                        &wf_bridge_runtime,
-                        *(const wf_completion_token *)token_storage
-                    );
-                if (wait == WF_COMPLETION_CONSUME_READY) {
-                    continue;
-                }
-                if (wait != WF_COMPLETION_CONSUME_WAIT_REGISTERED) {
-                    abort();
-                }
-                wf_bridge_park(epoch);
-            }
-        }
-    }
-}
-
-void wf__completion_file_open_join(
-    const void *token_storage,
-    int64_t *value,
-    int *error_code,
-    unsigned *open_outcome
-) {
-    for (;;) {
-        uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
-        wf_bridge_drain_token(token_storage);
-        if (wf_bridge_take_open(
-                token_storage,
-                value,
-                error_code,
-                open_outcome
-            )) {
-            return;
-        }
-        if (!wf_bridge_progress()) {
-            if (wf_bridge_drain() != 0) {
-                continue;
-            }
-            if (wf_completion_ready_event_count(&wf_bridge_runtime) == 0
-                && !wf_bridge_target_work_needs_this_thread()
-                && !wf_bridge_spin_for_completion()) {
-                enum wf_completion_consume_wait_result wait =
-                    wf_completion_wait_to_consume(
-                        &wf_bridge_runtime,
-                        *(const wf_completion_token *)token_storage
-                    );
-                if (wait == WF_COMPLETION_CONSUME_READY) {
-                    continue;
-                }
-                if (wait != WF_COMPLETION_CONSUME_WAIT_REGISTERED) {
-                    abort();
-                }
-                wf_bridge_park(epoch);
-            }
-        }
-    }
-}
-
-void wf__completion_file_status_join(
-    const void *token_storage,
-    int64_t *value,
-    int *error_code,
-    void *status,
-    uint64_t status_capacity,
-    uint64_t *status_size
-) {
-    for (;;) {
-        uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
-        wf_bridge_drain_token(token_storage);
-        if (wf__completion_file_take_status(
-                token_storage,
-                value,
-                error_code,
-                status,
-                status_capacity,
-                status_size
-            )) {
-            return;
-        }
-        if (!wf_bridge_progress()) {
-            if (wf_bridge_drain() != 0) {
-                continue;
-            }
-            if (wf_completion_ready_event_count(&wf_bridge_runtime) == 0
-                && !wf_bridge_target_work_needs_this_thread()
-                && !wf_bridge_spin_for_completion()) {
-                enum wf_completion_consume_wait_result wait =
-                    wf_completion_wait_to_consume(
-                        &wf_bridge_runtime,
-                        *(const wf_completion_token *)token_storage
-                    );
-                if (wait == WF_COMPLETION_CONSUME_READY) {
-                    continue;
-                }
-                if (wait != WF_COMPLETION_CONSUME_WAIT_REGISTERED) {
-                    abort();
-                }
-                wf_bridge_park(epoch);
-            }
-        }
-    }
-}
-
-void wf__writer_run_root(void *frame) {
-    while (!wf__writer_is_done(frame)) {
-        uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
-        int progressed = wf_bridge_progress();
-        progressed |= wf__writer_scheduler_help_once();
-        if (!progressed && !wf__writer_is_done(frame)) {
-            /* A bounded drain can stop before another ready slot. Keep
-             * harvesting while the durable count says such an event exists;
-             * drain-to-writer enqueue advances the epoch and closes the final
-             * ready-count-to-park race. */
-            if (wf_completion_ready_event_count(&wf_bridge_runtime) != 0) {
-                continue;
-            }
-            wf_bridge_park(epoch);
-        }
-    }
-}
+/* ------------------------------------------------------- the statistics */
 
 uint64_t wf__completion_file_submissions(void) {
     uint64_t submissions = wf_bridge_file_ready == 0
         ? 0
         : wf_file_adapter_statistics_snapshot(&wf_bridge_adapter).submissions;
-#if defined(__linux__)
-    if (wf_bridge_linux_ready != 0) {
-        submissions += wf_linux_io_uring_statistics_snapshot(
-            &wf_bridge_linux_adapter
-        ).submissions;
-    }
-#endif
-    return submissions;
+    return submissions + wf_bridge_ring_submissions();
 }
 
 uint64_t wf__completion_file_fallback_submissions(void) {
@@ -1848,50 +1917,13 @@ uint64_t wf__completion_file_fallback_submissions(void) {
         : wf_file_adapter_statistics_snapshot(&wf_bridge_adapter).submissions;
 }
 
-/* `io_uring_enter` calls this process made to carry staged submissions.  With
- * the doorbell deferred this stays far below the submission count, and the
- * distance between the two is what deferring bought. */
-uint64_t wf__completion_linux_io_uring_submission_enters(void) {
-#if defined(__linux__)
-    if (wf_bridge_linux_ready != 0) {
-        return wf_linux_io_uring_statistics_snapshot(&wf_bridge_linux_adapter)
-            .submission_enters;
-    }
-#endif
-    return 0;
-}
-
-/* Opens the host refused for want of a descriptor that this runtime gave one
- * back for and re-attempted once, over every route an open can take. */
-uint64_t wf__completion_open_exhaustion_retries(void) {
-    uint64_t retries = atomic_load_explicit(
-        &wf_bridge_direct_exhaustion_retries,
-        memory_order_relaxed
-    );
-    retries += wf_bridge_file_ready == 0
-        ? 0
-        : wf_file_adapter_statistics_snapshot(&wf_bridge_adapter)
-            .exhaustion_retries;
-#if defined(__linux__)
-    if (wf_bridge_linux_ready != 0) {
-        retries += wf_linux_io_uring_statistics_snapshot(
-            &wf_bridge_linux_adapter
-        ).exhaustion_retries;
-    }
-#endif
-    return retries;
-}
-
-/* Opens this runtime held rather than published, over every route, because
- * something in flight could still give the descriptor they needed back.  A
- * test that has to stand at exactly that moment reads this; nothing in the
- * runtime decides anything on it. */
-uint64_t wf__completion_open_exhaustion_waits(void) {
-    return wf_completion_retirement_waits();
-}
-
-uint64_t wf__completion_file_demoted_opens(void) {
-    return atomic_load_explicit(&wf_bridge_demoted_opens, memory_order_relaxed);
+/* Calls this process made to carry staged submissions to the kernel, where the
+ * ring defers its doorbell.  With `io_uring`'s doorbell deferred this stays far
+ * below the submission count, and the distance between the two is what
+ * deferring bought; a ring that carries each request inside the call that
+ * issues it, as the completion port does, answers zero. */
+uint64_t wf__completion_native_ring_submission_enters(void) {
+    return wf_bridge_ring_submission_enters();
 }
 
 uint64_t wf__completion_file_helper_executions(void) {
@@ -1910,16 +1942,23 @@ uint64_t wf__completion_target_helper_executions(void) {
 }
 
 uint64_t wf__completion_publications(void) {
-    return wf_completion_statistics_snapshot(&wf_bridge_runtime).publications;
+    return atomic_load_explicit(&wf_bridge_publications, memory_order_relaxed);
 }
 
-uint64_t wf__completion_linux_io_uring_submissions(void) {
-#if defined(__linux__)
-    return wf_bridge_linux_ready == 0
-        ? 0
-        : wf_linux_io_uring_statistics_snapshot(&wf_bridge_linux_adapter)
-            .submissions;
-#else
-    return 0;
-#endif
+uint64_t wf__completion_inline_executions(void) {
+    return atomic_load_explicit(
+        &wf_bridge_inline_executions,
+        memory_order_relaxed
+    );
+}
+
+uint64_t wf__completion_native_ring_submissions(void) {
+    return wf_bridge_ring_submissions();
+}
+
+/* The ceiling of this bridge's own WF_IO_HELPERS setting, answered for the
+ * core's entry so that a setting this runtime cannot mean ends the run before
+ * the program body rather than at its first operation (`sched/entry.h`). */
+unsigned long wf__sched_helper_ceiling(void) {
+    return (unsigned long)WF_BRIDGE_MAX_HELPERS;
 }

@@ -96,9 +96,9 @@ READ_SETTLE_ATTEMPTS ?= 24
 READ_SETTLE_SECONDS ?= 15
 DOCKER_IMAGE ?= wf-io-bench:linux
 
-.PHONY: build prepare compiler gen verify bench bench-pipe linux linux-image expected clean \
+.PHONY: build prepare compiler gen verify bench bench-pipe linux linux-image expected clean chain \
 	read-build read-gen read-uncache read-settle read-warm read-verify expected-read bench-read \
-	linux-read
+	linux-read net-tools net-verify linux-net
 
 build: prepare compiler $(BUILD)/gen $(BUILD)/baseline $(BUILD)/runner \
 	$(BUILD)/pipe_producer $(BUILD)/pipe_harness \
@@ -471,6 +471,70 @@ linux-read: linux-image
 		-e EXPECTED_READ_4K="$(EXPECTED_READ_4K)" \
 		$(DOCKER_IMAGE) \
 		sh /work/research/experiments/io-completion-bench/read-bench.sh
+
+# The four-stage chain of design section 12's fourth item, in its four shapes.
+# Not one of the three lines: it is a C program on raw io_uring, it links the
+# scheduler core for the stack-switch shape, and what it reports is the
+# dependent stage's in-flight depth beside the wall time.
+CHAIN_JOBS ?= 1000
+CHAIN_THREADS ?= 8
+CHAIN_SLOTS ?= 32
+CHAIN_STACKS ?= 72
+SCHED_DIR := $(ROOT)/compiler/src/backend/sched
+
+$(BUILD)/chain: chain.c uring_baseline.h workload.h $(SCHED_DIR)/core.c $(SCHED_DIR)/prim_host.c | prepare
+	$(CLANG) $(CFLAGS) -Wpedantic -pthread -I. -I$(SCHED_DIR) \
+		chain.c $(SCHED_DIR)/core.c $(SCHED_DIR)/prim_host.c -o $@
+
+chain: $(BUILD)/chain $(BUILD)/gen
+	@rm -rf $(WORK)/chaintree
+	$(BUILD)/gen $(WORK)/chaintree $(CHAIN_JOBS) $(MAX_KIB)
+	@for shape in nested compensate switch pipeline; do \
+		$(BUILD)/chain $(WORK)/chaintree $$shape $(CHAIN_JOBS) \
+			$(CHAIN_THREADS) $(CHAIN_SLOTS) $(CHAIN_STACKS) || exit 1; \
+	done
+
+# --- the TCP echo workload ------------------------------------------------
+#
+# Three servers on one contract -- the io_uring reference, the epoll reference,
+# and the Whitefoot program -- measured by one load generator over the same
+# loopback. `linux-net-bench.sh` owns the protocol; these targets only build
+# the pieces and hand it this repository's paths, so the container, this host
+# and the runner all execute the same bytes.
+#
+#   make net-tools    build the three C tools
+#   make net-verify   every server against netload at 4 connections
+#   make linux-net    the protocol, here
+NET_OUT := $(WORK)/net
+NET_ROUNDS ?= 5
+NET_WARMUP ?= 1
+WF_ECHO_SOURCE := $(wildcard programs/tcp_echo_server.wf)
+
+net-tools: $(BUILD)/uring_echo $(BUILD)/epoll_echo $(BUILD)/netload
+
+$(BUILD)/uring_echo: uring_echo.c | prepare
+	$(CLANG) $(CFLAGS) -pthread $< -o $@
+
+$(BUILD)/epoll_echo: epoll_echo.c | prepare
+	$(CLANG) $(CFLAGS) -pthread $< -o $@
+
+$(BUILD)/netload: netload.c | prepare
+	$(CLANG) $(CFLAGS) -pthread $< -o $@
+
+$(BUILD)/wf_echo: programs/tcp_echo_server.wf compiler | prepare
+	$(WFC) --par -o $@ $<
+
+# The Whitefoot line joins this check when its program is in the bundle; the
+# two references are always in it.
+net-verify: net-tools $(if $(WF_ECHO_SOURCE),$(BUILD)/wf_echo)
+	@env ROOT=$(ROOT) OUT=$(BUILD) sh linux-net-bench.sh verify
+
+linux-net:
+	@mkdir -p $(NET_OUT)
+	env ROOT=$(ROOT) OUT=$(NET_OUT) CLANG=$(CLANG) \
+		CARGO_TARGET_DIR=$(ROOT)/compiler/target \
+		ROUNDS=$(NET_ROUNDS) WARMUP=$(NET_WARMUP) \
+		sh linux-net-bench.sh
 
 clean:
 	rm -rf $(WORK)

@@ -47,13 +47,14 @@ const fn input(tail: &'static str, written: &'static str, nominal: &'static str)
 /// [FN-7]'s closed standard-input table for kind `command`, in table-ordinal
 /// order. Ordinal identity, never type identity, selects the supplied value:
 /// `command.stdout` and `command.stderr` share one type and stay two inputs.
-const COMMAND_INPUTS: [StandardInput; 6] = [
+const COMMAND_INPUTS: [StandardInput; 7] = [
     input("args", "own Args", "Args"),
     input("cwd", "own DirectoryRead", "DirectoryRead"),
-    input("stdout", "own Output", "Output"),
-    input("stderr", "own Output", "Output"),
-    input("files", "own FileFactory", "FileFactory"),
-    // [S22] the sixth row is the one route by which a program obtains the
+    input("stdout", "own OutputStream", "OutputStream"),
+    input("stderr", "own OutputStream", "OutputStream"),
+    input("handles", "own HandleFactory", "HandleFactory"),
+    input("stdin", "own InputStream", "InputStream"),
+    // [S22] the seventh row is the one route by which a program obtains the
     // general store [PROV-1]. Its written type is the compiler-owned
     // container nominal `Heap` [TYPE-2] rather than a [SYS-2] one, written
     // bare because the entry heap's store region has no spelling; the label

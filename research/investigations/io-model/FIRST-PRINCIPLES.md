@@ -795,10 +795,33 @@ match first {
 }
 ```
 
-The target cannot promise that a logical permit reserves every host-wide
-resource. File descriptor tables, kernel memory, ephemeral ports, and limits
-changed by another process may still fail. An API distinguishes exactly
-reserved Whitefoot/runtime capacity from honest target exhaustion.
+A logical permit reserves one real unit of the finite resource, or it reserves
+nothing the checker can use. The factory's capacity is fixed at program start
+and is never larger than what the target actually provides to this program
+(owner ruling 2026-09-04, constitution T4). Under that mapping an operation
+holding a permit cannot fail for want of the resource, `close(held);
+open(path)` is a move dependency the checker sequences, and an overlapped
+schedule can never reach a host limit the sequential program does not reach.
+What the mapping cannot cover is honest target exhaustion: a limit changed
+outside the program, such as a system-wide file table, kernel memory, or
+another process. That, and only that, is the operation's typed
+`ResourceExhausted`.
+
+The shipped slice (v0.39 through v0.41, [SYS-10] unchanged) does the opposite. [SYS-10] makes the permit proof-only
+("promises no native descriptor"), never returns it, and erases it before the
+native ABI, so `close` produces nothing the checker sees and the pipeline
+overlaps it with a later `open`. The runtime then receives `EMFILE` for a
+schedule the sequential program never produces and hides it with a retirement
+ledger, a source-order award (`compiler/src/backend/completion/contract.h:409-417`;
+963 of 1000 awards went to the wrong open without the order), and a wait that
+holds the thread (`compiler/src/backend/completion/harness.c:4041-4047`).
+That machinery is the measured cost of one relation missing from the API. It
+is deleted, not ported, once the permit is backed: the factory carries a
+capacity, `reserve_file` returns a `Result` whose exhaustion member is the
+program's own source-order outcome, and release returns the permit or its
+credit by one of the explicit dispositions below. The same test governs every
+later device API: if overlap can invent an outcome the sequential program
+never produces, a resource is missing from the API.
 
 Automatic release cannot secretly return credit to a separately held quota.
 A resource contract chooses one explicit disposition:

@@ -21,8 +21,8 @@ use std::path::Path;
 use std::process::Command;
 
 use super::support::{
-    CompiledProgram, build_program, compile_program, compile_program_rejection_with,
-    fixture_directory,
+    CompiledProgram, build_program, close_path, compile_program, compile_program_rejection_with,
+    fixture_directory, reopen_path,
 };
 use whitefoot::Inventory;
 
@@ -308,19 +308,11 @@ fn an_unreadable_subdirectory_is_reported_and_the_rest_is_still_searched() {
     fixture.write_nested("tree/open.txt", b"needle visible\n");
     let closed = fixture.directory("tree/closed");
     fixture.write_nested("tree/closed/buried.txt", b"needle buried\n");
-    let mut permissions = std::fs::metadata(&closed)
-        .expect("fixture directory metadata")
-        .permissions();
-    std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o000);
-    std::fs::set_permissions(&closed, permissions).expect("close the fixture directory");
+    close_path(&closed);
 
     let output = wfgrep().run(fixture.path(), &[b"needle", b"tree"]);
 
-    let mut restored = std::fs::metadata(&closed)
-        .expect("fixture directory metadata")
-        .permissions();
-    std::os::unix::fs::PermissionsExt::set_mode(&mut restored, 0o755);
-    std::fs::set_permissions(&closed, restored).expect("reopen the fixture directory");
+    reopen_path(&closed, 0o755);
 
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
@@ -341,19 +333,11 @@ fn an_unreadable_file_is_reported_by_path_and_the_walk_continues() {
     fixture.directory("tree");
     let denied = fixture.write_nested("tree/denied.txt", b"needle denied\n");
     fixture.write_nested("tree/open.txt", b"needle visible\n");
-    let mut permissions = std::fs::metadata(&denied)
-        .expect("fixture file metadata")
-        .permissions();
-    std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o000);
-    std::fs::set_permissions(&denied, permissions).expect("close the fixture file");
+    close_path(&denied);
 
     let output = wfgrep().run(fixture.path(), &[b"needle", b"tree"]);
 
-    let mut restored = std::fs::metadata(&denied)
-        .expect("fixture file metadata")
-        .permissions();
-    std::os::unix::fs::PermissionsExt::set_mode(&mut restored, 0o644);
-    std::fs::set_permissions(&denied, restored).expect("reopen the fixture file");
+    reopen_path(&denied, 0o644);
 
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
@@ -467,7 +451,7 @@ fn the_search_source_requires_the_complete_file_permit_inventory() {
     let failure = compile_program_rejection_with("wfgrep.wf", Inventory::OpenByName);
     assert!(
         failure.contains("UnresolvedUse")
-            && (failure.contains("FileFactory") || failure.contains("reserve_file")),
+            && (failure.contains("HandleFactory") || failure.contains("reserve_handle")),
         "the pre-permit inventory must reject explicit file authority: {failure}"
     );
 }

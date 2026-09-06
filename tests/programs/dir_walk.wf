@@ -1,6 +1,6 @@
 const empty_prefix: FixedVector<u8, 1> =[0_u8];
 
-fn publish_all(output: &uniq Output, source: own Slice<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+fn publish_all(output: &uniq OutputStream, source: own Slice<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
   define source_length = len_of(source);
   requires length <= source_length;
 } {
@@ -121,23 +121,49 @@ fn record_line(records: &Vector<u8>, index: own u64, destination: &uniq MutSlice
   return cursor;
 }
 
-fn open_source_from_factory(factory: &uniq FileFactory, directory: &DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(factory, directory), writes(factory) {
-  let permit = reserve_file(factory: move factory);
-  return open_directory_source(permit: move permit, directory: directory);
+fn open_source_from_factory(factory: &uniq HandleFactory, directory: &DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(factory, directory), writes(factory) {
+  match reserve_handle(factory: move factory) {
+    Ok(value: permit) => {
+      match open_directory_source(permit: move permit, directory: directory) {
+        SourceOpened(value: opened) => {
+          return Ok<DirectorySource, IoError>(value: move opened);
+        }
+        SourceOpenFailed(error: problem, permit: refused) => {
+          return Err<DirectorySource, IoError>(error: move problem);
+        }
+      }
+    }
+    Err(error: spent) => {
+      return Err<DirectorySource, IoError>(error: move spent);
+    }
+  }
 }
 
-fn open_directory_from_factory(factory: &uniq FileFactory, root: &DirectoryRead, name: &Slice<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(factory, root, name), writes(factory) contract {
+fn open_directory_from_factory(factory: &uniq HandleFactory, root: &DirectoryRead, name: &Slice<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(factory, root, name), writes(factory) contract {
   define ordered = start <= end;
   define capacity = len_of(deref(name));
   define within = end <= capacity;
   requires ordered;
   requires within;
 } {
-  let permit = reserve_file(factory: move factory);
-  return open_directory(permit: move permit, root: root, name: name, start: start, end: end);
+  match reserve_handle(factory: move factory) {
+    Ok(value: permit) => {
+      match open_directory(permit: move permit, root: root, name: name, start: start, end: end) {
+        DirectoryOpened(value: opened) => {
+          return Ok<DirectoryRead, IoError>(value: move opened);
+        }
+        DirectoryOpenFailed(error: problem, permit: refused) => {
+          return Err<DirectoryRead, IoError>(error: move problem);
+        }
+      }
+    }
+    Err(error: spent) => {
+      return Err<DirectoryRead, IoError>(error: move spent);
+    }
+  }
 }
 
-fn walk(factory: &uniq FileFactory, dir: &DirectoryRead, prefix: own Slice<u8>, prefix_length: own u64, records: own Vector<u8>, used: own u64, depth: own u64, store: &uniq Heap) -> (rest: own Vector<u8>, count: own u64) reads(factory, dir, prefix, records, store), writes(factory, records, store), allocates(store) {
+fn walk(factory: &uniq HandleFactory, dir: &DirectoryRead, prefix: own Slice<u8>, prefix_length: own u64, records: own Vector<u8>, used: own u64, depth: own u64, store: &uniq Heap) -> (rest: own Vector<u8>, count: own u64) reads(factory, dir, prefix, records, store), writes(factory, records, store), allocates(store) {
   doc "Enumerates one directory, records every entry's relative path, and descends into every subdirectory it names. The record table travels by value because a &uniq parameter whose referent reaches a container nominal is refused, and the two scratch runs are taken from the general store once per activation.";
   let held = move records;
   let total = used;
@@ -437,7 +463,7 @@ fn walk(factory: &uniq FileFactory, dir: &DirectoryRead, prefix: own Slice<u8>, 
   return move held, total;
 }
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(cwd, out, files, heap), writes(cwd, out, files, heap), allocates(heap) {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(cwd, out, files, heap), writes(cwd, out, files, heap), allocates(heap) {
   doc "Walks the invocation directory recursively and publishes every entry's kind and relative path in sorted order.";
   let status = 0_u8;
   region {

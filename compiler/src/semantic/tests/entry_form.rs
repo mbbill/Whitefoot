@@ -40,7 +40,8 @@ fn invalid_label(label: &str) -> SemanticIssueKind {
             "command.cwd".to_owned(),
             "command.stdout".to_owned(),
             "command.stderr".to_owned(),
-            "command.files".to_owned(),
+            "command.handles".to_owned(),
+            "command.stdin".to_owned(),
             "command.heap".to_owned(),
         ],
     }
@@ -189,9 +190,9 @@ fn an_admitted_command_entry_completes_semantic_checking() {
     // compiler-derived close; every other input release row is empty [SYS-5].
     for source in [
         &b"command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n"[..],
-        &b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus writes(cwd) {\n  return exit_status(code: 0_u8);\n}\n"[..],
+        &b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus writes(cwd) {\n  return exit_status(code: 0_u8);\n}\n"[..],
         // A subset in strictly increasing table-ordinal order, skipping rows.
-        &b"command fn main(command.args as args: own Args, command.stderr as err: own Output) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n"[..],
+        &b"command fn main(command.args as args: own Args, command.stderr as err: own OutputStream) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n"[..],
     ] {
         with_semantics(source, |outcome| {
             assert!(
@@ -231,11 +232,11 @@ fn the_standard_input_table_is_closed_at_its_input_label_node() {
 #[test]
 fn two_inputs_of_one_type_remain_two_distinct_ordinals() {
     // `command.stdout` and `command.stderr` share one type; selecting them in
-    // table order is admitted (and checks completely, since `Output`'s
+    // table order is admitted (and checks completely, since `OutputStream`'s
     // logical source detach carries the empty release row), and selecting
     // them in reverse is not.
     with_semantics(
-        b"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             assert!(
                 matches!(outcome, SemanticOutcome::Complete(_)),
@@ -244,7 +245,7 @@ fn two_inputs_of_one_type_remain_two_distinct_ordinals() {
         },
     );
     assert_rule_at(
-        b"command fn main(command.stderr as err: own Output, command.stdout as out: own Output) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main(command.stderr as err: own OutputStream, command.stdout as out: own OutputStream) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn7,
         invalid_label("command.stdout"),
         b"command.stdout as",
@@ -263,13 +264,13 @@ fn a_selected_input_equals_its_row_at_the_complete_param_node() {
         b"command.args as args: own DirectoryRead",
     );
     // The label, not the written type, selects the row: `command.stderr`
-    // written as `own Args` fails against row 3's `own Output`.
+    // written as `own Args` fails against row 3's `own OutputStream`.
     assert_rule_at(
         b"command fn main(command.stderr as err: own Args) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn7,
         SemanticIssueKind::InvalidStandardInput {
             label: "command.stderr".to_owned(),
-            declared: "own Output",
+            declared: "own OutputStream",
         },
         b"command.stderr as err: own Args",
     );

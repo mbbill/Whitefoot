@@ -29,9 +29,9 @@ mod reborrows;
 mod reinterpret;
 mod requires;
 mod resource_enums;
+mod sched;
 mod slices;
 mod stack_ledger;
-mod stackless;
 mod system;
 mod system_io;
 mod target_frame;
@@ -42,23 +42,25 @@ mod target_frame;
 use std::io::Write;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::lexer::{LexLimits, LexOutcome, lex};
 use crate::{
     ACTIVE_KERNEL_SPEC_HASH, COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE,
     COMPLETION_CONTRACT_HEADER, COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
-    COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
-    CanonicalLimits, CanonicalOutcome, FLOOR_RUNTIME_SOURCE, FinalizeLimits, FinalizeOutcome,
-    HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering,
-    PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE, ParseLimits, ParseOutcome,
-    ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput, SourceLimits, TerminalLimits,
-    TerminalOutcome, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, audit_canonical,
-    check_semantics, check_semantics_arithmetic_obligations, check_semantics_division_obligations,
-    classify_terminals, compile as compile_program, emit_llvm, finalize, lower_checked,
-    module_requires_completion_runtime, module_requires_parallel_runtime,
-    module_requires_writer_scheduler, parse, resolve,
+    COMPLETION_FILE_POSIX_HEADER, COMPLETION_FILE_POSIX_SOURCE, COMPLETION_LINUX_IO_URING_HEADER,
+    COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
+    COMPLETION_WAIT_HOST_SOURCE, COMPLETION_WINDOWS_IOCP_HEADER, CanonicalLimits, CanonicalOutcome,
+    FLOOR_RUNTIME_SOURCE, FinalizeLimits, FinalizeOutcome, HOST_LINK_LIBRARIES,
+    HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, ParseLimits, ParseOutcome, ResolutionOutcome,
+    SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
+    SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER, SemanticOutcome, SourceBundle,
+    SourceInput, SourceLimits, TerminalLimits, TerminalOutcome, WINDOWS_RUNTIME_HEADER,
+    audit_canonical, check_semantics, check_semantics_arithmetic_obligations,
+    check_semantics_division_obligations, classify_terminals, compile as compile_program,
+    emit_llvm, finalize, lower_checked, module_requires_completion_runtime,
+    module_requires_parallel_runtime, parse, resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -171,8 +173,9 @@ fn emit_lowered(source: &[u8], overlap: OverlapLowering) -> String {
     let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
         panic!("backend test source must resolve");
     };
-    let SemanticOutcome::Complete(checked) = check_semantics(resolved) else {
-        panic!("backend test source must check");
+    let checked = match check_semantics(resolved) {
+        SemanticOutcome::Complete(checked) => checked,
+        other => panic!("backend test source must check: {other:?}"),
     };
     let ir = lower_checked(*checked, overlap).expect("checked program must lower");
     emit_llvm(&ir)
@@ -324,7 +327,7 @@ fn compile_sources(sources: &[(&str, &[u8])]) -> String {
         .expect("normal compiler pipeline must emit")
 }
 
-fn compile_and_run(llvm: &str) -> Output {
+fn compile_and_run(llvm: &str) -> std::process::Output {
     compile_and_run_with(llvm, &[])
 }
 
@@ -344,51 +347,101 @@ fn build_executable(llvm: &str, directory: &Path) -> PathBuf {
     build_linked_executable(llvm, None, &[], directory)
 }
 
-/// Adds the compiler-owned completion units to one test link on the exact
-/// condition used by the driver. Custom parallel/floor observers use this too,
-/// so none can accidentally test a link shape the shipped compiler never
-/// produces.
-pub(super) fn append_completion_runtime(
+/// Adds the compiler-owned runtime units to one test link on the exact
+/// conditions the driver uses: the scheduler core when the module hands work
+/// out *or* submits an operation, and the completion units when it submits.
+/// Custom grant/floor observers use this too, so none can accidentally test a
+/// link shape the shipped compiler never produces.
+pub(super) fn append_runtime_units(
     command: &mut Command,
     llvm: &str,
     directory: &Path,
 ) -> Option<Vec<&'static str>> {
-    if !module_requires_completion_runtime(llvm) {
+    let completion = module_requires_completion_runtime(llvm);
+    if !completion && !module_requires_parallel_runtime(llvm) {
         return None;
     }
-    let units = [
-        ("contract.h", COMPLETION_CONTRACT_HEADER),
-        ("file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
-        ("bridge.h", COMPLETION_BRIDGE_HEADER),
-        ("writer_scheduler.h", WRITER_SCHEDULER_HEADER),
-        ("linux_io_uring.h", COMPLETION_LINUX_IO_URING_HEADER),
-        ("completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
-        ("file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
-        ("completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
-        ("writer_scheduler.c", WRITER_SCHEDULER_SOURCE),
-        ("linux_io_uring.c", COMPLETION_LINUX_IO_URING_SOURCE),
+    // The staged tree keeps the repository's own two directories, because the
+    // completion header reaches the scheduler core by the relative path it
+    // uses in the tree: the record begins with a `wf_sched_record`.
+    let mut units = vec![
+        ("sched/core.h", SCHED_CORE_HEADER),
+        ("sched/prim.h", SCHED_PRIM_HEADER),
+        ("sched/switch.h", SCHED_SWITCH_HEADER),
+        ("sched/entry.h", SCHED_ENTRY_HEADER),
+        ("sched/core.c", SCHED_CORE_SOURCE),
+        ("sched/prim_host.c", SCHED_PRIM_HOST_SOURCE),
+        ("sched/entry.c", SCHED_ENTRY_SOURCE),
     ];
-    for (name, source) in units {
-        std::fs::write(directory.join(name), source).expect("write completion runtime unit");
+    if completion {
+        units.extend([
+            ("completion/contract.h", COMPLETION_CONTRACT_HEADER),
+            ("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
+            ("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
+            ("completion/file_posix.h", COMPLETION_FILE_POSIX_HEADER),
+            (
+                "completion/socket_address.h",
+                COMPLETION_SOCKET_ADDRESS_HEADER,
+            ),
+            (
+                "completion/linux_io_uring.h",
+                COMPLETION_LINUX_IO_URING_HEADER,
+            ),
+            // Every header of the runtime is staged on every platform, exactly
+            // as the driver stages them (`src/bin/whitefootc.rs`): a header is
+            // never a clang input, and `bridge.c` is one shared unit whose
+            // Windows arm names these two in text this host does not compile.
+            ("completion/windows_iocp.h", COMPLETION_WINDOWS_IOCP_HEADER),
+            ("windows_runtime.h", WINDOWS_RUNTIME_HEADER),
+            ("completion/completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
+            ("completion/wait_host.c", COMPLETION_WAIT_HOST_SOURCE),
+            ("completion/file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
+            ("completion/file_posix.c", COMPLETION_FILE_POSIX_SOURCE),
+            ("completion/completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
+            (
+                "completion/linux_io_uring.c",
+                COMPLETION_LINUX_IO_URING_SOURCE,
+            ),
+        ]);
+    }
+    std::fs::create_dir_all(directory.join("completion")).expect("stage completion directory");
+    std::fs::create_dir_all(directory.join("sched")).expect("stage scheduler directory");
+    for (name, source) in &units {
+        std::fs::write(directory.join(name), source).expect("write runtime unit");
     }
     command
-        .arg("-I")
-        .arg(directory)
         .arg("-x")
         .arg("c")
-        .arg(directory.join("completion_runtime.c"))
+        .arg(directory.join("sched/core.c"))
         .arg("-x")
         .arg("c")
-        .arg(directory.join("file_adapter.c"))
+        .arg(directory.join("sched/prim_host.c"))
         .arg("-x")
         .arg("c")
-        .arg(directory.join("completion_bridge.c"))
-        .arg("-x")
-        .arg("c")
-        .arg(directory.join("writer_scheduler.c"))
-        .arg("-x")
-        .arg("c")
-        .arg(directory.join("linux_io_uring.c"));
+        .arg(directory.join("sched/entry.c"));
+    if completion {
+        command
+            .arg("-I")
+            .arg(directory.join("completion"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("completion/completion_runtime.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("completion/wait_host.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("completion/file_adapter.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("completion/file_posix.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("completion/completion_bridge.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("completion/linux_io_uring.c"));
+    }
     Some(units.into_iter().map(|(name, _)| name).collect())
 }
 
@@ -437,22 +490,12 @@ fn build_linked_executable(
     let floor_unit = directory.join("wf_floor.c");
     std::fs::write(&floor_unit, FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
     command.arg("-pthread").arg("-x").arg("c").arg(&floor_unit);
-    // The parallel runtime joins the link on exactly the condition the driver
-    // uses: the emitted module names its entry point. A test therefore cannot
-    // link a runtime a shipped build would not, and a module that overlaps
-    // nothing is linked here with nothing extra at all.
-    let parallel_unit = module_requires_parallel_runtime(llvm).then(|| {
-        let path = directory.join("par_runtime.c");
-        let source = if module_requires_writer_scheduler(llvm) {
-            PARALLEL_COMPLETION_RUNTIME_SOURCE
-        } else {
-            PARALLEL_RUNTIME_SOURCE
-        };
-        std::fs::write(&path, source).expect("write the parallel runtime");
-        command.arg("-x").arg("c").arg(&path);
-        path
-    });
-    let completion_units = append_completion_runtime(&mut command, llvm, directory);
+    // The runtime units join the link on exactly the conditions the driver
+    // uses: the emitted module names the core's entry points, or a submit. A
+    // test therefore cannot link a runtime a shipped build would not, and a
+    // module that overlaps nothing and submits nothing is linked here with
+    // nothing extra at all.
+    let completion_units = append_runtime_units(&mut command, llvm, directory);
     let compile = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .args(HOST_LINK_LIBRARIES)
@@ -472,12 +515,15 @@ fn build_linked_executable(
         std::fs::remove_file(path).expect("remove deterministic host unit");
     }
     std::fs::remove_file(&floor_unit).expect("remove the floor runtime unit");
-    if let Some(path) = parallel_unit {
-        std::fs::remove_file(path).expect("remove the parallel runtime unit");
-    }
     if let Some(names) = completion_units {
         for name in names {
             std::fs::remove_file(directory.join(name)).expect("remove completion runtime unit");
+        }
+        // The staged tree keeps the repository's own two directories, because
+        // the completion header reaches the scheduler core by the relative
+        // path it uses in the tree.
+        for staged in ["completion", "sched"] {
+            std::fs::remove_dir(directory.join(staged)).expect("remove staged runtime directory");
         }
     }
     executable
@@ -487,13 +533,17 @@ fn build_linked_executable(
 ///
 /// The bytes are passed as raw `OsStr`s so a test can hand the program an
 /// argument that is not valid text [HOST-1].
-fn compile_and_run_with(llvm: &str, arguments: &[&[u8]]) -> Output {
+fn compile_and_run_with(llvm: &str, arguments: &[&[u8]]) -> std::process::Output {
     compile_link_and_run(llvm, None, arguments)
 }
 
 /// Runs one emitted module, optionally linked against one host translation
 /// unit.
-fn compile_link_and_run(llvm: &str, host: Option<&str>, arguments: &[&[u8]]) -> Output {
+fn compile_link_and_run(
+    llvm: &str,
+    host: Option<&str>,
+    arguments: &[&[u8]],
+) -> std::process::Output {
     let directory = test_directory();
     let executable = build_linked_executable(llvm, host, &[], &directory);
     let output = Command::new(&executable)
@@ -522,7 +572,7 @@ fn compile_link_and_run_with(
     host: Option<&str>,
     defines: &[String],
     arguments: &[&[u8]],
-) -> Output {
+) -> std::process::Output {
     let directory = test_directory();
     let executable = build_linked_executable(llvm, host, defines, &directory);
     let output = Command::new(&executable)

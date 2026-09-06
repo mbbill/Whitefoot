@@ -410,8 +410,7 @@ pub(super) fn validate_static_storage(
 
 /// The selected-target layout of one fully assembled backend aggregate.
 ///
-/// Each consumer retains the part of the result its emitted form needs: the
-/// stackless root states the validated alignment on its `alloca`, while an
+/// A consumer retains the part of the result its emitted form needs: an
 /// ordinary parallel hand-out passes the validated byte size to the lane
 /// runtime. Tests inspect both values at exact target and runtime boundaries.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -480,42 +479,6 @@ pub(super) fn parallel_lane_frame_layout(
         size: layout.size,
         align: layout.align,
     }))
-}
-
-/// Validates the exact ordered field list the stackless emitter will render
-/// for its root frame.
-///
-/// This runs after stackless planning has selected the live values, but before
-/// the emitter writes the frame's LLVM definition. Each field is laid out by
-/// the selected target rules, then the complete aggregate is checked with all
-/// inter-field and tail padding included. No separately maintained field list
-/// participates in acceptance.
-pub(super) fn validate_stackless_root_frame(
-    target: TargetLayout,
-    qualification: &Qualification,
-    program: &IrProgram<'_, '_, '_>,
-    fields: &[IrType],
-) -> Result<TargetAggregateLayout, TargetLayoutFailure> {
-    let mut layouts = LayoutComputer {
-        target,
-        qualification,
-        program,
-        nominal: HashMap::new(),
-        visiting: HashSet::new(),
-    };
-    let mut field_layouts = Vec::with_capacity(fields.len());
-    for field in fields {
-        field_layouts.push(
-            layouts
-                .layout(*field)
-                .map_err(|failure| as_object(failure, TargetObject::StackFrame))?,
-        );
-    }
-    let layout = layouts.aggregate_layout(field_layouts, TargetObject::StackFrame)?;
-    Ok(TargetAggregateLayout {
-        size: layout.size,
-        align: layout.align,
-    })
 }
 
 pub(super) fn validate_program(

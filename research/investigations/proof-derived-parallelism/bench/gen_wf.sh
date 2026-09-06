@@ -151,7 +151,7 @@ fn tile(lo: own u32, hi: own u32, phase: own f64) -> result: own u32 pure {
   return a +wrap b;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   doc "Counts the escaping points of a ${POINTS}-point grid by recursive index split, once per repetition, and publishes the running total as hexadecimal.";
   let total = 0_u32;
   let phase = 0.0_f64;
@@ -369,7 +369,7 @@ fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) 
   return limit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   doc "Lays out one box tree many times and publishes the exact bits of the fold as hexadecimal.";
   ${BUILD_CALL}
   let words = buffer_new(${WORDS}_u64, 0.25_f64);

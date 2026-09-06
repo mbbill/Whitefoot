@@ -1,4 +1,4 @@
-command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(cwd, files, heap), writes(cwd, files, heap), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(cwd, files, heap), writes(cwd, files, heap), allocates(heap) {
   doc "A zero-length destination range is a well-formed request that transfers nothing [SYS-8, SYS-14]: it yields `ListBytes(next: 0, entries: 0)`, never `ListEnd`. End of enumeration is a separate outcome from an empty transfer, exactly as a full buffer is a separate outcome from end of input, so a program cannot read a zero endpoint as exhaustion.";
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 1024_u64) {
@@ -18,30 +18,36 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
         region {
           let window = mut_slice_of(&uniq entries);
           region {
-            let permit = reserve_file(factory: &uniq files);
-            match open_directory_source(permit: move permit, directory: &cwd) {
-              Ok(value: list) => {
-                region {
-                  match directory_next(source: &uniq list, destination: &uniq window, start: 0_u64, end: 0_u64) {
-                    ListBytes(next: bytes, entries: reported) => {
-                      if bytes == 0_u64 {
-                        if reported == 0_u64 {
-                          return exit_status(code: 0_u8);
+            match reserve_handle(factory: &uniq files) {
+              Ok(value: permit) => {
+                match open_directory_source(permit: move permit, directory: &cwd) {
+                  SourceOpened(value: list) => {
+                    region {
+                      match directory_next(source: &uniq list, destination: &uniq window, start: 0_u64, end: 0_u64) {
+                        ListBytes(next: bytes, entries: reported) => {
+                          if bytes == 0_u64 {
+                            if reported == 0_u64 {
+                              return exit_status(code: 0_u8);
+                            }
+                          }
+                          return exit_status(code: 5_u8);
+                        }
+                        ListEnd() => {
+                          return exit_status(code: 6_u8);
+                        }
+                        ListFailed(error: problem) => {
+                          return exit_status(code: 3_u8);
                         }
                       }
-                      return exit_status(code: 5_u8);
                     }
-                    ListEnd() => {
-                      return exit_status(code: 6_u8);
-                    }
-                    ListFailed(error: problem) => {
-                      return exit_status(code: 3_u8);
-                    }
+                  }
+                  SourceOpenFailed(error: problem, permit: refused) => {
+                    return exit_status(code: 4_u8);
                   }
                 }
               }
-              Err(error: problem) => {
-                return exit_status(code: 4_u8);
+              Err(error: spent) => {
+                return exit_status(code: 7_u8);
               }
             }
           }

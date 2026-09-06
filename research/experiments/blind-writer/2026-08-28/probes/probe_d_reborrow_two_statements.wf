@@ -1,11 +1,16 @@
 fn walk['f, 'c](factory: &uniq 'f FileFactory, root: &'c DirectoryRead, name: &'c buffer<u8>) -> result: own u8 reads(factory, root, name), writes(factory) {
   doc "Reborrows a borrowed factory inside a region that holds two statements.";
   region 'source {
-    let permit = reserve_file<'source>(factory: &uniq 'source deref(factory));
-    match open_file<'source, 'c>(permit: move permit, root: root, name: name, start: 0_u64, end: 1_u64) {
-      Ok(value: handle) => {
+    match reserve_file<'source>(factory: &uniq 'source deref(factory)) {
+      Ok(value: permit) => {
+        match open_file<'source, 'c>(permit: move permit, root: root, name: name, start: 0_u64, end: 1_u64) {
+          FileOpened(value: handle) => {
+          }
+          FileOpenFailed(error: problem, permit: refused) => {
+          }
+        }
       }
-      Err(error: problem) => {
+      Err(error: spent) => {
       }
     }
   }

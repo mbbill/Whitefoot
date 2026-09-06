@@ -12,7 +12,12 @@
 #endif
 
 #include "windows_runtime.h"
-#include "completion/windows_completion.h"
+
+/* Winsock first, so that `<windows.h>` cannot pull the version-1 declarations
+ * in ahead of it.  WIN32_LEAN_AND_MEAN above already excludes them; this order
+ * makes that independent of the macro. */
+#include <winsock2.h>
+#include <ws2tcpip.h>
 
 #include <windows.h>
 #include <winternl.h>
@@ -24,6 +29,7 @@
 #include <stddef.h>
 #include <stdatomic.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -71,108 +77,6 @@
 #define WF_WINDOWS_STATUS_NO_MORE_FILES \
     ((NTSTATUS)(LONG)0x80000006UL)
 #define WF_WINDOWS_STATUS_PENDING ((NTSTATUS)(LONG)0x00000103UL)
-
-#if !defined(WF_WINDOWS_OPEN_ATTEMPT_WAIT_POINT)
-#define WF_WINDOWS_OPEN_ATTEMPT_WAIT_POINT \
-    wf_windows_open_attempt_wait_point_absent
-static void wf_windows_open_attempt_wait_point_absent(void) {
-}
-#else
-extern void WF_WINDOWS_OPEN_ATTEMPT_WAIT_POINT(void);
-#endif
-
-#if !defined(WF_WINDOWS_OPEN_ATTEMPT_POINT)
-#define WF_WINDOWS_OPEN_ATTEMPT_POINT wf_windows_open_attempt_point_absent
-static void wf_windows_open_attempt_point_absent(void) {
-}
-#else
-extern void WF_WINDOWS_OPEN_ATTEMPT_POINT(void);
-#endif
-
-#if !defined(WF_WINDOWS_CLOSE_RELEASE_POINT)
-#define WF_WINDOWS_CLOSE_RELEASE_POINT wf_windows_close_release_point_absent
-static void wf_windows_close_release_point_absent(void) {
-}
-#else
-extern void WF_WINDOWS_CLOSE_RELEASE_POINT(void);
-#endif
-
-/* Open attempts from one source lane have two execution routes: earlier
- * operations enter the blocking adapter, while the source-last operation is
- * deliberately work-first and calls the direct ABI. Reserving a ticket at
- * submission/call entry keeps those routes in source order when the host has
- * only one descriptor left. Future tickets are not retirement operations yet,
- * so an exhausted current ticket never waits for work forbidden by the gate. */
-static SRWLOCK wf_windows_open_order_lock = SRWLOCK_INIT;
-static CONDITION_VARIABLE wf_windows_open_order_ready =
-    CONDITION_VARIABLE_INIT;
-static _Atomic uint64_t wf_windows_next_open_ticket;
-static uint64_t wf_windows_serving_open_ticket;
-static SRWLOCK wf_windows_open_resource_attempt_lock = SRWLOCK_INIT;
-
-void wf__windows_open_resource_attempt_enter(void) {
-    AcquireSRWLockExclusive(&wf_windows_open_resource_attempt_lock);
-}
-
-void wf__windows_open_resource_attempt_leave(void) {
-    ReleaseSRWLockExclusive(&wf_windows_open_resource_attempt_lock);
-}
-
-static void wf_windows_open_host_attempt_enter(void) {
-    WF_WINDOWS_OPEN_ATTEMPT_WAIT_POINT();
-    wf__windows_open_resource_attempt_enter();
-    WF_WINDOWS_OPEN_ATTEMPT_POINT();
-}
-
-uint64_t wf__windows_open_order_reserve(void) {
-    uint64_t ticket = atomic_fetch_add_explicit(
-        &wf_windows_next_open_ticket,
-        1,
-        memory_order_seq_cst
-    );
-    if (ticket == UINT64_MAX) {
-        abort();
-    }
-    return ticket;
-}
-
-int wf__windows_open_order_is_serving(uint64_t ticket) {
-    int serving;
-    AcquireSRWLockShared(&wf_windows_open_order_lock);
-    serving = ticket == wf_windows_serving_open_ticket;
-    ReleaseSRWLockShared(&wf_windows_open_order_lock);
-    return serving;
-}
-
-void wf__windows_open_order_enter(uint64_t ticket) {
-    BOOL slept;
-    AcquireSRWLockExclusive(&wf_windows_open_order_lock);
-    while (ticket != wf_windows_serving_open_ticket) {
-        slept = SleepConditionVariableSRW(
-            &wf_windows_open_order_ready,
-            &wf_windows_open_order_lock,
-            INFINITE,
-            0
-        );
-        if (slept == FALSE) {
-            ReleaseSRWLockExclusive(&wf_windows_open_order_lock);
-            abort();
-        }
-    }
-    ReleaseSRWLockExclusive(&wf_windows_open_order_lock);
-}
-
-void wf__windows_open_order_leave(uint64_t ticket) {
-    AcquireSRWLockExclusive(&wf_windows_open_order_lock);
-    if (ticket != wf_windows_serving_open_ticket
-        || wf_windows_serving_open_ticket == UINT64_MAX) {
-        ReleaseSRWLockExclusive(&wf_windows_open_order_lock);
-        abort();
-    }
-    wf_windows_serving_open_ticket += 1u;
-    WakeAllConditionVariable(&wf_windows_open_order_ready);
-    ReleaseSRWLockExclusive(&wf_windows_open_order_lock);
-}
 
 typedef NTSTATUS(NTAPI *wf_windows_nt_create_file_fn)(
     PHANDLE,
@@ -258,8 +162,21 @@ _Static_assert(
     "GetProcAddress does not fit the native procedure pointers"
 );
 
+/* This leaf's one fail-stop.
+ *
+ * Each `abort` below is a trusted-computing-base defect, not an operation
+ * outcome, and a fail-stop that writes nothing cannot be diagnosed from a
+ * crash log: the release UCRT ends such a process through the fast-fail path,
+ * which a shell reports as a bare status with no message at all. This writes
+ * one line and then aborts exactly where the bare call did, and changes no
+ * control flow. */
+static _Noreturn void wf_windows_fail(const char *reason) {
+    (void)fprintf(stderr, "whitefoot windows runtime: %s\n", reason);
+    (void)fflush(stderr);
+    abort();
+}
+
 static _Thread_local int wf_windows_error_code;
-static volatile LONG64 wf_windows_direct_open_retries;
 
 static void wf_windows_record_error(DWORD error_code) {
     DWORD recorded = error_code;
@@ -290,6 +207,182 @@ static DWORD wf_windows_error_from_errno(int error_code) {
     }
 }
 
+/* One code per condition, whichever route produced it; `windows_runtime.h`
+ * says at the declaration why the two routes need it.
+ *
+ * The right column is the code the [SYS-7] Windows class table in
+ * `backend/qualification.rs` already carries for that condition, so this adds
+ * no class and moves no existing mapping.  The two address refusals keep their
+ * Winsock numbers, because bind and listen never reach the completion port and
+ * those are the numbers that table already names. */
+int wf__windows_error_from_socket(int error_code) {
+    switch (error_code) {
+    /* A peer that refused the connection. */
+    case WSAECONNREFUSED:
+    case (int)ERROR_CONNECTION_REFUSED:
+        return (int)ERROR_CONNECTION_REFUSED;
+    /* A peer that reset the connection, and the port's own spelling of it. */
+    case WSAECONNRESET:
+    case WSAENETRESET:
+    case (int)ERROR_NETNAME_DELETED:
+        return (int)ERROR_NETNAME_DELETED;
+    /* An aborted connection.  Both spellings answer ERROR_REQUEST_ABORTED,
+     * which is the code that table classifies `ConnectionAborted`; the port's
+     * own ERROR_CONNECTION_ABORTED is classified `ConnectionReset` there, and
+     * one condition may not answer two classes depending on its route. */
+    case WSAECONNABORTED:
+    case (int)ERROR_CONNECTION_ABORTED:
+        return (int)ERROR_REQUEST_ABORTED;
+    /* A send on a direction this program has already shut down, which is what
+     * `BrokenPipe` means [SYS-8]. */
+    case WSAESHUTDOWN:
+    case (int)ERROR_GRACEFUL_DISCONNECT:
+    case (int)ERROR_NO_DATA:
+        return (int)ERROR_BROKEN_PIPE;
+    case WSAETIMEDOUT:
+    case (int)ERROR_TIMEOUT:
+        return (int)ERROR_SEM_TIMEOUT;
+    case WSAENOTCONN:
+        return (int)ERROR_NOT_CONNECTED;
+    case WSAEACCES:
+        return (int)ERROR_ACCESS_DENIED;
+    case WSAEMFILE:
+        return (int)ERROR_TOO_MANY_OPEN_FILES;
+    case WSAENOBUFS:
+        return (int)ERROR_NOT_ENOUGH_MEMORY;
+    case WSAEINVAL:
+        return (int)ERROR_INVALID_PARAMETER;
+    case WSAEAFNOSUPPORT:
+    case WSAEPROTONOSUPPORT:
+    case WSAEOPNOTSUPP:
+        return (int)ERROR_NOT_SUPPORTED;
+    /* Every other code is its own answer, so a condition with no portable
+     * distinction reaches source as `Other` rather than as something else. */
+    default:
+        return error_code;
+    }
+}
+
+/* ------------------------------------------------------------- Winsock */
+
+static INIT_ONCE wf_windows_socket_once = INIT_ONCE_STATIC_INIT;
+static DWORD wf_windows_socket_startup_error;
+
+static BOOL CALLBACK wf_windows_socket_startup_once(
+    PINIT_ONCE once,
+    PVOID parameter,
+    PVOID *context
+) {
+    WSADATA data;
+    int started;
+    (void)once;
+    (void)parameter;
+    (void)context;
+    memset(&data, 0, sizeof(data));
+    started = WSAStartup(MAKEWORD(2, 2), &data);
+    wf_windows_socket_startup_error = started == 0 ? ERROR_SUCCESS
+                                                   : (DWORD)started;
+    /* The once has run either way: a refusal is remembered above and reported
+     * to every caller, rather than re-attempted per operation. */
+    return TRUE;
+}
+
+int wf__windows_socket_startup(void) {
+    if (InitOnceExecuteOnce(
+            &wf_windows_socket_once,
+            wf_windows_socket_startup_once,
+            NULL,
+            NULL
+        ) == FALSE) {
+        return (int)ERROR_GEN_FAILURE;
+    }
+    if (wf_windows_socket_startup_error != ERROR_SUCCESS) {
+        return (int)wf_windows_socket_startup_error;
+    }
+    return 0;
+}
+
+uintptr_t wf__windows_socket_handle(int descriptor) {
+    HANDLE native = wf__windows_completion_descriptor_handle(descriptor);
+    return native == INVALID_HANDLE_VALUE ? (uintptr_t)INVALID_SOCKET
+                                          : (uintptr_t)native;
+}
+
+int wf__windows_socket_open(int family) {
+    SOCKET created;
+    int descriptor;
+    int startup = wf__windows_socket_startup();
+    if (startup != 0) {
+        wf_windows_record_error((DWORD)startup);
+        return -1;
+    }
+    created = WSASocketW(
+        family,
+        SOCK_STREAM,
+        IPPROTO_TCP,
+        NULL,
+        0,
+        WSA_FLAG_OVERLAPPED | WSA_FLAG_NO_HANDLE_INHERIT
+    );
+    if (created == INVALID_SOCKET) {
+        wf_windows_record_error(
+            (DWORD)wf__windows_error_from_socket(WSAGetLastError())
+        );
+        return -1;
+    }
+    /* The descriptor number is the CRT's, because every writer-visible
+     * resource on this target is a CRT i32 descriptor and the [SYS-10] handle
+     * factory's capacity argument is written in that one numbering
+     * (`completion/file_adapter.h`, WF_FILE_CONNECTION_DESCRIPTORS).  The
+     * adoption stores this socket's handle in that table and nothing else;
+     * every host call below reaches the socket through it. */
+    errno = 0;
+    descriptor = _open_osfhandle((intptr_t)created, 0);
+    if (descriptor < 0) {
+        int saved_errno = errno;
+        (void)closesocket(created);
+        wf_windows_record_error(wf_windows_error_from_errno(saved_errno));
+        return -1;
+    }
+    {
+        int registered = wf__windows_completion_register_descriptor(
+            descriptor,
+            WF_WINDOWS_DESCRIPTOR_CLASS_SOCKET
+        );
+        if (registered != 0) {
+            (void)wf__windows_socket_close(descriptor);
+            wf_windows_record_error((DWORD)registered);
+            return -1;
+        }
+    }
+    return descriptor;
+}
+
+int wf__windows_socket_close(int descriptor) {
+    SOCKET native = (SOCKET)wf__windows_socket_handle(descriptor);
+    int refusal = 0;
+    if (native == INVALID_SOCKET) {
+        wf_windows_record_error(ERROR_INVALID_HANDLE);
+        return -1;
+    }
+    /* The registry row goes before the object does, so the descriptor number
+     * the host may hand out again starts with no class and no association. */
+    wf__windows_completion_forget_descriptor(descriptor);
+    if (closesocket(native) != 0) {
+        refusal = wf__windows_error_from_socket(WSAGetLastError());
+    }
+    /* `closesocket` ends the Winsock object; this releases the CRT row the
+     * number lives in.  Its own `CloseHandle` necessarily fails, because the
+     * object it names is already gone -- the number is what this call is for,
+     * and the operation's outcome is the one `closesocket` reported. */
+    (void)_close(descriptor);
+    if (refusal != 0) {
+        wf_windows_record_error((DWORD)refusal);
+        return -1;
+    }
+    return 0;
+}
+
 static int wf_windows_nt_success(NTSTATUS status) {
     return status >= 0;
 }
@@ -298,10 +391,227 @@ static int wf_windows_handle_valid(HANDLE handle) {
     return handle != NULL && handle != INVALID_HANDLE_VALUE;
 }
 
+/* ------------------------------------------------ the descriptor registry */
+
+/* What this runtime remembers about the descriptors it produced: the resource
+ * class each one became, and whether the completion port has taken its handle.
+ *
+ * This is all that is left of the descriptor ledger the deleted bounded pool
+ * needed, and `windows_runtime.h` says beside the declarations why each of the
+ * two facts has a reader that cannot do without it and why nothing else does.
+ * The table is indexed by descriptor and grows; it is never shrunk, because a
+ * descriptor number the host reuses reuses its row.
+ *
+ * The lock is exclusive for every operation.  These are startup-rate calls --
+ * one per open, one per close, one per first submission on a descriptor -- and
+ * a reader-writer split would buy nothing measurable at that rate. */
+typedef struct wf_windows_descriptor_row {
+    unsigned descriptor_class;
+    unsigned port_associated;
+    unsigned present;
+} wf_windows_descriptor_row;
+
+static SRWLOCK wf_windows_registry_lock = SRWLOCK_INIT;
+static wf_windows_descriptor_row *wf_windows_registry;
+static size_t wf_windows_registry_capacity;
+
+static int wf_windows_registry_grow(size_t required) {
+    wf_windows_descriptor_row *grown;
+    size_t capacity;
+    if (required <= wf_windows_registry_capacity) {
+        return 1;
+    }
+    capacity = wf_windows_registry_capacity == 0 ? 64u : wf_windows_registry_capacity;
+    while (capacity < required && capacity <= SIZE_MAX / 2u) {
+        capacity *= 2u;
+    }
+    if (capacity < required
+        || capacity > SIZE_MAX / sizeof(*wf_windows_registry)) {
+        return 0;
+    }
+    grown = wf_windows_registry == NULL
+        ? (wf_windows_descriptor_row *)HeapAlloc(
+              GetProcessHeap(),
+              HEAP_ZERO_MEMORY,
+              capacity * sizeof(*wf_windows_registry)
+          )
+        : (wf_windows_descriptor_row *)HeapReAlloc(
+              GetProcessHeap(),
+              HEAP_ZERO_MEMORY,
+              wf_windows_registry,
+              capacity * sizeof(*wf_windows_registry)
+          );
+    if (grown == NULL) {
+        return 0;
+    }
+    wf_windows_registry = grown;
+    wf_windows_registry_capacity = capacity;
+    return 1;
+}
+
+HANDLE wf__windows_completion_descriptor_handle(int descriptor) {
+    intptr_t native = descriptor < 0 ? -1 : _get_osfhandle(descriptor);
+    return native == -1 ? INVALID_HANDLE_VALUE : (HANDLE)native;
+}
+
+int wf__windows_completion_register_descriptor(
+    int descriptor,
+    unsigned descriptor_class
+) {
+    if (descriptor < 0
+        || !wf_windows_handle_valid(
+               wf__windows_completion_descriptor_handle(descriptor)
+           )) {
+        return ERROR_INVALID_HANDLE;
+    }
+    AcquireSRWLockExclusive(&wf_windows_registry_lock);
+    if (!wf_windows_registry_grow((size_t)descriptor + 1u)) {
+        ReleaseSRWLockExclusive(&wf_windows_registry_lock);
+        return ERROR_NOT_ENOUGH_MEMORY;
+    }
+    wf_windows_registry[descriptor].descriptor_class = descriptor_class;
+    wf_windows_registry[descriptor].port_associated = 0u;
+    wf_windows_registry[descriptor].present = 1u;
+    ReleaseSRWLockExclusive(&wf_windows_registry_lock);
+    return 0;
+}
+
+int wf__windows_completion_descriptor_state(
+    int descriptor,
+    unsigned *descriptor_class,
+    unsigned *port_associated
+) {
+    int present = 0;
+    if (descriptor_class != NULL) {
+        *descriptor_class = WF_WINDOWS_DESCRIPTOR_CLASS_ANY;
+    }
+    if (port_associated != NULL) {
+        *port_associated = 0u;
+    }
+    if (descriptor < 0) {
+        return 0;
+    }
+    AcquireSRWLockExclusive(&wf_windows_registry_lock);
+    if ((size_t)descriptor < wf_windows_registry_capacity
+        && wf_windows_registry[descriptor].present != 0u) {
+        present = 1;
+        if (descriptor_class != NULL) {
+            *descriptor_class = wf_windows_registry[descriptor].descriptor_class;
+        }
+        if (port_associated != NULL) {
+            *port_associated = wf_windows_registry[descriptor].port_associated;
+        }
+    }
+    ReleaseSRWLockExclusive(&wf_windows_registry_lock);
+    return present;
+}
+
+/* Whether the completion port may use this descriptor's handle, binding it
+ * exactly once if it must.
+ *
+ * The whole of it -- the class rule, the "has it been bound" question, the
+ * binding itself and the record of it -- happens inside one hold of the table's
+ * own lock, and that is the point of the call.  `CreateIoCompletionPort` binds
+ * a handle exactly once and answers ERROR_INVALID_PARAMETER for a handle a port
+ * already has, and there is no host call that asks whether it already has one.
+ * So the fact lives in this table, and a check outside the lock followed by a
+ * bind is a race with a real consequence rather than a wasted call: two threads
+ * offering the first two records on one descriptor both read "not bound", the
+ * first binds, the second's bind fails, and that second record falls to the
+ * bounded adapter -- which then issues host I/O on a handle that is now on this
+ * port.  The lock makes the second thread either wait for the first to finish
+ * binding or find the handle already bound, and in both cases submit.
+ *
+ * `bind` is the caller's, because the port is the completion runtime's and this
+ * unit does not reach it (`windows_runtime.h`).  It runs under the lock, which
+ * is what serializes it; it answers nonzero when the handle is now the port's.
+ *
+ * A descriptor this runtime never opened -- a probe's own `_open_osfhandle` of
+ * a `CreateFile` -- has no row until the first offer on it.  It is admitted on
+ * the host's own answer that it is a disk file, and given a row under class ANY
+ * so the association fact has somewhere to live; without the row, every offer
+ * would re-ask `GetFileType` and re-attempt the bind.  A row under any other
+ * class is a directory or an output, which this ring does not carry.
+ *
+ * A socket is admitted on its class alone and never on `GetFileType`, which
+ * answers FILE_TYPE_PIPE for one: the class is the fact that this runtime
+ * created it with `WSA_FLAG_OVERLAPPED`, which is what the port needs
+ * [SYS-17, SYS-18].
+ *
+ * The lock is held across three host calls.  This is once per descriptor, not
+ * once per operation: the second and every later offer on the same descriptor
+ * takes the already-bound answer and makes no host call at all. */
+int wf__windows_completion_ring_handle(
+    int descriptor,
+    int (*bind)(HANDLE handle, void *context),
+    void *context,
+    HANDLE *handle
+) {
+    HANDLE native;
+    int admitted = 0;
+    if (descriptor < 0 || bind == NULL || handle == NULL) {
+        return 0;
+    }
+    native = wf__windows_completion_descriptor_handle(descriptor);
+    if (!wf_windows_handle_valid(native)) {
+        return 0;
+    }
+    AcquireSRWLockExclusive(&wf_windows_registry_lock);
+    if (!wf_windows_registry_grow((size_t)descriptor + 1u)) {
+        ReleaseSRWLockExclusive(&wf_windows_registry_lock);
+        return 0;
+    }
+    if (wf_windows_registry[descriptor].present == 0u) {
+        if (GetFileType(native) != FILE_TYPE_DISK) {
+            ReleaseSRWLockExclusive(&wf_windows_registry_lock);
+            return 0;
+        }
+        wf_windows_registry[descriptor].descriptor_class =
+            WF_WINDOWS_DESCRIPTOR_CLASS_ANY;
+        wf_windows_registry[descriptor].port_associated = 0u;
+        wf_windows_registry[descriptor].present = 1u;
+    } else if (wf_windows_registry[descriptor].descriptor_class
+                   != WF_WINDOWS_DESCRIPTOR_CLASS_READ_FILE
+               && wf_windows_registry[descriptor].descriptor_class
+                   != WF_WINDOWS_DESCRIPTOR_CLASS_SOCKET
+               && wf_windows_registry[descriptor].descriptor_class
+                   != WF_WINDOWS_DESCRIPTOR_CLASS_ANY) {
+        ReleaseSRWLockExclusive(&wf_windows_registry_lock);
+        return 0;
+    }
+    if (wf_windows_registry[descriptor].port_associated != 0u) {
+        admitted = 1;
+    } else if (bind(native, context) != 0) {
+        wf_windows_registry[descriptor].port_associated = 1u;
+        admitted = 1;
+    }
+    ReleaseSRWLockExclusive(&wf_windows_registry_lock);
+    if (admitted != 0) {
+        *handle = native;
+    }
+    return admitted;
+}
+
+void wf__windows_completion_forget_descriptor(int descriptor) {
+    if (descriptor < 0) {
+        return;
+    }
+    AcquireSRWLockExclusive(&wf_windows_registry_lock);
+    if ((size_t)descriptor < wf_windows_registry_capacity) {
+        wf_windows_registry[descriptor].descriptor_class =
+            WF_WINDOWS_DESCRIPTOR_CLASS_ANY;
+        wf_windows_registry[descriptor].port_associated = 0u;
+        wf_windows_registry[descriptor].present = 0u;
+    }
+    ReleaseSRWLockExclusive(&wf_windows_registry_lock);
+}
+
 static int wf_windows_close_provisional_handle(HANDLE *handle) {
     if (handle != NULL && wf_windows_handle_valid(*handle)) {
         if (CloseHandle(*handle) == FALSE) {
-            abort();
+            wf_windows_fail(
+                "a provisional handle this runtime owns could not be closed"
+            );
         }
         *handle = INVALID_HANDLE_VALUE;
         return 1;
@@ -363,11 +673,7 @@ static DWORD wf_windows_nt_error(
         : (DWORD)mapped;
 }
 
-static int wf_windows_adopt_handle(
-    HANDLE handle,
-    int open_flags,
-    unsigned *returned_native_handle
-) {
+static int wf_windows_adopt_handle(HANDLE handle, int open_flags) {
     int descriptor;
     int saved_errno;
     errno = 0;
@@ -376,10 +682,9 @@ static int wf_windows_adopt_handle(
     if (descriptor < 0) {
         DWORD mapped = wf_windows_error_from_errno(saved_errno);
         if (CloseHandle(handle) == FALSE) {
-            abort();
-        }
-        if (returned_native_handle != NULL) {
-            *returned_native_handle = 1u;
+            wf_windows_fail(
+                "a handle could not be closed after its descriptor adoption failed"
+            );
         }
         wf_windows_record_error(mapped);
         return -1;
@@ -599,25 +904,28 @@ int wf__windows_open_cwd(const void *unused_path, int flags, ...) {
         wf_windows_record_error(GetLastError());
         return -1;
     }
-    descriptor = wf_windows_adopt_handle(
-        handle,
-        _O_RDONLY | _O_BINARY,
-        NULL
-    );
+    descriptor = wf_windows_adopt_handle(handle, _O_RDONLY | _O_BINARY);
     if (descriptor >= 0
         && wf__windows_completion_register_descriptor(
                descriptor,
                WF_WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_ROOT
            ) != 0) {
         if (_close(descriptor) != 0) {
-            abort();
+            wf_windows_fail(
+                "a directory root descriptor could not be closed after its registration failed"
+            );
         }
-        abort();
+        wf_windows_fail(
+            "a directory root descriptor could not be registered"
+        );
     }
     return descriptor;
 }
 
-static int wf_windows_duplicate_descriptor(int descriptor) {
+static int wf_windows_duplicate_descriptor(
+    int descriptor,
+    unsigned descriptor_class
+) {
     int duplicate;
     int saved_errno;
     errno = 0;
@@ -627,22 +935,38 @@ static int wf_windows_duplicate_descriptor(int descriptor) {
         wf_windows_record_error(wf_windows_error_from_errno(saved_errno));
     } else if (wf__windows_completion_register_descriptor(
                    duplicate,
-                   WF_WINDOWS_DESCRIPTOR_CLASS_OUTPUT
+                   descriptor_class
                ) != 0) {
         if (_close(duplicate) != 0) {
-            abort();
+            wf_windows_fail(
+                "a standard descriptor could not be closed after its registration failed"
+            );
         }
-        abort();
+        wf_windows_fail(
+            "a standard descriptor could not be registered"
+        );
     }
     return duplicate;
 }
 
 int wf__windows_stdout_descriptor(void) {
-    return wf_windows_duplicate_descriptor(1);
+    return wf_windows_duplicate_descriptor(1, WF_WINDOWS_DESCRIPTOR_CLASS_OUTPUT);
 }
 
 int wf__windows_stderr_descriptor(void) {
-    return wf_windows_duplicate_descriptor(2);
+    return wf_windows_duplicate_descriptor(2, WF_WINDOWS_DESCRIPTOR_CLASS_OUTPUT);
+}
+
+/* The [SYS-15] standard input stream.
+ *
+ * It is registered under its own class, not the output one, because the two
+ * are read and written by different request kinds and the registry's class is
+ * what a leaf checks before it uses a descriptor. A console handle has no
+ * overlapped form and a redirected pipe or file does, but neither difference
+ * is decided here: this entry duplicates and registers the descriptor, and
+ * `file_windows.c` decides per request how to read it. */
+int wf__windows_stdin_descriptor(void) {
+    return wf_windows_duplicate_descriptor(0, WF_WINDOWS_DESCRIPTOR_CLASS_INPUT);
 }
 
 int64_t wf__windows_diagnostic_write(const void *bytes, uint64_t length) {
@@ -670,70 +994,15 @@ int64_t wf__windows_diagnostic_write(const void *bytes, uint64_t length) {
     return (int64_t)written;
 }
 
-static void wf_windows_open_note_take(
-    unsigned *resources,
-    unsigned resource_mask,
-    unsigned awarded_resource,
-    int on_an_award
-) {
-    unsigned ledger_resource;
-    unsigned matching_award;
-    if (resource_mask != WF_WINDOWS_OPEN_RESOURCE_NATIVE_HANDLE
-        && resource_mask != WF_WINDOWS_OPEN_RESOURCE_CRT_DESCRIPTOR) {
-        abort();
-    }
-    if (resource_mask == WF_WINDOWS_OPEN_RESOURCE_NATIVE_HANDLE) {
-        ledger_resource = WF_RETIREMENT_NATIVE_HANDLE;
-        matching_award = WF_WINDOWS_OPEN_REFUSED_NATIVE_HANDLE;
-    } else {
-        ledger_resource = WF_RETIREMENT_CRT_DESCRIPTOR;
-        matching_award = WF_WINDOWS_OPEN_REFUSED_CRT_DESCRIPTOR;
-    }
-    wf_completion_retirement_open_took_resource(
-        ledger_resource,
-        on_an_award != 0 && awarded_resource == matching_award
-    );
-    *resources |= resource_mask;
-}
-
-static void wf_windows_open_note_return(
-    unsigned *resources,
-    unsigned resource_mask
-) {
-    unsigned ledger_resource;
-    if (resource_mask != WF_WINDOWS_OPEN_RESOURCE_NATIVE_HANDLE
-        && resource_mask != WF_WINDOWS_OPEN_RESOURCE_CRT_DESCRIPTOR) {
-        abort();
-    }
-    ledger_resource = resource_mask == WF_WINDOWS_OPEN_RESOURCE_NATIVE_HANDLE
-        ? WF_RETIREMENT_NATIVE_HANDLE
-        : WF_RETIREMENT_CRT_DESCRIPTOR;
-    wf_completion_resource_returned(ledger_resource);
-    *resources |= resource_mask;
-}
-
-static void wf_windows_open_return_provisional_handle(
-    HANDLE *handle,
-    unsigned *returned_resources
-) {
+static void wf_windows_open_return_provisional_handle(HANDLE *handle) {
     if (handle == NULL || !wf_windows_handle_valid(*handle)) {
         return;
     }
-    wf__windows_open_resource_attempt_enter();
     if (!wf_windows_close_provisional_handle(handle)) {
-        wf__windows_open_resource_attempt_leave();
-        abort();
+        wf_windows_fail(
+            "an open could not return its provisional handle"
+        );
     }
-    wf_windows_open_note_return(
-        returned_resources,
-        WF_WINDOWS_OPEN_RESOURCE_NATIVE_HANDLE
-    );
-    wf__windows_open_resource_attempt_leave();
-}
-
-static int wf_windows_open_general_resource_exhausted(DWORD error) {
-    return error == ERROR_NOT_ENOUGH_MEMORY || error == ERROR_OUTOFMEMORY
-        || error == ERROR_NO_SYSTEM_RESOURCES;
 }
 
 int wf__windows_completion_file_open_at_worker(
@@ -745,12 +1014,7 @@ int wf__windows_completion_file_open_at_worker(
     unsigned expected_kind,
     unsigned descriptor_class,
     int *error_code,
-    unsigned *open_outcome,
-    unsigned *took_resources,
-    unsigned *returned_resources,
-    unsigned *refused_resource,
-    unsigned awarded_resource,
-    int on_an_award
+    unsigned *open_outcome
 ) {
     const uint16_t *units = (const uint16_t *)(const void *)path;
     wf_windows_nt_api api;
@@ -774,20 +1038,7 @@ int wf__windows_completion_file_open_at_worker(
     if (open_outcome != NULL) {
         *open_outcome = WF_WINDOWS_OPEN_FAILED;
     }
-    if (took_resources != NULL) {
-        *took_resources = 0;
-    }
-    if (returned_resources != NULL) {
-        *returned_resources = 0;
-    }
-    if (refused_resource != NULL) {
-        *refused_resource = WF_WINDOWS_OPEN_REFUSED_NONE;
-    }
     if (path == NULL || error_code == NULL || open_outcome == NULL
-        || took_resources == NULL || returned_resources == NULL
-        || refused_resource == NULL
-        || awarded_resource > WF_WINDOWS_OPEN_REFUSED_GENERAL_RESOURCE
-        || on_an_award < 0 || on_an_award > 1
         || (flags != 0 && flags != WF_WINDOWS_NO_FOLLOW)
         || has_mode > 1u || has_mode != 0u
         || expected_kind > WF_WINDOWS_EXPECT_DIRECTORY
@@ -845,7 +1096,6 @@ int wf__windows_completion_file_open_at_worker(
     if (flags == WF_WINDOWS_NO_FOLLOW) {
         create_options |= FILE_OPEN_REPARSE_POINT;
     }
-    wf_windows_open_host_attempt_enter();
     status = api.create_file(
         &opened,
         desired_access,
@@ -859,15 +1109,6 @@ int wf__windows_completion_file_open_at_worker(
         NULL,
         0
     );
-    if (wf_windows_handle_valid(opened)) {
-        wf_windows_open_note_take(
-            took_resources,
-            WF_WINDOWS_OPEN_RESOURCE_NATIVE_HANDLE,
-            awarded_resource,
-            on_an_award
-        );
-    }
-    wf__windows_open_resource_attempt_leave();
     if (status == WF_WINDOWS_STATUS_PENDING) {
         if (!wf_windows_handle_valid(opened)) {
             wf_windows_record_error(ERROR_INVALID_HANDLE);
@@ -882,16 +1123,9 @@ int wf__windows_completion_file_open_at_worker(
             if (error == ERROR_SUCCESS) {
                 error = ERROR_GEN_FAILURE;
             }
-            wf_windows_open_return_provisional_handle(
-                &opened,
-                returned_resources
-            );
+            wf_windows_open_return_provisional_handle(&opened);
             wf_windows_record_error(error);
             *error_code = (int)error;
-            if (wf_windows_open_general_resource_exhausted(error)) {
-                *refused_resource =
-                    WF_WINDOWS_OPEN_REFUSED_GENERAL_RESOURCE;
-            }
             return -1;
         }
         status = io_status.Status;
@@ -899,17 +1133,9 @@ int wf__windows_completion_file_open_at_worker(
     if (status == WF_WINDOWS_STATUS_PENDING
         || !wf_windows_nt_success(status)) {
         DWORD error = wf_windows_nt_error(&api, status);
-        wf_windows_open_return_provisional_handle(
-            &opened,
-            returned_resources
-        );
+        wf_windows_open_return_provisional_handle(&opened);
         wf_windows_record_error(error);
         *error_code = (int)error;
-        if (error == ERROR_TOO_MANY_OPEN_FILES) {
-            *refused_resource = WF_WINDOWS_OPEN_REFUSED_NATIVE_HANDLE;
-        } else if (wf_windows_open_general_resource_exhausted(error)) {
-            *refused_resource = WF_WINDOWS_OPEN_REFUSED_GENERAL_RESOURCE;
-        }
         return -1;
     }
     if (!wf_windows_handle_valid(opened)) {
@@ -924,16 +1150,10 @@ int wf__windows_completion_file_open_at_worker(
             (DWORD)sizeof(tag_information)
         ) == FALSE) {
         DWORD error = GetLastError();
-        wf_windows_open_return_provisional_handle(
-            &opened,
-            returned_resources
-        );
+        wf_windows_open_return_provisional_handle(&opened);
         wf_windows_record_error(error);
         *error_code = (int)error;
         *open_outcome = WF_WINDOWS_OPEN_STATUS_FAILED;
-        if (wf_windows_open_general_resource_exhausted(error)) {
-            *refused_resource = WF_WINDOWS_OPEN_REFUSED_GENERAL_RESOURCE;
-        }
         return -1;
     }
     outcome = wf_windows_kind_outcome(
@@ -941,388 +1161,42 @@ int wf__windows_completion_file_open_at_worker(
         tag_information.FileAttributes
     );
     if (outcome != WF_WINDOWS_OPEN_SUCCEEDED) {
-        wf_windows_open_return_provisional_handle(
-            &opened,
-            returned_resources
-        );
+        wf_windows_open_return_provisional_handle(&opened);
         *open_outcome = outcome;
         return -1;
     }
-    {
-        unsigned returned_native_handle = 0;
-        wf__windows_open_resource_attempt_enter();
-        descriptor = wf_windows_adopt_handle(
-            opened,
-            _O_RDONLY | _O_BINARY,
-            &returned_native_handle
-        );
-        if (returned_native_handle != 0) {
-            wf_windows_open_note_return(
-                returned_resources,
-                WF_WINDOWS_OPEN_RESOURCE_NATIVE_HANDLE
-            );
-        }
-        if (descriptor >= 0) {
-            wf_windows_open_note_take(
-                took_resources,
-                WF_WINDOWS_OPEN_RESOURCE_CRT_DESCRIPTOR,
-                awarded_resource,
-                on_an_award
-            );
-        }
-        wf__windows_open_resource_attempt_leave();
-    }
+    descriptor = wf_windows_adopt_handle(opened, _O_RDONLY | _O_BINARY);
     if (descriptor < 0) {
         *error_code = wf_windows_error_code;
-        if (*error_code == ERROR_TOO_MANY_OPEN_FILES) {
-            *refused_resource = WF_WINDOWS_OPEN_REFUSED_CRT_DESCRIPTOR;
-        } else if (wf_windows_open_general_resource_exhausted(
-                       (DWORD)*error_code
-                   )) {
-            *refused_resource = WF_WINDOWS_OPEN_REFUSED_GENERAL_RESOURCE;
-        }
         return -1;
     }
     {
-        int registration_error = expected_kind == WF_WINDOWS_EXPECT_REGULAR
-            ? wf__windows_completion_associate_descriptor(descriptor)
-            : wf__windows_completion_register_descriptor(
-                  descriptor,
-                  descriptor_class
-              );
+        /* An open records the descriptor's class in this runtime's own table
+         * and stops there.  It does not reach the completion port, and this
+         * layering is not a detail: a program that submits nothing links this
+         * unit and the floor and no completion runtime at all, so a call from
+         * here into the bridge would be an unresolved symbol in every such
+         * link.  The port association is the ring's own and happens where the
+         * ring already does it -- lazily, at the first offer of a record on
+         * this descriptor, in `completion/bridge.c`'s
+         * `wf_bridge_windows_port_handle`, which is also the only place that
+         * knows whether this run has a ring to associate with. */
+        int registration_error = wf__windows_completion_register_descriptor(
+            descriptor,
+            descriptor_class
+        );
         if (registration_error != 0) {
-            int close_result;
-            wf__windows_open_resource_attempt_enter();
-            close_result = _close(descriptor);
-            if (close_result == 0) {
-                wf_windows_open_note_return(
-                    returned_resources,
-                    WF_WINDOWS_OPEN_RESOURCE_NATIVE_HANDLE
-                );
-            }
-            wf_windows_open_note_return(
-                returned_resources,
-                WF_WINDOWS_OPEN_RESOURCE_CRT_DESCRIPTOR
+            (void)_close(descriptor);
+            /* Registry storage is an execution resource introduced by this
+             * backend. It cannot become a source-level open failure, and there
+             * is no permitted synchronous fallback. */
+            wf_windows_fail(
+                "an opened descriptor could not be registered, and an open has no permitted synchronous fallback"
             );
-            wf__windows_open_resource_attempt_leave();
-            /* Association and registry storage are execution resources
-             * introduced by this backend. They cannot become a source-level
-             * open failure, and there is no permitted synchronous fallback. */
-            abort();
         }
     }
     *open_outcome = WF_WINDOWS_OPEN_SUCCEEDED;
     return descriptor;
-}
-
-int wf__completion_file_open_at_direct(
-    int directory,
-    const char *path,
-    int flags,
-    unsigned mode,
-    unsigned has_mode,
-    unsigned expected_kind,
-    unsigned descriptor_class,
-    int *error_code,
-    unsigned *open_outcome
-) {
-    wf_retirement_waiter waiter;
-    unsigned took_resources = 0;
-    unsigned returned_resources = 0;
-    unsigned refused_resource = WF_WINDOWS_OPEN_REFUSED_NONE;
-    uint64_t open_ticket = wf__windows_open_order_reserve();
-    wf_windows_descriptor_lease root_lease;
-    int progressed;
-    int result;
-    wf__windows_open_order_enter(open_ticket);
-    wf_completion_operation_accepted();
-    if (!wf__windows_completion_descriptor_lease_acquire(
-            directory,
-            WF_WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_ROOT,
-            WF_WINDOWS_DESCRIPTOR_LEASE_SHARED,
-            &root_lease
-        )) {
-        wf_windows_record_error(ERROR_INVALID_HANDLE);
-        if (error_code != NULL) {
-            *error_code = ERROR_INVALID_HANDLE;
-        }
-        if (open_outcome != NULL) {
-            *open_outcome = WF_WINDOWS_OPEN_FAILED;
-        }
-        wf__windows_open_order_leave(open_ticket);
-        wf_completion_operation_retired_resources(0);
-        return -1;
-    }
-    result = wf__windows_completion_file_open_at_worker(
-        root_lease.handle,
-        path,
-        flags,
-        mode,
-        has_mode,
-        expected_kind,
-        descriptor_class,
-        error_code,
-        open_outcome,
-        &took_resources,
-        &returned_resources,
-        &refused_resource,
-        WF_WINDOWS_OPEN_REFUSED_NONE,
-        0
-    );
-    if (refused_resource != WF_WINDOWS_OPEN_REFUSED_NONE) {
-        wf_completion_retirement_wait_begin_resource(
-            &waiter,
-            wf_completion_resource_returns(WF_RETIREMENT_OPEN_QUIESCENCE),
-            NULL,
-            NULL,
-            0,
-            WF_RETIREMENT_OPEN_QUIESCENCE
-        );
-        for (;;) {
-            wf_completion_retirement_defer_begin(&waiter);
-            progressed = wf__windows_completion_progress_for_retirement();
-            wf_completion_retirement_defer_end(&waiter);
-            if (wf_completion_retirement_state(&waiter)
-                != WF_RETIREMENT_AWAITED) {
-                break;
-            }
-            if (!progressed) {
-                Sleep(1u);
-            }
-        }
-        wf_completion_retirement_wait_end(&waiter);
-        (void)InterlockedIncrement64(&wf_windows_direct_open_retries);
-        result = wf__windows_completion_file_open_at_worker(
-            root_lease.handle,
-            path,
-            flags,
-            mode,
-            has_mode,
-            expected_kind,
-            descriptor_class,
-            error_code,
-            open_outcome,
-            &took_resources,
-            &returned_resources,
-            &refused_resource,
-            WF_WINDOWS_OPEN_REFUSED_NONE,
-            0
-        );
-    }
-    wf__windows_completion_descriptor_lease_release(&root_lease);
-    wf__windows_open_order_leave(open_ticket);
-    wf_completion_operation_retired_resources(0);
-    return result;
-}
-
-uint64_t wf__windows_direct_open_exhaustion_retries(void) {
-    return (uint64_t)InterlockedCompareExchange64(
-        &wf_windows_direct_open_retries,
-        0,
-        0
-    );
-}
-
-int wf__completion_file_status_direct(
-    int descriptor,
-    void *status,
-    uint64_t status_capacity
-) {
-    wf_windows_descriptor_lease lease;
-    FILE_ATTRIBUTE_TAG_INFO tag_information;
-    wf_windows_status_cell cell;
-    if (status == NULL) {
-        wf_windows_record_error(ERROR_INVALID_PARAMETER);
-        return -1;
-    }
-    if (status_capacity < sizeof(cell)) {
-        wf_windows_record_error(ERROR_INSUFFICIENT_BUFFER);
-        return -1;
-    }
-    if (!wf__windows_completion_descriptor_lease_acquire(
-            descriptor,
-            WF_WINDOWS_DESCRIPTOR_CLASS_READ_FILE,
-            WF_WINDOWS_DESCRIPTOR_LEASE_SHARED,
-            &lease
-        )) {
-        wf_windows_record_error(ERROR_INVALID_HANDLE);
-        return -1;
-    }
-    wf_completion_operation_accepted();
-    if (GetFileInformationByHandleEx(
-            lease.handle,
-            FileAttributeTagInfo,
-            &tag_information,
-            (DWORD)sizeof(tag_information)
-        ) == FALSE) {
-        wf_windows_record_error(GetLastError());
-        wf__windows_completion_descriptor_lease_release(&lease);
-        wf_completion_operation_retired_resources(0);
-        return -1;
-    }
-    memset(&cell, 0, sizeof(cell));
-    cell.mode = wf_windows_mode_from_attributes(
-        tag_information.FileAttributes
-    );
-    cell.attributes = (uint32_t)tag_information.FileAttributes;
-    memcpy(status, &cell, sizeof(cell));
-    wf__windows_completion_descriptor_lease_release(&lease);
-    wf_completion_operation_retired_resources(0);
-    return 0;
-}
-
-int wf__completion_file_close_direct(int descriptor) {
-    int result;
-    int saved_errno;
-    int descriptor_was_valid;
-    wf_windows_descriptor_close_ticket ticket;
-    wf_completion_operation_accepted();
-    (void)wf__windows_completion_descriptor_close_begin(
-        descriptor,
-        &ticket
-    );
-    descriptor_was_valid = ticket.active != 0;
-    if (descriptor_was_valid != 0) {
-        wf__windows_open_resource_attempt_enter();
-    }
-    errno = 0;
-    result = _close(descriptor);
-    saved_errno = errno;
-    if (descriptor_was_valid != 0) {
-        WF_WINDOWS_CLOSE_RELEASE_POINT();
-        if (result == 0) {
-            wf_completion_resource_returned(
-                WF_RETIREMENT_NATIVE_HANDLE
-            );
-        }
-        wf_completion_resource_returned(WF_RETIREMENT_CRT_DESCRIPTOR);
-        wf__windows_open_resource_attempt_leave();
-        wf__windows_completion_descriptor_close_finish(&ticket);
-    }
-    if (result != 0) {
-        wf_windows_record_error(wf_windows_error_from_errno(saved_errno));
-        wf_completion_operation_retired_resources(0);
-        return -1;
-    }
-    if (descriptor_was_valid == 0) {
-        abort();
-    }
-    wf_completion_operation_retired_resources(0);
-    return 0;
-}
-
-static int64_t wf_windows_file_pread_worker(
-    HANDLE handle,
-    void *buffer,
-    uint64_t count,
-    int64_t file_offset
-) {
-    HANDLE event;
-    OVERLAPPED overlapped;
-    ULARGE_INTEGER offset;
-    DWORD transferred = 0;
-    BOOL started;
-    DWORD error;
-    if (count == 0) {
-        return 0;
-    }
-    if (buffer == NULL || count > (uint64_t)MAXDWORD || file_offset < 0
-        || count > (uint64_t)INT64_MAX - (uint64_t)file_offset) {
-        wf_windows_record_error(ERROR_INVALID_PARAMETER);
-        return -1;
-    }
-    event = CreateEventW(NULL, TRUE, FALSE, NULL);
-    if (event == NULL) {
-        wf_windows_record_error(GetLastError());
-        return -1;
-    }
-    memset(&overlapped, 0, sizeof(overlapped));
-    offset.QuadPart = (uint64_t)file_offset;
-    overlapped.Offset = offset.LowPart;
-    overlapped.OffsetHigh = offset.HighPart;
-    /* This handle is already associated with the shared completion port. The
-     * low event bit is Windows' per-operation instruction not to enqueue an
-     * IOCP packet: this direct call waits for its own event and its OVERLAPPED
-     * lives only on this stack. Without the bit, the adapter could later
-     * dequeue that expired address as though it were one of its own entries. */
-    overlapped.hEvent = (HANDLE)((uintptr_t)event | (uintptr_t)1u);
-    started = ReadFile(
-        handle,
-        buffer,
-        (DWORD)count,
-        &transferred,
-        &overlapped
-    );
-    if (started == FALSE) {
-        error = GetLastError();
-        if (error == ERROR_HANDLE_EOF) {
-            (void)CloseHandle(event);
-            return 0;
-        }
-        if (error != ERROR_IO_PENDING) {
-            (void)CloseHandle(event);
-            wf_windows_record_error(error);
-            return -1;
-        }
-        if (WaitForSingleObject(event, INFINITE) != WAIT_OBJECT_0) {
-            error = GetLastError();
-            (void)CancelIoEx(handle, &overlapped);
-            (void)GetOverlappedResult(handle, &overlapped, &transferred, TRUE);
-            (void)CloseHandle(event);
-            wf_windows_record_error(
-                error == ERROR_SUCCESS ? ERROR_GEN_FAILURE : error
-            );
-            return -1;
-        }
-        if (GetOverlappedResult(
-                handle,
-                &overlapped,
-                &transferred,
-                FALSE
-            ) == FALSE) {
-            error = GetLastError();
-            (void)CloseHandle(event);
-            if (error == ERROR_HANDLE_EOF) {
-                return 0;
-            }
-            wf_windows_record_error(error);
-            return -1;
-        }
-    }
-    (void)CloseHandle(event);
-    return (int64_t)transferred;
-}
-
-int64_t wf__completion_file_pread_direct(
-    int descriptor,
-    void *buffer,
-    uint64_t count,
-    int64_t file_offset
-) {
-    wf_windows_descriptor_lease lease;
-    int64_t result;
-    if (count == 0) {
-        return 0;
-    }
-    if (!wf__windows_completion_descriptor_lease_acquire(
-            descriptor,
-            WF_WINDOWS_DESCRIPTOR_CLASS_READ_FILE,
-            WF_WINDOWS_DESCRIPTOR_LEASE_SHARED,
-            &lease
-        )) {
-        wf_windows_record_error(ERROR_INVALID_HANDLE);
-        return -1;
-    }
-    wf_completion_operation_accepted();
-    result = wf_windows_file_pread_worker(
-        lease.handle,
-        buffer,
-        count,
-        file_offset
-    );
-    wf__windows_completion_descriptor_lease_release(&lease);
-    wf_completion_operation_retired_resources(0);
-    return result;
 }
 
 int64_t wf__windows_completion_file_write_worker(
@@ -1343,36 +1217,6 @@ int64_t wf__windows_completion_file_write_worker(
         return -1;
     }
     return (int64_t)written;
-}
-
-int64_t wf__completion_file_write_direct(
-    int descriptor,
-    const void *buffer,
-    uint64_t count
-) {
-    wf_windows_descriptor_lease lease;
-    int64_t result;
-    if (count == 0) {
-        return 0;
-    }
-    if (!wf__windows_completion_descriptor_lease_acquire(
-            descriptor,
-            WF_WINDOWS_DESCRIPTOR_CLASS_OUTPUT,
-            WF_WINDOWS_DESCRIPTOR_LEASE_SERIAL,
-            &lease
-        )) {
-        wf_windows_record_error(ERROR_INVALID_HANDLE);
-        return -1;
-    }
-    wf_completion_operation_accepted();
-    result = wf__windows_completion_file_write_worker(
-        lease.handle,
-        buffer,
-        count
-    );
-    wf__windows_completion_descriptor_lease_release(&lease);
-    wf_completion_operation_retired_resources(0);
-    return result;
 }
 
 static int wf_windows_directory_record_valid(
@@ -1614,46 +1458,30 @@ int64_t wf__windows_completion_directory_next_worker(
     );
 }
 
-int64_t wf__completion_directory_next_direct(
-    int descriptor,
-    void *buffer,
-    uint64_t count,
-    int64_t *position
-) {
-    wf_windows_descriptor_lease lease;
-    int64_t result;
-    if (count == 0) {
-        return 0;
-    }
-    if (!wf__windows_completion_descriptor_lease_acquire(
-            descriptor,
-            WF_WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_SOURCE,
-            WF_WINDOWS_DESCRIPTOR_LEASE_SERIAL,
-            &lease
-        )) {
-        wf_windows_record_error(ERROR_INVALID_HANDLE);
-        return -1;
-    }
-    wf_completion_operation_accepted();
-    result = wf__windows_completion_directory_next_worker(
-        lease.handle,
-        buffer,
-        count,
-        position
-    );
-    wf__windows_completion_descriptor_lease_release(&lease);
-    wf_completion_operation_retired_resources(0);
-    return result;
-}
-
 int64_t wf__windows_directory_batch(
     int descriptor,
     void *buffer,
     uint64_t count,
     int64_t *position
 ) {
-    return wf__completion_directory_next_direct(
-        descriptor,
+    unsigned descriptor_class = WF_WINDOWS_DESCRIPTOR_CLASS_ANY;
+    HANDLE handle;
+    if (count == 0) {
+        return 0;
+    }
+    handle = wf__windows_completion_descriptor_handle(descriptor);
+    if (!wf_windows_handle_valid(handle)
+        || !wf__windows_completion_descriptor_state(
+               descriptor,
+               &descriptor_class,
+               NULL
+           )
+        || descriptor_class != WF_WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_SOURCE) {
+        wf_windows_record_error(ERROR_INVALID_HANDLE);
+        return -1;
+    }
+    return wf__windows_completion_directory_next_worker(
+        handle,
         buffer,
         count,
         position

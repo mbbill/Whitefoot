@@ -10,7 +10,10 @@
 #include "contract.h"
 #include "bridge.h"
 #include "file_adapter.h"
+#include "file_posix.h"
 #include "native_contract.h"
+#include "../sched/core.h"
+#include "../sched/entry.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -25,19 +28,35 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <netinet/in.h>
 #include <sys/resource.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 
-/* The bridge's whole process-wide operation capacity. A test which means to
- * reach the capacity boundary must name the same number the bridge does. */
-#define WF_HARNESS_OPERATION_CAPACITY WF_COMPLETION_SLOT_CAPACITY
+/* The runtime's own answer to the window query when nothing else bounds it. A
+ * test which means to reach that boundary must name the same number the bridge
+ * does.
+ *
+ * It used to be half the process-wide operation capacity.  There is no
+ * operation capacity any more -- the record is a block of the submitting frame
+ * -- and every submitted operation's batch carries the compiler's ceiling of
+ * two, so the only form this number reaches is a staged loop whose call is a
+ * lane hand-out, and it is the lane's own slot count (design §7). */
+#define WF_HARNESS_WINDOW_DEFAULT 1024u
 /* The private storage the window query affords one loop before the compiler's
  * ceiling and the loop's own slot size apply.  A test which means to reach
  * that boundary must name the same number the bridge does. */
 #define WF_HARNESS_WINDOW_BYTE_BUDGET (4u * 1024u * 1024u)
+
+/* One operation record block, exactly as an emitted frame reserves it: the
+ * size and alignment the contract states, and no knowledge of the layout. */
+typedef struct wf_harness_record {
+    _Alignas(WF_COMPLETION_RECORD_ALIGN)
+        unsigned char bytes[WF_COMPLETION_RECORD_BYTES];
+} wf_harness_record;
 
 #define CHECK(condition)                                                      \
     do {                                                                      \
@@ -116,116 +135,23 @@ ssize_t wf_completion_test_getdents64(int descriptor, void *buffer, size_t count
 #endif
 #endif
 
-/* The adapter's own `openat`, observed.
- *
- * Retire and retry is decided by what that call answers, and the schedule
- * worth testing is the one where another engine is mid-operation at the exact
- * moment it answers `EMFILE`.  A test arms the gate, and the first refusal
- * after that announces itself, so the thread that gives the descriptor back
- * acts strictly after the refusal rather than racing it with a delay. */
-static pthread_mutex_t wf_open_gate_lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t wf_open_gate_signal = PTHREAD_COND_INITIALIZER;
-/* Read without the lock by every refusal, so a build that is only observing
- * does not serialize the refusals it is observing.  A refused open decides
- * what it does next against a ledger several threads are moving, and a global
- * lock taken on the way out of every `openat` narrows that to one thread at a
- * time — which is exactly the schedule a test of the rule needs to leave
- * alone. */
-static _Atomic unsigned wf_open_gate_armed;
-static unsigned wf_open_gate_refusals;
-
+/* The adapter's own `openat`, named so this build performs the same host
+ * call the shipped build does. */
 int wf_completion_test_openat(
     int directory,
     const char *path,
     int flags,
     ...
 ) {
-    int descriptor;
     if ((flags & O_CREAT) != 0) {
         va_list arguments;
         mode_t mode;
         va_start(arguments, flags);
         mode = (mode_t)va_arg(arguments, int);
         va_end(arguments);
-        descriptor = openat(directory, path, flags, mode);
-    } else {
-        descriptor = openat(directory, path, flags);
+        return openat(directory, path, flags, mode);
     }
-    if (descriptor < 0 && (errno == EMFILE || errno == ENFILE)
-        && atomic_load_explicit(&wf_open_gate_armed, memory_order_acquire)
-            != 0) {
-        int refusal = errno;
-        (void)pthread_mutex_lock(&wf_open_gate_lock);
-        if (atomic_load_explicit(&wf_open_gate_armed, memory_order_relaxed)
-            != 0) {
-            wf_open_gate_refusals += 1;
-            (void)pthread_cond_broadcast(&wf_open_gate_signal);
-        }
-        (void)pthread_mutex_unlock(&wf_open_gate_lock);
-        errno = refusal;
-    }
-    return descriptor;
-}
-
-/* The readiness wait a parked transfer makes, announced.
- *
- * A test that means to stand where one engine is mid-operation while another
- * is refused an open needs the first operation to be genuinely in flight, not
- * merely submitted.  The bounded adapter reaches its readiness wait through
- * this named call, so arming it makes "the read is parked" a fact the test
- * observes instead of a delay it hopes for. */
-static pthread_mutex_t wf_poll_gate_lock = PTHREAD_MUTEX_INITIALIZER;
-static int wf_poll_gate_descriptor = -1;
-static unsigned wf_poll_gate_entries;
-
-/* The named point inside the ledger's give-up decision, between its read of
- * the retirement generation and its read of what is still in flight.  Armed,
- * it retires one operation exactly there, which is the one interleaving that
- * can hide a retirement from both reads. */
-static pthread_mutex_t wf_retirement_point_lock = PTHREAD_MUTEX_INITIALIZER;
-static unsigned wf_retirement_point_armed;
-static unsigned wf_retirement_point_fired;
-
-/* What a test standing at the point does there: retire one operation, or
- * queue one more behind the waiter's own thread. */
-#define WF_HARNESS_POINT_RETIRES 0u
-#define WF_HARNESS_POINT_QUEUES_OWED 1u
-static unsigned wf_retirement_point_mode;
-static _Atomic size_t wf_harness_owed_work;
-
-/* The queue a scripted waiter is answerable for.  The ledger asks for it where
- * it decides, so a test can make it grow exactly there. */
-static size_t wf_harness_owed(void *context) {
-    (void)context;
-    return atomic_load_explicit(&wf_harness_owed_work, memory_order_seq_cst);
-}
-
-void wf_completion_test_retirement_point(void) {
-    unsigned fire = 0;
-    unsigned mode = WF_HARNESS_POINT_RETIRES;
-    (void)pthread_mutex_lock(&wf_retirement_point_lock);
-    if (wf_retirement_point_armed != 0) {
-        wf_retirement_point_armed = 0;
-        wf_retirement_point_fired = 1;
-        mode = wf_retirement_point_mode;
-        fire = 1;
-    }
-    (void)pthread_mutex_unlock(&wf_retirement_point_lock);
-    if (fire == 0) {
-        return;
-    }
-    if (mode == WF_HARNESS_POINT_QUEUES_OWED) {
-        atomic_fetch_add_explicit(
-            &wf_harness_owed_work,
-            1,
-            memory_order_seq_cst
-        );
-        wf_completion_operation_accepted();
-        return;
-    }
-    /* The retirement a give-up decision is about: one that put a descriptor
-     * back, which is the only kind that grants the re-attempt. */
-    wf_completion_operation_retired(1);
+    return openat(directory, path, flags);
 }
 
 int wf_completion_test_poll(
@@ -233,14 +159,6 @@ int wf_completion_test_poll(
     nfds_t count,
     int timeout
 ) {
-    if (count == 1) {
-        (void)pthread_mutex_lock(&wf_poll_gate_lock);
-        if (wf_poll_gate_descriptor >= 0
-            && descriptors[0].fd == wf_poll_gate_descriptor) {
-            wf_poll_gate_entries += 1;
-        }
-        (void)pthread_mutex_unlock(&wf_poll_gate_lock);
-    }
 #if defined(WF_FILE_HAS_DIRECTORY_NEXT)
     if (wf_directory_host_calls != 0) {
         wf_directory_poll_calls += 1;
@@ -252,460 +170,59 @@ int wf_completion_test_poll(
     return poll(descriptors, count, timeout);
 }
 
-static wf_completion_publication integer_publication(const int *value) {
-    wf_completion_publication publication = {
-        .milestones = WF_COMPLETION_OWNERSHIP_COMPLETE,
-        .terminal_kind = 1,
-        .result = value,
-        .result_size = sizeof(*value),
-    };
-    return publication;
-}
+/* ------------------------------------------------------------- retirements
+ *
+ * Retired with the record pool (design §7, "The record's pool machinery:
+ * deleted, not answered").  Every property each of these asserted was a
+ * property of that pool, and the pool is gone rather than answered: the record
+ * is a block of the submitting frame, nothing claims it, nothing recycles it,
+ * and no queue anywhere can refuse an operation.
+ *
+ *   - `test_capacity_and_product_state`: the slot phases, the milestone
+ *     product and WF_COMPLETION_OWNERSHIP_COMPLETE.  A record has one state
+ *     that goes PENDING to DONE once, and no product of independent facts.
+ *   - `test_generation_and_duplicate_terminal`: the generation and the
+ *     duplicate-terminal refusal.  Exactly one terminal per submission is now
+ *     an impossibility rather than a checked refusal, and it is tested in its
+ *     new form by `test_exactly_one_completion_per_submission_under_race`.
+ *   - `test_named_drain_refuses_a_recycled_slot`: a recycled slot.  There is
+ *     no slot and no recycling; the frame joins its record before any
+ *     terminator, so no publisher can meet a reused one.
+ *   - `test_concurrent_single_claims_are_unique`: claim uniqueness.  There is
+ *     nothing to claim; each frame supplies its own record, which is what the
+ *     race test above submits from many threads at once.
+ *   - `test_bounded_drain_and_lane_independence`: the bounded drain and the
+ *     ready-event count it moved.  A completion is published straight into its
+ *     record and there is no event to drain.
+ *   - `test_drain_wakes_the_registered_token_owner`: the consume-wait
+ *     registration.  Its property -- a completion elsewhere wakes the thread
+ *     that registered for it -- survives as the in-place waiter, and is tested
+ *     by `test_a_completion_claims_an_in_place_registration` and
+ *     `test_a_helper_completion_wakes_a_waiting_join`.
+ *   - `test_bridge_capacity_falls_back_per_operation` and
+ *     `test_open_capacity_refuses_and_resubmits`: the per-operation capacity
+ *     fallback and the readmission after a release.  There is no capacity to
+ *     exhaust, no refusal to fall back from, and the owner's rule forbids a
+ *     per-operation blocking fallback; the property that replaces both is
+ *     `test_more_operations_outstanding_than_the_old_capacity`.
+ *   - `test_capacity_release_wakes_before_blocking_work`: the capacity
+ *     notification and the ordering it bought.  `wf_completion_notify_capacity`
+ *     and its six callers are deleted with the capacity they announced.
+ *   - `test_a_name_no_record_can_hold_opens_directly`: the path-does-not-fit
+ *     demotion and its counter.  An open's path bytes are the submitting
+ *     frame's own and are never copied, so no name can be too long for a
+ *     record; the property that replaces it is
+ *     `test_a_name_no_pool_record_could_hold_takes_the_completion_path`.
+ *   - The overwrite arm of `test_submitted_open_owns_its_path_bytes`, which
+ *     rewrote the caller's buffer immediately after submitting.  The bytes are
+ *     the frame's and [SYS-2]'s loan on them holds until the join (design §5),
+ *     so rewriting them while the operation is outstanding is no longer a
+ *     thing a conforming caller does; what remains -- that an open resolves
+ *     the name it was given -- is asserted by
+ *     `test_submitted_open_resolves_the_submitters_bytes`.
+ */
 
-static int accept_operation(
-    wf_completion_runtime *runtime,
-    wf_completion_token token
-) {
-    CHECK(
-        wf_completion_begin_submit(runtime, token)
-        == WF_COMPLETION_TRANSITIONED
-    );
-    CHECK(
-        wf_completion_target_accepted(runtime, token)
-        == WF_COMPLETION_TRANSITIONED
-    );
-    return 0;
-}
-
-static int drain_exact(
-    wf_completion_runtime *runtime,
-    size_t expected,
-    wf_completion_event *events
-) {
-    size_t total = 0;
-    size_t rounds = 0;
-    while (total < expected && rounds < runtime->slot_count + 2) {
-        total += wf_completion_drain(
-            runtime,
-            events + total,
-            expected - total,
-            runtime->slot_count
-        );
-        rounds += 1;
-    }
-    CHECK(total == expected);
-    return 0;
-}
-
-static int consume_integer(
-    wf_completion_runtime *runtime,
-    wf_completion_token token,
-    int expected
-) {
-    int result = 0;
-    wf_completion_outcome outcome;
-    CHECK(
-        wf_completion_consume(
-            runtime,
-            token,
-            &result,
-            sizeof(result),
-            &outcome
-        ) == WF_COMPLETION_CONSUMED
-    );
-    CHECK(result == expected);
-    CHECK(
-        (outcome.milestones & WF_COMPLETION_OWNERSHIP_COMPLETE)
-        == WF_COMPLETION_OWNERSHIP_COMPLETE
-    );
-    CHECK(outcome.terminal_kind == 1);
-    CHECK(outcome.result_size == sizeof(result));
-    return 0;
-}
-
-static int test_capacity_and_product_state(void) {
-    wf_completion_runtime runtime;
-    wf_completion_slot slots[2];
-    wf_completion_token first;
-    wf_completion_token second;
-    wf_completion_token refused;
-    wf_completion_event event;
-    wf_completion_outcome outcome;
-    wf_completion_publication publication;
-    uint32_t milestones = 0;
-    unsigned phase = 0;
-    int value = 37;
-    int result = 0;
-
-    CHECK(wf_completion_runtime_init(&runtime, slots, 2) == 0);
-    CHECK(wf_completion_claim(&runtime, &first) == WF_COMPLETION_CLAIMED);
-    CHECK(wf_completion_claim(&runtime, &second) == WF_COMPLETION_CLAIMED);
-    CHECK(
-        wf_completion_claim(&runtime, &refused)
-        == WF_COMPLETION_CLAIM_WAIT_CAPACITY
-    );
-
-    CHECK(
-        wf_completion_begin_submit(&runtime, first)
-        == WF_COMPLETION_TRANSITIONED
-    );
-    CHECK(
-        wf_completion_mark_wait_capacity(&runtime, first)
-        == WF_COMPLETION_TRANSITIONED
-    );
-    CHECK(
-        wf_completion_observe(&runtime, first, &milestones, &phase)
-        == WF_COMPLETION_TRANSITIONED
-    );
-    CHECK(phase == WF_COMPLETION_WAIT_CAPACITY);
-    CHECK(milestones == 0);
-    CHECK(accept_operation(&runtime, first) == 0);
-
-    publication = integer_publication(&value);
-    publication.milestones = WF_COMPLETION_RESULT_READY
-        | WF_COMPLETION_TERMINAL;
-    CHECK(
-        wf_completion_publish_terminal(&runtime, first, &publication)
-        == WF_COMPLETION_PUBLISH_INCOMPLETE_TERMINAL
-    );
-    publication = integer_publication(&value);
-    publication.result_size = WF_COMPLETION_RESULT_CAPACITY + 1u;
-    CHECK(
-        wf_completion_publish_terminal(&runtime, first, &publication)
-        == WF_COMPLETION_PUBLISH_RESULT_TOO_LARGE
-    );
-    publication = integer_publication(&value);
-    CHECK(
-        wf_completion_publish_terminal(&runtime, first, &publication)
-        == WF_COMPLETION_PUBLISHED
-    );
-    CHECK(
-        wf_completion_observe(&runtime, first, &milestones, &phase)
-        == WF_COMPLETION_TRANSITIONED
-    );
-    CHECK(phase == WF_COMPLETION_TERMINAL_PHASE);
-    CHECK((milestones & WF_COMPLETION_RESULT_READY) != 0);
-    CHECK((milestones & WF_COMPLETION_PAYLOAD_RELEASED) != 0);
-    CHECK((milestones & WF_COMPLETION_RESOURCE_RELEASED) != 0);
-    CHECK((milestones & WF_COMPLETION_TERMINAL) != 0);
-    CHECK(
-        wf_completion_consume(
-            &runtime,
-            first,
-            &result,
-            sizeof(result),
-            &outcome
-        ) == WF_COMPLETION_CONSUME_NOT_DRAINED
-    );
-    CHECK(drain_exact(&runtime, 1, &event) == 0);
-    CHECK(event.token.slot == first.slot);
-    CHECK(event.token.generation == first.generation);
-    CHECK(consume_integer(&runtime, first, value) == 0);
-
-    /* Release the second slot through the true inline/no-future-event route. */
-    CHECK(
-        wf_completion_begin_submit(&runtime, second)
-        == WF_COMPLETION_TRANSITIONED
-    );
-    value = 41;
-    publication = integer_publication(&value);
-    CHECK(
-        wf_completion_publish_inline_terminal(&runtime, second, &publication)
-        == WF_COMPLETION_PUBLISHED
-    );
-    CHECK(drain_exact(&runtime, 1, &event) == 0);
-    CHECK(consume_integer(&runtime, second, value) == 0);
-    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
-    return 0;
-}
-
-static int test_generation_and_duplicate_terminal(void) {
-    wf_completion_runtime runtime;
-    wf_completion_slot slot;
-    wf_completion_token old_token;
-    wf_completion_token new_token;
-    wf_completion_event event;
-    wf_completion_publication publication;
-    int first = 111;
-    int unexpected = 999;
-    int second = 222;
-
-    CHECK(wf_completion_runtime_init(&runtime, &slot, 1) == 0);
-    CHECK(wf_completion_claim(&runtime, &old_token) == WF_COMPLETION_CLAIMED);
-    CHECK(accept_operation(&runtime, old_token) == 0);
-    publication = integer_publication(&first);
-    CHECK(
-        wf_completion_publish_terminal(&runtime, old_token, &publication)
-        == WF_COMPLETION_PUBLISHED
-    );
-    publication = integer_publication(&unexpected);
-    CHECK(
-        wf_completion_publish_terminal(&runtime, old_token, &publication)
-        == WF_COMPLETION_PUBLISH_DUPLICATE_TERMINAL
-    );
-    CHECK(drain_exact(&runtime, 1, &event) == 0);
-    CHECK(consume_integer(&runtime, old_token, first) == 0);
-
-    CHECK(wf_completion_claim(&runtime, &new_token) == WF_COMPLETION_CLAIMED);
-    CHECK(new_token.slot == old_token.slot);
-    CHECK(new_token.generation == old_token.generation + 1);
-    CHECK(accept_operation(&runtime, new_token) == 0);
-
-    /* The stale token is rejected while holding the slot lock and before the
-     * unexpected late result can touch the new operation's result cell. */
-    publication = integer_publication(&unexpected);
-    CHECK(
-        wf_completion_publish_terminal(&runtime, old_token, &publication)
-        == WF_COMPLETION_PUBLISH_STALE
-    );
-    publication = integer_publication(&second);
-    CHECK(
-        wf_completion_publish_terminal(&runtime, new_token, &publication)
-        == WF_COMPLETION_PUBLISHED
-    );
-    CHECK(drain_exact(&runtime, 1, &event) == 0);
-    CHECK(consume_integer(&runtime, new_token, second) == 0);
-    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
-    return 0;
-}
-
-/* A slot outlives the operation that used it, and only the generation says
- * which operation a token still stands for.  The named drain is the one
- * token-named entry that *takes* an event rather than reading one, so a
- * missing generation check there is not a stale read but a live operation's
- * completion consumed by an owner with no claim on it — and the live owner
- * then waits for an event that no longer exists. */
-static int test_named_drain_refuses_a_recycled_slot(void) {
-    wf_completion_runtime runtime;
-    wf_completion_slot slot;
-    wf_completion_token retired_token;
-    wf_completion_token live_token;
-    wf_completion_event event;
-    wf_completion_outcome outcome;
-    wf_completion_publication publication;
-    int retired = 5;
-    int live = 9;
-    int taken = 0;
-
-    CHECK(wf_completion_runtime_init(&runtime, &slot, 1) == 0);
-
-    /* One operation runs to completion, which frees the single slot. */
-    CHECK(wf_completion_claim(&runtime, &retired_token) == WF_COMPLETION_CLAIMED);
-    CHECK(accept_operation(&runtime, retired_token) == 0);
-    publication = integer_publication(&retired);
-    CHECK(
-        wf_completion_publish_terminal(&runtime, retired_token, &publication)
-        == WF_COMPLETION_PUBLISHED
-    );
-    CHECK(wf_completion_drain_token(&runtime, retired_token, &event) == 1);
-    CHECK(event.token.slot == retired_token.slot);
-    CHECK(event.token.generation == retired_token.generation);
-    CHECK(consume_integer(&runtime, retired_token, retired) == 0);
-
-    /* An unrelated operation reuses that slot and publishes its own result. */
-    CHECK(wf_completion_claim(&runtime, &live_token) == WF_COMPLETION_CLAIMED);
-    CHECK(live_token.slot == retired_token.slot);
-    CHECK(live_token.generation == retired_token.generation + 1);
-    CHECK(accept_operation(&runtime, live_token) == 0);
-    publication = integer_publication(&live);
-    CHECK(
-        wf_completion_publish_terminal(&runtime, live_token, &publication)
-        == WF_COMPLETION_PUBLISHED
-    );
-
-    /* The retired token names the slot but no longer names an operation, so
-     * it takes nothing and the event stays where it belongs. */
-    CHECK(wf_completion_drain_token(&runtime, retired_token, &event) == 0);
-    CHECK(wf_completion_ready_event_count(&runtime) == 1);
-    CHECK(
-        wf_completion_consume(
-            &runtime,
-            retired_token,
-            &taken,
-            sizeof(taken),
-            &outcome
-        ) == WF_COMPLETION_CONSUME_STALE
-    );
-
-    /* The live owner still finds its own event, exactly once. */
-    CHECK(wf_completion_drain_token(&runtime, live_token, &event) == 1);
-    CHECK(event.token.generation == live_token.generation);
-    CHECK(wf_completion_drain_token(&runtime, live_token, &event) == 0);
-    CHECK(consume_integer(&runtime, live_token, live) == 0);
-    CHECK(wf_completion_ready_event_count(&runtime) == 0);
-    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
-    return 0;
-}
-
-#define TERMINAL_RACERS 12
-
-typedef struct terminal_race_context {
-    wf_completion_runtime *runtime;
-    wf_completion_token token;
-    _Atomic unsigned *start;
-    int value;
-    enum wf_completion_publish_result result;
-} terminal_race_context;
-
-static void *terminal_racer(void *opaque) {
-    terminal_race_context *context = opaque;
-    wf_completion_publication publication;
-    while (atomic_load_explicit(context->start, memory_order_acquire) == 0) {
-        sched_yield();
-    }
-    publication = integer_publication(&context->value);
-    context->result = wf_completion_publish_terminal(
-        context->runtime,
-        context->token,
-        &publication
-    );
-    return NULL;
-}
-
-static int test_exactly_one_terminal_under_race(void) {
-    wf_completion_runtime runtime;
-    wf_completion_slot slot;
-    wf_completion_token token;
-    wf_completion_event event;
-    pthread_t threads[TERMINAL_RACERS];
-    terminal_race_context contexts[TERMINAL_RACERS];
-    _Atomic unsigned start;
-    size_t index;
-    size_t winners = 0;
-    size_t duplicates = 0;
-    int winning_value = 0;
-
-    atomic_init(&start, 0);
-    CHECK(wf_completion_runtime_init(&runtime, &slot, 1) == 0);
-    CHECK(wf_completion_claim(&runtime, &token) == WF_COMPLETION_CLAIMED);
-    CHECK(accept_operation(&runtime, token) == 0);
-    for (index = 0; index < TERMINAL_RACERS; ++index) {
-        contexts[index].runtime = &runtime;
-        contexts[index].token = token;
-        contexts[index].start = &start;
-        contexts[index].value = (int)index + 1;
-        contexts[index].result = WF_COMPLETION_PUBLISH_INVALID_STATE;
-        CHECK(
-            pthread_create(
-                &threads[index],
-                NULL,
-                terminal_racer,
-                &contexts[index]
-            ) == 0
-        );
-    }
-    atomic_store_explicit(&start, 1, memory_order_release);
-    for (index = 0; index < TERMINAL_RACERS; ++index) {
-        CHECK(pthread_join(threads[index], NULL) == 0);
-        if (contexts[index].result == WF_COMPLETION_PUBLISHED) {
-            winners += 1;
-            winning_value = contexts[index].value;
-        } else if (
-            contexts[index].result
-            == WF_COMPLETION_PUBLISH_DUPLICATE_TERMINAL
-        ) {
-            duplicates += 1;
-        }
-    }
-    CHECK(winners == 1);
-    CHECK(duplicates == TERMINAL_RACERS - 1);
-    CHECK(wf_completion_ready_event_count(&runtime) == 1);
-    CHECK(drain_exact(&runtime, 1, &event) == 0);
-    CHECK(consume_integer(&runtime, token, winning_value) == 0);
-    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
-    return 0;
-}
-
-#define CLAIM_RACERS 32
-
-typedef struct claim_race_context {
-    wf_completion_runtime *runtime;
-    _Atomic unsigned *start;
-    wf_completion_token token;
-    enum wf_completion_claim_result result;
-} claim_race_context;
-
-static void *claim_racer(void *opaque) {
-    claim_race_context *context = opaque;
-    while (atomic_load_explicit(context->start, memory_order_acquire) == 0) {
-        sched_yield();
-    }
-    context->result = wf_completion_claim(
-        context->runtime,
-        &context->token
-    );
-    return NULL;
-}
-
-static int test_concurrent_single_claims_are_unique(void) {
-    wf_completion_runtime runtime;
-    wf_completion_slot slots[CLAIM_RACERS];
-    wf_completion_event events[CLAIM_RACERS];
-    pthread_t threads[CLAIM_RACERS];
-    claim_race_context contexts[CLAIM_RACERS];
-    unsigned char seen[CLAIM_RACERS] = {0};
-    int values[CLAIM_RACERS];
-    wf_completion_publication publication;
-    wf_completion_token refused;
-    _Atomic unsigned start;
-    size_t index;
-
-    atomic_init(&start, 0);
-    CHECK(
-        wf_completion_runtime_init(&runtime, slots, CLAIM_RACERS) == 0
-    );
-    for (index = 0; index < CLAIM_RACERS; ++index) {
-        contexts[index].runtime = &runtime;
-        contexts[index].start = &start;
-        contexts[index].result = WF_COMPLETION_CLAIM_INVALID;
-        CHECK(
-            pthread_create(
-                &threads[index],
-                NULL,
-                claim_racer,
-                &contexts[index]
-            ) == 0
-        );
-    }
-    atomic_store_explicit(&start, 1, memory_order_release);
-    for (index = 0; index < CLAIM_RACERS; ++index) {
-        CHECK(pthread_join(threads[index], NULL) == 0);
-        CHECK(contexts[index].result == WF_COMPLETION_CLAIMED);
-        CHECK(contexts[index].token.slot < CLAIM_RACERS);
-        CHECK(contexts[index].token.generation == 1);
-        CHECK(seen[contexts[index].token.slot] == 0);
-        seen[contexts[index].token.slot] = 1;
-    }
-    CHECK(
-        wf_completion_claim(&runtime, &refused)
-        == WF_COMPLETION_CLAIM_WAIT_CAPACITY
-    );
-
-    for (index = 0; index < CLAIM_RACERS; ++index) {
-        values[index] = (int)index;
-        CHECK(accept_operation(&runtime, contexts[index].token) == 0);
-        publication = integer_publication(&values[index]);
-        CHECK(
-            wf_completion_publish_terminal(
-                &runtime,
-                contexts[index].token,
-                &publication
-            ) == WF_COMPLETION_PUBLISHED
-        );
-    }
-    CHECK(drain_exact(&runtime, CLAIM_RACERS, events) == 0);
-    for (index = 0; index < CLAIM_RACERS; ++index) {
-        CHECK(
-            consume_integer(
-                &runtime,
-                contexts[index].token,
-                values[index]
-            ) == 0
-        );
-    }
-    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
-    return 0;
-}
+/* ---------------------------------------------------------------- helpers */
 
 typedef struct park_context {
     wf_completion_runtime *runtime;
@@ -713,7 +230,7 @@ typedef struct park_context {
     enum wf_completion_park_result result;
 } park_context;
 
-static void *park_scheduler(void *opaque) {
+static void *park_thread(void *opaque) {
     park_context *context = opaque;
     context->result = wf_completion_park_if_unchanged(
         context->runtime,
@@ -747,22 +264,195 @@ static void record_host_wake(void *context) {
     atomic_fetch_add_explicit(count, 1, memory_order_relaxed);
 }
 
+/* One record, filled the way a submit fills it, for the cases that drive an
+ * adapter directly rather than through the bridge. */
+static void harness_record_init(
+    wf_completion_record *record,
+    enum wf_file_operation_kind kind
+) {
+    memset(record, 0, sizeof(*record));
+    wf_sched_record_init(&record->sched);
+    record->request.kind = kind;
+    record->opened_descriptor = -1;
+    record->open_outcome = WF_FILE_OPEN_SUCCEEDED;
+}
+
+static int harness_record_done(const wf_completion_record *record) {
+    return __atomic_load_n(&record->sched.state, __ATOMIC_ACQUIRE)
+        == WF_SCHED_DONE;
+}
+
+/* Submits one record to the bounded adapter and runs it on this thread. */
+static int harness_run_on_adapter(
+    wf_file_adapter *adapter,
+    wf_completion_record *record
+) {
+    CHECK(wf_file_adapter_submit(adapter, record) == WF_FILE_TARGET_OWNS);
+    CHECK(wf_file_adapter_progress(adapter, 1) == 1);
+    CHECK(harness_record_done(record));
+    return 0;
+}
+
+/* ------------------------------------------------- the record protocol */
+
+#define WF_HARNESS_RACERS 12
+#define WF_HARNESS_RACER_ROUNDS 64
+
+typedef struct submission_race_context {
+    int descriptor;
+    unsigned lane;
+    _Atomic unsigned *start;
+    int failed;
+} submission_race_context;
+
+/* One lane submitting and joining through records on its own frames.
+ *
+ * Every record here is a block of this thread's own stack frame, which is what
+ * the emitter reserves (design §5).  No two lanes can name one record, so the
+ * property the old token pool checked by refusing a second terminal is checked
+ * here by construction: each submission has exactly one publication, and the
+ * whole run's publication count says so. */
+static void *submission_racer(void *opaque) {
+    submission_race_context *context = opaque;
+    unsigned round;
+    while (atomic_load_explicit(context->start, memory_order_acquire) == 0) {
+        sched_yield();
+    }
+    for (round = 0; round < WF_HARNESS_RACER_ROUNDS; ++round) {
+        wf_harness_record record;
+        unsigned char byte = 0xff;
+        uint64_t offset = (uint64_t)((context->lane + round) % 8u);
+        int64_t value = -1;
+        int error = -1;
+        wf__completion_file_pread_submit(
+            context->descriptor,
+            &byte,
+            1,
+            offset,
+            record.bytes
+        );
+        wf__completion_file_join(record.bytes, &value, &error);
+        if (value != 1 || error != 0
+            || byte != (unsigned char)('a' + offset)) {
+            context->failed = 1;
+            return NULL;
+        }
+    }
+    return NULL;
+}
+
+/* Exactly one completion per submission, under a race.
+ *
+ * This is what replaces the token pool's duplicate-terminal refusal and its
+ * claim-uniqueness check: twelve threads submit and join at once, each through
+ * records on its own frames, and the runtime publishes exactly one completion
+ * for each submission.  A second publication would show as a publication count
+ * above the submission count; a lost one would hang the join, which the
+ * harness watchdog reports by name. */
+static int test_exactly_one_completion_per_submission_under_race(
+    const char *scratch_directory
+) {
+    pthread_t threads[WF_HARNESS_RACERS];
+    submission_race_context contexts[WF_HARNESS_RACERS];
+    _Atomic unsigned start;
+    uint64_t publications_before;
+    uint64_t publications_after;
+    char path[256];
+    int descriptor;
+    unsigned index;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-race-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    descriptor = open(path, O_CREAT | O_EXCL | O_RDWR, 0600);
+    CHECK(descriptor >= 0);
+    CHECK(write(descriptor, "abcdefgh", 8) == 8);
+
+    atomic_init(&start, 0);
+    publications_before = wf__completion_publications();
+    for (index = 0; index < WF_HARNESS_RACERS; ++index) {
+        contexts[index].descriptor = descriptor;
+        contexts[index].lane = index;
+        contexts[index].start = &start;
+        contexts[index].failed = 0;
+        CHECK(
+            pthread_create(
+                &threads[index],
+                NULL,
+                submission_racer,
+                &contexts[index]
+            ) == 0
+        );
+    }
+    atomic_store_explicit(&start, 1, memory_order_release);
+    for (index = 0; index < WF_HARNESS_RACERS; ++index) {
+        CHECK(pthread_join(threads[index], NULL) == 0);
+        CHECK(contexts[index].failed == 0);
+    }
+    publications_after = wf__completion_publications();
+    CHECK(
+        publications_after - publications_before
+        == (uint64_t)WF_HARNESS_RACERS * WF_HARNESS_RACER_ROUNDS
+    );
+
+    CHECK(close(descriptor) == 0);
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
+/* A publisher claims an in-place registration before it stores DONE.
+ *
+ * This is the I/O half of §6's handshake with no stack to park: a thread that
+ * waits in place registers `WF_SCHED_WAITER_IN_PLACE` on its own record, and
+ * the one publisher takes that registration back with a compare-exchange
+ * before storing DONE, so exactly one of the two owns the wake.  Checked
+ * without a park so the answer is a fact rather than a sample: after the
+ * publication the registration is gone and the state is DONE. */
+static int test_a_completion_claims_an_in_place_registration(void) {
+    wf_completion_record record;
+
+    harness_record_init(&record, WF_FILE_PREAD);
+    CHECK(record.sched.state == WF_SCHED_PENDING);
+    CHECK(record.sched.waiter == NULL);
+    record.sched.waiter = WF_SCHED_WAITER_IN_PLACE;
+    record.result.kind = WF_FILE_PREAD;
+    record.result.value = 7;
+    wf_completion_record_complete(&record);
+    CHECK(harness_record_done(&record));
+    CHECK(record.sched.waiter == NULL);
+    CHECK(record.result.value == 7);
+
+    /* A record no one waits on is published just the same, and the publisher
+     * touches nothing after DONE. */
+    harness_record_init(&record, WF_FILE_CLOSE);
+    record.result.kind = WF_FILE_CLOSE;
+    wf_completion_record_complete(&record);
+    CHECK(harness_record_done(&record));
+    CHECK(record.sched.waiter == NULL);
+    return 0;
+}
+
+/* ------------------------------------------------------- the wake epoch */
+
 static int test_unified_wake_epoch(void) {
     wf_completion_runtime runtime;
-    wf_completion_slot slot;
-    wf_completion_token token;
-    wf_completion_event event;
-    wf_completion_publication publication;
     wf_completion_statistics before;
     wf_completion_statistics after;
     park_context parked;
     pthread_t thread;
     _Atomic unsigned host_wakes;
     uint64_t epoch_before;
-    int value = 73;
 
     atomic_init(&host_wakes, 0);
-    CHECK(wf_completion_runtime_init(&runtime, &slot, 1) == 0);
+    CHECK(wf_completion_runtime_init(&runtime) == 0);
     CHECK(
         wf_completion_set_wake_callback(
             &runtime,
@@ -770,30 +460,28 @@ static int test_unified_wake_epoch(void) {
             &host_wakes
         ) == 0
     );
-    CHECK(wf_completion_claim(&runtime, &token) == WF_COMPLETION_CLAIMED);
-    CHECK(accept_operation(&runtime, token) == 0);
     before = wf_completion_statistics_snapshot(&runtime);
     epoch_before = wf_completion_wake_epoch(&runtime);
-    publication = integer_publication(&value);
-    CHECK(
-        wf_completion_publish_terminal(&runtime, token, &publication)
-        == WF_COMPLETION_PUBLISHED
-    );
+    /* A transition with no announced sleeper raises the epoch and performs no
+     * host wake at all. */
+    wf_completion_notify_target(&runtime);
     after = wf_completion_statistics_snapshot(&runtime);
     CHECK(after.wake_signals == before.wake_signals);
+    CHECK(after.target_notifications == before.target_notifications + 1);
     CHECK(atomic_load_explicit(&host_wakes, memory_order_relaxed) == 0);
     CHECK(wf_completion_wake_epoch(&runtime) == epoch_before + 1);
+    /* And a park against the epoch it raised does not sleep. */
     CHECK(
         wf_completion_park_if_unchanged(&runtime, epoch_before, 1)
         == WF_COMPLETION_PARK_EPOCH_CHANGED
     );
-    CHECK(drain_exact(&runtime, 1, &event) == 0);
-    CHECK(consume_integer(&runtime, token, value) == 0);
 
+    /* An announced sleeper is woken once, through the host endpoint and the
+     * condition variable both. */
     parked.runtime = &runtime;
     parked.epoch = wf_completion_wake_epoch(&runtime);
     parked.result = WF_COMPLETION_PARK_FAILED;
-    CHECK(pthread_create(&thread, NULL, park_scheduler, &parked) == 0);
+    CHECK(pthread_create(&thread, NULL, park_thread, &parked) == 0);
     CHECK(wait_until_parked(&runtime) == 0);
     before = wf_completion_statistics_snapshot(&runtime);
     wf_completion_notify_compute(&runtime);
@@ -804,34 +492,65 @@ static int test_unified_wake_epoch(void) {
     CHECK(after.compute_notifications == before.compute_notifications + 1);
     CHECK(atomic_load_explicit(&host_wakes, memory_order_relaxed) == 1);
 
-    CHECK(wf_completion_claim(&runtime, &token) == WF_COMPLETION_CLAIMED);
-    CHECK(accept_operation(&runtime, token) == 0);
-    parked.epoch = wf_completion_wake_epoch(&runtime);
-    parked.result = WF_COMPLETION_PARK_FAILED;
-    CHECK(pthread_create(&thread, NULL, park_scheduler, &parked) == 0);
-    CHECK(wait_until_parked(&runtime) == 0);
-    before = wf_completion_statistics_snapshot(&runtime);
-    publication = integer_publication(&value);
-    CHECK(
-        wf_completion_publish_terminal(&runtime, token, &publication)
-        == WF_COMPLETION_PUBLISHED
-    );
-    CHECK(pthread_join(thread, NULL) == 0);
-    after = wf_completion_statistics_snapshot(&runtime);
-    CHECK(parked.result == WF_COMPLETION_PARK_WOKEN);
-    CHECK(after.wake_signals == before.wake_signals + 1);
-    CHECK(atomic_load_explicit(&host_wakes, memory_order_relaxed) == 2);
-    CHECK(drain_exact(&runtime, 1, &event) == 0);
-    CHECK(consume_integer(&runtime, token, value) == 0);
     CHECK(wf_completion_runtime_destroy(&runtime) == 0);
     return 0;
 }
+
+static int test_one_epoch_wakes_every_announced_thread(void) {
+    wf_completion_runtime runtime;
+    wf_completion_statistics before;
+    wf_completion_statistics after;
+    park_context parked[2];
+    pthread_t threads[2];
+    _Atomic unsigned host_wakes;
+    uint64_t epoch;
+    size_t index;
+
+    atomic_init(&host_wakes, 0);
+    CHECK(wf_completion_runtime_init(&runtime) == 0);
+    CHECK(
+        wf_completion_set_wake_callback(
+            &runtime,
+            record_host_wake,
+            &host_wakes
+        ) == 0
+    );
+    epoch = wf_completion_wake_epoch(&runtime);
+    for (index = 0; index < 2; ++index) {
+        parked[index].runtime = &runtime;
+        parked[index].epoch = epoch;
+        parked[index].result = WF_COMPLETION_PARK_FAILED;
+        CHECK(
+            pthread_create(
+                &threads[index],
+                NULL,
+                park_thread,
+                &parked[index]
+            ) == 0
+        );
+    }
+    CHECK(wait_until_parked_count(&runtime, 2u) == 0);
+    before = wf_completion_statistics_snapshot(&runtime);
+    wf_completion_notify_compute(&runtime);
+    for (index = 0; index < 2; ++index) {
+        CHECK(pthread_join(threads[index], NULL) == 0);
+        CHECK(parked[index].result == WF_COMPLETION_PARK_WOKEN);
+    }
+    after = wf_completion_statistics_snapshot(&runtime);
+    CHECK(after.compute_notifications == before.compute_notifications + 1);
+    CHECK(after.wake_signals == before.wake_signals + 1);
+    CHECK(atomic_load_explicit(&host_wakes, memory_order_relaxed) == 1);
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    return 0;
+}
+
+/* --------------------------------------------------------- the adapters */
 
 static int test_linux_independent_operations_use_available_target(
     const char *scratch_directory
 ) {
 #if defined(__linux__)
-    wf_completion_token tokens[2];
+    wf_harness_record records[2];
     unsigned char bytes[2] = {0};
     int64_t value;
     int error_code;
@@ -855,34 +574,30 @@ static int test_linux_independent_operations_use_available_target(
     descriptor = open(path, O_CREAT | O_EXCL | O_RDWR, 0600);
     CHECK(descriptor >= 0);
     CHECK(write(descriptor, "xy", 2) == 2);
-    native_before = wf__completion_linux_io_uring_submissions();
+    native_before = wf__completion_native_ring_submissions();
     fallback_before = wf__completion_file_fallback_submissions();
 
-    CHECK(
-        wf__completion_file_pread_submit(
-            descriptor,
-            &bytes[0],
-            1,
-            0,
-            &tokens[0]
-        ) == 1
+    wf__completion_file_pread_submit(
+        descriptor,
+        &bytes[0],
+        1,
+        0,
+        records[0].bytes
     );
-    CHECK(
-        wf__completion_file_pread_submit(
-            descriptor,
-            &bytes[1],
-            1,
-            1,
-            &tokens[1]
-        ) == 1
+    wf__completion_file_pread_submit(
+        descriptor,
+        &bytes[1],
+        1,
+        1,
+        records[1].bytes
     );
-    wf__completion_file_join(&tokens[0], &value, &error_code);
+    wf__completion_file_join(records[0].bytes, &value, &error_code);
     CHECK(value == 1 && error_code == 0);
-    wf__completion_file_join(&tokens[1], &value, &error_code);
+    wf__completion_file_join(records[1].bytes, &value, &error_code);
     CHECK(value == 1 && error_code == 0);
     CHECK(bytes[0] == 'x' && bytes[1] == 'y');
 
-    native_after = wf__completion_linux_io_uring_submissions();
+    native_after = wf__completion_native_ring_submissions();
     fallback_after = wf__completion_file_fallback_submissions();
     if (native_after == native_before + 2) {
         CHECK(fallback_after == fallback_before);
@@ -900,197 +615,21 @@ static int test_linux_independent_operations_use_available_target(
     return 0;
 }
 
-static int test_one_epoch_wakes_every_announced_scheduler(void) {
+/* Every typed operation the bounded adapter carries, driven by one thread
+ * that is itself the queue's only engine.
+ *
+ * The backpressure arm this case used to carry -- a queue of one, a second
+ * submission answered WAIT_CAPACITY, and the same request accepted after a
+ * progress pass -- is retired with the fixed queue (design §7).  The list is
+ * threaded through the records, so a second submission is queued rather than
+ * refused, and this case now submits two before running either. */
+static int test_single_thread_file_progress(const char *scratch_directory) {
     wf_completion_runtime runtime;
-    wf_completion_slot slot;
-    wf_completion_statistics before;
-    wf_completion_statistics after;
-    park_context parked[2];
-    pthread_t threads[2];
-    _Atomic unsigned host_wakes;
-    uint64_t epoch;
-    size_t index;
-
-    atomic_init(&host_wakes, 0);
-    CHECK(wf_completion_runtime_init(&runtime, &slot, 1) == 0);
-    CHECK(
-        wf_completion_set_wake_callback(
-            &runtime,
-            record_host_wake,
-            &host_wakes
-        ) == 0
-    );
-    epoch = wf_completion_wake_epoch(&runtime);
-    for (index = 0; index < 2; ++index) {
-        parked[index].runtime = &runtime;
-        parked[index].epoch = epoch;
-        parked[index].result = WF_COMPLETION_PARK_FAILED;
-        CHECK(
-            pthread_create(
-                &threads[index],
-                NULL,
-                park_scheduler,
-                &parked[index]
-            ) == 0
-        );
-    }
-    CHECK(wait_until_parked_count(&runtime, 2u) == 0);
-    before = wf_completion_statistics_snapshot(&runtime);
-    wf_completion_notify_compute(&runtime);
-    for (index = 0; index < 2; ++index) {
-        CHECK(pthread_join(threads[index], NULL) == 0);
-        CHECK(parked[index].result == WF_COMPLETION_PARK_WOKEN);
-    }
-    after = wf_completion_statistics_snapshot(&runtime);
-    CHECK(after.compute_notifications == before.compute_notifications + 1);
-    CHECK(after.wake_signals == before.wake_signals + 1);
-    CHECK(atomic_load_explicit(&host_wakes, memory_order_relaxed) == 1);
-    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
-    return 0;
-}
-
-static int test_drain_wakes_the_registered_token_owner(void) {
-    wf_completion_runtime runtime;
-    wf_completion_slot slot;
-    wf_completion_token token;
-    wf_completion_publication publication;
-    wf_completion_event event;
-    wf_completion_statistics before;
-    wf_completion_statistics after;
-    park_context parked;
-    pthread_t thread;
-    uint64_t epoch;
-    int value = 83;
-
-    CHECK(wf_completion_runtime_init(&runtime, &slot, 1) == 0);
-    CHECK(wf_completion_claim(&runtime, &token) == WF_COMPLETION_CLAIMED);
-    CHECK(accept_operation(&runtime, token) == 0);
-    publication = integer_publication(&value);
-    CHECK(
-        wf_completion_publish_terminal(&runtime, token, &publication)
-        == WF_COMPLETION_PUBLISHED
-    );
-    epoch = wf_completion_wake_epoch(&runtime);
-    CHECK(
-        wf_completion_wait_to_consume(&runtime, token)
-        == WF_COMPLETION_CONSUME_WAIT_REGISTERED
-    );
-    parked.runtime = &runtime;
-    parked.epoch = epoch;
-    parked.result = WF_COMPLETION_PARK_FAILED;
-    CHECK(pthread_create(&thread, NULL, park_scheduler, &parked) == 0);
-    CHECK(wait_until_parked(&runtime) == 0);
-    before = wf_completion_statistics_snapshot(&runtime);
-    CHECK(wf_completion_drain(&runtime, &event, 1, 1) == 1);
-    CHECK(pthread_join(thread, NULL) == 0);
-    after = wf_completion_statistics_snapshot(&runtime);
-    CHECK(parked.result == WF_COMPLETION_PARK_WOKEN);
-    CHECK(after.wake_signals == before.wake_signals + 1);
-    CHECK(
-        wf_completion_wait_to_consume(&runtime, token)
-        == WF_COMPLETION_CONSUME_READY
-    );
-    CHECK(consume_integer(&runtime, token, value) == 0);
-    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
-    return 0;
-}
-
-typedef struct consume_context {
-    wf_completion_runtime *runtime;
-    wf_completion_token token;
-    int expected;
-    int failed;
-} consume_context;
-
-static void *consume_on_other_lane(void *opaque) {
-    consume_context *context = opaque;
-    context->failed = consume_integer(
-        context->runtime,
-        context->token,
-        context->expected
-    );
-    return NULL;
-}
-
-static int test_bounded_drain_and_lane_independence(void) {
-    wf_completion_runtime runtime;
-    wf_completion_slot slots[4];
-    wf_completion_token tokens[4];
-    wf_completion_event events[4];
-    int values[4] = {5, 7, 11, 13};
-    size_t index;
-    size_t drained;
-    consume_context other;
-    pthread_t consumer;
-
-    CHECK(wf_completion_runtime_init(&runtime, slots, 4) == 0);
-    for (index = 0; index < 4; ++index) {
-        wf_completion_publication publication;
-        CHECK(wf_completion_claim(&runtime, &tokens[index]) == WF_COMPLETION_CLAIMED);
-        CHECK(accept_operation(&runtime, tokens[index]) == 0);
-        publication = integer_publication(&values[index]);
-        CHECK(
-            wf_completion_publish_terminal(&runtime, tokens[index], &publication)
-            == WF_COMPLETION_PUBLISHED
-        );
-    }
-    drained = wf_completion_drain(&runtime, events, 2, 4);
-    CHECK(drained <= 2);
-    CHECK(drained == 2);
-    CHECK(wf_completion_ready_event_count(&runtime) == 2);
-    CHECK(drain_exact(&runtime, 2, events + 2) == 0);
-    CHECK(wf_completion_ready_event_count(&runtime) == 0);
-
-    other.runtime = &runtime;
-    other.token = tokens[0];
-    other.expected = values[0];
-    other.failed = 1;
-    CHECK(pthread_create(&consumer, NULL, consume_on_other_lane, &other) == 0);
-    CHECK(pthread_join(consumer, NULL) == 0);
-    CHECK(other.failed == 0);
-    for (index = 1; index < 4; ++index) {
-        CHECK(consume_integer(&runtime, tokens[index], values[index]) == 0);
-    }
-    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
-    return 0;
-}
-
-static int drain_and_consume_file(
-    wf_completion_runtime *runtime,
-    wf_completion_token token,
-    wf_file_result *result
-) {
-    wf_completion_event event;
-    wf_completion_outcome outcome;
-    CHECK(drain_exact(runtime, 1, &event) == 0);
-    CHECK(event.token.slot == token.slot);
-    CHECK(event.token.generation == token.generation);
-    CHECK(
-        wf_completion_consume(
-            runtime,
-            token,
-            result,
-            sizeof(*result),
-            &outcome
-        ) == WF_COMPLETION_CONSUMED
-    );
-    CHECK(outcome.result_size == sizeof(*result));
-    CHECK(result->kind != 0);
-    return 0;
-}
-
-static int test_single_thread_file_progress_and_backpressure(
-    const char *scratch_directory
-) {
-    wf_completion_runtime runtime;
-    wf_completion_slot slots[4];
     wf_file_adapter adapter;
-    wf_file_work queue[1];
-    wf_completion_token open_token;
-    wf_completion_token capacity_token;
-    wf_completion_token operation_token;
-    wf_file_request request;
-    wf_file_result result;
+    wf_completion_record open_record;
+    wf_completion_record bad_close;
+    wf_completion_record operation;
+    unsigned char status[WF_FILE_STATUS_CAPACITY];
     char name[96];
     char read_back[32] = {0};
     const char payload[] = "completion-core";
@@ -1108,120 +647,71 @@ static int test_single_thread_file_progress_and_backpressure(
     );
     (void)unlinkat(root, name, 0);
 
-    CHECK(wf_completion_runtime_init(&runtime, slots, 4) == 0);
-    CHECK(
-        wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0, 0) == 0
-    );
-    CHECK(wf_completion_claim(&runtime, &open_token) == WF_COMPLETION_CLAIMED);
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_OPEN_AT;
-    request.operation.open_at.directory = root;
-    request.operation.open_at.path = name;
-    request.operation.open_at.flags = O_CREAT | O_EXCL | O_RDWR;
-    request.operation.open_at.mode = 0600;
-    request.operation.open_at.has_mode = 1;
-    CHECK(
-        wf_file_adapter_submit(&adapter, open_token, &request)
-        == WF_FILE_TARGET_OWNS
-    );
+    CHECK(wf_completion_runtime_init(&runtime) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 0, 0) == 0);
 
-    CHECK(
-        wf_completion_claim(&runtime, &capacity_token)
-        == WF_COMPLETION_CLAIMED
-    );
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_CLOSE;
-    request.operation.close.descriptor = -1;
-    CHECK(
-        wf_file_adapter_submit(&adapter, capacity_token, &request)
-        == WF_FILE_WAIT_CAPACITY
-    );
-    CHECK(wf_file_adapter_progress(&adapter, 1) == 1);
-    CHECK(
-        wf_file_adapter_submit(&adapter, capacity_token, &request)
-        == WF_FILE_TARGET_OWNS
-    );
-    CHECK(wf_file_adapter_progress(&adapter, 1) == 1);
+    harness_record_init(&open_record, WF_FILE_OPEN_AT);
+    open_record.request.operation.open_at.directory = root;
+    open_record.request.operation.open_at.path = name;
+    open_record.request.operation.open_at.flags = O_CREAT | O_EXCL | O_RDWR;
+    open_record.request.operation.open_at.mode = 0600;
+    open_record.request.operation.open_at.has_mode = 1;
+    harness_record_init(&bad_close, WF_FILE_CLOSE);
+    bad_close.request.operation.close.descriptor = -1;
 
-    CHECK(drain_and_consume_file(&runtime, open_token, &result) == 0);
-    CHECK(result.error_code == 0);
-    CHECK(result.value >= 0);
-    descriptor = (int)result.value;
-    CHECK(drain_and_consume_file(&runtime, capacity_token, &result) == 0);
-    CHECK(result.value == -1);
-    CHECK(result.error_code == EBADF);
+    /* Two operations queued at once: the list has no capacity to refuse. */
+    CHECK(
+        wf_file_adapter_submit(&adapter, &open_record) == WF_FILE_TARGET_OWNS
+    );
+    CHECK(
+        wf_file_adapter_submit(&adapter, &bad_close) == WF_FILE_TARGET_OWNS
+    );
+    CHECK(wf_file_adapter_queued(&adapter) == 2);
+    CHECK(wf_file_adapter_progress(&adapter, 2) == 2);
+    CHECK(harness_record_done(&open_record));
+    CHECK(harness_record_done(&bad_close));
+    CHECK(open_record.result.error_code == 0);
+    CHECK(open_record.result.value >= 0);
+    descriptor = (int)open_record.result.value;
+    CHECK(bad_close.result.value == -1);
+    CHECK(bad_close.result.error_code == EBADF);
 
-    CHECK(
-        wf_completion_claim(&runtime, &operation_token)
-        == WF_COMPLETION_CLAIMED
-    );
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_PWRITE;
-    request.operation.pwrite.descriptor = descriptor;
-    request.operation.pwrite.buffer = payload;
-    request.operation.pwrite.count = sizeof(payload) - 1;
-    request.operation.pwrite.offset = 0;
-    CHECK(
-        wf_file_adapter_submit(&adapter, operation_token, &request)
-        == WF_FILE_TARGET_OWNS
-    );
-    CHECK(wf_file_adapter_progress(&adapter, 1) == 1);
-    CHECK(drain_and_consume_file(&runtime, operation_token, &result) == 0);
-    CHECK(result.error_code == 0);
-    CHECK(result.value == (int64_t)(sizeof(payload) - 1));
+    harness_record_init(&operation, WF_FILE_PWRITE);
+    operation.request.operation.pwrite.descriptor = descriptor;
+    operation.request.operation.pwrite.buffer = payload;
+    operation.request.operation.pwrite.count = sizeof(payload) - 1;
+    operation.request.operation.pwrite.offset = 0;
+    CHECK(harness_run_on_adapter(&adapter, &operation) == 0);
+    CHECK(operation.result.error_code == 0);
+    CHECK(operation.result.value == (int64_t)(sizeof(payload) - 1));
 
-    CHECK(
-        wf_completion_claim(&runtime, &operation_token)
-        == WF_COMPLETION_CLAIMED
-    );
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_PREAD;
-    request.operation.pread.descriptor = descriptor;
-    request.operation.pread.buffer = read_back;
-    request.operation.pread.count = sizeof(payload) - 1;
-    request.operation.pread.offset = 0;
-    CHECK(
-        wf_file_adapter_submit(&adapter, operation_token, &request)
-        == WF_FILE_TARGET_OWNS
-    );
-    CHECK(wf_file_adapter_progress(&adapter, 1) == 1);
-    CHECK(drain_and_consume_file(&runtime, operation_token, &result) == 0);
-    CHECK(result.error_code == 0);
-    CHECK(result.value == (int64_t)(sizeof(payload) - 1));
+    harness_record_init(&operation, WF_FILE_PREAD);
+    operation.request.operation.pread.descriptor = descriptor;
+    operation.request.operation.pread.buffer = read_back;
+    operation.request.operation.pread.count = sizeof(payload) - 1;
+    operation.request.operation.pread.offset = 0;
+    CHECK(harness_run_on_adapter(&adapter, &operation) == 0);
+    CHECK(operation.result.error_code == 0);
+    CHECK(operation.result.value == (int64_t)(sizeof(payload) - 1));
     CHECK(memcmp(read_back, payload, sizeof(payload) - 1) == 0);
 
-    CHECK(
-        wf_completion_claim(&runtime, &operation_token)
-        == WF_COMPLETION_CLAIMED
-    );
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_STATUS;
-    request.operation.status.descriptor = descriptor;
-    CHECK(
-        wf_file_adapter_submit(&adapter, operation_token, &request)
-        == WF_FILE_TARGET_OWNS
-    );
-    CHECK(wf_file_adapter_progress(&adapter, 1) == 1);
-    CHECK(drain_and_consume_file(&runtime, operation_token, &result) == 0);
-    CHECK(result.error_code == 0);
-    CHECK(result.value == 0);
-    CHECK(result.status_size == sizeof(struct stat));
+    /* A status writes into the destination its own request named; the record
+     * carries the size and never the bytes. */
+    memset(status, 0, sizeof(status));
+    harness_record_init(&operation, WF_FILE_STATUS);
+    operation.request.operation.status.descriptor = descriptor;
+    operation.request.operation.status.destination = status;
+    operation.request.operation.status.capacity = sizeof(status);
+    CHECK(harness_run_on_adapter(&adapter, &operation) == 0);
+    CHECK(operation.result.error_code == 0);
+    CHECK(operation.result.value == 0);
+    CHECK(operation.status_written == sizeof(struct stat));
 
-    CHECK(
-        wf_completion_claim(&runtime, &operation_token)
-        == WF_COMPLETION_CLAIMED
-    );
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_CLOSE;
-    request.operation.close.descriptor = descriptor;
-    CHECK(
-        wf_file_adapter_submit(&adapter, operation_token, &request)
-        == WF_FILE_TARGET_OWNS
-    );
-    CHECK(wf_file_adapter_progress(&adapter, 1) == 1);
-    CHECK(drain_and_consume_file(&runtime, operation_token, &result) == 0);
-    CHECK(result.error_code == 0);
-    CHECK(result.value == 0);
+    harness_record_init(&operation, WF_FILE_CLOSE);
+    operation.request.operation.close.descriptor = descriptor;
+    CHECK(harness_run_on_adapter(&adapter, &operation) == 0);
+    CHECK(operation.result.error_code == 0);
+    CHECK(operation.result.value == 0);
 
     CHECK(wf_file_adapter_shutdown(&adapter) == 0);
     CHECK(wf_completion_runtime_destroy(&runtime) == 0);
@@ -1230,11 +720,13 @@ static int test_single_thread_file_progress_and_backpressure(
     return 0;
 }
 
+/* ---------------------------------------------------------- the bridge */
+
 static int test_bridge_independent_positioned_reads(
     const char *scratch_directory
 ) {
-    wf_completion_token first_token;
-    wf_completion_token second_token;
+    wf_harness_record first_record;
+    wf_harness_record second_record;
     int64_t first_value = -1;
     int64_t second_value = -1;
     int first_error = -1;
@@ -1263,40 +755,32 @@ static int test_bridge_independent_positioned_reads(
         == (ssize_t)(sizeof(payload) - 1)
     );
 
-    /* Both stable tokens are submitted before either result is joined.  The
-     * two requests name one descriptor but independent file offsets; pread
-     * leaves the shared cursor out of their semantics.
+    /* Both records are submitted before either result is joined.  The two
+     * requests name one descriptor but independent file offsets; pread leaves
+     * the shared cursor out of their semantics.
      *
-     * This asserts the *submitted* route, so it depends on the bridge being
-     * willing to take it.  Under a written WF_IO_HELPERS it always is.  Under
-     * the demand-driven policy the bridge declines a positioned read once it
-     * has measured this host's reads as not waiting, so a case like this one
-     * belongs before any bridge operation has been executed — where it is —
-     * and a reordering that moves it after one must pin the route instead. */
-    CHECK(
-        wf__completion_file_pread_submit(
-            descriptor,
-            first,
-            4,
-            4,
-            &first_token
-        ) == 1
+     * A written WF_IO_HELPERS keeps both on the queued route, which is what
+     * the submission count below asserts. */
+    wf__completion_file_pread_submit(
+        descriptor,
+        first,
+        4,
+        4,
+        first_record.bytes
     );
-    CHECK(
-        wf__completion_file_pread_submit(
-            descriptor,
-            second,
-            4,
-            11,
-            &second_token
-        ) == 1
+    wf__completion_file_pread_submit(
+        descriptor,
+        second,
+        4,
+        11,
+        second_record.bytes
     );
     wf__completion_file_join(
-        &second_token,
+        second_record.bytes,
         &second_value,
         &second_error
     );
-    wf__completion_file_join(&first_token, &first_value, &first_error);
+    wf__completion_file_join(first_record.bytes, &first_value, &first_error);
     CHECK(first_error == 0);
     CHECK(second_error == 0);
     CHECK(first_value == 4);
@@ -1306,21 +790,44 @@ static int test_bridge_independent_positioned_reads(
     CHECK(wf__completion_file_submissions() >= 2);
 #if defined(__linux__)
     if (getenv("WF_REQUIRE_LINUX_IO_URING") != NULL) {
-        CHECK(wf__completion_linux_io_uring_submissions() >= 2);
+        CHECK(wf__completion_native_ring_submissions() >= 2);
     }
 #endif
 
-    /* A u64 which cannot be represented by the signed native offset never
-     * enters the target queue and therefore owns no operation token. */
-    CHECK(
+    /* An offset the signed native type cannot represent is a refusal the host
+     * itself would make, not a contract violation: a writer may spell any
+     * `u64` offset, and there is no direct wrapper left to take the shape and
+     * answer the host's EINVAL (design section 8, "One lowering for every I/O
+     * operation").  The submit therefore publishes that same answer into the
+     * record -- `value = -1`, `error_code = EINVAL` -- so the join reads what
+     * the direct route used to read, one publication is counted for it, and
+     * nothing was executed. */
+    {
+        wf_harness_record refused_record;
+        uint64_t publications_before = wf__completion_publications();
+        uint64_t executions_before = wf__completion_inline_executions();
+        char refused[5] = {0};
+        int64_t refused_value = 0;
+        int refused_error = 0;
         wf__completion_file_pread_submit(
             descriptor,
-            first,
-            1,
-            UINT64_MAX,
-            &first_token
-        ) == 0
-    );
+            refused,
+            4,
+            (uint64_t)INT64_MAX + 1u,
+            refused_record.bytes
+        );
+        wf__completion_file_join(
+            refused_record.bytes,
+            &refused_value,
+            &refused_error
+        );
+        CHECK(refused_value == -1);
+        CHECK(refused_error == EINVAL);
+        CHECK(wf__completion_publications() == publications_before + 1u);
+        CHECK(wf__completion_inline_executions() == executions_before);
+        CHECK(memcmp(refused, "\0\0\0\0", 4) == 0);
+    }
+
     CHECK(close(descriptor) == 0);
     CHECK(unlink(path) == 0);
     return 0;
@@ -1329,7 +836,7 @@ static int test_bridge_independent_positioned_reads(
 static int test_bridge_open_status_and_close_are_typed_operations(
     const char *scratch_directory
 ) {
-    wf_completion_token token;
+    wf_harness_record record;
     unsigned char status[WF_FILE_STATUS_CAPACITY];
     uint64_t status_size = 0;
     int64_t value = -1;
@@ -1337,7 +844,7 @@ static int test_bridge_open_status_and_close_are_typed_operations(
     unsigned open_outcome = WF_FILE_OPEN_FAILED;
     char path[256];
     int descriptor;
-    uint64_t native_before = wf__completion_linux_io_uring_submissions();
+    uint64_t native_before = wf__completion_native_ring_submissions();
 
     CHECK(scratch_directory != NULL);
     CHECK(
@@ -1351,19 +858,17 @@ static int test_bridge_open_status_and_close_are_typed_operations(
     );
     (void)unlink(path);
 
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            path,
-            O_CREAT | O_EXCL | O_RDWR,
-            0600u,
-            1u,
-            WF_FILE_EXPECT_REGULAR,
-            &token
-        ) == 1
+    wf__completion_file_open_at_submit(
+        AT_FDCWD,
+        path,
+        O_CREAT | O_EXCL | O_RDWR,
+        0600u,
+        1u,
+        WF_FILE_EXPECT_REGULAR,
+        record.bytes
     );
     wf__completion_file_open_join(
-        &token,
+        record.bytes,
         &value,
         &error_code,
         &open_outcome
@@ -1374,9 +879,15 @@ static int test_bridge_open_status_and_close_are_typed_operations(
     );
     descriptor = (int)value;
 
-    CHECK(wf__completion_file_status_submit(descriptor, &token) == 1);
+    memset(status, 0, sizeof(status));
+    wf__completion_file_status_submit(
+        descriptor,
+        status,
+        sizeof(status),
+        record.bytes
+    );
     wf__completion_file_status_join(
-        &token,
+        record.bytes,
         &value,
         &error_code,
         status,
@@ -1386,14 +897,14 @@ static int test_bridge_open_status_and_close_are_typed_operations(
     CHECK(value == 0 && error_code == 0);
     CHECK(status_size == sizeof(struct stat));
 
-    CHECK(wf__completion_file_close_submit(descriptor, &token) == 1);
-    wf__completion_file_join(&token, &value, &error_code);
+    wf__completion_file_close_submit(descriptor, record.bytes);
+    wf__completion_file_join(record.bytes, &value, &error_code);
     CHECK(value == 0 && error_code == 0);
 
     /* Closing a descriptor whose authority this program already gave up is a
      * typed refusal, not a crash and not a silent success. */
-    CHECK(wf__completion_file_close_submit(descriptor, &token) == 1);
-    wf__completion_file_join(&token, &value, &error_code);
+    wf__completion_file_close_submit(descriptor, record.bytes);
+    wf__completion_file_join(record.bytes, &value, &error_code);
     CHECK(value < 0 && error_code == EBADF);
 
 #if defined(__linux__)
@@ -1402,39 +913,38 @@ static int test_bridge_open_status_and_close_are_typed_operations(
      * silent fallback to the bounded POSIX adapter, which is exactly the
      * regression the ring path exists to prevent. */
     if (getenv("WF_REQUIRE_LINUX_IO_URING") != NULL) {
-        CHECK(wf__completion_linux_io_uring_submissions() >= native_before + 3);
+        CHECK(wf__completion_native_ring_submissions() >= native_before + 3);
     }
 #endif
     (void)native_before;
 
-    descriptor = (int)wf__completion_file_open_at_direct(
-        AT_FDCWD,
-        path,
-        O_RDONLY,
-        0u,
-        0u,
-        WF_FILE_EXPECT_REGULAR,
-        &error_code,
-        &open_outcome
-    );
-    CHECK(
-        descriptor >= 0 && error_code == 0
-        && open_outcome == WF_FILE_OPEN_SUCCEEDED
-    );
-    CHECK(
-        wf__completion_file_status_direct(
-            descriptor,
-            status,
-            sizeof(status)
-        ) == 0
-    );
-    CHECK(wf__completion_file_close_direct(descriptor) == 0);
+    /* The same lifecycle through the direct family used to be repeated here.
+     * There is one lowering now, so the submitted lifecycle above is the whole
+     * of it and the second leg has no route left to take (design §8). */
     CHECK(unlink(path) == 0);
     return 0;
 }
 
 /* One file of exactly one byte, so the byte a later read returns names which
  * file was opened. */
+/* Closes one descriptor the way every close is performed now: submit, then
+ * join.  The direct family is gone with the second lowering that named it
+ * (`research/investigations/io-model/PARK-ON-MISS.md` §8), so this is the one
+ * close, here as in emitted code.  It reports the way a host call does so the
+ * cases below read unchanged. */
+static int wf_harness_close(int descriptor) {
+    wf_harness_record record;
+    int64_t value = -1;
+    int error_code = -1;
+    wf__completion_file_close_submit(descriptor, record.bytes);
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    if (value < 0) {
+        errno = error_code;
+        return -1;
+    }
+    return 0;
+}
+
 static int wf_harness_write_marker_file(int root, const char *name, char byte) {
     int descriptor = openat(root, name, O_CREAT | O_TRUNC | O_WRONLY, 0600);
     if (descriptor < 0) {
@@ -1447,47 +957,40 @@ static int wf_harness_write_marker_file(int root, const char *name, char byte) {
     return close(descriptor);
 }
 
-/* A submitted open resolves the name it was given, not the bytes that were in
- * the caller's buffer when the host got round to it.
+/* A submitted open resolves the bytes the submitting frame gave it, and two
+ * outstanding opens resolve their own.
  *
- * The caller regains its name buffer the moment submission returns, so this
- * rewrites the buffer to name a *different* existing file immediately after
- * every submit.  The two names are the same length, so the rewrite is exactly
- * the overwrite a loop reusing one scratch buffer performs.  If the operation
- * record did not own its path bytes, the open would resolve the second name
- * and the marker byte would be wrong — or, on the ring, the kernel would read
- * a buffer the writer is concurrently rewriting.
- *
- * The private adapter leg also observes [SYS-2]'s `loan-released(path)` fact
- * while the operation is still outstanding, which is what makes the release
- * milestone a checked contract rather than a comment.  Both legs run on every
- * platform: the bridge leg reaches the io_uring ring on Linux and the bounded
- * POSIX adapter on Darwin, which are the two adapters that stage a path. */
-static int test_submitted_open_owns_its_path_bytes(
+ * Nothing is copied any more: the path is the frame's own storage and
+ * [SYS-2]'s loan on it holds until the join, so the kernel or the helper
+ * resolves the caller's bytes in place (design §5).  The property that
+ * survives the copy's removal is the one an emitted program depends on --
+ * that two independent opens outstanding at once each resolve their own name
+ * -- and it is checked with two marker files whose byte says which was
+ * opened.  Both legs run on every platform: the bridge leg reaches the
+ * io_uring ring on Linux and the bounded POSIX adapter on Darwin. */
+static int test_submitted_open_resolves_the_submitters_bytes(
     const char *scratch_directory
 ) {
     wf_completion_runtime runtime;
-    wf_completion_slot slots[4];
     wf_file_adapter adapter;
-    wf_file_work queue[1];
-    wf_completion_token token;
-    wf_file_request request;
-    wf_file_result result;
-    uint32_t milestones = 0;
-    unsigned phase = 0;
+    wf_completion_record record;
+    wf_harness_record first_block;
+    wf_harness_record second_block;
     char first[64];
     char second[64];
-    char requested[64];
     char first_directory[64];
     char second_directory[64];
     char marker = 0;
     int64_t value = -1;
+    int64_t other_value = -1;
     int error_code = -1;
+    int other_error = -1;
     unsigned open_outcome = WF_FILE_OPEN_FAILED;
+    unsigned other_outcome = WF_FILE_OPEN_FAILED;
     int root;
     int descriptor;
     int marker_descriptor;
-    uint64_t native_before = wf__completion_linux_io_uring_submissions();
+    uint64_t native_before = wf__completion_native_ring_submissions();
 
     CHECK(scratch_directory != NULL);
     root = open(scratch_directory, O_RDONLY | O_DIRECTORY);
@@ -1500,71 +1003,81 @@ static int test_submitted_open_owns_its_path_bytes(
         snprintf(second, sizeof(second), "wf-open-name-b-%ld", (long)getpid())
         > 0
     );
-    CHECK(strlen(first) == strlen(second));
     CHECK(wf_harness_write_marker_file(root, first, 'A') == 0);
     CHECK(wf_harness_write_marker_file(root, second, 'B') == 0);
 
-    /* The bounded POSIX adapter, driven by this thread alone so the host call
-     * demonstrably runs after the rewrite. */
-    CHECK(wf_completion_runtime_init(&runtime, slots, 4) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0, 0) == 0);
-    CHECK(wf_completion_claim(&runtime, &token) == WF_COMPLETION_CLAIMED);
-    memcpy(requested, first, strlen(first) + 1u);
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_OPEN_AT;
-    request.operation.open_at.directory = root;
-    request.operation.open_at.path = requested;
-    request.operation.open_at.flags = O_RDONLY;
-    request.operation.open_at.expected_kind = WF_FILE_EXPECT_REGULAR;
-    CHECK(
-        wf_file_adapter_submit(&adapter, token, &request)
-        == WF_FILE_TARGET_OWNS
-    );
-    memcpy(requested, second, strlen(second) + 1u);
-    CHECK(
-        wf_completion_observe(&runtime, token, &milestones, &phase)
-        == WF_COMPLETION_TRANSITIONED
-    );
-    CHECK((milestones & WF_COMPLETION_PAYLOAD_RELEASED) != 0);
-    CHECK((milestones & WF_COMPLETION_TERMINAL) == 0);
-    CHECK(phase == WF_COMPLETION_IN_FLIGHT);
+    /* The bounded POSIX adapter, driven by this thread alone, so the host call
+     * demonstrably runs after the submission returned. */
+    CHECK(wf_completion_runtime_init(&runtime) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 0, 0) == 0);
+    harness_record_init(&record, WF_FILE_OPEN_AT);
+    record.request.operation.open_at.directory = root;
+    record.request.operation.open_at.path = first;
+    record.request.operation.open_at.flags = O_RDONLY;
+    record.request.operation.open_at.expected_kind = WF_FILE_EXPECT_REGULAR;
+    CHECK(wf_file_adapter_submit(&adapter, &record) == WF_FILE_TARGET_OWNS);
+    /* The request names the caller's own bytes; nothing was copied. */
+    CHECK(record.request.operation.open_at.path == first);
     CHECK(wf_file_adapter_progress(&adapter, 1) == 1);
-    CHECK(drain_and_consume_file(&runtime, token, &result) == 0);
-    CHECK(result.error_code == 0 && result.value >= 0);
-    CHECK(result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
-    descriptor = (int)result.value;
+    CHECK(harness_record_done(&record));
+    CHECK(record.result.error_code == 0 && record.result.value >= 0);
+    CHECK(record.result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    descriptor = (int)record.result.value;
     CHECK(pread(descriptor, &marker, 1, 0) == 1);
     CHECK(marker == 'A');
     CHECK(close(descriptor) == 0);
     CHECK(wf_file_adapter_shutdown(&adapter) == 0);
     CHECK(wf_completion_runtime_destroy(&runtime) == 0);
 
-    /* The shipped bridge, on whichever target it selects. */
-    memcpy(requested, first, strlen(first) + 1u);
-    CHECK(
-        wf__completion_file_open_at_submit(
-            root,
-            requested,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            &token
-        ) == 1
+    /* The shipped bridge, with both opens outstanding at once. */
+    wf__completion_file_open_at_submit(
+        root,
+        first,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        first_block.bytes
     );
-    memcpy(requested, second, strlen(second) + 1u);
-    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    wf__completion_file_open_at_submit(
+        root,
+        second,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        second_block.bytes
+    );
+    wf__completion_file_open_join(
+        second_block.bytes,
+        &other_value,
+        &other_error,
+        &other_outcome
+    );
+    wf__completion_file_open_join(
+        first_block.bytes,
+        &value,
+        &error_code,
+        &open_outcome
+    );
     CHECK(
         value >= 0 && error_code == 0
         && open_outcome == WF_FILE_OPEN_SUCCEEDED
     );
-    descriptor = (int)value;
+    CHECK(
+        other_value >= 0 && other_error == 0
+        && other_outcome == WF_FILE_OPEN_SUCCEEDED
+    );
     marker = 0;
-    CHECK(wf__completion_file_pread_direct(descriptor, &marker, 1, 0) == 1);
+    CHECK(pread((int)value, &marker, 1, 0) == 1);
     CHECK(marker == 'A');
-    CHECK(wf__completion_file_close_direct(descriptor) == 0);
+    marker = 0;
+    CHECK(pread((int)other_value, &marker, 1, 0) == 1);
+    CHECK(marker == 'B');
+    CHECK(wf_harness_close((int)value) == 0);
+    CHECK(wf_harness_close((int)other_value) == 0);
 
-    /* `open_directory` stages its name through exactly the same request, so
+    /* `open_directory` carries its name through exactly the same request, so
      * it is checked the same way: the marker file exists only under the first
      * directory, and finding it proves which name was resolved. */
     CHECK(
@@ -1583,7 +1096,6 @@ static int test_submitted_open_owns_its_path_bytes(
             (long)getpid()
         ) > 0
     );
-    CHECK(strlen(first_directory) == strlen(second_directory));
     (void)unlinkat(root, first_directory, AT_REMOVEDIR);
     (void)unlinkat(root, second_directory, AT_REMOVEDIR);
     CHECK(mkdirat(root, first_directory, 0700) == 0);
@@ -1593,20 +1105,21 @@ static int test_submitted_open_owns_its_path_bytes(
     CHECK(wf_harness_write_marker_file(marker_descriptor, "marker", 'A') == 0);
     CHECK(close(marker_descriptor) == 0);
 
-    memcpy(requested, first_directory, strlen(first_directory) + 1u);
-    CHECK(
-        wf__completion_file_open_at_submit(
-            root,
-            requested,
-            O_RDONLY | O_DIRECTORY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_DIRECTORY,
-            &token
-        ) == 1
+    wf__completion_file_open_at_submit(
+        root,
+        first_directory,
+        O_RDONLY | O_DIRECTORY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_DIRECTORY,
+        first_block.bytes
     );
-    memcpy(requested, second_directory, strlen(second_directory) + 1u);
-    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    wf__completion_file_open_join(
+        first_block.bytes,
+        &value,
+        &error_code,
+        &open_outcome
+    );
     CHECK(
         value >= 0 && error_code == 0
         && open_outcome == WF_FILE_OPEN_SUCCEEDED
@@ -1615,15 +1128,15 @@ static int test_submitted_open_owns_its_path_bytes(
     marker_descriptor = openat(descriptor, "marker", O_RDONLY);
     CHECK(marker_descriptor >= 0);
     CHECK(close(marker_descriptor) == 0);
-    CHECK(wf__completion_file_close_direct(descriptor) == 0);
+    CHECK(wf_harness_close(descriptor) == 0);
 
 #if defined(__linux__)
-    /* Where the ring is the qualified target, both bridge opens above are ring
+    /* Where the ring is the qualified target, the bridge opens above are ring
      * operations. Without this the leg would still pass on a silent fallback
      * to the bounded adapter, which is the other half of what this test is
      * about. */
     if (getenv("WF_REQUIRE_LINUX_IO_URING") != NULL) {
-        CHECK(wf__completion_linux_io_uring_submissions() >= native_before + 2);
+        CHECK(wf__completion_native_ring_submissions() >= native_before + 3);
     }
 #endif
     (void)native_before;
@@ -1644,40 +1157,41 @@ static int test_submitted_open_owns_its_path_bytes(
 #define WF_HARNESS_LONG_COMPONENT_BYTES 240u
 #define WF_HARNESS_LONG_PATH_BYTES                                            \
     (WF_HARNESS_LONG_COMPONENTS * (WF_HARNESS_LONG_COMPONENT_BYTES + 1u) + 16u)
+/* The path storage the deleted pool record held.  No runtime constant names
+ * it any more; the number is written here so the case that used to be about
+ * exceeding it can still say what it exceeds. */
+#define WF_HARNESS_RETIRED_PATH_CAPACITY 1024u
 
-/* A name no operation record can hold takes the direct path, with the host's
- * own outcome and a counted demotion.
+/* A name no pool record could have held takes the completion path.
  *
- * `open_read` resolves the caller's whole path buffer and [PATH-1] admits a
- * relative path of any length, so a name longer than WF_FILE_PATH_CAPACITY is
- * one an ordinary program can write; only `open_file` and `open_directory`
- * are clamped to a single component.  The submission refuses such a name
- * before anything is claimed and the caller's direct open carries it, so the
- * outcome is exactly the host's own — the file opens where the host resolves
- * a name that long, and the same errno comes back where it does not.  What
- * the program loses is only the completion path, and that is a throughput
- * fact the runtime has to report: neither submission counter moves for an
- * operation that was never submitted, so without the demotion counter this
- * looks exactly like a program that never opened anything.
+ * This is the inverse of the case it replaces.  An operation record used to
+ * copy an open's path into 1024 bytes of its own and refuse a longer name
+ * before anything was claimed, so `open_read` -- which resolves the caller's
+ * whole path buffer, and which [PATH-1] admits at any length -- lost the
+ * completion path for a name an ordinary program can write, and the runtime
+ * counted the demotion.  The path bytes are the submitting frame's own now and
+ * are never copied, so there is no length a record cannot hold, no refusal,
+ * and no counter: the same name is submitted, joined, and answered by the
+ * engine like any other operation (design §5, §7).
  *
  * Linux resolves the whole 1200-byte name (`PATH_MAX` is 4096) and the marker
- * file is really opened through the direct path.  Darwin's `PATH_MAX` is this
- * record's own bound, so the name it cannot hold is one its host refuses too;
- * the demotion still has to be counted and the direct path still has to
- * deliver the host's answer unchanged.  Both legs run wherever they apply. */
-static int test_a_name_no_record_can_hold_opens_directly(
+ * file is really opened.  Darwin's `PATH_MAX` is smaller, so there the host
+ * itself refuses the name -- and the point holds either way: the outcome is
+ * the host's own, delivered through the completion path rather than around
+ * it. */
+static int test_a_name_no_pool_record_could_hold_takes_the_completion_path(
     const char *scratch_directory
 ) {
     char relative[WF_HARNESS_LONG_PATH_BYTES];
-    wf_completion_token token;
+    wf_harness_record record;
     size_t length = 0;
     size_t built = 0;
     size_t level;
-    uint64_t demoted_before;
     uint64_t submissions_before;
     int root;
     int descriptor;
     int host_error = 0;
+    int64_t value = -1;
     int error_code = -1;
     unsigned open_outcome = WF_FILE_OPEN_FAILED;
     char marker = 0;
@@ -1686,9 +1200,9 @@ static int test_a_name_no_record_can_hold_opens_directly(
     root = open(scratch_directory, O_RDONLY | O_DIRECTORY);
     CHECK(root >= 0);
     /* One component is at most NAME_MAX on every host this runs on, so the
-     * length that exceeds the record comes from nesting rather than from one
-     * outsized name.  A host that refuses the depth stops the tree there and
-     * `built` records how much of it exists. */
+     * length that used to exceed the record comes from nesting rather than
+     * from one outsized name.  A host that refuses the depth stops the tree
+     * there and `built` records how much of it exists. */
     for (level = 0; level < WF_HARNESS_LONG_COMPONENTS; ++level) {
         if (level != 0) {
             relative[length] = '/';
@@ -1705,7 +1219,7 @@ static int test_a_name_no_record_can_hold_opens_directly(
     }
     memcpy(relative + length, "/marker", sizeof("/marker"));
     length += sizeof("/marker") - 1u;
-    CHECK(length > (size_t)WF_FILE_PATH_CAPACITY);
+    CHECK(length > (size_t)WF_HARNESS_RETIRED_PATH_CAPACITY);
     descriptor = openat(root, relative, O_CREAT | O_TRUNC | O_WRONLY, 0600);
     if (descriptor < 0) {
         host_error = errno;
@@ -1715,44 +1229,37 @@ static int test_a_name_no_record_can_hold_opens_directly(
         CHECK(close(descriptor) == 0);
     }
 
-    demoted_before = wf__completion_file_demoted_opens();
     submissions_before = wf__completion_file_submissions();
-    CHECK(
-        wf__completion_file_open_at_submit(
-            root,
-            relative,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            &token
-        ) == 0
-    );
-    CHECK(wf__completion_file_demoted_opens() == demoted_before + 1u);
-    CHECK(wf__completion_file_submissions() == submissions_before);
-
-    descriptor = wf__completion_file_open_at_direct(
+    wf__completion_file_open_at_submit(
         root,
         relative,
         O_RDONLY,
         0u,
         0u,
         WF_FILE_EXPECT_REGULAR,
+        record.bytes
+    );
+    wf__completion_file_open_join(
+        record.bytes,
+        &value,
         &error_code,
         &open_outcome
     );
+    /* The operation really went to an engine, rather than being executed here
+     * because a record could not hold its name. */
+    CHECK(wf__completion_file_submissions() > submissions_before);
     if (host_error == 0) {
         CHECK(
-            descriptor >= 0 && error_code == 0
+            value >= 0 && error_code == 0
             && open_outcome == WF_FILE_OPEN_SUCCEEDED
         );
-        CHECK(read(descriptor, &marker, 1) == 1);
+        CHECK(pread((int)value, &marker, 1, 0) == 1);
         CHECK(marker == 'L');
-        CHECK(close(descriptor) == 0);
+        CHECK(wf_harness_close((int)value) == 0);
         CHECK(unlinkat(root, relative, 0) == 0);
     } else {
         CHECK(
-            descriptor < 0 && error_code == host_error
+            value < 0 && error_code == host_error
             && open_outcome == WF_FILE_OPEN_FAILED
         );
     }
@@ -1773,39 +1280,69 @@ static int test_a_name_no_record_can_hold_opens_directly(
     return 0;
 }
 
-static int test_bridge_capacity_falls_back_per_operation(void) {
-    wf_completion_token tokens[WF_HARNESS_OPERATION_CAPACITY];
-    wf_completion_token refused;
-    int64_t value = -1;
-    int error_code = -1;
-    size_t index;
+/* More operations outstanding at once than the deleted pool could hold, and
+ * deeper than the ring is.
+ *
+ * This replaces both capacity cases.  The old pool held 64 operations and
+ * refused the sixty-fifth, and the ring refused a submission its entry array
+ * could not take; the record is a block of the submitting frame now, so the
+ * only bound is the frames that hold the records, and a full submission queue
+ * is emptied by the submitting call's own `io_uring_enter` (design §7).  A
+ * count past both old bounds is therefore the property to assert: every one is
+ * accepted and every one completes with the byte at its own offset. */
+#define WF_HARNESS_OUTSTANDING 96u
 
-    for (index = 0; index < WF_HARNESS_OPERATION_CAPACITY; ++index) {
-        CHECK(
-            wf__completion_file_pread_submit(
-                -1,
-                NULL,
-                0,
-                0,
-                &tokens[index]
-            ) == 1
+static int test_more_operations_outstanding_than_the_old_capacity(
+    const char *scratch_directory
+) {
+    static wf_harness_record records[WF_HARNESS_OUTSTANDING];
+    static unsigned char bytes[WF_HARNESS_OUTSTANDING];
+    char path[256];
+    int descriptor;
+    unsigned index;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-outstanding-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    descriptor = open(path, O_CREAT | O_EXCL | O_RDWR, 0600);
+    CHECK(descriptor >= 0);
+    CHECK(write(descriptor, "abcdefgh", 8) == 8);
+
+    for (index = 0; index < WF_HARNESS_OUTSTANDING; ++index) {
+        bytes[index] = 0xa5u;
+        wf__completion_file_pread_submit(
+            descriptor,
+            &bytes[index],
+            1,
+            (uint64_t)(index % 8u),
+            records[index].bytes
         );
     }
-    CHECK(
-        wf__completion_file_pread_submit(-1, NULL, 0, 0, &refused)
-        == 0
-    );
-    for (index = 0; index < WF_HARNESS_OPERATION_CAPACITY; ++index) {
-        wf__completion_file_join(&tokens[index], &value, &error_code);
-        CHECK(value == 0 && error_code == 0);
+    for (index = 0; index < WF_HARNESS_OUTSTANDING; ++index) {
+        int64_t value = -1;
+        int error_code = -1;
+        wf__completion_file_join(records[index].bytes, &value, &error_code);
+        CHECK(value == 1 && error_code == 0);
+        CHECK(bytes[index] == (unsigned char)('a' + (index % 8u)));
     }
+
+    CHECK(close(descriptor) == 0);
+    CHECK(unlink(path) == 0);
     return 0;
 }
 
 static int test_checked_open_rejects_and_closes_nonregular_descriptors(
     const char *scratch_directory
 ) {
-    wf_completion_token token;
+    wf_harness_record record;
     int64_t value = -1;
     int error_code = -1;
     unsigned open_outcome = WF_FILE_OPEN_FAILED;
@@ -1824,36 +1361,17 @@ static int test_checked_open_rejects_and_closes_nonregular_descriptors(
     (void)unlink(path);
     CHECK(mkfifo(path, 0600) == 0);
 
-    value = wf__completion_file_open_at_direct(
+    wf__completion_file_open_at_submit(
         AT_FDCWD,
         path,
         O_RDONLY,
         0u,
         0u,
         WF_FILE_EXPECT_REGULAR,
-        &error_code,
-        &open_outcome
-    );
-    CHECK(value >= 0);
-    CHECK(error_code == 0);
-    CHECK(open_outcome == WF_FILE_OPEN_OTHER_KIND);
-    errno = 0;
-    CHECK(fcntl((int)value, F_GETFD) == -1);
-    CHECK(errno == EBADF);
-
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            path,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            &token
-        ) == 1
+        record.bytes
     );
     wf__completion_file_open_join(
-        &token,
+        record.bytes,
         &value,
         &error_code,
         &open_outcome
@@ -1865,37 +1383,23 @@ static int test_checked_open_rejects_and_closes_nonregular_descriptors(
     CHECK(fcntl((int)value, F_GETFD) == -1);
     CHECK(errno == EBADF);
 
-    value = wf__completion_file_open_at_direct(
+    /* A directory where a regular file was expected: the second
+     * discriminator, answered by whoever executes the operation. */
+    wf__completion_file_open_at_submit(
         AT_FDCWD,
         scratch_directory,
         O_RDONLY,
         0u,
         0u,
         WF_FILE_EXPECT_REGULAR,
+        record.bytes
+    );
+    wf__completion_file_open_join(
+        record.bytes,
+        &value,
         &error_code,
         &open_outcome
     );
-    CHECK(value >= 0);
-    CHECK(error_code == 0);
-    CHECK(open_outcome == WF_FILE_OPEN_IS_DIRECTORY);
-    errno = 0;
-    CHECK(fcntl((int)value, F_GETFD) == -1);
-    CHECK(errno == EBADF);
-
-    /* The same submitted refusal, so a target which carries opens natively
-     * answers the same discriminator as one which does not. */
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            scratch_directory,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            &token
-        ) == 1
-    );
-    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
     CHECK(value >= 0);
     CHECK(error_code == 0);
     CHECK(open_outcome == WF_FILE_OPEN_IS_DIRECTORY);
@@ -1907,15 +1411,15 @@ static int test_checked_open_rejects_and_closes_nonregular_descriptors(
     return 0;
 }
 
-/* Every way an open can fail names its own terminal discriminator, on the
- * submitted path and on the direct one.  The generated program switches on
- * exactly this value and aborts on anything outside the set, so a target
- * which answers the wrong one is a fail-stop defect rather than a wrong
- * program. */
+/* Every way an open can fail names its own terminal discriminator.  The
+ * generated program switches on exactly this value and aborts on anything
+ * outside the set, so a target which answers the wrong one is a fail-stop
+ * defect rather than a wrong program.  There is one lowering, so there is one
+ * route to check rather than two (design §8). */
 static int test_open_failure_classes_are_typed_outcomes(
     const char *scratch_directory
 ) {
-    wf_completion_token token;
+    wf_harness_record record;
     int64_t value = -1;
     int error_code = -1;
     unsigned open_outcome = WF_FILE_OPEN_SUCCEEDED;
@@ -1949,29 +1453,18 @@ static int test_open_failure_classes_are_typed_outcomes(
     CHECK(close(descriptor) == 0);
 
     /* A name that does not resolve fails before any descriptor exists. */
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            missing,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            &token
-        ) == 1
-    );
-    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
-    CHECK(value < 0);
-    CHECK(error_code == ENOENT);
-    CHECK(open_outcome == WF_FILE_OPEN_FAILED);
-
-    value = wf__completion_file_open_at_direct(
+    wf__completion_file_open_at_submit(
         AT_FDCWD,
         missing,
         O_RDONLY,
         0u,
         0u,
         WF_FILE_EXPECT_REGULAR,
+        record.bytes
+    );
+    wf__completion_file_open_join(
+        record.bytes,
+        &value,
         &error_code,
         &open_outcome
     );
@@ -1981,32 +1474,18 @@ static int test_open_failure_classes_are_typed_outcomes(
 
     /* A directory open of a regular file is refused by the same one rule
      * that refuses a regular open of a directory. */
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            regular,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_DIRECTORY,
-            &token
-        ) == 1
-    );
-    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
-    CHECK(value >= 0);
-    CHECK(error_code == 0);
-    CHECK(open_outcome == WF_FILE_OPEN_OTHER_KIND);
-    errno = 0;
-    CHECK(fcntl((int)value, F_GETFD) == -1);
-    CHECK(errno == EBADF);
-
-    value = wf__completion_file_open_at_direct(
+    wf__completion_file_open_at_submit(
         AT_FDCWD,
         regular,
         O_RDONLY,
         0u,
         0u,
         WF_FILE_EXPECT_DIRECTORY,
+        record.bytes
+    );
+    wf__completion_file_open_join(
+        record.bytes,
+        &value,
         &error_code,
         &open_outcome
     );
@@ -2019,121 +1498,29 @@ static int test_open_failure_classes_are_typed_outcomes(
 
     /* The directory the refusal above named really does open as a directory,
      * so the refusal is about the kind and not about the request shape. */
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            scratch_directory,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_DIRECTORY,
-            &token
-        ) == 1
+    wf__completion_file_open_at_submit(
+        AT_FDCWD,
+        scratch_directory,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_DIRECTORY,
+        record.bytes
     );
-    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    wf__completion_file_open_join(
+        record.bytes,
+        &value,
+        &error_code,
+        &open_outcome
+    );
     CHECK(value >= 0);
     CHECK(error_code == 0);
     CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
-    CHECK(wf__completion_file_close_submit((int)value, &token) == 1);
-    wf__completion_file_join(&token, &value, &error_code);
+    wf__completion_file_close_submit((int)value, record.bytes);
+    wf__completion_file_join(record.bytes, &value, &error_code);
     CHECK(value == 0 && error_code == 0);
 
     CHECK(unlink(regular) == 0);
-    return 0;
-}
-
-/* Opens exhaust the same bounded operation capacity every other completion
- * operation draws on, refuse honestly at the boundary, and the refused
- * request succeeds once capacity returns. */
-static int test_open_capacity_refuses_and_resubmits(
-    const char *scratch_directory
-) {
-    wf_completion_token tokens[WF_HARNESS_OPERATION_CAPACITY];
-    wf_completion_token refused;
-    int64_t value = -1;
-    int error_code = -1;
-    unsigned open_outcome = WF_FILE_OPEN_FAILED;
-    char path[256];
-    size_t index;
-
-    CHECK(scratch_directory != NULL);
-    CHECK(
-        snprintf(
-            path,
-            sizeof(path),
-            "%s/wf-completion-open-capacity-%ld",
-            scratch_directory,
-            (long)getpid()
-        ) > 0
-    );
-    (void)unlink(path);
-    {
-        int seed = open(path, O_CREAT | O_EXCL | O_RDWR, 0600);
-        CHECK(seed >= 0);
-        CHECK(close(seed) == 0);
-    }
-
-    for (index = 0; index < WF_HARNESS_OPERATION_CAPACITY; ++index) {
-        CHECK(
-            wf__completion_file_open_at_submit(
-                AT_FDCWD,
-                path,
-                O_RDONLY,
-                0u,
-                0u,
-                WF_FILE_EXPECT_REGULAR,
-                &tokens[index]
-            ) == 1
-        );
-    }
-    /* No operation is left to claim, so the bridge refuses before touching a
-     * token and the generated program takes its qualified direct call. */
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            path,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            &refused
-        ) == 0
-    );
-    for (index = 0; index < WF_HARNESS_OPERATION_CAPACITY; ++index) {
-        wf__completion_file_open_join(
-            &tokens[index],
-            &value,
-            &error_code,
-            &open_outcome
-        );
-        CHECK(value >= 0 && error_code == 0);
-        CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
-        CHECK(wf__completion_file_close_submit((int)value, &tokens[index]) == 1);
-    }
-    for (index = 0; index < WF_HARNESS_OPERATION_CAPACITY; ++index) {
-        wf__completion_file_join(&tokens[index], &value, &error_code);
-        CHECK(value == 0 && error_code == 0);
-    }
-    /* Released capacity readmits the request that was refused. */
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            path,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            &refused
-        ) == 1
-    );
-    wf__completion_file_open_join(&refused, &value, &error_code, &open_outcome);
-    CHECK(value >= 0 && error_code == 0);
-    CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
-    CHECK(wf__completion_file_close_submit((int)value, &refused) == 1);
-    wf__completion_file_join(&refused, &value, &error_code);
-    CHECK(value == 0 && error_code == 0);
-
-    CHECK(unlink(path) == 0);
     return 0;
 }
 
@@ -2145,45 +1532,46 @@ typedef struct wf_open_waiter {
 
 static void *wf_open_waiter_main(void *opaque) {
     wf_open_waiter *waiter = opaque;
-    wf_completion_token token;
+    wf_harness_record record;
     int64_t value = -1;
     int error_code = -1;
     unsigned open_outcome = WF_FILE_OPEN_FAILED;
     unsigned yield;
     waiter->result = 1;
-    if (wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            waiter->path,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            &token
-        ) != 1) {
-        return NULL;
-    }
-    /* Give the target every chance to reach terminal before this owner asks
-     * for the result, so the join exercises the already-published path rather
-     * than only the park-and-wake one. */
+    wf__completion_file_open_at_submit(
+        AT_FDCWD,
+        waiter->path,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        record.bytes
+    );
+    /* Give the engine every chance to finish before this owner asks for the
+     * result, so the join exercises the already-published path rather than
+     * only the park-and-wake one. */
     for (yield = 0; yield < waiter->yields; ++yield) {
         (void)sched_yield();
     }
-    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    wf__completion_file_open_join(
+        record.bytes,
+        &value,
+        &error_code,
+        &open_outcome
+    );
     if (value < 0 || error_code != 0
         || open_outcome != WF_FILE_OPEN_SUCCEEDED) {
         return NULL;
     }
-    if (wf__completion_file_close_submit((int)value, &token) != 1) {
-        return NULL;
-    }
-    wf__completion_file_join(&token, &value, &error_code);
+    wf__completion_file_close_submit((int)value, record.bytes);
+    wf__completion_file_join(record.bytes, &value, &error_code);
     waiter->result = value == 0 && error_code == 0 ? 0 : 1;
     return NULL;
 }
 
 /* Independent owners each hold their own open operation at once. No owner
  * observes another's result, and an owner whose operation finished before it
- * asked still consumes exactly its own. */
+ * asked still reads exactly its own record. */
 static int test_open_results_reach_every_independent_owner(
     const char *scratch_directory
 ) {
@@ -2212,7 +1600,7 @@ static int test_open_results_reach_every_independent_owner(
     for (index = 0; index < WF_OPEN_WAITERS; ++index) {
         waiters[index].path = path;
         /* Half join immediately and half only after yielding, so both the
-         * already-terminal and the still-in-flight join are covered. */
+         * already-completed and the still-in-flight join are covered. */
         waiters[index].yields = index % 2u == 0u ? 0u : 64u;
         waiters[index].result = 1;
         CHECK(
@@ -2231,34 +1619,6 @@ static int test_open_results_reach_every_independent_owner(
     CHECK(unlink(path) == 0);
     return 0;
 }
-
-/* The helper policy makes two different promises and this pins both.
- *
- * A written WF_IO_HELPERS pins the count exactly, which is what every test
- * that names a helper configuration depends on. An unset one asks for
- * demand-driven growth, bounded by the process ceiling.
- *
- * The unset arm has now been weakened twice, and both times because the
- * policy it pinned changed under it. It first asserted exactly one helper,
- * which was the fixed default before growth existed. It then asserted at
- * least one and no more than the machine's CPU count, which was the growth
- * rule of batch 0086.
- *
- * Batch 0096 measured that rule and replaced both of its ends: the count
- * starts at none, because a program whose operations do not wait wants none,
- * and the ceiling is the bridge's operation bound rather than the core count,
- * because a helper inside a host call holds no CPU. What is left that this
- * process-wide case can honestly assert is the ceiling — how many helpers a
- * program *has* here depends on whether this harness's own temporary-file
- * operations happened to wait, which is a property of the machine. Its unset
- * arm no longer runs at all, because `main` pins the route for every
- * invocation that did not name one; the ceiling it asserts is the one thing
- * that holds either way.
- *
- * The rest of the promise did not go untested: it moved to
- * `test_pool_stays_empty_when_operations_do_not_wait` and
- * `test_pool_grows_when_operations_wait`, which script the clock the policy
- * measures with and so decide the question rather than sampling it. */
 /* The scripted clock the helper policy measures host calls with.
  *
  * Unscripted it is the host's own monotonic clock, so every other case in this
@@ -2350,7 +1710,7 @@ static int test_uncached_reads_are_target_policy_only(
 ) {
     const char *setting = getenv("WF_IO_NOCACHE");
     int asked = setting != NULL && setting[0] == '1' && setting[1] == 0;
-    wf_completion_token token;
+    wf_harness_record record;
     int64_t value = -1;
     int error_code = -1;
     unsigned open_outcome = WF_FILE_OPEN_SUCCEEDED;
@@ -2393,50 +1753,18 @@ static int test_uncached_reads_are_target_policy_only(
     /* One kind-checked open through the submitted path.  Its flags are the
      * request's O_RDONLY plus the O_NONBLOCK a kind check needs, and nothing
      * else; the bytes it reads are the bytes that were written. */
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            regular,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            &token
-        ) == 1
-    );
-    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
-    CHECK(value >= 0);
-    CHECK(error_code == 0);
-    CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
-    CHECK(wf_uncached_open_flags((int)value) == (O_RDONLY | O_NONBLOCK));
-    memset(window, 0, sizeof(window));
-    CHECK(
-        wf__completion_file_pread_submit(
-            (int)value,
-            window,
-            (uint64_t)sizeof(window),
-            0u,
-            &token
-        ) == 1
-    );
-    {
-        int64_t moved = -1;
-        int read_error = -1;
-        wf__completion_file_join(&token, &moved, &read_error);
-        CHECK(moved == (int64_t)sizeof(window));
-        CHECK(read_error == 0);
-        CHECK(memcmp(window, content, sizeof(content)) == 0);
-    }
-    CHECK(close((int)value) == 0);
-
-    /* The same open through the direct path. */
-    value = wf__completion_file_open_at_direct(
+    wf__completion_file_open_at_submit(
         AT_FDCWD,
         regular,
         O_RDONLY,
         0u,
         0u,
         WF_FILE_EXPECT_REGULAR,
+        record.bytes
+    );
+    wf__completion_file_open_join(
+        record.bytes,
+        &value,
         &error_code,
         &open_outcome
     );
@@ -2445,30 +1773,39 @@ static int test_uncached_reads_are_target_policy_only(
     CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
     CHECK(wf_uncached_open_flags((int)value) == (O_RDONLY | O_NONBLOCK));
     memset(window, 0, sizeof(window));
-    CHECK(
-        wf__completion_file_pread_direct(
-            (int)value,
-            window,
-            (uint64_t)sizeof(window),
-            0
-        ) == (int64_t)sizeof(window)
+    wf__completion_file_pread_submit(
+        (int)value,
+        window,
+        (uint64_t)sizeof(window),
+        0u,
+        record.bytes
     );
-    CHECK(memcmp(window, content, sizeof(content)) == 0);
+    {
+        int64_t moved = -1;
+        int read_error = -1;
+        wf__completion_file_join(record.bytes, &moved, &read_error);
+        CHECK(moved == (int64_t)sizeof(window));
+        CHECK(read_error == 0);
+        CHECK(memcmp(window, content, sizeof(content)) == 0);
+    }
     CHECK(close((int)value) == 0);
 
     /* An unchecked open carries exactly the request's own flags. */
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            regular,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_ANY,
-            &token
-        ) == 1
+    wf__completion_file_open_at_submit(
+        AT_FDCWD,
+        regular,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_ANY,
+        record.bytes
     );
-    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    wf__completion_file_open_join(
+        record.bytes,
+        &value,
+        &error_code,
+        &open_outcome
+    );
     CHECK(value >= 0);
     CHECK(error_code == 0);
     CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
@@ -2477,34 +1814,47 @@ static int test_uncached_reads_are_target_policy_only(
 
     /* A refused open hands back no descriptor, so the policy has nothing to
      * apply to it. */
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            regular,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_DIRECTORY,
-            &token
-        ) == 1
+    wf__completion_file_open_at_submit(
+        AT_FDCWD,
+        regular,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_DIRECTORY,
+        record.bytes
     );
-    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    wf__completion_file_open_join(
+        record.bytes,
+        &value,
+        &error_code,
+        &open_outcome
+    );
     CHECK(open_outcome == WF_FILE_OPEN_OTHER_KIND);
-    value = wf__completion_file_open_at_direct(
+
+    /* Neither does an open that never resolved a name. */
+    wf__completion_file_open_at_submit(
         AT_FDCWD,
         missing,
         O_RDONLY,
         0u,
         0u,
         WF_FILE_EXPECT_REGULAR,
+        record.bytes
+    );
+    wf__completion_file_open_join(
+        record.bytes,
+        &value,
         &error_code,
         &open_outcome
     );
     CHECK(value < 0);
     CHECK(open_outcome == WF_FILE_OPEN_FAILED);
 
+    /* Two opens produced a descriptor for the policy to apply to; the third
+     * leg was the direct family's copy of the first and left with it
+     * (design §8). */
     after = wf_uncached_applications_now();
-    CHECK(after - before == (asked ? 3u : 0u));
+    CHECK(after - before == (asked ? 2u : 0u));
 
     CHECK(unlink(regular) == 0);
     return 0;
@@ -2531,16 +1881,16 @@ static int test_process_wide_target_helper_budget(void) {
     return 0;
 }
 
+
 /* Submits `count` positioned reads of one open descriptor, one at a time, and
  * waits for each to complete.
  *
- * The wait is on the completion event rather than on the queue emptying: a
- * helper takes a request out of the queue before it executes it, so an empty
- * queue is not an answer, and waiting for one is a race this thread loses
- * whenever the pool has grown.  This thread also offers to execute, so the
- * case runs the same either way. */
+ * The wait is on the record rather than on the queue emptying: a helper takes
+ * a request out of the queue before it executes it, so an empty queue is not
+ * an answer, and waiting for one is a race this thread loses whenever the pool
+ * has grown.  This thread also offers to execute, so the case runs the same
+ * either way. */
 static int drive_reads_to_completion(
-    wf_completion_runtime *runtime,
     wf_file_adapter *adapter,
     int descriptor,
     unsigned count
@@ -2548,33 +1898,27 @@ static int drive_reads_to_completion(
     struct timespec delay = {.tv_sec = 0, .tv_nsec = 1000000};
     unsigned index;
     for (index = 0; index < count; ++index) {
-        wf_completion_token token;
-        wf_file_request request;
-        wf_file_result result;
+        wf_completion_record record;
         unsigned char byte = 0;
         unsigned attempts;
-        CHECK(wf_completion_claim(runtime, &token) == WF_COMPLETION_CLAIMED);
-        memset(&request, 0, sizeof(request));
-        request.kind = WF_FILE_PREAD;
-        request.operation.pread.descriptor = descriptor;
-        request.operation.pread.buffer = &byte;
-        request.operation.pread.count = 1;
-        request.operation.pread.offset = 0;
+        harness_record_init(&record, WF_FILE_PREAD);
+        record.request.operation.pread.descriptor = descriptor;
+        record.request.operation.pread.buffer = &byte;
+        record.request.operation.pread.count = 1;
+        record.request.operation.pread.offset = 0;
         CHECK(
-            wf_file_adapter_submit(adapter, token, &request)
-            == WF_FILE_TARGET_OWNS
+            wf_file_adapter_submit(adapter, &record) == WF_FILE_TARGET_OWNS
         );
         for (attempts = 0; attempts < 5000; ++attempts) {
-            if (wf_completion_ready_event_count(runtime) != 0) {
+            if (harness_record_done(&record)) {
                 break;
             }
             if (wf_file_adapter_progress(adapter, 1) == 0) {
                 (void)nanosleep(&delay, NULL);
             }
         }
-        CHECK(wf_completion_ready_event_count(runtime) != 0);
-        CHECK(drain_and_consume_file(runtime, token, &result) == 0);
-        CHECK(result.error_code == 0);
+        CHECK(harness_record_done(&record));
+        CHECK(record.result.error_code == 0);
     }
     return 0;
 }
@@ -2592,10 +1936,7 @@ static int test_pool_stays_empty_when_operations_do_not_wait(
     const char *directory
 ) {
     wf_completion_runtime runtime;
-    wf_completion_slot slots[8];
     wf_file_adapter adapter;
-    wf_file_work queue[8];
-    pthread_t helpers[4];
     char path[512];
     int descriptor;
 
@@ -2613,8 +1954,8 @@ static int test_pool_stays_empty_when_operations_do_not_wait(
     CHECK(descriptor >= 0);
     CHECK(write(descriptor, "wf", 2) == 2);
 
-    CHECK(wf_completion_runtime_init(&runtime, slots, 8) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 8, helpers, 4, 0) == 0);
+    CHECK(wf_completion_runtime_init(&runtime) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 4, 0) == 0);
     CHECK(wf_file_adapter_set_helper_cap(&adapter, 4) == 0);
 
     /* Nothing measured yet is not evidence of anything, and neither policy
@@ -2625,7 +1966,7 @@ static int test_pool_stays_empty_when_operations_do_not_wait(
     /* One microsecond a call: real work, and an order of magnitude under the
      * wait that would make a second thread worth its handoff. */
     wf_script_clock(1000u);
-    CHECK(drive_reads_to_completion(&runtime, &adapter, descriptor, 32) == 0);
+    CHECK(drive_reads_to_completion(&adapter, descriptor, 32) == 0);
     wf_script_clock(0);
     CHECK(wf_file_adapter_helper_count(&adapter) == 0);
     CHECK(wf_file_adapter_wait_verdict(&adapter) == WF_FILE_WAIT_SHORT);
@@ -2676,43 +2017,32 @@ static int test_pool_stays_empty_when_operations_do_not_wait(
  * The pipe is fed the rest of its bytes only after the pool count has been
  * read, so that count is the pool's final one. */
 static int grow_pool_against_a_blocked_queue(
-    wf_completion_runtime *runtime,
     wf_file_adapter *adapter,
     int read_descriptor,
     int write_descriptor,
     size_t *held
 ) {
     struct timespec delay = {.tv_sec = 0, .tv_nsec = 1000000};
-    wf_completion_token tokens[WF_POOL_GROWTH_DEPTH];
+    static wf_completion_record records[WF_POOL_GROWTH_DEPTH];
     unsigned char bytes[WF_POOL_GROWTH_DEPTH];
     char feed[WF_POOL_GROWTH_DEPTH];
-    wf_completion_token primer_token;
-    wf_file_request request;
-    wf_file_result result;
-    wf_completion_event event;
-    wf_completion_outcome outcome;
+    wf_completion_record primer;
     unsigned char primer_byte = 0;
     unsigned index;
 
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_READ;
-    request.operation.read.descriptor = read_descriptor;
-    request.operation.read.buffer = &primer_byte;
-    request.operation.read.count = 1;
-
     CHECK(write(write_descriptor, "w", 1) == 1);
-    CHECK(wf_completion_claim(runtime, &primer_token) == WF_COMPLETION_CLAIMED);
+    harness_record_init(&primer, WF_FILE_READ);
+    primer.request.operation.read.descriptor = read_descriptor;
+    primer.request.operation.read.buffer = &primer_byte;
+    primer.request.operation.read.count = 1;
     /* Nothing is measured yet, so this submission cannot grow the pool
      * whatever its cap says, and the caller is the queue's only engine. */
-    CHECK(
-        wf_file_adapter_submit(adapter, primer_token, &request)
-        == WF_FILE_TARGET_OWNS
-    );
+    CHECK(wf_file_adapter_submit(adapter, &primer) == WF_FILE_TARGET_OWNS);
     CHECK(wf_file_adapter_helper_count(adapter) == 0);
     CHECK(wf_file_adapter_progress(adapter, 1) == 1);
-    CHECK(drain_and_consume_file(runtime, primer_token, &result) == 0);
-    CHECK(result.error_code == 0);
-    CHECK(result.value == 1);
+    CHECK(harness_record_done(&primer));
+    CHECK(primer.result.error_code == 0);
+    CHECK(primer.result.value == 1);
     CHECK(primer_byte == 'w');
     /* One scripted millisecond a call is a wait by any reading of the
      * threshold, so the growth rule's measured half now holds. */
@@ -2723,13 +2053,12 @@ static int grow_pool_against_a_blocked_queue(
     for (index = 0; index < WF_POOL_GROWTH_DEPTH; ++index) {
         bytes[index] = 0;
         feed[index] = 'q';
+        harness_record_init(&records[index], WF_FILE_READ);
+        records[index].request.operation.read.descriptor = read_descriptor;
+        records[index].request.operation.read.buffer = &bytes[index];
+        records[index].request.operation.read.count = 1;
         CHECK(
-            wf_completion_claim(runtime, &tokens[index])
-            == WF_COMPLETION_CLAIMED
-        );
-        request.operation.read.buffer = &bytes[index];
-        CHECK(
-            wf_file_adapter_submit(adapter, tokens[index], &request)
+            wf_file_adapter_submit(adapter, &records[index])
             == WF_FILE_TARGET_OWNS
         );
     }
@@ -2746,31 +2075,17 @@ static int grow_pool_against_a_blocked_queue(
     );
     for (index = 0; index < WF_POOL_GROWTH_DEPTH; ++index) {
         unsigned attempts;
-        int drained = 0;
-        for (attempts = 0; attempts < 100000u && drained == 0; ++attempts) {
-            if (wf_completion_drain_token(runtime, tokens[index], &event)
-                != 0) {
-                drained = 1;
+        for (attempts = 0; attempts < 100000u; ++attempts) {
+            if (harness_record_done(&records[index])) {
                 break;
             }
             if (wf_file_adapter_progress(adapter, 1) == 0) {
                 (void)nanosleep(&delay, NULL);
             }
         }
-        CHECK(drained == 1);
-        CHECK(event.token.slot == tokens[index].slot);
-        CHECK(event.token.generation == tokens[index].generation);
-        CHECK(
-            wf_completion_consume(
-                runtime,
-                tokens[index],
-                &result,
-                sizeof(result),
-                &outcome
-            ) == WF_COMPLETION_CONSUMED
-        );
-        CHECK(result.error_code == 0);
-        CHECK(result.value == 1);
+        CHECK(harness_record_done(&records[index]));
+        CHECK(records[index].result.error_code == 0);
+        CHECK(records[index].result.value == 1);
         CHECK(bytes[index] == 'q');
     }
     return 0;
@@ -2786,32 +2101,13 @@ static int grow_pool_against_a_blocked_queue(
  * settles on is the cap exactly. */
 static int test_pool_grows_when_operations_wait(void) {
     wf_completion_runtime runtime;
-    wf_completion_slot slots[WF_POOL_GROWTH_DEPTH + 1u];
     wf_file_adapter adapter;
-    wf_file_work queue[WF_POOL_GROWTH_DEPTH + 1u];
-    pthread_t helpers[4];
     int descriptors[2];
     size_t held = 0;
 
     CHECK(pipe(descriptors) == 0);
-    CHECK(
-        wf_completion_runtime_init(
-            &runtime,
-            slots,
-            WF_POOL_GROWTH_DEPTH + 1u
-        ) == 0
-    );
-    CHECK(
-        wf_file_adapter_init(
-            &adapter,
-            &runtime,
-            queue,
-            WF_POOL_GROWTH_DEPTH + 1u,
-            helpers,
-            4,
-            0
-        ) == 0
-    );
+    CHECK(wf_completion_runtime_init(&runtime) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 4, 0) == 0);
     CHECK(wf_file_adapter_set_helper_cap(&adapter, 4) == 0);
 
     /* Nothing measured yet is not evidence of anything, and neither policy
@@ -2821,7 +2117,6 @@ static int test_pool_grows_when_operations_wait(void) {
     wf_script_clock(1000000u);
     CHECK(
         grow_pool_against_a_blocked_queue(
-            &runtime,
             &adapter,
             descriptors[0],
             descriptors[1],
@@ -2842,55 +2137,33 @@ static int test_pool_grows_when_operations_wait(void) {
     return 0;
 }
 
-/* The ceiling a policy asks for is a wish; the storage the caller handed to
- * `wf_file_adapter_init` is the fact.  The growth rule writes `helpers[held]`,
- * so a cap above that storage is a `pthread_create` past its end -- which is
- * why `wf_file_adapter_set_helper_cap` clamps the cap to the storage rather
- * than trusting it.  A cap of eight against storage of two leaves the clamp as
- * the only thing keeping the pool inside the caller's array.
+/* The ceiling a policy asks for is a wish; the bound the caller gave
+ * `wf_file_adapter_init` is the fact, and `wf_file_adapter_set_helper_cap`
+ * clamps the cap to it rather than trusting it.  A cap of eight against a bound
+ * of two leaves the clamp as the only thing keeping the pool at the number of
+ * helpers this adapter was told it may ever hold.
  *
- * The array below is deliberately longer than the two entries init is told
- * about.  The bound under test is the declared capacity, and the slack decides
- * only whether a violation of it is *reported* -- a pool larger than the
- * storage it was given -- or executed as a write past the end of this frame,
- * which ends the run before any check is reached.  With the clamp in place
- * nothing beyond `helpers[1]` is ever written, so the slack is unreachable in
- * a passing run. */
-static int test_helper_growth_stops_at_the_helper_storage(void) {
+ * The bound used to be the length of an array of thread handles the caller
+ * owned, and this case was named for that array.  The helpers are the
+ * runtime's own detached threads now (`wf_prim_thread_start`), so the caller
+ * hands over no storage and the bound is a plain number -- which is the same
+ * property to hold and the same clamp that holds it, with the write past the
+ * end of a frame no longer among the ways to break it. */
+static int test_helper_growth_stops_at_the_declared_bound(void) {
     wf_completion_runtime runtime;
-    wf_completion_slot slots[WF_POOL_GROWTH_DEPTH + 1u];
     wf_file_adapter adapter;
-    wf_file_work queue[WF_POOL_GROWTH_DEPTH + 1u];
-    pthread_t helpers[WF_POOL_GROWTH_DEPTH];
     int descriptors[2];
     size_t held = 0;
 
     CHECK(pipe(descriptors) == 0);
-    CHECK(
-        wf_completion_runtime_init(
-            &runtime,
-            slots,
-            WF_POOL_GROWTH_DEPTH + 1u
-        ) == 0
-    );
-    CHECK(
-        wf_file_adapter_init(
-            &adapter,
-            &runtime,
-            queue,
-            WF_POOL_GROWTH_DEPTH + 1u,
-            helpers,
-            2,
-            0
-        ) == 0
-    );
+    CHECK(wf_completion_runtime_init(&runtime) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 2, 0) == 0);
     /* Accepted, and silently reduced to the two helpers init was given. */
     CHECK(wf_file_adapter_set_helper_cap(&adapter, 8) == 0);
 
     wf_script_clock(1000000u);
     CHECK(
         grow_pool_against_a_blocked_queue(
-            &runtime,
             &adapter,
             descriptors[0],
             descriptors[1],
@@ -2900,7 +2173,7 @@ static int test_helper_growth_stops_at_the_helper_storage(void) {
     wf_script_clock(0);
     /* Two, not the eight that were asked for: the queue stayed deeper than
      * the pool for every one of the twenty submissions, so the cap is the
-     * only thing that stopped it, and the cap is the storage. */
+     * only thing that stopped it, and the cap is the declared bound. */
     CHECK(held == 2);
 
     CHECK(wf_file_adapter_shutdown(&adapter) == 0);
@@ -2910,20 +2183,14 @@ static int test_helper_growth_stops_at_the_helper_storage(void) {
     return 0;
 }
 
-/* An initial count the storage cannot hold is refused outright: unlike the
+/* An initial count above the declared bound is refused outright: unlike the
  * cap, it is not a ceiling to grow towards but threads to start right now. */
-static int test_helper_count_above_its_storage_is_refused(void) {
+static int test_helper_count_above_its_bound_is_refused(void) {
     wf_completion_runtime runtime;
-    wf_completion_slot slots[2];
     wf_file_adapter adapter;
-    wf_file_work queue[2];
-    pthread_t helpers[1];
 
-    CHECK(wf_completion_runtime_init(&runtime, slots, 2) == 0);
-    CHECK(
-        wf_file_adapter_init(&adapter, &runtime, queue, 2, helpers, 1, 2)
-        == EINVAL
-    );
+    CHECK(wf_completion_runtime_init(&runtime) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 1, 2) == EINVAL);
     CHECK(wf_completion_runtime_destroy(&runtime) == 0);
     return 0;
 }
@@ -2941,47 +2208,20 @@ static int test_helper_count_above_its_storage_is_refused(void) {
  *
  * The pool is grown first on purpose.  A shutdown of an adapter that never
  * started a helper joins nothing, so the interesting teardown -- helpers
- * joined, then the objects they waited on destroyed -- would not run at all.
- *
- * What this does not test is the concurrent window the store's position
- * closes: a reader that passes the guard while shutdown is between its
- * destroys is a race, and a race is not what a single-threaded case decides.
- * It does hold the ordering to its unconditional half, which is a real
- * property -- a teardown that reported an error still leaves a record that
- * says it is unusable. */
+ * joined, then the objects they waited on destroyed -- would not run at all. */
 static int test_shutdown_refuses_every_later_entry(void) {
     wf_completion_runtime runtime;
-    wf_completion_slot slots[WF_POOL_GROWTH_DEPTH + 1u];
     wf_file_adapter adapter;
-    wf_file_work queue[WF_POOL_GROWTH_DEPTH + 1u];
-    pthread_t helpers[4];
     int descriptors[2];
     size_t held = 0;
 
     CHECK(pipe(descriptors) == 0);
-    CHECK(
-        wf_completion_runtime_init(
-            &runtime,
-            slots,
-            WF_POOL_GROWTH_DEPTH + 1u
-        ) == 0
-    );
-    CHECK(
-        wf_file_adapter_init(
-            &adapter,
-            &runtime,
-            queue,
-            WF_POOL_GROWTH_DEPTH + 1u,
-            helpers,
-            4,
-            0
-        ) == 0
-    );
+    CHECK(wf_completion_runtime_init(&runtime) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 4, 0) == 0);
     CHECK(wf_file_adapter_set_helper_cap(&adapter, 4) == 0);
     wf_script_clock(1000000u);
     CHECK(
         grow_pool_against_a_blocked_queue(
-            &runtime,
             &adapter,
             descriptors[0],
             descriptors[1],
@@ -3012,74 +2252,14 @@ static int test_shutdown_refuses_every_later_entry(void) {
     return 0;
 }
 
-static int test_helper_completion_wakes_scheduler(void) {
-    wf_completion_runtime runtime;
-    wf_completion_slot slots[2];
-    wf_file_adapter adapter;
-    wf_file_work queue[2];
-    pthread_t helper;
-    pthread_t scheduler;
-    wf_completion_token token;
-    wf_file_request request;
-    wf_file_result result;
-    park_context parked;
-    int pipe_descriptors[2];
-    char byte = 0;
-    const char sent = 'x';
-    struct timespec delay = {.tv_sec = 0, .tv_nsec = 1000000};
-    unsigned attempts;
-
-    CHECK(pipe(pipe_descriptors) == 0);
-    CHECK(wf_completion_runtime_init(&runtime, slots, 2) == 0);
-    CHECK(
-        wf_file_adapter_init(&adapter, &runtime, queue, 2, &helper, 1, 1) == 0
-    );
-    CHECK(wf_completion_claim(&runtime, &token) == WF_COMPLETION_CLAIMED);
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_READ;
-    request.operation.read.descriptor = pipe_descriptors[0];
-    request.operation.read.buffer = &byte;
-    request.operation.read.count = 1;
-    CHECK(
-        wf_file_adapter_submit(&adapter, token, &request)
-        == WF_FILE_TARGET_OWNS
-    );
-    for (attempts = 0; attempts < 5000; ++attempts) {
-        if (wf_file_adapter_queued(&adapter) == 0) {
-            break;
-        }
-        (void)nanosleep(&delay, NULL);
-    }
-    CHECK(wf_file_adapter_queued(&adapter) == 0);
-
-    parked.runtime = &runtime;
-    parked.epoch = wf_completion_wake_epoch(&runtime);
-    parked.result = WF_COMPLETION_PARK_FAILED;
-    CHECK(pthread_create(&scheduler, NULL, park_scheduler, &parked) == 0);
-    CHECK(wait_until_parked(&runtime) == 0);
-    CHECK(write(pipe_descriptors[1], &sent, 1) == 1);
-    CHECK(pthread_join(scheduler, NULL) == 0);
-    CHECK(parked.result == WF_COMPLETION_PARK_WOKEN);
-    CHECK(drain_and_consume_file(&runtime, token, &result) == 0);
-    CHECK(result.error_code == 0);
-    CHECK(result.value == 1);
-    CHECK(byte == sent);
-
-    CHECK(wf_file_adapter_shutdown(&adapter) == 0);
-    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
-    CHECK(close(pipe_descriptors[0]) == 0);
-    CHECK(close(pipe_descriptors[1]) == 0);
-    return 0;
-}
-
-typedef struct readiness_writer_context {
+typedef struct wf_pipe_writer {
     int descriptor;
     unsigned char byte;
-} readiness_writer_context;
+} wf_pipe_writer;
 
-static void *write_after_readiness_wait(void *opaque) {
-    readiness_writer_context *context = opaque;
-    struct timespec delay = {.tv_sec = 0, .tv_nsec = 2000000};
+static void *write_after_a_delay(void *opaque) {
+    wf_pipe_writer *context = opaque;
+    struct timespec delay = {.tv_sec = 0, .tv_nsec = 20000000};
     ssize_t written;
     (void)nanosleep(&delay, NULL);
     written = write(context->descriptor, &context->byte, 1);
@@ -3087,18 +2267,177 @@ static void *write_after_readiness_wait(void *opaque) {
     return NULL;
 }
 
+/* A completion elsewhere ends a join that is waiting in place.
+ *
+ * This is the property `test_drain_wakes_the_registered_token_owner` held over
+ * the deleted consume-wait registration, in the form the design gives it: the
+ * join registers `WF_SCHED_WAITER_IN_PLACE` on its own record, sleeps on the
+ * one primitive, and the thread that finishes the operation -- a helper where
+ * the pool has one, this thread's own progress pass where it has none -- calls
+ * `wf_sched_complete`, which claims the registration and wakes it (design §2's
+ * fourth line, §6).
+ *
+ * The operation is a read of an empty pipe, so it genuinely cannot finish
+ * until another thread writes: a join that did not wait, or a completion that
+ * did not wake, is a hang the harness watchdog reports by name rather than a
+ * wrong answer.  It runs on all four helper settings the gate uses, which is
+ * what covers both engines. */
+static int test_a_helper_completion_wakes_a_waiting_join(void) {
+    wf_harness_record record;
+    wf_pipe_writer writer_context;
+    pthread_t writer;
+    int descriptors[2];
+    unsigned char byte = 0;
+    int64_t value = -1;
+    int error_code = -1;
+    uint64_t publications_before;
+
+    CHECK(pipe(descriptors) == 0);
+    publications_before = wf__completion_publications();
+    wf__completion_file_read_submit(
+        descriptors[0],
+        &byte,
+        1,
+        record.bytes
+    );
+    writer_context.descriptor = descriptors[1];
+    writer_context.byte = 'w';
+    CHECK(
+        pthread_create(&writer, NULL, write_after_a_delay, &writer_context)
+        == 0
+    );
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(pthread_join(writer, NULL) == 0);
+    CHECK(value == 1 && error_code == 0);
+    CHECK(byte == 'w');
+    CHECK(wf__completion_publications() == publications_before + 1u);
+    /* A non-positioned read is never executed inside submit, so this really
+     * did go to the queue and come back from an engine. */
+    CHECK(wf__completion_file_fallback_submissions() >= 1u);
+    CHECK(close(descriptors[0]) == 0);
+    CHECK(close(descriptors[1]) == 0);
+    return 0;
+}
+
+/* An I/O join made on a pool stack parks that stack, and the completion
+ * resumes it.
+ *
+ * This is design §11 item 1 in its real-thread form, and the case above in the
+ * shape a linked program actually runs: there the join is made from a plain
+ * harness thread with no stack to park, so it takes §2's fourth line and waits
+ * in place; here the thread enters the core the way `sched/smoke.c` does, the
+ * join has a stack, and §2's third line parks it.
+ *
+ * The operation is completed by a thread of this case's own rather than by an
+ * engine, and that is what makes the park unconditional. A record the bounded
+ * adapter still holds is run by the joining thread itself, which is the engine
+ * doing its job and not a park; a record in the ring is reaped by whichever
+ * thread makes the next progress pass. Which of those a real read takes
+ * depends on the helper policy and on whether this host has io_uring, so a
+ * case that submitted one would assert a park on some gate hosts and not
+ * others. A record only another thread can publish takes §2's third line on
+ * every host and every helper setting, and it is the same record, the same
+ * join entry point and the same publication call
+ * (`wf_completion_record_complete`) an operation of any kind ends in.
+ *
+ * What the counters say is the whole property. `parks` above zero says the
+ * stack really parked rather than spinning to DONE; `resumes` equal to `parks`
+ * says every parked stack came back; and the join returned the record's own
+ * result, so the stack that was resumed is the stack that joined. The
+ * publisher sleeps first, so a join that did not park would have to spin on a
+ * record nothing had completed: a park that was never resumed is a hang the
+ * watchdog reports by name.
+ *
+ * Three stacks and one thread: the entry takes one, so a park has one to
+ * switch to and the exhausted arm is not what is being tested. The core is the
+ * process's own `wf__sched_core`, which nothing has started here -- a harness
+ * link carries no floor, so no entry started it -- and it stays initialised for
+ * the cases after this one, whose joins run on plain threads and wait in place
+ * exactly as before.
+ *
+ * A compute hand-out joined newest-first on the core from a linked program is
+ * not duplicated here: `compiler/tests/programs/parallel.rs` runs whole
+ * compiled programs whose overlap groups do exactly that, at several worker
+ * counts, and reads the core's own grant count back. */
+typedef struct pool_stack_join_context {
+    int failed;
+    wf_harness_record record;
+    int64_t value;
+    int error_code;
+    uint64_t publications_before;
+} pool_stack_join_context;
+
+static void *complete_after_a_delay(void *opaque) {
+    wf_completion_record *record = opaque;
+    struct timespec delay = {.tv_sec = 0, .tv_nsec = 20000000};
+    (void)nanosleep(&delay, NULL);
+    record->result.kind = WF_FILE_READ;
+    record->result.value = 11;
+    record->result.error_code = 0;
+    wf_completion_record_complete(record);
+    return NULL;
+}
+
+static void run_pool_stack_join(void *argument) {
+    pool_stack_join_context *context = argument;
+    wf_completion_record *record = (wf_completion_record *)context->record.bytes;
+    pthread_t publisher;
+
+    context->failed = 1;
+    if (wf__sched_current_stack() == NULL) {
+        wf_sched_post_status(&wf__sched_core, 0);
+        return;
+    }
+    context->publications_before = wf__completion_publications();
+    harness_record_init(record, WF_FILE_READ);
+    if (pthread_create(&publisher, NULL, complete_after_a_delay, record) != 0) {
+        wf_sched_post_status(&wf__sched_core, 0);
+        return;
+    }
+    wf__completion_file_join(
+        context->record.bytes,
+        &context->value,
+        &context->error_code
+    );
+    if (pthread_join(publisher, NULL) != 0) {
+        wf_sched_post_status(&wf__sched_core, 0);
+        return;
+    }
+    context->failed = 0;
+    wf_sched_post_status(&wf__sched_core, 0);
+}
+
+static int test_an_io_join_on_a_pool_stack_parks_and_is_resumed(void) {
+    pool_stack_join_context context;
+    wf_sched_statistics counts;
+
+    memset(&context, 0, sizeof(context));
+    context.value = -1;
+    context.error_code = -1;
+    CHECK(wf_sched_init(&wf__sched_core, 1u, 3u, 256u * 1024u) == 0);
+    CHECK(wf__sched_enter(0u, run_pool_stack_join, &context) == 0);
+    wf_sched_statistics_sum(&wf__sched_core, &counts);
+    CHECK(context.failed == 0);
+    CHECK(context.value == 11 && context.error_code == 0);
+    CHECK(wf__completion_publications() == context.publications_before + 1u);
+    CHECK(counts.parks >= 1u);
+    CHECK(counts.resumes == counts.parks);
+    return 0;
+}
+
+/* Interruption and readiness refusal are adapter progress, never an outcome.
+ *
+ * The read below is of a nonblocking empty pipe, so its first host attempt is
+ * refused with EAGAIN; the adapter waits for exactly one POLLIN and repeats
+ * it.  One submission still produces exactly one completion, which the
+ * publication count says. */
 static int test_readiness_refusal_is_not_a_terminal_outcome(void) {
     wf_completion_runtime runtime;
-    wf_completion_slot slot;
     wf_file_adapter adapter;
-    wf_file_work queue[1];
-    wf_completion_token token;
-    wf_file_request request;
-    wf_file_result result;
-    wf_completion_event event;
-    wf_completion_outcome outcome;
-    readiness_writer_context writer_context;
+    wf_completion_record record;
+    wf_pipe_writer writer_context;
     pthread_t writer;
+    uint64_t publications_before;
     int descriptors[2];
     int flags;
     unsigned char byte = 0;
@@ -3107,173 +2446,33 @@ static int test_readiness_refusal_is_not_a_terminal_outcome(void) {
     flags = fcntl(descriptors[0], F_GETFL, 0);
     CHECK(flags >= 0);
     CHECK(fcntl(descriptors[0], F_SETFL, flags | O_NONBLOCK) == 0);
-    CHECK(wf_completion_runtime_init(&runtime, &slot, 1) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0, 0) == 0);
-    CHECK(wf_completion_claim(&runtime, &token) == WF_COMPLETION_CLAIMED);
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_READ;
-    request.operation.read.descriptor = descriptors[0];
-    request.operation.read.buffer = &byte;
-    request.operation.read.count = 1;
-    CHECK(
-        wf_file_adapter_submit(&adapter, token, &request)
-        == WF_FILE_TARGET_OWNS
-    );
+    CHECK(wf_completion_runtime_init(&runtime) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 0, 0) == 0);
+    harness_record_init(&record, WF_FILE_READ);
+    record.request.operation.read.descriptor = descriptors[0];
+    record.request.operation.read.buffer = &byte;
+    record.request.operation.read.count = 1;
+    publications_before = wf__completion_publications();
+    CHECK(wf_file_adapter_submit(&adapter, &record) == WF_FILE_TARGET_OWNS);
     writer_context.descriptor = descriptors[1];
     writer_context.byte = 'r';
     CHECK(
-        pthread_create(
-            &writer,
-            NULL,
-            write_after_readiness_wait,
-            &writer_context
-        ) == 0
+        pthread_create(&writer, NULL, write_after_a_delay, &writer_context)
+        == 0
     );
     CHECK(wf_file_adapter_progress(&adapter, 1) == 1);
     CHECK(pthread_join(writer, NULL) == 0);
     CHECK(byte == 'r');
-    CHECK(wf_completion_drain(&runtime, &event, 1, 1) == 1);
-    CHECK(event.token.slot == token.slot);
-    CHECK(wf_completion_drain(&runtime, &event, 1, 1) == 0);
-    CHECK(
-        wf_completion_consume(
-            &runtime,
-            token,
-            &result,
-            sizeof(result),
-            &outcome
-        ) == WF_COMPLETION_CONSUMED
-    );
-    CHECK(result.value == 1);
-    CHECK(result.error_code == 0);
-    CHECK(wf_completion_statistics_snapshot(&runtime).publications == 1);
-    CHECK(wf_completion_statistics_snapshot(&runtime).consumptions == 1);
+    CHECK(harness_record_done(&record));
+    CHECK(record.result.value == 1);
+    CHECK(record.result.error_code == 0);
+    CHECK(wf__completion_publications() == publications_before + 1u);
     CHECK(wf_file_adapter_shutdown(&adapter) == 0);
     CHECK(wf_completion_runtime_destroy(&runtime) == 0);
     CHECK(close(descriptors[0]) == 0);
     CHECK(close(descriptors[1]) == 0);
     return 0;
 }
-
-typedef struct progress_context {
-    wf_file_adapter *adapter;
-    size_t progressed;
-} progress_context;
-
-static void *progress_one_file_operation(void *opaque) {
-    progress_context *context = opaque;
-    context->progressed = wf_file_adapter_progress(context->adapter, 1);
-    return NULL;
-}
-
-static int test_capacity_release_wakes_before_blocking_work(void) {
-    wf_completion_runtime runtime;
-    wf_completion_slot slots[2];
-    wf_file_adapter adapter;
-    wf_file_work queue[1];
-    wf_completion_token read_token;
-    wf_completion_token write_token;
-    wf_completion_event events[2];
-    wf_completion_outcome outcome;
-    wf_file_request read_request;
-    wf_file_request write_request;
-    wf_file_result read_result;
-    wf_file_result write_result;
-    park_context parked;
-    progress_context progress;
-    pthread_t scheduler;
-    pthread_t target_progress;
-    int pipe_descriptors[2];
-    char received = 0;
-    const char sent = 'c';
-
-    CHECK(pipe(pipe_descriptors) == 0);
-    CHECK(wf_completion_runtime_init(&runtime, slots, 2) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0, 0) == 0);
-    CHECK(wf_completion_claim(&runtime, &read_token) == WF_COMPLETION_CLAIMED);
-    memset(&read_request, 0, sizeof(read_request));
-    read_request.kind = WF_FILE_READ;
-    read_request.operation.read.descriptor = pipe_descriptors[0];
-    read_request.operation.read.buffer = &received;
-    read_request.operation.read.count = 1;
-    CHECK(
-        wf_file_adapter_submit(&adapter, read_token, &read_request)
-        == WF_FILE_TARGET_OWNS
-    );
-
-    CHECK(wf_completion_claim(&runtime, &write_token) == WF_COMPLETION_CLAIMED);
-    memset(&write_request, 0, sizeof(write_request));
-    write_request.kind = WF_FILE_WRITE;
-    write_request.operation.write.descriptor = pipe_descriptors[1];
-    write_request.operation.write.buffer = &sent;
-    write_request.operation.write.count = 1;
-    CHECK(
-        wf_file_adapter_submit(&adapter, write_token, &write_request)
-        == WF_FILE_WAIT_CAPACITY
-    );
-
-    parked.runtime = &runtime;
-    parked.epoch = wf_completion_wake_epoch(&runtime);
-    parked.result = WF_COMPLETION_PARK_FAILED;
-    CHECK(pthread_create(&scheduler, NULL, park_scheduler, &parked) == 0);
-    CHECK(wait_until_parked(&runtime) == 0);
-
-    /* This scheduler-driven target progress thread removes the read from the
-     * full queue, publishes capacity, then blocks in the typed read.  The
-     * capacity notification must wake the scheduler before the read can ever
-     * complete, because submitting the waiting write is what unblocks it. */
-    progress.adapter = &adapter;
-    progress.progressed = 0;
-    CHECK(
-        pthread_create(
-            &target_progress,
-            NULL,
-            progress_one_file_operation,
-            &progress
-        ) == 0
-    );
-    CHECK(pthread_join(scheduler, NULL) == 0);
-    CHECK(parked.result == WF_COMPLETION_PARK_WOKEN);
-    CHECK(
-        wf_file_adapter_submit(&adapter, write_token, &write_request)
-        == WF_FILE_TARGET_OWNS
-    );
-    CHECK(wf_file_adapter_progress(&adapter, 1) == 1);
-    CHECK(pthread_join(target_progress, NULL) == 0);
-    CHECK(progress.progressed == 1);
-    CHECK(drain_exact(&runtime, 2, events) == 0);
-
-    CHECK(
-        wf_completion_consume(
-            &runtime,
-            read_token,
-            &read_result,
-            sizeof(read_result),
-            &outcome
-        ) == WF_COMPLETION_CONSUMED
-    );
-    CHECK(read_result.error_code == 0);
-    CHECK(read_result.value == 1);
-    CHECK(received == sent);
-    CHECK(
-        wf_completion_consume(
-            &runtime,
-            write_token,
-            &write_result,
-            sizeof(write_result),
-            &outcome
-        ) == WF_COMPLETION_CONSUMED
-    );
-    CHECK(write_result.error_code == 0);
-    CHECK(write_result.value == 1);
-
-    CHECK(wf_file_adapter_shutdown(&adapter) == 0);
-    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
-    CHECK(close(pipe_descriptors[0]) == 0);
-    CHECK(close(pipe_descriptors[1]) == 0);
-    return 0;
-}
-
 /* The runtime's own bound on how many iterations of one loop may be in flight
  * at once.
  *
@@ -3287,12 +2486,15 @@ static int test_completion_window_answers_at_the_boundaries(void) {
     uint64_t budget = WF_HARNESS_WINDOW_BYTE_BUDGET;
     uint64_t two;
 
-    /* The runtime never offers its whole operation capacity to one loop: a
-     * loop holding every record would push the rest of the program onto the
-     * capacity-wait path, where a full ring degrades to a blocking direct
-     * call. */
+    /* The runtime's unconstrained answer is its own throughput choice.  It
+     * used to be half the process operation capacity, because a loop holding
+     * every record would have pushed the rest of the program onto the
+     * capacity-wait path; there is no capacity and no wait to be pushed onto
+     * any more, and the number is the lane's slot count, since a staged lane
+     * hand-out is the one form no compiler ceiling bounds below it (design
+     * §7). */
     CHECK(unconstrained >= 1u);
-    CHECK(unconstrained <= WF_HARNESS_OPERATION_CAPACITY / 2u);
+    CHECK(unconstrained <= WF_HARNESS_WINDOW_DEFAULT);
 
     /* A trip count of one is a loop with nothing to overlap. */
     CHECK(wf__completion_window(1, 0, 0) == 1u);
@@ -3339,8 +2541,7 @@ static int test_completion_window_answers_at_the_boundaries(void) {
  * eight-wide benchmark and 2,048 when it is deferred (LOOP-PIPELINE.md §9.1).
  * Deferring is only safe while the two facts below hold, and they are what
  * this checks: a submission alone rings nothing, and the first thing that
- * could wait — a join, or a blocking direct host call the completion path
- * refused to carry — rings it first.
+ * could wait — a join — rings it first.
  *
  * The enter counter only exists where the ring is the target route, so the
  * counted half of this test runs there and the functional half runs
@@ -3351,9 +2552,9 @@ static int test_a_submitted_operation_is_kicked_before_it_waits(
     char path[256];
     unsigned char first[8];
     unsigned char second[8];
-    wf_completion_token open_token;
-    wf_completion_token read_token;
-    wf_completion_token other_token;
+    wf_harness_record open_record;
+    wf_harness_record read_record;
+    wf_harness_record other_record;
     int64_t value = -1;
     int error_code = -1;
     unsigned open_outcome = WF_FILE_OPEN_FAILED;
@@ -3379,20 +2580,18 @@ static int test_a_submitted_operation_is_kicked_before_it_waits(
     CHECK(write(writer, "doorbell", 8) == 8);
     CHECK(close(writer) == 0);
 
-    submissions_before = wf__completion_linux_io_uring_submissions();
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            path,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            &open_token
-        ) == 1
+    submissions_before = wf__completion_native_ring_submissions();
+    wf__completion_file_open_at_submit(
+        AT_FDCWD,
+        path,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        open_record.bytes
     );
     wf__completion_file_open_join(
-        &open_token,
+        open_record.bytes,
         &value,
         &error_code,
         &open_outcome
@@ -3401,2006 +2600,395 @@ static int test_a_submitted_operation_is_kicked_before_it_waits(
     CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
     descriptor = (int)value;
     ring_route =
-        wf__completion_linux_io_uring_submissions() > submissions_before;
+        wf__completion_native_ring_submissions() > submissions_before;
 
-    /* A submission alone rings nothing. */
-    enters = wf__completion_linux_io_uring_submission_enters();
+    /* A submission alone rings nothing, and the join that follows it rings it
+     * first.  The blocking direct host call this leg used to make between the
+     * two went with the direct family (design section 8); a caller's thread
+     * reaches a host call now only by running its own queued record, and that
+     * path rings the doorbell for the same reason before the same kind of
+     * call. */
+    enters = wf__completion_native_ring_submission_enters();
     memset(first, 0, sizeof(first));
-    CHECK(
-        wf__completion_file_pread_submit(
-            descriptor,
-            first,
-            sizeof(first),
-            0,
-            &read_token
-        ) == 1
+    wf__completion_file_pread_submit(
+        descriptor,
+        first,
+        sizeof(first),
+        0,
+        read_record.bytes
     );
     if (ring_route) {
-        CHECK(wf__completion_linux_io_uring_submission_enters() == enters);
+        CHECK(wf__completion_native_ring_submission_enters() == enters);
     }
-
-    /* A blocking direct host call rings it first. This one is refused
-     * immediately by the host, so what it proves is the ordering and not the
-     * waiting: the doorbell rang before the call, not after it. */
-    CHECK(wf__completion_file_close_direct(-1) < 0);
+    wf__completion_file_join(read_record.bytes, &value, &error_code);
     if (ring_route) {
-        CHECK(wf__completion_linux_io_uring_submission_enters() == enters + 1u);
+        CHECK(wf__completion_native_ring_submission_enters() == enters + 1u);
     }
-    wf__completion_file_join(&read_token, &value, &error_code);
     CHECK(value == 8 && error_code == 0);
     CHECK(memcmp(first, "doorbell", 8) == 0);
 
     /* Two submissions, one doorbell: the first join carries both, and the
      * second join needs no further call. This is the whole of what deferring
      * buys, stated as a count. */
-    enters = wf__completion_linux_io_uring_submission_enters();
+    enters = wf__completion_native_ring_submission_enters();
     memset(first, 0, sizeof(first));
     memset(second, 0, sizeof(second));
-    CHECK(
-        wf__completion_file_pread_submit(
-            descriptor,
-            first,
-            4,
-            0,
-            &read_token
-        ) == 1
+    wf__completion_file_pread_submit(
+        descriptor,
+        first,
+        4,
+        0,
+        read_record.bytes
     );
-    CHECK(
-        wf__completion_file_pread_submit(
-            descriptor,
-            second,
-            4,
-            4,
-            &other_token
-        ) == 1
+    wf__completion_file_pread_submit(
+        descriptor,
+        second,
+        4,
+        4,
+        other_record.bytes
     );
     if (ring_route) {
-        CHECK(wf__completion_linux_io_uring_submission_enters() == enters);
+        CHECK(wf__completion_native_ring_submission_enters() == enters);
     }
-    wf__completion_file_join(&read_token, &value, &error_code);
+    wf__completion_file_join(read_record.bytes, &value, &error_code);
     CHECK(value == 4 && error_code == 0);
     if (ring_route) {
-        CHECK(wf__completion_linux_io_uring_submission_enters() == enters + 1u);
+        CHECK(wf__completion_native_ring_submission_enters() == enters + 1u);
     }
-    wf__completion_file_join(&other_token, &value, &error_code);
+    wf__completion_file_join(other_record.bytes, &value, &error_code);
     CHECK(value == 4 && error_code == 0);
     if (ring_route) {
-        CHECK(wf__completion_linux_io_uring_submission_enters() == enters + 1u);
+        CHECK(wf__completion_native_ring_submission_enters() == enters + 1u);
     }
     CHECK(memcmp(first, "door", 4) == 0);
     CHECK(memcmp(second, "bell", 4) == 0);
 
-    CHECK(wf__completion_file_close_submit(descriptor, &read_token) == 1);
-    wf__completion_file_join(&read_token, &value, &error_code);
+    wf__completion_file_close_submit(descriptor, read_record.bytes);
+    wf__completion_file_join(read_record.bytes, &value, &error_code);
     CHECK(value == 0 && error_code == 0);
     CHECK(unlink(path) == 0);
     return 0;
 }
 
-/* Fills this process's descriptor table exactly: opens `path` at the lowest
- * free descriptor and lowers the soft limit to one past it, so no further open
- * can succeed until that one descriptor is given back.  `*saved` carries the
- * limit the caller must restore.  Returns the held descriptor. */
-static int wf_harness_hold_the_last_descriptor(
-    const char *path,
-    struct rlimit *saved
-) {
-    struct rlimit narrowed;
-    int probe;
-    int held;
-    if (getrlimit(RLIMIT_NOFILE, saved) != 0) {
-        return -1;
-    }
-    probe = open(path, O_RDONLY);
-    if (probe < 0) {
-        return -1;
-    }
-    if (close(probe) != 0) {
-        return -1;
-    }
-    narrowed = *saved;
-    narrowed.rlim_cur = (rlim_t)probe + 1;
-    if (narrowed.rlim_cur > saved->rlim_max) {
-        return -1;
-    }
-    if (setrlimit(RLIMIT_NOFILE, &narrowed) != 0) {
-        return -1;
-    }
-    held = open(path, O_RDONLY);
-    if (held != probe) {
-        if (held >= 0) {
-            (void)close(held);
-        }
-        (void)setrlimit(RLIMIT_NOFILE, saved);
-        return -1;
-    }
-    return held;
-}
-
-/* An open refused for want of a host descriptor retires the work this runtime
- * still owns and re-attempts once before publishing an outcome.
+/* One loopback connection through the submitted TCP kinds, and the accounting
+ * a connection's two directions carry [SYS-17, SYS-18].
  *
- * Retire and retry (LOOP-PIPELINE.md §2.10).  A schedule that keeps several
- * iterations of a loop in flight holds several descriptors where source order
- * holds one, so a host limit the sequential program never reaches could turn a
- * correct program's `Ok` into an `Err(ResourceExhausted)` — and [SYS-10] is
- * explicit that a `FilePermit` promises no native descriptor, while [PAR-1]'s
- * exhaustion clause excuses only what an implementation spends on overlapping.
- * The descriptors the program's own opens consume are not that.
+ * This is the whole socket lifecycle at the bridge's own ABI: listen, connect,
+ * accept, send, receive, and the two half-closes. The accounting under test is
+ * the pair's: a connection is one descriptor and two owners, so it takes
+ * exactly two releases, the first is that direction's half-close and leaves
+ * the target's object open, and the second releases it. That is the runtime's
+ * half of the [SYS-10] credit rule -- one connection costs the target one
+ * native handle, whichever way the pair is released -- and it is checked here
+ * by asking the host whether the descriptor is still this program's.
  *
- * The shape here is the smallest one that has the property: a close of the one
- * held descriptor is submitted, then an open which cannot succeed until that
- * close runs.  With no helper the scheduler takes the newest request first, so
- * the open really is attempted while the close is still owed, and only the
- * retirement makes it succeed.  Both outcomes are published unchanged. */
-static int test_open_exhaustion_retires_owned_work_and_retries(
-    const char *scratch_directory
-) {
-    wf_completion_runtime runtime;
-    wf_completion_slot slots[4];
-    wf_file_adapter adapter;
-    wf_file_work queue[4];
-    wf_completion_token close_token;
-    wf_completion_token open_token;
-    wf_file_request request;
-    wf_file_result result;
-    wf_completion_event events[2];
-    wf_completion_outcome outcome;
-    struct rlimit saved;
-    char path[256];
-    int writer;
-    int held;
-    int opened;
-
-    CHECK(scratch_directory != NULL);
-    CHECK(
-        snprintf(
-            path,
-            sizeof(path),
-            "%s/wf-completion-exhaustion-%ld",
-            scratch_directory,
-            (long)getpid()
-        ) > 0
-    );
-    (void)unlink(path);
-    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
-    CHECK(writer >= 0);
-    CHECK(close(writer) == 0);
-
-    /* Everything that needs a descriptor of its own happens before the limit
-     * narrows. */
-    CHECK(wf_completion_runtime_init(&runtime, slots, 4) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 4, NULL, 0, 0) == 0);
-    CHECK(wf_completion_claim(&runtime, &close_token) == WF_COMPLETION_CLAIMED);
-    CHECK(wf_completion_claim(&runtime, &open_token) == WF_COMPLETION_CLAIMED);
-
-    held = wf_harness_hold_the_last_descriptor(path, &saved);
-    CHECK(held >= 0);
-    /* The premise: with the table full the host refuses an open outright. */
-    CHECK(open(path, O_RDONLY) < 0);
-
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_CLOSE;
-    request.operation.close.descriptor = held;
-    CHECK(
-        wf_file_adapter_submit(&adapter, close_token, &request)
-        == WF_FILE_TARGET_OWNS
-    );
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_OPEN_AT;
-    request.operation.open_at.directory = AT_FDCWD;
-    request.operation.open_at.path = path;
-    request.operation.open_at.flags = O_RDONLY;
-    request.operation.open_at.expected_kind = WF_FILE_EXPECT_REGULAR;
-    CHECK(
-        wf_file_adapter_submit(&adapter, open_token, &request)
-        == WF_FILE_TARGET_OWNS
-    );
-
-    /* One scheduler visit. It takes the open, is refused, retires the close it
-     * still owed, and re-attempts. */
-    CHECK(wf_file_adapter_progress(&adapter, 1) == 1);
-    CHECK(
-        wf_file_adapter_statistics_snapshot(&adapter).exhaustion_retries == 1
-    );
-
-    CHECK(drain_exact(&runtime, 2, events) == 0);
-    CHECK(
-        wf_completion_consume(
-            &runtime,
-            close_token,
-            &result,
-            sizeof(result),
-            &outcome
-        ) == WF_COMPLETION_CONSUMED
-    );
-    CHECK(result.kind == WF_FILE_CLOSE);
-    CHECK(result.value == 0 && result.error_code == 0);
-    CHECK(
-        wf_completion_consume(
-            &runtime,
-            open_token,
-            &result,
-            sizeof(result),
-            &outcome
-        ) == WF_COMPLETION_CONSUMED
-    );
-    CHECK(result.kind == WF_FILE_OPEN_AT);
-    /* The whole point: the outcome the program sees is the one source order
-     * produces, not the exhaustion the schedule caused. */
-    CHECK(result.value >= 0 && result.error_code == 0);
-    CHECK(result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
-    opened = (int)result.value;
-
-    CHECK(close(opened) == 0);
-    CHECK(setrlimit(RLIMIT_NOFILE, &saved) == 0);
-    CHECK(wf_file_adapter_shutdown(&adapter) == 0);
-    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
-    CHECK(unlink(path) == 0);
-    return 0;
-}
-
-/* The same rule on the route generated code takes, whichever target carries
- * it.
- *
- * Here nothing can give a descriptor back, so every open fails — and that is
- * the outcome the program is entitled to see, because it is the one source
- * order produces too.  What the count proves is the bound: an exhausted host
- * cannot turn one `open_file` call into unbounded work, so three refused opens
- * can produce at most three second attempts however the three are scheduled.
- *
- * This test asserted the opposite bound until the rule below was corrected —
- * that the count had *moved*, that is, that at least one re-attempt was made.
- * That is not a property of three independent opens.  A re-attempt is owed
- * only where this runtime is still holding a descriptor it could give back,
- * and whether it is depends on where the three land: a helper pool that
- * finishes each open before the next is submitted holds nothing at the moment
- * of each refusal, so publishing each refusal unchanged is the correct answer
- * and no re-attempt is owed.  Asserting otherwise made this test fail 13 of
- * 200 runs at `WF_IO_HELPERS=4` on macOS, inside canonical `make check`.
- *
- * The property it was reaching for — that a runtime still holding a descriptor
- * asks the host again rather than publishing the refusal — is what
- * `test_open_exhaustion_waits_for_another_engine` and
- * `test_bridge_open_behind_a_submitted_close_succeeds` establish, each by
- * arranging that schedule instead of hoping for it, and each failing without
- * its fix. */
-static int test_bridge_open_exhaustion_is_retried_once(
-    const char *scratch_directory
-) {
-    struct rlimit saved;
-    char path[256];
-    wf_completion_token tokens[3];
-    wf_completion_token token;
+ * The listener's own port is the kernel's choice, and no operation reports it,
+ * so this frame asks the host directly. That is the same thing the program
+ * corpus does from the other side, where the harness picks the port. */
+static int test_socket_lifecycle_and_the_pair_two_count(void) {
+    wf_harness_record record;
     int64_t value = -1;
     int error_code = -1;
-    unsigned open_outcome = WF_FILE_OPEN_SUCCEEDED;
-    uint64_t retries_before;
-    size_t index;
-    int writer;
-    int held;
+    uint64_t peer_low = 0;
+    uint64_t peer_high = 0;
+    uint32_t peer_tag = 0;
+    struct sockaddr_in local;
+    socklen_t local_length = (socklen_t)sizeof(local);
+    const unsigned char message[6] = {'s', 'o', 'c', 'k', 'e', 't'};
+    unsigned char received[6] = {0};
+    unsigned port;
+    int listener;
+    int connected;
+    int taken;
 
-    CHECK(scratch_directory != NULL);
-    CHECK(
-        snprintf(
-            path,
-            sizeof(path),
-            "%s/wf-completion-bridge-exhaustion-%ld",
-            scratch_directory,
-            (long)getpid()
-        ) > 0
-    );
-    (void)unlink(path);
-    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
-    CHECK(writer >= 0);
-    CHECK(close(writer) == 0);
-
-    /* Warm every descriptor the bridge itself needs before the limit narrows:
-     * the ring, its wait set, and any helper the policy asks for are created
-     * on the first submission, not here. */
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            path,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            &token
-        ) == 1
-    );
-    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    /* 127.0.0.1, port zero: the address value the emitted constructors build,
+     * in the three scalars the submit ABI carries (`contract.h`). */
+    wf__completion_socket_listen_submit(0x0100007fu, 0, 0, record.bytes);
+    wf__completion_file_join(record.bytes, &value, &error_code);
     CHECK(value >= 0 && error_code == 0);
-    CHECK(wf__completion_file_close_submit((int)value, &token) == 1);
-    wf__completion_file_join(&token, &value, &error_code);
+    listener = (int)value;
+    CHECK(
+        getsockname(listener, (struct sockaddr *)&local, &local_length) == 0
+    );
+    port = (unsigned)ntohs(local.sin_port);
+    CHECK(port != 0u);
+
+    wf__completion_socket_connect_submit(0x0100007fu, 0, port, record.bytes);
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(value >= 0 && error_code == 0);
+    connected = (int)value;
+
+    wf__completion_socket_accept_submit(listener, record.bytes);
+    wf__completion_socket_accept_join(
+        record.bytes,
+        &value,
+        &error_code,
+        &peer_low,
+        &peer_high,
+        &peer_tag
+    );
+    CHECK(value >= 0 && error_code == 0);
+    taken = (int)value;
+    /* The peer of a loopback connection is 127.0.0.1 on an ephemeral port,
+     * reported in the same portable form an emitted `SocketAddress` carries. */
+    CHECK(peer_low == 0x0100007fu && peer_high == 0);
+    CHECK((peer_tag & WF_SOCKET_FAMILY_V6) == 0u);
+    CHECK((peer_tag & WF_SOCKET_PORT_MASK) != 0u);
+
+    wf__completion_socket_send_submit(
+        connected,
+        message,
+        sizeof(message),
+        record.bytes
+    );
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(value == (int64_t)sizeof(message) && error_code == 0);
+
+    wf__completion_socket_receive_submit(
+        taken,
+        received,
+        sizeof(received),
+        record.bytes
+    );
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(value == (int64_t)sizeof(message) && error_code == 0);
+    CHECK(memcmp(received, message, sizeof(message)) == 0);
+
+    /* An empty receive has no external action at all and answers zero without
+     * a host call, exactly as an empty read does [SYS-8]. */
+    wf__completion_socket_receive_submit(taken, received, 0, record.bytes);
+    wf__completion_file_join(record.bytes, &value, &error_code);
     CHECK(value == 0 && error_code == 0);
 
-    retries_before = wf__completion_open_exhaustion_retries();
-    held = wf_harness_hold_the_last_descriptor(path, &saved);
-    CHECK(held >= 0);
+    /* The first release of a direction half-closes it and leaves the
+     * descriptor this program's. */
+    wf__completion_socket_shutdown_submit(
+        taken,
+        WF_SOCKET_DIRECTION_RECEIVE,
+        record.bytes
+    );
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+    CHECK(fcntl(taken, F_GETFD) >= 0);
 
+    /* The second releases the target's object, which is the release that
+     * spends the credit. */
+    wf__completion_socket_shutdown_submit(
+        taken,
+        WF_SOCKET_DIRECTION_SEND,
+        record.bytes
+    );
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+    errno = 0;
+    CHECK(fcntl(taken, F_GETFD) < 0 && errno == EBADF);
+
+    /* The other connection takes exactly the same two releases, in the other
+     * order, because which direction is released first is the program's own
+     * ordinary release order and changes no outcome [SYS-18]. */
+    wf__completion_socket_shutdown_submit(
+        connected,
+        WF_SOCKET_DIRECTION_SEND,
+        record.bytes
+    );
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+    CHECK(fcntl(connected, F_GETFD) >= 0);
+    wf__completion_socket_shutdown_submit(
+        connected,
+        WF_SOCKET_DIRECTION_RECEIVE,
+        record.bytes
+    );
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+    errno = 0;
+    CHECK(fcntl(connected, F_GETFD) < 0 && errno == EBADF);
+
+    /* A listener is one owner and one credit, so its explicit close is the
+     * ordinary one every other descriptor-shaped resource takes. */
+    wf__completion_file_close_submit(listener, record.bytes);
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+
+    /* A connect nobody is listening for takes no handle at all: the host
+     * refuses it and the runtime disposes of the socket it made, so the
+     * program's own permit comes back rather than a descriptor [SYS-10]. */
+    wf__completion_socket_connect_submit(0x0100007fu, 0, port, record.bytes);
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(value < 0 && error_code == ECONNREFUSED);
+    return 0;
+}
+
+/* Opens one listening socket on the loopback and reports the port the host
+ * chose, for the peer-bound case below.
+ *
+ * It is the host's own three calls rather than the bridge's socket kinds
+ * because the case under it is about the adapter's queue and not about the
+ * submitted listen: a listener built here is one this frame can hand to an
+ * adapter it made itself, with the helper policy the case names rather than
+ * the process-wide one. */
+static int harness_open_listener(unsigned *port) {
+    struct sockaddr_in address;
+    socklen_t length = (socklen_t)sizeof(address);
+    int listener = socket(AF_INET, SOCK_STREAM, 0);
+    if (listener < 0) {
+        return -1;
+    }
+    memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = 0;
+    if (bind(listener, (struct sockaddr *)&address, sizeof(address)) != 0
+        || listen(listener, 8) != 0
+        || getsockname(listener, (struct sockaddr *)&address, &length) != 0) {
+        (void)close(listener);
+        return -1;
+    }
+    *port = (unsigned)ntohs(address.sin_port);
+    return listener;
+}
+
+/* Connects one peer to the loopback port, and leaves it silent. */
+static int harness_connect_peer(unsigned port) {
+    struct sockaddr_in address;
+    int peer = socket(AF_INET, SOCK_STREAM, 0);
+    if (peer < 0) {
+        return -1;
+    }
+    memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = htons((unsigned short)port);
+    if (connect(peer, (struct sockaddr *)&address, sizeof(address)) != 0) {
+        (void)close(peer);
+        return -1;
+    }
+    return peer;
+}
+
+/* A request whose kind waits on a peer is a helper's work, not a scheduler
+ * thread's.
+ *
+ * The wait an accept or a receive makes is ended by another program, so no
+ * measurement of this adapter's own host calls can see it coming and nothing
+ * this runtime does can shorten it. A scheduler thread that enters one is a
+ * thread another program has taken, along with every continuation it was
+ * holding, which is exactly how `tests/programs/tcp_fanout.wf` lost its fourth
+ * peer: three workers inside receives from silent peers and no thread left to
+ * accept the connection whose peer was about to speak.
+ *
+ * So the kind is the whole rule, and this case is its three halves. The
+ * submission of a peer-bound request starts a helper whatever the measured
+ * verdict says -- here it says nothing at all, because this adapter has
+ * executed nothing. The scheduler thread's progress pass then leaves the
+ * queued accept alone and reports that it moved nothing, rather than blocking
+ * in it. And a pool pinned at zero helpers, which is a policy that makes the
+ * calling thread the queue's only engine, still runs one on the calling
+ * thread, because there refusing it would leave it with no engine at all.
+ *
+ * The queue is brought to a state the rule can be read off by filling the pool
+ * first: two helpers, both inside an accept of a listener no peer has reached,
+ * and a third accept behind them that no helper can take. What is queued at
+ * the progress call is therefore exactly one peer-bound request, and a
+ * regression that takes it does not fail this check -- it blocks in the host
+ * call and the watchdog reports the case by name. */
+static int test_a_peer_bound_request_is_left_to_a_helper(void) {
+    wf_completion_runtime runtime;
+    wf_file_adapter adapter;
+    wf_completion_record accepts[3];
+    wf_completion_record pinned;
+    struct timespec delay = {.tv_sec = 0, .tv_nsec = 1000000};
+    unsigned port = 0;
+    unsigned index;
+    unsigned attempts;
+    int listener;
+    int peers[3];
+
+    listener = harness_open_listener(&port);
+    CHECK(listener >= 0);
+    CHECK(wf_completion_runtime_init(&runtime) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 2, 0) == 0);
+    CHECK(wf_file_adapter_set_helper_cap(&adapter, 2) == 0);
+    CHECK(wf_file_adapter_helper_count(&adapter) == 0);
+
+    /* (a) The first peer-bound submission starts the first helper, under the
+     * queue lock, before it returns.  Nothing has been executed, so the
+     * measured verdict is the one that stops every other growth. */
+    CHECK(wf_file_adapter_wait_verdict(&adapter) == WF_FILE_WAIT_UNMEASURED);
     for (index = 0; index < 3; ++index) {
+        harness_record_init(&accepts[index], WF_FILE_SOCKET_ACCEPT);
+        accepts[index].request.operation.accept.descriptor = listener;
         CHECK(
-            wf__completion_file_open_at_submit(
-                AT_FDCWD,
-                path,
-                O_RDONLY,
-                0u,
-                0u,
-                WF_FILE_EXPECT_REGULAR,
-                &tokens[index]
-            ) == 1
+            wf_file_adapter_submit(&adapter, &accepts[index])
+            == WF_FILE_TARGET_OWNS
         );
+        /* One helper per submission, and never past the cap. */
+        CHECK(wf_file_adapter_helper_count(&adapter) == (index < 2 ? index + 1 : 2));
+    }
+    CHECK(wf_file_adapter_wait_verdict(&adapter) == WF_FILE_WAIT_UNMEASURED);
+
+    /* Both helpers are inside an accept of a listener no peer has reached, so
+     * the third submission is the one thing left on the queue. */
+    for (attempts = 0; attempts < 5000u; ++attempts) {
+        if (wf_file_adapter_queued(&adapter) == 1) {
+            break;
+        }
+        (void)nanosleep(&delay, NULL);
+    }
+    CHECK(wf_file_adapter_queued(&adapter) == 1);
+
+    /* (b) The progress pass leaves it there and says so. */
+    CHECK(wf_file_adapter_progress(&adapter, 1) == 0);
+    CHECK(wf_file_adapter_queued(&adapter) == 1);
+    for (index = 0; index < 3; ++index) {
+        CHECK(!harness_record_done(&accepts[index]));
+    }
+
+    /* (c) Every one of them completes once the peers act. */
+    for (index = 0; index < 3; ++index) {
+        peers[index] = harness_connect_peer(port);
+        CHECK(peers[index] >= 0);
     }
     for (index = 0; index < 3; ++index) {
-        wf__completion_file_open_join(
-            &tokens[index],
-            &value,
-            &error_code,
-            &open_outcome
-        );
-        CHECK(value < 0);
-        CHECK(open_outcome == WF_FILE_OPEN_FAILED);
-        CHECK(error_code == EMFILE || error_code == ENFILE);
-    }
-    CHECK(
-        wf__completion_open_exhaustion_retries() - retries_before
-        <= (uint64_t)3
-    );
-
-    CHECK(close(held) == 0);
-    CHECK(setrlimit(RLIMIT_NOFILE, &saved) == 0);
-    CHECK(unlink(path) == 0);
-    return 0;
-}
-
-/* What a refused open must retire is not always on this adapter's queue.
- *
- * With one engine it is, and draining the queue is the whole of the rule.
- * With several the same schedule puts it elsewhere: three simultaneous opens
- * are taken by three different helpers and every one of them looks at an empty
- * queue.  An adapter that gives up there publishes an exhaustion the
- * sequential program never produces, because the descriptors are still its
- * own — held by operations it is running, which is not the same as gone.
- *
- * The shape below fixes that schedule rather than racing for it.  A read of an
- * empty pipe parks the one helper, so exactly one operation is in flight and
- * nothing at all is queued.  The scheduler then takes an open the host must
- * refuse, and because the adapter's `openat` is named, the releasing thread
- * stands exactly at the refusal: only then does it give the held descriptor
- * back and let the parked read finish.  The open's second attempt is the first
- * one that could succeed, and the outcome the program sees is the one source
- * order produces. */
-struct wf_open_release {
-    int held;
-    int pipe_writer;
-    ssize_t released;
-};
-
-static void *wf_open_release_main(void *context) {
-    struct wf_open_release *release = context;
-    (void)pthread_mutex_lock(&wf_open_gate_lock);
-    while (wf_open_gate_refusals == 0) {
-        (void)pthread_cond_wait(&wf_open_gate_signal, &wf_open_gate_lock);
-    }
-    (void)pthread_mutex_unlock(&wf_open_gate_lock);
-    /* The descriptor the refused open needs comes back here, and the parked
-     * read is released so the adapter observes a retirement on its other
-     * engine.  The byte's fate is recorded rather than discarded: a write
-     * that did not land would leave that helper parked, and the test reads
-     * this back before it concludes anything about the schedule. */
-    (void)close(release->held);
-    release->released = write(release->pipe_writer, "x", 1);
-    return NULL;
-}
-
-/* The one question the retirement ledger asks an operation is answered from
- * the record, and only a host action that actually put a descriptor back may
- * answer yes: a close the host refused freed nothing, and counting it would
- * spend a refused open's single re-attempt on a return that never happened. */
-static int test_descriptor_return_follows_the_outcome(void) {
-    wf_file_result result;
-    memset(&result, 0, sizeof(result));
-    result.kind = WF_FILE_CLOSE;
-    result.error_code = 0;
-    CHECK(wf_file_returned_a_descriptor(&result) == 1);
-    result.error_code = EBADF;
-    CHECK(wf_file_returned_a_descriptor(&result) == 0);
-    memset(&result, 0, sizeof(result));
-    result.kind = WF_FILE_OPEN_AT;
-    result.value = 7;
-    result.open_outcome = WF_FILE_OPEN_OTHER_KIND;
-    CHECK(wf_file_returned_a_descriptor(&result) == 1);
-    result.open_outcome = WF_FILE_OPEN_SUCCEEDED;
-    CHECK(wf_file_returned_a_descriptor(&result) == 0);
-    result.value = -1;
-    result.open_outcome = WF_FILE_OPEN_FAILED;
-    CHECK(wf_file_returned_a_descriptor(&result) == 0);
-    memset(&result, 0, sizeof(result));
-    result.kind = WF_FILE_PREAD;
-    result.value = 4096;
-    CHECK(wf_file_returned_a_descriptor(&result) == 0);
-    CHECK(wf_file_returned_a_descriptor(NULL) == 0);
-    return 0;
-}
-
-/* The same question, asked of the ring, which answers it from its own entry.
- *
- * The test above calls the shared inline answer, so it pins the record half of
- * the predicate and nothing else.  A ring that counted every close it completed
- * as a descriptor coming back — whatever the kernel said about it — passes that
- * test and every other one in this file, while a refused close spends a refused
- * open's single re-attempt on a descriptor that never came back.  Measured on
- * the shape that submits both, it mis-accounts one return per repetition.
- *
- * So this stands where only the ring can answer: two closes, one the kernel
- * performs and one it refuses, each checked to have gone to the ring, with the
- * process-wide return count read across each.  The deltas are exact — one and
- * zero — because nothing else of this runtime's is in flight here. */
-static int test_a_ring_close_counts_a_return_only_when_it_ran(
-    const char *scratch_directory
-) {
-    wf_completion_token token;
-    char path[256];
-    uint64_t ring_before;
-    uint64_t returns_before;
-    int64_t value = -1;
-    int error_code = -1;
-    int held;
-    int writer;
-
-    CHECK(scratch_directory != NULL);
-    CHECK(
-        snprintf(
-            path,
-            sizeof(path),
-            "%s/wf-completion-ring-close-return-%ld",
-            scratch_directory,
-            (long)getpid()
-        ) > 0
-    );
-    (void)unlink(path);
-    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
-    CHECK(writer >= 0);
-    CHECK(close(writer) == 0);
-    held = open(path, O_RDONLY);
-    CHECK(held >= 0);
-
-    /* A close the host performs: one descriptor back. */
-    ring_before = wf__completion_linux_io_uring_submissions();
-    returns_before = wf_completion_descriptor_returns();
-    CHECK(wf__completion_file_close_submit(held, &token) == 1);
-    wf__completion_file_join(&token, &value, &error_code);
-    CHECK(value == 0 && error_code == 0);
-    if (wf__completion_linux_io_uring_submissions() == ring_before) {
-        /* This host's closes do not take the ring, so the ring's own answer is
-         * not reachable from here.  A run that demanded the ring may not pass
-         * by skipping. */
-        CHECK(getenv("WF_REQUIRE_LINUX_IO_URING") == NULL);
-        CHECK(unlink(path) == 0);
-        return 0;
-    }
-    CHECK(wf_completion_descriptor_returns() == returns_before + 1u);
-
-    /* A close the host refuses: nothing came back, and the count says so. */
-    ring_before = wf__completion_linux_io_uring_submissions();
-    returns_before = wf_completion_descriptor_returns();
-    value = 0;
-    error_code = 0;
-    CHECK(wf__completion_file_close_submit(30000, &token) == 1);
-    wf__completion_file_join(&token, &value, &error_code);
-    CHECK(value < 0 && error_code == EBADF);
-    CHECK(wf__completion_linux_io_uring_submissions() == ring_before + 1u);
-    CHECK(wf_completion_descriptor_returns() == returns_before);
-
-    CHECK(unlink(path) == 0);
-    return 0;
-}
-
-static int test_open_exhaustion_waits_for_another_engine(
-    const char *scratch_directory
-) {
-    wf_completion_runtime runtime;
-    wf_completion_slot slots[4];
-    wf_file_adapter adapter;
-    wf_file_work queue[4];
-    pthread_t helpers[1];
-    pthread_t releaser;
-    struct wf_open_release release;
-    wf_completion_token read_token;
-    wf_completion_token open_token;
-    wf_file_request request;
-    wf_file_result result;
-    wf_completion_event events[2];
-    wf_completion_outcome outcome;
-    struct rlimit saved;
-    char path[256];
-    unsigned char received = 0;
-    int pipe_pair[2];
-    int writer;
-    int held;
-    int opened;
-
-    CHECK(scratch_directory != NULL);
-    CHECK(
-        snprintf(
-            path,
-            sizeof(path),
-            "%s/wf-completion-other-engine-%ld",
-            scratch_directory,
-            (long)getpid()
-        ) > 0
-    );
-    (void)unlink(path);
-    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
-    CHECK(writer >= 0);
-    CHECK(close(writer) == 0);
-
-    /* Everything that needs a descriptor of its own happens before the limit
-     * narrows: the runtime, the pipe that parks the helper, and the helper
-     * itself. */
-    CHECK(wf_completion_runtime_init(&runtime, slots, 4) == 0);
-    CHECK(pipe(pipe_pair) == 0);
-    CHECK(fcntl(pipe_pair[0], F_SETFL, O_NONBLOCK) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 4, helpers, 1, 1) == 0);
-    CHECK(wf_completion_claim(&runtime, &read_token) == WF_COMPLETION_CLAIMED);
-    CHECK(wf_completion_claim(&runtime, &open_token) == WF_COMPLETION_CLAIMED);
-
-    /* One operation in flight on the helper, waiting for a byte that only the
-     * releasing thread writes. */
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_READ;
-    request.operation.read.descriptor = pipe_pair[0];
-    request.operation.read.buffer = &received;
-    request.operation.read.count = 1;
-    CHECK(
-        wf_file_adapter_submit(&adapter, read_token, &request)
-        == WF_FILE_TARGET_OWNS
-    );
-    while (wf_file_adapter_queued(&adapter) != 0) {
-        sched_yield();
-    }
-
-    held = wf_harness_hold_the_last_descriptor(path, &saved);
-    CHECK(held >= 0);
-    /* The premise: with the table full the host refuses an open outright. */
-    CHECK(open(path, O_RDONLY) < 0);
-
-    (void)pthread_mutex_lock(&wf_open_gate_lock);
-    wf_open_gate_refusals = 0;
-    atomic_store_explicit(&wf_open_gate_armed, 1, memory_order_release);
-    (void)pthread_mutex_unlock(&wf_open_gate_lock);
-    release.held = held;
-    release.pipe_writer = pipe_pair[1];
-    release.released = -1;
-    CHECK(pthread_create(&releaser, NULL, wf_open_release_main, &release) == 0);
-
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_OPEN_AT;
-    request.operation.open_at.directory = AT_FDCWD;
-    request.operation.open_at.path = path;
-    request.operation.open_at.flags = O_RDONLY;
-    request.operation.open_at.expected_kind = WF_FILE_EXPECT_REGULAR;
-    CHECK(
-        wf_file_adapter_submit(&adapter, open_token, &request)
-        == WF_FILE_TARGET_OWNS
-    );
-
-    /* One scheduler visit.  It takes the open, is refused, finds nothing
-     * queued to retire, waits for the operation running on the helper, and
-     * re-attempts once. */
-    CHECK(wf_file_adapter_progress(&adapter, 1) == 1);
-    CHECK(pthread_join(releaser, NULL) == 0);
-    CHECK(release.released == 1);
-    (void)pthread_mutex_lock(&wf_open_gate_lock);
-    atomic_store_explicit(&wf_open_gate_armed, 0, memory_order_release);
-    (void)pthread_mutex_unlock(&wf_open_gate_lock);
-    CHECK(
-        wf_file_adapter_statistics_snapshot(&adapter).exhaustion_retries == 1
-    );
-
-    CHECK(drain_exact(&runtime, 2, events) == 0);
-    CHECK(
-        wf_completion_consume(
-            &runtime,
-            read_token,
-            &result,
-            sizeof(result),
-            &outcome
-        ) == WF_COMPLETION_CONSUMED
-    );
-    CHECK(result.kind == WF_FILE_READ);
-    CHECK(result.value == 1 && result.error_code == 0);
-    CHECK(received == 'x');
-    CHECK(
-        wf_completion_consume(
-            &runtime,
-            open_token,
-            &result,
-            sizeof(result),
-            &outcome
-        ) == WF_COMPLETION_CONSUMED
-    );
-    CHECK(result.kind == WF_FILE_OPEN_AT);
-    /* The whole point: the outcome the program sees is the one source order
-     * produces, not the exhaustion the schedule caused. */
-    CHECK(result.value >= 0 && result.error_code == 0);
-    CHECK(result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
-    opened = (int)result.value;
-
-    CHECK(close(opened) == 0);
-    CHECK(setrlimit(RLIMIT_NOFILE, &saved) == 0);
-    CHECK(wf_file_adapter_shutdown(&adapter) == 0);
-    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
-    CHECK(close(pipe_pair[0]) == 0);
-    CHECK(close(pipe_pair[1]) == 0);
-    CHECK(unlink(path) == 0);
-    return 0;
-}
-
-/* A close this runtime already owns is a descriptor it has not yet given
- * back, and an open submitted behind it must not be told the host is out.
- *
- * Source order is `close(held); open(path)` and it succeeds: the close returns
- * the one free descriptor and the open takes it.  A pipeline holds both at
- * once, so the open can reach the host while the close is still owed and the
- * host answers `EMFILE` — an outcome the sequential program never produces.
- *
- * This is the same rule as the adapter test above, on the route generated code
- * takes.  On a target with a kernel completion ring both operations sit in one
- * ring, and the refusal arrives as a completion of its own: re-attempting the
- * open inside the reap pass that saw the refusal races the close, because that
- * pass sees only the completions the ring had already posted.  The re-attempt
- * has to wait for the close's completion to be published, and this test fails
- * for exactly as long as it does not. */
-static int test_bridge_open_behind_a_submitted_close_succeeds(
-    const char *scratch_directory
-) {
-    struct rlimit saved;
-    char path[256];
-    wf_completion_token close_token;
-    wf_completion_token open_token;
-    int64_t value = -1;
-    int error_code = -1;
-    unsigned open_outcome = WF_FILE_OPEN_FAILED;
-    int writer;
-    int held;
-    int opened;
-
-    CHECK(scratch_directory != NULL);
-    CHECK(
-        snprintf(
-            path,
-            sizeof(path),
-            "%s/wf-completion-bridge-close-first-%ld",
-            scratch_directory,
-            (long)getpid()
-        ) > 0
-    );
-    (void)unlink(path);
-    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
-    CHECK(writer >= 0);
-    CHECK(close(writer) == 0);
-
-    /* Warm every descriptor the bridge itself needs before the limit narrows:
-     * the ring, its wait set, and any helper the policy asks for are created
-     * on the first submission, not here. */
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            path,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            &open_token
-        ) == 1
-    );
-    wf__completion_file_open_join(&open_token, &value, &error_code, &open_outcome);
-    CHECK(value >= 0 && error_code == 0);
-    CHECK(wf__completion_file_close_submit((int)value, &open_token) == 1);
-    wf__completion_file_join(&open_token, &value, &error_code);
-    CHECK(value == 0 && error_code == 0);
-
-    held = wf_harness_hold_the_last_descriptor(path, &saved);
-    CHECK(held >= 0);
-    /* The premise: with the table full the host refuses an open outright. */
-    CHECK(open(path, O_RDONLY) < 0);
-
-    /* Source order, submitted in source order. */
-    CHECK(wf__completion_file_close_submit(held, &close_token) == 1);
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            path,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            &open_token
-        ) == 1
-    );
-
-    wf__completion_file_open_join(&open_token, &value, &error_code, &open_outcome);
-    CHECK(value >= 0);
-    CHECK(error_code == 0);
-    CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
-    opened = (int)value;
-
-    wf__completion_file_join(&close_token, &value, &error_code);
-    CHECK(value == 0 && error_code == 0);
-
-    CHECK(wf__completion_file_close_submit(opened, &close_token) == 1);
-    wf__completion_file_join(&close_token, &value, &error_code);
-    CHECK(value == 0 && error_code == 0);
-    CHECK(setrlimit(RLIMIT_NOFILE, &saved) == 0);
-    CHECK(unlink(path) == 0);
-    return 0;
-}
-
-/* The rule's third answer, at the one moment it is about.
- *
- * A give-up decision reads the descriptor-return count, then how many
- * operations are in flight and how many of those are themselves waiting.  A
- * returning retirement whose increment lands after the first read and whose
- * in-flight decrement lands before the second is invisible to both: the
- * decision sees an unchanged generation and nothing left that could give a
- * descriptor back, and a rule that stopped there would publish an exhaustion
- * a descriptor had already answered.
- *
- * The ledger's schedule point is named so this test can stand exactly between
- * those two reads instead of racing for the interleaving. */
-static int test_a_retirement_between_the_ledger_reads_is_not_missed(void) {
-    wf_retirement_waiter waiter;
-    uint64_t seen;
-    enum wf_retirement_state state;
-
-    /* Two operations in flight: the refused open this waiter is deciding, and
-     * one other that could still return a descriptor. */
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    seen = wf_completion_descriptor_returns();
-    wf_completion_retirement_wait_begin(&waiter, seen, NULL, NULL, 0);
-
-    (void)pthread_mutex_lock(&wf_retirement_point_lock);
-    wf_retirement_point_mode = WF_HARNESS_POINT_RETIRES;
-    wf_retirement_point_armed = 1;
-    wf_retirement_point_fired = 0;
-    (void)pthread_mutex_unlock(&wf_retirement_point_lock);
-
-    state = wf_completion_retirement_state(&waiter);
-
-    (void)pthread_mutex_lock(&wf_retirement_point_lock);
-    wf_retirement_point_armed = 0;
-    (void)pthread_mutex_unlock(&wf_retirement_point_lock);
-
-    CHECK(wf_retirement_point_fired == 1);
-    CHECK(state == WF_RETIREMENT_HAPPENED);
-
-    wf_completion_retirement_wait_end(&waiter);
-    /* This waiter's own refused open, publishing: it returns nothing. */
-    wf_completion_operation_retired(0);
-    return 0;
-}
-
-/* The two facts the ledger keeps apart, at the moment they differ.
- *
- * A refused open has exactly one re-attempt, and the only thing that can make
- * a second host attempt answer differently from the first is a descriptor
- * coming back.  An operation that merely ends — a read on a helper thread, a
- * write, a directory batch — changes what is in flight and nothing else.  A
- * ledger that counted it as a descriptor return would send the refused open to
- * the host once more for nothing and then publish the refusal, while the close
- * it was waiting for was still in flight: exactly the `Ok` this ledger exists
- * to keep, since source order runs the read, then the close, then the open,
- * and the open succeeds.
- *
- * The schedule is scripted rather than raced for, because it is the whole
- * point and it is one schedule for both engines: on Linux the read is on the
- * bounded adapter while the close and the open are on the kernel ring, and a
- * host whose ring makes that close asynchronous — an `overlayfs` file, whose
- * `flush` sends `IORING_OP_CLOSE` to a worker — produces this order by itself
- * often enough to lose an `Ok` at every helper count.  The record carries the
- * counts; this test carries the schedule, which is the part that must not
- * depend on a host reaching it. */
-static int test_an_ending_that_returns_nothing_grants_no_reattempt(void) {
-    wf_retirement_waiter waiter;
-    uint64_t seen;
-
-    /* Three operations in flight: the refused open this waiter is deciding, a
-     * read that will end returning nothing, and a close that will return a
-     * descriptor. */
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    seen = wf_completion_descriptor_returns();
-    wf_completion_retirement_wait_begin(&waiter, seen, NULL, NULL, 0);
-    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
-
-    /* The read ends.  Something that can still give a descriptor back is in
-     * flight, so this open keeps waiting — and has spent nothing. */
-    wf_completion_operation_retired(0);
-    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
-
-    /* The close ends, returning one.  Now, and only now, the re-attempt. */
-    wf_completion_operation_retired(1);
-    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_HAPPENED);
-
-    wf_completion_retirement_wait_end(&waiter);
-    wf_completion_operation_retired(0);
-    return 0;
-}
-
-/* A returned descriptor goes to the waiter that registered first, and only to
- * that one.
- *
- * Two refused opens waiting, one descriptor coming back, and one re-attempt
- * each: if both are told a descriptor came back, both spend their re-attempt on
- * it, one of them takes it and the other publishes a refusal it had a claim on.
- * Which one takes it is then whichever reaches the host first, and source order
- * says it is the first open that asked. Measured on the racing shape, the
- * unordered award published the `Ok` at the wrong call in 963 of 1,000 runs.
- *
- * The schedule is scripted rather than raced for, because the rule is about
- * which waiter is told, not about who wins a race: the second waiter keeps
- * waiting while the first is owed, and what the first does not consume — here,
- * a descriptor its re-attempt takes and the kind check disposes of, which is a
- * return again — falls to the next. */
-static int test_a_returned_descriptor_is_awarded_in_waiter_order(void) {
-    wf_retirement_waiter first;
-    wf_retirement_waiter second;
-    uint64_t seen;
-
-    /* Four operations in flight: the two refused opens these waiters are
-     * deciding, and two others that can still give a descriptor back. */
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    seen = wf_completion_descriptor_returns();
-    wf_completion_retirement_wait_begin(&first, seen, NULL, NULL, 0);
-    wf_completion_retirement_wait_begin(&second, seen, NULL, NULL, 0);
-    CHECK(wf_completion_retirement_state(&first) == WF_RETIREMENT_AWAITED);
-    CHECK(wf_completion_retirement_state(&second) == WF_RETIREMENT_AWAITED);
-
-    /* One descriptor comes back.  It is owed to the waiter that registered
-     * first, and the later one may not spend its one re-attempt on it. */
-    wf_completion_operation_retired(1);
-    CHECK(wf_completion_retirement_state(&second) == WF_RETIREMENT_AWAITED);
-    CHECK(wf_completion_retirement_state(&first) == WF_RETIREMENT_HAPPENED);
-    /* Asking again awards nothing a second time. */
-    CHECK(wf_completion_retirement_state(&second) == WF_RETIREMENT_AWAITED);
-
-    /* The first waiter leaves to spend it, and its re-attempt takes the
-     * descriptor and gives it straight back — the kind check refused it — so
-     * a return falls to the next waiter, which is now the earliest. */
-    wf_completion_retirement_wait_end(&first);
-    wf_completion_operation_retired(1);
-    CHECK(wf_completion_retirement_state(&second) == WF_RETIREMENT_HAPPENED);
-
-    wf_completion_retirement_wait_end(&second);
-    /* The second waiter's own refused open, and the operation that never
-     * returned anything: neither of them returns one. */
-    wf_completion_operation_retired(0);
-    wf_completion_operation_retired(0);
-    return 0;
-}
-
-/* A descriptor this runtime returned is promised to one open, and an open that
- * has taken one is charged for it whether or not it ever waited.
- *
- * The award mark is what stops two refused opens spending their one re-attempt
- * each on the same return.  An open whose *first* host attempt succeeds is
- * outside that accounting entirely: it never registers as a waiter and takes no
- * award, so the return it consumed is still on offer, and the refused open the
- * ledger then hands it to spends its single re-attempt on a descriptor that is
- * already gone.  Measured on the interleave shape before the charge below: 25
- * lost `Ok`s in 280,000 repetitions, each with a descriptor left over at the
- * end and a re-attempt count one short of every open having been refused.
- *
- * The schedule is scripted rather than raced for, because it is one moment
- * between two threads — a close landing, an open taking what it returned, and a
- * waiter asking — and no host reaches it on demand. */
-static int test_an_open_that_took_a_return_is_charged_for_it(void) {
-    wf_retirement_waiter waiter;
-    uint64_t seen;
-
-    /* Three operations in flight: the refused open this waiter is deciding, a
-     * close that will return a descriptor, and an open on another thread whose
-     * first host attempt will take it. */
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    seen = wf_completion_descriptor_returns();
-    wf_completion_retirement_wait_begin(&waiter, seen, NULL, NULL, 0);
-    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
-
-    /* The close ends, returning one — and the other open's first attempt takes
-     * it before this waiter next asks.  That open is charged for it, so what
-     * came back is spent and this waiter is not told it may have it. */
-    wf_completion_operation_retired(1);
-    wf_completion_retirement_open_took_a_descriptor(0);
-    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
-
-    /* The open that took it ends holding its descriptor, so it returns
-     * nothing.  Now nothing is left that could bring one back, and this
-     * waiter's one attempt is made here — the moment source order makes it —
-     * rather than earlier against a descriptor another open already held. */
-    wf_completion_operation_retired(0);
-    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_UNREACHABLE);
-
-    wf_completion_retirement_wait_end(&waiter);
-    wf_completion_operation_retired(0);
-    return 0;
-}
-
-/* A descriptor already promised is not promised again to a waiter that arrives
- * with an older view of the world.
- *
- * A waiter's `seen` is read before its own host attempt, and on the ring that
- * is the moment of submission — long before the kernel refuses it and longer
- * still before the refusal is reaped and the waiter registers.  Waiters
- * therefore arrive with `seen` values older than what the ledger has already
- * done, and they arrive one at a time: each finds the order empty, because the
- * one before it left to spend its award.  A mark that re-opened on each of
- * them promised one returned descriptor to all three, and the two that reached
- * the host after it was taken published the refusal.  Traced on the interleave
- * shape under load, that is the whole of the rare shortfall: one return,
- * three awards, two lost `Ok`s and a descriptor left over. */
-static int test_a_promised_descriptor_is_not_promised_again(void) {
-    wf_retirement_waiter first;
-    wf_retirement_waiter second;
-    uint64_t seen;
-
-    /* Four in flight: two refused opens whose attempts were made at the same
-     * moment, and two closes that will each return a descriptor. */
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    seen = wf_completion_descriptor_returns();
-
-    /* The first refusal is reaped and registers, and the close ends: it is
-     * awarded the descriptor and leaves the order to spend it. */
-    wf_completion_retirement_wait_begin(&first, seen, NULL, NULL, 0);
-    wf_completion_operation_retired(1);
-    CHECK(wf_completion_retirement_state(&first) == WF_RETIREMENT_HAPPENED);
-    wf_completion_retirement_wait_end(&first);
-
-    /* Now the second refusal is reaped, with the `seen` its own attempt took
-     * before any of this.  It opens the order again, and what it may not be
-     * told is that a descriptor came back for it: the one that came back is
-     * spent.  Its own open is in flight and so is the first waiter's, so this
-     * is not the moment it answers either. */
-    wf_completion_retirement_wait_begin(&second, seen, NULL, NULL, 0);
-    CHECK(wf_completion_retirement_state(&second) == WF_RETIREMENT_AWAITED);
-
-    /* A second descriptor comes back, and that one is this waiter's. */
-    wf_completion_operation_retired(1);
-    CHECK(wf_completion_retirement_state(&second) == WF_RETIREMENT_HAPPENED);
-
-    wf_completion_retirement_wait_end(&second);
-    wf_completion_operation_retired(0);
-    wf_completion_operation_retired(0);
-    return 0;
-}
-
-/* A free that came from outside this runtime, charged to the open that took it,
- * refuses no waiter.
- *
- * No ledger can see a descriptor a thread of the program's own gave back, so an
- * open the host satisfies from one looks exactly like an open that took a
- * return of this runtime's, and the charge falls on it either way.  That can
- * deprive a waiter of an award it was owed, which is the forced schedule
- * this stands for — and what it costs that waiter is nothing it is entitled to:
- * being deprived is not being refused.  Raced rather than scripted, on a probe
- * that arranges exactly this against a raw `close` the runtime never made, the
- * charge deprived the waiter in every one of 2,000 repetitions and the waiter
- * published its `Ok` in every one of them.  It keeps waiting while anything is in
- * flight, and its one attempt is then made at the moment nothing is left that
- * could bring a descriptor back, with the return it was deprived of still in
- * the host's table for it to take.  Charging is bounded by the unspent returns
- * for the same reason: past them there is nothing to deprive anyone of. */
-static int test_an_outside_free_charged_to_an_open_refuses_no_waiter(void) {
-    wf_retirement_waiter waiter;
-    uint64_t seen;
-
-    /* Four operations in flight: the refused open this waiter is deciding, a
-     * close that returns a descriptor, an open the host satisfies from a
-     * descriptor a thread of the program's own gave back, and a read. */
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    seen = wf_completion_descriptor_returns();
-    wf_completion_retirement_wait_begin(&waiter, seen, NULL, NULL, 0);
-    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
-
-    /* The close returns one, and the other open takes the outside descriptor.
-     * The ledger charges it against the return it can see, so this waiter is
-     * deprived — and kept waiting, which is the whole of what happens to it. */
-    wf_completion_operation_retired(1);
-    wf_completion_retirement_open_took_a_descriptor(0);
-    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
-
-    /* That open ends holding its descriptor.  The read is still running and
-     * could still give one back, so this is not the moment to answer either. */
-    wf_completion_operation_retired(0);
-    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
-
-    /* The read ends returning nothing.  Nothing is left, so the deprived
-     * waiter attempts here, with the runtime's own return still unclaimed. */
-    wf_completion_operation_retired(0);
-    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_UNREACHABLE);
-
-    wf_completion_retirement_wait_end(&waiter);
-    wf_completion_operation_retired(0);
-    return 0;
-}
-
-/* An attempt made on an award is not charged again for what the award already
- * spent.
- *
- * The mark moves once per descriptor, and there are two places it can move: the
- * decision that grants an award, and the open that takes a descriptor.  The
- * re-attempt a waiter makes with an award in hand is both of those at once, so
- * it says which it is; charging it twice would take a second return out of the
- * ledger's account and refuse the next waiter the one it is owed. */
-static int test_an_awarded_attempt_is_charged_once(void) {
-    wf_retirement_waiter first;
-    wf_retirement_waiter second;
-    uint64_t seen;
-
-    /* Four in flight: two refused opens, and two closes that each return a
-     * descriptor — one for each of them. */
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    seen = wf_completion_descriptor_returns();
-    wf_completion_retirement_wait_begin(&first, seen, NULL, NULL, 0);
-    wf_completion_retirement_wait_begin(&second, seen, NULL, NULL, 0);
-
-    /* The first close returns one, awarded to the earliest waiter, which
-     * leaves the order to spend it. */
-    wf_completion_operation_retired(1);
-    CHECK(wf_completion_retirement_state(&first) == WF_RETIREMENT_HAPPENED);
-    CHECK(first.awarded != 0);
-    wf_completion_retirement_wait_end(&first);
-
-    /* The second close returns the other one while that re-attempt is being
-     * made, so there is an unspent return for a charge to take. */
-    wf_completion_operation_retired(1);
-
-    /* The re-attempt takes the descriptor it was awarded.  The mark moved when
-     * the award was granted, so this says so and moves nothing — and the
-     * return the second close made is still the second waiter's. */
-    wf_completion_retirement_open_took_a_descriptor(first.awarded);
-    CHECK(wf_completion_retirement_state(&second) == WF_RETIREMENT_HAPPENED);
-
-    wf_completion_retirement_wait_end(&second);
-    wf_completion_operation_retired(0);
-    wf_completion_operation_retired(0);
-    return 0;
-}
-
-/* The work a waiter owes is read where the decision is made, never handed to
- * the ledger as a reading taken before it.
- *
- * A refused open on the bounded adapter is answerable for that adapter's
- * queue: the items behind a suspended caller cannot retire while it waits, and
- * the items in front of a thread that will run them are the answer rather than
- * a reason to sleep.  Either way the number is live — a submission lands while
- * the decision is being made — and the decision is made under the lock every
- * wake takes.  A ledger handed the count from before that lock sleeps on a
- * queue that has already grown, and the wake for that growth has already
- * passed: the process stops with a helper asleep and work in the queue, which
- * is what a 200-run TSan sweep at one helper caught once.
- *
- * The schedule point stands between the ledger's two reads, so this test can
- * put the submission exactly there instead of racing for it. */
-static int test_the_work_a_waiter_owes_is_read_where_it_decides(void) {
-    wf_retirement_waiter waiter;
-    uint64_t seen;
-    enum wf_retirement_state state;
-
-    /* Three operations in flight: the refused open this waiter is deciding and
-     * two queued behind the caller it suspended, which only that caller can
-     * run. */
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    atomic_store_explicit(&wf_harness_owed_work, 2, memory_order_seq_cst);
-    seen = wf_completion_descriptor_returns();
-    wf_completion_retirement_wait_begin(
-        &waiter,
-        seen,
-        wf_harness_owed,
-        NULL,
-        0
-    );
-
-    (void)pthread_mutex_lock(&wf_retirement_point_lock);
-    wf_retirement_point_mode = WF_HARNESS_POINT_QUEUES_OWED;
-    wf_retirement_point_armed = 1;
-    wf_retirement_point_fired = 0;
-    (void)pthread_mutex_unlock(&wf_retirement_point_lock);
-
-    state = wf_completion_retirement_state(&waiter);
-
-    (void)pthread_mutex_lock(&wf_retirement_point_lock);
-    wf_retirement_point_armed = 0;
-    (void)pthread_mutex_unlock(&wf_retirement_point_lock);
-
-    CHECK(wf_retirement_point_fired == 1);
-    /* Four in flight now, and all four are this waiter or work stuck behind
-     * it: nothing anywhere else can give a descriptor back, so the refusal is
-     * the program's outcome.  Read from before the point, the same ledger says
-     * three of four, concludes something else is running, and waits for a
-     * retirement that nothing will produce. */
-    CHECK(state == WF_RETIREMENT_UNREACHABLE);
-
-    wf_completion_retirement_wait_end(&waiter);
-    atomic_store_explicit(&wf_harness_owed_work, 0, memory_order_seq_cst);
-    /* The refused open and the queue behind it: none of them returned one. */
-    wf_completion_operation_retired(0);
-    wf_completion_operation_retired(0);
-    wf_completion_operation_retired(0);
-    wf_completion_operation_retired(0);
-    return 0;
-}
-
-/* A waiter that runs the work it owes keeps its place, and with it the return
- * that place is owed.
- *
- * A refused open on the bounded adapter runs its own queue before it decides,
- * and an open among that work is one sequential execution runs after it.  A
- * waiter that left the order to run it and registered again on the way back
- * would return behind every open refused meanwhile, and the ledger would hand
- * the descriptor — and with it the program's one `Ok` — to the later call: on a
- * scripted two-waiter shape, to the later one in 200 runs of 200.
- *
- * So running that work costs a waiter its turn to publish and nothing else.
- * The later open takes the refusal sequential execution gives it, which is what
- * the second answer below is, and the descriptor stays where registration order
- * put it. */
-static int test_a_waiter_that_stands_aside_keeps_its_claim(void) {
-    wf_retirement_waiter first;
-    wf_retirement_waiter second;
-    uint64_t seen;
-
-    /* Three operations in flight: the two refused opens these waiters are
-     * deciding, and one that can still give a descriptor back. */
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    seen = wf_completion_descriptor_returns();
-    wf_completion_retirement_wait_begin(&first, seen, NULL, NULL, 0);
-    wf_completion_retirement_wait_begin(&second, seen, NULL, NULL, 0);
-
-    /* The earlier waiter's thread goes into another operation, and the
-     * descriptor comes back while it is there. */
-    wf_completion_retirement_defer_begin(&first);
-    wf_completion_operation_retired(1);
-    CHECK(
-        wf_completion_retirement_state(&second) == WF_RETIREMENT_UNREACHABLE
-    );
-    wf_completion_retirement_wait_end(&second);
-
-    /* It comes back to the ledger and the return is still its own. */
-    wf_completion_retirement_defer_end(&first);
-    CHECK(wf_completion_retirement_state(&first) == WF_RETIREMENT_HAPPENED);
-    wf_completion_retirement_wait_end(&first);
-    wf_completion_operation_retired(0);
-    wf_completion_operation_retired(0);
-    return 0;
-}
-
-/* A waiter parked on the runtime's endpoint is woken by a second waiter
- * registering.
- *
- * The two places a refused open can sleep are this ledger's condition variable
- * and the runtime's park endpoint, and a transition that reaches one of them
- * stops the process at the other.  This is that transition: one more waiter is
- * one fewer operation that can retire, so it turns the first waiter's answer
- * from "keep waiting" into "publish" — and the first waiter is inside a
- * blocking direct call, parked on the endpoint, where a broadcast on the
- * condition variable is never heard.
- *
- * The schedule is scripted and needs nothing asynchronous from the host, which
- * is what lets it run everywhere the harness runs rather than only where an
- * overlay can be mounted.  The table is narrowed until the host refuses an open
- * outright, one operation is entered in the ledger by hand so that the refused
- * open waits instead of publishing, and the second waiter is registered from
- * this thread once the first is in the order.  A runtime that leaves the
- * endpoint out of that announcement parks the direct call forever; the bound
- * below makes that a failed check rather than a hang. */
-struct wf_harness_parked_direct_open {
-    const char *path;
-    int value;
-    int error_code;
-    unsigned outcome;
-    _Atomic unsigned finished;
-};
-
-static void *wf_harness_parked_direct_open_main(void *context) {
-    struct wf_harness_parked_direct_open *call = context;
-    call->value = wf__completion_file_open_at_direct(
-        AT_FDCWD,
-        call->path,
-        O_RDONLY,
-        0u,
-        0u,
-        WF_FILE_EXPECT_REGULAR,
-        &call->error_code,
-        &call->outcome
-    );
-    atomic_store_explicit(&call->finished, 1u, memory_order_seq_cst);
-    return NULL;
-}
-
-static void wf_harness_parked_direct_open_arm(
-    struct wf_harness_parked_direct_open *call,
-    const char *path
-) {
-    call->path = path;
-    call->value = 0;
-    call->error_code = 0;
-    call->outcome = WF_FILE_OPEN_SUCCEEDED;
-    atomic_store_explicit(&call->finished, 0u, memory_order_seq_cst);
-}
-
-static void wf_harness_pause_a_millisecond(void) {
-    struct timespec pause;
-    pause.tv_sec = 0;
-    pause.tv_nsec = 1000L * 1000L;
-    (void)nanosleep(&pause, NULL);
-}
-
-/* Up to four seconds for the waiter order to reach this many. */
-static void wf_harness_wait_for_waiters(size_t wanted) {
-    int attempt;
-    for (attempt = 0;
-         attempt < 4000 && wf_completion_retirement_waiters() < wanted;
-         ++attempt) {
-        wf_harness_pause_a_millisecond();
-    }
-}
-
-/* Long enough that the direct call is asleep in its park rather than on its
- * way there when the transition below is made. */
-static void wf_harness_settle(void) {
-    struct timespec settle;
-    settle.tv_sec = 0;
-    settle.tv_nsec = 50L * 1000L * 1000L;
-    (void)nanosleep(&settle, NULL);
-}
-
-/* Up to eight seconds for the direct call to publish.  A runtime that leaves
- * the endpoint out of the announcement never publishes here, and this bound is
- * what turns that into a failed check rather than a hang. */
-static int wf_harness_the_direct_call_published(
-    struct wf_harness_parked_direct_open *call
-) {
-    int attempt;
-    for (attempt = 0; attempt < 8000; ++attempt) {
-        if (atomic_load_explicit(&call->finished, memory_order_seq_cst)
-            != 0u) {
-            return 1;
-        }
-        wf_harness_pause_a_millisecond();
-    }
-    return 0;
-}
-
-/* Narrows the table, runs one of the two schedules below on it, and restores
- * the descriptor and the limit on every way out — the ways a broken runtime
- * takes included, so that a red run reports a failed check and leaves the rest
- * of the harness able to open files. */
-static int wf_harness_endpoint_wake_test(
-    const char *scratch_directory,
-    const char *name,
-    int (*schedule)(const char *path)
-) {
-    struct rlimit saved;
-    char path[256];
-    int held;
-    int writer;
-    int outcome;
-
-    CHECK(scratch_directory != NULL);
-    CHECK(
-        snprintf(
-            path,
-            sizeof(path),
-            "%s/wf-completion-%s-%ld",
-            scratch_directory,
-            name,
-            (long)getpid()
-        ) > 0
-    );
-    (void)unlink(path);
-    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
-    CHECK(writer >= 0);
-    CHECK(close(writer) == 0);
-
-    /* On its own failure paths this helper holds nothing and has restored the
-     * limit itself, so there is nothing here to undo. */
-    held = wf_harness_hold_the_last_descriptor(path, &saved);
-    if (held < 0) {
-        (void)unlink(path);
-        CHECK(0);
-    }
-    outcome = schedule(path);
-    (void)close(held);
-    (void)setrlimit(RLIMIT_NOFILE, &saved);
-    (void)unlink(path);
-    return outcome;
-}
-
-static int wf_harness_registration_wake_schedule(const char *path) {
-    struct wf_harness_parked_direct_open call;
-    wf_retirement_waiter second;
-    pthread_t opener;
-    int probe;
-    int finished = 0;
-
-    /* The premise: with the table full the host refuses an open outright. */
-    probe = open(path, O_RDONLY);
-    if (probe >= 0) {
-        (void)close(probe);
-    }
-    CHECK(probe < 0);
-
-    /* The operation that keeps the refused open waiting.  Entered in the
-     * ledger by hand, so it belongs to no engine and blocks no thread. */
-    wf_completion_operation_accepted();
-    wf_harness_parked_direct_open_arm(&call, path);
-    if (pthread_create(
-            &opener,
-            NULL,
-            wf_harness_parked_direct_open_main,
-            &call
-        ) != 0) {
-        wf_completion_operation_retired(0);
-        CHECK(0);
-    }
-
-    /* The first waiter is in the order and has nothing to drive, so it is
-     * parked on the endpoint. */
-    wf_harness_wait_for_waiters(1u);
-    if (wf_completion_retirement_waiters() != 0) {
-        wf_harness_settle();
-        /* The transition.  Now every operation in flight is a waiter, so the
-         * earliest of them publishes — if it is told. */
-        wf_completion_retirement_wait_begin(
-            &second,
-            wf_completion_descriptor_returns(),
-            NULL,
-            NULL,
-            0
-        );
-        finished = wf_harness_the_direct_call_published(&call);
-        wf_completion_retirement_wait_end(&second);
-    }
-    /* Release the call and take the thread back before anything is checked:
-     * it holds a pointer into this frame, and on a red run the retirement
-     * below is what lets it answer at all. */
-    wf_completion_operation_retired(0);
-    (void)pthread_join(opener, NULL);
-    CHECK(finished != 0);
-    /* And what it published is the refusal, not a descriptor it never had. */
-    CHECK(call.value < 0);
-    CHECK(call.error_code == EMFILE || call.error_code == ENFILE);
-    return 0;
-}
-
-static int test_a_registration_wakes_a_waiter_parked_on_the_endpoint(
-    const char *scratch_directory
-) {
-    return wf_harness_endpoint_wake_test(
-        scratch_directory,
-        "endpoint-wake",
-        wf_harness_registration_wake_schedule
-    );
-}
-
-/* A waiter parked on the runtime's endpoint is woken by an earlier waiter
- * standing aside.
- *
- * The other transition that can hand a parked waiter a terminal answer, and
- * the one the announcement rule was written without.  Standing aside is not
- * leaving: the waiter keeps its place and its claim on a return, and gives up
- * only the duty to publish — which hands that duty to the next waiter in the
- * order, whose answer turns from "keep waiting" into "publish".  That waiter
- * can be one registered long before the aside began, asleep on the endpoint,
- * where the ledger's own condition variable is never heard.
- *
- * Scripted the same way as the test above and discriminating the same way: the
- * direct call must still be parked the moment before the aside, and must
- * publish during it. */
-static int wf_harness_standing_aside_wake_schedule(const char *path) {
-    struct wf_harness_parked_direct_open call;
-    wf_retirement_waiter earlier;
-    pthread_t opener;
-    int probe;
-    int finished = 0;
-    int published_before_the_aside = 1;
-
-    probe = open(path, O_RDONLY);
-    if (probe >= 0) {
-        (void)close(probe);
-    }
-    CHECK(probe < 0);
-
-    /* The waiter that registers first, and the operation it is deciding —
-     * entered by hand, so it belongs to no engine and blocks no thread. */
-    wf_completion_operation_accepted();
-    wf_completion_retirement_wait_begin(
-        &earlier,
-        wf_completion_descriptor_returns(),
-        NULL,
-        NULL,
-        0
-    );
-    wf_harness_parked_direct_open_arm(&call, path);
-    if (pthread_create(
-            &opener,
-            NULL,
-            wf_harness_parked_direct_open_main,
-            &call
-        ) != 0) {
-        wf_completion_retirement_wait_end(&earlier);
-        wf_completion_operation_retired(0);
-        CHECK(0);
-    }
-
-    /* The direct call registers behind it and parks: both operations in
-     * flight are waiters, so nothing can bring a descriptor back — but the
-     * earliest waiter is the other one, so this one keeps waiting. */
-    wf_harness_wait_for_waiters(2u);
-    if (wf_completion_retirement_waiters() >= 2u) {
-        wf_harness_settle();
-        published_before_the_aside = atomic_load_explicit(
-            &call.finished,
-            memory_order_seq_cst
-        ) != 0u;
-        /* The transition: the earlier waiter's thread goes into another
-         * operation, which hands the earliest deciding place — and with it
-         * the answer that nothing can bring a descriptor back — to the call
-         * parked on the endpoint. */
-        wf_completion_retirement_defer_begin(&earlier);
-        finished = wf_harness_the_direct_call_published(&call);
-        wf_completion_retirement_defer_end(&earlier);
-    }
-    wf_completion_retirement_wait_end(&earlier);
-    wf_completion_operation_retired(0);
-    (void)pthread_join(opener, NULL);
-    CHECK(published_before_the_aside == 0);
-    CHECK(finished != 0);
-    CHECK(call.value < 0);
-    CHECK(call.error_code == EMFILE || call.error_code == ENFILE);
-    return 0;
-}
-
-static int test_standing_aside_wakes_a_waiter_parked_on_the_endpoint(
-    const char *scratch_directory
-) {
-    return wf_harness_endpoint_wake_test(
-        scratch_directory,
-        "aside-wake",
-        wf_harness_standing_aside_wake_schedule
-    );
-}
-
-/* An open registered behind a waiter that stands aside can still answer.
- *
- * This is why standing aside gives up publishing: the operation that waiter is
- * running can be an open that is refused in its turn and registers behind it.
- * A ledger that made that one wait for the earliest waiter in the order would
- * have it waiting for the thread that is waiting for it, and neither ever
- * answers. */
-static int test_a_waiter_behind_one_that_stands_aside_can_answer(void) {
-    wf_retirement_waiter running;
-    wf_retirement_waiter behind;
-    uint64_t seen;
-
-    /* Two operations in flight, both of them refused opens: the one whose
-     * thread went on to run the other, and the other. */
-    wf_completion_operation_accepted();
-    wf_completion_operation_accepted();
-    seen = wf_completion_descriptor_returns();
-    wf_completion_retirement_wait_begin(&running, seen, NULL, NULL, 0);
-    wf_completion_retirement_defer_begin(&running);
-    wf_completion_retirement_wait_begin(&behind, seen, NULL, NULL, 0);
-
-    CHECK(
-        wf_completion_retirement_state(&behind) == WF_RETIREMENT_UNREACHABLE
-    );
-    wf_completion_retirement_wait_end(&behind);
-    wf_completion_operation_retired(0);
-
-    wf_completion_retirement_defer_end(&running);
-    CHECK(
-        wf_completion_retirement_state(&running) == WF_RETIREMENT_UNREACHABLE
-    );
-    wf_completion_retirement_wait_end(&running);
-    wf_completion_operation_retired(0);
-    return 0;
-}
-
-/* A refused open must see an operation in flight on the *other* engine.
- *
- * This is the shape a program reaches without writing anything unusual: a read
- * the bounded helper pool carries and an open the target's native ring
- * carries, in flight together.  Source order runs the read, then the close
- * that happens inside it, then the open, and the open succeeds.  A pipeline
- * decides the open's refusal from one engine's own state instead, and the read
- * running on the other one is invisible there: `wf__completion_file_read_submit`
- * has no ring route, so on Linux the read is on the helper adapter while the
- * open is on the ring, and a ring that asks only about itself sees one
- * operation in flight — the refused open — and publishes an `Err` the
- * sequential program never produces.
- *
- * The schedule is fixed rather than raced for.  The read is not merely
- * submitted but parked: it reaches the adapter's readiness wait, which is a
- * named host call, so the test knows it is in flight.  The releasing thread
- * then stands at the moment the runtime holds the refused open — a count of
- * its own — and only then gives the descriptor back and lets the read finish.
- * A runtime that published the refusal instead never reaches that count, and
- * the bound in the releasing thread turns that into a failed check rather than
- * a hang. */
-struct wf_harness_parked_read {
-    wf_completion_token token;
-    int64_t value;
-    int error_code;
-};
-
-static void *wf_harness_parked_read_main(void *context) {
-    struct wf_harness_parked_read *parked = context;
-    wf__completion_file_join(
-        &parked->token,
-        &parked->value,
-        &parked->error_code
-    );
-    return NULL;
-}
-
-struct wf_harness_release_after_the_hold {
-    int held;
-    int pipe_writer;
-    uint64_t waits_before;
-    unsigned wait_for_the_hold;
-    ssize_t released;
-    unsigned observed_the_hold;
-};
-
-static void *wf_harness_release_after_the_hold_main(void *context) {
-    struct wf_harness_release_after_the_hold *release = context;
-    int attempt;
-    for (attempt = 0;
-         release->wait_for_the_hold != 0 && attempt < 4000;
-         ++attempt) {
-        struct timespec pause;
-        if (wf__completion_open_exhaustion_waits() != release->waits_before) {
-            release->observed_the_hold = 1;
-            break;
-        }
-        pause.tv_sec = 0;
-        pause.tv_nsec = 1000L * 1000L;
-        (void)nanosleep(&pause, NULL);
-    }
-    (void)close(release->held);
-    release->released = write(release->pipe_writer, "x", 1);
-    return NULL;
-}
-
-static int test_bridge_open_waits_for_the_other_engine(
-    const char *scratch_directory
-) {
-    struct wf_harness_parked_read parked;
-    struct wf_harness_release_after_the_hold release;
-    pthread_t reader;
-    pthread_t releaser;
-    wf_completion_token token;
-    wf_completion_token open_token;
-    struct rlimit saved;
-    char path[256];
-    unsigned char received = 0;
-    int64_t value = -1;
-    int error_code = -1;
-    unsigned open_outcome = WF_FILE_OPEN_FAILED;
-    uint64_t ring_submissions;
-    int pipe_pair[2];
-    int writer;
-    int held;
-    int opened;
-    int attempt;
-    int the_open_has_an_engine_of_its_own;
-
-    CHECK(scratch_directory != NULL);
-    CHECK(
-        snprintf(
-            path,
-            sizeof(path),
-            "%s/wf-completion-other-engine-bridge-%ld",
-            scratch_directory,
-            (long)getpid()
-        ) > 0
-    );
-    (void)unlink(path);
-    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
-    CHECK(writer >= 0);
-    CHECK(close(writer) == 0);
-
-    /* Warm every descriptor the bridge itself needs before the limit narrows:
-     * the ring, its wait set, and any helper the policy asks for are created
-     * on the first submission, not here.  The warm open also answers which
-     * engine an open takes on this host. */
-    ring_submissions = wf__completion_linux_io_uring_submissions();
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            path,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            &token
-        ) == 1
-    );
-    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
-    CHECK(value >= 0 && error_code == 0);
-    /* Whether the schedule this test is about exists at all on this host and
-     * helper count.  It needs a second engine: one carrying the read while
-     * another attempts the open.  A target whose ring carries opens always has
-     * one, and so does a helper pool of any size but exactly one — with a
-     * single pinned helper parked in the read, the open has nowhere to run
-     * until the read finishes and the runtime is never asked the question.
-     * Where it is asked, it must hold; where it is not, the outcome is still
-     * the program's. */
-    the_open_has_an_engine_of_its_own =
-        wf__completion_linux_io_uring_submissions() != ring_submissions
-        || wf__completion_target_helper_count() != 1;
-    CHECK(wf__completion_file_close_submit((int)value, &token) == 1);
-    wf__completion_file_join(&token, &value, &error_code);
-    CHECK(value == 0 && error_code == 0);
-
-    CHECK(pipe(pipe_pair) == 0);
-    CHECK(fcntl(pipe_pair[0], F_SETFL, O_NONBLOCK) == 0);
-    (void)pthread_mutex_lock(&wf_poll_gate_lock);
-    wf_poll_gate_descriptor = pipe_pair[0];
-    wf_poll_gate_entries = 0;
-    (void)pthread_mutex_unlock(&wf_poll_gate_lock);
-
-    parked.value = -1;
-    parked.error_code = -1;
-    CHECK(
-        wf__completion_file_read_submit(
-            pipe_pair[0],
-            &received,
-            1u,
-            &parked.token
-        ) == 1
-    );
-    CHECK(
-        pthread_create(&reader, NULL, wf_harness_parked_read_main, &parked)
-        == 0
-    );
-    /* The read is in flight once it has reached its readiness wait.  With no
-     * helper the joining thread above is the engine that takes it there. */
-    (void)pthread_mutex_lock(&wf_poll_gate_lock);
-    for (attempt = 0; attempt < 4000 && wf_poll_gate_entries == 0; ++attempt) {
-        struct timespec pause;
-        (void)pthread_mutex_unlock(&wf_poll_gate_lock);
-        pause.tv_sec = 0;
-        pause.tv_nsec = 1000L * 1000L;
-        (void)nanosleep(&pause, NULL);
-        (void)pthread_mutex_lock(&wf_poll_gate_lock);
-    }
-    CHECK(wf_poll_gate_entries != 0);
-    (void)pthread_mutex_unlock(&wf_poll_gate_lock);
-
-    held = wf_harness_hold_the_last_descriptor(path, &saved);
-    CHECK(held >= 0);
-    /* The premise: with the table full the host refuses an open outright. */
-    CHECK(open(path, O_RDONLY) < 0);
-
-    release.held = held;
-    release.pipe_writer = pipe_pair[1];
-    release.waits_before = wf__completion_open_exhaustion_waits();
-    release.wait_for_the_hold =
-        the_open_has_an_engine_of_its_own != 0 ? 1u : 0u;
-    release.released = -1;
-    release.observed_the_hold = 0;
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            path,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            &open_token
-        ) == 1
-    );
-    CHECK(
-        pthread_create(
-            &releaser,
-            NULL,
-            wf_harness_release_after_the_hold_main,
-            &release
-        ) == 0
-    );
-
-    value = -1;
-    error_code = -1;
-    open_outcome = WF_FILE_OPEN_FAILED;
-    wf__completion_file_open_join(
-        &open_token,
-        &value,
-        &error_code,
-        &open_outcome
-    );
-    CHECK(pthread_join(releaser, NULL) == 0);
-    CHECK(pthread_join(reader, NULL) == 0);
-    CHECK(release.released == 1);
-    /* The runtime held the refused open rather than publishing it, which is
-     * the fact the whole rule is about. */
-    if (the_open_has_an_engine_of_its_own != 0) {
-        CHECK(release.observed_the_hold == 1);
-    }
-    /* And the outcome the program sees is the one source order produces. */
-    CHECK(value >= 0);
-    CHECK(error_code == 0);
-    CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
-    opened = (int)value;
-    CHECK(parked.value == 1 && parked.error_code == 0);
-    CHECK(received == 'x');
-
-    (void)pthread_mutex_lock(&wf_poll_gate_lock);
-    wf_poll_gate_descriptor = -1;
-    (void)pthread_mutex_unlock(&wf_poll_gate_lock);
-    CHECK(wf__completion_file_close_submit(opened, &token) == 1);
-    wf__completion_file_join(&token, &value, &error_code);
-    CHECK(value == 0 && error_code == 0);
-    CHECK(setrlimit(RLIMIT_NOFILE, &saved) == 0);
-    CHECK(close(pipe_pair[0]) == 0);
-    CHECK(close(pipe_pair[1]) == 0);
-    CHECK(unlink(path) == 0);
-    return 0;
-}
-
-/* One close and two opens, which is the smallest shape a K-slot loop makes.
- *
- * Source order closes the one held descriptor, opens with it, and is refused
- * the second time: exactly one `Ok` and one `Err(ResourceExhausted)`.  A
- * pipeline holds all three at once, so both opens can reach the host while the
- * close is still owed and both can be refused — and both refusals published is
- * an outcome the sequential program never produces.
- *
- * What made that reachable was a refused open running a sibling open out of
- * its own queue and publishing that sibling's refusal with no second attempt
- * at all, while spending its own on a close that had not finished.  Owed work
- * now follows the same rule as the operation that ran it: it may wait for a
- * retirement, and only draining further is denied it, because the caller
- * suspended inside it is the thread that would run the rest of the queue.
- *
- * Repeated, because which thread takes which of the three is the schedule this
- * is about; one repetition would pass by luck at any helper count. */
-static int test_bridge_one_of_two_opens_behind_a_close_succeeds(
-    const char *scratch_directory
-) {
-    wf_completion_token close_token;
-    wf_completion_token open_tokens[2];
-    struct rlimit saved;
-    char path[256];
-    int64_t value = -1;
-    int error_code = -1;
-    unsigned open_outcome = WF_FILE_OPEN_FAILED;
-    int writer;
-    int repetition;
-    size_t index;
-
-    CHECK(scratch_directory != NULL);
-    CHECK(
-        snprintf(
-            path,
-            sizeof(path),
-            "%s/wf-completion-two-opens-%ld",
-            scratch_directory,
-            (long)getpid()
-        ) > 0
-    );
-    (void)unlink(path);
-    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
-    CHECK(writer >= 0);
-    CHECK(close(writer) == 0);
-
-    /* Warm every descriptor the bridge itself needs before the limit narrows. */
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            path,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            &close_token
-        ) == 1
-    );
-    wf__completion_file_open_join(
-        &close_token,
-        &value,
-        &error_code,
-        &open_outcome
-    );
-    CHECK(value >= 0 && error_code == 0);
-    CHECK(wf__completion_file_close_submit((int)value, &close_token) == 1);
-    wf__completion_file_join(&close_token, &value, &error_code);
-    CHECK(value == 0 && error_code == 0);
-
-    for (repetition = 0; repetition < 16; ++repetition) {
-        int opened = -1;
-        int successes = 0;
-        int refusals = 0;
-        int held = wf_harness_hold_the_last_descriptor(path, &saved);
-        CHECK(held >= 0);
-        CHECK(open(path, O_RDONLY) < 0);
-
-        CHECK(wf__completion_file_close_submit(held, &close_token) == 1);
-        for (index = 0; index < 2; ++index) {
-            CHECK(
-                wf__completion_file_open_at_submit(
-                    AT_FDCWD,
-                    path,
-                    O_RDONLY,
-                    0u,
-                    0u,
-                    WF_FILE_EXPECT_REGULAR,
-                    &open_tokens[index]
-                ) == 1
-            );
-        }
-        for (index = 0; index < 2; ++index) {
-            value = -1;
-            error_code = -1;
-            open_outcome = 99u;
-            wf__completion_file_open_join(
-                &open_tokens[index],
-                &value,
-                &error_code,
-                &open_outcome
-            );
-            if (value >= 0 && error_code == 0
-                && open_outcome == WF_FILE_OPEN_SUCCEEDED) {
-                successes += 1;
-                opened = (int)value;
-            } else {
-                refusals += 1;
-                CHECK(error_code == EMFILE || error_code == ENFILE);
-                CHECK(open_outcome == WF_FILE_OPEN_FAILED);
+        for (attempts = 0; attempts < 20000u; ++attempts) {
+            if (harness_record_done(&accepts[index])) {
+                break;
             }
+            (void)nanosleep(&delay, NULL);
         }
-        value = -1;
-        error_code = -1;
-        wf__completion_file_join(&close_token, &value, &error_code);
-        CHECK(value == 0 && error_code == 0);
-        CHECK(successes == 1);
-        CHECK(refusals == 1);
-        CHECK(opened >= 0);
-        CHECK(wf__completion_file_close_submit(opened, &close_token) == 1);
-        wf__completion_file_join(&close_token, &value, &error_code);
-        CHECK(value == 0 && error_code == 0);
-        CHECK(setrlimit(RLIMIT_NOFILE, &saved) == 0);
+        CHECK(harness_record_done(&accepts[index]));
+        CHECK(accepts[index].result.error_code == 0);
+        CHECK(accepts[index].result.value >= 0);
+        CHECK(close((int)accepts[index].result.value) == 0);
+        CHECK(close(peers[index]) == 0);
     }
-    CHECK(unlink(path) == 0);
-    return 0;
-}
+    CHECK(wf_file_adapter_shutdown(&adapter) == 0);
+    CHECK(close(listener) == 0);
 
-/* Every operation record this runtime has, all holding a refused open at once.
- *
- * The rule holds an open the host refused while something in flight could
- * still give a descriptor back, so a program that fills the whole operation
- * capacity with opens against a full descriptor table makes every record a
- * held one, and the thread that submits the next is waiting for a record to
- * come free. Nothing can retire, so every one of them is the program's own
- * outcome and must be published — the answer source order gives too, since a
- * sequential execution reaches each of these opens with the table still full.
- *
- * What this catches is the shape where waiting does not end. A refused open
- * that runs the work its own adapter owes is not, meanwhile, an engine for the
- * work queued behind it, and one that decided that once and then slept is
- * waiting for an operation only it could have run. This test is the pressure
- * that makes that difference: it queues far more work than there are threads
- * to take it, while every thread is inside the rule.
- */
-static int test_bridge_every_record_holding_a_refused_open_publishes(
-    const char *scratch_directory
-) {
-    wf_completion_token tokens[WF_HARNESS_OPERATION_CAPACITY];
-    wf_completion_token token;
-    struct rlimit saved;
-    char path[256];
-    int64_t value = -1;
-    int error_code = -1;
-    unsigned open_outcome = WF_FILE_OPEN_FAILED;
-    size_t submitted = 0;
-    size_t index;
-    int writer;
-    int held;
+    /* (d) A pool pinned at zero helpers keeps the calling thread as the
+     * queue's engine for a peer-bound request too.  The peer is connected
+     * first, so what this asserts is which thread ran the accept and not how
+     * long one waits. */
+    listener = harness_open_listener(&port);
+    CHECK(listener >= 0);
+    peers[0] = harness_connect_peer(port);
+    CHECK(peers[0] >= 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 2, 0) == 0);
+    CHECK(wf_file_adapter_set_helper_cap(&adapter, 0) == 0);
+    harness_record_init(&pinned, WF_FILE_SOCKET_ACCEPT);
+    pinned.request.operation.accept.descriptor = listener;
+    CHECK(wf_file_adapter_submit(&adapter, &pinned) == WF_FILE_TARGET_OWNS);
+    CHECK(wf_file_adapter_helper_count(&adapter) == 0);
+    CHECK(wf_file_adapter_progress(&adapter, 1) == 1);
+    CHECK(harness_record_done(&pinned));
+    CHECK(pinned.result.error_code == 0);
+    CHECK(pinned.result.value >= 0);
+    CHECK(close((int)pinned.result.value) == 0);
+    CHECK(close(peers[0]) == 0);
+    CHECK(wf_file_adapter_shutdown(&adapter) == 0);
+    CHECK(close(listener) == 0);
 
-    CHECK(scratch_directory != NULL);
-    CHECK(
-        snprintf(
-            path,
-            sizeof(path),
-            "%s/wf-completion-every-record-%ld",
-            scratch_directory,
-            (long)getpid()
-        ) > 0
-    );
-    (void)unlink(path);
-    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
-    CHECK(writer >= 0);
-    CHECK(close(writer) == 0);
-
-    /* Warm every descriptor the bridge itself needs before the limit
-     * narrows. */
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            path,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            &token
-        ) == 1
-    );
-    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
-    CHECK(value >= 0 && error_code == 0);
-    CHECK(wf__completion_file_close_submit((int)value, &token) == 1);
-    wf__completion_file_join(&token, &value, &error_code);
-    CHECK(value == 0 && error_code == 0);
-
-    held = wf_harness_hold_the_last_descriptor(path, &saved);
-    CHECK(held >= 0);
-    CHECK(open(path, O_RDONLY) < 0);
-
-    while (submitted < WF_HARNESS_OPERATION_CAPACITY) {
-        if (wf__completion_file_open_at_submit(
-                AT_FDCWD,
-                path,
-                O_RDONLY,
-                0u,
-                0u,
-                WF_FILE_EXPECT_REGULAR,
-                &tokens[submitted]
-            ) != 1) {
-            break;
-        }
-        submitted += 1;
-    }
-    CHECK(submitted > 0);
-    for (index = 0; index < submitted; ++index) {
-        value = -1;
-        error_code = -1;
-        open_outcome = 99u;
-        wf__completion_file_open_join(
-            &tokens[index],
-            &value,
-            &error_code,
-            &open_outcome
-        );
-        CHECK(value < 0);
-        CHECK(error_code == EMFILE || error_code == ENFILE);
-        CHECK(open_outcome == WF_FILE_OPEN_FAILED);
-    }
-
-    CHECK(close(held) == 0);
-    CHECK(setrlimit(RLIMIT_NOFILE, &saved) == 0);
-    CHECK(unlink(path) == 0);
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
     return 0;
 }
 
@@ -5437,6 +3025,7 @@ static int test_native_contract_inventory(void) {
     return 0;
 }
 
+
 #if defined(WF_FILE_HAS_DIRECTORY_NEXT)
 /* The base-position cell after one progressing attempt: the value the Darwin
  * stub above writes, and the caller's own sentinel on a family whose facility
@@ -5459,7 +3048,7 @@ static int64_t wf_expected_position(void) {
 static int test_directory_progress_is_internal(void) {
 #if defined(WF_FILE_HAS_DIRECTORY_NEXT)
     int descriptors[2];
-    wf_completion_token token;
+    wf_harness_record record;
     unsigned char readiness = 'r';
     unsigned char byte = 0;
     int64_t position = 4242;
@@ -5472,39 +3061,24 @@ static int test_directory_progress_is_internal(void) {
     wf_directory_poll_timeout = 0;
     CHECK(pipe(descriptors) == 0);
     CHECK(write(descriptors[1], &readiness, 1) == 1);
-    CHECK(
-        wf__completion_directory_next_direct(
-            descriptors[0],
-            &byte,
-            1,
-            &position
-        ) == 1
+    /* One lowering, so the enumeration is asserted once, on the submitted
+     * route the direct entry's leg used to duplicate (design §8).  The poll
+     * the readiness refusal waited on is checked here, where the direct leg
+     * used to check it. */
+    wf__completion_directory_next_submit(
+        descriptors[0],
+        &byte,
+        1,
+        &position,
+        record.bytes
     );
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(value == 1 && error_code == 0);
     CHECK(wf_directory_host_calls == 3);
     CHECK(wf_directory_poll_calls == 1);
     CHECK(wf_directory_poll_descriptor == descriptors[0]);
     CHECK(wf_directory_poll_events == POLLIN);
     CHECK(wf_directory_poll_timeout == -1);
-    CHECK(byte == 'd');
-    CHECK(position == wf_expected_position());
-
-    wf_directory_host_calls = 0;
-    wf_directory_poll_calls = 0;
-    byte = 0;
-    position = 4242;
-    CHECK(
-        wf__completion_directory_next_submit(
-            descriptors[0],
-            &byte,
-            1,
-            &position,
-            &token
-        ) == 1
-    );
-    wf__completion_file_join(&token, &value, &error_code);
-    CHECK(value == 1 && error_code == 0);
-    CHECK(wf_directory_host_calls == 3);
-    CHECK(wf_directory_poll_calls == 1);
     CHECK(byte == 'd');
     CHECK(position == wf_expected_position());
     CHECK(close(descriptors[0]) == 0);
@@ -5513,6 +3087,7 @@ static int test_directory_progress_is_internal(void) {
     return 0;
 }
 
+
 static uint64_t monotonic_nanoseconds(void) {
     struct timespec now;
     CHECK(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
@@ -5520,47 +3095,30 @@ static uint64_t monotonic_nanoseconds(void) {
         + (uint64_t)now.tv_nsec;
 }
 
-static int benchmark_core_roundtrip(uint64_t *nanoseconds_per_operation) {
+/* What one submission-to-join round trip costs when the operation itself
+ * costs nothing.
+ *
+ * It is the record protocol and nothing else: initialise the record, store a
+ * result head, publish through `wf_sched_complete`, read DONE.  The claim,
+ * the drain and the consume it used to include are deleted with the pool. */
+static int benchmark_record_roundtrip(uint64_t *nanoseconds_per_operation) {
     enum { ITERATIONS = 100000 };
-    wf_completion_runtime runtime;
-    wf_completion_slot slot;
-    wf_completion_event event;
+    wf_completion_record record;
     uint64_t start;
     uint64_t elapsed;
     int iteration;
 
-    CHECK(wf_completion_runtime_init(&runtime, &slot, 1) == 0);
     start = monotonic_nanoseconds();
     for (iteration = 0; iteration < ITERATIONS; ++iteration) {
-        wf_completion_token token;
-        wf_completion_publication publication;
-        wf_completion_outcome outcome;
-        int result = 0;
-        CHECK(wf_completion_claim(&runtime, &token) == WF_COMPLETION_CLAIMED);
-        CHECK(accept_operation(&runtime, token) == 0);
-        publication = integer_publication(&iteration);
-        CHECK(
-            wf_completion_publish_terminal(&runtime, token, &publication)
-            == WF_COMPLETION_PUBLISHED
-        );
-        CHECK(wf_completion_drain(&runtime, &event, 1, 1) == 1);
-        CHECK(
-            wf_completion_consume(
-                &runtime,
-                token,
-                &result,
-                sizeof(result),
-                &outcome
-            ) == WF_COMPLETION_CONSUMED
-        );
-        CHECK(result == iteration);
+        harness_record_init(&record, WF_FILE_PREAD);
+        record.result.kind = WF_FILE_PREAD;
+        record.result.value = iteration;
+        wf_completion_record_complete(&record);
+        CHECK(harness_record_done(&record));
+        CHECK(record.result.value == iteration);
     }
     elapsed = monotonic_nanoseconds() - start;
     *nanoseconds_per_operation = elapsed / ITERATIONS;
-    CHECK(
-        wf_completion_statistics_snapshot(&runtime).wake_signals == 0
-    );
-    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
     return 0;
 }
 
@@ -5570,14 +3128,14 @@ static int benchmark_core_roundtrip(uint64_t *nanoseconds_per_operation) {
  * handler only prints it. */
 static const char *volatile wf_harness_running = "startup";
 
-/* A deadlock is now a failure mode of this suite, so it gets a name.
+/* A deadlock is a failure mode of this suite, so it gets a name.
  *
- * The rule a refused open follows makes threads wait for each other on
- * purpose, and a mistake in it does not produce a wrong answer — it produces
- * no answer, which without this would surface as a build job that never ends
- * and a log with nothing in it. The bound is three orders of magnitude above
- * what the whole suite takes, so it can only fire on a schedule that has
- * genuinely stopped. */
+ * A join that waits in place makes threads wait for each other on purpose,
+ * and a mistake in the wake does not produce a wrong answer — it produces no
+ * answer, which without this would surface as a build job that never ends and
+ * a log with nothing in it. The bound is three orders of magnitude above what
+ * the whole suite takes, so it can only fire on a schedule that has genuinely
+ * stopped. */
 static void wf_harness_watchdog(int signal_number) {
     static const char message[] = "completion harness: no progress in test: ";
     ssize_t ignored;
@@ -5618,88 +3176,62 @@ int main(int argc, char **argv) {
         return 2;
     }
     /* The bridge cases below assert which route an operation took, and under
-     * the demand-driven policy that is the runtime's choice: it declines a
-     * positioned read once it has measured this host's reads as not waiting,
-     * so whether a case sees the submitted route would depend on what the
-     * cases before it happened to execute. A written WF_IO_HELPERS pins the
-     * route with the count, so an invocation that did not name one gets one
-     * here and every case asserts a route that is fixed.
+     * the demand-driven policy that is the runtime's choice: it runs a
+     * positioned read inside submit once it has measured this host's reads as
+     * not waiting, so whether a case sees the queued route would depend on
+     * what the cases before it happened to execute. A written WF_IO_HELPERS
+     * pins the route with the count, so an invocation that did not name one
+     * gets one here and every case asserts a route that is fixed.
      *
      * What that leaves untested here is the policy itself, and it is tested
      * where it can be decided rather than sampled:
      * `test_pool_stays_empty_when_operations_do_not_wait` and
      * `test_pool_grows_when_operations_wait` script the clock the policy
-     * measures with, and `compiler/tests/programs` runs whole compiled
-     * programs under the unset policy. */
+     * measures with, `bridge_default_probe.c` runs the unset policy end to
+     * end, and `compiler/tests/programs` runs whole compiled programs under
+     * it. */
     if (getenv("WF_IO_HELPERS") == NULL) {
         (void)setenv("WF_IO_HELPERS", "1", 0);
     }
-    RUN_TEST(test_capacity_and_product_state());
-    RUN_TEST(test_generation_and_duplicate_terminal());
-    RUN_TEST(test_named_drain_refuses_a_recycled_slot());
-    RUN_TEST(test_exactly_one_terminal_under_race());
-    RUN_TEST(test_concurrent_single_claims_are_unique());
+    RUN_TEST(test_exactly_one_completion_per_submission_under_race(argv[1]));
+    RUN_TEST(test_a_completion_claims_an_in_place_registration());
     RUN_TEST(test_unified_wake_epoch());
-    RUN_TEST(test_one_epoch_wakes_every_announced_scheduler());
-    RUN_TEST(test_drain_wakes_the_registered_token_owner());
-    RUN_TEST(test_bounded_drain_and_lane_independence());
+    RUN_TEST(test_one_epoch_wakes_every_announced_thread());
     RUN_TEST(test_linux_independent_operations_use_available_target(argv[1]));
-    RUN_TEST(test_single_thread_file_progress_and_backpressure(argv[1]));
+    RUN_TEST(test_single_thread_file_progress(argv[1]));
     RUN_TEST(test_bridge_independent_positioned_reads(argv[1]));
     RUN_TEST(test_bridge_open_status_and_close_are_typed_operations(argv[1]));
-    RUN_TEST(test_submitted_open_owns_its_path_bytes(argv[1]));
-    RUN_TEST(test_a_name_no_record_can_hold_opens_directly(argv[1]));
-    RUN_TEST(test_bridge_capacity_falls_back_per_operation());
+    RUN_TEST(test_submitted_open_resolves_the_submitters_bytes(argv[1]));
+    RUN_TEST(
+        test_a_name_no_pool_record_could_hold_takes_the_completion_path(argv[1])
+    );
+    RUN_TEST(test_more_operations_outstanding_than_the_old_capacity(argv[1]));
     RUN_TEST(test_checked_open_rejects_and_closes_nonregular_descriptors(argv[1]));
     RUN_TEST(test_open_failure_classes_are_typed_outcomes(argv[1]));
-    RUN_TEST(test_open_capacity_refuses_and_resubmits(argv[1]));
     RUN_TEST(test_open_results_reach_every_independent_owner(argv[1]));
     RUN_TEST(test_uncached_reads_are_target_policy_only(argv[1]));
     RUN_TEST(test_process_wide_target_helper_budget());
     RUN_TEST(test_pool_stays_empty_when_operations_do_not_wait(argv[1]));
     RUN_TEST(test_pool_grows_when_operations_wait());
-    RUN_TEST(test_helper_growth_stops_at_the_helper_storage());
-    RUN_TEST(test_helper_count_above_its_storage_is_refused());
+    RUN_TEST(test_helper_growth_stops_at_the_declared_bound());
+    RUN_TEST(test_helper_count_above_its_bound_is_refused());
     RUN_TEST(test_shutdown_refuses_every_later_entry());
-    RUN_TEST(test_helper_completion_wakes_scheduler());
+    RUN_TEST(test_a_helper_completion_wakes_a_waiting_join());
+    RUN_TEST(test_an_io_join_on_a_pool_stack_parks_and_is_resumed());
     RUN_TEST(test_readiness_refusal_is_not_a_terminal_outcome());
-    RUN_TEST(test_capacity_release_wakes_before_blocking_work());
     RUN_TEST(test_completion_window_answers_at_the_boundaries());
     RUN_TEST(test_a_submitted_operation_is_kicked_before_it_waits(argv[1]));
-    RUN_TEST(test_descriptor_return_follows_the_outcome());
-    RUN_TEST(test_a_ring_close_counts_a_return_only_when_it_ran(argv[1]));
-    RUN_TEST(test_open_exhaustion_retires_owned_work_and_retries(argv[1]));
-    RUN_TEST(test_open_exhaustion_waits_for_another_engine(argv[1]));
-    RUN_TEST(test_bridge_open_exhaustion_is_retried_once(argv[1]));
-    RUN_TEST(test_bridge_open_behind_a_submitted_close_succeeds(argv[1]));
-    RUN_TEST(test_a_retirement_between_the_ledger_reads_is_not_missed());
-    RUN_TEST(test_an_ending_that_returns_nothing_grants_no_reattempt());
-    RUN_TEST(test_a_returned_descriptor_is_awarded_in_waiter_order());
-    RUN_TEST(test_an_open_that_took_a_return_is_charged_for_it());
-    RUN_TEST(test_a_promised_descriptor_is_not_promised_again());
-    RUN_TEST(test_an_outside_free_charged_to_an_open_refuses_no_waiter());
-    RUN_TEST(test_an_awarded_attempt_is_charged_once());
-    RUN_TEST(test_the_work_a_waiter_owes_is_read_where_it_decides());
-    RUN_TEST(test_a_waiter_that_stands_aside_keeps_its_claim());
-    RUN_TEST(test_a_waiter_behind_one_that_stands_aside_can_answer());
-    RUN_TEST(
-        test_a_registration_wakes_a_waiter_parked_on_the_endpoint(argv[1])
-    );
-    RUN_TEST(
-        test_standing_aside_wakes_a_waiter_parked_on_the_endpoint(argv[1])
-    );
-    RUN_TEST(test_bridge_open_waits_for_the_other_engine(argv[1]));
-    RUN_TEST(test_bridge_one_of_two_opens_behind_a_close_succeeds(argv[1]));
-    RUN_TEST(test_bridge_every_record_holding_a_refused_open_publishes(argv[1]));
+    RUN_TEST(test_socket_lifecycle_and_the_pair_two_count());
+    RUN_TEST(test_a_peer_bound_request_is_left_to_a_helper());
     RUN_TEST(test_native_contract_inventory());
     RUN_TEST(test_directory_progress_is_internal());
-    RUN_TEST(benchmark_core_roundtrip(&roundtrip_ns));
+    RUN_TEST(benchmark_record_roundtrip(&roundtrip_ns));
 #undef RUN_TEST
     printf(
         "completion-core-harness: PASS core_roundtrip_ns=%" PRIu64
-        " terminal_racers=%d\n",
+        " racers=%d\n",
         roundtrip_ns,
-        TERMINAL_RACERS
+        WF_HARNESS_RACERS
     );
     return 0;
 }

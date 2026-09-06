@@ -3,8 +3,25 @@
 
 #if defined(_WIN32)
 
-#include "native_completion_api.h"
-#include "windows_runtime.h"
+/*
+ * The Windows kernel completion ring, in the same shape as `linux_io_uring.h`.
+ *
+ * It finds the record by address: the `OVERLAPPED` a request is issued with is
+ * embedded in the frame's own completion record, so the completion packet's
+ * `OVERLAPPED` pointer *is* the record's identity, exactly as a CQE's
+ * `user_data` is on Linux (design
+ * `research/investigations/io-model/PARK-ON-MISS.md` §7, "What survives, and
+ * the one change inside it").  There is no entry pool, no token, no
+ * generation, and therefore no capacity this ring can refuse for.
+ *
+ * Its wait is the one park the bridge supplies through the
+ * `wf__sched_host_epoch` / `_park` / `_wake` seam on Windows (§7, platform item
+ * 2): the completion port itself, with a wake delivered as a
+ * `PostQueuedCompletionStatus` packet, so a ready stack and an I/O completion
+ * arrive on one queue and there is no second wake path to keep consistent.
+ */
+
+#include "contract.h"
 
 #include <stdatomic.h>
 #include <stddef.h>
@@ -15,196 +32,127 @@
 extern "C" {
 #endif
 
-enum wf_windows_file_operation_kind {
-    WF_WINDOWS_FILE_READ_AT = 1,
-    WF_WINDOWS_FILE_WRITE_AT = 2,
-    WF_WINDOWS_FILE_WRITE = 3,
-    WF_WINDOWS_FILE_OPEN_AT = 4,
-    WF_WINDOWS_FILE_DIRECTORY_NEXT = 5
-};
-
-struct wf_windows_iocp_adapter;
-
-typedef int (*wf_windows_iocp_wait_finished_hook)(
-    wf_completion_runtime *runtime,
-    HANDLE port,
-    ULONG_PTR wake_key,
-    unsigned consumed_wake
-);
-
-typedef int (*wf_windows_iocp_close_hook)(
-    wf_completion_runtime *runtime,
-    HANDLE port,
-    ULONG_PTR wake_key
-);
-
-/* Only the adapter association function can mint this internal handle.  The
- * underlying file must have been opened with FILE_FLAG_OVERLAPPED and must
- * remain adapter-owned until every operation using it is terminal. */
-typedef struct wf_windows_iocp_file {
-    HANDLE handle;
-    struct wf_windows_iocp_adapter *adapter;
-} wf_windows_iocp_file;
-
-typedef struct wf_windows_file_request {
-    enum wf_windows_file_operation_kind kind;
-    wf_windows_iocp_file file;
-    wf_windows_descriptor_lease lease;
-    union {
-        void *read_buffer;
-        const void *write_buffer;
-    } buffer;
-    size_t count;
-    uint64_t offset;
-} wf_windows_file_request;
-
-typedef struct wf_windows_file_result {
-    enum wf_windows_file_operation_kind kind;
-    int64_t value;
-    uint32_t error_code;
-    uint32_t open_outcome;
-    /* Worker-private retirement facts. Consumers ignore these bytes. */
-    uint32_t runtime_flags;
-} wf_windows_file_result;
-
-enum wf_windows_file_runtime_flag {
-    WF_WINDOWS_FILE_TOOK_NATIVE_HANDLE = 1u << 0,
-    WF_WINDOWS_FILE_TOOK_CRT_DESCRIPTOR = 1u << 1,
-    WF_WINDOWS_FILE_RETURNED_NATIVE_HANDLE = 1u << 2,
-    WF_WINDOWS_FILE_RETURNED_CRT_DESCRIPTOR = 1u << 3,
-    WF_WINDOWS_FILE_REFUSED_NATIVE_HANDLE = 1u << 4,
-    WF_WINDOWS_FILE_REFUSED_CRT_DESCRIPTOR = 1u << 5,
-    WF_WINDOWS_FILE_REFUSED_GENERAL_RESOURCE = 1u << 6
-};
-
 enum wf_windows_iocp_submit_result {
     WF_WINDOWS_IOCP_TARGET_OWNS = 0,
-    WF_WINDOWS_IOCP_WAIT_CAPACITY = 1,
-    WF_WINDOWS_IOCP_SUBMIT_STALE = 2,
-    WF_WINDOWS_IOCP_SUBMIT_INVALID = 3,
-    WF_WINDOWS_IOCP_UNAVAILABLE = 4
+    WF_WINDOWS_IOCP_SUBMIT_INVALID = 1,
+    WF_WINDOWS_IOCP_UNAVAILABLE = 2
 };
-
-enum wf_windows_iocp_entry_state {
-    WF_WINDOWS_IOCP_ENTRY_FREE = 0,
-    WF_WINDOWS_IOCP_ENTRY_RESERVED = 1,
-    WF_WINDOWS_IOCP_ENTRY_IN_FLIGHT = 2
-};
-
-enum wf_windows_iocp_option {
-    /* Suppress the otherwise redundant completion-port packet when an
-     * overlapped request returns success synchronously. The adapter publishes
-     * that already-terminal request on the submitting thread. */
-    WF_WINDOWS_IOCP_INLINE_SYNCHRONOUS_SUCCESS = 1u << 0
-};
-
-/* OVERLAPPED is first so the completion packet maps to a stable preallocated
- * operation entry without a side table or allocation. */
-typedef struct wf_windows_iocp_entry {
-    OVERLAPPED overlapped;
-    _Atomic unsigned state;
-    wf_completion_token token;
-    enum wf_windows_file_operation_kind kind;
-    wf_windows_descriptor_lease lease;
-} wf_windows_iocp_entry;
 
 typedef struct wf_windows_iocp_statistics {
     uint64_t submissions;
-    uint64_t capacity_waits;
-    uint64_t immediate_failures;
+    /* Requests the kernel answered synchronously, published on the submitting
+     * thread because the association asked for no packet in that case. */
     uint64_t inline_completions;
     uint64_t dequeued_completions;
     uint64_t completions;
-    uint64_t publication_failures;
+    uint64_t kernel_waits;
+    uint64_t host_wake_posts;
 } wf_windows_iocp_statistics;
 
-/* Target-private protocol state.  The shared completion port and OVERLAPPED
- * entries are not Whitefoot memory and never cross the generated-code ABI.
- * Only the buffer loan carried by a typed request enters an owned operation. */
+/* Target-private protocol state.  The completion port is not Whitefoot memory
+ * and never crosses the generated-code ABI.  A request buffer crosses this
+ * boundary only inside a `wf_completion_record`, which is a block of the frame
+ * that submitted the operation and outlives it. */
 typedef struct wf_windows_iocp_adapter {
     wf_completion_runtime *runtime;
     HANDLE port;
     ULONG_PTR wake_key;
-    wf_windows_iocp_wait_finished_hook wait_finished;
-    wf_windows_iocp_close_hook close_bound_port;
-    wf_windows_iocp_entry *entries;
-    size_t entry_capacity;
-    _Atomic size_t entry_cursor;
+    ULONG_PTR file_key;
     _Atomic size_t in_flight;
-    /* Ordinary values count active progress calls. Two high sentinels close
-     * entry atomically during and after destroy. */
-    _Atomic size_t progress_gate;
-    unsigned options;
+    _Atomic int progress_error;
     unsigned initialized;
 
     _Atomic uint64_t stat_submissions;
-    _Atomic uint64_t stat_capacity_waits;
-    _Atomic uint64_t stat_immediate_failures;
     _Atomic uint64_t stat_inline_completions;
     _Atomic uint64_t stat_dequeued_completions;
     _Atomic uint64_t stat_completions;
-    _Atomic uint64_t stat_publication_failures;
+    _Atomic uint64_t stat_kernel_waits;
+    _Atomic uint64_t stat_host_wake_posts;
 } wf_windows_iocp_adapter;
 
-/* Creates one shared IOCP. `entry_storage` is the entire userspace operation
- * capacity; there is no per-operation allocation. Options are immutable and
- * applied to every file associated with this adapter. */
+/* Creates the one completion port this process's ring uses.  `concurrency` is
+ * the port's own concurrency hint; zero asks the kernel for its default. */
 int wf_windows_iocp_init(
     wf_windows_iocp_adapter *adapter,
     wf_completion_runtime *runtime,
-    wf_windows_iocp_entry *entry_storage,
-    size_t entry_capacity,
-    DWORD concurrency,
-    unsigned options
+    DWORD concurrency
 );
 
-/* Installs the completion core's wait-accounting and lifecycle hooks before
- * any scheduler announces an IOCP wait. The standalone adapter probe leaves
- * them absent because it never announces or consumes scheduler waits. */
-int wf_windows_iocp_attach_completion(
+/* Associates one file handle with the port, once, and asks the kernel not to
+ * queue a packet for a request it answers synchronously -- that request is
+ * already complete, so the submitting thread publishes it instead of paying
+ * for a port round trip. */
+int wf_windows_iocp_associate(
     wf_windows_iocp_adapter *adapter,
-    wf_completion_runtime *runtime,
-    wf_windows_iocp_wait_finished_hook wait_finished,
-    wf_windows_iocp_close_hook close_bound_port
+    HANDLE handle
 );
 
-/* Associates an overlapped file with this adapter's shared port before any
- * completion token changes ownership. */
-int wf_windows_iocp_associate_file(
-    wf_windows_iocp_adapter *adapter,
-    HANDLE handle,
-    wf_windows_iocp_file *file
-);
+/* Whether this ring has a form for one record's request kind.  Asked by the
+ * bridge before the record is handed over, so a kind the ring does not carry
+ * reaches the bounded adapter or the inline executor instead of being refused
+ * after the operation was already the ring's. */
+int wf_windows_iocp_carries(const wf_completion_record *record);
 
+/* The descriptor this record's request will be issued on, or -1.
+ *
+ * Every kind but the connect already has one.  A connect names none at submit,
+ * because it creates its own socket; this makes it, and binds it to the
+ * wildcard address of its family because `ConnectEx` requires a bound socket.
+ * It is a separate call from the submit below because the port has to take the
+ * handle before the request is issued on it, and taking it happens under the
+ * descriptor table's own lock (`../windows_runtime.h`,
+ * `wf__windows_completion_ring_handle`).
+ *
+ * The socket it creates is undone by `wf_windows_iocp_withdraw` when the port
+ * refuses the handle, so the record reaches the bounded adapter exactly as it
+ * was offered. */
+int wf_windows_iocp_issue_descriptor(wf_completion_record *record);
+
+/* Undoes what `wf_windows_iocp_issue_descriptor` created for a record the
+ * ring did not take.  Nothing was published and nothing is left half-owned. */
+void wf_windows_iocp_withdraw(wf_completion_record *record);
+
+/* Hands one record to the ring, on a handle the port has taken.  It cannot
+ * answer capacity: the record is the frame's and the port holds no pool. */
 enum wf_windows_iocp_submit_result wf_windows_iocp_submit(
     wf_windows_iocp_adapter *adapter,
-    wf_completion_token token,
-    const wf_windows_file_request *request
+    wf_completion_record *record,
+    HANDLE handle
 );
 
-/* Dequeues at most `budget` packets and reports only successfully published
- * terminal operations. The first dequeue may wait for
- * `timeout_milliseconds`; subsequent dequeues are nonblocking. Once attached
- * to the completion core, each call must follow one successful IOCP wait-begin
- * announcement. Its first dequeue result atomically withdraws that announcement
- * before any terminal publication and ends the call, so a returned scheduler
- * cannot consume wake packets reserved for its peers. An unattached standalone
- * adapter retains the ordinary multi-packet budget behavior. Destroy returns
- * EBUSY while any progress call remains active; other adapter operations still
- * require external lifecycle coordination. */
+/* Dequeues at most `budget` ready packets without waiting and publishes the
+ * terminal completions among them.  A wake packet found here belongs to a
+ * sleeper: it is put back when one is announced and dropped when none is,
+ * because the epoch and not the packet is the durable wake fact. */
 int wf_windows_iocp_progress(
     wf_windows_iocp_adapter *adapter,
     size_t budget,
-    DWORD timeout_milliseconds,
     size_t *published
 );
 
-HANDLE wf_windows_iocp_port(const wf_windows_iocp_adapter *adapter);
-ULONG_PTR wf_windows_iocp_wake_key(const wf_windows_iocp_adapter *adapter);
-size_t wf_windows_iocp_in_flight(const wf_windows_iocp_adapter *adapter);
-size_t wf_windows_iocp_active_progress(
-    const wf_windows_iocp_adapter *adapter
+/* Announces any completion-core epoch change to the port.  This is the
+ * callback installed with `wf_completion_set_wake_callback`; it posts one
+ * packet per announced sleeper and never runs a continuation. */
+void wf_windows_iocp_notify(void *context);
+
+/* Parks one thread on the port.  `observed_epoch` is rechecked under the
+ * runtime's own wait lock before the kernel wait, closing
+ * completion-before-park without a polling timeout.  UINT32_MAX means no
+ * deadline. */
+int wf_windows_iocp_park(
+    wf_windows_iocp_adapter *adapter,
+    uint64_t observed_epoch,
+    uint32_t timeout_milliseconds
 );
+
+/* A nonzero value is a sticky target-owned progress failure.  Once an
+ * operation has been accepted, the bridge must fail-stop on this condition. */
+int wf_windows_iocp_progress_error(const wf_windows_iocp_adapter *adapter);
+
+size_t wf_windows_iocp_in_flight(const wf_windows_iocp_adapter *adapter);
+
+/* Refuses with EBUSY until every accepted operation has produced and published
+ * its packet. */
 int wf_windows_iocp_destroy(wf_windows_iocp_adapter *adapter);
 
 wf_windows_iocp_statistics wf_windows_iocp_statistics_snapshot(

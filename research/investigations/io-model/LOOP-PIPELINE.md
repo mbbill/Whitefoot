@@ -788,11 +788,29 @@ stage 1 sufficient.
 
 ### 3.4 In-order commit, out-of-order harvest, and the emitter change
 
-`emit_all_completion_joins` (`compiler/src/backend/emitter/completion.rs:142`)
-is called first thing in `emit_terminator`
-(`compiler/src/backend/emitter.rs:1229`), so every outstanding target operation
-is joined before any block ends, including a loop back-edge. That one line is
-the complete explanation of the round barrier. Three changes:
+**What the tree does now, after park on miss (batch 2, `PARK-ON-MISS.md`).**
+The three paragraphs of this section that named the shipped emitter were
+written before that batch and are corrected here rather than left standing.
+`emit_all_completion_joins`
+(`compiler/src/backend/emitter/completion.rs:430`) is still called first thing
+in `emit_terminator` (`compiler/src/backend/emitter.rs:1824`), so every
+outstanding target operation is still joined before any block ends, including a
+loop back-edge, and it still exempts `HandedOut::Compute`. What changed is
+underneath it. An overlap group's join site now runs one order for both kinds
+of member, `compute_join_order` (`emitter/parallel.rs:670`, design §4): the
+group's compute members newest first, because the deque is Chase-Lev and the
+newest entry is the one the owner can reach, and its completion members exactly
+where they were published, because a completion member holds no deque entry and
+the deque constrains it nowhere. `emit_overlap_joins`, `overlap_join_tail` and
+`block_exit_label` all consume that one function. The completion record is no
+longer a token into a runtime pool: it is an opaque block of the submitting
+frame, reserved by the wrapper that submits, found by the runtime at its own
+address (design §5), and a join that misses parks the joining stack instead of
+holding the thread. The round barrier this section is about is therefore still
+`emit_all_completion_joins`, and it is still one line; the cost of the join it
+performs is now a park and not a blocked thread.
+
+That one line is the complete explanation of the round barrier. Three changes:
 
 1. `emit_terminator` joins all outstanding operations **except** those owned by
    a live pipeline slot of the enclosing loop. The back-edge is then legal with
@@ -801,10 +819,14 @@ the complete explanation of the round barrier. Three changes:
    per-token behaviour is what the pipeline needs and it is already correct.
    Note also that `emit_all_completion_joins` already exempts
    `HandedOut::Compute`, so the fold hand-out is untouched by it.
-2. The pipeline emits its own driver and retirement blocks: try
-   `wf__completion_file_take` (non-blocking, `bridge.h:144`) on each busy slot;
-   fall back to `wf__completion_file_join` (`bridge.h:129`) on the oldest; run
-   that slot's next stage; commit finished slots in index order.
+2. The pipeline emits its own driver and retirement blocks: look at each busy
+   slot's own record, take the ones already published, and otherwise join the
+   oldest through `wf__completion_file_join` (`bridge.h:116`); run that slot's
+   next stage; commit finished slots in index order. (The non-blocking
+   `wf__completion_file_take` this step was written against is gone with the
+   slot pool: after park on miss there is one join, it reads the record in the
+   frame, and a miss parks rather than blocks, so "try, then fall back to a
+   blocking join" is now "join, and pay a park if it misses".)
 3. The loop's normal exit and every exit edge from P emit a **drain**: retire
    every busy slot in index order — all of it work the sequential execution
    performs — apply their tails so `sum` and `bytes` take their source-order
@@ -812,17 +834,20 @@ the complete explanation of the round barrier. Three changes:
 
 **No stackless generalization is required.** This is the single largest cost
 saving in the design and it must be stated plainly to anyone who assumes
-otherwise. `StacklessPlan::build`
-(`compiler/src/backend/emitter/stackless.rs:49-102`) admits only
-`blocks().len() == 1`, an empty `overlaps()`, exactly one may-suspend call, and
-an `IrTerminator::Return`; the whole 757-line file is shaped by those four
-refusals. A budgets ~800 lines to lift them and C budgets ~1,000-1,500; judge 2
-estimates 2,000+ plus a large test surface for a coroutine transform with
-cross-thread resume emitted as LLVM *text*, and both judges call it the
-schedule risk. **The pipeline does not need it**: with K slots outstanding the
-owner lane has nothing else to run, so it *blocks* on the oldest slot's join
-rather than suspending. Suspension only buys something when a writer frame must
-yield to unrelated work.
+otherwise. The stackless continuation lowering it argued against no longer
+exists: `emitter/stackless.rs` and `tests/stackless.rs` were deleted in batch
+2's slice 2, and what replaced them is the stack park of `PARK-ON-MISS.md` §5 —
+a join that misses parks its own stack on a pool stack of a fixed reservation
+and switches, which is one save and restore of the callee-saved registers and
+the stack pointer and no emitter transform at all. The judgment this paragraph
+recorded stands and was reached from the other side: `StacklessPlan::build`
+admitted only a single block, an empty `overlaps()`, exactly one may-suspend
+call and a returning terminator, the whole 757-line file was shaped by those
+four refusals, and the estimates to lift them ran from ~800 to 2,000+ lines
+plus a large test surface for a coroutine transform emitted as LLVM *text*.
+**The pipeline does not need any of it**: with K slots outstanding the owner
+lane has nothing else to run, so its join misses and parks, which costs one
+park and no lowering.
 
 What replaces it is smaller and has an in-tree precedent. E is cut at each
 subsequent suspension into **stages**, and each stage is a straight-line region
@@ -832,7 +857,9 @@ what `split.rs` already does when it outlines a chunk (`split.rs:183`), not a
 continuation transform: every stage runs on the owner lane, there is no stack
 switch, no cross-thread resume, and the persisted state is a fixed record of
 four or five scalars. Budget it as such (§6.1) and do not let anyone
-re-introduce `stackless.rs` into the critical path.
+re-introduce a continuation transform into the critical path; the suspension
+the design once wanted from one is the core's stack park, which is already
+there.
 
 ### 3.5 The compute lane — and a claim that has no thread
 
@@ -871,6 +898,27 @@ is 2, so there is exactly one compute lane, which is precisely the shape
 Several folds may be outstanding, one per slot. The owner joins and commits
 them **in index order**, so no associativity is used and no combination tree is
 built.
+
+**The compute lane now also carries a may-suspend call as a pipeline slot**
+(landed 2026-09-06). This section was written about the *pure* per-iteration
+fold, and the mechanism it names turns out to be the whole of what a staged
+loop needs when the staged call itself is a may-suspend user call rather than a
+system operation: the emitter acquires a lane frame sized for
+`{ arguments..., result }` at the staged point, publishes it with the same
+thunk, and the frame's address is what the slot holds for that iteration —
+exactly as the record's address is what it holds for a submitted operation. The
+callee then runs on a pool stack and parks on its own I/O without holding the
+loop (`PARK-ON-MISS.md` §2, §5), and the exact drain joins it with
+`wf__par_join`, loads the result out of the frame, releases it, and runs the
+remainder in index order. So the lane is not only where the fold goes; it is
+where an iteration's *whole* suspending body goes when that body is one call.
+`wf__par_acquire_lane` answering null still runs the call inline, which is the
+same decline path the fold takes. The compiler's ceiling on such a loop's
+window is `WF_SCHED_LANE_SLOTS`, because each in-flight iteration holds one
+frame slot of the offering thread's lane; the runtime's own answer through
+`wf__completion_window` and the stack pool bound it from the other side.
+`tests/programs/tcp_fanout.wf` is the shipped instance: four accepts in flight
+in a `--par` build.
 
 ### 3.6 Two latent bugs the barrier is currently hiding
 

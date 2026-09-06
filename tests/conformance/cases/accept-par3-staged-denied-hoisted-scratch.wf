@@ -40,8 +40,8 @@ fn fold_prefix(source: own Slice<u8>, produced: own u64, seed: own u64) -> resul
   return sum;
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  doc "DOC_HOISTED";
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+  doc "The destination is hoisted above the loop and the fold reads its whole capacity rather than the prefix the transfer defined, so the bytes beyond the short read are the previous iteration's. PAR-3 denies: the body writes storage the iteration does not introduce and a may-suspend call retains a borrow of it, and this version replicates only storage the body itself constructs. Over the view surface the reported stage condition is 7 rather than 3, because the judgment does not resolve a footprint element reached through a MutSlice.";
   region 'w {
     let workspace = arena_frame::<64, 1, 'w>();
     region {
@@ -57,35 +57,41 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
       let name = component();
       let total = 0_u64;
       for @scan (index in 0_u64..4_u64) {
-        let permit = reserve_file(factory: &uniq files);
-        let window = slice_of(&name);
-        region {
-          match open_file(permit: move permit, root: &cwd, name: &window, start: 0_u64, end: 4_u64) {
-            Ok(value: handle) => {
-              region 'h {
-                region {
-                  let destination = mut_slice_of(&uniq data);
-                  region {
-                    match read_at(file: &'h handle, destination: &uniq destination, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
-                      ReadBytes(next: produced) => {
-                      }
-                      ReadEnd() => {
-                      }
-                      ReadFailed(error: problem) => {
+        match reserve_handle(factory: &uniq files) {
+          Ok(value: permit) => {
+            let window = slice_of(&name);
+            region {
+              match open_file(permit: move permit, root: &cwd, name: &window, start: 0_u64, end: 4_u64) {
+                FileOpened(value: handle) => {
+                  region 'h {
+                    region {
+                      let destination = mut_slice_of(&uniq data);
+                      region {
+                        match read_at(file: &'h handle, destination: &uniq destination, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+                          ReadBytes(next: produced) => {
+                          }
+                          ReadEnd() => {
+                          }
+                          ReadFailed(error: problem) => {
+                          }
+                        }
                       }
                     }
+                    let digest = 0_u64;
+                    region {
+                      let source = slice_of(&data);
+                      set digest = fold_prefix(source: source, produced: 64_u64, seed: 0_u64);
+                    }
+                    set total = total +wrap digest;
                   }
                 }
-                let digest = 0_u64;
-                region {
-                  let source = slice_of(&data);
-                  set digest = fold_prefix(source: source, produced: 64_u64, seed: 0_u64);
+                FileOpenFailed(error: problem, permit: refused) => {
                 }
-                set total = total +wrap digest;
               }
             }
-            Err(error: problem) => {
-            }
+          }
+          Err(error: spent) => {
+            return exit_status(code: 1_u8);
           }
         }
       }

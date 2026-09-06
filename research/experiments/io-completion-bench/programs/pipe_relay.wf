@@ -1,4 +1,4 @@
-command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
   doc "Relays a fixed byte volume onto two independent outputs, one chunk to each per round, so a consumer that makes one output wait cannot stop the other.";
   let left = buffer_new(262144_u64, 65_u8);
   let right = buffer_new(262144_u64, 66_u8);

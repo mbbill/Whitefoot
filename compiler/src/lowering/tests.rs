@@ -429,7 +429,7 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
          fn release_relative_path(value: own RelativePath) -> result: own unit pure {{\n  return unit;\n}}\n\n\
          fn release_directory_read(value: own DirectoryRead) -> result: own unit writes(value) {{\n  return unit;\n}}\n\n\
          fn release_read_file(value: own ReadFile) -> result: own unit writes(value) {{\n  return unit;\n}}\n\n\
-         fn release_output(value: own Output) -> result: own unit pure {{\n  return unit;\n}}\n\n\
+         fn release_output(value: own OutputStream) -> result: own unit pure {{\n  return unit;\n}}\n\n\
          fn release_exit_status(value: own ExitStatus) -> result: own unit pure {{\n  return unit;\n}}\n\n\
          fn release_directory_source(value: own DirectorySource) -> result: own unit writes(value) {{\n  return unit;\n}}\n\n\
          {COMMAND_ENTRY}"
@@ -479,7 +479,7 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
         );
         assert_contract(
             program,
-            SystemResourceType::Output,
+            SystemResourceType::OutputStream,
             SourceDetach,
             SystemReleaseRow::EMPTY,
             Opaque,
@@ -524,7 +524,11 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
                 SystemResourceType::ReadFile,
                 NativeCloseAttempt,
             ),
-            ("release_output", SystemResourceType::Output, SourceDetach),
+            (
+                "release_output",
+                SystemResourceType::OutputStream,
+                SourceDetach,
+            ),
             (
                 "release_exit_status",
                 SystemResourceType::ExitStatus,
@@ -778,7 +782,7 @@ fn releases_keep_reverse_declaration_order_on_the_normal_edge() {
 
 #[test]
 fn a_system_call_carries_its_semantic_identity_and_precedes_the_releases() {
-    let source = "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus writes(cwd) {\n  return exit_status(code: 0_u8);\n}\n";
+    let source = "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus writes(cwd) {\n  return exit_status(code: 0_u8);\n}\n";
     with_ir(source.as_bytes(), |program| {
         let main = function(program, "main");
         let block = only_block(main);
@@ -827,9 +831,9 @@ fn a_system_call_carries_its_semantic_identity_and_precedes_the_releases() {
         assert_eq!(
             resources,
             vec![
-                Some(SystemResourceType::FileFactory),
-                Some(SystemResourceType::Output),
-                Some(SystemResourceType::Output),
+                Some(SystemResourceType::HandleFactory),
+                Some(SystemResourceType::OutputStream),
+                Some(SystemResourceType::OutputStream),
                 Some(SystemResourceType::DirectoryRead),
                 Some(SystemResourceType::Args),
             ]
@@ -839,13 +843,13 @@ fn a_system_call_carries_its_semantic_identity_and_precedes_the_releases() {
 
 #[test]
 fn the_entry_retains_distinct_standard_input_rows_without_alias_metadata() {
-    let both = "command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let both = "command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
     with_ir(both.as_bytes(), |program| {
         let IrEntry::Command { inputs } = program.entry();
         assert_eq!(inputs, &vec![2, 3]);
     });
 
-    let one = "command fn main(command.stdout as out: own Output) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let one = "command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
     with_ir(one.as_bytes(), |program| {
         let IrEntry::Command { inputs } = program.entry();
         assert_eq!(inputs, &vec![2]);
@@ -929,7 +933,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn staged_permission_reaches_a_complete_depth_one_driver_by_checked_loop_identity() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let total = 0_u64;
   for @plain (index in 0_u64..1_u64) {
     set total = total +wrap 1_u64;
@@ -937,14 +941,20 @@ fn staged_permission_reaches_a_complete_depth_one_driver_by_checked_loop_identit
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      let permit = reserve_file(factory: &uniq files);
-      region {
-        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
-          Ok(value: handle) => {
-            set total = total +wrap 1_u64;
+      match reserve_handle(factory: &uniq files) {
+        Ok(value: permit) => {
+          region {
+            match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
+              FileOpened(value: handle) => {
+                set total = total +wrap 1_u64;
+              }
+              FileOpenFailed(error: problem, permit: refused) => {
+              }
+            }
           }
-          Err(error: problem) => {
-          }
+        }
+        Err(error: spent) => {
+          return exit_status(code: 8_u8);
         }
       }
     }
@@ -1021,18 +1031,24 @@ fn staged_permission_reaches_a_complete_depth_one_driver_by_checked_loop_identit
 
 #[test]
 fn direct_staged_loop_builds_a_two_slot_issue_and_drain_driver() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let opened = 0_u64;
   let name = buffer_new(4_u64, 97_u8);
   for @scan (index in 0_u64..4_u64) {
-    let permit = reserve_file(factory: &uniq files);
-    region {
-      match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
-        Ok(value: handle) => {
-          set opened = opened +wrap 1_u64;
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: permit) => {
+        region {
+          match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+            FileOpened(value: handle) => {
+              set opened = opened +wrap 1_u64;
+            }
+            FileOpenFailed(error: problem, permit: refused) => {
+            }
+          }
         }
-        Err(error: problem) => {
-        }
+      }
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
       }
     }
   }
@@ -1060,39 +1076,57 @@ fn direct_staged_loop_builds_a_two_slot_issue_and_drain_driver() {
             .into_string();
         assert!(llvm.contains("call i64 @wf__completion_window(i64 4, i64 0, i64 2)"));
         assert!(llvm.contains("%wf.frame = alloca {"));
-        assert!(llvm.contains("[2 x [2 x i64]]"));
-        assert!(llvm.contains("getelementptr inbounds [2 x [2 x i64]]"));
-        assert!(llvm.contains("call i32 @wf__completion_file_open_at_submit("));
+        // Two blocks of WF_COMPLETION_RECORD_BYTES, which the record grew to
+        // when it stopped being a token into a pool and became the operation's
+        // own state in the submitting frame
+        // (`research/investigations/io-model/PARK-ON-MISS.md` §5). The number
+        // is the contract header's, checked against the emitter's own constant
+        // by `the_record_block_abi_constants_agree_with_the_contract_header`.
+        assert!(llvm.contains("[2 x [160 x i8]]"));
+        assert!(llvm.contains("getelementptr inbounds [2 x [160 x i8]]"));
+        assert!(llvm.contains("call void @wf__completion_file_open_at_submit("));
         assert!(llvm.contains("call void @wf__completion_file_open_join("));
     });
 }
 
 #[test]
 fn two_staged_loops_in_one_function_leave_both_on_the_ordinary_path() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let opened = 0_u64;
   let name = buffer_new(4_u64, 97_u8);
   for @first (index in 0_u64..3_u64) {
-    let permit = reserve_file(factory: &uniq files);
-    region {
-      match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
-        Ok(value: handle) => {
-          set opened = opened +wrap 1_u64;
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: permit) => {
+        region {
+          match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+            FileOpened(value: handle) => {
+              set opened = opened +wrap 1_u64;
+            }
+            FileOpenFailed(error: problem, permit: refused) => {
+            }
+          }
         }
-        Err(error: problem) => {
-        }
+      }
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
       }
     }
   }
   for @second (index in 0_u64..3_u64) {
-    let permit = reserve_file(factory: &uniq files);
-    region {
-      match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
-        Ok(value: handle) => {
-          set opened = opened +wrap 1_u64;
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: permit) => {
+        region {
+          match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+            FileOpened(value: handle) => {
+              set opened = opened +wrap 1_u64;
+            }
+            FileOpenFailed(error: problem, permit: refused) => {
+            }
+          }
         }
-        Err(error: problem) => {
-        }
+      }
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
       }
     }
   }
@@ -1254,5 +1288,51 @@ fn a_needle_declared_inside_the_loop_declines_the_wide_probe() {
     let middle = "    let inner_mark = 88_u8;\n    let lead = byte == inner_mark;\n    if lead {\n      set seen = seen +wrap 2_u64;\n    }\n";
     with_ir(&byte_walk_source(middle, "1_u64"), |program| {
         assert_eq!(probe_needle_counts(program), Vec::<usize>::new());
+    });
+}
+
+/// A gate whose exiting arm breaks rather than returns takes the same bounded
+/// batch driver: the exit runs after the batch in flight has drained, on the
+/// carried bindings, and leaves through the driver's exit block.
+#[test]
+fn a_prologue_gate_leaving_by_break_keeps_the_two_slot_driver() {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+  let opened = 0_u64;
+  let name = buffer_new(4_u64, 97_u8);
+  for @scan (index in 0_u64..4_u64) {
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: permit) => {
+        region {
+          match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+            FileOpened(value: handle) => {
+              set opened = opened +wrap 1_u64;
+            }
+            FileOpenFailed(error: problem, permit: refused) => {
+            }
+          }
+        }
+      }
+      Err(error: spent) => {
+        break;
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_ir_mode(source, OverlapLowering::Completion, |program| {
+        let main = function(program, "main");
+        let pipeline = main
+            .completion_pipeline()
+            .expect("the gated staged loop must reach IR");
+        assert!(
+            pipeline.planned_batch_driver().is_some(),
+            "a break in the gate's exiting arm keeps the bounded batch driver"
+        );
+        assert_eq!(pipeline.slots(), 2);
+        let llvm = crate::backend::emit_llvm(program)
+            .expect("a gated two-slot driver must emit valid LLVM text")
+            .into_string();
+        assert!(llvm.contains("call i64 @wf__completion_window(i64 4, i64 0, i64 2)"));
     });
 }

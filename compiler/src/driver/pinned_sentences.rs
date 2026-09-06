@@ -304,7 +304,7 @@ command fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "system-range-residual.wf",
-        source: br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
+        source: br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let header = buffer_new(4_u64, 65_u8);
   let payload = buffer_new(9_u64, 66_u8);
   let wide = len_of(payload);
@@ -335,7 +335,7 @@ command fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "system-argument-does-not-name-a-region.wf",
-        source: br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
+        source: br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let payload = buffer_new(4_u64, 65_u8);
   region {
     let sent = write_once::<ExitStatus>(output: &uniq out, source: &payload, start: 0_u64, end: 4_u64);
@@ -882,7 +882,7 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         rule: "OWN-6",
         sentences: &[
-            "a child reborrow's region admits exactly one statement, and a value that statement binds dies at the region's end, so `region 'r { let permit = reserve_file::<'r>(factory: &uniq 'r holder); match open_...(permit: move permit, ...) { ... } }` is two statements and cannot be repaired by shortening the region. The whole idiom is three parts: move the reserve and the open into one helper that takes the holder as `&uniq 'f` and returns the opened value (`fn open_source_from_factory['f, 'd](factory: &uniq 'f FileFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError>`); make the single statement of the region the `match` on that helper's call; and write every statement that uses the opened value inside that `match` arm, because the opened value dies with the region (P4 linear threading, P15 recursive walker). The other route, `let stale = replace target = call(...);`, applies only where the call leaves the target's root alive: a call that consumes the target root — one taking `move permit` — rejects OWN-1 instead.",
+            "a child reborrow's region admits exactly one statement, and a value that statement binds dies at the region's end, so `region 'r { let permit = reserve_handle::<'r>(factory: &uniq 'r holder); match open_...(permit: move permit, ...) { ... } }` is two statements and cannot be repaired by shortening the region. The whole idiom is three parts: move the reserve and the open into one helper that takes the holder as `&uniq 'f` and returns the opened value (`fn open_source_from_factory['f, 'd](factory: &uniq 'f HandleFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError>`); make the single statement of the region the `match` on that helper's call; and write every statement that uses the opened value inside that `match` arm, because the opened value dies with the region (P4 linear threading, P15 recursive walker). The other route, `let stale = replace target = call(...);`, applies only where the call leaves the target's root alive: a call that consumes the target root — one taking `move permit` — rejects OWN-1 instead.",
         ],
     },
     Probe {
@@ -904,7 +904,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "shared-borrow-where-a-unique-one-is-required.wf",
-        source: br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
+        source: br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let payload = buffer_new(4_u64, 65_u8);
   region {
     let sent = write_once(output: &out, source: &payload, start: 0_u64, end: 4_u64);
@@ -913,7 +913,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         rule: "TYPE-5",
-        sentences: &[r#"TypeMismatch { expected: "a `uniq` borrow", found: "&Output" }"#],
+        sentences: &[r#"TypeMismatch { expected: "a `uniq` borrow", found: "&OutputStream" }"#],
     },
     Probe {
         name: "slice-value-where-a-scalar-is-required.wf",

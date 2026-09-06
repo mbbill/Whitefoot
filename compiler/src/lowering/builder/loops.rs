@@ -1,16 +1,17 @@
 use std::collections::HashSet;
 
 use crate::semantic::{
-    BindingId, CheckedDrop, CheckedExpression, CheckedLoopId, CheckedMatchArm, CheckedSetTarget,
-    CheckedStatement,
+    BindingId, CheckedDrop, CheckedEnumType, CheckedExpression, CheckedLoopId, CheckedMatchArm,
+    CheckedMode, CheckedSetTarget, CheckedStatement,
 };
 use crate::{
     IrBlockId, IrBooleanOperation, IrCompletionPipeline, IrCompletionWindow, IrConstant,
     IrEnumType, IrIntegerOperation, IrMatchTarget, IrOperation, IrTerminator, IrType, IrValueId,
-    LoweringFailure, NodePath,
+    LoweringFailure, NodePath, SystemRelease, SystemReleaseAction,
 };
 
 use super::{GiveTarget, IrBuilder};
+use crate::lowering::lower_type;
 
 pub(super) const U64: IrType = IrType::Integer {
     width: 64,
@@ -159,14 +160,23 @@ impl IrBuilder<'_> {
         )
     }
 
-    /// Lowers the first complete multi-slot completion schedule.
+    /// Lowers the complete multi-slot staged schedule of one counted loop.
     ///
     /// The admitted IR topology is deliberately narrow: a straight-line
-    /// prologue ending in the selected result match, no loop-body cleanup, and
-    /// a remainder that does not read the counted binder or a prologue-local
-    /// value. Those are implementation limits, not source-language
-    /// rejections. A loop outside this subset continues through the ordinary
-    /// graph and the complete one-slot driver below.
+    /// prologue ending at the staged call, and a remainder that does not read
+    /// the counted binder or a prologue-local value. Those are implementation
+    /// limits, not source-language rejections. A loop outside this subset
+    /// continues through the ordinary graph and the complete one-slot driver
+    /// below.
+    ///
+    /// Two things can be at the staged call, and they take the same schedule:
+    /// a system operation submitted to the completion runtime, whose slot
+    /// holds its record and whose remainder is the arms of a `match` on it;
+    /// and a may-suspend user call handed to a compute lane, whose slot holds
+    /// its frame and whose remainder is the statements written after the `let`
+    /// that binds it. The lane form is the one that may carry the iteration's
+    /// own storage, because its drain reads that storage back out of the ring
+    /// before the remainder runs.
     #[allow(clippy::too_many_arguments)]
     fn lower_bounded_completion_range(
         &mut self,
@@ -186,41 +196,126 @@ impl IrBuilder<'_> {
         let Some(cut) = self.unique_staged_cut(id) else {
             return Ok(false);
         };
-        let Some(direct) = direct_staged_match(body, &cut) else {
+        let Some(direct) = direct_staged_match(body, &cut, id) else {
             return Ok(false);
         };
-        if give_target.is_some()
-            || !backedge_drops.is_empty()
-            || self.addressed_bindings.contains(&binder)
-        {
+        // Which form this is is decided by the cut's own kind and never by how
+        // the tail is written. A may-suspend *user* call has a lane hand-out:
+        // the frame is what the slot holds, and the drain defines the result
+        // before the remainder that reads it. A submitted system operation has
+        // no lane frame and its drain publishes its outcome at the block
+        // boundary, after every instruction of that block, so a remainder
+        // written after it in the same block would read a value that does not
+        // exist yet — which is why the bound tail is admitted for the first
+        // and declined for the second, exactly as it was declined before this
+        // form existed. A hand-out also exists only in the world that asked
+        // for one, so the ordinary build keeps the loop it always had.
+        let lane = match &direct.tail {
+            StagedTail::Dispatch { .. } => false,
+            StagedTail::Bound { call, .. } => {
+                if !matches!(call, CheckedExpression::UserCall { .. }) {
+                    return Ok(false);
+                }
+                true
+            }
+        };
+        if lane && self.overlap != crate::OverlapLowering::On {
+            return Ok(false);
+        }
+        if give_target.is_some() || self.addressed_bindings.contains(&binder) {
+            return Ok(false);
+        }
+        // A submitted operation's driver carries no iteration-own storage, so
+        // its loop still has to leave its back edge bare. The lane form may
+        // carry one: the iteration's own releases run in the drain, after the
+        // join, from the ring element the issue stage stored them in.
+        if !lane && !backedge_drops.is_empty() {
             return Ok(false);
         }
 
         let mut unavailable_in_remainder = HashSet::from([binder]);
-        for statement in &direct.prologue {
-            match statement {
-                CheckedStatement::Let { binding, .. }
-                | CheckedStatement::Replace { binding, .. } => {
+        for item in &direct.prologue {
+            match item {
+                PrologueItem::Statement(CheckedStatement::Let { binding, .. })
+                | PrologueItem::Statement(CheckedStatement::Replace { binding, .. }) => {
                     unavailable_in_remainder.insert(*binding);
                 }
-                CheckedStatement::Set { .. }
-                | CheckedStatement::Evaluate(_)
-                | CheckedStatement::DropExpression { .. }
-                | CheckedStatement::Proof(_) => {}
-                _ => return Ok(false),
+                PrologueItem::Statement(
+                    CheckedStatement::Set { .. }
+                    | CheckedStatement::Evaluate(_)
+                    | CheckedStatement::DropExpression { .. }
+                    | CheckedStatement::Proof(_),
+                ) => {}
+                PrologueItem::Statement(_) => return Ok(false),
+                PrologueItem::Gate(gate) => {
+                    for arm in gate.arms {
+                        for binder in &arm.binders {
+                            unavailable_in_remainder.insert(binder.binding);
+                        }
+                    }
+                }
             }
         }
-        if unavailable_in_remainder
-            .iter()
-            .any(|binding| self.addressed_bindings.contains(binding))
-            || direct.arms.iter().any(|arm| {
+        let remainder_reads_the_issue_stage = match &direct.tail {
+            StagedTail::Dispatch { arms, .. } => arms.iter().any(|arm| {
                 arm.body
                     .iter()
                     .any(|statement| statement_uses_any(statement, &unavailable_in_remainder))
                     || drops_use_any(&arm.fallthrough_drops, &unavailable_in_remainder)
-            })
+            }),
+            StagedTail::Bound { remainder, .. } => remainder
+                .iter()
+                .any(|statement| statement_uses_any(statement, &unavailable_in_remainder)),
+        };
+        if unavailable_in_remainder
+            .iter()
+            .any(|binding| self.addressed_bindings.contains(binding))
+            || remainder_reads_the_issue_stage
         {
             return Ok(false);
+        }
+        // The one thing the drain does read out of the issue stage: the
+        // compiler-derived release of the iteration's own storage. Each such
+        // binding becomes a ring element, so the release runs in the drain on
+        // the value that iteration allocated. A release that performs a system
+        // action is refused here rather than reordered, on the same rule an
+        // exiting arm's own binders take.
+        let mut carried_bindings_in_drain = Vec::new();
+        for drop in backedge_drops {
+            if !unavailable_in_remainder.contains(&drop.binding)
+                || !release_emits_nothing(&drop.release)
+            {
+                return Ok(false);
+            }
+            if !carried_bindings_in_drain.contains(&drop.binding) {
+                carried_bindings_in_drain.push(drop.binding);
+            }
+        }
+        // An exiting gate arm leaves before this iteration submitted anything,
+        // so its releases of the issue stage's own bindings run there, where
+        // the values are. Only a release that emits nothing may run early.
+        for item in &direct.prologue {
+            let PrologueItem::Gate(gate) = item else {
+                continue;
+            };
+            for (index, arm) in gate.arms.iter().enumerate() {
+                if index == gate.continuing {
+                    continue;
+                }
+                let exiting_drops = match arm.body.last() {
+                    Some(
+                        CheckedStatement::Return { drops, .. }
+                        | CheckedStatement::Break { drops, .. },
+                    ) => drops,
+                    _ => return Ok(false),
+                };
+                if exiting_drops.iter().any(|drop| {
+                    unavailable_in_remainder.contains(&drop.binding)
+                        && !release_emits_nothing(&drop.release)
+                }) {
+                    return Ok(false);
+                }
+            }
         }
 
         let base_bindings = self.bindings.clone();
@@ -249,12 +344,49 @@ impl IrBuilder<'_> {
         let mut issue_types = carried_types.clone();
         issue_types.extend([U64, U64, U64]); // index, upper, issued count
         let (issue, issue_parameters) = self.new_block(&issue_types)?;
+        let gates = direct
+            .prologue
+            .iter()
+            .filter_map(|item| match item {
+                PrologueItem::Gate(gate) => Some(gate),
+                PrologueItem::Statement(_) => None,
+            })
+            .collect::<Vec<_>>();
+        let mut gate_plans = Vec::with_capacity(gates.len());
+        let mut exit_count = 0_u64;
+        for gate in &gates {
+            let mut arm_blocks = Vec::with_capacity(gate.arms.len());
+            let mut exits = Vec::new();
+            for index in 0..gate.arms.len() {
+                arm_blocks.push(self.new_block(&[])?.0);
+                if index != gate.continuing {
+                    exit_count += 1;
+                    exits.push((index, exit_count));
+                }
+            }
+            gate_plans.push(GatePlan { arm_blocks, exits });
+        }
         let (issue_again_edge, _) = self.new_block(&[])?;
         let (start_drain_edge, _) = self.new_block(&[])?;
         let mut drain_types = carried_types.clone();
-        drain_types.extend([U64, U64, U64, U64]); // next index, upper, count, slot
+        drain_types.extend([U64, U64, U64, U64, U64]); // next index, upper, count, slot, leaving
         let (drain, drain_parameters) = self.new_block(&drain_types)?;
         let (exit, exit_parameters) = self.new_block(&carried_types)?;
+        // One block per exiting arm, entered on the carried bindings after the
+        // batch in flight has drained (or at once when nothing was in flight).
+        let mut exit_targets = Vec::new();
+        let mut exit_arms = Vec::new();
+        for (gate, plan) in gates.iter().zip(&gate_plans) {
+            for (arm_index, leaving) in &plan.exits {
+                let (block, parameters) = self.new_block(&carried_types)?;
+                exit_targets.push((*leaving, block));
+                let arm = gate
+                    .arms
+                    .get(*arm_index)
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                exit_arms.push((arm, block, parameters));
+            }
+        }
 
         // The empty path never asks for a runtime window and never enters a
         // completion drain.
@@ -325,36 +457,90 @@ impl IrBuilder<'_> {
         if self.bindings.insert(binder, issue_index).is_some() {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        for statement in &direct.prologue {
-            let before = self.current;
-            self.lower_statements(std::slice::from_ref(*statement), None)?;
-            if self.current != before {
-                return Err(LoweringFailure::InvalidCheckedProgram);
-            }
-        }
-        let result = self.expression(direct.scrutinee)?;
-        self.note_call_result(direct.scrutinee, result)?;
-        let call_is_last = self
-            .blocks
-            .get(issue.index())
-            .and_then(|block| block.instructions.last())
-            .is_some_and(|instruction| {
-                matches!(
-                    instruction,
-                    crate::IrInstruction::Define {
-                        result: defined,
-                        operation: IrOperation::SystemCall { target_action, .. },
-                        ..
-                    } if *defined == result && target_action.may_suspend()
-                )
-            });
-        if !call_is_last {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
+        // Defined at the head of the issue stage, which dominates every block
+        // the constant reaches: the drain is entered from the issue tail and
+        // from a gate's exiting arm alike.
         let one = self.define(
             U64,
             IrOperation::Constant(IrConstant::Integer { ty: U64, bits: 1 }),
         )?;
+        let mut gate_cursor = 0;
+        let mut submission_blocks = Vec::new();
+        let mut pending_exit_edges = Vec::new();
+        for item in &direct.prologue {
+            match item {
+                PrologueItem::Statement(statement) => {
+                    let before = self.current;
+                    self.lower_statements(std::slice::from_ref(*statement), None)?;
+                    if self.current != before {
+                        return Err(LoweringFailure::InvalidCheckedProgram);
+                    }
+                }
+                PrologueItem::Gate(gate) => {
+                    let plan = gate_plans
+                        .get(gate_cursor)
+                        .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                    gate_cursor += 1;
+                    let edges = self.lower_prologue_gate_staged(
+                        gate,
+                        plan,
+                        &GateContext {
+                            issue_index,
+                            issue_upper,
+                            issue_count,
+                            zero,
+                            drain,
+                            carried_bindings: &carried_bindings,
+                            exit_targets: &exit_targets,
+                        },
+                    )?;
+                    pending_exit_edges.extend(edges);
+                    submission_blocks
+                        .push(self.current.ok_or(LoweringFailure::InvalidCheckedProgram)?);
+                }
+            }
+        }
+        let issue_tail = self.current.ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        let staged_call = match &direct.tail {
+            StagedTail::Dispatch { scrutinee, .. } => *scrutinee,
+            StagedTail::Bound { call, .. } => *call,
+        };
+        let result = self.expression(staged_call)?;
+        self.note_call_result(staged_call, result)?;
+        let call_is_last = self
+            .blocks
+            .get(issue_tail.index())
+            .and_then(|block| block.instructions.last())
+            .is_some_and(|instruction| match instruction {
+                crate::IrInstruction::Define {
+                    result: defined,
+                    operation: IrOperation::SystemCall { target_action, .. },
+                    ..
+                } => *defined == result && target_action.may_suspend(),
+                crate::IrInstruction::Define {
+                    result: defined,
+                    operation: IrOperation::Call { function, .. },
+                    ..
+                } => {
+                    lane && *defined == result
+                        && self
+                            .function_actions
+                            .get(*function as usize)
+                            .is_some_and(|action| action.may_suspend())
+                }
+                _ => false,
+            });
+        if !call_is_last {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        // The ring elements the drain reads back, chosen now because the issue
+        // stage's own definitions are exactly the values live here.
+        let mut staged_carries = Vec::with_capacity(carried_bindings_in_drain.len());
+        for binding in &carried_bindings_in_drain {
+            let origin = self.binding_value(*binding)?;
+            let reload = self.new_value(self.value_type(origin)?)?;
+            staged_carries.push((*binding, origin, reload));
+        }
         let next_index = self.define(
             U64,
             IrOperation::Integer {
@@ -420,7 +606,7 @@ impl IrBuilder<'_> {
 
         self.current = Some(start_drain_edge);
         let mut start_drain = self.binding_values(&carried_bindings)?;
-        start_drain.extend([next_index, issue_upper, next_count, zero]);
+        start_drain.extend([next_index, issue_upper, next_count, zero, zero]);
         self.terminate(IrTerminator::Jump {
             target: drain,
             arguments: start_drain,
@@ -442,10 +628,48 @@ impl IrBuilder<'_> {
         let drain_slot = *drain_parameters
             .get(carried_count + 3)
             .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        let drain_leaving = *drain_parameters
+            .get(carried_count + 4)
+            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
         self.current = Some(drain);
         self.bindings = base_bindings.clone();
         self.bind_parameters(&carried_bindings, drain_state)?;
-        self.lower_match_from_value(result, direct.enum_type, direct.arms, true, None, None)?;
+        match &direct.tail {
+            StagedTail::Dispatch {
+                enum_type, arms, ..
+            } => {
+                self.lower_match_from_value(result, *enum_type, arms, true, None, None)?;
+            }
+            StagedTail::Bound {
+                binding, remainder, ..
+            } => {
+                // The retired result is the `let`'s value, and the iteration's
+                // own storage is what the ring element holds; both are bound
+                // here, so the remainder is the statements the writer wrote
+                // after the call, lowered once and read once per slot.
+                for (carried, _, reload) in &staged_carries {
+                    if self.bindings.insert(*carried, *reload).is_some() {
+                        return Err(LoweringFailure::InvalidCheckedProgram);
+                    }
+                }
+                if self.bindings.insert(*binding, result).is_some() {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                self.lower_statements(remainder, None)?;
+                if self.current.is_none() {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                // [FN-1]'s edge releases for this iteration, run where the
+                // iteration ends: after the join, on the ring element that
+                // iteration owns, once per retired slot.
+                let drops = self.lower_drops(backedge_drops)?;
+                for drop in drops {
+                    self.current_block_mut()?
+                        .instructions
+                        .push(crate::IrInstruction::Drop(drop));
+                }
+            }
+        }
         if self.current.is_none() {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
@@ -484,7 +708,13 @@ impl IrBuilder<'_> {
 
         self.current = Some(drain_again_edge);
         let mut drain_again = self.binding_values(&carried_bindings)?;
-        drain_again.extend([drain_next_index, drain_upper, drain_count, next_slot]);
+        drain_again.extend([
+            drain_next_index,
+            drain_upper,
+            drain_count,
+            next_slot,
+            drain_leaving,
+        ]);
         self.terminate(IrTerminator::Jump {
             target: drain,
             arguments: drain_again,
@@ -492,6 +722,87 @@ impl IrBuilder<'_> {
         })?;
 
         self.current = Some(batch_finished_edge);
+        // A gate exit taken while this batch had operations in flight arrives
+        // here with `leaving` naming its arm. The batch is drained, so every
+        // earlier iteration's remainder has run, and the exit now leaves in
+        // source order. `leaving` is dispatched by an ascending chain of
+        // strict comparisons: below one is no exit, below two is arm one, and
+        // so on.
+        if !exit_targets.is_empty() {
+            let one_bound = self.define(
+                U64,
+                IrOperation::Constant(IrConstant::Integer { ty: U64, bits: 1 }),
+            )?;
+            let no_exit = self.define(
+                IrType::Bool,
+                IrOperation::Integer {
+                    operation: IrIntegerOperation::Less,
+                    operand_type: U64,
+                    arguments: vec![drain_leaving, one_bound],
+                },
+            )?;
+            let (normal_edge, _) = self.new_block(&[])?;
+            let (mut rest, _) = self.new_block(&[])?;
+            self.terminate(IrTerminator::Match {
+                scrutinee: no_exit,
+                enum_type: IrEnumType::Bool,
+                targets: vec![
+                    IrMatchTarget {
+                        tag: 1,
+                        block: normal_edge,
+                    },
+                    IrMatchTarget {
+                        tag: 0,
+                        block: rest,
+                    },
+                ],
+            })?;
+            for (leaving, target) in &exit_targets {
+                self.current = Some(rest);
+                let bound = self.define(
+                    U64,
+                    IrOperation::Constant(IrConstant::Integer {
+                        ty: U64,
+                        bits: leaving.wrapping_add(1),
+                    }),
+                )?;
+                let is_this = self.define(
+                    IrType::Bool,
+                    IrOperation::Integer {
+                        operation: IrIntegerOperation::Less,
+                        operand_type: U64,
+                        arguments: vec![drain_leaving, bound],
+                    },
+                )?;
+                let (leave, _) = self.new_block(&[])?;
+                let (next_rest, _) = self.new_block(&[])?;
+                self.terminate(IrTerminator::Match {
+                    scrutinee: is_this,
+                    enum_type: IrEnumType::Bool,
+                    targets: vec![
+                        IrMatchTarget {
+                            tag: 1,
+                            block: leave,
+                        },
+                        IrMatchTarget {
+                            tag: 0,
+                            block: next_rest,
+                        },
+                    ],
+                })?;
+                self.current = Some(leave);
+                let arguments = self.binding_values(&carried_bindings)?;
+                self.terminate(IrTerminator::Jump {
+                    target: *target,
+                    arguments,
+                    drops: Vec::new(),
+                })?;
+                rest = next_rest;
+            }
+            self.current = Some(rest);
+            self.terminate(IrTerminator::Unreachable)?;
+            self.current = Some(normal_edge);
+        }
         let more_batches = self.define(
             IrType::Bool,
             IrOperation::Integer {
@@ -538,24 +849,100 @@ impl IrBuilder<'_> {
             drops: Vec::new(),
         })?;
 
+        // The exiting arms themselves, on the carried bindings alone (the
+        // recognizer refused an arm that reads its own binders). A `break`
+        // leaves through this driver's exit block like any other.
+        for (arm, block, parameters) in &exit_arms {
+            self.current = Some(*block);
+            self.bindings = base_bindings.clone();
+            self.bind_parameters(&carried_bindings, parameters)?;
+            let Some((last, prefix)) = arm.body.split_last() else {
+                return Err(LoweringFailure::InvalidCheckedProgram);
+            };
+            let before = self.current;
+            self.lower_statements(prefix, None)?;
+            if self.current != before {
+                return Err(LoweringFailure::InvalidCheckedProgram);
+            }
+            // Everything the issue stage owned was released there; the
+            // remaining releases — the carried bindings' — and the exit
+            // itself run here, after the drain, in source order.
+            match last {
+                CheckedStatement::Return { value, drops, .. } => {
+                    let value = self.expression(value)?;
+                    let remaining = drops
+                        .iter()
+                        .filter(|drop| carried_bindings.contains(&drop.binding))
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    let drops = self.lower_drops(&remaining)?;
+                    self.terminate(IrTerminator::Return { value, drops })?;
+                }
+                CheckedStatement::Break { target, drops } if *target == id => {
+                    let remaining = drops
+                        .iter()
+                        .filter(|drop| carried_bindings.contains(&drop.binding))
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    let arguments = self.binding_values(&carried_bindings)?;
+                    let drops = self.lower_drops(&remaining)?;
+                    self.terminate(IrTerminator::Jump {
+                        target: exit,
+                        arguments,
+                        drops,
+                    })?;
+                }
+                _ => return Err(LoweringFailure::InvalidCheckedProgram),
+            }
+        }
+
         self.current = Some(exit);
         self.bindings = base_bindings;
         self.bind_parameters(&carried_bindings, &exit_parameters)?;
 
+        let mut carrying = vec![issue, issue_again_edge, start_drain_edge];
+        let mut slot_index = vec![(issue, issue_count)];
+        for plan in &gate_plans {
+            carrying.extend(plan.arm_blocks.iter().copied());
+        }
+        for block in submission_blocks {
+            slot_index.push((block, issue_count));
+        }
+        slot_index.push((drain, drain_slot));
+        // The compiler's own ceiling, and the ring it sizes. A submitted
+        // operation's driver has carried two since it shipped. A lane
+        // hand-out's ceiling is the lane's own slot count: every iteration in
+        // flight holds one frame slot of the offering thread's lane, so a
+        // window past that is a window whose extra iterations are refused a
+        // frame and run inline.
+        let (ceiling, slots) = if lane {
+            (crate::LANE_SLOTS, crate::LANE_SLOTS)
+        } else {
+            (2, 2)
+        };
         let mut pipeline = IrCompletionPipeline::pending(
             id,
             window_entry,
-            IrCompletionWindow::new(counted_span(lower, upper), 0, 2),
+            IrCompletionWindow::new(counted_span(lower, upper), 0, ceiling),
         );
         pipeline.plan_bounded_batch(
-            vec![issue, issue_again_edge, start_drain_edge],
-            2,
-            vec![(issue, issue_count), (drain, drain_slot)],
+            carrying,
+            slots,
+            slot_index,
             window_value,
             issue,
             drain,
             result,
+            pending_exit_edges,
         );
+        if lane {
+            pipeline.plan_lane_handout(
+                staged_carries
+                    .iter()
+                    .map(|(_, origin, reload)| (*origin, *reload))
+                    .collect(),
+            );
+        }
         self.completion_pipeline = Some(pipeline);
         self.staged_cut = Some(cut);
 
@@ -797,42 +1184,143 @@ impl IrBuilder<'_> {
     }
 }
 
-struct DirectStagedMatch<'body> {
-    prologue: Vec<&'body CheckedStatement>,
+/// One gate in the prologue: a `match` on a `never-suspends` operation whose
+/// one continuing arm holds the staged submission and whose every other arm
+/// leaves the loop before any submission, which is an exit written in the
+/// prologue and admitted by [PAR-3]'s second condition. `reserve_handle` is the
+/// instance the backed permit introduces [SYS-10]: its `Err` arm exits, its
+/// `Ok` arm carries the permit into the open.
+struct PrologueGate<'body> {
     scrutinee: &'body CheckedExpression,
     enum_type: crate::semantic::CheckedEnumType,
     arms: &'body [CheckedMatchArm],
+    continuing: usize,
+}
+
+enum PrologueItem<'body> {
+    Statement(&'body CheckedStatement),
+    Gate(PrologueGate<'body>),
+}
+
+/// The blocks one gate dispatches into, allocated before the drain so that
+/// the block holding the submission precedes the drain in emission order,
+/// which is the order the emitter retires a driven result in. Each exiting
+/// arm is numbered from one; zero means no exit is pending.
+struct GatePlan {
+    arm_blocks: Vec<IrBlockId>,
+    exits: Vec<(usize, u64)>,
+}
+
+/// What an exiting arm needs from the issue stage it leaves.
+struct GateContext<'a> {
+    issue_index: IrValueId,
+    issue_upper: IrValueId,
+    issue_count: IrValueId,
+    zero: IrValueId,
+    drain: IrBlockId,
+    carried_bindings: &'a [BindingId],
+    exit_targets: &'a [(u64, IrBlockId)],
+}
+
+/// What the drain does with the staged call's result, which is the one thing
+/// the two admitted written forms differ in.
+///
+/// Both are the same schedule: a prologue that ends at the staged call, and a
+/// remainder the drain runs once per retired slot in iteration order. Which
+/// one a loop is written in decides nothing about permission — [PAR-3] already
+/// cut the body at the same call either way — and nothing about the driver.
+enum StagedTail<'body> {
+    /// The staged call is the scrutinee of a continuing `match`: the drain
+    /// dispatches its arms on the retired result, as a submitted system
+    /// operation's outcome is dispatched today.
+    Dispatch {
+        scrutinee: &'body CheckedExpression,
+        enum_type: crate::semantic::CheckedEnumType,
+        arms: &'body [CheckedMatchArm],
+    },
+    /// The staged call is bound by a `let`: the drain binds the retired result
+    /// and runs the statements written after it. This is the shape a server
+    /// loop takes when the may-suspend work is one call — `let reported =
+    /// serve_one(...)` — and the remainder is what the iteration does with the
+    /// answer.
+    ///
+    /// `call` is kept because the cut's kind, not this tail's shape, is what
+    /// decides between the lane hand-out and the submitted operation.
+    Bound {
+        binding: BindingId,
+        call: &'body CheckedExpression,
+        remainder: &'body [CheckedStatement],
+    },
+}
+
+struct DirectStagedMatch<'body> {
+    prologue: Vec<PrologueItem<'body>>,
+    tail: StagedTail<'body>,
 }
 
 /// Recognizes the target-independent topology the bounded-batch driver owns:
-/// one straight-line prologue followed by the selected, continuing result
-/// dispatch. This is an optimization eligibility check only; returning `None`
-/// keeps the ordinary accepted program and its one-slot completion schedule.
+/// a prologue of straight-line statements and exiting gates, followed by the
+/// selected staged call and its remainder. This is an optimization eligibility
+/// check only; returning `None` keeps the ordinary accepted program and its
+/// one-slot completion schedule.
 fn direct_staged_match<'body>(
     body: &'body [CheckedStatement],
     cut: &NodePath,
+    loop_id: CheckedLoopId,
 ) -> Option<DirectStagedMatch<'body>> {
     let mut prologue = Vec::new();
-    let (scrutinee, enum_type, arms) = direct_staged_tail(body, cut, &mut prologue)?;
-    Some(DirectStagedMatch {
-        prologue,
-        scrutinee,
-        enum_type,
-        arms,
-    })
+    let tail = direct_staged_tail(body, cut, loop_id, &mut prologue)?;
+    Some(DirectStagedMatch { prologue, tail })
+}
+
+/// The staged call bound by this statement, when this statement is the `let`
+/// of the cut.
+///
+/// The occurrence is the checker's own: the cut names one call site, and this
+/// only asks whether that site is this statement's right-hand side. No name,
+/// signature, or shape is read.
+fn staged_let_binding<'body>(
+    statement: &'body CheckedStatement,
+    cut: &NodePath,
+) -> Option<(BindingId, &'body CheckedExpression)> {
+    let CheckedStatement::Let { binding, value, .. } = statement else {
+        return None;
+    };
+    match value {
+        CheckedExpression::UserCall { call, .. } if call == cut => Some((*binding, value)),
+        CheckedExpression::SystemCall {
+            call,
+            target_action,
+            ..
+        } if call == cut && target_action.may_suspend() => Some((*binding, value)),
+        _ => None,
+    }
 }
 
 fn direct_staged_tail<'body>(
     body: &'body [CheckedStatement],
     cut: &NodePath,
-    prologue: &mut Vec<&'body CheckedStatement>,
-) -> Option<(
-    &'body CheckedExpression,
-    crate::semantic::CheckedEnumType,
-    &'body [CheckedMatchArm],
-)> {
+    loop_id: CheckedLoopId,
+    prologue: &mut Vec<PrologueItem<'body>>,
+) -> Option<StagedTail<'body>> {
+    // The bound form first, because the cut is then in the middle of this
+    // block rather than at its end: everything before it is prologue and
+    // everything after it is the remainder. The cut names one occurrence, so
+    // at most one statement of one block can answer here.
+    if let Some((index, (binding, call))) = body
+        .iter()
+        .enumerate()
+        .find_map(|(index, statement)| Some((index, staged_let_binding(statement, cut)?)))
+    {
+        prologue.extend(body[..index].iter().map(PrologueItem::Statement));
+        return Some(StagedTail::Bound {
+            binding,
+            call,
+            remainder: &body[index + 1..],
+        });
+    }
     let (last, prefix) = body.split_last()?;
-    prologue.extend(prefix);
+    prologue.extend(prefix.iter().map(PrologueItem::Statement));
     if let CheckedStatement::Region {
         arena_list: None,
         body,
@@ -840,7 +1328,7 @@ fn direct_staged_tail<'body>(
     } = last
         && fallthrough_drops.is_empty()
     {
-        return direct_staged_tail(body, cut, prologue);
+        return direct_staged_tail(body, cut, loop_id, prologue);
     }
     let CheckedStatement::Match {
         scrutinee,
@@ -859,10 +1347,246 @@ fn direct_staged_tail<'body>(
     else {
         return None;
     };
-    if call != cut || !target_action.may_suspend() {
+    if call == cut && target_action.may_suspend() {
+        return Some(StagedTail::Dispatch {
+            scrutinee,
+            enum_type: *enum_type,
+            arms,
+        });
+    }
+    if target_action.may_suspend() {
         return None;
     }
-    Some((scrutinee, *enum_type, arms))
+    // A gate: exactly one arm continues into the cut, and every other arm's
+    // last statement leaves the loop, so no submission of this iteration has
+    // happened when the exit is taken.
+    let mut continuing = None;
+    for (index, arm) in arms.iter().enumerate() {
+        let mut inner = Vec::new();
+        if let Some(tail) = direct_staged_tail(&arm.body, cut, loop_id, &mut inner) {
+            if continuing.is_some() || !arm.fallthrough_drops.is_empty() {
+                return None;
+            }
+            continuing = Some((index, inner, tail));
+            continue;
+        }
+        if !exit_arm_leaves_on_carried_bindings(arm, loop_id) {
+            return None;
+        }
+    }
+    let (continuing, inner, tail) = continuing?;
+    prologue.push(PrologueItem::Gate(PrologueGate {
+        scrutinee,
+        enum_type: *enum_type,
+        arms,
+        continuing,
+    }));
+    prologue.extend(inner);
+    Some(tail)
+}
+
+impl IrBuilder<'_> {
+    /// Lowers one prologue gate inside the issue stage: the `never-suspends`
+    /// scrutinee, the dispatch into the pre-allocated arm blocks, the
+    /// continuing arm's binders into the block the issue stage continues on,
+    /// and for each exiting arm the choice between leaving at once (nothing of
+    /// this batch is in flight) and draining the batch first with `leaving`
+    /// naming the arm.
+    fn lower_prologue_gate_staged(
+        &mut self,
+        gate: &PrologueGate<'_>,
+        plan: &GatePlan,
+        context: &GateContext<'_>,
+    ) -> Result<Vec<IrBlockId>, LoweringFailure> {
+        let mut pending_exit_edges = Vec::new();
+        let before = self.current;
+        let scrutinee = self.expression(gate.scrutinee)?;
+        if self.current != before {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        let CheckedEnumType::Nominal(nominal) = gate.enum_type else {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        };
+        let base_bindings = self.bindings.clone();
+        self.terminate(IrTerminator::Match {
+            scrutinee,
+            enum_type: crate::lowering::lower_enum_type(self.erasure, gate.enum_type),
+            targets: gate
+                .arms
+                .iter()
+                .zip(&plan.arm_blocks)
+                .map(|(arm, block)| IrMatchTarget {
+                    tag: arm.tag,
+                    block: *block,
+                })
+                .collect(),
+        })?;
+        let mut continuing = None;
+        for (index, (arm, block)) in gate.arms.iter().zip(&plan.arm_blocks).enumerate() {
+            self.current = Some(*block);
+            self.bindings = base_bindings.clone();
+            for binder in &arm.binders {
+                let value = self.define(
+                    lower_type(self.erasure, binder.ty)?,
+                    IrOperation::ProjectVariant {
+                        aggregate: scrutinee,
+                        nominal: self.erased(nominal),
+                        variant: arm.tag,
+                        field: binder.field,
+                    },
+                )?;
+                if self.bindings.insert(binder.binding, value).is_some() {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                if binder.mode == CheckedMode::Own {
+                    self.promote_binding_if_needed(binder.binding)?;
+                }
+            }
+            if index == gate.continuing {
+                continuing = Some((*block, self.bindings.clone()));
+                continue;
+            }
+            // The exit's releases of everything the issue stage owns — this
+            // arm's own binders and the iteration's own storage alike — run
+            // here, where the values are. The exit itself waits for the batch,
+            // and the caller admitted only releases that emit nothing, so
+            // running them before the drain moves nothing observable. What
+            // stays for the exit block is exactly the releases of the carried
+            // bindings, which live on past the loop.
+            let binder_drops = match arm.body.last() {
+                Some(CheckedStatement::Return { drops, .. })
+                | Some(CheckedStatement::Break { drops, .. }) => drops
+                    .iter()
+                    .filter(|drop| !context.carried_bindings.contains(&drop.binding))
+                    .cloned()
+                    .collect::<Vec<_>>(),
+                _ => return Err(LoweringFailure::InvalidCheckedProgram),
+            };
+            let bindings_with_binders = self.bindings.clone();
+            let leaving = plan
+                .exits
+                .iter()
+                .find(|(arm_index, _)| *arm_index == index)
+                .map(|(_, leaving)| *leaving)
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            let target = context
+                .exit_targets
+                .iter()
+                .find(|(candidate, _)| *candidate == leaving)
+                .map(|(_, block)| *block)
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            let one = self.define(
+                U64,
+                IrOperation::Constant(IrConstant::Integer { ty: U64, bits: 1 }),
+            )?;
+            let nothing_pending = self.define(
+                IrType::Bool,
+                IrOperation::Integer {
+                    operation: IrIntegerOperation::Less,
+                    operand_type: U64,
+                    arguments: vec![context.issue_count, one],
+                },
+            )?;
+            let (leave_now, _) = self.new_block(&[])?;
+            let (drain_first, _) = self.new_block(&[])?;
+            pending_exit_edges.push(drain_first);
+            self.terminate(IrTerminator::Match {
+                scrutinee: nothing_pending,
+                enum_type: IrEnumType::Bool,
+                targets: vec![
+                    IrMatchTarget {
+                        tag: 1,
+                        block: leave_now,
+                    },
+                    IrMatchTarget {
+                        tag: 0,
+                        block: drain_first,
+                    },
+                ],
+            })?;
+            self.current = Some(leave_now);
+            self.bindings = bindings_with_binders.clone();
+            let arguments = self.binding_values(context.carried_bindings)?;
+            let drops = self.lower_drops(&binder_drops)?;
+            self.terminate(IrTerminator::Jump {
+                target,
+                arguments,
+                drops,
+            })?;
+            self.current = Some(drain_first);
+            self.bindings = bindings_with_binders;
+            let drops = self.lower_drops(&binder_drops)?;
+            let leaving_value = self.define(
+                U64,
+                IrOperation::Constant(IrConstant::Integer {
+                    ty: U64,
+                    bits: leaving,
+                }),
+            )?;
+            let mut arguments = self.binding_values(context.carried_bindings)?;
+            arguments.extend([
+                context.issue_index,
+                context.issue_upper,
+                context.issue_count,
+                context.zero,
+                leaving_value,
+            ]);
+            self.terminate(IrTerminator::Jump {
+                target: context.drain,
+                arguments,
+                drops,
+            })?;
+        }
+        let (block, bindings) = continuing.ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        self.current = Some(block);
+        self.bindings = bindings;
+        Ok(pending_exit_edges)
+    }
+}
+
+/// The binders one gate arm introduces.
+fn arm_binders(arm: &CheckedMatchArm) -> HashSet<BindingId> {
+    arm.binders.iter().map(|binder| binder.binding).collect()
+}
+
+/// A release that performs no system action: nothing observable moves when it
+/// runs early, so an exiting arm's release of its own binders can run in the
+/// issue stage while the arm's exit itself waits for the batch to drain.
+fn release_emits_nothing(release: &SystemRelease) -> bool {
+    !matches!(
+        release.action,
+        Some(SystemReleaseAction::NativeCloseAttempt)
+    )
+}
+
+/// Whether an exiting gate arm can be lowered as the driver requires: its
+/// last statement leaves the loop, everything before it and the exit's own
+/// value read only carried bindings, and the arm's binders appear only in
+/// that last statement's releases, each of which emits nothing.
+fn exit_arm_leaves_on_carried_bindings(arm: &CheckedMatchArm, loop_id: CheckedLoopId) -> bool {
+    let binders = arm_binders(arm);
+    let Some((last, prefix)) = arm.body.split_last() else {
+        return false;
+    };
+    if prefix
+        .iter()
+        .any(|statement| statement_uses_any(statement, &binders))
+    {
+        return false;
+    }
+    let (drops, value_uses_binders, leaves) = match last {
+        CheckedStatement::Return { value, drops, .. } => {
+            (drops, expression_uses_any(value, &binders), true)
+        }
+        CheckedStatement::Break { target, drops } => (drops, false, *target == loop_id),
+        _ => return false,
+    };
+    leaves
+        && !value_uses_binders
+        && drops
+            .iter()
+            .filter(|drop| binders.contains(&drop.binding))
+            .all(|drop| release_emits_nothing(&drop.release))
 }
 
 fn expression_uses_any(expression: &CheckedExpression, bindings: &HashSet<BindingId>) -> bool {

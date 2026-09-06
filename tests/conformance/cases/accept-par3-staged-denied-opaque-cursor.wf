@@ -1,42 +1,48 @@
-command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   doc "The enumeration source is a cursor with one position, opened above the loop and advanced by every iteration through a retained exclusive borrow. It is not read-only, it is not prologue-only, and an opaque system nominal has no copy element type to replicate, so PAR-3 denies it permanently rather than for a stage-one reason. This is the ownership model working, not a gap.";
   let total = 0_u64;
   region {
-    let permit = reserve_file(factory: &uniq files);
-    match open_directory_source(permit: move permit, directory: &cwd) {
-      Ok(value: list) => {
-        for @scan (index in 0_u64..4_u64) {
-          region 'w {
-            let workspace = arena_frame::<1024, 1, 'w>();
-            region {
-              let entries = arena_vector_proved::<u8>(store: &uniq workspace, count: 1024_u64);
-              for @prime (
-                at in 0_u64..1024_u64,
-                invariant grown: len_of(entries) >= at,
-                invariant spare: room_of(entries) + at >= 1024_u64,
-                invariant flat: head_of(entries) <= 0_u64
-              ) {
-                set entries = place_back(vector: move entries, value: 0_u8);
-              }
-              region {
-                let destination = mut_slice_of(&uniq entries);
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: permit) => {
+        match open_directory_source(permit: move permit, directory: &cwd) {
+          SourceOpened(value: list) => {
+            for @scan (index in 0_u64..4_u64) {
+              region 'w {
+                let workspace = arena_frame::<1024, 1, 'w>();
                 region {
-                  match directory_next(source: &uniq list, destination: &uniq destination, start: 0_u64, end: 1024_u64) {
-                    ListBytes(next: bytes, entries: reported) => {
-                      set total = total +wrap reported;
-                    }
-                    ListEnd() => {
-                    }
-                    ListFailed(error: problem) => {
+                  let entries = arena_vector_proved::<u8>(store: &uniq workspace, count: 1024_u64);
+                  for @prime (
+                    at in 0_u64..1024_u64,
+                    invariant grown: len_of(entries) >= at,
+                    invariant spare: room_of(entries) + at >= 1024_u64,
+                    invariant flat: head_of(entries) <= 0_u64
+                  ) {
+                    set entries = place_back(vector: move entries, value: 0_u8);
+                  }
+                  region {
+                    let destination = mut_slice_of(&uniq entries);
+                    region {
+                      match directory_next(source: &uniq list, destination: &uniq destination, start: 0_u64, end: 1024_u64) {
+                        ListBytes(next: bytes, entries: reported) => {
+                          set total = total +wrap reported;
+                        }
+                        ListEnd() => {
+                        }
+                        ListFailed(error: problem) => {
+                        }
+                      }
                     }
                   }
                 }
               }
             }
           }
+          SourceOpenFailed(error: problem, permit: refused) => {
+          }
         }
       }
-      Err(error: problem) => {
+      Err(error: spent) => {
+        return exit_status(code: 1_u8);
       }
     }
   }

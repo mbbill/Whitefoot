@@ -45,11 +45,16 @@ So the sweep is demanded exactly where testing cannot substitute for it.
       no conflict. This is a bounded set, so "did you read every row" has an
       answer — give it. A conflict found means either this change is wrong or
       that rule needs re-deriving; settle which one here, not later.
-- [ ] Rows whose status is `existence-only` are listed by ID rather than
-      counted as checked. Such a row states no premise, so nothing can conflict
-      with it and the sweep learns nothing there. Recording that as "no
-      conflict" would turn this check into ceremony, which is the failure mode
-      it exists to avoid.
+- [ ] Rows whose status is `existence-only` are swept too, and the ones this
+      change bears on are named by ID. Such a row is not empty. The *need* for
+      the rule is derived there; only its *form* is minimality-selected, and
+      the row states the evidence that would settle the form — "remains
+      existence-only until wider source compares proof length, diagnostic
+      quality, and missing expressivity" is a representative one. So two
+      questions are asked at such a row, not one: does this change contradict
+      it, and does this change's evidence meet the promotion condition it
+      names? Skipping the second is how a measurement gets paid for and then
+      thrown away.
 
 ### B. Everything else — derivation is required, completeness is not
 

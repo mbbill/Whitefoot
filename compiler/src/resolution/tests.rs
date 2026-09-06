@@ -613,11 +613,11 @@ fn every_unit_receives_the_system_domain_before_entry_validation() {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("entry-invalid syntax must still resolve system names: {outcome:?}");
         };
-        assert_eq!(resolved.system_declarations().len(), 203);
+        assert_eq!(resolved.system_declarations().len(), 307);
         for (role, spelling, ordinal) in [
             (LexicalUseRole::Type, "Args", 0),
             (LexicalUseRole::Type, "ExitStatus", 6),
-            (LexicalUseRole::IdentifierCallee, "exit_status", 171),
+            (LexicalUseRole::IdentifierCallee, "exit_status", 216),
         ] {
             let usage = resolved
                 .lexical_uses()
@@ -675,7 +675,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("an admitted requires block must reach system inventory: {outcome:?}");
         };
-        assert_eq!(resolved.system_declarations().len(), 203);
+        assert_eq!(resolved.system_declarations().len(), 307);
     });
 }
 
@@ -692,7 +692,7 @@ fn a_kind_declaring_unit_resolves_the_complete_system_lookup_inventory() {
   return exit_status(code: 0_u8);
 }
 
-fn types(a: own Args, b: own HostString, c: own RelativePath, d: own DirectoryRead, e: own ReadFile, f: own Output, g: own ExitStatus, h: own ArgError, i: own Utf8Error, j: own CopyError, k: own Utf8CopyError, l: own PathError, m: own ReadOutcome, n: own IoError, o: own DirectorySource, p: own ListOutcome, q: own FileFactory, r: own FilePermit) -> result: own unit pure {
+fn types(a: own Args, b: own HostString, c: own RelativePath, d: own DirectoryRead, e: own ReadFile, f: own OutputStream, g: own ExitStatus, h: own ArgError, i: own Utf8Error, j: own CopyError, k: own Utf8CopyError, l: own PathError, m: own ReadOutcome, n: own IoError, o: own DirectorySource, p: own ListOutcome, q: own HandleFactory, r: own HandlePermit) -> result: own unit pure {
   return unit;
 }
 
@@ -711,7 +711,7 @@ fn calls(x: own u64) -> result: own unit pure {
   open_directory_source(permit: x, directory: x);
   directory_next(source: x, destination: x, start: x, end: x);
   open_file(permit: x, root: x, name: x, start: x, end: x);
-  reserve_file(factory: x);
+  reserve_handle(factory: x);
   return unit;
 }
 
@@ -752,7 +752,7 @@ fn list_outcomes(m: own ListOutcome) -> result: own unit pure {
             ResolvedTarget::System(id) => Some(id.ordinal()),
             _ => None,
         };
-        let expect = |role: LexicalUseRole, spelling: &str, ordinal: u8| {
+        let expect = |role: LexicalUseRole, spelling: &str, ordinal: u16| {
             let usage = resolved
                 .lexical_uses()
                 .iter()
@@ -770,7 +770,7 @@ fn list_outcomes(m: own ListOutcome) -> result: own unit pure {
             ("RelativePath", 2),
             ("DirectoryRead", 3),
             ("ReadFile", 4),
-            ("Output", 5),
+            ("OutputStream", 5),
             ("ExitStatus", 6),
             ("ArgError", 7),
             ("Utf8Error", 8),
@@ -781,38 +781,38 @@ fn list_outcomes(m: own ListOutcome) -> result: own unit pure {
             ("IoError", 13),
             ("DirectorySource", 14),
             ("ListOutcome", 15),
-            ("FileFactory", 16),
-            ("FilePermit", 17),
+            ("HandleFactory", 16),
+            ("HandlePermit", 17),
         ] {
             expect(LexicalUseRole::Type, spelling, ordinal);
         }
         for (spelling, ordinal) in [
-            ("args_count", 121),
-            ("arg_get", 124),
-            ("host_bytes_len", 128),
-            ("host_copy_bytes", 131),
-            ("host_utf8_len", 138),
-            ("host_copy_utf8", 141),
-            ("relative_path", 148),
-            ("open_read", 150),
-            ("read_at", 156),
-            ("write_once", 164),
-            ("exit_status", 171),
-            ("open_directory", 173),
-            ("open_directory_source", 181),
-            ("directory_next", 185),
-            ("open_file", 192),
-            ("reserve_file", 200),
+            ("args_count", 166),
+            ("arg_get", 169),
+            ("host_bytes_len", 173),
+            ("host_copy_bytes", 176),
+            ("host_utf8_len", 183),
+            ("host_copy_utf8", 186),
+            ("relative_path", 193),
+            ("open_read", 195),
+            ("read_at", 201),
+            ("write_once", 209),
+            ("exit_status", 216),
+            ("open_directory", 218),
+            ("open_directory_source", 226),
+            ("directory_next", 230),
+            ("open_file", 237),
+            ("reserve_handle", 245),
         ] {
             expect(LexicalUseRole::IdentifierCallee, spelling, ordinal);
         }
-        expect(LexicalUseRole::Construct, "NotFound", 31);
-        expect(LexicalUseRole::ArmVariant, "ReadBytes", 26);
-        expect(LexicalUseRole::ArmVariant, "ReadEnd", 28);
-        expect(LexicalUseRole::ArmVariant, "ReadFailed", 29);
-        expect(LexicalUseRole::ArmVariant, "ListBytes", 115);
-        expect(LexicalUseRole::ArmVariant, "ListEnd", 118);
-        expect(LexicalUseRole::ArmVariant, "ListFailed", 119);
+        expect(LexicalUseRole::Construct, "NotFound", 45);
+        expect(LexicalUseRole::ArmVariant, "ReadBytes", 40);
+        expect(LexicalUseRole::ArmVariant, "ReadEnd", 42);
+        expect(LexicalUseRole::ArmVariant, "ReadFailed", 43);
+        expect(LexicalUseRole::ArmVariant, "ListBytes", 129);
+        expect(LexicalUseRole::ArmVariant, "ListEnd", 132);
+        expect(LexicalUseRole::ArmVariant, "ListFailed", 133);
     });
 }
 
@@ -840,7 +840,7 @@ fn system_names_are_reserved_even_without_a_valid_entry() {
         assert_eq!(conflicts[0].domain(), DeclarationDomain::LexicalIdentifier);
         assert!(matches!(
             conflicts[0].origin(),
-            DeclarationOrigin::System(id) if id.ordinal() == 121
+            DeclarationOrigin::System(id) if id.ordinal() == 166
         ));
     });
 }
@@ -876,7 +876,7 @@ fn system_collisions_reject_deterministically_in_both_directions() {
             assert_eq!(conflicts[0].class(), DeclarationClass::Function);
             assert!(matches!(
                 conflicts[0].origin(),
-                DeclarationOrigin::System(id) if id.ordinal() == 121
+                DeclarationOrigin::System(id) if id.ordinal() == 166
             ));
         });
     }
@@ -933,7 +933,7 @@ fn system_collisions_cover_every_contributed_domain_and_nested_scopes() {
         assert_eq!(conflicts[0].domain(), DeclarationDomain::Constructor);
         assert!(matches!(
             conflicts[0].origin(),
-            DeclarationOrigin::System(id) if id.ordinal() == 28
+            DeclarationOrigin::System(id) if id.ordinal() == 42
         ));
     });
 
@@ -959,7 +959,7 @@ fn system_collisions_cover_every_contributed_domain_and_nested_scopes() {
         assert_eq!(conflicts[0].domain(), DeclarationDomain::LexicalIdentifier);
         assert!(matches!(
             conflicts[0].origin(),
-            DeclarationOrigin::System(id) if id.ordinal() == 128
+            DeclarationOrigin::System(id) if id.ordinal() == 173
         ));
     });
 }
@@ -1024,7 +1024,7 @@ conform u64: Task {
 fn system_resolution_is_deterministic_across_repeated_runs_and_paths() {
     let source =
         b"command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
-    let targets = |path: &str| -> Vec<(String, u8)> {
+    let targets = |path: &str| -> Vec<(String, u16)> {
         with_resolution(&[SourceInput::new(path, source)], |outcome| {
             let ResolutionOutcome::Complete(resolved) = outcome else {
                 panic!("the deterministic fixture must resolve: {outcome:?}");
@@ -1044,7 +1044,7 @@ fn system_resolution_is_deterministic_across_repeated_runs_and_paths() {
         first,
         vec![
             ("ExitStatus".to_owned(), 6),
-            ("exit_status".to_owned(), 171)
+            ("exit_status".to_owned(), 216)
         ]
     );
     assert_eq!(first, targets("first.wf"));
@@ -2174,7 +2174,7 @@ fn probe() -> result: own unit pure {
 
 #[test]
 fn effect_paths_resolve_the_exact_formal_parameter_and_retain_fields() {
-    let source = b"struct Holder {\n  output: Output;\n}\n\nfn publish(holder: own Holder) -> result: own unit writes(holder.output) {\n  return unit;\n}\n";
+    let source = b"struct Holder {\n  output: OutputStream;\n}\n\nfn publish(holder: own Holder) -> result: own unit writes(holder.output) {\n  return unit;\n}\n";
     with_one_resolution(source, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("a parameter-rooted state path must resolve: {outcome:?}");
@@ -2676,7 +2676,7 @@ fn system_index_helpers_agree_with_the_preorder_entity_map() {
         let mut nominals = 0_usize;
         let mut constructors = 0_usize;
         let mut operations = 0_usize;
-        for ordinal in 0..=u8::MAX {
+        for ordinal in 0..=u16::from(u8::MAX) * 2 {
             let id = SystemDeclarationId::new(ordinal);
             match system_entity(id, surface) {
                 Some(SystemEntity::Nominal(nominal)) => {
@@ -2727,7 +2727,12 @@ fn system_index_helpers_agree_with_the_preorder_entity_map() {
         let row = system_release_row(index);
         let expected = matches!(
             nominal.spelling,
-            "DirectoryRead" | "ReadFile" | "DirectorySource"
+            "DirectoryRead"
+                | "ReadFile"
+                | "DirectorySource"
+                | "TcpListener"
+                | "TcpReceive"
+                | "TcpSend"
         );
         assert_eq!(
             row.target_action.may_suspend(),
@@ -2781,8 +2786,8 @@ fn the_system_resource_contracts_equal_the_release_and_backing_tables() {
             SystemResourceBacking::Opaque,
         ),
         (
-            "Output",
-            SystemResourceType::Output,
+            "OutputStream",
+            SystemResourceType::OutputStream,
             SystemReleaseAction::SourceDetach,
             SystemResourceBacking::Opaque,
         ),
@@ -2802,15 +2807,49 @@ fn the_system_resource_contracts_equal_the_release_and_backing_tables() {
             SystemResourceBacking::Opaque,
         ),
         (
-            "FileFactory",
-            SystemResourceType::FileFactory,
+            "HandleFactory",
+            SystemResourceType::HandleFactory,
             SystemReleaseAction::LogicalConsume,
             SystemResourceBacking::Opaque,
         ),
         (
-            "FilePermit",
-            SystemResourceType::FilePermit,
+            "HandlePermit",
+            SystemResourceType::HandlePermit,
             SystemReleaseAction::LogicalConsume,
+            SystemResourceBacking::Opaque,
+        ),
+        // The v0.50 rows [SYS-15, SYS-16, SYS-17, SYS-18]. The stream detaches
+        // like `OutputStream`, the address is a value with nothing to release,
+        // the listener closes like `ReadFile`, and each connection direction
+        // half-closes its own direction.
+        (
+            "InputStream",
+            SystemResourceType::InputStream,
+            SystemReleaseAction::SourceDetach,
+            SystemResourceBacking::Opaque,
+        ),
+        (
+            "SocketAddress",
+            SystemResourceType::SocketAddress,
+            SystemReleaseAction::LogicalConsume,
+            SystemResourceBacking::Opaque,
+        ),
+        (
+            "TcpListener",
+            SystemResourceType::TcpListener,
+            SystemReleaseAction::NativeCloseAttempt,
+            SystemResourceBacking::Opaque,
+        ),
+        (
+            "TcpReceive",
+            SystemResourceType::TcpReceive,
+            SystemReleaseAction::NativeDirectionCloseAttempt,
+            SystemResourceBacking::Opaque,
+        ),
+        (
+            "TcpSend",
+            SystemResourceType::TcpSend,
+            SystemReleaseAction::NativeDirectionCloseAttempt,
             SystemResourceBacking::Opaque,
         ),
     ];
@@ -2827,11 +2866,14 @@ fn the_system_resource_contracts_equal_the_release_and_backing_tables() {
                 "{} takes no SYS-5 release row",
                 nominal.spelling
             );
-            assert!(!nominal.opaque);
+            // The one system struct takes no row either, and it is not an
+            // enum: releasing a `TcpConnection` is releasing its two fields
+            // [SYS-5, SYS-18].
+            assert!(!nominal.is_opaque());
             continue;
         };
         covered += 1;
-        assert!(nominal.opaque);
+        assert!(nominal.is_opaque());
         let contract = contract.unwrap_or_else(|| panic!("{} has a contract", nominal.spelling));
         assert_eq!(
             contract.resource, row.1,
@@ -2844,7 +2886,11 @@ fn the_system_resource_contracts_equal_the_release_and_backing_tables() {
         assert_eq!(contract.row, system_release_row(index));
         assert_eq!(
             contract.row.target_action.may_suspend(),
-            row.2 == SystemReleaseAction::NativeCloseAttempt
+            matches!(
+                row.2,
+                SystemReleaseAction::NativeCloseAttempt
+                    | SystemReleaseAction::NativeDirectionCloseAttempt
+            )
         );
     }
     assert_eq!(covered, expected.len());

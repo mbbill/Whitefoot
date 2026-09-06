@@ -16,8 +16,14 @@ fn open_regular_from['f, 'n](factory: &uniq 'f FileFactory, root: &'f DirectoryR
   requires ile(2_u64, capacity);
 } {
   doc "Reserves one file slot and opens one single-component name under the root, the helper form the reborrow rule pushes a writer towards.";
-  let permit = reserve_file<'f>(factory: move factory);
-  return open_file<'f, 'n>(permit: move permit, root: root, name: name, start: 0_u64, end: 2_u64);
+  match reserve_file<'f>(factory: move factory) {
+    Ok(value: permit) => {
+      return open_file<'f, 'n>(permit: move permit, root: root, name: name, start: 0_u64, end: 2_u64);
+    }
+    Err(error: spent) => {
+      return Err<ReadFile, IoError>(error: move spent);
+    }
+  }
 }
 
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
