@@ -365,13 +365,15 @@ fn lower_function<'program>(
     builder.materialize_staged_driver_plan()?;
     let overlaps = builder.overlaps();
     let completion_steps = builder.completion_steps();
-    builder.finish(
+    let mut lowered = builder.finish(
         function.symbol.clone(),
         overlaps,
         completion_steps,
         None,
         function.target_action,
-    )
+    )?;
+    lowered.declared_pure = function.declared_pure;
+    Ok(lowered)
 }
 
 fn lower_parameter_type(
@@ -587,6 +589,8 @@ impl<'program> IrBuilder<'program> {
             completion_steps,
             synthesis,
             target_action,
+            declared_pure: false,
+            compute_weight: 0,
         })
     }
 

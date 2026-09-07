@@ -146,6 +146,162 @@ fn return_drops(function: &IrFunction) -> &[IrDrop] {
 }
 
 #[test]
+fn continuation_compute_probe_never_repeats_cleanup() {
+    let source = format!(
+        "fn release(value: own buffer<u8>) -> result: own unit pure {{\n  return unit;\n}}\n\n{COMMAND_ENTRY}"
+    );
+    with_ir(source.as_bytes(), |program| {
+        let original = function(program, "release");
+        let [drop] = return_drops(original) else {
+            panic!("fixture must own one buffer release");
+        };
+        // Exercise all three IR homes for a release. Moving the same release
+        // across the edge does not authorize a scheduling probe to execute it.
+        for location in 0..3 {
+            let mut input = original.clone();
+            let IrTerminator::Return { value, .. } = input.blocks[0].terminator else {
+                panic!("straight-line release fixture");
+            };
+            if location == 1 {
+                input.blocks[0]
+                    .instructions
+                    .insert(0, IrInstruction::Drop(*drop));
+                input.blocks[0].terminator = IrTerminator::Return {
+                    value,
+                    drops: vec![],
+                };
+            } else if location == 2 {
+                input.blocks.push(IrBlock {
+                    parameters: vec![],
+                    instructions: vec![],
+                    terminator: IrTerminator::Return {
+                        value,
+                        drops: vec![],
+                    },
+                });
+                input.blocks[0].terminator = IrTerminator::Jump {
+                    target: super::IrBlockId(1),
+                    arguments: vec![],
+                    drops: vec![*drop],
+                };
+            }
+            let probe = super::compute_entry::probe(&input, 0).expect("acyclic prefix");
+            for block in &probe.blocks {
+                assert!(
+                    !block
+                        .instructions
+                        .iter()
+                        .any(|instruction| matches!(instruction, IrInstruction::Drop(_)))
+                );
+                if let IrTerminator::Return { value, drops } = &block.terminator {
+                    assert!(drops.is_empty());
+                    assert!(block.instructions.iter().any(|instruction| matches!(instruction,
+                        IrInstruction::Define { result, operation: IrOperation::Constant(super::IrConstant::Bool(false)), .. } if result == value
+                    )), "a cleanup path must decline cheap execution");
+                }
+            }
+        }
+    });
+}
+
+#[test]
+fn continuation_compute_probe_keeps_partial_operation_guards_and_cuts_nested_backedges() {
+    let source = format!(
+        r#"fn guarded(n: own u64, divisor: own u64) -> result: own u64 pure {{
+  if divisor == 0_u64 {{
+    return 7_u64;
+  }}
+  let quotient = n / divisor;
+  let answer = 0_u64;
+  if quotient == 0_u64 {{
+    set answer = 11_u64;
+  }} else {{
+    set answer = 13_u64;
+  }}
+  let outer = 0_u64;
+  loop @outer {{
+    if outer == quotient {{
+      break @outer;
+    }}
+    let inner = 0_u64;
+    loop @inner {{
+      if inner == quotient {{
+        break @inner;
+      }}
+      set answer = answer +wrap inner;
+      set inner = inner +wrap 1_u64;
+    }}
+    set outer = outer +wrap 1_u64;
+  }}
+  return answer;
+}}
+
+{COMMAND_ENTRY}"#
+    );
+    with_ir(source.as_bytes(), |program| {
+        let input = function(program, "guarded");
+        let probe = super::compute_entry::probe(input, 0).expect("nested natural loops");
+        let division = input
+            .blocks
+            .iter()
+            .enumerate()
+            .find_map(|(block, body)| {
+                body.instructions
+                    .iter()
+                    .enumerate()
+                    .find_map(|(index, instruction)| {
+                        matches!(
+                            instruction,
+                            IrInstruction::Define {
+                                operation: IrOperation::Integer {
+                                    operation: IrIntegerOperation::DivideDefined
+                                        | IrIntegerOperation::DivideExact,
+                                    ..
+                                },
+                                ..
+                            }
+                        )
+                        .then_some((block, index))
+                    })
+            })
+            .expect("fixture must contain a partial division");
+        assert_ne!(division.0, 0, "division must be below its source guard");
+        assert_eq!(
+            probe.blocks[0], input.blocks[0],
+            "the guard must stay before the division"
+        );
+        assert_eq!(
+            probe.blocks[division.0].instructions[division.1],
+            input.blocks[division.0].instructions[division.1]
+        );
+        let backedges = super::control_flow::backedge_sources(&input.blocks);
+        assert_eq!(backedges.len(), 2, "fixture must exercise nested loops");
+        assert!(
+            super::control_flow::backedge_sources(&probe.blocks)
+                .iter()
+                .all(|&index| {
+                    matches!(probe.blocks[index].terminator, IrTerminator::Unreachable)
+                })
+        );
+        for index in backedges {
+            if let IrTerminator::Return { value, .. } = probe.blocks[index].terminator {
+                assert!(probe.blocks[index].instructions.iter().any(|instruction| matches!(instruction,
+                    IrInstruction::Define { result, operation: IrOperation::Constant(super::IrConstant::Bool(false)), .. } if *result == value
+                )), "a generated backedge return must never become cheap");
+            }
+        }
+        // A residual match-edge cycle is not a natural jump backedge. The
+        // independent acyclicity check must refuse to copy it.
+        let mut cyclic = input.clone();
+        let IrTerminator::Match { targets, .. } = &mut cyclic.blocks[0].terminator else {
+            panic!("entry guard must branch");
+        };
+        targets[0].block = super::IrBlockId(0);
+        assert!(super::compute_entry::probe(&cyclic, 1).is_none());
+    });
+}
+
+#[test]
 fn counted_range_cfg_emits_with_distinct_header_update_and_exit_interfaces() {
     let source = br#"fn count() -> result: own u64 pure {
   let total = 0_u64;

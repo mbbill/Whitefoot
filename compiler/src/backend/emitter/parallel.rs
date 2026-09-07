@@ -378,7 +378,10 @@ impl ParallelThunks {
     }
 
     /// Records one thunk body and returns the symbol that names it.
-    fn register(&mut self, body: impl FnOnce(&str) -> String) -> Result<String, BackendFailure> {
+    pub(super) fn register(
+        &mut self,
+        body: impl FnOnce(&str) -> String,
+    ) -> Result<String, BackendFailure> {
         let symbol = format!("@wf__par_thunk_{}", self.count);
         self.count = self
             .count
@@ -814,6 +817,12 @@ impl FunctionEmitter<'_, '_> {
         ty: IrType,
         split: &LoopSplitSite<'_>,
     ) -> Result<(), BackendFailure> {
+        if self.continuation_compute {
+            // This owner-side form still calls a synchronous range splitter.
+            // State the experimental capability gap instead of parking the
+            // sole resumer. Splits inside an offloaded worker remain normal.
+            return Err(BackendFailure::UnsupportedContinuationTarget);
+        }
         let result_type = llvm_type(self.program, ty)?;
         let mut arguments = Vec::with_capacity(split.captures.len() + 4);
         arguments.push(format!("{result_type} {}", self.value_name(split.seed)));
@@ -1019,7 +1028,7 @@ pub(super) fn compute_join_order<T>(
 }
 
 /// One outlined call over its frame.
-fn thunk_definition(
+pub(super) fn thunk_definition(
     symbol: &str,
     frame_type: &str,
     field_types: &[String],

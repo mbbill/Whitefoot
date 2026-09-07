@@ -932,6 +932,77 @@ compiler-continuation-check: completion-coroutine-check compiler
 	done; \
 	done
 
+# General pure-call offload: real generated code, held-worker admission and
+# repeated frame reuse. This is a correctness target, never a timed control.
+.PHONY: compiler-continuation-compute-check
+compiler-continuation-compute-check: prepare compiler
+	@set -e; \
+	backend="$(ROOT)/compiler/src/backend"; build="$(BUILD)/continuation-compute"; \
+	case "$(COMPLETION_CORO_SANITIZERS)" in \
+	  address,undefined) attribute=sanitize_address ;; thread) attribute=sanitize_thread ;; \
+	  *) echo 'compute qualification requires address,undefined or thread sanitizers' >&2; exit 1 ;; \
+	esac; \
+	mkdir -p "$$build"; set --; \
+	for source in $(CONTINUATION_RUNTIME_UNITS) wf_floor.c; do \
+	  define=''; \
+	  case "$$source" in completion/bridge.c) define=-Dwf_sched_complete=wf_probe_publish ;; \
+	    sched/entry.c) define='-Dwf_prim_thread_start=wf_probe_thread_start -Dwf__par_publish=wf_probe_par_publish -Dwf__par_join=wf_probe_par_join' ;; esac; \
+	  object="$$build/$$(basename "$$source").o"; \
+	  $(CORO_CLANG) $(CFLAGS) -g -Wpedantic -pthread -fsanitize=$(COMPLETION_CORO_SANITIZERS) -fno-sanitize-recover=all \
+	    -I "$$backend" $$define -c "$$backend/$$source" -o "$$object"; set -- "$$@" "$$object"; \
+	done; \
+	$(CORO_CLANG) $(CFLAGS) -g -Wpedantic -pthread -fsanitize=$(COMPLETION_CORO_SANITIZERS) -fno-sanitize-recover=all \
+	  -I "$$backend" -DPROBE_WF_GENERATED -DPROBE_WF_COMPUTE -DPROBE_COMPUTE_GATE -x c \
+	  -c coroutine_completion.cpp -o "$$build/host.o"; \
+	$(CORO_CLANG) $(CFLAGS) -Wpedantic -pthread stream_check.c -o "$$build/stream-check"; \
+	"$(WFC)" --emit-llvm --continuation-compute --par programs/tcp_compute_server.wf -o "$$build/server.ll"; \
+	awk -v attribute="$$attribute" '/^define / {sub(/ \{$$/, " " attribute " {")} {print}' "$$build/server.ll" > "$$build/instrumented.ll"; \
+	$(CORO_CLANG) -Wno-override-module -O2 -g -pthread -fsanitize=$(COMPLETION_CORO_SANITIZERS) -fno-sanitize-recover=all \
+	  "$$build/instrumented.ll" "$$build/host.o" "$$@" -o "$$build/server"; \
+	"$(WFC)" --emit-llvm --continuation-compute --par programs/continuation_compute.wf -o "$$build/recursive.ll"; \
+	awk -v attribute="$$attribute" '/^define / {sub(/ \{$$/, " " attribute " {")} {print}' "$$build/recursive.ll" > "$$build/recursive-instrumented.ll"; \
+	$(CORO_CLANG) -Wno-override-module -O2 -g -pthread -fsanitize=$(COMPLETION_CORO_SANITIZERS) -fno-sanitize-recover=all \
+	  "$$build/recursive-instrumented.ll" "$$build/host.o" "$$@" -o "$$build/recursive"; \
+	for helper in 0 1; do \
+	  if [ "$$helper" = 1 ] && [ "$$(uname -s)" != Linux ]; then continue; fi; \
+	  export WF_IO_NO_NATIVE_RING=$$helper WF_IO_HELPERS=4 WF_CONTINUATION_WINDOW=16 WF_CONTINUATION_REPORT_COMPUTE=1; \
+	  for policy in 0:1 1:1 1:32; do \
+	    export WF_CONTINUATION_OWNER_PROGRESS=$${policy%:*} WF_CONTINUATION_PROGRESS_BATCH=$${policy#*:}; \
+	    for setting in 0:0 1:0 2:1 4:3 fail0:0 fail1:1; do \
+	      unset WF_COMPUTE_TEST_THREADS; workers=$${setting%:*}; actual=$${setting#*:}; \
+	      case "$$workers" in fail*) export WF_COMPUTE_TEST_THREADS=$${workers#fail}; workers=4 ;; esac; \
+	      export WF_WORKERS=$$workers; log="$$build/h$$helper-p$$policy-w$$setting.log"; \
+	      "$$build/stream-check" "$$build/server" compute 1 > "$$log" 2>&1 || { cat "$$log"; exit 1; }; cat "$$log"; \
+	      awk -v workers="$$actual" '/^WF continuation compute:/ {reports++; for(i=4;i<=NF;i++) {split($$i,a,"="); if(a[2]!~/^[0-9]+$$/ || seen[a[1]]++) bad=1; v[a[1]]=a[2]+0}; next} \
+	        /^stream_check: PASS mode=compute workers=1$$/ {passes++; next} \
+	        /./ {bad=1} END {exit !(!bad && reports==1 && passes==1 && ("workers" in v) && v["workers"]==workers && \
+	          ("capacity" in v) && v["capacity"]==2*workers && ("submitted" in v) && v["submitted"]==(workers ? 12 : 0) && \
+	          ("retired" in v) && v["retired"]==v["submitted"] && ("peak" in v) && v["peak"]<=v["capacity"] && \
+	          (workers ? v["peak"]>0 : v["peak"]==0))}' "$$log"; \
+	    done; \
+	    unset WF_COMPUTE_TEST_THREADS; export WF_WORKERS=2; \
+	    log="$$build/h$$helper-p$$policy-progress.log"; \
+	    "$$build/stream-check" "$$build/server" compute-progress 1 > "$$log" 2>&1 || { cat "$$log"; exit 1; }; cat "$$log"; \
+	    awk '/^WF continuation compute: workers=1 capacity=2 peak=2 submitted=67 retired=67$$/ {reports++; next} \
+	      /^stream_check: PASS mode=compute-progress workers=1$$/ {passes++; next} /./ {bad=1} END {exit !(!bad && reports==1 && passes==1)}' "$$log"; \
+	    for mode in truncated:9 oversized:10; do \
+	      "$$build/stream-check" "$$build/server" "$${mode%:*}" 1 "$${mode#*:}"; \
+	    done; \
+	    for workers in 1 2 4; do \
+	      log="$$build/h$$helper-p$$policy-recursive-w$$workers.log"; \
+	      WF_WORKERS=$$workers WF_COMPUTE_TEST_REPORT_NESTED=1 "$$build/recursive" > "$$log.out" 2> "$$log"; \
+	      test "$$(cat "$$log.out")" = P && test "$$(wc -c < "$$log.out")" -eq 1; cat "$$log"; \
+	      awk -v workers="$$workers" '/^WF compute nested:/ {nested++; for(i=4;i<=NF;i++) {split($$i,a,"="); if(a[2]!~/^[0-9]+$$/ || seen[a[1]]++) bad=1; v[a[1]]=a[2]+0}; next} \
+	        /^WF continuation compute:/ {reports++; for(i=4;i<=NF;i++) {split($$i,a,"="); if(a[2]!~/^[0-9]+$$/ || seen[a[1]]++) bad=1; v[a[1]]=a[2]+0}; next} \
+	        /./ {bad=1} END {exit !(!bad && nested==1 && reports==1 && ("published" in v) && ("joined" in v) && \
+	          v["published"]==v["joined"] && (workers>1 ? v["published"]>0 : v["published"]==0) && \
+	          ("workers" in v) && v["workers"]==workers-1 && ("capacity" in v) && v["capacity"]==2*(workers-1) && \
+	          ("submitted" in v) && v["submitted"]==(workers>1) && ("retired" in v) && v["retired"]==v["submitted"] && \
+	          ("peak" in v) && v["peak"]==v["submitted"])}' "$$log"; \
+	    done; \
+	  done; \
+	done
+
 # The first generated-WF timing form keeps the qualified coordinator and one
 # resumer. Root-scheduler metadata and TCP_NODELAY match the small stackful
 # control. Host counters remain enabled in both timed and observed runs.

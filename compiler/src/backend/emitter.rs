@@ -139,11 +139,19 @@ fn emit_llvm_checkpoint_policy(
     let system_target = SystemTarget::for_triple(target.triple()).ok_or(
         BackendFailure::TargetLayout(TargetLayoutFailure::UnsupportedHost),
     )?;
-    emit_llvm_for(program, system_target, checkpoint_interval, chunks, false)
+    emit_llvm_for(
+        program,
+        system_target,
+        checkpoint_interval,
+        chunks,
+        false,
+        false,
+    )
 }
 
 pub(crate) fn emit_llvm_with_continuations(
     program: &IrProgram<'_, '_, '_>,
+    compute: bool,
 ) -> Result<LlvmModule, BackendFailure> {
     let target = TargetLayout::host().map_err(BackendFailure::TargetLayout)?;
     let system_target = SystemTarget::for_triple(target.triple())
@@ -151,7 +159,7 @@ pub(crate) fn emit_llvm_with_continuations(
     if system_target.is_windows() {
         return Err(BackendFailure::UnsupportedContinuationTarget);
     }
-    emit_llvm_for(program, system_target, None, false, true)
+    emit_llvm_for(program, system_target, None, false, true, compute)
 }
 
 /// Emits one program against an explicitly selected system target.
@@ -164,7 +172,7 @@ pub(crate) fn emit_llvm_for_target(
     program: &IrProgram<'_, '_, '_>,
     system_target: SystemTarget,
 ) -> Result<LlvmModule, BackendFailure> {
-    emit_llvm_for(program, system_target, None, false, false)
+    emit_llvm_for(program, system_target, None, false, false, false)
 }
 
 fn emit_llvm_for(
@@ -173,6 +181,7 @@ fn emit_llvm_for(
     checkpoint_interval: Option<NonZeroU32>,
     chunks: bool,
     continuations: bool,
+    continuation_compute: bool,
 ) -> Result<LlvmModule, BackendFailure> {
     let target = TargetLayout::host().map_err(BackendFailure::TargetLayout)?;
     let qualification = qualify_program(system_target, program)?;
@@ -181,6 +190,7 @@ fn emit_llvm_for(
             .functions()
             .iter()
             .any(|function| function.target_action().may_suspend());
+    let continuation_compute = continuations && continuation_compute;
     validate_program(target, &qualification, program).map_err(BackendFailure::TargetLayout)?;
     let main = program
         .functions()
@@ -193,6 +203,35 @@ fn emit_llvm_for(
     let mut completion_used = false;
     let mut checkpoints_used = false;
     let mut functions = String::new();
+    if continuations && continuation_compute {
+        for (ordinal, function) in program.functions().iter().enumerate() {
+            if !function.compute_candidate() {
+                continue;
+            }
+            if let Some(probe) = crate::lowering::compute_entry::probe(function, ordinal) {
+                functions.push_str(
+                    &FunctionEmitter::new(
+                        program,
+                        &qualification,
+                        target,
+                        &probe,
+                        ModuleState {
+                            continuations: false,
+                            continuation_compute: false,
+                            intrinsics: &mut intrinsics,
+                            parallel: &mut thunks,
+                            completion_used: &mut completion_used,
+                            sequential_clones: None,
+                            checkpoint_interval: None,
+                            chunked: None,
+                            checkpoints_used: &mut checkpoints_used,
+                        },
+                    )?
+                    .emit()?,
+                );
+            }
+        }
+    }
     for function in program.functions() {
         let chunked = checkpoint_interval
             .filter(|_| chunks)
@@ -214,6 +253,7 @@ fn emit_llvm_for(
                 chunked: chunked.as_ref(),
                 checkpoints_used: &mut checkpoints_used,
                 continuations,
+                continuation_compute,
             },
         )?;
         functions.push_str(&emitter.emit()?);
@@ -228,12 +268,21 @@ fn emit_llvm_for(
     // call graph and so holds the entry whenever it holds anything; reading
     // that off the set rather than trusting the argument is what makes the
     // module well-formed by construction instead of by that reasoning.
-    let mut clones = if thunks.is_used() {
+    let mut clones = if continuation_compute || thunks.is_used() {
         sequential_clone_set(program)
     } else {
         HashSet::new()
     };
-    if !clones.contains(&program.main_ordinal()) {
+    if continuation_compute {
+        // The owner calls sequential ordinary helpers, while CPU thunks call
+        // their parallel originals. Suspension factories remain unique and
+        // there is no second bootstrap world in this experiment.
+        clones.retain(|ordinal| {
+            !program.functions()[*ordinal as usize]
+                .target_action()
+                .may_suspend()
+        });
+    } else if !clones.contains(&program.main_ordinal()) {
         clones.clear();
     }
     for (ordinal, function) in program.functions().iter().enumerate() {
@@ -259,6 +308,7 @@ fn emit_llvm_for(
                         chunked: chunked.as_ref(),
                         checkpoints_used: &mut checkpoints_used,
                         continuations,
+                        continuation_compute,
                     },
                 )?
                 .emit()?,
@@ -269,7 +319,11 @@ fn emit_llvm_for(
         program,
         &qualification,
         main,
-        overlap_minimum_workers(program, &clones),
+        if continuation_compute {
+            None
+        } else {
+            overlap_minimum_workers(program, &clones)
+        },
     )?;
     let has_matches = program.functions().iter().any(|function| {
         function
@@ -396,6 +450,9 @@ fn emit_llvm_for(
     text.push_str(&system.definitions);
     if continuations {
         text.push_str(continuation::SUPPORT);
+        if continuation_compute {
+            text.push_str(continuation::COMPUTE_SUPPORT);
+        }
     }
     for intrinsic in intrinsics {
         match intrinsic {
@@ -738,6 +795,8 @@ enum IntrinsicDeclaration {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum FunctionSlot {
+    ComputeFrame(IrValueId),
+    ComputeTask,
     ContinuationResult(IrValueId),
     ContinuationWaiter,
     CheckpointBudget,
@@ -803,6 +862,7 @@ struct RuntimeFrameNeeds<'a> {
     staged_lane: Option<&'a parallel::StagedLane>,
     checkpoint: bool,
     continuation: bool,
+    compute: bool,
 }
 
 impl FunctionFramePlan {
@@ -819,6 +879,7 @@ impl FunctionFramePlan {
             staged_lane,
             checkpoint,
             continuation,
+            compute,
         } = runtime;
         let mut specifications = Vec::new();
         let mut ordered = Vec::new();
@@ -835,6 +896,28 @@ impl FunctionFramePlan {
                     continue;
                 };
                 match operation {
+                    IrOperation::Call {
+                        function: callee, ..
+                    } if compute
+                        && program
+                            .functions()
+                            .get(*callee as usize)
+                            .is_some_and(IrFunction::compute_candidate) =>
+                    {
+                        let callee = &program.functions()[*callee as usize];
+                        let fields = callee
+                            .parameters()
+                            .iter()
+                            .map(|(_, ty)| TargetStorageType::source(*ty))
+                            .chain(std::iter::once(TargetStorageType::source(callee.result())));
+                        push_function_slot(
+                            &mut specifications,
+                            &mut ordered,
+                            FunctionSlot::ComputeFrame(*result),
+                            TargetStorageType::structure(fields),
+                            None,
+                        )?;
+                    }
                     IrOperation::Call {
                         function: callee, ..
                     } if continuation
@@ -1001,6 +1084,19 @@ impl FunctionFramePlan {
             }
         }
 
+        if compute
+            && ordered
+                .iter()
+                .any(|slot| matches!(slot, FunctionSlot::ComputeFrame(_)))
+        {
+            push_function_slot(
+                &mut specifications,
+                &mut ordered,
+                FunctionSlot::ComputeTask,
+                TargetStorageType::bytes(continuation::COMPUTE_TASK_BYTES),
+                Some(8),
+            )?;
+        }
         if checkpoint {
             push_function_slot(
                 &mut specifications,
@@ -1275,6 +1371,8 @@ fn plan_completion_slots(
 
 struct FunctionEmitter<'program, 'state> {
     continuation: bool,
+    continuation_compute: bool,
+    owner_clones: HashSet<u32>,
     program: &'program IrProgram<'program, 'program, 'program>,
     /// The [QUAL-1] table lookup this build already performed. Every emission
     /// site reads the resolved row; none consults the table again.
@@ -1398,6 +1496,7 @@ struct FunctionEmitter<'program, 'state> {
 /// think about.
 struct ModuleState<'state> {
     continuations: bool,
+    continuation_compute: bool,
     intrinsics: &'state mut BTreeSet<IntrinsicDeclaration>,
     parallel: &'state mut ParallelThunks,
     completion_used: &'state mut bool,
@@ -1418,6 +1517,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     ) -> Result<Self, BackendFailure> {
         let ModuleState {
             continuations,
+            continuation_compute,
             intrinsics,
             parallel,
             completion_used,
@@ -1427,6 +1527,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             checkpoints_used,
         } = module;
         let continuation = continuations && function.target_action().may_suspend();
+        let continuation_compute = continuation && continuation_compute;
         // The staged call of a driven [PAR-3] loop, when that call is a
         // may-suspend user call. It has a hand-out form of its own — the lane
         // frame — so it is not a call the emitter has to withdraw the
@@ -1501,7 +1602,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
         let mut overlaps = Vec::new();
         let mut ordinary_lane_frames = HashMap::new();
-        if sequential_clones.is_none() {
+        if sequential_clones.is_none() && !continuation_compute {
             for overlap in function.overlaps() {
                 // A group that also carries completion steps is not excluded
                 // here: a mixed group hands its compute members to lanes and
@@ -1615,6 +1716,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 staged_lane: staged_lane.as_ref(),
                 checkpoint: !checkpoint_edges.is_empty(),
                 continuation,
+                compute: continuation_compute,
             },
         )?;
         let mut entry_prelude = frame.render(program)?;
@@ -1631,6 +1733,12 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
         Ok(Self {
             continuation,
+            continuation_compute,
+            owner_clones: if continuation_compute {
+                sequential_clone_set(program)
+            } else {
+                HashSet::new()
+            },
             program,
             qualification,
             function,
@@ -1671,6 +1779,13 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     /// world the entry selected. Everything else — including every callee with
     /// no hand-out anywhere below it — is the one copy both worlds share.
     pub(super) fn callee_symbol(&self, ordinal: u32, name: &str) -> String {
+        if self.owner_clones.contains(&ordinal)
+            && !self.program.functions()[ordinal as usize]
+                .target_action()
+                .may_suspend()
+        {
+            return sequential_clone_symbol(name);
+        }
         match self.sequential_clones {
             Some(clones) if clones.contains(&ordinal) => sequential_clone_symbol(name),
             _ => source_symbol(name),

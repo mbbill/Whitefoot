@@ -556,6 +556,24 @@ void wf__par_release(void *frame) {
     wf_sched_release(&wf__sched_core, frame);
 }
 
+unsigned wf__par_compute_workers(void) {
+    if (!wf__sched_on_core) return 0u;
+    wf__sched_once(&wf__sched_workers_once, wf__sched_start_workers_once);
+    return wf__sched_pool_running();
+}
+
+void wf__par_publish_async(void *frame, void (*run)(void *)) {
+    /* Register before publication. The worker claims the marker before DONE
+     * and wakes through that captured value after its last record access. */
+    wf_sched_slot_of(frame)->record.waiter = WF_SCHED_WAITER_IN_PLACE;
+    wf_sched_publish(&wf__sched_core, frame, run);
+}
+
+int wf__par_frame_done(void *frame) {
+    return wf_prim_load_u(&wf_sched_slot_of(frame)->record.state,
+                          WF_PRIM_ACQUIRE) == WF_SCHED_DONE;
+}
+
 /* Whether this run was asked for a pool, answered once at the bootstrap.
  *
  * Not part of the lane protocol: it takes no frame, publishes nothing and

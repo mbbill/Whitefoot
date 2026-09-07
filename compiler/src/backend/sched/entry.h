@@ -150,6 +150,14 @@ void wf__par_publish_staged(void *frame, void (*run)(void *));
 void wf__par_join(void *frame);
 void wf__par_release(void *frame);
 
+/* Experimental nonblocking completion bridge. Start the lazy pool before
+ * reporting actual CPU workers; zero retains the sequential schedule.
+ * Async publication owns its frame until an acquire DONE observation. It
+ * wakes the host epoch instead of parking a source stack in join. */
+unsigned wf__par_compute_workers(void);
+void wf__par_publish_async(void *frame, void (*run)(void *));
+int wf__par_frame_done(void *frame);
+
 /* Whether this run requested enough workers for this module's overlap:
  * one for staged I/O, two for compute-only hand-outs. Answered from the
  * setting, once at bootstrap, before lazy worker creation. Zero opts out. */

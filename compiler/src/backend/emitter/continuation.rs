@@ -13,6 +13,18 @@ pub(super) const WAITER_BYTES: u64 = 48;
 pub(super) const WAITER_ALIGN: u64 = 8;
 pub(super) const TASK_BYTES: u64 = 32;
 pub(super) const TASK_ALIGN: u64 = 8;
+pub(super) const COMPUTE_TASK_BYTES: u64 = 48;
+
+pub(super) const COMPUTE_SUPPORT: &str = r"
+declare i32 @wf__continuation_compute_enabled()
+declare void @wf__continuation_compute_prepare(ptr, ptr, ptr, ptr)
+declare void @wf__continuation_compute_arm(ptr, ptr)
+define private i1 @wf__continuation_register_compute(ptr %task, ptr %self) {
+entry:
+  call void @wf__continuation_compute_arm(ptr %task, ptr %self)
+  ret i1 true
+}
+";
 
 pub(super) fn symbol(name: &str) -> String {
     format!("wf__coro_{name}")
@@ -83,6 +95,60 @@ entry:
 ";
 
 impl FunctionEmitter<'_, '_> {
+    pub(super) fn emit_continuation_compute(
+        &mut self,
+        result: IrValueId,
+        ordinal: u32,
+        arguments: &[String],
+    ) -> Result<(), BackendFailure> {
+        let callee = &self.program.functions()[ordinal as usize];
+        let result_type = llvm_type(self.program, callee.result())?;
+        let mut fields = callee
+            .parameters()
+            .iter()
+            .map(|(_, ty)| llvm_type(self.program, *ty))
+            .collect::<Result<Vec<_>, _>>()?;
+        fields.push(result_type.clone());
+        let frame_type = format!("{{ {} }}", fields.join(", "));
+        let symbol = self.callee_symbol(ordinal, callee.name());
+        let worker_symbol = source_symbol(callee.name());
+        let thunk = self.parallel.register(|name| {
+            parallel::thunk_definition(name, &frame_type, &fields, &worker_symbol, &result_type)
+        })?;
+        let frame = self.entry_slot(FunctionSlot::ComputeFrame(result))?;
+        let task = self.entry_slot(FunctionSlot::ComputeTask)?;
+        let waiter = self.entry_slot(FunctionSlot::ContinuationWaiter)?;
+        let prefix = format!("wf.compute.v{}", result.ordinal());
+        let args = arguments.join(", ");
+        if crate::lowering::compute_entry::probe(callee, ordinal as usize).is_some() {
+            writeln!(self.output, "  %{prefix}.cheap = call i1 @wf__compute_probe_{ordinal}({args})\n  \
+                br i1 %{prefix}.cheap, label %{prefix}.inline, label %{prefix}.policy\n{prefix}.policy:")
+                .map_err(|_| BackendFailure::TextEmission)?;
+        }
+        writeln!(
+            self.output,
+            "  %{prefix}.workers = call i32 @wf__continuation_compute_enabled()\n  \
+            %{prefix}.active = icmp ne i32 %{prefix}.workers, 0\n  \
+            br i1 %{prefix}.active, label %{prefix}.offer, label %{prefix}.inline\n{prefix}.offer:"
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        for (index, argument) in arguments.iter().enumerate() {
+            writeln!(self.output, "  %{prefix}.arg{index} = getelementptr inbounds {frame_type}, ptr {frame}, i32 0, i32 {index}\n  \
+                store {argument}, ptr %{prefix}.arg{index}").map_err(|_| BackendFailure::TextEmission)?;
+        }
+        writeln!(self.output, "  call void @wf__continuation_compute_prepare(ptr {task}, ptr {waiter}, ptr {frame}, ptr {thunk})\n  \
+            %{prefix}.saved = call token @llvm.coro.save(ptr null)\n  \
+            %{prefix}.armed = call i1 @llvm.coro.await.suspend.bool(ptr {task}, ptr %wf.coro.handle, ptr @wf__continuation_register_compute)\n  \
+            %{prefix}.state = call i8 @llvm.coro.suspend(token %{prefix}.saved, i1 false)\n  \
+            switch i8 %{prefix}.state, label %wf.coro.suspended [ i8 0, label %{prefix}.returned i8 1, label %wf.coro.destroy ]\n\
+            {prefix}.returned:\n  \
+            %{prefix}.result = getelementptr inbounds {frame_type}, ptr {frame}, i32 0, i32 {}\n  \
+            %{prefix}.loaded = load {result_type}, ptr %{prefix}.result\n  br label %{prefix}.done\n\
+            {prefix}.inline:\n  %{prefix}.local = call {result_type} @{symbol}({args})\n  br label %{prefix}.done\n\
+            {prefix}.done:\n  {} = phi {result_type} [ %{prefix}.loaded, %{prefix}.returned ], [ %{prefix}.local, %{prefix}.inline ]",
+            arguments.len(), self.value_name(result)).map_err(|_| BackendFailure::TextEmission)
+    }
+
     pub(super) fn emit_continuation(mut self) -> Result<String, BackendFailure> {
         let result_type = llvm_type(self.program, self.function.result())?;
         let parameters = self

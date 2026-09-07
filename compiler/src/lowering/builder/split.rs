@@ -846,7 +846,8 @@ pub(crate) fn assign_weights(functions: &mut [IrFunction]) {
             *weight = sum;
         }
     }
-    for function in functions.iter_mut() {
+    for (ordinal, function) in functions.iter_mut().enumerate() {
+        function.compute_weight = total[ordinal];
         for block in &mut function.blocks {
             for instruction in &mut block.instructions {
                 if let IrInstruction::Define {

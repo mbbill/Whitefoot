@@ -611,6 +611,18 @@ invocations and the previous generated/loan suites; M1 ASan/UBSan and TSan
 each pass the nine local-route invocations. Experiment 52 records the exact
 artifact identity and independent audit.
 
+The separate opt-in computation experiment keeps sequential source calls but
+awaits expensive pure callees on the existing CPU pool. Reproduce its untimed
+qualification with `make compiler-continuation-compute-check CORO_CLANG=clang-20`
+from this directory (use `/usr/bin/clang` for Apple clang 21 on M1). It checks
+bounded admission, light-request progress while a worker is held, repeated
+frame reuse, actual thread-start failure, and recursive worker fork/join with
+ASan/UBSan; set `COMPLETION_CORO_SANITIZERS=thread` for TSan. The flag is
+`--continuation-compute --par`; this does not change
+the older `--continuations` control or qualify a mixed performance ranking.
+Experiment 66 in the scheduler investigation records the lifetime protocol
+and current capability limits.
+
 On native Windows, `windows-bench.ps1` owns a separate production
 qualification:
 

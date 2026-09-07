@@ -1584,9 +1584,16 @@ pub struct IrFunction {
     completion_pipeline: Option<IrCompletionPipeline>,
     synthesis: Option<IrSynthesis>,
     target_action: crate::TargetAction,
+    declared_pure: bool,
+    compute_weight: u64,
 }
 
 impl IrFunction {
+    /// Scheduling metadata only; neither property participates in acceptance.
+    pub(crate) const fn compute_candidate(&self) -> bool {
+        self.declared_pure && !self.target_action.may_suspend() && self.compute_weight >= 128
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -1829,6 +1836,7 @@ pub enum LoweringFailure {
 
 mod builder;
 pub(crate) mod checkpoint_chunks;
+pub(crate) mod compute_entry;
 pub(crate) mod control_flow;
 
 #[cfg(test)]

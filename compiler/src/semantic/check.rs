@@ -1733,6 +1733,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .unwrap_or(CheckedResultStateOrigin::Unknown),
             slice_return_ceiling: signature.slice_return_ceiling.clone(),
             declared_allocates_heap: signature.declared_effects.allocates_heap,
+            declared_pure: signature.declared_effects == EffectSet::NONE,
             declared_state_writes: signature.declared_effects.writes.clone(),
             target_action: crate::TargetAction::INLINE,
             requirements,

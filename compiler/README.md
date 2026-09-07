@@ -229,6 +229,24 @@ is experimental and does not alter the existing staged runtime or container
 storage contract. `compiler-continuation-check` in the I/O completion experiment
 qualifies actual WF-generated code against native byte oracles and sanitizers.
 
+`--continuation-compute --emit-llvm` adds an opt-in pure-call scheduling
+experiment. A checked empty effect row and an IR cost estimate select calls;
+an unchanged bounded scalar entry prefix can identify a cheap return before
+CPU admission. Long calls use the existing CPU pool while their caller's
+coroutine remains suspended. Arguments and results stay in its typed frame,
+and the host retires the worker slot only after core completion, before
+resuming the caller. Submitted, executing and completed-unretired work is
+bounded by twice the actual CPU worker count; admission waiters retain their
+source activation storage. With `--par`, workers keep ordinary compute
+outlining and the I/O owner calls sequential helper clones. Without actual
+CPU workers, calls run sequentially. Direct owner-side range split operations
+remain an explicit experimental capability gap. This changes no source
+signature or acceptance rule and establishes no source progress guarantee.
+`compiler-continuation-compute-check`, reached by canonical `make check`,
+checks the generated mixed protocol, held-worker light progress, frame reuse
+and failed/partial CPU startup under sanitizers. Performance qualification,
+general cancellation and effectful compute offload remain open.
+
 The first multi-operation loop path is deliberately specific: one
 source-derived fixed two-slot bounded batch for the direct staged counted-loop
 shape. On native POSIX completion targets the runtime window is bounded to

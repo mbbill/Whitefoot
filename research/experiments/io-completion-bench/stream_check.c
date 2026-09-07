@@ -11,6 +11,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <pthread.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -28,6 +29,8 @@
 static volatile sig_atomic_t server_pid;
 static uint16_t server_port;
 static const char *mode;
+static int compute_gate[2];
+static int compute_events[2];
 
 static void stop_server(void) {
     if (server_pid > 0) kill((pid_t)server_pid, SIGKILL);
@@ -238,6 +241,75 @@ static void check_echo(struct peer *peer) {
     require(pthread_join(writer, NULL) == 0, "writer join failed");
 }
 
+/* The qualification host holds actual CPU workers behind a pipe. Three
+ * nonzero calls fill B=2/Q=2 and leave one waiting for admission. A fourth
+ * zero-round request must complete while no heavy thunk can run. */
+static void check_compute_progress(void) {
+    int peers[4];
+    unsigned char request[64] = {0};
+    request[15] = 1;
+    for (unsigned index = 0; index < 3; ++index) {
+        peers[index] = connect_peer();
+        send_all(peers[index], request, sizeof request);
+    }
+    unsigned submitted = 0, queued = 0, executing = 0;
+    while (submitted < 2 || queued < 3 || executing < 1) {
+        char event;
+        ssize_t taken;
+        do { taken = read(compute_events[0], &event, 1); } while (taken < 0 && errno == EINTR);
+        require(taken == 1, "compute witness pipe closed");
+        if (event == 's') ++submitted;
+        else if (event == 'q') ++queued;
+        else if (event == 'e') ++executing;
+        else require(0, "unknown compute witness");
+        require(submitted <= 2 && queued <= 3 && executing <= 1, "compute admission exceeded held capacity");
+    }
+    peers[3] = connect_peer();
+    memset(request, 0, sizeof request);
+    request[7] = 0xa5;
+    send_all(peers[3], request, sizeof request);
+    unsigned char response[64];
+    receive_all(peers[3], response, sizeof response);
+    for (unsigned bit = 0; bit < 64; ++bit) {
+        require(response[bit] == ((UINT64_C(0xa5) >> bit) & 1u), "zero-round bypass result mismatch");
+    }
+    for (unsigned index = 0; index < 3; ++index) {
+        struct pollfd held = {peers[index], POLLIN, 0};
+        require(poll(&held, 1, 0) == 0, "heavy request completed while worker gate was closed");
+    }
+    require(write(compute_gate[1], "ggg", 3) == 3, "compute gate release failed");
+    for (unsigned index = 0; index < 3; ++index) {
+        receive_all(peers[index], response, sizeof response);
+        for (unsigned bit = 0; bit < 64; ++bit) {
+            require(response[bit] == ((UINT64_C(1442695040888963407) >> bit) & 1u), "held compute result mismatch");
+        }
+    }
+    /* Reuse the same activation/descriptor and core slots with immediate
+     * worker completion. Alternating arguments distinguish stale results. */
+    for (unsigned repeat = 0; repeat < 64; ++repeat) {
+        memset(request, 0, sizeof request);
+        request[7] = (unsigned char)repeat;
+        request[15] = 1;
+        require(write(compute_gate[1], "g", 1) == 1, "reuse gate release failed");
+        send_all(peers[0], request, sizeof request);
+        receive_all(peers[0], response, sizeof response);
+        uint64_t seed = repeat;
+        uint64_t rotated = (seed << 17) | (seed >> 47);
+        uint64_t expected = (seed ^ rotated) * UINT64_C(6364136223846793005) + UINT64_C(1442695040888963407);
+        for (unsigned bit = 0; bit < 64; ++bit) {
+            require(response[bit] == ((expected >> bit) & 1u), "reused compute result mismatch");
+        }
+    }
+    for (unsigned index = 0; index < 4; ++index) require(shutdown(peers[index], SHUT_WR) == 0, "compute progress half-close failed");
+    for (unsigned index = 0; index < 4; ++index) {
+        unsigned char extra;
+        ssize_t taken;
+        do { taken = recv(peers[index], &extra, 1, 0); } while (taken < 0 && errno == EINTR);
+        require(taken == 0, "compute progress stream did not drain");
+        close(peers[index]);
+    }
+}
+
 static void check_compute(struct peer *peer) {
     static const uint64_t seeds[] = {0, UINT64_C(11400714819323198485), UINT64_MAX};
     static const uint64_t rounds[] = {1, 65536, 4096};
@@ -285,12 +357,13 @@ int main(int argc, char **argv) {
     require(argc == 4 || argc == 5 || argc == 7, "expected SERVER MODE WORKERS [ERROR_STATUS | CONNECTIONS BYTES PREFIX]");
     mode = argv[2];
     int resident = strcmp(mode, "resident") == 0;
+    int compute_progress = strcmp(mode, "compute-progress") == 0;
     int truncated = strcmp(mode, "truncated") == 0;
     int oversized = strcmp(mode, "oversized") == 0;
     int reset = strcmp(mode, "reset") == 0;
     int error_case = truncated || oversized || reset;
     require(strcmp(mode, "echo") == 0 || strcmp(mode, "compute") == 0 ||
-            error_case || resident, "unknown mode");
+            error_case || resident || compute_progress, "unknown mode");
     require(resident ? argc == 7 : error_case ? (argc == 4 || argc == 5) : argc == 4,
             "incorrect arguments for stream mode");
     /* Different source programs assign different error codes. Preserve the
@@ -325,9 +398,20 @@ int main(int argc, char **argv) {
     close(probe);
     char port_text[16];
     snprintf(port_text, sizeof port_text, "%u", server_port);
+    if (compute_progress) {
+        require(pipe(compute_gate) == 0 && pipe(compute_events) == 0, "compute witness pipe failed");
+    }
     pid_t child = fork();
     require(child >= 0, "fork failed");
     if (child == 0) {
+        if (compute_progress) {
+            close(compute_gate[1]); close(compute_events[0]);
+            char descriptor[16];
+            snprintf(descriptor, sizeof descriptor, "%d", compute_gate[0]);
+            require(setenv("WF_COMPUTE_TEST_GATE_FD", descriptor, 1) == 0, "gate descriptor export failed");
+            snprintf(descriptor, sizeof descriptor, "%d", compute_events[1]);
+            require(setenv("WF_COMPUTE_TEST_EVENT_FD", descriptor, 1) == 0, "event descriptor export failed");
+        }
         select_page_policy();
         const char *server_cpus = getenv("WF_BENCH_SERVER_CPUS");
         if (server_cpus != NULL) {
@@ -341,7 +425,11 @@ int main(int argc, char **argv) {
         _exit(127);
     }
     server_pid = child;
-    if (resident) {
+    if (compute_progress) {
+        close(compute_gate[0]); close(compute_events[1]);
+        check_compute_progress();
+        close(compute_gate[1]); close(compute_events[0]);
+    } else if (resident) {
         check_residency(count, bytes, argv[6]);
     } else if (reset) {
         int idle[3];

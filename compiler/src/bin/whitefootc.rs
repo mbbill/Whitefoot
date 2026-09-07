@@ -34,7 +34,7 @@ use whitefoot::{
     FLOOR_WINDOWS_RUNTIME_SOURCE, SCHED_PRIM_WINDOWS_SOURCE, WINDOWS_RUNTIME_SOURCE,
 };
 
-const USAGE: &str = "usage: whitefootc [--emit-llvm] [--continuations] [--par] [--sched-quantum N | --sched-chunks N] [--no-overlap] [--par-ledger] \
+const USAGE: &str = "usage: whitefootc [--emit-llvm] [--continuations | --continuation-compute] [--par] [--sched-quantum N | --sched-chunks N] [--no-overlap] [--par-ledger] \
 [--stack-ledger] [-o OUTPUT] SOURCE...";
 
 // The compiler walks typed source and lowering trees recursively. Windows
@@ -249,7 +249,12 @@ fn run() -> Result<(), String> {
         .collect();
     let overlap = options.overlap();
     let module = if options.continuations {
-        compile_with_continuations(&inputs, CompilerLimits::default(), options.par)
+        let compile = if options.continuation_compute {
+            whitefoot::compile_with_continuation_compute
+        } else {
+            compile_with_continuations
+        };
+        compile(&inputs, CompilerLimits::default(), options.par)
             .map_err(|failure| failure.to_string())?
             .module
     } else if let Some(interval) = options.sched_quantum {
@@ -560,6 +565,7 @@ fn portable_logical_path(path: &str) -> bool {
 
 struct Options {
     continuations: bool,
+    continuation_compute: bool,
     emit_llvm: bool,
     /// Experimental backedge interval; no source proof or progress contract.
     sched_quantum: Option<NonZeroU32>,
@@ -641,6 +647,7 @@ impl Options {
     fn parse(arguments: &[String]) -> Result<Self, String> {
         let mut emit_llvm = false;
         let mut continuations = false;
+        let mut continuation_compute = false;
         let mut sched_quantum = None;
         let mut sched_chunks = false;
         let mut par = false;
@@ -654,6 +661,10 @@ impl Options {
             match arguments[cursor].as_str() {
                 "--emit-llvm" => emit_llvm = true,
                 "--continuations" => continuations = true,
+                "--continuation-compute" => {
+                    continuations = true;
+                    continuation_compute = true;
+                }
                 "--par" => par = true,
                 "--sched-quantum" | "--sched-chunks" => {
                     sched_chunks = arguments[cursor] == "--sched-chunks";
@@ -724,6 +735,7 @@ impl Options {
         }
         Ok(Self {
             continuations,
+            continuation_compute,
             emit_llvm,
             sched_quantum,
             sched_chunks,
@@ -790,32 +802,31 @@ mod tests {
                 .expect("ordinary invocation")
                 .continuations
         );
-        assert!(parse(&["--continuations", "value.wf"]).is_err());
-        assert!(parse(&["--continuations", "--emit-llvm", "--par", "value.wf"]).is_ok());
-        for incompatible in ["--no-overlap", "--par-ledger", "--stack-ledger"] {
-            assert!(
-                parse(&[
-                    "--continuations",
-                    "--emit-llvm",
-                    incompatible,
-                    "-o",
-                    "out.ll",
-                    "value.wf"
-                ])
-                .is_err()
+        for mode in ["--continuations", "--continuation-compute"] {
+            let options = parse(&[mode, "--emit-llvm", "--par", "value.wf"])
+                .expect("qualified experimental emission");
+            assert!(options.continuations);
+            assert_eq!(
+                options.continuation_compute,
+                mode == "--continuation-compute"
             );
-        }
-        for checkpoint in ["--sched-quantum", "--sched-chunks"] {
-            assert!(
-                parse(&[
-                    "--continuations",
-                    "--emit-llvm",
-                    checkpoint,
-                    "2",
-                    "value.wf"
-                ])
-                .is_err()
-            );
+            assert!(parse(&[mode, "value.wf"]).is_err());
+            for incompatible in ["--no-overlap", "--par-ledger", "--stack-ledger"] {
+                assert!(
+                    parse(&[
+                        mode,
+                        "--emit-llvm",
+                        incompatible,
+                        "-o",
+                        "out.ll",
+                        "value.wf"
+                    ])
+                    .is_err()
+                );
+            }
+            for checkpoint in ["--sched-quantum", "--sched-chunks"] {
+                assert!(parse(&[mode, "--emit-llvm", checkpoint, "2", "value.wf"]).is_err());
+            }
         }
     }
 

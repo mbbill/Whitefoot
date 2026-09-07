@@ -1,0 +1,38 @@
+fn fib(n: own u64) -> result: own u64 pure {
+  doc "Qualifies ordinary recursive fork/join inside a computation awaited by an I/O continuation.";
+  if n < 2_u64 {
+    return n;
+  }
+  let left_n = n -wrap 1_u64;
+  let right_n = n -wrap 2_u64;
+  let left = fib(n: left_n);
+  let right = fib(n: right_n);
+  return left +wrap right;
+}
+
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+  let answer = fib(n: 24_u64);
+  let byte = 70_u8;
+  if answer == 46368_u64 {
+    set byte = 80_u8;
+  }
+  let message = buffer_new(1_u64, byte);
+  let sent = 0_u64;
+  loop @publish {
+    if sent < 1_u64 {
+    } else {
+      break @publish;
+    }
+    region {
+      match write_once(output: &uniq out, source: &message, start: sent, end: 1_u64) {
+        Ok(value: next) => {
+          set sent = next;
+        }
+        Err(error: problem) => {
+          return exit_status(code: 2_u8);
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

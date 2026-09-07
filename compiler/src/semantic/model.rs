@@ -1853,6 +1853,8 @@ pub(crate) struct CheckedFunction {
     pub(crate) result_state_origin: CheckedResultStateOrigin,
     pub(crate) slice_return_ceiling: Vec<CheckedSliceOrigin>,
     pub(crate) declared_allocates_heap: bool,
+    /// Empty checked effect row, retained separately from suspension policy.
+    pub(crate) declared_pure: bool,
     /// Formal state paths named by `writes(...)`.
     pub(crate) declared_state_writes: Vec<CheckedStatePath>,
     /// Conservative fixed-point summary of every reachable target action.

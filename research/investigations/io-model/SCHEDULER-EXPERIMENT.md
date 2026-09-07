@@ -5328,8 +5328,9 @@ For a nonzero request the handler asynchronously acquires one of Q
 permits before submitting an owned Rayon job. Q counts queued plus executing
 CPU jobs, not merely workers. The job carries seed, count, a one-value
 oneshot sender and the permit; it retains no socket or buffer reference.
-Its result wakes the awaiting handler. The permit is released before any
-response write, so a slow receiver cannot reserve CPU admission indefinitely.
+Its result wakes the awaiting handler. The worker releases the permit after
+publishing the result, independently of socket backpressure; the handler may
+already be writing. A slow receiver cannot reserve CPU admission indefinitely.
 The handler encodes and completely writes that result before reading another
 frame. There is at most one partial/full request, pending admission or pending
 reply per accepted connection; total handler storage is bounded by CONNECTIONS.
@@ -9810,6 +9811,129 @@ measured optimization target under the wider large-message client, while
 WF still has a residual cost against private epoll. These results do not
 select a runtime, language, allocator or storage default change and do not
 establish a globally fastest backend.
+
+## 66. Await pure computation on the existing pool
+
+The generated mixed handler qualified in experiment 52 still runs its long
+pure call on the sole continuation resumer. That prevents other connections
+from progressing during computation. This experiment adds an opt-in
+`--continuation-compute` compiler path: the source call keeps its arguments,
+result and ownership interval, while an existing CPU worker executes its
+ordinary function and the I/O owner services other suspended activations.
+No source `async`, `await` or `yield` form, signature effect or new container
+layout is introduced. This is an implementation experiment, not a selected
+language change or a mixed-load performance result.
+
+### Selection and the cheap-entry path
+
+The checked empty effect row is retained in IR separately from `may_suspend`:
+an inline system operation is not thereby pure. Candidate source functions
+have an empty row, no suspension, and estimated cost at least 128 using the
+existing instruction/loop/callee cost model. This is post-proof scheduling
+policy and cannot change acceptance, proof completion or source outcomes.
+
+A private Boolean helper repeats only an unchanged scalar entry prefix on
+the same evaluated operands. A cleanup-free source return answers cheap;
+unsupported operations or a natural backedge answer expensive. The retained
+graph is independently required to be acyclic, and conservative maximum
+prefix costs at merges limit copied scalar/block work to a fixed budget of
+32 before the answer epilogue. Loads, stores, allocation, unknown calls,
+non-scalar operations and cleanup cut the prefix before execution. Original
+guards remain in place for partial integer operations. Removed predecessors
+are excluded from emitted phi inputs. The real function still executes once,
+including its original moves, result and cleanup.
+
+This handles the mixed protocol's zero-round return before CPU admission
+without matching a function name, parameter position or source program. It
+does not identify every inexpensive nonzero call, nor bound the run time of
+an arbitrary noncandidate function. There is no source progress guarantee.
+
+### Frames, admission and completion
+
+The ordinary target frame planner lays out typed arguments and a result in
+the suspended caller. An intrusive 48-byte host descriptor points to that
+frame; the CPU lane holds only a descriptor pointer. This initially favors a
+clear lifetime over minimum coroutine storage. Descriptor, argument and result
+addresses must survive suspension, and frame/RSS cost remains a measurement
+obligation. Admission waiters retain their source activation storage.
+
+The host registers the continuation handle and its owning task before any
+worker publication and always suspends once on the active-pool path. FIFO
+admission caps queued, executing and completed-unretired submissions at twice
+the actual number of started CPU workers. This does not cap the number or
+storage of admission waiters. Full admission queues the activation; it does
+not execute expensive fallback work on the I/O owner.
+
+The worker wrapper calls the generated ordinary thunk and returns. Only then
+does the existing core publish DONE. Async publication installs the core's
+in-place wake marker before offering the slot; completion captures it before
+the final record access and wakes the host epoch. A locked scan can queue a
+retirement notification after an acquire DONE observation. The sole owner
+then releases and clears the lane, decrements admission, admits waiting work,
+and resumes the parent. Helpers never acquire owner lanes or resume source.
+Compute records have a separate list and are never interpreted as I/O records.
+Both threaded and owner-driven I/O progress scan this list with the same
+epoch/check/park ordering used by completion progress.
+
+The experimental runtime entries are `wf__par_compute_workers`,
+`wf__par_publish_async` and `wf__par_frame_done`. They add no record or container
+layout change. Worker availability is read after lazy startup, so zero or
+partial startup is handled from the actual count. With no CPU workers, the
+same source call executes sequentially. `--par` retains ordinary worker-side
+compute outlining, while the continuation owner reaches sequential ordinary
+helper clones. Coroutine factories are unique; this is not another bootstrap
+world. Direct owner-side `LoopSplit` is an explicit capability gap until it
+has an asynchronous representation. Cancellation of live compute frames and
+general asynchronous cleanup are not qualified.
+
+### Qualification and current evidence
+
+`compiler-continuation-compute-check` is reached by canonical `make check` on
+both POSIX hosts. It instruments generated functions with ASan and C runtime
+code with fatal ASan/UBSan, retains the request/response byte oracle, and runs
+both I/O progress modes plus owner batch 32. Disabled, single-thread and
+multiple-worker cases are separate from injected zero/partial worker-start
+failure. Linux additionally exercises forced helper I/O. Existing continuation
+and baseline checks remain intact.
+
+An untimed pipe gate holds a real CPU worker before its thunk. Two submissions
+fill the B=2/Q=2 limit and a third awaits admission; a fourth, zero-round
+request must return while all three heavy replies remain unavailable. After
+release, their results are verified and one activation reuses its descriptor
+and slots for 64 further calls with changing inputs. This distinguishes light
+progress from short heavy work and checks stale-result/reuse failures. Gate
+hooks and injected thread startup exist only in the qualification build.
+
+A separate sequential-source fixture awaits recursive `fib(24)` before writing
+one byte selected by its result. A qualification-only wrapper observes ordinary
+worker-side publication and join, separately from the asynchronous outer task.
+With one or three started CPU workers, it returns the correct 46368 result,
+retires one outer task and balances 75024 inner publications with 75024 completed
+joins. With no CPU worker it returns the same result with no publication. This
+checks nested fork/join completion, not efficient recursive task granularity.
+The fixture belongs to this target and is retired with this offload experiment.
+
+The M1 Apple clang 21 qualification passes all 36 invocations in all three
+progress configurations with ASan/UBSan and separately with TSan. Each held-worker run retires 67
+submissions, peak admission is two, and the light request requires no submission.
+This is local correctness evidence, not Linux native completion evidence or a
+timing comparison. LLVM 22 rejects the pre-existing `llvm.coro.end` signature;
+this experiment retains the previously qualified Apple clang 21 / Linux LLVM
+20 continuation toolchains. The maintained target defaults to fatal ASan/UBSan
+and accepts `COMPLETION_CORO_SANITIZERS=thread` for TSan, including the matching
+generated LLVM function instrumentation. Linux CI qualification remains
+outstanding; no performance conclusion is drawn.
+
+The complete local `make -C compiler check` passes: 1436 unit and 71 sampling
+tests, executable corpus, format/lint/docs/spec and native completion/core
+checks. This is the compiler gate, not the root all-repository gate. Separate
+probe tests cover cleanup in all three IR locations, guarded partial division,
+nested-loop cuts and residual-cycle refusal; the CLI and renamed/reordered
+call test also pass. Eight ordinary/parallel/previous-continuation module
+comparisons against the pre-experiment compiler are byte-identical. Both
+macro-off host IR comparisons differ only in module path headers and assertion
+source-line constants. These checks support isolation of the opt-in path;
+they do not establish a language-wide progress property.
 
 ## Sixty-seventh experiment: owned receive chunks in a sequential handler
 

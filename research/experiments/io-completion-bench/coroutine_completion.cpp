@@ -51,6 +51,9 @@ void probe_report(int required_route);
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(PROBE_COMPUTE_GATE)
+#include <unistd.h>
+#endif
 
 _Static_assert(PROBE_RECORD_BYTES == WF_COMPLETION_RECORD_BYTES, "record size");
 _Static_assert(PROBE_RECORD_ALIGN == WF_COMPLETION_RECORD_ALIGN, "record alignment");
@@ -98,6 +101,68 @@ static uint64_t probe_tasks_created;
 static uint64_t probe_tasks_completed;
 static uint64_t probe_tasks_retired;
 static uint64_t probe_tasks_peak;
+#if defined(PROBE_WF_COMPUTE)
+#if defined(PROBE_COMPUTE_GATE)
+/* Untimed qualification only: hold real CPU jobs before their thunk so a
+ * light-progress witness cannot be explained by heavy work finishing early. */
+static int probe_compute_gate_fd = -1;
+static int probe_compute_event_fd = -1;
+static uint64_t probe_compute_nested_published;
+static uint64_t probe_compute_nested_joined;
+void wf_probe_par_publish(void *frame, void (*run)(void *));
+void wf_probe_par_join(void *frame);
+void wf__par_publish(void *frame, void (*run)(void *)) {
+    __atomic_fetch_add(&probe_compute_nested_published, 1, __ATOMIC_RELAXED);
+    wf_probe_par_publish(frame, run);
+}
+void wf__par_join(void *frame) {
+    wf_probe_par_join(frame);
+    __atomic_fetch_add(&probe_compute_nested_joined, 1, __ATOMIC_RELAXED);
+}
+/* Only the qualification copy of entry.c redirects thread creation here.
+ * Production primitives and file helpers keep their ordinary entry points. */
+int wf_probe_thread_start(wf_prim_thread *thread, void (*entry)(void *),
+                          void *argument, size_t stack_bytes) {
+    static unsigned started;
+    const char *setting = getenv("WF_COMPUTE_TEST_THREADS");
+    if (setting) {
+        char *end;
+        long limit = strtol(setting, &end, 10);
+        assert(*setting && !*end && limit >= 0 && limit <= 3);
+        if (started >= (unsigned)limit) return -1;
+    }
+    int status = wf_prim_thread_start(thread, entry, argument, stack_bytes);
+    if (!status) ++started;
+    return status;
+}
+static void probe_compute_event(char event) {
+    if (probe_compute_event_fd < 0) return;
+    ssize_t written;
+    do { written = write(probe_compute_event_fd, &event, 1); } while (written < 0 && errno == EINTR);
+    assert(written == 1);
+}
+#endif
+/* Typed arguments/results remain in the suspended source activation. A core
+ * slot carries only this descriptor pointer. Workers never access host queues. */
+typedef struct probe_compute {
+    void *arguments;
+    void (*run)(void *);
+    void *lane;
+    probe_waiter *waiter;
+    struct probe_compute *next;
+    unsigned phase;
+} probe_compute;
+static probe_compute *probe_compute_waiting_head;
+static probe_compute *probe_compute_waiting_tail;
+static probe_compute *probe_compute_running;
+static unsigned probe_compute_workers;
+static unsigned probe_compute_active;
+static unsigned probe_compute_peak;
+static uint64_t probe_compute_submitted;
+static uint64_t probe_compute_retired;
+static void probe_compute_scan(void);
+static void probe_compute_retire_locked(probe_waiter *waiter);
+#endif
 #endif
 
 int wf__sched_host_epoch(uint64_t *epoch);
@@ -253,6 +318,9 @@ void *probe_take_ready(void) {
              * reaping may synchronously enter wf_probe_publish. */
             assert(wf__sched_host_epoch(&epoch));
             (void)wf__sched_target_progress(NULL);
+#if defined(PROBE_WF_COMPUTE)
+            probe_compute_scan();
+#endif
             probe_progress_remaining = probe_progress_batch;
             pthread_mutex_lock(&probe_lock);
             if (probe_ready_head) {
@@ -270,9 +338,16 @@ void *probe_take_ready(void) {
         while (!probe_ready_head) pthread_cond_wait(&probe_changed, &probe_lock);
     }
     waiter = probe_ready_head;
+#if defined(PROBE_WF_COMPUTE)
+    assert(waiter->phase == 2 || waiter->phase == 4);
+#else
     assert(waiter->phase == 2);
+#endif
     probe_ready_head = waiter->ready_next;
     if (!probe_ready_head) probe_ready_tail = NULL;
+#if defined(PROBE_WF_COMPUTE)
+    if (waiter->phase == 4) probe_compute_retire_locked(waiter);
+#endif
     continuation = waiter->continuation;
 #if defined(PROBE_WF_GENERATED)
     probe_active_task = waiter->owner;
@@ -304,6 +379,9 @@ static void *probe_progress(void *unused) {
         uint64_t epoch;
         assert(wf__sched_host_epoch(&epoch));
         (void)wf__sched_target_progress(NULL);
+#if defined(PROBE_WF_COMPUTE)
+        probe_compute_scan();
+#endif
         if (atomic_load_explicit(&probe_stopping, memory_order_acquire)) break;
         assert(wf__sched_host_park(epoch));
     }
@@ -336,6 +414,10 @@ void probe_idle(void) {
     }
     assert(probe_ready_head == NULL && probe_ready_tail == NULL);
     assert(probe_registered == probe_dequeued);
+#if defined(PROBE_WF_COMPUTE)
+    assert(!probe_compute_waiting_head && !probe_compute_waiting_tail && !probe_compute_running);
+    assert(!probe_compute_active && probe_compute_submitted == probe_compute_retired);
+#endif
     pthread_mutex_unlock(&probe_lock);
 }
 
@@ -385,8 +467,162 @@ _Static_assert(sizeof(probe_waiter) == 48, "continuation waiter size");
 _Static_assert(_Alignof(probe_waiter) == 8, "continuation waiter alignment");
 _Static_assert(sizeof(probe_task) == 32, "continuation task size");
 _Static_assert(_Alignof(probe_task) == 8, "continuation task alignment");
+#if defined(PROBE_WF_COMPUTE)
+_Static_assert(sizeof(probe_compute) == 48, "continuation compute size");
+_Static_assert(_Alignof(probe_compute) == 8, "continuation compute alignment");
+#endif
 void wf__continuation_resume(void *frame);
 int wf__continuation_finished(void *frame);
+
+#if defined(PROBE_WF_COMPUTE)
+int wf__continuation_compute_enabled(void) {
+#if defined(PROBE_COMPUTE_GATE)
+    static unsigned configured;
+    if (!configured) {
+        const char *gate = getenv("WF_COMPUTE_TEST_GATE_FD");
+        const char *events = getenv("WF_COMPUTE_TEST_EVENT_FD");
+        assert((gate == NULL) == (events == NULL));
+        if (gate) {
+            char *end;
+            long value = strtol(gate, &end, 10);
+            assert(*gate && !*end && value >= 0 && value <= 1024);
+            probe_compute_gate_fd = (int)value;
+            value = strtol(events, &end, 10);
+            assert(*events && !*end && value >= 0 && value <= 1024);
+            probe_compute_event_fd = (int)value;
+        }
+        configured = 1;
+    }
+#endif
+    /* Only the owner calls this, before publishing any descriptor. A failed
+     * startup may have fewer workers than requested, including none. */
+    probe_compute_workers = wf__par_compute_workers();
+    return probe_compute_workers != 0;
+}
+
+static void probe_compute_execute(void *lane) {
+    probe_compute *compute = *(probe_compute **)lane;
+#if defined(PROBE_COMPUTE_GATE)
+    if (probe_compute_gate_fd >= 0) {
+        char token;
+        probe_compute_event('e');
+        ssize_t taken;
+        do { taken = read(probe_compute_gate_fd, &token, 1); } while (taken < 0 && errno == EINTR);
+        assert(taken == 1 && token == 'g');
+    }
+#endif
+    compute->run(compute->arguments);
+    /* The core still uses its slot after this return. Only core DONE grants
+     * the owner permission to release it or resume the parent. */
+}
+
+/* Owner only, with probe_lock. FIFO admission; the cap counts queued core
+ * work, executing work, and completed work whose slot is not yet retired.
+ * Waiting source activations are not part of this cap. */
+static void probe_compute_admit_locked(void) {
+    while (probe_compute_waiting_head && probe_compute_active < 2u * probe_compute_workers) {
+        void *lane = wf__par_acquire_lane(sizeof(probe_compute *));
+        if (!lane) {
+            /* Active submissions will retire a slot; never run heavy source
+             * on the owner just because admission is full. */
+            assert(probe_compute_active != 0);
+            break;
+        }
+        probe_compute *compute = probe_compute_waiting_head;
+        assert(compute->phase == 1 && !compute->lane);
+        probe_compute_waiting_head = compute->next;
+        if (!probe_compute_waiting_head) probe_compute_waiting_tail = NULL;
+        compute->lane = lane;
+        compute->phase = 2;
+        compute->next = probe_compute_running;
+        probe_compute_running = compute;
+        *(probe_compute **)lane = compute;
+        ++probe_compute_active;
+        ++probe_compute_submitted;
+#if defined(PROBE_COMPUTE_GATE)
+        probe_compute_event('s');
+#endif
+        if (probe_compute_active > probe_compute_peak) probe_compute_peak = probe_compute_active;
+        wf__par_publish_async(lane, probe_compute_execute);
+    }
+}
+
+void wf__continuation_compute_prepare(void *storage, void *waiting, void *arguments, void (*run)(void *)) {
+    probe_compute *compute = storage;
+    probe_waiter *waiter = waiting;
+    memset(compute, 0, sizeof(*compute));
+    memset(waiter, 0, sizeof(*waiter));
+    compute->arguments = arguments;
+    compute->run = run;
+    compute->waiter = waiter;
+    waiter->record = compute;
+}
+
+void wf__continuation_compute_arm(void *storage, void *frame) {
+    probe_compute *compute = storage;
+    probe_waiter *waiter = compute->waiter;
+    assert(probe_compute_workers && probe_active_task && compute->phase == 0);
+    pthread_mutex_lock(&probe_lock);
+    waiter->continuation = frame;
+    waiter->owner = probe_active_task;
+    waiter->phase = 1;
+    compute->phase = 1;
+    if (probe_compute_waiting_tail) probe_compute_waiting_tail->next = compute;
+    else probe_compute_waiting_head = compute;
+    probe_compute_waiting_tail = compute;
+    ++probe_registered;
+    probe_compute_admit_locked();
+#if defined(PROBE_COMPUTE_GATE)
+    probe_compute_event('q');
+#endif
+    pthread_mutex_unlock(&probe_lock);
+    /* This hook always suspends once. Even an immediate worker completion
+     * goes through the owner's retirement queue, never a competing fast path. */
+    assert(wf__sched_host_wake());
+}
+
+/* Either progress policy may poll DONE under the lock. This only queues a
+ * retirement notification; the source activation remains suspended. */
+static void probe_compute_scan(void) {
+    pthread_mutex_lock(&probe_lock);
+    probe_compute **link = &probe_compute_running;
+    while (*link) {
+        probe_compute *compute = *link;
+        assert(compute->phase == 2 && compute->lane);
+        if (!wf__par_frame_done(compute->lane)) { link = &compute->next; continue; }
+        *link = compute->next;
+        compute->next = NULL;
+        compute->phase = 3;
+        probe_waiter *waiter = compute->waiter;
+        assert(waiter->phase == 1);
+        waiter->phase = 4;
+        waiter->ready_next = NULL;
+        if (probe_ready_tail) probe_ready_tail->ready_next = waiter;
+        else probe_ready_head = waiter;
+        probe_ready_tail = waiter;
+        pthread_cond_broadcast(&probe_changed);
+    }
+    pthread_mutex_unlock(&probe_lock);
+}
+
+/* Only probe_take_ready on the sole owner may retire and service admission.
+ * No slot or queue reference survives the following source resumption. */
+static void probe_compute_retire_locked(probe_waiter *waiter) {
+    probe_compute *compute = waiter->record;
+    assert(compute->phase == 3 && compute->lane && !compute->next);
+    assert(wf__par_frame_done(compute->lane));
+    wf__par_release(compute->lane);
+    compute->lane = NULL;
+    compute->phase = 4;
+    compute->waiter = NULL;
+    waiter->record = NULL;
+    assert(probe_compute_active);
+    --probe_compute_active;
+    ++probe_compute_retired;
+    probe_compute_admit_locked();
+}
+
+#endif
 
 int wf__continuation_record_done(void *record) {
     return probe_done(record);
@@ -573,6 +809,20 @@ void wf__continuation_run(void *frame) {
     assert(probe_tasks_created == probe_tasks_completed);
     assert(probe_tasks_retired + 1 == probe_tasks_created);
     probe_active_task = NULL;
+#if defined(PROBE_WF_COMPUTE)
+#if defined(PROBE_COMPUTE_GATE)
+    if (getenv("WF_COMPUTE_TEST_REPORT_NESTED")) {
+        fprintf(stderr, "WF compute nested: published=%llu joined=%llu\n",
+                (unsigned long long)__atomic_load_n(&probe_compute_nested_published, __ATOMIC_RELAXED),
+                (unsigned long long)__atomic_load_n(&probe_compute_nested_joined, __ATOMIC_RELAXED));
+    }
+#endif
+    if (getenv("WF_CONTINUATION_REPORT_COMPUTE")) {
+        fprintf(stderr, "WF continuation compute: workers=%u capacity=%u peak=%u submitted=%llu retired=%llu\n",
+                probe_compute_workers, 2u * probe_compute_workers, probe_compute_peak,
+                (unsigned long long)probe_compute_submitted, (unsigned long long)probe_compute_retired);
+    }
+#endif
     if (getenv("WF_CONTINUATION_OBSERVE")) {
         fprintf(stderr, "WF continuation host: registered=%llu dequeued=%llu helper=%llu uring=%llu inline=%llu owner_progress=%u progress_batch=%u pending_buckets=%u",
                 (unsigned long long)probe_registered, (unsigned long long)probe_dequeued,

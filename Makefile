@@ -144,6 +144,7 @@ scheduler-enumeration:
 
 scheduler-streams:
 	$(MAKE) -C research/experiments/io-completion-bench scheduler-stream-check WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)"
+	$(MAKE) -C research/experiments/io-completion-bench compiler-continuation-compute-check WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)"
 	$(MAKE) -C research/experiments/io-completion-bench go-check WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)"
 
 # Enumerate every declared case through the native adapter. Every non-pending

@@ -160,8 +160,8 @@ impl Engine {
                 engine.stats.completed.fetch_add(1, SeqCst);
                 engine.stats.inflight.fetch_sub(1, SeqCst);
             }
-            // Release CPU admission before the response encounters network
-            // backpressure. A completed reply occupies only its own handler.
+            // Release admission independently of socket backpressure after
+            // publishing the result; the receiver may already be writing.
             drop(permit);
             #[cfg(any(test, feature = "mixed-observe"))]
             drop(engine);

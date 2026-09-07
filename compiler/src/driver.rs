@@ -378,17 +378,38 @@ pub fn compile_with_continuations(
     limits: CompilerLimits,
     staged: bool,
 ) -> Result<CompilationReport, CompilationFailure> {
+    compile_continuation_policy(inputs, limits, staged, false)
+}
+
+/// Experimental pure-call offload on the existing pool, with a bounded cheap
+/// entry probe. The ordinary continuation mode remains the measured control.
+pub fn compile_with_continuation_compute(
+    inputs: &[SourceInput<'_>],
+    limits: CompilerLimits,
+    staged: bool,
+) -> Result<CompilationReport, CompilationFailure> {
+    compile_continuation_policy(inputs, limits, staged, true)
+}
+
+fn compile_continuation_policy(
+    inputs: &[SourceInput<'_>],
+    limits: CompilerLimits,
+    staged: bool,
+    compute: bool,
+) -> Result<CompilationReport, CompilationFailure> {
     compile_reporting_with_policy(
         inputs,
         limits,
         crate::Inventory::ACTIVE,
-        if staged {
+        if staged && compute {
+            crate::OverlapLowering::On
+        } else if staged {
             crate::OverlapLowering::Staged
         } else {
             crate::OverlapLowering::Off
         },
         None,
-        true,
+        Some(compute),
     )
 }
 
@@ -452,7 +473,7 @@ fn compile_reporting_with_checkpoints(
         inventory,
         overlap,
         checkpoint_interval,
-        false,
+        None,
     )
 }
 
@@ -462,7 +483,7 @@ fn compile_reporting_with_policy(
     inventory: crate::Inventory,
     overlap: crate::OverlapLowering,
     checkpoint_interval: Option<(NonZeroU32, bool)>,
-    continuations: bool,
+    continuations: Option<bool>,
 ) -> Result<CompilationReport, CompilationFailure> {
     let bundle = SourceBundle::with_limits(inputs, limits.source).map_err(|failure| {
         CompilationFailure::new(
@@ -688,8 +709,8 @@ fn compile_reporting_with_policy(
         .map(|line| line.text)
         .collect();
     ledger.extend_from_slice(ir.actualization_ledger());
-    let emitted = if continuations {
-        emit_llvm_with_continuations(&ir)
+    let emitted = if let Some(compute) = continuations {
+        emit_llvm_with_continuations(&ir, compute)
     } else {
         match checkpoint_interval {
             None => emit_llvm(&ir),
@@ -768,6 +789,56 @@ command fn main() -> status: own ExitStatus pure {
                 super::compile_with_continuations(&inputs, CompilerLimits::default(), staged)
                     .expect("pure module must compile in the experiment");
             assert_eq!(ordinary, continuation.module);
+            let offload = super::compile_with_continuation_compute(
+                &inputs,
+                CompilerLimits::default(),
+                staged,
+            )
+            .expect("compute policy must also compile a pure module");
+            assert_eq!(
+                if staged { &compute_parallel } else { &ordinary },
+                &offload.module
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn continuation_compute_uses_checked_calls_with_reordered_parameters() {
+        let source = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../research/experiments/io-completion-bench/programs/tcp_compute_server.wf"
+        ));
+        let renamed = source
+            .replace("churn(", "transform(")
+            .replace(
+                "fn transform(seed: own u64, rounds: own u64)",
+                "fn transform(rounds: own u64, seed: own u64)",
+            )
+            .replace(
+                "transform(seed: seed, rounds: rounds)",
+                "transform(rounds: rounds, seed: seed)",
+            );
+        for source in [source, renamed.as_str()] {
+            let inputs = [SourceInput::new("mixed.wf", source.as_bytes())];
+            let ordinary =
+                super::compile_with_continuations(&inputs, CompilerLimits::default(), true)
+                    .expect("control continuation must compile")
+                    .module;
+            let offload =
+                super::compile_with_continuation_compute(&inputs, CompilerLimits::default(), true)
+                    .expect("typed compute continuation must compile")
+                    .module;
+            assert!(!ordinary.contains("@wf__continuation_compute_prepare"));
+            assert!(offload.contains("call void @wf__continuation_compute_prepare"));
+            assert!(offload.contains("call i1 @wf__compute_probe_"));
+            assert_eq!(offload.matches("define internal i8 @wf_main(").count(), 1);
+            assert_eq!(
+                offload
+                    .matches("define internal ptr @wf__coro_main(")
+                    .count(),
+                1
+            );
         }
     }
 
