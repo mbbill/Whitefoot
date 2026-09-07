@@ -7726,9 +7726,25 @@ Stack capture can perturb the workload and is used only for attribution.
 The conditional CI job installs a concrete Linux perf executable, requests
 per-process kernel sampling and visible kernel symbols, and fails explicitly
 if the capability probe fails. Raw `perf.data`, reports, period-bearing stack
-samples and recorder diagnostics are retained. `client-profile-status.txt`
-records visible kernel and unknown-symbol report lines: successful recording
-alone does not qualify kernel symbol attribution. Host topology, runtime
+samples and recorder diagnostics are retained. Decoding requests
+`--show-lost-events`; a separate raw-record dump exposes LOST_SAMPLES and
+THROTTLE/UNTHROTTLE records as well. `client-profile-status.txt` records each
+decoder's exit status, sample counts, kernel/user/unknown symbol lines,
+unexpected recorder output, decoder diagnostic bytes and loss/throttling
+markers. All decoder diagnostics and unexpected recorder messages make the
+profile explicitly incomplete. So do recorded loss/throttling, missing or
+mismatched raw/decoded sample counts, absent kernel/user symbols or unresolved
+symbols. Report output uses zero percent cutoff so small unknown-symbol rows
+cannot disappear under the presentation threshold. Normal recorder progress
+messages are retained separately from unexpected diagnostics.
+
+An incomplete decode retains every raw file and the twelve checked
+unprofiled observation rows; it does not claim complete kernel attribution or
+silently accept a user-only trace. A recorder/client execution failure records
+an incomplete status and fails the run, preserving preceding artifacts.
+`loss_checked_kernel_attribution` only certifies the stated decoding and
+visibility checks; a finite 199-Hz sample and 8192-byte DWARF stack snapshot
+cannot prove exhaustive instruction or call-chain coverage. Host topology, runtime
 settings, source/tool/binary hashes and kernel CPU/softirq/socket snapshots
 surround the panel. `client-diagnostic-counters.tsv` links all sixteen records
 to their raw sample directories and identifies the four profiled records.
@@ -7748,3 +7764,7 @@ strict C11 warnings, and ordinary optimized Linux IR matches 72fdd468. Shell
 syntax and workflow YAML checks pass. These local checks do not execute Linux
 syscalls: real Linux socket/stream qualification, stack visibility and all
 diagnostic measurements remain pending on `codex/io-client-diagnostic`.
+Synthetic decoder-output checks separately verify the status policy for clean,
+lost, throttled, failed-decode, unknown-symbol, user-only and mismatched-sample
+captures while preserving the preceding observation table. Invalid diagnostic
+mode/experiment combinations fail at preflight; no timing threshold changes.

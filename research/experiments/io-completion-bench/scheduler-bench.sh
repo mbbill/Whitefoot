@@ -33,9 +33,10 @@ if [[ $CONTINUATION_SCREEN != 0 && $NATIVE_BASELINES != 1 ]]; then
     exit 2
 fi
 CLIENT_HEADROOM=${CLIENT_HEADROOM:-0}
-if [[ $CLIENT_DIAGNOSTIC == 1 && ( $NATIVE_BASELINES != 1 || $CONTINUATION_SCREEN != 0 ||
+if [[ $CLIENT_DIAGNOSTIC == 1 && ( $MODE != combine || $EXPERIMENT != allocator ||
+    $NATIVE_BASELINES != 1 || $CONTINUATION_SCREEN != 0 ||
     $GO_SCREEN != 0 || $CLIENT_HEADROOM != 0 || $URING_DIAGNOSTIC != 0 || $ROUNDS != 3 || $WARMUP != 1 ) ]]; then
-    echo 'scheduler-bench: client diagnostic uses only NATIVE_BASELINES=1, three passes and one warmup' >&2
+    echo 'scheduler-bench: client diagnostic uses combine, EXPERIMENT=allocator, only NATIVE_BASELINES=1, three passes and one warmup' >&2
     exit 2
 fi
 [[ $GO_SCREEN == 0 || $GO_SCREEN == 1 ]] || exit 2
@@ -923,12 +924,67 @@ check_client_observation() {
       }' "$report"
 }
 
+decode_client_profile() {
+    local directory=$1 report_status=0 script_status=0 raw_status=0 reasons=()
+    local samples raw_samples kernel unknown user record_diagnostics decode_diagnostics markers status
+    "$PROFILE_PERF" report --stdio --header --show-nr-samples --no-children --percent-limit=0 \
+        --sort comm,dso,symbol -i "$directory/client-perf.data" > "$directory/client-perf-report.txt" \
+        2> "$directory/client-perf-report.err" || report_status=$?
+    "$PROFILE_PERF" script --show-lost-events -i "$directory/client-perf.data" \
+        -F comm,pid,tid,time,event,ip,sym,dso,period > "$directory/client-perf-samples.txt" \
+        2> "$directory/client-perf-script.err" || script_status=$?
+    # Raw record headers expose THROTTLE/UNTHROTTLE and LOST_SAMPLES too;
+    # --show-lost-events alone only promises to display PERF_RECORD_LOST.
+    "$PROFILE_PERF" script -D --show-lost-events -i "$directory/client-perf.data" \
+        > "$directory/client-perf-raw.txt" 2> "$directory/client-perf-raw.err" || raw_status=$?
+    samples=$(awk '/cpu-clock:/ {n++} END {print n+0}' "$directory/client-perf-samples.txt")
+    raw_samples=$(awk '/\[[^]]+\]: PERF_RECORD_SAMPLE([[:space:](]|$)/ {n++} END {print n+0}' "$directory/client-perf-raw.txt")
+    kernel=$(awk '/\[kernel.kallsyms\]/ && /\[k\]/ {n++} END {print n+0}' "$directory/client-perf-report.txt")
+    user=$(awk '/\[\.\]/ {n++} END {print n+0}' "$directory/client-perf-report.txt")
+    unknown=$(awk '/\[unknown\]/ || /\[[k.]\][[:space:]]+(0x)?[[:xdigit:]]+([[:space:]]|$)/ {n++}
+        END {print n+0}' "$directory/client-perf-report.txt")
+    # Only the recorder's two normal progress messages are expected. Decoder
+    # stderr is never discarded or silently treated as successful attribution.
+    awk 'NF && !/^\[ perf record: (Woken up|Captured and wrote) .* \]$/' \
+        "$directory/client-perf-record.err" > "$directory/client-perf-unexpected-record.txt"
+    record_diagnostics=$(wc -l < "$directory/client-perf-unexpected-record.txt")
+    decode_diagnostics=$(cat "$directory/client-perf-report.err" "$directory/client-perf-script.err" \
+        "$directory/client-perf-raw.err" | wc -c)
+    { awk '/\[[^]]+\]: PERF_RECORD_(LOST(_SAMPLES)?|THROTTLE|UNTHROTTLE)([[:space:]:]|$)/' "$directory/client-perf-raw.txt";
+      awk 'tolower($0) ~ /perf_record_lost|lost [1-9][0-9]* (events|chunks|samples)|throttl/' \
+        "$directory/client-perf-samples.txt" "$directory/client-perf-record.err" \
+        "$directory/client-perf-report.err" "$directory/client-perf-script.err" "$directory/client-perf-raw.err";
+    } > "$directory/client-perf-loss-throttling.txt"
+    markers=$(wc -l < "$directory/client-perf-loss-throttling.txt")
+    if (( report_status || script_status || raw_status )); then reasons+=(decode_exit); fi
+    if (( record_diagnostics )); then reasons+=(recorder_diagnostics); fi
+    if (( decode_diagnostics )); then reasons+=(decoder_diagnostics); fi
+    if (( markers )); then reasons+=(loss_or_throttling); fi
+    if (( samples == 0 || raw_samples == 0 )); then reasons+=(missing_samples); fi
+    if (( samples != raw_samples )); then reasons+=(sample_count_mismatch); fi
+    if (( kernel == 0 )); then reasons+=(kernel_symbols_missing); fi
+    if (( user == 0 )); then reasons+=(user_symbols_missing); fi
+    if (( unknown )); then reasons+=(unknown_symbols); fi
+    status=loss_checked_kernel_attribution
+    if (( ${#reasons[@]} )); then status=incomplete; fi
+    { printf 'sample=%s\nstatus=%s\n' "$directory" "$status";
+      printf 'report_exit=%s\nscript_exit=%s\nraw_exit=%s\n' "$report_status" "$script_status" "$raw_status";
+      printf 'samples=%s\nraw_sample_records=%s\n' "$samples" "$raw_samples";
+      printf 'kernel_symbol_lines=%s\nuser_symbol_lines=%s\nunknown_symbol_lines=%s\n' "$kernel" "$user" "$unknown";
+      printf 'unexpected_record_lines=%s\ndecode_diagnostic_bytes=%s\nloss_throttling_lines=%s\n' \
+          "$record_diagnostics" "$decode_diagnostics" "$markers";
+      printf 'reasons=%s\n' "${reasons[*]:-none}";
+    } >> "$OUT/client-profile-status.txt"
+    # Partial profiles remain available, clearly unqualified. They do not
+    # invalidate the twelve already checked unprofiled observer rows.
+}
+
 network_case() {
     local form=$1 connections=$2 trips=$3 bytes=$4 pass=$5 observed=$6
     local binary environment=() arguments=() launcher=() directory port server_stderr owner_progress progress_batch pending_buckets
     local go_owner go_width go_environment=()
     local client_binary="$OUT/bin/netload"
-    local client_launcher=() client_stderr
+    local client_launcher=() client_stderr client_exit=0
     if [[ $client_observer_active == 1 ]]; then client_binary="$OUT/bin/netload-observed"; fi
     if [[ $cohort == *-client8 ]]; then client_binary="$OUT/bin/netload-service8"; fi
     if [[ $cohort == *-client1 ]]; then client_binary="$OUT/bin/netload-service1"; fi
@@ -1032,7 +1088,15 @@ network_case() {
     timeout --signal=TERM --kill-after=5s 120s \
         /usr/bin/time -f '%U\t%S\t%M\t%w\t%c' -o "$directory/client-resources.tsv" taskset -c "$client_cpus" \
         "${client_launcher[@]}" "$client_binary" "$port" "$connections" "$trips" "$bytes" --threads "$client_workers" "${client_arguments[@]}" \
-        > "$directory/client.tsv" 2> "$client_stderr"
+        > "$directory/client.tsv" 2> "$client_stderr" || client_exit=$?
+    if (( client_exit )); then
+        if [[ $client_profile_active == 1 ]]; then
+            printf 'sample=%s\nstatus=incomplete\nrecord_or_client_exit=%s\nreasons=recorder_or_client_failed\n' \
+                "$directory" "$client_exit" >> "$OUT/client-profile-status.txt"
+        fi
+        cat "$client_stderr" >&2
+        return "$client_exit"
+    fi
     if ! wait "$server_pid"; then cat "$directory/server.err" "$server_stderr" >&2; return 1; fi
     server_pid=''
     [[ ! -s $directory/server.out ]]
@@ -1055,17 +1119,7 @@ network_case() {
         [[ -s $directory/perf-samples.txt ]]
     fi
     if [[ $client_profile_active == 1 ]]; then
-        "$PROFILE_PERF" report --stdio --header --show-nr-samples --no-children \
-            --sort comm,dso,symbol -i "$directory/client-perf.data" > "$directory/client-perf-report.txt" 2> "$directory/client-perf-report.err"
-        "$PROFILE_PERF" script -i "$directory/client-perf.data" \
-            -F comm,pid,tid,time,event,ip,sym,dso,period > "$directory/client-perf-samples.txt" 2> "$directory/client-perf-script.err"
-        [[ -s $directory/client-perf-samples.txt ]]
-        # Retain the symbol-visibility evidence; absence does not silently
-        # turn a user-only capture into kernel attribution.
-        { printf 'sample=%s\n' "$directory";
-          printf 'kernel_symbol_lines='; awk '/\[kernel.kallsyms\]/ {n++} END {print n+0}' "$directory/client-perf-report.txt";
-          printf 'unknown_symbol_lines='; awk '/\[unknown\]/ {n++} END {print n+0}' "$directory/client-perf-report.txt";
-        } >> "$OUT/client-profile-status.txt"
+        decode_client_profile "$directory"
     fi
     if [[ $pass -ge 0 ]]; then
         if [[ $client_observer_active == 1 ]]; then
