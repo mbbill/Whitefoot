@@ -356,15 +356,22 @@ client resource limit; it does not compare servers using different clients.
 Go 1.27.1 (`GO=/path/to/go` selects the binary), `jq` and the host C compiler.
 It is reached by canonical `make check` through `scheduler-experiment`; the
 gate installs that exact Go version only for its scheduler jobs. Release and
-race builds independently run the existing 2 MiB byte-stream/half-close/slow
+race builds independently qualify both `WF_BENCH_GO_BUFFER_OWNER=handler`
+(default: handler-created stack buffer) and `acceptor` (acceptor-created heap
+buffer transferred to the handler). They share the same sequential read/write
+loop. Escape diagnostics and actual disassembly are retained; all lifecycle
+checks finish before the live memory snapshots. Both forms run the full
+existing 2 MiB byte-stream/half-close/slow
 reader oracle, a reset that must close three other waiting handlers, and 64
 live peers using private initialized 64 KiB buffers. Runtime/GC/socket
 readbacks and optional Linux per-thread, epoll-fdinfo and memory snapshots are
 qualification evidence. Experiment49's dedicated CI pins the whole server to
 one logical CPU, including GC/runtime threads, and uses another physical core
 for the client; `GOMAXPROCS=4` is deliberate oversubscription qualification.
-No Go timing rank or four-CPU performance claim exists yet. See
-[experiment49](../../investigations/io-model/SCHEDULER-EXPERIMENT.md#forty-ninth-experiment-qualify-a-sequential-go-net-reference).
+No Go timing rank or four-CPU performance claim exists yet. The earlier
+[experiment49](../../investigations/io-model/SCHEDULER-EXPERIMENT.md#forty-ninth-experiment-qualify-a-sequential-go-net-reference)
+qualification remains frozen; [experiment51](../../investigations/io-model/SCHEDULER-EXPERIMENT.md#fifty-first-experiment-compare-go-buffer-ownership)
+compares the two ordinary storage forms before selecting timing candidates.
 
 `scheduler-uring-diagnostic` captures three observed repetitions of the
 64-peer × 64 KiB cell for the four 8/64 KiB pure/inline uring forms, using one

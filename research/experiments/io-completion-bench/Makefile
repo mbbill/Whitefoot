@@ -794,11 +794,23 @@ GO_VERSION := go1.27.1
 # Non-recipe continuations become spaces. Inside a single-quoted recipe jq
 # program GNU Make preserves the backslash/newline, which jq cannot parse.
 GO_QUALIFY_FILTER = length == (if $$mode=="reset" then 1 else 2 end) and \
-    all(.[]; .kind=="go-net" and .version=="$(GO_VERSION)" and .gomaxprocs==$$width and .buffer_bytes==65536 and \
+    all(.[]; .kind=="go-net" and .version=="$(GO_VERSION)" and .gomaxprocs==$$width and .buffer_bytes==65536 and .buffer_owner==$$owner and \
       .metrics["/sched/gomaxprocs:threads"]==$$width and .metrics["/sched/threads/total:threads"]>=1) and \
     .[0].stage=="listening" and (if $$mode=="reset" then true else \
       .[1].stage=="complete" and (.[1].sockets|length)==(if $$mode=="resident" then 64 else 4 end) and \
       all(.[1].sockets[]; .nodelay!=0 and .send_buffer>=4096) end)
+# Pinned Linux/amd64 allocation-control evidence, not a timing threshold.
+GO_STORAGE_ASM_FILTER = \
+    /^TEXT main.startEchoStack.func1\(/ {fn="stack"; next} \
+    /^TEXT main.startEchoHeap.func1\(/ {fn="heap"; next} \
+    /^TEXT main.echoBuffer\(/ {fn="shared"; next} \
+    /^TEXT main.startEchoHeap\(/ {fn="allocator"; next} /^TEXT/ {fn=""} \
+    fn=="stack" && /SUBQ \$$0x1[[:xdigit:]][[:xdigit:]][[:xdigit:]][[:xdigit:]], SP/ {large++} \
+    fn=="stack" && /REP; STOSQ/ {zero++} \
+    (fn=="heap" || fn=="shared") && /SUBQ.*SP/ {frames++; if(/SUBQ \$$0x[[:xdigit:]][[:xdigit:]], SP/) small++} \
+    (fn=="stack" || fn=="heap") && /CALL main.echoBuffer\(/ {shared++} \
+    fn=="allocator" && /CALL runtime.makeslice\(/ {alloc++} \
+    END {exit !(large==1 && zero==1 && frames==2 && small==2 && shared==2 && alloc==1)}
 .PHONY: go-check
 go-check: prepare
 	@set -eu; \
@@ -815,16 +827,34 @@ go-check: prepare
 	for profile in release race; do \
 	  binary="$(BUILD)/go-qualification/go-echo-$$profile"; \
 	  if test "$$profile" = race; then \
-	    CGO_ENABLED=1 CC="$(CLANG)" "$(GO)" build -race -trimpath -o "$$binary" go_echo.go; \
-	  else CGO_ENABLED=0 "$(GO)" build -trimpath -o "$$binary" go_echo.go; fi; \
+	    CGO_ENABLED=1 CC="$(CLANG)" "$(GO)" build -race -trimpath -gcflags=-m=2 -o "$$binary" go_echo.go 2> "$$binary.escape.txt"; \
+	  else CGO_ENABLED=0 "$(GO)" build -trimpath -gcflags=-m=2 -o "$$binary" go_echo.go 2> "$$binary.escape.txt"; fi; \
 	  "$(GO)" version -m "$$binary" > "$$binary.build.txt"; \
-	  for width in 1 4; do \
-	    log="$$binary-p$$width-quiet.log"; \
-	    if ! env -u WF_BENCH_GO_OBSERVE -u WF_BENCH_GO_SNDBUF "$(BUILD)/go-stream-check" "$$binary" echo "$$width" > "$$log" 2>&1; then cat "$$log"; exit 1; fi; \
-	    test "$$(wc -l < "$$log" | tr -d ' ')" = 1; \
-	    for mode in echo reset resident; do \
-	      log="$$binary-p$$width-$$mode.log"; \
-	      prefix="-"; if test "$$(uname -s)" = Linux; then prefix="$$binary-p$$width-live"; fi; \
+	  "$(GO)" tool objdump -s 'main\.(echo|startEcho)' "$$binary" > "$$binary.objdump.txt"; \
+	done; \
+	stack_line=$$(awk '/func echoStack\(/ {inside=1} inside && /buffer := make\(/ {print NR; exit}' go_echo.go); \
+	heap_line=$$(awk '/func startEchoHeap\(/ {inside=1} inside && /buffer := make\(/ {print NR; exit}' go_echo.go); \
+	awk -v location="go_echo.go:$$stack_line:" 'index($$0,location) && /make\(\[\]byte, 65536\) does not escape$$/ {seen=1} END {exit !seen}' "$(BUILD)/go-qualification/go-echo-release.escape.txt"; \
+	awk -v location="go_echo.go:$$heap_line:" 'index($$0,location) && /make\(\[\]byte, 65536\) escapes to heap$$/ {seen=1} END {exit !seen}' "$(BUILD)/go-qualification/go-echo-release.escape.txt"; \
+	if test "$$("$(GO)" env GOOS)/$$("$(GO)" env GOARCH)" = linux/amd64; then \
+	  awk '$(GO_STORAGE_ASM_FILTER)' "$(BUILD)/go-qualification/go-echo-release.objdump.txt"; \
+	fi; \
+	for phase in lifecycle resident; do \
+	 for profile in release race; do \
+	  binary="$(BUILD)/go-qualification/go-echo-$$profile"; \
+	  for owner in handler acceptor; do \
+	   export WF_BENCH_GO_BUFFER_OWNER="$$owner"; \
+	   for width in 1 4; do \
+	    sample="$$binary-$$owner-p$$width"; \
+	    modes=resident; \
+	    if test "$$phase" = lifecycle; then \
+	      modes='echo reset'; log="$$sample-quiet.log"; \
+	      if ! env -u WF_BENCH_GO_OBSERVE -u WF_BENCH_GO_SNDBUF "$(BUILD)/go-stream-check" "$$binary" echo "$$width" > "$$log" 2>&1; then cat "$$log"; exit 1; fi; \
+	      test "$$(wc -l < "$$log" | tr -d ' ')" = 1; \
+	    fi; \
+	    for mode in $$modes; do \
+	      log="$$sample-$$mode.log"; \
+	      prefix="-"; if test "$$(uname -s)" = Linux; then prefix="$$sample-live"; fi; \
 	      if test "$$mode" = resident; then \
 	        WF_BENCH_GO_OBSERVE=1 WF_BENCH_GO_SNDBUF=4096 WF_BENCH_PROCESS_DETAILS=1 \
 	          "$(BUILD)/go-stream-check" "$$binary" resident "$$width" 64 65536 "$$prefix" > "$$log" 2>&1; \
@@ -832,7 +862,7 @@ go-check: prepare
 	        "$(BUILD)/go-stream-check" "$$binary" "$$mode" "$$width" > "$$log" 2>&1; fi; \
 	      cat "$$log"; \
 	      awk -v mode="$$mode" '/^\{/ {next} /^stream_check: PASS/ {passes++; next} /^go_echo:/ && mode=="reset" {errors++; next} {bad=1} END {exit !(passes==1 && !bad && (mode=="reset" ? errors==1 : errors==0))}' "$$log"; \
-	      awk '/^\{/' "$$log" | jq -s -e --argjson width "$$width" --arg mode "$$mode" \
+	      awk '/^\{/' "$$log" | jq -s -e --argjson width "$$width" --arg mode "$$mode" --arg owner "$$owner" \
 	        '$(GO_QUALIFY_FILTER)' > /dev/null; \
 	      if test "$$mode" = resident && test "$$prefix" != "-"; then \
 	        test -s "$$prefix.smaps"; test -s "$$prefix.status"; \
@@ -840,7 +870,9 @@ go-check: prepare
 	        awk '/^tfd:/ {seen++} END {exit !(seen>0)}' "$$prefix".fdinfo-*; \
 	      fi; \
 	    done; \
+	   done; \
 	  done; \
+	 done; \
 	done
 
 

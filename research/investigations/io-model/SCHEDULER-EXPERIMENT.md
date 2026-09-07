@@ -4241,7 +4241,7 @@ name. A known limitation remains visible until its experiment is complete.
 | Native C stackful / C++ stackless | Same epoll engine; private or shared receive storage; stackful, heap coroutine, and compiler-elided coroutine forms | Diagnostic representation control: separates coroutine/frame allocation, storage and reactor cost | Screened and stream/lifetime-qualified at their recorded revisions; not independent mature runtime comparisons |
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
 | WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Correctness-qualified at the revisions above; no concurrent server performance claim yet |
-| Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Experiment49 pins Go 1.27.1 and 64 KiB private initialized buffers; release/race qualification passes on macOS and native Linux, including Linux thread/epoll/resource readback; no timing yet |
+| Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Experiment49 pins Go 1.27.1 and qualifies release/race on macOS/Linux. Release buffer is goroutine-stack storage; heap counters omit that cost. Experiment51 compares handler-stack versus acceptor-heap ownership at equal 64 KiB private capacity before ranking; no timing yet |
 | Rust sequential / Rayon CPU pool | Sequential Rust control, then tuned `par_iter`, `join` and `scope` with explicit grain size and pool width | Essential CPU-parallel baseline for balanced/unbalanced data-parallel and recursive work; mixed-I/O row combines native I/O or Tokio with bounded Rayon offload | Source candidate only; count the total physical CPU budget across both executors, queue bounds and transfer cost. Blocking sockets on Rayon are not its strongest pure-network implementation |
 | Tokio | Fixed-worker multithread runtime and a separate per-core current-thread/reactor configuration | External mainstream async baseline; distinguish work stealing from reactor locality | Source candidate only; pin toolchain/lockfile, socket distribution and blocking-pool budget |
 | Monoio | Per-core runtime, separately forced IoUringDriver and LegacyDriver | External completion/readiness comparison within one runtime family | Source candidate only; prohibit silent fusion fallback in backend-specific rows |
@@ -5170,3 +5170,73 @@ with release/race separation and observed Linux backend/CPU constraints.
 The canonical gate at this revision is still running when these results are
 recorded. No Go timing panel has run, no existing native/WF cohort is replaced,
 and there is no claim of spare generator capacity or maximal Go performance.
+
+
+## Fifty-first experiment: compare Go buffer ownership
+
+Experiment49 qualifies a normal sequential Go reference, but its release
+goroutines retain large stacks for private 64 KiB buffers. That is not evidence
+that the storage form is optimal for Go. This follow-up keeps Go 1.27.1, the
+same initialized capacity, byte-stream contract and CPU budget, and compares
+two ordinary ownership forms selected by `WF_BENCH_GO_BUFFER_OWNER`:
+
+| Owner | Allocation and transfer | Handler's use |
+| --- | --- | --- |
+| `handler`, default | The handler creates its private buffer in a stack-owning wrapper | Calls the common sequential `echoBuffer` loop |
+| `acceptor` | The accepting goroutine allocates the private buffer after accept and transfers its slice into the new goroutine | Calls the same `echoBuffer` loop with that supplied buffer |
+
+There are no global keepers, unsafe conversions, buffer pools, alternate
+reactors, io.Copy/splice calls or artificial escape functions. The heap form
+moves real allocation work to the acceptor and exposes the allocation to GC;
+those are costs of that normal Go ownership choice, not work excluded from
+the comparison. Each connection still owns one 65,536-byte initialized buffer
+until its ordered writes finish. Socket policy, the first-error cleanup and
+joining behavior are shared. The frozen experiment49 remote remains at
+`ccf667fd`; the new `codex/io-go-storage` branch contains this comparison.
+
+The stack-owning wrapper is separate from the supplied-buffer loop. A
+conditional 64 KiB allocation in that loop could force both policies to reserve
+the same large fixed frame and invalidate the intended comparison. Instead,
+`echoStack` is called only from `startEchoStack`'s goroutine, while
+`startEchoHeap` allocates before starting its goroutine. Both call one
+`echoBuffer` implementation. The common-loop refactoring changes the code
+layout relative to experiment49; this experiment compares its two forms at
+one revision rather than pairing their timings with the older binary.
+
+Before recording live RSS, `go-check` builds both release and race binaries,
+saves build metadata, compiler escape diagnostics and the actual disassembly,
+and checks the release allocation sites: the handler buffer must not escape,
+while the acceptor buffer must escape to the heap. On the pinned Linux/amd64
+target it additionally checks a large initialized stack frame for the
+stack-owning goroutine, small frames for the heap-owning goroutine and shared
+loop, a heap allocation call, and both calls into the common loop. These are
+requirements on this experimental storage control, not timing thresholds or
+source-language acceptance rules. Other native targets retain their escape
+checks and disassembly for inspection.
+
+The local Linux/amd64 cross-build demonstrates the intended code generation:
+the compiler inlines `echoStack` into `startEchoStack.func1`, whose frame is
+`0x10028` bytes and whose initializer zeroes the 64 KiB buffer.
+`startEchoHeap` calls `runtime.makeslice`; its handler wrapper has a 40-byte
+frame, and the shared `echoBuffer` frame is 64 bytes. Both wrappers call that
+same loop. Race instrumentation causes even the handler-created buffer to
+escape in the locally inspected race build. Race memory and timing therefore
+cannot stand in for the release storage comparison.
+
+All sixteen experiment49 cases remain for **each** owner, thirty-two cases
+in total: release/race × owner × GOMAXPROCS 1/4 × quiet stream, pressured
+stream, reset-with-three-waiters cleanup, and live residency. All twenty-four
+lifecycle cases complete before any of the eight live snapshots is attempted.
+There is no early promotion after one variant's success. The same full 2 MiB
+per-peer stream oracle, explicit error result and all-thread affinity/epoll
+readbacks remain. Each live case retains 64 peers after checking 64 KiB per
+peer. The Linux CI job still limits all server threads to one logical CPU,
+uses another physical core for the fixture, and labels P4 as oversubscription
+qualification. There is no performance panel.
+
+Local M1 release/race qualification passes all thirty-two cases. Compiler
+escape diagnostics, the Linux/amd64 frame predicate against the actual
+cross-built binary, Go formatting/vet, shell/Make expansion and diff checks
+pass. Native Linux paired live snapshots are pending. Release storage
+candidates remain unranked until those results and later properly resourced
+timing evidence establish their tradeoffs.
