@@ -21,6 +21,7 @@ printf '%s\n' "$result" > "$OUT/last-$mode-path.txt"
     git rev-parse HEAD
     git status --short
     cat "$OUT/bench-toolchain.txt"
+    cat "$OUT/fir-wf-flags.txt"
     if test "$(uname -s)" = Linux; then
         lscpu
         cat /proc/self/status
@@ -31,16 +32,22 @@ printf '%s\n' "$result" > "$OUT/last-$mode-path.txt"
     else
         sysctl hw.model hw.ncpu hw.physicalcpu hw.l1dcachesize hw.l2cachesize machdep.cpu.brand_string
     fi
-    shasum -a 256 fir.wf fir_host.ll fir_bench.c fir_native.c fir_native.h fir_check.c \
+    shasum -a 256 fir.wf fir_direct.wf fir_lanes.wf fir_host.ll fir_bench.c fir_native.c fir_native.h fir_check.c fir_wf_check.c \
         fir_static.c fir_static.h fir_static_check.c runtime.c runtime.h Makefile fir-bench.sh \
         ../../../compiler/src/backend/wf_floor.c ../../../compiler/src/backend/sched/core.c \
         ../../../compiler/src/backend/sched/prim_host.c ../../../compiler/src/backend/sched/entry.c \
         "$OUT/fir-host.ll" "$OUT/fir-wf.o" "$OUT/fir-native.o" "$OUT/fir-static.o" \
-        "$OUT/bench-weak" "$OUT/bench-static" "$OUT/bench-recovered" "$OUT/bench-shared"
+        "$OUT/bench-weak" "$OUT/bench-static" "$OUT/bench-recovered" "$OUT/bench-shared" \
+        "$OUT/fir-lanes-host.ll" "$OUT/fir-wf-lanes16.o" "$OUT/fir-wf-lanes16-slp.o" \
+        "$OUT/bench-weak-wf-lanes16" "$OUT/bench-recovered-wf-lanes16" "$OUT/bench-shared-wf-lanes16" \
+        "$OUT/bench-weak-wf-lanes16-slp" "$OUT/bench-recovered-wf-lanes16-slp" "$OUT/bench-shared-wf-lanes16-slp"
 } > "$result/manifest.txt"
 git diff --binary HEAD -- . ../../../.github/workflows/compute-bench.yml > "$result/source.patch"
 cp "$OUT/fir-native-release-check.log" "$result/native-qualification.txt"
 for lanes in 1 2 4; do cp "$OUT/fir-static-release-$lanes.log" "$result/"; done
+for variant in direct lanes16 lanes16-slp; do
+    cp "$OUT/fir-wf-$variant-check.log" "$OUT/fir-wf-$variant-sanitized-check.log" "$result/"
+done
 
 if test "$mode" = check; then
     printf '3 0\n7 33\n64 4097\n' > "$result/cells.txt"
@@ -64,10 +71,12 @@ fi
     for kernel in direct lanes4 lanes8 lanes16; do
         for width in $widths; do printf 'static static-%s %s 65536\n' "$kernel" "$width"; done
     done
-    for tile in $tiles; do
-        printf 'weak wf 0 %s\n' "$tile"
-        for runtime in recovered shared; do
-            for width in $widths; do printf '%s wf %s %s\n' "$runtime" "$width" "$tile"; done
+    for kernel in wf wf-lanes16 wf-lanes16-slp; do
+        for tile in $tiles; do
+            printf 'weak %s 0 %s\n' "$kernel" "$tile"
+            for runtime in recovered shared; do
+                for width in $widths; do printf '%s %s %s %s\n' "$runtime" "$kernel" "$width" "$tile"; done
+            done
         done
     done
 } > "$result/configurations.txt"
@@ -89,7 +98,9 @@ while read -r k n; do
             }}' "$result/configurations.txt" > "$result/order.txt"
         while read -r runtime kernel width tile; do
             log="$result/k$k-n$n-$runtime-$kernel-w$width-t$tile-p$pass.tsv"
-            WF_WORKERS=$width WF_SCHED_REPORT=1 "$OUT/bench-$runtime" \
+            suffix=
+            case "$kernel" in wf-lanes16|wf-lanes16-slp) suffix=-$kernel;; esac
+            WF_WORKERS=$width WF_SCHED_REPORT=1 "$OUT/bench-$runtime$suffix" \
                 "$kernel" "$k" "$n" "$tile" "$reps" "$seed" "$pass" > "$log" 2>&1
             grep -Fxq "# FIR bench PASS: calls=$((reps + 1)) samples=$(((reps + 1) * n)) history=$(((reps + 1) * (k - 1)))" "$log"
             if test "$runtime" = static; then

@@ -11,8 +11,9 @@ direct and 4/8/16-output SIMD candidates, with full-result qualification and a
 same-host calibration caller. They do not yet establish a confirmed frontier.
 The [static worker control](../../experiments/compute-runtime/README.md#static-worker-control)
 now dispatches the same qualified objects at one/two/four actual lanes; its
-condition-variable policy has local correctness evidence and awaits Linux
-measurement. Dynamic framework rows remain source-informed candidates.
+condition-variable policy has full-oracle/lifecycle evidence and a dated
+[Linux calibration](../../experiments/compute-runtime/README.md#linux-static-control-before-wf-output-groups).
+Dynamic framework rows remain source-informed candidates.
 Earlier I/O or mixed-panel results do not qualify these comparisons. This matrix belongs to the [compute-runtime
 investigation](README.md); update its evidence cells when actual results exist,
 and consolidate it if that investigation supersedes this selection.
@@ -63,7 +64,7 @@ tasking; its examples' timing tables are not evidence for this investigation.
 | oneTBB **v2023.1.0**, release short commit `3046c8b`. [Release](https://github.com/uxlfoundation/oneTBB/releases/tag/v2023.1.0). | Full source/package identity, compiler and linked release library; live `main` documentation is not a frozen source audit. |
 | Taskflow **v4.1.0**, release short commit `45366fe`. [Release](https://github.com/taskflow/taskflow/releases/tag/v4.1.0). | Live docs list **4.2.0 (Master)** separately. Verify each chosen runtime/subflow API against pinned headers; development documentation is not proof that an API exists in 4.1.0. [Release index](https://taskflow.github.io/taskflow/Releases.html). |
 | ParlayLib **`master`**, inspected sources above; no immutable revision pinned | Resolve a full commit, record scheduler macros, allocator and idle settings; qualify target architecture. |
-| Native C strict FIR direct/output-lane candidates and static workers: checked-in source and executable qualification in the [experiment](../../experiments/compute-runtime/README.md#native-fir-and-first-cost-attribution) | The first Linux calibration qualifies the single-caller kernel screen; static workers have local full-oracle/lifecycle qualification. Each calibration retains source/object hashes, compiler and target flags. Static Linux measurement and held-out confirmation are pending; other native languages and other workloads remain unimplemented. |
+| Native C strict FIR direct/output-lane candidates and static workers: checked-in source and executable qualification in the [experiment](../../experiments/compute-runtime/README.md#native-fir-and-first-cost-attribution) | Dated Linux screens cover single-caller kernels and static workers with actual capacity, full-oracle and lifecycle qualification. Each calibration retains source/object hashes, compiler and target flags. Held-out confirmation remains pending; other native languages and other workloads remain unimplemented. |
 
 ## Workload matrix
 

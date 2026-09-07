@@ -18,6 +18,9 @@
 #if defined(WF_FILTER_NATIVE) && defined(WF_FILTER_HOST)
 #error "Native and WF host qualification are separate build modes"
 #endif
+#if defined(WF_FILTER_WF_OBJECT) && !defined(WF_FILTER_NATIVE)
+#error "WF object adapters require the complete native oracle matrix"
+#endif
 #ifdef WF_FILTER_NATIVE
 #include "fir_native.h"
 
@@ -467,6 +470,8 @@ static int check_suite(void) {
     printf("FIR scalar oracle PASS: cases=%zu channels=%zu samples=%" PRIu64
 #ifdef WF_FILTER_HOST
            "; WF complete output/history included\n",
+#elif defined(WF_FILTER_WF_OBJECT)
+           "; WF object adapters included\n",
 #else
            "; WF execution not included\n",
 #endif
@@ -505,7 +510,12 @@ int main(void) {
 #ifdef WF_FILTER_NATIVE
     int status = check_suite();
     check_native_boundaries();
-    printf("Native FIR qualification PASS: forms=%zu calls=%" PRIu64
+    printf(
+#ifdef WF_FILTER_WF_OBJECT
+           "WF FIR tile matrix PASS: forms=%zu calls=%" PRIu64
+#else
+           "Native FIR qualification PASS: forms=%zu calls=%" PRIu64
+#endif
            " samples=%" PRIu64 " K=1..64\n",
            sizeof(native_forms) / sizeof(native_forms[0]), native_calls, native_samples);
     return status;

@@ -16,6 +16,9 @@ BENCH_CFLAGS := -std=c11 -O3 -g -Wall -Wextra -Werror -Wpedantic -pthread \
 STATIC_ORACLE_FLAGS := -DWF_FILTER_NATIVE -Dmain=fir_qualified_oracle_main \
 	-Dfir_native_direct=fir_static_check_direct -Dfir_native_lanes4=fir_static_check_lanes4 \
 	-Dfir_native_lanes8=fir_static_check_lanes8 -Dfir_native_lanes16=fir_static_check_lanes16
+WF_ORACLE_FLAGS := -DWF_FILTER_NATIVE -DWF_FILTER_WF_OBJECT -Dmain=fir_qualified_oracle_main \
+	-Dfir_native_direct=fir_wf_tile1 -Dfir_native_lanes4=fir_wf_tile17 \
+	-Dfir_native_lanes8=fir_wf_tile257 -Dfir_native_lanes16=fir_wf_tile65536
 
 # Mach-O plain nm prints T for weak function definitions too. Check its full
 # binding description; ELF nm distinguishes a strong T from weak W directly.
@@ -30,7 +33,7 @@ define require-strong
 endef
 
 .PHONY: check build check-runtime check-abi check-fir fir-ir check-native native-object check-static \
-	build-bench check-bench bench-calibrate compiler force
+	wf-objects check-wf-objects build-bench check-bench bench-calibrate compiler force
 
 force:
 
@@ -92,7 +95,7 @@ check-abi: $(WFC)
 
 fir-ir: $(WFC)
 	mkdir -p "$(OUT)"
-	"$(WFC)" --par --par-ledger --emit-llvm fir.wf -o "$(OUT)/fir.ll" > "$(OUT)/fir.ledger"
+	"$(WFC)" --par --par-ledger --emit-llvm fir.wf fir_direct.wf -o "$(OUT)/fir.ll" > "$(OUT)/fir.ledger"
 	grep -F 'pair(filter_tiles, filter_tiles)' "$(OUT)/fir.ledger"
 	grep -F 'call void @wf__par_publish(' "$(OUT)/fir.ll"
 	grep -E '^define i32 @main\(' "$(OUT)/fir.ll"
@@ -102,6 +105,14 @@ fir-ir: $(WFC)
 	sed -e 's/@main(/@wf_research_fir_command_main(/g' \
 		-e 's/@wf__main_body(/@wf_research_fir_command_body(/g' "$(OUT)/fir.ll" > "$(OUT)/fir-host.ll"
 	cat fir_host.ll >> "$(OUT)/fir-host.ll"
+	"$(WFC)" --par --par-ledger --emit-llvm fir.wf fir_lanes.wf -o "$(OUT)/fir-lanes.ll" > "$(OUT)/fir-lanes.ledger"
+	grep -F 'pair(filter_tiles, filter_tiles)' "$(OUT)/fir-lanes.ledger"
+	grep -F 'call void @wf__par_publish(' "$(OUT)/fir-lanes.ll"
+	grep -E '^define i32 @main\(' "$(OUT)/fir-lanes.ll"
+	grep -E '^define i32 @wf__main_body\(' "$(OUT)/fir-lanes.ll"
+	sed -e 's/@main(/@wf_research_fir_command_main(/g' \
+		-e 's/@wf__main_body(/@wf_research_fir_command_body(/g' "$(OUT)/fir-lanes.ll" > "$(OUT)/fir-lanes-host.ll"
+	cat fir_host.ll >> "$(OUT)/fir-lanes-host.ll"
 
 check-fir: fir-ir
 	$(CC) $(CFLAGS) -fno-fast-math -ffp-contract=off -fsanitize=$(SANITIZER) -fno-omit-frame-pointer \
@@ -186,9 +197,43 @@ check-static: native-object
 			"$(OUT)/fir-static-$$1-$$2.log" || exit 1; \
 	done
 
-build-bench: fir-ir check-native check-static
+wf-objects: fir-ir
 	$(CC) $(BENCH_CFLAGS) -Wno-override-module -c "$(OUT)/fir-host.ll" -o "$(OUT)/fir-wf.o"
 	$(CC) $(BENCH_CFLAGS) -Wno-override-module -S "$(OUT)/fir-host.ll" -o "$(OUT)/fir-wf.s"
+	$(CC) $(BENCH_CFLAGS) -Wno-override-module -c "$(OUT)/fir-lanes-host.ll" -o "$(OUT)/fir-wf-lanes16.o"
+	$(CC) $(BENCH_CFLAGS) -Wno-override-module -S "$(OUT)/fir-lanes-host.ll" -o "$(OUT)/fir-wf-lanes16.s"
+	$(CC) $(BENCH_CFLAGS) -fno-vectorize -Wno-override-module -c "$(OUT)/fir-lanes-host.ll" -o "$(OUT)/fir-wf-lanes16-slp.o"
+	$(CC) $(BENCH_CFLAGS) -fno-vectorize -Wno-override-module -S "$(OUT)/fir-lanes-host.ll" -o "$(OUT)/fir-wf-lanes16-slp.s"
+	@printf '%s\n' 'wf: fir.wf fir_direct.wf; $(BENCH_CFLAGS)' \
+		'wf-lanes16: fir.wf fir_lanes.wf; $(BENCH_CFLAGS)' \
+		'wf-lanes16-slp: fir.wf fir_lanes.wf; $(BENCH_CFLAGS) -fno-vectorize' > "$(OUT)/fir-wf-flags.txt"
+
+# C checker/runtime instrumentation does not imply that already emitted WF
+# LLVM receives frontend sanitizer instrumentation. Reuse the exact timed WF
+# object, and retain both the ordinary and instrumented host qualifications.
+check-wf-objects: wf-objects
+	$(CC) $(BENCH_CFLAGS) $(WF_ORACLE_FLAGS) -c fir_check.c -o "$(OUT)/fir-wf-oracle.o"
+	$(CC) $(BENCH_CFLAGS) $(WF_ORACLE_FLAGS) -fsanitize=$(SANITIZER) \
+		-fno-sanitize-recover=all -fno-omit-frame-pointer -c fir_check.c -o "$(OUT)/fir-wf-oracle-sanitized.o"
+	@for variant in direct lanes16 lanes16-slp; do \
+		suffix=-$$variant; if test "$$variant" = direct; then suffix=; fi; \
+		$(CC) $(BENCH_CFLAGS) fir_wf_check.c $(FLOOR) "$(OUT)/fir-wf$$suffix.o" \
+			"$(OUT)/fir-wf-oracle.o" -lm -o "$(OUT)/fir-wf-$$variant-check" || exit $$?; \
+		$(CC) $(BENCH_CFLAGS) -DWF_COMPUTE_CONTROL -fsanitize=$(SANITIZER) \
+			-fno-sanitize-recover=all -fno-omit-frame-pointer fir_wf_check.c runtime.c $(FLOOR) \
+			"$(OUT)/fir-wf$$suffix.o" "$(OUT)/fir-wf-oracle-sanitized.o" \
+			-lm -o "$(OUT)/fir-wf-$$variant-sanitized-check" || exit $$?; \
+		WF_WORKERS=0 "$(OUT)/fir-wf-$$variant-check" > "$(OUT)/fir-wf-$$variant-check.log" || exit $$?; \
+		WF_WORKERS=4 "$(OUT)/fir-wf-$$variant-sanitized-check" > "$(OUT)/fir-wf-$$variant-sanitized-check.log" || exit $$?; \
+		cat "$(OUT)/fir-wf-$$variant-check.log" "$(OUT)/fir-wf-$$variant-sanitized-check.log"; \
+		for mode in check sanitized-check; do \
+			world=sequential; if test "$$mode" = sanitized-check; then world=parallel; fi; \
+			grep -Fxq "FIR WF object qualification PASS: world=$$world tiles=4 calls=107408 samples=1294336 history=3752300 misses=322224 K=1..64" \
+				"$(OUT)/fir-wf-$$variant-$$mode.log" || exit 1; \
+		done; \
+	done
+
+build-bench: check-wf-objects check-native check-static
 	$(CC) $(BENCH_CFLAGS) -DFIR_RUNTIME='"weak"' fir_bench.c $(FLOOR) \
 		"$(OUT)/fir-wf.o" "$(OUT)/fir-native.o" -lm -o "$(OUT)/bench-weak"
 	$(CC) $(BENCH_CFLAGS) -DFIR_RUNTIME='"static"' -DWF_FILTER_STATIC fir_bench.c $(FLOOR) \
@@ -198,7 +243,19 @@ build-bench: fir-ir check-native check-static
 	$(CC) $(BENCH_CFLAGS) -DFIR_RUNTIME='"shared"' -DWF_SHARED_CONTROL \
 		fir_bench.c $(FLOOR) $(SHARED)/core.c $(SHARED)/prim_host.c $(SHARED)/entry.c \
 		"$(OUT)/fir-wf.o" "$(OUT)/fir-native.o" -lm -o "$(OUT)/bench-shared"
-	@for form in weak static recovered shared; do \
+	@for variant in lanes16 lanes16-slp; do \
+		$(CC) $(BENCH_CFLAGS) -DFIR_RUNTIME='"weak"' -DFIR_WF_KERNEL=\"wf-$$variant\" \
+			fir_bench.c $(FLOOR) "$(OUT)/fir-wf-$$variant.o" "$(OUT)/fir-native.o" \
+			-lm -o "$(OUT)/bench-weak-wf-$$variant" || exit $$?; \
+		$(CC) $(BENCH_CFLAGS) -DFIR_RUNTIME='"recovered"' -DWF_COMPUTE_CONTROL -DFIR_WF_KERNEL=\"wf-$$variant\" \
+			fir_bench.c runtime.c $(FLOOR) "$(OUT)/fir-wf-$$variant.o" "$(OUT)/fir-native.o" \
+			-lm -o "$(OUT)/bench-recovered-wf-$$variant" || exit $$?; \
+		$(CC) $(BENCH_CFLAGS) -DFIR_RUNTIME='"shared"' -DWF_SHARED_CONTROL -DFIR_WF_KERNEL=\"wf-$$variant\" \
+			fir_bench.c $(FLOOR) $(SHARED)/core.c $(SHARED)/prim_host.c $(SHARED)/entry.c \
+			"$(OUT)/fir-wf-$$variant.o" "$(OUT)/fir-native.o" -lm -o "$(OUT)/bench-shared-wf-$$variant" || exit $$?; \
+	done
+	@for form in weak static recovered shared weak-wf-lanes16 recovered-wf-lanes16 shared-wf-lanes16 \
+		weak-wf-lanes16-slp recovered-wf-lanes16-slp shared-wf-lanes16-slp; do \
 		nm "$(OUT)/bench-$$form" > "$(OUT)/bench-$$form.symbols"; \
 	done
 	$(call require-strong,$(OUT)/bench-weak,wf__floor_run)
@@ -207,10 +264,24 @@ build-bench: fir-ir check-native check-static
 	$(call require-strong,$(OUT)/bench-shared,wf__floor_run)
 	$(call require-strong,$(OUT)/bench-recovered,wf__par_acquire_lane)
 	$(call require-strong,$(OUT)/bench-shared,wf__par_acquire_lane)
+	$(call require-strong,$(OUT)/bench-weak-wf-lanes16,wf__floor_run)
+	$(call require-strong,$(OUT)/bench-recovered-wf-lanes16,wf__floor_run)
+	$(call require-strong,$(OUT)/bench-shared-wf-lanes16,wf__floor_run)
+	$(call require-strong,$(OUT)/bench-recovered-wf-lanes16,wf__par_acquire_lane)
+	$(call require-strong,$(OUT)/bench-shared-wf-lanes16,wf__par_acquire_lane)
+	$(call require-strong,$(OUT)/bench-weak-wf-lanes16-slp,wf__floor_run)
+	$(call require-strong,$(OUT)/bench-recovered-wf-lanes16-slp,wf__floor_run)
+	$(call require-strong,$(OUT)/bench-shared-wf-lanes16-slp,wf__floor_run)
+	$(call require-strong,$(OUT)/bench-recovered-wf-lanes16-slp,wf__par_acquire_lane)
+	$(call require-strong,$(OUT)/bench-shared-wf-lanes16-slp,wf__par_acquire_lane)
 	grep -E ' T _?wf_sched_join$$' "$(OUT)/bench-shared.symbols"
-	@if grep -E ' [Tt] _?(wf_sched_|wf_completion_|wf__completion_)' "$(OUT)/bench-recovered.symbols"; then \
-		echo 'recovered timing binary unexpectedly links shared runtime' >&2; exit 1; \
-	fi
+	grep -E ' T _?wf_sched_join$$' "$(OUT)/bench-shared-wf-lanes16.symbols"
+	grep -E ' T _?wf_sched_join$$' "$(OUT)/bench-shared-wf-lanes16-slp.symbols"
+	@for suffix in '' -wf-lanes16 -wf-lanes16-slp; do \
+		if grep -E ' [Tt] _?(wf_sched_|wf_completion_|wf__completion_)' "$(OUT)/bench-recovered$$suffix.symbols"; then \
+			echo 'recovered timing binary unexpectedly links shared runtime' >&2; exit 1; \
+		fi; \
+	done
 	$(CC) --version > "$(OUT)/bench-toolchain.txt"
 	@printf '%s\n' '$(BENCH_CFLAGS)' >> "$(OUT)/bench-toolchain.txt"
 	shasum -a 256 "$(WFC)" >> "$(OUT)/bench-toolchain.txt"

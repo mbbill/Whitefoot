@@ -140,11 +140,17 @@ drawn from the local sanitizer runs.
 
 ## Variable-input causal FIR
 
-`fir.wf` computes every output of a causal finite impulse response filter with
+`fir.wf` and one selected leaf file compute every output of a causal finite impulse response filter with
 1 to 64 taps and K-1 initial history samples, oldest first. Tap zero multiplies
 the current sample. Each output accumulates in ascending tap order using
 distinct `fmul.strict` and `fadd.strict` operations. Samples preceding the block
-come from its history; an empty block preserves that history.
+come from its history; an empty block preserves that history. `fir_direct.wf`
+retains the original one-output recurrence. `fir_lanes.wf` computes sixteen
+independent outputs together, followed by a scalar tail. Both define the same
+leaf contract and share `fir.wf`'s tree, recursion, accessors and command. The
+compiler receives both files in one ordinary compilation; this is not separate
+module compilation or a new ABI. Keep the two leaf files while their code
+generation is compared; remove the superseded form when that question is settled.
 
 The filter recursively divides the output interval and computes independently
 owned tiles. Ordinary sibling calls expose the overlap; their joins complete
@@ -154,7 +160,7 @@ filter. A missing sample is an actual accessor result, checked as such by the
 host. The WF history accessor reads the final K-1 samples of the held input
 prefix, and its results become the history of subsequent real WF calls.
 
-The original command remains a complete WF program and checks a small impulse.
+The shared command remains a complete WF program and checks a small impulse.
 `fir_check.c` supplies the variable input cases and two independent C algorithms:
 direct convolution and a stateful circular delay line. Each complete output
 and next-history value must agree bit for bit. Hand-calculated nonzero-history,
@@ -244,6 +250,52 @@ input immutability and rounding witnesses: 107,408 calls and 1,294,336 output
 samples. The ordinary object is then reused unchanged by the timing binaries.
 The older standalone and WF-host checks remain separate and retain their counts.
 
+### WF output groups and exact optimized objects
+
+Three WF configurations retain the same ownership and execution model:
+
+| Kernel identifier | Leaf source | WF object optimization |
+|---|---|---|
+| `wf` | `fir_direct.wf` | Strict O3, the original control |
+| `wf-lanes16` | `fir_lanes.wf` | Strict O3, default LLVM loop and SLP passes |
+| `wf-lanes16-slp` | `fir_lanes.wf` | Same strict O3 plus `-fno-vectorize`; SLP stays enabled |
+
+The grouped source writes a finite weighted invariant establishing that all
+sixteen outputs lie inside the tile. Additional tail facts establish causal
+input bounds. These proofs erase before lowering; there is no executable
+overflow/bounds fallback or new arithmetic permission. Each output still
+visits every tap in ascending order. The compiler, scheduler, function
+contracts and opaque task-frame interface are unchanged. Only this experiment's
+WF-object invocation selects the last configuration's flag; production
+optimization policy is unchanged. The flag applies to that entire WF module,
+including its accessors, and is not a promise to improve other programs.
+
+The first local source screen tried four/eight/sixteen independent accumulators.
+LLVM could vectorize tap products with ordered scalar additions before SLP saw
+the independent output recurrences. The explicit pass control tests that
+mechanism against ordinary O3 in the same matrix. It does not establish that
+sixteen is optimal across workloads or targets. A compact local array-loop
+variant also compiles, but this compiler revision materializes the full array
+at dynamic indexed accesses; its generated lane loop contains repeated whole
+array stores/reloads. A dereferenced exclusive legacy-array variant stops with
+the explicit `RegionsAndBorrows` capability diagnostic. Neither observation
+selects a language rejection or justifies adding a runtime proof guard.
+
+`check-wf-objects` links each actual timed WF object to `fir_wf_check.c` and
+the unchanged complete native oracle algorithms. Only the oracle translation
+unit's four entry references are redirected to WF adapters with tile sizes
+1/17/257/65536. Each run makes 107,408 real WF calls and checks 1,294,336 output
+samples, 3,752,300 history values and 322,224 misses, including every K=1..64,
+lane boundaries, ragged blocks, canaries and strict rounding witnesses.
+For each of the three objects, one ordinary weak host and one recovered
+four-worker host with the selected C sanitizer must report the expected world
+and complete counts. The generated WF object remains byte-identical to the
+timed object; C instrumentation does not add frontend sanitizer checks to WF
+LLVM. The original streaming/history test still checks state from WF accessors
+across successive calls separately. Keep this adapter while actual optimized
+WF objects need the expanded oracle; consolidate it if the broader workload
+harness replaces this research boundary.
+
 ### Static worker control
 
 `fir_static.c` dispatches those same four kernels over balanced contiguous
@@ -279,12 +331,17 @@ WF scheduling; consolidate or remove them when that comparison is superseded.
 
 ### Timing boundaries
 
-`fir_bench.c` is an explicit C host for the actual FIR program. All four
-executables contain the **same `fir-wf.o` and `fir-native.o`**, compiled once at
-O3 with strict FP and without LTO. `bench-weak` links the weak sequential path;
+`fir_bench.c` is an explicit C host for the actual FIR program. Each WF
+configuration uses one object unchanged across weak/recovered/shared controls;
+all ten executables share the **same `fir-native.o`**. Objects compile at O3
+with strict FP and without LTO, with WF pass settings recorded separately in
+`fir-wf-flags.txt`. `bench-weak` links the weak sequential path;
 `bench-recovered` links the current-stack control; `bench-shared` links main's
 compute scheduler units (`core.c`, `prim_host.c`, `entry.c`); `bench-static` adds
-the qualified static object to the weak host. All retain the real
+the qualified static object to the original weak host. The two grouped forms
+use six additional binaries named `bench-<runtime>-<kernel>`; each host accepts
+only its compiled WF kernel identifier, preventing a mislabeled WF comparison.
+All retain the real
 floor and the same research wrappers. The shared runtime is an architectural
 control, not a native performance ceiling. Current runtime statistics remain
 enabled, including recovery's shared atomic steal counter; differences include
@@ -312,13 +369,14 @@ per-process means and ranges, not confidence intervals or reliable tail
 percentiles. Tiny/empty rows diagnose overhead and do not establish nanosecond
 kernel rankings.
 
-`check-bench`, included by canonical `check`, runs 69 processes: three empty,
+`check-bench`, included by canonical `check`, runs 111 processes: three empty,
 short and uneven cells across four native forms, weak WF and recovered/shared
-WF with requested widths 0/2/4, and all four static forms at those widths.
+WF with requested widths 0/2/4 for all three WF kernels, and all four static forms at those widths.
 It checks the exact full report, every result,
 and the complete ordered row sequence and configuration keys;
 there are no elapsed-time assertions. Alongside the previous nineteen, two
-native and eight static checks, the experiment now runs 98 invocations. The host metadata read
+native, eight static and six optimized-WF-object checks, the experiment now runs
+146 invocations. The host metadata read
 may require permission in a local sandbox; native CI has that access.
 
 Run a calibration explicitly, with a target appropriate to the measured host:
@@ -334,7 +392,9 @@ five passes rotate/reverse configuration order over K={3,15,64},
 N={33,4097,262144}, plus an empty diagnostic. WF tiles are 257/4096/65536;
 requested WF and static widths are 0 and, when available, 2/4. Static partitioning
 does not use the WF tile parameter. On four allowed logical CPUs this gives
-37 configurations per cell and 1,850 processes over five passes. Every configuration and losing
+79 configurations per cell and 3,950 processes over five passes. The three WF
+forms participate in the same rotated/reversed order, rather than separate
+form-by-form timing batches. Every configuration and losing
 row remains. `ROUNDS` can shorten a smoke/calibration replay, never manufacture
 confirmation. Results go to a fresh directory recorded in `OUT/last-calibrate-path.txt`;
 an existing directory is not overwritten. Exact objects, assembly, tool flags,
@@ -391,3 +451,33 @@ scheduler-ceiling conclusions. They do not measure static workers or establish
 held-out confirmation. All twelve Linux/macOS jobs of the matching
 [canonical gate](https://github.com/mbbill/Whitefoot/actions/runs/34157403358)
 passed; that revision ran 54 experiment invocations, before the static addition.
+
+### Linux static control, before WF output groups
+
+Revision `7ad3ec5f4df2e8d0842a6f5a0ff34f954f7c7eaa` passed all twelve jobs of
+its [canonical gate](https://github.com/mbbill/Whitefoot/actions/runs/34160395286)
+and the [five-pass static calibration](https://github.com/mbbill/Whitefoot/actions/runs/34160395321).
+The full artifact audit verified all 1,850 processes and 271,580 raw calls,
+including exact capacity and completed shutdown in all 600 static processes.
+This was another EPYC 9V74 VM reporting two SMT2 cores and mask 0-3, with
+Clang 18.1.3 and strict O3 `-march=native`. Quota and individual thread placement
+remain unqualified. The run is not pooled with the preceding host population.
+
+At K=64, N=262,144 and WF tile=4,096, median core/cycle microseconds were
+1,142.731/1,301.326 for single-caller C lanes16;
+1,093.803/1,226.703 for static lanes16 with two actual lanes;
+855.686/999.069 for static lanes16 with four;
+4,292.095/6,439.568 for recovered WF with four; and
+4,691.544/7,638.750 for shared WF with four. Static four lanes beat two in only
+three of five paired passes; a lower median does not establish consistent
+monotonic scaling. The different allocation/materialization boundaries above
+still apply. This result predates the grouped WF configurations.
+
+Artifact `10032428800` (`compute-fir-linux`, expires 2026-12-06) contains every
+raw row, source/host manifests and exact objects. Its 6,954,818-byte ZIP has
+SHA-256 `ea96e5ad22cc3d04fbe69c021f94f9b06ff1b9397cdaf7acea4cf460f57fb138`.
+The independent audit rehashed seventeen sources and eight retained IR/object/
+executables and verified all eight static qualification cases and 69 smokes.
+Compiler executable bytes are not uploaded; its hash is recorded. Keep this
+dated interpretation while the control is useful, and remove it if superseded
+evidence makes this comparison unnecessary.

@@ -10,8 +10,11 @@ investigation](README.md). The [reference matrix](BASELINES.md) separately owns
 the native comparisons. The inventory below was inspected at
 `6cc00984415a39c507fa74897c9269b10beebfee`. The
 [variable-input FIR experiment](../../experiments/compute-runtime/README.md#variable-input-causal-fir)
-now supplies the first implemented WF computation with local output and
-parallel-execution qualification; no timing result is claimed. Keep the inventory current as
+now supplies the first implemented WF computation with output and
+parallel-execution qualification plus dated Linux native calibration. Its
+original and grouped-output kernels share the recursive program and exact
+result contract. This remains one workload family, with broader coverage still
+required below. Keep the inventory current as
 programs become executable; consolidate it when the suite's implemented coverage
 supersedes this selection.
 
