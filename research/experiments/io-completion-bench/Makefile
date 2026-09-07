@@ -27,6 +27,13 @@ ROOT := $(abspath ../../..)
 scheduler-check:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" bash scheduler-bench.sh check
 
+.PHONY: scheduler-enumeration-check scheduler-stream-check
+scheduler-enumeration-check:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" bash scheduler-bench.sh check-enumeration
+
+scheduler-stream-check:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" bash scheduler-bench.sh check-streams
+
 scheduler-bench:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" bash scheduler-bench.sh bench
 

@@ -230,8 +230,7 @@ check() {
     return "$status"
 }
 
-if [[ $MODE == check ]]; then
-    check
+check_streams() {
     if [[ $(uname -s) == Linux ]]; then
         make -C "$HERE" compiler-continuation-check CLANG="$CLANG" CORO_CXX="$CORO_CXX" \
             WHITEFOOT_SCRATCH_ROOT="$OUT/completion-coroutine-check"
@@ -244,10 +243,17 @@ if [[ $MODE == check ]]; then
     else
         make -C "$HERE" netload-observe-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/client-observer-check"
     fi
-    exit 0
-fi
+}
+
+# These two independent parts are also the CI partition. The original check
+# mode keeps their complete union for callers outside the root gate.
+case $MODE in
+    check) check; check_streams; exit 0 ;;
+    check-enumeration) check; exit 0 ;;
+    check-streams) check_streams; exit 0 ;;
+esac
 if [[ ( $MODE != bench && $MODE != profile && $MODE != combine && $client_experiment != 1 ) || $(uname -s) != Linux ]]; then
-    echo 'scheduler-bench: use check on POSIX, or bench/profile/client/placement/combine on Linux with io_uring' >&2
+    echo 'scheduler-bench: use check/check-enumeration/check-streams on POSIX, or bench/profile/client/placement/combine on Linux with io_uring' >&2
     exit 2
 fi
 if [[ $MODE == combine && $EXPERIMENT != allocator ]]; then

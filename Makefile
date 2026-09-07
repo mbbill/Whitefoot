@@ -136,7 +136,14 @@ research-tests:
 # The experimental ready policies change scheduling only. Each still owes the
 # complete scheduler enumeration, independently of the performance readings.
 scheduler-experiment:
-	$(MAKE) -C research/experiments/io-completion-bench scheduler-check WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)"
+	$(MAKE) scheduler-enumeration
+	$(MAKE) scheduler-streams
+
+scheduler-enumeration:
+	$(MAKE) -C research/experiments/io-completion-bench scheduler-enumeration-check WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)"
+
+scheduler-streams:
+	$(MAKE) -C research/experiments/io-completion-bench scheduler-stream-check WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)"
 	$(MAKE) -C research/experiments/io-completion-bench go-check WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)"
 
 # Enumerate every declared case through the native adapter. Every non-pending
@@ -168,4 +175,4 @@ install-hooks:
 	git config core.hooksPath governance/hooks
 	@echo "installed governance/hooks (pre-commit, pre-merge-commit)"
 
-.PHONY: check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity conformance compiler research-tests scheduler-experiment conformance-run snapshot-run install-hooks
+.PHONY: check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity conformance compiler research-tests scheduler-experiment scheduler-enumeration scheduler-streams conformance-run snapshot-run install-hooks

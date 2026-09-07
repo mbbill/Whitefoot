@@ -404,8 +404,12 @@ screening six server forms at 64 peers and 64 B/64 KiB. This isolates a
 client resource limit; it does not compare servers using different clients.
 `go-check` qualifies the external Go sequential `net` reference with exactly
 Go 1.27.1 (`GO=/path/to/go` selects the binary), `jq` and the host C compiler.
-It is reached by canonical `make check` through `scheduler-experiment`; the
-gate installs that exact Go version only for its scheduler jobs. Release and
+It is reached by canonical `make check` through `scheduler-experiment` and its
+`scheduler-streams` part; the gate installs that exact Go version only for
+the stream jobs. Root `scheduler-enumeration` separately runs every scheduler
+policy/configuration sweep. CI runs these two parts in parallel; the local
+composite and the original benchmark `scheduler-check` retain all their cases.
+Release and
 race builds independently qualify both `WF_BENCH_GO_BUFFER_OWNER=handler`
 (default: handler-created stack buffer) and `acceptor` (acceptor-created heap
 buffer transferred to the handler). They share the same sequential read/write
@@ -418,7 +422,9 @@ readbacks and optional Linux per-thread, epoll-fdinfo and memory snapshots are
 qualification evidence. Experiment49's dedicated CI pins the whole server to
 one logical CPU, including GC/runtime threads, and uses another physical core
 for the client; `GOMAXPROCS=4` is deliberate oversubscription qualification.
-No Go timing rank or four-CPU performance claim exists yet. The earlier
+The same-host Go timing screen is recorded in
+[experiment 53](../../investigations/io-model/SCHEDULER-EXPERIMENT.md#fifty-third-experiment-sequential-go-in-the-fixed-echo-screen);
+it does not establish a universal rank or four-CPU performance. The earlier
 [experiment49](../../investigations/io-model/SCHEDULER-EXPERIMENT.md#forty-ninth-experiment-qualify-a-sequential-go-net-reference)
 qualification remains frozen; [experiment51](../../investigations/io-model/SCHEDULER-EXPERIMENT.md#fifty-first-experiment-compare-go-buffer-ownership)
 compares the two ordinary storage forms before selecting timing candidates.

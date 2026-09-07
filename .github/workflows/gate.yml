@@ -11,7 +11,7 @@
 #
 # The gate is split by stage rather than run as one `make check` per host,
 # because a gate people wait half a day for is a gate people stop running. One
-# host's `make check` is a sum; six jobs on that host are a maximum. Every job
+# host's `make check` is a sum; parallel jobs on that host are a maximum. Every job
 # runs the *same* make targets `check` runs — `Makefile`'s `CHECK_STAGES` and
 # `compiler/Makefile`'s `COMPILER_STAGES` are the authority for what belongs to
 # the gate, and the `run` lines below name those targets and nothing else — so
@@ -44,7 +44,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-14]
-        stage: [static, unit, sampling, corpus, conformance, research, scheduler]
+        stage: [static, unit, sampling, corpus, conformance, research, scheduler, scheduler-streams]
         include:
           # Everything that reads the tree without running a compiled program.
           - stage: static
@@ -67,7 +67,11 @@ jobs:
           - stage: research
             run: make research-tests
           - stage: scheduler
-            run: make scheduler-experiment
+            run: make scheduler-enumeration
+          # The other half of scheduler-experiment: all native stream/client
+          # and continuation qualification, followed by the Go references.
+          - stage: scheduler-streams
+            run: make scheduler-streams
     steps:
       - uses: actions/checkout@v4
         with:
@@ -103,7 +107,7 @@ jobs:
           cargo --version
 
       - name: Install the pinned Go reference toolchain
-        if: matrix.stage == 'scheduler'
+        if: matrix.stage == 'scheduler-streams'
         uses: actions/setup-go@v5
         with:
           go-version: '1.27.1'

@@ -50,9 +50,26 @@ when checking that all workers cannot sleep beside ready work.
 
 `make scheduler-experiment` is part of root `make check`. It runs all existing
 schedules at (1,2), (1,3), (2,3), (2,4) for every policy. The original compiler
-gate also checks the default policy. The new gate matrix stage runs this on
-Linux and macOS; production default changes also reach the existing native
+gate also checks the default policy. The gate runs its enumeration and
+stream/continuation parts as separate jobs on Linux and macOS; production
+default changes also reach the existing native
 Windows checks. This does not qualify the experimental policies on Windows.
+
+The two parts remain one local `scheduler-experiment` stage, reached by
+`make check`. Root `scheduler-enumeration` runs the same three policies and
+four configurations; `scheduler-streams` runs every existing native
+continuation, stream/client and Go qualification. The benchmark's original
+`scheduler-check` still runs its complete enumeration/native-check union.
+The split addresses the Linux gate at `48bdbfea`,
+[run 34115496718](https://github.com/mbbill/Whitefoot/actions/runs/34115496718):
+although its individual steps report success, the platform annotation states
+that the job exceeded eight minutes. The command spent 233.99 seconds in
+enumeration including compilation and 196.68 seconds in later checks,
+compared with 171.98 and 165.66 seconds at successful `cf998b56`. No directly
+exercised test, compiler or gate input changed between these runs. Separate
+jobs preserve the complete test union and the eight-minute ceiling; they do
+not change the enumerator, its bounds or any acceptance/coverage assertion.
+Their actual completion time requires a new CI observation.
 
 `make -C research/experiments/io-completion-bench scheduler-bench` runs on
 Linux. `.github/workflows/io-scheduler.yml` runs it on one hosted runner:
