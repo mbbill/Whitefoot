@@ -1,0 +1,23 @@
+fn accumulate(seed: own u64, count: own u64) -> result: own u64 pure {
+  let value = seed;
+  for (index in 0_u64..count) {
+    let scaled = value *wrap 6364136223846793005_u64;
+    let indexed = scaled +wrap index;
+    set value = indexed +wrap 1442695040888963407_u64;
+  }
+  return value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let first = accumulate(seed: 3_u64, count: 100003_u64);
+  let second = accumulate(seed: 11_u64, count: 70001_u64);
+  if first == 268041396848451351_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if second == 4991480266116573574_u64 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

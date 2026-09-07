@@ -8,10 +8,13 @@ remaining costs separately from generated kernel code. Performance takes
 precedence over sharing an execution mechanism with I/O.
 
 This investigation starts at main revision
-`6cc00984415a39c507fa74897c9269b10beebfee`. Its initial contribution is the
-source audit below, the [WF workload coverage](WORKLOADS.md), and the
-[reference matrix](BASELINES.md); the runtime has not yet been changed or newly
-benchmarked. The separate
+`6cc00984415a39c507fa74897c9269b10beebfee`. The source audit below identifies a
+recovery control, now implemented and locally qualified in the
+[compute runtime experiment](../../experiments/compute-runtime/README.md).
+The normal compiler link path is unchanged, and no new performance result is
+claimed. The [WF workload coverage](WORKLOADS.md) and
+[reference matrix](BASELINES.md) define the broader comparison still to build.
+The separate
 [I/O investigation, PR #26](https://github.com/mbbill/Whitefoot/pull/26), is
 paused and retains its implementation and measurements. Its stackless path is
 not the base of this work.
@@ -21,8 +24,8 @@ selection. Keep it current while that experiment is active; consolidate or
 remove superseded material when another investigation takes over the question.
 The active [specification](../../../spec/kernel-spec.md) defines acceptance and
 the [compiler guide](../../../compiler/README.md) describes implemented paths.
-No language rule, ABI, conformance expectation, or executable test changes in
-this initial audit.
+The recovery experiment adds executable checks under the root `make check`;
+it changes no language rule, public ABI, or conformance expectation.
 
 ## Recovering the actual compute path
 
