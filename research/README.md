@@ -1,33 +1,35 @@
-# Project log and design records
+# Research and design evidence
 
-This directory started as the research corpus and is now the project's
-living record. The research-era material (debates, sources, matrices,
-synthesis) moved to `../archive/research/`.
+This directory holds investigations and experiments that expose language or
+compiler needs and test possible solutions. The active
+[specification](../spec/kernel-spec.md) defines the language, the
+[compiler README](../compiler/README.md) describes the implementation, and
+[AGENTS.md](../AGENTS.md) defines the work-branch and merge boundary.
 
-Research supplies facts to the living [`Direction Outline`](../docs/roadmap.md).
-[`docs/roadmap.md`](../docs/roadmap.md) records current high-level
-sequencing. Neither it nor a research note or experiment grants or withholds
-permission to work on a branch.
+- `investigations/`: a selected question's design, measurements, and rejected
+  alternatives. Keep useful evidence here after implementation; an ended task
+  does not require relocating it.
+- `experiments/`: reproducible measurements and their inputs, comparisons,
+  limitations, and maintained harnesses.
+- `notes/` and existing documents at this directory's root: bounded design
+  questions and supporting analysis.
+- [Decision memory](../mcts_mem/): what was settled, why, and which attempts
+  were replaced. Update the affected standing guidance when recording a change.
+- [Archive promotion audit](archive-promotion-audit.md): a non-authoritative
+  map from historical findings to useful successors and remaining questions.
 
-- `archive-promotion-audit.md` — live, non-authoritative crosswalk of useful
-  archived conclusions, their current successors, and unresolved promotion
-  questions. The archived originals remain provenance.
-- `../archive/governance/decision-log.md` — archived transition log and index
-  of the versioned decision record. Historical entries may cite pre-rewrite
-  commit hashes and pre-archive paths; those are labels, not links.
-- `../mcts_mem/` — durable design choices, rejected alternatives, and evidence.
-- `../archive/governance/directives.md` — original mixed owner-ruling record;
-  historical only and not a source of current workflow.
-- `notes/` — memos that pose or record design decisions (e.g. the STOR-1 pool
-  question).
-- The design drafts and hostile reviews that remain useful live at this
-  directory's root or under `investigations/`. `experiments/` also retains
-  reproducibility bundles; an old script inside such a bundle may name a retired
-  compiler and is historical evidence, not an active repository tool. Completed
-  or superseded design corpora live under `../archive/research/`.
+The [roadmap](../docs/roadmap.md) is reference material outside the working
+loop. Research does not update its status or wait for it. Dated results state
+what their recorded program, toolchain, and environment established; they are
+not descriptions of current compiler capabilities. Historical approval or
+phase language in evidence does not add current workflow requirements.
 
-Retained records redact machine-specific locations. `<repository-root>`,
-`<historical-repository-root>`, `<scratch-root>`, `<local-home>`, and
-`<local-workdir>` preserve the role of a path without publishing a developer's
-absolute directory. Where a reproducibility bundle hashes a redacted record,
-the bundle records the digest of the redacted bytes.
+The root `make check` owns the maintained research test inventory. A deferred
+prototype that depends on a retired compiler is evidence, not an executable
+test target; its local README identifies that boundary. Active tools do not
+import archived code. Keep experiments useful to an identifiable compiler
+question and remove superseded material when it no longer carries evidence.
+
+Retained records use role placeholders such as `<repository-root>` and
+`<scratch-root>` instead of personal filesystem paths. When a reproducibility
+bundle hashes a redacted record, its digest describes the redacted bytes.

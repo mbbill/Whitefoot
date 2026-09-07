@@ -7,4 +7,4 @@
 
 ## Moves
 
-- 2026-07-11 (6f031496) replaced by [[requires-entry-contract]]: the compiler must derive the discharging obligation from the body and independently normalize the requirement, so that unresolved accounting fails closed and diagnostics name the first missing fact and first failed premise instead of an opaque recognizer verdict (sourced)
+- 2026-07-11 (6f031496) replaced by [[single-final-requirement-block]]: the compiler must derive the discharging obligation from the body and independently normalize the requirement, so that unresolved accounting fails closed and diagnostics name the first missing fact and first failed premise instead of an opaque recognizer verdict (sourced)

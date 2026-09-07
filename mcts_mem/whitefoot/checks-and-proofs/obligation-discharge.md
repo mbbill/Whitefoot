@@ -1,23 +1,9 @@
-- Every partial operation carries a proof obligation; an index obligation first passes complete-state discharge at its use site and then the constrained-subject provenance gate, or the program is rejected.
-- The entailment fragment is normative specification text rather than an optimizer pass: its fact sources, closure, kill rules, and joins fix source acceptance and are versioned with the language (ENT-1).
-- An undischarged obligation is a compile-time rejection whose diagnostic prints the exact residual obligation and the mechanical repair.
-- A claim is the named, justification-bearing runtime backstop and the sole writer-reachable trap construct ([[writer-trap-surface]]), but it is admissible only for an exact theorem that independent review can derive, the normative checker cannot derive before S3, and at least one later terminal admission root loses under the claim's fresh counterfactual mask; every partial operation family is inside static discharge and no compiler-derived language trap source remains.
-- Claim eligibility is frozen before residual classification. Checker-proved, refuted, vacuous, overlapping, unsupported, unused, and non-residual claims are hard errors; no claim is an assertion, test oracle, deliberate abort, or substitute for explicit control flow.
-- A discharged index compiles with no runtime bounds branch in any build mode and contributes no `traps` to its effect row.
-- Every exact integer occurrence carries one canonical IntegerDomain goal equal to its matching total `.defined` query. Exact evidence or fixed normalization discharges it; refutation or absence rejects, irrespective of whether operands are constants.
-- `buffer_new` and `buffer_vacant` carry one AllocationFit goal derived from the language stride ceiling, and every range-bearing system call carries the independent `start <= end` and `end <= len(buffer)` SystemRange goals.
-- Loop-derived admission authority is a construct-owned structural recurrence, not general ordinary-loop induction.
-- The fact state combines the scalar relation fragment with finite signed atomic goal evidence; only an exact comparison root may project into the scalar fragment.
-- Each ordinary call requirement independently has exactly three outcomes in the same pre-transfer state: discharged, refuted, or unproved; refuted and unproved calls reject before transfer, while every discharged goal enters the body through S4.
-- A normal-return postcondition is proved at every selected exit in complete, unasserted, and S4-blinded views; only a wholly successful concrete callee component publishes a closed summary to later components.
-- Caller-side postcondition facts use only the closed direct-result, selected-payload, narrow receiver, and value-if delivery routes, with ordinary substitution, support kills, joins, and view-local derivations.
-- Optimistic postcondition and value-if facts finalize atomically with the provenance verdict and checked program.
-- Signed goal support follows resolved reads; writes, ownership events, scope exits, loop summaries, intersection joins, and combined contradiction govern its lifetime; goal structure participates only per [[goal-decomposition]].
-- A finite two-stratum explicit-dataflow provenance judgment freezes value, storage, result, and write component pairs before subject-only protected demands, requirement bridges, call targets, and rejection events converge.
-- Claim accountability is one deterministic read-only checked-program projection over the sole finalized function-local derivation DAGs: direct, support-canonical, and fully structural images retain their distinct lifecycle roles; component and reconstruction evidence plus non-explosive terminal witnesses retain existing remapped proof identities; and the projection neither replays closure nor creates portable proof authority.
-- An opt-in claim-free root demands its finite outgoing concrete-call/SCC closure in the existing unasserted view: direct or imported claims and unproved protected obligations reject, the closure never flows upward into unrelated callers, and no second flow analysis or proof authority exists.
-- After complete-state local discharge and ordinary-call requirement success, an unconditionally external constrained subject cannot authorize a protected index leaf solely through a claim or S4-blinded requirement bridge; local leaves reject at the subscript and downstream leaves at the responsible call argument.
-- The entailment fragment is part of the trusted computing base beside the type and borrow checkers; a wrong discharge is a memory-safety defect rather than an optimizer defect.
+- The active specification's ENT rules define acceptance, including fact sources, closure, kills, joins, and exact domain obligations. Optimizer results and runtime origin are not independent sources of proof authority.
+- Requires are checked at callers; ensures are checked at selected returns and published only through the specified component order. Header invariants carry induction and local invariants may carry finite PRF-1 certificates.
+- Each use reads the same entering context; only the checked outer invariant becomes a later fact. Source proof syntax is erased and no retained claim, provenance-mask acceptance pass, or claim-free root is part of the current language.
+- An unproved required operation rejects at compile time. Diagnostics should identify the obligation and missing evidence; implementation gaps and known diagnostic defects are documented in compiler/README.md.
+- Signed Boolean decomposition and reconstruction use the exact finite ENT-3/ENT-4 rules; support, writes, ownership events, scope exits, and joins control fact lifetime.
+- The checker is part of the trusted computing base. An incorrect discharge is a compiler soundness defect, not a reason to revise a conformance expectation.
 
 ## Facts
 

@@ -730,6 +730,51 @@ impl Drop for FixtureDirectory {
     }
 }
 
+/// Denies every mode bit on `path`, and confirms the denial actually reaches
+/// this process before the case relies on it.
+///
+/// The cases that call this describe a path the walking program cannot open.
+/// Mode bits do not deny a process holding `CAP_DAC_OVERRIDE`, which uid 0
+/// carries by default, so a container that runs the gate as root cannot
+/// construct that scenario at all: the walk reads the path it was told was
+/// closed, and the case then fails on its output comparison, which reads like a
+/// traversal defect and is not one. Checking the denial where it is established
+/// names the cause instead, and covers the opposite risk too — without the
+/// check, a case could report success in an environment where the path it
+/// describes was never closed.
+///
+/// This is not a skip. The case still fails here, because the behavior it
+/// covers genuinely went unverified.
+pub fn close_path(path: &Path) {
+    set_fixture_mode(path, 0o000);
+    let still_reaches = if path.is_dir() {
+        std::fs::read_dir(path).is_ok()
+    } else {
+        std::fs::File::open(path).is_ok()
+    };
+    assert!(
+        !still_reaches,
+        "{} is mode 000 and this process still reads it, so the denied-path \
+         case cannot be constructed here. A process holding CAP_DAC_OVERRIDE, \
+         which uid 0 carries by default, is not denied by mode bits. Re-run \
+         this case as an unprivileged user.",
+        path.display()
+    );
+}
+
+/// Restores `mode` on a path closed by `close_path`.
+pub fn reopen_path(path: &Path, mode: u32) {
+    set_fixture_mode(path, mode);
+}
+
+fn set_fixture_mode(path: &Path, mode: u32) {
+    let mut permissions = std::fs::metadata(path)
+        .expect("fixture path metadata")
+        .permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, mode);
+    std::fs::set_permissions(path, permissions).expect("set fixture path mode");
+}
+
 pub fn emitted_function<'module>(module: &'module str, name: &str) -> &'module str {
     let symbol = format!(" @wf_{name}(");
     let function_start = module

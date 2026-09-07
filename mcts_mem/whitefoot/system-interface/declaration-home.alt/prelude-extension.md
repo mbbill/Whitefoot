@@ -7,4 +7,4 @@
 
 ## Moves
 
-- 2026-08-05 (8f7055fc) replaced by [[declaration-home]]: extending PRE-1 reserves the slice's nominals and constructors, including ordinary spellings such as Other, NotFound, Interrupted, and ReadOnly, unconditionally in every program whether or not it performs I/O, and would put function signatures in the prelude for the first time; a distinct domain scopes reservation to units that declare system inputs (sourced)
+- 2026-08-05 (8f7055fc) replaced by [[program-kind-conditional-domain]]: extending PRE-1 reserves the slice's nominals and constructors, including ordinary spellings such as Other, NotFound, Interrupted, and ReadOnly, unconditionally in every program whether or not it performs I/O, and would put function signatures in the prelude for the first time; a distinct domain scopes reservation to units that declare system inputs (sourced)

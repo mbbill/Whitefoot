@@ -1,5 +1,5 @@
 - Recoverable failures are ordinary `Result` values; Whitefoot has no exception, throw, catch, unwinding, or exception-handling region.
-- The sole forwarding form is `let value: own T = propagate expression;`.
+- The forwarding form is `let value = propagate expression;`, with its type inferred under the ordinary binding rule.
 - `propagate` is the fixed terminal for this form; `try` is an ordinary IDENT and there is no compatibility alias.
 - `Ok` binds its payload and continues; `Err` returns through the enclosing function's Result type and receives the checked auto-derived context record.
 

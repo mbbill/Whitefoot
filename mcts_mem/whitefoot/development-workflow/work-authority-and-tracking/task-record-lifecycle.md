@@ -1,11 +1,5 @@
-- Assign every substantial task one immutable monotonically increasing number shared by planned, live, and terminal records.
-- Optionally stage a task decomposed from an active plan as a claimable planned record; claiming moves the same numbered record into live coordination and binds its owner, workspace, and base revision, with the first claim to land on the integration branch winning.
-- Admit a claim only when the planned record's listed dependencies are terminal or its cross-linked integration order explicitly permits the overlap.
-- Keep a task record in live coordination while work remains and move the same numbered record to terminal history at disposition.
-- Keep terminal records concise and frozen, with outcome, landed commits, canonical evidence, validation, and remaining dependency links.
-- Keep task records non-authorizing and keep durable facts, measurements, decisions, approvals, and project status in their canonical owners.
-- Delete unclaimed planned records when the plan they cite is replaced, unless the new active plan explicitly carries them; a deleted number never returns. Terminal history records only executed work.
-- Resolve concurrent number collisions by renumbering the later integration before it lands.
+- The numbered planned/live/terminal task-record lifecycle is retired together with [[work-authority-and-tracking]]. Its dated evidence below describes the replaced protocol.
+- Current work requires no task number, claimed record, rolling plan, or terminal archive. AGENTS.md owns the approval boundary; investigations hold designs and measurements, and mcts_mem holds settled decisions.
 
 ## Facts
 

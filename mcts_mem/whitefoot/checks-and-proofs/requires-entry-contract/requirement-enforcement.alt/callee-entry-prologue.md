@@ -4,4 +4,4 @@
 
 ## Moves
 
-- 2026-08-10 (441cd5b8) replaced by [[requirement-enforcement]]: the unconditional ordinary-callee prologue let a helper hide a protected leaf behind a runtime trap; pre-transfer proof exposes the complete atomic requirement without narrowing the admitted predicate surface, while real process entries retain the checked boundary (sourced)
+- 2026-08-10 (441cd5b8) replaced by [[ordinary-plus-program-entry]]: the unconditional ordinary-callee prologue let a helper hide a protected leaf behind a runtime trap; pre-transfer proof exposes the complete atomic requirement without narrowing the admitted predicate surface, while real process entries retain the checked boundary (sourced)

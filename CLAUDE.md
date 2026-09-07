@@ -50,20 +50,29 @@ probably not the next work.
   it, and it grants or withholds nothing. Read it for orientation; do not treat
   a line in it as a statement of what the compiler currently does, which is the
   specification's and `compiler/README.md`'s to say.
-- The active specification at `spec/kernel-spec.md` defines the language. Compiler behavior, tests, archived
-  code, and design prose do not.
-- `docs/constitution.md` records project law and `docs/patterns.md` records writer
-  forms.
+- The active specification at `spec/kernel-spec.md` defines the language.
+  `compiler/README.md` owns the current implementation map and known gaps.
+  Compiler behavior, tests, archived code, and design prose do not define the
+  language.
+- `docs/constitution.md` owns objectives and language-design principles;
+  `docs/patterns.md` teaches writer forms without adding acceptance rules.
+  `docs/practice.md` explains engineering and evidence techniques without
+  adding approval or merge requirements. README is navigation, not a second
+  specification or implementation inventory.
 - `mcts_mem/` is where decisions are recorded: what was tried, what was
   concluded, why a form was chosen, and which implementations it replaced.
-  Write there when a question is settled, not when a batch ends.
+  Write there when a question is settled, not when a batch ends. Maintain it
+  with the `mcts-mem-use` skill and run `npx mcts-mem lint` after tree edits.
+  The skill owns node structure, provenance, replacement pairs, and append-only
+  history; lint checks integrity, not the truth of the recorded evidence.
 - Architecture dossiers, `archive/done/`, and
   `archive/governance/decision-log.md` preserve historical evidence and
   rationale. `archive/done/` is the retired per-batch record: frozen, not
   written to again, and not cited. A finished task is not evidence — a claim
   that needs support cites the specification, a conformance case, a measured
   result under `research/experiments/`, a design under
-  `research/investigations/`, or a decision in `mcts_mem/`. None of these
+  `research/investigations/`, or decision rationale where the completion
+  checklist's citation boundaries permit memory references. None of these
   defines live approval or workflow requirements. Any imperative process
   wording retained in those evidence artifacts is historical and superseded by
   the four rules below.
@@ -75,9 +84,36 @@ probably not the next work.
 Read only the material relevant to the current task. Do not turn historical
 research into an implied implementation requirement.
 
+Maintain a current fact in its owning document and link to it elsewhere. When
+a decision changes, update the affected standing guidance as well as recording
+the decision; appending history does not supersede a contradictory instruction.
+Follow rule IDs, named interfaces, and references to find the affected reading
+set. Do not require every task to load the whole repository. Check commands and
+links mechanically where useful, and review meaning across the affected owners;
+a text search cannot establish logical consistency. Dated evidence retains its
+experimental conditions and is not rewritten as a current capability claim.
+The practical maintenance method is in `docs/practice.md`.
+
+At the end of a repository-changing task, run the applicable checks in
+[the completion review checklist](docs/review-checklist.md) before reporting
+completion or handing over the result. It defines document content and
+citation boundaries and the bounded checks for a fast reviewing agent.
+Report concrete findings in the task or PR and recheck affected items after
+fixes; no separate review record or owner approval is required.
+
+When working on an existing open PR, use that PR as the owner's review
+surface. After each completed round of changes, applicable checks, and review,
+commit and push the task's changes to the same PR branch and refresh its
+description and validation results before reporting completion. Do not wait
+for another request to update the PR or leave the reviewable result only in
+the local worktree. Verify the remote PR contains the delivered revision and
+link to it in the reply. If publication fails, report the blocker and which
+changes remain unpublished. Updating a work-branch PR does not authorize a
+merge into `main`.
+
 ## Branch and main boundary
 
-These are the complete approval and workflow rules:
+These are the complete approval and merge rules:
 
 1. Any change may be made on a work branch without approval, including plans,
    repository layout, specifications, conformance evidence, gate wiring, code,
@@ -160,9 +196,10 @@ one-time cleanup.
   native path cannot do the job; if it cannot, it does not ship.
 - Supersede in place. When new material replaces old, update, merge, or delete
   the old in the same change. Do not accumulate parallel versions, stale
-  dossiers, or abandoned experiments beside their replacements. The single
-  deliberate retained-history model is `spec/`: its active file is superseded
-  in place, while its flat versioned archives are append-only.
+  dossiers, or abandoned experiments beside their replacements. This applies
+  to current guidance and replaceable implementation artifacts; frozen
+  archives, useful dated evidence, and skill-managed decision memory retain
+  history under their own rules.
 - Keep important folders as clean as the root. The same discipline applies
   inside `spec/`, `compiler/`, `tools/`, `conformance/`, and the research
   directories. An important folder turning into a junk drawer is the same
@@ -183,8 +220,9 @@ only reports the same class of mistake earlier.
 
 - The active kernel specification lives at `spec/kernel-spec.md` and is
   editable on a work branch. Released flat `spec/kernel-spec-vN.md` archives
-  are immutable, and the active file's identity is carried by the chained
-  digest and archive gates. A spec/compiler discrepancy is a technical defect;
+  are immutable. `compiler/build.rs` derives the active identity from its bytes,
+  and `make check` checks identity consistency and archive immutability.
+  A spec/compiler discrepancy is a technical defect;
   implementation convenience never selects language behavior.
 - When the spec changes, bring everything derived from it to the newest version
   in the same work: conformance cases and verdicts, the lexer/parser and
