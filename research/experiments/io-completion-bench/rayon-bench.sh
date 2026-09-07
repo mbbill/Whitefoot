@@ -103,8 +103,9 @@ if [[ $RESOURCE_CONTROLS == 1 ]]; then
 
     # Existing observer, separately linked and never timed. The normal WF
     # executable above remains the compiler's ordinary native output. The
-    # completion units provide grant_observer.c's bridge-report dependency;
-    # this compute-only module does not initialize an I/O engine.
+    # completion units match the ordinary module's write_once output path
+    # and provide grant_observer.c's bridge-report dependency. Final stdout
+    # output initializes the bridge even though the layout work is CPU-only.
     backend="$ROOT/compiler/src/backend"
     "$WFC" --par --emit-llvm "$ROOT/tests/programs/par_layout.wf" -o "$OUT/wf-par.ll"
     observer_sources=()

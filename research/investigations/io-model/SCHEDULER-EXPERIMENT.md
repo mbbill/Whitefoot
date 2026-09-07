@@ -4927,6 +4927,14 @@ Rayon uses four workers and a caller that waits for the pool. The host CPU
 set/topology is recorded, but neither physical-core dedication nor affinity
 is assumed. The panel has no concurrent load generator and uses no perf.
 
+The generated parallel WF program still calls the completion bridge for its
+final `write_once` checksum. `wf_bridge_begin` requires bridge initialization,
+which attempts the native ring even though unpositioned WF_FILE_WRITE itself
+uses the typed adapter. Whole-process timing includes this output-path setup
+and shutdown; no ring line in a macOS observer means there is no native ring
+report, not that the bridge stayed uninitialized. Any remaining short-run
+fixed cost is therefore not automatically stack initialization or scheduling.
+
 After timing, a separate binary links the existing `WF_SCHED_OBSERVE=1`
 scheduler/grant observer. It runs each WF cell once, untimed, with the same
 exact-byte check and confirms three spawned workers and positive grants.
@@ -4956,3 +4964,76 @@ not that the same turns occurred in ordinary samples. The one-pass local
 times were visibly affected by shared-host load and are not ranking evidence.
 The raw smoke remains in the scratch `whitefoot-rayon-resource-smoke` folder;
 Linux confirmation is the separate five-pass cohort.
+
+The [Linux resource-control job](https://github.com/mbbill/Whitefoot/actions/runs/34088350612/job/101636646204)
+passed at 60073e1d680328df14c5ba40086b044af1f69982. The existing Rust tests,
+fmt/clippy, all 54 ordinary invocations including warmup, and all six separate
+observations passed. The [45 raw confirmation samples](../../experiments/io-completion-bench/rayon-baseline/resource-linux-2026-09-07.tsv)
+retain their original order and CPU fields. Independently re-reading them
+confirmed each plan's exact argument/batch mapping, all five alternating
+orders, finite nonnegative times and every printed median/min/max/CPU summary.
+The six observed stdout files matched the corpus bytes exactly.
+
+| Batches | Form | Median wall, ms | Median user + system CPU, ms | Median CPU / wall |
+|---:|---|---:|---:|---:|
+| 1 | Rayon4, grain4 | 317.82 | 1261.07 | 3.970 |
+| 1 | WF4, 12 stacks | 360.55 | 1290.84 | 3.580 |
+| 1 | WF4, 1100 stacks | 385.37 | 1316.84 | 3.418 |
+| 4 | Rayon4, grain4 | 1266.60 | 5035.66 | 3.976 |
+| 4 | WF4, 12 stacks | 1316.29 | 5093.95 | 3.874 |
+| 4 | WF4, 1100 stacks | 1342.03 | 5121.62 | 3.816 |
+| 16 | Rayon4, grain4 | 5058.05 | 20130.51 | 3.980 |
+| 16 | WF4, 12 stacks | 5136.13 | 20311.33 | 3.954 |
+| 16 | WF4, 1100 stacks | 5169.81 | 20343.83 | 3.935 |
+
+CPU is summed within each sample before taking its median, rather than adding
+separately rounded median fields. Ratios below pair forms within the same
+pass; a median ratio need not equal the ratio of the two reported medians.
+
+| Batches | Paired form / Rayon4 | Wall ratio median [min, max] | CPU ratio median |
+|---:|---|---|---:|
+| 1 | WF4, 12 stacks | 1.1391 [1.1266, 1.1644] | 1.0245 |
+| 1 | WF4, 1100 stacks | 1.2081 [1.1995, 1.2191] | 1.0440 |
+| 4 | WF4, 12 stacks | 1.0402 [1.0035, 1.0534] | 1.0116 |
+| 4 | WF4, 1100 stacks | 1.0574 [1.0243, 1.0649] | 1.0171 |
+| 16 | WF4, 12 stacks | 1.0156 [1.0069, 1.0201] | 1.0090 |
+| 16 | WF4, 1100 stacks | 1.0206 [1.0175, 1.0251] | 1.0101 |
+
+The paired 1100-minus-12 stack differences were 22.31/27.20/29.60 ms wall
+and 24.43/28.47/32.26 ms CPU at 1/4/16 batches. Every pair favored twelve
+stacks. A roughly bounded absolute difference across sixteen times the work
+is consistent with predominantly fixed capacity costs; it does not isolate
+individual initialization syscalls or exclude scheduling effects. More
+broadly, the original roughly 20% single-batch gap is not a sustained 20%
+compute-parallelism loss in this workload. At sixteen batches the paired
+gap is about 1.6% with twelve stacks, with CPU/wall near four for both forms.
+Five passes on one hosted machine still do not establish a universal ranking
+or prove that the remaining difference is entirely fixed.
+
+All six Linux observations reported four scheduler threads, three spawned
+workers, positive grants and zero `exhausted_compute`. That does not refute
+the fifty turns observed on M1 or prove the ordinary Linux samples never took
+that path. Each Linux observation also emitted a native ring report with
+zero submissions, submission enters and completions. This is direct evidence
+that the final output initialized a ring that carried none of this workload's
+requests. It supports a separate existing `WF_IO_NO_NATIVE_RING` control as
+the next attribution experiment, without selecting a future runtime default.
+
+The host reported AMD EPYC 7763, four allowed vCPUs 0-3, two guest cores with
+two SMT threads each and one NUMA node, Linux 6.17.0-1022-azure, Rust
+1.98.0/LLVM 22.1.8 and Ubuntu Clang 18.1.3 for both the runner and actual WF
+native link. No affinity or other host load was controlled. The
+[complete artifact 10006272465](https://github.com/mbbill/Whitefoot/actions/runs/34088350612/artifacts/10006272465)
+has ZIP SHA-256 `51672bddde34e7dc70bca7accb13e6f44145d1ad8360722c0393987669a58353`.
+Twenty-six recorded artifact/source hashes were independently verified
+against the retained files or exact git revision, along with the uploaded
+Cargo.lock. The compiler executable's hash is recorded, but that executable
+itself was not uploaded. Key retained SHA-256 values are:
+
+| Retained file | SHA-256 |
+|---|---|
+| Ordinary WF parallel binary | `948ec36393b60f922cc4132c36b5cd1012fd4b8559a2523aa692a12f6e16db54` |
+| Ordinary Rust/Rayon binary | `2a8289d8ca19fb74b0b035edb732cba533ab033c053379d36ae58c764b4d7d45` |
+| Observed WF parallel binary | `414da59a4417a234fb73489fcef2fdc51a9a9f26b68bee57e4193c21d7467d31` |
+| Generated WF parallel IR | `111320f992b02a384d5eb0c7705f67dbeda74c9bf42685e06bb362836588b7c8` |
+| Original resource.tsv | `6c0b079bd1e726fdcf892e5e8b55d26e12a1e73540cbe17a1393cc5e9f401805` |
