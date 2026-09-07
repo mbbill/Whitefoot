@@ -4393,3 +4393,76 @@ Both observed buffer variants also cross-compile to Linux-musl objects with
 Zig 0.14 and strict C11 warnings; shell syntax, YAML, Make dry-run and diff
 checks pass locally. The new paired timing panel remains in progress in
 run `34082126598`; no performance improvement is claimed yet.
+
+## Thirty-seventh experiment: checked staged calls own independent continuations
+
+Revision `767858bd` adds `--continuations --par --emit-llvm`. The existing
+checked [PAR-3] issue/drain graph now publishes may-suspend user calls as
+independent continuation roots. Source order still determines the drain and
+result consumption; a completed later task retains its result and storage
+until its own join. The serial continuation option remains available, and the
+experimental `Staged` lowering policy leaves pure compute outlining off.
+A recursive pure-compute control verifies that ordinary `--par` changes its
+module while both continuation policies remain byte-identical to `Off`.
+No source signature, proof rule or conformance expectation changes.
+
+The issuer reserves one 32-byte task descriptor, a child-frame pointer and
+the typed result per existing pipeline slot, using the normal target frame
+planner. Published children do not carry the nested-call frame-elision hint:
+successive loop iterations can remain live simultaneously. Nested calls
+inside each task retain the existing symmetric-transfer and elision path.
+Both activation representations now consume the same block emission path,
+including issue-window initialization, carry storage and the exact drain.
+
+The experimental C host has one owning resumer and a FIFO of newly published
+roots. Each I/O waiter carries its owner task, making this experiment's
+waiter 48 bytes rather than 40; the independent C++ fixture retains its
+original layout. Native completion publication only makes a waiter ready.
+After resume returns, the host checks the owning root, marks a completed task
+done and publishes its issuer's join waiter. A finished child is destroyed
+and its descriptor retired before the issuer loads the typed result. No
+publisher retains a waiter node after the owner dequeues it. Registration,
+dequeue, task completion and retirement counters must balance at host exit.
+This is a test coordinator with a locked pending list, not the intended
+performance scheduler.
+
+The same experimental ABI supplies a bounded window, with a default of 64
+and an explicit host-only override used by qualification. Zero IR bounds
+mean no bound, as in `IrCompletionWindow`; source and compiler ceilings still
+apply. An initial host implementation mistakenly treated the dynamic-span
+sentinel zero as an empty range and returned a window of one. A live process
+sample showed one pending receive and three idle helpers while the peer
+waited for four suspended tasks. Correcting the host's interpretation made
+the unchanged multi-batch protocol complete; no peer expectation or source
+permission was relaxed.
+
+`compiler-continuation-check` adds two unchanged source programs to its
+instrumented builds:
+
+- `tests/programs/tcp_fanout.wf` lends an iteration-owned scratch buffer to
+  each of four staged callees. All four peers connect before any speaks,
+  the host observes four pending receives, and the last connected peer must
+  finish before the earlier three receive input.
+- The research `tcp_echo_server.wf` repeats the same reverse-completion
+  protocol over twelve connections with a four-task window, exercising
+  three batches and reuse of the issuer's task/result slots.
+
+Both cases pass on the local M1 helper route with generated LLVM functions
+and runtime code instrumented by ASan/UBSan, and separately by ThreadSanitizer.
+The first reports 4 tasks completed and retired; the second reports 12;
+both report a peak of 4 retained child tasks. Every existing file, pipe,
+recursive-loan, endpoint-outcome and independent C++ continuation case also
+passes in those runs. The compiler library's 1,504 tests pass, and the
+strengthened recursive pure-control test passes separately. Format, clippy
+and diff checks pass. Linux native-ring staged qualification is pending.
+
+The old `wf__par_*` runtime ABI and container storage contract are unchanged.
+Only the experimental continuation-host interface adds publication, task
+readiness/registration, retirement and window queries. Storage borrowed by a
+child stays alive and address-stable through its join; a finished flag alone
+does not permit reuse. The first test covers an issuer-owned buffer loan and
+the second covers callee-owned buffers. Arbitrary suspended-frame destruction,
+source cancellation, asynchronous cleanup, compute checkpoints, multiple
+resumers and Windows are not qualified here. Other system wrappers and
+cleanup can still block the owner. There is no performance result for this
+concurrent WF representation yet.
