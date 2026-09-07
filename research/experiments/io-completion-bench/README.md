@@ -352,6 +352,11 @@ one client hardware thread with both SMT siblings of a separate physical
 core. It retains full byte verification and all qualification checks while
 screening six server forms at 64 peers and 64 B/64 KiB. This isolates a
 client resource limit; it does not compare servers using different clients.
+`scheduler-uring-diagnostic` captures three observed repetitions of the
+64-peer × 64 KiB cell for the four 8/64 KiB pure/inline uring forms, using one
+server CPU and the unchanged client on another physical core. Its counters
+distinguish requested bytes/iovecs from completed transfers; instrumented
+metadata is kept outside the normal timing tables.
 `scheduler-checkpoint`, `scheduler-footprint`, `scheduler-paced`,
 `scheduler-chunks`, `scheduler-canonical`, `scheduler-stackful` and
 `scheduler-stackful-paced`, `scheduler-nodelay`, `scheduler-owner` and

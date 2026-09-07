@@ -19,6 +19,7 @@ WARMUP=${WARMUP:-2}
 EXPERIMENT=${EXPERIMENT:-idle}
 NATIVE_BASELINES=${NATIVE_BASELINES:-0}
 CONTINUATION_SCREEN=${CONTINUATION_SCREEN:-0}
+URING_DIAGNOSTIC=${URING_DIAGNOSTIC:-0}
 [[ $NATIVE_BASELINES == 0 || $NATIVE_BASELINES == 1 || $NATIVE_BASELINES == 2 ]] || exit 2
 [[ $CONTINUATION_SCREEN == 0 || $CONTINUATION_SCREEN == 1 || $CONTINUATION_SCREEN == 2 ]] || exit 2
 if [[ $CONTINUATION_SCREEN != 0 && $NATIVE_BASELINES != 1 ]]; then
@@ -27,6 +28,12 @@ if [[ $CONTINUATION_SCREEN != 0 && $NATIVE_BASELINES != 1 ]]; then
 fi
 CLIENT_HEADROOM=${CLIENT_HEADROOM:-0}
 [[ $CLIENT_HEADROOM == 0 || $CLIENT_HEADROOM == 1 ]] || exit 2
+[[ $URING_DIAGNOSTIC == 0 || $URING_DIAGNOSTIC == 1 ]] || exit 2
+if [[ $URING_DIAGNOSTIC == 1 && ( $NATIVE_BASELINES != 2 || $CLIENT_HEADROOM != 0 ) ]]; then
+    echo 'scheduler-bench: uring diagnostics use NATIVE_BASELINES=2 and the original single client' >&2
+    exit 2
+fi
+uring_diagnostic_fields='receives sends receive_bytes send_bytes exhausted deepest_queue inline_attempts inline_bytes inline_succeeded inline_short inline_eagain inline_requested_bytes inline_requested_vectors ring_requests ring_requested_bytes ring_requested_vectors'
 if [[ $CLIENT_HEADROOM == 1 && $NATIVE_BASELINES != 2 ]]; then
     echo 'scheduler-bench: client headroom uses NATIVE_BASELINES=2' >&2
     exit 2
@@ -245,6 +252,10 @@ fi
         fi
     fi
     echo "client_headroom=$CLIENT_HEADROOM"
+    echo "uring_diagnostic=$URING_DIAGNOSTIC"
+    if [[ $URING_DIAGNOSTIC == 1 ]]; then
+        echo 'uring_diagnostic_policy=observed binaries only; requested bytes/vectors distinguish gathered requests from completed transfers; diagnostic timings are not an uninstrumented performance panel'
+    fi
     if [[ $CLIENT_HEADROOM == 1 ]]; then
         echo 'client_headroom_policy=one server logical CPU; one versus two client workers on a separate physical core; unchanged prefilled payload and full memcmp oracle'
     fi
@@ -334,6 +345,9 @@ if [[ $CLIENT_HEADROOM == 1 ]]; then
     printf 'split1-client-one\t1\t1\t%s\t%s\nsplit1-client-smt2\t1\t2\t%s\t%s,%s\n' \
         "$server_one" "$client_first" "$server_one" "$client_first" "$client_second" > "$OUT/cohorts.tsv"
 fi
+if [[ $URING_DIAGNOSTIC == 1 ]]; then
+    printf 'split1\t1\t1\t%s\t%s\n' "$server_one" "$client_one" > "$OUT/cohorts.tsv"
+fi
 if [[ $page_experiment == 1 ]]; then
     # Both policies inherit the same host setting; disable=0 permits THP,
     # rather than forcing a huge-page allocation. Keep policy in each row.
@@ -395,6 +409,7 @@ if [[ $EXPERIMENT == service-paced ]]; then forms=(base chbalanced16384 chservic
 if [[ $EXPERIMENT == coroutine-paced ]]; then forms=(base ch16384 chbalanced16384); fi
 if [[ $MODE == combine ]]; then forms=(callee-small balanced balanced-small quiet-small); fi
 if [[ $NATIVE_BASELINES != 0 ]]; then forms=(callee-small balanced-small); fi
+if [[ $URING_DIAGNOSTIC == 1 ]]; then forms=(); fi
 form_flags() {
     local_inline=0
     init_used=0
@@ -769,6 +784,7 @@ network_case() {
     sample=$((sample + 1))
     directory="$OUT/samples/$sample-$cohort-$form-k$connections-b$bytes-r$compute_rounds-a$admitted-d$duration_ms-l${light_per_second:-0}"
     if [[ $observed == 1 ]]; then directory="$OUT/observed/$cohort-$form-k$connections-a$admitted"; fi
+    if [[ $URING_DIAGNOSTIC == 1 && $observed == 1 && $pass -ge 0 ]]; then directory="$directory-pass$pass"; fi
     mkdir -p "$directory"
     port=$(free_port)
     case $form in
@@ -888,6 +904,22 @@ network_case() {
             "${light_per_second:-0}" "$(field "$directory/client.tsv" light_planned)" \
             "$(field "$directory/client.tsv" light_dispatch_p99_us)" "$(field "$directory/client.tsv" light_service_p99_us)" \
             "$(field "$directory/client.tsv" light_completed_by_deadline)" "$(field "$directory/client.tsv" heavy_completed_by_deadline)" >> "$OUT/network.tsv"
+        if [[ $URING_DIAGNOSTIC == 1 ]]; then
+            awk -v fields="$uring_diagnostic_fields" -v pass="$pass" -v form="$form" \
+                -v expected="$((connections * trips * bytes))" '/^uring:/ {
+                for(i=2;i<=NF;i++) {split($i,a,"=");v[a[1]]=a[2]+0}; seen++;
+            } !/^uring:/ && NF {bad=1} END {
+                n=split(fields,names," "); for(i=1;i<=n;i++) if(!(names[i] in v)) bad=1;
+                if(seen!=1 || bad || v["receive_bytes"]!=expected || v["send_bytes"]!=expected ||
+                   v["ring_requests"]!=v["sends"] || v["ring_requested_bytes"]<expected-v["inline_bytes"] ||
+                   v["ring_requested_vectors"]<v["ring_requests"] ||
+                   v["inline_requested_bytes"]<v["inline_bytes"] ||
+                   v["inline_requested_vectors"]<v["inline_attempts"] ||
+                   v["inline_succeeded"]+v["inline_eagain"]>v["inline_attempts"] ||
+                   v["inline_short"]>v["inline_succeeded"]) exit 1;
+                printf "%d\t%s",pass,form; for(i=1;i<=n;i++) printf "\t%.0f",v[names[i]]; print "";
+            }' "$directory/server.err" >> "$OUT/uring-diagnostic-counters.tsv"
+        fi
     fi
 }
 
@@ -938,6 +970,7 @@ check_continuation_report() {
         v["tasks"]==peers && v["completed"]==peers && v["retired"]==peers &&
         v["peak"]>0 && v["peak"]<=peers)}' "$report"
 }
+if [[ $URING_DIAGNOSTIC == 1 ]]; then references=(uring uring-64k uring-inline uring-64k-inline); fi
 while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
     allocator_environment=()
     if [[ $EXPERIMENT == allocator ]]; then allocator_environment=("$(allocator_setting)"); fi
@@ -1122,7 +1155,7 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
     done
 done < "$OUT/cohorts.tsv"
 
-if [[ $page_experiment == 1 && $CLIENT_HEADROOM == 0 ]]; then
+if [[ $page_experiment == 1 && $CLIENT_HEADROOM == 0 && $URING_DIAGNOSTIC == 0 ]]; then
     mkdir -p "$OUT/resident"
     printf 'repetition\tcohort\tform\tconnections\tbytes\tthp_disabled\trss_kib\tanonymous_kib\tanon_huge_kib\tprivate_dirty_kib\tswap_kib\n' > "$OUT/resident.tsv"
     # Same normal binaries as timing, with all peers held open after a checked
@@ -1209,6 +1242,11 @@ if [[ $CLIENT_HEADROOM == 1 ]]; then
     awk '$1==64' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
     mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
 fi
+if [[ $URING_DIAGNOSTIC == 1 ]]; then
+    printf '64 500 65536 0\n' > "$OUT/cases.tsv"
+    { printf 'pass\tform'; for field_name in $uring_diagnostic_fields; do printf '\t%s' "$field_name"; done; printf '\n'; } \
+        > "$OUT/uring-diagnostic-counters.tsv"
+fi
 if [[ $EXPERIMENT == fairness ]]; then
     # Zero-compute control plus two sustained compute costs; retain both peer counts.
     awk '$4 != 16384' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
@@ -1283,12 +1321,20 @@ for ((pass=-WARMUP; pass<ROUNDS; pass++)); do
       for admitted in "${admissions[@]}"; do
         for form in "${order[@]}"; do
             echo "network pass=$pass cohort=$cohort form=$form connections=$connections bytes=$bytes compute=$compute_rounds"
-            network_case "$form" "$connections" "$trips" "$bytes" "$pass" 0
+            network_case "$form" "$connections" "$trips" "$bytes" "$pass" "$URING_DIAGNOSTIC"
         done
       done
     done < "$OUT/cases.tsv"
   done < "$OUT/cohorts-order.tsv"
 done
+
+if [[ $URING_DIAGNOSTIC == 1 ]]; then
+    # Preserve instrumented metadata separately; do not publish a normal
+    # throughput ranking or combine these samples with unobserved timing.
+    mv "$OUT/network.tsv" "$OUT/uring-diagnostic.tsv"
+    cat "$OUT/uring-diagnostic-counters.tsv"
+    exit 0
+fi
 
 # Existing compiler-independent expected bytes from the Windows qualification.
 # Warm positioned reads plus compute measure coexistence; they do not establish

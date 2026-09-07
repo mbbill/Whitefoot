@@ -5908,3 +5908,56 @@ itself was not uploaded. Key retained SHA-256 values are:
 | Observed WF parallel binary | `414da59a4417a234fb73489fcef2fdc51a9a9f26b68bee57e4193c21d7467d31` |
 | Generated WF parallel IR | `111320f992b02a384d5eb0c7705f67dbeda74c9bf42685e06bb362836588b7c8` |
 | Original resource.tsv | `6c0b079bd1e726fdcf892e5e8b55d26e12a1e73540cbe17a1393cc5e9f401805` |
+
+## Forty-sixth experiment: observe aggregation in the native send regression
+
+Experiment38 measured a large regression when the 8 KiB provided-buffer
+reference attempts an immediate send for each receive. This bounded follow-up
+uses the exact 64-peer × 64 KiB echo cell, 500 round trips per peer, with the
+unchanged `netload` payload sequence and full byte oracle. It keeps all four
+8/64 KiB pure-ring/inline native forms, one server worker on one logical CPU,
+and one client worker on a different physical core. It changes no native
+default, client policy or compiler/runtime interface.
+
+`scheduler-uring-diagnostic` selects `URING_DIAGNOSTIC=1` in the existing
+native harness. Three recorded passes after one warmup yield twelve observed
+records. Each record must receive and echo exactly 2,097,152,000 bytes. All
+existing native stream qualification remains, including the eight ASan/UBSan
+size/send-policy/worker configurations. Instrumented metadata goes to
+`uring-diagnostic.tsv`, with counters in `uring-diagnostic-counters.tsv` and
+separate per-pass observer/client/resource files. The diagnostic does not
+publish an ordinary throughput ranking or add resident-memory measurements.
+
+Existing counters provide receive CQEs/bytes, successful ring-send CQEs,
+total sent bytes, immediate calls/bytes, buffer exhaustion and maximum queued
+buffers. Observed builds additionally count each ring-send request's gathered
+bytes and iovecs, each immediate call's requested bytes/iovecs, and immediate
+successes, short transfers and EAGAIN results. Requested bytes may count a
+short-send suffix more than once; completed bytes count bytes actually moved.
+Consequently the following quantities answer separate questions:
+
+| Quantity | Derivation |
+| --- | --- |
+| Received bytes per CQE | `receive_bytes / receives` |
+| Ring bytes actually sent per successful CQE | `(send_bytes - inline_bytes) / sends`, when sends are nonzero |
+| Requested ring aggregation | `ring_requested_bytes / ring_requests` and `ring_requested_vectors / ring_requests` |
+| Immediate bytes actually sent per call | `inline_bytes / inline_attempts`, including zero-byte unsuccessful attempts |
+| Requested immediate aggregation | `inline_requested_bytes / inline_attempts` and `inline_requested_vectors / inline_attempts` |
+| Immediate fallback evidence | Successful, short and EAGAIN counts, plus any following ring requests |
+
+The counter checks require matching transfer totals, one positive ring-send
+CQE per completed ring request, requested bytes no smaller than actual bytes,
+and consistent call/vector/result counts. They do not assume a requested
+vector is fully transferred or that TCP preserves application message
+boundaries. A difference in gathered bytes or call counts can support an
+aggregation mechanism; proving packetization itself needs kernel or packet
+evidence. Observation overhead can perturb the traffic and its timings, so
+these records are not substitutes for experiment38's uninstrumented samples.
+
+All eight strict Linux-musl size/send/observation builds pass locally. For
+each of the four normal builds, optimized LLVM IR is identical before and
+after these counters once source-file identity is excluded and debug info is
+disabled. Shell parsing, Make dry-run, YAML parsing and diff checks pass.
+Native execution and the diagnostic records are pending on the independent
+`codex/io-uring-aggregation-diagnostic` branch; measured remote `0ebe924b`
+remains unchanged.

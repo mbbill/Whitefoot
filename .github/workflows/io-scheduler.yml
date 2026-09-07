@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-continuation-screen', 'codex/io-rayon-baselines', 'codex/io-compute-profile', 'codex/io-mixed-rayon-baselines', 'codex/io-continuation-owner', 'codex/io-client-headroom', 'codex/io-cpu-resource-controls']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-continuation-screen', 'codex/io-rayon-baselines', 'codex/io-compute-profile', 'codex/io-mixed-rayon-baselines', 'codex/io-continuation-owner', 'codex/io-client-headroom', 'codex/io-cpu-resource-controls', 'codex/io-uring-aggregation-diagnostic']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -58,12 +58,13 @@ jobs:
           ROOT: ${{ github.workspace }}
           OUT: ${{ runner.temp }}/io-scheduler
           CARGO_TARGET_DIR: ${{ github.workspace }}/compiler/target
-          ROUNDS: '7'
-          WARMUP: '2'
+          ROUNDS: ${{ github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic' && '3' || '7' }}
+          WARMUP: ${{ github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic' && '1' || '2' }}
           EXPERIMENT: ${{ matrix.experiment }}
-          NATIVE_BASELINES: ${{ (github.ref == 'refs/heads/codex/io-native-baselines' || github.ref == 'refs/heads/codex/io-client-headroom') && '2' || ((github.ref == 'refs/heads/codex/io-continuation-screen' || github.ref == 'refs/heads/codex/io-continuation-owner') && '1' || '0') }}
+          NATIVE_BASELINES: ${{ (github.ref == 'refs/heads/codex/io-native-baselines' || github.ref == 'refs/heads/codex/io-client-headroom' || github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic') && '2' || ((github.ref == 'refs/heads/codex/io-continuation-screen' || github.ref == 'refs/heads/codex/io-continuation-owner') && '1' || '0') }}
           CONTINUATION_SCREEN: ${{ github.ref == 'refs/heads/codex/io-continuation-owner' && '2' || (github.ref == 'refs/heads/codex/io-continuation-screen' && '1' || '0') }}
           CLIENT_HEADROOM: ${{ github.ref == 'refs/heads/codex/io-client-headroom' && '1' || '0' }}
+          URING_DIAGNOSTIC: ${{ github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic' && '1' || '0' }}
           CLANG: /usr/bin/clang-20
           CORO_CXX: /usr/bin/clang++-20
         run: |
@@ -77,6 +78,8 @@ jobs:
               echo 'Continuation progress-owner comparison: four WF forms and seven native controls, split1 only, five echo cases, seven alternating passes after two warmups: 385 timing rows and 99 live snapshots. The same generated binary compares background progress with progress on the sole resumer. Source, frame ABI, buffer policy, locks, publication and wake paths stay fixed. Both modes pass all generated native/helper sanitizer and large-stream qualifications before timing. Client CPU headroom remains limited; this experiment isolates the current coordinator handoff cost and does not establish a server capacity frontier.'
             elif [[ "$GITHUB_REF" == refs/heads/codex/io-continuation-screen ]]; then
               echo 'Generated WF continuation screen: three WF forms and seven native controls on split1 only, with all server threads restricted to one CPU and the client on another physical core. Five echo cases and seven alternating passes after two warmups: 350 rows and 90 live snapshots. The continuation candidate uses the qualified test coordinator, a 1024-task admission window, and the same counter-enabled binary for observed and timed runs. Full native-ring continuation sanitizers, streaming/backpressure checks and task retirement assertions precede timing. This measures the current implementation, not the performance limit of sequential source or the language model.'
+            elif [[ "$GITHUB_REF" == refs/heads/codex/io-uring-aggregation-diagnostic ]]; then
+              echo 'Observed aggregation diagnostic, not a normal timing ranking: four uring 8/64 KiB pure/inline forms, one server worker/CPU and the unchanged one-thread client on another physical core, 64 peers x 64 KiB x 500 trips. Three recorded passes after one warmup give 12 diagnostic rows. Full byte oracle and native stream qualification remain. Requested bytes and iovecs count send requests, which can repeat a suffix on short sends; completed bytes/CQEs and inline calls are reported separately. Counters alone do not establish TCP packetization.'
             elif [[ "$GITHUB_REF" == refs/heads/codex/io-client-headroom ]]; then
               echo 'Client headroom sensitivity: one fixed server logical CPU and worker, with either one client thread on one hardware thread or two client threads on the two SMT siblings of another physical core. No server sibling is added to the client. Two existing WF forms and four native controls, 64 peers at 64 B/64 KiB, seven passes after two warmups: 168 timed rows. Payload construction and full byte verification are unchanged. All native/stream/completion qualification remains; this CPU-resource panel omits the separate resident-memory measurements. This can reveal a client ceiling but does not certify spare physical client cores or real-NIC saturation.'
             elif [[ "$GITHUB_REF" == refs/heads/codex/io-native-baselines ]]; then
@@ -85,7 +88,9 @@ jobs:
               echo 'Combine existing policies: handler-owned initialized buffers, compact stack metadata, configured-lane initialization, balanced pinned I/O dispatch and optional local self-wake omission. Four WF forms and five native manual/stackful/coroutine controls; split1/split2, five echo cases including underoccupied controls, seven passes after two warmups produce 630 rows. Every server has THP disabled and explicit glibc top_pad=0, with loader readback. Three live snapshots at 64/1024 small peers and 64 large peers give 162 records. Full completion qualification runs for each combined policy before measurements; all existing native stream and coroutine lifetime checks remain. Clang 20 throughout. No source signature, runtime ABI or default allocator changes. See the investigation for scope.'
             fi
             echo '```text'
-            for file in host.txt cohorts.tsv network-summary.txt small-check.log balanced-check.log balanced-small-check.log quiet-small-check.log allocation-check.log stackful-check.log coroutine-check.log uring-check.log continuation-check.log continuation-build.log; do
+            files=(host.txt cohorts.tsv network-summary.txt small-check.log balanced-check.log balanced-small-check.log quiet-small-check.log allocation-check.log stackful-check.log coroutine-check.log uring-check.log continuation-check.log continuation-build.log)
+            if [[ "$GITHUB_REF" == refs/heads/codex/io-uring-aggregation-diagnostic ]]; then files=(host.txt cohorts.tsv uring-diagnostic-counters.tsv uring-check.log); fi
+            for file in "${files[@]}"; do
               cat "$RUNNER_TEMP/io-scheduler/$file" 2>/dev/null || echo "$file was not produced"
             done
             echo '```'
