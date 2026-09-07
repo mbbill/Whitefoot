@@ -1,7 +1,9 @@
 # Whitefoot — agent instructions
 
-Whitefoot is a proof-carrying systems language for AI-written, human-approved
-code. Accepted programs must make memory corruption, data races, uninitialized
+Whitefoot is a programming language designed as a harness for AI agents.
+Its chosen systems-language design carries machine-checked source proofs,
+with humans setting requirements and approving changes. Accepted programs
+must make memory corruption, data races, uninitialized
 reads, silent overflow, and every other unproved partial operation
 unrepresentable. There is no writer-accessible unsafe escape or runtime trap.
 Every partial operation is admitted only after machine proof of its domain.

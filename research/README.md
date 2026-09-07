@@ -1,7 +1,11 @@
 # Research and design evidence
 
 This directory holds investigations and experiments that expose language or
-compiler needs and test possible solutions. The active
+compiler needs and test possible solutions. Treat agent authorship as a
+changed design condition: identify what a candidate restriction or capability
+should buy, compare plausible alternatives, and retain the observed limits.
+The [evidence method](../docs/practice.md#evidence-guidance) separates design
+objectives, assumptions, mechanism choices, and experimental results. The active
 [specification](../spec/kernel-spec.md) defines the language, the
 [compiler README](../compiler/README.md) describes the implementation, and
 [AGENTS.md](../AGENTS.md) defines the work-branch and merge boundary.

@@ -6,11 +6,14 @@ the active specification at `spec/kernel-spec.md`, whose version and digest
 are its own bytes; each superseded version is
 archived at `spec/kernel-spec-vN.md`, and the v0.40 through v0.50 amendments
 at the end of this file bind their changed derivations.
-Requirement (META-6): every rule is provably
-derived, directly or indirectly, from the constitution — or flagged. Statuses:
-**derived** (existence and form), **derived_existence_only** (the rule must
-exist; this form is minimality-selected and awaits its experiment),
-**underived** (no chain; may not ratify).
+Requirement (META-6): every rule has a trace to the constitution; a refuted or
+orphaned chain is flagged for re-grounding. Statuses describe the recorded
+selection grounds: **derived** (grounds for existence and form),
+**derived_existence_only** (grounds for the need under stated objectives;
+the form is minimality-selected pending its recorded comparison), and
+**underived** (no grounded chain; may not ratify). A design rationale is not
+a formal theorem of unique necessity or a proof of compiler correctness.
+The native gate checks row coverage, not the validity of these arguments.
 
 Rows and amendments through v0.39 remain in this ledger as historical
 derivation evidence. The unversioned table preserves those derivation chains;
@@ -53,6 +56,59 @@ the following evidence boundaries for the existing re-grounding work:
 
 These are qualifications of design evidence, not new language rules, required
 experiments before branch work, or claims that the questions are resolved.
+
+## Constitutional grounding: 2026-09-07
+
+The constitution now starts from a language designed as a harness for AI
+agents. P0 and the safety commitments are chosen objectives; the intended
+author alone does not logically entail them or one implementation mechanism.
+R7 distinguishes objectives, conditional deductions, selections, and evidence.
+The following qualifications apply to the affected reading of the retained
+chains; no source judgment or recorded status is changed here.
+
+- **SCOPE-1 through SCOPE-3, INV-1, and PRF-1:** the safety and proof boundary
+  is grounded in the chosen T1/T2/W3 commitments. Historical arguments that
+  derive memory safety solely from AI writability are insufficient by
+  themselves. No-SMT acceptance, fixed automatic families, and finite explicit
+  proofs are selected mechanisms with specific guarantees and expressive
+  limits, not necessary consequences of changing the writer. The existing
+  PRF-1 wider-source comparison remains relevant; finite syntax does not
+  establish practical total checking cost.
+- **FORM-1, FORM-2, FORM-4, and META-4:** R3 still selects one canonical form,
+  but W2 no longer treats compactness or a particular context window as an
+  independent objective. The useful grounds are available information,
+  predictable rules, and local reasoning. Those grounds do not uniquely
+  select exact byte formatting, rejection instead of normalization, or the
+  removal of comments. The recorded form-selection questions remain open.
+  A unique definition site also does not make logical contradictions
+  impossible; the stronger claim in the historical META-4 row is refuted.
+- **FN-1, FN-3, FN-8, FN-9, and EFF-1:** W4 makes composable responsibility
+  explicit. It supports checked interface obligations, but does not establish
+  that the present vocabulary suffices for independently authored components.
+  The active grammar excludes `contract_block` from `fn_sig`, and FN-9 limits
+  normal-return relations. The [compiler's contract boundary](../../compiler/README.md#implemented-language-surface)
+  also distinguishes closed-bundle verification from independent module
+  checking. The older locality arguments justify the capability; they do not
+  discharge those broader composition questions.
+- **R0-dependent comparisons, including EFF-1 and the proof/fact channels:**
+  compare a mechanism as part of the design and against a stated baseline.
+  Reusing a sound existing mechanism is not a failure merely because it has
+  no isolated advantage over Rust. The historical
+  [two-target default-floor result](../../research/experiments/default-floor/RESULTS.md)
+  supports the programs and comparison conditions it measured; its retained
+  bounds checks do not establish a proof-caused win, current-compiler results,
+  or general agent collaboration effectiveness.
+- **META-6:** tracing reasons and preserving refutations serves R7. The
+  historical row's stronger claim that every feature must be logically proved
+  from the constitution is not the current interpretation. A choice can have
+  technical grounds while alternatives remain viable; unexplained or refuted
+  grounds still need re-grounding rather than a status label alone.
+
+These flags preserve the actual form-selection obligations. They do not
+promote provisional forms, reopen retired source rules, or claim that the
+whole ledger has been re-audited. Canonical formatting, proof expressivity
+and cost, and interface composition each require their own bounded technical
+comparison before a stronger conclusion can be recorded.
 
 ## Versioned evidence
 

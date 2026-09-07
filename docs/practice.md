@@ -103,6 +103,44 @@ A soundness defect is a correctness issue regardless of planning status.
 
 ## Evidence guidance
 
+Use the constitution to identify objectives and candidate directions, then
+use technical arguments and experiments to decide between them. Keep four
+things distinct: the desired property, the assumptions behind a deduction,
+the chosen mechanism, and the observations supporting it. More than one
+mechanism may meet the objective. A minimality choice can remain provisional
+without an invented experiment or a claim of unique necessity.
+
+Choose a probe that could distinguish the live alternatives. Keep behavior,
+contracts, workloads, and comparison conditions fixed where they define the
+question. If an agent makes the task easier by weakening a requirement, the
+new green result does not answer the original question. A representative
+writer trial can expose that failure and test a possible constraint or
+diagnostic; it cannot establish that the language knows unstated requirements.
+
+For agent-led development, distinguish at least these observations:
+
+- whether the required implementation and proof can be expressed;
+- whether the tested agent can produce them with the supplied interfaces,
+  context, tools, and repair assistance;
+- whether separately implemented components meet independent behavior
+  expectations when composed; and
+- whether the resulting program meets its runtime cost goal, and why.
+
+A failed trial can reveal inadequate contracts, missing proof vocabulary,
+poor feedback, model limitations, or a bad architecture. Attribute the cause
+before selecting a language change. Model identity and assistance are
+experimental conditions, not permanent language ceilings. A restriction can
+still be worthwhile when it increases writing effort; measure the benefit
+and cost rather than treating brevity as success.
+
+Keep conclusions conditional. Record what would make a rejected alternative
+worth reopening and preserve the failure it must address. Improved agents can
+change an authoring-cost result; they do not invalidate a counterexample to
+soundness. A result on a retired compiler or a different workload remains
+evidence about those conditions until reproduced on the new ones. The
+relevant [decision memory](../mcts_mem/) records choices and their reasons;
+the experiment or design remains the source of the technical evidence.
+
 - State exact commands, inputs, outputs, counts, and exit codes. Read an exit
   code directly, not through a pipe.
 - Prefer differential reproduction on the same source before and after the
