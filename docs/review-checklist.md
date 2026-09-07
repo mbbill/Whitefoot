@@ -21,14 +21,23 @@ not a pass. When the task changes a review rule or an expected result, compare
 its previous form with the requested change rather than judging only against
 the newly edited rule.
 
-Report the reviewed scope, checked item IDs, skipped groups, and findings in
-the existing PR, or in the task reply when there is no PR. Each finding names
-an item ID, file and line, the offending text or missing evidence, and a short
-reason. Quote both sides
-of a contradiction. Mark a question needing design judgment `unverified` and
-return it to the implementing agent; do not guess or redesign the project.
-Keep reports short and do not create a repository audit log. Later edits
-invalidate review of the affected content, not unrelated completed checks.
+Put a compact report in the existing PR, or the task reply when there is no PR.
+Use the [PR template](../.github/pull_request_template.md)'s three bullets:
+
+- **Scope:** reviewer/model, base and head, checked groups and any skipped
+  groups or unreviewed parts. A scoped review does not certify the whole PR.
+- **Checks:** commands actually run and their results; distinguish the full
+  gate from focused checks and identify the tested revision.
+- **Findings:** remaining issues and unverified items, or none within the
+  reviewed scope. Each finding names its item ID, file/line, offending text or
+  missing evidence, and a short reason; quote both sides of a contradiction.
+
+Summarize clean groups together rather than listing every passed item. Link
+detailed evidence when needed instead of copying logs, stage tables or the
+checklist. Mark a question needing design judgment `unverified` and return it
+to the implementing agent; do not guess or redesign the project. Do not create
+a repository audit log. Later edits invalidate review of the affected content,
+not unrelated completed checks.
 
 ## Document roles
 
@@ -142,15 +151,21 @@ Source: [compiler rules](../AGENTS.md#compiler-rules) and
   question cannot be settled by local inspection and cases, flag it for deeper
   review rather than certifying soundness.
 
-## T. Specification and checks — changed language rules, tests or gate wiring
+## T. Specification and checks — changed language rules, design premises, tests or gate wiring
 
 Source: [specification and test integrity](../AGENTS.md#specification-and-test-integrity).
 
-- [ ] **T1 — Specification amendment.** The outgoing active bytes are archived
-  unchanged, released archives are untouched, and the new declaration and title
-  agree. Affected cases/verdicts, generated syntax, compiler and documentation
-  follow the amendment. Check affected derivation grounds without requiring
-  an unrelated full-ledger sweep.
+- [ ] **T1 — Language evidence.** For a specification amendment, the outgoing
+  active bytes are archived unchanged, released archives are untouched, and
+  the new declaration and title agree. The change declares the [META-5] delta
+  (rules, tokens, spellings, exceptions) and evidence/minimality selection
+  ground. Affected cases/verdicts, generated syntax, compiler and documentation
+  follow the amendment. For changed rules or constitutional premises, check
+  affected derivation grounds and flag re-grounding needs; an `existence-only`
+  row still has a premise and form-selection condition. For conformance changes,
+  the PR explains the normative expectation and how the changed evidence tests
+  it. Do not require an unrelated full-ledger sweep. [META-5/6] are defined in the
+  [active specification](../spec/kernel-spec.md#20-spec-meta-rules-ci-checked).
 - [ ] **T2 — Preserved checks.** Every removed, skipped, narrowed, regenerated
   or weakened test/check has a technical reason consistent with the requested
   change. An implementation gap, crash, timeout or unsupported feature has not
