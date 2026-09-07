@@ -373,6 +373,22 @@ No Go timing rank or four-CPU performance claim exists yet. The earlier
 qualification remains frozen; [experiment51](../../investigations/io-model/SCHEDULER-EXPERIMENT.md#fifty-first-experiment-compare-go-buffer-ownership)
 compares the two ordinary storage forms before selecting timing candidates.
 
+`scheduler-go-screen` adds all four qualified release configurations
+(handler/acceptor buffer ownership × GOMAXPROCS 1/4) to experiment48's fixed
+five WF and seven native echo controls. It pins Go 1.27.1, runs all 32 Go
+release/race qualification cases first, and copies that exact release binary
+into the panel. Five cases and seven alternating passes after two warmups
+produce 560 ordinary timing rows. Three resident cases repeated three times
+produce 144 snapshots, separate from the eight Go qualification snapshots.
+Every server thread shares one logical CPU; the client uses a different
+physical core. Go reports and send-buffer overrides are disabled in ordinary
+samples, GOGC is 100, and runtime limits stay at their defaults. Observations
+retain the storage/P configuration, live thread affinity and actual epoll
+registrations. Source, tool and binary hashes accompany the raw samples.
+[Experiment53](../../investigations/io-model/SCHEDULER-EXPERIMENT.md#fifty-third-experiment-sequential-go-in-the-fixed-echo-screen)
+owns this bounded comparison; no fresh tuning or server-capacity claim is
+inferred from the unchanged loopback/client envelope.
+
 `scheduler-uring-diagnostic` captures three observed repetitions of the
 64-peer × 64 KiB cell for the four 8/64 KiB pure/inline uring forms, using one
 server CPU and the unchanged client on another physical core. Its counters

@@ -103,6 +103,10 @@ scheduler-pages:
 scheduler-native-baselines:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" NATIVE_BASELINES=2 EXPERIMENT=allocator bash scheduler-bench.sh combine
 
+.PHONY: scheduler-go-screen
+scheduler-go-screen:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" GO="$(GO)" CORO_CXX="$(CORO_CXX)" GO_SCREEN=1 CONTINUATION_SCREEN=3 NATIVE_BASELINES=1 EXPERIMENT=allocator bash scheduler-bench.sh combine
+
 .PHONY: scheduler-client-headroom
 scheduler-client-headroom:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" CORO_CXX="$(CORO_CXX)" CLIENT_HEADROOM=1 NATIVE_BASELINES=2 EXPERIMENT=allocator bash scheduler-bench.sh combine

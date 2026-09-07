@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-continuation-screen', 'codex/io-rayon-baselines', 'codex/io-compute-profile', 'codex/io-mixed-rayon-baselines', 'codex/io-continuation-owner', 'codex/io-continuation-batch', 'codex/io-client-headroom', 'codex/io-cpu-resource-controls', 'codex/io-uring-aggregation-diagnostic', 'codex/io-cpu-ring-controls', 'codex/io-go-baselines', 'codex/io-cpu-startup-controls', 'codex/io-continuation-mixed', 'codex/io-go-storage', 'codex/io-cpu-phase-recheck']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-continuation-screen', 'codex/io-rayon-baselines', 'codex/io-compute-profile', 'codex/io-mixed-rayon-baselines', 'codex/io-continuation-owner', 'codex/io-continuation-batch', 'codex/io-client-headroom', 'codex/io-cpu-resource-controls', 'codex/io-uring-aggregation-diagnostic', 'codex/io-cpu-ring-controls', 'codex/io-go-baselines', 'codex/io-cpu-startup-controls', 'codex/io-continuation-mixed', 'codex/io-go-storage', 'codex/io-cpu-phase-recheck', 'codex/io-go-screen']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -55,6 +55,12 @@ jobs:
           sudo apt-get install -y --no-install-recommends clang clang-20 libclang-rt-20-dev time
           rustup default stable
           cargo fetch --locked --manifest-path compiler/Cargo.toml
+      - name: Install the pinned Go screen toolchain
+        if: github.ref == 'refs/heads/codex/io-go-screen'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.1'
+          cache: false
       - name: Measure scheduler policies on this host
         env:
           ROOT: ${{ github.workspace }}
@@ -63,8 +69,9 @@ jobs:
           ROUNDS: ${{ github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic' && '3' || '7' }}
           WARMUP: ${{ github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic' && '1' || '2' }}
           EXPERIMENT: ${{ matrix.experiment }}
-          NATIVE_BASELINES: ${{ (github.ref == 'refs/heads/codex/io-native-baselines' || github.ref == 'refs/heads/codex/io-client-headroom' || github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic') && '2' || ((github.ref == 'refs/heads/codex/io-continuation-screen' || github.ref == 'refs/heads/codex/io-continuation-owner' || github.ref == 'refs/heads/codex/io-continuation-batch') && '1' || '0') }}
-          CONTINUATION_SCREEN: ${{ github.ref == 'refs/heads/codex/io-continuation-batch' && '3' || (github.ref == 'refs/heads/codex/io-continuation-owner' && '2' || (github.ref == 'refs/heads/codex/io-continuation-screen' && '1' || '0')) }}
+          NATIVE_BASELINES: ${{ (github.ref == 'refs/heads/codex/io-native-baselines' || github.ref == 'refs/heads/codex/io-client-headroom' || github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic') && '2' || ((github.ref == 'refs/heads/codex/io-continuation-screen' || github.ref == 'refs/heads/codex/io-continuation-owner' || github.ref == 'refs/heads/codex/io-continuation-batch' || github.ref == 'refs/heads/codex/io-go-screen') && '1' || '0') }}
+          CONTINUATION_SCREEN: ${{ (github.ref == 'refs/heads/codex/io-continuation-batch' || github.ref == 'refs/heads/codex/io-go-screen') && '3' || (github.ref == 'refs/heads/codex/io-continuation-owner' && '2' || (github.ref == 'refs/heads/codex/io-continuation-screen' && '1' || '0')) }}
+          GO_SCREEN: ${{ github.ref == 'refs/heads/codex/io-go-screen' && '1' || '0' }}
           CLIENT_HEADROOM: ${{ github.ref == 'refs/heads/codex/io-client-headroom' && '1' || '0' }}
           URING_DIAGNOSTIC: ${{ github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic' && '1' || '0' }}
           CLANG: /usr/bin/clang-20
@@ -76,7 +83,9 @@ jobs:
         run: |
           {
             echo '## Scheduler experiment: ${{ matrix.experiment }}'
-            if [[ "$GITHUB_REF" == refs/heads/codex/io-continuation-batch ]]; then
+            if [[ "$GITHUB_REF" == refs/heads/codex/io-go-screen ]]; then
+              echo 'Qualified Go 1.27.1 sequential net controls join the fixed continuation screen: four Go release forms (handler/acceptor private 64 KiB x GOMAXPROCS 1/4), five WF and seven native forms. One logical server CPU includes every Go runtime/GC thread; P4 is oversubscription. Five echo cases, seven alternating passes after two warmups yield 560 ordinary rows; three live cases x three repeats yield 144 snapshots. The separate 32 release/race qualification cases include 8 additional snapshots. Timed Go uses the exact qualified release binary, GOGC 100/default limits, no reports/race/send-buffer override. Owner/P/backend/thread-affinity readbacks, source/tool/binary hashes, every CPU/latency row and RSS map are retained. Existing loopback/client headroom limits prevent a server-capacity or universal-fastest claim.'
+            elif [[ "$GITHUB_REF" == refs/heads/codex/io-continuation-batch ]]; then
               echo 'Continuation progress batching: five WF forms and seven fixed native controls, split1, five echo cases, seven alternating passes after two warmups: 420 timing rows and 108 live snapshots. One generated binary compares the threaded coordinator and sole-owner progress every 1/32 ready resumptions. Empty-ready progress remains immediate, epochs/registration/storage stay unchanged. All three policies pass native/helper sanitizers and large-stream qualification. Separate observations expose existing ring submissions, enters, completions and wake counters; ordinary samples disable reports and sanitizers but retain coordinator counters. This isolates a batching policy, not a universal executor optimum or qualified server capacity frontier.'
             elif [[ "$GITHUB_REF" == refs/heads/codex/io-continuation-owner ]]; then
               echo 'Continuation progress-owner comparison: four WF forms and seven native controls, split1 only, five echo cases, seven alternating passes after two warmups: 385 timing rows and 99 live snapshots. The same generated binary compares background progress with progress on the sole resumer. Source, frame ABI, buffer policy, locks, publication and wake paths stay fixed. Both modes pass all generated native/helper sanitizer and large-stream qualifications before timing. Client CPU headroom remains limited; this experiment isolates the current coordinator handoff cost and does not establish a server capacity frontier.'
@@ -93,6 +102,7 @@ jobs:
             fi
             echo '```text'
             files=(host.txt cohorts.tsv network-summary.txt small-check.log balanced-check.log balanced-small-check.log quiet-small-check.log allocation-check.log stackful-check.log coroutine-check.log uring-check.log continuation-check.log continuation-build.log)
+            if [[ "$GITHUB_REF" == refs/heads/codex/io-go-screen ]]; then files+=(go-check.log build-sha256.txt); fi
             if [[ "$GITHUB_REF" == refs/heads/codex/io-uring-aggregation-diagnostic ]]; then files=(host.txt cohorts.tsv uring-diagnostic-counters.tsv uring-check.log); fi
             for file in "${files[@]}"; do
               cat "$RUNNER_TEMP/io-scheduler/$file" 2>/dev/null || echo "$file was not produced"
@@ -114,6 +124,7 @@ jobs:
             ${{ runner.temp }}/io-scheduler/samples/
             ${{ runner.temp }}/io-scheduler/codegen/
             ${{ runner.temp }}/io-scheduler/resident/
+            ${{ runner.temp }}/io-scheduler/go/whitefoot-io-completion-bench/build/go-qualification/
 
 
   go-reference:
