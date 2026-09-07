@@ -3,9 +3,11 @@
 This is the container architecture selection from the independent workload,
 critical-case, and semantic reviews of 2026-09-06, their executable experiments,
 and adversarial cross-review, supplemented by the pinned external workload traces.
-It selects the architecture and first implementation scope below; it does not
-amend the active specification. Implementation is in progress; the checkpoint
-below is distinct from the retained pre-implementation measurements and gate.
+It selects the architectural direction and first implementation scope below; it
+does not amend the active specification. The foundation review of 2026-09-07
+reopens the precise IR and phase boundary before further call-adapter work. The
+current implementation is a candidate, not the definition of that foundation.
+Its checkpoint is distinct from the retained pre-implementation measurements and gate.
 Keep this decision and its linked evidence current as implementation replaces the
 old container paths. `DESIGN.md` points here for the superseding container choice;
 its separate resource research is outside this selection.
@@ -27,8 +29,9 @@ representation privileges in this implementation.**
 
 The comparison concerns architecture, not the final spelling of every future
 operation. Existing source spellings and semantics remain in force until their
-corresponding specification amendments. This decision is sufficient to begin the
-first implementation slice, which needs no new public container syntax.
+corresponding specification amendments. The initial programs need no new public
+container syntax. Their implementation now supplies evidence for reviewing the
+foundation's concrete form, rather than committing to every mechanism it introduced.
 
 ### Empirical ground
 
@@ -97,9 +100,117 @@ and remaining causal uncertainties are recorded under workload evidence below.
   its retirement. This requirement belongs in storage identity/lifetime handling
   now, even though staged-window optimization is not the first slice.
 
-### Initialization and public authority
+### Foundation review: authority, representation, and placement
 
-The initial public kernel owns these semantic state families:
+When construction, replacement, borrowing, helper transfer, cleanup, or deferred
+execution exposes a problem, first identify the missing state or transition and
+its owning layer. Repeated adapters are evidence to examine that boundary; they
+are not proof that the language needs another operation. Conversely, an isolated
+incorrect use of a sufficient representation is an implementation bug, not a
+reason to redesign the whole compiler.
+
+| Layer | Responsibility | Boundary |
+| --- | --- | --- |
+| Source specification and semantic checker | Admit operations using ownership, initialized domains, loan origins, effects, and verified callable contracts. | A backend destination grants no new source authority. Missing source permissions require specified rules and their checker, not an emitter exception. |
+| Typed lowering and normalized storage/call representation | Preserve value identity separately from storage identity, typed projections, construction/commit order, ownership transfer, cleanup, and address-use lifetimes. | Lowering may choose a physical construction destination for an already admitted value. It must preserve every observable source behavior and responsibility. |
+| Target storage, ABI, and optimization | Select layouts and frame objects, implement calls, and reuse storage when contents and derived addresses no longer need it. | This is compiler correctness analysis, not another source acceptance path. STOR-6 checks target materializations before optional optimization; optimizer facts cannot supply missing source proof. |
+
+The current [storage planner](../../../compiler/src/backend/storage.rs) analyzes
+immutable IR contents and their CFG interference. It does not infer source
+ownership: a failed coalescing opportunity keeps separate backing. Loads remain
+snapshots, exposed backing is protected, and coalescing is disabled for functions
+with overlap or completion pipelines. These are legitimate conservative compiler
+choices. That conservatism does not yet model the complete lifetime of an address
+carried across asynchronous execution.
+
+The more consequential gap is the phase boundary. An
+[`IrOperation::Call`](../../../compiler/src/lowering.rs) names value arguments;
+the aggregate result-pointer ABI is introduced later by the
+[emitter bridge](../../../compiler/src/backend/emitter/places.rs).
+[`promote_binding_if_needed`](../../../compiler/src/lowering/builder/storage.rs)
+can then introduce separate addressable owner storage. The dense measurement
+retains a whole result-to-binding copy, and ordinary, system, and parallel emission
+routes have each needed to honor that late bridge. The system-operand correction
+at `bb8eb30f` and remaining parallel failure are concrete evidence that the shared
+representation deserves review; they do not establish that every ABI conversion
+is avoidable or unsound.
+
+The preferred candidate for that review is **one typed storage/call normalization
+before emission**, with explicit aggregate destinations and a shared call
+representation consumed by ordinary, system, and parallel paths. Runtime-specific
+marshalling still exists, but must not independently reconstruct whether an
+operand is a value, a borrowed place, or an aggregate destination. This candidate
+is not implemented or validated. Keeping the late bridge is cheaper locally but
+must demonstrate equally complete propagation and placement; adding public output
+parameters does not by itself solve either obligation.
+
+The representation must distinguish these transitions:
+
+- **Fresh construction:** an ordinary `let` receiving a completed value may use
+  its final backing as the physical result destination. Source value semantics
+  do not require a temporary copy. Direct placement still needs valid extent,
+  alignment, aliasing, lifetime, and cleanup on every relevant exit.
+- **Commit to an existing place:** SET-1 captures the target before RHS evaluation;
+  SET-2 reads the displaced owner after that evaluation, then exchanges owners.
+  The RHS may observe or mutate the old value. The target is not a fresh result
+  slot, and the displaced owner may remain independently live after commit.
+- **Partial construction and failure:** record exactly which values have acquired
+  ownership on each edge and how they are returned or discharged. A normal error
+  result is part of the program. Moving an allocation before construction can
+  suppress effects or change refusal and returned ownership; destination choice
+  alone does not justify that reorder.
+- **Borrow and retirement:** a descriptor's last read does not imply its backing
+  is dead. Derived addresses remain valid for their complete uses, including
+  join return, result consumption, and retirement. Cross-worker execution and
+  suspension must not change that requirement. Reuse follows that boundary,
+  not a DONE observation or an assumed worker assignment.
+- **Control-flow transfer:** snapshot simultaneously transferred values, perform
+  the required predecessor cleanup, then write reusable destinations. A storage
+  slot is neither a second owning value nor evidence that an old snapshot may
+  be overwritten.
+
+These are requirements on the representation, not a mandate for a runtime
+per-field bitmap, a new allocation, a universal storage wrapper, or a second
+general theorem prover. Statically known construction paths can have statically
+selected cleanup. Container window state, genuinely dynamic occupancy, and
+source-level linear discharge remain their own semantic responsibilities.
+
+Current source authority is narrower than arbitrary construction into a chosen
+raw slot. A constructor builds a complete value; `fixed_vector()` builds a valid
+empty run; `place_back` consumes a completed element and proved room. `&uniq T`
+authorizes access to an already valid `T`, while `writes(dst)` is a write footprint,
+not a guarantee of initialization on every exit. A `MutSlice` covers initialized
+length, not raw capacity. Borrowing an empty run's first slot fails OP-4, and BLK-4
+also excludes source `&uniq` run parameters through nested fields and generics.
+Thus a source-written raw-slot helper cannot currently be obtained by changing a
+parameter spelling. Whether a real workload needs that additional authority is
+a separate source-design question under D17; fresh value-result placement does
+not require it.
+
+Use existing complete witnesses to judge the candidate, with their actual limits:
+
+| Witness | Required distinction and current evidence |
+| --- | --- |
+| [Dense scalar, wide record, and inline view](../../experiments/container-representation/dense/RESULTS.md) | The retained matrix executes and element loops no longer copy whole payloads. Remaining result-to-binding copying and frame cost show that final placement is unfinished. These are cost/capability probes, not production prevalence data. |
+| [Owned-place execution tests](../../../compiler/src/backend/tests/owned_places.rs): `replace_reads_the_displaced_value_after_rhs_mutation` and `replaced_aggregate_snapshots_survive_writes_and_helper_returns` | Passed with normal and retained helper calls. RHS effects occur before old-owner readout, and the old aggregate remains a snapshot after the new target changes. A fresh-destination rewrite must not erase either behavior. |
+| Same suite: `partial_construction_refusal_preserves_effects_values_and_release_order` | Passed with retained calls and refusal at each of three allocations, observing exact allocation/release order and returned values. The source constructs two complete cells before making the pair; this does **not** demonstrate source-visible partially initialized struct authority. |
+| Same suite: `returned_element_borrows_and_inline_views_reach_the_owners_storage`; [semantic neighbors](../../../compiler/src/semantic/tests/owned_places.rs) | Passed owner-storage execution and bounds/loan checks, including refusal of raw-slot access and moving a borrowed owner. Root value liveness alone cannot replace loan/storage identity. |
+| [Linear lifecycle programs](../../experiments/container-representation/lifecycle/RESULTS.md) | Actual linear values are discharged on success and failure; the leak neighbor is rejected. A proved-empty run of linear values still cannot be discharged. That missing language capability is not solved by an aggregate ABI. |
+| [Parallel corpus execution](../../../compiler/tests/programs/parallel.rs) using [generic nominals](../../../tests/programs/generic_nominals.wf) | At `bb8eb30f`, the canonical program stage reports 72 passes and this one failure: abnormal exit with four workers. Existing green sampling predominantly returns scalars. Aggregate-result and staged-cleanup test additions remain paused, uncompiled, and unexecuted; no complete parallel aggregate lifetime result is claimed. |
+
+Select the concrete normalization using these witnesses and the frozen external
+contracts already recorded below. Its design must account for successful handout,
+refused handout, deferred execution, join, result consumption, and cleanup through
+one consistent set of value/storage relationships. Avoid enlarging runtime slots
+or adding scheduling edges to make an incomplete storage model appear sound.
+This review precedes more adapter implementation; it does not expand the first
+slice into a public raw-storage framework or six application ports.
+
+### Selected initialization states and public authority
+
+The selected direction distinguishes these semantic state families. The current
+specification still has the two window runs of BLK-1 and transitional legacy
+arrays; this table is not a claim that three new source families already exist:
 
 | State | Inherent guarantee | Representation requirement |
 | --- | --- | --- |
@@ -115,7 +226,9 @@ moves through a free list. At the examined baseline, the boxed source probes
 were blocked by incorrect region inference and owned-cell measure resolution;
 those compiler defects do not refute that representation.
 
-Construction proceeds through a checked partial state. Sealing into a full fixed
+The proposed full-state construction proceeds through a checked partial state.
+This is a follow-on source capability, distinct from constructing an already
+admitted complete value in its physical result destination. Sealing into a full fixed
 array requires full initialization, matching extent, and the correct contiguous
 layout; it transfers ownership rather than treating raw slots as values. For an
 already acquired provider allocation, a compatible seal may retain that allocation
@@ -240,9 +353,12 @@ artifact**, not an applied compiler change. Automatic approval review rejected
 the remaining cross-worker adapter edit and requested explicit owner permission;
 the draft PR carries the exact proposed patch for inspection. Its owner is this
 implementation investigation, and it is deleted when that patch is applied or
-superseded. It preserves frame layout and publication/join/release order, copying
-aggregate results into caller storage before frame release. Current parallel
-integration is incomplete until this patch and its required validation land.
+superseded. It proposes preserving frame layout and publication/join/release order,
+copying aggregate results into caller storage before frame release. The owner has
+questioned the adaptation strategy; foundation review now precedes further adapter
+work. Neither this patch nor another way to perform the rejected edit is assumed
+selected or authorized. Parallel integration remains incomplete and needs a
+reviewed implementation and its required validation.
 
 The committed implementation at `f5dab70c` now has a separate 168-sample run using
 the same scalar kernels and procedure. Four-pass medians at 16/256/4096 elements
@@ -263,11 +379,12 @@ legacy retirement follow only when the replacement capabilities run the relevant
 programs, including fixed blocks on the stable-storage route. Do not retire the
 full-array guarantee merely because a variable run accepts a constant literal.
 
-No open choice changes the first slice's required storage/ownership architecture.
-Remaining exact spellings and the later sparse, dynamic-refinement, destruction,
-and device extensions are bounded follow-on questions. This decision is a scoped
-implementation starting point, not a claim that every future container API is
-designed or that the proposed language rules have already passed a compiler.
+The direction of general owned storage remains supported; the exact representation
+and phase boundary are open in the foundation review above. That choice can change
+the current implementation, including its call adapters. Later sparse,
+dynamic-refinement, destruction, and device extensions remain bounded follow-on
+questions. Neither the direction nor the measured checkpoint establishes that the
+first slice is complete or that proposed source rules have passed a compiler.
 
 ## Selection ground
 
