@@ -10224,3 +10224,95 @@ at `a350b9e8b7ca97fdc1c7afe859a204a3ee663b08` passes all 16 jobs with the same
 tree `2bb7e0fe35fe9863a38eb5d137dc6c556d6eb0d8`. These are distinct runs;
 the successful integration does not rewrite the frozen failure or establish
 its cause. No timing was rerun or candidate retuned after this cohort.
+
+## 68. Result-retained admission for the mixed Rayon reference
+
+Experiment 42's Q permits cover queued and executing CPU jobs until the worker
+publishes a result and releases its permit. Completed results still awaiting
+their I/O consumers are bounded by the connection count, independently of Q.
+Experiment 66 instead retains a submission's admission until its sole owner
+observes core DONE and retires the lane. Giving both programs Q=2 therefore
+does not make their admission boundaries identical.
+
+Revision `0a10ceca52ce5b5ca8d451fbc27a171303542eb9` adds an optional
+`mixed-retain` feature to the existing
+[`mixed.rs`](../../experiments/io-completion-bench/rayon-baseline/src/mixed.rs)
+implementation. It keeps the original `mixed` feature as the competitive
+reference and adds a diagnostic that retains admission with the result.
+Both use the same sequential per-connection loop, recurrence, zero-round
+bypass, partial-read cursor, response encoding and complete-write operation.
+The [bench README](../../experiments/io-completion-bench/README.md) records the
+feature combinations, unchanged CLI and separate qualification executable
+paths. This implementation selects no performance winner or WF ownership API.
+
+### Permit retirement and producer lifetime
+
+The retained worker sends a value owning its actual `OwnedSemaphorePermit`.
+Taking that value on the I/O owner releases admission before encoding or
+writing; dropping an unconsumed value also releases it. Cancellation before
+computation finishes leaves the permit in the producer. A failed oneshot send
+destroys its returned value and permit. A slow socket writer consequently
+holds its response storage, but does not keep a CPU admission permit.
+
+Returning a logical permit does not prove that its publishing closure has
+finished. The retained mode therefore counts submitted closures independently
+of admission and marks their final source-controlled cleanup point after
+result publication and producer statistics. Drain first joins or aborts and
+joins all handlers, takes all Q permits, then waits for that count to reach
+zero. No new submission can race this sole-owner drain. `Notify::notify_one`
+retains a notification if the final decrement precedes the await.
+
+The notification and guard's final Arc drop can still be finishing after the
+count reaches zero; their storage remains independently owned. Rayon's own
+job epilogue also lies outside this marker. It is not a worker-thread join or
+the physical/core DONE boundary used by WF66. The comparison isolates a
+logical completed-result admission policy, with different underlying storage
+and executor lifetimes still visible.
+
+This accounting has real cost in the ordinary diagnostic: one shared tail
+state allocation per engine, a guard Arc clone/drop per submitted job, atomic
+increment/decrement of the unfinished count, notification when it reaches
+zero, and the final drain checks/await. The oneshot value additionally carries
+the permit instead of only a u64. Observation adds disposition/held counters
+and an Arc in that result; those extra counters and layout are absent from
+ordinary builds. None of these costs is charged to the unchanged original
+reference by enabling the diagnostic implicitly. The retained form is not
+presented as an optimized replacement or a pure zero-cost switch.
+
+### Local qualification
+
+The existing `make mixed-rayon-check` target passed on the M1 host with Rust
+1.98.1 (LLVM 22.1.8) and Apple Clang 21.0.0 at the exact implementation above.
+The original five Rust socket tests remain, and the new deterministic tests
+exercise the actual submission and channel path rather than a copied queue
+algorithm. Ordinary execution contains no worker or write gates.
+
+| Qualification | Result |
+|---|---|
+| Hold the consumer after two completed Q=2 jobs; offer a third job | Original admission proceeds; retained admission waits until a result is consumed or discarded |
+| Cancel an admission waiter, cancel a queued/running consumer, discard a published result | No premature permit release, extra submission or retained result after drain |
+| Hold the producer after its result/permit has been released | Retained drain remains pending until the independent final cleanup marker |
+| Pause one writer asynchronously after an actual socket write Pending | Its CPU permit is already returned; another connection completes a real CPU request before the writer is released; all 2,049 CPU replies verify |
+| Existing vectors, every frame split, half-close, saturation/light progress, malformed frames, RST and slow reader | All preserved; seven default and eight retained Rust tests pass, including retained disposition/tail checks at every server finish |
+| External compute/truncated at B=2/4, plus retained oversized cases | Four original and six retained runs pass |
+| Separate release retained-observation build, compute/truncated/oversized at B=2/4 | Six reports reconcile; compute produces and consumes 12 results per run, with held/tails zero at exit |
+| Formatting and all-feature clippy with denied warnings | Pass |
+
+Two single-change negative controls confirm the deterministic assertions:
+returning admission before result consumption fails the expected Q=2 held-slot
+state, and omitting tail drain fails the pending-drain assertion. Later gate
+disconnects during failed-test teardown are not the rejection evidence.
+
+The complete ordinary release ThinLTO `mixed_rayon` module matches its
+`ae94bfcf` parent after normalizing ten source-location records and their symbol
+references, plus the sole empty compiler-barrier `srcloc` cookie. Each changed
+location preserves its source line text and column. This is qualified IR
+equality, not byte-identical IR or executable identity; source locations really
+changed. No default instruction, admission policy or dependency version changes.
+
+These are local qualification results, not a full canonical gate result for
+this revision. The retained variant has no qualified Linux execution or mixed
+performance comparison yet. Experiment 42's earlier Linux smoke remains
+evidence for its original form only. Both reference forms remain candidates;
+this checkpoint supplies a tested semantic diagnostic, not a claim that
+Tokio+Rayon is the fastest available mixed-I/O implementation.

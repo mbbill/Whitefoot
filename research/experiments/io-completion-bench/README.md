@@ -932,17 +932,52 @@ task tree; these data do not establish available work or an OS cause.
 `make mixed-rayon-check` qualifies the optional `mixed-rayon` binary in the
 same standalone crate. Its CLI is `mixed-rayon PORT CONNECTIONS --threads B
 [--queue Q]`: B includes one current-thread Tokio I/O driver, leaving B-1
-Rayon CPU workers. Q bounds queued plus running CPU jobs and defaults to
-2*(B-1). Each connection retains one framed request/reply; a full CPU queue
+Rayon CPU workers. Q defaults to 2*(B-1). The default `mixed` feature bounds
+queued plus running CPU jobs until the worker publishes the result and releases
+its permit. Each connection retains one framed request/reply; a full CPU queue
 asynchronously suspends its handler. Zero-round requests stay on the I/O
-thread, and CPU admission is released before response writes. Protocol
+thread, and CPU admission is released independently of socket backpressure;
+the consumer may already be writing when the worker releases it. Protocol
 errors terminate the sample after handlers and CPU jobs are drained.
 
-The canonical gate calls its five lifecycle tests and the existing independent
-`stream_check` compute/truncation oracle. The optional `mixed-observe` feature
-adds queue/concurrency/lifecycle counters; ordinary builds omit them. Socket2
-is used only by the Rust tests to force TCP backpressure and RST safely.
+The optional `mixed-retain` feature enables the same binary and CLI but keeps
+the permit with the completed result until the I/O handler takes it or the
+result is discarded. Taking it releases the permit before encoding or writing
+the response. This is a diagnostic for the admission boundary, alongside the
+original competitive form. It adds independent closure-tail accounting so
+cancellation/drain does not mistake returned permits for producer cleanup;
+it does not wait for
+Rayon's internal job epilogue. The implementation and local qualification are
+recorded in [experiment 68](../../investigations/io-model/SCHEDULER-EXPERIMENT.md#68-result-retained-admission-for-the-mixed-rayon-reference).
+
+| Build purpose | Cargo features for `--bin mixed-rayon` |
+|---|---|
+| Original reference | `mixed` |
+| Result-retained diagnostic | `mixed-retain` |
+| Original observation | `mixed-observe` |
+| Result-retained observation | `mixed-retain,mixed-observe` |
+
+`mixed-observe` adds queue/concurrency/lifecycle counters; ordinary builds omit
+those observation counters. Retained tail bookkeeping remains in ordinary
+retained builds. The retained observation also emits `mixed-retain:` with
+`permit_release=consumer`, `produced`, `consumed`, `discarded`, `held`,
+`held_peak` and `unfinished_tails`. Produced includes a send rejected by an
+already canceled receiver; discarded also includes an unconsumed channel
+result dropped later. At completed drain, produced equals consumed plus
+discarded, and held/unfinished_tails are zero. The existing `inflight` counter
+does not count completed results awaiting consumption.
+
+The canonical mixed target runs seven default and eight retained lifecycle
+tests, preserving the original five socket tests in both builds. The independent
+`stream_check` runs compute/truncated at B=2/4 for the original and adds oversized
+for the retained form. Its retained executable goes in the separate
+`$(RAYON_CARGO_TARGET)/mixed-retain/gate/mixed-rayon` path; the original
+`$(RAYON_CARGO_TARGET)/gate/mixed-rayon` stays available. Socket2 and deterministic
+worker/write gates are used only in tests to exercise backpressure, RST and
+otherwise transient lifecycle states.
 `make mixed-rayon-smoke` adds four Linux-only, half-second runs of the existing
 paced `netload` client at total budgets 2/4 with ordinary/observed binaries.
 Those are protocol qualifications on a shared host, not a performance ranking.
-Experiment 42 owns this bin, its caller and their retirement condition.
+It keeps the original publication policy. Experiment 42 owns this bin, its
+caller and their retirement condition; experiment 68 qualifies the optional
+retained policy locally, with Linux execution and comparative timing pending.
