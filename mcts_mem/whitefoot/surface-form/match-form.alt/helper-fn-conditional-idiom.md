@@ -7,4 +7,4 @@
 
 ## Moves
 
-- 2026-07-08 (e687100a) replaced by [[match-form]]: conditional initialization is the most common pattern an AI writer needs; the helper-function idiom's recorded provenance was the literal R3 disqualifier ("cheapest to specify") and value delivery via give removes a mechanical helper function per conditional value (sourced)
+- 2026-07-08 (e687100a) replaced by [[match-only-conditional]]: conditional initialization is the most common pattern an AI writer needs; the helper-function idiom's recorded provenance was the literal R3 disqualifier ("cheapest to specify") and value delivery via give removes a mechanical helper function per conditional value (sourced)

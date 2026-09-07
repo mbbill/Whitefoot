@@ -2,7 +2,7 @@
 - Proof-only contracts and invariants introduce no scheduling edge. The old false-claim trap semantics are retired; observable program behavior follows the active PAR and system rules.
 - Permission and actualization are separate. compiler/README.md owns the current default completion path, --par compute behavior, --no-overlap reference, and target limits.
 - Optional optimizer facts cannot change acceptance or supply a separate parallel proof authority. Runtime scheduling must preserve the language's observable behavior.
-- Developer ledgers explain judgments and actualization but do not grant proof authority. The detailed current window and loop rules live in the specification, not the dated v1 designs below.
+- Diagnostic reports explain judgments and actualization but do not grant proof authority. The detailed current window and loop rules live in the specification, not the dated v1 designs below.
 
 ## Facts
 

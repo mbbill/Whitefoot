@@ -61,7 +61,10 @@ probably not the next work.
   specification or implementation inventory.
 - `mcts_mem/` is where decisions are recorded: what was tried, what was
   concluded, why a form was chosen, and which implementations it replaced.
-  Write there when a question is settled, not when a batch ends.
+  Write there when a question is settled, not when a batch ends. Maintain it
+  with the `mcts-mem-use` skill and run `npx mcts-mem lint` after tree edits.
+  The skill owns node structure, provenance, replacement pairs, and append-only
+  history; lint checks integrity, not the truth of the recorded evidence.
 - Architecture dossiers, `archive/done/`, and
   `archive/governance/decision-log.md` preserve historical evidence and
   rationale. `archive/done/` is the retired per-batch record: frozen, not

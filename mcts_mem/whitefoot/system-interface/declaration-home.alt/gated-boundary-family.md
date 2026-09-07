@@ -3,4 +3,4 @@
 
 ## Moves
 
-- 2026-08-05 (8f7055fc) replaced by [[declaration-home]]: the specification fixes exactly one gated boundary-construct family with one shared per-fact obligation record, so housing system operations there merges them with FFI extern frames against the required system/FFI separation; the system interface needs a home that is not the foreign-trust wall (sourced)
+- 2026-08-05 (8f7055fc) replaced by [[program-kind-conditional-domain]]: the specification fixes exactly one gated boundary-construct family with one shared per-fact obligation record, so housing system operations there merges them with FFI extern frames against the required system/FFI separation; the system interface needs a home that is not the foreign-trust wall (sourced)

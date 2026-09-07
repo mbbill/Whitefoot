@@ -25,6 +25,15 @@ and a falsifier.
 `mcts_mem/` can preserve durable design choices and rejected alternatives. It
 does not authorize work or add a workflow step.
 
+Maintain the memory with the `mcts-mem-use` skill named in AGENTS.md. Walk from
+the root through the relevant subsystem and its rejected alternatives before
+changing a decision. Keep current assertions in Items and dated evidence in
+Facts; a replacement needs the frozen alternative and paired Moves. Run
+`npx mcts-mem lint` after edits. Link, command, and text checks below complement
+that linter; they do not replace its history and structure checks.
+Check that replacement twins resolve back to the same historical nodes;
+matching rationale text alone does not establish the two endpoints.
+
 ## Documentation and local context
 
 Use the ownership map in [AGENTS.md](../AGENTS.md#authority-and-reading).
