@@ -10,11 +10,14 @@ investigation](README.md). The [reference matrix](BASELINES.md) separately owns
 the native comparisons. The inventory below was inspected at
 `6cc00984415a39c507fa74897c9269b10beebfee`. The
 [variable-input FIR experiment](../../experiments/compute-runtime/README.md#variable-input-causal-fir)
-now supplies the first implemented WF computation with output and
+supplies an implemented WF computation with output and
 parallel-execution qualification plus dated Linux native calibration. Its
 original and grouped-output kernels share the recursive program and exact
 result contract. This remains one workload family, with broader coverage still
-required below. Keep the inventory current as
+required below. The [UTF-8 record batch](../../experiments/compute-runtime/README.md#variable-length-utf-8-record-batches)
+adds a second computation with variable record boundaries, per-record results
+and an actualized flat output map; its native frontier and held-out measurement
+remain unqualified. Keep the inventory current as
 programs become executable; consolidate it when the suite's implemented coverage
 supersedes this selection.
 
@@ -83,7 +86,10 @@ correctness and actualization**, and **measured application with native
 references**. The filter row has FIR correctness, recursive tile actualization
 and a [first Linux native comparison](../../experiments/compute-runtime/README.md#first-linux-calibration-before-static-workers)
 for independent blocks. Channel co-scheduling, a multistage pipeline and held-out
-performance confirmation remain open. The other rows are source seeds or explicit gaps.
+performance confirmation remain open. The text/record row has a complete UTF-8
+validation/count batch with correctness and map actualization; search, richer
+record processing and confirmed performance remain open. The other rows are
+source seeds or explicit gaps.
 New maintained programs must have a real correctness-test caller and a benchmark
 caller in the owning experiment; do not leave disconnected fixtures or scripts.
 

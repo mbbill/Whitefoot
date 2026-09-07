@@ -376,7 +376,8 @@ It checks the exact full report, every result,
 and the complete ordered row sequence and configuration keys;
 there are no elapsed-time assertions. Alongside the previous nineteen, two
 native, eight static and six optimized-WF-object checks, the experiment now runs
-146 invocations. The host metadata read
+146 invocations for the runtime/FIR panel. The record panel below adds 23,
+giving 169 invocations in the complete experiment. The host metadata read
 may require permission in a local sandbox; native CI has that access.
 
 Run a calibration explicitly, with a target appropriate to the measured host:
@@ -481,3 +482,104 @@ executables and verified all eight static qualification cases and 69 smokes.
 Compiler executable bytes are not uploaded; its hash is recorded. Keep this
 dated interpretation while the control is useful, and remove it if superseded
 evidence makes this comparison unnecessary.
+
+### Linux grouped WF calibration
+
+At `bf985ac42cbced4b424e3c8fec3a2d5c1f24c932`, the
+[canonical gate](https://github.com/mbbill/Whitefoot/actions/runs/34163120182)
+passed all twelve jobs and the
+[grouped WF calibration](https://github.com/mbbill/Whitefoot/actions/runs/34163120195)
+passed 3,950 processes / 579,860 calls. The independently audited artifact is
+`10033306398`, ZIP SHA-256
+`7f48e3d24bf681856b406fa653cd9749fab546be0396a41e2eb6465b1690d816`.
+It retains all raw rows; twenty frozen-source hashes and seventeen retained
+IR/object/executable hashes match. Compiler executable bytes remain unretained.
+
+On that EPYC 9V74 VM (two SMT2 cores, mask 0-3, Clang 18.1.3, strict O3
+`-march=native`), K=64/N=262,144/tile=4,096 weak WF core/cycle medians changed
+from 10,469.007/12,337.729 to 1,208.903/3,169.144 microseconds with output groups.
+Native lanes16 was 1,149.024/1,272.264. Recovered grouped WF with four lanes was
+711.882/2,663.706, versus static C's 843.954/982.156: the core won all five
+paired passes and the complete cycle lost all five. Batch CPU medians were
+28.164 versus 13.879 ms for one first plus four warm calls and checks.
+These boundaries do not isolate scheduler performance.
+
+Both Linux grouped WF objects are byte-identical, so their pass-setting timing
+differences cannot demonstrate a vectorizer effect. Their leaf uses separate
+packed YMM multiply/add and scalar tails. The effect is also workload-dependent:
+at K=3/N=262,144/tile=257, weak grouped WF reduced core from 659.797 to 215.532
+microseconds while cycle increased from 3,504.390 to 3,759.118. Quota, individual
+thread placement and held-out confirmation remain unqualified; this population
+is not pooled with the earlier screens.
+
+## Variable-length UTF-8 record batches
+
+`records.wf` validates complete, independently framed UTF-8 records and returns
+one Unicode scalar count per record in input order. Its byte grammar follows
+[RFC 3629](https://www.rfc-editor.org/rfc/rfc3629.html): empty records, NUL and
+noncharacters are valid; overlong encodings, surrogates, values above U+10FFFF
+and truncated sequences are invalid. Adjacent offsets describe each record.
+Invalid UTF-8 returns `UINT64_MAX`; descending or out-of-input ranges return
+`UINT64_MAX-1`. Both differ from every admitted scalar count. A record cannot
+borrow continuation bytes from its neighbor.
+
+The ordinary source loop writes independent positions of one initialized
+`buffer<u64>`. The compiler stages the map with six captures and a 112-byte
+frame, retaining current-stack join/help/steal. A header invariant proves the
+leaf's counter bound; every range/index obligation remains static after the
+source handles genuinely malformed metadata. The current compiler actualizes
+the direct result-index form; an equivalent `record-first` target expression
+was declined. This is a compiler actualization limitation, not a language rule.
+
+`records_host.ll` explicitly constructs input descriptors and exports the typed
+output buffer's element pointer/count to the C research host. C reads the
+initialized scalar elements and releases ownership through the WF release
+function. It retains both inputs through the completed call. This is a bounded
+experimental adapter, not a production ABI or a separate-compilation design.
+No compiler, runtime interface or execution semantics change in this addition.
+
+`records_native.c` supplies a matching state machine and a single-pass native
+word candidate: two bounded unaligned eight-byte reads skip sixteen ASCII
+bytes at a code-point boundary; non-ASCII sequences follow explicit byte
+rules. `records.c` independently decodes integer code points to check minimum
+encoding lengths and scalar ranges. Each qualifier checks 4,595,603 leaf inputs
+and 342 batches / 1,821,070 per-record results, including complete scalar
+encodings, nonempty truncations, all one/two-byte combinations, selected longer
+extensions, invalid metadata, nonzero range starts, empty/uneven batches and
+long-record outliers. Canary comparisons detect input writes, not every possible
+out-of-slice read; three/four-byte combinations are not exhaustive.
+
+`check-records` runs the original WF command at widths zero/four, ordinary weak
+and recovered full qualifiers, a C-sanitized qualifier, and eighteen timing-host
+smokes. Both timing hosts reuse the exact qualified O3 WF and native objects.
+The C-sanitized qualifier also instruments a separate native object; ordinary
+WF LLVM does not thereby acquire frontend sanitizer instrumentation. Keep these
+six record source/adapter/native/host/driver files while this workload needs the
+experiment; consolidate them if a shared workload harness supersedes their role.
+
+Run `make -C research/experiments/compute-runtime records-calibrate OUT=/path/to/output
+BENCH_ARCH=-march=native` on the selected Linux host (one shell line). The driver
+records five rotating/reversing passes across twenty cells and six controls:
+native state/word, weak WF, and recovered WF at requested zero/two/four lanes.
+The 600 processes cover ASCII, mixed Unicode, early/late invalid bytes and
+skewed lengths at one to 65,536 records. Every output is checked after each
+timed call. Raw calls, per-process warm means/ranges, code/flags and host
+manifests are retained. The CI matrix gives FIR and records separate hosts and
+artifacts; compare controls within one workload's host, not between those jobs.
+
+Core includes result allocation and processing: WF initializes its buffer;
+native allocates uninitialized output and writes every element. Cycle adds a
+complete flat result copy and release. Prepared input bytes/offsets and the
+consumer buffer are outside both intervals. The first call includes lazy pool
+startup; batch CPU/context switches include first/warm calls, printing and
+between-call checks; RSS is process lifetime. Empty/tiny clocks are diagnostics,
+not rankings. Offered input bytes are not a claim of bytes actually scanned by
+an early-invalid validator.
+
+Parallel-world selection does not imply that a small batch starts workers.
+The current estimated map weight is 812 and the recovered split policy admits
+no split below 2,956 records. Reports retain actual capacity and steals; a
+partial started pool is rejected, and the full qualifier requires four lanes.
+The two native kernels are initial scalar anchors. simdutf, static/dynamic
+native workers, held-out inputs and dedicated-core measurements remain open;
+this panel does not establish a native frontier or full application throughput.

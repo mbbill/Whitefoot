@@ -33,7 +33,8 @@ define require-strong
 endef
 
 .PHONY: check build check-runtime check-abi check-fir fir-ir check-native native-object check-static \
-	wf-objects check-wf-objects build-bench check-bench bench-calibrate compiler force
+	wf-objects check-wf-objects build-bench check-bench bench-calibrate compiler force \
+	records-build check-records records-calibrate
 
 force:
 
@@ -44,7 +45,7 @@ $(OUT)/probe: runtime.c runtime.h probe.c $(FLOOR) force
 	$(CC) $(CFLAGS) -DWF_COMPUTE_TEST -fsanitize=$(SANITIZER) -fno-omit-frame-pointer \
 		runtime.c probe.c $(FLOOR) -o "$@"
 
-check: check-runtime check-abi check-fir check-bench
+check: check-runtime check-abi check-fir check-bench check-records
 
 check-runtime: build
 	WF_WORKERS=2 "$(OUT)/probe" protocol
@@ -61,6 +62,55 @@ check-runtime: build
 compiler:
 	cargo build --manifest-path $(ROOT)/compiler/Cargo.toml --profile gate --bin whitefootc \
 		--locked --offline --target-dir "$(OUT)/compiler"
+
+# One ordinary optimized WF object and one native object are qualified before
+# reuse by the record timing hosts. The typed shim exposes only the buffer's
+# declared element pointer/count; release still consumes the WF buffer.
+records-build: $(WFC)
+	mkdir -p "$(OUT)"
+	"$(WFC)" --par --par-ledger --emit-llvm records.wf -o "$(OUT)/records.ll" > "$(OUT)/records.ledger"
+	grep -F 'split independent map' "$(OUT)/records.ledger"
+	grep -F 'call void @wf__par_publish(' "$(OUT)/records.ll"
+	sed -e 's/@main(/@wf_record_command_main(/g' \
+		-e 's/@wf__main_body(/@wf_record_command_body(/g' "$(OUT)/records.ll" > "$(OUT)/records-host.ll"
+	cat records_host.ll >> "$(OUT)/records-host.ll"
+	$(CC) $(BENCH_CFLAGS) -Wno-override-module -c "$(OUT)/records-host.ll" -o "$(OUT)/records-wf.o"
+	$(CC) $(BENCH_CFLAGS) -Wno-override-module -S "$(OUT)/records-host.ll" -o "$(OUT)/records-wf.s"
+	$(CC) $(BENCH_CFLAGS) -Wno-override-module runtime.c $(FLOOR) "$(OUT)/records.ll" -o "$(OUT)/records-command"
+	$(CC) $(BENCH_CFLAGS) -c records_native.c -o "$(OUT)/records-native.o"
+	$(CC) $(BENCH_CFLAGS) -S records_native.c -o "$(OUT)/records-native.s"
+	$(CC) $(BENCH_CFLAGS) records.c $(FLOOR) "$(OUT)/records-wf.o" "$(OUT)/records-native.o" -o "$(OUT)/records-weak"
+	$(CC) $(BENCH_CFLAGS) -DWF_COMPUTE_CONTROL -DRECORD_RUNTIME='"recovered"' \
+		records.c runtime.c $(FLOOR) "$(OUT)/records-wf.o" "$(OUT)/records-native.o" -o "$(OUT)/records-recovered"
+	$(CC) $(BENCH_CFLAGS) -fsanitize=$(SANITIZER) -fno-sanitize-recover=all \
+		-fno-omit-frame-pointer -c records_native.c -o "$(OUT)/records-native-sanitized.o"
+	$(CC) $(BENCH_CFLAGS) -DWF_COMPUTE_CONTROL -DRECORD_RUNTIME='"recovered"' -fsanitize=$(SANITIZER) \
+		-fno-sanitize-recover=all -fno-omit-frame-pointer records.c runtime.c $(FLOOR) \
+		"$(OUT)/records-wf.o" "$(OUT)/records-native-sanitized.o" -o "$(OUT)/records-sanitized"
+	@for mode in weak recovered sanitized; do nm "$(OUT)/records-$$mode" > "$(OUT)/records-$$mode.symbols"; done
+	$(call require-strong,$(OUT)/records-weak,wf__floor_run)
+	$(call require-strong,$(OUT)/records-recovered,wf__floor_run)
+	$(call require-strong,$(OUT)/records-sanitized,wf__floor_run)
+	$(call require-strong,$(OUT)/records-recovered,wf__par_acquire_lane)
+	$(call require-strong,$(OUT)/records-sanitized,wf__par_acquire_lane)
+	@printf '%s\n' '$(BENCH_CFLAGS)' > "$(OUT)/records-flags.txt"
+	$(CC) --version >> "$(OUT)/records-flags.txt"
+	shasum -a 256 "$(WFC)" >> "$(OUT)/records-flags.txt"
+
+check-records: records-build
+	WF_WORKERS=0 "$(OUT)/records-command"
+	WF_WORKERS=4 "$(OUT)/records-command"
+	@for mode in weak recovered sanitized; do \
+		workers=4; world=parallel; if test "$$mode" = weak; then workers=0; world=sequential; fi; \
+		WF_WORKERS=$$workers "$(OUT)/records-$$mode" check > "$(OUT)/records-$$mode-check.log" || exit $$?; \
+		cat "$(OUT)/records-$$mode-check.log"; \
+		grep -Fxq 'UTF8 leaf qualification PASS: calls=4595603 all-codepoints all-truncations two-byte-pairs' "$(OUT)/records-$$mode-check.log" || exit 1; \
+		grep -Fxq "UTF8 batch qualification PASS: world=$$world calls=342 results=1821070" "$(OUT)/records-$$mode-check.log" || exit 1; \
+	done
+	OUT="$(OUT)" sh records-bench.sh check
+
+records-calibrate: check-records
+	OUT="$(OUT)" sh records-bench.sh calibrate
 
 # Refresh the default compiler after source changes. A supplied compiler is
 # an explicit caller-owned dependency and must already be built for this tree.

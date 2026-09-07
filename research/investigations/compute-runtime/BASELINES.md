@@ -14,6 +14,15 @@ now dispatches the same qualified objects at one/two/four actual lanes; its
 condition-variable policy has full-oracle/lifecycle evidence and a dated
 [Linux calibration](../../experiments/compute-runtime/README.md#linux-static-control-before-wf-output-groups).
 Dynamic framework rows remain source-informed candidates.
+The [record batch panel](../../experiments/compute-runtime/README.md#variable-length-utf-8-record-batches)
+also qualifies a native state machine and bounded ASCII-word candidate.
+For its validation-plus-scalar-count contract, simdutf **v9.1.1**, commit
+`9dd35adc5f2c87a53c5a0e6e5b43af6fffe7187e`, remains an unbuilt candidate:
+the [pinned API](https://github.com/simdutf/simdutf/blob/v9.1.1/include/simdutf/implementation.h)
+requires validation followed by `count_utf8` on valid inputs. A successful
+`validate_utf8_with_errors` result counts bytes, not scalars. Compare both
+validator forms because early-invalid work differs; a two-pass library API is
+not a lower bound for a fused implementation.
 Earlier I/O or mixed-panel results do not qualify these comparisons. This matrix belongs to the [compute-runtime
 investigation](README.md); update its evidence cells when actual results exist,
 and consolidate it if that investigation supersedes this selection.

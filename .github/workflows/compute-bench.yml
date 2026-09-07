@@ -14,7 +14,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  fir-linux:
+  compute-linux:
+    name: ${{ matrix.workload }}-linux
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - workload: fir
+            checks: check-fir check-bench
+            driver: fir-bench.sh
+          - workload: records
+            checks: check-records
+            driver: records-bench.sh
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -28,14 +39,14 @@ jobs:
           /usr/bin/clang --version
       - name: Qualify sources and actual timing objects
         env:
-          OUT: ${{ runner.temp }}/compute-fir
+          OUT: ${{ runner.temp }}/compute-${{ matrix.workload }}
         run: |
           set -o pipefail
-          make -C research/experiments/compute-runtime check-fir check-bench \
-            OUT="$OUT" BENCH_ARCH=-march=native 2>&1 | tee "$RUNNER_TEMP/compute-build.log"
+          make -C research/experiments/compute-runtime ${{ matrix.checks }} \
+            OUT="$OUT" BENCH_ARCH=-march=native 2>&1 | tee "$RUNNER_TEMP/compute-${{ matrix.workload }}-build.log"
       - name: Calibrate sequentially on one recorded CPU mask
         env:
-          OUT: ${{ runner.temp }}/compute-fir
+          OUT: ${{ runner.temp }}/compute-${{ matrix.workload }}
         run: |
           # Restrict the experiment to at most four available logical CPUs.
           # Children inherit this mask; topology/SMT/quota remain in the record.
@@ -51,14 +62,14 @@ jobs:
           }')
           test -n "$selected"
           taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/calibration" \
-            sh research/experiments/compute-runtime/fir-bench.sh calibrate
+            sh research/experiments/compute-runtime/${{ matrix.driver }} calibrate
       - name: Publish calibration location and scope
         if: always()
         env:
-          OUT: ${{ runner.temp }}/compute-fir
+          OUT: ${{ runner.temp }}/compute-${{ matrix.workload }}
         run: |
           {
-            echo '## FIR compute calibration'
+            echo '## ${{ matrix.workload }} compute calibration'
             echo 'Same-host raw calls, per-process warm means/ranges and exact objects are in the artifact.'
             echo 'This screen is not held-out confirmation or a fastest-runtime claim.'
             if test -f "$OUT/calibration/summary.tsv"; then
@@ -68,10 +79,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: compute-fir-linux
+          name: compute-${{ matrix.workload }}-linux
           path: |
-            ${{ runner.temp }}/compute-build.log
-            ${{ runner.temp }}/compute-fir/calibration/
-            ${{ runner.temp }}/compute-fir/check-*/
-            ${{ runner.temp }}/compute-fir/bench-*
-            ${{ runner.temp }}/compute-fir/fir*
+            ${{ runner.temp }}/compute-${{ matrix.workload }}-build.log
+            ${{ runner.temp }}/compute-${{ matrix.workload }}/calibration/
+            ${{ runner.temp }}/compute-${{ matrix.workload }}/*check-*/
+            ${{ runner.temp }}/compute-${{ matrix.workload }}/bench-*
+            ${{ runner.temp }}/compute-${{ matrix.workload }}/fir*
+            ${{ runner.temp }}/compute-${{ matrix.workload }}/records*
