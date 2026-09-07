@@ -4236,7 +4236,7 @@ name. A known limitation remains visible until its experiment is complete.
 | --- | --- | --- | --- |
 | Native C epoll | Manual state machine; per-worker edge-triggered reactor and `SO_REUSEPORT`; 64 KiB shared scratch, bounded private spill on backpressure | Competitive readiness control: immediate recv/send, no ordinary per-operation allocation, local connection state | Screened on Linux loopback; 2 MiB streams, short sends and half-close qualified. Physical NIC and overload confirmation missing |
 | Native C epoll with private storage | Arena, malloc or calloc per connection; main-thread worker variant | Diagnostic storage and allocator comparison; private backing remains owned through I/O | Screened and stream-qualified; these rows need not beat shared scratch to explain WF storage cost |
-| Native C io_uring | Multishot accept/recv, provided buffers, per-worker rings/listeners, ordered vectored sends; SINGLE_ISSUER + DEFER_TASKRUN, no SQPOLL | Competitive completion control: batching, no receive submission per arrival, loaned receive buffers reused for send | Earlier closed-loop cells screened. New queue/submission corrections and 8/64 KiB equal-byte variants below await native qualification; earlier results are not reclassified as invalid |
+| Native C io_uring | Multishot accept/recv, provided buffers, per-worker rings/listeners, ordered vectored sends; SINGLE_ISSUER + DEFER_TASKRUN, no SQPOLL | Competitive completion control: batching, no receive submission per arrival, loaned receive buffers reused for send | Earlier closed-loop cells screened. New queue/submission corrections and 8/64 KiB equal-byte variants stream-qualified at `475008b5`; new timing screen pending |
 | Native C stackful / C++ stackless | Same epoll engine; private or shared receive storage; stackful, heap coroutine, and compiler-elided coroutine forms | Diagnostic representation control: separates coroutine/frame allocation, storage and reactor cost | Screened and stream/lifetime-qualified at their recorded revisions; not independent mature runtime comparisons |
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
 | WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Correctness-qualified at the revisions above; no concurrent server performance claim yet |
@@ -4280,7 +4280,7 @@ comparison remain explicit platform rows, not inferred coverage.
 | Resource / measurement axis | Required interpretation and current limitation |
 | --- | --- |
 | CPU placement | Record physical cores, SMT siblings, NUMA, cpuset and IRQ placement. Current split2 uses disjoint logical CPUs that may share physical cores; it is not a promise of two physical server cores. split1 separates physical cores |
-| Thread and poll budgets | Count runtime workers, blocking helpers, io-wq and SQPOLL kernel threads. Process taskset and process CPU alone do not bound or account for a kernel polling thread |
+| Thread and poll budgets | Count runtime workers, blocking helpers, io-wq and SQPOLL kernel threads. Process taskset and process CPU alone do not bound or account for a kernel polling thread. A competitive CPU budget is an upper bound: tuning may use fewer workers at low occupancy rather than forcing every contender to start all available workers |
 | CPU cost | Existing `/usr/bin/time` `%U/%S` covers whole process lifetime with centisecond output: startup/drain and quantization matter in short cells. Separate steady-state CPU-ns/request, idle CPU and kernel CPU before fine low-load claims |
 | Load generator | Record client CPU and verify headroom using additional client cores or an independent host. Inline byte checking can saturate the client; flat throughput alone does not prove server saturation |
 | Latency / overload | Closed-loop echo p99 does not establish an overload SLO. Fixed-arrival latency begins at the intended send time and includes dispatch delay; report goodput, drops/deadlines, backlog and recovery |
@@ -4356,9 +4356,28 @@ paired result. SEND_ZC also changes when buffers may be recycled, and
 [local-network deferred copies](https://www.kernel.org/doc/html/latest/networking/msg_zerocopy.html)
 make a real NIC follow-up necessary before any zero-copy superiority claim.
 
-Validation at this milestone: both observed buffer variants cross-compile to
-x86_64 Linux-musl objects with Zig 0.14 and strict C11 warnings; shell syntax,
-workflow YAML parsing, Make dry-run and `git diff --check` pass locally. These
-are compile checks, not Linux execution. Linux ASan/UBSan stream qualification
-and the new paired timing panel are pending; no performance improvement is
-claimed.
+Validation at `475008b519f3dd5b3df86d6113259ebe3e7a6c23`: all fourteen
+canonical gate jobs passed. The
+[Linux scheduler job](https://github.com/mbbill/Whitefoot/actions/runs/34082126596/job/101619282242)
+passed ASan/UBSan `uring-check` in all four configurations, alongside every
+previous maintained scheduler, stream and continuation check. Each uring case
+received and sent exactly 8,388,608 bytes. The 8 KiB one-worker case reached
+queue depth 152 and the four-worker case reached 248: the shared oracle
+actually exercised queue depths exceeding the old 64-entry assumption. This
+does not assert that an old recorded timing sample encountered that defect.
+
+| Qualification configuration | Receive completions | Send completions | Buffer exhaustion events | Maximum per-connection queue |
+| --- | ---: | ---: | ---: | ---: |
+| 8 KiB, 1 worker | 1038 | 105 | 205 | 152 |
+| 8 KiB, 4 workers, summed | 1045 | 65 | 56 | 248 |
+| 64 KiB, 1 worker | 158 | 135 | 285 | 25 |
+| 64 KiB, 4 workers, summed | 156 | 76 | 36 | 32 |
+
+These counters describe a forced-small-send-buffer correctness fixture, not
+a timing comparison. SO_REUSEPORT distributed four peers unevenly (one of
+four workers remained idle in both shown cases), which is another reason to
+observe actual placement instead of assuming per-worker load equality.
+Both observed buffer variants also cross-compile to Linux-musl objects with
+Zig 0.14 and strict C11 warnings; shell syntax, YAML, Make dry-run and diff
+checks pass locally. The new paired timing panel remains in progress in
+run `34082126598`; no performance improvement is claimed yet.
