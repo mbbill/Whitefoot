@@ -1,7 +1,7 @@
 # Program-level I/O measurement for the unified-state completion model.
 #
 # Three lines per workload, all publishing the same bytes:
-#   N  the best hand-written native shape (thread pool, io_uring)
+#   N  hand-written native candidates (thread pool, io_uring)
 #   S  the Whitefoot program built with --no-overlap, the sequential reference
 #   C  the Whitefoot program built the way it ships, with completion overlap
 #
@@ -98,6 +98,10 @@ scheduler-storage:
 
 scheduler-pages:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" EXPERIMENT=pages bash scheduler-bench.sh bench
+
+.PHONY: scheduler-native-baselines
+scheduler-native-baselines:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" NATIVE_BASELINES=1 EXPERIMENT=allocator bash scheduler-bench.sh combine
 
 .PHONY: scheduler-allocation
 scheduler-allocation:
@@ -738,6 +742,31 @@ compiler-continuation-check: completion-coroutine-check compiler
 	  if [ "$$(uname -s)" = Linux ]; then \
 	    WF_IO_NO_NATIVE_RING=1 "$$build/stream-check" $$transport "$$build/$$program" --require-helper; \
 	  fi; \
+	done
+
+# Linux-only native completion reference correctness. The full streaming
+# oracle is shared with the epoll controls; no request-size bound substitutes
+# for handling TCP back pressure, short transfers and EOF.
+.PHONY: uring-check
+uring-check: prepare
+	@set -e; \
+	$(CLANG) $(CFLAGS) -Wpedantic -pthread stream_check.c -o "$(BUILD)/stream_check"; \
+	for bytes in 8192 65536; do \
+	  binary="$(BUILD)/check-uring-$$bytes"; \
+	  $(CLANG) $(CFLAGS) -g -Wpedantic -pthread -fsanitize=address,undefined \
+	    -DWF_BENCH_SNDBUF=4096 -DWF_BENCH_TCP_VERIFY -DWF_BENCH_URING_OBSERVE \
+	    "-DWF_BENCH_URING_BUFFER_BYTES=$$bytes" uring_echo.c -o "$$binary"; \
+	  for workers in 1 4; do \
+	    log="$$binary-w$$workers.log"; \
+	    if ! "$(BUILD)/stream_check" "$$binary" echo "$$workers" > "$$log" 2>&1; then cat "$$log"; exit 1; fi; \
+	    cat "$$log"; \
+	    awk -v bytes="$$bytes" -v workers="$$workers" '/^uring:/ { \
+	      for(i=2;i<=NF;i++) {split($$i,a,"=");v[a[1]]=a[2]+0}; seen++; \
+	      if(v["buffer_bytes"]!=bytes || v["provided_bytes"]!=2097152 || \
+	         v["buffers"]*bytes!=v["provided_bytes"]) bad=1; \
+	      received+=v["receive_bytes"]; sent+=v["send_bytes"] \
+	    } END {exit !(seen==workers && !bad && received==8388608 && sent==received)}' "$$log"; \
+	  done; \
 	done
 
 # Linux-only reference correctness, also reached by scheduler-check on Linux.

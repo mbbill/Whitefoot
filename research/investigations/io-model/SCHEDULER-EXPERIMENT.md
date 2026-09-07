@@ -4205,3 +4205,151 @@ still owns one root. Staged publication, compute checkpoints and asynchronous
 cleanup are not yet integrated, so this is the network prerequisite for the
 concurrent executor, not a concurrency or performance result. No source
 signature, container layout or existing staged-runtime interface changes.
+
+## Baseline matrix and evidence levels
+
+This is the maintained comparison map for the I/O investigation. It supersedes
+unqualified descriptions of the in-tree controls as the fastest possible
+implementation; it does not change any recorded result above. A strong
+reference is a measured Pareto candidate under a named workload, hardware and
+resource budget. Beating the fastest measured candidate in one cell does not
+establish that WF beats all implementations, or even that the server rather
+than the load generator limits that cell.
+
+Two comparisons answer different questions. The competitive comparison lets
+each backend use its best qualified storage and scheduling policy within the
+same resource envelope. The diagnostic comparison holds the engine, storage,
+compiler or scheduler fixed while changing one factor. A 64 KiB io_uring
+provided buffer and 64 KiB epoll worker scratch have the same transfer ceiling
+but different ownership and residency. They are not matched storage. A native
+control need not inherit a WF implementation limitation to be admitted.
+
+Evidence levels are explicit: **audited** means source and configuration are
+understood; **qualified** means the shared protocol oracle passes; **screened**
+means same-host paired measurements exist; **confirmed** means tuning was
+frozen before independent confirmation; **NIC-qualified** means a separate
+machine and physical network repeat support the claim. Qualification and
+screening apply to an exact revision/configuration, not the language or library
+name. A known limitation remains visible until its experiment is complete.
+
+| Implementation / backend | Source form, storage and scheduling | Role and expected source of performance | Evidence and remaining question |
+| --- | --- | --- | --- |
+| Native C epoll | Manual state machine; per-worker edge-triggered reactor and `SO_REUSEPORT`; 64 KiB shared scratch, bounded private spill on backpressure | Competitive readiness control: immediate recv/send, no ordinary per-operation allocation, local connection state | Screened on Linux loopback; 2 MiB streams, short sends and half-close qualified. Physical NIC and overload confirmation missing |
+| Native C epoll with private storage | Arena, malloc or calloc per connection; main-thread worker variant | Diagnostic storage and allocator comparison; private backing remains owned through I/O | Screened and stream-qualified; these rows need not beat shared scratch to explain WF storage cost |
+| Native C io_uring | Multishot accept/recv, provided buffers, per-worker rings/listeners, ordered vectored sends; SINGLE_ISSUER + DEFER_TASKRUN, no SQPOLL | Competitive completion control: batching, no receive submission per arrival, loaned receive buffers reused for send | Earlier closed-loop cells screened. New queue/submission corrections and 8/64 KiB equal-byte variants below await native qualification; earlier results are not reclassified as invalid |
+| Native C stackful / C++ stackless | Same epoll engine; private or shared receive storage; stackful, heap coroutine, and compiler-elided coroutine forms | Diagnostic representation control: separates coroutine/frame allocation, storage and reactor cost | Screened and stream/lifetime-qualified at their recorded revisions; not independent mature runtime comparisons |
+| WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
+| WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Correctness-qualified at the revisions above; no concurrent server performance claim yet |
+| Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Source candidate only; pin Go toolchain, GOMAXPROCS, buffers and complete protocol fixture before timing |
+| Tokio | Fixed-worker multithread runtime and a separate per-core current-thread/reactor configuration | External mainstream async baseline; distinguish work stealing from reactor locality | Source candidate only; pin toolchain/lockfile, socket distribution and blocking-pool budget |
+| Monoio | Per-core runtime, separately forced IoUringDriver and LegacyDriver | External completion/readiness comparison within one runtime family | Source candidate only; prohibit silent fusion fallback in backend-specific rows |
+| Seastar | Per-core reactor and kernel TCP stack, explicit memory and polling settings | External high-performance locality and mixed-load scheduling baseline | Source candidate only; qualify chosen backend and reserve/count all CPU and memory resources |
+| Native uring SQPOLL / fixed files / bundles / SEND_ZC | Separate explicit configurations, not silently enabled defaults | Later backend tuning envelope; upstream liburing proxy is implementation provenance, not an echo drop-in | Audited candidates, unmeasured here; SQPOLL CPU and zero-copy loan lifetime require separate qualification |
+
+External architecture sources are [Go netpoll](https://go.dev/src/runtime/netpoll_epoll.go),
+[Tokio runtime](https://docs.rs/tokio/latest/tokio/runtime/),
+[Monoio](https://github.com/monoio-rs/monoio), its
+[legacy driver](https://github.com/monoio-rs/monoio/blob/master/docs/en/use-legacy-driver.md),
+and the [Seastar tutorial](https://docs.seastar.io/master/tutorial.html).
+Their reputation or published benchmarks select candidates for our matrix,
+not winners of our workload. Each executable row must pin its actual source
+revision, compiler and dependency lockfile.
+
+| Workload class | Matrix axes and semantic equivalence | Current coverage / next discriminating evidence |
+| --- | --- | --- |
+| TCP closed-loop echo | 1/4/64/1024 peers × 64 B, 64 peers × 64 KiB; one outstanding request per peer; exact bytes and EOF | Current ten-cell split1/split2 screen. Add 4 KiB and pipeline depths 8/32 only after candidate screening |
+| TCP streaming / backpressure | Continuous 2 MiB or larger, arbitrary fragmentation, short sends, slow readers, half-close; preserve order and bounded live storage | Existing epoll stream oracle; uring joins it below. Idle 10k peers, churn and reset/cancellation remain separate qualification |
+| TCP fixed-arrival / mixed compute | Same recurrence and compute quantum; light paced requests alongside heavy work; below/near/above saturation | Existing paced mixed experiments cover selected controls. External candidates need scheduled-to-response p99/p99.9, goodput, missed deadlines, backlog and drain recovery |
+| File reads | Open-once cache-hot vs cold buffered vs direct I/O; random/sequential; 4/64 KiB; QD 1/8/64; same offsets, bytes and checksum | Existing file experiments cover subsets. Extend native blocking/pread pool/uring comparisons; fio is a device-envelope cross-check, not an identical-program runtime row |
+| File writes | Buffered accepted bytes vs fdatasync/fsync durability are distinct contracts; name batch size, flush cadence and directory durability | Broader matrix required; no current TCP result supports a write or durability claim |
+| Dependent storage/network pipeline | Read → parse → request → write with the same dependency graph and compute work | Unmeasured; tests whether sequential-source overlap composes across stages |
+| Pipes / child processes | Bounded pipes, producer/consumer backpressure, EOF and child exit ordering | Continuation correctness exists for pipes; matched throughput and helper-admission envelopes remain unmeasured |
+
+File workload provenance is the [fio documentation](https://fio.readthedocs.io/en/latest/fio_doc.html).
+Ephemeral CI storage and virtual block devices cannot certify a physical
+NVMe-best claim. Linux epoll/io_uring loopback is the current network screen;
+macOS helper qualification and local timings do not measure either Linux
+backend. A native kqueue comparison on macOS and matched
+[Windows IOCP](https://learn.microsoft.com/en-us/windows/win32/fileio/i-o-completion-ports)
+comparison remain explicit platform rows, not inferred coverage.
+
+| Resource / measurement axis | Required interpretation and current limitation |
+| --- | --- |
+| CPU placement | Record physical cores, SMT siblings, NUMA, cpuset and IRQ placement. Current split2 uses disjoint logical CPUs that may share physical cores; it is not a promise of two physical server cores. split1 separates physical cores |
+| Thread and poll budgets | Count runtime workers, blocking helpers, io-wq and SQPOLL kernel threads. Process taskset and process CPU alone do not bound or account for a kernel polling thread |
+| CPU cost | Existing `/usr/bin/time` `%U/%S` covers whole process lifetime with centisecond output: startup/drain and quantization matter in short cells. Separate steady-state CPU-ns/request, idle CPU and kernel CPU before fine low-load claims |
+| Load generator | Record client CPU and verify headroom using additional client cores or an independent host. Inline byte checking can saturate the client; flat throughput alone does not prove server saturation |
+| Latency / overload | Closed-loop echo p99 does not establish an overload SLO. Fixed-arrival latency begins at the intended send time and includes dispatch delay; report goodput, drops/deadlines, backlog and recovery |
+| Memory | Record total reserved/provided bytes, live RSS/PSS and slope versus peers, socket/kernel memory, faults and allocations. Equal provided bytes does not imply equal total or resident memory. Keep THP and allocator readbacks with each panel |
+| Mechanism evidence | Untimed observers: syscalls/submissions/CQEs, send/recv bytes, queue depth/exhaustion, context switches, task migration and frame allocations. An observer is not part of a timed binary |
+| Statistical selection | Tune on calibration cells, freeze survivors and confirm independently. Keep paired samples and dispersion. Current seven alternating passes are screening evidence, not independent confirmation after tuning |
+
+The near-term sequence is bounded: qualify the in-tree byte-stream controls,
+run the ten-cell native screen, then add Go, Tokio and forced-backend Monoio to
+that same screen. Surviving Pareto configurations advance to mixed load,
+streaming/pipeline stress and real NIC measurements; Seastar is a targeted
+mixed-load/locality control. This avoids an unbounded Cartesian product while
+keeping omitted workloads and implementations visible.
+
+## Thirty-sixth experiment: strengthen the native completion reference
+
+The dedicated baseline branch starts at `d5037bfc`. It changes only native
+references, their experiment harness/checks and this investigation; no compiler,
+runtime ABI, specification or conformance rule changes. The recorded
+`5ca8a6747ea7f26ce1700a62dd140e20778744bc` combined panel remains a historical
+four-WF/five-native comparison. Its omission of uring isolated storage and
+scheduler policies; it did not demonstrate epoll superiority.
+
+Source audit found two concrete invariant defects in `uring_echo.c`: the fixed
+64-buffer per-connection queue used payload size to bound TCP fragment count,
+and `ring_enter` cleared pending submissions even when an interrupted, busy or
+short enter had not consumed the published SQEs. The new queue uses one link
+per provided buffer and keeps the send vector bounded at 64 entries. No node
+is allocated per operation, and the total pending queue is bounded by actual
+buffer ownership. Submission debt is reread from the shared SQ head after
+enter. These are source-level defects; the earlier timing logs do not prove
+that either failure occurred in an earlier measured sample.
+
+Terminal buffer ownership follows CQE `F_BUFFER` even when no payload is
+returned. A send failure aborts the measurement instead of closing and reusing
+a descriptor that an outstanding multishot receive may still name. Ring
+teardown precedes freeing its loan storage. This is an explicit fail-fast
+error contract, not qualification of recoverable resets or cancellation.
+
+`make -C research/experiments/io-completion-bench uring-check` adds the existing
+four-peer, 2 MiB-per-peer backpressure/half-close oracle at one and four server
+workers, for both buffer sizes. The server is built with ASan/UBSan, a small
+send buffer, TCP_NODELAY readback and untimed configuration/byte counters.
+The original epoll, stackful and C++ checks stay intact. Native execution is
+Linux-only; local shell/YAML/diff checks cannot substitute for it.
+
+The runnable `scheduler-native-baselines` target selects a new panel:
+`callee-small` and `balanced-small` WF controls, the existing five competitive
+manual/stackful/elided-C++ controls, and native uring at 8 and 64 KiB. Two CPU
+cohorts × five echo cases × nine forms × seven passes give 630 timed records;
+three repetitions of three live-storage cases give 162 snapshots. Two warm-up
+passes, THP disabled, explicit glibc top_pad=0, byte checks and exit checks are
+retained. This is a screening configuration, not a new production default.
+
+The 64 KiB form divides the provided-buffer count by eight. For the previous
+256..2048 buffers of 8 KiB, it uses 32..256 buffers of 64 KiB: both reserve
+2..16 MiB of payload storage per worker, with the same 4096-entry submission
+ring. Queue metadata and touched pages can differ and are not claimed equal.
+The change isolates chunk size at a fixed payload-storage budget; it does not
+prove either choice best. SQPOLL is excluded until its additional kernel CPU
+has a controlled and accounted placement.
+
+The [io_uring setup interface](https://man7.org/linux/man-pages/man2/io_uring_setup.2.html)
+and [upstream liburing proxy](https://github.com/axboe/liburing/blob/master/examples/proxy.c)
+identify later tuning candidates such as fixed descriptors, NO_SQARRAY and
+receive/send bundles. They need explicit feature qualification and a new
+paired result. SEND_ZC also changes when buffers may be recycled, and
+[local-network deferred copies](https://www.kernel.org/doc/html/latest/networking/msg_zerocopy.html)
+make a real NIC follow-up necessary before any zero-copy superiority claim.
+
+Validation at this milestone: both observed buffer variants cross-compile to
+x86_64 Linux-musl objects with Zig 0.14 and strict C11 warnings; shell syntax,
+workflow YAML parsing, Make dry-run and `git diff --check` pass locally. These
+are compile checks, not Linux execution. Linux ASan/UBSan stream qualification
+and the new paired timing panel are pending; no performance improvement is
+claimed.
