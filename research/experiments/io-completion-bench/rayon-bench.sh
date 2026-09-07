@@ -35,6 +35,10 @@ bounded_integer BATCHES "$BATCHES" 1 16
 bounded_integer RAYON_PROFILE "$RAYON_PROFILE" 0 1
 
 bounded_integer RESOURCE_CONTROLS "$RESOURCE_CONTROLS" 0 1
+if [[ $RESOURCE_CONTROLS == 1 && $RAYON_PROFILE == 1 ]]; then
+    echo 'rayon-bench: resource controls and perf captures are separate experiments' >&2
+    exit 2
+fi
 read -r -a threads <<< "$RAYON_THREADS"
 read -r -a grains <<< "$RAYON_GRAINS"
 (( ${#threads[@]} > 0 && ${#grains[@]} > 0 )) || exit 2
@@ -107,8 +111,9 @@ if [[ $RESOURCE_CONTROLS == 1 ]]; then
 
     # Existing observer, separately linked and never timed. The normal WF
     # executable above remains the compiler's ordinary native output. The
-    # completion units provide grant_observer.c's bridge-report dependency;
-    # this compute-only module does not initialize an I/O engine.
+    # completion units match the ordinary module's write_once output path
+    # and provide grant_observer.c's bridge-report dependency. Final stdout
+    # output initializes the bridge even though the layout work is CPU-only.
     backend="$ROOT/compiler/src/backend"
     "$WFC" --par --emit-llvm "$ROOT/tests/programs/par_layout.wf" -o "$OUT/wf-par.ll"
     observer_sources=()

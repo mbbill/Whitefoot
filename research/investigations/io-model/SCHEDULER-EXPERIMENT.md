@@ -5271,6 +5271,13 @@ named `perf`, and an executable-bit test also accepts searchable directories.
 Tool discovery now requires a regular executable file. Neither failed
 setup produces workload measurements or profiling evidence.
 
+Revision `0d15c7cc` completed all sixteen CPU/scheduler captures in
+[run 34086189734](https://github.com/mbbill/Whitefoot/actions/runs/34086189734).
+The raw-output, thread and sample-period audit is recorded with its resulting
+fixed-cost control in experiment 45. Those instrumented four-batch captures
+do not reproduce the ordinary single-batch utilization gap and therefore do
+not establish excess parking as its cause.
+
 ## Forty-second experiment: async TCP with bounded Rayon CPU offload
 
 The mixed reference is now an optional `mixed` feature and a separate
@@ -5603,6 +5610,16 @@ the requested count, prepares every stack context and touches its metadata;
 the POSIX primitive also protects a guard for every stack. The setting can
 therefore affect both startup and the chance of taking a no-free-target
 compute join path. Reducing it is not automatically a cost-free optimization.
+
+The program also writes its final checksum through ordinary `write_once`.
+Its emitted `wf__completion_file_write_submit` calls `wf_bridge_begin`, which
+requires bridge initialization before dispatch. On Linux initialization first
+attempts a native ring, even though unpositioned `WF_FILE_WRITE` itself uses
+the typed file adapter. Both normal and observed WF binaries therefore
+include completion initialization and output costs. Missing ring counters on
+macOS do not prove the bridge was uninitialized. This is a separate possible
+fixed cost; the stack/batch control does not attribute all startup or shutdown
+time to stacks, and no output or runtime route is changed in that panel.
 
 The separate four-batch perf audit at 0d15c7cc found no recorded lost-event or
 throttle diagnostics and the expected execution threads. It did not reproduce
