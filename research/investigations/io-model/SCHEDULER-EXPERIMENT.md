@@ -4241,7 +4241,7 @@ name. A known limitation remains visible until its experiment is complete.
 | Native C stackful / C++ stackless | Same epoll engine; private or shared receive storage; stackful, heap coroutine, and compiler-elided coroutine forms | Diagnostic representation control: separates coroutine/frame allocation, storage and reactor cost | Screened and stream/lifetime-qualified at their recorded revisions; not independent mature runtime comparisons |
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
 | WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Correctness-qualified at the revisions above; no concurrent server performance claim yet |
-| Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Experiment49 pins Go 1.27.1 and 64 KiB private initialized buffers; local release/race protocol qualification passes, native Linux resource/backend qualification pending; no timing yet |
+| Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Experiment49 pins Go 1.27.1 and 64 KiB private initialized buffers; release/race qualification passes on macOS and native Linux, including Linux thread/epoll/resource readback; no timing yet |
 | Rust sequential / Rayon CPU pool | Sequential Rust control, then tuned `par_iter`, `join` and `scope` with explicit grain size and pool width | Essential CPU-parallel baseline for balanced/unbalanced data-parallel and recursive work; mixed-I/O row combines native I/O or Tokio with bounded Rayon offload | Source candidate only; count the total physical CPU budget across both executors, queue bounds and transfer cost. Blocking sockets on Rayon are not its strongest pure-network implementation |
 | Tokio | Fixed-worker multithread runtime and a separate per-core current-thread/reactor configuration | External mainstream async baseline; distinguish work stealing from reactor locality | Source candidate only; pin toolchain/lockfile, socket distribution and blocking-pool budget |
 | Monoio | Per-core runtime, separately forced IoUringDriver and LegacyDriver | External completion/readiness comparison within one runtime family | Source candidate only; prohibit silent fusion fallback in backend-specific rows |
@@ -5091,9 +5091,9 @@ policy in the reference.
 
 Local M1 qualification passes all sixteen release/race cases with the exact
 toolchain. Go vet, gofmt, strict C compilation and Linux cross-compilation are
-checked. Native Linux affinity/backend/resource qualification remains pending
-on the isolated branch. This promotes Go from an unspecified candidate to an
-implemented, locally protocol-qualified row; it does not measure its speed or
+checked. Native Linux affinity/backend/resource qualification is recorded
+below. This promotes Go from an unspecified candidate to an implemented,
+protocol-qualified row; it does not measure its speed or
 claim that this idiom is Go's best possible tuning.
 
 The first Linux qualification at `62a3e885247f3890bb2dab1cf6e788a2e019ddc8`
@@ -5110,3 +5110,63 @@ Make variable, where continuations become spaces. No assertion or fixture is
 removed or relaxed, and the Go implementation is unchanged. Linux qualification
 must run to completion on the corrected revision before its evidence status
 is promoted.
+
+
+The corrected native Linux qualification succeeds at
+[`ccf667fd077c2f4a1c7ada24f6ed6c3c0a3ed1de`](https://github.com/mbbill/Whitefoot/commit/ccf667fd077c2f4a1c7ada24f6ed6c3c0a3ed1de),
+[run 34092404824](https://github.com/mbbill/Whitefoot/actions/runs/34092404824),
+job 101648493665. Artifact `10007332754`, `go-reference-qualification`,
+has SHA-256
+`5fe56e4105a812530a77254e958c8b25a27db04ef0a741c2645be805b5c52853`.
+Independent raw audit reconciles all sixteen case logs, release/race build
+metadata, every socket-option record and all four live process snapshots.
+The qualification host is an Intel Xeon 6973P-C VM on Linux
+6.17.0-1022-azure. CPU 0 is the entire server mask; CPU 2 is the fixture on a
+different physical core. Every runtime observation reads `NumCPU=1` and the
+requested GOMAXPROCS. GC remains enabled at GOGC 100 with the default memory
+limit and no GODEBUG overrides.
+
+All four captured thread sets have mask `0` on every thread, with counts
+matching their process status. Each snapshot has exactly one epoll descriptor
+with 65 registered targets: the 64 active peers and the runtime wakeup.
+All socket readbacks show TCP_NODELAY enabled and an effective 8,192-byte
+send buffer for the requested 4,096 bytes. Reset cases report the intended
+connection-reset write error and successfully close the three other waiting
+handlers. No byte mismatch, unexpected output or race report occurs.
+
+These are single live qualification snapshots after all 64 peers have
+completed a byte-checked 64 KiB exchange and while they remain open.
+Race instrumentation is included only to show its distinct resource cost;
+it is not a performance reference.
+
+| Build | GOMAXPROCS | Captured live OS threads | RSS KiB | PSS KiB | GC cycles at exit |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Release, cgo off | 1 | 3 | 13288 | 13280 | 0 |
+| Release, cgo off | 4 | 3 | 15336 | 15328 | 0 |
+| Race, cgo on | 1 | 5 | 41904 | 40288 | 1 |
+| Race, cgo on | 4 | 7 | 42372 | 40770 | 1 |
+
+GOMAXPROCS therefore does not name the thread count or multiply this job's
+CPU allocation. Go heap counters alone also cannot describe this reference's
+storage. Release process TotalAlloc at exit is only 238,640/288,272 bytes for
+P1/P4, while its 64 simultaneously live private buffers have a 4 MiB source
+payload budget. With this exact Go toolchain and Linux/amd64 target, compiler
+escape diagnostics say the 65,536-byte allocation does not escape.
+Disassembly of the **actual CI release artifact** places it in `main.echo`'s
+stack frame (`SUBQ $0x10040, SP`) and explicitly zeroes 65,536 bytes with
+`REP STOSQ` before the read loop. It is goroutine stack storage, not missing
+payload memory or eliminated initialization. The exit stack count is after
+handlers have finished; live smaps captures their retained physical footprint.
+These four snapshots are neither lifetime peaks nor a cross-implementation
+memory ranking, and they do not establish optimal Go storage.
+
+The two audited runtime sources match the local verified toolchain:
+`netpoll_epoll.go` SHA-256
+`cd94172ee133e4e522a8091818c6d82c9fdb94a9c263d5004feee114f76f9624`
+and `internal/poll/fd_unix.go`
+`675f74e8cbfc73170e08b43947c131706cd59e498d722555fe3b793618f5f162`.
+The row is now protocol-qualified on native Linux as well as local macOS,
+with release/race separation and observed Linux backend/CPU constraints.
+The canonical gate at this revision is still running when these results are
+recorded. No Go timing panel has run, no existing native/WF cohort is replaced,
+and there is no claim of spare generator capacity or maximal Go performance.
