@@ -9,8 +9,9 @@
 //! against the unsplit lowering is what says the tree does not matter.
 //!
 //! A run at `WF_WORKERS=1` proves nothing about overlapping — it takes the
-//! sequential world — so the cases that need real overlap read the runtime's
-//! own grant count and refuse a repeat that never actually handed anything out.
+//! sequential world — so the cases that need worker execution also hold the
+//! first publisher until a different OS thread enters the original thunk.
+//! Acquisition/publication and the resulting steal are checked separately.
 
 use std::process::Command;
 
@@ -18,26 +19,6 @@ use super::parallel::{CountedProgram, clone_symbols, function_body, identical};
 use super::{
     build_executable, emit, emit_with_overlap, module_requires_parallel_runtime, test_directory,
 };
-
-/// How many runs a case sums the runtime's grant counter over before deciding
-/// that a repeat overlapped nothing.
-///
-/// One run's count is a sample of the schedule: the offering thread may run
-/// every one of its own offers before another lane reaches them, and on a
-/// saturated machine it usually does. These fixtures fold a range worth only a
-/// few dozen offers, so the sample is thin — measured on this machine at a
-/// one-minute load average of 7.1, twelve runs each, [`PERMITTED_FOLD`] was
-/// granted 3-8 lanes at `WF_WORKERS=4` and 3-14 at 8, against the pair path's
-/// `par_layout`, which is granted 1 610-2 214 at two workers. Four runs make
-/// the assertion a question about the lowering rather than about one schedule,
-/// and it still fails outright against a runtime that grants nothing, which is
-/// the whole of what these assertions are for; it buys no confidence in a
-/// rate, which is not.
-///
-/// [`CountedProgram::grants_over_runs`] stops at the first granted lane, so
-/// four is the bound the *ungranted* direction pays and the granted direction
-/// usually pays one run.
-const GRANT_RUNS: usize = 4;
 
 /// A counted `for` the judgment permits: one accumulator under `+wrap`, a
 /// pure body doing real arithmetic per iteration, no write to
@@ -660,22 +641,12 @@ fn a_split_loop_publishes_one_byte_sequence_at_every_worker_count() {
     runs.push(("WF_WORKERS unset".to_owned(), shipped.stdout));
     identical(&runs).expect("a split range must not move one byte of the fold");
 
-    // A repeat over runs that never handed anything out would pass against a
-    // runtime that granted nothing, so the counts that should overlap are
-    // asked whether they did — over [`GRANT_RUNS`] runs, because one steal is
-    // a race rather than a property of the lowering.
+    // Preserve the ordinary byte comparisons above, then qualify one actual
+    // worker execution at each count without a finite scheduling sample.
     let counted = CountedProgram::link(&module, &directory);
     for workers in ["4", "8"] {
-        let lanes: usize = workers.parse().expect("the worker setting is a number");
-        if !super::parallel::a_steal_is_observable(lanes) {
-            continue;
-        }
-        let granted = counted.grants_over_runs(Some(workers), GRANT_RUNS);
-        assert!(
-            granted > 0,
-            "WF_WORKERS={workers} granted no lane in {GRANT_RUNS} runs, so the repeat \
-             above overlapped nothing"
-        );
+        let output = counted.run_with_worker(workers);
+        assert_eq!(output.stdout, runs[0].1);
     }
     let (opted_out, _) = counted.run(Some("1"));
     assert_eq!(opted_out, 0, "WF_WORKERS=1 must take the sequential world");
@@ -728,17 +699,8 @@ fn a_split_loop_carries_its_captures_and_a_second_combine() {
     }
     identical(&runs).expect("a captured, xor-folded split must not move one byte");
 
-    // Eight lanes need eight cores to show a steal, which is the same limit
-    // the repeat above already carries; on a smaller host the zero is the
-    // host's and this says so instead of reporting the lowering.
-    if super::parallel::a_steal_is_observable(8) {
-        let granted =
-            CountedProgram::link(&split, &directory).grants_over_runs(Some("8"), GRANT_RUNS);
-        assert!(
-            granted > 0,
-            "the comparison above overlapped nothing in {GRANT_RUNS} runs"
-        );
-    }
+    let output = CountedProgram::link(&split, &directory).run_with_worker("8");
+    assert_eq!(output.stdout, runs[0].1);
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
@@ -884,14 +846,8 @@ fn an_independent_map_joins_and_preserves_its_outer_buffer() {
 
     let counted = CountedProgram::link(&split, &directory);
     for workers in ["4", "8"] {
-        let lanes: usize = workers.parse().expect("the worker setting is a number");
-        if !super::parallel::a_steal_is_observable(lanes) {
-            continue;
-        }
-        assert!(
-            counted.grants_over_runs(Some(workers), GRANT_RUNS) > 0,
-            "WF_WORKERS={workers} granted no map lane in {GRANT_RUNS} runs"
-        );
+        let output = counted.run_with_worker(workers);
+        assert_eq!(output.stdout, runs[0].1);
     }
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
@@ -1403,21 +1359,15 @@ fn every_admitted_combine_splits_and_publishes_the_unsplit_bytes() {
     assert_eq!(shipped.status.code(), Some(0));
     assert_combine_rows(&reference.stdout, &shipped.stdout, "WF_WORKERS unset");
 
-    // A splitter in the module is not a range the runtime actually cut: the
-    // allowance is asked at each loop entry, and a range too small to be worth
-    // splitting gets zero and descends straight to its leaf. Without this the
-    // whole table would still pass against seventeen sequential folds — the
-    // control is direct, since narrowing [`COMBINE_SPAN`] to a hundred takes
-    // this program's grant count to zero in every run.
-    if super::parallel::a_steal_is_observable(8) {
-        let granted =
-            CountedProgram::link(&split, &directory).grants_over_runs(Some("8"), GRANT_RUNS);
-        assert!(
-            granted > 0,
-            "no row's range was cut in {GRANT_RUNS} runs, so the comparisons above \
-             are between two sequential folds"
-        );
-    }
+    // A synthesized splitter is not evidence that any allowance was nonzero.
+    // Require a real acquisition/publication and worker handoff as well as the
+    // complete ordinary byte matrix; the gated run must preserve every row.
+    let output = CountedProgram::link(&split, &directory).run_with_worker("8");
+    assert_combine_rows(
+        &reference.stdout,
+        &output.stdout,
+        "held publisher WF_WORKERS=8",
+    );
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }

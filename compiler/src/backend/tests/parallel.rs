@@ -5,8 +5,8 @@
 //! The load-bearing property of this whole path is that overlapping changes
 //! nothing observable. A test that only ran the overlapped program would pass
 //! just as well against a runtime that never granted a lane, so the runs below
-//! read the runtime's own grant count and refuse to accept a repeat that never
-//! actually overlapped.
+//! observe acquisition/publication and hold the first publisher until another
+//! OS thread enters the real thunk. Ordinary runs need not contain a steal.
 //!
 //! Actualization is compile-time opt-in, so every case that expects a hand-out
 //! emits through [`emit_with_overlap`], which is what `whitefootc --par`
@@ -2004,23 +2004,14 @@ fn a_module_that_hands_nothing_out_needs_no_runtime() {
     )));
 }
 
-/// The module carries a weak sequential answer to both runtime entry points,
-/// and the runtime's own definitions replace them at link.
+/// Strong runtime entries replace the module's weak refusal. Successful lane
+/// acquisition and publication are observed directly; steals alone cannot say
+/// whether work was offered, since the owner may execute every offer itself.
 ///
-/// Without this the whole path could be silently sequential forever: every
-/// other test here passes just as well when the weak refusal wins, because
-/// refusing every lane is a correct execution.
-///
-/// The reference run moved, and design §7's "Where the core is linked" is why.
-/// It used to be the same module linked with no parallel runtime at all; the
-/// scheduler core is now staged under the union of the two predicates, because
-/// one core serves compute hand-outs and I/O completions alike and a
-/// completion-only program parks its stack at every join, so this fixture —
-/// which writes its result — has no core-free link any more and the shipped
-/// compiler produces none. The sequential world of the same binary is the
-/// reference instead: `WF_WORKERS=1` answers "no pool" at the bootstrap, the
-/// program enters its sequential clone world, and nothing is ever handed out,
-/// which the grant count below states rather than assumes.
+/// The same binary's sequential world remains the byte oracle. A separate
+/// handoff witness holds its first publisher until another OS thread enters
+/// the real thunk, so this case also exercises worker execution without asking
+/// a short fixture to win a scheduling race within a fixed sample.
 #[test]
 fn the_runtime_replaces_the_modules_weak_refusal() {
     let module = emit_with_overlap(OVERLAPPING_FOLD);
@@ -2034,36 +2025,32 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
         8,
         "the fold must report eight bytes"
     );
-    assert_eq!(
-        refused, 0,
-        "the sequential world hands nothing out, so nothing can be granted"
-    );
+    assert_eq!(refused, 0, "the sequential world cannot steal a task");
+    assert_eq!(handouts(&sequential), [0, 0, 0]);
 
-    // Asked for a pool: the strong definitions win. The count is the
-    // runtime's own, reported at process exit by the observer unit, so a
-    // link that kept the weak refusal reports zero here and fails.
-    let (granted, parallel) = counted.run(Some("4"));
-    assert_eq!(parallel.status.code(), Some(0));
+    let parallel = counted.run_with_worker("4");
     assert_eq!(
         parallel.stdout, sequential.stdout,
-        "granting lanes must not move one byte of the result"
+        "acquiring and publishing lanes must not move one byte of the result"
     );
-    if a_steal_is_observable(4) {
-        let observed_grants = if granted == 0 {
-            counted.grants_over_runs(Some("4"), GRANT_OBSERVATION_RUNS)
-        } else {
-            granted
-        };
-        assert!(
-            observed_grants > 0,
-            "the runtime granted no lane, so nothing was overlapped"
-        );
-    }
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
 
-    // The explicit opt-out is the reference run above: one lane of execution
-    // is the calling thread alone, so no hand-out is made and nothing is
-    // granted.
-
+/// Hiding only the strong acquire definition leaves the module's actual weak
+/// refusal at the same link seam. Source results still agree, but the positive
+/// handoff assertion must fail for missing acquisition/publication evidence.
+#[test]
+fn the_handoff_witness_rejects_the_modules_weak_refusal() {
+    let module = emit_with_overlap(OVERLAPPING_FOLD);
+    let directory = test_directory();
+    let executable = link_counting_grants(&module, &directory, true);
+    let (_, sequential) = counted_run(&executable, Some("1"), false);
+    let (steals, refused) = counted_run(&executable, Some("4"), true);
+    assert_eq!(sequential.status.code(), Some(0));
+    assert_eq!(refused.status.code(), Some(0));
+    assert_eq!(refused.stdout, sequential.stdout);
+    assert_eq!(handouts(&refused), [0, 0, 0]);
+    assert!(require_handoff(steals, &refused).is_err());
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
@@ -2105,9 +2092,8 @@ fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
     // workers was scheduled at all (`workers_started=2 parks=0 steals=0
     // inline_runs=63`), and that is the default doing exactly what it should
     // with the CPU it was given, not the path being off. That the default
-    // build CAN be granted lanes is the WF_WORKERS=4 case above, which makes
-    // that existential observation over [`GRANT_OBSERVATION_RUNS`] runs; this
-    // case is about which world an absent setting selects, and the started
+    // build can acquire and publish lanes is the held-publisher case above.
+    // This case is about which world an absent setting selects, and the started
     // count states that directly. The opt-out runs below stay exact.
     let counted = CountedProgram::link(&module, &directory);
     let (_, published) = counted.run(None);
@@ -2390,75 +2376,17 @@ pub(super) fn identical(runs: &[(String, Vec<u8>)]) -> Result<(), String> {
     Ok(())
 }
 
-/// Whether this host can tell "the runtime granted no lane" apart from "no
-/// worker was scheduled inside the window".
-///
-/// A steal is only observable if a worker reaches the offer before the
-/// offering thread has already finished the work itself, which needs a core
-/// that is not already carrying a lane. Measured in batch 0090 on GitHub's
-/// runners: the four-lane observations reach zero over their whole sample on
-/// the three-core macOS runner and are non-zero on every four-core host run,
-/// so a zero there is a fact about the host rather than about the lowering.
-/// Where the host has the cores, the observation is enforced exactly as it
-/// always was; where it does not, the case says so on standard error rather
-/// than reporting a lowering regression it cannot see.
-pub(super) fn a_steal_is_observable(lanes: usize) -> bool {
-    let cores = std::thread::available_parallelism().map_or(0, std::num::NonZero::get);
-    if cores < lanes {
-        eprintln!(
-            "host-limited: {cores} schedulable cores cannot show a steal across {lanes} lanes, \
-             so the grant observation is not made on this host"
-        );
-        return false;
-    }
-    true
-}
-
-/// The upper bound on the runs an existential grant observation makes before
-/// it reports that the runtime granted nothing.
-///
-/// A steal is a scheduling event, so one run samples the host's schedule
-/// rather than the lowering: the offering thread can finish the work itself
-/// before any pool thread reaches the offer, and on a busy machine it often
-/// does. Measured in batch 0090 on the three-core `macos-14` runner, where the
-/// default-pool observation totalled zero over five runs in one gate run and
-/// was granted on the first run of the next — five runs were sampling that
-/// host's luck. Thirty-two runs of a fixture that finishes in milliseconds
-/// cost one link and a fraction of a second, and a runtime that grants nothing
-/// still totals zero over all of them.
-///
-/// [`CountedProgram::grants_over_runs`] stops at the first granted lane, so
-/// this is what the *negative* direction pays and not what a healthy host
-/// pays: the property these runs support is existential — some run was granted a
-/// lane — and one grant settles it. A runtime that grants nothing still makes
-/// every one of the thirty-two runs and still totals zero.
-pub(super) const GRANT_OBSERVATION_RUNS: usize = 32;
-
-/// The observer linked beside a counted program: one destructor that reports
-/// the runtime's own grant count on standard error at process exit.
-///
-/// `wf__par_grants` is the scheduler core's steal count, summed across the
-/// core's threads on demand (`sched/entry.c`). It used to be a plain
-/// `unsigned long` the parallel runtime incremented; the core keeps its
-/// counters per thread so that no two threads ever write one word, so the
-/// observer calls rather than reads.
+/// The observer's ordinary report retains its legacy `grants=` spelling for
+/// the core's steal statistic. CountedProgram additionally enables test-only
+/// acquisition/publication interposition and an optional held-owner handshake.
+/// Other users, including Windows and measured programs, keep the ordinary
+/// observer without these hooks.
 pub(super) const GRANT_OBSERVER: &str = include_str!("../sched/grant_observer.c");
 
-/// One linked build of a module against the scheduler core and the grant
-/// observer, so a case that wants several runs of one module pays for the link
-/// once.
-///
-/// Linking is the expensive half — clang compiles the whole runtime, the
-/// exhaustion floor and the observer beside the emitted module, and a run of
-/// these fixtures is milliseconds. The cases below ask one program several
-/// questions: what it grants at four lanes, what it grants with the variable
-/// absent, and that each named opt-out grants nothing. Through the
-/// link-and-run helper this replaces, each of those questions linked the same
-/// executable again — five links of one module in one case.
-///
-/// The observer reads `wf__par_grants`, which no Whitefoot construct can name;
-/// it exists exactly so a pool that never grants a lane cannot pass for one
-/// that does.
+/// One linked build for ordinary counter observations and a forced handoff.
+/// The latter changes scheduling only: the original thunk, runtime and source
+/// bytes remain the same. It establishes a worker execution, not a steal rate
+/// or a guarantee that ordinary finite runs must contain a steal.
 pub(super) struct CountedProgram {
     executable: std::path::PathBuf,
 }
@@ -2468,7 +2396,7 @@ impl CountedProgram {
     /// done with the fixture.
     pub(super) fn link(module: &str, directory: &Path) -> Self {
         Self {
-            executable: link_counting_grants(module, directory),
+            executable: link_counting_grants(module, directory, false),
         }
     }
 
@@ -2478,61 +2406,53 @@ impl CountedProgram {
     /// the child's environment, which is how a `--par` binary is actually
     /// handed to somebody — and `Some(count)` for a run that names a count.
     pub(super) fn run(&self, workers: Option<&str>) -> (u64, std::process::Output) {
-        counted_run(&self.executable, workers)
+        counted_run(&self.executable, workers, false)
     }
 
-    /// What the runtime granted over at most `runs` runs, stopping at the
-    /// first run that was granted a lane.
-    ///
-    /// A steal is a race, so one run's count samples the schedule rather than
-    /// stating a property of the lowering. A fixture whose whole range is
-    /// worth only a few dozen offers can lose nearly all of them to the
-    /// offering thread on a saturated machine — measured down to three grants
-    /// at `WF_WORKERS=4` — which would fail a per-run `granted > 0` for a
-    /// reason that has nothing to do with the code under test. A total keeps
-    /// exactly what those assertions are for: a runtime that grants nothing
-    /// totals zero and still fails.
-    ///
-    /// Every caller asserts `> 0`, which is an existential observation: the first
-    /// grant is the whole observation, and the runs after it re-observe
-    /// something already seen. Stopping there changes neither direction of the
-    /// result — the total is positive exactly when some run of the sample was
-    /// granted a lane, and a runtime that grants nothing still makes all
-    /// `runs` runs and still returns zero.
-    pub(super) fn grants_over_runs(&self, workers: Option<&str>, runs: usize) -> u64 {
-        let mut total = 0;
-        for run in 0..runs {
-            let (granted, output) = self.run(workers);
-            assert_eq!(
-                output.status.code(),
-                Some(0),
-                "run {run} of the counted program must succeed: {}",
+    /// Execute one held-publisher run. A missing/partial worker startup is
+    /// read from the real runtime, not inferred from the requested setting.
+    /// One actual worker suffices even on a single-core host; absent workers
+    /// and a stalled handoff fail with the harness's diagnostic.
+    pub(super) fn run_with_worker(&self, workers: &str) -> std::process::Output {
+        let (steals, output) = counted_run(&self.executable, Some(workers), true);
+        require_handoff(steals, &output).unwrap_or_else(|reason| {
+            panic!(
+                "WF_WORKERS={workers}: {reason}: {}",
                 String::from_utf8_lossy(&output.stderr)
-            );
-            total += granted;
-            if total > 0 {
-                break;
-            }
-        }
-        total
+            )
+        });
+        output
     }
 }
 
 /// Links one module against the runtime and the observer, and returns the
 /// executable. Linking is the expensive half, so a case that wants several runs
 /// of one module pays for it once.
-fn link_counting_grants(module: &str, directory: &Path) -> std::path::PathBuf {
+fn link_counting_grants(module: &str, directory: &Path, hide_acquire: bool) -> std::path::PathBuf {
     let assembly = directory.join("counted.ll");
     let floor = directory.join("counted_floor.c");
     let observer = directory.join("observer.c");
     let executable = directory.join("counted");
-    std::fs::write(&assembly, module).expect("write the module");
+    // Rename call sites only: the module's weak definitions and the runtime's
+    // strong definitions keep their real symbol names. The C hooks invoke
+    // those names, so the linker still selects the implementation under test.
+    let observed = module
+        .replace(
+            "call ptr @wf__par_acquire_lane(",
+            "call ptr @wf_test_acquire_lane(",
+        )
+        .replace("call void @wf__par_publish(", "call void @wf_test_publish(");
+    let observed = format!(
+        "{observed}\ndeclare ptr @wf_test_acquire_lane(i64)\ndeclare void @wf_test_publish(ptr, ptr)\n"
+    );
+    std::fs::write(&assembly, observed).expect("write the observed module");
     // The floor joins every link the driver makes, it runs the entry on a pool
     // stack when the core is linked, and a worker's per-thread arm lives in
     // it, so this harness links what a shipped program links.
     std::fs::write(&floor, super::FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
     std::fs::write(&observer, GRANT_OBSERVER).expect("write the observer");
     let mut command = Command::new("/usr/bin/clang");
+    command.arg("-DWF_PAR_TEST_HANDOFF=1");
     command
         .arg("-std=c11")
         .arg("-pthread")
@@ -2544,6 +2464,20 @@ fn link_counting_grants(module: &str, directory: &Path) -> std::path::PathBuf {
         .arg(&floor)
         .arg(&observer);
     let _runtime_units = append_runtime_units(&mut command, module, directory);
+    if hide_acquire {
+        let entry = directory.join("sched/entry.c");
+        let source = std::fs::read_to_string(&entry).expect("read the staged runtime entry");
+        assert_eq!(source.matches("void *wf__par_acquire_lane(").count(), 1);
+        std::fs::write(
+            &entry,
+            source.replace(
+                "void *wf__par_acquire_lane(",
+                "void *wf_test_hidden_acquire_lane(",
+            ),
+        )
+        .expect("hide only the strong acquire definition");
+    }
+
     let linked = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .arg("-o")
@@ -2562,8 +2496,18 @@ fn link_counting_grants(module: &str, directory: &Path) -> std::path::PathBuf {
 }
 
 /// One run of a linked module, with the grant count the observer reported.
-fn counted_run(executable: &Path, workers: Option<&str>) -> (u64, std::process::Output) {
+fn counted_run(
+    executable: &Path,
+    workers: Option<&str>,
+    require_worker: bool,
+) -> (u64, std::process::Output) {
     let mut command = Command::new(executable);
+    if require_worker {
+        command.env("WF_PAR_TEST_REQUIRE_WORKER", "1");
+    } else {
+        command.env_remove("WF_PAR_TEST_REQUIRE_WORKER");
+    }
+
     match workers {
         Some(count) => command.env("WF_WORKERS", count),
         None => command.env_remove("WF_WORKERS"),
@@ -2573,12 +2517,54 @@ fn counted_run(executable: &Path, workers: Option<&str>) -> (u64, std::process::
     command.env("WF_SCHED_REPORT", "1");
     let output = command.output().expect("run the counted program");
     let report = String::from_utf8_lossy(&output.stderr).into_owned();
+    if !output.status.success() && require_worker {
+        return (0, output);
+    }
     let granted = report
         .lines()
         .find_map(|line| line.strip_prefix("grants="))
         .and_then(|count| count.trim().parse::<u64>().ok())
         .unwrap_or_else(|| panic!("the observer must report a grant count, got {report:?}"));
     (granted, output)
+}
+
+/// Exact fields from the opt-in test observer, distinct from steal statistics.
+fn handouts(output: &std::process::Output) -> [u64; 3] {
+    let report = String::from_utf8_lossy(&output.stderr);
+    let lines: Vec<_> = report
+        .lines()
+        .filter_map(|line| line.strip_prefix("handouts: "))
+        .collect();
+    let [line] = lines.as_slice() else {
+        panic!("one handout report required: {report}")
+    };
+    let fields: Vec<_> = line.split_whitespace().collect();
+    assert_eq!(fields.len(), 3, "unexpected handout fields: {report}");
+    let mut values = [0; 3];
+    for (index, key) in ["acquired=", "published=", "worker_entered="]
+        .iter()
+        .enumerate()
+    {
+        values[index] = fields[index]
+            .strip_prefix(key)
+            .and_then(|value| value.parse().ok())
+            .unwrap_or_else(|| panic!("missing numeric {key}: {report}"));
+    }
+    values
+}
+
+fn require_handoff(steals: u64, output: &std::process::Output) -> Result<(), &'static str> {
+    if !output.status.success() {
+        return Err("the held-publisher program failed");
+    }
+    let [acquired, published, entered] = handouts(output);
+    if acquired == 0 || published == 0 || published > acquired {
+        return Err("the strong runtime did not acquire and publish a lane");
+    }
+    if entered != 1 || steals == 0 {
+        return Err("no actual worker executed the held publisher's task");
+    }
+    Ok(())
 }
 
 /// The number of pool threads the core started in one counted run, read from

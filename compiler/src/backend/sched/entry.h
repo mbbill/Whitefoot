@@ -119,13 +119,11 @@ void wf__sched_checkpoint(void);
 /* How many worker threads this process started, 0 when it started none. */
 unsigned wf__sched_pool_running(void);
 
-/* Lanes granted since process start: hand-outs that ran on a thread other
- * than the one that offered them, which is the core's steal count.
- *
- * No Whitefoot construct can name it and no program reads it; it exists so
- * that a measurement, or a gate, can tell a pool that grants lanes from one
- * that silently never does. A hand-out the offering thread ran itself at its
- * own join overlapped with nothing, so it is not counted here. */
+/* Stolen hand-outs since process start, retaining the legacy grants name.
+ * This counts successful foreign deque pops, not lane acquisitions or every
+ * published task. A zero does not establish that the runtime refused work:
+ * the offering thread may have executed all of its own published tasks.
+ * No Whitefoot construct names this diagnostic entry. */
 unsigned long wf__par_grants(void);
 
 /* The core's summed counters as one line of text, when the run asked for
