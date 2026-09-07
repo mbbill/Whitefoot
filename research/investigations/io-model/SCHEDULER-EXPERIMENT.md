@@ -8488,3 +8488,95 @@ and ID mode before reading topology, and a mismatch names the CPU, expected
 sysfs package/core and actual table rows. There is no fallback from missing or
 inconsistent physical IDs. Synthetic sparse-ID cases exercise this distinction;
 the corrected native ARM qualification and timing remain pending.
+
+## 61. Control parallel tree initialization
+
+Experiment 59's ordinary control gives no wall improvement from removing
+idle-scan yield rounds. Keep those defaults. One remaining structural
+mismatch precedes the measured layout work: the generated WF builder makes
+63 parallel acquisition attempts while allocating its 127-node tree; the
+Rayon reference builds that tree sequentially inside its existing pool.
+WF starts its workers lazily at the first acquisition. The small node count
+neither proves negligible cost nor attributes the short-run gap to allocation.
+
+`make rayon-build-bench` selects `RESOURCE_CONTROLS=5` in the existing CPU
+harness. Its candidate changes only `wf_main`'s call from `wf_build` to the
+already-emitted `wf__par_seq_build`. The transform requires exactly one main,
+both builder definitions and one applicable call, then reverses that scoped
+substitution and compares the entire original IR byte-for-byte. All layout
+functions, recursive acquisition fallbacks, source loops and runtime units
+remain unchanged. This is an experimental executable control, not a compiler
+rule, source-language change or selected lowering default.
+
+The intervention also moves worker creation from the first tree-building
+pair to the first layout pair. Its result therefore measures parallel
+initialization and that lazy-start relocation together, not isolated malloc
+cost. Both programs construct the complete tree and table before traversing
+it; no work moves outside the measured process. Both execute all 800 full
+8192-word layouts per batch before all 800 banded 4096-word layouts per
+batch. The parent table scan still precedes child publication. WF still
+attempts acquisition at all 63 branch nodes per layout, while Rayon grain
+four uses 15 joins; that granularity difference is not changed here.
+
+Four computing threads, twelve WF stacks and the frozen Rayon width/grain
+4/4 are fixed. The 1/16-batch panel contains ordinary compiler WF, an unchanged
+manual link, the manual sequential-build candidate and Rayon. One complete
+warmup precedes five alternating passes: forty ordinary wall, user/system
+CPU, context-switch and peak-RSS rows. The duplicate WF baseline records
+whether ordinary/manual executables are byte-identical. Only an identical
+pair exposes same-binary sampling variation; otherwise both links and their
+code/layout evidence remain explicit controls.
+The normal completion suite runs once with default runtime settings; no
+redundant candidate runtime variant is introduced. Both manual executables
+must print the independent exact checksum at one and sixteen batches before
+timing. Four separate observed executions check those bytes, four scheduler
+threads, three started workers, grants, default storage settings and the
+unchanged 256 pause/look and 16 idle-yield rounds. Their counters are not
+assigned to ordinary samples.
+
+The artifact retains both IR files and their exact diff, every selected
+executable including the compiler, link commands, plans, resource records,
+qualification outputs, observer reports and source hashes including backend
+headers. Linux objdump decodes the actual main/body calls and requires the
+candidate to call the sequential builder without calling the parallel one.
+Hot layout functions are compared after normalizing instruction addresses
+and symbolic relocation displacements; any difference is retained explicitly
+for attribution review rather than silently called equivalent. Original
+symbols and disassembly remain available. Source-level node-write parity is
+not a claim of identical executed stores: the retained WF layout IR already
+omits node-output stores whose values are not published by this workload.
+No additional stores are removed by this control.
+
+The `codex/io-cpu-build-control` route runs this panel without phase probes,
+new affinity, changed waiting defaults or a new calibration cohort. An
+initialization effect would not prove ready work was available during earlier
+yields. Distinguishing insufficient exposed work from OS scheduling delay
+requires contemporaneous eligible tasks/READY continuations and per-thread
+scheduling state; aggregate grants, failed acquisitions and idle counters
+cannot establish that relation. Local command and checksum evidence and the
+native Linux measurement are recorded separately when available.
+
+Local M1 qualification passes the normal completion suite, all four existing
+scheduler enumeration configurations, Rayon tests/fmt/clippy, both manual
+batch-length checks and a one-pass/no-warmup smoke with eight ordinary rows
+and four separate observations. The initial qualification attempt passed
+explicit default yield macros into the enumerator's zero-round model and
+failed on a macro redefinition; the harness now uses the unchanged normal
+qualification flags. All nine ordinary artifact hashes, eleven full artifact
+hashes and 34 source entries verify after the panel. The Mach-O ordinary and
+manual-default files differ, while their complete disassemblies match after
+removing the file-heading line. Local timings are command/mapping evidence,
+not a performance comparison.
+
+The exact IR transform rejects six malformed inputs, and the actual Bash
+3.2 compiler-array checks preserve every prior mode's commands. All 45 prior
+workflow branch admissions and CPU target selectors remain equivalent;
+invalid mode/profile/phase combinations stop before host or compiler work.
+Linux x86-64 cross-links using LLVM 22 for IR and Zig's Clang with glibc 2.36
+for the C runtime contain the required main/body call replacement. Both hot
+layout functions retain identical offset-normalized decoded instructions,
+and the call guard rejects an unchanged baseline supplied as a candidate.
+These ELF files are not executed locally and use different tools from the
+native CI cohort. Its actual ELF checks, qualifications, forty-row ordinary
+result and full gate status remain pending. `make static`, shell syntax and
+patch checks pass locally.
