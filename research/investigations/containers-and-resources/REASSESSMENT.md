@@ -5,8 +5,9 @@ critical-case, and semantic reviews of 2026-09-06, their executable experiments,
 and adversarial cross-review, supplemented by the pinned external workload traces.
 It selects the architectural direction and first implementation scope below; it
 does not amend the active specification. The foundation review of 2026-09-07
-reopens the precise IR and phase boundary before further call-adapter work. The
-current implementation is a candidate, not the definition of that foundation.
+selects the information and phase boundary for the next implementation below,
+before further call-adapter work. The current implementation does not yet carry
+that complete representation and is not the definition of the foundation.
 Its checkpoint is distinct from the retained pre-implementation measurements and gate.
 Keep this decision and its linked evidence current as implementation replaces the
 old container paths. `DESIGN.md` points here for the superseding container choice;
@@ -135,45 +136,135 @@ at `bb8eb30f` and remaining parallel failure are concrete evidence that the shar
 representation deserves review; they do not establish that every ABI conversion
 is avoidable or unsound.
 
-The preferred candidate for that review is **one typed storage/call normalization
-before emission**, with explicit aggregate destinations and a shared call
-representation consumed by ordinary, system, and parallel paths. Runtime-specific
-marshalling still exists, but must not independently reconstruct whether an
-operand is a value, a borrowed place, or an aggregate destination. This candidate
-is not implemented or validated. Keeping the late bridge is cheaper locally but
-must demonstrate equally complete propagation and placement; adding public output
-parameters does not by itself solve either obligation.
+The selected next implementation direction is **one typed storage/call
+normalization before emission**, extending the existing IR rather than building a
+second complete IR or a new source checker. Scalar SSA, CFG structure, typed place
+projections, checked cleanup, and permission-derived scheduling remain useful.
+Explicit aggregate destinations and a shared call representation must be consumed
+by ordinary, system, and parallel paths. Runtime-specific marshalling still exists,
+but must not independently reconstruct whether an operand is a value, a borrowed
+place, or an aggregate destination. This representation is not yet implemented or
+validated; the following boundary determines what its implementation must preserve.
 
-The representation must distinguish these transitions:
+#### Information retained at the checked boundary
 
-- **Fresh construction:** an ordinary `let` receiving a completed value may use
-  its final backing as the physical result destination. Source value semantics
-  do not require a temporary copy. Direct placement still needs valid extent,
-  alignment, aliasing, lifetime, and cleanup on every relevant exit.
-- **Commit to an existing place:** SET-1 captures the target before RHS evaluation;
-  SET-2 reads the displaced owner after that evaluation, then exchanges owners.
-  The RHS may observe or mutate the old value. The target is not a fresh result
-  slot, and the displaced owner may remain independently live after commit.
-- **Partial construction and failure:** record exactly which values have acquired
-  ownership on each edge and how they are returned or discharged. A normal error
-  result is part of the program. Moving an allocation before construction can
-  suppress effects or change refusal and returned ownership; destination choice
-  alone does not justify that reorder.
-- **Borrow and retirement:** a descriptor's last read does not imply its backing
-  is dead. Derived addresses remain valid for their complete uses, including
-  join return, result consumption, and retirement. Cross-worker execution and
-  suspension must not change that requirement. Reuse follows that boundary,
-  not a DONE observation or an assumed worker assignment.
-- **Control-flow transfer:** snapshot simultaneously transferred values, perform
-  the required predecessor cleanup, then write reusable destinations. A storage
-  slot is neither a second owning value nor evidence that an old snapshot may
-  be overwritten.
+Code inspection identifies information that a pass over the current erased IR
+cannot recover by value type. The checked binding occurrence carries
+`consume_root`, but the binding arm in
+[`IrBuilder::expression`](../../../compiler/src/lowering/builder.rs) does not
+retain it. Formal modes pass through `lower_borrow_mode_type`: a borrow of direct
+content becomes an address, while a descriptor or opaque handle can keep exactly
+the same IR type in own and borrow modes. User-call lowering also does not retain
+its checked result-provenance relation. This is compatible with the current
+conservative backend; it is insufficient authority for a new ownership-directed
+reuse pass. A false consume flag alone does not establish a copy operation.
+
+| Information | Origin and use |
+| --- | --- |
+| Operand use and formal/result role | Preserve the checked distinction between copy/read, ownership transfer, and shared/exclusive access. Retain or consume it in an explicit lowering operation before erasure. Do not infer it from pointer/descriptor shape. |
+| Place identity and projection | Keep a typed root plus field/index/dereference path. A borrowed root refers to existing caller storage; making it addressable must not allocate another owner. |
+| Borrow origin and storage-use boundary | Preserve the resolved source origin and result relationship needed for storage placement. Schedule lowering supplies the actual issue, join, consumption, and retirement uses; a source region name alone is not an activation storage plan. |
+| Commit and cleanup responsibility | Carry the checker's target/RHS/commit order and ordered release records to their current value or place. Reusing a physical slot neither duplicates nor combines these responsibilities. |
+| Physical content and layout | Normalization and target planning can derive representation, sizes, alignment, content interference, and legal slot sharing from these explicit operations. They cannot grant source permissions. |
+
+Source ownership is therefore decided once. The implementation may validate that
+its generated IR preserves these records and uses well-typed destinations; such a
+failure is a compiler defect, not a source rejection or a runtime fallback.
+
+#### Minimal operation distinction
+
+The following is schematic internal notation, not proposed Whitefoot syntax or
+committed Rust API names:
+
+```text
+reserve p : T                    // physical backing; no initialized T owner yet
+initialize p from value          // a fresh logical destination receives a value
+call f(arguments) into p         // complete result becomes available at delivery
+snapshot p -> v                  // immutable content needed independently of p
+project p.path -> q              // same backing; neither read nor ownership transfer
+commit q <- replacement -> old   // existing-place exchange, after RHS completion
+release subject, checked_action  // the checked owner/value/place on its exact edge
+```
+
+An initialized `T` here means a valid value of its type, not initialized bytes
+throughout its full capacity: an empty run is a complete value. Logical ownership
+and immutable content snapshots are separate from physical backing. In particular,
+an internal snapshot of affine representation does not grant a second owning
+responsibility or permit a new source copy. The exact enum/tag and padding rules
+remain the target representation's, not inferred from this notation.
+
+For the dense witness, the current logical chain is `v2 = Call build(seed)`,
+`v3 = AddressOf(v2)`, projected updates through `v3`, then a whole-owner `Load`
+feeding cleanup. The retained raw LLVM has three aggregate fields: call result,
+addressable owner, and cleanup snapshot. The selected shape instead reserves the
+binding's place, calls `build` into that fresh place, updates its projections, and
+applies the checked cleanup to that place. A content snapshot remains where a
+later read actually needs the old content. This describes the intended removal of
+the recorded copy and extra fields; it is not a new measurement or a claim that
+current target code already has that shape.
+
+Direct cleanup of a place needs its own ordering argument. Existing jump delivery
+snapshots incoming values before cleanup because a reused destination may overwrite
+an owner that cleanup still reads. Replacing every cleanup load with an arbitrary
+late address read would lose that protection. The normalization must preserve the
+subject's contents until the checked release executes, or retain a real snapshot.
+
+#### Calls and dynamic storage instances
+
+A call's result destination is fresh with respect to live inputs and borrowed
+storage by default. Consuming an argument ends the caller's owning use, not the
+callee's reads of it. Input/result aliasing therefore needs explicit read/write
+ordering evidence; a move annotation alone cannot permit it. The existing
+aggregate swap and `rewrite` witnesses retain both old field values before their
+writes. Existing-place replacement is stronger still: the RHS can mutate the old
+target before the subsequent old-owner readout.
+
+Each ordinary invocation has its own storage instance. A staged static definition
+can have several dynamic instances in flight: the place must be associated with
+the existing activation/window slot, not only its static value ID. These are
+compiler relationships, not a request for runtime owner IDs or generation tags.
+The existing generated slot/drain CFG supplies the reuse boundary.
+
+| Execution route | Storage obligation |
+| --- | --- |
+| Direct call | Inputs live through the call's reads; the fresh result is available on return. Its caller-owned backing survives subsequent reads and loans. |
+| Ordinary refused handout | No task frame receives the arguments. The deferred direct invocation still needs its argument storage at join, even though the source call occurrence is earlier. |
+| Granted handout | The admitted frame holds the existing argument/result layout. Borrowed pointers retain their external backing. Join returns before result delivery, and delivery reads the result before frame release. |
+| Staged iteration | Issue-side carry, result, and any borrowed backing belong to the same dynamic slot through that iteration's drain and retirement. A later issue cannot reuse it merely because the worker marked DONE. |
+
+Final materialization accounts for the actualized schedule before STOR-6 target
+layout checks. Every route uses the same operand/result roles; adapters implement
+their existing transport and timing. No route gains permission by changing frame
+capacity, replacing inline payload with pointers, or adding a scheduling edge.
+
+#### Scope selected by the comparison
+
+| Candidate | Decision for the next implementation |
+| --- | --- |
+| Extend only the emitter's value-to-slot map | Useful for current conservative content coalescing, but not the selected foundation: it lacks checked use distinctions and leaves destination/cleanup conventions to multiple emission routes. |
+| Preserve checked uses and extend the existing typed IR, then normalize storage/calls once | Selected direction. It addresses the concrete information loss and dense result-to-binding chain while reusing the existing CFG and explicit release records. Exact implementation and complete regression evidence remain outstanding. |
+| Introduce a second complete storage IR | Not selected for this slice: the needed distinctions can extend the existing typed CFG. No current witness requires replacing scalar operations and control-flow machinery. |
+| Expose a public partial-object construction protocol first | Not a prerequisite for these existing value-return programs. It answers a separate source-authority question and needs its own workload and checked transition evidence. |
+
+Implementation can first preserve the checked information without changing the
+emitted ABI, then use it for ordinary fresh destinations and cleanup. A normalized
+form must not be routed into a consumer that has not been updated to understand
+it. Shared consumption by the parallel paths remains part of completion, subject
+to the existing rejected-edit boundary; this sequencing is not an alternative way
+to apply that edit or a reason to report the ordinary subset as the finished goal.
 
 These are requirements on the representation, not a mandate for a runtime
 per-field bitmap, a new allocation, a universal storage wrapper, or a second
-general theorem prover. Statically known construction paths can have statically
-selected cleanup. Container window state, genuinely dynamic occupancy, and
-source-level linear discharge remain their own semantic responsibilities.
+general theorem prover. LIV-1 already makes scope-exit release unconditional on
+each checked edge; `CheckedDrop` and `IrDrop` retain the ordered responsibilities.
+In the failure witness, the first successful acquisition creates one complete
+cell; second-acquisition refusal releases that cell, with no pair owner yet.
+Success transfers the two cell owners into the complete pair and then the result.
+Even if placement puts a cell in a future pair field early, it remains that cell's
+responsibility until the checked construction transfers it. A universal source
+partial-pair/seal state machine is not needed for this program. Container window
+state, genuinely dynamic occupancy, and source-level linear discharge remain their
+own semantic responsibilities.
 
 Current source authority is narrower than arbitrary construction into a chosen
 raw slot. A constructor builds a complete value; `fixed_vector()` builds a valid
@@ -198,13 +289,11 @@ Use existing complete witnesses to judge the candidate, with their actual limits
 | [Linear lifecycle programs](../../experiments/container-representation/lifecycle/RESULTS.md) | Actual linear values are discharged on success and failure; the leak neighbor is rejected. A proved-empty run of linear values still cannot be discharged. That missing language capability is not solved by an aggregate ABI. |
 | [Parallel corpus execution](../../../compiler/tests/programs/parallel.rs) using [generic nominals](../../../tests/programs/generic_nominals.wf) | At `bb8eb30f`, the canonical program stage reports 72 passes and this one failure: abnormal exit with four workers. Existing green sampling predominantly returns scalars. Aggregate-result and staged-cleanup test additions remain paused, uncompiled, and unexecuted; no complete parallel aggregate lifetime result is claimed. |
 
-Select the concrete normalization using these witnesses and the frozen external
-contracts already recorded below. Its design must account for successful handout,
-refused handout, deferred execution, join, result consumption, and cleanup through
-one consistent set of value/storage relationships. Avoid enlarging runtime slots
-or adding scheduling edges to make an incomplete storage model appear sound.
-This review precedes more adapter implementation; it does not expand the first
-slice into a public raw-storage framework or six application ports.
+Validate the selected normalization using these witnesses and the frozen external
+contracts already recorded below. Existing positive runs are semantic constraints
+on the new implementation, not evidence that it has passed. This review precedes
+more adapter implementation; it does not expand the first slice into a public
+raw-storage framework or six application ports.
 
 ### Selected initialization states and public authority
 
@@ -379,9 +468,9 @@ legacy retirement follow only when the replacement capabilities run the relevant
 programs, including fixed blocks on the stable-storage route. Do not retire the
 full-array guarantee merely because a variable run accepts a constant literal.
 
-The direction of general owned storage remains supported; the exact representation
-and phase boundary are open in the foundation review above. That choice can change
-the current implementation, including its call adapters. Later sparse,
+The foundation review selects retained checked uses and normalization of the
+existing typed IR as the next implementation direction. Its concrete implementation
+remains to be validated and can replace the current call adapters. Later sparse,
 dynamic-refinement, destruction, and device extensions remain bounded follow-on
 questions. Neither the direction nor the measured checkpoint establishes that the
 first slice is complete or that proposed source rules have passed a compiler.

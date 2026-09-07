@@ -154,6 +154,48 @@
   the full repository gate remain incomplete.
   [Both measurements and limits](../../../research/experiments/container-representation/dense/RESULTS.md),
   [current implementation boundary](../../../research/investigations/containers-and-resources/REASSESSMENT.md#first-implementation-scope-and-completion-evidence).
+- 2026-09-07 (bb8eb30f) pitfall: the checked binding occurrence records whether
+  it consumes its owner, but ordinary binding-expression lowering discards that
+  field. Formal own and borrow modes can also lower to the same descriptor or
+  opaque-handle type, and user-call lowering does not retain checked result
+  provenance. Type shape alone therefore cannot supply the source permissions
+  needed by an ownership-directed placement pass. The current conservative
+  content-liveness planner does not infer those permissions.
+  [Checked occurrences](../../../compiler/src/semantic/model.rs),
+  [parameter and expression lowering](../../../compiler/src/lowering/builder.rs),
+  [content storage planning](../../../compiler/src/backend/storage.rs). (code)
+- 2026-09-07 (f5dab70c) mechanism: the dense helper result is first stored as an
+  immutable aggregate, then copied to the addressable owner; cleanup obtains
+  another aggregate snapshot. The retained three-field frame distinguishes
+  these physical objects, not three live source owners. Direct fresh-result
+  placement and cleanup of the actual owner are separate opportunities from
+  deleting per-element reconstruction. A cleanup subject still needs its old
+  contents until its checked release runs, including through phi transfers.
+  [Measured frame and remaining copy](../../../research/experiments/container-representation/dense/RESULTS.md),
+  [binding storage](../../../compiler/src/lowering/builder/storage.rs),
+  [edge delivery](../../../compiler/src/backend/emitter/places.rs). (code)
+- 2026-09-07 (bb8eb30f) trace: the allocation-refusal witness owns one complete
+  cell after the first acquisition. Refusal of the second returns its error and
+  releases the first cell; no pair owner exists on that edge. Success transfers
+  the two complete cells into the pair. The checker supplies ordered releases
+  for each edge and lowering preserves them; the witness does not require a
+  source-visible partially initialized pair or a runtime drop-needed flag.
+  [Execution witness](../../../compiler/src/backend/tests/owned_places.rs),
+  [checked release records](../../../compiler/src/semantic/model.rs),
+  [release lowering](../../../compiler/src/lowering/builder.rs). (code)
+- 2026-09-07 (bb8eb30f) pitfall: consuming a call argument does not end the
+  callee's reads of it. Aggregate swap retains both old field values before
+  writing, and replacement can mutate the existing target during its RHS before
+  reading the displaced owner. A move annotation alone cannot justify aliasing
+  a result destination with an input or treating the replacement target as fresh
+  storage. [Swap, retained helper, and replacement witnesses](../../../compiler/src/backend/tests/owned_places.rs). (code)
+- 2026-09-07 rationale: the foundation review selects preserving checked use
+  distinctions and extending the existing typed IR before one storage/call
+  normalization. Reusing its scalar SSA, CFG, projections, and explicit cleanup
+  avoids turning emitter adapters into the place where source authority is
+  reconstructed. This is the next implementation direction, not a statement
+  that the normalized representation or parallel integration already exists.
+  [Comparison, operation distinctions, and dynamic storage instances](../../../research/investigations/containers-and-resources/REASSESSMENT.md#foundation-review-authority-representation-and-placement). (sourced)
 
 ## Moves
 
