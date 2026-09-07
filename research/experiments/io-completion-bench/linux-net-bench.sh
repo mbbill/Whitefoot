@@ -16,6 +16,7 @@
 #   sh linux-net-bench.sh verify-client   qualify NETLOAD's bounded service
 #                                  against the selected echo references
 #   sh linux-net-bench.sh verify-observer   qualify client counter conservation
+#   sh linux-net-bench.sh verify-readiness-paced   admitted scheduled requests
 #
 # The tuned native uring and epoll references expose backend and runtime
 # costs under this protocol. Their quality and evidence scope are maintained
@@ -141,7 +142,10 @@ run_case() {
     wait_for_listener "$port" "$server" "$label"
 
     measured=0
-    if [ "$MODE" = verify-observer ]; then
+    if [ "$MODE" = verify-readiness-paced ]; then
+        line=$("$NETLOAD" "$port" "$connections" "$roundtrips" "$bytes" --threads 2 \
+            --compute 16384 --heavy-every 2 --admit --duration-ms 100 --light-per-second 50) || measured=$?
+    elif [ "$MODE" = verify-observer ]; then
         line=$("$NETLOAD" "$port" "$connections" "$roundtrips" "$bytes" --threads 2 \
             2> "$OUT/$label-client-observe.err") || measured=$?
     else
@@ -175,6 +179,15 @@ run_case() {
         test "$(field "$line" roundtrips)" -eq $((connections * roundtrips))
         printf 'client-service: budget=%s bytes=%s roundtrips=%s yields=%s PASS\n' \
             "$budget" "$bytes" "$(field "$line" roundtrips)" "$(field "$line" client_service_yields)"
+    fi
+    if [ "$MODE" = verify-readiness-paced ]; then
+        test "$(field "$line" admitted)" = 1
+        test "$(field "$line" duration_ms)" = 100
+        test "$(field "$line" light_planned)" = 10
+        test "$(field "$line" light_count)" = 10
+        test "$(field "$line" heavy_count)" -gt 0
+        printf 'client-readiness-paced: readiness=%s budget=%s full delayed compute oracle PASS\n' \
+            "$(field "$line" client_readiness)" "$(field "$line" client_service_rounds)"
     fi
     if [ "$MODE" = verify-observer ]; then
         # The binary checks each worker's full conservation equations before
@@ -259,6 +272,7 @@ for name in ${NET_LINES:-uring epoll wf}; do
     case $name in
         uring) binary=$OUT/uring_echo ;;
         epoll) binary=$OUT/epoll_echo ;;
+        compute) binary=$OUT/epoll_compute ;;
         wf) binary=$OUT/wf_echo ;;
         *) echo "linux-net-bench: there is no $name line" >&2; exit 2 ;;
     esac
@@ -285,14 +299,18 @@ echo "$LINES" | while read -r name binary; do
     if [ "$name" = wf ]; then
         environment=$WF_ENVIRONMENT
     fi
-    run_case "$name.verify" "$binary" "$environment" 4 200 64 0
+    if [ "$MODE" = verify-readiness-paced ]; then
+        run_case "$name.verify" "$binary" "$environment" 4 100000 64 0
+    else
+        run_case "$name.verify" "$binary" "$environment" 4 200 64 0
+    fi
     if [ "$MODE" = verify-client ] || [ "$MODE" = verify-observer ]; then
         run_case "$name.verify.large" "$binary" "$environment" 4 20 65536 0
     fi
 done
 echo "every server echoes what netload sent, at 4 connections"
 
-if [ "$MODE" = verify ] || [ "$MODE" = verify-client ] || [ "$MODE" = verify-observer ]; then
+if [ "$MODE" = verify ] || [ "$MODE" = verify-client ] || [ "$MODE" = verify-observer ] || [ "$MODE" = verify-readiness-paced ]; then
     exit 0
 fi
 
