@@ -4254,7 +4254,7 @@ name. A known limitation remains visible until its experiment is complete.
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
 | WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Experiments 39/44/48 qualify the threaded, owner and batched-owner paths. At `fc69af15`, batching adds 28% / 27% paired throughput at 64 / 1024 small-message peers, with separate counters confirming aggregated ring submissions. Experiment 54 removes 97..98% of pending-list visits, with only 1.0%/1.8% median paired rate gains and reversals at 1024 peers; native CPU/trip still leads. Client headroom and multi-owner compute remain open. Experiments 52/54 qualify the unchanged sequential mixed protocol on both Linux completion routes |
 | Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Go 1.27.1 release/race and both 64 KiB storage forms qualified (49/51). The fixed Linux screen (53) favors acceptor-heap/P1 for memory and tail latency within one server CPU; P4 oversubscription inflates p99. WF batch32 exceeds this Go candidate at 64/1024 small peers while native stays ahead. Large transfers approach the client ceiling; no universal optimum. Race moves both buffers to the heap |
-| Rust sequential / Rayon CPU pool | Existing recursive `par_layout.wf` port with exact floating-point order and every node write; sibling `join`, calibrated grain and explicit pool width | Essential CPU-parallel reference; separates sequential code generation from parallel scheduling. Broader `par_iter`/`scope` and unbalanced workloads remain candidate rows | Checksum-qualified and independently confirmed after grain calibration on M1/Linux (experiment 40). Experiment 45's stack/batch control reduces the WF12/Rayon paired wall gap from 13.9% at one batch to 1.6% at sixteen, supporting substantial fixed costs. Experiments 47/50 find no stable gain from unused-ring or lane-initialization changes. Corrected traces locate early underutilization during computation; experiment 55 associates about 90% of WF runnable waits with explicit yields. The next control must separate wait paths and worker placement. This is not an optimal WF CPU setup claim |
+| Rust sequential / Rayon CPU pool | Existing recursive `par_layout.wf` port with exact floating-point order and every node write; sibling `join`, calibrated grain and explicit pool width | Essential CPU-parallel reference; separates sequential code generation from parallel scheduling. Broader `par_iter`/`scope` and unbalanced workloads remain candidate rows | Checksum-qualified and independently confirmed after grain calibration on M1/Linux (experiment 40). Experiment 45's stack/batch control reduces the WF12/Rayon paired wall gap from 13.9% at one batch to 1.6% at sixteen, supporting substantial fixed costs. Experiments 47/50 find no stable gain from unused-ring or lane-initialization changes. Corrected traces locate early underutilization during computation; experiment 55 associates about 90% of WF runnable waits with explicit yields. Experiment 57 adds exact-binary caller capture to distinguish wait paths before changing backoff or worker placement; native attribution is pending. This is not an optimal WF CPU setup claim |
 | Tokio I/O + bounded Rayon CPU offload | One current-thread I/O driver plus B-1 CPU workers, fixed 64-byte protocol, asynchronous bounded admission, one request/reply per connection | External mixed-load reference under one total execution budget; exposes CPU queue transfer, backpressure and light-request progress | Linux-qualified at `040bfc4b` (experiment 42), including saturation, errors, reset, partial input, half-close and slow output. Four short client smoke records are correctness evidence, not a performance ranking |
 | Tokio | Fixed-worker multithread runtime and a separate per-core current-thread/reactor configuration | External mainstream async baseline; distinguish work stealing from reactor locality | Source candidate only; pin toolchain/lockfile, socket distribution and blocking-pool budget |
 | Monoio | Per-core runtime, separately forced IoUringDriver and LegacyDriver | External completion/readiness comparison within one runtime family | Source candidate only; prohibit silent fusion fallback in backend-specific rows |
@@ -4296,7 +4296,7 @@ comparison remain explicit platform rows, not inferred coverage.
 | CPU placement | Record physical cores, SMT siblings, NUMA, cpuset and IRQ placement. Current split2 uses disjoint logical CPUs that may share physical cores; it is not a promise of two physical server cores. split1 separates physical cores |
 | Thread and poll budgets | Count runtime workers, blocking helpers, io-wq and SQPOLL kernel threads. Process taskset and process CPU alone do not bound or account for a kernel polling thread. A competitive CPU budget is an upper bound: tuning may use fewer workers at low occupancy rather than forcing every contender to start all available workers |
 | CPU cost | Existing `/usr/bin/time` `%U/%S` covers whole process lifetime with centisecond output: startup/drain and quantization matter in short cells. Separate steady-state CPU-ns/request, idle CPU and kernel CPU before fine low-load claims |
-| Load generator | Occupied echo cells demonstrably consume nearly all assigned client CPU, predominantly system time. Experiment43's extra client SMT worker does not establish spare capacity. Verify with more independent physical client cores or another host; flat throughput alone does not prove server saturation |
+| Load generator | Occupied echo cells demonstrably consume nearly all assigned client CPU, predominantly system time. Experiment43's extra client SMT worker does not establish spare capacity. Experiment56 confirms roughly one full receive plus one empty probe per round, with only rare large-transfer fragmentation and large-transfer mean readiness batches of 60.78..62.92 events; complete profile attribution is unqualified. Test a readiness-aware client and independent physical client resources; flat throughput alone does not prove server saturation |
 | Latency / overload | Closed-loop echo p99 does not establish an overload SLO. Fixed-arrival latency begins at the intended send time and includes dispatch delay; report goodput, drops/deadlines, backlog and recovery |
 | Memory | Record total reserved/provided bytes, live RSS/PSS and slope versus peers, socket/kernel memory, faults and allocations. Equal provided bytes does not imply equal total or resident memory. Keep THP and allocator readbacks with each panel |
 | Mechanism evidence | Untimed observers: syscalls/submissions/CQEs, send/recv bytes, queue depth/exhaustion, context switches, task migration and frame allocations. An observer is not part of a timed binary |
@@ -7762,12 +7762,84 @@ classes, every size-bin boundary and deliberately broken conservation edges.
 All three observed service-budget forms cross-compile for x86-64 Linux with
 strict C11 warnings, and ordinary optimized Linux IR matches 72fdd468. Shell
 syntax and workflow YAML checks pass. These local checks do not execute Linux
-syscalls: real Linux socket/stream qualification, stack visibility and all
-diagnostic measurements remain pending on `codex/io-client-diagnostic`.
+syscalls. The frozen Linux result below supplies socket/stream qualification
+and diagnostic counters; complete profile attribution remains unqualified.
 Synthetic decoder-output checks separately verify the status policy for clean,
 lost, throttled, failed-decode, unknown-symbol, user-only and mismatched-sample
 captures while preserving the preceding observation table. Invalid diagnostic
 mode/experiment combinations fail at preflight; no timing threshold changes.
+
+### Frozen client diagnostic result
+
+Revision `bc119e9a201da127c401decefc0a6c8a24e0cc4b` completed
+[run 34104363706](https://github.com/mbbill/Whitefoot/actions/runs/34104363706),
+including Linux measurement job 101685856568 and Windows placement checks.
+Artifact 10012364607 has ZIP SHA-256
+`92434c7bd9d7ebfa55f7cbda508036074abb7f727718f2bb1e2e5353ec67d7bc`.
+The host is an EPYC 7763 guest with four logical CPUs on two reported SMT
+cores, Linux 6.17.0-1022-azure and Clang 20.1.2. Server CPU 0 and client
+CPU 2 belong to different reported cores; all observed client affinity
+readbacks match CPU 2. Do not combine its absolute times with experiment 53.
+
+The independently replayed artifact audit checks all twelve
+counter-instrumented rows without perf and all four separate profiled rows
+against their raw client and process-resource output. Across the 22 observed
+sample directories, twelve measurements, four profiles, four warmups and two
+admission qualifications remain distinct. All 22 exchange counter records
+and both admission records conserve operation outcomes, bytes, verified
+rounds, size histograms, poll/event batches and
+`pumps = peer_count + dispatched_events` for the fixed zero service budget.
+Native Linux client-service/observer and io_uring stream qualifications pass.
+
+Four recorded source hashes match the frozen git revision. The retained
+baseline source matches 72fdd468, and both normalized ordinary IR files
+reconstruct from their retained inputs and are equal. The artifact records
+42 executable hashes and two tool hashes, but the upload omitted the
+executables themselves. None of those binary hashes is independently
+recomputed from an uploaded binary. Future client comparisons must retain
+the selected executable files as well as their hashes.
+
+Every unprofiled observed row makes exactly one successful full send per
+round, with zero short sends or send EAGAIN. The receive side is also almost
+entirely full-message transfers. Ranges below span all three passes; rates
+from these instrumented executions are not ordinary performance rankings.
+
+| Server / message | Successful recv / round | EAGAIN recv / round | Events / positive epoll wait |
+| --- | ---: | ---: | ---: |
+| epoll / 64 B | 1.000000 | 0.999977..1.000000 | 42.04..49.36 |
+| uring-64k / 64 B | 1.000000 | 0.999883..0.999984 | 17.41..62.37 |
+| epoll / 64 KiB | 1.000094..1.000406 | 1.000562..1.004688 | 62.89..62.92 |
+| uring-64k / 64 KiB | 1.000125..1.000219 | 1.006656..1.007156 | 60.78..61.16 |
+
+The client uses 0.9795..0.9999 CPU/wall across these rows. Large-message
+system CPU per round is 23.030/23.398/41.075 us against epoll and
+43.869/43.866/43.675 us against uring-64k in pass order. Nearly identical
+syscall counts coexist with materially different CPU costs; epoll's third
+pass also changes substantially. Counts alone do not identify the expensive
+kernel path or explain that variability. Fragmentation and small readiness
+batches are not the large-transfer explanation in this capture.
+
+All four profile statuses are **incomplete: unknown_symbols**. The audit
+matches all 960 decoded samples to raw records and report totals; each has
+the same 5,025,125 period weight. It finds no lost/throttle records, decode
+diagnostics or count mismatch. Unknown leaf-symbol weight is respectively
+3.0612%, 2.0202%, 3.6496% and 2.7397% for epoll-small, uring-small,
+epoll-large and uring-large. Most are userspace libc/vDSO addresses; two
+individual kernel samples lack names in nf_conntrack/nf_tables. This small
+leaf share does not establish complete stacks: 194/196 and 196/198 sampled
+small-message callchains contain unknown frames, while the large captures
+have 16/274 and 11/292 empty callchains and 257/274 and 280/292 chains with
+only kernel addresses. Full caller-based
+kernel attribution is not qualified, and the original failure policy stays.
+
+The concrete next performance candidate is a separately qualified
+readiness-aware client: avoid the roughly one speculative empty receive per
+round while preserving partial bidirectional progress and edge-triggered
+notifications. This is a testable hypothesis, not a promised speedup; the
+remaining per-call TCP/copy costs may dominate. Compare ordinary candidate
+and unchanged clients under the same server/client CPU budget, then use
+separate counters to verify which work disappeared. A lower client CPU cost
+does not itself prove spare capacity or a server performance frontier.
 
 ## 57. Locate the yield wait path in the same CPU executables
 
