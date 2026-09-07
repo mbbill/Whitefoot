@@ -4573,9 +4573,26 @@ so no timing ratio depends on comparing different CI machines.
 
 Strict Linux-musl cross-compilation passes for all eight combinations of
 buffer size, send policy and observation. Shell/YAML parsing, Make dry-run and
-diff checks pass locally. Linux execution and the expanded paired screen are pending; the completed
-`475008b5` screen is preserved above. No hybrid speedup or default
-selection is claimed from implementation alone.
+diff checks pass locally. At `0357259d`, the
+[Linux scheduler gate](https://github.com/mbbill/Whitefoot/actions/runs/34084400944/job/101625562596)
+passed all eight native uring stream configurations under ASan/UBSan, along
+with all existing scheduler, stream, coroutine and continuation checks.
+Every uring case received and sent exactly 8,388,608 bytes. Hybrid counters
+below sum four-worker rows where applicable and demonstrate actual immediate
+and ring-fallback transfers under the shared small-send-buffer fixture:
+
+| Hybrid buffer size, workers | Receive CQEs | Ring send CQEs | Inline attempts | Inline bytes | Maximum queue |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 8 KiB, 1 | 1039 | 95 | 131 | 905357 | 154 |
+| 8 KiB, 4 | 1038 | 49 | 70 | 825485 | 240 |
+| 64 KiB, 1 | 145 | 90 | 92 | 1704095 | 22 |
+| 64 KiB, 4 | 152 | 32 | 35 | 645367 | 32 |
+
+These are correctness-fixture counters, not hot-path timing measurements.
+The successful-exit lifetime qualification remains limited as audited below.
+The expanded paired screen is pending; the completed `475008b5` screen is
+preserved above. No hybrid speedup or default selection is claimed from
+implementation or protocol qualification alone.
 
 ### Successful-exit loan audit after the 0357259d screen was started
 
@@ -4618,3 +4635,50 @@ matching the full-barrier protocol in
 This is a source-protocol correction, not a reproduced SQPOLL stall or native
 qualification. The current screen never enables SQPOLL; its kernel-thread
 CPU placement/accounting and dedicated runtime qualification remain pending.
+
+## Forty-third experiment: client CPU headroom before server saturation claims
+
+Experiment36's raw exchange CPU counters show the load generator occupying
+nearly all its assigned CPU in the occupied echo cells. Source inspection
+rules out a proposed redundant-payload optimization: `fill_message` already
+prefills each echo payload before connecting, `begin_round` changes only its
+round byte, and `pump` uses full-length `memcmp` on the success path. The
+observed occupied split1 client CPU is predominantly system time. This first
+phase changes client resources before modifying client code without a
+demonstrated redundant operation.
+
+`make scheduler-client-headroom` selects `CLIENT_HEADROOM=1` with the existing
+native panel. One server worker remains on the same logical CPU in every
+sample. The client uses either one thread on one hardware thread of another
+physical core, or two threads allowed on that same core's two SMT siblings.
+Topology is derived from the process's allowed CPUs and physical core/socket
+identity; a machine without two available client siblings fails explicitly.
+The client never uses the server CPU's sibling. The cohorts and complete
+`lscpu` topology are retained with the artifact.
+
+The panel keeps `callee-small`, `balanced-small`, `uring-64k`,
+`uring-64k-inline`, `epoll` and `cpp-elide`. It reuses the 64-peer × 64 B
+(2,000 trips/peer) and 64-peer × 64 KiB (500 trips/peer) cells, with two warmups
+and seven recorded passes. Representation and client-placement order alternate
+by pass, yielding 168 rows. All variants in a client-placement cohort use the
+same client binary, payload sequence, single-outstanding-request protocol,
+full byte validation and strict errors. This revision includes the native
+successful-exit wake-storage correction; it does not overwrite the running
+`0357259d` hybrid screen.
+
+All existing completion, native stream, coroutine and uring qualification
+remains before timing. The new CPU-resource panel omits only the separate
+resident-memory measurements; prior panels and canonical checks retain their
+coverage. Raw client exchange user/system CPU, server resources and latency
+remain per sample. This phase does not change compiler/runtime interfaces or
+claim the current WF stackful rows measure the newer generated continuation.
+
+The discriminating comparison is each fixed server's paired rate, tail and
+CPU cost with two versus one client workers, together with client exchange
+CPU/wall. A rise in rate under unchanged server resources demonstrates that
+the former end-to-end ceiling was sensitive to the generator. An unchanged
+rate cannot establish server saturation: SMT contention inside the client
+core may still cap both variants. Extra physical client cores or another
+host remain the stronger follow-up, and loopback remains distinct from a
+real NIC. Local shell parsing, Make dry-run, YAML parsing and diff checks
+pass; native results are pending.

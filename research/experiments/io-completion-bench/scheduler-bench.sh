@@ -18,7 +18,13 @@ ROUNDS=${ROUNDS:-7}
 WARMUP=${WARMUP:-2}
 EXPERIMENT=${EXPERIMENT:-idle}
 NATIVE_BASELINES=${NATIVE_BASELINES:-0}
+CLIENT_HEADROOM=${CLIENT_HEADROOM:-0}
 [[ $NATIVE_BASELINES == 0 || $NATIVE_BASELINES == 1 || $NATIVE_BASELINES == 2 ]] || exit 2
+[[ $CLIENT_HEADROOM == 0 || $CLIENT_HEADROOM == 1 ]] || exit 2
+if [[ $CLIENT_HEADROOM == 1 && $NATIVE_BASELINES != 2 ]]; then
+    echo 'scheduler-bench: client headroom uses NATIVE_BASELINES=2' >&2
+    exit 2
+fi
 if [[ $NATIVE_BASELINES != 0 && ( $MODE != combine || $EXPERIMENT != allocator ) ]]; then
     echo 'scheduler-bench: native baseline panel uses combine with EXPERIMENT=allocator' >&2
     exit 2
@@ -213,6 +219,10 @@ fi
     lscpu
     echo "experiment=$EXPERIMENT mode=$MODE rounds=$ROUNDS warmup=$WARMUP"
     echo "native_baselines=$NATIVE_BASELINES"
+    echo "client_headroom=$CLIENT_HEADROOM"
+    if [[ $CLIENT_HEADROOM == 1 ]]; then
+        echo 'client_headroom_policy=one server logical CPU; one versus two client workers on a separate physical core; unchanged prefilled payload and full memcmp oracle'
+    fi
     if [[ $NATIVE_BASELINES != 0 ]]; then
         echo 'uring_buffer_policy=8192/65536 bytes; equal provided bytes per worker; counts 256..2048 / 32..256; SQPOLL excluded'
     fi
@@ -287,6 +297,17 @@ if [[ $MODE == placement ]]; then
     IFS=, read -r first second rest <<< "${physical_groups[1]}"
     client_separate="$first,$second"
     printf 'separate2\t2\t2\t%s\t%s\n' "$server_separate" "$client_separate" >> "$OUT/cohorts.tsv"
+fi
+if [[ $CLIENT_HEADROOM == 1 ]]; then
+    # Increase only the client's execution resources. Never borrow a sibling
+    # of the server CPU, which would confound the server budget with this test.
+    [[ ${physical_groups[1]} == *,* ]] || {
+        echo 'scheduler-bench: client headroom requires two client SMT siblings on a separate physical core' >&2
+        exit 2
+    }
+    IFS=, read -r client_first client_second rest <<< "${physical_groups[1]}"
+    printf 'split1-client-one\t1\t1\t%s\t%s\nsplit1-client-smt2\t1\t2\t%s\t%s,%s\n' \
+        "$server_one" "$client_first" "$server_one" "$client_first" "$client_second" > "$OUT/cohorts.tsv"
 fi
 if [[ $page_experiment == 1 ]]; then
     # Both policies inherit the same host setting; disable=0 permits THP,
@@ -858,6 +879,7 @@ if [[ $EXPERIMENT == coroutine-paced ]]; then references=(q16384 cpp-manual cpp-
 if [[ $MODE == combine ]]; then references=(epoll epoll-calloc-main fiber-calloc-main cpp-elide cpp-elide-calloc); fi
 if [[ $NATIVE_BASELINES != 0 ]]; then references=(uring uring-64k "${references[@]}"); fi
 if [[ $NATIVE_BASELINES == 2 ]]; then references=(uring-inline uring-64k-inline "${references[@]}"); fi
+if [[ $CLIENT_HEADROOM == 1 ]]; then references=(uring-64k uring-64k-inline epoll cpp-elide); fi
 while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
     allocator_environment=()
     if [[ $EXPERIMENT == allocator ]]; then allocator_environment=("$(allocator_setting)"); fi
@@ -1019,7 +1041,7 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
     done
 done < "$OUT/cohorts.tsv"
 
-if [[ $page_experiment == 1 ]]; then
+if [[ $page_experiment == 1 && $CLIENT_HEADROOM == 0 ]]; then
     mkdir -p "$OUT/resident"
     printf 'repetition\tcohort\tform\tconnections\tbytes\tthp_disabled\trss_kib\tanonymous_kib\tanon_huge_kib\tprivate_dirty_kib\tswap_kib\n' > "$OUT/resident.tsv"
     # Same normal binaries as timing, with all peers held open after a checked
@@ -1092,6 +1114,12 @@ if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == stackf
 fi
 if [[ $page_experiment == 1 && $MODE != combine ]]; then
     awk '$1>=64' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
+    mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
+fi
+if [[ $CLIENT_HEADROOM == 1 ]]; then
+    # Two occupied echo cells diagnose the measured generator ceiling; this
+    # opt-in resource experiment does not rerun the full storage matrix.
+    awk '$1==64' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
     mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
 fi
 if [[ $EXPERIMENT == fairness ]]; then
