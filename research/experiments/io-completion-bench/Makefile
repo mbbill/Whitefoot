@@ -5,9 +5,9 @@
 #   S  the Whitefoot program built with --no-overlap, the sequential reference
 #   C  the Whitefoot program built the way it ships, with completion overlap
 #
-# This is a measurement bundle, not a gate. It is deliberately not reachable
-# from the repository's `make check`: it generates a large tree, runs for
-# minutes, and reports timings that no build should depend on.
+# Timing targets are not a gate: they generate large trees, run for minutes,
+# and report timings that no build should depend on. Explicit scheduler and
+# Rayon correctness targets are reached by the repository's `make check`.
 #
 #   make -C research/experiments/io-completion-bench verify   correctness only
 #   make -C research/experiments/io-completion-bench bench     the macOS table
@@ -152,6 +152,17 @@ CONTINUATION_RUNTIME_UNITS := sched/core.c sched/prim_host.c sched/entry.c \
 	completion/runtime.c completion/wait_host.c completion/file_adapter.c \
 	completion/file_posix.c completion/bridge.c completion/linux_io_uring.c
 WFC := $(ROOT)/compiler/target/gate/whitefootc
+
+# Independent CPU reference: no Rayon dependency enters the compiler crate.
+RAYON_CARGO_TARGET ?= $(WORK)/rayon-target
+.PHONY: rayon-check rayon-bench
+rayon-check:
+	cargo fmt --manifest-path rayon-baseline/Cargo.toml -- --check
+	CARGO_TARGET_DIR="$(RAYON_CARGO_TARGET)" cargo test --profile gate --locked --offline --manifest-path rayon-baseline/Cargo.toml
+	CARGO_TARGET_DIR="$(RAYON_CARGO_TARGET)" cargo clippy --profile gate --all-targets --locked --offline --manifest-path rayon-baseline/Cargo.toml -- -D warnings
+
+rayon-bench: compiler rayon-check
+	ROOT="$(ROOT)" WFC="$(WFC)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" CARGO_TARGET_DIR="$(RAYON_CARGO_TARGET)" CLANG="$(CLANG)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" bash rayon-bench.sh
 
 # The workload's shape. FILES x up to MAX_KIB, read through one positioned
 # read each. The checksum below is a property of these two numbers alone, so

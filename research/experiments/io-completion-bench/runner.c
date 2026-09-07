@@ -22,7 +22,8 @@
  * Plan lines are tab separated:
  *     label <TAB> KEY=VALUE,KEY=VALUE <TAB> command <TAB> arg <TAB> ...
  * An empty environment field sets nothing. Lines starting with '#' and empty
- * lines are ignored. */
+ * lines are ignored. WF_BENCH_RAW optionally names a TSV file containing
+ * every successful recorded sample, before summary sorting. */
 #define _GNU_SOURCE
 #include <errno.h>
 #include <stdint.h>
@@ -259,6 +260,19 @@ int main(int argc, char **argv) {
         return 2;
     }
 
+    FILE *raw = NULL;
+    const char *raw_path = getenv("WF_BENCH_RAW");
+    if (raw_path != NULL && raw_path[0] != '\0') {
+        raw = fopen(raw_path, "w");
+        if (raw == NULL) {
+            perror("runner: open raw samples");
+            for (size_t at = 0; at < count; at++) free(lines[at].storage);
+            free(lines);
+            return 2;
+        }
+        fprintf(raw, "pass\tlabel\twall_ms\tuser_ms\tsystem_ms\n");
+    }
+
     /* Passes, alternating direction. The pass index decides the direction, so
      * the warm-up passes alternate too and the first recorded pass follows
      * the last warm-up one rather than repeating it. */
@@ -287,6 +301,10 @@ int main(int argc, char **argv) {
             line->user[line->recorded] = sample.user_ms;
             line->system_time[line->recorded] = sample.system_ms;
             line->recorded++;
+            if (raw != NULL) {
+                fprintf(raw, "%lu\t%s\t%.6f\t%.6f\t%.6f\n", pass - warmup,
+                        line->label, sample.wall_ms, sample.user_ms, sample.system_ms);
+            }
         }
     }
 
@@ -318,5 +336,9 @@ int main(int argc, char **argv) {
         free(lines[at].storage);
     }
     free(lines);
+    if (raw != NULL && fclose(raw) != 0) {
+        perror("runner: write raw samples");
+        return 2;
+    }
     return failures == 0 ? 0 : 1;
 }

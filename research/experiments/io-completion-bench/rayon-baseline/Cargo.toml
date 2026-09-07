@@ -1,0 +1,23 @@
+[package]
+name = "whitefoot-rayon-baseline"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+rayon = "=1.12.0"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+
+[profile.gate]
+inherits = "release"
+debug-assertions = true
+overflow-checks = true

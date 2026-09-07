@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-continuation-screen']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-continuation-screen', 'codex/io-rayon-baselines']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -22,6 +22,8 @@ on:
       - 'research/experiments/io-completion-bench/programs/continuation_stream.wf'
       - 'research/experiments/io-completion-bench/Makefile'
       - 'research/experiments/io-completion-bench/scheduler-bench.sh'
+      - 'research/experiments/io-completion-bench/rayon-bench.sh'
+      - 'research/experiments/io-completion-bench/rayon-baseline/**'
       - '.github/workflows/io-scheduler.yml'
 
 concurrency:
@@ -32,7 +34,7 @@ jobs:
   measure:
     # Correctness-only branches retain the independently running timing
     # revisions. Canonical and native correctness jobs still run.
-    if: github.ref != 'refs/heads/codex/io-windows-wake-fix' && github.ref != 'refs/heads/codex/io-continuation-experiments' && github.ref != 'refs/heads/codex/io-continuation-lowering' && github.ref != 'refs/heads/codex/io-continuation-network' && github.ref != 'refs/heads/codex/io-continuation-staged'
+    if: github.ref != 'refs/heads/codex/io-windows-wake-fix' && github.ref != 'refs/heads/codex/io-continuation-experiments' && github.ref != 'refs/heads/codex/io-continuation-lowering' && github.ref != 'refs/heads/codex/io-continuation-network' && github.ref != 'refs/heads/codex/io-continuation-staged' && github.ref != 'refs/heads/codex/io-rayon-baselines'
     name: measure (${{ matrix.experiment }})
     strategy:
       fail-fast: false
@@ -300,3 +302,45 @@ jobs:
             ${{ runner.temp }}/owner/*.err
             ${{ runner.temp }}/owner/*.actual
             ${{ runner.temp }}/owner/*.expected
+
+  rayon-baselines:
+    if: github.ref == 'refs/heads/codex/io-rayon-baselines'
+    name: Rayon CPU reference
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch locked toolchain dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang
+          rustup default stable
+          cargo fetch --locked --manifest-path compiler/Cargo.toml
+          cargo fetch --locked --manifest-path research/experiments/io-completion-bench/rayon-baseline/Cargo.toml
+      - name: Qualify and measure the bounded CPU panel
+        env:
+          OUT: ${{ runner.temp }}/rayon-baselines
+          RAYON_THREADS: '1 2 4'
+          RAYON_GRAINS: '1 4 16'
+          CALIBRATION_ROUNDS: '3'
+          BATCHES: '1'
+        run: |
+          make -C research/experiments/io-completion-bench rayon-bench \
+            WHITEFOOT_SCRATCH_ROOT="$RUNNER_TEMP" ROUNDS=5 WARMUP=1
+      - name: Publish CPU reference summary
+        if: always()
+        run: |
+          {
+            echo '## Rayon CPU-only reference'
+            echo 'Existing par_layout.wf, exact f64 order and result bytes. Separate calibration/frozen confirmation, explicit 1/2/4-worker pools; whole-process timings include startup. Hosted CPU topology is recorded, not guaranteed dedicated physical cores. No mixed I/O or top1 claim.'
+            echo '```text'
+            for file in host.txt calibration.txt selected.tsv confirmation.txt; do
+              cat "$RUNNER_TEMP/rayon-baselines/$file" 2>/dev/null || echo "$file not produced"
+            done
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: io-rayon-baselines
+          path: ${{ runner.temp }}/rayon-baselines
