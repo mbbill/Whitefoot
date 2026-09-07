@@ -4742,6 +4742,13 @@ source-language acceptance or performance pass/fail threshold. The separate
 `io-scheduler` Rayon branch job runs this bounded panel instead of the larger
 allocator/network timing panel.
 
+CLANG configures only the timing runner's C compilation. The current
+`whitefootc.rs::clang_executable` selects `/usr/bin/clang` for native linking
+on both supported POSIX hosts. The harness records these two compiler roles
+explicitly, plus the Rust source/profile/lock and compiler-CLI source hashes;
+it does not infer the WF linker from an arbitrary CLANG override. The local
+cohort below used the same `/usr/bin/clang` for both roles.
+
 ### Local qualification and indicative measurement
 
 The first local cohort used MacBookPro18,3, arm64 Darwin 25.6.0, eight physical

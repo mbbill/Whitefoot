@@ -41,7 +41,14 @@ for grain in "${grains[@]}"; do bounded_integer GRAIN "$grain" 1 64; done
     uname -a
     rustc -vV
     cargo -V
+    printf 'runner_compiler=%s\n' "$CLANG"
     "$CLANG" --version
+    # whitefootc.rs::clang_executable fixes the non-Windows native linker to
+    # this path; CLANG above controls only this experiment's C timing runner.
+    printf 'wf_native_link_compiler=/usr/bin/clang (compiler-owned selection)\n'
+    /usr/bin/clang --version
+    printf 'RUSTFLAGS=%s\nCARGO_ENCODED_RUSTFLAGS=%s\n' \
+        "${RUSTFLAGS:-}" "${CARGO_ENCODED_RUSTFLAGS:-}"
     printf 'threads=%s grains=%s batches=%s calibration=%s confirmation=%s warmup=%s\n' \
         "$RAYON_THREADS" "$RAYON_GRAINS" "$BATCHES" "$CALIBRATION_ROUNDS" "$ROUNDS" "$WARMUP"
     printf 'timing=whole-process; Rayon pool created once, install once; no concurrent I/O\n'
@@ -63,7 +70,9 @@ fi
 "$WFC" --no-overlap "$ROOT/tests/programs/par_layout.wf" -o "$OUT/wf-seq"
 "$WFC" --par "$ROOT/tests/programs/par_layout.wf" -o "$OUT/wf-par"
 shasum -a 256 "$WFC" "$OUT/wf-seq" "$OUT/wf-par" "$OUT/rust-layout" \
-    "$ROOT/tests/programs/par_layout.wf" >> "$OUT/host.txt"
+    "$ROOT/tests/programs/par_layout.wf" "$ROOT/compiler/src/bin/whitefootc.rs" \
+    "$HERE/rayon-baseline/src/main.rs" "$HERE/rayon-baseline/Cargo.toml" \
+    "$HERE/rayon-baseline/Cargo.lock" >> "$OUT/host.txt"
 
 # Each native process requests BATCHES explicitly. WF's complete argument
 # count includes its executable, so BATCHES - 1 dummy args select the same work.
