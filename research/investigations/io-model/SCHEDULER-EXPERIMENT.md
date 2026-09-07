@@ -4271,7 +4271,7 @@ name. A known limitation remains visible until its experiment is complete.
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
 | WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Experiments 39/44/48 qualify the threaded, owner and batched-owner paths. At `fc69af15`, batching adds 28% / 27% paired throughput at 64 / 1024 small-message peers, with separate counters confirming aggregated ring submissions. Experiment 54 removes 97..98% of pending-list visits, with only 1.0%/1.8% median paired rate gains and reversals at 1024 peers; native CPU/trip still leads. Client headroom and multi-owner compute remain open. Experiments 52/54 qualify the unchanged sequential mixed protocol on both Linux completion routes |
 | Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Go 1.27.1 release/race and both 64 KiB storage forms qualified (49/51). The fixed Linux screen (53) favors acceptor-heap/P1 for memory and tail latency within one server CPU; P4 oversubscription inflates p99. WF batch32 exceeds this Go candidate at 64/1024 small peers while native stays ahead. Large transfers approach the client ceiling; no universal optimum. Race moves both buffers to the heap |
-| Rust sequential / Rayon CPU pool | Existing recursive `par_layout.wf` port with exact floating-point order and every node write; sibling `join`, calibrated grain and explicit pool width | Essential CPU-parallel reference; separates sequential code generation from parallel scheduling. Broader `par_iter`/`scope` and unbalanced workloads remain candidate rows | Checksum-qualified and independently confirmed after grain calibration on M1/Linux (experiment 40). Experiment 45's stack/batch control reduces the WF12/Rayon paired wall gap from 13.9% at one batch to 1.6% at sixteen, supporting substantial fixed costs. Experiments 47/50 find no stable gain from unused-ring or lane-initialization changes. Corrected traces locate early underutilization during computation; experiment 55 associates about 90% of WF runnable waits with runtime-issued yields. Experiment 57's complete pre-exit attribution places over 99.4% of early yield-associated off-CPU time in the idle scan; three post-exit probes remain explicitly unpaired. Experiment 59 finds no wall improvement from removing those rounds, with +1.24% short-task CPU; retain the default and distinguish ready-work availability from placement. This is not an optimal WF CPU setup claim |
+| Rust sequential / Rayon CPU pool | Existing recursive `par_layout.wf` port with exact floating-point order and every node write; sibling `join`, calibrated grain and explicit pool width | Essential CPU-parallel reference; separates sequential code generation from parallel scheduling. Broader `par_iter`/`scope` and unbalanced workloads remain candidate rows | Checksum-qualified and independently confirmed after grain calibration on M1/Linux (experiment 40). Experiment 45's stack/batch control reduces the WF12/Rayon paired wall gap from 13.9% at one batch to 1.6% at sixteen, supporting substantial fixed costs. Experiments 47/50 find no stable gain from unused-ring or lane-initialization changes. Corrected traces locate early underutilization during computation; experiment 55 associates about 90% of WF runnable waits with runtime-issued yields. Experiment 57's complete pre-exit attribution places over 99.4% of early yield-associated off-CPU time in the idle scan; three post-exit probes remain explicitly unpaired. Experiment 59 finds no wall improvement from removing those rounds, with +1.24% short-task CPU. Experiment 61 also finds no useful gain from sequential tree building plus relocated lazy startup; decoded hot operations/constants agree despite relocated code/data. Retain both defaults; neither control measures ready-work availability or an OS scheduling cause. This is not an optimal WF CPU setup claim |
 | Tokio I/O + bounded Rayon CPU offload | One current-thread I/O driver plus B-1 CPU workers, fixed 64-byte protocol, asynchronous bounded admission, one request/reply per connection | External mixed-load reference under one total execution budget; exposes CPU queue transfer, backpressure and light-request progress | Linux-qualified at `040bfc4b` (experiment 42), including saturation, errors, reset, partial input, half-close and slow output. Four short client smoke records are correctness evidence, not a performance ranking |
 | Tokio | Fixed-worker multithread runtime and a separate per-core current-thread/reactor configuration | External mainstream async baseline; distinguish work stealing from reactor locality | Source candidate only; pin toolchain/lockfile, socket distribution and blocking-pool budget |
 | Monoio | Per-core runtime, separately forced IoUringDriver and LegacyDriver | External completion/readiness comparison within one runtime family | Source candidate only; prohibit silent fusion fallback in backend-specific rows |
@@ -4294,7 +4294,7 @@ revision, compiler and dependency lockfile.
 | TCP closed-loop echo | 1/4/64/1024 peers × 64 B, 64 peers × 64 KiB; one outstanding request per peer; exact bytes and EOF | Current ten-cell split1/split2 screen. Add 4 KiB and pipeline depths 8/32 only after candidate screening |
 | TCP streaming / backpressure | Continuous 2 MiB or larger, arbitrary fragmentation, short sends, slow readers, half-close; preserve order and bounded live storage | Existing epoll stream oracle; uring joins it below. Idle 10k peers, churn and reset/cancellation remain separate qualification |
 | TCP fixed-arrival / mixed compute | Same recurrence and compute quantum; light paced requests alongside heavy work; below/near/above saturation | Existing paced mixed experiments cover selected controls. External candidates need scheduled-to-response p99/p99.9, goodput, missed deadlines, backlog and drain recovery |
-| CPU-only parallelism and CPU offload | Sequential Rust vs Rayon; balanced/unbalanced recursive and data-parallel jobs; matched arithmetic, tuned grain and pool width. Mixed mode charges enqueue, completion transfer and bounded queues | Recursive `join`, stack/batch, unused-ring and initializer controls are measured; caller traces identify the idle-yield path, but the ordinary zero-yield control finds no improvement. Ready-work availability and same-budget worker placement remain open. Tokio + Rayon mixed qualification exists, with timing pending client-capacity control. Both executors share one total budget |
+| CPU-only parallelism and CPU offload | Sequential Rust vs Rayon; balanced/unbalanced recursive and data-parallel jobs; matched arithmetic, tuned grain and pool width. Mixed mode charges enqueue, completion transfer and bounded queues | Recursive `join`, stack/batch, unused-ring and initializer controls are measured; caller traces identify the idle-yield path, but the ordinary zero-yield control finds no improvement. Experiment 61 also finds no useful gain from the tree-build/lazy-start control. The 63-versus-15 layout fork difference remains; observed owner inline executions are not failed acquisitions. Ready-work availability and same-budget worker placement remain open. Tokio + Rayon mixed qualification exists, with timing pending client-capacity control. Both executors share one total budget |
 | File reads | Open-once cache-hot vs cold buffered vs direct I/O; random/sequential; 4/64 KiB; QD 1/8/64; same offsets, bytes and checksum | Existing file experiments cover subsets. Extend native blocking/pread pool/uring comparisons; fio is a device-envelope cross-check, not an identical-program runtime row |
 | File writes | Buffered accepted bytes vs fdatasync/fsync durability are distinct contracts; name batch size, flush cadence and directory durability | Broader matrix required; no current TCP result supports a write or durability claim |
 | Dependent storage/network pipeline | Read → parse → request → write with the same dependency graph and compute work | Unmeasured; tests whether sequential-source overlap composes across stages |
@@ -8726,6 +8726,111 @@ for the C runtime contain the required main/body call replacement. Both hot
 layout functions retain identical offset-normalized decoded instructions,
 and the call guard rejects an unchanged baseline supplied as a candidate.
 These ELF files are not executed locally and use different tools from the
-native CI cohort. Its actual ELF checks, qualifications, forty-row ordinary
-result and full gate status remain pending. `make static`, shell syntax and
-patch checks pass locally.
+native CI cohort. Its actual ELF checks, qualifications and forty-row ordinary
+result follow below; measurement qualification is not the full repository
+gate. `make static`, shell syntax and patch checks pass locally.
+
+### Sixty-first measurement: no useful tree-build control gain
+
+Frozen revision `dc88c43342af90518f552e9e7c1e3af6df37d36d` on
+`codex/io-cpu-build-control` completed
+[run 34121175541](https://github.com/mbbill/Whitefoot/actions/runs/34121175541)
+successfully. The Linux CPU job and Windows completion job passed; the other
+six workflow jobs were correctly skipped by their existing routes. The
+[CPU artifact 10018435219](https://github.com/mbbill/Whitefoot/actions/runs/34121175541/artifacts/10018435219)
+has ZIP SHA-256
+`e273acb6d6f6fecf625dc09db9a0699db5d5766a5ccada500aaf58da628bb2df`,
+matching the API digest. This is the isolated measurement workflow, not a
+claim that the complete repository gate passed.
+
+The host was an AMD EPYC 9V74 with four allowed logical CPUs, two cores and
+two SMT threads per core, running Linux 6.17.0-1022-azure. Clang 18.1.3 and
+Rust 1.98.0 built this cohort. No new affinity constraint or dedicated-host
+assumption was introduced. The normal completion target passed five full
+native harness executions, its read/default-route/pure-compute probes,
+scheduler smoke and all four enumeration configurations (17/17/20/19
+schedules). Both native-ring and forced POSIX-adapter bridge checks passed.
+The default configuration's optional owner-ring probe is inapplicable;
+this does not assert an additional owner-ring harness pass. Rayon fmt,
+both Rust tests and clippy also passed.
+
+All nine pre-timing artifact hashes, eleven final artifact hashes and 34
+source entries verify against the retained files and frozen source revision.
+The compiler executable, runner, selected WF/Rayon executables, both observed
+executables and both IR files are retained. Manual link arguments differ
+only in IR input and output path, and the complete IR differs at exactly
+one line: the scoped build-call replacement. Both manual executables print
+the exact independent checksum at both batch lengths before timing. The
+runner validates each ordinary/warmup output after trimming trailing CR/LF;
+those outputs are not individually retained. Four observer stdout files
+and four manual qualification stdout files match the exact expected bytes.
+
+The plan and raw data contain eight warmup invocations followed by forty
+ordinary rows: five passes over the four forms at each of one/sixteen
+batches. Warmup runs in plan order; recorded passes start reversed and then
+alternate. Warmup timings are not recorded. Wall, aggregate user-plus-system
+CPU, both context-switch counts and peak RSS are recomputed from these rows.
+The following candidate/manual-default ratios pair the same recorded pass;
+brackets are the five-pair minimum and maximum, not confidence intervals.
+
+| Batches | Wall ratio | Total CPU ratio | Voluntary switches | Involuntary switches | Total switches | Peak RSS ratio |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 1.010129 [0.997610, 1.016587] | 1.000504 [0.999131, 1.005711] | 0.989983 [0.943511, 1.067797] | 1.220903 [0.746631, 1.745882] | 1.085294 [0.887619, 1.309659] | 1.021600 [0.966392, 1.034682] |
+| 16 | 0.997319 [0.984265, 1.001698] | 0.999921 [0.998609, 1.001052] | 0.982386 [0.967097, 1.046800] | 1.026518 [0.795757, 1.078092] | 0.985290 [0.943315, 1.042668] | 0.988800 [0.908764, 1.029695] |
+
+Manual-default/candidate median walls are 397.175/400.472 ms at one batch
+and 5762.130/5749.324 ms at sixteen. The ordinary and manual-default ELF
+files are byte-identical. Their ordinary/manual paired wall ratios are
+0.999434 [0.991685, 1.016073] and 0.997114 [0.994291, 1.003531], respectively;
+their total CPU ratios are 0.998861 and 0.999896. This same-binary spread
+limits interpretation of small differences in this five-pass cohort.
+
+For the separate competitive comparison, ordinary WF/Rayon paired wall
+ratios remain 1.124169 [1.119751, 1.137607] at one batch and 1.021157
+[1.014251, 1.035833] at sixteen, with total CPU ratios 1.025910 and 1.011659.
+Sequential-build WF/Rayon wall ratios are 1.128644 [1.123860, 1.147869] and
+1.019900 [1.013177, 1.025388]. The control does not close the short-run gap.
+These are ordinary whole-process measurements of this workload and resource
+budget; observer counters do not supply a WF/Rayon performance ranking.
+
+Actual ELF disassembly confirms the default main/body has one call to
+`wf_build`; the candidate has none and calls `wf__par_seq_build`. The
+uploaded hot-layout check honestly reports differences. Independent decoding
+of all 264 `wf_layout` and 275 `wf_layout_banded` instructions resolves those
+differences: operations, registers, branch-relative targets and thunk names
+agree after address normalization. For each function, all 31 RIP-relative
+constant reads resolve to identical actual 8/16-byte operands in the ELF
+load segments. Twenty-nine constant addresses move by -16 bytes; two stay
+fixed. Both function starts move by -400 bytes. Thus matching decoded work
+and constant values does not establish byte-identical candidate code/data
+placement or remove a cache/layout effect from this executable control.
+
+All four separate observations report four scheduler threads, three started
+workers, positive steals, unchanged storage settings, 256 pause/look rounds
+and 16 idle-yield rounds. The counter identities matter:
+`grants` is the steal count, while `inline_runs` counts a published task
+popped and executed by its owner at join. It is not failed acquisition.
+The [scheduler source](../../../compiler/src/backend/sched/core.c) increments
+these counters on the two successful deque-pop routes. Once running on a
+core lane, `wf_sched_acquire` refuses only an oversized frame or an empty
+lane free list; the ABI wrapper also refuses a caller without a core lane.
+
+| Observed form | Batches | Steals | Owner inline executions | Sum |
+| --- | ---: | ---: | ---: | ---: |
+| Default | 1 | 6756 | 94107 | 100863 |
+| Sequential build | 1 | 6644 | 94156 | 100800 |
+| Default | 16 | 85992 | 1526871 | 1612863 |
+| Sequential build | 16 | 85858 | 1526942 | 1612800 |
+
+These sums account for every planned publication: 63 per layout times
+1600 layouts per batch, plus the default builder's 63. The observations
+provide no evidence of executed failed-acquire fallbacks. They do not show
+how much eligible work existed at an idle turn, and their relaxed snapshots
+are not a simultaneous queue/scheduling timeline for ordinary samples.
+
+Selection: retain parallel tree initialization and the existing runtime
+defaults. This bounded change to initialization plus lazy-start placement
+shows no useful gain here. The remaining 63-versus-15 layout fork difference
+is exercised, whereas treating owner inline executions as acquisition
+failures would select an unsupported explanation. Neither ready-work
+availability nor an OS scheduling cause has been measured by this control.

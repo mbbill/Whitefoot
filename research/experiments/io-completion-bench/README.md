@@ -815,8 +815,14 @@ This controls initialization and the relocation of lazy worker startup to
 the first layout; it does not isolate allocation cost or prove available
 ready work. Retained ELF calls, normalized hot-layout disassembly, both IR
 files, executables including the compiler, source hashes and raw resource
-records support the Linux audit. The route is `codex/io-cpu-build-control`;
-local M1 checks do not supply its native Linux result.
+records support the Linux audit. The route is `codex/io-cpu-build-control`.
+Its frozen Linux result finds no useful gain from the combined build/startup
+change: paired wall ratios are 1.0101 at one batch and 0.9973 at sixteen,
+with nearly unchanged total CPU. The ordinary/manual-default ELF files are
+byte-identical. Candidate hot instructions and constant values agree after
+resolving relocated code and data addresses; their placement still differs.
+The experiment retains the existing lowering and waiting defaults and does
+not measure ready-work availability or an OS scheduling cause.
 
 `make mixed-rayon-check` qualifies the optional `mixed-rayon` binary in the
 same standalone crate. Its CLI is `mixed-rayon PORT CONNECTIONS --threads B
