@@ -5837,7 +5837,8 @@ Linux confirmation is the separate five-pass cohort.
 The [Linux resource-control job](https://github.com/mbbill/Whitefoot/actions/runs/34088350612/job/101636646204)
 passed at 60073e1d680328df14c5ba40086b044af1f69982. The existing Rust tests,
 fmt/clippy, all 54 ordinary invocations including warmup, and all six separate
-observations passed. The [45 raw confirmation samples](../../experiments/io-completion-bench/rayon-baseline/resource-linux-2026-09-07.tsv)
+observations passed. Its [canonical gate](https://github.com/mbbill/Whitefoot/actions/runs/34088350621)
+also passed all fourteen Linux/macOS jobs. The [45 raw confirmation samples](../../experiments/io-completion-bench/rayon-baseline/resource-linux-2026-09-07.tsv)
 retain their original order and CPU fields. Independently re-reading them
 confirmed each plan's exact argument/batch mapping, all five alternating
 orders, finite nonnegative times and every printed median/min/max/CPU summary.
@@ -6112,3 +6113,66 @@ order were independently checked, including both argument counts and the
 per-child native-ring override. Bash syntax and workflow YAML also passed.
 These are command/protocol qualifications; the M1 has no native Linux ring,
 and its shared-host timings are not performance evidence for this control.
+
+The [Linux ring-control job](https://github.com/mbbill/Whitefoot/actions/runs/34090258664/job/101642113941)
+passed at e71ec2781142b0b6f3dc8619dcd19a9541c0f9c9. The existing two Rust tests,
+fmt/clippy, all 36 ordinary checksum checks including warmup and all four
+separate observed checks passed. The [thirty original raw samples](../../experiments/io-completion-bench/rayon-baseline/ring-linux-2026-09-07.tsv)
+were independently audited for exact plan/argument/environment mapping,
+per-pass forward/reverse order, finite nonnegative times and all summary
+statistics. Ordinary stdout remains runner-validated with trailing CR/LF
+normalization; each separate observed output was independently compared
+including its newline.
+
+| Batches | Form | Median wall, ms | Median user + system CPU, ms | Median CPU / wall |
+|---:|---|---:|---:|---:|
+| 1 | Rayon4, grain4 | 354.26 | 1406.61 | 3.973 |
+| 1 | WF4/12, default ring policy | 398.22 | 1442.17 | 3.625 |
+| 1 | Same WF binary, native ring disabled | 397.82 | 1442.56 | 3.619 |
+| 16 | Rayon4, grain4 | 5653.93 | 22472.02 | 3.977 |
+| 16 | WF4/12, default ring policy | 5757.74 | 22717.04 | 3.949 |
+| 16 | Same WF binary, native ring disabled | 5753.21 | 22710.95 | 3.948 |
+
+| Batches | Paired comparison | Wall ratio median [min, max] | CPU ratio median |
+|---:|---|---|---:|
+| 1 | WF default / Rayon | 1.1241 [1.1182, 1.1390] | 1.0255 |
+| 1 | WF disabled / Rayon | 1.1217 [1.1185, 1.1521] | 1.0252 |
+| 1 | WF default / WF disabled | 0.9997 [0.9833, 1.0034] | 0.9999 |
+| 16 | WF default / Rayon | 1.0166 [1.0144, 1.0229] | 1.0102 |
+| 16 | WF disabled / Rayon | 1.0160 [1.0145, 1.0214] | 1.0106 |
+| 16 | WF default / WF disabled | 1.0010 [0.9984, 1.0039] | 1.0003 |
+
+Default-minus-disabled paired median differences were -0.123 ms wall and
+-0.133 ms CPU at one batch, and +6.036 ms wall / +7.812 ms CPU at sixteen.
+The direction changed across passes at both batch counts. This panel does
+not support the hypothesis that unused ring initialization explains the
+remaining roughly 40 ms short-run difference. The init path is real, but
+its removal produced no stable material improvement here. The tiny observed
+differences do not justify selecting a runtime default or a precise bound on
+ring setup cost; other serial startup, computation, final joins, output or
+shutdown costs still need attribution before another implementation change.
+
+Mechanism qualification succeeded rather than silently comparing fallback
+paths: both default observations emitted one ring report with zero
+submissions/enters/completions; neither disabled observation emitted a ring
+report. All four had four scheduler threads, three spawned workers, positive
+grants and zero no-target compute-join turns. These are separate observed
+executions, not scheduler traces of the ordinary timing samples.
+
+The host reported AMD EPYC 9V74, four allowed vCPUs 0-3, two guest cores with
+two SMT threads each and one NUMA node, Linux 6.17.0-1022-azure, Rust
+1.98.0/LLVM 22.1.8 and Ubuntu Clang 18.1.3 for both the runner and WF native
+link. This differs from experiment 45's reported CPU model; comparisons above
+pair samples within experiment 47, not absolute times across those hosts.
+The ordinary WF/Rayon binaries, observed WF binary and generated IR are
+byte-identical to experiment 45's retained files. Twenty-six available
+source/artifact hashes and the lock file were independently verified against
+e71ec278; the compiler executable remains recorded by hash but not uploaded.
+
+The [complete artifact 10006697428](https://github.com/mbbill/Whitefoot/actions/runs/34090258664/artifacts/10006697428)
+has ZIP SHA-256 `26fc10efebf6848df0cccd8f9930c1b593fd423816f762dfeffa348aa419d96c`.
+Its original resource.tsv has SHA-256
+`bbd6a32cd57bf2f9b97af8c4163b706d621852f0203bda22de441c71b8fe9021`.
+Plans, host metadata, commands, ordinary binaries and all separate output
+and observation files remain there. No performance-policy change follows
+from this negative attribution result.
