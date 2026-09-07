@@ -15,7 +15,19 @@
 #include "runtime.h"
 #endif
 
+#if defined(WF_FILTER_NATIVE) && defined(WF_FILTER_HOST)
+#error "Native and WF host qualification are separate build modes"
+#endif
+#ifdef WF_FILTER_NATIVE
+#include "fir_native.h"
+
+static void native_check_call(const double *, size_t, const double *, const double *,
+                              size_t, const double *, const double *);
+static uint64_t native_calls, native_samples;
+#endif
+
 enum { MAX_TAPS = 64 };
+
 
 typedef struct {
     double delay[MAX_TAPS];
@@ -50,6 +62,9 @@ static void direct_filter(const double *input, size_t count,
         size_t at = count + i;
         next_history[i] = at < history_count ? history[at] : input[at - history_count];
     }
+#ifdef WF_FILTER_NATIVE
+    native_check_call(input, count, history, taps, tap_count, output, next_history);
+#endif
 }
 
 static void delay_init(DelayLine *line, const double *history, size_t tap_count) {
@@ -190,6 +205,87 @@ static void wf_check_call(const double *input, size_t count, const double *histo
 }
 #endif
 
+#ifdef WF_FILTER_NATIVE
+static const struct { const char *name; FirNativeKernel run; } native_forms[] = {
+    {"direct", fir_native_direct}, {"lanes4", fir_native_lanes4},
+    {"lanes8", fir_native_lanes8}, {"lanes16", fir_native_lanes16}
+};
+
+static void native_check_call(const double *input, size_t count, const double *history,
+                              const double *taps, size_t k, const double *expected,
+                              const double *expected_state) {
+    if (k < 1 || k > MAX_TAPS || count > 16777216 - (k - 1)) {
+        fputs("Native FIR qualification: invalid fixture dimensions\n", stderr);
+        exit(1);
+    }
+    size_t prefix_count = count + k - 1;
+    double *prefix = samples_new(prefix_count);
+    double *saved = samples_new(prefix_count);
+    memcpy(prefix, history, (k - 1) * sizeof(double));
+    memcpy(prefix + k - 1, input, count * sizeof(double));
+    memcpy(saved, prefix, prefix_count * sizeof(double));
+    double saved_taps[MAX_TAPS];
+    memcpy(saved_taps, taps, k * sizeof(double));
+    double *backing = samples_new(count + 2);
+    const double sentinel = 0x1.23456789abcdep42;
+    double state[MAX_TAPS];
+    for (size_t form = 0; form < sizeof(native_forms) / sizeof(native_forms[0]); ++form) {
+        for (size_t i = 0; i < count + 2; ++i) backing[i] = sentinel;
+        native_forms[form].run(prefix, taps, k, count, backing + 1);
+        check_samples(expected, backing + 1, count, native_forms[form].name, native_calls, 0);
+        check_samples(&sentinel, backing, 1, "before-output", native_calls, form);
+        check_samples(&sentinel, backing + count + 1, 1, "after-output", native_calls, form);
+        check_samples(saved, prefix, prefix_count, "prefix-immutable", native_calls, form);
+        check_samples(saved_taps, taps, k, "taps-immutable", native_calls, form);
+        /* Separate host state preparation; not charged to the pure kernel. */
+        memcpy(state, prefix + count, (k - 1) * sizeof(double));
+        check_samples(expected_state, state, k - 1, "native-next-history", native_calls, form);
+        ++native_calls;
+        native_samples += count;
+    }
+    free(backing);
+    free(saved);
+    free(prefix);
+}
+
+static void check_native_boundaries(void) {
+    const size_t sizes[] = {0, 1, 2, 3, 4, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 257};
+    for (size_t k = 1; k <= MAX_TAPS; ++k) {
+        for (size_t size = 0; size < sizeof(sizes) / sizeof(sizes[0]); ++size) {
+            size_t n = sizes[size];
+            double history[MAX_TAPS] = {0}, taps[MAX_TAPS] = {0}, state[MAX_TAPS] = {0};
+            double input[257], output[257];
+            uint32_t seed = UINT32_C(0x83177731) ^ (uint32_t)k ^ (uint32_t)(n << 16);
+            for (size_t i = 0; i < k; ++i) taps[i] = random_sample(&seed) / 7.0;
+            for (size_t i = 0; i + 1 < k; ++i) history[i] = random_sample(&seed) / 10.0;
+            for (size_t i = 0; i < n; ++i)
+                input[i] = random_sample(&seed) / 10.0 * (i % 3 == 0 ? 1e12 : 1e-12);
+            direct_filter(input, n, history, taps, k, output, state);
+            /* Every ragged window invokes each native form too, including an
+             * empty window. The reference state is checked against the full
+             * result after processing the entire stream. */
+            double carry[MAX_TAPS];
+            memcpy(carry, history, (k - 1) * sizeof(double));
+            size_t done = 0;
+            do {
+                double window[257], after[MAX_TAPS] = {0};
+                direct_filter(input + done, 0, carry, taps, k, window, after);
+                check_samples(carry, after, k - 1, "empty-window-state", k, size);
+                if (done == n) break;
+                size_t count = 1 + done % 19;
+                if (count > n - done) count = n - done;
+                direct_filter(input + done, count, carry, taps, k, window, after);
+                check_samples(output + done, window, count, "window-output", k, size);
+                memcpy(carry, after, (k - 1) * sizeof(double));
+                done += count;
+            } while (1);
+            check_samples(state, carry, k - 1, "whole-stream-state", k, size);
+        }
+    }
+}
+
+#endif
+
 static void check_known(void) {
     const double taps[] = {0.5, -0.25, 0.125};
     const double history[] = {2.0, -4.0};
@@ -308,8 +404,21 @@ static int check_suite(void) {
             while (done < count) {
                 size_t block = 1 + done % 67;
                 if (block > count - done) block = count - done;
+#ifdef WF_FILTER_NATIVE
+                double before[MAX_TAPS], after[MAX_TAPS];
+                delay_history(&line, before);
+#endif
                 delay_filter(&line, input + done, 0, taps, streamed + done);
+#ifdef WF_FILTER_NATIVE
+                native_check_call(input + done, 0, before, taps, k, expected + done, before);
+#endif
+
                 delay_filter(&line, input + done, block, taps, streamed + done);
+#ifdef WF_FILTER_NATIVE
+                delay_history(&line, after);
+                native_check_call(input + done, block, before, taps, k, expected + done, after);
+#endif
+
                 done += block;
             }
             delay_history(&line, streamed_history);
@@ -393,6 +502,16 @@ int main(int argc, char **argv) {
 }
 #else
 int main(void) {
+#ifdef WF_FILTER_NATIVE
+    int status = check_suite();
+    check_native_boundaries();
+    printf("Native FIR qualification PASS: forms=%zu calls=%" PRIu64
+           " samples=%" PRIu64 " K=1..64\n",
+           sizeof(native_forms) / sizeof(native_forms[0]), native_calls, native_samples);
+    return status;
+#else
     return check_suite();
+#endif
 }
+
 #endif

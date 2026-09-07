@@ -5,10 +5,12 @@ of expressing parallel work through ordinary, synchronously returning functions.
 The reference is the strongest qualified implementation for each named workload
 and resource budget. No library is designated the winner in advance.
 
-Primary sources were inspected on 2026-09-07. This is reference selection and
-qualification design: **no implementation below has been built, qualified, tuned,
-or measured in this new investigation**. Earlier I/O or mixed-panel results do not
-qualify these comparisons. This matrix belongs to the [compute-runtime
+Primary sources were inspected on 2026-09-07. The first executable references are
+the [strict native FIR kernels](../../experiments/compute-runtime/README.md#native-fir-and-first-cost-attribution):
+direct and 4/8/16-output SIMD candidates, with full-result qualification and a
+same-host calibration caller. They do not yet establish a confirmed frontier.
+The static worker and dynamic framework rows remain source-informed candidates.
+Earlier I/O or mixed-panel results do not qualify these comparisons. This matrix belongs to the [compute-runtime
 investigation](README.md); update its evidence cells when actual results exist,
 and consolidate it if that investigation supersedes this selection.
 
@@ -58,13 +60,13 @@ tasking; its examples' timing tables are not evidence for this investigation.
 | oneTBB **v2023.1.0**, release short commit `3046c8b`. [Release](https://github.com/uxlfoundation/oneTBB/releases/tag/v2023.1.0). | Full source/package identity, compiler and linked release library; live `main` documentation is not a frozen source audit. |
 | Taskflow **v4.1.0**, release short commit `45366fe`. [Release](https://github.com/taskflow/taskflow/releases/tag/v4.1.0). | Live docs list **4.2.0 (Master)** separately. Verify each chosen runtime/subflow API against pinned headers; development documentation is not proof that an API exists in 4.1.0. [Release index](https://taskflow.github.io/taskflow/Releases.html). |
 | ParlayLib **`master`**, inspected sources above; no immutable revision pinned | Resolve a full commit, record scheduler macros, allocator and idle settings; qualify target architecture. |
-| Native C/C++/Rust serial and static worker controls: **not implemented or pinned** | Exact source, compiler/linker, target features, optimization/FP/LTO flags, allocator and thread implementation. |
+| Native C strict FIR direct/output-lane candidates: checked-in source and executable qualification in the [experiment](../../experiments/compute-runtime/README.md#native-fir-and-first-cost-attribution) | Each calibration retains source/object hashes, compiler and target flags. Held-out confirmation is pending; other native languages, static worker controls and other workloads remain unimplemented. |
 
 ## Workload matrix
 
 The [WF workload suite](WORKLOADS.md) owns concrete program candidates, capability
-gaps, data selection and correctness coverage. These are proposed workloads,
-not already implemented tests or claims that WF can compile them. The matrix
+gaps, data selection and correctness coverage. FIR is the first implemented WF
+program in that suite; the other application families remain candidates. The matrix
 below assigns comparison roles to those families; it does not replace a serious
 WF program suite with wrappers around one kernel. `par_layout` is a historical
 smoke/regression program, not evidence for future application performance.
@@ -160,6 +162,6 @@ These tests evaluate suitability for WF; they do not select a new language ABI.
 
 Evidence progresses from **source-informed candidate** to **qualified executable**
 to **calibrated/frozen** to **independently confirmed on a named host**. Every row
-is currently at the first stage. A strongest observed frontier can justify the
+except the qualified FIR native kernels is currently at the first stage. A strongest observed frontier can justify the
 next optimization target; neither marketing, elapsed time alone, nor ideal
 work/span bounds establish that no better program can exist.

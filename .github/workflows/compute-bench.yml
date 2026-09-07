@@ -1,0 +1,73 @@
+# Pure-compute calibration. Correctness remains in canonical research-tests;
+# these elapsed times never select acceptance or turn into timing gate limits.
+name: compute-bench
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'research/experiments/compute-runtime/**'
+      - '.github/workflows/compute-bench.yml'
+
+concurrency:
+  group: compute-bench-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fir-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      OUT: ${{ runner.temp }}/compute-fir
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install and record compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang
+          rustup default stable
+          cargo fetch --locked --manifest-path compiler/Cargo.toml
+          /usr/bin/clang --version
+      - name: Qualify sources and actual timing objects
+        run: |
+          set -o pipefail
+          make -C research/experiments/compute-runtime check-fir check-bench \
+            OUT="$OUT" BENCH_ARCH=-march=native 2>&1 | tee "$RUNNER_TEMP/compute-build.log"
+      - name: Calibrate sequentially on one recorded CPU mask
+        run: |
+          # Restrict the experiment to at most four available logical CPUs.
+          # Children inherit this mask; topology/SMT/quota remain in the record.
+          mask=$(awk '/Cpus_allowed_list/ {print $2}' /proc/self/status)
+          selected=$(awk -v list="$mask" 'BEGIN {
+            n=split(list,parts,","); count=0;
+            for(i=1;i<=n && count<4;i++) {
+              m=split(parts[i],range,"-"); last=(m==1?range[1]:range[2]);
+              for(cpu=range[1];cpu<=last && count<4;cpu++) {
+                printf "%s%d", count?",":"",cpu; count++
+              }
+            }
+          }')
+          test -n "$selected"
+          taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/calibration" \
+            sh research/experiments/compute-runtime/fir-bench.sh calibrate
+      - name: Publish calibration location and scope
+        if: always()
+        run: |
+          {
+            echo '## FIR compute calibration'
+            echo 'Same-host raw calls, per-process warm means/ranges and exact objects are in the artifact.'
+            echo 'This screen is not held-out confirmation or a fastest-runtime claim.'
+            if test -f "$OUT/calibration/summary.tsv"; then
+              echo "Retained process rows: $(awk 'END {print NR-1}' "$OUT/calibration/summary.tsv")"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compute-fir-linux
+          path: |
+            ${{ runner.temp }}/compute-build.log
+            ${{ runner.temp }}/compute-fir/calibration/
+            ${{ runner.temp }}/compute-fir/check-*/
+            ${{ runner.temp }}/compute-fir/bench-*
+            ${{ runner.temp }}/compute-fir/fir*

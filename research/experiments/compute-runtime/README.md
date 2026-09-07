@@ -4,8 +4,10 @@ This experiment isolates current-stack compute join/help/steal from the shared
 I/O scheduler. It supplies a research runtime for the current compiler's
 ordinary task frames, checks the concurrent protocol, and links the same
 unmodified emitted module with this runtime and the compiler's weak sequential
-fallback. The normal compiler link driver is unchanged. There are no performance
-results yet.
+fallback. The normal compiler link driver is unchanged. The FIR calibration
+caller below also links the identical optimized WF object with the existing
+shared runtime, and compares qualified native output-lane SIMD candidates.
+This is cost attribution, not a confirmed performance frontier.
 
 The [investigation](../../investigations/compute-runtime/README.md) owns the
 architecture question, [WF workload coverage](../../investigations/compute-runtime/WORKLOADS.md)
@@ -200,7 +202,10 @@ ASan/UBSan and under TSan, including actual two/four-worker execution. Successfu
 steals were observed and are printed; their count is not a timing-dependent
 correctness assertion. Scratch WF variants that fuse multiply/add or reverse
 tap order fail the full-output oracle at the intended rounding witnesses.
-FIR Linux execution and timing remain unqualified in this revision.
+The [FIR gate at `d13f6971`](https://github.com/mbbill/Whitefoot/actions/runs/34154018796)
+passed all twelve Linux/macOS jobs. Its Linux research job used Clang 18.1.3
+and ran the complete nineteen recovery/ABI/FIR invocations under ASan/UBSan.
+That gate predates the native candidate and calibration caller below.
 
 ### Costs and gaps exposed by this program
 
@@ -208,10 +213,10 @@ The host invokes channels sequentially; WF parallelism currently exists inside
 each channel across independent tiles. This does not yet qualify mixed-channel
 co-scheduling or a full multistage signal pipeline. Initialized output buffers,
 box/tree allocation and recursive dispatch remain in the computation. They
-must be charged to a future filter-core timing. Prefix construction, state
-queries, result access and destruction must be charged to the corresponding
-end-to-end boundary; none has been timed or silently subtracted here. The
-scalar oracle is a correctness reference, not a qualified fastest native filter.
+are charged to the filter-core interval below. Prefix construction, state
+queries, result access and destruction are charged to its complete-cycle
+interval. The scalar oracle is a correctness reference, not a qualified fastest
+native filter.
 
 The first range contract expressed `end - first <= limit`. Current S4 admits
 that as an opaque requirement without projecting its arithmetic into the body
@@ -221,3 +226,88 @@ bounds in the body. This is a useful contract-expressiveness limitation to
 investigate, not evidence that a required proof can be replaced by a runtime
 guard. The active [specification](../../../spec/kernel-spec.md) still selects
 those rules; this experiment changes neither acceptance nor the public ABI.
+
+## Native FIR and first cost attribution
+
+`fir_native.c` supplies four ordinary C kernels: a direct loop and 4/8/16
+independent output accumulators. Every output retains ascending tap order,
+separately rounded multiply/add and the same finite-data contract as WF. The
+Clang hint disables only tap-loop vectorization/interleaving, leaving SLP across
+independent outputs enabled. Native output is caller allocated; normal double
+alignment suffices, tails need no padding, and empty calls still require valid
+non-null object pointers. `fir_native.h` owns these preconditions.
+
+`check-native` adds both ASan/UBSan (or the selected sanitizer) and ordinary
+optimized-object qualification to the existing oracle. Each checks all four
+forms over every K from 1 through 64, lane boundaries, ragged streams, canaries,
+input immutability and rounding witnesses: 107,408 calls and 1,294,336 output
+samples. The ordinary object is then reused unchanged by the timing binaries.
+The older standalone and WF-host checks remain separate and retain their counts.
+
+`fir_bench.c` is an explicit C host for the actual FIR program. All three
+executables contain the **same `fir-wf.o` and `fir-native.o`**, compiled once at
+O3 with strict FP and without LTO. `bench-weak` links the weak sequential path;
+`bench-recovered` links the current-stack control; `bench-shared` links main's
+compute scheduler units (`core.c`, `prim_host.c`, `entry.c`). All retain the real
+floor and the same research wrappers. The shared runtime is an architectural
+control, not a native performance ceiling. Current runtime statistics remain
+enabled, including recovery's shared atomic steal counter; differences include
+those costs and the different slot/idle policies. Fine-grained scheduler-only
+claims need a later instrumented-versus-uninstrumented comparison.
+
+Every invocation starts from the same supplied history and samples. It returns
+all N outputs and K-1 next-history samples, then frees its temporary storage.
+This is an independent block API screen, not a timed evolving stream/pipeline.
+
+| Reading | Included work and limits |
+|---|---|
+| `core_ns` | Filter call through completion. WF includes initialized leaf buffers, owned tree allocation and joins. Native uses a preallocated flat output. These representations differ deliberately; this ratio alone is not scheduler overhead. |
+| `cycle_ns` | Fresh prefix allocation/copy, output allocation, core, materialization of all outputs into a caller buffer, next-history copy/query and destruction. WF currently uses one tree accessor per sample; native copies a contiguous result. Includes the two inner clock calls. This is the current complete API form, not the best possible pipeline. |
+| First versus warm | Call zero retains lazy runtime startup where needed. Subsequent calls reuse that pool. `entry_ns` measures main-to-floor-body entry and `select_ns` measures world selection separately. No row includes process loading, input generation or pool teardown; this is not total cold-process latency. |
+| Batch resources | Wall/user/system CPU and context switches include every first/warm call and full bitwise verification between calls; peak RSS is process lifetime, including oracle/input/result storage. They are not core-only resources. Allocation counts, per-thread attribution and reserved stack bytes remain unmeasured. |
+
+The `CLOCK_MONOTONIC_RAW` timer surrounds individual calls, so very short
+`core_ns` values include a material clock/call floor. Every process reports the
+clock's stated resolution and minimum/positive minimum of 1,000 empty clock
+pairs; these diagnostics are never subtracted. Full output and history
+verification runs outside each interval and warms data between calls. No timed
+loop prints output. Each call is retained in a TSV; the summary reports warm
+per-process means and ranges, not confidence intervals or reliable tail
+percentiles. Tiny/empty rows diagnose overhead and do not establish nanosecond
+kernel rankings.
+
+`check-bench`, included by canonical `check`, runs 33 processes: three empty,
+short and uneven cells across four native forms, weak WF and recovered/shared
+WF with requested widths 0/2/4. It checks the exact full report, every result,
+and the complete ordered row sequence and configuration keys;
+there are no elapsed-time assertions. Alongside the previous nineteen and two
+native checks, the experiment now runs 54 invocations. The host metadata read
+may require permission in a local sandbox; native CI has that access.
+
+Run a calibration explicitly, with a target appropriate to the measured host:
+
+```sh
+make -C research/experiments/compute-runtime bench-calibrate \
+  OUT=/tmp/wf-compute-fir BENCH_ARCH=-march=native
+```
+
+On the local M1, use `BENCH_ARCH=-mcpu=apple-m1`. `OUT` must be absolute. The
+caller builds and qualifies first, then runs one process at a time. Its default
+five passes rotate/reverse configuration order over K={3,15,64},
+N={33,4097,262144}, plus an empty diagnostic. WF tiles are 257/4096/65536;
+requested widths are 0 and, when available, 2/4. Every configuration and losing
+row remains. `ROUNDS` can shorten a smoke/calibration replay, never manufacture
+confirmation. Results go to a fresh directory recorded in `OUT/last-calibrate-path.txt`;
+an existing directory is not overwritten. Exact objects, assembly, tool flags,
+source hashes, host topology/quota and CPU masks accompany the raw data.
+
+[compute-bench](../../../.github/workflows/compute-bench.yml) runs this screen
+on a GitHub-hosted Linux runner, restricting all children to the same mask of
+at most four allowed logical CPUs. VM interference, frequency and per-thread
+placement are uncontrolled; this is same-host calibration, not dedicated-host
+confirmation. The job artifact preserves the raw calls, failures and objects.
+Held-out K={1,7,31,63}, N={1,65,65539} and independent input families are reserved
+for a later frozen-candidate confirmation. Cache-cold working sets, static
+native workers and dynamic library references remain separate next experiments.
+Keep the native/bench files while this FIR comparison is maintained; consolidate
+them into a broader workload harness or remove them when it supersedes this API.
