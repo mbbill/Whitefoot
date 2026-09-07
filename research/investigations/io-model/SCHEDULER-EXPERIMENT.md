@@ -4236,7 +4236,7 @@ name. A known limitation remains visible until its experiment is complete.
 | --- | --- | --- | --- |
 | Native C epoll | Manual state machine; per-worker edge-triggered reactor and `SO_REUSEPORT`; 64 KiB shared scratch, bounded private spill on backpressure | Competitive readiness control: immediate recv/send, no ordinary per-operation allocation, local connection state | Screened on Linux loopback; 2 MiB streams, short sends and half-close qualified. Physical NIC and overload confirmation missing |
 | Native C epoll with private storage | Arena, malloc or calloc per connection; main-thread worker variant | Diagnostic storage and allocator comparison; private backing remains owned through I/O | Screened and stream-qualified; these rows need not beat shared scratch to explain WF storage cost |
-| Native C io_uring | Multishot accept/recv, provided buffers, per-worker rings/listeners, ordered vectored sends; SINGLE_ISSUER + DEFER_TASKRUN, no SQPOLL | Competitive completion control: batching, no receive submission per arrival, loaned receive buffers reused for send | Earlier closed-loop cells screened. New queue/submission corrections and 8/64 KiB equal-byte variants stream-qualified at `475008b5`; new timing screen pending |
+| Native C io_uring | Multishot accept/recv, provided buffers, per-worker rings/listeners, ordered vectored sends; SINGLE_ISSUER + DEFER_TASKRUN, no SQPOLL | Competitive completion control: batching, no receive submission per arrival, loaned receive buffers reused for send | Stream-qualified and screened at `475008b5`: 64 KiB improves both large-message cells; small-message intervals overlap. No independently confirmed or universal winner |
 | Native C io_uring with immediate send | Same receive engine and loans, one nonblocking `sendmsg` attempt before ring fallback | Competitive hybrid candidate: avoids a submission/completion round trip when the socket accepts bytes immediately | Implemented and cross-compiled; native qualification and same-revision paired screen pending |
 | Native C stackful / C++ stackless | Same epoll engine; private or shared receive storage; stackful, heap coroutine, and compiler-elided coroutine forms | Diagnostic representation control: separates coroutine/frame allocation, storage and reactor cost | Screened and stream/lifetime-qualified at their recorded revisions; not independent mature runtime comparisons |
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
@@ -4381,8 +4381,93 @@ four workers remained idle in both shown cases), which is another reason to
 observe actual placement instead of assuming per-worker load equality.
 Both observed buffer variants also cross-compile to Linux-musl objects with
 Zig 0.14 and strict C11 warnings; shell syntax, YAML, Make dry-run and diff
-checks pass locally. The new paired timing panel remains in progress in
-run `34082126598`; no performance improvement is claimed yet.
+checks pass locally.
+
+### Native screen results at 475008b5
+
+[Run 34082126598](https://github.com/mbbill/Whitefoot/actions/runs/34082126598)
+completed successfully, including native measurement job `101619281846` and
+the Windows owner checks. Its
+[raw artifact](https://github.com/mbbill/Whitefoot/actions/runs/34082126598/artifacts/10004549653)
+has SHA256 `9b8fa8b7da8184adb68ad340bb48ccf586fc2f55eeec902b712e288a159eec31`.
+The host was an EPYC 7763 VM, Linux 6.17.0-1022-azure, Clang 20.1.2 and glibc
+2.39, exposing two physical cores with two SMT threads each. split1 used
+server CPU 0 and client CPU 2; split2 used server 0,2 and client 1,3, sharing
+physical cores. These results do not reuse timing denominators from the
+earlier EPYC 9V74 combined panel.
+
+The artifact audit found all 630 raw rows, 90 groups with exactly passes 0..6,
+and 162 live snapshots in 54 groups with repetitions 0..2. Raw client metrics,
+trip/byte counts and process-resource files match each row; timed diagnostics
+are empty. Every RSS/anonymous/huge/private-dirty/swap value was recomputed
+from its smaps. THP was disabled, huge pages and swap were zero, and the actual
+loader's top_pad readback was zero. These checks establish a complete screen,
+not absence of all environmental bottlenecks.
+
+Ratios below pair the same pass and cell. Values are median [minimum, maximum]
+across seven pairs; these ranges are not confidence intervals.
+
+| 64 KiB buffer / 8 KiB buffer, at 64 peers × 64 KiB | Throughput ratio | Server CPU/trip ratio | p99 ratio |
+| --- | --- | --- | --- |
+| split1 | 1.1898 [1.0951, 1.2135] | 0.8372 [0.8136, 0.8913] | 0.5215 [0.3721, 0.8460] |
+| split2 | 1.1841 [1.0328, 1.2708] | 0.9049 [0.8630, 0.9341] | 0.6059 [0.5468, 0.7842] |
+
+The larger provided buffer improves throughput, CPU and p99 in every paired
+large-message sample under both placements, at equal payload reservation.
+All eight small-message throughput ranges cross 1.0, so this screen does not
+select a faster small-message size. Reduced receive fragmentation is a
+supported mechanism candidate, but the forced-backpressure qualification's
+completion counts are not counts from these timed large-message samples.
+
+For each cell, the next table selects the native form with the highest median
+throughput from these seven candidates, then pairs both existing WF forms
+against that fixed form. This is an in-sample screening selection. It is not a
+claim that each winner is statistically separated from every close runner-up.
+The final column is the `balanced-small` server CPU/trip ratio; the original
+whole-process, centisecond-precision CPU-accounting limitations still apply.
+
+| Placement, peers × bytes | Highest native median | Native k trips/s | `callee-small` / native rate | `balanced-small` / native rate | `balanced-small` / native CPU |
+| --- | --- | ---: | --- | --- | --- |
+| split1, 1 × 64 | epoll-calloc-main | 23.9 | 1.191 [1.079, 1.259] | 1.136 [1.076, 1.213] | 1.850 [1.750, 1.950] |
+| split1, 4 × 64 | uring | 127.1 | 0.876 [0.863, 0.975] | 0.879 [0.861, 0.982] | 1.194 [1.161, 1.233] |
+| split1, 64 × 64 | uring | 130.0 | 0.996 [0.987, 1.005] | 0.995 [0.987, 1.008] | 1.041 [1.010, 1.042] |
+| split1, 64 × 65536 | cpp-elide | 31.0 | 0.700 [0.531, 1.053] | 0.695 [0.529, 1.046] | 1.656 [1.349, 1.910] |
+| split1, 1024 × 64 | epoll-calloc-main | 126.7 | 0.976 [0.902, 0.983] | 0.985 [0.939, 0.994] | 1.049 [1.037, 1.085] |
+| split2, 1 × 64 | fiber-calloc-main | 22.0 | 0.973 [0.869, 1.040] | 0.950 [0.773, 1.194] | 3.696 [3.391, 4.091] |
+| split2, 4 × 64 | epoll | 86.6 | 0.877 [0.447, 1.060] | 0.673 [0.349, 0.825] | 2.230 [2.127, 3.163] |
+| split2, 64 × 64 | uring | 186.7 | 0.840 [0.828, 0.905] | 0.982 [0.971, 1.051] | 1.085 [1.069, 1.102] |
+| split2, 64 × 65536 | epoll | 36.1 | 0.823 [0.569, 0.887] | 0.790 [0.568, 0.922] | 1.696 [1.520, 1.868] |
+| split2, 1024 × 64 | cpp-elide | 182.6 | 0.825 [0.813, 0.881] | 0.950 [0.867, 1.038] | 1.088 [1.054, 1.156] |
+
+Uring has the highest native median in three small-message cells; epoll and
+C++/stackful controls lead other cells. The split1 one-peer WF rate advantage
+costs more CPU, while several occupied/large-message cells still have material
+WF rate and CPU gaps. No representation or backend wins throughout this
+matrix. In particular, treating the old epoll-only combined controls as the
+complete native target would have omitted a relevant competitor.
+
+Live RSS medians below retain three byte-checked snapshots per cell. Payload
+reservation is equal between the two uring sizes, but the number of buffer
+identities and touched pages differs. Native shared scratch also reserves a
+per-descriptor spill arena whose pages need not be touched. The table measures
+RSS, not equal virtual reservation or equal buffer-initialization semantics:
+the WF source explicitly owns initialized 64 KiB buffers, while native uring
+exposes only received prefixes from a shared malloc pool.
+
+| Placement, peers × bytes | uring 8 KiB | uring 64 KiB | epoll shared | epoll calloc main | C++ elided calloc | WF balanced-small |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| split1, 64 × 64 | 2380 | 2244 | 1640 | 2008 | 4108 | 3524 |
+| split1, 64 × 65536 | 4172 | 3304 | 1672 | 3828 | 5964 | 6092 |
+| split1, 1024 × 64 | 7312 | 4192 | 1660 | 9720 | 12076 | 15060 |
+| split2, 64 × 64 | 2800 | 2784 | 1660 | 2184 | 4192 | 3988 |
+| split2, 64 × 65536 | 6524 | 4808 | 1724 | 4088 | 5956 | 6420 |
+| split2, 1024 × 64 | 7780 | 5640 | 1672 | 9896 | 12060 | 15500 |
+
+The next native ablation is the immediate-send policy below. Fixed submission
+ring sizing, the minimum provided pool, polling/parking choices and real-NIC
+behavior remain untuned dimensions. An initialized-prefix or target-owned
+buffer loan API is a language-design hypothesis for explaining the storage
+gap; this screen does not establish that memory safety itself imposes it.
 
 ## Thirty-eighth experiment: native completion receive with immediate send
 
@@ -4419,6 +4504,6 @@ so no timing ratio depends on comparing different CI machines.
 
 Strict Linux-musl cross-compilation passes for all eight combinations of
 buffer size, send policy and observation. Shell/YAML parsing, Make dry-run and
-diff checks pass locally. Linux execution and the expanded paired screen are pending; the earlier
-`475008b5` screen is preserved while it runs. No hybrid speedup or default
+diff checks pass locally. Linux execution and the expanded paired screen are pending; the completed
+`475008b5` screen is preserved above. No hybrid speedup or default
 selection is claimed from implementation alone.
