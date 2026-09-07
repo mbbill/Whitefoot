@@ -7,6 +7,11 @@ OUT=${OUT:?set OUT to the qualified startup panel directory}
 TRACE="$OUT/phase-trace"
 EXPECTED='420a993efa7437a1 41fa962893d45299'
 PERF=${PROFILE_PERF:-perf}
+CPU_YIELD_TRACE=${CPU_YIELD_TRACE:-0}
+[[ $CPU_YIELD_TRACE == 0 || $CPU_YIELD_TRACE == 1 ]] || {
+    echo 'rayon-phase-trace: CPU_YIELD_TRACE must be 0 or 1' >&2
+    exit 2
+}
 mkdir -p "$TRACE"
 printf 'status=preflight\n' > "$TRACE/status.txt"
 
@@ -35,12 +40,17 @@ done
     printf 'cohort=one batch; four forms; two opposite orders; no trace timing enters resource.tsv\n'
     printf 'probe_kind=entry only; no return probes, recursive layout probes or compute-join probes\n'
     printf 'write_filter=per-event --exclude-perf; global scheduler events retained\n'
+    printf 'yield_syscalls=%s; paired enter/exit records, no call stacks\n' "$CPU_YIELD_TRACE"
+    printf 'attribution=observed intervals only; syscall tracing may change scheduling\n'
     cat /proc/sys/kernel/perf_event_paranoid /proc/sys/kernel/kptr_restrict
 } > "$TRACE/host.txt"
 sudo -n cat "$trace_root/available_events" > "$TRACE/available-events.txt"
 events=(sched:sched_process_exec sched:sched_process_fork sched:sched_process_exit
     sched:sched_switch sched:sched_waking syscalls:sys_enter_write syscalls:sys_exit_write
     syscalls:sys_enter_wait4 syscalls:sys_exit_wait4 syscalls:sys_enter_exit_group)
+if [[ $CPU_YIELD_TRACE == 1 ]]; then
+    events+=(syscalls:sys_enter_sched_yield syscalls:sys_exit_sched_yield)
+fi
 event_args=()
 for event in "${events[@]}"; do
     grep -Fxq "$event" "$TRACE/available-events.txt" || incomplete "missing required event $event"

@@ -7450,3 +7450,50 @@ native/helper qualification and performance remain pending on the isolated
 `codex/io-continuation-index` branch. Client headroom, single-peer idle
 tradeoffs, multi-owner computation and fairness retain their earlier limits;
 even a lookup win would only identify another implementation cost.
+
+## 55. Attribute early runnable waits before changing CPU placement
+
+The corrected experiment50 traces show WF using roughly three logical CPUs
+during its first 100 ms while Rayon uses roughly four on the same host.
+Several WF threads spend 58.5..67.7 ms runnable but off CPU in that interval.
+The scheduler's R state alone does not distinguish an explicit yield from
+ordinary kernel scheduling. The platform implements `wf_prim_yield` with
+`sched_yield`; the core calls it during idle looks, completion-publication
+waits and exhausted-stack joins, and worker startup also uses it. Pinning
+threads or changing the wait strategy before distinguishing these cases
+would confound two different candidate explanations.
+
+`codex/io-cpu-yield-attribution` therefore uses the existing coarse trace
+script with `CPU_YIELD_TRACE=1`, adding syscall entry and exit events for
+`sched_yield`. It keeps all eight captures: ordinary WF, used-lanes WF,
+sequential WF and Rayon, one batch in each of two opposite orders. The
+script retains the existing global scheduler, process, write, wait4 and
+milestone events, recorder-write exclusion, event-format files, explicit
+loss/incomplete status, thread IDs and checksum-runner diagnostics. No
+recursive function probes or syscall call stacks are added. Traced time
+does not enter an ordinary performance table.
+
+CI restores the exact experiment50 executables and generated IR through
+the smaller audited c81 recapture artifact `10009398989` (ZIP SHA-256
+`f117d23ff93ed900b6418b677e76223318012b8a66866060eaaf5e9507b0a44a`).
+It verifies all six individual file hashes again. The original source
+revision remains `8dd5b44a4e090601c276431ff4f83da55e443c43`, with compiler,
+runtime policy, WF source, Rayon grain and pool width unchanged. The new
+host's topology and affinity envelope are recorded separately. There is no
+rebuild, ordinary retiming, pinning or default change in this diagnostic.
+
+The required result audit reconstructs the exec/fork thread set, pairs each
+thread's yield entry with its successful exit, and intersects those intervals
+with that thread's R-state off-CPU intervals. It reports the first 100 ms
+and complete body separately, with per-thread and aggregate denominators.
+An unbalanced syscall stream or lost scheduler record cannot support that
+attribution. Absence of yields on a sequential or Rayon thread is valid.
+Tracing every yield can itself change scheduling; the control can locate
+observed waits, but cannot silently replace the ordinary timing evidence or
+establish readiness of useful tasks. If large waits occur outside yields,
+the next discriminating control is same-budget worker placement. If waits
+overlap yields, locate the runtime waiting path before selecting a replacement.
+
+Local checks cover shell/YAML syntax, branch selection, invalid mode rejection
+and restoring the exact six files from the retained ZIP. Actual yield event
+availability, capture balance and attribution remain Linux CI work.

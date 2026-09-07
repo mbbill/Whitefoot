@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-continuation-screen', 'codex/io-rayon-baselines', 'codex/io-compute-profile', 'codex/io-mixed-rayon-baselines', 'codex/io-continuation-owner', 'codex/io-continuation-batch', 'codex/io-client-headroom', 'codex/io-cpu-resource-controls', 'codex/io-uring-aggregation-diagnostic', 'codex/io-cpu-ring-controls', 'codex/io-go-baselines', 'codex/io-cpu-startup-controls', 'codex/io-continuation-mixed', 'codex/io-go-storage', 'codex/io-cpu-phase-recheck', 'codex/io-go-screen', 'codex/io-continuation-index']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-continuation-screen', 'codex/io-rayon-baselines', 'codex/io-compute-profile', 'codex/io-mixed-rayon-baselines', 'codex/io-continuation-owner', 'codex/io-continuation-batch', 'codex/io-client-headroom', 'codex/io-cpu-resource-controls', 'codex/io-uring-aggregation-diagnostic', 'codex/io-cpu-ring-controls', 'codex/io-go-baselines', 'codex/io-cpu-startup-controls', 'codex/io-continuation-mixed', 'codex/io-go-storage', 'codex/io-cpu-phase-recheck', 'codex/io-go-screen', 'codex/io-continuation-index', 'codex/io-cpu-yield-attribution']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -37,7 +37,7 @@ jobs:
   measure:
     # Correctness-only branches retain the independently running timing
     # revisions. Canonical and native correctness jobs still run.
-    if: github.ref != 'refs/heads/codex/io-windows-wake-fix' && github.ref != 'refs/heads/codex/io-continuation-experiments' && github.ref != 'refs/heads/codex/io-continuation-lowering' && github.ref != 'refs/heads/codex/io-continuation-network' && github.ref != 'refs/heads/codex/io-continuation-staged' && github.ref != 'refs/heads/codex/io-rayon-baselines' && github.ref != 'refs/heads/codex/io-compute-profile' && github.ref != 'refs/heads/codex/io-mixed-rayon-baselines' && github.ref != 'refs/heads/codex/io-cpu-resource-controls' && github.ref != 'refs/heads/codex/io-cpu-ring-controls' && github.ref != 'refs/heads/codex/io-go-baselines' && github.ref != 'refs/heads/codex/io-cpu-startup-controls' && github.ref != 'refs/heads/codex/io-continuation-mixed' && github.ref != 'refs/heads/codex/io-go-storage' && github.ref != 'refs/heads/codex/io-cpu-phase-recheck'
+    if: github.ref != 'refs/heads/codex/io-windows-wake-fix' && github.ref != 'refs/heads/codex/io-continuation-experiments' && github.ref != 'refs/heads/codex/io-continuation-lowering' && github.ref != 'refs/heads/codex/io-continuation-network' && github.ref != 'refs/heads/codex/io-continuation-staged' && github.ref != 'refs/heads/codex/io-rayon-baselines' && github.ref != 'refs/heads/codex/io-compute-profile' && github.ref != 'refs/heads/codex/io-mixed-rayon-baselines' && github.ref != 'refs/heads/codex/io-cpu-resource-controls' && github.ref != 'refs/heads/codex/io-cpu-ring-controls' && github.ref != 'refs/heads/codex/io-go-baselines' && github.ref != 'refs/heads/codex/io-cpu-startup-controls' && github.ref != 'refs/heads/codex/io-continuation-mixed' && github.ref != 'refs/heads/codex/io-go-storage' && github.ref != 'refs/heads/codex/io-cpu-phase-recheck' && github.ref != 'refs/heads/codex/io-cpu-yield-attribution'
     name: measure (${{ matrix.experiment }})
     strategy:
       fail-fast: false
@@ -469,17 +469,17 @@ jobs:
             ${{ runner.temp }}/mixed-rayon-check.log
 
   cpu-resource-controls:
-    if: github.ref == 'refs/heads/codex/io-cpu-resource-controls' || github.ref == 'refs/heads/codex/io-cpu-ring-controls' || github.ref == 'refs/heads/codex/io-cpu-startup-controls' || github.ref == 'refs/heads/codex/io-cpu-phase-recheck'
+    if: github.ref == 'refs/heads/codex/io-cpu-resource-controls' || github.ref == 'refs/heads/codex/io-cpu-ring-controls' || github.ref == 'refs/heads/codex/io-cpu-startup-controls' || (github.ref == 'refs/heads/codex/io-cpu-phase-recheck' || github.ref == 'refs/heads/codex/io-cpu-yield-attribution')
     name: ordinary CPU resource controls and separate phase traces
     runs-on: ubuntu-24.04
-    timeout-minutes: ${{ github.ref == 'refs/heads/codex/io-cpu-phase-recheck' && 10 || 20 }}
+    timeout-minutes: ${{ (github.ref == 'refs/heads/codex/io-cpu-phase-recheck' || github.ref == 'refs/heads/codex/io-cpu-yield-attribution') && 10 || 20 }}
     permissions:
       contents: read
       actions: read
     steps:
       - uses: actions/checkout@v4
       - name: Fetch locked toolchain dependencies
-        if: github.ref != 'refs/heads/codex/io-cpu-phase-recheck'
+        if: github.ref != 'refs/heads/codex/io-cpu-phase-recheck' && github.ref != 'refs/heads/codex/io-cpu-yield-attribution'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends clang
@@ -487,9 +487,9 @@ jobs:
           cargo fetch --locked --manifest-path compiler/Cargo.toml
           cargo fetch --locked --manifest-path research/experiments/io-completion-bench/rayon-baseline/Cargo.toml
       - name: Install phase tracing tools
-        if: github.ref == 'refs/heads/codex/io-cpu-startup-controls' || github.ref == 'refs/heads/codex/io-cpu-phase-recheck'
+        if: github.ref == 'refs/heads/codex/io-cpu-startup-controls' || (github.ref == 'refs/heads/codex/io-cpu-phase-recheck' || github.ref == 'refs/heads/codex/io-cpu-yield-attribution')
         run: |
-          if [[ $GITHUB_REF == refs/heads/codex/io-cpu-phase-recheck ]]; then sudo apt-get update; fi
+          if [[ $GITHUB_REF == refs/heads/codex/io-cpu-phase-recheck || $GITHUB_REF == refs/heads/codex/io-cpu-yield-attribution ]]; then sudo apt-get update; fi
           sudo apt-get install -y --no-install-recommends linux-tools-generic-hwe-24.04
           mapfile -t perf_packages < <(dpkg-query -W -f='${binary:Package}\t${db:Status-Status}\n' |
             awk '$2=="installed" && $1 ~ /^linux-.*tools/ {print $1}')
@@ -502,17 +502,24 @@ jobs:
           "$perf_binary" --version
           echo "PROFILE_PERF=$perf_binary" >> "$GITHUB_ENV"
       - name: Restore exact qualified 8dd binaries for trace-only recapture
-        if: github.ref == 'refs/heads/codex/io-cpu-phase-recheck'
+        if: (github.ref == 'refs/heads/codex/io-cpu-phase-recheck' || github.ref == 'refs/heads/codex/io-cpu-yield-attribution')
         env:
           GH_TOKEN: ${{ github.token }}
           OUT: ${{ runner.temp }}/cpu-resource-controls
         run: |
           set -euo pipefail
           mkdir -p "$OUT"
-          gh api repos/mbbill/Whitefoot/actions/artifacts/10008007005/zip > "$RUNNER_TEMP/startup-8dd.zip"
-          printf '%s  %s\n' 'a390db0c1c26664db02157e40c7e4da64c9f6a7d76257008a2e208681069168c' "$RUNNER_TEMP/startup-8dd.zip" | sha256sum -c -
-          unzip -q "$RUNNER_TEMP/startup-8dd.zip" wf-par wf-seq wf-manual-1 rust-layout runner wf-par.ll Cargo.lock host.txt -d "$OUT"
-          mv "$OUT/host.txt" "$OUT/source-8dd-host.txt"
+          if [[ $GITHUB_REF == refs/heads/codex/io-cpu-yield-attribution ]]; then
+            # The smaller audited recapture contains byte-identical 8dd binaries.
+            gh api repos/mbbill/Whitefoot/actions/artifacts/10009398989/zip > "$RUNNER_TEMP/phase-c81.zip"
+            printf '%s  %s\n' 'f117d23ff93ed900b6418b677e76223318012b8a66866060eaaf5e9507b0a44a' "$RUNNER_TEMP/phase-c81.zip" | sha256sum -c -
+            unzip -q "$RUNNER_TEMP/phase-c81.zip" wf-par wf-seq wf-manual-1 rust-layout runner wf-par.ll Cargo.lock source-8dd-host.txt -d "$OUT"
+          else
+            gh api repos/mbbill/Whitefoot/actions/artifacts/10008007005/zip > "$RUNNER_TEMP/startup-8dd.zip"
+            printf '%s  %s\n' 'a390db0c1c26664db02157e40c7e4da64c9f6a7d76257008a2e208681069168c' "$RUNNER_TEMP/startup-8dd.zip" | sha256sum -c -
+            unzip -q "$RUNNER_TEMP/startup-8dd.zip" wf-par wf-seq wf-manual-1 rust-layout runner wf-par.ll Cargo.lock host.txt -d "$OUT"
+            mv "$OUT/host.txt" "$OUT/source-8dd-host.txt"
+          fi
           cat > "$OUT/source-binaries.sha256" <<'HASHES'
           948ec36393b60f922cc4132c36b5cd1012fd4b8559a2523aa692a12f6e16db54  wf-par
           4f23a160e412fa00d90478b94668ac34efd6d7dd51bf1c23e001c4475ac23d3c  wf-seq
@@ -524,15 +531,19 @@ jobs:
           (cd "$OUT" && sha256sum -c source-binaries.sha256) | tee "$OUT/source-check.log"
           chmod u+x "$OUT/wf-par" "$OUT/wf-seq" "$OUT/wf-manual-1" "$OUT/rust-layout" "$OUT/runner"
           printf 'source_revision=8dd5b44a4e090601c276431ff4f83da55e443c43\nsource_artifact=10008007005\n' > "$OUT/recheck.txt"
+          if [[ $GITHUB_REF == refs/heads/codex/io-cpu-yield-attribution ]]; then
+            printf 'restored_via_artifact=10009398989\ntrace_kind=sched_yield entry/exit attribution\n' >> "$OUT/recheck.txt"
+          fi
           printf 'trace_revision=%s\n' "$GITHUB_SHA" >> "$OUT/recheck.txt"
           sha256sum research/experiments/io-completion-bench/rayon-phase-trace.sh >> "$OUT/recheck.txt"
       - name: Recapture only the eight process traces
-        if: github.ref == 'refs/heads/codex/io-cpu-phase-recheck'
+        if: (github.ref == 'refs/heads/codex/io-cpu-phase-recheck' || github.ref == 'refs/heads/codex/io-cpu-yield-attribution')
         env:
           OUT: ${{ runner.temp }}/cpu-resource-controls
+          CPU_YIELD_TRACE: ${{ github.ref == 'refs/heads/codex/io-cpu-yield-attribution' && '1' || '0' }}
         run: bash research/experiments/io-completion-bench/rayon-phase-trace.sh
       - name: Qualify and measure fixed resource controls
-        if: github.ref != 'refs/heads/codex/io-cpu-phase-recheck'
+        if: github.ref != 'refs/heads/codex/io-cpu-phase-recheck' && github.ref != 'refs/heads/codex/io-cpu-yield-attribution'
         env:
           OUT: ${{ runner.temp }}/cpu-resource-controls
           CPU_PHASE_TRACE: ${{ github.ref == 'refs/heads/codex/io-cpu-startup-controls' && '1' || '0' }}
@@ -547,7 +558,9 @@ jobs:
         run: |
           {
             echo '## CPU resource controls'
-            if [[ $GITHUB_REF == refs/heads/codex/io-cpu-phase-recheck ]]; then
+            if [[ $GITHUB_REF == refs/heads/codex/io-cpu-yield-attribution ]]; then
+              echo 'Exact SHA-verified 8dd binaries restored through the smaller audited c81 artifact. Eight trace-only captures add paired sched_yield entry/exit records to the corrected scheduler/milestone trace. Reconstruct own-thread syscall intervals and their overlap with R-state off-CPU intervals before choosing a placement or waiting-policy control. No rebuild, ordinary retiming, affinity change or runtime default change; syscall tracing may perturb scheduling.'
+            elif [[ $GITHUB_REF == refs/heads/codex/io-cpu-phase-recheck ]]; then
               echo 'Trace-only correction using exact SHA-verified 8dd artifact binaries; no compiler build or ordinary timing panel rerun. Recorder write events are excluded per event, global scheduler events and successful reap remain. Eight one-batch captures; independent duplicate/thread/state audit remains required.'
             elif [[ $GITHUB_REF == refs/heads/codex/io-cpu-startup-controls ]]; then
               echo 'Four computing threads; frozen Rayon grain four; WF_STACKS 12; 1/16 batches. Ordinary compiler WF, same-IR manual default and used-lanes links, and Rayon: forty ordinary samples. Full candidate completion checks and separate observed storage flags/bytes. Eight additional one-batch coarse traces include sequential WF and parent reap; their status is explicit below and captured data still require attribution audit. No runtime defaults change.'
@@ -559,7 +572,7 @@ jobs:
             echo 'Whole-process ordinary binaries without perf. Every checksum is checked after trailing CR/LF normalization; separate observed stdout is retained for byte comparison. No CPU affinity or dedicated-host guarantee.'
             echo '```text'
             files=(host.txt resource.txt link-comparison.txt observed-*.err phase-trace/status.txt phase-trace/host.txt phase-trace/captures.tsv)
-            if [[ $GITHUB_REF == refs/heads/codex/io-cpu-phase-recheck ]]; then
+            if [[ $GITHUB_REF == refs/heads/codex/io-cpu-phase-recheck || $GITHUB_REF == refs/heads/codex/io-cpu-yield-attribution ]]; then
               files=(recheck.txt source-check.log phase-trace/status.txt phase-trace/host.txt phase-trace/captures.tsv)
             fi
             for file in "${files[@]}"; do
@@ -572,5 +585,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ${{ github.ref == 'refs/heads/codex/io-cpu-phase-recheck' && 'io-cpu-phase-recheck' || 'io-cpu-resource-controls' }}
+          name: ${{ github.ref == 'refs/heads/codex/io-cpu-yield-attribution' && 'io-cpu-yield-attribution' || github.ref == 'refs/heads/codex/io-cpu-phase-recheck' && 'io-cpu-phase-recheck' || 'io-cpu-resource-controls' }}
           path: ${{ runner.temp }}/cpu-resource-controls

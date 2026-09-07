@@ -708,6 +708,13 @@ exact retained binary artifact and verifies its ZIP and individual hashes
 before an eight-trace-only recapture. It neither rebuilds nor retimes the
 ordinary panel. Recorder-issued write events are explicitly filtered and
 checked against the saved recorder PID; global scheduler events remain.
+Experiment 55's `codex/io-cpu-yield-attribution` path restores those same
+hashed binaries from the smaller audited recapture artifact and sets
+`CPU_YIELD_TRACE=1`. This adds `sched_yield` syscall entry/exit events to the
+eight captures. Reconstruct each workload thread's syscall intervals and
+their overlap with runnable off-CPU intervals before attributing the early
+utilization gap to a waiting policy or placement. No source, executable,
+worker budget or ordinary timing changes; tracing can perturb scheduling.
 
 `make mixed-rayon-check` qualifies the optional `mixed-rayon` binary in the
 same standalone crate. Its CLI is `mixed-rayon PORT CONNECTIONS --threads B
