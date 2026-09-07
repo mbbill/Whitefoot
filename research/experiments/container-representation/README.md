@@ -6,15 +6,20 @@ before production implementation or migration. The design question belongs to
 reproducible source probes, finite checker model, native controls, and measurements.
 Its three parts answer different questions:
 
-- `dense/`: real Whitefoot construction, update, helper boundaries, and native
-  controls for aggregate versus final-destination storage; source capability and
-  machine cost are reported separately.
+- `dense/`: executable Whitefoot construction/update probes, helper boundaries,
+  and native controls for aggregate versus final-destination storage; source
+  capability and machine cost are reported separately.
 - `lifecycle/`: actual compiler outcomes for pool contracts, element properties,
   complete and partial linear cleanup, and wrapped access, with nearby invalid
   programs that must still be rejected.
 - `authority/`: finite concrete range certificates compared with an independent
   per-slot oracle; this is neither a language extension nor evidence that a
   symbolic library implementation already passes the compiler.
+
+These small programs test specific capabilities and costs. They are not a
+representative corpus of real applications and supply no workload-frequency data.
+Broader demand selection needs evidence from established applications in languages
+such as C++, Rust, and Go; that external study is not part of this bundle.
 
 From the repository root:
 

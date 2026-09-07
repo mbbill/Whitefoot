@@ -19,6 +19,20 @@
   for the measured pool. Do not infer general element-refinement requirements
   from a fact that a fixed-capacity type already preserves. Do not infer that
   dynamic capacities or graph relations can always be reduced to constants.
+- Treat current Whitefoot tests and small programs as capability/cost witnesses,
+  not evidence of production workload distribution. Ground prevalence and broader
+  demand priorities in an explicit cross-domain sample of established C++, Rust,
+  and Go applications. Distinguish static use sites from measured execution,
+  sizes, allocations, and lifetimes, and retain the corpus and language biases.
+  Translate external requirements into Whitefoot probes without treating either
+  a library API or a successful probe as a representative demand distribution.
+- Infer the need behind an external representation: separate semantic and
+  measured cost constraints from language/library workarounds, compatibility,
+  and history. Ask what survives without those expression limits. Preserve actual
+  identity, lifetime, failure, and resource contracts in a Whitefoot alternative;
+  validate its advantage rather than assuming static proof removes every cost.
+  Mixed or unknown causes stay explicit, and cross-language frequency is not
+  proof that a representation is necessary.
 - A checked empty run may discharge its own backing responsibility after every
   element obligation is gone, with the provider and loan rules still satisfied.
   Emptiness of a field does not discharge an independently declared linear wrapper.
@@ -40,6 +54,14 @@
 
 ## Facts
 
+- 2026-09-06 owner correction: Whitefoot has no substantial real-application
+  corpus yet. This selection's small executable programs establish particular
+  requirements and implementation failures, not how often workloads occur. No
+  external C++/Rust/Go distribution study was performed; production prevalence
+  remains unmeasured. The general storage foundation has witness-based support,
+  while broader container prioritization needs external demand evidence.
+  External forms are themselves constrained by their languages; the owner requires
+  recovering underlying needs rather than treating observed forms as requirements.
 - 2026-09-06 selection ground: main's `existence-only` correction separates a
   derived need from a minimality-selected form. The independent review and
   executable experiments compare forms against performance, checked authority,

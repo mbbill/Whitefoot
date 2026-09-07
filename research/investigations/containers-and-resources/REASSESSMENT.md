@@ -34,6 +34,12 @@ The maintained [experiment bundle](../../experiments/container-representation/RE
 contains all sources, native controls, a finite checker model, exact current
 compiler outcomes, and the retained 168 timing samples.
 
+These are bounded capability and cost witnesses, not a sample of production
+workload prevalence. Whitefoot does not yet have a substantial real-application
+corpus. The first storage implementation is justified by the witnessed ownership
+and machine-work requirements; this evidence does not rank broader container
+demand or establish that the selected families cover production use.
+
 | Evidence | Observation | Selection consequence |
 | --- | --- | --- |
 | [Dense storage](../../experiments/container-representation/dense/RESULTS.md) | With four updates, 16/256/4096 `u64` elements cost about 408 ns/176 us/43.9 ms in current Whitefoot, versus 65 ns/1.50 us/29.7 us in the native local-build/value-return control. Whole-payload transfers remain in element loops. | Final storage placement and in-place element work are an immediate architecture requirement. The gap is for this workload and host, not a language-wide speed claim. |
@@ -258,10 +264,48 @@ facts needed to select efficient lowering.
 
 ## Workload evidence and coverage gaps
 
-These are workload classes, not measured prevalence estimates. Existing Whitefoot
-examples are biased toward byte storage and dense construction. The compiler's
-own Rust implementation is an additional concrete demand source, not evidence that
-a full self-hosting project should start now.
+These are candidate workload classes, not measured prevalence estimates. Existing
+Whitefoot tests and small programs are capability probes; their distribution
+reflects what the compiler supports and what its authors chose to test. They cannot
+establish production demand, including the relative importance of byte storage,
+dense construction, or other classes below. The compiler's own Rust implementation
+is one additional demand source, not a representative corpus or a reason to start
+full self-hosting.
+
+When prevalence or application-scale composition is needed to select priorities,
+use a bounded, explicitly sampled corpus of established C++, Rust, and Go
+applications across relevant domains. Trace actual container use through helper
+boundaries and complete lifetimes, retaining the source revision and workload
+context. Separate static use-site counts from execution frequency, element-size
+and collection-size distributions, allocation behavior, and live-storage costs;
+the latter require representative runtime measurements. Language/library defaults
+and corpus selection can bias the observed forms, so infer requirements from the
+program's behavior and resource contract rather than copying its container API.
+Report conclusions within the sampled corpus instead of claiming industry-wide
+percentages. No such external distribution study has been performed here.
+
+For each consequential representation, ask the counterfactual question: which
+constraints remain if the source language's ownership, borrowing, proof, layout,
+or library limitations are removed? Recover the required behavior, ordering,
+identity/address lifetime, failure behavior, and resource/cost contract before
+classifying the observed container. Distinguish evidence for an algorithmic
+necessity or measured performance choice from language/library workarounds,
+compatibility constraints, and historical accidents. Causes can be mixed or
+unknown; occurrence counts alone do not establish them. Comments, design records,
+profiles, and relevant alternatives help test the interpretation.
+
+For example, an observed handle table does not by itself establish a requirement
+for handle lookup: the required property might be stable identity, stable addresses,
+or simply a way to express otherwise awkward references. Conversely, replacing
+that table with dense ownership is invalid if the application really needs its
+identity and lifetime behavior. A Whitefoot alternative must preserve the recovered
+contract and demonstrate its claimed representation or proof advantage. Label it
+as a hypothesis until tested; cross-language agreement can still reflect shared
+constraints and is not independent proof of necessity.
+
+Use those external traces to select and ground subsequent Whitefoot experiments.
+Keep the existing probes for the narrower semantic and cost questions they answer;
+their successful execution does not substitute for external demand evidence.
 
 | Class | Complete trace to preserve | Local demand source |
 | --- | --- | --- |
@@ -391,10 +435,10 @@ Measure only the dimensions relevant to that trace. Runtime state inherent to th
 algorithm is not a proof overhead. Reference timings must use comparable algorithms
 and layouts; source occurrence counts are not execution hotness.
 
-The smallest useful selection experiment couples one common path with one critical
-path that distinguishes the candidates, crosses a real helper boundary, and ends
-the relevant storage lifetime. A choice becomes actionable when these programs
-run, nearby invalid programs are rejected for their rules, and the architecture
+The smallest useful selection experiment couples a candidate ordinary path with
+one critical path that distinguishes the candidates, crosses a real helper
+boundary, and ends the relevant storage lifetime. A choice becomes actionable when
+these programs run, nearby invalid programs are rejected for their rules, and the architecture
 tradeoff is visible in source and cost evidence. Remaining limits should be named;
 an ever-growing scenario list or a universal framework is not the completion test.
 
