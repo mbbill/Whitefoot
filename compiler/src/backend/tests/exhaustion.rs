@@ -44,7 +44,7 @@
 
 use std::process::Command;
 
-use super::{build_executable, compile, emitted_function, test_directory};
+use super::{build_executable, build_linked_executable, compile, emitted_function, test_directory};
 
 /// The attribute group [`crate::backend::emitter`] gives every definition, and
 /// the value it carries on this host.
@@ -1000,12 +1000,11 @@ fn every_allocation_refusal_edge_reaches_the_resource_abort() {
     }
 }
 
-/// A recursion whose every activation carries an array far larger than a
-/// guard page, written and read at an index only the run knows so the frame
-/// cannot be shrunk away.
-///
-/// After the host inliner merges several levels together each activation moves
-/// the stack pointer by roughly three hundred kilobytes at once.
+/// A recursion whose every activation carries an array far larger than a guard
+/// page, written and read at an index only the caller knows so the frame cannot
+/// be shrunk away. The controlled harness below enters only its base case; the
+/// recursive edge keeps the generated function representative of an ordinary
+/// source recursion without making the fault depend on a sequence of frames.
 const LARGE_FRAME_SPINE: &[u8] =
     br#"fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {
   let pad = array_new::<u64, 7168>(v);
@@ -1043,46 +1042,97 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
 }
 "#;
 
-/// A frame far larger than the guard region is still reported, not absorbed.
+/// Runs the generated large-frame function once on a stack whose surrounding
+/// address space belongs to this fixture.
+///
+/// The stack is smaller than the array payload in one source activation. The
+/// reservation beneath it is much larger than that payload and remains
+/// `PROT_NONE`, so neither the floor's alternate stack nor another incidental
+/// mapping can absorb the first access after an unprobed frame steps over the
+/// stack. The thread attaches before making the call, exactly as a runtime lane
+/// does, and its signal is classified against these known bounds.
+const LARGE_FRAME_BODY: &str = r#"#define _GNU_SOURCE
+#include <pthread.h>
+#include <stdint.h>
+#include <sys/mman.h>
+
+extern int wf__floor_run(int argc, char **argv);
+extern void wf__floor_attach_thread(void);
+extern uint64_t wf_spine(uint64_t depth, uint64_t value, uint8_t index);
+
+#define PAD_BYTES ((size_t)16 * 1024 * 1024)
+#define STACK_BYTES ((size_t)32 * 1024)
+
+static char *reservation;
+
+static void *call_large_frame(void *opaque) {
+    (void)opaque;
+    wf__floor_attach_thread();
+    (void)wf_spine(0, 3, 0);
+    return NULL;
+}
+
+int wf__main_body(int argc, char **argv) {
+    pthread_attr_t attributes;
+    pthread_t thread;
+    void *returned = NULL;
+    (void)argc;
+    (void)argv;
+    reservation = mmap(NULL, PAD_BYTES + STACK_BYTES, PROT_NONE,
+                       MAP_PRIVATE | MAP_ANON, -1, 0);
+    if (reservation == MAP_FAILED) {
+        return 2;
+    }
+    if (mprotect(reservation + PAD_BYTES, STACK_BYTES,
+                 PROT_READ | PROT_WRITE) != 0) {
+        return 3;
+    }
+    if (pthread_attr_init(&attributes) != 0
+        || pthread_attr_setstack(&attributes, reservation + PAD_BYTES,
+                                 STACK_BYTES) != 0
+        || pthread_create(&thread, &attributes, call_large_frame, NULL) != 0) {
+        return 4;
+    }
+    pthread_attr_destroy(&attributes);
+    if (pthread_join(thread, &returned) != 0) {
+        return 5;
+    }
+    return 6;
+}
+
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+"#;
+
+/// A frame far larger than the guard region is still contained and reported.
 ///
 /// This is the behaviour the probe attribute buys, as distinct from the
-/// attribute being present. A frame that moves the stack pointer three hundred
-/// kilobytes in one step can clear the whole guard region without touching it;
-/// what happens next depends on what is mapped where it lands. If that memory
-/// is mapped — under the pool, the next lane's stack is packed a few pages
-/// below — the write succeeds and the program carries on with frames outside
-/// its own stack, eventually returning an answer for a computation that never
-/// fit. Nothing about that run says anything went wrong.
+/// attribute being present. Both binaries call the same generated function
+/// once from the top of the fixture's small stack. Probed, the frame walks its
+/// pages and first touches the protected memory within one stride of the low
+/// bound, which the floor reports. Ablated, its first access beyond the stack
+/// is farther into the fixture's protected reservation, which the floor leaves
+/// to the host signal.
 ///
-/// So the case runs the ablation rather than describing it. It strips the
-/// attribute group from this one definition, in this one module, and requires
-/// the two runs to differ: probed, the descent walks its pages, faults inside
-/// the probe stride, and is reported; ablated, it moves the stack pointer
-/// 291,600 bytes in one step, faults far outside anything a descent can reach,
-/// and the floor correctly refuses to call that exhaustion.
-///
-/// Both halves are needed and neither alone is the property. Checking only the
-/// probed run passes against an emitter that stopped emitting the attribute,
-/// as long as something else still reported the death — which is exactly what
-/// happened while the discrimination band was a megabyte wide: the ablated
-/// skip landed inside the band and was reported too, and no case could tell
-/// the difference.
+/// Owning both the stack and the memory beneath it is part of the assertion. A
+/// recursive descent on a host-created stack leaves the final pre-fault stack
+/// position and neighbouring mappings to target code generation and address
+/// placement; either can make an unprobed run fault inside the reporting band
+/// even though its large frame did not walk the guard.
 #[test]
 fn a_frame_larger_than_the_guard_region_is_still_reported() {
-    let module = compile(LARGE_FRAME_SPINE);
+    let module = expose_large_frame_spine(&compile(LARGE_FRAME_SPINE));
     let directory = test_directory();
-    let executable = build_executable(&module, &directory);
+    let executable = build_linked_executable(&module, Some(LARGE_FRAME_BODY), &[], &directory);
     let output = Command::new(&executable)
         .output()
-        .expect("run the large-frame recursion");
-    assert_eq!(
-        output.status.code(),
-        None,
-        "a recursion this deep cannot fit any stack, so it must not return: \
-         {:?}",
-        output.status
-    );
+        .expect("run the probed large frame");
     assert_resource_record(&output.stderr, "stack");
+    assert_eq!(
+        signal_of(&output),
+        Some(libc_sigabrt()),
+        "a probed frame that exhausts its stack ends in the floor's abort: {:?}",
+        output.status,
+    );
 
     let ablated = ablate_probe(&module, "@wf_spine(");
     assert_eq!(
@@ -1091,10 +1141,10 @@ fn a_frame_larger_than_the_guard_region_is_still_reported() {
         "the ablation must remove the group from exactly one definition"
     );
     let elsewhere = test_directory();
-    let unprobed = build_executable(&ablated, &elsewhere);
+    let unprobed = build_linked_executable(&ablated, Some(LARGE_FRAME_BODY), &[], &elsewhere);
     let output = Command::new(&unprobed)
         .output()
-        .expect("run the unprobed large-frame recursion");
+        .expect("run the unprobed large frame");
     assert!(
         output.stderr.is_empty(),
         "an unprobed frame steps over the guard region, so the fault it \
@@ -1102,8 +1152,56 @@ fn a_frame_larger_than_the_guard_region_is_still_reported() {
          reported as one: {:?}",
         String::from_utf8_lossy(&output.stderr)
     );
+    assert_eq!(
+        signal_of(&output),
+        Some(protected_page_signal()),
+        "an unprobed frame keeps the host's protection-fault signal rather than \
+         becoming the floor's abort: {:?}",
+        output.status,
+    );
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
     std::fs::remove_dir_all(&elsewhere).expect("remove the second test directory");
+}
+
+/// Makes the generated function callable by the C fixture and leaves the
+/// fixture to supply the program entry. The generated entry remains in the
+/// module under an unused name so this changes no part of `wf_spine` itself.
+fn expose_large_frame_spine(module: &str) -> String {
+    let mut exposed = module
+        .replacen("define internal i64 @wf_spine(", "define i64 @wf_spine(", 1)
+        .replacen(
+            "define i32 @wf__main_body(",
+            "define i32 @wf__unused_main_body(",
+            1,
+        )
+        .replacen("define i32 @main(", "define i32 @wf__unused_main(", 1);
+    exposed.push_str("\ndeclare i32 @wf__main_body(i32, ptr)\n");
+    assert_eq!(
+        module.matches("define internal i64 @wf_spine(").count(),
+        1,
+        "the fixture must expose exactly one generated spine"
+    );
+    assert_eq!(
+        exposed.matches("define i32 @wf__unused_main_body(").count(),
+        1,
+        "the fixture must rename exactly one generated entry body"
+    );
+    assert_eq!(
+        exposed.matches("define i32 @wf__unused_main(").count(),
+        1,
+        "the fixture must rename exactly one generated host entry"
+    );
+    exposed
+}
+
+#[cfg(target_os = "macos")]
+const fn protected_page_signal() -> i32 {
+    10
+}
+
+#[cfg(not(target_os = "macos"))]
+const fn protected_page_signal() -> i32 {
+    libc_sigsegv()
 }
 
 /// The same module with the probe attribute group taken off the one definition
