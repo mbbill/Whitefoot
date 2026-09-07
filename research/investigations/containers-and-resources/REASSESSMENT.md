@@ -871,7 +871,11 @@ The parallel integration step passes the three new native execution controls in
 all four worlds: the sequential reference, forced lane refusal, native workers,
 and publications deferred until their actual joins. Both staged controls require
 at least two frames held simultaneously, and all source allocations and lane
-frames are released exactly once. The canonical root gate now passes formatting,
-Clippy, and all 1,566 library cases (1,496 unit and 70 sampling). Its program,
-conformance, and remaining experiment stages are running; these partial results
-do not establish a complete green gate or complete destination normalization.
+frames are released exactly once. At `bf8cdc56`, the canonical root `make check`
+completes with `WHITEFOOT ALL TESTS GREEN`: formatting, Clippy, all 1,566 library
+cases (1,496 unit and 70 sampling), all 73 program cases, runtime checks, research
+experiments, full native conformance (732 passed, one declared pending), and the
+snapshot corpus (484 passed, zero flips). The previously failing
+`generic_nominals.wf --par` corpus case now passes. This establishes the parallel
+integration checkpoint, not complete destination normalization or new performance
+measurements. The result-to-binding and cleanup placement work remains open.
