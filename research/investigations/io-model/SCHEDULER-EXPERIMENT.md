@@ -4650,6 +4650,38 @@ diff checks pass locally. Linux execution and the expanded paired screen are pen
 `475008b5` screen is preserved above. No hybrid speedup or default
 selection is claimed from implementation alone.
 
+### Successful-exit loan audit after the 0357259d screen was started
+
+The running `0357259d` tree is left unchanged, but a source audit identifies
+one remaining shutdown loan without an explicit completion proof: a worker
+can observe global `finished` and exit before consuming its eventfd READ
+CQE. The successful cleanup then frees `workers`, including the operation's
+`wake_storage`. Ring close is not used as a cancellation/drain proof here,
+and ASan cannot establish the lifetime of a later kernel write. Consequently,
+the earlier stream oracle and screen qualify their observed protocol results,
+not this complete shutdown lifetime.
+
+The follow-up retains the worker-record allocation until process exit on
+success, as failed runs already retain all loan storage. It adds no shutdown
+scheduler and does not change the send/receive hot path. Other cleanup relies
+on the following operation-specific boundaries in the qualified, clean
+half-close protocol; arbitrary reset recovery remains outside this evidence:
+
+| Allocation or resource | Successful-exit lifetime evidence |
+| --- | --- |
+| `workers`, containing eventfd `wake_storage` | Retained until process exit because a wake READ may remain pending when the worker exits |
+| Connection table, embedded `msghdr` and send iovecs | Exactly one send can be in flight per connection; close waits for its CQE and any queued suffix, or follows a synchronous inline send. All accepted connections must close before successful cleanup |
+| Provided payload buffers | Each send retires only its completed byte prefix. Clean EOF terminates multishot receive; close follows the last pending send, so successful cleanup has no active network buffer loan |
+| Provided-buffer ring | No receive remains after all clean connection closes; the ring is closed before the userspace buffer-ring mapping is released |
+| `loans` and `starved_list` | Userspace-only metadata, never passed as a kernel operation address; accessed only by joined worker threads |
+| Submission/completion mappings | Kernel ring-owned mappings are unmapped by ring teardown; their syscall-managed backing lifetime is distinct from caller-owned operation buffers |
+| Listening sockets | Remaining multishot accepts use null address/length pointers, so they do not borrow freed caller storage; no extra client connections are part of this fixed-count protocol |
+
+This narrow lifetime correction does not retroactively turn an observed byte
+failure into a pass or claim that the timing screen witnessed a use-after-free.
+Native validation of the correction will use the existing full qualification
+suite after the running screen completes.
+
 ## Thirty-ninth experiment: measure generated staged WF against the native panel
 
 The first continuation performance screen reuses the exact sequential
