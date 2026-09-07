@@ -4320,6 +4320,10 @@ returned. A send failure aborts the measurement instead of closing and reusing
 a descriptor that an outstanding multishot receive may still name. Ring
 teardown precedes freeing its loan storage. This is an explicit fail-fast
 error contract, not qualification of recoverable resets or cancellation.
+A follow-up conservatively retains allocations and descriptors through process
+exit when a run has failed: ring close alone is not used as evidence that a
+native operation has stopped accessing its loan. Successful-run cleanup and
+the running `475008b5` screening revision are unchanged.
 
 `make -C research/experiments/io-completion-bench uring-check` adds the existing
 four-peer, 2 MiB-per-peer backpressure/half-close oracle at one and four server
