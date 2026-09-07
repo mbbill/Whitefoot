@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -28,9 +28,9 @@ concurrency:
 
 jobs:
   measure:
-    # This branch qualifies a Windows wake fix. Storage timings retain their
-    # own running revision; canonical and native correctness jobs still run.
-    if: github.ref != 'refs/heads/codex/io-windows-wake-fix'
+    # Correctness-only branches retain the independently running timing
+    # revisions. Canonical and native correctness jobs still run.
+    if: github.ref != 'refs/heads/codex/io-windows-wake-fix' && github.ref != 'refs/heads/codex/io-continuation-experiments'
     name: measure (${{ matrix.experiment }})
     strategy:
       fail-fast: false
@@ -87,6 +87,31 @@ jobs:
             ${{ runner.temp }}/io-scheduler/samples/
             ${{ runner.temp }}/io-scheduler/codegen/
             ${{ runner.temp }}/io-scheduler/resident/
+
+  completion-continuations:
+    if: github.ref == 'refs/heads/codex/io-continuation-experiments'
+    name: nested continuations with native completion loans
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install coroutine toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-20 libclang-rt-20-dev
+      - name: Qualify actual io_uring and helper completions
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -C research/experiments/io-completion-bench completion-coroutine-check \
+            CLANG=/usr/bin/clang-20 CORO_CXX=/usr/bin/clang++-20 \
+            WHITEFOOT_SCRATCH_ROOT="$RUNNER_TEMP/completion-continuations" \
+            COMPLETION_CORO_ARGS=--require-ring 2>&1 | tee "$RUNNER_TEMP/completion-continuations.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: completion-continuations
+          path: ${{ runner.temp }}/completion-continuations.log
 
   windows-owner:
     name: native Windows memory and I/O placement checks

@@ -141,6 +141,8 @@ CLANG := /usr/bin/clang
 CFLAGS := -std=c11 -O2 -Wall -Wextra -Werror
 CORO_CXX ?= $(shell command -v clang++-20 || command -v clang++)
 CORO_FLAGS := -std=c++20 -O2 -Wall -Wextra -Werror -Wpedantic -fno-exceptions -pthread
+COMPLETION_CORO_SANITIZERS ?= address,undefined
+COMPLETION_CORO_ARGS ?=
 WFC := $(ROOT)/compiler/target/gate/whitefootc
 
 # The workload's shape. FILES x up to MAX_KIB, read through one positioned
@@ -644,6 +646,35 @@ client-service-check: $(BUILD)/epoll_echo
 	    netload.c -o "$(BUILD)/netload-service$$budget"; \
 	  env ROOT="$(ROOT)" OUT="$(BUILD)" NET_LINES=epoll NETLOAD="$(BUILD)/netload-service$$budget" \
 	    sh linux-net-bench.sh verify-client; \
+	done
+
+# Completion lifetime uses the actual C runtime, without changing its ABI.
+# Only the bridge publisher is interposed by the test registration coordinator.
+# Both ordinary and elided nested frames must drain borrowed storage before
+# destruction. Linux also qualifies its real helper fallback explicitly.
+.PHONY: completion-coroutine-check
+completion-coroutine-check: prepare
+	@set -e; \
+	backend="$(ROOT)/compiler/src/backend"; \
+	build="$(BUILD)/completion-coroutine-$(COMPLETION_CORO_SANITIZERS)"; \
+	mkdir -p "$$build"; set --; \
+	for source in sched/core.c sched/prim_host.c sched/entry.c completion/runtime.c \
+	  completion/wait_host.c completion/file_adapter.c completion/file_posix.c \
+	  completion/bridge.c completion/linux_io_uring.c; do \
+	  define=''; if [ "$$source" = completion/bridge.c ]; then define=-Dwf_sched_complete=wf_probe_publish; fi; \
+	  object="$$build/$$(basename "$$source").o"; \
+	  $(CLANG) $(CFLAGS) -g -Wpedantic -pthread -fsanitize=$(COMPLETION_CORO_SANITIZERS) \
+	    -I "$$backend" $$define -c "$$backend/$$source" -o "$$object"; \
+	  set -- "$$@" "$$object"; \
+	done; \
+	$(CLANG) $(CFLAGS) -g -Wpedantic -pthread -fsanitize=$(COMPLETION_CORO_SANITIZERS) \
+	  -I "$$backend" -x c -c coroutine_completion.cpp -o "$$build/protocol.o"; \
+	for form in heap elide; do \
+	  define=''; if [ "$$form" = elide ]; then define=-DPROBE_ELIDE; fi; \
+	  $(CORO_CXX) $(CORO_FLAGS) -g -fsanitize=$(COMPLETION_CORO_SANITIZERS) \
+	    -I "$$backend" $$define coroutine_completion.cpp "$$build/protocol.o" "$$@" -o "$$build/$$form"; \
+	  "$$build/$$form" $(COMPLETION_CORO_ARGS); \
+	  if [ "$$(uname -s)" = Linux ]; then WF_IO_NO_NATIVE_RING=1 "$$build/$$form" --require-helper; fi; \
 	done
 
 # Linux-only reference correctness, also reached by scheduler-check on Linux.

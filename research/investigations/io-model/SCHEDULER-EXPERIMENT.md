@@ -3860,3 +3860,63 @@ the actual configuration blocks against the captured guest topology produces
 672 rows/288 snapshots. Native Linux combined performance remains pending.
 This experiment changes no source signature, runtime ABI, container storage
 contract or default runtime policy.
+
+## Thirty-third experiment: nested continuations retain real completion loans
+
+The native readiness-coroutine lifetime check does not retain a buffer in a
+pending kernel operation. `coroutine_completion.cpp` closes that specific
+qualification gap using the existing WF receive-submit and join entries.
+It is compiled once as C for the runtime seam and once as C++20 for nested
+sequential coroutines. Only the bridge object's reference to
+`wf_sched_complete` is redirected to a test coordinator, which still calls
+the actual core publisher exactly once. Runtime sources, record layout,
+generated-code ABI and container contracts are unchanged. The coordinator's
+mutex and registration list are test instrumentation, not a proposed fast
+scheduler. Replace this fixture with compiler-generated cases when general
+continuation lowering can express the same protocol.
+
+A parent owns an initialized 128-byte local buffer; a child receives into
+that borrowed storage in a loop, using at most seven bytes per operation.
+The parent's guard and byte-pattern checks require the buffer to remain at
+one address until the child's last join returns. Four controlled orderings
+cover immediate completion, completion before wait registration, publication
+while registration is still returning, and completion after suspension.
+The latter two include a logical early-exit request: the pending operation
+must be joined before either coroutine frame is destroyed. This is draining,
+not native cancellation, and requires the producer eventually to respond.
+It does not solve cancellation of an uncooperative peer or destruction of
+arbitrary suspended frames.
+
+There are 512 individual cases and 16 groups of eight simultaneous roots.
+All eight group producers remain gated until every root is suspended, so
+the helper route has more outstanding loans than its four helper threads.
+The roots must have distinct, stable buffer addresses. A single owning
+thread resumes continuations; publication occurs on the real runtime's
+completion threads. Under the coordinator lock, registration either observes
+DONE and continues inline, or transfers ownership of its continuation node
+to the pending/ready lists. Publication never accesses the completion record
+after the real publisher stores DONE; dequeue removes its separate node
+before allowing the frame to resume and die. The existing core's stackful
+waiter handshake is not replaced or claimed to cover this new node.
+
+`make completion-coroutine-check` runs heap and nested-frame-elided forms
+under ASan/UBSan. The Linux canonical scheduler stage includes this check
+alongside the existing C++ reference tests. Its toolchain has clang 20;
+the macOS-14 canonical runner currently has Apple clang 15, so this
+attribute-dependent fixture has the same Linux qualification boundary as
+those reference tests. It also runs directly on the local Apple clang 21.
+The dedicated Linux job requires at least 512 native-ring publications and
+no helper publications, then explicitly forces the helper backend and
+requires the inverse route counts. A fallback cannot qualify native I/O.
+All previously maintained checks remain enabled.
+
+Locally, both O2 forms pass all 640 cases, including 192 logical exits,
+under ASan/UBSan and separately under ThreadSanitizer. Each run observes
+384 registrations/dequeues, 128 pre-registration completions, 128
+in-registration completions and 513 helper publications. Heap mode makes
+1,280 frame allocations/frees; elided mode makes 640. Total requested frame
+bytes are equal between forms: 307,200 under ASan/UBSan, 312,320 under TSan.
+The allocation-count reduction is therefore not evidence of reduced total
+frame bytes or a throughput improvement. Linux io_uring qualification is
+pending. This fixture is lifetime evidence, not a WF stackless backend or
+a performance result.
