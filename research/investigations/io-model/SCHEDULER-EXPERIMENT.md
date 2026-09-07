@@ -3618,8 +3618,8 @@ cleanup and the observer's startup-policy value. All 36 pass locally on M1
 through the existing epoll compatibility layer. The actual maintained WF
 build block produces the three normal binaries and three observers with
 the intended caller/callee source selection. All twelve WF stream cases
-(three forms, normal/observed, one/four workers) pass locally. Native Linux tunable behavior,
-heap maps and performance remain pending CI.
+(three forms, normal/observed, one/four workers) pass locally. Native Linux
+results follow below.
 
 The decisive memory observation is the ordinary heap mapping while every
 connection remains live, separately from total peak RSS. Moving worker zero
@@ -3630,6 +3630,98 @@ can vary. Lower live memory does not establish a better performance frontier
 unless CPU, throughput and tails support it. No runtime allocator default,
 source initialization rule, container address guarantee or ABI is changed
 by this experiment.
+
+### Native allocator results
+
+Revision 6ac4ebf4 completed
+[the scheduler workflow](https://github.com/mbbill/Whitefoot/actions/runs/34070252329),
+[the canonical gate](https://github.com/mbbill/Whitefoot/actions/runs/34070252296),
+[host checks](https://github.com/mbbill/Whitefoot/actions/runs/34070252301) and
+[the independent I/O benchmark workflow](https://github.com/mbbill/Whitefoot/actions/runs/34070252367).
+Linux job 101586151119 ran on an AMD EPYC 7763 guest with four logical CPUs,
+two reported SMT cores, Linux 6.17.0-1022-azure, Clang 18.1.3, glibc 2.39
+and 4096-byte pages. Artifact 10000660487, `io-scheduler-allocator`, retains
+the raw data. All 672 timed rows have their expected connection/trip byte
+checks, seven passes per cell and empty normal-process diagnostics. All
+288 live smaps sums match the table and report THP disabled, zero huge-page
+residency and zero swap. Both loader top_pad readbacks match the requested
+values. All three default native LLVM identities, 36 native stream cases,
+12 WF allocation stream cases and 20 native storage-policy observers pass.
+
+The large one-worker difference is reproduced by changing only which
+native thread runs worker zero. The following are median live RSS values
+in KiB with 1024 live connections exchanging 64-byte messages; they are
+separate snapshots from timed maximum RSS.
+
+| Form | Split1 top_pad=131072 | Split1 top_pad=0 | Split2 top_pad=131072 | Split2 top_pad=0 |
+| --- | ---: | ---: | ---: | ---: |
+| WF caller small | 53336 | 15052 | 53812 | 15480 |
+| WF handler callee-small | 53320 | 15036 | 37108 | 15460 |
+| Native manual calloc, spawned worker zero | 10040 | 9960 | 10112 | 9944 |
+| Native manual calloc, main worker zero | 48064 | 9720 | 29136 | 9904 |
+| Native stackful calloc, spawned worker zero | 14152 | 14068 | 14228 | 14060 |
+| Native stackful calloc, main worker zero | 52160 | 13832 | 33640 | 14012 |
+
+At split1, both WF buffer placements have an ordinary heap RSS of exactly
+46516 KiB in all three explicit-default snapshots and 8212 KiB in all
+three top0 snapshots. Native manual main-worker calloc changes from 46584
+to 8240 KiB. Its total heap mapping size remains 65644 KiB under both
+policies; the difference is physical residency, not logical allocation size.
+The spawned native manual form keeps only 32 KiB in the ordinary heap and
+most buffer residency in unnamed mappings. Native stackful main-worker
+calloc similarly changes ordinary heap RSS from 46584 to 8256 KiB. This
+reproduces the main-arena amplification without WF types, proof or task
+lowering. Neither the initialized 65536-byte buffers nor the requirement to
+preserve every returned byte was relaxed.
+
+With two workers, handler allocation under explicit-default padding varies
+with execution placement: callee-small live RSS spans 30672..43744 KiB,
+with ordinary heap RSS 18356..34272 KiB. Under top0 its total live RSS spans
+only 15448..15464 KiB even though ordinary-heap and unnamed-map shares still
+vary. Caller small and callee-small then have almost equal residency. The
+earlier caller/handler memory difference therefore does not require a new
+container initialization or address contract to explain it. At 64 small
+connections the same effect is smaller: split1 callee-small live RSS falls
+5908 -> 3500 KiB, while main-worker native stackful falls 4668 -> 2264 KiB.
+
+This is a memory explanation, not a recovered throughput frontier. All
+ratios below pair the same pass; brackets contain the minimum and maximum
+of seven ratios, not a confidence interval. CPU/exchange is the server's
+reported user plus system time divided by verified round trips.
+
+| Top0 comparison, 1024 small-message peers | Throughput ratio | CPU/exchange ratio | Timed peak RSS ratio |
+| --- | --- | --- | --- |
+| Split1 WF callee-small / native manual main | 0.9598 [0.9348, 0.9977] | 1.0723 [1.0405, 1.1024] | 1.5411 [1.5290, 1.5440] |
+| Split1 WF callee-small / native stackful main | 0.9676 [0.9215, 0.9984] | 1.0476 [1.0286, 1.1024] | 1.0807 [1.0762, 1.0836] |
+| Split2 WF callee-small / native manual main | 0.8490 [0.8090, 0.9155] | 1.1318 [1.1116, 1.1701] | 1.5637 [1.5482, 1.5863] |
+| Split2 WF callee-small / native stackful main | 0.8561 [0.8184, 0.8957] | 1.1239 [1.1161, 1.1371] | 1.1054 [1.0978, 1.1214] |
+
+Every rate and CPU pair in that table still loses. Tail ratios cross parity
+in all four comparisons. The top0/explicit-default rate ranges also cross
+parity for both compact WF forms at both worker counts; no repeatable rate
+gain accompanies the large RSS reduction. The base WF split2/1024 form
+actually loses every top0 rate pair, median 0.9856 [0.9574, 0.9978]. At 64
+small-message peers, native rate variability prevents a consistent rate
+ranking, while WF's split2 CPU cost still exceeds both native main-worker
+forms in every pair.
+
+Large-transfer timed peak RSS does not preserve the sparse live-snapshot
+gain: split1 callee-small peaks at median 6916/6920 KiB under the two
+padding policies. With top0, its rate exceeds native stackful main in every
+split1 pair, median 1.0573 [1.0345, 1.0774], but CPU/exchange also exceeds it
+in every pair, 1.3545 [1.3036, 1.3889], and tails cross parity. Split2 rate
+ranges cross parity while WF CPU/exchange is still 1.5154
+[1.3759, 1.6718] of that reference. These results cannot select a universal
+winner from throughput alone.
+
+Retain explicit top0 as an allocator control and the main-worker native
+forms as an attribution control. Do not adopt a process-wide allocator
+default from this panel: steady exchanges exclude connection establishment
+from their rate interval, and other allocation sizes, churn and resource
+pressure are unmeasured. The roughly 37.4-MiB one-worker heap reduction is
+real and independently reproducible in native C. The remaining WF work is
+continuation state and service cost, not removal of source initialization
+or a claim that sequential source inherently requires the original RSS.
 
 ## Thirty-first experiment: separate client/server physical cores
 
