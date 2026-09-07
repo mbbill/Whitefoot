@@ -635,6 +635,19 @@ the disabled route. This isolates a candidate fixed output-path cost; it
 does not choose a runtime default. macOS can qualify the commands and
 checksums, but cannot qualify the native Linux ring distinction.
 
+`make rayon-startup-bench` is experiment 50: four computing threads, twelve
+WF stacks and 1/16 batches, retaining ordinary compiler WF output, same-IR
+manual default and used-lanes links, and frozen Rayon grain four. Five passes
+after one warmup produce forty ordinary samples. The used-lanes candidate
+runs the full existing completion suite; separate observations check the
+storage flags and bytes. `CPU_PHASE_TRACE=1` additionally invokes
+`rayon-phase-trace.sh` after all ordinary timing. It preflights Linux events
+and entry symbols, then records eight one-batch process timelines including
+the WF sequential control and parent reap. `PROFILE_PERF` selects perf.
+Missing events, failed recording or lost data leave an explicit incomplete
+trace status; even captured traces require independent attribution audit.
+No probe-derived timing enters the ordinary ranking and no default changes.
+
 `make mixed-rayon-check` qualifies the optional `mixed-rayon` binary in the
 same standalone crate. Its CLI is `mixed-rayon PORT CONNECTIONS --threads B
 [--queue Q]`: B includes one current-thread Tokio I/O driver, leaving B-1

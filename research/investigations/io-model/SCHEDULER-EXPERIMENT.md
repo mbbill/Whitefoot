@@ -6540,3 +6540,92 @@ with release/race separation and observed Linux backend/CPU constraints.
 The canonical gate at this revision is still running when these results are
 recorded. No Go timing panel has run, no existing native/WF cohort is replaced,
 and there is no claim of spare generator capacity or maximal Go performance.
+
+## Fiftieth experiment: configured-lane initialization and process boundaries
+
+Experiment 47's source and timeline audit selected one existing candidate:
+`WF_SCHED_INIT_USED_LANES=1`, with compact stacks kept at zero. This experiment
+implements the bounded control described above without editing runtime
+sources, emitted IR, the workload, the output path or either default policy.
+It does not presume that the candidate removes the full short-run difference.
+
+`make rayon-startup-bench ROUNDS=5 WARMUP=1` reuses `rayon-bench.sh` with
+`RESOURCE_CONTROLS=3`. At each of one and sixteen batches it runs four forms:
+normal compiler WF, the same IR manually linked with explicit default macros,
+the same manual link with used-lanes set to one, and frozen Rayon width/grain
+4/4. WF has four workers and twelve stacks; the harness removes any inherited
+native-ring override. One warmup and five alternating passes yield forty
+ordinary samples. No fresh grain calibration selects these controls.
+
+The manual link reproduces whitefootc's C source order and actual
+`/usr/bin/clang` selection, C11, pthread, O2 and math-library flags, feeding the
+same generated IR on stdin. Commands and binary hashes are retained, along
+with a byte-identity result for manual default versus compiler default and
+Linux symbol/disassembly dumps for all three WF forms. Both default forms
+remain in every pass regardless of that result. Before timing, the used-lanes
+candidate passes the entire existing `completion-test`, including the core
+enumerations; neither its scope nor its expected verdicts change.
+
+Every ordinary invocation validates the existing checksum with the runner's
+trailing CR/LF normalization. Additional manual one-batch output files are
+compared including their newline. Four separate observer runs cross default
+and used-lanes at both batch counts, require the expected macro values, four
+scheduler threads, three spawned workers and positive grants, and retain
+exact stdout plus no-target compute-join counts. There is still no peak live
+stack counter. These observations are not measurements of the ordinary
+samples' scheduling events.
+
+`CPU_PHASE_TRACE=1` adds the separately maintained `rayon-phase-trace.sh`
+caller after the complete ordinary panel. It first records the current Linux
+kernel/perf version and actual available tracepoints, checks every required
+event and each binary's entry symbols, and retains their schemas and ELF
+segments. `perf probe` resolves file offsets as required by the
+[Linux uprobe interface](https://www.kernel.org/doc/html/latest/trace/uprobetracer.html).
+Only the seven coarse function entries identified above are registered, in
+an invocation-specific group removed on exit. No function-return probe or
+hot recursive probe is added.
+
+The trace cohort is ordinary WF4/12, used-lanes WF4/12, sequential WF4/12
+configured without any parallel acquisition, and Rayon4/grain4, each at one
+batch in forward then reverse order. A privileged system-wide recorder runs
+the checksum runner as the normal job user. Tiny exec-in-place wrappers retain
+runner and child PIDs; the child's stdout still goes directly to the runner's
+normal pipe. Recording outlives child exit and includes parent wait4 return.
+The wrapper/recorder executions and all their timing rows live under
+`phase-trace/`, never in `resource.tsv`.
+
+The trace captures scheduler exec/fork/exit/switch/waking events, write and
+wait4 entry/exit, exit-group entry, and the WF entry probes. It uses the
+monotonic clock and retains raw perf data, nanosecond-decoded records,
+commands, PID files, event definitions, recorder/decode stderr and basic
+milestone checks. Missing permissions, kernel events, symbols, failed capture,
+decode errors or loss markers produce explicit `status=incomplete`, preserving
+the ordinary panel. `status=captured` means eight checksum-validated records
+with necessary markers, not completed causal analysis: exact thread membership,
+marker counts, the returned wait4 PID and final state transitions must still
+be independently audited. A function-entry interval includes any intervening
+code and scheduling; probes themselves can perturb the execution. Neither
+that interval nor a profiled process wall is substituted into the ranking.
+
+The isolated `codex/io-cpu-startup-controls` branch reuses the resource CI job
+with a twenty-minute cap and the bounded panel above. Experiment 47 remains
+frozen on its existing branch. Current native event availability and complete
+trace qualification are Linux results to be established, not inferred from
+the prior kernel version or from the local M1 smoke.
+
+The initial M1 smoke passed both Rust tests, fmt/clippy, the complete candidate
+completion suite, all eight ordinary commands and all six independent manual
+or observer stdout files. Re-reading the plan/raw data verified executable,
+environment and exact batch mapping. Both one-batch observations reported
+zero no-target compute-join turns; at sixteen batches default/used-lanes
+reported ten/three, respectively, with correct bytes and flags. Those are
+separate observations, not an explanation of the ordinary timing rows.
+The compiler/manual-default Mach-O files differ, while their retained complete
+disassemblies match after removing only the file-heading lines. The local
+shared-load timings are not ranking evidence. The optional trace path correctly
+reported `incomplete` because this machine has no Linux tracepoints.
+A separate local invocation of the actual launch wrapper ran WF-seq and
+Rayon through the existing runner, preserving both checksum payloads and
+distinct runner/child PID records. It also verified the runner's expected
+progress stderr, which the trace qualification permits exactly. This checks
+wrapper/pipe wiring, not Linux event collection.
