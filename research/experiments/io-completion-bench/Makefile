@@ -114,6 +114,10 @@ scheduler-coroutine-paced:
 scheduler-profile:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS=3 WARMUP=0 CORO_CXX="$(CORO_CXX)" EXPERIMENT=coroutine-paced bash scheduler-bench.sh profile
 
+.PHONY: scheduler-client-service
+scheduler-client-service:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" CORO_CXX="$(CORO_CXX)" EXPERIMENT=coroutine-paced bash scheduler-bench.sh client
+
 WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
 WORK := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-io-completion-bench
 BUILD := $(WORK)/build
@@ -617,6 +621,18 @@ $(BUILD)/epoll_echo: epoll_echo.c compute_protocol.h | prepare
 
 $(BUILD)/netload: netload.c compute_protocol.h | prepare
 	$(CLANG) $(CFLAGS) -pthread $< -o $@
+
+# This client policy is independent of the server representation. Budget one
+# forces the edge-triggered userspace continuation; both enter the timed panel.
+.PHONY: client-service-check
+client-service-check: $(BUILD)/epoll_echo
+	@set -e; \
+	for budget in 1 8; do \
+	  $(CLANG) $(CFLAGS) -Wpedantic -pthread "-DWF_NETLOAD_SERVICE_ROUNDS=$$budget" \
+	    netload.c -o "$(BUILD)/netload-service$$budget"; \
+	  env ROOT="$(ROOT)" OUT="$(BUILD)" NET_LINES=epoll NETLOAD="$(BUILD)/netload-service$$budget" \
+	    sh linux-net-bench.sh verify-client; \
+	done
 
 # Linux-only reference correctness, also reached by scheduler-check on Linux.
 # The send-buffer override and observers never enter timed binaries.

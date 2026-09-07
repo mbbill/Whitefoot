@@ -73,6 +73,15 @@
 
 #include "compute_protocol.h"
 
+/* A client-service control, independent of the server's execution budget.
+ * Zero retains the original drive-until-EAGAIN client and its data layout. */
+#ifndef WF_NETLOAD_SERVICE_ROUNDS
+#define WF_NETLOAD_SERVICE_ROUNDS 0u
+#endif
+#if WF_NETLOAD_SERVICE_ROUNDS < 0 || WF_NETLOAD_SERVICE_ROUNDS > 65536u
+#error "The client service budget must be in 0..65536"
+#endif
+
 struct connection {
     int descriptor;
     int established;
@@ -91,6 +100,10 @@ struct connection {
     uint64_t completed_by_deadline;
     int waiting_arrival;
     struct timespec due;
+#if WF_NETLOAD_SERVICE_ROUNDS
+    struct connection *ready_next;
+    int queued;
+#endif
 };
 
 struct client {
@@ -100,6 +113,12 @@ struct client {
     uint64_t count;
     uint64_t outstanding;
     int admitting;
+#if WF_NETLOAD_SERVICE_ROUNDS
+    struct connection *ready_head;
+    struct connection *ready_tail;
+    uint64_t ready_count;
+    uint64_t service_yields;
+#endif
 };
 
 static uint64_t option_connections;
@@ -238,11 +257,28 @@ static void begin_round(struct connection *link, int admitting) {
     if (link->round == 0) link->first_started = link->started;
 }
 
+#if WF_NETLOAD_SERVICE_ROUNDS
+static void enqueue_client(struct client *owner, struct connection *link) {
+    if (link->queued) return;
+    link->queued = 1;
+    link->ready_next = NULL;
+    if (owner->ready_tail) owner->ready_tail->ready_next = link;
+    else owner->ready_head = link;
+    owner->ready_tail = link;
+    owner->ready_count++;
+    owner->service_yields++;
+}
+#endif
+
 /* Drives one connection as far as it will go without blocking: send what is
  * left of the current message, receive what is left of its echo, verify it,
  * record the round trip, and start the next one. Returns when the kernel has
- * no more room to send or no more bytes to give. */
+ * no more room to send or no more bytes to give, or when the optional client
+ * service budget puts the next round on the owner's ready FIFO. */
 static void pump(struct client *owner, struct connection *link) {
+#if WF_NETLOAD_SERVICE_ROUNDS
+    unsigned turns = 0;
+#endif
     for (;;) {
         while (link->sent < option_bytes) {
             ssize_t moved = send(link->descriptor, link->outgoing + link->sent,
@@ -333,6 +369,14 @@ static void pump(struct client *owner, struct connection *link) {
             return;
         }
         begin_round(link, owner->admitting);
+#if WF_NETLOAD_SERVICE_ROUNDS
+        if (++turns == WF_NETLOAD_SERVICE_ROUNDS) {
+            /* The next request is ready even if no fresh kernel edge arrives.
+             * Keep it in an owner-local FIFO before returning to arrivals. */
+            enqueue_client(owner, link);
+            return;
+        }
+#endif
     }
 }
 
@@ -340,12 +384,22 @@ static void pump(struct client *owner, struct connection *link) {
 static void exchange(struct client *owner) {
     struct epoll_event events[256];
     owner->outstanding = owner->count;
+#if WF_NETLOAD_SERVICE_ROUNDS
+    owner->ready_head = NULL;
+    owner->ready_tail = NULL;
+    owner->ready_count = 0;
+    owner->service_yields = 0;
+#endif
     for (uint64_t at = 0; at < owner->count; at++) {
         struct connection *link = &owner->first[at];
         link->round = 0;
         link->finished = 0;
         link->completed_by_deadline = 0;
         link->waiting_arrival = 0;
+#if WF_NETLOAD_SERVICE_ROUNDS
+        link->ready_next = NULL;
+        link->queued = 0;
+#endif
         if (paced_link(owner, link)) {
             if (!link->planned) {
                 link->finished = 1;
@@ -390,9 +444,21 @@ static void exchange(struct client *owner) {
                 }
             }
         }
+#if WF_NETLOAD_SERVICE_ROUNDS
+        if (owner->ready_head) {
+            delay = (struct timespec){0, 0};
+            timeout = &delay;
+        }
+#endif
         int ready = option_light_per_second && !owner->admitting
             ? epoll_pwait2(owner->epoll, events, 256, timeout, NULL)
-            : epoll_wait(owner->epoll, events, 256, -1);
+            : epoll_wait(owner->epoll, events, 256,
+#if WF_NETLOAD_SERVICE_ROUNDS
+                         owner->ready_head ? 0 : -1
+#else
+                         -1
+#endif
+                         );
         if (ready < 0) {
             if (errno == EINTR) {
                 continue;
@@ -404,8 +470,25 @@ static void exchange(struct client *owner) {
             if (link->finished || link->waiting_arrival) {
                 continue;
             }
+#if WF_NETLOAD_SERVICE_ROUNDS
+            if (link->queued) continue;
+#endif
             pump(owner, link);
         }
+#if WF_NETLOAD_SERVICE_ROUNDS
+        /* A finite group prevents a perpetually ready heavy peer from hiding
+         * due light arrivals. Poll readiness again between groups of eight. */
+        uint64_t turns = owner->ready_count < 8u ? owner->ready_count : 8u;
+        for (uint64_t turn = 0; turn < turns; turn++) {
+            struct connection *link = owner->ready_head;
+            owner->ready_head = link->ready_next;
+            if (!owner->ready_head) owner->ready_tail = NULL;
+            owner->ready_count--;
+            link->ready_next = NULL;
+            link->queued = 0;
+            pump(owner, link);
+        }
+#endif
     }
 }
 
@@ -807,6 +890,12 @@ int main(int argc, char **argv) {
     double per_second = exchange_seconds > 0.0 ? (double)total / exchange_seconds : 0.0;
     double bytes_per_second =
         exchange_seconds > 0.0 ? (double)total * (double)option_bytes / exchange_seconds : 0.0;
+#if WF_NETLOAD_SERVICE_ROUNDS
+    uint64_t service_yields = 0;
+    for (uint64_t at = 0; at < threads; at++) service_yields += clients[at].service_yields;
+    printf("client_service_rounds=%u\tclient_service_yields=%llu\t",
+           (unsigned)WF_NETLOAD_SERVICE_ROUNDS, (unsigned long long)service_yields);
+#endif
     printf("admitted=%d\tadmission_us=%llu\t", option_admit, (unsigned long long)microseconds_between(connect_end, exchange_start));
     printf("duration_ms=%llu\tdrain_us=%llu\t", (unsigned long long)option_duration_ms,
            (unsigned long long)(option_duration_ms ? microseconds_between(exchange_deadline, exchange_end) : 0));

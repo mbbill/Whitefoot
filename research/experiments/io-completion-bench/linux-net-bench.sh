@@ -13,6 +13,8 @@
 #   sh linux-net-bench.sh          build everything and run the protocol
 #   sh linux-net-bench.sh verify   only the correctness pass, over binaries
 #                                  another build already put in $OUT
+#   sh linux-net-bench.sh verify-client   qualify NETLOAD's bounded service
+#                                  against the selected echo references
 #
 # The bar this measures against is the one
 # research/investigations/io-model/NETWORK.md section 6 sets: the reference is
@@ -31,6 +33,7 @@ BUNDLE=$ROOT/research/experiments/io-completion-bench
 OUT=${OUT:-/scratch/io-net-bench}
 CLANG=${CLANG:-/usr/bin/clang}
 MODE=${1:-bench}
+NETLOAD=${NETLOAD:-$OUT/netload}
 
 # The plan. One line per case: label suffix, connections, round trips per
 # connection, message bytes.
@@ -141,7 +144,7 @@ run_case() {
     wait_for_listener "$port" "$server" "$label"
 
     measured=0
-    line=$("$OUT/netload" "$port" "$connections" "$roundtrips" "$bytes") || measured=$?
+    line=$("$NETLOAD" "$port" "$connections" "$roundtrips" "$bytes") || measured=$?
     if [ "$measured" != 0 ]; then
         echo "$label: the load generator failed" >&2
         cat "$OUT/server.err" >&2
@@ -159,6 +162,16 @@ run_case() {
     if [ -s "$OUT/server.err" ]; then
         echo "$label: the server wrote to its diagnostic channel:" >&2
         cat "$OUT/server.err" >&2
+    fi
+    if [ "$MODE" = verify-client ]; then
+        budget=$(field "$line" client_service_rounds)
+        test "$budget" = 1 || test "$budget" = 8
+        if [ "$budget" = 1 ]; then
+            test "$(field "$line" client_service_yields)" -gt 0
+        fi
+        test "$(field "$line" roundtrips)" -eq $((connections * roundtrips))
+        printf 'client-service: budget=%s bytes=%s roundtrips=%s yields=%s PASS\n' \
+            "$budget" "$bytes" "$(field "$line" roundtrips)" "$(field "$line" client_service_yields)"
     fi
 
     if [ "$recording" = 1 ]; then
@@ -218,8 +231,8 @@ if [ "$MODE" = bench ]; then
     fi
 fi
 
-if [ ! -x "$OUT/netload" ]; then
-    echo "linux-net-bench: $OUT/netload is not built" >&2
+if [ ! -x "$NETLOAD" ]; then
+    echo "linux-net-bench: $NETLOAD is not built" >&2
     exit 1
 fi
 
@@ -255,10 +268,13 @@ echo "$LINES" | while read -r name binary; do
         environment=$WF_ENVIRONMENT
     fi
     run_case "$name.verify" "$binary" "$environment" 4 200 64 0
+    if [ "$MODE" = verify-client ]; then
+        run_case "$name.verify.large" "$binary" "$environment" 4 20 65536 0
+    fi
 done
 echo "every server echoes what netload sent, at 4 connections"
 
-if [ "$MODE" = verify ]; then
+if [ "$MODE" = verify ] || [ "$MODE" = verify-client ]; then
     exit 0
 fi
 

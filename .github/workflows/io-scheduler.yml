@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -45,14 +45,7 @@ jobs:
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang clang-20 libclang-rt-20-dev linux-tools-generic time
-          profile_perf=''
-          for candidate in /usr/lib/linux-tools/*/perf; do
-            if [[ -x $candidate ]]; then profile_perf=$candidate; fi
-          done
-          test -n "$profile_perf"
-          "$profile_perf" --version
-          printf 'PROFILE_PERF=%s\n' "$profile_perf" >> "$GITHUB_ENV"
+          sudo apt-get install -y --no-install-recommends clang clang-20 libclang-rt-20-dev time
           rustup default stable
           cargo fetch --locked --manifest-path compiler/Cargo.toml
       - name: Measure scheduler policies on this host
@@ -60,29 +53,21 @@ jobs:
           ROOT: ${{ github.workspace }}
           OUT: ${{ runner.temp }}/io-scheduler
           CARGO_TARGET_DIR: ${{ github.workspace }}/compiler/target
-          ROUNDS: '3'
-          WARMUP: '0'
+          ROUNDS: '7'
+          WARMUP: '2'
           EXPERIMENT: ${{ matrix.experiment }}
           CLANG: /usr/bin/clang-20
           CORO_CXX: /usr/bin/clang++-20
         run: |
-          profile_old_perf=$(cat /proc/sys/kernel/perf_event_paranoid)
-          profile_old_kptr=$(cat /proc/sys/kernel/kptr_restrict)
-          trap 'sudo sysctl -q "kernel.perf_event_paranoid=$profile_old_perf" "kernel.kptr_restrict=$profile_old_kptr"' EXIT
-          mkdir -p "$OUT"
-          {
-            printf 'original perf_event_paranoid=%s kptr_restrict=%s\n' "$profile_old_perf" "$profile_old_kptr"
-            sudo sysctl kernel.perf_event_paranoid=-1 kernel.kptr_restrict=0
-          } > "$OUT/profile-host-policy.txt"
-          bash research/experiments/io-completion-bench/scheduler-bench.sh profile
+          bash research/experiments/io-completion-bench/scheduler-bench.sh client
       - name: Publish measurement summary
         if: always()
         run: |
           {
             echo '## Scheduler experiment: ${{ matrix.experiment }}'
-            echo 'CPU attribution on the qualified fixed-arrival mixed workload: WF base/balanced chunks, native C manual quantum and compact C++ coroutine quantum. Three profiles per split1/split2 case use cpu-clock sampling at 999 Hz, inherited across server threads, with raw events and whole-lifetime resource costs. Keep the same normal binaries and all protocol/observer qualifications. Results are profile.tsv, not an unprofiled performance panel. The dedicated hosted runner temporarily permits profiling and kernel symbol lookup; original settings are restored on exit. Clang 20 is used throughout. See the investigation for scope.'
+            echo 'Client-service control on the fixed-arrival mixed workload: original drive-until-EAGAIN versus bounded eight-round and one-round client FIFOs. All keep every planned light request and its backlog-inclusive latency. Cross WF base/chunks/balanced chunks with native C manual quantum and compact C++ coroutine quantum; seven paired passes and two warmups on split1/split2. Default client optimized LLVM must remain identical to d72d0d25, and budget one forces queued continuation in byte/compute/paced qualification. Server policies and source ABI are unchanged. Clang 20 is used throughout. See the investigation for scope.'
             echo '```text'
-            for file in host.txt profile-host-policy.txt cohorts.tsv profile-summary.txt balanced-check.log stackful-check.log coroutine-check.log; do
+            for file in host.txt cohorts.tsv network-summary.txt client-service-check.log balanced-check.log stackful-check.log coroutine-check.log; do
               cat "$RUNNER_TEMP/io-scheduler/$file" 2>/dev/null || echo "$file was not produced"
             done
             echo '```'

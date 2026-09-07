@@ -3259,7 +3259,62 @@ binaries and four observer companions. All sixteen normal/observed stream
 cases pass with one/four workers, including 2-MiB streams, backpressure,
 half-close and process exit. Both optimized sources retain an initialized
 65536-byte calloc. Runner Bash and workflow YAML/embedded shell checks pass.
-Native Linux allocation placement, residency and timing remain pending.
+Native Linux allocation results follow below.
+
+### Native allocation results
+
+Revision `8b44b5f9270a2bb322ae7c9dfe775f736730a7bc` completed the
+[allocation panel](https://github.com/mbbill/Whitefoot/actions/runs/34066923286)
+on AMD EPYC 7763, four logical CPUs on two SMT cores, Linux 6.17, Clang 18.1.3,
+glibc 2.39 and 4096-byte pages. Artifact 9999604332 retains every sample and
+live mapping. Independent analysis checks exactly 12 workload/policy cells,
+eight forms and seven passes, all 672 raw client exchange counts and empty
+diagnostics. All 288 live snapshots have three repetitions, matching smaps
+sums and the requested read-back THP policy; disabled samples have zero
+AnonHugePages. The canonical gate and host qualification pass. The separate
+io-bench Windows performance job fails its existing compute stability rule
+after two cohorts; this is not a successful Windows performance panel and
+its threshold is unchanged. The subsequent d72d0d25 gate, hosts, scheduler
+and io-bench workflows all pass.
+
+Moving the buffer into the accepted handler improves two-worker residency,
+but neither one-worker residency nor throughput generally improves. Live
+RSS medians in KiB, with THP disabled, are:
+
+| Placement and workload | Caller small | Callee small | Native stackful calloc |
+| --- | ---: | ---: | ---: |
+| split1, 64 peers, 64 bytes | 5912 | 5896 | 2524 |
+| split1, 1024 peers, 64 bytes | 53360 | 53344 | 14152 |
+| split2, 64 peers, 64 bytes | 6368 | 4128 | 2648 |
+| split2, 1024 peers, 64 bytes | 53808 | 32904 | 14232 |
+| split2, 64 peers, 65536 bytes | 7164 | 6996 | 4412 |
+
+The callee-small split2/1024 snapshots range from 31620 to 36152 KiB, so
+allocation distribution varies even within this cell. Its ordinary heap RSS
+is 19508/21076/25012 KiB versus the caller's 46572 KiB in all three samples;
+another anonymous mapping holds 3924..4896 KiB. At split1, both forms retain
+exactly 46516 KiB in the ordinary heap. The WF entry thread executes worker
+zero, while the native reference creates every worker with pthread_create.
+Thus moving allocation into a handler need not move it off the process main
+thread. These observations support an allocation-path hypothesis; they do
+not trace a particular libc branch or prove that another allocator wins.
+
+The split2/1024 paired callee-small/caller-small throughput median is 0.9966
+(0.9822..1.0241) with THP permitted, and 0.9904 (0.9735..0.9998) when disabled.
+The latter loses every pass despite lower memory. Against native stackful
+calloc in that disabled cell, callee-small throughput is 0.8621
+(0.8145..0.9231), CPU/exchange 1.0856 (1.0822..1.1781), and peak RSS 2.1217
+(2.0295..2.1668): all remain worse. At split1/large transfers the disabled
+callee-small form beats native throughput by 4.17% in the paired median,
+but spends 36.11% more CPU/exchange; it is not a performance frontier win.
+Live snapshots and process-lifetime peak RSS are different measurements.
+
+Retain the initialized handler-owned source as an experimental ownership
+form, with the caller control still reproducible. No buffer initialization
+is removed and no writer-visible pinning, suspension annotation, container
+ABI or lifetime exception is introduced. A temporary native main-worker
+control has passed 20 M1 stream cases; Linux allocator attribution remains
+a follow-up, not an explanation established by those local checks.
 
 ## Twenty-eighth experiment: CPU attribution of the mixed-load gap
 
@@ -3299,4 +3354,106 @@ lookup, records the original values, and restores them on shell exit. It
 uses the installed generic perf executable directly because the Azure kernel
 may have a different version from Ubuntu's generic tools. Page policy is
 recorded without modification. M1 can check runner/workflow shell syntax but
-cannot qualify Linux perf collection; actual profiles remain pending CI.
+cannot qualify Linux perf collection; the native results follow.
+
+### Native CPU profiles and client-dispatch attribution
+
+Revision `d72d0d253838c1e0134cb7f3f97ea681af105b7f` completed all four
+workflows. The
+[profile job](https://github.com/mbbill/Whitefoot/actions/runs/34067754736)
+ran on AMD EPYC 9V74, four logical CPUs on two SMT cores, Linux 6.17,
+Clang 20.1.2 and perf 6.8.12. Artifact 9999564655 holds 72 profiles.
+Independent parsing accounts for all 110784 raw sample events, matches each
+report's summed sample periods, verifies zero lost samples and checks raw
+client counts against the profile table. It does not discard unknown symbols.
+
+For zero computation, median CPU sample shares are:
+
+| Placement and form | Kernel | Program | libc |
+| --- | ---: | ---: | ---: |
+| split1, WF base | 93.71% | 3.73% | 2.46% |
+| split1, WF balanced chunks | 93.32% | 4.11% | 2.64% |
+| split1, C manual quantum | 95.41% | 1.60% | 2.79% |
+| split1, C++ elided quantum | 95.61% | 1.69% | 2.59% |
+| split2, WF base | 90.61% | 5.48% | 4.16% |
+| split2, WF balanced chunks | 90.75% | 5.75% | 3.37% |
+| split2, C manual quantum | 94.87% | 1.61% | 3.56% |
+| split2, C++ elided quantum | 93.49% | 2.77% | 4.06% |
+
+Columns are independently formed medians over three profiles, so they need
+not sum to 100%. Kernel execution dominates this sampled workload. WF's
+userspace contribution is spread across submission, ring progress, joins
+and scheduler completion rather than one dominant function. With long
+computation and 100 light arrivals/peer/s, program code takes 93.83%/96.86%
+of WF balanced samples on split1/split2, versus 94.74%/96.61% for native
+elided quantum. The inlined recurrence dominates that function's samples.
+These flat profiles do not measure off-CPU waiting or prove that a rarely
+sampled checkpoint is free or sufficiently fair.
+
+The resource wrapper times perf and its child, so profile.tsv user/system
+resource columns include recorder/wrapper costs. They must not be reported
+as isolated server CPU/exchange. The cpu-clock event stream follows the
+target and inherited workers. Neither those samples nor this host's profiled
+latencies replace experiment 26's unprofiled comparisons.
+
+Re-examining that earlier unprofiled panel identifies an attribution limit.
+At zero-compute split2, WF balanced's end-to-end light p99 median is 1885 us
+versus native elided's 105 us. Its dispatch-wait p99 is 1560 versus 28 us;
+its post-dispatch p99 is 186 versus 86 us. The latter paired ratio is still
+2.1628 (1.1429..16.9091), but the full end-to-end ratio of 19.1619 cannot all
+be assigned to execution inside the server. These are separately computed
+quantiles: subtracting or adding their medians is not a p99 decomposition.
+Post-dispatch latency includes client send/receive work and kernel time as
+well as the server.
+
+The client pump repeatedly exchanges on one heavy connection until EAGAIN.
+Light arrival times are checked outside that pump. A continuously ready
+heavy connection can therefore delay the client's next arrival check even
+with disjoint client/server logical CPUs. The existing paced wait already
+uses epoll_pwait2 with a timespec; millisecond timeout rounding is not this
+mechanism. Server burstiness may affect the client's dispatch behavior, and
+backlog can also reflect a previous request's slow response. A bounded
+client control is needed before selecting another server policy from this
+particular tail. Long-compute split2 post-dispatch tails also lose every
+pair, with median ratios 1.9946/1.7876 at 100/500 light arrivals/peer/s;
+the client observation does not erase the remaining performance problem.
+
+## Twenty-ninth experiment: bounded client service
+
+`make scheduler-client-service` crosses the unchanged five server forms
+(WF base, chunks, balanced chunks, C manual quantum and C++ elided quantum)
+with three client policies on split1/split2. The original client has service
+budget zero; its optimized LLVM must match the retained d72d0d25 source
+exactly after removing only module/source filename lines. The candidates
+limit one pump to eight completed round trips or a single round trip, and queue its continuation
+in an owner-local intrusive FIFO. Queued work is driven without requiring
+a new edge-triggered kernel event. The client polls readiness and checks
+light arrivals between finite FIFO groups of at most eight turns.
+
+The policy neither deletes planned light arrivals nor resets their due
+timestamps. The next heavy request's timer starts before its queue wait,
+and all light backlog and drain remain in the latency measurements. Positive
+budget builds report their budget and yield count in every raw client row.
+No server binary, runtime budget, source ABI or container interface changes.
+The five forms, six policy/placement cohorts and three cases yield 630
+timed rows over seven passes after two warmups. Both form and cohort order
+alternate. All prior native, WF completion and observer qualification stays
+enabled. The uncapped comparison remains a full measured policy, rather
+than being replaced silently.
+
+Budget one forces the FIFO path during byte/compute/paced qualification.
+The maintained client-service-check runs small and 64-KiB echo exchanges
+against the native engine, verifies counts and requires positive yields
+for budget one; Linux scheduler-check reaches it through the canonical
+gate. The measurement runner additionally verifies computed and paced
+budget-one exchanges at both server worker counts before timing. On M1,
+32 native loopback cases pass across budgets one/eight, manual/stackful
+references, one/four workers and small/large/compute/paced workloads.
+Strict C11 builds and the default-client LLVM comparison pass locally.
+The maintained verifier's actual exchange/assertion functions also pass
+four local cases against the original native manual server. Budget one
+reports 796 yields over 800 small exchanges and 76 over 80 large exchanges;
+budget eight reports zero in those small cases. This is why the timed panel
+includes both budgets: one stays a forced control if eight never exhausts.
+These are correctness checks through the local epoll compatibility layer,
+not Linux timings. The native client-policy panel remains pending CI.

@@ -67,15 +67,16 @@ if [[ $MODE == check ]]; then
     if [[ $(uname -s) == Linux ]]; then
         make -C "$HERE" stackful-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/stream-check"
         make -C "$HERE" coroutine-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/coroutine-check"
+        make -C "$HERE" client-service-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/client-check"
     fi
     exit 0
 fi
-if [[ ( $MODE != bench && $MODE != profile ) || $(uname -s) != Linux ]]; then
-    echo 'scheduler-bench: use check on POSIX, or bench/profile on Linux with io_uring' >&2
+if [[ ( $MODE != bench && $MODE != profile && $MODE != client ) || $(uname -s) != Linux ]]; then
+    echo 'scheduler-bench: use check on POSIX, or bench/profile/client on Linux with io_uring' >&2
     exit 2
 fi
-if [[ $MODE == profile && $EXPERIMENT != coroutine-paced ]]; then
-    echo 'scheduler-bench: profile uses the qualified coroutine-paced workload' >&2
+if [[ ( $MODE == profile || $MODE == client ) && $EXPERIMENT != coroutine-paced ]]; then
+    echo 'scheduler-bench: profile/client uses the qualified coroutine-paced workload' >&2
     exit 2
 fi
 [[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == footprint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical || $EXPERIMENT == stackful || $EXPERIMENT == stackful-paced || $EXPERIMENT == nodelay || $EXPERIMENT == owner || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced || $EXPERIMENT == memory || $EXPERIMENT == dispatch || $EXPERIMENT == wake || $EXPERIMENT == service || $storage_experiment == 1 || $coroutine_experiment == 1 ]] || exit 2
@@ -246,6 +247,13 @@ if [[ $page_experiment == 1 ]]; then
     mv "$OUT/cohorts-selected.tsv" "$OUT/cohorts.tsv"
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -pthread \
         "$HERE/stream_check.c" -o "$OUT/bin/stream_check"
+fi
+if [[ $MODE == client ]]; then
+    # A forced one-round control stays informative if eight never exhausts.
+    # All client policies use the same worker counts and CPU placement.
+    awk 'BEGIN {OFS="\t"} {name=$1; print; $1=name "-client8"; print; $1=name "-client1"; print}' \
+        "$OUT/cohorts.tsv" > "$OUT/cohorts-selected.tsv"
+    mv "$OUT/cohorts-selected.tsv" "$OUT/cohorts.tsv"
 fi
 forms=(base sleep short spin poll1 poll16)
 if [[ $network_compute == 1 ]]; then
@@ -450,6 +458,26 @@ fi
 for tool in netload uring_echo epoll_echo runner gen; do
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread "$HERE/$tool.c" -o "$OUT/bin/$tool"
 done
+if [[ $MODE == client ]]; then
+    mkdir -p "$OUT/codegen"
+    git -C "$ROOT" show d72d0d253838c1e0134cb7f3f97ea681af105b7f:research/experiments/io-completion-bench/netload.c \
+        > "$OUT/codegen/netload-before.c"
+    for revision in before after; do
+        client_source="$OUT/codegen/netload-before.c"
+        if [[ $revision == after ]]; then client_source="$HERE/netload.c"; fi
+        "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread -I "$HERE" -S -emit-llvm \
+            "$client_source" -o "$OUT/codegen/netload-$revision.ll"
+        sed '/^; ModuleID =/d; /^source_filename =/d' "$OUT/codegen/netload-$revision.ll" \
+            > "$OUT/codegen/netload-$revision.normalized.ll"
+    done
+    cmp "$OUT/codegen/netload-before.normalized.ll" "$OUT/codegen/netload-after.normalized.ll"
+    for budget in 1 8; do
+        "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -pthread \
+            "-DWF_NETLOAD_SERVICE_ROUNDS=$budget" "$HERE/netload.c" -o "$OUT/bin/netload-service$budget"
+    done
+    make -C "$HERE" client-service-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/client-check" \
+        > "$OUT/client-service-check.log" 2>&1 || { cat "$OUT/client-service-check.log"; exit 1; }
+fi
 if [[ $EXPERIMENT == nodelay ]]; then
     for engine in epoll uring; do
         for nagle in 0 1; do
@@ -582,6 +610,9 @@ sample=0
 network_case() {
     local form=$1 connections=$2 trips=$3 bytes=$4 pass=$5 observed=$6
     local binary environment=() arguments=() launcher=() directory port server_stderr
+    local client_binary="$OUT/bin/netload"
+    if [[ $cohort == *-client8 ]]; then client_binary="$OUT/bin/netload-service8"; fi
+    if [[ $cohort == *-client1 ]]; then client_binary="$OUT/bin/netload-service1"; fi
     sample=$((sample + 1))
     directory="$OUT/samples/$sample-$cohort-$form-k$connections-b$bytes-r$compute_rounds-a$admitted-d$duration_ms-l${light_per_second:-0}"
     if [[ $observed == 1 ]]; then directory="$OUT/observed/$cohort-$form-k$connections-a$admitted"; fi
@@ -655,12 +686,17 @@ network_case() {
     if [[ ${light_per_second:-0} != 0 ]]; then client_arguments+=(--light-per-second "$light_per_second"); fi
     timeout --signal=TERM --kill-after=5s 120s \
         /usr/bin/time -f '%U\t%S\t%M\t%w\t%c' -o "$directory/client-resources.tsv" taskset -c "$client_cpus" \
-        "$OUT/bin/netload" "$port" "$connections" "$trips" "$bytes" --threads "$client_workers" "${client_arguments[@]}" \
+        "$client_binary" "$port" "$connections" "$trips" "$bytes" --threads "$client_workers" "${client_arguments[@]}" \
         > "$directory/client.tsv" 2> "$directory/client.err"
     if ! wait "$server_pid"; then cat "$directory/server.err" "$server_stderr" >&2; return 1; fi
     server_pid=''
     [[ ! -s $directory/server.out && ! -s $directory/client.err ]]
     if [[ $observed == 0 ]]; then [[ ! -s $directory/server.err ]]; fi
+    if [[ $cohort == *-client8 ]]; then [[ $(field "$directory/client.tsv" client_service_rounds) == 8 ]]; fi
+    if [[ $cohort == *-client1 ]]; then
+        [[ $(field "$directory/client.tsv" client_service_rounds) == 1 ]]
+        [[ $(field "$directory/client.tsv" client_service_yields) -gt 0 ]]
+    fi
     if [[ $profile_active == 1 ]]; then
         "$PROFILE_PERF" report --stdio --header --show-nr-samples --no-children \
             --sort comm,dso,symbol -i "$directory/perf.data" > "$directory/perf-report.txt" 2> "$directory/perf-report.err"
@@ -713,6 +749,16 @@ if [[ $EXPERIMENT == coroutine ]]; then
 fi
 if [[ $EXPERIMENT == coroutine-paced ]]; then references=(q16384 cpp-manual cpp-stackful cpp-heap cpp-elide); fi
 while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
+    if [[ $MODE == client && ( $cohort == split1 || $cohort == split2 ) ]]; then
+        # Force the userspace continuation path even when every kernel poll
+        # could otherwise supply another edge. Verify computation and pacing.
+        cohort="$cohort-client1"
+        network_case q16384 4 20 64 -1 0
+        admitted=1 duration_ms=100 light_per_second=100
+        network_case q16384 4 100000 64 -1 0
+        admitted=0 duration_ms=0 light_per_second=0
+        cohort=${cohort%-client1}
+    fi
     if [[ $EXPERIMENT == allocation ]]; then
         disabled=0
         if [[ $cohort == *-no-thp ]]; then disabled=1; fi
@@ -975,11 +1021,15 @@ exec "$@" 2> "$diagnostics"
 PROFILE_SERVER
     chmod +x "$OUT/bin/profile-server"
 fi
+if [[ $MODE == client ]]; then
+    forward=(base ch16384 chbalanced16384 q16384 cpp-elide)
+    reverse=(cpp-elide q16384 chbalanced16384 ch16384 base)
+fi
 for ((pass=-WARMUP; pass<ROUNDS; pass++)); do
     order=("${forward[@]}")
     if (( (pass + WARMUP) % 2 )); then order=("${reverse[@]}"); fi
     cp "$OUT/cohorts.tsv" "$OUT/cohorts-order.tsv"
-    if [[ $page_experiment == 1 ]] && (( (pass + WARMUP) % 2 )); then
+    if [[ $page_experiment == 1 || $MODE == client ]] && (( (pass + WARMUP) % 2 )); then
         # Alternate which policy runs first as well as representation order.
         tac "$OUT/cohorts.tsv" > "$OUT/cohorts-order.tsv"
     fi
