@@ -7893,9 +7893,10 @@ The additional traps affect WF and may change its scheduling. This is a
 wait-path diagnostic, not another ordinary timing panel or a measurement of
 the earlier host's exact deficit. It does not yet observe whether useful
 work is available during a wait. No waiting policy, affinity, runtime ABI,
-source effect or compiler default changes here. A native capture and complete
-caller/timeline audit remain required before selecting a targeted backoff or
-placement comparison.
+source effect or compiler default changes here. The native result below
+provides the pre-exit/body caller and timeline audit used to select the next
+idle-wait comparison; its three unpaired post-exit probes remain an explicit
+limit on full-capture pairing.
 
 ### Frozen caller result
 
