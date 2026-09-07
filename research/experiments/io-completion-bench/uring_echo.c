@@ -984,7 +984,10 @@ int main(int argc, char **argv) {
         close(worker->wake);
         close(worker->listener);
     }
-    free(workers);
+    /* A worker may observe finished before consuming its wake-read CQE.
+     * Ring close is not an explicit drain proof for that kernel write into
+     * wake_storage. This one-run process retains the worker records until
+     * exit; the network loans released above have already completed. */
     free(table);
     return 0;
 }
