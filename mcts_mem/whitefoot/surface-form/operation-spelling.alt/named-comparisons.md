@@ -1,5 +1,4 @@
-- Arithmetic is spelled infix, and every other table operation is spelled as a named call, comparison included.
-- Comparison keeps its named call because bare `<` cannot be told from a type-argument list at the two-token horizon, and a rule over a grammar class beats a four-of-six subset.
+- Arithmetic used infix spelling. Every other table operation, including the complete comparison class, used named calls.
 
 ## Facts
 
@@ -8,3 +7,4 @@
 ## Moves
 
 - 2026-09-03 replaced by [[operation-spelling]]: the collision is dissolved by a delimiter on call-site type application rather than by keeping six names; comparison is the corpus's most frequent operation, its positional form was the last direction-sensitive one, and v0.40 had made the same four names proof-domain relations over infix affine operands (sourced)
+- 2026-09-06 (5fa851f6) replaced by [[operation-spelling]]: v0.23's whole-class cancellation rested on the `<` collision, which a delimiter on call-site type application dissolves; comparison is the corpus's most frequent operation, its positional form was the last direction-sensitive one, and v0.40 had made the same four names proof-domain relations over infix affine operands (sourced)

@@ -7,4 +7,4 @@
 
 ## Moves
 
-- 2026-08-09 (a01bc707) replaced by [[operation-spelling]]: the register had marked prefix arithmetic as minimality-selected rather than evidence-selected, and the sweep supplied the missing evidence; retained three-address form admits exactly one operation per expression, so an infix spelling needs no precedence surface and costs no lookahead (sourced)
+- 2026-08-09 (a01bc707) replaced by [[trapping-mode-axis]]: the register had marked prefix arithmetic as minimality-selected rather than evidence-selected, and the sweep supplied the missing evidence; retained three-address form admits exactly one operation per expression, so an infix spelling needs no precedence surface and costs no lookahead (sourced)

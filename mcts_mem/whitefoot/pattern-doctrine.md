@@ -1,9 +1,12 @@
-- Design patterns are a closed, taught catalog (`docs/patterns.md`): the language forces a curated subset of architectures at program scale, exactly as it forces one loop form and one conditional at statement scale.
-- The catalog's acceptance test is two-fold: complete (every task is modelable inside the blessed patterns; a gap is a recorded finding) and efficient (each blessed pattern names the fact channel or machine property behind its speed).
-- Patterns are taught up front in the writer material; a writer discovering mid-design that a familiar architecture is unrepresentable is classified as a documentation defect, not a writer error.
-- The archived democ measurements connect command-buffer writes, structure-of-arrays pools, declared-law reductions, and Boolean dataflow to optimizer opportunities; the active compiler has not yet reimplemented those channels.
+- Patterns teach usable implementations under the language's constraints; the active specification alone determines acceptance. The current W1 objective is in docs/constitution.md.
+- A restriction needs an accessible alternative and evidence about its authoring and runtime costs. A gap is a finding to investigate, not authority to invent a rejection rule or force an unrelated architecture.
+- Measure representative coverage, repair effort, and scoped performance. A closed teaching catalog does not prove universal expressibility or global optimality.
+- Patterns, reusable checked components, and actionable diagnostics serve different parts of the authoring problem. Their further design and multi-agent evaluation remain research questions.
+- docs/patterns.md owns the teaching catalog; compiler/README.md owns implementation status. Historical optimizer measurements retain their original claim boundaries.
 
 ## Facts
+
+- 2026-09-06 owner clarification: patterns alone are insufficient to realize W1. Restrictions need usable alternatives, potentially supported by checked components, interfaces, and diagnostics; the concrete design is deferred for research. This corrects the standing catalog-as-enforcement and universal-optimality readings while preserving the earlier experiments as scoped evidence. See docs/constitution.md for the current objective. (sourced)
 
 - 2026-07-09 rationale: owner ruling D6 — human languages must accommodate incoming patterns or be rejected by their users; Whitefoot has no installed base to appease (D0a), so it may make radical restrictions provided the completeness and efficiency tests hold; the recorded trigger was the deep-write review, with the ruling that the command-buffer idiom must be doctrine, not folklore. (sourced)
 - 2026-07-11 statement: catalog entries are earned from a measurement or a review, never taste — the command-buffer pattern from the no-reborrow deep-write wall, the struct-of-arrays pool validated by the binary-trees port, the branchless i1 classifier from the width-16 result, traps-to-the-boundary from the wc counter case, and the exact-capacity/recoverable-shortage contract from the check-accounting review. (sourced)

@@ -3,26 +3,16 @@
 *For people who already write Rust, C, and C++, and for people who only prompt.*
 
 Status: **DATED, NON-AUTHORITATIVE DESIGN SYNTHESIS.** This article combines
-current language ideas with measurements from the retired democ compiler and
-proposed mechanisms that have not shipped. Present-tense claims in the
-performance-channel and architecture sections must not be read as current
-compiler capability. The [Direction Outline](roadmap.md) owns live status, the
-[compiler README](../compiler/README.md) owns implementation detail, and the
-active numbered specification owns language semantics.
+language ideas with measurements from the retired democ compiler and proposed
+mechanisms. Its historical performance, architecture, and status claims are
+not a description of the current compiler or a promise of global optimality.
 
-Current correction: Whitefoot is now pursuing a **proof-carrying systems
-language**. The work branch is an implementation candidate, not an activated or
-completed release. Source contracts, loop-header invariants, local invariants,
-and finite `use` steps are checked by the ordinary compiler and erased before
-lowering. Every supported partial operation is proved or rejected; there is no
-writer proof trap or hidden fallback. The compiler uses no SMT, timeout, or
-cumulative proof-work budget. AUTO is exactly the zero-premise route, every
-coefficient-one single premise, every unordered coefficient-one pair including
-self-pairs, and the final fixed L0-image route; combinations that need three or
-more published affine premises outside that final route, plus special routes,
-use written certificates. The full rules are the active specification at
-[`spec/kernel-spec.md`](../spec/kernel-spec.md); what the proof surface
-currently reaches is `outline:PROOF-1` in [`roadmap.md`](roadmap.md).
+For current objectives and tradeoffs, read the [constitution](constitution.md).
+The [compiler README](../compiler/README.md) owns implementation status and the
+[active specification](../spec/kernel-spec.md) owns language semantics. The
+[roadmap](roadmap.md) is reference material outside the working loop. Original
+measurements below retain their conditions; this essay adds no approval or
+workflow requirements.
 
 ---
 
@@ -748,6 +738,6 @@ Every number above, with its committed record. Protocols, machines, and caveats 
 | Kernel-shape dry runs (C mockups vs `Vec`/hashbrown; bands) | `archive/research/systems-performance-coverage/m3a-kernel-dryrun/RESULTS.md` |
 | Queue: exhaustive model check, all 4 weakened-ordering mutants caught; zero-RMW hot path; latency vs throughput vs `rtrb` | `archive/research/systems-performance-coverage/m6a-spsc-dryrun/RESULTS.md` |
 | Reproducibility direction and the absence of a complete object claim | `docs/roadmap.md`, item `VERIFY-4` |
-| Current direction cited (one spelling; reject-not-reformat; checked effects; static contracts; exact integer domains; prove-or-reject partial operations; source invariants and finite use steps) | `spec/kernel-spec.md`, `archive/current-plan.md` |
+| Source-language rules cited (one spelling; reject-not-reformat; checked effects; static contracts; exact integer domains; prove-or-reject partial operations; source invariants and finite use steps) | `spec/kernel-spec.md` |
 | Pattern doctrine (command buffer, SoA pool, boolean classifier, proof at the maintained boundary) | `docs/patterns.md` |
 | Founding evidence for the premise (escape analysis conditionality, JIT recovery machinery, non-interference as the central enabler, IR semantics preservation) | `archive/research/phase2-notes/verified-findings.md`, `archive/research/phase2-notes/phase2-jit-findings.jsonl`, `archive/research/debates/round1-static-vs-profile.md` |

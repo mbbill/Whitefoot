@@ -1,66 +1,23 @@
 # Whitefoot Pattern Doctrine (D6)
 
-Status: seeded, non-normative writer guidance since 2026-07-09. Only the active
-specification defines accepted source. The selected D6 direction is to test
-whether a closed architecture-level vocabulary can stay COMPLETE (every task
-modelable — a gap is a finding) and EFFICIENT (each pattern names the fact
-channel or machine property that makes it fast) before normative adoption.
-Writers may be taught this catalog during validation; hitting a wall is a
-catalog finding, not authority to invent a language rule.
+This is non-normative writer guidance. The active
+[specification](../spec/kernel-spec.md) defines accepted source, the
+[compiler README](../compiler/README.md) owns implementation status, and the
+[constitution](constitution.md) defines W1's performance and authoring goals.
 
-This document carries guidance for the active specification at
-`spec/kernel-spec.md`, including the readable byte stream, the socket address,
-and the two-field connection introduced by v0.46 (P34), the ordered result list
-and its destructuring `let` and `set` binder forms introduced by v0.45 — a
-transforming operation now
-hands back the value it was given beside what it computed, `-> (rest: own
-Vector<u8>, written: own u64)`, instead of a two-field struct per operation, and
-its caller writes `let (rest, written) = collect(...);` — and the four measure
-terms and their readers `len_of`, `cap_of`, `room_of` and `head_of`, also
-introduced by v0.45 (P16): a measured value carries the standing facts
-`len_of(P) <= cap_of(P)`, `head_of(P) <= cap_of(P)` and
-`len_of(P) + room_of(P) = cap_of(P)` with no writer statement, a write to a
-sibling field kills no measure, and it is those four `_of` spellings, not the
-four bare words a writer wants for a binding, that are reserved against every
-writer declaration — and the four call transports v0.45 also introduces (P16),
-which fix what a call kills from the callee's declared parameter and never from
-the argument's spelling or the callee's body, so a helper that fills a caller's
-storage takes a view and a call through a `&uniq` run costs its caller that
-run's measures — the contract-clause
-measure operands and the
-call datum introduced by v0.44 (P16, P21), the loop-body
-region block and the associative [ENT-6] join introduced by v0.43, the one canonical
-region spelling introduced by [FORM-8] in v0.42, the comparison symbols and
-call-site `::` delimiter introduced by v0.41, the source-proof forms introduced
-by v0.40, the unified-state
-completion-I/O forms introduced by v0.37, the
-per-iteration scratch form [PAR-3] admits (P15), and the three forms the
-2026-08-28 blind-writer trial found a writer lacking: the inline factory reserve
-inside P15, the hoisted length fact (P16), and the accumulator fold (P17),
-whose rejection [LIV-2] removed by admitting the commit that reads its target
-out. P18 is the explicit buffer a loop holds in place of the output resource
-it may not hold. P19 is the join-image rule for a loop binding advanced under a
-condition, the one place the 2026-09-03 scenario sweep found the catalog
-misleading a writer. References to earlier versions describe historical evidence,
-not a second writable proof surface.
+Patterns teach usable paths through the language's restrictions. The catalog
+is not itself an acceptance rule and does not establish that every task is
+covered or every accepted program is optimal. A missing path or a slow ordinary
+implementation is a finding: identify the unmet need, the relevant compiler
+rule, and the observed cost before choosing a language, library, diagnostic,
+or teaching change. Pattern text alone cannot enforce an architecture.
 
-Implementation boundary: the work-branch compiler is being aligned to prove
-supported partial operations before lowering and erase source proof syntax. It
-is not described as complete or activated before whole-repository verification.
-The backend
-still emits no effect-derived attributes or alias metadata, has no termination
-checker or `willreturn` derivation. Local region-confined arenas now lower and
-execute, with selected-target layout and address checks before emission and
-release on the implemented region exits. Arena parameters and slices over arena
-content remain explicit capability limits. The [PAR-3] judgment is implemented;
-its first multi-operation actualization is the narrow direct counted-loop form
-described in P15, not every loop that receives a permitted judgment.
-The speed rationales in P1–P4 and P7–P9 therefore include historical
-measurements or future hypotheses; each entry labels the current boundary. P6
-and P10 already state their exact v0.17 status.
-
-Each entry: problem shape -> candidate or validated pattern -> current or
-historical speed rationale -> what it would replace in mainstream languages.
+Entries distinguish current source guidance from measurements made with older
+compilers. Read each measurement with its stated program, target, and scope;
+do not infer a current optimizer capability from an old result. Short code
+blocks are fragments with surrounding bindings, not standalone commands.
+Complete source references provide the executable context. Version references
+within entries identify historical evidence, not current workflow.
 
 ## P1. Command buffer (write intents)
 

@@ -1,9 +1,9 @@
-- The opaque handle a binding contributes was to be published as an ordinary fact stating its defining equality, so that everything provable about `width + padding` stayed provable about `stride`.
+- Each binding contributed an opaque handle and an ordinary fact equating that handle with the binding image.
 
 ## Facts
 
-- 2026-09-05 measurement: built and run. The published equality is invisible to the residual, because the residual is discharged by the direct L0 route by rule, and that route does not consult a published affine fact. The sum folded correctly and the residual then came out as exactly that equality instead of zero.
-- 2026-09-05 pitfall: the failure is not that the fact was wrong or missing. It was present, true, and unreachable from the route that had to use it. A fact published into a layer the consumer does not read is indistinguishable from no fact at all, and the symptom — a residual equal to the equality — reads like an arithmetic bug rather than a routing one.
+- 2026-09-05 measurement: built and run. The published equality is invisible to the residual, because the residual is discharged by the direct L0 route by rule, and that route does not consult a published affine fact. The sum folded correctly and the residual then came out as exactly that equality instead of zero. (sourced)
+- 2026-09-05 pitfall: the failure is not that the fact was wrong or missing. It was present, true, and unreachable from the route that had to use it. A fact published into a layer the consumer does not read is indistinguishable from no fact at all, and the symptom — a residual equal to the equality — reads like an arithmetic bug rather than a routing one. (sourced)
 
 ## Moves
 

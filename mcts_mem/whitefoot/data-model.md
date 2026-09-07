@@ -1,6 +1,7 @@
-- The active specification defines buffers, arrays, constants, Result, Option, and their source semantics; it does not make the archived democ's exact LLVM layouts authoritative for the new compiler.
-- The active safe-Rust compiler has a private checked nominal model, typed control-flow IR, and conservative LLVM backend for nongeneric acyclic frame-resident structs and enums. Structs use declared-field aggregates; payload enums use a validated i32 tag plus flattened variant fields, with the complete aggregate initialized before active fields are inserted. This private representation selects no buffer, Result, Option, or container layout.
-- The archived democ's pointer-plus-length buffers, structure-of-arrays aggregates, two-word Result/Option values, and private-global const lowering remain measured implementation evidence for later backend slices.
+- The active specification defines source storage and ownership rules. Historical LLVM layouts are implementation evidence, not language authority.
+- Keep the current representation and container capability map in compiler/README.md. Its supporting tests and backend code determine what the implementation actually reaches.
+- Replacement, initialization, relocation, identity reuse, and cleanup must follow the relevant storage rules and proofs. A past library proposal or privileged implementation does not establish those obligations for a new container.
+- Dated democ layouts and early compiler-slice descriptions below retain their experimental scope; they are not current capability exclusions.
 - The empirical container design selection is [[container-representation]]: general typed owned places and result destinations, distinct full/prefix/circular initialization states, and finite internal range/loan relationships. The first implementation preserves current source semantics; selected later amendments do not become language behavior until the active specification changes. General library representation privileges remain a checked extension direction, and recyclable identity remains separate from ordinary dense storage.
 
 ## Facts

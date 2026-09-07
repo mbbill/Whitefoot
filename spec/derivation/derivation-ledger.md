@@ -23,6 +23,39 @@ not describe the active compiler. v0.40 removes SCOPE-4,
 DIAG-3, TRAP-1, CLM-1 through CLM-3, and PRV-1 through PRV-3; the retained rows
 below explain only why those released rules once existed.
 
+## Constitutional clarification: 2026-09-06
+
+The current constitution states W1 as constraints and usable guidance toward
+efficient implementation classes, with representative coverage and authoring
+cost measured. It does not assert global optimality or universal coverage by a
+closed catalog. W2 includes the cost of conflicting context, and W3/T3 use the
+active machine-checked, erased proof model. Compatibility is a low-priority
+design tradeoff rather than a reason to retain a superseded language form.
+
+This clarification changes no source judgment or derivation status. It flags
+the following evidence boundaries for the existing re-grounding work:
+
+- FORM-1, FORM-2, FORM-4, and META-4: canonical form and a single definition
+  site do not prove that misleading edits are impossible or that prose is
+  logically consistent. Their regularity rationale remains; the recorded
+  authoring-cost and reject-versus-canonicalize questions remain open.
+- FN-1, FN-3, EFF-1, INV-1, and PRF-1: local reasoning and explicit interfaces
+  serve the intended multi-agent authoring model, but that model supplies no
+  evidence that the present forms cover arbitrary module contracts. Existing
+  form-selection and broader-writer evidence obligations remain open.
+- PRF-1: the early table's proportional-work claim must not be read as a
+  current total-checking bound. Target AUTO, relation-premise queries,
+  closure, normalization, and sum formation all contribute; compiler/README.md
+  records the measured cost and the missing attribution.
+- SCOPE-2, INV-1, PRF-1, and PAR: their active derivations require machine
+  proof and erasure. Retired claim/trap arguments do not establish current
+  permission or acceptance, and no rule is restored by a historical row.
+
+These are qualifications of design evidence, not new language rules, required
+experiments before branch work, or claims that the questions are resolved.
+
+## Versioned evidence
+
 **v0.51 statistics: 101 derived · 60 existence-only · 0 underived**
 (161 rules, plus one non-rule row for [S39]'s cell, which is a [TYPE-2] type rather than a numbered rule: v0.51 adds derived MSR-2, MSR-4, MSR-6, LIV-1, LIV-2, PROV-6,
 PROV-1, BLK-1, VIEW-1, VIEW-2, VIEW-4, VIEW-6, CALL-1, CALL-2, CALL-3 and CALL-5, and existence-only MSR-1,

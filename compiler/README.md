@@ -9,10 +9,11 @@ this README.
 The frontend targets the exact bytes at `../spec/kernel-spec.md`. Their
 version and SHA-256 are derived from those bytes by `build.rs` on every build
 that touches them, and every other identity constant in the crate reads that
-generated module. Nothing is committed, so nothing can go stale: amending the
-specification changes the identity in the same build.
-`whitefoot-spec` checks the selected identity, activation chain,
-rule inventory, and generated syntax identity as one compiler gate.
+generated module. The generated identity is not committed; amending the
+specification changes it in the same build. `whitefoot-spec` checks identity
+consistency, rule references and inventory, derivation-row coverage, and
+generated syntax identity. The root `make check` also checks that released
+specification archives have not changed. There is no approval-ledger chain.
 
 ## Compilation path
 
@@ -101,8 +102,12 @@ Ownership, initialization, effects, layout, target, and parallel permission
 remain separate deterministic domains tied to the same checked source flow;
 this is not a universal solver.
 
-Within a `use` block, a bare decimal factor from two upward scales one premise;
-factor one must be omitted, and the same normalized premise cannot be repeated.
+Within a `use` block, `use (a <= b);` writes a relation premise and
+`use bound;` cites a named invariant. The optional `N times` prefix scales
+that premise by a bare decimal from two upward or an admitted unsigned value
+name. An explicit decimal one is omitted, and the same normalized premise
+cannot be repeated. PRF-1 defines the exact admissible forms and the bounded
+product-folding rule for named multiplicities.
 The final target may be a direct weakening of the checked weighted sum. A
 nonempty block is a source error if AUTO proves the target without it. This
 redundancy rule is tied to the exact specification version, so an author can
@@ -190,9 +195,8 @@ to that window, drains the complete batch in source order, and only then reuses
 slot zero. Backend evidence covers dynamic per-iteration paths, an odd final
 batch, the ordinary result/error arm, LLVM emission, linking, and execution.
 When one function contains two staged loops, both deliberately remain ordinary.
-Wider control flow, operation families, and multi-loop selection are possible
-future extensions, not v0.40 activation gaps or permission to infer a broader
-path from this one.
+Wider control flow, operation families, and multi-loop selection remain
+possible future extensions; this path does not imply those capabilities.
 
 With `--par`, an admitted may-suspend user call bound by `let` can drive a
 bounded lane batch. Issue-local values needed by the remainder or cleanup are
@@ -636,6 +640,31 @@ calling itself [PROV-6]; the depth is the value's, which is the ordinary
 stack-availability question [SCOPE-3] defers for a program that is not
 `resource_closed`, and the stack ledger reports it as a `STACK cycle` row.
 
+Contracts currently support the FN-8 requirement vocabulary and FN-9's
+restricted integer-result relations, including the selected `Ok` payload
+route. They are not a general specification language for aggregate results
+or mutable data-structure invariants. A contract-member `fn_sig` cannot carry
+a function `contract_block`. Verification is over the closed source bundle;
+independent module checking remains future work.
+
+## Finding the implementation
+
+| Responsibility | Entry point |
+|---|---|
+| Stage boundaries and failure categories | [driver.rs](src/driver.rs) |
+| Parsing and canonical source form | [syntax](src/syntax/mod.rs) |
+| Names and declaration identity | [resolution](src/resolution/mod.rs) |
+| Types, ownership, effects, and checked statements | [semantic checker](src/semantic/check.rs) |
+| Proof facts, kills, joins, and obligation consumers | [entailment flow](src/semantic/entailment/flow.rs) and [fact state](src/semantic/entailment/state.rs) |
+| Affine arithmetic and written sums | [affine core](src/semantic/entailment/affine.rs) |
+| Typed control-flow lowering | [lowering builder](src/lowering/builder.rs) |
+| Target qualification and LLVM emission | [qualification](src/backend/qualification.rs) and [emitter](src/backend/emitter.rs) |
+
+Read the owning rule and nearby tests for the change in hand. The map is a
+navigation aid, not another definition of language or proof authority.
+
+## Known limitations
+
 ### Known defect: unguarded affine expression nesting depth
 
 A proof-domain affine expression nesting parentheses about 1400 deep aborts
@@ -693,6 +722,14 @@ not specific to any one entry shape; a pre-v0.48 build measures the same at
 recorded rather than fixed. Removed when the ceiling is reachable, or when the
 specification says what the real limit is.
 
+The source-proof path includes target AUTO for redundancy and separate proof
+queries for relation-form premises; named premises check published theorem
+availability. Automatic queries can rebuild fact closures and enumerate
+premise combinations. Weighted sums also merge growing coefficient vectors.
+The recorded measurements do not isolate these costs, so they do not establish
+that certificate accumulation alone is the bottleneck. Profile the stages
+before changing the implementation or the accepted proof rules.
+
 ## Running and checking
 
 From `compiler/`:
@@ -703,7 +740,6 @@ cargo run --bin whitefootc -- --emit-llvm source.wf
 cargo run --bin whitefootc -- --par source.wf -o program
 cargo run --bin whitefootc -- --par-ledger source.wf -o program
 cargo run --bin whitefootc -- --stack-ledger source.wf -o program
-make check
 ```
 
 `whitefootc` accepts an ordered bundle of multiple source files. `--no-overlap`
@@ -711,7 +747,24 @@ selects the exact sequential reference lowering and cannot be combined with
 `--par`. When a report and emitted LLVM would otherwise share stdout, name the
 LLVM output with `-o`.
 
-From the repository root, `make check` is the canonical complete gate;
-`make static` alone runs the stages that read the tree without running a
-compiled program, `make spec-append-only` among them, which checks that no
-released `spec/kernel-spec-vN.md` archive differs from main's.
+For focused development checks, run these from the repository root:
+
+```sh
+make static
+make -C compiler format lint
+cargo test --manifest-path compiler/Cargo.toml --profile gate --locked --offline --lib semantic::tests::source_proofs
+make -C compiler test-unit
+```
+
+Use a test filter matching the responsibility changed; `source_proofs` above
+is one example. The `gate` profile retains debug assertions and overflow
+checks while optimizing the compiler's analysis work. `test-sampling` owns
+repeated runtime schedules and `test-corpus` owns integration targets;
+`test-partition` checks the test split. The [Makefile](Makefile) owns the exact
+inventory.
+
+The root `make check` is the canonical complete gate. `make -C compiler check`
+runs only its compiler stages. The root gate also runs research tests,
+conformance structure and coverage, the full native conformance adapter, and
+the snapshot corpus. `make spec-append-only` checks released archives against
+local `main`; it does not replace the complete gate or approve a merge.
