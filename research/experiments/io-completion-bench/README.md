@@ -887,7 +887,13 @@ joint capacity/setup/join-route control can reduce parking while increasing
 in-place drain or yield turns; it does not isolate switch cost or measure
 available work. Reservation bytes describe virtual address space, separately
 from peak RSS. The isolated Linux route is `codex/io-cpu-stack-floor`;
-its native result is pending and no default changes.
+its frozen native result establishes no useful wall/CPU gain. S5/S12 paired
+wall ratios are 1.0071 for one batch and 0.9984 for sixteen, with CPU ratios
+1.0054/0.9964 and substantial same-command variation. Separate observations
+show fewer parks and more no-target turns; ordinary involuntary and total
+context switches rise in every pair. Reduced virtual reservation does not
+establish an RSS saving. Keep twelve stacks, the parallel builder and full
+task tree; these data do not establish available work or an OS cause.
 
 `make mixed-rayon-check` qualifies the optional `mixed-rayon` binary in the
 same standalone crate. Its CLI is `mixed-rayon PORT CONNECTIONS --threads B

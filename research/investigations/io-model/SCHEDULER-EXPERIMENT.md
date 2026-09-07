@@ -4294,7 +4294,7 @@ revision, compiler and dependency lockfile.
 | TCP closed-loop echo | 1/4/64/1024 peers × 64 B, 64 peers × 64 KiB; one outstanding request per peer; exact bytes and EOF | Current ten-cell split1/split2 screen. Add 4 KiB and pipeline depths 8/32 only after candidate screening |
 | TCP streaming / backpressure | Continuous 2 MiB or larger, arbitrary fragmentation, short sends, slow readers, half-close; preserve order and bounded live storage | Existing epoll stream oracle; uring joins it below. Idle 10k peers, churn and reset/cancellation remain separate qualification |
 | TCP fixed-arrival / mixed compute | Same recurrence and compute quantum; light paced requests alongside heavy work; below/near/above saturation | Existing paced mixed experiments cover selected controls. External candidates need scheduled-to-response p99/p99.9, goodput, missed deadlines, backlog and drain recovery |
-| CPU-only parallelism and CPU offload | Sequential Rust vs Rayon; balanced/unbalanced recursive and data-parallel jobs; matched arithmetic, tuned grain and pool width. Mixed mode charges enqueue, completion transfer and bounded queues | Recursive `join`, stack/batch, unused-ring and initializer controls are measured; caller traces identify the idle-yield path, but the ordinary zero-yield control finds no improvement. Experiment 61 also finds no useful gain from the tree-build/lazy-start control. Experiment 63 qualifies a 63-to-15 publication control without useful gain; short CPU rises and long work is nearly neutral, with traversal and code specialization changing too. Owner inline executions are not failed acquisitions. Experiment 64 selects a same-binary five/twelve-stack capacity/setup/join-route control with a duplicate twelve-stack baseline; its Linux result is pending. Ready-work availability and same-budget worker placement remain open. Tokio + Rayon mixed qualification exists, with timing pending client-capacity control. Both executors share one total budget |
+| CPU-only parallelism and CPU offload | Sequential Rust vs Rayon; balanced/unbalanced recursive and data-parallel jobs; matched arithmetic, tuned grain and pool width. Mixed mode charges enqueue, completion transfer and bounded queues | Recursive `join`, stack/batch, unused-ring and initializer controls are measured; caller traces identify the idle-yield path, but the ordinary zero-yield control finds no improvement. Experiment 61 also finds no useful gain from the tree-build/lazy-start control. Experiment 63 qualifies a 63-to-15 publication control without useful gain; short CPU rises and long work is nearly neutral, with traversal and code specialization changing too. Owner inline executions are not failed acquisitions. Experiment 64 finds no useful wall/CPU benefit from a same-binary five/twelve-stack capacity control; fewer observed parks accompany more no-target turns, and ordinary involuntary switches rise. Retain twelve stacks and the existing builder/layout defaults. Ready-work availability and same-budget worker placement remain open. Tokio + Rayon mixed qualification exists, with timing pending client-capacity control. Both executors share one total budget |
 | File reads | Open-once cache-hot vs cold buffered vs direct I/O; random/sequential; 4/64 KiB; QD 1/8/64; same offsets, bytes and checksum | Existing file experiments cover subsets. Extend native blocking/pread pool/uring comparisons; fio is a device-envelope cross-check, not an identical-program runtime row |
 | File writes | Buffered accepted bytes vs fdatasync/fsync durability are distinct contracts; name batch size, flush cadence and directory durability | Broader matrix required; no current TCP result supports a write or durability claim |
 | Dependent storage/network pipeline | Read → parse → request → write with the same dependency graph and compute work | Unmeasured; tests whether sequential-source overlap composes across stages |
@@ -9407,9 +9407,9 @@ source/header hashes, raw rows, outputs and full completion log. Ordinary
 inputs are hashed before timing; their hashes and the separately built
 observed artifact are checked again after observations. The dedicated
 `codex/io-cpu-stack-floor` route uses the existing CPU resource job with phase
-tracing disabled; earlier modes and routes retain their settings. Native
-Linux evidence is pending. This selected test changes no compiler, runtime,
-language surface, ABI or default.
+tracing disabled; earlier modes and routes retain their settings. The native
+Linux result below supplies this comparison's measured evidence. This test
+changes no compiler, runtime, language surface, ABI or default.
 
 Local qualification on macOS arm64 ran the actual target with `ROUNDS=1`
 and `WARMUP=0`: eight ordinary rows and four observations passed, together
@@ -9432,6 +9432,118 @@ phase combinations are rejected. Shell syntax, `make static` and diff checks
 pass. These checks qualify the new command/readback contract and local path;
 they do not constitute a native Linux five-pass result or a full gate for
 this revision.
+
+### Native Linux result
+
+The [frozen run 34130484905](https://github.com/mbbill/Whitefoot/actions/runs/34130484905)
+at `543bf48c3ee7f1503723df3dfadd055e1f96cb8a` succeeds. CPU job
+`101769157870` and Windows job `101769157495` both pass; these specialized
+jobs do not substitute for the canonical full gate. The
+[`io-cpu-stack-floor` artifact 10022015771](https://github.com/mbbill/Whitefoot/actions/runs/34130484905/artifacts/10022015771)
+is 3,477,127 ZIP bytes with SHA-256
+`861a8cda5466a94c64c8862e64ff7ca0373b88af659a3495d4331421e42c34b0`,
+matching the API digest. All seven pre-timing artifact entries, eight final
+entries and 35 source/header entries rehash. The latter comprise the exact
+frozen repository inputs and generated companion source. The compiler,
+ordinary and observed ELF files, unchanged IR, commands and raw rows remain
+available for independent inspection.
+
+The host reports AMD EPYC 9V45, four allowed logical CPUs `0-3`, two cores
+with two SMT threads each, Linux `6.17.0-1022-azure`, Clang 18.1.3 and
+Rust 1.98.0. No affinity or dedicated-host guarantee is added. Qualification
+passes five native completion harness executions, the existing scheduler
+smoke and all four complete reduced-round enumerations, a real
+`linux-io-uring` adapter probe, and both native-ring and forced POSIX-adapter
+routes without skips. The Rayon reference's two tests, formatting and Clippy
+checks pass. All four direct ordinary outputs and four observed outputs
+match the exact checksum; direct ordinary stderr is empty. The forty raw
+rows have the correct labels, arguments, environment and alternating order
+after eight warmups. Warmup resource samples are intentionally absent;
+the retained successful runner log and source establish their invocations.
+
+No useful wall/CPU benefit is established. The following values are medians
+and ranges of five **same-pass S5/S12 ratios**, using ordinary rows only;
+they are not ratios of separately computed medians. Total CPU is user plus
+system CPU, and total context switches sum voluntary and involuntary counts.
+
+| Metric | One batch: median [min, max] | Sixteen batches: median [min, max] |
+| --- | ---: | ---: |
+| Wall | 1.007120 [0.978888, 1.051702] | 0.998386 [0.988094, 1.010749] |
+| Total CPU | 1.005392 [0.987899, 1.038230] | 0.996427 [0.990551, 1.008980] |
+| Voluntary context switches | 0.711864 [0.677346, 0.897849] | 0.800855 [0.789616, 0.940713] |
+| Involuntary context switches | 4.600671 [3.187291, 7.325397] | 2.847880 [1.875000, 4.953574] |
+| Total context switches | 2.443465 [1.697011, 3.100430] | 1.160111 [1.130153, 1.438037] |
+| Peak RSS (KiB) | 1.033552 [0.987710, 1.153970] | 1.005233 [0.973456, 1.015208] |
+
+The S12 duplicate runs the exact same binary and environment as the primary.
+Its paired wall ratio is 0.997949 [0.991896, 1.034228] at one batch and
+0.998302 [0.987215, 1.013406] at sixteen; corresponding total-CPU ratios are
+0.994389 [0.989336, 1.014383] and 1.003301 [0.986164, 1.011307]. S5's small
+median wall/CPU differences overlap this same-command variation, and neither
+CPU cohort has a uniform improvement across its five pairs. Voluntary
+switches decrease in every pair, while involuntary and total switches
+increase in every pair. Median paired increases in total switches are 983
+at one batch and 1380 at sixteen. These are ordinary whole-process OS
+resource counts; they are distinct from the runtime's stack-switch counters.
+
+The qualified Rayon anchor gives the following comparisons on this same
+host, again pairing by pass. The S12 primary's short wall gap is 8.88%,
+with all five ratios above one; its 0.3446% long wall gap is smaller than
+the same-command duplicate variation. These values do not compare hosts or
+establish a change from an earlier experiment's WF/Rayon gap.
+
+| Batches | WF form / Rayon4 grain4 | Wall ratio median [min, max] | Total CPU ratio median [min, max] |
+| --- | --- | ---: | ---: |
+| 1 | S12 primary | 1.088770 [1.080045, 1.124687] | 1.008417 [0.999097, 1.022030] |
+| 1 | S12 duplicate | 1.082720 [1.077829, 1.126635] | 1.002747 [0.991539, 1.036730] |
+| 1 | S5 | 1.101120 [1.065071, 1.145062] | 1.019462 [0.999678, 1.037292] |
+| 16 | S12 primary | 1.003446 [0.991379, 1.013010] | 0.999257 [0.991548, 1.009388] |
+| 16 | S12 duplicate | 1.001742 [0.982713, 1.026042] | 0.998168 [0.977829, 1.020801] |
+| 16 | S5 | 1.001826 [0.979576, 1.023353] | 0.994733 [0.982179, 1.018452] |
+
+All three ordinary WF forms launch one exact ELF path, verified against
+pre/post hashes. Its ELF bytes and emitted IR also equal the retained default
+from 63, establishing code identity without supporting cross-host timing
+comparisons. The `wf__par_report` and `report_stack_capacity` symbols are
+absent from the ordinary ELF and present only in the observed link. The
+actual companion machine code reads the core's thread count, stack count,
+stack bytes and stride fields before
+printing; its immutable-field offsets agree with the retained header layout.
+Four separate observations read back the requested twelve or five effective
+stacks, four scheduler threads, three started workers, positive steals,
+default storage and the unchanged 256/16 waiting settings.
+
+| Observed stacks | Batches | Parks = resumes | Runtime resume migrations | No-target compute turns | Idle waits |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 12 | 1 | 4154 | 2854 | 0 | 55 |
+| 12 | 16 | 41295 | 28695 | 0 | 83 |
+| 5 | 1 | 1910 | 1259 | 8336 | 53 |
+| 5 | 16 | 28216 | 18142 | 42729 | 131 |
+
+S5 therefore exercises fewer park/resume operations and more no-target join
+turns in these observations. This does not say whether those turns execute
+a task or yield, nor make an observed route count an ordinary timing cost.
+`grants` equals steals in all four reports. The descriptive steals plus
+owner-join-inline sums happen to equal 100863 at one batch and 1612863 at
+sixteen for both capacities; the uncounted owner-pop paths described above
+still prevent treating that sum as a general publication identity. Existing
+idle-wait counters omit the no-target path's direct host yields. There is no
+simultaneous available-work timeline or OS-cause measurement.
+
+Native readback gives 1,073,741,824 bytes per stack and a 1,073,745,920-byte
+stride, including the 4096-byte guard. Pool virtual reservation drops from
+12,884,951,040 bytes at S12 to 5,368,729,600 at S5, a reduction of seven GiB
+plus seven guard pages. That does not establish a resident-memory saving:
+ordinary paired peak-RSS median deltas are +820 KiB and +128 KiB, with mixed
+signs across pairs. Mapping size, guard/header/context setup and dynamic
+stack placement change together with join behavior even though executable
+bytes are identical.
+
+Selection: retain twelve stacks at four computing threads, the default
+parallel builder, full-depth layout and existing waiting policy. This
+same-binary capacity/setup/join-route control establishes no useful ordinary
+wall/CPU improvement in its five-pair cohort. No new implementation or
+runtime default is selected by these results.
 
 ## 65. Private epoll storage under the qualified large-message client
 
