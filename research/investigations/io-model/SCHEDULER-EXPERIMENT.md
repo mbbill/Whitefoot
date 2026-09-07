@@ -8293,3 +8293,117 @@ yield rounds as the proposed performance fix for this panel. It does not
 reject the ownership-based parallel model. Keep the default and distinguish
 ready-work availability from OS placement before another waiting-policy
 change; experiment 57's off-CPU intervals are not recoverable-time estimates.
+
+## 60. Client capacity on reported independent ARM cores
+
+Experiments 43 and 58 leave the occupied echo client's CPU limit unresolved.
+Experiment 43 added a second client worker on the same physical core's SMT
+sibling. Experiment 58 reduced speculative receive calls but retained one
+client CPU; its small-message regressions keep readiness opt-in. This screen
+keeps the original default/service0 client and tests additional reported
+physical client cores on one Linux AArch64 host. It changes no server
+algorithm, private buffer capacity, continuation batch/index policy or source
+language/runtime ABI.
+
+The existing `scheduler-bench.sh` harness, reached through
+`make scheduler-client-capacity`, uses the conditional
+`codex/io-client-capacity` workflow route. GitHub's
+[standard runner documentation](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
+advertises four vCPUs for public `ubuntu-24.04-arm` runners. That is an
+availability hypothesis: the harness requires native AArch64, four allowed
+reported package/core pairs, matching `lscpu` and sysfs identities, each CPU in
+its own sibling list, and no selected CPUs sharing a sibling list. It records
+all allowed topology, selected sibling lists, page size, image/kernel/tool
+versions, cgroup-v2 ancestry, effective cpusets, quota and throttling counters.
+Every visible finite CPU quota must allow at least four CPUs. Admission fails
+before compilation/qualification when these conditions cannot be checked.
+Missing or unreadable non-root quota metadata fails admission. The actual
+cgroup-v2 root has no `cpu.max` interface, as defined by the kernel's
+[CPU interface documentation](https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html#cpu-interface-files);
+that root absence is recorded explicitly. If a namespace root exposes
+`cpu.max`, its value is checked. Initial/final topology and canonical selection
+snapshots must match, including allowed CPUs and selected sibling identities;
+changing quota/stat counters are retained separately from this equality check.
+Virtual topology does not establish dedicated host cores, eliminate noisy
+neighbors or reveal a hidden host quota.
+
+| Axis | Frozen settings |
+| --- | --- |
+| Server | `epoll`, `uring-64k`, `callee-small`, `wf-coro-index`; one worker/resumer on the first selected CPU |
+| Client | Default receive behavior, service budget 0; widths 1/2/3 use the next 1/2/3 selected CPUs, with no server sibling |
+| Work | 64 peers × 2,000 trips × 64 B; 1,024 × 200 × 64 B; 64 × 500 × 64 KiB |
+| Protocol | Fresh connections, one outstanding request per peer, original bytes and full `memcmp`, original two clocks; NODELAY and normal errors retained |
+| Server storage/policy | Existing 64 KiB echo capacity; glibc top pad 0, THP disabled; native provided-pool storage and WF private storage remain distinct; indexed continuation owner/batch32/window1024 |
+| CPU scope | All server OS threads inherit its one-CPU mask; all client workers inherit their whole selected pool; no per-worker pinning and no SQPOLL |
+| Repeats | One warmup plus five ordinary passes; four servers × three cases × three widths = 36 rows per pass |
+| Observation | One separate default observed-client execution per server/case/width = 36 rows and 72 exchange worker reports; ordinary servers, no profiler |
+
+Within each server/case/pass, the three widths run adjacently. The warmup uses
+1/2/3; ordinary width orders are frozen as 1/2/3, 3/2/1, 2/3/1, 1/3/2 and
+3/1/2. Server order alternates forward/reverse. Thus each width occupies every
+position once or twice before any result is inspected. Connection partitioning
+remains the original contiguous assignment: 64 peers split 22/21/21 and
+1,024 split 342/341/341 at width 3. Per-worker epoll ownership and aggregation
+are part of this worker-count experiment; extra allowed CPUs are not isolated
+from that existing partitioning change.
+
+The normal native ring, large-stream, helper-control, continuation sanitizer,
+client service/observer and full readiness qualification paths remain wired.
+Unsupported io_uring or toolchain setup is a failed qualification, with no
+substitute backend or timing-only success. The selected release default
+client is copied from the exact qualified service0 binary. Its optimized IR
+must equal the frozen pre-observer client. Before timing, two additional
+observed admitted runs use four peers across three workers, at 64 B and
+64 KiB. Their 2/1/1 ownership and both admission/exchange byte and round totals
+are checked separately; the twelve phase reports are qualification evidence,
+not part of the 72 panel reports.
+
+A small retained launcher reads `/proc/<pid>/status` after `taskset`, checks the
+actual mask, then immediately `exec`s the client or existing server launcher.
+The PID/mask therefore belongs to the launched process; new threads inherit
+that mask. Every observed client additionally reports its actual worker mask.
+These records establish launch and observed worker affinity, not a continuous
+trace of CPU residency or individual server-thread execution. The launcher
+runs before the client's exchange clocks; its setup work is included in the
+existing whole-process `/usr/bin/time` resource figures. Client exchange
+`getrusage` still measures aggregate client process CPU across all workers.
+Visible quota/stat metadata and kernel CPU/softirq/socket counters are retained
+before and after the panel for audit; they do not assign kernel work to a
+particular request.
+
+Expected artifacts are 180 ordinary rows, 36 warmups preserved in sample
+folders/logs, 36 separate observed rows, 72 worker reports, and the two uneven
+smokes with twelve phase reports. `retained/` contains six selected ELF files:
+the default ordinary/observed clients and four ordinary servers. The manifest
+checks these copies against their used binaries and records selected source,
+generated IR/source and launcher hashes before/after timing. Compiler/tool
+hashes identify the installed tools; those tool executables are not uploaded
+or independently rehashed by an artifact consumer. Existing generated-host
+codegen artifacts and qualification logs remain available. This screen adds
+no profiler capture and preserves all existing branch routes.
+
+Evaluate width2/width1 and width3/width1 rate, tails, server CPU/trip and
+aggregate client exchange CPU/trip **within each same-host server/case/pass**.
+A repeatable rate increase with the server fixed exposes client-resource
+sensitivity; a decrease falsifies the claim that widening this existing client
+improves that cell. A flat response does not prove an unrestricted server
+ceiling: worker imbalance, per-worker event batches, loopback/kernel limits,
+VM contention and the measured server's own capacity may differ by form.
+Inspect all five paired ratios and CPU/latency effects before adopting a wider
+client for later panels. Do not combine absolute ARM rates with the earlier
+x86 results or choose a new algorithm from these confirmation samples.
+
+Local checks pass: the extracted actual driver produces the required counts,
+orders and masks; eleven preflight negatives reject mismatched modes; synthetic
+admission cases cover root absence, finite quotas, sibling/core disagreement
+and initial/final topology changes. Four synthetic proc-readback cases check
+the launcher's canonical mask and actual PID preservation through `exec`.
+All 44 prior workflow branch routes/settings remain equivalent and 22 shell
+steps parse. Strict Linux AArch64 cross-compilation links six native-reference,
+client and fixture ELF files, and compiles the scheduler host/native ring units;
+the two selected WF benchmark executables are not part of this cross-link set. The
+default client optimized IR equals the frozen pre-observer client on that
+target. `make static` and patch checks pass. These local checks use filesystem
+shims for Linux admission and do not execute the Linux ELF files. Native ARM
+qualification, real topology/socket/ring behavior and performance remain
+pending; no complete gate or server-capacity result is claimed.

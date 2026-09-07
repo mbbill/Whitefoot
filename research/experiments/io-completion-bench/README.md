@@ -331,6 +331,21 @@ identical. Selected executables, hashes and every raw sample are retained;
 the evidence boundaries are in
 [experiment 58](../../investigations/io-model/SCHEDULER-EXPERIMENT.md#58-remove-speculative-client-receive-probes).
 
+`make scheduler-client-capacity` runs the bounded Linux AArch64 client-capacity
+screen. It requires four allowed, distinct reported package/core IDs with
+disjoint sibling lists and enough visible CPU quota; the CI route uses
+`ubuntu-24.04-arm` and installs Clang 20 explicitly. One fixed server CPU
+serves the unchanged default/service0 client using pools of 1/2/3 workers on
+the other cores. Workers inherit the whole selected pool; they are not pinned
+one per core. Launch affinity and every observed client's worker mask are
+checked. Four existing servers and three occupied echo cases produce 180
+ordinary rows, 36 warmups and 36 separate observations (72 worker reports).
+Full native-ring/client qualifications and an uneven three-worker admitted
+smoke precede timing. The six selected executables, source/IR hashes, tool
+identifiers and raw samples are retained. The VM topology, CPU accounting and
+same-host interpretation limits are in
+[experiment 60](../../investigations/io-model/SCHEDULER-EXPERIMENT.md#60-client-capacity-on-reported-independent-arm-cores).
+
 `linux-net-bench.sh` is the protocol, and one protocol for every host that can
 run it, as `read-bench.sh` is for the read tables. It builds the compiler and
 the three tools from one worktree, checks that every server echoes what the
