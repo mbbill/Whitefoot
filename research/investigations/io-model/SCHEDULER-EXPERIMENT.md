@@ -4682,6 +4682,16 @@ failure into a pass or claim that the timing screen witnessed a use-after-free.
 Native validation of the correction will use the existing full qualification
 suite after the running screen completes.
 
+A separate source audit of the optional, unmeasured SQPOLL path found a
+missing store-to-load barrier between publishing the SQ tail and reading
+`IORING_SQ_NEED_WAKEUP`. The release store and acquire load alone do not
+provide that ordering. The follow-up inserts a sequentially consistent fence,
+matching the full-barrier protocol in
+[upstream liburing `sq_ring_needs_enter`](https://github.com/axboe/liburing/blob/master/src/queue.c).
+This is a source-protocol correction, not a reproduced SQPOLL stall or native
+qualification. The current screen never enables SQPOLL; its kernel-thread
+CPU placement/accounting and dedicated runtime qualification remain pending.
+
 ## Thirty-ninth experiment: measure generated staged WF against the native panel
 
 The first continuation performance screen reuses the exact sequential
