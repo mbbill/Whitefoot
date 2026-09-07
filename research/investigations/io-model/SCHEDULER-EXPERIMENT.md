@@ -4241,12 +4241,15 @@ name. A known limitation remains visible until its experiment is complete.
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
 | WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Correctness-qualified at the revisions above; no concurrent server performance claim yet |
 | Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Source candidate only; pin Go toolchain, GOMAXPROCS, buffers and complete protocol fixture before timing |
+| Rust sequential / Rayon CPU pool | Sequential Rust control, then tuned `par_iter`, `join` and `scope` with explicit grain size and pool width | Essential CPU-parallel baseline for balanced/unbalanced data-parallel and recursive work; mixed-I/O row combines native I/O or Tokio with bounded Rayon offload | Source candidate only; count the total physical CPU budget across both executors, queue bounds and transfer cost. Blocking sockets on Rayon are not its strongest pure-network implementation |
 | Tokio | Fixed-worker multithread runtime and a separate per-core current-thread/reactor configuration | External mainstream async baseline; distinguish work stealing from reactor locality | Source candidate only; pin toolchain/lockfile, socket distribution and blocking-pool budget |
 | Monoio | Per-core runtime, separately forced IoUringDriver and LegacyDriver | External completion/readiness comparison within one runtime family | Source candidate only; prohibit silent fusion fallback in backend-specific rows |
 | Seastar | Per-core reactor and kernel TCP stack, explicit memory and polling settings | External high-performance locality and mixed-load scheduling baseline | Source candidate only; qualify chosen backend and reserve/count all CPU and memory resources |
 | Native uring SQPOLL / fixed files / bundles / SEND_ZC | Separate explicit configurations, not silently enabled defaults | Later backend tuning envelope; upstream liburing proxy is implementation provenance, not an echo drop-in | Audited candidates, unmeasured here; SQPOLL CPU and zero-copy loan lifetime require separate qualification |
 
 External architecture sources are [Go netpoll](https://go.dev/src/runtime/netpoll_epoll.go),
+[Rayon](https://docs.rs/rayon/latest/rayon/) and its
+[`join` contract](https://docs.rs/rayon/latest/rayon/fn.join.html),
 [Tokio runtime](https://docs.rs/tokio/latest/tokio/runtime/),
 [Monoio](https://github.com/monoio-rs/monoio), its
 [legacy driver](https://github.com/monoio-rs/monoio/blob/master/docs/en/use-legacy-driver.md),
@@ -4260,6 +4263,7 @@ revision, compiler and dependency lockfile.
 | TCP closed-loop echo | 1/4/64/1024 peers × 64 B, 64 peers × 64 KiB; one outstanding request per peer; exact bytes and EOF | Current ten-cell split1/split2 screen. Add 4 KiB and pipeline depths 8/32 only after candidate screening |
 | TCP streaming / backpressure | Continuous 2 MiB or larger, arbitrary fragmentation, short sends, slow readers, half-close; preserve order and bounded live storage | Existing epoll stream oracle; uring joins it below. Idle 10k peers, churn and reset/cancellation remain separate qualification |
 | TCP fixed-arrival / mixed compute | Same recurrence and compute quantum; light paced requests alongside heavy work; below/near/above saturation | Existing paced mixed experiments cover selected controls. External candidates need scheduled-to-response p99/p99.9, goodput, missed deadlines, backlog and drain recovery |
+| CPU-only parallelism and CPU offload | Sequential Rust vs Rayon `par_iter`/`join`/`scope`; balanced/unbalanced recursive and data-parallel jobs; matched arithmetic, tuned grain and pool width. Mixed mode charges enqueue, completion transfer and bounded queues | Required companion to the I/O study. Compare WF compute parallelism directly, then test Tokio/native-I/O + Rayon under one total CPU budget; do not multiply workers by giving every pool the full budget |
 | File reads | Open-once cache-hot vs cold buffered vs direct I/O; random/sequential; 4/64 KiB; QD 1/8/64; same offsets, bytes and checksum | Existing file experiments cover subsets. Extend native blocking/pread pool/uring comparisons; fio is a device-envelope cross-check, not an identical-program runtime row |
 | File writes | Buffered accepted bytes vs fdatasync/fsync durability are distinct contracts; name batch size, flush cadence and directory durability | Broader matrix required; no current TCP result supports a write or durability claim |
 | Dependent storage/network pipeline | Read → parse → request → write with the same dependency graph and compute work | Unmeasured; tests whether sequential-source overlap composes across stages |
@@ -4286,7 +4290,8 @@ comparison remain explicit platform rows, not inferred coverage.
 
 The near-term sequence is bounded: qualify the in-tree byte-stream controls,
 run the ten-cell native screen, then add Go, Tokio and forced-backend Monoio to
-that same screen. Surviving Pareto configurations advance to mixed load,
+that same screen. Rayon accompanies the CPU-only and bounded CPU-offload
+comparisons, with a sequential Rust control. Surviving Pareto configurations advance to mixed load,
 streaming/pipeline stress and real NIC measurements; Seastar is a targeted
 mixed-load/locality control. This avoids an unbounded Cartesian product while
 keeping omitted workloads and implementations visible.
