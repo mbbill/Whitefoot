@@ -5042,3 +5042,53 @@ itself was not uploaded. Key retained SHA-256 values are:
 | Observed WF parallel binary | `414da59a4417a234fb73489fcef2fdc51a9a9f26b68bee57e4193c21d7467d31` |
 | Generated WF parallel IR | `111320f992b02a384d5eb0c7705f67dbeda74c9bf42685e06bb362836588b7c8` |
 | Original resource.tsv | `6c0b079bd1e726fdcf892e5e8b55d26e12a1e73540cbe17a1393cc5e9f401805` |
+
+## Forty-seventh experiment: control unused native ring initialization
+
+Experiment 45's generated WF layout has no concurrent I/O workload, yet its
+final `write_once` requires the completion bridge. All six Linux observations
+reported an initialized native ring carrying zero submissions, submission
+enters and completions. The same panel's large short-run gap mostly amortized
+away with longer work. A native-ring policy control can now test one candidate
+fixed cost while retaining the algorithm and actual output path.
+
+`make rayon-ring-bench ROUNDS=5 WARMUP=1` reuses `rayon-bench.sh` and its
+ordinary C runner. It fixes WF_WORKERS=4, WF_STACKS=12 and Rayon width/grain
+4/4. It pairs `WF_IO_NO_NATIVE_RING` unset and exactly `1` at one and sixteen
+batches, alongside the ordinary Rayon reference at each batch count. The
+harness first removes any inherited value, then sets `1` only for the disabled
+row's child. Both WF rows execute the identical normal compiler-produced
+binary. The existing runtime setting skips ring startup and keeps the typed
+adapter; no runtime source, language rule, computation or output call changes.
+
+The six forms share one forward/reverse plan. One warmup and five measured
+passes produce thirty ordinary samples, with whole-process wall and child
+user/system CPU including startup and output. The runner validates each
+checksum after trimming trailing CR/LF; it does not archive those stdout
+files. Four separate untimed `WF_SCHED_OBSERVE=1` executions archive and
+exactly compare their output. On Linux, each default observation must have
+one ring report with zero submissions/enters/completions, and each disabled
+observation must have none. Both retain four scheduler threads, three spawned
+workers and positive grants. A Linux host that cannot initialize the default
+ring fails this particular experiment's qualification rather than silently
+measuring two fallback rows. macOS can check command and checksum wiring but
+does not qualify the native-ring distinction.
+
+This is an attribution control, not a selection of a future runtime policy.
+Disabling native ring availability also selects the existing adapter policy;
+the paired difference is not a direct timer around io_uring_setup or a proof
+that every affected instruction belongs to ring initialization. No native
+network throughput claim follows from a ring that carried zero requests.
+The comparison retains total CPU accounting, the waiting Rayon caller,
+host/topology, actual compilers, source/binary hashes, plans, raw samples and
+separate observations as in experiment 45. Neither CPU affinity nor host
+dedication is assumed, and no perf capture is mixed into ordinary timings.
+The isolated `codex/io-cpu-ring-controls` branch reuses the bounded CI resource
+job while experiment 45 remains frozen at 60073e1d.
+
+The local M1 one-pass smoke passed all six ordinary checksum validations and
+all four separate observed stdout/counter checks. Its retained plan and raw
+order were independently checked, including both argument counts and the
+per-child native-ring override. Bash syntax and workflow YAML also passed.
+These are command/protocol qualifications; the M1 has no native Linux ring,
+and its shared-host timings are not performance evidence for this control.
