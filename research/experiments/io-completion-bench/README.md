@@ -622,6 +622,9 @@ ASan/UBSan; set `COMPLETION_CORO_SANITIZERS=thread` for TSan. The flag is
 the older `--continuations` control or qualify a mixed performance ranking.
 Experiment 66 in the scheduler investigation records the lifetime protocol
 and current capability limits.
+The canonical `scheduler-streams` CI stage installs LLVM 20 on both hosts.
+Its macOS job selects the Homebrew `llvm@20` compiler through `CORO_CLANG` and
+`CORO_CXX`; the runner's Apple clang 15 cannot parse `coro_elide_safe`.
 
 On native Windows, `windows-bench.ps1` owns a separate production
 qualification:

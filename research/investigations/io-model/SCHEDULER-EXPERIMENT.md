@@ -9921,8 +9921,22 @@ timing comparison. LLVM 22 rejects the pre-existing `llvm.coro.end` signature;
 this experiment retains the previously qualified Apple clang 21 / Linux LLVM
 20 continuation toolchains. The maintained target defaults to fatal ASan/UBSan
 and accepts `COMPLETION_CORO_SANITIZERS=thread` for TSan, including the matching
-generated LLVM function instrumentation. Linux CI qualification remains
-outstanding; no performance conclusion is drawn.
+generated LLVM function instrumentation. No performance conclusion is drawn.
+
+At `03d3e05d`, the [Linux scheduler-streams job](https://github.com/mbbill/Whitefoot/actions/runs/34142452216/job/101807271642)
+passes all 72 compute invocations on x86-64 Linux 6.17.0-1022-azure with the
+installed LLVM 20 toolchain. Direct recount of its log finds six held-worker
+runs, each with 67 submissions and retirements at peak two, and eighteen
+recursive cases with balanced inner publication/join counts. Every outer
+submission is retired. Default and forced-helper policy runs both pass;
+these compute reports do not record per-operation native-route counts.
+The complete gate is not green: thirteen jobs pass, macOS scheduler-streams
+fails because Apple clang 15 cannot parse `coro_elide_safe`, Linux static
+fails a native-adapter wake-count assertion, and Linux scheduler times out
+while downloading the LLVM package before any scheduler test runs. The CI
+toolchain correction installs LLVM 20 only for scheduler-streams and selects
+Homebrew `llvm@20` explicitly on macOS. Its native macOS execution remains
+to be qualified; the eight-minute job ceiling and all test targets are retained.
 
 The complete local `make -C compiler check` passes: 1436 unit and 71 sampling
 tests, executable corpus, format/lint/docs/spec and native completion/core

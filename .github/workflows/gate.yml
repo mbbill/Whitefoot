@@ -97,7 +97,7 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
             sudo apt-get update
-            sudo apt-get install -y --no-install-recommends clang clang-20 libclang-rt-20-dev
+            sudo apt-get install -y --no-install-recommends clang
           fi
           test -x /usr/bin/clang
           /usr/bin/clang --version
@@ -105,6 +105,26 @@ jobs:
           rustup default stable
           rustup component add clippy rustfmt
           cargo --version
+
+      # The continuation IR uses coro_elide_safe, which the macos-14 image's
+      # Apple clang 15 cannot parse. Only this stage needs LLVM 20; the other
+      # stages keep using the host compiler without downloading this package.
+      - name: Install LLVM 20 for continuation qualification
+        if: matrix.stage == 'scheduler-streams'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_INSTALL_CLEANUP: '1'
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            sudo apt-get install -y --no-install-recommends clang-20 libclang-rt-20-dev
+            clang-20 --version
+          else
+            brew install --force-bottle llvm@20
+            continuation_llvm_prefix=$(brew --prefix llvm@20)
+            "$continuation_llvm_prefix/bin/clang" --version
+            printf 'CORO_CLANG=%s/bin/clang\n' "$continuation_llvm_prefix" >> "$GITHUB_ENV"
+            printf 'CORO_CXX=%s/bin/clang++\n' "$continuation_llvm_prefix" >> "$GITHUB_ENV"
+          fi
 
       - name: Install the pinned Go reference toolchain
         if: matrix.stage == 'scheduler-streams'
