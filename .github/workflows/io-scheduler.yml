@@ -1,5 +1,7 @@
 # One host, alternating samples, all candidate forms built from one revision.
 # This is the temporary experiment owned by io-model/SCHEDULER-EXPERIMENT.md.
+# The continuation-batch branch selects the three-policy screen; its source
+# remains fixed while results are integrated on io-runtime-followup.
 name: io-scheduler
 
 on:
