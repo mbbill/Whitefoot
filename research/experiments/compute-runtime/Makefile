@@ -10,7 +10,7 @@ CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread
 FLOOR := $(ROOT)/compiler/src/backend/wf_floor.c
 WFC ?= $(OUT)/compiler/gate/whitefootc
 
-.PHONY: check build check-runtime check-abi compiler force
+.PHONY: check build check-runtime check-abi check-fir compiler force
 
 force:
 
@@ -21,7 +21,7 @@ $(OUT)/probe: runtime.c runtime.h probe.c $(FLOOR) force
 	$(CC) $(CFLAGS) -DWF_COMPUTE_TEST -fsanitize=$(SANITIZER) -fno-omit-frame-pointer \
 		runtime.c probe.c $(FLOOR) -o "$@"
 
-check: check-runtime check-abi
+check: check-runtime check-abi check-fir
 
 check-runtime: build
 	WF_WORKERS=2 "$(OUT)/probe" protocol
@@ -68,4 +68,47 @@ check-abi: $(WFC)
 	grep -E ' T _?wf__par_acquire_lane$$' "$(OUT)/abi.symbols"
 	@if grep -E ' [Tt] _?(wf_sched_|wf_completion_|wf__completion_)' "$(OUT)/abi.symbols"; then \
 		echo 'compute ABI binary unexpectedly links shared scheduler or completion code' >&2; exit 1; \
+	fi
+
+check-fir: $(WFC)
+	mkdir -p "$(OUT)"
+	"$(WFC)" --par --par-ledger --emit-llvm fir.wf -o "$(OUT)/fir.ll" > "$(OUT)/fir.ledger"
+	grep -F 'pair(filter_tiles, filter_tiles)' "$(OUT)/fir.ledger"
+	grep -F 'call void @wf__par_publish(' "$(OUT)/fir.ll"
+	grep -E '^define i32 @main\(' "$(OUT)/fir.ll"
+	grep -E '^define i32 @wf__main_body\(' "$(OUT)/fir.ll"
+	# Preserve the emitted module and command; only its command symbols are
+	# renamed in the host copy. Typed shims are appended before optimization.
+	sed -e 's/@main(/@wf_research_fir_command_main(/g' \
+		-e 's/@wf__main_body(/@wf_research_fir_command_body(/g' "$(OUT)/fir.ll" > "$(OUT)/fir-host.ll"
+	cat fir_host.ll >> "$(OUT)/fir-host.ll"
+	$(CC) $(CFLAGS) -fno-fast-math -ffp-contract=off -fsanitize=$(SANITIZER) -fno-omit-frame-pointer \
+		fir_check.c -lm -o "$(OUT)/fir-oracle"
+	$(CC) $(CFLAGS) -Wno-override-module -fsanitize=$(SANITIZER) -fno-omit-frame-pointer \
+		runtime.c $(FLOOR) "$(OUT)/fir.ll" -o "$(OUT)/fir-command"
+	$(CC) $(CFLAGS) -Wno-override-module -fno-fast-math -ffp-contract=off \
+		-DWF_FILTER_HOST -DWF_COMPUTE_CONTROL -fsanitize=$(SANITIZER) -fno-omit-frame-pointer \
+		runtime.c fir_check.c $(FLOOR) "$(OUT)/fir-host.ll" -lm -o "$(OUT)/fir"
+	$(CC) $(CFLAGS) -Wno-override-module -fno-fast-math -ffp-contract=off \
+		-DWF_FILTER_HOST -fsanitize=$(SANITIZER) -fno-omit-frame-pointer \
+		fir_check.c $(FLOOR) "$(OUT)/fir-host.ll" -lm -o "$(OUT)/fir-sequential"
+	"$(OUT)/fir-oracle"
+	WF_WORKERS=0 "$(OUT)/fir-command"
+	WF_WORKERS=2 "$(OUT)/fir-command"
+	@for workers in 0 1 2 4; do \
+		case $$workers in 0|1) selected=sequential-clone;; *) selected=parallel;; esac; \
+		WF_WORKERS=$$workers "$(OUT)/fir" > "$(OUT)/fir-workers-$$workers.log" || exit $$?; \
+		cat "$(OUT)/fir-workers-$$workers.log"; \
+		grep -Fxq "FIR WF qualification PASS: world=$$selected calls=6408 samples=485431 history=290955 misses=19224" \
+			"$(OUT)/fir-workers-$$workers.log" || exit 1; \
+	done
+	"$(OUT)/fir-sequential" > "$(OUT)/fir-sequential.log"
+	cat "$(OUT)/fir-sequential.log"
+	grep -Fxq 'FIR WF qualification PASS: world=sequential-clone calls=6408 samples=485431 history=290955 misses=19224' \
+		"$(OUT)/fir-sequential.log"
+	nm "$(OUT)/fir" > "$(OUT)/fir.symbols"
+	grep -E ' T _?wf__par_acquire_lane$$' "$(OUT)/fir.symbols"
+	grep -E ' T _?wf__floor_run$$' "$(OUT)/fir.symbols"
+	@if grep -E ' [Tt] _?(wf_sched_|wf_completion_|wf__completion_)' "$(OUT)/fir.symbols"; then \
+		echo 'FIR unexpectedly links shared scheduler or completion code' >&2; exit 1; \
 	fi

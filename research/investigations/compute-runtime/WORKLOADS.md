@@ -8,8 +8,10 @@ it into representative application coverage.
 This document owns WF-side workload selection for the [compute runtime
 investigation](README.md). The [reference matrix](BASELINES.md) separately owns
 the native comparisons. The inventory below was inspected at
-`6cc00984415a39c507fa74897c9269b10beebfee`; no new benchmark program, execution
-qualification, or timing result is claimed here. Keep the inventory current as
+`6cc00984415a39c507fa74897c9269b10beebfee`. The
+[variable-input FIR experiment](../../experiments/compute-runtime/README.md#variable-input-causal-fir)
+now supplies the first implemented WF computation with local output and
+parallel-execution qualification; no timing result is claimed. Keep the inventory current as
 programs become executable; consolidate it when the suite's implemented coverage
 supersedes this selection.
 
@@ -75,7 +77,9 @@ the workload, changing its expected answer, or adding a test-specific lowering.
 
 A row advances through **source seed**, **implemented WF program**, **qualified
 correctness and actualization**, and **measured application with native
-references**. All rows above are currently source seeds or explicit gaps.
+references**. The filter row has local FIR correctness and recursive tile
+actualization evidence; channel co-scheduling, a multistage pipeline and measured
+native comparisons remain open. The other rows are source seeds or explicit gaps.
 New maintained programs must have a real correctness-test caller and a benchmark
 caller in the owning experiment; do not leave disconnected fixtures or scripts.
 
