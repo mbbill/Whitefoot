@@ -148,7 +148,7 @@ validated; the following boundary determines what its implementation must preser
 
 #### Information retained at the checked boundary
 
-Code inspection identifies information that a pass over the current erased IR
+Code inspection at `bb8eb30f` identifies information that an erased-IR pass
 cannot recover by value type. The checked binding occurrence carries
 `consume_root`, but the binding arm in
 [`IrBuilder::expression`](../../../compiler/src/lowering/builder.rs) does not
@@ -158,6 +158,14 @@ the same IR type in own and borrow modes. User-call lowering also does not retai
 its checked result-provenance relation. This is compatible with the current
 conservative backend; it is insufficient authority for a new ownership-directed
 reuse pass. A false consume flag alone does not establish a copy operation.
+
+The first implementation step now retains source parameter and result modes in
+`IrSourceSignature`, independently of the representation types. It is populated
+from the checked function for source declarations and monomorphized instances;
+compiler-synthesized functions carry no invented source signature. This step
+does not yet retain binding-occurrence use kinds or borrow-result provenance,
+normalize destinations, or change the emitted ABI. Its mode record carries no
+loan origin/lifetime and grants no input/result aliasing permission by itself.
 
 | Information | Origin and use |
 | --- | --- |
@@ -287,7 +295,7 @@ Use existing complete witnesses to judge the candidate, with their actual limits
 | Same suite: `partial_construction_refusal_preserves_effects_values_and_release_order` | Passed with retained calls and refusal at each of three allocations, observing exact allocation/release order and returned values. The source constructs two complete cells before making the pair; this does **not** demonstrate source-visible partially initialized struct authority. |
 | Same suite: `returned_element_borrows_and_inline_views_reach_the_owners_storage`; [semantic neighbors](../../../compiler/src/semantic/tests/owned_places.rs) | Passed owner-storage execution and bounds/loan checks, including refusal of raw-slot access and moving a borrowed owner. Root value liveness alone cannot replace loan/storage identity. |
 | [Linear lifecycle programs](../../experiments/container-representation/lifecycle/RESULTS.md) | Actual linear values are discharged on success and failure; the leak neighbor is rejected. A proved-empty run of linear values still cannot be discharged. That missing language capability is not solved by an aggregate ABI. |
-| [Parallel corpus execution](../../../compiler/tests/programs/parallel.rs) using [generic nominals](../../../tests/programs/generic_nominals.wf) | At `bb8eb30f`, the canonical program stage reports 72 passes and this one failure: abnormal exit with four workers. Existing green sampling predominantly returns scalars. Aggregate-result and staged-cleanup test additions remain paused, uncompiled, and unexecuted; no complete parallel aggregate lifetime result is claimed. |
+| [Parallel corpus execution](../../../compiler/tests/programs/parallel.rs) using [generic nominals](../../../tests/programs/generic_nominals.wf) | At `bb8eb30f`, the canonical program stage reports 72 passes and this one failure: abnormal exit with four workers. Existing green sampling predominantly returns scalars. Aggregate-result and staged-cleanup test additions remain paused and unexecuted. Their Rust harness compiled during signature-metadata checks, which does not run or validate their embedded WF programs; no complete parallel aggregate lifetime result is claimed. |
 
 Validate the selected normalization using these witnesses and the frozen external
 contracts already recorded below. Existing positive runs are semantic constraints
@@ -806,3 +814,14 @@ with the pending adapter. LoopSplit currently charges each aggregate capture the
 entire 256-byte lane payload during admission; a small record capture can be
 permission-eligible yet never select split actualization. A sequential fallback
 for that source is not evidence of a parallel aggregate capture.
+
+The signature-metadata step passes all 30 lowering tests, including three new
+controls for identical descriptor types with different source roles, shared/unique
+borrow results, and compiler-synthesized signatures. The gate-profile compiler
+build completes without warnings. LLVM output is byte-identical before and after
+this step for the retained N=256 dense program, wide-record program, inline view,
+and `generic_nominals.wf` with `--par`; a local staged-call prototype also matches.
+That last comparison is exploratory emission evidence, not a committed staged
+runtime test. No parallel adapter was changed and no new aggregate/staged runtime
+result is claimed. The metadata step does not complete destination normalization
+or make the existing full gate green.

@@ -4,6 +4,10 @@
   permission to duplicate owners or a requirement to copy an entire payload at
   every element operation. Fields, indices, and cell dereferences share the normal
   place path.
+- Source-function signatures retain their checked ownership/access modes
+  independently of parameter and result representation. Compiler-synthesized
+  functions carry no invented source signature. These modes alone supply no loan
+  origin, lifetime, or input/result aliasing permission.
 - Distinguish full fixed arrays, initialized prefixes, and circular windows.
   Persistent fixed extent and full initialization belong to the relevant type or
   state; variable length and head are not universal array metadata. Placement and
@@ -196,6 +200,15 @@
   reconstructed. This is the next implementation direction, not a statement
   that the normalized representation or parallel integration already exists.
   [Comparison, operation distinctions, and dynamic storage instances](../../../research/investigations/containers-and-resources/REASSESSMENT.md#foundation-review-authority-representation-and-placement). (sourced)
+- 2026-09-07 correction: the signature portion of the preceding erasure pitfall
+  is now addressed. Own, shared, and unique buffer parameters retain the same
+  descriptor representation while keeping distinct source roles and release
+  responsibilities. Shared and unique scalar-borrow results likewise keep their
+  roles despite an identical address representation. Generated reduction
+  functions carry no source signature. Binding-occurrence consume information
+  and borrow-result provenance still need their own retained representation.
+  [Signature lowering and source boundary](../../../compiler/src/lowering/builder.rs),
+  [IR distinctions and focused tests](../../../compiler/src/lowering/tests.rs). (code)
 
 ## Moves
 

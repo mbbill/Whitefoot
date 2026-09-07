@@ -390,13 +390,30 @@ fn lower_function<'program>(
     builder.materialize_staged_driver_plan()?;
     let overlaps = builder.overlaps();
     let completion_steps = builder.completion_steps();
-    builder.finish(
+    let mut lowered = builder.finish(
         function.symbol.clone(),
         overlaps,
         completion_steps,
         None,
         function.target_action,
-    )
+    )?;
+    lowered.source_signature = Some(IrSourceSignature {
+        parameters: function
+            .parameters
+            .iter()
+            .map(|parameter| lower_source_mode(parameter.mode))
+            .collect(),
+        result: lower_source_mode(function.result_mode),
+    });
+    Ok(lowered)
+}
+
+const fn lower_source_mode(mode: CheckedMode) -> IrSourceMode {
+    match mode {
+        CheckedMode::Own => IrSourceMode::Own,
+        CheckedMode::Shared(_) => IrSourceMode::Shared,
+        CheckedMode::Unique(_) => IrSourceMode::Unique,
+    }
 }
 
 fn lower_parameter_type(
@@ -608,6 +625,7 @@ impl<'program> IrBuilder<'program> {
         Ok(IrFunction {
             name,
             parameters: self.parameters,
+            source_signature: None,
             result: self.result,
             values: self.values,
             blocks: self

@@ -18,7 +18,7 @@ use crate::{
 
 use super::{
     IrBlock, IrDrop, IrEntry, IrFunction, IrInstruction, IrIntegerOperation, IrNominalKind,
-    IrOperation, IrProgram, IrTerminator, IrType, IrValueId, lower_checked,
+    IrOperation, IrProgram, IrSourceMode, IrTerminator, IrType, IrValueId, lower_checked,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -143,6 +143,99 @@ fn return_drops(function: &IrFunction) -> &[IrDrop] {
         panic!("expected a return terminator");
     };
     drops
+}
+
+#[test]
+fn source_signature_modes_distinguish_identical_descriptor_representations() {
+    let source = format!(
+        "fn owned(value: own buffer<u8>) -> result: own unit pure {{\n  return unit;\n}}\n\nfn shared(value: &buffer<u8>) -> result: own unit pure {{\n  return unit;\n}}\n\nfn unique(value: &uniq buffer<u8>) -> result: own unit pure {{\n  return unit;\n}}\n\n{COMMAND_ENTRY}"
+    );
+    with_ir(source.as_bytes(), |program| {
+        let owned = function(program, "owned");
+        let representation = owned.parameters()[0].1;
+        assert!(matches!(representation, IrType::Buffer { .. }));
+        for (name, mode) in [
+            ("owned", IrSourceMode::Own),
+            ("shared", IrSourceMode::Shared),
+            ("unique", IrSourceMode::Unique),
+        ] {
+            let lowered = function(program, name);
+            assert_eq!(lowered.parameters()[0].1, representation);
+            let signature = lowered
+                .source_signature
+                .as_ref()
+                .expect("a source signature");
+            assert_eq!(signature.parameters, [mode]);
+            assert_eq!(signature.result, IrSourceMode::Own);
+            assert_eq!(
+                return_drops(lowered).len(),
+                usize::from(mode == IrSourceMode::Own),
+                "equal descriptor types retain different release responsibilities"
+            );
+        }
+    });
+}
+
+#[test]
+fn source_signature_modes_retain_borrow_results_without_inventing_ownership() {
+    let source = format!(
+        "fn owned(value: own u64) -> result: own u64 pure {{\n  return value;\n}}\n\nfn shared['r](value: &'r u64) -> result: &'r u64 pure {{\n  return value;\n}}\n\nfn unique['r](value: &uniq 'r u64) -> result: &uniq 'r u64 pure {{\n  return move value;\n}}\n\n{COMMAND_ENTRY}"
+    );
+    with_ir(source.as_bytes(), |program| {
+        for (name, mode) in [
+            ("owned", IrSourceMode::Own),
+            ("shared", IrSourceMode::Shared),
+            ("unique", IrSourceMode::Unique),
+        ] {
+            let lowered = function(program, name);
+            let signature = lowered
+                .source_signature
+                .as_ref()
+                .expect("a source signature");
+            assert_eq!(signature.parameters, [mode]);
+            assert_eq!(signature.result, mode);
+            assert_eq!(
+                matches!(lowered.result(), IrType::Address(_)),
+                mode != IrSourceMode::Own
+            );
+        }
+        assert_eq!(
+            function(program, "shared").result(),
+            function(program, "unique").result(),
+            "the same address representation does not distinguish loan strength"
+        );
+    });
+}
+
+#[test]
+fn source_signature_modes_are_not_invented_for_synthesized_functions() {
+    let source = format!(
+        "fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {{\n  let total = 0_u64;\n  for @points (i in lo..hi) {{\n    set total = total +wrap i;\n  }}\n  return total;\n}}\n\n{COMMAND_ENTRY}"
+    );
+    with_ir_mode(source.as_bytes(), OverlapLowering::On, |program| {
+        let generated = program
+            .functions()
+            .iter()
+            .filter(|function| function.synthesis().is_some())
+            .collect::<Vec<_>>();
+        assert!(
+            !generated.is_empty(),
+            "the reduction must exercise synthesized signatures: {:?}",
+            program.actualization_ledger()
+        );
+        for function in generated {
+            assert_eq!(function.source_signature, None);
+        }
+        let source = function(program, "folded");
+        assert_eq!(
+            source
+                .source_signature
+                .as_ref()
+                .expect("a source signature")
+                .parameters,
+            [IrSourceMode::Own, IrSourceMode::Own]
+        );
+    });
 }
 
 #[test]

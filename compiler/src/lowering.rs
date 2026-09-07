@@ -2033,10 +2033,35 @@ pub enum IrSynthesis {
     Chunk,
 }
 
+/// A checked source signature's mode, independent of its lowered value type.
+///
+/// Descriptor and opaque-handle types can have the same representation in all
+/// three modes. This record does not carry a loan origin or its lifetime, and
+/// cannot by itself authorize aliasing an input and a result destination.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrSourceMode {
+    /// The source signature passes an owned value.
+    Own,
+    /// The source signature passes shared access to an existing value.
+    Shared,
+    /// The source signature passes exclusive access to an existing value.
+    Unique,
+}
+
+/// Checked source roles retained independently of representation and erased regions.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IrSourceSignature {
+    parameters: Vec<IrSourceMode>,
+    result: IrSourceMode,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrFunction {
     name: String,
     parameters: Vec<(IrValueId, IrType)>,
+    /// Checked source modes, or `None` for a compiler-synthesized function.
+    /// Internal transfer contracts must not be invented from representation.
+    source_signature: Option<IrSourceSignature>,
     result: IrType,
     values: Vec<IrType>,
     blocks: Vec<IrBlock>,
