@@ -33,9 +33,11 @@
  * connection table is indexed by descriptor, each connection owns one pending
  * buffer for the remainder of a short write, and each thread owns one receive
  * buffer. The storage experiment can instead receive into private arena slices
- * or allocate a buffer on accept and free it on close. No storage policy
- * allocates buffers per receive or send. The coroutine comparison separately
- * measures heap-allocated versus parent-contained nested call frames. */
+ * or allocate a buffer on accept and free it on close. Those storage policies
+ * do not allocate buffers per receive or send. The opt-in chunk-lease comparison
+ * instead grows reusable owner-local storage when all existing nodes have
+ * live loans. The coroutine comparison separately measures heap-allocated
+ * versus parent-contained nested call frames. */
 #include <errno.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -116,6 +118,11 @@ typedef _Atomic int wf_atomic_int;
 #if WF_BENCH_RECEIVE_STORAGE && defined(WF_BENCH_COMPUTE)
 #error "The receive-storage comparison applies to the echo byte stream"
 #endif
+#if defined(WF_BENCH_CHUNK_LEASE)
+#if !defined(WF_BENCH_CORO_ELIDE) || !defined(WF_BENCH_COROUTINE) || WF_BENCH_RECEIVE_STORAGE || defined(WF_BENCH_COMPUTE)
+#error "Chunk leases require the elided C++ echo with the default storage selector"
+#endif
+#endif
 #if WF_BENCH_RECEIVE_STORAGE
 #define WF_BENCH_RECEIVE_BUFFER(worker, link) ((link)->pending)
 #else
@@ -158,6 +165,17 @@ struct worker {
     int listener;
     int wake;
     unsigned char *scratch;
+#if defined(WF_BENCH_CHUNK_LEASE)
+    struct chunk_node *chunk_free;
+    struct chunk_node *chunk_all;
+    uint64_t chunk_count;
+#if defined(WF_BENCH_OBSERVE)
+    uint64_t chunk_live;
+    uint64_t chunk_peak;
+    uint64_t chunk_acquires;
+    uint64_t chunk_returns;
+#endif
+#endif
 #if defined(WF_BENCH_STACKFUL)
     void *saved_sp;
 #if defined(WF_BENCH_QUANTUM)
@@ -687,18 +705,18 @@ int main(int argc, char **argv) {
     descriptor_capacity = (unsigned)(option_connections + 8 * option_threads + 64);
     table = (struct connection *)calloc(descriptor_capacity, sizeof *table);
     workers = (struct worker *)calloc(option_threads, sizeof *workers);
-#if WF_BENCH_RECEIVE_STORAGE < 2
+#if WF_BENCH_RECEIVE_STORAGE < 2 && !defined(WF_BENCH_CHUNK_LEASE)
     pending_memory = (unsigned char *)malloc((size_t)descriptor_capacity * TRANSFER_BYTES);
 #endif
     if (table == NULL || workers == NULL
-#if WF_BENCH_RECEIVE_STORAGE < 2
+#if WF_BENCH_RECEIVE_STORAGE < 2 && !defined(WF_BENCH_CHUNK_LEASE)
         || pending_memory == NULL
 #endif
     ) {
         fprintf(stderr, "epoll_echo: out of memory\n");
         return 1;
     }
-#if WF_BENCH_RECEIVE_STORAGE < 2
+#if WF_BENCH_RECEIVE_STORAGE < 2 && !defined(WF_BENCH_CHUNK_LEASE)
     for (unsigned at = 0; at < descriptor_capacity; at++) {
         table[at].pending = pending_memory + (size_t)at * TRANSFER_BYTES;
     }
@@ -726,7 +744,9 @@ int main(int argc, char **argv) {
     for (unsigned at = 0; at < option_threads; at++) {
         struct worker *worker = &workers[at];
         worker->index = (int)at;
+#if !defined(WF_BENCH_CHUNK_LEASE)
         worker->scratch = (unsigned char *)malloc(TRANSFER_BYTES);
+#endif
 #if defined(WF_BENCH_QUANTUM)
         worker->queue = (int *)malloc((size_t)descriptor_capacity * sizeof *worker->queue);
         if (worker->queue == NULL) {
@@ -737,7 +757,11 @@ int main(int argc, char **argv) {
         worker->epoll = epoll_create1(0);
         worker->listener = listener_for(option_port);
         worker->wake = eventfd(0, EFD_NONBLOCK);
-        if (worker->scratch == NULL || worker->epoll < 0 || worker->listener < 0 ||
+        if (
+#if !defined(WF_BENCH_CHUNK_LEASE)
+            worker->scratch == NULL ||
+#endif
+            worker->epoll < 0 || worker->listener < 0 ||
             worker->wake < 0) {
             report("worker setup", errno);
             return 1;
@@ -786,6 +810,9 @@ int main(int argc, char **argv) {
 #endif
 #endif
     for (unsigned at = 0; at < option_threads; at++) {
+#if defined(WF_BENCH_CHUNK_LEASE)
+        chunk_pool_destroy(&workers[at]);
+#endif
 #if defined(WF_BENCH_STACKFUL) && defined(WF_BENCH_OBSERVE)
         fprintf(stderr, "stackful: worker=%u resumes=%llu waits=%llu send_waits=%llu yields=%llu\n", at,
                 (unsigned long long)workers[at].resumes,

@@ -146,6 +146,10 @@ scheduler-native-frontier:
 scheduler-storage-control:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS=5 WARMUP=1 CORO_CXX="$(CORO_CXX)" STORAGE_CONTROL=1 CONTINUATION_SCREEN=4 NATIVE_BASELINES=1 EXPERIMENT=allocator bash scheduler-bench.sh combine
 
+.PHONY: scheduler-chunk-lease
+scheduler-chunk-lease:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS=5 WARMUP=1 CORO_CXX="$(CORO_CXX)" CHUNK_LEASE_CONTROL=1 CONTINUATION_SCREEN=4 NATIVE_BASELINES=1 EXPERIMENT=allocator bash scheduler-bench.sh combine
+
 .PHONY: scheduler-allocation
 scheduler-allocation:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" EXPERIMENT=allocation bash scheduler-bench.sh bench
@@ -1116,7 +1120,7 @@ go-check: prepare
 # Linux-only reference correctness, also reached by scheduler-check on Linux.
 # The send-buffer override and observers never enter timed binaries.
 .PHONY: coroutine-check
-coroutine-check: prepare
+coroutine-check: prepare chunk-lease-check
 	@set -e; \
 	$(CLANG) $(CFLAGS) -Wpedantic -pthread stream_check.c -o "$(BUILD)/stream_check"; \
 	for mode in echo compute quantum; do \
@@ -1159,6 +1163,38 @@ coroutine-check: prepare
 	  $(CORO_CXX) $(CORO_FLAGS) -g -fsanitize=address,undefined -DWF_BENCH_STACKFUL \
 	    -DWF_BENCH_COROUTINE -DWF_BENCH_COMPUTE -DWF_BENCH_OBSERVE $$extra coroutine_lifetime.cpp -o "$$binary"; \
 	  "$$binary"; \
+	done
+
+# Stable owned receive chunks use the same root/leaf echo handlers. The socket
+# fixture counts actual handler short transfers/errors and checks nested-send
+# destruction; the stream runs separately qualify Linux edge-triggered service.
+.PHONY: chunk-lease-check
+chunk-lease-check: prepare
+	@set -e; \
+	flags='-DWF_BENCH_STACKFUL -DWF_BENCH_COROUTINE -DWF_BENCH_CORO_ELIDE -DWF_BENCH_CHUNK_LEASE -DWF_BENCH_OBSERVE'; \
+	$(CLANG) $(CFLAGS) -Wpedantic -pthread stream_check.c -o "$(BUILD)/stream_check"; \
+	binary="$(BUILD)/chunk-lease-lifetime"; \
+	$(CORO_CXX) $(CORO_FLAGS) -g -fsanitize=address,undefined -fno-sanitize-recover=all \
+	  $$flags coroutine_lifetime.cpp -o "$$binary"; \
+	"$$binary" > "$$binary.log" 2>&1 || { cat "$$binary.log"; exit 1; }; cat "$$binary.log"; \
+	binary="$(BUILD)/chunk-lease-stream"; \
+	$(CORO_CXX) $(CORO_FLAGS) -g -fsanitize=address,undefined -fno-sanitize-recover=all \
+	  $$flags -DWF_BENCH_SNDBUF=4096 -DWF_BENCH_STORAGE_OBSERVE -DWF_BENCH_TCP_VERIFY -x c++ epoll_echo.c -o "$$binary"; \
+	for workers in 1 4; do \
+	  log="$$binary-w$$workers.log"; \
+	  "$(BUILD)/stream_check" "$$binary" echo "$$workers" > "$$log" 2>&1 || { cat "$$log"; exit 1; }; cat "$$log"; \
+	  awk -v workers="$$workers" '/^chunks:/ {delete v; for(i=2;i<=NF;i++) {split($$i,a,"="); \
+	      if(a[2]!~/^[0-9]+$$/) bad=1; v[a[1]]=a[2]+0}; \
+	      n=split("worker nodes capacity_bytes node_bytes allocated_bytes acquires returns live peak",names," "); \
+	      for(i=1;i<=n;i++) if(!(names[i] in v)) bad=1; \
+	      if (v["worker"]>=workers || seen[v["worker"]]++ || v["live"]!=0 || \
+	          v["acquires"]!=v["returns"] || v["acquires"]<v["nodes"] || v["peak"]!=v["nodes"] || v["nodes"]>4 || \
+	          v["capacity_bytes"]!=v["nodes"]*65536 || v["node_bytes"]<65536 || \
+	          v["allocated_bytes"]!=v["nodes"]*v["node_bytes"]) bad=1; rows++; nodes+=v["nodes"]; loans+=v["acquires"]} \
+	    /^coroutine:/ {for(i=2;i<=NF;i++) {split($$i,a,"=");f[a[1]]=a[2]+0}; frames++} \
+	    /^stackful:/ {for(i=2;i<=NF;i++) {split($$i,a,"=");s[a[1]]+=a[2]+0}} \
+	    END {exit !(rows==workers && !bad && nodes>0 && nodes<=4 && loans>0 && \
+	      frames==1 && f["allocations"]==4 && f["frees"]==4 && s["send_waits"]>0)}' "$$log"; \
 	done
 
 # The ARM storage control adds server-only syscall evidence. LeakSanitizer
