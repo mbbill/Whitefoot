@@ -4468,6 +4468,14 @@ the number of peers. Windows checks for the unchanged stackful path and the
 cross-platform host checks also pass; they do not qualify continuations on
 Windows.
 
+The separate Windows performance qualification at the same revision fails
+its measurement-stability requirement
+([job 101621961875](https://github.com/mbbill/Whitefoot/actions/runs/34083089083/job/101621961875)):
+the compute pair remains unstable after both complete cohorts. The other
+three `io-bench` jobs pass. This run supplies no qualified Windows timing
+table and does not change the native continuation correctness result above.
+Its stability threshold is retained.
+
 The old `wf__par_*` runtime ABI and container storage contract are unchanged.
 Only the experimental continuation-host interface adds publication, task
 readiness/registration, retirement and window queries. Storage borrowed by a
@@ -4529,7 +4537,15 @@ legacy scheduler assertions remain intact.
 The local M1 build, uninstrumented multi-batch helper oracle, and common
 four-peer 2 MiB stream oracle pass. The large-stream run retires all four
 tasks and balances 36 registrations/dequeues on the helper route.
-Linux performance measurements are pending. The host still has locked
+The Apple Clang 21 optimized module requests a 42,552-byte issuer frame and
+a 1,784-byte frame per connection, plus a separate 65,536-byte `calloc`
+receive buffer per accepted connection. The nested send continuation is
+embedded in the connection frame. These are allocation requests from the
+emitted code, not resident-memory readings; allocator metadata, page touch
+and the runtime remain to be measured. Linux performance measurements for
+revision `2147857e` are pending in
+[run 34084346275](https://github.com/mbbill/Whitefoot/actions/runs/34084346275).
+The host still has locked
 pending-list lookup, a separate progress thread and synchronous cleanup;
 the screen measures that implementation and must not be read as a limit
 on the language or continuation representation. Its purpose is to locate
