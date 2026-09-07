@@ -279,7 +279,11 @@ static void socket_case(const char *binary, const char *mode, unsigned bytes, in
     int peer = accept(listener,NULL,NULL);
     require(peer>=0, "fixture accept failed");
     close(listener);
-    int one=1, buffer_bytes=4096;
+    /* The 8 MiB request and 1/8191-byte response fragments exercise partial
+     * progress; observer cases must still prove short send/receive and send
+     * EAGAIN. The larger response send capacity tests whether the former
+     * 4 KiB cap slowed this blocking fixture; no assertion is relaxed. */
+    int one=1, buffer_bytes=65536;
     require(setsockopt(peer,IPPROTO_TCP,TCP_NODELAY,&one,sizeof one)==0 &&
             setsockopt(peer,SOL_SOCKET,SO_SNDBUF,&buffer_bytes,sizeof buffer_bytes)==0,
             "fixture socket policy failed");

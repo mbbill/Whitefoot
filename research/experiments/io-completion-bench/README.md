@@ -324,7 +324,9 @@ client preserves delivered read edges through partial I/O and retains terminal
 events across frames. Linux `make client-readiness-check` runs strict traces
 through the actual exchange body, rejects a deliberately lost edge, and checks
 real fragmented/backpressured streams, admission, scheduled compute and exact
-error reasons with service budgets 0/1/8. Default optimized IR must remain
+error reasons with service budgets 0/1/8. The fixture requests a 64 KiB server
+send buffer; the 8 MiB stream, original fragments and observed short-send,
+short-receive and send-EAGAIN requirements remain. Default optimized IR must remain
 identical. Selected executables, hashes and every raw sample are retained;
 the evidence boundaries are in
 [experiment 58](../../investigations/io-model/SCHEDULER-EXPERIMENT.md#58-remove-speculative-client-receive-probes).

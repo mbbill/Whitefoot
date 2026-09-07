@@ -8166,6 +8166,30 @@ and a qualified client engine comparison, remain possible next controls.
 Neither is measured here. Existing throughput proximity between WF and native
 servers therefore remains an end-to-end result with unresolved client limits.
 
+### Qualification fixture capacity follow-up
+
+The canonical scheduler [job 101708097217](https://github.com/mbbill/Whitefoot/actions/runs/34111354204/job/101708097217)
+at `a1142e5fd06d38e95b09e38b8c8b7c50ac2bc1ed` reached its existing eight-minute
+job limit during the first observer client's 8 MiB fixture, after all 48
+ordinary socket cases had passed. Each completed fragmented case took about
+12.25 seconds, similarly for both client policies and all three service
+budgets. Even the ordinary 64 KiB echo fixture took about 85 ms for three
+rounds and 127 ms with admission. These regular delays suggest interaction
+between TCP acknowledgements, the 4 KiB server send-buffer request and the
+fixture's blocking read-then-write loop; they do not prove that kernel cause.
+
+The bounded follow-up changes only the fixture's requested server
+`SO_SNDBUF` from 4096 to 65536 bytes. It retains all cases, three exchange
+rounds plus admission, the 8 MiB payload, the initial one-byte and later
+8191-byte fragment limits, full independent request verification, exact
+error checks and all observed short-send/short-receive/send-EAGAIN assertions
+in both phases. A faster fixture is acceptable only if those real-operation
+assertions still pass. Benchmark client/server code, measured sample counts
+and the gate timeout remain unchanged. A same-host old/new fixture comparison
+against identical observed client binaries and the full Linux qualification
+are required before claiming the time-budget problem is resolved. The frozen
+063cbef4 measurements above retain their original fixture revision.
+
 ## 59. Ordinary CPU control without idle-scan yields
 
 Experiment 57 locates the dominant observed early yield wait in the runtime's
