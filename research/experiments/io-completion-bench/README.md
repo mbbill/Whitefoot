@@ -352,6 +352,20 @@ one client hardware thread with both SMT siblings of a separate physical
 core. It retains full byte verification and all qualification checks while
 screening six server forms at 64 peers and 64 B/64 KiB. This isolates a
 client resource limit; it does not compare servers using different clients.
+`go-check` qualifies the external Go sequential `net` reference with exactly
+Go 1.27.1 (`GO=/path/to/go` selects the binary), `jq` and the host C compiler.
+It is reached by canonical `make check` through `scheduler-experiment`; the
+gate installs that exact Go version only for its scheduler jobs. Release and
+race builds independently run the existing 2 MiB byte-stream/half-close/slow
+reader oracle, a reset that must close three other waiting handlers, and 64
+live peers using private initialized 64 KiB buffers. Runtime/GC/socket
+readbacks and optional Linux per-thread, epoll-fdinfo and memory snapshots are
+qualification evidence. Experiment49's dedicated CI pins the whole server to
+one logical CPU, including GC/runtime threads, and uses another physical core
+for the client; `GOMAXPROCS=4` is deliberate oversubscription qualification.
+No Go timing rank or four-CPU performance claim exists yet. See
+[experiment49](../../investigations/io-model/SCHEDULER-EXPERIMENT.md#forty-ninth-experiment-qualify-a-sequential-go-net-reference).
+
 `scheduler-uring-diagnostic` captures three observed repetitions of the
 64-peer × 64 KiB cell for the four 8/64 KiB pure/inline uring forms, using one
 server CPU and the unchanged client on another physical core. Its counters
@@ -567,9 +581,9 @@ cache state is checked by the probe above before and after it runs.
 `READ_PROBES`, `READ_THRESHOLD_US`, and `READ_TOLERANCE_PERCENT` set that
 check.
 
-The timing targets are deliberately not reachable from the repository's
-canonical `make check`. They generate large trees and run for minutes, so
-correctness builds do not depend on a performance host. The dedicated `io-bench` workflow
+The large-tree timing protocols are deliberately separate from canonical
+`make check`; the maintained scheduler/native/Go correctness targets remain
+in that gate. The dedicated `io-bench` workflow
 owns the Windows qualification and the exploratory Linux/macOS tables.
 Generated trees, binaries, and raw output stay in the selected scratch
 directory; durable results retain the host identity and raw artifact beside

@@ -854,6 +854,62 @@ uring-check: prepare
 	 done; \
 	done
 
+
+
+# External sequential-API reference, qualified independently before timing.
+# Toolchain upgrades are new comparison revisions, never an implicit download.
+GO ?= go
+GO_VERSION := go1.27.1
+.PHONY: go-check
+go-check: prepare
+	@set -eu; \
+	export GOTOOLCHAIN=local GOCACHE="$(BUILD)/go-cache"; \
+	actual=$$("$(GO)" env GOVERSION); \
+	if test "$$actual" != "$(GO_VERSION)"; then echo "go-check: requires $(GO_VERSION), found $$actual; set GO to the pinned binary" >&2; exit 1; fi; \
+	go_root=$$("$(GO)" env GOROOT); \
+	test -z "$$("$$go_root/bin/gofmt" -l go_echo.go)"; \
+	"$(GO)" vet go_echo.go; \
+	$(CLANG) $(CFLAGS) -Wpedantic -pthread stream_check.c -o "$(BUILD)/go-stream-check"; \
+	mkdir -p "$(BUILD)/go-qualification"; \
+	"$(GO)" version > "$(BUILD)/go-qualification/toolchain.txt"; \
+	"$(GO)" env GOOS GOARCH GOAMD64 CGO_ENABLED GOTOOLCHAIN GOEXPERIMENT >> "$(BUILD)/go-qualification/toolchain.txt"; \
+	for profile in release race; do \
+	  binary="$(BUILD)/go-qualification/go-echo-$$profile"; \
+	  if test "$$profile" = race; then \
+	    CGO_ENABLED=1 CC="$(CLANG)" "$(GO)" build -race -trimpath -o "$$binary" go_echo.go; \
+	  else CGO_ENABLED=0 "$(GO)" build -trimpath -o "$$binary" go_echo.go; fi; \
+	  "$(GO)" version -m "$$binary" > "$$binary.build.txt"; \
+	  for width in 1 4; do \
+	    log="$$binary-p$$width-quiet.log"; \
+	    if ! env -u WF_BENCH_GO_OBSERVE -u WF_BENCH_GO_SNDBUF "$(BUILD)/go-stream-check" "$$binary" echo "$$width" > "$$log" 2>&1; then cat "$$log"; exit 1; fi; \
+	    test "$$(wc -l < "$$log" | tr -d ' ')" = 1; \
+	    for mode in echo reset resident; do \
+	      log="$$binary-p$$width-$$mode.log"; \
+	      prefix="-"; if test "$$(uname -s)" = Linux; then prefix="$$binary-p$$width-live"; fi; \
+	      if test "$$mode" = resident; then \
+	        WF_BENCH_GO_OBSERVE=1 WF_BENCH_GO_SNDBUF=4096 WF_BENCH_PROCESS_DETAILS=1 \
+	          "$(BUILD)/go-stream-check" "$$binary" resident "$$width" 64 65536 "$$prefix" > "$$log" 2>&1; \
+	      else WF_BENCH_GO_OBSERVE=1 WF_BENCH_GO_SNDBUF=4096 \
+	        "$(BUILD)/go-stream-check" "$$binary" "$$mode" "$$width" > "$$log" 2>&1; fi; \
+	      cat "$$log"; \
+	      awk -v mode="$$mode" '/^\{/ {next} /^stream_check: PASS/ {passes++; next} /^go_echo:/ && mode=="reset" {errors++; next} {bad=1} END {exit !(passes==1 && !bad && (mode=="reset" ? errors==1 : errors==0))}' "$$log"; \
+	      awk '/^\{/' "$$log" | jq -s -e --argjson width "$$width" --arg mode "$$mode" \
+	        'length == (if $$mode=="reset" then 1 else 2 end) and \
+	        all(.[]; .kind=="go-net" and .version=="$(GO_VERSION)" and .gomaxprocs==$$width and .buffer_bytes==65536 and \
+	          .metrics["/sched/gomaxprocs:threads"]==$$width and .metrics["/sched/threads/total:threads"]>=1) and \
+	        .[0].stage=="listening" and (if $$mode=="reset" then true else \
+	          .[1].stage=="complete" and (.[1].sockets|length)==(if $$mode=="resident" then 64 else 4 end) and \
+	          all(.[1].sockets[]; .nodelay!=0 and .send_buffer>=4096) end)' > /dev/null; \
+	      if test "$$mode" = resident && test "$$prefix" != "-"; then \
+	        test -s "$$prefix.smaps"; test -s "$$prefix.status"; \
+	        awk -v expected="$${WF_BENCH_SERVER_CPUS:-}" '/^Cpus_allowed_list:/ {seen++; if(expected!="" && $$2!=expected) bad=1} END {exit !(seen>0 && !bad)}' "$$prefix".task-*-status; \
+	        awk '/^tfd:/ {seen++} END {exit !(seen>0)}' "$$prefix".fdinfo-*; \
+	      fi; \
+	    done; \
+	  done; \
+	done
+
+
 # Linux-only reference correctness, also reached by scheduler-check on Linux.
 # The send-buffer override and observers never enter timed binaries.
 .PHONY: coroutine-check

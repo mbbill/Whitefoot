@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-continuation-screen', 'codex/io-rayon-baselines', 'codex/io-compute-profile', 'codex/io-mixed-rayon-baselines', 'codex/io-continuation-owner', 'codex/io-continuation-batch', 'codex/io-client-headroom', 'codex/io-cpu-resource-controls', 'codex/io-uring-aggregation-diagnostic', 'codex/io-cpu-ring-controls']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-continuation-screen', 'codex/io-rayon-baselines', 'codex/io-compute-profile', 'codex/io-mixed-rayon-baselines', 'codex/io-continuation-owner', 'codex/io-continuation-batch', 'codex/io-client-headroom', 'codex/io-cpu-resource-controls', 'codex/io-uring-aggregation-diagnostic', 'codex/io-cpu-ring-controls', 'codex/io-go-baselines']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -17,6 +17,7 @@ on:
       - 'compiler/src/bin/whitefootc.rs'
       - 'research/experiments/io-completion-bench/*.c'
       - 'research/experiments/io-completion-bench/*.cpp'
+      - 'research/experiments/io-completion-bench/*.go'
       - 'research/experiments/io-completion-bench/*.h'
       - 'research/experiments/io-completion-bench/programs/tcp*_server.wf'
       - 'research/experiments/io-completion-bench/programs/continuation_stream.wf'
@@ -35,7 +36,7 @@ jobs:
   measure:
     # Correctness-only branches retain the independently running timing
     # revisions. Canonical and native correctness jobs still run.
-    if: github.ref != 'refs/heads/codex/io-windows-wake-fix' && github.ref != 'refs/heads/codex/io-continuation-experiments' && github.ref != 'refs/heads/codex/io-continuation-lowering' && github.ref != 'refs/heads/codex/io-continuation-network' && github.ref != 'refs/heads/codex/io-continuation-staged' && github.ref != 'refs/heads/codex/io-rayon-baselines' && github.ref != 'refs/heads/codex/io-compute-profile' && github.ref != 'refs/heads/codex/io-mixed-rayon-baselines' && github.ref != 'refs/heads/codex/io-cpu-resource-controls' && github.ref != 'refs/heads/codex/io-cpu-ring-controls'
+    if: github.ref != 'refs/heads/codex/io-windows-wake-fix' && github.ref != 'refs/heads/codex/io-continuation-experiments' && github.ref != 'refs/heads/codex/io-continuation-lowering' && github.ref != 'refs/heads/codex/io-continuation-network' && github.ref != 'refs/heads/codex/io-continuation-staged' && github.ref != 'refs/heads/codex/io-rayon-baselines' && github.ref != 'refs/heads/codex/io-compute-profile' && github.ref != 'refs/heads/codex/io-mixed-rayon-baselines' && github.ref != 'refs/heads/codex/io-cpu-resource-controls' && github.ref != 'refs/heads/codex/io-cpu-ring-controls' && github.ref != 'refs/heads/codex/io-go-baselines'
     name: measure (${{ matrix.experiment }})
     strategy:
       fail-fast: false
@@ -112,6 +113,58 @@ jobs:
             ${{ runner.temp }}/io-scheduler/samples/
             ${{ runner.temp }}/io-scheduler/codegen/
             ${{ runner.temp }}/io-scheduler/resident/
+
+
+  go-reference:
+    if: github.ref == 'refs/heads/codex/io-go-baselines'
+    name: Go net sequential stream and runtime qualification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the pinned Go reference toolchain
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.1'
+          cache: false
+      - name: Qualify release and race builds with a fixed CPU envelope
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/go-reference"
+          {
+            git rev-parse HEAD
+            uname -a
+            lscpu
+            lscpu -e=CPU,CORE,SOCKET,NODE,ONLINE
+            taskset -p $$
+            go version
+            go env GOOS GOARCH GOAMD64 GOEXPERIMENT GOTOOLCHAIN
+            /usr/bin/clang --version
+            sha256sum "$(go env GOROOT)/src/runtime/netpoll_epoll.go" \
+              "$(go env GOROOT)/src/internal/poll/fd_unix.go"
+            cat /proc/stat /proc/softirqs /proc/net/sockstat
+          } > "$RUNNER_TEMP/go-reference/host.txt"
+          mapfile -t cores < <(lscpu -p=CPU,CORE,SOCKET | awk -F, '!/^#/ && !seen[$2 "," $3]++ {print $1}')
+          test "${#cores[@]}" -ge 2
+          server_cpu="${cores[0]}"
+          client_cpu="${cores[1]}"
+          printf 'server_cpu=%s client_cpu=%s gomaxprocs=1,4; all server threads share one logical CPU; P4 is oversubscription qualification, not four CPU timing\n' \
+            "$server_cpu" "$client_cpu" >> "$RUNNER_TEMP/go-reference/host.txt"
+          env -u GOMEMLIMIT -u GODEBUG GOGC=100 WF_BENCH_SERVER_CPUS="$server_cpu" \
+            taskset -c "$client_cpu" make -C research/experiments/io-completion-bench go-check \
+            WHITEFOOT_SCRATCH_ROOT="$RUNNER_TEMP/go-reference" 2>&1 | tee "$RUNNER_TEMP/go-reference/check.log"
+          cat /proc/stat /proc/softirqs /proc/net/sockstat > "$RUNNER_TEMP/go-reference/kernel-after.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: go-reference-qualification
+          path: |
+            ${{ runner.temp }}/go-reference/host.txt
+            ${{ runner.temp }}/go-reference/check.log
+            ${{ runner.temp }}/go-reference/kernel-after.txt
+            ${{ runner.temp }}/go-reference/whitefoot-io-completion-bench/build/go-qualification/
+
 
   completion-continuations:
     if: github.ref == 'refs/heads/codex/io-continuation-experiments' || github.ref == 'refs/heads/codex/io-continuation-lowering' || github.ref == 'refs/heads/codex/io-continuation-network' || github.ref == 'refs/heads/codex/io-continuation-staged' || github.ref == 'refs/heads/codex/io-continuation-screen' || github.ref == 'refs/heads/codex/io-continuation-owner' || github.ref == 'refs/heads/codex/io-continuation-batch'

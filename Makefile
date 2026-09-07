@@ -137,6 +137,7 @@ research-tests:
 # complete scheduler enumeration, independently of the performance readings.
 scheduler-experiment:
 	$(MAKE) -C research/experiments/io-completion-bench scheduler-check WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)"
+	$(MAKE) -C research/experiments/io-completion-bench go-check WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)"
 
 # Enumerate every declared case through the native adapter. Every non-pending
 # case reaches an actual compiler verdict; run cases are linked and
