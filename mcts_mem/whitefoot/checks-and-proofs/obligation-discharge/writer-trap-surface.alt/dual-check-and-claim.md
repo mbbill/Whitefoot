@@ -8,4 +8,4 @@
 
 ## Moves
 
-- 2026-08-18 (f8c81dfc) replaced by [[writer-trap-surface]]: an anonymous body check is a claim minus its name, justification, accountability entry, redundancy advice, and refutation, so keeping both left a strictly weaker duplicate through which a writer could assert without accountability (sourced)
+- 2026-08-18 (f8c81dfc) replaced by [[contract-and-derived-traps]]: an anonymous body check is a claim minus its name, justification, accountability entry, redundancy advice, and refutation, so keeping both left a strictly weaker duplicate through which a writer could assert without accountability (sourced)

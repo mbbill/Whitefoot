@@ -1,10 +1,7 @@
-- The judged unit is a window: an ordered pair of let-bound calls in one block together with every statement between them, with all conditions quantified over the interposed statements (`judge`).
-- Four conditions, each necessary: no dataflow from the first call's result into the second's operands; disjoint write/read footprints under the acceptance overlap relation, projected through call boundaries and including caller-side operand evaluation in both directions; no external or blocking effect row in either closure; no exit edge of the first call's span that bypasses the second.
-- The disjointness condition has a loans half beside the row-projected uses: every borrow-moded argument holds an [OWN-5] loan on its resolved place for the whole call, exclusive for uniq and shared otherwise, judged by [OWN-5]'s own conflict matrix against the other statement's loans and uses, loans ahead of uses in denial citation order.
-- A non-call window statement that forms a borrow denies as a form, in both the window and loop judgments.
-- Interposed statement forms are classified by an exhaustive match; an unclassified form denies rather than contributing an empty footprint, and the denial is reported.
-- Footprint questions the judgment cannot resolve deny; permission fails closed.
-- A permitted window is eligible to actualize; no claim-freedom gate exists, and a claim written between the window's calls still denies as an exit-bearing interposed form.
+- Sibling-call permission is a judgment over checked calls and their intervening statements, with data dependencies, effect footprints, loans, and control exits considered together under PAR-1.
+- Unresolved overlap or an unsupported interposed form denies permission. A missing classification must not silently contribute an empty footprint.
+- The loan judgment uses ordinary ownership overlap; caller-side operand evaluation is part of the footprint. Source proofs are erased and introduce no exit or scheduling edge.
+- The active PAR rules own the complete conditions. The earlier external/blocks exclusions and retained-claim handling below are historical; compiler/README.md owns current actualization limits.
 
 ## Facts
 

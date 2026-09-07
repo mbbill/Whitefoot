@@ -1,7 +1,7 @@
-- The active specification defines buffers, arrays, constants, Result, Option, and their source semantics; it does not make the archived democ's exact LLVM layouts authoritative for the new compiler.
-- The active safe-Rust compiler has a private checked nominal model, typed control-flow IR, and conservative LLVM backend for nongeneric acyclic frame-resident structs and enums. Structs use declared-field aggregates; payload enums use a validated i32 tag plus flattened variant fields, with the complete aggregate initialized before active fields are inserted. This private representation selects no buffer, Result, Option, or container layout.
-- The archived democ's pointer-plus-length buffers, structure-of-arrays aggregates, two-word Result/Option values, and private-global const lowering remain measured implementation evidence for later backend slices.
-- STOR-1 currently describes growable and keyed collections as future libraries over buffers and structs, not kernel containers. v0.31 selects whole-value affine replacement and Option-shaped element vacancy ([[affine-replacement]] with the vacancy operation); the remaining D12 residue — spare capacity without vacancy values, sparse occupancy metadata, relocation, live-subset drop, and failure-atomic multi-slot growth — stays unselected. Append-only P2 remains protected, while recyclable identity is a separate contract rather than a universal collection basis.
+- The active specification defines source storage and ownership rules. Historical LLVM layouts are implementation evidence, not language authority.
+- Keep the current representation and container capability map in compiler/README.md. Its supporting tests and backend code determine what the implementation actually reaches.
+- Replacement, initialization, relocation, identity reuse, and cleanup must follow the relevant storage rules and proofs. A past library proposal or privileged implementation does not establish those obligations for a new container.
+- Dated democ layouts and early compiler-slice descriptions below retain their experimental scope; they are not current capability exclusions.
 
 ## Facts
 

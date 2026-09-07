@@ -6,4 +6,4 @@
 
 ## Moves
 
-- 2026-07-07 (7c1d7641) replaced by [[match-form]]: widening the scrutinee to expr resolved the GRAM-4/EX-1 contradiction; bind-then-match was rejected under R3/W1 because it taxes the sole conditional idiom with a mechanical temporary at every use and adds weak-writer naming burden (sourced)
+- 2026-07-07 (7c1d7641) replaced by [[match-only-conditional]]: widening the scrutinee to expr resolved the GRAM-4/EX-1 contradiction; bind-then-match was rejected under R3/W1 because it taxes the sole conditional idiom with a mechanical temporary at every use and adds weak-writer naming burden (sourced)
