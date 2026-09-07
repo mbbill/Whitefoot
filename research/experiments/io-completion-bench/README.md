@@ -413,8 +413,13 @@ host. Large-message client widths one/two and a small-message width-one
 control yield 120 ordinary rows after 24 warmups, with three separate
 observer passes. It preserves the default client and qualifies the corrected
 exhaustion path plus tiny/selected pools before timing; experiment 62 records
-its matrix and pending native evidence. This is a capacity/send-policy screen,
-not an assertion that an earlier native form was already optimal.
+its matrix and audited `b82647d5` raw results. The native qualification and
+complete cohort pass their checks, while that workflow fails in its final
+summary because it asks for an omitted `callee-small` anchor; the corrected
+postprocessing uses epoll without rerunning timing. At large-message client
+width two, pure-ring 128/32 buffers improves paired median rate by 5.54% with higher
+peak RSS, but epoll still beats every other selected form in all five passes.
+This result preserves the default client and makes no universal winner claim.
 `scheduler-client-headroom` holds one server worker/CPU fixed and compares
 one client hardware thread with both SMT siblings of a separate physical
 core. It retains full byte verification and all qualification checks while

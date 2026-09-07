@@ -4265,8 +4265,8 @@ name. A known limitation remains visible until its experiment is complete.
 | --- | --- | --- | --- |
 | Native C epoll | Manual state machine; per-worker edge-triggered reactor and `SO_REUSEPORT`; 64 KiB shared scratch, bounded private spill on backpressure | Competitive readiness control: immediate recv/send, no ordinary per-operation allocation, local connection state | Screened on Linux loopback; 2 MiB streams, short sends and half-close qualified. Physical NIC and overload confirmation missing |
 | Native C epoll with private storage | Arena, malloc or calloc per connection; main-thread worker variant | Diagnostic storage and allocator comparison; private backing remains owned through I/O | Screened and stream-qualified; these rows need not beat shared scratch to explain WF storage cost |
-| Native C io_uring | Multishot accept/recv, provided buffers, per-worker rings/listeners, ordered vectored sends; SINGLE_ISSUER + DEFER_TASKRUN, no SQPOLL | Competitive completion control: batching, no receive submission per arrival, loaned receive buffers reused for send | Stream-qualified and screened at `475008b5`: 64 KiB improves both large-message cells; small-message intervals overlap. No independently confirmed or universal winner. Experiment 62 fixes a subsequently reproduced delayed-ENOBUFS lost rearm; corrected native qualification is pending, with earlier cohorts retained |
-| Native C io_uring with immediate send | Same receive engine and loans, one nonblocking `sendmsg` attempt before ring fallback | Competitive hybrid candidate: avoids a submission/completion round trip when the socket accepts bytes immediately | Stream-qualified and screened at `0357259d`; 8 KiB hybrid severely regresses large messages; experiment 46 measures about 3.785x more send operations from lost application-level gathering, without short/EAGAIN retries. 64 KiB does not show the same loss. Shutdown wake-storage correction requalified at `0ebe924b`. The delayed-exhaustion correction in experiment 62 also applies to this path; corrected native qualification is pending |
+| Native C io_uring | Multishot accept/recv, provided buffers, per-worker rings/listeners, ordered vectored sends; SINGLE_ISSUER + DEFER_TASKRUN, no SQPOLL | Competitive completion control: batching, no receive submission per arrival, loaned receive buffers reused for send | Stream-qualified and screened at `475008b5`: 64 KiB improves both large-message cells; small-message intervals overlap. No independently confirmed or universal winner. Experiment 62 requalifies the delayed-ENOBUFS correction and 2/32/64/128 pools. Its complete `b82647d5` raw cohort is audited despite a final summary-reference failure; the strongest measured uring median remains below epoll at large-message client width two. Earlier cohorts remain frozen |
+| Native C io_uring with immediate send | Same receive engine and loans, one nonblocking `sendmsg` attempt before ring fallback | Competitive hybrid candidate: avoids a submission/completion round trip when the socket accepts bytes immediately | Stream-qualified and screened at `0357259d`; 8 KiB hybrid severely regresses large messages; experiment 46 measures about 3.785x more send operations from lost application-level gathering, without short/EAGAIN retries. 64 KiB does not show the same loss. Shutdown wake-storage correction requalified at `0ebe924b`. Experiment 62 qualifies corrected exhaustion recovery at all selected capacities; width-two large-message inline gains depend on pool size and do not beat the pure-ring 128-buffer median. Its final summary-reference failure is separate from the audited raw cohort |
 | Native C stackful / C++ stackless | Same epoll engine; private or shared receive storage; stackful, heap coroutine, and compiler-elided coroutine forms | Diagnostic representation control: separates coroutine/frame allocation, storage and reactor cost | Screened and stream/lifetime-qualified at their recorded revisions; not independent mature runtime comparisons |
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
 | WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Experiments 39/44/48 qualify the threaded, owner and batched-owner paths. At `fc69af15`, batching adds 28% / 27% paired throughput at 64 / 1024 small-message peers, with separate counters confirming aggregated ring submissions. Experiment 54 removes 97..98% of pending-list visits, with only 1.0%/1.8% median paired rate gains and reversals at 1024 peers; native CPU/trip still leads. Client headroom and multi-owner compute remain open. Experiments 52/54 qualify the unchanged sequential mixed protocol on both Linux completion routes |
@@ -4313,7 +4313,7 @@ comparison remain explicit platform rows, not inferred coverage.
 | CPU placement | Record physical cores, SMT siblings, NUMA, cpuset and IRQ placement. Current split2 uses disjoint logical CPUs that may share physical cores; it is not a promise of two physical server cores. split1 separates physical cores |
 | Thread and poll budgets | Count runtime workers, blocking helpers, io-wq and SQPOLL kernel threads. Process taskset and process CPU alone do not bound or account for a kernel polling thread. A competitive CPU budget is an upper bound: tuning may use fewer workers at low occupancy rather than forcing every contender to start all available workers |
 | CPU cost | Existing `/usr/bin/time` `%U/%S` covers whole process lifetime with centisecond output: startup/drain and quantization matter in short cells. Separate steady-state CPU-ns/request, idle CPU and kernel CPU before fine low-load claims |
-| Load generator | Occupied echo cells consume nearly all assigned client CPU, predominantly system time. Experiment 43's extra SMT worker does not establish spare capacity; experiment 58's readiness client remains opt-in after small-message regressions. Experiment 60 qualifies four distinct reported ARM cores: with the server fixed, two client workers improve paired median 64 KiB rates by 9–44% and reverse WF/epoll's same-host ranking, while 64-peer small messages regress with wider pools. This establishes client-worker/resource sensitivity, including changed connection partitioning and event batches, not an unrestricted server ceiling. Keep the default for small-message comparisons; verify capacity per workload and architecture before interpreting close rates |
+| Load generator | Occupied echo cells consume nearly all assigned client CPU, predominantly system time. Experiment 43's extra SMT worker does not establish spare capacity; experiment 58's readiness client remains opt-in after small-message regressions. Experiment 60 qualifies four distinct reported ARM cores: with the server fixed, two client workers improve paired median 64 KiB rates by 9–44% and reverse WF/epoll's same-host ranking, while 64-peer small messages regress with wider pools. This establishes client-worker/resource sensitivity, including changed connection partitioning and event batches, not an unrestricted server ceiling. Experiment 62 again finds width-one clients near one CPU and uses width two for its named large-message native comparison. Keep the default for small-message comparisons; verify capacity per workload and architecture before interpreting close rates |
 | Latency / overload | Closed-loop echo p99 does not establish an overload SLO. Fixed-arrival latency begins at the intended send time and includes dispatch delay; report goodput, drops/deadlines, backlog and recovery |
 | Memory | Record total reserved/provided bytes, live RSS/PSS and slope versus peers, socket/kernel memory, faults and allocations. Equal provided bytes does not imply equal total or resident memory. Keep THP and allocator readbacks with each panel |
 | Mechanism evidence | Untimed observers: syscalls/submissions/CQEs, send/recv bytes, queue depth/exhaustion, context switches, task migration and frame allocations. An observer is not part of a timed binary |
@@ -8972,8 +8972,133 @@ same 28 simulated ASan/UBSan traces. Source-extracted driver checks establish
 the new row/order/mask/retention counts and preserve experiment 60's prior
 180/36/36/72 counts; synthetic admission, observer-record mutation and all
 46 prior workflow-route checks pass. These local checks validate compilation
-and harness contracts, not Linux syscalls or performance. Native stream,
-exhaustion, real-host admission, measurements and full gate remain pending.
+and harness contracts, not Linux syscalls or performance. At this local stage, native streams,
+exhaustion, real-host admission, measurements and full gate were unverified;
+the following result records the actual experiment outcome.
+
+### Native ARM result: b82647d5, with a postprocessing failure
+
+Frozen revision `b82647d50afe2c470cebd0f57b26d7a11dc6aedf` ran in
+[workflow 34125893972](https://github.com/mbbill/Whitefoot/actions/runs/34125893972).
+Its allocator job `101754358637` is **FAILURE**, while the separate Windows
+placement job passes. The same frozen revision's separate
+[canonical gate 34125893995](https://github.com/mbbill/Whitefoot/actions/runs/34125893995)
+passes all 16 jobs. The allocator failure is the last summary command,
+`missing paired reference callee-small`: the general combine summary selected
+an anchor omitted from this eight-form panel. It occurs after the complete
+ordinary/observer loops, final hashes and final host-admission checks, not
+in a socket case or because of a timeout. The repair selects the already
+present epoll anchor only when `NATIVE_FRONTIER=1`; other routes keep their
+reference. Replaying the exact old summary block reproduces its failure on
+the retained rows. The repaired block produces 24 summaries whose rates and
+same-pass ratios match an independent raw-CSV calculation; a missing-epoll
+mutation still fails, and experiment 60's old summary remains byte-identical.
+This regenerated summary is postprocessing of the frozen cohort. It does not
+turn the original workflow green or claim a new timing run.
+
+[Artifact 10020517822](https://github.com/mbbill/Whitefoot/actions/runs/34125893972/artifacts/10020517822)
+has 2,151,282 bytes and independently verified ZIP SHA256
+`d746e8edf5c965c10b3ca7d14055269bedebce72196a14a45af3640cb6be31d1`.
+The audit rehashes all 18 retained AArch64 ELF files and retained generated IR,
+checks source hashes against the frozen revision, and verifies the corrected
+`4ad6c37c` source and ordinary-IR identity. The three compiler/tool executable
+hashes are identifiers: those tools were not uploaded and cannot be rehashed
+from this artifact. All 90 final manifest checks pass. Initial/final physical
+CPU IDs, sibling lists, allowed masks and selection match: allowed CPUs 0–3,
+package 36, raw cores 1–4, each with its own reported sibling list. CPU 0 is
+the server budget; client width one allows CPU 1 and width two allows CPUs
+1,2. Per-worker readbacks establish these allowed masks, not a dedicated host
+core or a promise that each worker stays on one particular client core.
+Visible quota admission passes at both endpoints.
+
+Native qualification passes all 28 actual-source deterministic traces and
+all 24 full 8 MiB stream cases. The four two-buffer cases demonstrate real
+exhaustion and recovery, including the corrected path:
+
+| Tiny pool case | ENOBUFS | Rearms from parked list | Return-since-arm retries |
+| --- | ---: | ---: | ---: |
+| Pure ring, one worker | 474 | 443 | 31 |
+| Pure ring, four workers | 308 | 295 | 13 |
+| Inline send, one worker | 470 | 340 | 130 |
+| Inline send, four workers | 226 | 160 | 66 |
+
+Every acquired loan is returned. Independent client qualification retains
+28 actual-loop traces, its lost-read-edge negative, 48 ordinary and 16
+observed socket cases, 12 counter phases and six paced cases. The panel has
+exactly **120 ordinary rows, 24 warmups, 72 separate observations, 96 client
+worker reports and 54 native reports** in the predetermined order. Both
+uneven admitted smokes and their 12 phases also pass. Source/binary identity,
+every-byte/trip conservation, raw resource/table equality, latency ordering,
+actual launch/worker masks and final metadata are checked before reading
+performance. The original failed artifact remains unchanged.
+
+All rates below are five-pass medians from this same ARM host. Server CPU is
+whole-process user+system time divided by completed trips, including startup
+and drain and the existing centisecond measurement precision. RSS is the
+whole-process peak, not steady resident memory, PSS or socket/kernel memory.
+Ordinary timings exclude the additional loan observer fields.
+
+| Form | 64 B, width 1 rt/s | 64 KiB, width 1 rt/s | 64 KiB, width 2 rt/s | Width-2 p99 µs, median [range] | Width-2 server CPU µs/trip | Width-2 peak RSS KiB |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `uring-64k-p32` | 225628 | 43894 | 50347 | 1425 [1298, 1622] | 20.000 | 3844 |
+| `uring-64k-p32-inline` | 224457 | 43570 | 51912 | 1529 [1387, 2834] | 19.375 | 3844 |
+| `uring-64k-p64` | 225839 | 43651 | 51930 | 1486 [1284, 1838] | 19.375 | 5892 |
+| `uring-64k-p64-inline` | 224934 | 43450 | 51570 | 1566 [1372, 3746] | 19.375 | 5892 |
+| `uring-64k-p128` | 226382 | 43638 | 53347 | 1368 [1357, 3781] | 18.750 | 9988 |
+| `uring-64k-p128-inline` | 225358 | 43649 | 51399 | 1731 [1403, 3781] | 19.688 | 9988 |
+| `epoll` | 223587 | 42688 | 59686 | 1432 [1103, 3786] | 16.875 | 3648 |
+| `wf-coro-index` | 216110 | 43223 | 48214 | 1818 [1389, 2346] | 20.938 | 6280 |
+
+The one-client rows remain constrained: native small-message client CPU is
+0.9995–0.9997 CPUs by cell median, and all large-message width-one medians are
+about one CPU. Increasing client width raises every large-message rate in all
+five paired passes. The width-two client medians are 1.492 CPUs for epoll,
+1.148 for WF, and 1.230–1.275 for uring; none of these readings alone certifies
+a server ceiling. Shared-kernel work, service-loop partition and VM scheduling
+remain part of this loopback experiment. Large-message p99 ranges vary
+substantially, so ranking median throughput does not rank the full latency
+tradeoff.
+
+With width two, epoll beats every selected uring form and indexed WF in every
+pass. The strongest uring median throughput is pure ring with 128 buffers:
+its paired rate/epoll is 0.89494 [0.86550, 0.92093] and its server CPU/trip ratio
+is 1.13208 [1.11111, 1.15094]. Indexed WF/epoll is 0.82002
+[0.79784, 0.82818], with CPU/trip 1.24074 [1.20370, 1.26415]. All six uring forms
+also beat indexed WF in all five passes. These are qualified comparisons
+within this named envelope, not a universal epoll or language limit.
+
+Pure-ring 128/32 buffers improves paired throughput 1.05539
+[1.01696, 1.09235], with CPU/trip 0.95313 [0.90909, 0.96875]; both directions
+hold in all five passes. Its peak RSS median rises from 3,844 to 9,988 KiB. The receive pool grows from
+2 to 8 MiB and its FIFO node array from 32 to 128 slots, each owned per worker
+rather than multiplied by peers; neither capacity is itself an RSS measurement.
+At 32 buffers, inline/pure improves rate 1.02580 [1.00926, 1.06161] but its
+p99 ratio is 1.17797 [0.91612, 1.74723]. Inline/pure at 64 buffers overlaps
+unity, and at 128 has median 0.96200 [0.95184, 1.01225]. Thus larger pools and
+immediate send are real candidate axes, with a measured memory/latency cost;
+neither becomes an unconditional default.
+
+The three separate width-two large-message observations expose where capacity
+changes the completion path. Pure-ring 32-buffer ENOBUFS counts are
+89,026 / 92,112 / 93,064; 64-buffer counts are 31,520 / 31,080 / 30,228;
+128-buffer counts are zero in all three. Every one of these exhaustion CQEs
+takes the return-since-arm retry, with zero parked-list rearms in these cells.
+Visible peak loans are 22–31, 33–40 and 40–41 respectively; the unread-kernel-
+CQE exclusion explains why this userspace ownership count is not a kernel
+pool-occupancy bound. The observations establish that the corrected path
+runs and that the larger pool removes this measured exhaustion work. They
+do not attribute the entire ordinary rate difference to that work.
+
+All three inline capacities have zero exhaustion in these observations,
+visible peak loans one, and all echoed bytes sent by the immediate path with
+no ring sends. This does not make them faster than the 128-buffer pure-ring
+control. Across these observed large-message width-two cells, mean bytes per
+successful send operation stay about 64 KiB (64,947–65,534 bytes): the earlier 8 KiB aggregation failure is not repeated here.
+CQEs, send operations and gathered bytes remain application/operation counts,
+not TCP packet counts. Observer layouts differ from ordinary layouts, and
+three observed runs do not determine ordinary packetization or causality.
+The next question is the residual native/WF cost under this stronger client
+and native envelope; this screen does not select another tuning change.
 
 ## 63. Control layout fork depth
 

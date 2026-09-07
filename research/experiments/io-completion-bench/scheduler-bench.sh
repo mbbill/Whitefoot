@@ -2139,10 +2139,12 @@ for program in "${cpu_programs[@]}"; do
         > "$OUT/$program.txt" 2> "$OUT/$program.err"
 done
 
-# Keep raw samples; summarize ranges as well as medians. Combine's control
-# is callee-small; other panels retain base. Both use the same pass and cohort.
+# Keep raw samples; summarize ranges as well as medians. Native frontier
+# uses epoll; other combine panels use callee-small, and other modes use base.
+# Every ratio uses the same pass and cohort.
 paired_reference=base
 if [[ $MODE == combine ]]; then paired_reference=callee-small; fi
+if [[ $NATIVE_FRONTIER == 1 ]]; then paired_reference=epoll; fi
 awk -F '\t' -v reference="$paired_reference" '
     NR == 1 { next }
     { key=$15 "/" $3 "/" $4 "/" ($21+0) "/" ($28+0) "/" ($30+0) "/" ($39+0); cohort=$1 SUBSEP key; group=$2 SUBSEP key
