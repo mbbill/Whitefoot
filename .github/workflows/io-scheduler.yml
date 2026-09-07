@@ -324,8 +324,11 @@ jobs:
           mapfile -t perf_packages < <(dpkg-query -W -f='${binary:Package}\t${db:Status-Status}\n' |
             awk '$2=="installed" && $1 ~ /^linux-.*tools/ {print $1}')
           test "${#perf_packages[@]}" -gt 0
-          perf_binary=$(dpkg-query -L "${perf_packages[@]}" | awk '/^\/usr\/lib\/.*\/perf$/ {print}' | sort -V | tail -1)
-          test -x "$perf_binary"
+          perf_binary=''
+          while IFS= read -r candidate; do
+            if [[ -f "$candidate" && -x "$candidate" ]]; then perf_binary=$candidate; fi
+          done < <(dpkg-query -L "${perf_packages[@]}" | awk '/^\/usr\/lib\/.*\/perf$/ {print}' | sort -V)
+          test -n "$perf_binary"
           "$perf_binary" --version
           echo "PROFILE_PERF=$perf_binary" >> "$GITHUB_ENV"
       - name: Qualify and measure the bounded CPU panel

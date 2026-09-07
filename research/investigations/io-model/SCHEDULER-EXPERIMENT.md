@@ -5029,3 +5029,9 @@ the package-list query, `dpkg-query -L` rejects a package-name wildcard.
 The follow-up enumerates installed Linux tools packages first, then queries
 those exact names, including the HWE package that owns the executable.
 No workload verdict, measurement threshold or capture option changes.
+The second attempt at `58f41f23`
+([job 101630130995](https://github.com/mbbill/Whitefoot/actions/runs/34086022372/job/101630130995))
+also stops during setup: the package lists contain a Python module directory
+named `perf`, and an executable-bit test also accepts searchable directories.
+Tool discovery now requires a regular executable file. Neither failed
+setup produces workload measurements or profiling evidence.
