@@ -138,6 +138,10 @@ scheduler-client-readiness:
 scheduler-client-capacity:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS=5 WARMUP=1 CORO_CXX="$(CORO_CXX)" CLIENT_CAPACITY=1 CONTINUATION_SCREEN=4 NATIVE_BASELINES=1 EXPERIMENT=allocator bash scheduler-bench.sh combine
 
+.PHONY: scheduler-native-frontier
+scheduler-native-frontier:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS=5 WARMUP=1 CORO_CXX="$(CORO_CXX)" NATIVE_FRONTIER=1 CONTINUATION_SCREEN=4 NATIVE_BASELINES=1 EXPERIMENT=allocator bash scheduler-bench.sh combine
+
 .PHONY: scheduler-allocation
 scheduler-allocation:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" EXPERIMENT=allocation bash scheduler-bench.sh bench
@@ -954,8 +958,10 @@ compiler-continuation-bench: prepare compiler
 # oracle is shared with the epoll controls; no request-size bound substitutes
 # for handling TCP back pressure, short transfers and EOF.
 .PHONY: uring-check
+URING_POOL_CHECK ?= 0
 uring-check: prepare
 	@set -e; \
+	test "$(URING_POOL_CHECK)" = 0 || test "$(URING_POOL_CHECK)" = 1; \
 	for inline_send in 0 1; do \
 	 for observed in 0 1; do \
 	  observe_flag=''; if test "$$observed" = 1; then observe_flag=-DWF_BENCH_URING_OBSERVE; fi; \
@@ -968,26 +974,43 @@ uring-check: prepare
 	$(CLANG) $(CFLAGS) -Wpedantic -pthread stream_check.c -o "$(BUILD)/stream_check"; \
 	for bytes in 8192 65536; do \
 	 for inline_send in 0 1; do \
+	  counts=0; if test "$(URING_POOL_CHECK)" = 1 && test "$$bytes" = 65536; then counts='0 2 32 64 128'; fi; \
+	  for count in $$counts; do \
 	  binary="$(BUILD)/check-uring-$$bytes-inline$$inline_send"; \
+	  if test "$$count" != 0; then binary="$$binary-pool$$count"; fi; \
 	  $(CLANG) $(CFLAGS) -g -Wpedantic -pthread -fsanitize=address,undefined \
 	    -DWF_BENCH_SNDBUF=4096 -DWF_BENCH_TCP_VERIFY -DWF_BENCH_URING_OBSERVE \
-	    "-DWF_BENCH_URING_BUFFER_BYTES=$$bytes" "-DWF_BENCH_URING_INLINE_SEND=$$inline_send" uring_echo.c -o "$$binary"; \
+	    "-DWF_BENCH_URING_BUFFER_BYTES=$$bytes" "-DWF_BENCH_URING_INLINE_SEND=$$inline_send" \
+	    "-DWF_BENCH_URING_BUFFER_COUNT=$$count" uring_echo.c -o "$$binary"; \
 	  for workers in 1 4; do \
 	    log="$$binary-w$$workers.log"; \
 	    if ! "$(BUILD)/stream_check" "$$binary" echo "$$workers" > "$$log" 2>&1; then cat "$$log"; exit 1; fi; \
 	    cat "$$log"; \
-	    awk -v bytes="$$bytes" -v workers="$$workers" -v inline_send="$$inline_send" '/^uring:/ { \
+	    awk -v bytes="$$bytes" -v count="$$count" -v workers="$$workers" -v inline_send="$$inline_send" '/^uring:/ { \
+	      for(key in v) delete v[key]; \
 	      for(i=2;i<=NF;i++) {split($$i,a,"=");v[a[1]]=a[2]+0}; seen++; \
-	      if(v["buffer_bytes"]!=bytes || v["provided_bytes"]!=2097152 || \
+	      n=split("worker buffer_bytes buffers provided_bytes ring_entries receives sends receive_bytes send_bytes exhausted deepest_queue inline_send inline_attempts inline_bytes inline_succeeded inline_short inline_eagain inline_requested_bytes inline_requested_vectors ring_requests ring_requested_bytes ring_requested_vectors buffer_acquires buffer_returns buffer_terminal loaned_buffers peak_loaned_buffers receive_arms starved_parks starved_rearms starved_closed peak_starved late_exhaustion_retries",required," "); \
+	      for(i=1;i<=n;i++) if(!(required[i] in v) || v[required[i]]<0) bad=1; \
+	      if(v["worker"]<0 || v["worker"]>=workers || ids[v["worker"]]++) bad=1; \
+	      if(v["buffer_bytes"]!=bytes || v["provided_bytes"]!=(count ? count*bytes : 2097152) || \
 	         v["buffers"]*bytes!=v["provided_bytes"] || v["inline_send"]!=inline_send) bad=1; \
+	      if(v["buffer_acquires"]!=v["receives"]+v["buffer_terminal"] || v["buffer_returns"]!=v["buffer_acquires"] || \
+	         v["loaned_buffers"]!=0 || v["peak_loaned_buffers"]>v["buffers"] || \
+	         v["deepest_queue"]>v["peak_loaned_buffers"] || \
+	         (v["receives"]>0 && v["peak_loaned_buffers"]==0) || \
+	         v["starved_parks"]!=v["starved_rearms"]+v["starved_closed"] || \
+	         v["exhausted"]!=v["starved_parks"]+v["late_exhaustion_retries"] || \
+	         v["receive_arms"]<v["starved_rearms"]+v["late_exhaustion_retries"]) bad=1; \
 	      if(v["ring_requests"]!=v["sends"] || v["ring_requested_bytes"]<v["send_bytes"]-v["inline_bytes"] || \
 	         v["ring_requested_vectors"]<v["ring_requests"] || v["inline_requested_bytes"]<v["inline_bytes"] || \
 	         v["inline_requested_vectors"]<v["inline_attempts"] || v["inline_short"]>v["inline_succeeded"] || \
 	         v["inline_succeeded"]+v["inline_eagain"]>v["inline_attempts"]) bad=1; \
 	      received+=v["receive_bytes"]; sent+=v["send_bytes"]; ring_sends+=v["sends"]; \
-	      inline_bytes+=v["inline_bytes"]; attempts+=v["inline_attempts"] \
+	      inline_bytes+=v["inline_bytes"]; attempts+=v["inline_attempts"]; exhausted+=v["exhausted"]; rearms+=v["starved_rearms"]+v["late_exhaustion_retries"] \
 	    } END {exit !(seen==workers && !bad && received==8388608 && sent==received && ring_sends>0 && \
+	      (count!=2 || (exhausted>0 && rearms>0)) && \
 	      (inline_send ? inline_bytes>0 && attempts>0 : inline_bytes==0 && attempts==0))}' "$$log"; \
+	  done; \
 	  done; \
 	 done; \
 	done

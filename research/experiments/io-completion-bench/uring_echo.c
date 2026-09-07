@@ -34,7 +34,8 @@
  *                           a connection is accepted, received and echoed on
  *                           one thread with no shared state on the path
  *
- * Everything is sized from CONNECTIONS before the first accept. The connection
+ * Everything is sized before the first accept, from CONNECTIONS by default.
+ * Explicit experiments can choose the provided-buffer count independently. The connection
  * table is indexed by descriptor, and each connection's echo queue holds the
  * buffers the kernel has filled but the socket has not yet taken. Nothing is
  * allocated per operation.
@@ -80,6 +81,16 @@ _Static_assert(BUFFER_BYTES == 8192u || BUFFER_BYTES == 65536u,
 #endif
 _Static_assert(WF_BENCH_URING_INLINE_SEND == 0 || WF_BENCH_URING_INLINE_SEND == 1,
                "inline send is an explicit paired configuration");
+#ifndef WF_BENCH_URING_BUFFER_COUNT
+#define WF_BENCH_URING_BUFFER_COUNT 0u
+#endif
+/* Zero retains the connection-derived byte budget. Explicit experiments size
+ * each worker's provided ring independently; registration requires a power
+ * of two, with at most 32768 entries. This does not size a private peer buffer. */
+_Static_assert(WF_BENCH_URING_BUFFER_COUNT == 0u ||
+                   (WF_BENCH_URING_BUFFER_COUNT <= 32768u &&
+                    (WF_BENCH_URING_BUFFER_COUNT & (WF_BENCH_URING_BUFFER_COUNT - 1u)) == 0u),
+               "provided buffer count must be zero or a power of two up to 32768");
 
 /* One send gathers at most this many buffers. The pending queue itself uses
  * one node per provided buffer, so its capacity follows actual buffer loans
@@ -136,6 +147,9 @@ struct buffer_loan {
     uint16_t next;
     uint32_t offset;
     uint32_t length;
+#if defined(WF_BENCH_URING_OBSERVE)
+    unsigned held;
+#endif
 };
 
 struct worker {
@@ -161,7 +175,6 @@ struct worker {
     uint64_t receive_bytes;
     uint64_t send_bytes;
     uint64_t exhausted;
-    uint64_t late_exhaustion_retries;
     uint64_t inline_attempts;
     uint64_t inline_bytes;
     uint64_t inline_succeeded;
@@ -173,6 +186,17 @@ struct worker {
     uint64_t ring_requested_bytes;
     uint64_t ring_requested_vectors;
     unsigned deepest_queue;
+    uint64_t buffer_acquires;
+    uint64_t buffer_returns;
+    uint64_t buffer_terminal;
+    uint64_t receive_arms;
+    uint64_t starved_parks;
+    uint64_t starved_rearms;
+    uint64_t starved_closed;
+    uint64_t late_exhaustion_retries;
+    unsigned loaned_buffers;
+    unsigned peak_loaned_buffers;
+    unsigned peak_starved;
 #endif
 };
 
@@ -456,6 +480,17 @@ static void arm_receive(struct worker *worker, int descriptor);
  * waiting for one. Only the owning thread publishes into its own ring, so the
  * tail needs no lock. */
 static void buffer_return(struct worker *worker, uint16_t identifier) {
+#if defined(WF_BENCH_URING_OBSERVE)
+    if (identifier >= worker->buffer_count || !worker->loans[identifier].held ||
+        worker->loaned_buffers == 0) {
+        fprintf(stderr, "uring_echo: returning an unowned provided buffer\n");
+        mark_failed();
+        return;
+    }
+    worker->loans[identifier].held = 0;
+    worker->loaned_buffers--;
+    worker->buffer_returns++;
+#endif
     struct io_uring_buf *slot = &worker->buffers->bufs[worker->buffer_tail & worker->buffer_mask];
     slot->addr =
         (unsigned long long)(uintptr_t)(worker->buffer_memory + (size_t)identifier * BUFFER_BYTES);
@@ -469,7 +504,14 @@ static void buffer_return(struct worker *worker, uint16_t identifier) {
         int descriptor = worker->starved_list[--worker->starved_count];
         table[descriptor].starved = 0;
         if (table[descriptor].active && !table[descriptor].closing) {
+#if defined(WF_BENCH_URING_OBSERVE)
+            worker->starved_rearms++;
+#endif
             arm_receive(worker, descriptor);
+#if defined(WF_BENCH_URING_OBSERVE)
+        } else {
+            worker->starved_closed++;
+#endif
         }
     }
 }
@@ -505,6 +547,9 @@ static void arm_receive(struct worker *worker, int descriptor) {
     entry->buf_group = (unsigned short)worker->index;
     entry->user_data = tag(OPERATION_RECEIVE, descriptor);
     table[descriptor].receive_return_generation = worker->buffer_return_generation;
+#if defined(WF_BENCH_URING_OBSERVE)
+    worker->receive_arms++;
+#endif
 }
 
 static void arm_wake(struct worker *worker) {
@@ -644,6 +689,9 @@ static void close_connection(struct worker *worker, int descriptor) {
         for (unsigned at = 0; at < worker->starved_count; at++) {
             if (worker->starved_list[at] == descriptor) {
                 worker->starved_list[at] = worker->starved_list[--worker->starved_count];
+#if defined(WF_BENCH_URING_OBSERVE)
+                worker->starved_closed++;
+#endif
                 break;
             }
         }
@@ -787,6 +835,25 @@ static void *worker_main(void *raw) {
                     mark_failed();
                     break;
                 }
+#if defined(WF_BENCH_URING_OBSERVE)
+                /* This counts userspace-visible ownership from the receive
+                 * CQE to final return, including terminal zero-payload loans.
+                 * Buffers already selected by the kernel but whose CQEs have
+                 * not been consumed are outside this live-loan count. */
+                if ((flags & IORING_CQE_F_BUFFER) != 0) {
+                    if (worker->loans[identifier].held) {
+                        fprintf(stderr, "uring_echo: received an already owned provided buffer\n");
+                        mark_failed();
+                        break;
+                    }
+                    worker->loans[identifier].held = 1;
+                    worker->buffer_acquires++;
+                    worker->loaned_buffers++;
+                    if (worker->loaned_buffers > worker->peak_loaned_buffers)
+                        worker->peak_loaned_buffers = worker->loaned_buffers;
+                    if (result <= 0) worker->buffer_terminal++;
+                }
+#endif
                 /* Ownership is carried by F_BUFFER, including a terminal CQE
                  * with no payload. Such a buffer does not enter the send queue. */
                 if (result <= 0 && (flags & IORING_CQE_F_BUFFER) != 0) {
@@ -849,6 +916,11 @@ static void *worker_main(void *raw) {
                     if (!link->starved) {
                         link->starved = 1;
                         worker->starved_list[worker->starved_count++] = descriptor;
+#if defined(WF_BENCH_URING_OBSERVE)
+                        worker->starved_parks++;
+                        if (worker->starved_count > worker->peak_starved)
+                            worker->peak_starved = worker->starved_count;
+#endif
                     }
                     continue;
                 } else if (result != -ECANCELED) {
@@ -982,9 +1054,11 @@ int main(int argc, char **argv) {
         fprintf(stderr, "uring_echo: out of memory\n");
         return 1;
     }
-    /* Every buffer ring, every echo queue and the connection table are sized
-     * here, from CONNECTIONS, and nothing is sized again once a connection
-     * arrives. */
+    /* Size the provided pool before accepting. Zero preserves the original
+     * connection-derived budget; an explicit count is per worker. */
+#if WF_BENCH_URING_BUFFER_COUNT
+    unsigned buffers = round_up_power_of_two(WF_BENCH_URING_BUFFER_COUNT);
+#else
     unsigned wanted = (unsigned)(option_connections * 4 / option_threads);
     if (wanted < 256) {
         wanted = 256;
@@ -994,6 +1068,7 @@ int main(int argc, char **argv) {
     }
     unsigned buffers = round_up_power_of_two(wanted);
     buffers /= BUFFER_BYTES / 8192u;
+#endif
 
     /* Every listener is bound before any thread runs, so a client that finds
      * the port listening finds all of them listening. */
@@ -1045,12 +1120,21 @@ int main(int argc, char **argv) {
             ring_teardown(&worker->ring);
         }
 #if defined(WF_BENCH_URING_OBSERVE)
+        if (worker->loaned_buffers != 0 || worker->buffer_acquires != worker->buffer_returns ||
+            worker->starved_count != 0 ||
+            worker->starved_parks != worker->starved_rearms + worker->starved_closed) {
+            fprintf(stderr, "uring_echo: final buffer ownership or starvation accounting mismatch\n");
+            return 1;
+        }
         fprintf(stderr, "uring: worker=%u buffer_bytes=%u buffers=%u provided_bytes=%zu "
                 "ring_entries=%u receives=%llu sends=%llu receive_bytes=%llu send_bytes=%llu "
                 "exhausted=%llu deepest_queue=%u inline_send=%u inline_attempts=%llu inline_bytes=%llu "
                 "inline_succeeded=%llu inline_short=%llu inline_eagain=%llu "
                 "inline_requested_bytes=%llu inline_requested_vectors=%llu "
                 "ring_requests=%llu ring_requested_bytes=%llu ring_requested_vectors=%llu "
+                "buffer_acquires=%llu buffer_returns=%llu buffer_terminal=%llu "
+                "loaned_buffers=%u peak_loaned_buffers=%u receive_arms=%llu "
+                "starved_parks=%llu starved_rearms=%llu starved_closed=%llu peak_starved=%u "
                 "late_exhaustion_retries=%llu\n",
                 at, BUFFER_BYTES, worker->buffer_count,
                 (size_t)worker->buffer_count * BUFFER_BYTES, RING_ENTRIES,
@@ -1066,6 +1150,14 @@ int main(int argc, char **argv) {
                 (unsigned long long)worker->ring_requests,
                 (unsigned long long)worker->ring_requested_bytes,
                 (unsigned long long)worker->ring_requested_vectors,
+                (unsigned long long)worker->buffer_acquires,
+                (unsigned long long)worker->buffer_returns,
+                (unsigned long long)worker->buffer_terminal,
+                worker->loaned_buffers, worker->peak_loaned_buffers,
+                (unsigned long long)worker->receive_arms,
+                (unsigned long long)worker->starved_parks,
+                (unsigned long long)worker->starved_rearms,
+                (unsigned long long)worker->starved_closed, worker->peak_starved,
                 (unsigned long long)worker->late_exhaustion_retries);
 #endif
         free(worker->starved_list);
