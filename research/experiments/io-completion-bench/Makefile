@@ -163,7 +163,7 @@ WFC := $(ROOT)/compiler/target/gate/whitefootc
 
 # Independent CPU reference: no Rayon dependency enters the compiler crate.
 RAYON_CARGO_TARGET ?= $(WORK)/rayon-target
-.PHONY: rayon-check rayon-bench rayon-resource-bench mixed-rayon-check mixed-rayon-smoke
+.PHONY: rayon-check rayon-bench rayon-resource-bench rayon-ring-bench mixed-rayon-check mixed-rayon-smoke
 rayon-check:
 	cargo fmt --manifest-path rayon-baseline/Cargo.toml -- --check
 	CARGO_TARGET_DIR="$(RAYON_CARGO_TARGET)" cargo test --profile gate --locked --offline --manifest-path rayon-baseline/Cargo.toml
@@ -174,6 +174,9 @@ rayon-bench: compiler rayon-check
 
 rayon-resource-bench: compiler rayon-check
 	ROOT="$(ROOT)" WFC="$(WFC)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" CARGO_TARGET_DIR="$(RAYON_CARGO_TARGET)" CLANG="$(CLANG)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" RESOURCE_CONTROLS=1 bash rayon-bench.sh
+
+rayon-ring-bench: compiler rayon-check
+	ROOT="$(ROOT)" WFC="$(WFC)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" CARGO_TARGET_DIR="$(RAYON_CARGO_TARGET)" CLANG="$(CLANG)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" RESOURCE_CONTROLS=2 bash rayon-bench.sh
 
 # Optional mixed feature does not enter the CPU-only binary. Its correctness
 # includes real bounded-offload saturation and the existing external oracle.

@@ -34,10 +34,15 @@ bounded_integer CALIBRATION_ROUNDS "$CALIBRATION_ROUNDS" 1 128
 bounded_integer BATCHES "$BATCHES" 1 16
 bounded_integer RAYON_PROFILE "$RAYON_PROFILE" 0 1
 
-bounded_integer RESOURCE_CONTROLS "$RESOURCE_CONTROLS" 0 1
-if [[ $RESOURCE_CONTROLS == 1 && $RAYON_PROFILE == 1 ]]; then
+bounded_integer RESOURCE_CONTROLS "$RESOURCE_CONTROLS" 0 2
+if [[ $RESOURCE_CONTROLS != 0 && $RAYON_PROFILE == 1 ]]; then
     echo 'rayon-bench: resource controls and perf captures are separate experiments' >&2
     exit 2
+fi
+if [[ $RESOURCE_CONTROLS == 2 ]]; then
+    # The default row must really inherit no override; the disabled row sets
+    # the existing control only in its own child process.
+    unset WF_IO_NO_NATIVE_RING
 fi
 read -r -a threads <<< "$RAYON_THREADS"
 read -r -a grains <<< "$RAYON_GRAINS"
@@ -62,8 +67,11 @@ for grain in "${grains[@]}"; do bounded_integer GRAIN "$grain" 1 64; done
     if [[ $RESOURCE_CONTROLS == 0 ]]; then
         printf 'threads=%s grains=%s batches=%s calibration=%s confirmation=%s warmup=%s\n' \
             "$RAYON_THREADS" "$RAYON_GRAINS" "$BATCHES" "$CALIBRATION_ROUNDS" "$ROUNDS" "$WARMUP"
-    else
+    elif [[ $RESOURCE_CONTROLS == 1 ]]; then
         printf 'threads=4 grain=4 batches=1,4,16 stacks=12,1100 confirmation=%s warmup=%s calibration=none\n' \
+            "$ROUNDS" "$WARMUP"
+    else
+        printf 'threads=4 grain=4 batches=1,16 stacks=12 no_native_ring=unset,1 confirmation=%s warmup=%s calibration=none\n' \
             "$ROUNDS" "$WARMUP"
     fi
     printf 'timing=whole-process; Rayon pool created once, install once; no concurrent I/O\n'
@@ -90,18 +98,37 @@ shasum -a 256 "$WFC" "$OUT/wf-seq" "$OUT/wf-par" "$OUT/rust-layout" \
     "$HERE/rayon-baseline/src/main.rs" "$HERE/rayon-baseline/Cargo.toml" \
     "$HERE/rayon-baseline/Cargo.lock" >> "$OUT/host.txt"
 
-if [[ $RESOURCE_CONTROLS == 1 ]]; then
-    # Experiment 45 freezes the earlier four-worker calibration. Do not tune
-    # against these samples: only WF stack capacity and batch count vary.
-    printf 'resource_panel=workers4; Rayon grain4; batches1,4,16; WF_STACKS12,1100\n' >> "$OUT/host.txt"
+if [[ $RESOURCE_CONTROLS != 0 ]]; then
+    # Experiments 45/47 freeze the earlier four-worker calibration. Neither
+    # panel tunes against its confirmation samples or changes runtime code.
+    if [[ $RESOURCE_CONTROLS == 1 ]]; then
+        resource_batches=(1 4 16)
+        resource_forms=(12 1100)
+        printf 'resource_panel=workers4; Rayon grain4; batches1,4,16; WF_STACKS12,1100\n' >> "$OUT/host.txt"
+    else
+        resource_batches=(1 16)
+        resource_forms=(default disabled)
+        printf 'resource_panel=workers4; Rayon grain4; batches1,16; WF_STACKS12; WF_IO_NO_NATIVE_RING unset/1\n' >> "$OUT/host.txt"
+    fi
+    resource_settings() {
+        if [[ $RESOURCE_CONTROLS == 1 ]]; then
+            resource_label="wf.w4.s$1"
+            resource_environment="WF_WORKERS=4,WF_STACKS=$1"
+        else
+            resource_label="wf.w4.s12.r$1"
+            resource_environment='WF_WORKERS=4,WF_STACKS=12'
+            if [[ $1 == disabled ]]; then resource_environment+=',WF_IO_NO_NATIVE_RING=1'; fi
+        fi
+    }
     printf 'resource_budget=WF main+3 workers; Rayon 4 workers+sleeping caller; no CPU affinity\n' >> "$OUT/host.txt"
     : > "$OUT/resource.plan"
-    for batches in 1 4 16; do
+    for batches in "${resource_batches[@]}"; do
         printf 'rayon.w4.g4.b%s\t\t%s\trayon\t4\t4\t%s\n' \
             "$batches" "$OUT/rust-layout" "$batches" >> "$OUT/resource.plan"
-        for stacks in 12 1100; do
-            printf 'wf.w4.s%s.b%s\tWF_WORKERS=4,WF_STACKS=%s,WF_SCHED_REPORT=0\t%s' \
-                "$stacks" "$batches" "$stacks" "$OUT/wf-par" >> "$OUT/resource.plan"
+        for form in "${resource_forms[@]}"; do
+            resource_settings "$form"
+            printf '%s.b%s\t%s,WF_SCHED_REPORT=0\t%s' \
+                "$resource_label" "$batches" "$resource_environment" "$OUT/wf-par" >> "$OUT/resource.plan"
             for ((batch=1; batch<batches; batch++)); do printf '\tbatch' >> "$OUT/resource.plan"; done
             printf '\n' >> "$OUT/resource.plan"
         done
@@ -131,17 +158,30 @@ if [[ $RESOURCE_CONTROLS == 1 ]]; then
         "$backend/sched/core.h" "$backend/sched/prim.h" "$backend/sched/switch.h" \
         "$HERE/runner.c" "$HERE/rayon-bench.sh" >> "$OUT/host.txt"
     printf 'observation=untimed WF_SCHED_OBSERVE=1; exhausted_compute counts no-target join turns, not peak stacks\n' >> "$OUT/host.txt"
-    for batches in 1 4 16; do
+    for batches in "${resource_batches[@]}"; do
         observed_args=("$OUT/wf-par-observed")
         for ((batch=1; batch<batches; batch++)); do observed_args+=(batch); done
-        for stacks in 12 1100; do
-            record="$OUT/observed-s$stacks-b$batches"
-            WF_WORKERS=4 WF_STACKS=$stacks WF_SCHED_REPORT=1 "${observed_args[@]}" \
+        for form in "${resource_forms[@]}"; do
+            resource_settings "$form"
+            record="$OUT/observed-${resource_label#wf.w4.}-b$batches"
+            IFS=, read -r -a observed_environment <<< "$resource_environment,WF_SCHED_REPORT=1"
+            env "${observed_environment[@]}" "${observed_args[@]}" \
                 > "$record.out" 2> "$record.err"
             printf '%s\n' "$EXPECTED" | cmp - "$record.out"
             awk '/^sched:/ {seen++; for(i=2;i<=NF;i++) {split($i,p,"=");v[p[1]]=p[2]+0}}
                 END {exit !(seen==1 && v["observed"]==1 && v["threads"]==4 &&
                     v["workers_started"]==3 && v["steals"]>0 && ("exhausted_compute" in v))}' "$record.err"
+            if [[ $RESOURCE_CONTROLS == 2 && $(uname -s) == Linux ]]; then
+                # Qualify the mechanism outside timing. A Linux host without
+                # a usable ring cannot answer this particular comparison.
+                awk -v form="$form" '/^ring:/ {seen++; for(i=2;i<=NF;i++) {split($i,p,"=");v[p[1]]=p[2]+0}}
+                    END {exit !(form=="disabled" ? seen==0 :
+                        seen==1 && ("submissions" in v) && ("submission_enters" in v) && ("completions" in v) &&
+                        v["submissions"]==0 && v["submission_enters"]==0 && v["completions"]==0)}' "$record.err" || {
+                    echo "rayon-bench: Linux ring control qualification failed for $form; see $record.err" >&2
+                    exit 1
+                }
+            fi
         done
     done
     cat "$OUT/resource.txt"

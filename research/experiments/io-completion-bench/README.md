@@ -603,6 +603,15 @@ separate untimed builds use the existing scheduler observer to expose
 no-target compute-join turns. No counter currently reports peak live stacks.
 The experiment changes process settings only, not runtime code or defaults.
 
+`make rayon-ring-bench` reuses that caller for experiment 47: four computing
+threads, twelve WF stacks, 1/16 batches, and `WF_IO_NO_NATIVE_RING` unset/1
+against the frozen Rayon grain-four control. Five passes after one warmup
+produce thirty ordinary samples. Four separate Linux observations require
+an initialized but unused ring in the default route and no ring report in
+the disabled route. This isolates a candidate fixed output-path cost; it
+does not choose a runtime default. macOS can qualify the commands and
+checksums, but cannot qualify the native Linux ring distinction.
+
 `make mixed-rayon-check` qualifies the optional `mixed-rayon` binary in the
 same standalone crate. Its CLI is `mixed-rayon PORT CONNECTIONS --threads B
 [--queue Q]`: B includes one current-thread Tokio I/O driver, leaving B-1

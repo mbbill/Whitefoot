@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-continuation-screen', 'codex/io-rayon-baselines', 'codex/io-compute-profile', 'codex/io-mixed-rayon-baselines', 'codex/io-continuation-owner', 'codex/io-client-headroom', 'codex/io-cpu-resource-controls', 'codex/io-uring-aggregation-diagnostic']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-continuation-screen', 'codex/io-rayon-baselines', 'codex/io-compute-profile', 'codex/io-mixed-rayon-baselines', 'codex/io-continuation-owner', 'codex/io-client-headroom', 'codex/io-cpu-resource-controls', 'codex/io-uring-aggregation-diagnostic', 'codex/io-cpu-ring-controls']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -35,7 +35,7 @@ jobs:
   measure:
     # Correctness-only branches retain the independently running timing
     # revisions. Canonical and native correctness jobs still run.
-    if: github.ref != 'refs/heads/codex/io-windows-wake-fix' && github.ref != 'refs/heads/codex/io-continuation-experiments' && github.ref != 'refs/heads/codex/io-continuation-lowering' && github.ref != 'refs/heads/codex/io-continuation-network' && github.ref != 'refs/heads/codex/io-continuation-staged' && github.ref != 'refs/heads/codex/io-rayon-baselines' && github.ref != 'refs/heads/codex/io-compute-profile' && github.ref != 'refs/heads/codex/io-mixed-rayon-baselines' && github.ref != 'refs/heads/codex/io-cpu-resource-controls'
+    if: github.ref != 'refs/heads/codex/io-windows-wake-fix' && github.ref != 'refs/heads/codex/io-continuation-experiments' && github.ref != 'refs/heads/codex/io-continuation-lowering' && github.ref != 'refs/heads/codex/io-continuation-network' && github.ref != 'refs/heads/codex/io-continuation-staged' && github.ref != 'refs/heads/codex/io-rayon-baselines' && github.ref != 'refs/heads/codex/io-compute-profile' && github.ref != 'refs/heads/codex/io-mixed-rayon-baselines' && github.ref != 'refs/heads/codex/io-cpu-resource-controls' && github.ref != 'refs/heads/codex/io-cpu-ring-controls'
     name: measure (${{ matrix.experiment }})
     strategy:
       fail-fast: false
@@ -400,8 +400,8 @@ jobs:
             ${{ runner.temp }}/mixed-rayon-check.log
 
   cpu-resource-controls:
-    if: github.ref == 'refs/heads/codex/io-cpu-resource-controls'
-    name: ordinary CPU stack and batch controls
+    if: github.ref == 'refs/heads/codex/io-cpu-resource-controls' || github.ref == 'refs/heads/codex/io-cpu-ring-controls'
+    name: ordinary CPU stack, batch and ring controls
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -417,14 +417,21 @@ jobs:
         env:
           OUT: ${{ runner.temp }}/cpu-resource-controls
         run: |
-          make -C research/experiments/io-completion-bench rayon-resource-bench \
+          target=rayon-resource-bench
+          if [[ $GITHUB_REF == refs/heads/codex/io-cpu-ring-controls ]]; then target=rayon-ring-bench; fi
+          make -C research/experiments/io-completion-bench "$target" \
             WHITEFOOT_SCRATCH_ROOT="$RUNNER_TEMP" ROUNDS=5 WARMUP=1
       - name: Publish resource control summary
         if: always()
         run: |
           {
             echo '## CPU resource controls'
-            echo 'Four computing threads; frozen Rayon grain four; WF_STACKS 12/1100; 1/4/16 batches. Nine forms, five alternating passes after one warmup. Whole-process ordinary binaries, no perf, exact output check on every run. Existing observer counters are collected separately and cannot identify peak stack occupancy. No CPU affinity or dedicated-host guarantee.'
+            if [[ $GITHUB_REF == refs/heads/codex/io-cpu-ring-controls ]]; then
+              echo 'Four computing threads; frozen Rayon grain four; WF_STACKS 12; 1/16 batches; WF_IO_NO_NATIVE_RING unset/1. Six forms, five alternating passes after one warmup. Separate Linux observations qualify initialized but unused ring vs disabled ring. No algorithm, output-path or runtime default changes.'
+            else
+              echo 'Four computing threads; frozen Rayon grain four; WF_STACKS 12/1100; 1/4/16 batches. Nine forms, five alternating passes after one warmup. Existing observer counters cannot identify peak stack occupancy.'
+            fi
+            echo 'Whole-process ordinary binaries without perf. Every checksum is checked after trailing CR/LF normalization; separate observed stdout is retained for byte comparison. No CPU affinity or dedicated-host guarantee.'
             echo '```text'
             for file in host.txt resource.txt observed-*.err; do
               for path in "$RUNNER_TEMP/cpu-resource-controls"/$file; do
