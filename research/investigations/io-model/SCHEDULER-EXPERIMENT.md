@@ -6177,6 +6177,140 @@ Plans, host metadata, commands, ordinary binaries and all separate output
 and observation files remain there. No performance-policy change follows
 from this negative attribution result.
 
+### Remaining process costs: source and old timeline audit
+
+This audit uses the unchanged runtime sources at e71ec278 and the retained
+0d15c7cc artifact linked in experiment 45. The old perf executions have four
+batches and 1100 WF stacks; they are not traces of experiment 47's one-batch,
+twelve-stack samples. No runtime policy or timing harness changes follow from
+this audit alone.
+
+The experiment 47 one-batch paired WF-default-minus-Rayon differences are
+43.963 ms wall and 35.857 ms aggregate CPU. The CPU difference divided by four
+is only 8.964 ms, so extra CPU work at full four-way utilization does not
+account for the entire wall difference. This arithmetic does not locate a
+serial phase: waiting, runnable delay, serial CPU work and imperfect overlap
+can all contribute. The longer samples and the existing four-batch profile
+already caution against assigning the whole difference to sustained parking.
+
+| Phase | Direct source or retained-trace evidence | What remains unknown |
+|---|---|---|
+| Core initialization | `sched/entry.c::wf__sched_start` calls `wf_sched_init` before the program body. Default `sched/core.c` clears the complete core, reserves all requested stacks, initializes every stack header/context, and initializes every configured lane's slots. | The old trace has no function boundary around this work. |
+| Worker startup | The first acquisition starts three detached pthreads, reserves their pool stacks and yields until all report ready. There is no fixed rendezvous deadline. Old WF PID 4022 first runs at 386.379580 and the last worker forks at 386.400895: 21.315 ms wall, including 19.073 ms of main-thread CPU. | This interval begins before exec completes, also includes 1100-stack setup, and is not a direct pool-start timer. Several short D-state switch-outs are visible; their cause is not identified. |
+| Computation and final output | Both kernels retain 800 full-table and 800 prefix-table tree folds per batch, resetting the same seed each batch and preserving sibling reduction order and all node writes. The final generated IR calls `wf__completion_file_write_submit`, then `wf__completion_file_join`, once. | Existing symbol samples cannot separate the last compute join, final output helper, or time until the body returns. |
+| Return and shutdown | `wf__sched_entry_body` posts status only after the complete body returns. Only scheduler thread zero returns to its original host stack. Bounds restoration uses cached host bounds. POSIX workers are detached, with no runtime join; `wf_bridge_shutdown` leaves descriptors/mappings to the kernel while that pool is running. | There is no existing `exit_group` timestamp to separate user cleanup from kernel cleanup. |
+
+The old WF scheduler trace is particularly informative at the end. Workers
+4023 and 4025 finally switch out with X at 387.714376, and worker 4024 at
+387.714377. Main 4022 runs continuously from 387.714064 until its final Z
+switch at 387.729067. Thus the interval from the first final worker exits to
+main's final switch is **14.691 ms continuously on CPU**, with the last worker
+gone after its first microsecond. That interval is not parking or a timed
+condition wait. Rayon caller 4003's last run interval is only
+384.656045..384.656176, while its workers finish at
+384.656162/.656168/.656196/.656460. These are separate instrumented executions,
+not paired timing samples or proof that the same tail exists with twelve
+stacks.
+
+The CPU-clock captures cannot close that attribution gap. WF PID 3874's first
+layout sample is 348.265825, and its last layout sample at 349.602022 is also
+its last recorded sample. Twenty-eight samples precede layout: twenty-five
+unresolved kernel samples, two libc samples and one `__mprotect`, totaling
+28.028 ms of sampled CPU. There is no recorded post-layout CPU sample from
+which to classify the final teardown. In
+[upstream Linux v6.17 `do_exit`](https://github.com/torvalds/linux/blob/v6.17/kernel/exit.c#L842),
+task perf events are removed before address-space and file cleanup. This
+ordering explains why task-local CPU sampling can miss late exit work while
+a system-wide scheduler trace continues to see it. The exact Azure patchset
+has not been audited, and these CPU/scheduler captures are different
+executions; neither missing symbols nor missing late samples identify the
+actual cleanup routine.
+
+The sequential controls also constrain attribution. The retained WF-seq ELF
+enters `wf__floor_run` and the same core initialization. With the recorded
+unset environment and four online CPUs it configures four lanes and twelve
+stacks, but no parallel acquisition starts workers. Its old scheduler PID
+3924 has no child thread, as does Rust-seq PID 3909. Their ordinary one-batch
+median walls are 1177.291 and 1170.690 ms, respectively, and aggregate CPU
+medians are 1177.051 and 1170.495 ms. Therefore the full-core clear is a real
+removable cost, but it cannot simply be declared the entire roughly 40 ms
+parallel difference. The sequential scheduler lifetimes are continuous
+computation without a final function marker; their last switch intervals do
+not independently measure teardown.
+
+No fixed millisecond sleep was found on the successful core path. The
+startup rendezvous yields until readiness; idle parks use completion/condition
+events. The bridge's bounded join look is 10 microseconds, followed by event
+waiting, not a 40 ms delay. `wf_floor.c` contains a fallback pthread join when
+core entry fails, but the qualified core executions do not take that fallback.
+This excludes an obvious written fixed delay, not all scheduler waiting.
+
+### Minimal next control and coarse trace proposal
+
+The stronger first policy control is `WF_SCHED_INIT_USED_LANES=1`, holding
+`WF_SCHED_COMPACT_STACKS=0`. The retained Linux ELF identifies
+`wf__sched_core` as exactly 20,478,544 bytes; `wf_sched_init` passes that same
+size to memset. Its lane loop uses stride 0x4e020, or 319,520 bytes, so
+clearing four rather than sixty-four skips 19,171,200 bytes
+of unreachable lane storage without changing the core layout, stack geometry
+or hot-path algorithm. Experiment 8 qualified this implementation policy;
+the current candidate still needs its existing completion checks rerun.
+The expected effect concerns touched memory at initialization and potentially
+cleanup, not a prediction of the full observed wall difference.
+
+Compact stacks change a different mechanism: they add 2048 aligned 128-byte
+header cells to the core and defer raw context preparation to the first free
+list pop. At twelve reserved stacks their immediately avoidable raw touches
+are small compared with the unused lanes, and some may be needed during the
+same computation. They also change a first-use path. Defer that axis while
+isolating used-lane initialization; the 1100-stack evidence remains a separate
+reason to revisit it. Neither policy's default changes.
+
+The proposed ordinary panel fixes four WF workers, twelve stacks, the default
+ring setting, and frozen Rayon width/grain 4/4. At batches 1 and 16 it compares
+the ordinary compiler WF binary, a manually linked same-IR default control,
+a same-IR used-lanes candidate, and Rayon. One warmup plus five alternating
+passes gives forty recorded samples. The manual default retains the same
+runtime source units, `/usr/bin/clang`, flags and link order as whitefootc;
+retain both its full hash and its code/layout comparison with ordinary output.
+This control prevents a manual-link difference from being credited to the
+policy. Keep exact source/IR/tool hashes, ordinary runner checksum validation,
+and separate exact-output/counter qualification for each storage form. Timing
+contains no probes or observer, and no timing threshold becomes a gate.
+
+A separate one-batch trace cohort should run the ordinary WF4/12, used-lanes
+WF4/12, WF-seq and frozen Rayon4 forms twice in opposite orders. Use the
+existing checksum runner as the traced command so collection outlives child
+exit and includes the runner's successful `wait4` return. Record system-wide
+`sched_process_exec`, `sched_process_fork`, `sched_process_exit`, `sched_switch`
+and `sched_waking`, plus syscall entry/exit for `write` and `wait4`, and entry
+for `exit_group`. Retain tracepoint schemas, actual PIDs/TIDs, binaries and
+loss/error reports. `sched_process_exit` alone is not a completed-teardown
+marker; final X/Z switches and parent reap delimit the later interval.
+
+Add only entry uprobes at existing WF symbols: `wf__floor_run`,
+`wf_sched_init`, `wf_sched_run`, `wf__main_body`,
+`wf__completion_file_write_submit`, `wf__completion_file_join`, and
+`wf_sched_post_status`. All are present in the retained ordinary ELF; verify
+each new binary's actual symbols before registration. Use entry events rather
+than a function-return pairing assumption across migrating stackful calls.
+Do not probe recursive layout or the hot compute-join path. Main-thread
+`wf_sched_run` entry follows successful initialization; worker entries plus
+fork events bound worker arrival without relying on the inlined startup
+helper or claiming an exact timer around its readiness loop.
+Submission-to-status-post brackets final output and body cleanup; status-post
+to exit-group brackets return/user shutdown; exit-group to final switch/reap
+tests the kernel-exit hypothesis directly. The pre-submit body interval still
+includes input construction and all final compute joins, so it is not named
+pure arithmetic time. Missing required events or loss make attribution
+incomplete and must not be silently replaced by the old samples.
+
+This bounded pair of measurements tests a concrete removable footprint while
+locating any residual startup or teardown cost. If the policy does not move
+the relevant phase, retain that negative result before selecting another
+runtime change. The trace is diagnostic evidence, not a replacement for the
+ordinary paired performance panel.
+
 ## Forty-eighth experiment: batch ready continuations before target progress
 
 Experiment 44 removes most coordinator context switches at occupied small
