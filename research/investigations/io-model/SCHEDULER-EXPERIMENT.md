@@ -4253,7 +4253,7 @@ name. A known limitation remains visible until its experiment is complete.
 | Native C stackful / C++ stackless | Same epoll engine; private or shared receive storage; stackful, heap coroutine, and compiler-elided coroutine forms | Diagnostic representation control: separates coroutine/frame allocation, storage and reactor cost | Screened and stream/lifetime-qualified at their recorded revisions; not independent mature runtime comparisons |
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
 | WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Experiments 39/44/48 qualify the threaded, owner and batched-owner paths. At `fc69af15`, batching adds 28% / 27% paired throughput at 64 / 1024 small-message peers, with separate counters confirming aggregated ring submissions. Native controls still lead those cells; client headroom and multi-owner compute remain open. Experiment 52 qualifies the unchanged sequential mixed protocol on both Linux completion routes |
-| Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Experiment49 pins Go 1.27.1. Experiment51 qualifies handler-stack and acceptor-heap forms on macOS/Linux at equal 64 KiB private capacity. The heap form lowers single live release RSS snapshots but adds a GC cycle; retain both candidates until timing. Race moves both buffers to the heap and cannot represent that release storage comparison; no timing yet |
+| Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Go 1.27.1 release/race and both 64 KiB storage forms qualified (49/51). The fixed Linux screen (53) favors acceptor-heap/P1 for memory and tail latency within one server CPU; P4 oversubscription inflates p99. WF batch32 exceeds this Go candidate at 64/1024 small peers while native stays ahead. Large transfers approach the client ceiling; no universal optimum. Race moves both buffers to the heap |
 | Rust sequential / Rayon CPU pool | Existing recursive `par_layout.wf` port with exact floating-point order and every node write; sibling `join`, calibrated grain and explicit pool width | Essential CPU-parallel reference; separates sequential code generation from parallel scheduling. Broader `par_iter`/`scope` and unbalanced workloads remain candidate rows | Checksum-qualified and independently confirmed after grain calibration on M1/Linux (experiment 40). Experiment 45's stack/batch control reduces the WF12/Rayon paired wall gap from 13.9% at one batch to 1.6% at sixteen, supporting substantial fixed costs. Experiment 47 finds no stable gain from disabling the unused output-path ring; remaining startup/exit costs need attribution. This is not an optimal WF CPU setup claim |
 | Tokio I/O + bounded Rayon CPU offload | One current-thread I/O driver plus B-1 CPU workers, fixed 64-byte protocol, asynchronous bounded admission, one request/reply per connection | External mixed-load reference under one total execution budget; exposes CPU queue transfer, backpressure and light-request progress | Linux-qualified at `040bfc4b` (experiment 42), including saturation, errors, reset, partial input, half-close and slow output. Four short client smoke records are correctness evidence, not a performance ranking |
 | Tokio | Fixed-worker multithread runtime and a separate per-core current-thread/reactor configuration | External mainstream async baseline; distinguish work stealing from reactor locality | Source candidate only; pin toolchain/lockfile, socket distribution and blocking-pool budget |
@@ -7247,8 +7247,134 @@ quiet launches through the new configuration helper, including deliberately
 inherited report/send-buffer/GC overrides that the helper must clear. The
 observed-report predicate accepts all four frozen Linux release records and
 rejects a mismatched owner. Shell/workflow parsing, Make expansion and diff
-checks pass. Native Linux qualification and timing for this exact screen
-are pending.
+checks pass. The native Linux screen completes successfully as recorded below.
+
+Native Linux results are from the frozen
+[`7aa6191c927723870ca5548d0b94f65940d6c7f3`](https://github.com/mbbill/Whitefoot/commit/7aa6191c927723870ca5548d0b94f65940d6c7f3),
+[run 34096288985](https://github.com/mbbill/Whitefoot/actions/runs/34096288985),
+job 101660571115. Artifact `10009918888`, `io-scheduler-allocator`, has SHA-256
+`2e3284d8f3c8a626c2d6155f35b5dc5cb8283c1a4a92ddb7fa3e96fde5783645`.
+The host is an Intel Xeon Platinum 8370C VM, Linux 6.17.0-1022-azure, Clang
+20.1.2. Server CPU 0 and client CPU 2 are on different physical cores.
+Independent audit reconciles all 560 ordinary rows against their raw client
+and resource files, verifies all 80 seven-pass groups, and recomputes all
+144 smaps totals. Ordinary server/client diagnostic channels are empty,
+trip counts match the five fixed cells, and THP/AnonHugePages/swap readbacks
+match the recorded policy. No samples are removed.
+
+The same audit separately verifies all 32 Go qualification cases and their
+eight snapshots, actual release/race allocation diagnostics and frames.
+All 36 normal Go panel thread censuses have mask `0`, counts matching their
+process status, and one epoll descriptor with peers-plus-one registrations.
+Normal observed sockets report NODELAY 1, SO_SNDBUF 2,626,560 and SO_RCVBUF
+131,072: the qualification's requested 4,096-byte send buffer is absent.
+The measured release binary is byte-identical both to this job's qualified
+copy and to experiment51's release artifact, SHA-256
+`dbe30414219c51057ebaae2624542aa6939ba3f29e584c84899d18ea95de36e8`.
+Toolchain/backend source hashes also match. Source capacity, source code and
+binary are fixed; host and THP conditions differ from experiment51, so its
+memory numbers must not be spliced into these paired comparisons.
+
+The table reports median roundtrips/s and median per-pass p99 in microseconds
+for **every Go configuration**. It is a fixed screen, not a retuned winner:
+
+| Peers × bytes | Handler P1, rate / p99 | Acceptor P1, rate / p99 | Handler P4, rate / p99 | Acceptor P4, rate / p99 |
+| --- | ---: | ---: | ---: | ---: |
+| 1 × 64 | 33077 / 42 | 33018 / 42 | 33152 / 42 | 33072 / 42 |
+| 4 × 64 | 172549 / 48 | 171911 / 48 | 154683 / 51 | 153675 / 52 |
+| 64 × 64 | 181875 / 685 | 183046 / 682 | 175206 / 3279 | 175525 / 3316 |
+| 1024 × 64 | 153285 / 9284 | 157627 / 8573 | 151119 / 42838 | 157237 / 42816 |
+| 64 × 65536 | 47537 / 1872 | 47977 / 1663 | 47721 / 13830 | 47505 / 12566 |
+
+At P1 the two ownership forms have overlapping paired rate ranges in four
+of five cells. Acceptor/handler at 64 small peers is 1.008 [1.002, 1.025];
+its small throughput difference is secondary to the memory difference below.
+P4 under the same one-CPU mask is a poor latency tradeoff here. For the
+acceptor form, paired P4/P1 p99 is 4.869 [4.629, 4.953] at 64 small peers,
+5.062 [3.636, 5.234] at 1024, and 7.556 [2.743, 9.069] for large messages.
+The corresponding rate ratios are 0.961 [0.955, 0.966], 1.008 [0.977, 1.018]
+and 0.991 [0.984, 1.009]. These are median and full ranges of seven same-pass
+ratios, not confidence intervals. They concern oversubscription on one CPU,
+not Go with four physical CPUs. This control gives no reason to prefer P4
+for the next one-CPU comparison; all four original rows remain retained.
+
+These same-host throughput medians place the Go candidates among the existing
+references. The native/old-WF columns identify the highest median in that
+family **in these samples**, rather than an independently selected optimum:
+
+| Peers × bytes | Native form and rate | Existing WF form and rate | WF batch32 rate | Go acceptor P1 rate |
+| --- | --- | --- | ---: | ---: |
+| 1 × 64 | epoll-calloc-main: 35112 | callee-small: 49683 | 33239 | 33018 |
+| 4 × 64 | epoll-calloc-main: 204502 | callee-small: 181811 | 172355 | 171911 |
+| 64 × 64 | uring: 218940 | balanced-small: 215084 | 197841 | 183046 |
+| 1024 × 64 | cpp-elide: 206494 | balanced-small: 192876 | 176921 | 157627 |
+| 64 × 65536 | fiber-calloc-main: 47684 | callee-small: 48027 | 46744 | 47977 |
+
+At 64 small peers, native uring / WF balanced-small / WF batch32 / Go
+acceptor P1 use median 4.453 / 4.688 / 5.000 / 5.391 process CPU
+microseconds per trip, with p99 325 / 334 / 363 / 682 microseconds.
+WF batch32 / Go acceptor P1 paired rate is 1.089 [1.060, 1.090], CPU is
+0.928 [0.900, 0.942], and p99 is 0.530 [0.516, 0.537]. At 1024 small peers
+those ratios are 1.116 [1.073, 1.163], 0.915 [0.879, 0.946], and
+0.868 [0.808, 0.945]. The current generated sequential WF form thus exceeds
+this ordinary Go control in these occupied small-message cells; the native
+controls and existing WF stackful policies still provide higher throughput.
+One small peer exposes a different CPU tradeoff: callee-small reaches 49,683
+trips/s at 20 CPU microseconds/trip versus the leading measured native's
+35,112 at 11. That is not a cost-free win or proof that the sleeping/polling
+policy of the native control is optimal for underoccupancy.
+
+Large-message medians cluster around 47–48 thousand trips/s. Client exchange
+CPU is approximately one full client CPU for these fast forms, as it is for
+many occupied small-message native cells. WF batch32 / Go acceptor P1 large
+rate is 0.974 [0.938, 1.046]; the panel cannot declare either a server-capacity
+winner from that near-tie. Process CPU still includes startup/drain and is
+centisecond-quantized. All CPU, switch, latency and client observations are
+retained; none is reclassified as open-loop SLO or real-NIC evidence.
+
+Normal live RSS medians below use three snapshots per cell, not the observed
+qualification snapshots. Selected comparison rows are shown; all sixteen
+forms and all 144 smaps/status records remain in the artifact:
+
+| Form | 64 peers × 64 B, KiB | 1024 peers × 64 B, KiB | 64 peers × 64 KiB, KiB |
+| --- | ---: | ---: | ---: |
+| Go handler P1 | 7496 | 74588 | 7504 |
+| Go handler P4 | 7616 | 74832 | 7584 |
+| Go acceptor P1 | 4124 | 11956 | 6632 |
+| Go acceptor P4 | 4352 | 12296 | 7116 |
+| WF callee-small | 3620 | 15200 | 6296 |
+| WF batch32 | 3100 | 12508 | 5792 |
+| Native uring-64k | 2372 | 4320 | 3756 |
+| Native epoll | 1768 | 1788 | 1832 |
+
+Acceptor P1 retains much less physical memory than handler P1 at 1024 small
+peers (11,956 versus 74,588 KiB), despite the same 64 MiB aggregate initialized
+source capacity. Initialization semantics do not require identical eager
+page touching. The exact stack wrapper explicitly zeroes 64 KiB; the pinned
+Go runtime's `makeslice` requests initialized storage from `mallocgc`, whose
+large-allocation path clears only when the span is not already known zero.
+The different 64-byte/64-KiB residency patterns are consistent with different
+page touching and allocator behavior as well as frame size. These snapshots
+and source evidence do not quantitatively partition those causes. TotalAlloc
+omits stack payload; race moves both buffers into the heap. Neither serves
+as a replacement for these normal live memory measurements.
+
+Go acceptor/P1 is consequently the strongest current one-CPU Go candidate
+for follow-up within this screen's storage/latency criteria, while handler/P1
+remains a useful representation control. No pooling, splice, socket-policy
+retuning or broader backend search is implied. The result strengthens the
+reference quality and narrows implementation tradeoffs among sequential-API
+candidates. It does not identify an intrinsic cost of sequential user code,
+settle the language model's ultimate performance or establish a universal
+ranking.
+
+At result-recording time all Linux canonical stages, including scheduler,
+pass at this revision; three macOS stages remain queued. Native Linux/Windows
+host checks pass. The separate io-bench Windows job 101660570781 refuses its
+warm-I/O measurement at `windows-bench.ps1:612`: `io-warm` remains unstable
+after two complete cohorts. That is a separate invalid timing table, not a
+Go/Linux protocol failure; its refusal is preserved without a threshold
+change or a rerun to obtain green.
 
 ## Fifty-fourth experiment: index pending continuation waiters
 
