@@ -209,10 +209,12 @@ measurement too.
 
 ### The TCP echo workload
 
-The control test `research/investigations/io-model/NETWORK.md` section 6 asks
-for, and the bar it sets: the reference is the fastest existing solution
-regardless of language, because the target is first place, and the gap is the
-batch's result rather than something to hide.
+The target in `research/investigations/io-model/NETWORK.md` section 6 is to
+compete with the strongest implementations regardless of language. The native
+programs here are measured candidates; their presence alone does not establish
+that they are the fastest existing solutions. The maintained
+[baseline matrix](../../investigations/io-model/SCHEDULER-EXPERIMENT.md#baseline-matrix-and-evidence-levels)
+records what each comparison can establish and what remains unmeasured.
 
 Three servers, one contract, one load generator. The contract is what makes
 the three comparable and what keeps the generator from telling them apart:
@@ -248,7 +250,8 @@ the ratio is against:
   ring of buffers and lets it choose the destination when the bytes arrive,
   rather than committing a buffer per connection before there is anything to
   put in it. The echo is then sent straight out of the buffer the kernel
-  filled, so the data is not copied on either side of the exchange. Exhaustion
+  filled, avoiding an extra userspace copy; ordinary kernel socket copies
+  still exist. Exhaustion
   is real and is handled rather than avoided: a receive that finds no buffer
   answers `-ENOBUFS`, and that connection waits for a buffer to come back
   instead of spinning on a re-arm.
@@ -258,17 +261,18 @@ the ratio is against:
 - **a ring the kernel need not interrupt.** `IORING_SETUP_SINGLE_ISSUER` with
   `IORING_SETUP_DEFER_TASKRUN` says one thread submits and the same thread
   waits, which lets the kernel defer completion work to the moment that thread
-  asks for it. It is worth about a quarter of the small-message rate here, and
-  it is what puts the io_uring line ahead of the epoll line at 64 and 1024
-  connections instead of level with it.
+  asks for it. The relative gain depends on the kernel, workload and resource
+  budget; a previous host's result does not select the best configuration for
+  a new panel.
 
 `--sqpoll` adds `IORING_SETUP_SQPOLL` and is off by default. The development
 host admits it; whether another host does is what `uring_echo --sqpoll` says
 there, since a kernel that refuses the flag refuses it at `io_uring_setup` and
-the server reports that and exits. The protocol does not run it, because a
-poll thread per ring costs a core each and on a four-core host it loses to the
-default by a third. It cannot be combined with the deferred task work above,
-since there the submitting task is the kernel's own.
+the server reports that and exits. The current paired protocol does not run
+it: the extra kernel poll threads need explicit CPU placement and whole-system
+accounting before they fit the same resource budget. Process CPU from
+`/usr/bin/time` does not account for them. This configuration uses SQPOLL
+instead of the deferred task-work pair.
 
 Everything each server needs is sized from `CONNECTIONS` before the first
 accept: the connection tables are indexed by descriptor, the buffer rings and
