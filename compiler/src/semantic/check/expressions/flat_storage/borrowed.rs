@@ -26,7 +26,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         match ty {
             CheckedType::Buffer { element } => {
                 let mut resolved = borrow.place.clone();
-                resolved.fields.extend_from_slice(&fields);
+                resolved.extend_fields(&fields);
                 Ok(CheckedIndexedPlace::Buffer(CheckedBufferPlace {
                     root: CheckedBufferRoot {
                         binding: local.binding,
@@ -74,7 +74,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedType::Vector { .. }
             | CheckedType::Extent { .. } => {
                 let mut resolved = borrow.place.clone();
-                resolved.fields.extend_from_slice(&fields);
+                resolved.extend_fields(&fields);
                 Ok(CheckedIndexedPlace::Container(CheckedContainerPlace {
                     root: CheckedContainerRoot {
                         binding: local.binding,

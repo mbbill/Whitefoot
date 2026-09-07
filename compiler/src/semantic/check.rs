@@ -1100,13 +1100,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         let mut wanted: HashMap<DeclarationId, Vec<ResolvedPlace>> = HashMap::new();
         for origin in &slice.origins {
-            if let crate::semantic::model::CheckedSliceOrigin::SourcePlace {
-                root, fields, ..
-            } = origin
+            if let crate::semantic::model::CheckedSliceOrigin::SourcePlace { root, path, .. } =
+                origin
             {
                 wanted.entry(*root).or_default().push(ResolvedPlace {
                     root: *root,
-                    fields: fields.clone(),
+                    path: path.clone(),
                 });
             }
         }
@@ -2435,11 +2434,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                     &mut target.offset,
                                     requirements,
                                 )?,
-                            CheckedSetTarget::RunIndex(target) => self
-                                .install_expression_call_requirements(
-                                    &mut target.offset,
-                                    requirements,
-                                )?,
+                            CheckedSetTarget::Storage(target) => {
+                                for offset in target.offsets_mut() {
+                                    self.install_expression_call_requirements(
+                                        offset,
+                                        requirements,
+                                    )?;
+                                }
+                            }
                             CheckedSetTarget::SliceIndex(target) => self
                                 .install_expression_call_requirements(
                                     &mut target.offset,
@@ -2465,11 +2467,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 &mut target.offset,
                                 requirements,
                             )?,
-                        CheckedSetTarget::RunIndex(target) => self
-                            .install_expression_call_requirements(
-                                &mut target.offset,
-                                requirements,
-                            )?,
+                        CheckedSetTarget::Storage(target) => {
+                            for offset in target.offsets_mut() {
+                                self.install_expression_call_requirements(offset, requirements)?;
+                            }
+                        }
                         CheckedSetTarget::SliceIndex(target) => self
                             .install_expression_call_requirements(
                                 &mut target.offset,
@@ -2574,9 +2576,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::ProjectValue { value, .. } => {
                 self.install_expression_call_requirements(value, requirements)?;
             }
+            CheckedExpression::ReadStorage { root, .. } => {
+                for offset in root.offsets_mut() {
+                    self.install_expression_call_requirements(offset, requirements)?;
+                }
+            }
             CheckedExpression::ArrayIndex { offset, .. }
             | CheckedExpression::BufferIndex { offset, .. }
-            | CheckedExpression::RunIndex { offset, .. }
             | CheckedExpression::SliceIndex { offset, .. } => {
                 self.install_expression_call_requirements(offset, requirements)?;
             }
@@ -2669,11 +2675,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                     bounds,
                                 )?;
                             }
-                            CheckedSetTarget::RunIndex(target) => {
-                                Self::install_expression_allocation_bounds(
-                                    &mut target.offset,
-                                    bounds,
-                                )?;
+                            CheckedSetTarget::Storage(target) => {
+                                for offset in target.offsets_mut() {
+                                    Self::install_expression_allocation_bounds(offset, bounds)?;
+                                }
                             }
                             CheckedSetTarget::SliceIndex(target) => {
                                 Self::install_expression_allocation_bounds(
@@ -2697,8 +2702,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         CheckedSetTarget::BufferIndex(target) => {
                             Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
                         }
-                        CheckedSetTarget::RunIndex(target) => {
-                            Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
+                        CheckedSetTarget::Storage(target) => {
+                            for offset in target.offsets_mut() {
+                                Self::install_expression_allocation_bounds(offset, bounds)?;
+                            }
                         }
                         CheckedSetTarget::SliceIndex(target) => {
                             Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
@@ -2809,9 +2816,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::ProjectValue { value, .. } => {
                 Self::install_expression_allocation_bounds(value, bounds)?;
             }
+            CheckedExpression::ReadStorage { root, .. } => {
+                for offset in root.offsets_mut() {
+                    Self::install_expression_allocation_bounds(offset, bounds)?;
+                }
+            }
             CheckedExpression::ArrayIndex { offset, .. }
             | CheckedExpression::BufferIndex { offset, .. }
-            | CheckedExpression::RunIndex { offset, .. }
             | CheckedExpression::SliceIndex { offset, .. } => {
                 Self::install_expression_allocation_bounds(offset, bounds)?;
             }

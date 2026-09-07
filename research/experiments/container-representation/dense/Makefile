@@ -4,6 +4,7 @@ CLANG ?= clang
 RUSTC ?= rustc
 BUILD := build
 SIZES := 16 256 4096
+CASES := $(SIZES) 16x4
 case_size = $(word 1,$(subst x, ,$(1)))
 case_lanes = $(if $(findstring x,$(1)),4,1)
 case_flags = -DSIZE=$(call case_size,$(1)) -DLANES=$(call case_lanes,$(1))
@@ -13,7 +14,7 @@ IRFLAGS := -O2 -Wno-override-module
 .PHONY: all check measure shape clean
 .PRECIOUS: $(BUILD)/dense%.wf $(BUILD)/raw%.ll $(BUILD)/linked%.ll \
            $(BUILD)/dense%.o $(BUILD)/native%.o
-all: $(SIZES:%=$(BUILD)/bench%) $(SIZES:%=$(BUILD)/smoke%) \
+all: $(CASES:%=$(BUILD)/bench%) $(CASES:%=$(BUILD)/smoke%) \
      $(BUILD)/boundary-bench256 shape
 
 $(BUILD):
@@ -61,27 +62,16 @@ $(BUILD)/boundary-bench256: harness.c reference.c $(BUILD)/dense256.o
 $(BUILD)/boundary256.ll: reference.c
 	$(CLANG) $(CFLAGS) -DSIZE=256 -DLANES=1 -DBOUNDARY_CONTROL=1 -S -emit-llvm $< -o $@
 
-shape: $(SIZES:%=$(BUILD)/optimized%.ll) $(SIZES:%=$(BUILD)/dense%.s) \
-       $(SIZES:%=$(BUILD)/native%.opt.ll) $(SIZES:%=$(BUILD)/native%.s)
+shape: $(CASES:%=$(BUILD)/optimized%.ll) $(CASES:%=$(BUILD)/dense%.s) \
+       $(CASES:%=$(BUILD)/native%.opt.ll) $(CASES:%=$(BUILD)/native%.s)
 
 shape: $(BUILD)/boundary256.ll
 
 check: all
 	rustfmt --edition 2024 --check driver.rs
-	@set -eu; status=0; rm -f $(BUILD)/inline-view.ll; \
-	  $(WHITEFOOTC) --emit-llvm -o $(BUILD)/inline-view.ll inline-view.wf > $(BUILD)/inline-view.log 2>&1 || status=$$?; \
-	  if test "$$status" -eq 0; then \
-	    $(WHITEFOOTC) -o $(BUILD)/inline-view inline-view.wf; $(BUILD)/inline-view; \
-	    echo 'inline view: supported and executed'; \
-	  else \
-	    test "$$status" -eq 1; test ! -f $(BUILD)/inline-view.ll; \
-	    grep -F 'Semantics/Unsupported' $(BUILD)/inline-view.log >/dev/null; \
-	    grep -F 'ExclusiveViewOverInlineRun' $(BUILD)/inline-view.log >/dev/null; \
-	    echo 'inline view: compiler capability unsupported (ExclusiveViewOverInlineRun)'; \
-	  fi
-	$(BUILD)/driver generate dense.wf.in 16x4 $(BUILD)/wide-probe.wf
-	$(BUILD)/driver probe $(WHITEFOOTC) $(BUILD)/wide-probe.wf $(BUILD)/wide-probe.txt
-	@set -eu; for size in $(SIZES); do \
+	$(WHITEFOOTC) -o $(BUILD)/inline-view inline-view.wf
+	$(BUILD)/inline-view
+	@set -eu; for size in $(CASES); do \
 		$(BUILD)/smoke$$size; \
 		$(BUILD)/bench$$size verify 7640891576956012809; \
 	done

@@ -84,6 +84,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             // store-resident one — lives in its owner, so a borrow of either
             // run addresses that storage [BLK-1].
             | IrAddressed::FixedVector { .. }
+            | IrAddressed::Array { .. }
             | IrAddressed::Vector { .. }
             // A provider is stored content: its cursor is the state a bump
             // take advances through the `&uniq` borrow [PROV-1, BLK-2].
@@ -123,15 +124,32 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         }
         let mut rendered = Vec::with_capacity(arguments.len());
+        let stored_result = is_stored_aggregate(self.program, ty)?;
+        if stored_result {
+            rendered.push(format!("ptr {}", self.value_place(result)?));
+        }
         for (argument, (_, parameter_type)) in arguments.iter().zip(target.parameters()) {
             if self.value_type(*argument) != Some(*parameter_type) {
                 return Err(BackendFailure::InvalidIr);
             }
-            rendered.push(format!(
-                "{} {}",
-                llvm_type(self.program, *parameter_type)?,
-                self.value_name(*argument)
-            ));
+            if is_stored_aggregate(self.program, *parameter_type)? {
+                rendered.push(format!("ptr {}", self.value_place(*argument)?));
+            } else {
+                rendered.push(format!(
+                    "{} {}",
+                    llvm_type(self.program, *parameter_type)?,
+                    self.value_name(*argument)
+                ));
+            }
+        }
+        if stored_result {
+            return writeln!(
+                self.output,
+                "  call void @{}({})",
+                self.callee_symbol(function, target.name()),
+                rendered.join(", ")
+            )
+            .map_err(|_| BackendFailure::TextEmission);
         }
         writeln!(
             self.output,

@@ -2,7 +2,7 @@ pub(in crate::semantic::check) mod calls;
 pub(in crate::semantic::check) mod flat_storage;
 mod places;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::syntax::NodeId;
 use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
@@ -255,10 +255,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        let resolved = ResolvedPlace {
-            root: declaration,
-            fields: fields.clone(),
-        };
+        let resolved = ResolvedPlace::fields(declaration, fields.clone());
         self.check_loan_access(bindings, None, &resolved, AccessKind::Write, node)?;
 
         self.check_mutation_target_class(node, ty, form)?;
@@ -1330,12 +1327,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // and the same statement reinitializes the target. It is not
                 // [OWN-1]'s root-killing consume and derives no residual
                 // cleanup of the root's unselected content.
+                self.check_commit_place_live(
+                    &ResolvedPlace::fields(declaration, fields.clone()),
+                    use_node,
+                    false,
+                )?;
                 let read_out = !copy
                     && options.explicit_move
-                    && self.take_commit_read_out(&ResolvedPlace {
-                        root: declaration,
-                        fields: fields.clone(),
-                    });
+                    && self
+                        .take_commit_read_out(&ResolvedPlace::fields(declaration, fields.clone()));
                 // OWN-1 makes an affine projection consume its whole root.
                 // Its residual cleanup destroys every unselected resource
                 // field, so the loan access is the root rather than only the
@@ -1354,10 +1354,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.check_loan_access(
                     bindings,
                     None,
-                    &ResolvedPlace {
-                        root: declaration,
-                        fields: access_fields.clone(),
-                    },
+                    &ResolvedPlace::fields(declaration, access_fields.clone()),
                     access_kind,
                     use_node,
                 )?;
@@ -1398,10 +1395,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?
                         .live = false;
                 }
-                let access = ResolvedPlace {
-                    root: declaration,
-                    fields: access_fields,
-                };
+                let access = ResolvedPlace::fields(declaration, access_fields);
                 let mut effects = EffectSet::NONE;
                 // [LIV-2, EFF-2] a read-out reads the target's own storage,
                 // exactly as [SET-2]'s exchange does, and the commit writes it.
@@ -1615,10 +1609,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.check_loan_access(
             bindings,
             None,
-            &ResolvedPlace {
-                root: local.declaration,
-                fields: fields.clone(),
-            },
+            &ResolvedPlace::fields(local.declaration, fields.clone()),
             AccessKind::Write,
             node,
         )?;
@@ -1633,10 +1624,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         });
         Ok(MutationTarget {
             declaration: local.declaration,
-            place: ResolvedPlace {
-                root: local.declaration,
-                fields: fields.clone(),
-            },
+            place: ResolvedPlace::fields(local.declaration, fields.clone()),
             element: false,
             target: CheckedSetTarget::Place(CheckedWritablePlace {
                 binding: local.binding,
@@ -1680,7 +1668,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let suffixes = self.tree.children_with(node, Production::Psuffix)?;
         let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
         let mut resolved = borrow.place;
-        resolved.fields.extend_from_slice(&fields);
+        resolved.extend_fields(&fields);
         self.check_loan_access(
             bindings,
             Some(declaration),
@@ -1709,8 +1697,53 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 declares: false,
             }),
             effects,
-            unsupported: None,
+            unsupported: self.borrowed_descriptor_mutation_capability(ty)?,
         })
+    }
+
+    /// A borrowed descriptor replacement needs both writable descriptor-slot
+    /// lowering and retention of any descendant backing an enclosing target
+    /// already captured. The retiring buffer surface implements neither
+    /// completely. This is a capability stop after the source judgments, not
+    /// a writability rule. Inspect the selected value, so writes of its scalar
+    /// contents remain admitted even when an ancestor owns a buffer.
+    fn borrowed_descriptor_mutation_capability(
+        &self,
+        ty: CheckedType,
+    ) -> Result<Option<UnsupportedSemanticFeature>, CheckStop> {
+        let mut pending = vec![ty];
+        let mut visited = HashSet::new();
+        while let Some(current) = pending.pop() {
+            match current {
+                CheckedType::Buffer { .. } => {
+                    return Ok(Some(
+                        UnsupportedSemanticFeature::BorrowedBufferDescriptorMutation,
+                    ));
+                }
+                CheckedType::Array { element, .. } => pending.push(element.ty()),
+                CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
+                    pending.push(element.ty())
+                }
+                CheckedType::Nominal(id) if visited.insert(id) => match &self.nominal(id)?.kind {
+                    CheckedNominalKind::Struct { fields } => {
+                        pending.extend(fields.iter().map(|field| field.ty));
+                    }
+                    CheckedNominalKind::Enum { variants } => {
+                        pending.extend(
+                            variants
+                                .iter()
+                                .flat_map(|variant| variant.fields.iter().map(|field| field.ty)),
+                        );
+                    }
+                    CheckedNominalKind::Box { referent, .. } => pending.push(*referent),
+                    CheckedNominalKind::Arena { content, .. } => pending.push(*content),
+                    CheckedNominalKind::ArenaStorage
+                    | CheckedNominalKind::SystemResource { .. } => {}
+                },
+                _ => {}
+            }
+        }
+        Ok(None)
     }
 
     pub(super) fn check_match_expression(

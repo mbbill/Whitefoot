@@ -185,8 +185,10 @@ fn collect_set_target(
         CheckedSetTarget::BufferIndex(target) => {
             collect_expression(&target.offset, direct, edges);
         }
-        CheckedSetTarget::RunIndex(target) => {
-            collect_expression(&target.offset, direct, edges);
+        CheckedSetTarget::Storage(target) => {
+            for offset in target.offsets() {
+                collect_expression(offset, direct, edges);
+            }
         }
         CheckedSetTarget::SliceIndex(target) => {
             collect_expression(&target.offset, direct, edges);

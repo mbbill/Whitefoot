@@ -214,13 +214,39 @@ Its concrete acceptance criteria are:
    boundary without replacing this foundation. No new I/O/runtime protocol is
    introduced, and private runtime slot layouts are not assumed.
 
-The in-progress worktree now passes the frozen scalar correctness matrix and the
-mandatory wide-record and inline exclusive-view execution probes. This is a
-capability checkpoint, not completion of the slice: the full regression gate,
-retained-call/alias/cleanup review, final machine-shape evidence, and comparable
-post-change measurements must still establish the complete result. The retained
-168 timing samples remain the old implementation's baseline; they have not become
-measurements of this checkpoint.
+The in-progress implementation now executes the frozen scalar correctness matrix
+and the mandatory wide-record and inline exclusive-view programs. Its seven
+[owned-place execution tests](../../../compiler/src/backend/tests/owned_places.rs)
+observe value snapshots, simultaneous assignment, returned element borrows,
+retained helper calls, allocation refusal, cleanup order, and mutation evaluation
+order. In particular, SET-1 captures target components before the RHS, while
+SET-2 reads the displaced owner after the RHS. A phi edge snapshots its inputs,
+performs predecessor cleanup, then writes the destination: liveness may allow the
+destination to reuse storage that cleanup still needs before that point.
+
+The old borrowed-buffer descriptor path exposed an existing unsafe capability:
+replacing a descriptor passed by value can free backing without updating its
+caller. Replacing an owning borrowed wrapper can likewise retire backing held by
+an earlier prepared target. These forms now stop explicitly as
+`BorrowedBufferDescriptorMutation`, after ordinary source judgments; no normative
+verdict was changed to call them invalid. Borrowed element writes and direct
+owned replacements remain supported. Current BLK-4 excludes mutating a new run
+through a source helper, including nested run owners. Any later lifting of that
+restriction must prove captured target storage identity and lifetime, not merely
+that the root binding is live after the call.
+
+The [parallel aggregate ABI patch](parallel-abi-review.patch) is an **inert review
+artifact**, not an applied compiler change. Automatic approval review rejected
+the remaining cross-worker adapter edit and requested explicit owner permission;
+the draft PR carries the exact proposed patch for inspection. Its owner is this
+implementation investigation, and it is deleted when that patch is applied or
+superseded. It preserves frame layout and publication/join/release order, copying
+aggregate results into caller storage before frame release. Current parallel
+integration is incomplete until this patch and its required validation land.
+
+This checkpoint is not completion of the slice: the full regression gate, final
+machine-shape evidence, and comparable post-change measurements remain pending.
+The retained 168 timing samples are still the old implementation's baseline.
 
 Then implement the selected bounded semantic capabilities: full-state construction
 and sealing, checked empty-run consume, projected result contracts, and two-span

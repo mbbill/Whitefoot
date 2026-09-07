@@ -9,6 +9,13 @@ Whitefoot implementations. This fixture remains owned by the container
 representation experiment; supersede its measurements and remove obsolete
 variants when the representation question changes.
 
+The retained timings and frame measurements below are the pre-implementation
+baseline at `eff095c7`. The owned-storage implementation is being validated on
+this branch; its comparable timing run and full repository gate are still
+pending. Its first executable checkpoint passes all three scalar sizes, the
+N=16 four-field record, and the inline exclusive-view program. Those are
+capability results, not replacement timing measurements or workload prevalence.
+
 ## Reproduction and scope
 
 From this directory, after building the repository compiler:
@@ -168,21 +175,26 @@ these retained internal calls, not timing parity for every ABI or aggregate.
 
 `inline-view.wf` is a separate complete source probe: append a byte, form an
 exclusive view of its inline owner, update through the view, and verify the
-owner sees the new byte. It currently reports `ExclusiveViewOverInlineRun`.
-The check records only that exact unsupported result or, once supported,
-compiles and executes the program. The implementation target requires the
-successful execution; retaining an unsupported observation is not its completion.
+owner sees the new byte.
+The baseline reported `ExclusiveViewOverInlineRun`. The owned-storage path now
+compiles and executes this program; `make check` requires exit 0 and no longer
+accepts an unsupported result.
 
 The same generator also produces a complete N=16 source with four distinct
 `u64` fields per element. Current records are affine, so it reads an element
 through a shared borrow, computes the replacement fields, ends the borrow, and
-replaces the owned element. The compiler reports
+replaces the owned element. The baseline stopped at
 `Semantics/Unsupported: RegionsAndBorrows` for that inline-element borrow.
-`make check` records this honest capability result in `build/wide-probe.txt`;
-it does not call the source invalid or include it in runtime performance data.
-If the capability becomes supported, the probe reports that the wide runtime
-measurement should be added. No fake failure branch or spare-buffer algorithm
-was inserted to get this case through the current compiler.
+After implementing the borrow, a redundant explicit region in the final checksum
+loop became visible as a FORM-8 source defect. Removing that sole-statement
+wrapper preserves the loop's implicit region and the algorithm; the update
+loop's short borrow region remains necessary and remains present. Scalar timed
+kernels were unchanged by this fixture correction.
+
+`make check` now builds and executes the wide program and checks its checksum
+against all three native controls over the same 60-input matrix. The four-field
+case remains outside the retained 168 scalar timing samples. No failure branch
+or alternate container algorithm was introduced to satisfy the checker.
 
 The measured result supports an implementation requirement for this dense
 workload: owned values need a representation that preserves destination storage

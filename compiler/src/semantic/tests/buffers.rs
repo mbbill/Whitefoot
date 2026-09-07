@@ -927,16 +927,19 @@ command fn main() -> status: own ExitStatus pure {
         let CheckedStatement::Set { target, .. } = &arms[0].body[0] else {
             panic!("the true branch must contain projected indexed SET-1");
         };
-        let CheckedSetTarget::RunIndex(target) = target else {
+        let CheckedSetTarget::Storage(target) = target else {
             panic!("SET-1 must retain a projected run root");
         };
-        assert_eq!(target.root.path, [CheckedPlaceStep::Field(0)]);
+        assert!(matches!(
+            target.path.as_slice(),
+            [CheckedPlaceStep::Field(0), CheckedPlaceStep::Subscript(_)]
+        ));
         assert!(matches!(
             &arms[0].body[1],
             CheckedStatement::Let {
-                value: CheckedExpression::RunIndex { root, .. },
+                value: CheckedExpression::ReadStorage { root, .. },
                 ..
-            } if root.path == [CheckedPlaceStep::Field(0)]
+            } if matches!(root.path.as_slice(), [CheckedPlaceStep::Field(0), CheckedPlaceStep::Subscript(_)])
         ));
         assert!(matches!(
             &main.body[8],

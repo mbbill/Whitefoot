@@ -1385,14 +1385,13 @@ pub(crate) struct CheckedSliceRoot {
     pub(crate) strength: LoanStrength,
 }
 
-/// The base place of one compiler-owned measured value: a run [BLK-1] or a
-/// bump extent [PROV-1].
+/// A typed storage place used by a borrow or a compiler-owned measure.
 ///
 /// [MSR-2] makes a measure's support the resolved place of the measured value
-/// itself, so the root is the binding plus the field selections that reach it
-/// and never the binding alone. The type is retained because it is what
-/// selects the measure table's row and, for a `FixedVector`, carries the
-/// capacity constant that is stored nowhere at run time.
+/// itself, so the root retains every field and subscript that reaches it.
+/// The type selects the addressed referent and, when measured, the table's
+/// row. A `FixedVector` also carries its capacity constant here because that
+/// constant is stored nowhere at run time.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedContainerRoot {
     pub(crate) binding: BindingId,
@@ -1400,11 +1399,11 @@ pub(crate) struct CheckedContainerRoot {
     /// order [MSR-1]. `len_of(table[i])` is a term, so a measured place is
     /// not a field path.
     pub(crate) path: Vec<CheckedPlaceStep>,
-    /// `FixedVector<T, n>`, `Vector<'s, T>`, or `Arena<'s, bytes, align>`.
+    /// The type selected by the complete path.
     pub(crate) ty: CheckedType,
 }
 
-/// One step below a measured place's root [MSR-1]: a field selection, or one
+/// One step below a storage place's root [MSR-1]: a field selection, or one
 /// [OP-4] subscript together with the obligation that subscript owes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedPlaceStep {
@@ -1412,7 +1411,7 @@ pub(crate) enum CheckedPlaceStep {
     Subscript(Box<CheckedPlaceSubscript>),
 }
 
-/// One subscript occurring inside a measured place [MSR-1, OP-4].
+/// One subscript occurring inside a storage place [MSR-1, OP-4].
 ///
 /// The offset is a logical one and its obligation is against `len_of` of the
 /// base it indexes; the storage it selects is slot `(head_of + i) mod cap_of`,
@@ -1434,6 +1433,27 @@ pub(crate) struct CheckedPlaceSubscript {
 }
 
 impl CheckedContainerRoot {
+    /// The exact storage projection consumed by [OWN-7] and [ENT-5].
+    pub(crate) fn place_path(&self) -> Vec<super::places::PlaceStep> {
+        self.path.iter().map(CheckedPlaceStep::place_step).collect()
+    }
+
+    /// Offset evaluations are children of the place, including when its
+    /// terminal operation only takes an address or reads a measure.
+    pub(crate) fn offsets(&self) -> impl Iterator<Item = &CheckedExpression> {
+        self.path.iter().filter_map(|step| match step {
+            CheckedPlaceStep::Field(_) => None,
+            CheckedPlaceStep::Subscript(index) => Some(&index.offset),
+        })
+    }
+
+    pub(crate) fn offsets_mut(&mut self) -> impl Iterator<Item = &mut CheckedExpression> {
+        self.path.iter_mut().filter_map(|step| match step {
+            CheckedPlaceStep::Field(_) => None,
+            CheckedPlaceStep::Subscript(index) => Some(&mut index.offset),
+        })
+    }
+
     /// The same path as [ENT-2] goal projections.
     pub(crate) fn goal_projections(&self) -> Vec<super::goal::GoalProjection> {
         self.path
@@ -1475,6 +1495,15 @@ impl CheckedContainerRoot {
             CheckedType::FixedVector { length, .. } => Some(length),
             CheckedType::Extent { bytes, .. } => Some(bytes),
             _ => None,
+        }
+    }
+}
+
+impl CheckedPlaceStep {
+    pub(crate) fn place_step(&self) -> super::places::PlaceStep {
+        match self {
+            Self::Field(field) => super::places::PlaceStep::Field(*field),
+            Self::Subscript(index) => super::places::PlaceStep::Subscript(index.place_offset),
         }
     }
 }
@@ -1523,7 +1552,7 @@ pub(crate) struct CheckedKernelInstance {
 pub(crate) enum CheckedSliceOrigin {
     SourcePlace {
         root: DeclarationId,
-        fields: Vec<u32>,
+        path: Vec<super::places::PlaceStep>,
         origin_region: Option<DeclarationId>,
     },
     ImmutableConst,
@@ -1731,7 +1760,7 @@ pub(crate) struct CheckedIntegerArgument {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedResultBorrow {
     pub(crate) binding: BindingId,
-    pub(crate) fields: Vec<u32>,
+    pub(crate) path: Vec<super::places::PlaceStep>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1936,13 +1965,9 @@ pub(crate) enum CheckedExpression {
     /// The offset is a logical one and its obligation is against `len`; the
     /// storage it selects is slot `(head + i) mod cap`, which the lowering
     /// computes and no source rule mentions.
-    RunIndex {
+    ReadStorage {
         carrier: NodePath,
         root: CheckedContainerRoot,
-        element_type: CheckedType,
-        offset: Box<CheckedExpression>,
-        obligation: NodePath,
-        target_domain: CheckedTargetDomainObligation,
     },
     BufferIndex {
         carrier: NodePath,
@@ -2004,12 +2029,11 @@ pub(crate) enum CheckedExpression {
         carrier: NodePath,
         root: CheckedBufferRoot,
     },
-    /// A borrow of directly stored content — a scalar, struct, or enum — which
-    /// is the address of the borrowed binding's storage [OWN-2, OWN-5].
+    /// A borrow of directly stored content, addressed by its complete typed
+    /// field/subscript path [OWN-2, OWN-5, OP-4].
     BorrowAddressed {
         carrier: NodePath,
-        binding: BindingId,
-        ty: CheckedType,
+        root: CheckedContainerRoot,
     },
     BorrowBox {
         carrier: NodePath,
@@ -2098,7 +2122,7 @@ impl CheckedExpression {
             | Self::BufferVacant { carrier, .. }
             | Self::BufferFits { carrier, .. }
             | Self::BufferIndex { carrier, .. }
-            | Self::RunIndex { carrier, .. }
+            | Self::ReadStorage { carrier, .. }
             | Self::SliceOf { carrier, .. }
             | Self::SliceIndex { carrier, .. }
             | Self::BoxNew { carrier, .. }
@@ -2148,7 +2172,7 @@ impl CheckedExpression {
             | Self::ContainerMeasure { .. }
             | Self::PostconditionResultMeasure { .. } => CheckedType::Integer(IntegerType::U64),
             Self::BufferIndex { root, .. } => root.element.ty(),
-            Self::RunIndex { element_type, .. } => *element_type,
+            Self::ReadStorage { root, .. } => root.ty,
             Self::SliceOf {
                 region,
                 element,
@@ -2169,9 +2193,8 @@ impl CheckedExpression {
             Self::BorrowBuffer { root, .. } => CheckedType::Buffer {
                 element: root.element,
             },
-            Self::BorrowAddressed { ty, .. }
-            | Self::ReborrowAddressed { ty, .. }
-            | Self::DerefAddressed { ty, .. } => *ty,
+            Self::BorrowAddressed { root, .. } => root.ty,
+            Self::ReborrowAddressed { ty, .. } | Self::DerefAddressed { ty, .. } => *ty,
             Self::BorrowBox { nominal, .. } | Self::BorrowSystemResource { nominal, .. } => {
                 CheckedType::Nominal(*nominal)
             }
@@ -2278,30 +2301,13 @@ pub(crate) struct CheckedSliceSetTarget {
     pub(crate) target_domain: CheckedTargetDomainObligation,
 }
 
-/// One element-position store into a run [BLK-3, SET-1, SET-2].
-///
-/// The offset is a logical one and its [OP-4] obligation is against `len_of`;
-/// the storage it writes is slot `(head_of + i) mod cap_of`, which the
-/// lowering computes and no source rule mentions [BLK-1].
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedRunSetTarget {
-    pub(crate) root: CheckedContainerRoot,
-    pub(crate) element_type: CheckedType,
-    pub(crate) offset: CheckedExpression,
-    pub(crate) obligation: NodePath,
-    pub(crate) target_domain: CheckedTargetDomainObligation,
-    /// [MSR-2, OWN-7] the written offset as the place relations read it: the
-    /// element this commit writes is `root[place_offset]`, and that is the
-    /// descriptor storage the kill overlaps.
-    pub(crate) place_offset: super::places::PlaceOffset,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedSetTarget {
     Place(CheckedWritablePlace),
     ArrayIndex(Box<CheckedArraySetTarget>),
     BufferIndex(Box<CheckedBufferSetTarget>),
-    RunIndex(Box<CheckedRunSetTarget>),
+    /// A typed storage path including all subscripts and terminal fields.
+    Storage(CheckedContainerRoot),
     /// [SET-1, VIEW-1] one element-position store through an exclusive view.
     SliceIndex(Box<CheckedSliceSetTarget>),
 }
@@ -2312,7 +2318,7 @@ impl CheckedSetTarget {
             Self::Place(target) => target.binding,
             Self::ArrayIndex(target) => target.binding,
             Self::BufferIndex(target) => target.root.binding,
-            Self::RunIndex(target) => target.root.binding,
+            Self::Storage(target) => target.binding,
             Self::SliceIndex(target) => target.root.binding,
         }
     }
@@ -2322,7 +2328,7 @@ impl CheckedSetTarget {
             Self::Place(target) => target.ty,
             Self::ArrayIndex(target) => target.element_type,
             Self::BufferIndex(target) => target.root.element.ty(),
-            Self::RunIndex(target) => target.element_type,
+            Self::Storage(target) => target.ty,
             Self::SliceIndex(target) => target.root.element.ty(),
         }
     }
@@ -2773,17 +2779,22 @@ pub(crate) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         | CheckedExpression::Binding { .. }
         | CheckedExpression::ArrayMeasure { .. }
         | CheckedExpression::BufferMeasure { .. }
-        | CheckedExpression::ContainerMeasure { .. }
         | CheckedExpression::PostconditionResultMeasure { .. }
         | CheckedExpression::SliceMeasure { .. }
-        | CheckedExpression::SliceOf { .. }
         | CheckedExpression::BorrowBuffer { .. }
-        | CheckedExpression::BorrowAddressed { .. }
         | CheckedExpression::BorrowBox { .. }
         | CheckedExpression::BorrowSystemResource { .. }
         | CheckedExpression::ReborrowAddressed { .. }
         | CheckedExpression::DerefAddressed { .. }
         | CheckedExpression::Project { .. } => Vec::new(),
+        CheckedExpression::BorrowAddressed { root, .. }
+        | CheckedExpression::ContainerMeasure { root, .. }
+        | CheckedExpression::ReadStorage { root, .. }
+        | CheckedExpression::SliceOf {
+            source: CheckedSliceSource::Run(root),
+            ..
+        } => root.offsets().collect(),
+        CheckedExpression::SliceOf { .. } => Vec::new(),
         CheckedExpression::UserCall { arguments, .. }
         | CheckedExpression::SystemCall { arguments, .. }
         | CheckedExpression::KernelCall { arguments, .. }
@@ -2806,7 +2817,6 @@ pub(crate) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         CheckedExpression::BufferVacant { length, .. }
         | CheckedExpression::BufferFits { length, .. } => vec![length.as_ref()],
         CheckedExpression::BufferIndex { offset, .. }
-        | CheckedExpression::RunIndex { offset, .. }
         | CheckedExpression::SliceIndex { offset, .. } => vec![offset.as_ref()],
         CheckedExpression::ConstructStruct { fields, .. }
         | CheckedExpression::ConstructEnum { fields, .. } => fields.iter().collect(),

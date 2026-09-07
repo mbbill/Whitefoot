@@ -1169,7 +1169,7 @@ extent's region is one the caller must choose, so it is written at every positio
             bindings
                 .get(&borrow.place.root)
                 .and_then(|binding| binding.state_origins.clone())
-                .map(|origins| origins.projected(&borrow.place.fields))
+                .map(|origins| origins.projected(&borrow.place.field_prefix()))
         } else if let Some(holder) = value.holder {
             bindings
                 .get(&holder)
@@ -1179,7 +1179,7 @@ extent's region is one the caller must choose, so it is written at every positio
             bindings
                 .get(&access.place.root)
                 .and_then(|binding| binding.state_origins.clone())
-                .map(|origins| origins.projected(&access.place.fields))
+                .map(|origins| origins.projected(&access.place.field_prefix()))
         } else {
             None
         };

@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use std::{collections::BTreeMap, env, fs, process::Command};
+use std::{collections::BTreeMap, env, fs};
 
 fn write_changed(path: &str, content: &str) {
     if fs::read_to_string(path).ok().as_deref() != Some(content) {
@@ -18,7 +18,9 @@ fn element_code(lanes: usize) -> (String, String, String) {
             update.push_str(&format!("      let {field} = 0_u64;\n"));
         }
         update.push_str("      region {\n        let previous = &values[at];\n");
-        consume.push_str("    region {\n      let value = &values[at];\n");
+        // FORM-8: the loop body already supplies this final borrow's region.
+        // The update's shorter explicit region remains necessary before replace.
+        consume.push_str("    let value = &values[at];\n");
     }
     for field in fields.iter().take(lanes) {
         build.push_str(&format!(
@@ -39,7 +41,7 @@ fn element_code(lanes: usize) -> (String, String, String) {
         } else {
             format!("deref(value).{field}")
         };
-        let indent = if lanes == 1 { "    " } else { "      " };
+        let indent = "    ";
         consume.push_str(&format!(
             "{indent}let product_{field} = checksum *wrap 1099511628211_u64;\n{indent}set checksum = product_{field} +wrap {value};\n"
         ));
@@ -50,7 +52,6 @@ fn element_code(lanes: usize) -> (String, String, String) {
     } else {
         build.push_str("    let entry = Wide(a: a, b: b, c: c, d: d);\n    set values = place_back(vector: move values, value: move entry);");
         update.push_str("      }\n      let entry = Wide(a: a, b: b, c: c, d: d);\n      let previous_entry = replace values[at] = move entry;");
-        consume.push_str("    }");
     }
     (build, update, consume)
 }
@@ -124,26 +125,6 @@ fn main() {
                 .replacen("define i32 @main(", "define i32 @wf_fixture_main(", 1);
             write_changed(&arguments[3], &adapted);
         }
-        Some("probe") if arguments.len() == 5 => {
-            let output = Command::new(&arguments[2])
-                .args(["--emit-llvm", &arguments[3]])
-                .output()
-                .expect("run wide-record compiler probe");
-            let diagnostic = String::from_utf8_lossy(&output.stderr);
-            if output.status.success() {
-                fs::write(&arguments[4], "supported: add wide runtime measurements\n")
-                    .expect("write capability result");
-                println!("wide-record probe: supported");
-            } else {
-                assert!(
-                    diagnostic.contains("Semantics/Unsupported")
-                        && diagnostic.contains("RegionsAndBorrows"),
-                    "unexpected wide-record result: {diagnostic}"
-                );
-                fs::write(&arguments[4], diagnostic.as_bytes()).expect("write capability result");
-                println!("wide-record probe: compiler capability unsupported (RegionsAndBorrows)");
-            }
-        }
         Some("summarize") if arguments.len() == 3 => {
             let input = fs::read_to_string(&arguments[2]).expect("read measurements");
             let mut groups: BTreeMap<(usize, usize, String, u64), Vec<f64>> = BTreeMap::new();
@@ -172,7 +153,7 @@ fn main() {
             }
         }
         _ => panic!(
-            "usage: driver generate TEMPLATE SIZE OUTPUT | adapt INPUT OUTPUT | probe COMPILER SOURCE REPORT | summarize CSV"
+            "usage: driver generate TEMPLATE SIZE OUTPUT | adapt INPUT OUTPUT | summarize CSV"
         ),
     }
 }

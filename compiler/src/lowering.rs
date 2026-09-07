@@ -230,6 +230,11 @@ pub enum IrAddressed {
         element: IrElement,
         length: u64,
     },
+    /// Inline legacy array storage reached by a checked mutation target.
+    Array {
+        element: IrFlatElement,
+        length: u64,
+    },
     /// One `Vector<'s, T>` [BLK-1]. Its descriptor is storage in its owner's
     /// frame, and a borrow of the run is the address of that descriptor, so
     /// both runs are borrowed through one path.
@@ -253,6 +258,7 @@ impl IrAddressed {
             Self::Float { width } => IrType::Float { width },
             Self::Nominal(id) => IrType::Nominal(id),
             Self::FixedVector { element, length } => IrType::FixedVector { element, length },
+            Self::Array { element, length } => IrType::Array { element, length },
             Self::Vector { element, release } => IrType::Vector { element, release },
             Self::Provider => IrType::Provider,
         }
@@ -266,12 +272,10 @@ impl IrAddressed {
             IrType::Float { width } => Self::Float { width },
             IrType::Nominal(id) => Self::Nominal(id),
             IrType::FixedVector { element, length } => Self::FixedVector { element, length },
+            IrType::Array { element, length } => Self::Array { element, length },
             IrType::Vector { element, release } => Self::Vector { element, release },
             IrType::Provider => Self::Provider,
-            IrType::Address(_)
-            | IrType::Array { .. }
-            | IrType::Buffer { .. }
-            | IrType::Slice { .. } => return None,
+            IrType::Address(_) | IrType::Buffer { .. } | IrType::Slice { .. } => return None,
         })
     }
 }
@@ -1066,6 +1070,22 @@ impl IrBoundary {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IrPlaceProjection {
+    /// A field of directly stored nominal content.
+    Field { nominal: IrNominalId, field: u32 },
+    /// An initialized run element selected by its checked logical offset.
+    RunElement {
+        offset: IrValueId,
+        target_domain: IrTargetDomainObligation,
+    },
+    /// An initialized legacy array element, without run descriptor words.
+    ArrayElement {
+        offset: IrValueId,
+        target_domain: IrTargetDomainObligation,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IrOperation {
     Constant(IrConstant),
     Call {
@@ -1120,11 +1140,6 @@ pub enum IrOperation {
         root: IrArrayRoot,
         offset: IrValueId,
         target_domain: IrTargetDomainObligation,
-    },
-    InsertArray {
-        aggregate: IrValueId,
-        index: IrValueId,
-        value: IrValueId,
     },
     BufferFill {
         length: IrValueId,
@@ -1184,16 +1199,6 @@ pub enum IrOperation {
     RunIndex {
         run: IrValueId,
         offset: IrValueId,
-        target_domain: IrTargetDomainObligation,
-    },
-    /// One discharged element-position store into a run [SET-1, SET-2,
-    /// BLK-1]: the offset is a logical one and the storage written is slot
-    /// `(head + i) mod cap`. The value is the run with that slot replaced;
-    /// the two descriptor words are untouched.
-    RunStore {
-        run: IrValueId,
-        offset: IrValueId,
-        value: IrValueId,
         target_domain: IrTargetDomainObligation,
     },
     /// [BLK-3] the run one boundary operation hands back: one store at the
@@ -1317,6 +1322,12 @@ pub enum IrOperation {
     AddressOf {
         value: IrValueId,
         referent: IrAddressed,
+    },
+    /// A typed child place of an already stable owner or borrow. This keeps
+    /// the same backing and lifetime; it does not read or copy its content.
+    ProjectAddress {
+        address: IrValueId,
+        projection: IrPlaceProjection,
     },
     Load {
         address: IrValueId,

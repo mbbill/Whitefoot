@@ -777,7 +777,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedSetTarget::Place(place) => Some(place.fields.as_slice()),
             CheckedSetTarget::ArrayIndex(_)
             | CheckedSetTarget::BufferIndex(_)
-            | CheckedSetTarget::RunIndex(_)
+            | CheckedSetTarget::Storage(_)
             | CheckedSetTarget::SliceIndex(_) => None,
         };
         let previous_origins = match (previous_whole_origins.clone(), target_fields) {

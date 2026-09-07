@@ -661,7 +661,11 @@ impl<'check> Survey<'check, '_> {
             CheckedSetTarget::Place(_) => {}
             CheckedSetTarget::ArrayIndex(target) => self.expression(&target.offset),
             CheckedSetTarget::BufferIndex(target) => self.expression(&target.offset),
-            CheckedSetTarget::RunIndex(target) => self.expression(&target.offset),
+            CheckedSetTarget::Storage(target) => {
+                for offset in target.offsets() {
+                    self.expression(offset);
+                }
+            }
             CheckedSetTarget::SliceIndex(target) => self.expression(&target.offset),
         }
     }
@@ -674,7 +678,13 @@ impl<'check> Survey<'check, '_> {
         let (root, obligation) = match target {
             CheckedSetTarget::ArrayIndex(target) => (target.binding, &target.obligation),
             CheckedSetTarget::BufferIndex(target) => (target.root.binding, &target.obligation),
-            CheckedSetTarget::RunIndex(target) => (target.root.binding, &target.obligation),
+            CheckedSetTarget::Storage(target) => {
+                let index = target.path.iter().rev().find_map(|step| match step {
+                    super::model::CheckedPlaceStep::Subscript(index) => Some(index),
+                    super::model::CheckedPlaceStep::Field(_) => None,
+                })?;
+                (target.binding, &index.obligation)
+            }
             CheckedSetTarget::SliceIndex(target) => (target.root.binding, &target.obligation),
             CheckedSetTarget::Place(_) => return None,
         };
@@ -710,7 +720,6 @@ impl<'check> Survey<'check, '_> {
     fn record_reads(&mut self, expression: &CheckedExpression) {
         let occurrence = match expression {
             CheckedExpression::Binding { binding, .. }
-            | CheckedExpression::BorrowAddressed { binding, .. }
             | CheckedExpression::BorrowBox { binding, .. }
             | CheckedExpression::BorrowSystemResource { binding, .. }
             | CheckedExpression::ReborrowAddressed { binding, .. }
@@ -727,14 +736,19 @@ impl<'check> Survey<'check, '_> {
             )),
             // A run's or a bump extent's descriptor storage is the resolved
             // place of the measured value itself [MSR-2].
-            CheckedExpression::ContainerMeasure { root, .. } => {
+            CheckedExpression::ContainerMeasure { root, .. }
+            | CheckedExpression::BorrowAddressed { root, .. } => {
                 Some((root.binding, rooted_container_place(self.places, root)))
             }
-            CheckedExpression::RunIndex {
-                root, obligation, ..
-            } => {
+            CheckedExpression::ReadStorage { root, .. } => {
                 let place = rooted_container_place(self.places, root);
-                if let Some(map) = self.proven_affine_map_at(root.binding, obligation) {
+                let index = root.path.iter().rev().find_map(|step| match step {
+                    super::model::CheckedPlaceStep::Subscript(index) => Some(index),
+                    super::model::CheckedPlaceStep::Field(_) => None,
+                });
+                if let Some(index) = index
+                    && let Some(map) = self.proven_affine_map_at(root.binding, &index.obligation)
+                {
                     self.element_reads.push(ProvenElementRead {
                         binding: root.binding,
                         place: place.clone(),

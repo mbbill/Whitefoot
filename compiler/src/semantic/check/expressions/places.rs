@@ -163,7 +163,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // leaves the referent place owning one valid value at every program
         // point, so the sole [OWN-5] exception covers this move as well.
         let mut read_out_place = borrow.place.clone();
-        read_out_place.fields.extend_from_slice(&fields);
+        read_out_place.extend_fields(&fields);
+        self.check_commit_place_live(&read_out_place, use_node, false)?;
         let read_out = !copy && options.explicit_move && self.take_commit_read_out(&read_out_place);
         if !copy && !read_out {
             if options.explicit_move {
@@ -197,7 +198,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         self.check_holder_not_suspended(&local, use_node)?;
         let mut resolved = borrow.place.clone();
-        resolved.fields.extend_from_slice(&fields);
+        resolved.extend_fields(&fields);
         self.check_loan_access(
             bindings,
             Some(declaration),
@@ -255,7 +256,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let mode = borrow.mode();
         let mut place = borrow.place.clone();
-        place.fields.extend_from_slice(&fields);
+        place.extend_fields(&fields);
         Ok(TypedExpression {
             expression,
             mode,
@@ -375,10 +376,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     consume_root: false,
                 },
                 resolved: local.borrow.map_or_else(
-                    || ResolvedPlace {
-                        root: declaration,
-                        fields: Vec::new(),
-                    },
+                    || ResolvedPlace::fields(declaration, Vec::new()),
                     |borrow| borrow.place,
                 ),
             }
@@ -446,7 +444,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ty: field.ty,
             };
             place.ty = field.ty;
-            place.resolved.fields.push(field_index);
+            place.resolved.extend_fields(&[field_index]);
         }
         Ok(place)
     }

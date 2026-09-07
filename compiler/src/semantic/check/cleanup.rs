@@ -129,8 +129,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             CheckedSetTarget::BufferIndex(target) => {
                                 self.collect_expression_release_sites(&target.offset, sites)?;
                             }
-                            CheckedSetTarget::RunIndex(target) => {
-                                self.collect_expression_release_sites(&target.offset, sites)?;
+                            CheckedSetTarget::Storage(target) => {
+                                for offset in target.offsets() {
+                                    self.collect_expression_release_sites(offset, sites)?;
+                                }
                             }
                             CheckedSetTarget::SliceIndex(target) => {
                                 self.collect_expression_release_sites(&target.offset, sites)?;
@@ -162,8 +164,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         CheckedSetTarget::BufferIndex(target) => {
                             self.collect_expression_release_sites(&target.offset, sites)?;
                         }
-                        CheckedSetTarget::RunIndex(target) => {
-                            self.collect_expression_release_sites(&target.offset, sites)?;
+                        CheckedSetTarget::Storage(target) => {
+                            for offset in target.offsets() {
+                                self.collect_expression_release_sites(offset, sites)?;
+                            }
                         }
                         CheckedSetTarget::SliceIndex(target) => {
                             self.collect_expression_release_sites(&target.offset, sites)?;
@@ -320,9 +324,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::ProjectValue { value, .. } => {
                 self.collect_expression_release_sites(value, sites)?;
             }
+            CheckedExpression::ReadStorage { root, .. } => {
+                for offset in root.offsets() {
+                    self.collect_expression_release_sites(offset, sites)?;
+                }
+            }
             CheckedExpression::ArrayIndex { offset, .. }
             | CheckedExpression::BufferIndex { offset, .. }
-            | CheckedExpression::RunIndex { offset, .. }
             | CheckedExpression::SliceIndex { offset, .. } => {
                 self.collect_expression_release_sites(offset, sites)?;
             }

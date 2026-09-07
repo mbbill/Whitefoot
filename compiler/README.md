@@ -291,6 +291,25 @@ a run execute: `set v[i] = e;` and `replace v[i] = e;` commit at the window's
 logical offset `(head_of + i) mod cap_of`, under [OP-4]'s ordinary subscript
 obligation judged at the target place and [MSR-2]'s storage-granular kill, so
 the store kills every measure of the element and none of the run's own.
+
+**Owned values and physical storage are separate.** The lowering retains typed
+field/index addresses for reads, writes and borrows of container content.
+Aggregate IR values remain independent snapshots; deterministic CFG liveness
+permits dead storage to be reused, and internal aggregate results use explicit
+destinations. An exposed address or deferred use prevents unsafe reuse. A
+mutation captures its target components before its RHS; replacement reads the
+old owner only at the subsequent commit. Pending integration of the parallel
+aggregate ABI is tracked in the container investigation; the implementation
+checkpoint is not yet a completed full-gate result.
+
+Rebinding a legacy `buffer` descriptor through a borrowed root is explicitly
+unsupported (`BorrowedBufferDescriptorMutation`). The legacy borrowed-parameter
+ABI copies that descriptor, and replacing an owning borrowed aggregate can also
+retire backing retained by a prepared target. Until descriptor-slot borrowing
+and captured-storage retention are implemented, neither path may emit code.
+Owned replacement and ordinary writes to borrowed element content remain
+supported. This is a compiler capability limit, not a source-language rejection.
+
 **There are two views now, and the exclusive one writes.** [S35] capitalizes the
 view nominals, so v0.44's `slice<'r, T>` is spelled `Slice<'r, T>` and the
 lowercase word is an ordinary identifier again; `MutSlice<'r, T>` [VIEW-1] is
@@ -299,15 +318,13 @@ the added view, formed by `mut_slice_of(&uniq p)` beside `slice_of(&p)`, and
 the view's own data pointer to the storage it views, and the descriptor is
 unchanged. [SET-1] admits a target path through a view exactly at the exclusive
 strength, so the same statement through a `Slice` is the refusal probe `p7`
-measured. **The storage has to be addressable, and an `array<T, N>` is not**: an
-array is a value here — an element commit rebuilds it and writes it back to its
-binding — so the descriptor a view of one carries points at a snapshot, and a
-write through an exclusive view of an array would reach the snapshot. That stops
-as the explicit unsupported capability `ExclusiveViewOverArray` rather than
-lowering a write nobody can observe; the shared view over an array is unaffected,
-because a live shared loan refuses every write to its origin and the snapshot and
-the array therefore agree wherever the view is readable; a `FixedVector<T, n>`
-is inline storage for the same reason and stops the same way. Exclusivity is not
+measured. **Inline runs use stable owner storage.** Their views and element
+borrows point into that storage, so a write through an exclusive view is visible
+through the owner after the loan ends. Typed field/index paths reach that same
+storage; reading an owned old value still creates an independent snapshot.
+The legacy exclusive-array view path remains an explicit unsupported capability
+`ExclusiveViewOverArray`; implementing addressable array mutation targets does
+not yet wire that separate view formation to its owner. Exclusivity is not
 a clause of its own: the formation takes the borrow
 its strength names, so a second `mut_slice_of` over one place meets the first
 view's loan and is refused there as an ordinary [OWN-5] conflict, while two
@@ -354,10 +371,10 @@ facts about it survive the call, and the write a callee performs through one is
 an element write over the view's own place [ENT-5, MSR-2], so the view's
 measures survive it and its element facts do not. A `&uniq` parameter whose
 referent is a view is admitted at a source declaration for the same reason
-[BLK-4]. What still stops is the exclusive view over an inline run
-(`ExclusiveViewOverInlineRun`), which is why a writable destination is a
-`Vector<'s, T>` taken from a store or a bump extent and never a
-`FixedVector<T, n>`.
+[BLK-4]. An inline `FixedVector<T, n>` can now supply the writable destination
+through its exclusive view, just as a store-backed `Vector<'s, T>` can. Its
+backing must remain live until every borrowed use retires; copying the view
+descriptor does not extend that lifetime.
 **One judgment does not follow a view yet, and it is the permission one.** The
 [PAR] footprint resolver reads a direct `slice_of` expression and a borrow; a
 *bound* view value resolves to no place, so an overlap pair or a staged loop

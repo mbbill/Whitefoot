@@ -109,10 +109,23 @@ fn result_run_transfer_error_and_abandonment_execute() {
     );
     assert!(!llvm.contains("call ptr @malloc"));
     assert!(!llvm.contains("call void @free"));
+    let transforms: Vec<_> = llvm
+        .lines()
+        .filter(|line| {
+            line.starts_with("define internal ") && line.contains("@wf_transform$instance$")
+        })
+        .collect();
     assert_eq!(
-        llvm.matches("define internal %wf.t").count(),
+        transforms.len(),
         3,
-        "one monomorphized transform instance per written run length"
+        "one transform instance per written run length"
+    );
+    assert!(
+        transforms.iter().all(|header| {
+            header.starts_with("define internal void ")
+                && header.contains("(ptr %wf.result, ptr %wf.arg.")
+        }),
+        "each transform takes inline input storage and a caller-owned outcome destination"
     );
     let abandon = emitted_function(&llvm, "abandon$instance$5");
     assert!(!abandon.contains("call void @wf.drop."));

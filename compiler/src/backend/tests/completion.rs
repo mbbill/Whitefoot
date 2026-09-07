@@ -982,23 +982,75 @@ fn windows_staged_ring_initializes_submission_state_before_pressure_recovery() {
     let submit = body
         .find("call void @wf__completion_file_open_at_submit")
         .expect("the source-derived batch submits an open");
+    let (submitted, routes) = body
+        .lines()
+        .find_map(|line| {
+            let (value, routes) = line.trim().split_once(" = phi i1 ")?;
+            (routes.starts_with("[ true, %")
+                && routes.contains("[ false, %completion.not_submitted.v"))
+            .then_some((value, routes))
+        })
+        .expect("the submitted and refused routes provide the slot's submission flag");
+    let refused_label = routes
+        .split_once("[ false, %")
+        .and_then(|(_, label)| label.strip_suffix(" ]"))
+        .expect("the false phi edge names the refused route");
     let refused = body
-        .find("completion.not_submitted.v")
-        .expect("a refused component name is the one route without a submission");
-    let stored = body
-        .match_indices("store i1 ")
-        .map(|(position, _)| position)
-        .collect::<Vec<_>>();
+        .find(&format!("\n{refused_label}:"))
+        .expect("the refused component route is defined");
+    let capture = format!("store i1 {submitted}, ptr ");
+    let capture_pointer = body
+        .lines()
+        .find_map(|line| line.trim().strip_prefix(&capture))
+        .expect("the joined submission flag is stored in its ring element");
+    let element_prefix = "getelementptr inbounds [2 x i1], ptr ";
+    let reservation = body
+        .lines()
+        .find_map(|line| {
+            let (pointer, operation) = line.trim().split_once(" = ")?;
+            if pointer != capture_pointer {
+                return None;
+            }
+            operation
+                .strip_prefix(element_prefix)?
+                .split_once(", i64 0, i64 ")
+                .map(|(reservation, _)| reservation)
+        })
+        .expect("submission capture addresses the planned two-slot flag reservation");
+    let mut stored = Vec::new();
+    let mut loaded = Vec::new();
+    for line in body.lines() {
+        let Some((pointer, operation)) = line.trim().split_once(" = ") else {
+            continue;
+        };
+        if !operation.starts_with(&format!("{element_prefix}{reservation}, i64 0, i64 ")) {
+            continue;
+        }
+        for (position, _) in body.match_indices("store i1 ") {
+            if body[position..]
+                .lines()
+                .next()
+                .is_some_and(|store| store.ends_with(&format!(", ptr {pointer}")))
+            {
+                stored.push(position);
+            }
+        }
+        for (position, _) in body.match_indices(&format!("load i1, ptr {pointer}\n")) {
+            loaded.push(position);
+        }
+    }
     assert_eq!(
         stored.len(),
         1,
         "one iteration owns one submission-state element:\n{body}"
     );
-    let loaded = body
-        .find("load i1, ptr ")
-        .expect("the drain reads the submission state of the slot it retires");
+    assert_eq!(
+        loaded.len(),
+        1,
+        "the drain reads this submission-state reservation exactly once:\n{body}"
+    );
     assert!(
-        submit < stored[0] && refused < stored[0] && stored[0] < loaded,
+        submit < stored[0] && refused < stored[0] && stored[0] < loaded[0],
         "both routes reach the store, and the store precedes the drain's load"
     );
     assert!(

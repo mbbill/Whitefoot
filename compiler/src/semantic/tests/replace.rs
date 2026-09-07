@@ -369,21 +369,23 @@ fn element_position_replace_accepts_an_affine_element_and_keeps_its_bounds_oblig
         let CheckedStatement::Replace { target, .. } = &main.body[3] else {
             panic!("the fourth statement must be the SET-2 element commit");
         };
-        let CheckedSetTarget::RunIndex(target) = target else {
+        let CheckedSetTarget::Storage(target) = target else {
             panic!("an element replace target retains its run root");
         };
-        let CheckedType::Nominal(element) = target.element_type else {
+        let CheckedType::Nominal(element) = target.ty else {
             panic!("the element is the affine Option instance");
         };
         assert_eq!(
             checked.data.nominals[element.0 as usize].name,
             "Option<u32>"
         );
-        assert!(!target.obligation.components().is_empty());
+        assert!(
+            matches!(target.path.as_slice(), [super::super::model::CheckedPlaceStep::Subscript(index)] if !index.obligation.components().is_empty())
+        );
         assert!(matches!(
             &main.body[5],
             CheckedStatement::Replace {
-                target: CheckedSetTarget::RunIndex(_),
+                target: CheckedSetTarget::Storage(_),
                 ..
             }
         ));

@@ -89,10 +89,30 @@ fn a_confined_arena_allocation_reads_and_releases_with_its_region() {
         "../../../../tests/conformance/cases/stor4-pos-arena-confined.wf"
     ));
     let main = emitted_function(&llvm, "main");
+    let frame = main
+        .lines()
+        .find(|line| line.contains("%wf.frame = alloca "))
+        .expect("the activation must reserve its physical frame");
     assert!(
-        main.contains("%wf.frame = alloca { [8 x i8], { ptr, i64 } }, align 8"),
+        frame.contains("[8 x i8]") && frame.ends_with(", align 8"),
         "the reservation must lay the extent out in the reserving frame"
     );
+    assert_eq!(main.matches(" = alloca ").count(), 1);
+    let provider = main
+        .lines()
+        .find(|line| line.contains("insertvalue { ptr, i64 } zeroinitializer, ptr "))
+        .expect("the provider must retain the reservation address");
+    let extent = provider
+        .split_once("zeroinitializer, ptr ")
+        .expect("provider address operand")
+        .1
+        .strip_suffix(", 0")
+        .expect("provider base field");
+    assert!(main.lines().any(|line| {
+        line.trim_start()
+            .starts_with(&format!("{extent} = getelementptr inbounds "))
+            && line.contains("ptr %wf.frame,")
+    }));
     assert!(
         !llvm.contains("@wf_arena_release"),
         "a frame-resident extent has no release action of its own"

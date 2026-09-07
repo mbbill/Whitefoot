@@ -187,6 +187,10 @@ inside the `region` block whose region it takes",
                 SemanticIssueKind::InvalidOperation,
             );
         };
+        let offsets = match &indexed {
+            CheckedIndexedPlace::Container(container) => container.offsets.clone(),
+            _ => super::CarriedOperands::default(),
+        };
         let (source, resolved) = match indexed {
             // TEMPORARY capability stop, judged after every source rejection
             // above: an array is a value with no stable address in this
@@ -202,10 +206,9 @@ inside the `region` block whose region it takes",
                     .unsupported(UnsupportedSemanticFeature::ExclusiveViewOverArray, atoms[0]);
             }
             CheckedIndexedPlace::Array(array) => {
-                let resolved = array.resolved_place().unwrap_or(ResolvedPlace {
-                    root: declaration,
-                    fields: Vec::new(),
-                });
+                let resolved = array
+                    .resolved_place()
+                    .unwrap_or(ResolvedPlace::fields(declaration, Vec::new()));
                 (
                     CheckedSliceSource::Array {
                         root: array.root,
@@ -223,15 +226,6 @@ inside the `region` block whose region it takes",
             // The requirement is submitted at this formation and is what
             // makes the viewed window one contiguous range.
             //
-            // TEMPORARY capability stop for the *inline* run at exclusive
-            // strength, judged after every source rejection above and for the
-            // reason the array's own stop states: a `FixedVector<T, n>` is a
-            // value whose slots travel with it, so the descriptor a view of
-            // one carries points at a snapshot. The shared view is
-            // unaffected — a live shared loan refuses every write to its
-            // origin, so the snapshot and the run agree wherever the view is
-            // readable — and the store-resident run is unaffected at either
-            // strength.
             CheckedIndexedPlace::Container(container) => {
                 let Some(measured) = container.root.measured() else {
                     return self.issue_node(
@@ -245,12 +239,6 @@ inside the `region` block whose region it takes",
                         SemanticRule::Op1,
                         node,
                         SemanticIssueKind::InvalidOperation,
-                    );
-                }
-                if measured == MeasuredKind::FixedVector && strength == LoanStrength::Exclusive {
-                    return self.unsupported(
-                        UnsupportedSemanticFeature::ExclusiveViewOverInlineRun,
-                        atoms[0],
                     );
                 }
                 let resolved = container.resolved.clone();
@@ -267,11 +255,12 @@ inside the `region` block whose region it takes",
         let origin = owner.map_or(CheckedSliceOrigin::ImmutableConst, |_| {
             CheckedSliceOrigin::SourcePlace {
                 root: resolved.root,
-                fields: resolved.fields.clone(),
+                path: resolved.path.clone(),
                 origin_region: None,
             }
         });
         let origins = vec![origin];
+        self.check_commit_place_live(&resolved, borrow, false)?;
         // [PROV-3] use 1: the formation's own access to the origin is the
         // access the loan's strength names, so a second exclusive view of one
         // place meets the first loan here and is the ordinary [OWN-5]
@@ -280,7 +269,7 @@ inside the `region` block whose region it takes",
             LoanStrength::Shared => AccessKind::SharedBorrow,
             LoanStrength::Exclusive => AccessKind::UniqueBorrow,
         };
-        let accesses = if let Some(owner) = owner {
+        let mut accesses = if let Some(owner) = owner {
             self.check_loan_access(bindings, None, &resolved, taken, borrow)?;
             bindings
                 .get_mut(&owner)
@@ -300,6 +289,7 @@ inside the `region` block whose region it takes",
         } else {
             Vec::new()
         };
+        accesses.extend(offsets.accesses);
         Ok(TypedExpression {
             expression: CheckedExpression::SliceOf {
                 carrier: self.tree.path(node)?.clone(),
@@ -314,7 +304,7 @@ inside the `region` block whose region it takes",
             slice: Some(SliceInfo { region, origins }),
             holder: None,
             reference_value: false,
-            effects: EffectSet::NONE,
+            effects: offsets.effects,
             accesses,
         })
     }
@@ -447,10 +437,7 @@ region outlives; name that region, or one it outlives, on this borrow"
         let Some(parent) = local.slice.clone() else {
             return Ok(None);
         };
-        let holder_place = ResolvedPlace {
-            root: declaration,
-            fields: Vec::new(),
-        };
+        let holder_place = ResolvedPlace::fields(declaration, Vec::new());
         self.check_loan_access(
             bindings,
             Some(declaration),
@@ -618,10 +605,7 @@ take the view in a region it outlives"
         let CheckedType::Array { element, length } = content else {
             return self.unsupported(UnsupportedSemanticFeature::CompositeValues, place_node);
         };
-        let resolved = ResolvedPlace {
-            root: declaration,
-            fields: Vec::new(),
-        };
+        let resolved = ResolvedPlace::fields(declaration, Vec::new());
         let taken = match strength {
             LoanStrength::Shared => AccessKind::SharedBorrow,
             LoanStrength::Exclusive => AccessKind::UniqueBorrow,
@@ -641,7 +625,7 @@ take the view in a region it outlives"
         // function owns, so the formation carries no boundary effect.
         let origins = vec![CheckedSliceOrigin::SourcePlace {
             root: declaration,
-            fields: Vec::new(),
+            path: Vec::new(),
             origin_region: None,
         }];
         Ok(TypedExpression {

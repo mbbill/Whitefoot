@@ -278,7 +278,7 @@ fn compiler_independent_mutable_array_checksum_executes() {
 }
 
 #[test]
-fn nested_struct_run_updates_rebuild_every_aggregate_layer_after_the_rhs() {
+fn nested_struct_run_update_uses_the_element_address_prepared_before_the_rhs() {
     let source = br#"struct Inner {
   values: FixedVector<u8, 2>;
   sibling: u16;
@@ -323,11 +323,33 @@ command fn main() -> status: own ExitStatus pure {
         !main[..rhs].contains("call void @wf_trap"),
         "no bounds trap edge precedes the RHS"
     );
-    let rebuild = main[rhs..]
-        .find("insertvalue %wf.t")
-        .map(|offset| rhs + offset)
-        .expect("projected update must rebuild its enclosing structs");
-    assert!(rhs < rebuild);
+    assert_eq!(main.matches("call i8 @wf_replacement").count(), 1);
+    let replacement = main[..rhs]
+        .lines()
+        .next_back()
+        .expect("RHS result definition")
+        .trim()
+        .strip_suffix(" =")
+        .expect("RHS assigns its result");
+    let store_text = format!("store i8 {replacement}, ptr ");
+    let store = main
+        .find(&store_text)
+        .expect("one element receives the RHS value");
+    assert_eq!(main.matches(&store_text).count(), 1);
+    let address = main[store..]
+        .lines()
+        .next()
+        .expect("element store")
+        .strip_prefix(&store_text)
+        .expect("element address operand");
+    let prepared = main
+        .find(&format!("{address} = getelementptr "))
+        .expect("the complete element address is prepared once");
+    assert!(prepared < rhs && rhs < store);
+    assert!(
+        !main[rhs..store].contains("store %wf.t"),
+        "the element write must not rebuild its enclosing structs"
+    );
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());

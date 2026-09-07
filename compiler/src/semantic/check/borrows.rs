@@ -8,9 +8,10 @@ use crate::{
 };
 
 use super::super::model::{
-    CheckedBufferRoot, CheckedExpression, CheckedMode, CheckedNominalKind, CheckedSliceOrigin,
-    CheckedStatePath, CheckedType, LoanStrength,
+    CheckedBufferRoot, CheckedContainerRoot, CheckedExpression, CheckedMode, CheckedNominalKind,
+    CheckedPlaceStep, CheckedSliceOrigin, CheckedStatePath, CheckedType, LoanStrength,
 };
+use super::super::places::{PlaceStep, paths_diverge};
 use super::linearity::LinearityClass;
 use super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, ParameterSignature,
@@ -127,7 +128,33 @@ const OWN6_HOLDER: &str = "reborrow only a parameter or let-bound holder, take `
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct ResolvedPlace {
     pub(super) root: DeclarationId,
-    pub(super) fields: Vec<u32>,
+    pub(super) path: Vec<PlaceStep>,
+}
+
+impl ResolvedPlace {
+    pub(super) fn fields(root: DeclarationId, fields: Vec<u32>) -> Self {
+        Self {
+            root,
+            path: fields.into_iter().map(PlaceStep::Field).collect(),
+        }
+    }
+
+    pub(super) fn extend_fields(&mut self, fields: &[u32]) {
+        self.path
+            .extend(fields.iter().copied().map(PlaceStep::Field));
+    }
+
+    /// The source-expressible prefix used by state/effect contracts, whose
+    /// grammar has fields but no element selectors [EFF-1].
+    pub(super) fn field_prefix(&self) -> Vec<u32> {
+        self.path
+            .iter()
+            .map_while(|step| match step {
+                PlaceStep::Field(field) => Some(*field),
+                PlaceStep::Subscript(_) => None,
+            })
+            .collect()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -252,12 +279,12 @@ impl SliceInfo {
             .filter_map(|origin| match origin {
                 CheckedSliceOrigin::SourcePlace {
                     root,
-                    fields,
+                    path,
                     origin_region,
                 } => Some((
                     ResolvedPlace {
                         root: *root,
-                        fields: fields.clone(),
+                        path: path.clone(),
                     },
                     *origin_region,
                 )),
@@ -270,14 +297,13 @@ impl SliceInfo {
         let mut places = Vec::new();
         for origin in &self.origins {
             let place = match origin {
-                CheckedSliceOrigin::SourcePlace { root, fields, .. } => Some(ResolvedPlace {
+                CheckedSliceOrigin::SourcePlace { root, path, .. } => Some(ResolvedPlace {
                     root: *root,
-                    fields: fields.clone(),
+                    path: path.clone(),
                 }),
-                CheckedSliceOrigin::FormalSlice { parameter, .. } => Some(ResolvedPlace {
-                    root: *parameter,
-                    fields: Vec::new(),
-                }),
+                CheckedSliceOrigin::FormalSlice { parameter, .. } => {
+                    Some(ResolvedPlace::fields(*parameter, Vec::new()))
+                }
                 CheckedSliceOrigin::ImmutableConst => None,
             };
             if let Some(place) = place
@@ -311,7 +337,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .map(|binding| binding.ty)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let mut fields = Vec::new();
-        for field in &place.fields {
+        for field in place.field_prefix() {
             let CheckedType::Nominal(nominal) = ty else {
                 break;
             };
@@ -322,9 +348,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 break;
             };
             let selected = declared_fields
-                .get(*field as usize)
+                .get(field as usize)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            fields.push(*field);
+            fields.push(field);
             ty = selected.ty;
         }
         Ok(CheckedStatePath {
@@ -903,10 +929,7 @@ absent when it writes none",
         Some(BorrowInfo {
             kind,
             region,
-            place: ResolvedPlace {
-                root: parameter.declaration,
-                fields: Vec::new(),
-            },
+            place: ResolvedPlace::fields(parameter.declaration, Vec::new()),
             origin_region: Some(region),
         })
     }
@@ -960,13 +983,6 @@ inside the `region` block whose region it takes",
             .tree
             .first_child_with(place_node, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        // A borrow of a subscripted place views one storage element; this
-        // version's borrows view whole bindings and field projections only.
-        for suffix in self.tree.children_with(place_node, Production::Psuffix)? {
-            if self.subscript_offset(suffix)?.is_some() {
-                return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
-            }
-        }
         if self.has_fixed(pbase, crate::FixedTerminal::Deref)? {
             // [OWN-14] defines a reborrow form by its root binding's *mode*,
             // not by the `deref` spelling: only a place rooted at a borrow
@@ -1053,11 +1069,15 @@ inside the `region` block whose region it takes",
             );
         }
         let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
-        let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
+        let (path, ty, offsets) =
+            self.resolve_storage_path(&suffixes, local.ty, bindings, function, loop_depth, true)?;
         let place = ResolvedPlace {
             root: declaration,
-            fields: fields.clone(),
+            path: path.iter().map(CheckedPlaceStep::place_step).collect(),
         };
+        let fields = place.field_prefix();
+        let only_fields = fields.len() == path.len();
+        self.check_commit_place_live(&place, node, false)?;
         self.check_loan_access(
             bindings,
             None,
@@ -1076,7 +1096,7 @@ inside the `region` block whose region it takes",
         };
         let slice = local.slice.clone();
         let expression = match ty {
-            CheckedType::Buffer { element } => CheckedExpression::BorrowBuffer {
+            CheckedType::Buffer { element } if only_fields => CheckedExpression::BorrowBuffer {
                 carrier: self.tree.path(carrier)?.clone(),
                 root: CheckedBufferRoot {
                     binding: local.binding,
@@ -1085,7 +1105,7 @@ inside the `region` block whose region it takes",
                 },
             },
             CheckedType::Nominal(nominal)
-                if fields.is_empty()
+                if path.is_empty()
                     && matches!(self.nominal(nominal)?.kind, CheckedNominalKind::Box { .. }) =>
             {
                 CheckedExpression::BorrowBox {
@@ -1102,10 +1122,11 @@ inside the `region` block whose region it takes",
             // decides two loans on disjoint fields exactly as it does for a
             // source struct.
             CheckedType::Nominal(nominal)
-                if matches!(
-                    self.nominal(nominal)?.kind,
-                    CheckedNominalKind::SystemResource { .. }
-                ) =>
+                if only_fields
+                    && matches!(
+                        self.nominal(nominal)?.kind,
+                        CheckedNominalKind::SystemResource { .. }
+                    ) =>
             {
                 CheckedExpression::BorrowSystemResource {
                     carrier: self.tree.path(carrier)?.clone(),
@@ -1115,7 +1136,7 @@ inside the `region` block whose region it takes",
                     nominal,
                 }
             }
-            CheckedType::Slice { .. } if fields.is_empty() => CheckedExpression::Binding {
+            CheckedType::Slice { .. } if path.is_empty() => CheckedExpression::Binding {
                 carrier: self.tree.path(carrier)?.clone(),
                 binding: local.binding,
                 state_origins: local.state_origins.clone(),
@@ -1126,13 +1147,14 @@ inside the `region` block whose region it takes",
                     .unwrap_or_default(),
                 consume_root: false,
             },
-            _ if fields.is_empty() && self.borrow_addresses_storage(ty)? => {
-                CheckedExpression::BorrowAddressed {
-                    carrier: self.tree.path(carrier)?.clone(),
+            _ if self.borrow_addresses_storage(ty)? => CheckedExpression::BorrowAddressed {
+                carrier: self.tree.path(carrier)?.clone(),
+                root: CheckedContainerRoot {
                     binding: local.binding,
+                    path,
                     ty,
-                }
-            }
+                },
+            },
             _ => {
                 return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
             }
@@ -1146,8 +1168,8 @@ inside the `region` block whose region it takes",
             // A `borrow_expr` is a reference value, never the referent
             // [TYPE-7, GRAM-5].
             reference_value: true,
-            effects: EffectSet::NONE,
-            accesses: Vec::new(),
+            effects: offsets.effects,
+            accesses: offsets.accesses,
         })
     }
 
@@ -1473,7 +1495,7 @@ and name it on the returned reborrow"
         let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
         let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
         let mut place = parent.place.clone();
-        place.fields.extend_from_slice(&fields);
+        place.extend_fields(&fields);
         self.check_loan_access(
             bindings,
             Some(holder),
@@ -1888,8 +1910,7 @@ and name it on the returned reborrow"
             {
                 let suspended_ancestor = local.suspended
                     && through_place.is_some_and(|child| {
-                        child.root == loan.place.root
-                            && child.fields.starts_with(&loan.place.fields)
+                        child.root == loan.place.root && child.path.starts_with(&loan.place.path)
                     });
                 let conflicts = match access {
                     AccessKind::Read => loan.kind == BorrowKind::Unique,
@@ -2182,6 +2203,5 @@ and name it on the returned reborrow"
 }
 
 pub(super) fn places_overlap(left: &ResolvedPlace, right: &ResolvedPlace) -> bool {
-    left.root == right.root
-        && (left.fields.starts_with(&right.fields) || right.fields.starts_with(&left.fields))
+    left.root == right.root && !paths_diverge(&left.path, &right.path)
 }

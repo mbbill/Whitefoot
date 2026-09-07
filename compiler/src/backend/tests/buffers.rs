@@ -619,14 +619,32 @@ fn compiler_independent_borrowed_pool_tree_executes() {
     let build = emitted_function(&llvm, "build");
     let checksum = emitted_function(&llvm, "checksum");
     let main = emitted_function(&llvm, "main");
-    // B7c4b-1: [BLK-4] refuses a `&uniq` whose referent reaches a run, so the
-    // pool is lent as two views and a scalar borrow rather than as one struct;
-    // each helper therefore takes two descriptors by value where it took one
-    // struct pointer.
-    assert!(build.starts_with("define internal %wf.t4 @wf_build({ ptr, i64 } "));
-    assert!(build.contains(", i32 "));
-    assert!(checksum.starts_with("define internal %wf.t4 @wf_checksum({ ptr, i64 } "));
-    assert!(checksum.contains(", i64 "));
+    // The case lends the pool as two view descriptors and a scalar borrow.
+    // The view arguments remain descriptors, while the aggregate outcome is
+    // written into caller-owned result storage.
+    assert!(build.starts_with("define internal void @wf_build(ptr %wf.result, "));
+    assert!(checksum.starts_with("define internal void @wf_checksum(ptr %wf.result, "));
+    for function in [build, checksum] {
+        let header = function.lines().next().expect("helper signature");
+        assert_eq!(header.matches("{ ptr, i64 }").count(), 2);
+        assert!(function.lines().any(|line| {
+            line.trim_start().starts_with("store %wf.t") && line.ends_with(", ptr %wf.result")
+        }));
+    }
+    assert!(
+        build
+            .lines()
+            .next()
+            .expect("build signature")
+            .contains(", i32 ")
+    );
+    assert!(
+        checksum
+            .lines()
+            .next()
+            .expect("checksum signature")
+            .contains(", i64 ")
+    );
     assert!(!build.contains("call void @free"));
     assert!(!checksum.contains("call void @free"));
     // Bounds and arithmetic failures are typed results rather than written proofs,
@@ -723,9 +741,10 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     let llvm = compile(source);
     let update = emitted_function(&llvm, "update");
-    // The length read projects the field once for the explicit control; the
-    // target projects it once more at the store, with no language trap.
-    assert_eq!(update.matches("extractvalue %wf.t0").count(), 2);
+    // The length read projects the field once for the explicit control. The
+    // target captures that field's descriptor once before the RHS, and the
+    // store uses the captured descriptor without rereading its parent.
+    assert_eq!(update.matches("getelementptr inbounds %wf.t0,").count(), 2);
     let guard = update
         .find("icmp ult i64")
         .expect("the explicit control must test the projected buffer length");
@@ -735,7 +754,18 @@ command fn main() -> status: own ExitStatus pure {
     let store = update
         .find("store i16")
         .expect("the target must receive one store");
-    assert!(guard < rhs && rhs < store);
+    assert_eq!(update.matches("call i16 @wf_replacement").count(), 1);
+    let captured = update
+        .rfind(" = load { ptr, i64 }, ptr ")
+        .expect("the projected buffer descriptor must be captured");
+    let descriptor = update[..captured]
+        .lines()
+        .next_back()
+        .expect("descriptor definition")
+        .trim();
+    assert!(guard < captured && captured < rhs && rhs < store);
+    assert!(update[rhs..store].contains(&format!("extractvalue {{ ptr, i64 }} {descriptor}, 0")));
+    assert!(!update[rhs..store].contains("load { ptr, i64 }"));
     assert!(!update.contains("call void @wf_trap"));
 
     let output = compile_and_run(&llvm);

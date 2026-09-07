@@ -58,6 +58,7 @@ use std::fmt::Write;
 
 use super::{BackendFailure, FunctionEmitter, llvm_type, source_symbol, value_name};
 use super::{Qualification, TargetLayout};
+use crate::backend::storage::is_stored_aggregate;
 use crate::{
     IrCompletionStep, IrFunction, IrInstruction, IrOperation, IrProgram, IrSynthesis, IrType,
     IrValueId,
@@ -465,17 +466,28 @@ impl FunctionEmitter<'_, '_> {
         }
         let mut field_types = Vec::with_capacity(arguments.len() + 1);
         let mut operands = Vec::with_capacity(arguments.len());
+        let mut call_arguments = Vec::with_capacity(arguments.len());
+        let mut indirect_fields = Vec::with_capacity(arguments.len() + 1);
         for (argument, (_, parameter_type)) in arguments.iter().zip(target.parameters()) {
             if self.value_type(*argument) != Some(*parameter_type) {
                 return Err(BackendFailure::InvalidIr);
             }
             let parameter = llvm_type(self.program, *parameter_type)?;
-            operands.push(format!("{parameter} {}", self.value_name(*argument)));
+            let indirect = is_stored_aggregate(self.program, *parameter_type)?;
+            let operand = self.value_operand(*argument)?;
+            operands.push(format!("{parameter} {operand}"));
+            call_arguments.push(if indirect {
+                format!("ptr {}", self.value_place(*argument)?)
+            } else {
+                format!("{parameter} {operand}")
+            });
             field_types.push(parameter);
+            indirect_fields.push(indirect);
         }
         let result_type = llvm_type(self.program, ty)?;
         let result_field = field_types.len();
         field_types.push(result_type.clone());
+        indirect_fields.push(is_stored_aggregate(self.program, ty)?);
         let frame_type = format!("{{ {} }}", field_types.join(", "));
         let frame_layout = self
             .ordinary_lane_frames
@@ -485,7 +497,7 @@ impl FunctionEmitter<'_, '_> {
 
         let callee = source_symbol(target.name());
         let thunk = self.parallel.register(|symbol| {
-            thunk_definition(symbol, &frame_type, &field_types, &callee, &result_type)
+            thunk_definition(symbol, &frame_type, &field_types, &indirect_fields, &callee, &result_type)
         })?;
 
         // Target layout already computed the exact complete aggregate before
@@ -521,7 +533,7 @@ impl FunctionEmitter<'_, '_> {
             frame,
             result_field,
             callee,
-            arguments: operands.join(", "),
+            arguments: call_arguments.join(", "),
         }));
         Ok(())
     }
@@ -575,13 +587,7 @@ impl FunctionEmitter<'_, '_> {
             &rendered,
             plan.slots,
         )?;
-        writeln!(
-            self.output,
-            "  store {rendered} {}, ptr {element}",
-            self.value_name(value)
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        Ok(())
+        self.store_value_at(value, &element)
     }
 
     /// Hands the staged call of a driven [PAR-3] loop to a compute lane.
@@ -618,17 +624,26 @@ impl FunctionEmitter<'_, '_> {
             return Err(BackendFailure::InvalidIr);
         }
         let mut operands = Vec::with_capacity(arguments.len());
+        let mut call_arguments = Vec::with_capacity(arguments.len());
+        let mut indirect_fields = Vec::with_capacity(arguments.len() + 1);
         for (argument, (_, parameter_type)) in arguments.iter().zip(target.parameters()) {
             if self.value_type(*argument) != Some(*parameter_type) {
                 return Err(BackendFailure::InvalidIr);
             }
-            operands.push(format!(
-                "{} {}",
-                llvm_type(self.program, *parameter_type)?,
-                self.value_name(*argument)
-            ));
+            let parameter = llvm_type(self.program, *parameter_type)?;
+            let operand = self.value_operand(*argument)?;
+            let indirect = is_stored_aggregate(self.program, *parameter_type)?;
+            operands.push(format!("{parameter} {operand}"));
+            call_arguments.push(if indirect {
+                format!("ptr {}", self.value_place(*argument)?)
+            } else {
+                format!("{parameter} {operand}")
+            });
+            indirect_fields.push(indirect);
         }
-        let rendered_arguments = operands.join(", ");
+        let rendered_arguments = call_arguments.join(", ");
+        let stored_result = is_stored_aggregate(self.program, ty)?;
+        indirect_fields.push(stored_result);
         let result_type = plan.result_llvm.clone();
         let answer = self.staged_ring_element(
             super::FunctionSlot::StagedResult(result),
@@ -637,6 +652,11 @@ impl FunctionEmitter<'_, '_> {
         )?;
         let callee = plan.callee.clone();
         let Some(frame_bytes) = plan.frame_bytes else {
+            if stored_result {
+                call_arguments.insert(0, format!("ptr {answer}"));
+                return writeln!(self.output, "  call void @{callee}({})", call_arguments.join(", "))
+                    .map_err(|_| BackendFailure::TextEmission);
+            }
             let inline = format!("%{}", self.next_temporary()?);
             writeln!(
                 self.output,
@@ -651,6 +671,7 @@ impl FunctionEmitter<'_, '_> {
                 symbol,
                 &plan.frame_type,
                 &plan.field_types,
+                &indirect_fields,
                 &callee,
                 &result_type,
             )
@@ -681,13 +702,18 @@ impl FunctionEmitter<'_, '_> {
             .map_err(|_| BackendFailure::TextEmission)?;
         }
         let refused = format!("%{}", self.next_temporary()?);
+        let fallback = if stored_result {
+            call_arguments.insert(0, format!("ptr {answer}"));
+            format!("call void @{callee}({})", call_arguments.join(", "))
+        } else {
+            format!("{refused} = call {result_type} @{callee}({rendered_arguments})\n  store {result_type} {refused}, ptr {answer}")
+        };
         writeln!(
             self.output,
             "  call void @wf__par_publish(ptr {frame}, ptr {thunk})\n  \
              br label %{offered}\n\
              {inline}:\n  \
-             {refused} = call {result_type} @{callee}({rendered_arguments})\n  \
-             store {result_type} {refused}, ptr {answer}\n  \
+             {fallback}\n  \
              br label %{offered}\n\
              {offered}:"
         )
@@ -997,6 +1023,7 @@ fn thunk_definition(
     symbol: &str,
     frame_type: &str,
     field_types: &[String],
+    indirect_fields: &[bool],
     callee: &str,
     result_type: &str,
 ) -> String {
@@ -1005,11 +1032,26 @@ fn thunk_definition(
     for (index, field_type) in field_types.iter().enumerate().take(field_types.len() - 1) {
         let _ = write!(
             body,
-            "  %p{index} = getelementptr inbounds {frame_type}, ptr %frame, i32 0, i32 {index}\n  %a{index} = load {field_type}, ptr %p{index}\n"
+            "  %p{index} = getelementptr inbounds {frame_type}, ptr %frame, i32 0, i32 {index}\n"
         );
-        rendered.push(format!("{field_type} %a{index}"));
+        if indirect_fields[index] {
+            // The field still owns the complete argument payload. The callee
+            // snapshots this content into its own activation before mutation.
+            rendered.push(format!("ptr %p{index}"));
+        } else {
+            let _ = writeln!(body, "  %a{index} = load {field_type}, ptr %p{index}");
+            rendered.push(format!("{field_type} %a{index}"));
+        }
     }
     let field = field_types.len() - 1;
+    if indirect_fields[field] {
+        // Construct into the same result field the existing join path reads.
+        // No pointer to worker-local or released storage becomes the result.
+        let _ = write!(body,
+            "  %slot = getelementptr inbounds {frame_type}, ptr %frame, i32 0, i32 {field}\n  call void @{callee}(ptr %slot{}{})\n  ret void\n}}\n\n",
+            if rendered.is_empty() { "" } else { ", " }, rendered.join(", "));
+        return body;
+    }
     let _ = write!(
         body,
         "  %result = call {result_type} @{callee}({})\n  %slot = getelementptr inbounds {frame_type}, ptr %frame, i32 0, i32 {field}\n  store {result_type} %result, ptr %slot\n  ret void\n}}\n\n",

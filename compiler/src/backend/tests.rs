@@ -23,6 +23,7 @@ mod integer_extended;
 mod integer_negation;
 mod loop_split;
 mod options;
+mod owned_places;
 mod parallel;
 mod propagation;
 mod reborrows;
@@ -711,6 +712,7 @@ command fn main() -> status: own ExitStatus pure {
   let flag = On();
   match flag {
     Off() => {
+      return exit_status(code: 1_u8);
     }
     On() => {
     }
@@ -718,19 +720,54 @@ command fn main() -> status: own ExitStatus pure {
   let payload = Value(number: 42_i32);
   match payload {
     Empty() => {
+      return exit_status(code: 2_u8);
     }
     Value(number: value) => {
+      if value != 42_i32 {
+        return exit_status(code: 3_u8);
+      }
     }
   }
   return exit_status(code: 0_u8);
 }
 "#;
     let llvm = emit(source);
+    let main = emitted_function(&llvm, "main");
     assert!(llvm.contains("switch i1"));
     assert!(llvm.contains("switch i32"));
-    assert!(llvm.contains("insertvalue %wf.t1 zeroinitializer, i32 1, 0"));
+    let payload = main
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("store %wf.t1 zeroinitializer, ptr ")
+        })
+        .expect("the payload enum starts in initialized typed destination storage");
+    for field in [0, 1] {
+        let projection =
+            format!("getelementptr inbounds %wf.t1, ptr {payload}, i32 0, i32 {field}");
+        let address = main
+            .lines()
+            .find_map(|line| {
+                let (address, operation) = line.trim().split_once(" = ")?;
+                (operation == projection).then_some(address)
+            })
+            .expect("the enum destination exposes its tag and selected payload fields");
+        let stored = main
+            .lines()
+            .find(|line| {
+                line.trim().starts_with("store i32 ") && line.ends_with(&format!(", ptr {address}"))
+            })
+            .expect("the tag and payload are both stored in that destination");
+        if field == 0 {
+            assert_eq!(stored.trim(), format!("store i32 1, ptr {address}"));
+        }
+    }
     assert!(llvm.contains("call void @abort()"));
     assert!(!llvm.contains("%wf.t0 = type"));
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
 }
 
 #[test]
@@ -866,8 +903,36 @@ command fn main() -> status: own ExitStatus pure {
     let llvm = emit(source);
     let main = emitted_function(&llvm, "main");
     assert!(main.contains(" = phi i32 "));
-    assert!(main.contains(" = insertvalue %wf.t1"));
-    assert!(main.contains(" = insertvalue %wf.t0"));
+    assert!(main.contains("store %wf.t1 zeroinitializer, ptr "));
+    assert!(main.contains("store %wf.t0 zeroinitializer, ptr "));
+    let mut value_addresses = Vec::new();
+    for line in main.lines() {
+        let Some((address, operation)) = line.trim().split_once(" = ") else {
+            continue;
+        };
+        let selects_value = operation.starts_with("getelementptr inbounds %wf.t0, ptr ")
+            && operation.ends_with(", i32 0, i32 0");
+        let aliases_value = operation
+            .strip_prefix("getelementptr i8, ptr ")
+            .and_then(|tail| tail.strip_suffix(", i64 0"))
+            .is_some_and(|base| value_addresses.contains(&base));
+        if selects_value || aliases_value {
+            value_addresses.push(address);
+        }
+    }
+    let value_stores = main
+        .lines()
+        .filter(|line| {
+            line.trim().starts_with("store i32 ")
+                && line
+                    .split_once(", ptr ")
+                    .is_some_and(|(_, address)| value_addresses.contains(&address))
+        })
+        .count();
+    assert_eq!(
+        value_stores, 3,
+        "the Inner.value constructor and both assignment branches store their scalar field"
+    );
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());

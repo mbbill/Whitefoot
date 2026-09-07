@@ -60,6 +60,14 @@
   release order. Acquire backing first in source when allocation-first construction
   is required; do not hoist an allocation across observable initialization just to
   obtain destination passing. Retain every partial-construction responsibility.
+- Capture mutation targets before the RHS, but read the displaced old owner at
+  the subsequent replace commit. An address's storage must survive RHS effects;
+  a live root binding alone is insufficient if a descriptor replacement can
+  retire its backing. The legacy borrowed-buffer path explicitly lacks that
+  capability; do not turn this implementation limit into a source rejection.
+- On phi edges, snapshot incoming values before cleanup and write coalesced
+  destinations after cleanup. The destination can share a predecessor owner's
+  storage through another edge without owning it before that owner's final read.
 - A published/borrowed address lasts through its actual use, including staged join
   return, result consumption, and corresponding retirement. DONE is not reuse
   authority. The runtime interface stays opaque; no private slot size or worker

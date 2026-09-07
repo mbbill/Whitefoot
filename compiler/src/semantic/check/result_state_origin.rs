@@ -250,7 +250,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                         CheckedSetTarget::Place(_)
                         | CheckedSetTarget::ArrayIndex(_)
                         | CheckedSetTarget::BufferIndex(_)
-                        | CheckedSetTarget::RunIndex(_)
+                        | CheckedSetTarget::Storage(_)
                         | CheckedSetTarget::SliceIndex(_) => current,
                     };
                     environment.insert(binding, updated);
@@ -302,7 +302,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                     CheckedSetTarget::Place(_)
                     | CheckedSetTarget::ArrayIndex(_)
                     | CheckedSetTarget::BufferIndex(_)
-                    | CheckedSetTarget::RunIndex(_)
+                    | CheckedSetTarget::Storage(_)
                     | CheckedSetTarget::SliceIndex(_) => current,
                 };
                 environment.insert(binding, updated);
@@ -339,7 +339,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                     CheckedSetTarget::Place(_)
                     | CheckedSetTarget::ArrayIndex(_)
                     | CheckedSetTarget::BufferIndex(_)
-                    | CheckedSetTarget::RunIndex(_)
+                    | CheckedSetTarget::Storage(_)
                     | CheckedSetTarget::SliceIndex(_) => previous,
                 };
                 environment.insert(target_binding, updated);
@@ -517,13 +517,29 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
         let origin = match expression {
             CheckedExpression::Binding { binding, .. }
             | CheckedExpression::BorrowSystemResource { binding, .. }
-            | CheckedExpression::BorrowAddressed { binding, .. }
             | CheckedExpression::BorrowBox { binding, .. }
             | CheckedExpression::ReborrowAddressed { binding, .. }
             | CheckedExpression::DerefAddressed { binding, .. } => environment
                 .get(binding)
                 .cloned()
                 .unwrap_or(OriginSet::Unknown),
+            CheckedExpression::BorrowAddressed { root, .. } => {
+                let fields = root
+                    .path
+                    .iter()
+                    .map(|step| match step {
+                        crate::semantic::model::CheckedPlaceStep::Field(field) => Some(*field),
+                        crate::semantic::model::CheckedPlaceStep::Subscript(_) => None,
+                    })
+                    .collect::<Option<Vec<_>>>();
+                fields.map_or(OriginSet::Unknown, |fields| {
+                    environment
+                        .get(&root.binding)
+                        .cloned()
+                        .unwrap_or(OriginSet::Unknown)
+                        .projected(&fields)
+                })
+            }
             CheckedExpression::Project {
                 binding, fields, ..
             } => environment

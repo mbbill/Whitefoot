@@ -16,6 +16,7 @@ mod floor;
 mod integer;
 mod operations;
 mod parallel;
+mod places;
 mod reinterpret;
 mod runs;
 mod slice;
@@ -27,6 +28,7 @@ use std::fmt::Write;
 use super::qualification::{
     Qualification, QualificationFailure, SystemTarget, qualified_representation, qualify_program,
 };
+use super::storage::{FunctionStoragePlan, is_stored_aggregate, operation_operands};
 use super::target::{
     TargetAggregateLayout, TargetFramePlan, TargetFrameSlot, TargetLayout, TargetLayoutFailure,
     TargetStorageType, parallel_lane_frame_layout, plan_target_frame, validate_program,
@@ -661,19 +663,14 @@ enum IntrinsicDeclaration {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum FunctionSlot {
-    /// The frame slot one run operation writes its aggregate through
-    /// [BLK-1]: a frame-resident run's slots are inline, so indexing one at a
-    /// computed offset goes through storage.
-    RunStorage(IrValueId),
+    /// One immutable aggregate value's planned storage, shared only after
+    /// complete control-flow interference checks.
+    OwnedValue(usize),
     /// The bump extent one [BLK-2] reservation lays out in the reserving
     /// activation's own frame, at the byte extent and alignment its two type
     /// constants fix.
     ExtentStorage(IrValueId),
-    ArrayFillValue(IrValueId),
     ArrayFillIndex(IrValueId),
-    ArrayRoot(IrValueId),
-    InsertArray(IrValueId),
-    SliceRoot(IrValueId),
     Address(IrValueId),
     ArenaList(IrValueId),
     Completion(IrValueId, CompletionSlot),
@@ -722,18 +719,43 @@ struct FunctionFramePlan {
     ordered: Vec<FunctionSlot>,
 }
 
+/// Storage selected before emission, including values that survive suspension.
+struct FunctionFrameContents<'plan> {
+    completion_steps: &'plan HashMap<IrValueId, IrCompletionStep>,
+    pipeline: Option<&'plan crate::IrCompletionPipeline>,
+    staged_lane: Option<&'plan parallel::StagedLane>,
+    storage: &'plan FunctionStoragePlan,
+    result_slot: Option<usize>,
+}
+
 impl FunctionFramePlan {
     fn build(
         target: TargetLayout,
         program: &IrProgram<'_, '_, '_>,
         qualification: &Qualification,
         function: &IrFunction,
-        completion_steps: &HashMap<IrValueId, IrCompletionStep>,
-        pipeline: Option<&crate::IrCompletionPipeline>,
-        staged_lane: Option<&parallel::StagedLane>,
+        contents: FunctionFrameContents<'_>,
     ) -> Result<Self, BackendFailure> {
+        let FunctionFrameContents {
+            completion_steps,
+            pipeline,
+            staged_lane,
+            storage,
+            result_slot,
+        } = contents;
         let mut specifications = Vec::new();
         let mut ordered = Vec::new();
+        for (slot, ty) in storage.slots().iter().copied().enumerate() {
+            if Some(slot) != result_slot {
+                push_function_slot(
+                    &mut specifications,
+                    &mut ordered,
+                    FunctionSlot::OwnedValue(slot),
+                    TargetStorageType::source(ty),
+                    None,
+                )?;
+            }
+        }
         for (block_index, block) in function.blocks().iter().enumerate() {
             let block_id =
                 IrBlockId::from_index(block_index).map_err(|_| BackendFailure::CounterOverflow)?;
@@ -751,79 +773,8 @@ impl FunctionFramePlan {
                         push_function_slot(
                             &mut specifications,
                             &mut ordered,
-                            FunctionSlot::ArrayFillValue(*result),
-                            TargetStorageType::source(*ty),
-                            None,
-                        )?;
-                        push_function_slot(
-                            &mut specifications,
-                            &mut ordered,
                             FunctionSlot::ArrayFillIndex(*result),
                             TargetStorageType::integer(64),
-                            None,
-                        )?;
-                    }
-                    IrOperation::ArrayIndex {
-                        root: IrArrayRoot::Value(value),
-                        ..
-                    } => {
-                        let root_type = function
-                            .value_type(*value)
-                            .ok_or(BackendFailure::InvalidIr)?;
-                        push_function_slot(
-                            &mut specifications,
-                            &mut ordered,
-                            FunctionSlot::ArrayRoot(*result),
-                            TargetStorageType::source(root_type),
-                            None,
-                        )?;
-                    }
-                    IrOperation::InsertArray { .. } => push_function_slot(
-                        &mut specifications,
-                        &mut ordered,
-                        FunctionSlot::InsertArray(*result),
-                        TargetStorageType::source(*ty),
-                        None,
-                    )?,
-                    // [BLK-1] a frame-resident run's element access goes
-                    // through storage, because the slot index is computed.
-                    IrOperation::RunIndex { run, .. }
-                    | IrOperation::RunTaken { run, .. }
-                    | IrOperation::RunStore { run, .. }
-                    | IrOperation::RunBoundary { run, .. }
-                    // [VIEW-2] a view of an inline run takes the address of
-                    // its slots, so it needs the same frame slot an element
-                    // access of one needs.
-                    | IrOperation::SliceFromRun { run } => {
-                        let run_type =
-                            function.value_type(*run).ok_or(BackendFailure::InvalidIr)?;
-                        // Read the storage the run's own type names rather
-                        // than naming the run types that keep slots inline
-                        // here: the emission that consumes this slot decides
-                        // the same question through the shape table, and two
-                        // readings of one fact go out of step at the third
-                        // run storage.
-                        if runs::run_keeps_its_slots_inline(run_type) {
-                            push_function_slot(
-                                &mut specifications,
-                                &mut ordered,
-                                FunctionSlot::RunStorage(*result),
-                                TargetStorageType::source(run_type),
-                                None,
-                            )?;
-                        }
-                    }
-                    IrOperation::SliceFromArray {
-                        array: IrArrayRoot::Value(value),
-                    } => {
-                        let array_type = function
-                            .value_type(*value)
-                            .ok_or(BackendFailure::InvalidIr)?;
-                        push_function_slot(
-                            &mut specifications,
-                            &mut ordered,
-                            FunctionSlot::SliceRoot(*result),
-                            TargetStorageType::source(array_type),
                             None,
                         )?;
                     }
@@ -1172,6 +1123,11 @@ struct FunctionEmitter<'program, 'state> {
     /// The validated physical frame which supplied `entry_prelude` and every
     /// pointer returned to an operation emitter.
     frame: FunctionFramePlan,
+    storage: FunctionStoragePlan,
+    result_slot: Option<usize>,
+    /// Per-operation snapshots for legacy value consumers. Place operations
+    /// read their actual storage directly; a snapshot never becomes an alias.
+    materialized: HashMap<IrValueId, String>,
     temporary: u32,
     /// The module's outlined thunks, shared by every function that hands a
     /// call out.
@@ -1428,14 +1384,20 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             &completion_steps,
             sequential_clones.is_none(),
         )?;
+        let storage = FunctionStoragePlan::build(program, function)?;
+        let result_slot = places::returned_storage_slot(function, &storage);
         let frame = FunctionFramePlan::build(
             target,
             program,
             qualification,
             function,
-            &completion_steps,
-            pipeline,
-            staged_lane.as_ref(),
+            FunctionFrameContents {
+                completion_steps: &completion_steps,
+                pipeline,
+                staged_lane: staged_lane.as_ref(),
+                storage: &storage,
+                result_slot,
+            },
         )?;
         let entry_prelude = frame.render(program)?;
         Ok(Self {
@@ -1447,6 +1409,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             output: String::new(),
             entry_prelude,
             frame,
+            storage,
+            result_slot,
+            materialized: HashMap::new(),
             temporary: 0,
             parallel,
             overlaps,
@@ -1492,12 +1457,25 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         write!(
             self.output,
             "define internal {} @{symbol}(",
-            llvm_type(self.program, self.function.result())?,
+            if is_stored_aggregate(self.program, self.function.result())? {
+                "void".to_owned()
+            } else {
+                llvm_type(self.program, self.function.result())?
+            },
         )
         .map_err(|_| BackendFailure::TextEmission)?;
+        let result_address = is_stored_aggregate(self.program, self.function.result())?;
+        if result_address {
+            self.output.push_str("ptr %wf.result");
+        }
         for (index, (value, ty)) in self.function.parameters().iter().enumerate() {
-            if index != 0 {
+            if index != 0 || result_address {
                 self.output.push_str(", ");
+            }
+            if self.storage.slot(*value).is_some() {
+                write!(self.output, "ptr %wf.arg.v{}", value.ordinal())
+                    .map_err(|_| BackendFailure::TextEmission)?;
+                continue;
             }
             write!(
                 self.output,
@@ -1510,6 +1488,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         self.output.push_str(") {\n");
         let mut prelude_anchor = None;
         for (index, block) in self.function.blocks().iter().enumerate() {
+            self.materialized.clear();
             let block_id =
                 IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
             writeln!(self.output, "{}:", block_label(block_id))
@@ -1518,6 +1497,17 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 prelude_anchor = Some(self.output.len());
             }
             self.emit_block_parameters(block_id, block)?;
+            if index == 0 {
+                for (value, ty) in self.function.parameters() {
+                    if self.storage.slot(*value).is_some() {
+                        self.copy_storage(
+                            *ty,
+                            &format!("%wf.arg.v{}", value.ordinal()),
+                            &self.value_place(*value)?,
+                        )?;
+                    }
+                }
+            }
             self.block_slot = self
                 .pipeline
                 .and_then(|pipeline| pipeline.slot_index(block_id));
@@ -1605,6 +1595,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         }
         for (parameter_index, (parameter, ty)) in block.parameters().iter().enumerate() {
+            if self.storage.slot(*parameter).is_some() {
+                continue;
+            }
             write!(
                 self.output,
                 "  {} = phi {} ",
@@ -1656,6 +1649,27 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         index: usize,
         instruction: &IrInstruction,
     ) -> Result<(), BackendFailure> {
+        match instruction {
+            IrInstruction::StoreBuffer {
+                buffer,
+                index,
+                value,
+            } => {
+                self.materialize_operands([*buffer, *index, *value])?;
+            }
+            IrInstruction::StoreSlice {
+                slice,
+                index,
+                value,
+            } => {
+                self.materialize_operands([*slice, *index, *value])?;
+            }
+            IrInstruction::Store { address, value, .. } => {
+                self.materialize_operands([*address, *value])?;
+            }
+            IrInstruction::Drop(drop) => self.materialize_operands([drop.value()])?,
+            IrInstruction::Define { .. } => {}
+        }
         self.emit_instruction_body(block, index, instruction)?;
         if let IrInstruction::Define { result, .. } = instruction {
             self.store_staged_carry(*result)?;
@@ -1774,6 +1788,24 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         ty: IrType,
         operation: &IrOperation,
     ) -> Result<(), BackendFailure> {
+        self.materialized.clear();
+        if self.emit_place_definition(result, ty, operation)? {
+            return Ok(());
+        }
+        self.materialize_operands(operation_operands(operation))?;
+        self.emit_value_definition(result, ty, operation)?;
+        if !self.overlap_handed_out.contains(&result) {
+            self.save_value_result(result)?;
+        }
+        Ok(())
+    }
+
+    fn emit_value_definition(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        operation: &IrOperation,
+    ) -> Result<(), BackendFailure> {
         if self.value_type(result) != Some(ty) {
             return Err(BackendFailure::InvalidIr);
         }
@@ -1859,11 +1891,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 offset,
                 target_domain,
             } => self.emit_array_index(result, ty, *root, *offset, *target_domain),
-            IrOperation::InsertArray {
-                aggregate,
-                index,
-                value,
-            } => self.emit_array_insertion(result, ty, *aggregate, *index, *value),
             IrOperation::BufferFill {
                 length,
                 value,
@@ -1901,12 +1928,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 offset,
                 target_domain,
             } => self.emit_run_index(result, ty, *run, *offset, *target_domain),
-            IrOperation::RunStore {
-                run,
-                offset,
-                value,
-                target_domain,
-            } => self.emit_run_store(result, ty, *run, *offset, *value, *target_domain),
             IrOperation::RunTaken { row, run } => self.emit_run_taken(result, ty, *row, *run),
             IrOperation::RunBoundary { row, run, value } => {
                 self.emit_run_boundary(result, ty, *row, *run, *value)
@@ -1982,6 +2003,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::AddressOf { value, referent } => {
                 self.emit_address_of(result, ty, *value, *referent)
             }
+            IrOperation::ProjectAddress {
+                address,
+                projection,
+            } => self.emit_project_address(result, ty, *address, projection),
             IrOperation::Load { address, referent } => {
                 self.emit_load(result, ty, *address, *referent)
             }
@@ -2085,13 +2110,19 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                         return Err(BackendFailure::InvalidIr);
                     }
                 }
-                self.emit_drops(drops)?;
+                self.emit_place_edge(*target, arguments, drops)?;
                 writeln!(self.output, "  br label %{}", block_label(*target))
                     .map_err(|_| BackendFailure::TextEmission)
             }
             IrTerminator::Return { value, drops } => {
                 if self.value_type(*value) != Some(self.function.result()) {
                     return Err(BackendFailure::InvalidIr);
+                }
+                if is_stored_aggregate(self.program, self.function.result())? {
+                    self.store_value_at(*value, "%wf.result")?;
+                    self.emit_drops(drops)?;
+                    return writeln!(self.output, "  ret void")
+                        .map_err(|_| BackendFailure::TextEmission);
                 }
                 self.emit_drops(drops)?;
                 writeln!(
@@ -2107,6 +2138,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 enum_type,
                 targets,
             } => {
+                self.materialize_operands([*scrutinee])?;
                 let (tag, tag_ty) = self.match_tag(*scrutinee, *enum_type)?;
                 writeln!(
                     self.output,
@@ -2191,7 +2223,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         if self.value_type(drop.value()) != Some(drop.ty()) {
             return Err(BackendFailure::InvalidIr);
         }
-        let value_name = self.value_name(drop.value());
+        let owner_name = value_name(drop.value());
+        let value_name = self.value_operand(drop.value())?;
         match drop.ty() {
             IrType::Array { .. } | IrType::Slice { .. } => {}
             // [STOR-3] a run's and a provider's release actions. A
@@ -2272,7 +2305,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             }
             _ => return Err(BackendFailure::InvalidIr),
         }
-        writeln!(self.output, "  ; drop {value_name}").map_err(|_| BackendFailure::TextEmission)
+        // The annotation names the logical IR owner, independently of the
+        // temporary snapshot through which its physical cleanup was emitted.
+        writeln!(self.output, "  ; drop {owner_name}").map_err(|_| BackendFailure::TextEmission)
     }
 
     fn emit_drops(&mut self, drops: &[IrDrop]) -> Result<(), BackendFailure> {
@@ -2302,7 +2337,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     }
 
     fn value_name(&self, value: IrValueId) -> String {
-        value_name(value)
+        self.materialized
+            .get(&value)
+            .cloned()
+            .unwrap_or_else(|| value_name(value))
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::semantic::{
-    CheckedExpression, CheckedFlatElement, CheckedSliceRoot, CheckedSliceSetTarget,
-    CheckedSliceSource, CheckedTargetDomainObligation,
+    CheckedExpression, CheckedFlatElement, CheckedSliceRoot, CheckedSliceSource,
+    CheckedTargetDomainObligation,
 };
 
 use super::*;
@@ -47,7 +47,7 @@ impl IrBuilder<'_> {
             }
             // [VIEW-2] a run's window: its own slots, from `head` onward.
             CheckedSliceSource::Run(root) => {
-                let run = self.container_root_value(root)?;
+                let run = self.lower_place_address(root)?;
                 IrOperation::SliceFromRun { run }
             }
             // The arena runtime lowering is not implemented. Two semantic
@@ -104,44 +104,10 @@ impl IrBuilder<'_> {
         )
     }
 
-    /// [SET-1] one element-position store through an exclusive view.
-    ///
-    /// The descriptor is not the storage: the store reaches the origin
-    /// through the view's own data pointer, so the value handed back is the
-    /// descriptor unchanged, exactly as a buffer element commit hands back
-    /// the buffer it wrote through.
-    pub(super) fn lower_slice_element_commit(
+    pub(super) fn slice_root(
         &mut self,
-        target: &CheckedSliceSetTarget,
-        value: IrValueId,
+        root: &CheckedSliceRoot,
     ) -> Result<IrValueId, LoweringFailure> {
-        let slice = self.slice_root(&target.root)?;
-        let element = lower_flat_element(self.erasure, target.root.element)?;
-        // The subscript's bounds obligation is discharged at the source level
-        // [OP-4]; the offset is consumed directly with no runtime branch.
-        let index = self.expression(&target.offset)?;
-        if self.value_type(index)?
-            != (IrType::Integer {
-                width: 64,
-                signed: false,
-            })
-        {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        if self.value_type(value)? != element.ty() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        self.current_block_mut()?
-            .instructions
-            .push(IrInstruction::StoreSlice {
-                slice,
-                index,
-                value,
-            });
-        Ok(slice)
-    }
-
-    fn slice_root(&mut self, root: &CheckedSliceRoot) -> Result<IrValueId, LoweringFailure> {
         let slice = self.binding_value(root.binding)?;
         if self.value_type(slice)?
             != (IrType::Slice {

@@ -13,7 +13,7 @@ use crate::syntax::NodeId;
 use crate::{DeclarationId, Production, SemanticCompilerFailure, SemanticIssueKind, SemanticRule};
 
 use super::super::super::model::{
-    CheckedCommitValues, CheckedPlaceStep, CheckedSetTarget, CheckedStatement, CheckedWritablePlace,
+    CheckedCommitValues, CheckedSetTarget, CheckedStatement, CheckedWritablePlace,
 };
 use super::super::super::places::{PlaceOffset, PlaceStep, paths_diverge};
 use super::super::borrows::{ResolvedPlace, places_overlap};
@@ -64,6 +64,33 @@ pub(in crate::semantic::check) struct CommitReadOut {
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    /// [LIV-2] a read-out spends that target for the rest of the RHS,
+    /// including later scalar reads or borrows of its descendants. A measure
+    /// reads only its descriptor, so reading an enclosing run's descriptor
+    /// does not read a spent element [MSR-2].
+    pub(in crate::semantic::check) fn check_commit_place_live(
+        &self,
+        place: &ResolvedPlace,
+        node: NodeId,
+        descriptor: bool,
+    ) -> Result<(), CheckStop> {
+        let spent = self.commit_read_outs.borrow().iter().any(|target| {
+            target.read_out
+                && places_overlap(&target.place, place)
+                && (!descriptor || target.place.path.len() <= place.path.len())
+        });
+        if spent {
+            return self.issue_node(
+                SemanticRule::Own1,
+                node,
+                SemanticIssueKind::UseAfterMove {
+                    mechanical_fix: "introduce a new `let` binding before reuse",
+                },
+            );
+        }
+        Ok(())
+    }
+
     /// Whether `place` is a read-out of a target of the commit now being
     /// checked, recording that read-out when it is [LIV-2].
     ///
@@ -81,7 +108,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if target.read_out
                 || target.element.is_some()
                 || target.place.root != place.root
-                || !place.fields.starts_with(&target.place.fields)
+                || !place.path.starts_with(&target.place.path)
             {
                 continue;
             }
@@ -112,8 +139,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
             if target.read_out
                 || target.place.root != place.root
-                || target.place.fields != place.fields
-                || target_path.len() != path.len()
+                || target_path.len() > path.len()
                 || !target_path
                     .iter()
                     .zip(path)
@@ -238,10 +264,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // statement writes is this binding's own fresh storage, and
             // [EFF-2] attributes the write to that storage exactly as a `let`
             // attributes its initialization.
-            let place = ResolvedPlace {
-                root: declaration,
-                fields: Vec::new(),
-            };
+            let place = ResolvedPlace::fields(declaration, Vec::new());
             let mut target_effects = EffectSet::NONE;
             for path in self.effect_paths_for_place(&place, bindings)? {
                 target_effects.add_write(path);
@@ -499,7 +522,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn commit_reinitializes_binding(&self, target: &FormedTarget) -> bool {
         matches!(&target.mutation.target, CheckedSetTarget::Place(place) if place.fields.is_empty())
             && target.mutation.place.root == target.mutation.declaration
-            && target.mutation.place.fields.is_empty()
+            && target.mutation.place.path.is_empty()
     }
 
     /// The commit itself: every target is live afterwards, and a complete
@@ -641,20 +664,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .collect(),
                 Some(Self::place_offset_of(&target.offset).unwrap_or(PlaceOffset::Opaque)),
             ),
-            CheckedSetTarget::RunIndex(target) => (
-                target
-                    .root
-                    .path
-                    .iter()
-                    .map(|step| match step {
-                        CheckedPlaceStep::Field(field) => PlaceStep::Field(*field),
-                        CheckedPlaceStep::Subscript(subscript) => {
-                            PlaceStep::Subscript(subscript.place_offset)
-                        }
-                    })
-                    .collect(),
-                Some(target.place_offset),
-            ),
+            CheckedSetTarget::Storage(target) => (target.place_path(), None),
             // A view has no field path of its own: the descriptor is a
             // direct binding [VIEW-6], so the target path is the one
             // subscript the statement wrote.

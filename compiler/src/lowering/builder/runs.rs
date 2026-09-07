@@ -9,7 +9,7 @@
 
 use crate::semantic::{
     CheckedContainerRoot, CheckedExpression, CheckedKernelInstance, CheckedMeasure,
-    CheckedPlaceStep, CheckedRunSetTarget, CheckedType, MeasureCell,
+    CheckedPlaceStep, CheckedType, MeasureCell,
 };
 use crate::{IrBoundary, IrMeasure};
 
@@ -103,145 +103,6 @@ impl IrBuilder<'_> {
         }
     }
 
-    /// One discharged source subscript read of a run [OP-4, BLK-1].
-    pub(super) fn lower_run_index(
-        &mut self,
-        root: &CheckedContainerRoot,
-        offset: &CheckedExpression,
-        target_domain: CheckedTargetDomainObligation,
-    ) -> Result<IrValueId, LoweringFailure> {
-        let element = root
-            .element()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-        let run = self.container_root_value(root)?;
-        let offset = self.expression(offset)?;
-        if self.value_type(offset)?
-            != (IrType::Integer {
-                width: 64,
-                signed: false,
-            })
-        {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        self.define(
-            lower_element(self.erasure, element)?.ty(),
-            IrOperation::RunIndex {
-                run,
-                offset,
-                target_domain: target_domain.into(),
-            },
-        )
-    }
-
-    /// The run-element half of one [LIV-2] commit, over an ordinal value the
-    /// caller has already evaluated.
-    ///
-    /// The offset's [OP-4] obligation was discharged at the source level, so
-    /// it is consumed directly and no runtime branch remains; the value
-    /// handed back is the run with that one slot replaced.
-    pub(super) fn lower_run_element_commit(
-        &mut self,
-        root: IrValueId,
-        target: &CheckedRunSetTarget,
-        value: IrValueId,
-    ) -> Result<IrValueId, LoweringFailure> {
-        let run = self.project_container_root(root, &target.root)?;
-        let index = self.expression(&target.offset)?;
-        let stored = self.run_store(run, index, value, target)?;
-        self.reinsert_container_root(root, &target.root, stored)
-    }
-
-    /// [SET-2] the run-element exchange: the previous element is read out of
-    /// the slot, then the replacement is stored into the same slot.
-    ///
-    /// The target's components are evaluated exactly once — one projected run
-    /// and one offset feed both the read and the write — so the shared `set`
-    /// path, which would re-lower the offset, is not reused here.
-    pub(super) fn lower_run_replace(
-        &mut self,
-        root: IrValueId,
-        target: &CheckedRunSetTarget,
-        value: &CheckedExpression,
-    ) -> Result<(IrValueId, IrValueId), LoweringFailure> {
-        let element = target
-            .root
-            .element()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-        let run = self.project_container_root(root, &target.root)?;
-        let index = self.expression(&target.offset)?;
-        let previous = self.define(
-            lower_element(self.erasure, element)?.ty(),
-            IrOperation::RunIndex {
-                run,
-                offset: index,
-                target_domain: target.target_domain.into(),
-            },
-        )?;
-        let value = self.expression(value)?;
-        let stored = self.run_store(run, index, value, target)?;
-        let replacement = self.reinsert_container_root(root, &target.root, stored)?;
-        Ok((previous, replacement))
-    }
-
-    /// One element store's new root value: a run reached through field
-    /// selections and subscripts is written back into the aggregate that
-    /// holds it, because a frame-resident run's slots are part of its own
-    /// value and a run held in another run's slot is part of that run's.
-    fn reinsert_container_root(
-        &mut self,
-        root: IrValueId,
-        container: &CheckedContainerRoot,
-        stored: IrValueId,
-    ) -> Result<IrValueId, LoweringFailure> {
-        self.replace_place_path(root, &container.path, stored)
-    }
-
-    /// Writes `stored` back through one measured place's path, rebuilding
-    /// every aggregate and every run it was reached through.
-    ///
-    /// A field step is the ordinary struct replacement; a subscript step is
-    /// the [BLK-1] element store into the slot the same offset selected on
-    /// the way in, so `grid[i][j]` writes the inner run back into slot `i`.
-    fn replace_place_path(
-        &mut self,
-        base: IrValueId,
-        steps: &[CheckedPlaceStep],
-        stored: IrValueId,
-    ) -> Result<IrValueId, LoweringFailure> {
-        let Some((step, rest)) = steps.split_first() else {
-            return Ok(stored);
-        };
-        match step {
-            CheckedPlaceStep::Field(field) => {
-                let inner = self.project_struct_path(base, &[*field], false)?;
-                let inner = self.replace_place_path(inner, rest, stored)?;
-                self.replace_struct_path(base, &[*field], inner)
-            }
-            CheckedPlaceStep::Subscript(subscript) => {
-                let offset = self.expression(&subscript.offset)?;
-                let element = self.define(
-                    lower_type(self.erasure, subscript.element_type)?,
-                    IrOperation::RunIndex {
-                        run: base,
-                        offset,
-                        target_domain: subscript.target_domain.into(),
-                    },
-                )?;
-                let element = self.replace_place_path(element, rest, stored)?;
-                let run_type = self.value_type(base)?;
-                self.define(
-                    run_type,
-                    IrOperation::RunStore {
-                        run: base,
-                        offset,
-                        value: element,
-                        target_domain: subscript.target_domain.into(),
-                    },
-                )
-            }
-        }
-    }
-
     /// Reads one measured place's value out of the value at its root:
     /// a field step projects, and a subscript step reads the slot the offset
     /// selects [BLK-1, OP-4].
@@ -268,50 +129,6 @@ impl IrBuilder<'_> {
                     )?
                 }
             };
-        }
-        Ok(value)
-    }
-
-    fn run_store(
-        &mut self,
-        run: IrValueId,
-        offset: IrValueId,
-        value: IrValueId,
-        target: &CheckedRunSetTarget,
-    ) -> Result<IrValueId, LoweringFailure> {
-        let element = target
-            .root
-            .element()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-        if self.value_type(offset)?
-            != (IrType::Integer {
-                width: 64,
-                signed: false,
-            })
-            || self.value_type(value)? != lower_element(self.erasure, element)?.ty()
-        {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        let run_type = self.value_type(run)?;
-        self.define(
-            run_type,
-            IrOperation::RunStore {
-                run,
-                offset,
-                value,
-                target_domain: target.target_domain.into(),
-            },
-        )
-    }
-
-    fn project_container_root(
-        &mut self,
-        root: IrValueId,
-        container: &CheckedContainerRoot,
-    ) -> Result<IrValueId, LoweringFailure> {
-        let value = self.project_place_path(root, &container.path)?;
-        if self.value_type(value)? != lower_type(self.erasure, container.ty)? {
-            return Err(LoweringFailure::InvalidCheckedProgram);
         }
         Ok(value)
     }
@@ -643,6 +460,14 @@ impl IrBuilder<'_> {
         &mut self,
         root: &CheckedContainerRoot,
     ) -> Result<IrValueId, LoweringFailure> {
+        if self
+            .bindings
+            .get(&root.binding)
+            .copied()
+            .is_some_and(|storage| matches!(self.value_type(storage), Ok(IrType::Address(_))))
+        {
+            return self.lower_place_address(root);
+        }
         let value = self.binding_value(root.binding)?;
         let value = self.project_place_path(value, &root.path)?;
         if self.value_type(value)? != lower_type(self.erasure, root.ty)? {

@@ -1646,7 +1646,12 @@ fn set_target_uses_any(target: &CheckedSetTarget, bindings: &HashSet<BindingId>)
         CheckedSetTarget::Place(_) => false,
         CheckedSetTarget::ArrayIndex(target) => expression_uses_any(&target.offset, bindings),
         CheckedSetTarget::BufferIndex(target) => expression_uses_any(&target.offset, bindings),
-        CheckedSetTarget::RunIndex(target) => expression_uses_any(&target.offset, bindings),
+        CheckedSetTarget::Storage(root) => root.path.iter().any(|step| match step {
+            crate::semantic::CheckedPlaceStep::Field(_) => false,
+            crate::semantic::CheckedPlaceStep::Subscript(subscript) => {
+                expression_uses_any(&subscript.offset, bindings)
+            }
+        }),
         CheckedSetTarget::SliceIndex(target) => expression_uses_any(&target.offset, bindings),
     }
 }

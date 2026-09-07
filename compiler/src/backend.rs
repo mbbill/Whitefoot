@@ -3,6 +3,7 @@
 mod emitter;
 mod qualification;
 mod stack_ledger;
+mod storage;
 mod target;
 
 #[cfg(test)]

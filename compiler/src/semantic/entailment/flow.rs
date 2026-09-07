@@ -2015,12 +2015,14 @@ impl Analyzer<'_, '_> {
         match argument {
             CheckedExpression::Binding { binding, .. }
             | CheckedExpression::Project { binding, .. }
-            | CheckedExpression::BorrowAddressed { binding, .. }
             | CheckedExpression::BorrowBox { binding, .. }
             | CheckedExpression::BorrowSystemResource { binding, .. }
             | CheckedExpression::ReborrowAddressed { binding, .. }
             | CheckedExpression::DerefAddressed { binding, .. } => {
                 self.append_holder_chain(*binding, holders);
+            }
+            CheckedExpression::BorrowAddressed { root, .. } => {
+                self.append_holder_chain(root.binding, holders);
             }
             CheckedExpression::BorrowBuffer { root, .. }
             | CheckedExpression::BufferMeasure { root, .. } => {
@@ -3358,8 +3360,8 @@ impl Analyzer<'_, '_> {
                 deref: self.is_holder(target.root.binding),
                 fields: target.root.fields.clone(),
             },
-            CheckedSetTarget::RunIndex(target) => {
-                return self.container_root_place(&target.root).overlaps(place);
+            CheckedSetTarget::Storage(target) => {
+                return self.container_root_place(target).overlaps(place);
             }
             // A view element store writes the origin's storage and not the
             // descriptor's [PROV-3], and the origin is not this place term's
@@ -3854,26 +3856,10 @@ impl Analyzer<'_, '_> {
         event: &KillEvent,
     ) -> bool {
         match event {
-            KillEvent::Write {
-                place: written,
-                element: true,
-                ..
+            KillEvent::Write { place: written, .. }
+            | KillEvent::EntryImageHolderWrite { place: written, .. } => {
+                written.is_prefix_of(support)
             }
-            | KillEvent::EntryImageHolderWrite {
-                place: written,
-                element: true,
-                ..
-            } => written.is_prefix_of(support),
-            KillEvent::Write {
-                place: written,
-                element: false,
-                ..
-            }
-            | KillEvent::EntryImageHolderWrite {
-                place: written,
-                element: false,
-                ..
-            } => support.overlaps(written),
             KillEvent::Consume { binding, .. } => root == PlaceRoot::Binding(*binding),
             KillEvent::EntryImageHolderConsume { .. } => false,
         }
@@ -3987,16 +3973,12 @@ impl Analyzer<'_, '_> {
                 // replaces was [ENT-5]'s element-position carve-out, which
                 // was only ever true of a table with no measured element
                 // type.
-                KillEvent::Write {
-                    place: written,
-                    element: true,
-                    ..
+                KillEvent::Write { place: written, .. }
+                | KillEvent::EntryImageHolderWrite { place: written, .. }
+                    if support.measure.is_some() =>
+                {
+                    written.is_prefix_of(&place)
                 }
-                | KillEvent::EntryImageHolderWrite {
-                    place: written,
-                    element: true,
-                    ..
-                } if support.measure.is_some() => written.is_prefix_of(&place),
                 KillEvent::Write { place: written, .. }
                 | KillEvent::EntryImageHolderWrite { place: written, .. } => {
                     place.overlaps(written)
@@ -4865,29 +4847,43 @@ impl Analyzer<'_, '_> {
                     vec![argument],
                 )
             }
-            CheckedExpression::RunIndex {
-                root,
-                element_type,
-                offset,
-                ..
-            } if admitted_partial => {
-                let measured = root.measured()?;
-                let element = root.element()?;
-                if element.ty() != *element_type {
-                    return None;
-                }
+            CheckedExpression::ReadStorage { root, .. } if admitted_partial => {
+                let Some((CheckedPlaceStep::Subscript(index), prefix)) = root.path.split_last()
+                else {
+                    if root
+                        .place_path()
+                        .contains(&PlaceStep::Subscript(PlaceOffset::Opaque))
+                    {
+                        return None;
+                    }
+                    return Some(self.goal_binding_place(
+                        root.binding,
+                        root.goal_projections(),
+                        root.ty,
+                    ));
+                };
+                let base = CheckedContainerRoot {
+                    binding: root.binding,
+                    path: prefix.to_vec(),
+                    ty: index.base_type,
+                };
+                let measured = base.measured()?;
+                let element = base.element()?;
                 let collection =
-                    self.goal_binding_place(root.binding, root.goal_projections(), root.ty);
+                    self.goal_binding_place(base.binding, base.goal_projections(), base.ty);
                 build_operation(
                     GoalOperation::RunIndex {
                         measured,
                         element,
-                        constant: root.type_constant(),
+                        constant: base.type_constant(),
                     },
                     Vec::new(),
                     Vec::new(),
-                    *element_type,
-                    vec![collection, self.goal_expression(offset, admitted_partial)?],
+                    root.ty,
+                    vec![
+                        collection,
+                        self.goal_expression(&index.offset, admitted_partial)?,
+                    ],
                 )
             }
             CheckedExpression::BufferMeasure { measure, root } => {
@@ -4993,7 +4989,7 @@ impl Analyzer<'_, '_> {
             | CheckedExpression::SystemCall { .. }
             | CheckedExpression::KernelCall { .. }
             | CheckedExpression::PostconditionResultMeasure { .. }
-            | CheckedExpression::RunIndex { .. }
+            | CheckedExpression::ReadStorage { .. }
             | CheckedExpression::ArrayIndex { .. }
             | CheckedExpression::BufferFill { .. }
             | CheckedExpression::BufferVacant { .. }
@@ -6416,7 +6412,8 @@ impl Analyzer<'_, '_> {
             }
             // [MSR-1] a measure over a subscripted place is a term only where
             // that place's own subscripts are discharged [OP-4].
-            CheckedExpression::ContainerMeasure { root, .. } => {
+            CheckedExpression::ContainerMeasure { root, .. }
+            | CheckedExpression::BorrowAddressed { root, .. } => {
                 let obligation_start = self.obligations.len();
                 let reached = self.judge_place_subscripts(root, states);
                 ExpressionJudgment {
@@ -6463,30 +6460,11 @@ impl Analyzer<'_, '_> {
             // bounds it, so the measured kind is the run's own and the written
             // capacity is not the bound. A read owes exactly what the
             // element-position target below owes, and is judged here.
-            CheckedExpression::RunIndex {
-                root,
-                offset,
-                obligation,
-                ..
-            } => {
-                let reaches_base = self.judge_place_subscripts(root, states);
-                let reaches_index = reaches_base
-                    && self.judge_children_reach_parent(std::iter::once(offset.as_ref()), states);
-                let obligation_start = self.obligations.len();
-                if reaches_index && let Some(measured) = root.measured() {
-                    let base = self.container_root_path(root);
-                    self.judge_obligation(
-                        base,
-                        measured,
-                        root.type_constant(),
-                        offset,
-                        obligation.clone(),
-                        states,
-                    );
-                }
+            CheckedExpression::ReadStorage { root, .. } => {
+                let reached = self.judge_place_subscripts(root, states);
                 ExpressionJudgment {
                     prepared_call: None,
-                    reached: reaches_index && self.obligations_since_discharged(obligation_start),
+                    reached,
                 }
             }
             CheckedExpression::BufferFill {
@@ -7725,14 +7703,14 @@ impl Analyzer<'_, '_> {
                 deref: self.is_holder(place.binding),
                 fields: place.fields.clone(),
             })),
-            CheckedSetTarget::RunIndex(target) => {
-                if matches!(target.place_offset, PlaceOffset::Opaque) {
+            CheckedSetTarget::Storage(target) => {
+                if target
+                    .place_path()
+                    .contains(&PlaceStep::Subscript(PlaceOffset::Opaque))
+                {
                     return None;
                 }
-                let mut path = self.container_root_path(&target.root);
-                path.projections
-                    .push(PlaceProjection::Subscript(target.place_offset));
-                Some(path)
+                Some(self.container_root_path(target))
             }
             // No flat element domain names the offset its commit wrote, so
             // none has an element place a measure could be stated over.
@@ -7763,7 +7741,7 @@ impl Analyzer<'_, '_> {
         };
         self.set_target_place(target)?;
         let placement = match target {
-            CheckedSetTarget::RunIndex(_) => MeasurePlacement::Element,
+            CheckedSetTarget::Storage(_) => MeasurePlacement::Element,
             _ => MeasurePlacement::Rebind,
         };
         let source = projected_place(PlaceTerm {
@@ -9796,23 +9774,7 @@ impl Analyzer<'_, '_> {
             // offset is a logical one and the window's length bounds it, so
             // the measured kind is the run's and the written capacity is not
             // the bound.
-            CheckedSetTarget::RunIndex(target) => {
-                let reaches_target =
-                    self.judge_children_reach_parent(std::iter::once(&target.offset), states);
-                let obligation_start = self.obligations.len();
-                if reaches_target && let Some(measured) = target.root.measured() {
-                    let base = self.container_root_path(&target.root);
-                    self.judge_obligation(
-                        base,
-                        measured,
-                        target.root.type_constant(),
-                        &target.offset,
-                        target.obligation.clone(),
-                        states,
-                    );
-                }
-                reaches_target && self.obligations_since_discharged(obligation_start)
-            }
+            CheckedSetTarget::Storage(target) => self.judge_place_subscripts(target, states),
         }
     }
 
@@ -12465,12 +12427,9 @@ impl Analyzer<'_, '_> {
             // [MSR-2] an element store into a run overlaps the descriptor
             // storage of `v[i]` and none of `v`'s own, so it kills the
             // measures of the element and none of the run's.
-            CheckedSetTarget::RunIndex(target) => {
+            CheckedSetTarget::Storage(target) => {
                 target_kills.push(KillEvent::Write {
-                    place: element_write_place(
-                        self.container_root_place(&target.root),
-                        target.place_offset,
-                    ),
+                    place: self.container_root_place(target),
                     element: true,
                     source: node_path.clone(),
                 });
@@ -12572,7 +12531,7 @@ impl Analyzer<'_, '_> {
             )),
             CheckedSetTarget::ArrayIndex(_)
             | CheckedSetTarget::BufferIndex(_)
-            | CheckedSetTarget::RunIndex(_)
+            | CheckedSetTarget::Storage(_)
             | CheckedSetTarget::SliceIndex(_) => None,
         };
         match values {
@@ -12994,7 +12953,7 @@ impl Analyzer<'_, '_> {
                 // rebind, construct, and element placements do.
                 let displaced = self.set_target_place(target).and_then(|place| {
                     let placement = match target {
-                        CheckedSetTarget::RunIndex(_) => MeasurePlacement::Element,
+                        CheckedSetTarget::Storage(_) => MeasurePlacement::Element,
                         _ => MeasurePlacement::Rebind,
                     };
                     self.mint_measure_datums(
@@ -14293,12 +14252,9 @@ impl Analyzer<'_, '_> {
                     source: node_path.clone(),
                 });
             }
-            CheckedSetTarget::RunIndex(target) => {
+            CheckedSetTarget::Storage(target) => {
                 events.push(KillEvent::Write {
-                    place: element_write_place(
-                        self.container_root_place(&target.root),
-                        target.place_offset,
-                    ),
+                    place: self.container_root_place(target),
                     element: true,
                     source: node_path.clone(),
                 });

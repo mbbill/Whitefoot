@@ -1324,8 +1324,10 @@ pub(super) fn collect_statement_calls(
                         CheckedSetTarget::BufferIndex(target) => {
                             collect_expression_calls(caller, &target.offset, calls);
                         }
-                        CheckedSetTarget::RunIndex(target) => {
-                            collect_expression_calls(caller, &target.offset, calls);
+                        CheckedSetTarget::Storage(target) => {
+                            for offset in target.offsets() {
+                                collect_expression_calls(caller, offset, calls);
+                            }
                         }
                         CheckedSetTarget::SliceIndex(target) => {
                             collect_expression_calls(caller, &target.offset, calls);
@@ -1346,8 +1348,10 @@ pub(super) fn collect_statement_calls(
                     CheckedSetTarget::BufferIndex(target) => {
                         collect_expression_calls(caller, &target.offset, calls);
                     }
-                    CheckedSetTarget::RunIndex(target) => {
-                        collect_expression_calls(caller, &target.offset, calls);
+                    CheckedSetTarget::Storage(target) => {
+                        for offset in target.offsets() {
+                            collect_expression_calls(caller, offset, calls);
+                        }
                     }
                     CheckedSetTarget::SliceIndex(target) => {
                         collect_expression_calls(caller, &target.offset, calls);

@@ -33,17 +33,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
 
         let pointer = match array {
-            IrArrayRoot::Value(value) => {
-                let llvm_array_type = llvm_type(self.program, array_type)?;
-                let slot = self.entry_slot(FunctionSlot::SliceRoot(result))?;
-                writeln!(
-                    self.output,
-                    "  store {llvm_array_type} {}, ptr {slot}",
-                    self.value_name(value),
-                )
-                .map_err(|_| BackendFailure::TextEmission)?;
-                slot
-            }
+            IrArrayRoot::Value(value) => self.value_place(value)?,
             IrArrayRoot::Constant(id) => constant_symbol(id),
         };
         self.emit_slice_descriptor(result, ty, &pointer, length)

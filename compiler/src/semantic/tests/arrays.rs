@@ -14,8 +14,8 @@ use super::{assert_rule, assert_rule_kind, with_semantics};
 /// the constant. Everything a program builds is a `FixedVector`, whose
 /// capacity is standing and whose `len_of`, `room_of` and `head_of` are
 /// descriptor words, so a built run's measure is `ContainerMeasure`, its
-/// subscript is `RunIndex`, and its indexed commit is `CheckedSetTarget::
-/// RunIndex`.
+/// subscript is `ReadStorage`, and its indexed commit is `CheckedSetTarget::
+/// Storage`, each retaining the complete typed projection.
 #[test]
 fn constants_fill_length_and_index_share_exact_run_types() {
     let source = br#"const count: u64 = 4_u64;
@@ -71,20 +71,19 @@ command fn main() -> status: own ExitStatus pure {
         assert!(matches!(
             &body[4],
             CheckedStatement::Let {
-                value: CheckedExpression::RunIndex {
+                value: CheckedExpression::ReadStorage {
                     root: CheckedContainerRoot {
-                        ty: CheckedType::FixedVector {
-                            length: CheckedConst::Value(4),
-                            ..
-                        },
+                        ty: CheckedType::Integer(IntegerType::I32),
+                        path,
                         ..
                     },
-                    obligation,
-                    target_domain: CheckedTargetDomainObligation::ElementAddress,
                     ..
                 },
                 ..
-            } if !obligation.components().is_empty()
+            } if matches!(path.as_slice(), [CheckedPlaceStep::Subscript(index)]
+                if matches!(index.base_type, CheckedType::FixedVector { length: CheckedConst::Value(4), .. })
+                && index.target_domain == CheckedTargetDomainObligation::ElementAddress
+                && !index.obligation.components().is_empty())
         ));
         assert!(matches!(
             &body[5],
@@ -205,21 +204,24 @@ fn indexed_set_retains_its_pre_rhs_guard_and_copy_target() {
         let CheckedStatement::Set { target, .. } = &checked.data.functions[0].body[3] else {
             panic!("fourth statement must be the indexed set");
         };
-        let CheckedSetTarget::RunIndex(target) = target else {
+        let CheckedSetTarget::Storage(target) = target else {
             panic!("indexed set must retain a run-index target");
         };
+        let [CheckedPlaceStep::Subscript(index)] = target.path.as_slice() else {
+            panic!("the complete target must retain its subscript");
+        };
         assert_eq!(
-            target.root.ty,
+            index.base_type,
             CheckedType::FixedVector {
                 element: CheckedElement::Flat(CheckedFlatElement::Integer(IntegerType::U8)),
                 length: CheckedConst::Value(2),
             }
         );
-        assert_eq!(target.element_type, CheckedType::Integer(IntegerType::U8));
-        assert_eq!(target.offset.ty(), CheckedType::Integer(IntegerType::U64));
-        assert!(!target.obligation.components().is_empty());
+        assert_eq!(target.ty, CheckedType::Integer(IntegerType::U8));
+        assert_eq!(index.offset.ty(), CheckedType::Integer(IntegerType::U64));
+        assert!(!index.obligation.components().is_empty());
         assert_eq!(
-            target.target_domain,
+            index.target_domain,
             CheckedTargetDomainObligation::ElementAddress
         );
     });
@@ -282,22 +284,26 @@ command fn main() -> status: own ExitStatus pure {
         let CheckedStatement::Set { target, .. } = &body[6] else {
             panic!("seventh statement must be the projected indexed set");
         };
-        let CheckedSetTarget::RunIndex(target) = target else {
+        let CheckedSetTarget::Storage(target) = target else {
             panic!("set must retain one checked run-index target");
         };
-        assert_eq!(
-            target.root.path,
-            vec![CheckedPlaceStep::Field(0), CheckedPlaceStep::Field(0)]
-        );
+        assert!(matches!(
+            target.path.as_slice(),
+            [
+                CheckedPlaceStep::Field(0),
+                CheckedPlaceStep::Field(0),
+                CheckedPlaceStep::Subscript(_)
+            ]
+        ));
         assert!(matches!(
             &body[7],
             CheckedStatement::Let {
-                value: CheckedExpression::RunIndex {
+                value: CheckedExpression::ReadStorage {
                     root: CheckedContainerRoot { path, .. },
                     ..
                 },
                 ..
-            } if path == &[CheckedPlaceStep::Field(0), CheckedPlaceStep::Field(0)]
+            } if matches!(path.as_slice(), [CheckedPlaceStep::Field(0), CheckedPlaceStep::Field(0), CheckedPlaceStep::Subscript(_)])
         ));
     });
 

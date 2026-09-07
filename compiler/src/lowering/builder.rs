@@ -8,13 +8,14 @@ mod runs;
 mod slices;
 mod split;
 mod storage;
+mod targets;
 
 use crate::CheckedProgram;
 use crate::NodePath;
 use crate::semantic::CheckedSetTarget;
 use crate::semantic::{
-    BindingId, CheckedArrayRoot, CheckedArraySetTarget, CheckedCommitValues, CheckedConstructor,
-    CheckedDrop, CheckedEntryForm, CheckedExpression, CheckedMatchArm, CheckedMeasure, CheckedMode,
+    BindingId, CheckedArrayRoot, CheckedCommitValues, CheckedConstructor, CheckedDrop,
+    CheckedEntryForm, CheckedExpression, CheckedMatchArm, CheckedMeasure, CheckedMode,
     CheckedNominalKind, CheckedParameter, CheckedProgramData, CheckedProjectedDrop,
     CheckedStatement, CheckedValue, FunctionPermissions, MeasureCell, MeasuredKind,
 };
@@ -1928,12 +1929,10 @@ impl<'program> IrBuilder<'program> {
             CheckedExpression::PostconditionResultMeasure { .. } => {
                 Err(LoweringFailure::InvalidCheckedProgram)
             }
-            CheckedExpression::RunIndex {
-                root,
-                offset,
-                target_domain,
-                ..
-            } => self.lower_run_index(root, offset, *target_domain),
+            CheckedExpression::ReadStorage { root, .. } => {
+                let address = self.lower_place_address(root)?;
+                self.load_storage_value(address)
+            }
             CheckedExpression::KernelCall {
                 row,
                 instance,
@@ -2038,8 +2037,8 @@ impl<'program> IrBuilder<'program> {
                 }
                 Ok(value)
             }
-            CheckedExpression::BorrowAddressed { binding, ty, .. }
-            | CheckedExpression::ReborrowAddressed { binding, ty, .. } => {
+            CheckedExpression::BorrowAddressed { root, .. } => self.lower_place_address(root),
+            CheckedExpression::ReborrowAddressed { binding, ty, .. } => {
                 self.lower_addressed_borrow(*binding, lower_type(self.erasure, *ty)?)
             }
             CheckedExpression::DerefAddressed { binding, ty, .. } => {
@@ -2090,6 +2089,24 @@ impl<'program> IrBuilder<'program> {
                 residual_drops,
                 ..
             } => {
+                if self.bindings.get(binding).copied().is_some_and(|storage| {
+                    matches!(self.value_type(storage), Ok(IrType::Address(_)))
+                }) && !consume_root
+                    && residual_drops.is_empty()
+                {
+                    let path = fields
+                        .iter()
+                        .copied()
+                        .map(crate::semantic::CheckedPlaceStep::Field)
+                        .collect();
+                    let root = crate::semantic::CheckedContainerRoot {
+                        binding: *binding,
+                        path,
+                        ty: *ty,
+                    };
+                    let address = self.lower_place_address(&root)?;
+                    return self.load_storage_value(address);
+                }
                 let root = self.binding_value(*binding)?;
                 let mut lowered_drops = Vec::with_capacity(residual_drops.len());
                 for drop in residual_drops {
@@ -2162,82 +2179,29 @@ impl<'program> IrBuilder<'program> {
         }
     }
 
-    /// [SET-2]: read the previous value out of the target place into the
-    /// fresh binding, then perform exactly the [SET-1] store of the
-    /// replacement. The read-out precedes the store, so no program point
-    /// observes an empty place, and nothing is dropped.
+    /// [SET-2] capture the target, evaluate the RHS, then exchange the old
+    /// and new owners at one commit. The old value includes the RHS's effects.
     fn replace(
         &mut self,
         binding: BindingId,
         target: &CheckedSetTarget,
         value: &CheckedExpression,
     ) -> Result<(), LoweringFailure> {
-        let root_binding = target.binding();
-        let storage = self
-            .bindings
-            .get(&root_binding)
-            .copied()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-        let root = self.load_storage_value(storage)?;
-        let previous = match target {
-            CheckedSetTarget::Place(place) => {
-                if place.fields.is_empty() {
-                    root
-                } else {
-                    self.project_struct_path(root, &place.fields, false)?
-                }
-            }
-            // A buffer-element replacement [SET-2, TYPE-2] evaluates its
-            // target components exactly once: the projected buffer and the
-            // offset feed one element read (the previous owner) and one
-            // element write (the replacement), so the shared `set` path,
-            // which would re-lower the offset, is not reused here.
-            CheckedSetTarget::BufferIndex(target) => {
-                let previous = self.lower_buffer_replace(root, target, value)?;
-                if self.bindings.insert(binding, previous).is_some() {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                }
-                self.promote_binding_if_needed(binding)?;
-                return Ok(());
-            }
-            // [SET-2] a run-element exchange evaluates its target components
-            // exactly once, exactly as a buffer element does; unlike a
-            // buffer's, a frame-resident run's slots are part of its own
-            // value, so the run the store hands back is committed to the
-            // target's root before the displaced element is bound.
-            CheckedSetTarget::RunIndex(target) => {
-                let (previous, replacement) = self.lower_run_replace(root, target, value)?;
-                self.commit_root_storage(root_binding, storage, replacement)?;
-                if self.bindings.insert(binding, previous).is_some() {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                }
-                self.promote_binding_if_needed(binding)?;
-                return Ok(());
-            }
-            // An array element and a view element are both flat, and every
-            // flat element this version constructs is copy [TYPE-2], so the
-            // checker never forms an element-position replace target over
-            // either [SET-2].
-            CheckedSetTarget::ArrayIndex(_) | CheckedSetTarget::SliceIndex(_) => {
-                return Err(LoweringFailure::InvalidCheckedProgram);
-            }
-        };
-        if self.value_type(previous)? != lower_type(self.erasure, target.ty())? {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
+        let target = self.prepare_target(target)?;
+        let replacement = self.expression(value)?;
+        let previous = self.read_target(&target)?;
+        self.write_target(&target, replacement)?;
         if self.bindings.insert(binding, previous).is_some() {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        self.promote_binding_if_needed(binding)?;
-        self.set(target, value)
+        self.promote_binding_if_needed(binding)
     }
 
     /// [GRAM-4, SET-1, CALL-4] `set (x, y) = f(...);`.
     ///
     /// One evaluation of the call, then one projection per result ordinal in
-    /// written order, each committed to its target exactly as a single-target
-    /// `set` commits. Every target of a checked target list is a plain place;
-    /// a subscript target stops in the checker.
+    /// written order, each committed to its checked target exactly as a
+    /// single-target `set` commits.
     /// [LIV-2] one commit of a target list.
     ///
     /// The whole right-hand side is evaluated first — the one call, or every
@@ -2249,6 +2213,10 @@ impl<'program> IrBuilder<'program> {
         targets: &[CheckedSetTarget],
         values: &CheckedCommitValues,
     ) -> Result<(), LoweringFailure> {
+        let prepared = targets
+            .iter()
+            .map(|target| self.prepare_target(target))
+            .collect::<Result<Vec<_>, _>>()?;
         let ordinals = match values {
             CheckedCommitValues::ResultList { nominal, value } => {
                 let aggregate = self.expression(value)?;
@@ -2275,75 +2243,10 @@ impl<'program> IrBuilder<'program> {
                 ordinals
             }
         };
-        for (target, value) in targets.iter().zip(ordinals) {
-            self.commit_target(target, value)?;
+        for (target, value) in prepared.iter().zip(ordinals) {
+            self.write_target(target, value)?;
         }
         Ok(())
-    }
-
-    /// One target's write of an already-evaluated ordinal value [LIV-2].
-    fn commit_target(
-        &mut self,
-        target: &CheckedSetTarget,
-        value: IrValueId,
-    ) -> Result<(), LoweringFailure> {
-        let binding = target.binding();
-        // [LIV-2] a commit whose target declares its own binding is that
-        // binding's initialization, exactly as a `let` is: nothing before it
-        // holds storage for it, so the committed value becomes the binding.
-        if let CheckedSetTarget::Place(place) = target
-            && place.declares
-        {
-            if place.fields.is_empty() {
-                if self.value_type(value)? != lower_type(self.erasure, place.ty)? {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                }
-                if self.bindings.insert(binding, value).is_some() {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                }
-                self.promote_binding_if_needed(binding)?;
-                return Ok(());
-            }
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        let storage = self
-            .bindings
-            .get(&binding)
-            .copied()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-        let root = self.load_storage_value(storage)?;
-        if self.value_type(value)? != lower_type(self.erasure, target.ty())? {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        let replacement = match target {
-            CheckedSetTarget::Place(place) => {
-                if place.fields.is_empty() {
-                    if self.value_type(root)? != self.value_type(value)? {
-                        return Err(LoweringFailure::InvalidCheckedProgram);
-                    }
-                    value
-                } else {
-                    self.replace_struct_path(root, &place.fields, value)?
-                }
-            }
-            CheckedSetTarget::ArrayIndex(target) => {
-                self.lower_array_element_commit(root, target, value)?
-            }
-            CheckedSetTarget::BufferIndex(target) => {
-                self.lower_buffer_element_commit(root, target, value)?
-            }
-            CheckedSetTarget::RunIndex(target) => {
-                self.lower_run_element_commit(root, target, value)?
-            }
-            // The descriptor a view element store writes through is
-            // unchanged, so the root committed back is the root that was
-            // loaded [SET-1].
-            CheckedSetTarget::SliceIndex(target) => {
-                self.lower_slice_element_commit(target, value)?;
-                root
-            }
-        };
-        self.commit_root_storage(binding, storage, replacement)
     }
 
     /// One target root's new value, written to the storage that holds it.
@@ -2377,59 +2280,9 @@ impl<'program> IrBuilder<'program> {
         target: &CheckedSetTarget,
         value: &CheckedExpression,
     ) -> Result<(), LoweringFailure> {
+        let target = self.prepare_target(target)?;
         let value = self.expression(value)?;
-        self.commit_target(target, value)
-    }
-
-    /// The array-element half of one commit: the offset is consumed directly,
-    /// because its [OP-4] obligation was discharged at the source level and no
-    /// runtime branch remains.
-    fn lower_array_element_commit(
-        &mut self,
-        root: IrValueId,
-        target: &CheckedArraySetTarget,
-        value: IrValueId,
-    ) -> Result<IrValueId, LoweringFailure> {
-        let array_type = lower_type(self.erasure, target.array_type)?;
-        let IrType::Array { element, length } = array_type else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        };
-        let array = if target.fields.is_empty() {
-            root
-        } else {
-            self.project_struct_path(root, &target.fields, false)?
-        };
-        if self.value_type(array)? != array_type
-            || element.ty() != lower_type(self.erasure, target.element_type)?
-            || Some(length) != target.length.value()
-        {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        let index = self.expression(&target.offset)?;
-        if self.value_type(index)?
-            != (IrType::Integer {
-                width: 64,
-                signed: false,
-            })
-        {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        if self.value_type(value)? != element.ty() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        let replacement = self.define(
-            array_type,
-            IrOperation::InsertArray {
-                aggregate: array,
-                index,
-                value,
-            },
-        )?;
-        if target.fields.is_empty() {
-            Ok(replacement)
-        } else {
-            self.replace_struct_path(root, &target.fields, replacement)
-        }
+        self.write_target(&target, value)
     }
 
     fn project_struct_path(

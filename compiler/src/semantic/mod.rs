@@ -42,17 +42,16 @@ pub(crate) use permission::FunctionPermissions;
 pub(crate) use loop_permission::{LoopActualization, LoopCombine, LoopPermission};
 
 pub(crate) use model::{
-    BindingId, CheckedArrayRoot, CheckedArraySetTarget, CheckedBodyDisposition,
-    CheckedBooleanOperation, CheckedBufferRoot, CheckedBufferSetTarget, CheckedCommitValues,
-    CheckedConst, CheckedConstructor, CheckedContainerRoot, CheckedDrop, CheckedElement,
-    CheckedEntryForm, CheckedEnumType, CheckedExpression, CheckedFlatElement,
-    CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation, CheckedKernelInstance,
-    CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedLoopId, CheckedMatchArm, CheckedMeasure,
-    CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedParameter, CheckedPlaceStep,
-    CheckedProgramData, CheckedProjectedDrop, CheckedReleaseClass, CheckedRunSetTarget,
-    CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot, CheckedSliceSetTarget,
+    BindingId, CheckedArrayRoot, CheckedBodyDisposition, CheckedBooleanOperation,
+    CheckedBufferRoot, CheckedCommitValues, CheckedConst, CheckedConstructor, CheckedContainerRoot,
+    CheckedDrop, CheckedElement, CheckedEntryForm, CheckedEnumType, CheckedExpression,
+    CheckedFlatElement, CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation,
+    CheckedKernelInstance, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedLoopId,
+    CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedNumericType,
+    CheckedParameter, CheckedPlaceStep, CheckedProgramData, CheckedProjectedDrop,
+    CheckedReleaseClass, CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot,
     CheckedSliceSource, CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue,
-    MeasureCell, MeasuredKind, NominalId, PropagationContext,
+    CheckedWritablePlace, MeasureCell, MeasuredKind, NominalId, PropagationContext,
 };
 
 /// Master switch for the v0.31 candidate's gated semantic surface:
@@ -1312,6 +1311,12 @@ pub enum UnsupportedSemanticFeature {
     PreludeNominalValues,
     /// A borrow form outside the implemented lexical buffer-borrow family.
     RegionsAndBorrows,
+    /// Rebinding a legacy buffer descriptor, directly or inside a selected
+    /// aggregate, through a borrowed place. Direct buffer borrows still carry
+    /// descriptor copies; aggregate borrows can update descriptor slots but
+    /// do not retain backing captured by an enclosing assignment target.
+    /// Element-content writes and owned descriptor replacement are unaffected.
+    BorrowedBufferDescriptorMutation,
     /// Composite types or values outside the implemented nominal-data family.
     CompositeValues,
     /// A recursive nominal layout whose finite representation is not selected.
@@ -1344,15 +1349,6 @@ pub enum UnsupportedSemanticFeature {
     /// every write to its origin [OWN-5]; only the exclusive one stops here,
     /// and it stops rather than lowering a write nobody can observe.
     ExclusiveViewOverArray,
-    /// An exclusive view over a `FixedVector<T, n>` [VIEW-1, VIEW-2]. A
-    /// frame-resident run is an inline value in this lowering exactly as an
-    /// array is — its slots travel with the value and an element commit
-    /// rebuilds it — so the descriptor a view of one carries points at a
-    /// snapshot of its slots. The shared view is unaffected for the reason
-    /// the array's is, and the store-resident run is unaffected at either
-    /// strength, because its slots live in the store its descriptor points
-    /// at [BLK-1].
-    ExclusiveViewOverInlineRun,
 }
 
 /// Exact source node at which an unimplemented compiler family was required.

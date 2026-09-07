@@ -709,7 +709,9 @@ command fn main() -> status: own ExitStatus pure {
         sentences: &[r#"TypeMismatch { expected: "own u64", found: "own Bool" }"#],
     },
     Probe {
-        name: "subscript-is-not-the-last-suffix.wf",
+        // Field suffixes after indices are supported; this scalar element
+        // still has no fields. Pin that type rule, not the retired path limit.
+        name: "scalar-buffer-element-has-no-fields.wf",
         source: br#"command fn main() -> status: own ExitStatus pure {
   let store = buffer_new(4_u64, 0_u8);
   let one = store[0_u64].value;
@@ -718,7 +720,7 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            r#"TypeMismatch { expected: "a subscript as the last suffix of the place", found: "a subscript followed by another suffix" }"#,
+            r#"TypeMismatch { expected: "a source struct, whose declared field this suffix selects", found: "u8" }"#,
         ],
     },
     Probe {

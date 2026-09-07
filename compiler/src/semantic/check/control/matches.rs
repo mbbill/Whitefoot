@@ -629,9 +629,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .cloned()
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 let mut place = parent.place;
-                place.fields.push(
-                    u32::try_from(index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
-                );
+                place
+                    .extend_fields(&[u32::try_from(index)
+                        .map_err(|_| SemanticCompilerFailure::CounterOverflow)?]);
                 Some(BorrowInfo { place, ..parent })
             };
             let field_ordinal =

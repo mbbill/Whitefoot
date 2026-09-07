@@ -30,6 +30,7 @@ mod loop_permission;
 mod operation_table;
 mod options;
 mod originating_acceptance;
+mod owned_places;
 mod permission;
 mod postconditions;
 mod reinterpret;

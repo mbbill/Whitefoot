@@ -1812,9 +1812,11 @@ pub(super) fn set_target_place(
             collect_operand_reads(places, &target.offset, node, footprint);
             rooted_place(places, target.root.binding, &target.root.fields)
         }
-        CheckedSetTarget::RunIndex(target) => {
-            collect_operand_reads(places, &target.offset, node, footprint);
-            rooted_container_place(places, &target.root)
+        CheckedSetTarget::Storage(target) => {
+            for offset in target.offsets() {
+                collect_operand_reads(places, offset, node, footprint);
+            }
+            rooted_container_place(places, target)
         }
         // [PAR-2] a view element store writes the origin, and [VIEW-1] says
         // which storage that is: the range the view was formed over. A
@@ -1854,7 +1856,11 @@ fn collect_set_target_bindings(target: &CheckedSetTarget, out: &mut Vec<BindingI
         CheckedSetTarget::Place(_) => {}
         CheckedSetTarget::ArrayIndex(target) => collect_used_bindings(&target.offset, out),
         CheckedSetTarget::BufferIndex(target) => collect_used_bindings(&target.offset, out),
-        CheckedSetTarget::RunIndex(target) => collect_used_bindings(&target.offset, out),
+        CheckedSetTarget::Storage(target) => {
+            for offset in target.offsets() {
+                collect_used_bindings(offset, out);
+            }
+        }
         CheckedSetTarget::SliceIndex(target) => collect_used_bindings(&target.offset, out),
     }
 }
@@ -1982,11 +1988,13 @@ pub(crate) fn visit_read_bindings(
     match expression {
         CheckedExpression::Binding { binding, .. }
         | CheckedExpression::Project { binding, .. }
-        | CheckedExpression::BorrowAddressed { binding, .. }
         | CheckedExpression::BorrowBox { binding, .. }
         | CheckedExpression::BorrowSystemResource { binding, .. }
         | CheckedExpression::ReborrowAddressed { binding, .. }
         | CheckedExpression::DerefAddressed { binding, .. } => note(*binding),
+        CheckedExpression::BorrowAddressed { root, .. }
+        | CheckedExpression::ContainerMeasure { root, .. }
+        | CheckedExpression::ReadStorage { root, .. } => note(root.binding),
         CheckedExpression::BorrowBuffer { root, .. }
         | CheckedExpression::BufferMeasure { root, .. }
         | CheckedExpression::BufferIndex { root, .. } => note(root.binding),
@@ -2088,7 +2096,7 @@ pub(super) fn collect_operand_reads(
             );
         }
         CheckedExpression::ContainerMeasure { root, .. }
-        | CheckedExpression::RunIndex { root, .. } => {
+        | CheckedExpression::ReadStorage { root, .. } => {
             read(footprint, node, rooted_container_place(places, root));
         }
         CheckedExpression::ArrayMeasure { root, .. }

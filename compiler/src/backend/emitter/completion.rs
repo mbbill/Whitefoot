@@ -1285,8 +1285,9 @@ impl FunctionEmitter<'_, '_> {
         let Some((result_slot, submitted)) = not_submitted else {
             // Every path through this operation submitted, so the wait is the
             // whole join: no branch, no phi and no block of its own.
-            return write!(self.output, "{}", retirement(&value_name(result)))
-                .map_err(|_| BackendFailure::TextEmission);
+            write!(self.output, "{}", retirement(&value_name(result)))
+                .map_err(|_| BackendFailure::TextEmission)?;
+            return self.save_value_result(result);
         };
         let direct = format!("%{}", self.next_temporary()?);
         let completed = format!("%{}", self.next_temporary()?);
@@ -1307,7 +1308,8 @@ impl FunctionEmitter<'_, '_> {
             retirement(&completed),
             value_name(result),
         )
-        .map_err(|_| BackendFailure::TextEmission)
+        .map_err(|_| BackendFailure::TextEmission)?;
+        self.save_value_result(result)
     }
 }
 

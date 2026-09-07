@@ -529,11 +529,8 @@ fn a_shared_view_is_no_set_target_and_an_exclusive_view_is() {
             required_classes: "live own storage, a live usable &uniq referent, or an exclusive view",
         },
     );
-    // The exclusive view is formed over a store-resident run: an exclusive
-    // view of an inline `FixedVector` stops as `ExclusiveViewOverInlineRun`,
-    // so the writable half of the pair is written over the run a bump extent
-    // hands out. What the case pins — a shared view refuses the element write
-    // and an exclusive one performs it — is unchanged.
+    // Keep the store-resident case alongside the inline-owned-place tests:
+    // both storage classes use the same exclusive view rule.
     with_semantics(
         br#"command fn main() -> status: own ExitStatus pure {
   region 'a {

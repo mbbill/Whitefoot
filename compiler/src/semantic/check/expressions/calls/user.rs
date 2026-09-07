@@ -369,7 +369,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .binding;
             Some(CheckedResultBorrow {
                 binding: root,
-                fields: borrow.place.fields.clone(),
+                path: borrow.place.path.clone(),
             })
         } else {
             None
@@ -494,7 +494,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         {
             projections.push(GoalProjection::Deref);
         }
-        projections.extend(place.fields.iter().copied().map(GoalProjection::Field));
+        projections.extend(place.path.iter().map(|step| match step {
+            crate::semantic::places::PlaceStep::Field(field) => GoalProjection::Field(*field),
+            crate::semantic::places::PlaceStep::Subscript(index) => {
+                GoalProjection::Subscript(*index)
+            }
+        }));
         let datum = if self.constants.contains_key(&place.root) {
             GoalDatum::NamedConst {
                 declaration: place.root,
@@ -1420,14 +1425,13 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
         if let Some(slice) = slice {
             for origin in &slice.origins {
                 let place = match origin {
-                    CheckedSliceOrigin::SourcePlace { root, fields, .. } => ResolvedPlace {
+                    CheckedSliceOrigin::SourcePlace { root, path, .. } => ResolvedPlace {
                         root: *root,
-                        fields: fields.clone(),
+                        path: path.clone(),
                     },
-                    CheckedSliceOrigin::FormalSlice { parameter, .. } => ResolvedPlace {
-                        root: *parameter,
-                        fields: Vec::new(),
-                    },
+                    CheckedSliceOrigin::FormalSlice { parameter, .. } => {
+                        ResolvedPlace::fields(*parameter, Vec::new())
+                    }
                     CheckedSliceOrigin::ImmutableConst => continue,
                 };
                 claims.push(CallAccessClaim {
@@ -1497,7 +1501,7 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
                         .and_then(Option::as_ref)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                     let mut place = borrow.place.clone();
-                    place.fields.extend_from_slice(&formal.fields);
+                    place.extend_fields(&formal.fields);
                     self.check_loan_access(
                         bindings,
                         holders.get(index).copied().flatten(),
@@ -1525,7 +1529,7 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
                     // check, where the callee's own row admits reads alone.
                     let judged = strength != LoanStrength::Exclusive;
                     for (mut place, _) in slice.source_places() {
-                        place.fields.extend_from_slice(&formal.fields);
+                        place.extend_fields(&formal.fields);
                         if judged {
                             self.check_loan_access(
                                 bindings,
@@ -1537,7 +1541,7 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
                         }
                     }
                     for mut place in slice.effect_places() {
-                        place.fields.extend_from_slice(&formal.fields);
+                        place.extend_fields(&formal.fields);
                         actual_paths.extend(self.effect_paths_for_place(&place, bindings)?);
                     }
                 }

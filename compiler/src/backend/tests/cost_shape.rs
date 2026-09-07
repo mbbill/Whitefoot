@@ -209,20 +209,30 @@ fn definition_start(module: &str, at: usize) -> Option<usize> {
     module[line..at].starts_with("define").then_some(line)
 }
 
-/// The first argument of the call to `callee` on one printed instruction.
+/// One argument of the call to `callee` on one printed instruction.
 ///
 /// Scans at paren depth so that a `range(i32 1, 3)` annotation inside the
 /// operand does not end it early.
-fn first_argument<'line>(line: &'line str, callee: &str) -> Option<&'line str> {
+fn call_argument<'line>(line: &'line str, callee: &str, wanted: usize) -> Option<&'line str> {
     let open = line.find(&format!("@{callee}("))? + callee.len() + 2;
     let rest = &line[open..];
     let mut depth = 0_usize;
+    let mut ordinal = 0_usize;
+    let mut start = 0_usize;
     for (offset, character) in rest.char_indices() {
         match character {
             '(' | '[' | '{' => depth += 1,
-            ')' | ']' | '}' if depth == 0 => return Some(rest[..offset].trim()),
+            ')' | ']' | '}' if depth == 0 => {
+                return (ordinal == wanted).then(|| rest[start..offset].trim());
+            }
             ')' | ']' | '}' => depth -= 1,
-            ',' if depth == 0 => return Some(rest[..offset].trim()),
+            ',' if depth == 0 => {
+                if ordinal == wanted {
+                    return Some(rest[start..offset].trim());
+                }
+                ordinal += 1;
+                start = offset + 1;
+            }
             _ => {}
         }
     }
@@ -233,7 +243,8 @@ fn first_argument<'line>(line: &'line str, callee: &str) -> Option<&'line str> {
 ///
 /// A publication is one source `publish_all` call. In the emitted program each
 /// appears in exactly one of two forms: a call into the out-of-line
-/// `publish_all`, whose first argument is the descriptor, or — where the host
+/// `publish_all`, whose descriptor follows its aggregate result destination,
+/// or — where the host
 /// inliner expanded that site — the typed submission of the expanded copy,
 /// carrying the same literal descriptor. The out-of-line body's own submission
 /// names the parameter instead of a literal and is not a publication site; it
@@ -245,7 +256,8 @@ fn publications() -> Vec<u32> {
             continue;
         };
         let argument = match target {
-            "wf_publish_all" | "wf__completion_file_write_submit" => first_argument(line, target),
+            "wf_publish_all" => call_argument(line, target, 1),
+            "wf__completion_file_write_submit" => call_argument(line, target, 0),
             _ => None,
         };
         let Some(argument) = argument else {
@@ -260,6 +272,43 @@ fn publications() -> Vec<u32> {
         }
     }
     descriptors
+}
+
+/// Attribute a bulk fill to a local aggregate or an explicit result destination.
+/// Heap run backing is reached by loads/call results, never by this GEP chain.
+/// Unknown pointer forms fail this observation and require fresh inspection.
+fn is_aggregate_destination<'module>(function: &'module str, mut pointer: &'module str) -> bool {
+    let mut seen = Vec::new();
+    loop {
+        let first_parameter = function.lines().next().and_then(|header| {
+            let (callee, _) = header.split_once('@')?.1.split_once('(')?;
+            call_argument(header, callee, 0)?.split_whitespace().next_back()
+        });
+        if pointer == "%wf.result" && first_parameter == Some(pointer) {
+            return true;
+        }
+        if seen.contains(&pointer) {
+            return false;
+        }
+        seen.push(pointer);
+        let prefix = format!("  {pointer} = ");
+        let Some(definition) = function.lines().find_map(|line| line.strip_prefix(&prefix)) else {
+            return false;
+        };
+        if definition.starts_with("alloca ") {
+            return true;
+        }
+        if !definition.starts_with("getelementptr ") {
+            return false;
+        }
+        let Some((_, base)) = definition.split_once(", ptr ") else {
+            return false;
+        };
+        let Some((base, _)) = base.split_once(',') else {
+            return false;
+        };
+        pointer = base.trim();
+    }
 }
 
 /// The emitted body of one definition, by symbol.
@@ -1205,17 +1254,34 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
     // guarantee: the fill loop is inside `zeroed_bytes` and `zeroed_words`,
     // between the take and the hand-back, so a caller cannot reach a filled
     // run without having taken it and cannot re-reach the fill without taking
-    // another. What the module can still be asked is that no *second* filling
-    // agent exists: no reallocation, and no bulk fill primitive anywhere. The
-    // source's fill is a `place_back` chain, which moves the run's length word
-    // on every iteration and is therefore not a plain byte store the host
-    // optimizer can contract into `memset`; if a later host ever does contract
-    // it, this row is re-derived against that module rather than relaxed here.
-    for forbidden in ["@realloc(", "@reallocf(", "memset", "bzero"] {
+    // another. Owned aggregate destinations now make LLVM retain three
+    // 228-byte inactive-result initializations and one 16-byte frame-metadata
+    // initialization as memset. These do not refill a run's heap payload.
+    // Keep the no-refill claim on pointer provenance, rather than forbidding
+    // the unrelated aggregate initialization instruction by name.
+    for forbidden in ["@realloc(", "@reallocf(", "bzero"] {
         assert!(
             !optimized().contains(forbidden),
             "the reused buffers must not reach {forbidden}"
         );
+    }
+    for definition in optimized().split("\ndefine ").skip(1) {
+        let function = definition
+            .split("\n}")
+            .next()
+            .expect("a definition has a body");
+        for line in function.lines() {
+            let Some(callee) = call_target(line).filter(|name| name.contains("memset")) else {
+                continue;
+            };
+            let pointer = call_argument(line, callee, 0)
+                .and_then(|argument| argument.split_whitespace().next_back())
+                .expect("a memset has a destination");
+            assert!(
+                is_aggregate_destination(function, pointer),
+                "bulk initialization must not reach reused heap run backing: {line}"
+            );
+        }
     }
     // Allocation begins in each function's prologue: the first allocation a
     // function makes precedes every host transfer it reaches, so no buffer is
