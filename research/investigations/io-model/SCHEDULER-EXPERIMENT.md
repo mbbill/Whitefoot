@@ -4254,7 +4254,7 @@ name. A known limitation remains visible until its experiment is complete.
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
 | WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Experiments 39/44/48 qualify the threaded, owner and batched-owner paths. At `fc69af15`, batching adds 28% / 27% paired throughput at 64 / 1024 small-message peers, with separate counters confirming aggregated ring submissions. Experiment 54 removes 97..98% of pending-list visits, with only 1.0%/1.8% median paired rate gains and reversals at 1024 peers; native CPU/trip still leads. Client headroom and multi-owner compute remain open. Experiments 52/54 qualify the unchanged sequential mixed protocol on both Linux completion routes |
 | Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Go 1.27.1 release/race and both 64 KiB storage forms qualified (49/51). The fixed Linux screen (53) favors acceptor-heap/P1 for memory and tail latency within one server CPU; P4 oversubscription inflates p99. WF batch32 exceeds this Go candidate at 64/1024 small peers while native stays ahead. Large transfers approach the client ceiling; no universal optimum. Race moves both buffers to the heap |
-| Rust sequential / Rayon CPU pool | Existing recursive `par_layout.wf` port with exact floating-point order and every node write; sibling `join`, calibrated grain and explicit pool width | Essential CPU-parallel reference; separates sequential code generation from parallel scheduling. Broader `par_iter`/`scope` and unbalanced workloads remain candidate rows | Checksum-qualified and independently confirmed after grain calibration on M1/Linux (experiment 40). Experiment 45's stack/batch control reduces the WF12/Rayon paired wall gap from 13.9% at one batch to 1.6% at sixteen, supporting substantial fixed costs. Experiments 47/50 find no stable gain from unused-ring or lane-initialization changes. Corrected traces locate early underutilization during computation; experiment 55 associates about 90% of WF runnable waits with explicit yields. Experiment 57's complete pre-exit attribution places over 99.4% of early yield-associated off-CPU time in the idle scan; three post-exit probes remain explicitly unpaired. Compare only the idle yield rounds in an ordinary same-budget panel next. This is not an optimal WF CPU setup claim |
+| Rust sequential / Rayon CPU pool | Existing recursive `par_layout.wf` port with exact floating-point order and every node write; sibling `join`, calibrated grain and explicit pool width | Essential CPU-parallel reference; separates sequential code generation from parallel scheduling. Broader `par_iter`/`scope` and unbalanced workloads remain candidate rows | Checksum-qualified and independently confirmed after grain calibration on M1/Linux (experiment 40). Experiment 45's stack/batch control reduces the WF12/Rayon paired wall gap from 13.9% at one batch to 1.6% at sixteen, supporting substantial fixed costs. Experiments 47/50 find no stable gain from unused-ring or lane-initialization changes. Corrected traces locate early underutilization during computation; experiment 55 associates about 90% of WF runnable waits with runtime-issued yields. Experiment 57's complete pre-exit attribution places over 99.4% of early yield-associated off-CPU time in the idle scan; three post-exit probes remain explicitly unpaired. Experiment 59 finds no wall improvement from removing those rounds, with +1.24% short-task CPU; retain the default and distinguish ready-work availability from placement. This is not an optimal WF CPU setup claim |
 | Tokio I/O + bounded Rayon CPU offload | One current-thread I/O driver plus B-1 CPU workers, fixed 64-byte protocol, asynchronous bounded admission, one request/reply per connection | External mixed-load reference under one total execution budget; exposes CPU queue transfer, backpressure and light-request progress | Linux-qualified at `040bfc4b` (experiment 42), including saturation, errors, reset, partial input, half-close and slow output. Four short client smoke records are correctness evidence, not a performance ranking |
 | Tokio | Fixed-worker multithread runtime and a separate per-core current-thread/reactor configuration | External mainstream async baseline; distinguish work stealing from reactor locality | Source candidate only; pin toolchain/lockfile, socket distribution and blocking-pool budget |
 | Monoio | Per-core runtime, separately forced IoUringDriver and LegacyDriver | External completion/readiness comparison within one runtime family | Source candidate only; prohibit silent fusion fallback in backend-specific rows |
@@ -4277,7 +4277,7 @@ revision, compiler and dependency lockfile.
 | TCP closed-loop echo | 1/4/64/1024 peers × 64 B, 64 peers × 64 KiB; one outstanding request per peer; exact bytes and EOF | Current ten-cell split1/split2 screen. Add 4 KiB and pipeline depths 8/32 only after candidate screening |
 | TCP streaming / backpressure | Continuous 2 MiB or larger, arbitrary fragmentation, short sends, slow readers, half-close; preserve order and bounded live storage | Existing epoll stream oracle; uring joins it below. Idle 10k peers, churn and reset/cancellation remain separate qualification |
 | TCP fixed-arrival / mixed compute | Same recurrence and compute quantum; light paced requests alongside heavy work; below/near/above saturation | Existing paced mixed experiments cover selected controls. External candidates need scheduled-to-response p99/p99.9, goodput, missed deadlines, backlog and drain recovery |
-| CPU-only parallelism and CPU offload | Sequential Rust vs Rayon; balanced/unbalanced recursive and data-parallel jobs; matched arithmetic, tuned grain and pool width. Mixed mode charges enqueue, completion transfer and bounded queues | Recursive `join`, stack/batch, unused-ring and initializer controls are measured; caller traces identify the idle-yield path. Compare idle backoff and same-budget worker placement next. Tokio + Rayon mixed qualification exists, with timing pending client-capacity control. Both executors share one total budget |
+| CPU-only parallelism and CPU offload | Sequential Rust vs Rayon; balanced/unbalanced recursive and data-parallel jobs; matched arithmetic, tuned grain and pool width. Mixed mode charges enqueue, completion transfer and bounded queues | Recursive `join`, stack/batch, unused-ring and initializer controls are measured; caller traces identify the idle-yield path, but the ordinary zero-yield control finds no improvement. Ready-work availability and same-budget worker placement remain open. Tokio + Rayon mixed qualification exists, with timing pending client-capacity control. Both executors share one total budget |
 | File reads | Open-once cache-hot vs cold buffered vs direct I/O; random/sequential; 4/64 KiB; QD 1/8/64; same offsets, bytes and checksum | Existing file experiments cover subsets. Extend native blocking/pread pool/uring comparisons; fio is a device-envelope cross-check, not an identical-program runtime row |
 | File writes | Buffered accepted bytes vs fdatasync/fsync durability are distinct contracts; name batch size, flush cadence and directory durability | Broader matrix required; no current TCP result supports a write or durability claim |
 | Dependent storage/network pipeline | Read → parse → request → write with the same dependency graph and compute work | Unmeasured; tests whether sequential-source overlap composes across stages |
@@ -8081,5 +8081,67 @@ supports checking which call path disappeared. `codex/io-cpu-idle-controls`
 runs this panel on Linux without profiler probes or changed affinity. Lower
 wall time must be considered with CPU cost and both batch lengths; a negative
 result rejects this isolated candidate, not the ownership-based parallel
-model. Available-work and placement questions remain distinct. Native Linux
-qualification and results are pending; no policy is selected yet.
+model. Available-work and placement questions remain distinct. The frozen
+Linux result below does not select the zero-yield candidate as a default.
+
+### Frozen idle-wait result
+
+Revision `e0a05efcae42bee9a622e68fcf62b614c94121d8` completed
+[run 34110933420](https://github.com/mbbill/Whitefoot/actions/runs/34110933420),
+including CPU job 101706761849 and Windows placement qualification. Artifact
+10014504854 has ZIP SHA-256
+`6bbc94c2c1eb37270e0b4e493fad1a98ef3d000eec45e7cee1d4e160ccca3354`.
+The host reports EPYC 9V74, four logical CPUs on two SMT cores, Linux
+6.17.0-1022-azure, Clang 18.1.3 and Rust 1.98.0. Processes inherit CPUs 0-3;
+the experiment adds no affinity. This is a shared hosted runner cohort.
+
+The artifact audit recomputes all nine distinct retained executable/IR
+hashes and 22 frozen source hashes. The compiler executable hash is recorded
+but its file is not retained, so that hash is not independently recomputed.
+Ordinary and manual-default WF executables are byte-identical. The freshly
+built ordinary WF, sequential WF, Rayon and emitted IR also match the earlier
+8dd artifacts byte-for-byte. Manual candidate/default commands differ only
+in the yield-round value and output filename. Actual ELF instruction bytes
+confirm eight default calls to `wf_prim_yield` and seven candidate calls:
+only the idle-scan call at `0x4df0` disappears; the seven other sites retain
+their offsets and targets.
+
+All forty ordinary rows have the expected plan labels, five alternating
+passes after one warmup and complete eight-column resource records. Summary
+medians and ranges reconstruct from the raw rows. Native-ring and helper
+completion routes, scheduler smoke, all four unchanged enumerations and five
+full Linux completion-harness runs pass. The owner-ring-only probe is
+inapplicable to this default-ring build and takes its existing status-77
+path. Four separate observed runs
+confirm the expected output, actual workers/grants, 256 spin rounds, 16/0
+yield rounds and unchanged storage/progress settings.
+
+The paired comparison uses candidate/manual-default ratios within each pass.
+Positive deltas mean greater candidate cost; the range contains all five
+pass deltas rather than a confidence interval.
+
+| Work | Default / idle0 median wall ms | Paired wall delta, median (range) | Paired total CPU delta | Paired voluntary-switch delta |
+| --- | ---: | ---: | ---: | ---: |
+| 1 batch | 397.428 / 402.280 | +1.196% (-0.643..+2.739%) | +1.244% | +51.939% |
+| 16 batches | 5757.071 / 5755.385 | +0.114% (-2.147..+1.068%) | +0.022% | +5.383% |
+
+The long-row ratio of separate medians has a different sign from the median
+of paired ratios; neither is a material speedup. The byte-identical
+manual/ordinary short-task control itself ranges from -1.221% to +2.271%
+across pairs, comparable to the small candidate wall effect. Short-task total CPU rises
+in every pass, by 0.196..1.400%, while its voluntary switches rise by
+45.643..78.411%. Involuntary switches vary in both directions. WF remains
+behind Rayon: ordinary/idle0 paired wall gaps are respectively 12.422/13.552%
+for one batch and 2.117/2.114% for sixteen. These gaps belong to this cohort,
+not an aggregate of earlier runners or a claim about all CPU workloads.
+
+The separate observed idle-wait counts rise from 21 to 356 for one batch
+and from 162 to 371 for sixteen. Together with the ordinary voluntary-switch
+increase, this is consistent with reaching the blocking wait more often
+after shortening the idle window. The observed executions are instrumented
+and are not the timing rows; they do not assign a wall-time cost to each park
+or prove ready work was available. The result rejects simply removing these
+yield rounds as the proposed performance fix for this panel. It does not
+reject the ownership-based parallel model. Keep the default and distinguish
+ready-work availability from OS placement before another waiting-policy
+change; experiment 57's off-CPU intervals are not recoverable-time estimates.
