@@ -11,6 +11,7 @@ mod buffer;
 mod checkpoint;
 mod cleanup;
 mod completion;
+mod continuation;
 mod conversion;
 mod floating;
 mod floor;
@@ -88,6 +89,8 @@ pub enum BackendFailure {
     /// proves the range in its own CFG; reaching this state is an internal
     /// compiler defect, not a second proof layer or source rejection.
     MisaddressedCompletionSlot,
+    /// An experimental continuation target has no qualified lowering yet.
+    UnsupportedContinuationTarget,
     InvalidIr,
     CounterOverflow,
     TextEmission,
@@ -136,7 +139,19 @@ fn emit_llvm_checkpoint_policy(
     let system_target = SystemTarget::for_triple(target.triple()).ok_or(
         BackendFailure::TargetLayout(TargetLayoutFailure::UnsupportedHost),
     )?;
-    emit_llvm_for(program, system_target, checkpoint_interval, chunks)
+    emit_llvm_for(program, system_target, checkpoint_interval, chunks, false)
+}
+
+pub(crate) fn emit_llvm_with_continuations(
+    program: &IrProgram<'_, '_, '_>,
+) -> Result<LlvmModule, BackendFailure> {
+    let target = TargetLayout::host().map_err(BackendFailure::TargetLayout)?;
+    let system_target = SystemTarget::for_triple(target.triple())
+        .ok_or(BackendFailure::UnsupportedContinuationTarget)?;
+    if system_target.is_windows() {
+        return Err(BackendFailure::UnsupportedContinuationTarget);
+    }
+    emit_llvm_for(program, system_target, None, false, true)
 }
 
 /// Emits one program against an explicitly selected system target.
@@ -149,7 +164,7 @@ pub(crate) fn emit_llvm_for_target(
     program: &IrProgram<'_, '_, '_>,
     system_target: SystemTarget,
 ) -> Result<LlvmModule, BackendFailure> {
-    emit_llvm_for(program, system_target, None, false)
+    emit_llvm_for(program, system_target, None, false, false)
 }
 
 fn emit_llvm_for(
@@ -157,9 +172,15 @@ fn emit_llvm_for(
     system_target: SystemTarget,
     checkpoint_interval: Option<NonZeroU32>,
     chunks: bool,
+    continuations: bool,
 ) -> Result<LlvmModule, BackendFailure> {
     let target = TargetLayout::host().map_err(BackendFailure::TargetLayout)?;
     let qualification = qualify_program(system_target, program)?;
+    let continuations = continuations
+        && program
+            .functions()
+            .iter()
+            .any(|function| function.target_action().may_suspend());
     validate_program(target, &qualification, program).map_err(BackendFailure::TargetLayout)?;
     let main = program
         .functions()
@@ -192,6 +213,7 @@ fn emit_llvm_for(
                 checkpoint_interval,
                 chunked: chunked.as_ref(),
                 checkpoints_used: &mut checkpoints_used,
+                continuations,
             },
         )?;
         functions.push_str(&emitter.emit()?);
@@ -236,6 +258,7 @@ fn emit_llvm_for(
                         checkpoint_interval,
                         chunked: chunked.as_ref(),
                         checkpoints_used: &mut checkpoints_used,
+                        continuations,
                     },
                 )?
                 .emit()?,
@@ -259,7 +282,8 @@ fn emit_llvm_for(
         .nominals()
         .iter()
         .any(|nominal| matches!(nominal.kind(), IrNominalKind::ArenaStorage));
-    let has_heap_storage = !drop_helpers.is_empty()
+    let has_heap_storage = continuations
+        || !drop_helpers.is_empty()
         || has_arena_storage
         || program.functions().iter().any(IrFunction::contains_buffer)
         || program.nominals().iter().any(|nominal| {
@@ -370,6 +394,9 @@ fn emit_llvm_for(
     }
     text.push_str(&drop_helpers);
     text.push_str(&system.definitions);
+    if continuations {
+        text.push_str(continuation::SUPPORT);
+    }
     for intrinsic in intrinsics {
         match intrinsic {
             IntrinsicDeclaration::Overflow { name, ty } => {
@@ -711,6 +738,8 @@ enum IntrinsicDeclaration {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum FunctionSlot {
+    ContinuationResult(IrValueId),
+    ContinuationWaiter,
     CheckpointBudget,
     ArrayFillValue(IrValueId),
     ArrayFillIndex(IrValueId),
@@ -769,6 +798,7 @@ struct RuntimeFrameNeeds<'a> {
     pipeline: Option<&'a crate::IrCompletionPipeline>,
     staged_lane: Option<&'a parallel::StagedLane>,
     checkpoint: bool,
+    continuation: bool,
 }
 
 impl FunctionFramePlan {
@@ -784,6 +814,7 @@ impl FunctionFramePlan {
             pipeline,
             staged_lane,
             checkpoint,
+            continuation,
         } = runtime;
         let mut specifications = Vec::new();
         let mut ordered = Vec::new();
@@ -800,6 +831,22 @@ impl FunctionFramePlan {
                     continue;
                 };
                 match operation {
+                    IrOperation::Call {
+                        function: callee, ..
+                    } if continuation
+                        && program
+                            .functions()
+                            .get(*callee as usize)
+                            .is_some_and(|callee| callee.target_action().may_suspend()) =>
+                    {
+                        push_function_slot(
+                            &mut specifications,
+                            &mut ordered,
+                            FunctionSlot::ContinuationResult(*result),
+                            TargetStorageType::source(*ty),
+                            None,
+                        )?;
+                    }
                     IrOperation::ArrayFill { .. } => {
                         push_function_slot(
                             &mut specifications,
@@ -890,6 +937,15 @@ impl FunctionFramePlan {
                     _ => {}
                 }
             }
+        }
+        if continuation {
+            push_function_slot(
+                &mut specifications,
+                &mut ordered,
+                FunctionSlot::ContinuationWaiter,
+                TargetStorageType::bytes(continuation::WAITER_BYTES),
+                Some(continuation::WAITER_ALIGN),
+            )?;
         }
         // The staged lane hand-out's ring, reserved once for the whole loop.
         // Its elements are a *plan* of the emission rather than an instruction
@@ -1174,6 +1230,7 @@ fn plan_completion_slots(
 }
 
 struct FunctionEmitter<'program, 'state> {
+    continuation: bool,
     program: &'program IrProgram<'program, 'program, 'program>,
     /// The [QUAL-1] table lookup this build already performed. Every emission
     /// site reads the resolved row; none consults the table again.
@@ -1296,6 +1353,7 @@ struct FunctionEmitter<'program, 'state> {
 /// the program, qualification, and the function — the ones a reader has to
 /// think about.
 struct ModuleState<'state> {
+    continuations: bool,
     intrinsics: &'state mut BTreeSet<IntrinsicDeclaration>,
     parallel: &'state mut ParallelThunks,
     completion_used: &'state mut bool,
@@ -1315,6 +1373,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         module: ModuleState<'state>,
     ) -> Result<Self, BackendFailure> {
         let ModuleState {
+            continuations,
             intrinsics,
             parallel,
             completion_used,
@@ -1323,6 +1382,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             chunked,
             checkpoints_used,
         } = module;
+        let continuation = continuations && function.target_action().may_suspend();
         // The staged call of a driven [PAR-3] loop, when that call is a
         // may-suspend user call. It has a hand-out form of its own — the lane
         // frame — so it is not a call the emitter has to withdraw the
@@ -1334,7 +1394,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         // A sequential clone suppresses compute hand-outs only. Target
         // completion is independent of the compute-pool choice and remains
         // active in both worlds.
-        let completion_steps: HashMap<_, _> =
+        let mut completion_steps: HashMap<_, _> =
             if qualification.target().supports_posix_file_completion() {
                 function
                     .completion_steps()
@@ -1370,6 +1430,31 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             } else {
                 HashMap::new()
             };
+        if continuation {
+            // A sequential continuation awaits each direct operation before
+            // its next source instruction. The existing typed submit/mapper
+            // path owns the outcome and the frame's buffer loans.
+            for instruction in function.blocks().iter().flat_map(IrBlock::instructions) {
+                if let IrInstruction::Define {
+                    result,
+                    operation:
+                        IrOperation::SystemCall {
+                            operation,
+                            target_action,
+                            ..
+                        },
+                    ..
+                } = instruction
+                    && target_action.may_suspend()
+                    && system::completion_file_operation(*operation).is_some()
+                {
+                    completion_steps.insert(
+                        *result,
+                        IrCompletionStep::new(*result, Vec::new(), true, true),
+                    );
+                }
+            }
+        }
         let mut overlaps = Vec::new();
         let mut ordinary_lane_frames = HashMap::new();
         if sequential_clones.is_none() {
@@ -1485,6 +1570,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 pipeline,
                 staged_lane: staged_lane.as_ref(),
                 checkpoint: !checkpoint_edges.is_empty(),
+                continuation,
             },
         )?;
         let mut entry_prelude = frame.render(program)?;
@@ -1500,6 +1586,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             *checkpoints_used = true;
         }
         Ok(Self {
+            continuation,
             program,
             qualification,
             function,
@@ -1548,6 +1635,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 
     fn emit(mut self) -> Result<String, BackendFailure> {
         self.incoming = self.collect_incoming()?;
+        if self.continuation {
+            return self.emit_continuation();
+        }
         let symbol = match self.sequential_clones {
             Some(_) => sequential_clone_symbol(self.function.name()),
             None => source_symbol(self.function.name()),
@@ -1690,15 +1780,19 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     self.output,
                     "[ {}, %{} ]",
                     self.value_name(argument),
-                    block_exit_label(
-                        edge.predecessor,
-                        self.block(edge.predecessor)?,
-                        &self.overlaps,
-                        &self.completion_steps,
-                        &self.branching_completions,
-                        self.pipeline,
-                        self.staged_lane.as_ref(),
-                    )
+                    if self.continuation {
+                        continuation::tail_label(edge.predecessor)
+                    } else {
+                        block_exit_label(
+                            edge.predecessor,
+                            self.block(edge.predecessor)?,
+                            &self.overlaps,
+                            &self.completion_steps,
+                            &self.branching_completions,
+                            self.pipeline,
+                            self.staged_lane.as_ref(),
+                        )
+                    }
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
@@ -2117,6 +2211,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 }
                 self.emit_drops(drops)?;
                 self.emit_checkpoint(block)?;
+                if self.continuation {
+                    writeln!(
+                        self.output,
+                        "  br label %{}\n{}:",
+                        continuation::tail_label(block),
+                        continuation::tail_label(block)
+                    )
+                    .map_err(|_| BackendFailure::TextEmission)?;
+                }
                 writeln!(self.output, "  br label %{}", block_label(*target))
                     .map_err(|_| BackendFailure::TextEmission)
             }
@@ -2125,6 +2228,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     return Err(BackendFailure::InvalidIr);
                 }
                 self.emit_drops(drops)?;
+                if self.continuation {
+                    return writeln!(
+                        self.output,
+                        "  store {} {}, ptr %wf.coro.out\n  br label %wf.coro.final",
+                        llvm_type(self.program, self.function.result())?,
+                        self.value_name(*value)
+                    )
+                    .map_err(|_| BackendFailure::TextEmission);
+                }
                 writeln!(
                     self.output,
                     "  ret {} {}",

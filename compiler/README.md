@@ -204,6 +204,21 @@ loop. Empty ranges, early exits and integer limits retain their source
 behavior; other loops use the existing counter fallback. This also remains
 an experimental scheduling policy without a source progress guarantee.
 
+`--continuations --emit-llvm` is a separate work-branch representation
+experiment qualified with Linux LLVM 20 and local Apple clang 21. Existing derived
+`may_suspend` effects select switched-resume coroutine frames, including
+nested and recursive calls; pure functions keep their ordinary representation.
+Source signatures and proof checking are unchanged. The experiment keeps the
+serial source schedule and awaits each mapped direct completion operation
+before continuing. The native research host owns one root and resumes it
+after publication; it is not yet a concurrent executor. Staged hand-outs,
+compute checkpoints, asynchronous cleanup, Windows and normal executable
+linking are not integrated, so incompatible command-line modes fail explicitly.
+Other system wrappers and cleanup may still block the host. The new host ABI
+is experimental and does not alter the existing staged runtime or container
+storage contract. `compiler-continuation-check` in the I/O completion experiment
+qualifies actual WF-generated code against native byte oracles and sanitizers.
+
 The first multi-operation loop path is deliberately specific: one
 source-derived fixed two-slot bounded batch for the direct staged counted-loop
 shape. On native POSIX completion targets the runtime window is bounded to

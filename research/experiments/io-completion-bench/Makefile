@@ -140,9 +140,13 @@ LINUX_TARGET := $(WORK)/linux-target
 CLANG := /usr/bin/clang
 CFLAGS := -std=c11 -O2 -Wall -Wextra -Werror
 CORO_CXX ?= $(shell command -v clang++-20 || command -v clang++)
+CORO_CLANG ?= $(shell command -v clang-20 || command -v clang)
 CORO_FLAGS := -std=c++20 -O2 -Wall -Wextra -Werror -Wpedantic -fno-exceptions -pthread
 COMPLETION_CORO_SANITIZERS ?= address,undefined
 COMPLETION_CORO_ARGS ?=
+CONTINUATION_RUNTIME_UNITS := sched/core.c sched/prim_host.c sched/entry.c \
+	completion/runtime.c completion/wait_host.c completion/file_adapter.c \
+	completion/file_posix.c completion/bridge.c completion/linux_io_uring.c
 WFC := $(ROOT)/compiler/target/gate/whitefootc
 
 # The workload's shape. FILES x up to MAX_KIB, read through one positioned
@@ -658,9 +662,7 @@ completion-coroutine-check: prepare
 	backend="$(ROOT)/compiler/src/backend"; \
 	build="$(BUILD)/completion-coroutine-$(COMPLETION_CORO_SANITIZERS)"; \
 	mkdir -p "$$build"; set --; \
-	for source in sched/core.c sched/prim_host.c sched/entry.c completion/runtime.c \
-	  completion/wait_host.c completion/file_adapter.c completion/file_posix.c \
-	  completion/bridge.c completion/linux_io_uring.c; do \
+	for source in $(CONTINUATION_RUNTIME_UNITS); do \
 	  define=''; if [ "$$source" = completion/bridge.c ]; then define=-Dwf_sched_complete=wf_probe_publish; fi; \
 	  object="$$build/$$(basename "$$source").o"; \
 	  $(CLANG) $(CFLAGS) -g -Wpedantic -pthread -fsanitize=$(COMPLETION_CORO_SANITIZERS) \
@@ -675,6 +677,57 @@ completion-coroutine-check: prepare
 	    -I "$$backend" $$define coroutine_completion.cpp "$$build/protocol.o" "$$@" -o "$$build/$$form"; \
 	  "$$build/$$form" $(COMPLETION_CORO_ARGS); \
 	  if [ "$$(uname -s)" = Linux ]; then WF_IO_NO_NATIVE_RING=1 "$$build/$$form" --require-helper; fi; \
+	done
+
+# The same coordinator now drives actual WF-generated continuations. Keep the
+# independent C++ lifetime check as a prerequisite. The observer handshake
+# gates input until a root is suspended; timings are not part of this target.
+.PHONY: compiler-continuation-check
+compiler-continuation-check: completion-coroutine-check compiler
+	@set -e; \
+	backend="$(ROOT)/compiler/src/backend"; \
+	build="$(BUILD)/compiler-continuation"; \
+	common="$(BUILD)/completion-coroutine-$(COMPLETION_CORO_SANITIZERS)"; \
+	mkdir -p "$$build/tree"; set --; \
+	for source in $(CONTINUATION_RUNTIME_UNITS); do set -- "$$@" "$$common/$$(basename "$$source").o"; done; \
+	$(CORO_CLANG) $(CFLAGS) -g -Wpedantic -pthread -fsanitize=$(COMPLETION_CORO_SANITIZERS) \
+	  -I "$$backend" -DPROBE_WF_GENERATED -x c -c coroutine_completion.cpp -o "$$build/host.o"; \
+	$(CORO_CLANG) $(CFLAGS) -g -Wpedantic -pthread -fsanitize=$(COMPLETION_CORO_SANITIZERS) \
+	  -I "$$backend" -c "$$backend/wf_floor.c" -o "$$build/floor.o"; \
+	$(CORO_CLANG) $(CFLAGS) -Wpedantic -pthread continuation_stream.c -o "$$build/stream-check"; \
+	case "$(COMPLETION_CORO_SANITIZERS)" in \
+	  *address*) ir_attribute=sanitize_address ;; \
+	  thread) ir_attribute=sanitize_thread ;; \
+	  *) echo 'compiler-continuation-check needs address or thread instrumentation' >&2; exit 2 ;; \
+	esac; \
+	for program in boundary stdin recursive; do \
+	  case "$$program" in \
+	    boundary) source="$(ROOT)/tests/programs/completion_read_boundary.wf" ;; \
+	    stdin) source="$(ROOT)/tests/programs/stdin_echo.wf" ;; \
+	    recursive) source=programs/continuation_stream.wf ;; \
+	  esac; \
+	  "$(WFC)" --emit-llvm --continuations "$$source" -o "$$build/$$program.ll"; \
+	  awk -v attribute="$$ir_attribute" '/^define / {sub(/ \{$$/, " " attribute " {")} {print}' \
+	    "$$build/$$program.ll" > "$$build/$$program-instrumented.ll"; \
+	  $(CORO_CLANG) -Wno-override-module -O2 -g -pthread -fsanitize=$(COMPLETION_CORO_SANITIZERS) \
+	    "$$build/$$program-instrumented.ll" "$$build/host.o" "$$build/floor.o" "$$@" -o "$$build/$$program"; \
+	done; \
+	printf A > "$$build/tree/a"; printf B > "$$build/tree/b"; printf AB > "$$build/expected"; \
+	(cd "$$build/tree" && WF_IO_HELPERS=4 ../boundary a b) > "$$build/actual"; \
+	cmp "$$build/expected" "$$build/actual"; \
+	status=0; (cd "$$build/tree" && ../boundary absent b) > "$$build/absent" || status=$$?; \
+	test "$$status" = 5 && test ! -s "$$build/absent"; \
+	: > "$$build/tree/a"; \
+	status=0; (cd "$$build/tree" && ../boundary a b) > "$$build/empty" || status=$$?; \
+	test "$$status" = 8 && test ! -s "$$build/empty"; \
+	status=0; "$$build/boundary" > "$$build/no-args" || status=$$?; \
+	test "$$status" = 1 && test ! -s "$$build/no-args"; \
+	echo 'compiled continuation file outcomes: PASS success/open-failure/EOF/no-I/O-return'; \
+	for program in stdin recursive; do \
+	  "$$build/stream-check" "$$build/$$program" $(COMPLETION_CORO_ARGS); \
+	  if [ "$$(uname -s)" = Linux ]; then \
+	    WF_IO_NO_NATIVE_RING=1 "$$build/stream-check" "$$build/$$program" --require-helper; \
+	  fi; \
 	done
 
 # Linux-only reference correctness, also reached by scheduler-check on Linux.

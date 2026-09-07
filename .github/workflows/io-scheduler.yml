@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -19,6 +19,8 @@ on:
       - 'research/experiments/io-completion-bench/*.cpp'
       - 'research/experiments/io-completion-bench/*.h'
       - 'research/experiments/io-completion-bench/programs/tcp*_server.wf'
+      - 'research/experiments/io-completion-bench/programs/continuation_stream.wf'
+      - 'research/experiments/io-completion-bench/Makefile'
       - 'research/experiments/io-completion-bench/scheduler-bench.sh'
       - '.github/workflows/io-scheduler.yml'
 
@@ -30,7 +32,7 @@ jobs:
   measure:
     # Correctness-only branches retain the independently running timing
     # revisions. Canonical and native correctness jobs still run.
-    if: github.ref != 'refs/heads/codex/io-windows-wake-fix' && github.ref != 'refs/heads/codex/io-continuation-experiments'
+    if: github.ref != 'refs/heads/codex/io-windows-wake-fix' && github.ref != 'refs/heads/codex/io-continuation-experiments' && github.ref != 'refs/heads/codex/io-continuation-lowering'
     name: measure (${{ matrix.experiment }})
     strategy:
       fail-fast: false
@@ -89,8 +91,8 @@ jobs:
             ${{ runner.temp }}/io-scheduler/resident/
 
   completion-continuations:
-    if: github.ref == 'refs/heads/codex/io-continuation-experiments'
-    name: nested continuations with native completion loans
+    if: github.ref == 'refs/heads/codex/io-continuation-experiments' || github.ref == 'refs/heads/codex/io-continuation-lowering'
+    name: compiled WF and nested continuations with native completion loans
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -99,19 +101,23 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends clang-20 libclang-rt-20-dev
+          rustup default stable
+          cargo fetch --locked --manifest-path compiler/Cargo.toml
       - name: Qualify actual io_uring and helper completions
         shell: bash
         run: |
           set -euo pipefail
-          make -C research/experiments/io-completion-bench completion-coroutine-check \
-            CLANG=/usr/bin/clang-20 CORO_CXX=/usr/bin/clang++-20 \
+          make -C research/experiments/io-completion-bench compiler-continuation-check \
+            CLANG=/usr/bin/clang-20 CORO_CXX=/usr/bin/clang++-20 CORO_CLANG=/usr/bin/clang-20 \
             WHITEFOOT_SCRATCH_ROOT="$RUNNER_TEMP/completion-continuations" \
             COMPLETION_CORO_ARGS=--require-ring 2>&1 | tee "$RUNNER_TEMP/completion-continuations.log"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: completion-continuations
-          path: ${{ runner.temp }}/completion-continuations.log
+          path: |
+            ${{ runner.temp }}/completion-continuations.log
+            ${{ runner.temp }}/completion-continuations/**/*.ll
 
   windows-owner:
     name: native Windows memory and I/O placement checks

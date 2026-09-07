@@ -4042,3 +4042,97 @@ coroutine probe: nested stackless frames can retain parent-owned addresses
 through actual io_uring completion and scoped draining. It does not supply
 a general WF coroutine ABI, a lock-free continuation-registration protocol,
 cross-thread coroutine migration, native cancellation or a faster scheduler.
+
+## Thirty-fourth experiment: compile sequential WF into continuations
+
+The next representation probe is emitted by the real WF compiler. The
+`--continuations --emit-llvm` mode uses the ordinary parsing, canonical,
+semantic, proof and lowering path with overlap actualization off. Existing
+derived `may_suspend` effects select coroutine representation across the
+finite call graph, including recursive functions. It does not select by
+function name or source shape, add a source annotation, or change the active
+specification. Pure functions keep their ordinary representation.
+
+`backend/emitter/continuation.rs` emits LLVM switched-resume intrinsics.
+The existing target frame planner owns source storage, child result slots
+and one opaque wait node per serial activation. A child receives its typed
+arguments, a parent-owned result slot and a continuation handle. Symmetric
+transfer enters the child and returns to its parent after source cleanup and
+result publication. The parent destroys the completed child before reading
+the result. LLVM may combine these nested frames under `coro_elide_safe`;
+recursive activations can still require separate allocations. The cold
+synchronous wrapper marks its root factory call `noinline`, preventing
+root-frame elision into the host call stack. In one local optimized stdin
+build this leaves a 1,296-byte heap root containing its elided child. This
+is code-generation evidence, not a per-connection memory measurement.
+
+Each mapped direct completion operation uses the existing submit, typed
+outcome mapping and join/retirement implementation. A completed record takes
+the ready path. Otherwise the generated body registers its wait node and
+suspends; only completion publication makes it runnable. After resumption
+the ordinary join retires the operation before source execution continues.
+This first mode deliberately retains the serial source schedule, with no
+independent sibling work issued across the await.
+
+The experiment extends the preceding C publication coordinator, compiled
+as C with `PROBE_WF_GENERATED`. Its host runs one root and has one progress
+thread for actual completions. It neither depends on LLVM frame offsets nor
+uses a C++ runtime. Its private interface is:
+
+| Entry | Owner and meaning |
+| --- | --- |
+| `wf__continuation_record_done(record)` | C host; acquire observation of completion |
+| `wf__continuation_prepare(waiter, record)` | C host; initialize an unregistered node |
+| `wf__continuation_arm(waiter, frame)` | C host; register or observe completion, returning whether to suspend |
+| `wf__continuation_run(frame)` | C host; drive this one root to completion |
+| `wf__continuation_resume(frame)` | Generated LLVM; resume an opaque frame |
+| `wf__continuation_finished(frame)` | Generated LLVM; test final suspension |
+
+The node is 40 bytes aligned to 8 on the qualified targets, with matching
+C static assertions. The coordinator lock retains the publication/register/
+dequeue ownership protocol of experiment 33. It is a correctness host, not
+a proposed low-overhead scheduler. It does not call the C++ fixture's file
+bootstrap; the source program initializes the runtime through its own system
+operations.
+
+`make compiler-continuation-check` retains `completion-coroutine-check` as
+a prerequisite and then compiles three WF programs. Existing
+`completion_read_boundary.wf` covers successful file reads producing `AB`,
+open failure (status 5), first-file EOF (status 8), and return before any
+source I/O (status 1). Existing `stdin_echo.wf` and the new
+`programs/continuation_stream.wf` each receive 0 and 65,673 bytes. The latter
+reborrows its parent's 128-byte buffer through 17 recursive calls before
+reading and publishing one chunk. The independent C oracle withholds input
+until the root's initial resume has returned suspended, then checks every
+output byte and the exact exit status. It also requires nonzero and equal
+wait registrations/dequeues, with no unexpected diagnostics.
+
+All of these maintained checks pass locally on Apple clang 21, with the
+generated LLVM functions explicitly marked `sanitize_address` and the C
+runtime compiled with ASan/UBSan. Passing `-fsanitize` to a clang LLVM-input
+link alone does not instrument those generated functions, so the test adds
+the LLVM function attribute before code generation. A separate local run of
+the same maintained target also passes with ThreadSanitizer, including
+`sanitize_thread` on the generated LLVM functions. The native Linux job
+requires nonzero actual io_uring publications for both stream programs and
+then repeats them with the helper backend explicitly forced. Those compiler
+checks are wired into the Linux canonical scheduler stage; the independent
+C++ fixture still requires its stricter all-ring or all-helper counters.
+Linux qualification of this new compiler mode is pending at this point.
+
+This has not integrated staged task publication, compute checkpoints,
+asynchronous cleanup, Windows, concurrent roots, migration, or destruction
+of arbitrary suspended frames. System operations without the existing direct
+completion mapping and cleanup still use their qualified synchronous wrappers
+and may block the host. The CLI therefore refuses native executable linking,
+parallel/checkpoint modes and ledgers in this experiment instead of silently
+claiming to provide them. There is no performance result for this WF mode.
+
+The existing staged runtime ABI and container storage contract are unchanged:
+acquire a lane, initialize arguments, publish, wait for join to return, read
+the result, and release the lane. A task that retains a container or element
+address requires the backing allocation to remain alive and address-stable
+until that join returns. Copying a descriptor does not extend storage
+lifetime, and observing DONE does not replace returning from join. No new
+container pin, lease or release callback is introduced by this experimental
+LLVM-to-host interface.

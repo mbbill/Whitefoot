@@ -1254,6 +1254,7 @@ impl FunctionEmitter<'_, '_> {
             }
         };
         let mapper = completion_mapper_symbol(operation);
+        let continuation_wait = self.continuation_wait(&token, result)?;
         let retirement = |result: &str| {
             completion_retirement(&CompletionRetirement {
                 join,
@@ -1274,13 +1275,22 @@ impl FunctionEmitter<'_, '_> {
         let Some((result_slot, submitted)) = not_submitted else {
             // Every path through this operation submitted, so the wait is the
             // whole join: no branch, no phi and no block of its own.
-            return write!(self.output, "{}", retirement(&value_name(result)))
-                .map_err(|_| BackendFailure::TextEmission);
+            return write!(
+                self.output,
+                "{continuation_wait}{}",
+                retirement(&value_name(result))
+            )
+            .map_err(|_| BackendFailure::TextEmission);
         };
         let direct = format!("%{}", self.next_temporary()?);
         let completed = format!("%{}", self.next_temporary()?);
         let inline_label = completion_join_inline_label(result);
         let wait_label = completion_wait_label(result);
+        let wait_predecessor = if self.continuation {
+            continuation::wait_done_label(result)
+        } else {
+            wait_label.clone()
+        };
         let done_label = par_done_label(result);
         writeln!(
             self.output,
@@ -1288,11 +1298,11 @@ impl FunctionEmitter<'_, '_> {
              {inline_label}:\n  \
              {direct} = load {result_llvm}, ptr {result_slot}\n  \
              br label %{done_label}\n\
-             {wait_label}:\n\
+             {wait_label}:\n{continuation_wait}\
              {}  \
              br label %{done_label}\n\
              {done_label}:\n  \
-             {} = phi {result_llvm} [ {direct}, %{inline_label} ], [ {completed}, %{wait_label} ]",
+             {} = phi {result_llvm} [ {direct}, %{inline_label} ], [ {completed}, %{wait_predecessor} ]",
             retirement(&completed),
             value_name(result),
         )

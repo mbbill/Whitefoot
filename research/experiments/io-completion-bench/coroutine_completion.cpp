@@ -247,6 +247,59 @@ void probe_report(int required_route) {
            (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_LINUX_IO_URING],
            (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_INLINE]);
 }
+
+#if defined(PROBE_WF_GENERATED)
+/* Experimental LLVM host for compiler-generated bodies. This uses the same
+ * publication coordinator as the nested C++ fixture, not a production
+ * scheduler. Source code performs its own first system operation; the host
+ * does not open a bootstrap file or manufacture an ambient source input. */
+_Static_assert(sizeof(probe_waiter) == 40, "continuation waiter size");
+_Static_assert(_Alignof(probe_waiter) == 8, "continuation waiter alignment");
+void wf__continuation_resume(void *frame);
+int wf__continuation_finished(void *frame);
+
+int wf__continuation_record_done(void *record) {
+    return probe_done(record);
+}
+
+void wf__continuation_prepare(void *storage, void *record) {
+    probe_waiter *waiter = storage;
+    memset(waiter, 0, sizeof(*waiter));
+    waiter->record = record;
+}
+
+int wf__continuation_arm(void *storage, void *frame) {
+    probe_waiter *waiter = storage;
+    return probe_arm(waiter, waiter->record, frame, NULL, 0);
+}
+
+void wf__continuation_run(void *frame) {
+    static unsigned active;
+    assert(!active);
+    active = 1;
+    atomic_store_explicit(&probe_stopping, 0, memory_order_release);
+    wf__continuation_resume(frame);
+    if (!wf__continuation_finished(frame)) {
+        if (getenv("WF_CONTINUATION_OBSERVE")) {
+            fputs("WF continuation host: suspended\n", stderr);
+        }
+        assert(pthread_create(&probe_progress_thread, NULL, probe_progress, NULL) == 0);
+        do {
+            wf__continuation_resume(probe_take_ready());
+        } while (!wf__continuation_finished(frame));
+        probe_stop();
+    }
+    probe_idle();
+    if (getenv("WF_CONTINUATION_OBSERVE")) {
+        fprintf(stderr, "WF continuation host: registered=%llu dequeued=%llu helper=%llu uring=%llu inline=%llu\n",
+                (unsigned long long)probe_registered, (unsigned long long)probe_dequeued,
+                (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_FILE_ADAPTER],
+                (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_LINUX_IO_URING],
+                (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_INLINE]);
+    }
+    active = 0;
+}
+#endif
 #else
 #include "completion/bridge.h"
 #include <assert.h>

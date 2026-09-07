@@ -125,6 +125,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 self.value_name(*argument)
             ));
         }
+        if self.continuation && target.target_action().may_suspend() {
+            return self.emit_continuation_call(result, ty, target.name(), &rendered);
+        }
         writeln!(
             self.output,
             "  {} = call {} @{}({})",

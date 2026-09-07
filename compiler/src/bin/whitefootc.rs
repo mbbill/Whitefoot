@@ -13,8 +13,9 @@ use whitefoot::{
     FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, SCHED_CORE_HEADER,
     SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER,
     SCHED_SWITCH_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER, compile_with_checkpoint_chunks,
-    compile_with_checkpoints, compile_with_io_notices, compile_with_permission_ledger,
-    module_requires_completion_runtime, module_requires_parallel_runtime, stack_ledger,
+    compile_with_checkpoints, compile_with_continuations, compile_with_io_notices,
+    compile_with_permission_ledger, module_requires_completion_runtime,
+    module_requires_parallel_runtime, stack_ledger,
 };
 
 // `HOST_LINK_LIBRARIES` is here rather than above because its one reader is
@@ -33,7 +34,7 @@ use whitefoot::{
     FLOOR_WINDOWS_RUNTIME_SOURCE, SCHED_PRIM_WINDOWS_SOURCE, WINDOWS_RUNTIME_SOURCE,
 };
 
-const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--sched-quantum N | --sched-chunks N] [--no-overlap] [--par-ledger] \
+const USAGE: &str = "usage: whitefootc [--emit-llvm] [--continuations] [--par] [--sched-quantum N | --sched-chunks N] [--no-overlap] [--par-ledger] \
 [--stack-ledger] [-o OUTPUT] SOURCE...";
 
 // The compiler walks typed source and lowering trees recursively. Windows
@@ -247,7 +248,11 @@ fn run() -> Result<(), String> {
         .map(|((logical, display), bytes)| SourceInput::from_host_path(logical, display, bytes))
         .collect();
     let overlap = options.overlap();
-    let module = if let Some(interval) = options.sched_quantum {
+    let module = if options.continuations {
+        compile_with_continuations(&inputs, CompilerLimits::default())
+            .map_err(|failure| failure.to_string())?
+            .module
+    } else if let Some(interval) = options.sched_quantum {
         let compile = if options.sched_chunks {
             compile_with_checkpoint_chunks
         } else {
@@ -554,6 +559,7 @@ fn portable_logical_path(path: &str) -> bool {
 }
 
 struct Options {
+    continuations: bool,
     emit_llvm: bool,
     /// Experimental backedge interval; no source proof or progress contract.
     sched_quantum: Option<NonZeroU32>,
@@ -634,6 +640,7 @@ struct Options {
 impl Options {
     fn parse(arguments: &[String]) -> Result<Self, String> {
         let mut emit_llvm = false;
+        let mut continuations = false;
         let mut sched_quantum = None;
         let mut sched_chunks = false;
         let mut par = false;
@@ -646,6 +653,7 @@ impl Options {
         while cursor < arguments.len() {
             match arguments[cursor].as_str() {
                 "--emit-llvm" => emit_llvm = true,
+                "--continuations" => continuations = true,
                 "--par" => par = true,
                 "--sched-quantum" | "--sched-chunks" => {
                     sched_chunks = arguments[cursor] == "--sched-chunks";
@@ -706,10 +714,21 @@ impl Options {
         if par && no_overlap {
             return Err("--no-overlap and --par select opposite lowerings: write one".to_owned());
         }
+        if continuations
+            && (!emit_llvm
+                || par
+                || no_overlap
+                || sched_quantum.is_some()
+                || par_ledger
+                || stack_ledger)
+        {
+            return Err("--continuations currently requires --emit-llvm and the serial experiment host; parallel and ledger modes are not integrated yet".to_owned());
+        }
         if sched_quantum.is_some() && !par {
             return Err("scheduler checkpoints require --par for this experiment".to_owned());
         }
         Ok(Self {
+            continuations,
             emit_llvm,
             sched_quantum,
             sched_chunks,
@@ -764,6 +783,44 @@ mod tests {
     fn parse(arguments: &[&str]) -> Result<Options, String> {
         let owned: Vec<String> = arguments.iter().map(|value| (*value).to_owned()).collect();
         Options::parse(&owned)
+    }
+
+    #[test]
+    fn continuation_experiment_requires_its_qualified_emission_mode() {
+        let options = parse(&["--continuations", "--emit-llvm", "value.wf"])
+            .expect("qualified continuation invocation");
+        assert!(options.continuations);
+        assert!(
+            !parse(&["--emit-llvm", "value.wf"])
+                .expect("ordinary invocation")
+                .continuations
+        );
+        assert!(parse(&["--continuations", "value.wf"]).is_err());
+        for incompatible in ["--par", "--no-overlap", "--par-ledger", "--stack-ledger"] {
+            assert!(
+                parse(&[
+                    "--continuations",
+                    "--emit-llvm",
+                    incompatible,
+                    "-o",
+                    "out.ll",
+                    "value.wf"
+                ])
+                .is_err()
+            );
+        }
+        for checkpoint in ["--sched-quantum", "--sched-chunks"] {
+            assert!(
+                parse(&[
+                    "--continuations",
+                    "--emit-llvm",
+                    checkpoint,
+                    "2",
+                    "value.wf"
+                ])
+                .is_err()
+            );
+        }
     }
 
     #[test]

@@ -20,8 +20,8 @@ use crate::{
     FinalizeOutcome, LexLimits, LexOutcome, LoweringFailure, ParseLimits, ParseOutcome,
     ResolutionOutcome, SemanticLocation, SemanticOutcome, SourceBundle, SourceInput, SourceLimits,
     TerminalLimits, TerminalOutcome, audit_canonical, check_semantics, classify_terminals,
-    emit_llvm, emit_llvm_with_checkpoint_chunks, emit_llvm_with_checkpoints, finalize, lex,
-    lower_checked, parse, resolve_with_inventory,
+    emit_llvm, emit_llvm_with_checkpoint_chunks, emit_llvm_with_checkpoints,
+    emit_llvm_with_continuations, finalize, lex, lower_checked, parse, resolve_with_inventory,
 };
 
 /// Host-compiler optimization arguments for every Whitefoot executable.
@@ -369,6 +369,23 @@ pub struct CompilationReport {
     pub notices: Vec<String>,
 }
 
+/// Experimental stackless LLVM emission. The serial source schedule is kept;
+/// operation outcomes and proofs use the ordinary compilation path. The
+/// experimental continuation host supplies the emitted resume/await ABI.
+pub fn compile_with_continuations(
+    inputs: &[SourceInput<'_>],
+    limits: CompilerLimits,
+) -> Result<CompilationReport, CompilationFailure> {
+    compile_reporting_with_policy(
+        inputs,
+        limits,
+        crate::Inventory::ACTIVE,
+        crate::OverlapLowering::Off,
+        None,
+        true,
+    )
+}
+
 /// Experimental code-generation policy: a scheduler check after this many
 /// natural-loop backedges per activation. It changes neither source checking
 /// nor the permission ledger, and imposes no source progress guarantee.
@@ -422,6 +439,24 @@ fn compile_reporting_with_checkpoints(
     inventory: crate::Inventory,
     overlap: crate::OverlapLowering,
     checkpoint_interval: Option<(NonZeroU32, bool)>,
+) -> Result<CompilationReport, CompilationFailure> {
+    compile_reporting_with_policy(
+        inputs,
+        limits,
+        inventory,
+        overlap,
+        checkpoint_interval,
+        false,
+    )
+}
+
+fn compile_reporting_with_policy(
+    inputs: &[SourceInput<'_>],
+    limits: CompilerLimits,
+    inventory: crate::Inventory,
+    overlap: crate::OverlapLowering,
+    checkpoint_interval: Option<(NonZeroU32, bool)>,
+    continuations: bool,
 ) -> Result<CompilationReport, CompilationFailure> {
     let bundle = SourceBundle::with_limits(inputs, limits.source).map_err(|failure| {
         CompilationFailure::new(
@@ -647,10 +682,14 @@ fn compile_reporting_with_checkpoints(
         .map(|line| line.text)
         .collect();
     ledger.extend_from_slice(ir.actualization_ledger());
-    let emitted = match checkpoint_interval {
-        None => emit_llvm(&ir),
-        Some((interval, false)) => emit_llvm_with_checkpoints(&ir, Some(interval)),
-        Some((interval, true)) => emit_llvm_with_checkpoint_chunks(&ir, interval),
+    let emitted = if continuations {
+        emit_llvm_with_continuations(&ir)
+    } else {
+        match checkpoint_interval {
+            None => emit_llvm(&ir),
+            Some((interval, false)) => emit_llvm_with_checkpoints(&ir, Some(interval)),
+            Some((interval, true)) => emit_llvm_with_checkpoint_chunks(&ir, interval),
+        }
     };
     emitted
         .map(|module| CompilationReport {
@@ -684,6 +723,19 @@ mod tests {
         compile_with_permission_ledger,
     };
     use crate::{OverlapLowering, SourceInput};
+
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn continuation_representation_leaves_pure_modules_unchanged() {
+        let source = b"command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+        let inputs = [SourceInput::new("pure.wf", source)];
+        let ordinary =
+            super::compile_with_overlap(&inputs, CompilerLimits::default(), OverlapLowering::Off)
+                .expect("pure module must compile");
+        let continuation = super::compile_with_continuations(&inputs, CompilerLimits::default())
+            .expect("pure module must compile in the experiment");
+        assert_eq!(ordinary, continuation.module);
+    }
 
     /// The permission ledger of one compiled source, in the order the driver
     /// hands it to `whitefootc --par-ledger`.

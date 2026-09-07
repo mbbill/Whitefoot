@@ -1,0 +1,76 @@
+fn publish_all(output: &uniq OutputStream, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+  define source_length = len(deref(source));
+  requires length <= source_length;
+} {
+  doc "Publishes the checked read prefix until it is exhausted or the host refuses a write.";
+  let sent = 0_u64;
+  loop @publish {
+    if sent < length {
+    } else {
+      break @publish;
+    }
+    region {
+      match write_once(output: &uniq deref(output), source: source, start: sent, end: length) {
+        Ok(value: next) => {
+          set sent = next;
+        }
+        Err(error: problem) => {
+          return Err<unit, IoError>(error: move problem);
+        }
+      }
+    }
+  }
+  return Ok<unit, IoError>(value: unit);
+}
+
+fn exchange_nested(output: &uniq OutputStream, input: &uniq InputStream, chunk: &uniq buffer<u8>, depth: own u64) -> result: own u8 reads(output, input, chunk), writes(output, input, chunk) {
+  doc "Keeps recursive caller borrows alive while the leaf receives and publishes one chunk.";
+  if depth > 0_u64 {
+    let remaining = depth - 1_u64;
+    region {
+      return exchange_nested(output: &uniq deref(output), input: &uniq deref(input), chunk: &uniq deref(chunk), depth: remaining);
+    }
+  }
+  let room = len(deref(chunk));
+  region {
+    match read_next(input: &uniq deref(input), destination: &uniq deref(chunk), start: 0_u64, end: room) {
+      ReadBytes(next: endpoint) => {
+        region {
+          match publish_all(output: &uniq deref(output), source: &deref(chunk), length: endpoint) {
+            Ok(value: published) => {
+              return 0_u8;
+            }
+            Err(error: problem) => {
+              return 4_u8;
+            }
+          }
+        }
+      }
+      ReadEnd() => {
+        return 1_u8;
+      }
+      ReadFailed(error: problem) => {
+        return 3_u8;
+      }
+    }
+  }
+}
+
+command fn main(command.stdout as out: own OutputStream, command.stdin as input: own InputStream) -> status: own ExitStatus reads(out, input), writes(out, input), allocates(heap) {
+  doc "Exercises recursive continuation frames and a parent-owned buffer across real stream completions.";
+  let chunk = buffer_new(128_u64, 0_u8);
+  let outcome = 0_u8;
+  loop @chunks {
+    region {
+      set outcome = exchange_nested(output: &uniq out, input: &uniq input, chunk: &uniq chunk, depth: 17_u64);
+    }
+    if outcome == 0_u8 {
+    } else {
+      break @chunks;
+    }
+  }
+  if outcome == 1_u8 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: outcome);
+}

@@ -69,7 +69,7 @@ check() {
 if [[ $MODE == check ]]; then
     check
     if [[ $(uname -s) == Linux ]]; then
-        make -C "$HERE" completion-coroutine-check CLANG="$CLANG" CORO_CXX="$CORO_CXX" \
+        make -C "$HERE" compiler-continuation-check CLANG="$CLANG" CORO_CXX="$CORO_CXX" \
             WHITEFOOT_SCRATCH_ROOT="$OUT/completion-coroutine-check"
         make -C "$HERE" stackful-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/stream-check"
         make -C "$HERE" coroutine-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/coroutine-check"
