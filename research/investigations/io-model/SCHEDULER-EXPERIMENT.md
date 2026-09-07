@@ -8185,10 +8185,38 @@ rounds plus admission, the 8 MiB payload, the initial one-byte and later
 error checks and all observed short-send/short-receive/send-EAGAIN assertions
 in both phases. A faster fixture is acceptable only if those real-operation
 assertions still pass. Benchmark client/server code, measured sample counts
-and the gate timeout remain unchanged. A same-host old/new fixture comparison
-against identical observed client binaries and the full Linux qualification
-are required before claiming the time-budget problem is resolved. The frozen
-063cbef4 measurements above retain their original fixture revision.
+and the gate timeout remain unchanged. The frozen 063cbef4 measurements above
+retain their original fixture revision.
+
+The native [fixture control at e424b800](https://github.com/mbbill/Whitefoot/actions/runs/34114500864)
+passes on EPYC 7763, four logical CPUs on two reported SMT cores, Linux
+6.17.0-1022-azure and Clang 18.1.3. Its full `client-readiness-check`, including
+compilation, takes 10.77 seconds: all 28 actual-loop traces, the lost-edge
+mutation rejection, 48 ordinary and 16 observed socket cases, and six paced
+compute checks pass. The same-host old/new fixture comparison reuses identical
+observed client binaries, with old/new order for the default client and
+new/old for readiness. Each row includes all eight socket cases:
+
+| Observed client | Old 4 KiB fixture wall seconds | New 64 KiB fixture wall seconds |
+| --- | ---: | ---: |
+| Default | 12.52 | 0.17 |
+| Readiness | 12.54 | 0.19 |
+
+These are one observation per fixture/client pair, not an ordinary throughput
+panel. Both new fixtures still encounter partial sends and receives and send
+EAGAIN in admission and exchange; their send-EAGAIN counts are respectively
+634/1970 and 686/1955. All 36 retained counter phases conserve operation,
+size-bin and byte totals, and all 96 socket-case results have the expected
+order and shapes. The audit rehashes four retained comparison executables and
+five source entries, including the old fixture; shared client dependencies
+equal their frozen 063 bytes and the end manifest check passes. Artifact
+10015715346 has ZIP SHA-256
+`7212ebd66ed9e43a7c30e1eb169e83ab5531ed655525a14058f1b6ee53106204`.
+The current Linux scheduler [gate job at cf998b56](https://github.com/mbbill/Whitefoot/actions/runs/34113936064/job/101716322437)
+also passes with the same fixture correction and unchanged eight-minute
+limit. This resolves the observed fixture runtime problem while retaining
+coverage; it does not identify the kernel mechanism or improve a measured
+benchmark client policy. Full gate status remains revision-specific.
 
 ## 59. Ordinary CPU control without idle-scan yields
 
