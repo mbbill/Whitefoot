@@ -14,6 +14,7 @@ CALIBRATION_ROUNDS=${CALIBRATION_ROUNDS:-3}
 BATCHES=${BATCHES:-1}
 RAYON_THREADS=${RAYON_THREADS:-"1 2 4"}
 RAYON_GRAINS=${RAYON_GRAINS:-"1 4 16"}
+RAYON_PROFILE=${RAYON_PROFILE:-0}
 EXPECTED='420a993efa7437a1 41fa962893d45299'
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
@@ -29,6 +30,7 @@ bounded_integer ROUNDS "$ROUNDS" 1 128
 bounded_integer WARMUP "$WARMUP" 0 128
 bounded_integer CALIBRATION_ROUNDS "$CALIBRATION_ROUNDS" 1 128
 bounded_integer BATCHES "$BATCHES" 1 16
+bounded_integer RAYON_PROFILE "$RAYON_PROFILE" 0 1
 read -r -a threads <<< "$RAYON_THREADS"
 read -r -a grains <<< "$RAYON_GRAINS"
 (( ${#threads[@]} > 0 && ${#grains[@]} > 0 )) || exit 2
@@ -123,3 +125,79 @@ WF_BENCH_RAW="$OUT/confirmation.tsv" "$OUT/runner" "$OUT/confirmation.plan" \
     "$ROUNDS" "$WARMUP" "$EXPECTED" > "$OUT/confirmation.txt" 2> "$OUT/confirmation.err"
 cat "$OUT/calibration.txt" "$OUT/selected.tsv" "$OUT/confirmation.txt"
 printf 'rayon-bench: raw samples and exact-byte qualifications retained in %s\n' "$OUT"
+
+if [[ $RAYON_PROFILE == 1 ]]; then
+    [[ $(uname -s) == Linux ]] || { echo 'rayon-bench: profiling requires Linux' >&2; exit 2; }
+    perf_tool=${PROFILE_PERF:-perf}
+    profile_user=$(id -un)
+    sudo -n true
+    mkdir -p "$OUT/profile"
+    {
+        "$perf_tool" --version
+        echo 'profile_batches=4; ordinary binaries; separate CPU and scheduler captures; no profiled timings enter confirmation.tsv'
+        echo "workload_user=$profile_user; privileged recorder only; workload inherits the normal job affinity"
+        cat /proc/sys/kernel/perf_event_paranoid
+        cat /proc/sys/kernel/kptr_restrict
+    } > "$OUT/profile/host.txt"
+    # The recorder needs scheduler tracepoint access. Drop back to the normal
+    # job user before exec, preserve the real workload PID, and separate its
+    # strict output channels from profiler diagnostics.
+    cat > "$OUT/profile/run" <<'PROFILE_RUN'
+#!/bin/sh
+record=$1
+shift
+printf '%s\n' "$$" > "$record.pid"
+exec "$@" > "$record.out" 2> "$record.err"
+PROFILE_RUN
+    chmod +x "$OUT/profile/run"
+    profile_case() {
+        local kind=$1 label=$2 record
+        shift 2
+        record="$OUT/profile/$kind-$label"
+        printf '%q ' "$@" > "$record.command"
+        printf '\n' >> "$record.command"
+        if [[ $kind == cpu ]]; then
+            sudo -n "$perf_tool" record -e cpu-clock -F 999 -o "$record.data" -- \
+                sudo -n -u "$profile_user" -- "$OUT/profile/run" "$record" "$@" \
+                > "$record.recorder.out" 2> "$record.recorder.err"
+        else
+            sudo -n "$perf_tool" sched record -a -o "$record.data" -- \
+                sudo -n -u "$profile_user" -- "$OUT/profile/run" "$record" "$@" \
+                > "$record.recorder.out" 2> "$record.recorder.err"
+        fi
+        printf '%s\n' "$EXPECTED" | cmp - "$record.out"
+        [[ ! -s $record.err && -s $record.pid ]]
+        sudo -n chown "$(id -u):$(id -g)" "$record.data"
+        if [[ $kind == cpu ]]; then
+            "$perf_tool" report --stdio --header --show-nr-samples --no-children \
+                --pid "$(cat "$record.pid")" --sort pid,dso,symbol -i "$record.data" > "$record.report" 2> "$record.report.err"
+            "$perf_tool" script --show-lost-events -i "$record.data" \
+                -F comm,pid,tid,time,event,ip,sym,dso,period > "$record.samples" 2> "$record.script.err"
+        else
+            "$perf_tool" sched timehist -i "$record.data" --pid "$(cat "$record.pid")" \
+                --state --wakeups --migrations --with-summary > "$record.timehist" 2> "$record.timehist.err"
+            "$perf_tool" script --show-lost-events -i "$record.data" > "$record.samples" 2> "$record.script.err"
+            [[ -s $record.timehist ]]
+        fi
+        [[ -s $record.samples ]]
+        echo "rayon-profile: $kind $label captured; inspect lost events before attributing costs"
+    }
+    # Four identical source batches amortize startup in observations without
+    # changing the preceding one-batch calibration or confirmation panel.
+    for kind in cpu sched; do
+        profile_case "$kind" rust-seq "$OUT/rust-layout" seq 1 64 4
+        profile_case "$kind" wf-seq "$OUT/wf-seq" batch batch batch
+        while IFS=$'\t' read -r width grain; do
+            profile_forms=(wf rayon)
+            if [[ $kind == sched ]]; then profile_forms=(rayon wf); fi
+            for form in "${profile_forms[@]}"; do
+                if [[ $form == wf ]]; then
+                    profile_case "$kind" "wf-w$width" env "WF_WORKERS=$width" WF_STACKS=1100 \
+                        "$OUT/wf-par" batch batch batch
+                else
+                    profile_case "$kind" "rayon-w$width-g$grain" "$OUT/rust-layout" rayon "$width" "$grain" 4
+                fi
+            done
+        done < "$OUT/selected.tsv"
+    done
+fi

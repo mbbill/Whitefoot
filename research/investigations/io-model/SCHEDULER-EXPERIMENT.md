@@ -4977,3 +4977,47 @@ budget, and measure paced light-request tails under heavy CPU work. Rayon
 `join` is intended for CPU work; its documentation explicitly describes
 blocking-I/O hazards. This panel does not qualify that transfer path and
 does not claim that blocking I/O placed inside Rayon is the intended model.
+
+## Forty-first experiment: attribute the WF/Rayon parallel utilization gap
+
+The Linux confirmation in experiment 40 gives a concrete next question.
+At four workers, WF uses about 4.6% more process CPU than Rayon but takes
+about 20.2% longer. CPU time divided by elapsed time is about 3.45 for WF
+and 3.97 for Rayon. Sequential execution differs by less than 1%, and the
+same direction appears in all five paired samples. These measurements
+separate extra CPU work from missing parallel overlap; they do not identify
+whether the latter comes from runtime sleeping, the computation's critical
+path, runnable tasks waiting for a CPU, or some combination.
+
+`RAYON_PROFILE=1` extends the existing CPU harness after its independent
+calibration and uninstrumented confirmation phases. The
+`codex/io-compute-profile` CI branch installs Linux perf and selects this
+mode. It retains the two sequential controls and both parallel forms at
+1/2/4 workers. Each observation executes four identical source batches with
+the same ordinary binary and that host's frozen Rayon grain. Separate
+captures collect inherited `cpu-clock` samples at 999 Hz and Linux scheduler
+switch/wakeup events. No profiled elapsed time enters the confirmation TSV.
+The recorder has tracepoint privileges, but an exec wrapper returns the
+workload to the original job user and records its actual PID. Program
+stdout must match the corpus oracle and program stderr must remain empty;
+recorder diagnostics have separate files.
+
+CPU reports retain thread identity, DSO and symbol. The scheduler report
+filters the recorded process and its threads, retaining switch-out state,
+wakeups, migrations, runtime and runnable delay. As documented by
+[Linux perf sched](https://man7.org/linux/man-pages/man1/perf-sched.1.html),
+its wait interval and runnable scheduling delay are different quantities.
+A sleeping worker and a worker runnable but not scheduled therefore require
+different explanations. Raw perf data, decoded events, commands, PIDs,
+versions and diagnostic files remain available for checking that distinction.
+Capture loss must be audited before attributing a gap. Full scheduler
+tracing adds work and can perturb the execution; a trace supplies mechanism
+evidence, not a replacement throughput ranking or a precise decomposition
+of the uninstrumented 20% difference.
+
+Shell syntax, workflow YAML and diff checks pass locally. Linux capture and
+attribution remain pending. This experiment changes no compiler or runtime
+policy. The next policy change should follow the observed source of lost
+overlap, then receive independent uninstrumented confirmation against both
+the retained WF form and Rayon. Retire this optional capture mode when that
+question has a measured answer.

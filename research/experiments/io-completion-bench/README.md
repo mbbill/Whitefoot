@@ -564,3 +564,12 @@ processes, including tree and pool construction; no concurrent I/O or CPU
 offload transfer is measured. Experiment 40 in
 `research/investigations/io-model/SCHEDULER-EXPERIMENT.md` owns its findings and
 the condition for retiring this reference.
+
+On Linux, `RAYON_PROFILE=1` appends experiment 41's CPU and scheduler captures
+after the ordinary confirmation panel. `PROFILE_PERF` names the installed
+perf executable. The recorder uses noninteractive sudo for tracepoint access,
+then runs each workload as the original user. Four source batches use the
+same binaries and frozen grains; every capture checks the exact output.
+Raw CPU samples, scheduler events, per-thread reports, PIDs and commands stay
+under `OUT/profile`. These observations never enter the performance TSVs.
+Inspect capture loss and observer overhead before using them for attribution.
