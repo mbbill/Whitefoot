@@ -953,6 +953,15 @@ compiler-continuation-bench: prepare compiler
 .PHONY: uring-check
 uring-check: prepare
 	@set -e; \
+	for inline_send in 0 1; do \
+	 for observed in 0 1; do \
+	  observe_flag=''; if test "$$observed" = 1; then observe_flag=-DWF_BENCH_URING_OBSERVE; fi; \
+	  binary="$(BUILD)/uring-trace-inline$$inline_send-observe$$observed"; \
+	  $(CLANG) $(CFLAGS) -g -Wpedantic -pthread -fsanitize=address,undefined \
+	    "-DWF_BENCH_URING_INLINE_SEND=$$inline_send" $$observe_flag uring_echo_check.c -o "$$binary"; \
+	  "$$binary"; \
+	 done; \
+	done; \
 	$(CLANG) $(CFLAGS) -Wpedantic -pthread stream_check.c -o "$(BUILD)/stream_check"; \
 	for bytes in 8192 65536; do \
 	 for inline_send in 0 1; do \

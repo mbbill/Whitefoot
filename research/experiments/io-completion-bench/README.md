@@ -254,10 +254,10 @@ the ratio is against:
   rather than committing a buffer per connection before there is anything to
   put in it. The echo is then sent straight out of the buffer the kernel
   filled, avoiding an extra userspace copy; ordinary kernel socket copies
-  still exist. Exhaustion
-  is real and is handled rather than avoided: a receive that finds no buffer
-  answers `-ENOBUFS`, and that connection waits for a buffer to come back
-  instead of spinning on a re-arm.
+  still exist. A receive that exhausts the ring ends with `-ENOBUFS`.
+  Recovery retries once if a buffer was returned since that receive was armed;
+  otherwise it waits for a return. This also covers a return processed before
+  its delayed exhaustion CQE without repeatedly retrying an unchanged ring.
 - **one ring per core.** Each thread owns its ring, its buffer ring and its own
   `SO_REUSEPORT` listening socket, so a connection is accepted, received and
   echoed on one thread with nothing shared on the path.
@@ -401,8 +401,12 @@ The current scheduler experiments and their controls are described in
 [`SCHEDULER-EXPERIMENT.md`](../../investigations/io-model/SCHEDULER-EXPERIMENT.md).
 `scheduler-native-baselines` screens pure-ring and immediate-send io_uring at
 8/64 KiB with an equal provided-byte budget, alongside the existing epoll,
-stackful, C++ coroutine and WF controls. `uring-check` qualifies every native
-uring configuration against the shared 2 MiB stream oracle before timing.
+stackful, C++ coroutine and WF controls. `uring-check` runs deterministic
+actual-source exhaustion/retirement traces in four ordinary/observed and
+pure-ring/inline builds, then qualifies the native configurations against the
+shared streaming oracle. Experiment 62 records the delayed-exhaustion defect,
+its generation-based correction and the limits of local simulated evidence;
+the earlier measured revisions remain frozen.
 `scheduler-client-headroom` holds one server worker/CPU fixed and compares
 one client hardware thread with both SMT siblings of a separate physical
 core. It retains full byte verification and all qualification checks while

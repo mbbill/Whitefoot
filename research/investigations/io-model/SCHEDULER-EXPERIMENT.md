@@ -4265,8 +4265,8 @@ name. A known limitation remains visible until its experiment is complete.
 | --- | --- | --- | --- |
 | Native C epoll | Manual state machine; per-worker edge-triggered reactor and `SO_REUSEPORT`; 64 KiB shared scratch, bounded private spill on backpressure | Competitive readiness control: immediate recv/send, no ordinary per-operation allocation, local connection state | Screened on Linux loopback; 2 MiB streams, short sends and half-close qualified. Physical NIC and overload confirmation missing |
 | Native C epoll with private storage | Arena, malloc or calloc per connection; main-thread worker variant | Diagnostic storage and allocator comparison; private backing remains owned through I/O | Screened and stream-qualified; these rows need not beat shared scratch to explain WF storage cost |
-| Native C io_uring | Multishot accept/recv, provided buffers, per-worker rings/listeners, ordered vectored sends; SINGLE_ISSUER + DEFER_TASKRUN, no SQPOLL | Competitive completion control: batching, no receive submission per arrival, loaned receive buffers reused for send | Stream-qualified and screened at `475008b5`: 64 KiB improves both large-message cells; small-message intervals overlap. No independently confirmed or universal winner |
-| Native C io_uring with immediate send | Same receive engine and loans, one nonblocking `sendmsg` attempt before ring fallback | Competitive hybrid candidate: avoids a submission/completion round trip when the socket accepts bytes immediately | Stream-qualified and screened at `0357259d`; 8 KiB hybrid severely regresses large messages; experiment 46 measures about 3.785x more send operations from lost application-level gathering, without short/EAGAIN retries. 64 KiB does not show the same loss. Shutdown wake-storage correction requalified at `0ebe924b` |
+| Native C io_uring | Multishot accept/recv, provided buffers, per-worker rings/listeners, ordered vectored sends; SINGLE_ISSUER + DEFER_TASKRUN, no SQPOLL | Competitive completion control: batching, no receive submission per arrival, loaned receive buffers reused for send | Stream-qualified and screened at `475008b5`: 64 KiB improves both large-message cells; small-message intervals overlap. No independently confirmed or universal winner. Experiment 62 fixes a subsequently reproduced delayed-ENOBUFS lost rearm; corrected native qualification is pending, with earlier cohorts retained |
+| Native C io_uring with immediate send | Same receive engine and loans, one nonblocking `sendmsg` attempt before ring fallback | Competitive hybrid candidate: avoids a submission/completion round trip when the socket accepts bytes immediately | Stream-qualified and screened at `0357259d`; 8 KiB hybrid severely regresses large messages; experiment 46 measures about 3.785x more send operations from lost application-level gathering, without short/EAGAIN retries. 64 KiB does not show the same loss. Shutdown wake-storage correction requalified at `0ebe924b`. The delayed-exhaustion correction in experiment 62 also applies to this path; corrected native qualification is pending |
 | Native C stackful / C++ stackless | Same epoll engine; private or shared receive storage; stackful, heap coroutine, and compiler-elided coroutine forms | Diagnostic representation control: separates coroutine/frame allocation, storage and reactor cost | Screened and stream/lifetime-qualified at their recorded revisions; not independent mature runtime comparisons |
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
 | WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Experiments 39/44/48 qualify the threaded, owner and batched-owner paths. At `fc69af15`, batching adds 28% / 27% paired throughput at 64 / 1024 small-message peers, with separate counters confirming aggregated ring submissions. Experiment 54 removes 97..98% of pending-list visits, with only 1.0%/1.8% median paired rate gains and reversals at 1024 peers; native CPU/trip still leads. Client headroom and multi-owner compute remain open. Experiments 52/54 qualify the unchanged sequential mixed protocol on both Linux completion routes |
@@ -8729,3 +8729,61 @@ These ELF files are not executed locally and use different tools from the
 native CI cohort. Its actual ELF checks, qualifications, forty-row ordinary
 result and full gate status remain pending. `make static`, shell syntax and
 patch checks pass locally.
+## 62. Native large-message candidates with a wider ARM client
+
+Experiment 60 shows that the one-client envelope can mask server differences
+and reverse their apparent ranking. The next native screen holds the server
+CPU fixed while comparing the existing 64 KiB uring pure-ring and inline-send
+paths with 32/64/128 provided buffers. Epoll and indexed WF remain same-host
+anchors. A correctness issue in the existing exhaustion recovery path must
+be resolved before this screen can produce timing evidence.
+
+### Delayed exhaustion after a buffer return
+
+The existing `d241cf7d` receive path parks a connection on `-ENOBUFS` and
+depends on a later `buffer_return` to arm another receive. The
+[multishot documentation](https://man7.org/linux/man-pages/man7/io_uring_multishot.7.html)
+and the [maintainer's explanation](https://github.com/axboe/liburing/discussions/1362)
+establish that exhaustion terminates the multishot operation; replenishing
+the provided ring does not restart it. The concrete ordering defect follows
+from this reference's CQE loop, not from the API documentation alone:
+
+1. The kernel consumes the last buffers and queues positive receive CQEs
+   followed by an exhaustion CQE.
+2. Earlier CQEs retire sends and return those buffers before userspace consumes
+   the exhaustion CQE. Inline sends can do this while handling the positive
+   receive CQEs; a different connection's send CQE can do so in the ring path.
+3. At those returns, the exhausted connection is not yet in the parked list.
+   Processing its later exhaustion CQE then parks it despite the completed
+   replenishment. With no later return, it has no event that arms a receive.
+
+The correction records a buffer-return generation per worker and snapshots it
+at every actual receive arm. The generation advances only after the returned
+buffer is published. Exhaustion with a changed generation gets one new arm,
+which captures the current generation; exhaustion without another return
+parks. A different connection can consume the retry's available buffers, but
+cannot cause repeated idle retries without new publications. The ordinary
+connection and worker representations acquire these fields; this is a visible
+correctness change, not an unchanged-IR claim against `d241cf7d`.
+
+`uring_echo_check.c`, wired into the existing `uring-check` target, drives the
+actual receive-arm, queue, buffer-return and complete CQE-handling functions.
+Only kernel setup/enter and synchronous send outcomes are simulated. Its
+transport traces distinguish returns before and after exhaustion, no-return
+parking, a retry whose buffers another connection consumes, partial sends and
+terminal buffer CQEs, for pure-ring/inline and ordinary/observed builds. These
+deterministic traces complement the real Linux streaming/backpressure oracle;
+they do not establish native kernel behavior or timing. An observed-only
+`late_exhaustion_retries` count makes the corrected path visible in subsequent
+diagnostics. The earlier measurement revision stays frozen.
+
+The regression was run locally with ASan/UBSan in all four builds. The frozen
+`d241cf7d` source with only the transport hooks added fails the return-before-
+exhaustion trace in each build: two buffers are available, two connections
+remain parked, no sends are pending and no retry was submitted. The corrected
+source passes all seven traces in each build (28 total), and rejects an unknown
+trace name. Two ordinary send modes also cross-link against real Linux
+AArch64 headers. These are simulated CQE executions on macOS and cross-builds,
+not a native Linux streaming qualification or a new performance result. The
+new fixture belongs to the existing benchmark qualification and is removed
+if the native reference is retired.

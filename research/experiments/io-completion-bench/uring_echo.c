@@ -121,6 +121,7 @@ struct connection {
     int closing;
     int sending;
     int starved;
+    uint64_t receive_return_generation;
     uint16_t head;
     uint16_t tail;
     unsigned count;
@@ -151,6 +152,7 @@ struct worker {
     unsigned buffer_count;
     unsigned buffer_mask;
     uint16_t buffer_tail;
+    uint64_t buffer_return_generation;
     int *starved_list;
     unsigned starved_count;
 #if defined(WF_BENCH_URING_OBSERVE)
@@ -159,6 +161,7 @@ struct worker {
     uint64_t receive_bytes;
     uint64_t send_bytes;
     uint64_t exhausted;
+    uint64_t late_exhaustion_retries;
     uint64_t inline_attempts;
     uint64_t inline_bytes;
     uint64_t inline_succeeded;
@@ -172,6 +175,17 @@ struct worker {
     unsigned deepest_queue;
 #endif
 };
+
+#if defined(WF_BENCH_URING_TEST)
+/* The deterministic CQE fixture replaces only kernel transport/setup and the
+ * synchronous send result. Queue, receive-arm and CQE handling stay real. */
+static int uring_test_ring_setup(struct ring *ring, unsigned entries, int poll_thread);
+static int uring_test_buffers_setup(struct worker *worker);
+static int uring_test_ring_enter(struct ring *ring, unsigned wait_for);
+#if WF_BENCH_URING_INLINE_SEND
+static ssize_t uring_test_sendmsg(int descriptor, const struct msghdr *message, int flags);
+#endif
+#endif
 
 static uint64_t option_connections;
 static uint16_t option_port;
@@ -226,6 +240,9 @@ static void raise_descriptor_limit(uint64_t wanted) {
 /* --- the ring ---------------------------------------------------------- */
 
 static int ring_setup(struct ring *ring, unsigned entries, int poll_thread) {
+#if defined(WF_BENCH_URING_TEST)
+    return uring_test_ring_setup(ring, entries, poll_thread);
+#else
     struct io_uring_params parameters;
     memset(&parameters, 0, sizeof parameters);
     if (poll_thread) {
@@ -301,6 +318,7 @@ static int ring_setup(struct ring *ring, unsigned entries, int poll_thread) {
         ring->submission_array[at] = at;
     }
     return 0;
+#endif
 }
 
 static void ring_teardown(struct ring *ring) {
@@ -332,6 +350,9 @@ static struct io_uring_sqe *ring_next(struct ring *ring) {
 }
 
 static int ring_enter(struct ring *ring, unsigned wait_for) {
+#if defined(WF_BENCH_URING_TEST)
+    return uring_test_ring_enter(ring, wait_for);
+#else
     unsigned flags = 0;
     unsigned to_submit = ring->unsubmitted;
     if (to_submit > 0) {
@@ -380,11 +401,15 @@ static int ring_enter(struct ring *ring, unsigned wait_for) {
         ring->unsubmitted = ring->local_tail - head;
     }
     return 0;
+#endif
 }
 
 /* --- the provided buffer ring ------------------------------------------- */
 
 static int buffers_setup(struct worker *worker) {
+#if defined(WF_BENCH_URING_TEST)
+    return uring_test_buffers_setup(worker);
+#else
     worker->buffer_ring_bytes = (size_t)worker->buffer_count * sizeof(struct io_uring_buf);
     void *map = mmap(NULL, worker->buffer_ring_bytes, PROT_READ | PROT_WRITE,
                      MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
@@ -422,6 +447,7 @@ static int buffers_setup(struct worker *worker) {
     atomic_store_explicit((_Atomic uint16_t *)&worker->buffers->tail, worker->buffer_tail,
                           memory_order_release);
     return 0;
+#endif
 }
 
 static void arm_receive(struct worker *worker, int descriptor);
@@ -438,6 +464,7 @@ static void buffer_return(struct worker *worker, uint16_t identifier) {
     worker->buffer_tail++;
     atomic_store_explicit((_Atomic uint16_t *)&worker->buffers->tail, worker->buffer_tail,
                           memory_order_release);
+    worker->buffer_return_generation++;
     while (worker->starved_count > 0) {
         int descriptor = worker->starved_list[--worker->starved_count];
         table[descriptor].starved = 0;
@@ -477,6 +504,7 @@ static void arm_receive(struct worker *worker, int descriptor) {
     entry->flags = IOSQE_BUFFER_SELECT;
     entry->buf_group = (unsigned short)worker->index;
     entry->user_data = tag(OPERATION_RECEIVE, descriptor);
+    table[descriptor].receive_return_generation = worker->buffer_return_generation;
 }
 
 static void arm_wake(struct worker *worker) {
@@ -557,7 +585,11 @@ static void arm_send(struct worker *worker, int descriptor) {
     worker->inline_requested_bytes += requested;
     worker->inline_requested_vectors += link->message.msg_iovlen;
 #endif
+#if defined(WF_BENCH_URING_TEST)
+    ssize_t moved = uring_test_sendmsg(descriptor, &link->message, MSG_DONTWAIT | MSG_NOSIGNAL);
+#else
     ssize_t moved = sendmsg(descriptor, &link->message, MSG_DONTWAIT | MSG_NOSIGNAL);
+#endif
     if (moved > 0) {
 #if defined(WF_BENCH_URING_OBSERVE)
         worker->inline_bytes += (uint64_t)moved;
@@ -800,6 +832,18 @@ static void *worker_main(void *raw) {
 #if defined(WF_BENCH_URING_OBSERVE)
                     worker->exhausted++;
 #endif
+                    /* This CQE may predate buffers returned while earlier
+                     * CQEs were consumed. Retry once for those publications;
+                     * the new arm captures this generation. If another peer
+                     * consumes the buffers, a second exhaustion without a new
+                     * return parks instead of spinning. */
+                    if (link->receive_return_generation != worker->buffer_return_generation) {
+#if defined(WF_BENCH_URING_OBSERVE)
+                        worker->late_exhaustion_retries++;
+#endif
+                        arm_receive(worker, descriptor);
+                        continue;
+                    }
                     /* The buffer ring ran dry. The connection waits for a
                      * buffer to come back rather than spinning on a re-arm. */
                     if (!link->starved) {
@@ -1006,7 +1050,8 @@ int main(int argc, char **argv) {
                 "exhausted=%llu deepest_queue=%u inline_send=%u inline_attempts=%llu inline_bytes=%llu "
                 "inline_succeeded=%llu inline_short=%llu inline_eagain=%llu "
                 "inline_requested_bytes=%llu inline_requested_vectors=%llu "
-                "ring_requests=%llu ring_requested_bytes=%llu ring_requested_vectors=%llu\n",
+                "ring_requests=%llu ring_requested_bytes=%llu ring_requested_vectors=%llu "
+                "late_exhaustion_retries=%llu\n",
                 at, BUFFER_BYTES, worker->buffer_count,
                 (size_t)worker->buffer_count * BUFFER_BYTES, RING_ENTRIES,
                 (unsigned long long)worker->receives, (unsigned long long)worker->sends,
@@ -1020,7 +1065,8 @@ int main(int argc, char **argv) {
                 (unsigned long long)worker->inline_requested_vectors,
                 (unsigned long long)worker->ring_requests,
                 (unsigned long long)worker->ring_requested_bytes,
-                (unsigned long long)worker->ring_requested_vectors);
+                (unsigned long long)worker->ring_requested_vectors,
+                (unsigned long long)worker->late_exhaustion_retries);
 #endif
         free(worker->starved_list);
         free(worker->loans);
