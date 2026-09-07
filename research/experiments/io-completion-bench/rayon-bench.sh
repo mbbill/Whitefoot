@@ -15,6 +15,7 @@ BATCHES=${BATCHES:-1}
 RAYON_THREADS=${RAYON_THREADS:-"1 2 4"}
 RAYON_GRAINS=${RAYON_GRAINS:-"1 4 16"}
 RESOURCE_CONTROLS=${RESOURCE_CONTROLS:-0}
+CPU_PHASE_TRACE=${CPU_PHASE_TRACE:-0}
 EXPECTED='420a993efa7437a1 41fa962893d45299'
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
@@ -30,8 +31,13 @@ bounded_integer ROUNDS "$ROUNDS" 1 128
 bounded_integer WARMUP "$WARMUP" 0 128
 bounded_integer CALIBRATION_ROUNDS "$CALIBRATION_ROUNDS" 1 128
 bounded_integer BATCHES "$BATCHES" 1 16
-bounded_integer RESOURCE_CONTROLS "$RESOURCE_CONTROLS" 0 2
-if [[ $RESOURCE_CONTROLS == 2 ]]; then
+bounded_integer RESOURCE_CONTROLS "$RESOURCE_CONTROLS" 0 3
+bounded_integer CPU_PHASE_TRACE "$CPU_PHASE_TRACE" 0 1
+if [[ $CPU_PHASE_TRACE == 1 && $RESOURCE_CONTROLS != 3 ]]; then
+    echo 'rayon-bench: coarse phase traces require the startup control panel' >&2
+    exit 2
+fi
+if [[ $RESOURCE_CONTROLS == 2 || $RESOURCE_CONTROLS == 3 ]]; then
     # The default row must really inherit no override; the disabled row sets
     # the existing control only in its own child process.
     unset WF_IO_NO_NATIVE_RING
@@ -62,8 +68,11 @@ for grain in "${grains[@]}"; do bounded_integer GRAIN "$grain" 1 64; done
     elif [[ $RESOURCE_CONTROLS == 1 ]]; then
         printf 'threads=4 grain=4 batches=1,4,16 stacks=12,1100 confirmation=%s warmup=%s calibration=none\n' \
             "$ROUNDS" "$WARMUP"
-    else
+    elif [[ $RESOURCE_CONTROLS == 2 ]]; then
         printf 'threads=4 grain=4 batches=1,16 stacks=12 no_native_ring=unset,1 confirmation=%s warmup=%s calibration=none\n' \
+            "$ROUNDS" "$WARMUP"
+    else
+        printf 'threads=4 grain=4 batches=1,16 stacks=12 init_used_lanes=0,1 compact_stacks=0 confirmation=%s warmup=%s calibration=none\n' \
             "$ROUNDS" "$WARMUP"
     fi
     printf 'timing=whole-process; Rayon pool created once, install once; no concurrent I/O\n'
@@ -91,25 +100,76 @@ shasum -a 256 "$WFC" "$OUT/wf-seq" "$OUT/wf-par" "$OUT/rust-layout" \
     "$HERE/rayon-baseline/Cargo.lock" >> "$OUT/host.txt"
 
 if [[ $RESOURCE_CONTROLS != 0 ]]; then
-    # Experiments 45/47 freeze the earlier four-worker calibration. Neither
-    # panel tunes against its confirmation samples or changes runtime code.
+    # Experiments 45/47/50 freeze the earlier four-worker calibration. No
+    # panel tunes against its confirmation samples or changes runtime sources.
     if [[ $RESOURCE_CONTROLS == 1 ]]; then
         resource_batches=(1 4 16)
         resource_forms=(12 1100)
         printf 'resource_panel=workers4; Rayon grain4; batches1,4,16; WF_STACKS12,1100\n' >> "$OUT/host.txt"
-    else
+    elif [[ $RESOURCE_CONTROLS == 2 ]]; then
         resource_batches=(1 16)
         resource_forms=(default disabled)
         printf 'resource_panel=workers4; Rayon grain4; batches1,16; WF_STACKS12; WF_IO_NO_NATIVE_RING unset/1\n' >> "$OUT/host.txt"
+    else
+        resource_batches=(1 16)
+        resource_forms=(ordinary manual lanes)
+        printf 'resource_panel=workers4; Rayon grain4; batches1,16; WF_STACKS12; ordinary/manual-default/manual-used-lanes\n' >> "$OUT/host.txt"
+        if ! make -C "$ROOT/compiler" completion-test CC=/usr/bin/clang \
+            COMPLETION_TMP="$OUT/startup-check" \
+            COMPLETION_BASE_CFLAGS='-std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread -DWF_SCHED_INIT_USED_LANES=1 -DWF_SCHED_COMPACT_STACKS=0' \
+            > "$OUT/startup-check.log" 2>&1; then
+            cat "$OUT/startup-check.log"
+            exit 1
+        fi
+        backend="$ROOT/compiler/src/backend"
+        "$WFC" --par --emit-llvm "$ROOT/tests/programs/par_layout.wf" -o "$OUT/wf-par.ll"
+        manual_sources=()
+        for unit in wf_floor.c sched/core.c sched/prim_host.c sched/entry.c \
+            completion/runtime.c completion/wait_host.c completion/file_adapter.c \
+            completion/file_posix.c completion/bridge.c completion/linux_io_uring.c; do
+            manual_sources+=("$backend/$unit")
+        done
+        # Mirror whitefootc's source order, C11/-pthread/-O2/-lm and stdin IR.
+        # Explicit zero macros are the existing defaults, not a new policy.
+        for used in 0 1; do
+            manual_command=(/usr/bin/clang -std=c11 -pthread -I "$backend" \
+                -I "$backend/completion" -DWF_SCHED_COMPACT_STACKS=0 "-DWF_SCHED_INIT_USED_LANES=$used")
+            for source in "${manual_sources[@]}"; do manual_command+=(-x c "$source"); done
+            manual_command+=(-x ir - -Wno-override-module -O2 -lm -o "$OUT/wf-manual-$used")
+            printf '%q ' "${manual_command[@]}" > "$OUT/manual-$used.command"
+            printf '< %q\n' "$OUT/wf-par.ll" >> "$OUT/manual-$used.command"
+            "${manual_command[@]}" < "$OUT/wf-par.ll"
+            shasum -a 256 "$OUT/wf-manual-$used" >> "$OUT/host.txt"
+            WF_WORKERS=4 WF_STACKS=12 WF_SCHED_REPORT=0 "$OUT/wf-manual-$used" > "$OUT/manual-$used.out"
+            printf '%s\n' "$EXPECTED" | cmp - "$OUT/manual-$used.out"
+        done
+        if cmp -s "$OUT/wf-par" "$OUT/wf-manual-0"; then
+            echo 'manual_default_binary=byte-identical to ordinary compiler output' > "$OUT/link-comparison.txt"
+        else
+            echo 'manual_default_binary=differs; retain both controls and inspect code/layout before attribution' > "$OUT/link-comparison.txt"
+        fi
+        if [[ $(uname -s) == Linux ]]; then
+            for form in wf-par wf-manual-0 wf-manual-1; do
+                objdump -t "$OUT/$form" > "$OUT/$form.symbols"
+                objdump -d "$OUT/$form" > "$OUT/$form.disassembly"
+            done
+        fi
+        shasum -a 256 "$OUT/wf-par.ll" "${manual_sources[@]}" >> "$OUT/host.txt"
     fi
     resource_settings() {
+        resource_binary="$OUT/wf-par"
         if [[ $RESOURCE_CONTROLS == 1 ]]; then
             resource_label="wf.w4.s$1"
             resource_environment="WF_WORKERS=4,WF_STACKS=$1"
-        else
+        elif [[ $RESOURCE_CONTROLS == 2 ]]; then
             resource_label="wf.w4.s12.r$1"
             resource_environment='WF_WORKERS=4,WF_STACKS=12'
             if [[ $1 == disabled ]]; then resource_environment+=',WF_IO_NO_NATIVE_RING=1'; fi
+        else
+            resource_label="wf.w4.s12.$1"
+            resource_environment='WF_WORKERS=4,WF_STACKS=12'
+            if [[ $1 == manual ]]; then resource_binary="$OUT/wf-manual-0"; fi
+            if [[ $1 == lanes ]]; then resource_binary="$OUT/wf-manual-1"; fi
         fi
     }
     printf 'resource_budget=WF main+3 workers; Rayon 4 workers+sleeping caller; no CPU affinity\n' >> "$OUT/host.txt"
@@ -120,7 +180,7 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
         for form in "${resource_forms[@]}"; do
             resource_settings "$form"
             printf '%s.b%s\t%s,WF_SCHED_REPORT=0\t%s' \
-                "$resource_label" "$batches" "$resource_environment" "$OUT/wf-par" >> "$OUT/resource.plan"
+                "$resource_label" "$batches" "$resource_environment" "$resource_binary" >> "$OUT/resource.plan"
             for ((batch=1; batch<batches; batch++)); do printf '\tbatch' >> "$OUT/resource.plan"; done
             printf '\n' >> "$OUT/resource.plan"
         done
@@ -134,7 +194,9 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
     # and provide grant_observer.c's bridge-report dependency. Final stdout
     # output initializes the bridge even though the layout work is CPU-only.
     backend="$ROOT/compiler/src/backend"
-    "$WFC" --par --emit-llvm "$ROOT/tests/programs/par_layout.wf" -o "$OUT/wf-par.ll"
+    if [[ $RESOURCE_CONTROLS != 3 ]]; then
+        "$WFC" --par --emit-llvm "$ROOT/tests/programs/par_layout.wf" -o "$OUT/wf-par.ll"
+    fi
     observer_sources=()
     for unit in wf_floor.c sched/core.c sched/prim_host.c sched/entry.c \
         completion/runtime.c completion/wait_host.c completion/file_adapter.c \
@@ -146,6 +208,16 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
     printf '%q ' "${observer_command[@]}" > "$OUT/observer.command"
     printf '\n' >> "$OUT/observer.command"
     "${observer_command[@]}"
+    if [[ $RESOURCE_CONTROLS == 3 ]]; then
+        observer_used_command=(/usr/bin/clang -std=c11 -O2 -pthread -I "$backend" \
+            -I "$backend/completion" -DWF_SCHED_OBSERVE=1 -DWF_SCHED_INIT_USED_LANES=1 \
+            -DWF_SCHED_COMPACT_STACKS=0 -x c "${observer_sources[@]}" \
+            -x ir "$OUT/wf-par.ll" -Wno-override-module -lm -o "$OUT/wf-lanes-observed")
+        printf '%q ' "${observer_used_command[@]}" > "$OUT/observer-lanes.command"
+        printf '\n' >> "$OUT/observer-lanes.command"
+        "${observer_used_command[@]}"
+        shasum -a 256 "$OUT/wf-lanes-observed" "$HERE/rayon-phase-trace.sh" >> "$OUT/host.txt"
+    fi
     shasum -a 256 "$OUT/wf-par.ll" "$OUT/wf-par-observed" "${observer_sources[@]}" \
         "$backend/sched/core.h" "$backend/sched/prim.h" "$backend/sched/switch.h" \
         "$HERE/runner.c" "$HERE/rayon-bench.sh" >> "$OUT/host.txt"
@@ -154,7 +226,10 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
         observed_args=("$OUT/wf-par-observed")
         for ((batch=1; batch<batches; batch++)); do observed_args+=(batch); done
         for form in "${resource_forms[@]}"; do
+            if [[ $RESOURCE_CONTROLS == 3 && $form == manual ]]; then continue; fi
             resource_settings "$form"
+            observed_args[0]="$OUT/wf-par-observed"
+            if [[ $RESOURCE_CONTROLS == 3 && $form == lanes ]]; then observed_args[0]="$OUT/wf-lanes-observed"; fi
             record="$OUT/observed-${resource_label#wf.w4.}-b$batches"
             IFS=, read -r -a observed_environment <<< "$resource_environment,WF_SCHED_REPORT=1"
             env "${observed_environment[@]}" "${observed_args[@]}" \
@@ -163,6 +238,11 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
             awk '/^sched:/ {seen++; for(i=2;i<=NF;i++) {split($i,p,"=");v[p[1]]=p[2]+0}}
                 END {exit !(seen==1 && v["observed"]==1 && v["threads"]==4 &&
                     v["workers_started"]==3 && v["steals"]>0 && ("exhausted_compute" in v))}' "$record.err"
+            if [[ $RESOURCE_CONTROLS == 3 ]]; then
+                awk -v form="$form" '/^sched:/ {for(i=2;i<=NF;i++) {split($i,p,"=");v[p[1]]=p[2]+0}}
+                    END {exit !(("compact_stacks" in v) && v["compact_stacks"]==0 &&
+                        ("init_used_lanes" in v) && v["init_used_lanes"]==(form=="lanes"))}' "$record.err"
+            fi
             if [[ $RESOURCE_CONTROLS == 2 && $(uname -s) == Linux ]]; then
                 # Qualify the mechanism outside timing. A Linux host without
                 # a usable ring cannot answer this particular comparison.
@@ -178,6 +258,7 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
     done
     cat "$OUT/resource.txt"
     printf 'rayon-bench: resource samples and separate observations retained in %s\n' "$OUT"
+    if [[ $CPU_PHASE_TRACE == 1 ]]; then OUT="$OUT" bash "$HERE/rayon-phase-trace.sh"; fi
     exit 0
 fi
 
