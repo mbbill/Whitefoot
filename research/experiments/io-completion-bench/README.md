@@ -342,11 +342,17 @@ the other cores. Workers inherit the whole selected pool; they are not pinned
 one per core. Launch affinity and every observed client's worker mask are
 checked. Four existing servers and three occupied echo cases produce 180
 ordinary rows, 36 warmups and 36 separate observations (72 worker reports).
-Full native-ring/client qualifications and an uneven three-worker admitted
-smoke precede timing. The six selected executables, source/IR hashes, tool
+Full native-ring/client qualifications and two uneven three-worker admitted
+smokes precede timing. The six selected executables, source/IR hashes, tool
 identifiers and raw samples are retained. The VM topology, CPU accounting and
 same-host interpretation limits are in
 [experiment 60](../../investigations/io-model/SCHEDULER-EXPERIMENT.md#60-client-capacity-on-reported-independent-arm-cores).
+The qualified `d241cf7d` ARM screen finds that two client workers improve
+paired median 64 KiB throughput by 9–44% across the four servers, with every pass
+positive, and reverse WF/epoll's same-host ranking. All four 64-peer small-message
+cells regress with either wider pool. These are client-worker/resource
+sensitivities on that guest, including changed per-worker batching; they do not
+establish a server ceiling or promote a wider client as the global default.
 
 `linux-net-bench.sh` is the protocol, and one protocol for every host that can
 run it, as `read-bench.sh` is for the read tables. It builds the compiler and

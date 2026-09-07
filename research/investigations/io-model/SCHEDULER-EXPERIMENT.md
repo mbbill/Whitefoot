@@ -4313,7 +4313,7 @@ comparison remain explicit platform rows, not inferred coverage.
 | CPU placement | Record physical cores, SMT siblings, NUMA, cpuset and IRQ placement. Current split2 uses disjoint logical CPUs that may share physical cores; it is not a promise of two physical server cores. split1 separates physical cores |
 | Thread and poll budgets | Count runtime workers, blocking helpers, io-wq and SQPOLL kernel threads. Process taskset and process CPU alone do not bound or account for a kernel polling thread. A competitive CPU budget is an upper bound: tuning may use fewer workers at low occupancy rather than forcing every contender to start all available workers |
 | CPU cost | Existing `/usr/bin/time` `%U/%S` covers whole process lifetime with centisecond output: startup/drain and quantization matter in short cells. Separate steady-state CPU-ns/request, idle CPU and kernel CPU before fine low-load claims |
-| Load generator | Occupied echo cells consume nearly all assigned client CPU, predominantly system time. Experiment 43's extra SMT worker does not establish spare capacity. Experiment 58's readiness client removes empty receive probes but leaves large transfers near one client CPU, with a 64-small uring rate/tail regression; it remains opt-in. Verify with more independent physical client cores or another host; flat throughput alone does not prove server saturation |
+| Load generator | Occupied echo cells consume nearly all assigned client CPU, predominantly system time. Experiment 43's extra SMT worker does not establish spare capacity; experiment 58's readiness client remains opt-in after small-message regressions. Experiment 60 qualifies four distinct reported ARM cores: with the server fixed, two client workers improve paired median 64 KiB rates by 9–44% and reverse WF/epoll's same-host ranking, while 64-peer small messages regress with wider pools. This establishes client-worker/resource sensitivity, including changed connection partitioning and event batches, not an unrestricted server ceiling. Keep the default for small-message comparisons; verify capacity per workload and architecture before interpreting close rates |
 | Latency / overload | Closed-loop echo p99 does not establish an overload SLO. Fixed-arrival latency begins at the intended send time and includes dispatch delay; report goodput, drops/deadlines, backlog and recovery |
 | Memory | Record total reserved/provided bytes, live RSS/PSS and slope versus peers, socket/kernel memory, faults and allocations. Equal provided bytes does not imply equal total or resident memory. Keep THP and allocator readbacks with each panel |
 | Mechanism evidence | Untimed observers: syscalls/submissions/CQEs, send/recv bytes, queue depth/exhaustion, context switches, task migration and frame allocations. An observer is not part of a timed binary |
@@ -8449,9 +8449,9 @@ client and fixture ELF files, and compiles the scheduler host/native ring units;
 the two selected WF benchmark executables are not part of this cross-link set. The
 default client optimized IR equals the frozen pre-observer client on that
 target. `make static` and patch checks pass. These local checks use filesystem
-shims for Linux admission and do not execute the Linux ELF files. Native ARM
-qualification, real topology/socket/ring behavior and performance remain
-pending; no complete gate or server-capacity result is claimed.
+shims for Linux admission and do not execute the Linux ELF files. They alone
+do not qualify native topology/socket/ring behavior or performance; the native
+run and its evidence limits are recorded below.
 
 ### First ARM admission: f2e0f460
 
@@ -8486,5 +8486,154 @@ disjointness, quota checks and initial/final snapshots. Earlier panels keep
 their original logical grouping. Admission now records the `lscpu` version
 and ID mode before reading topology, and a mismatch names the CPU, expected
 sysfs package/core and actual table rows. There is no fallback from missing or
-inconsistent physical IDs. Synthetic sparse-ID cases exercise this distinction;
-the corrected native ARM qualification and timing remain pending.
+inconsistent physical IDs. Synthetic sparse-ID cases exercise this distinction.
+The subsequent corrected run is recorded below; the failed revision and its
+admission evidence remain unchanged.
+
+### Corrected ARM qualification and client-capacity results: d241cf7d
+
+Frozen revision `d241cf7d59b0e2724e44046358f10fa32ef350ec` passes allocator
+job `101729631995` and Windows placement job `101729631817` in
+[run 34118128572](https://github.com/mbbill/Whitefoot/actions/runs/34118128572).
+Artifact `10017548083` is a 1,846,028-byte ZIP with SHA-256
+`14ddc221705cf7ab83402eeef0fb0ea3dcef09fe25e09bc5a11d61a701a16304`.
+The archive digest and CRC, source revision, all six retained AArch64 ELFs,
+eight selected source hashes, retained generated source/IR and launcher hashes
+were independently checked. Each retained executable equals its used-binary
+hash; final hash checks agree with the initial manifest. The Clang, Clang++ and WFC hashes identify
+tools recorded by CI, whose executables are not uploaded or independently
+rehashed. Default-client optimized IR matches the frozen pre-observer client.
+
+The guest reports Linux `6.17.0-1022-azure`, image `20260831.111.1`, util-linux
+2.39.3 and 4 KiB pages. Allowed CPUs 0/1/2/3 map to package 36, cores 1/2/3/4,
+with singleton sibling lists 0/1/2/3. Initial/final selection and topology
+bytes agree. The server uses CPU 0; client pools use 1, then 1/2, then 1/2/3.
+All retained launch masks and observed worker masks match. Visible non-root
+ancestor quotas are `max 100000`, effective cpusets are 0–3, and all recorded
+initial/final throttling counts are zero; the root correctly lacks `cpu.max`.
+These checks establish the guest's reported separation and visible quota
+conditions, not dedicated underlying host cores or absence of hidden limits.
+
+The artifact contains exactly **180 ordinary rows, 36 warmups, 36 separate
+observed rows and 72 exchange worker reports**. Actual sample order follows
+the frozen width/server rotation. The two additional admitted width-3 smokes
+have the required 2/1/1 peer assignment and twelve distinct phase reports;
+they are not panel rows. Every ordinary/observed sample is bound to its
+cohort, form, peer count, message size, pass and launch masks. Worker round,
+byte, syscall-outcome, size-histogram and event/pump identities pass, as do
+server exit/status and quiet-output checks. The preserved raw client and
+`/usr/bin/time` records retain rates, tails and resource observations for
+every pass; observations do not enter the ordinary timing comparisons.
+
+Native qualification includes eight uring stream configurations (8/64 KiB,
+ring/inline sends, 1/4 workers), the actual 64 KiB provided-pool preflights,
+epoll storage readbacks, compact-stack controls and indexed owner/batch32
+continuations. Client qualification retains 28 actual-loop trace cases,
+the deliberate lost-edge rejection, six paced cases and 64 real socket cases
+(48 ordinary plus 16 observed). Twelve observed socket phases include the
+8 MiB fragmented transfer, with actual short sends, short receives and send
+EAGAIN still required. This native execution evidence is distinct from the
+earlier local filesystem/scheduling shims. It is a successful specialized
+screen, not a claim that this measurement revision ran the full canonical gate.
+
+The following are medians of **five same-server, same-case, same-pass rate
+ratios**, wider client divided by width 1; brackets contain all-five minimum
+and maximum. Ratios of separately reported median rates are not substituted.
+
+| Peers × bytes | Server | Width 2 / 1 rate [min, max] | Width 3 / 1 rate [min, max] |
+| --- | --- | --- | --- |
+| 64 × 64 B | epoll | 0.8850 [0.8761, 0.8891] | 0.8488 [0.8236, 0.8560] |
+| 64 × 64 B | uring-64k | 0.9247 [0.9200, 0.9319] | 0.8513 [0.8235, 0.8689] |
+| 64 × 64 B | callee-small | 0.8787 [0.7848, 0.9560] | 0.8529 [0.7220, 0.8820] |
+| 64 × 64 B | wf-coro-index | 0.8092 [0.7684, 0.9420] | 0.7833 [0.7168, 0.8818] |
+| 1024 × 64 B | epoll | 0.8997 [0.8792, 0.9591] | 0.7892 [0.7721, 0.9041] |
+| 1024 × 64 B | uring-64k | 1.0355 [0.9898, 1.0441] | 0.9734 [0.9265, 0.9946] |
+| 1024 × 64 B | callee-small | 0.6960 [0.6706, 0.7263] | 0.6498 [0.6184, 0.7146] |
+| 1024 × 64 B | wf-coro-index | 0.7099 [0.6969, 1.0520] | 0.6690 [0.6548, 0.8220] |
+| 64 × 64 KiB | epoll | 1.4364 [1.3970, 1.5755] | 1.3943 [1.3693, 1.5238] |
+| 64 × 64 KiB | uring-64k | 1.1449 [1.1286, 1.2018] | 1.1716 [1.1639, 1.2145] |
+| 64 × 64 KiB | callee-small | 1.0932 [1.0755, 1.1139] | 1.0651 [1.0176, 1.1285] |
+| 64 × 64 KiB | wf-coro-index | 1.1179 [1.0970, 1.1185] | 1.0758 [1.0597, 1.1237] |
+
+Every large-message wider/base rate pair improves, but width 3 is not
+generally better than width 2. All four 64-peer small-message cells regress
+in all five passes at both wider settings. At 1024 small peers, uring width 2
+improves in four passes, with a median of only 3.55%; indexed width 2 improves
+in one pass despite its 29.0% median regression. The remaining wider settings
+in that cell regress in all five passes. These outcomes reject a blanket
+wider-client default.
+
+Large-message latency and CPU use also matter. The next table uses the same
+paired ordinary ratios. Client CPU/trip sums exchange user and system time;
+server CPU/trip is whole-process lifetime user plus system time. The last
+column is the median aggregate client exchange CPU/wall at the wider setting;
+each form's width-1 median is about 0.999.
+
+| Server | Client width | p99 ratio | Client CPU/trip ratio | Server CPU/trip ratio | Client CPU/wall |
+| --- | --- | --- | --- | --- | --- |
+| epoll | 2 | 0.7048 | 1.0383 | 0.8594 | 1.4894 |
+| epoll | 3 | 0.6982 | 1.0414 | 0.9206 | 1.4506 |
+| uring-64k | 2 | 1.1133 | 1.0515 | 1.0152 | 1.2169 |
+| uring-64k | 3 | 0.8130 | 1.0429 | 0.9851 | 1.2228 |
+| callee-small | 2 | 0.9183 | 1.0291 | 0.9200 | 1.1243 |
+| callee-small | 3 | 0.9242 | 1.0531 | 0.9467 | 1.1211 |
+| wf-coro-index | 2 | 0.8979 | 1.0099 | 0.9859 | 1.1228 |
+| wf-coro-index | 3 | 0.9002 | 1.0393 | 1.0141 | 1.1325 |
+
+The large uring width-2 p99 ratio spans 0.8113–2.5755, worsening in three of
+five passes despite every rate pair improving. Its small 64-peer width-2
+p99 worsens in all five, median 2.7962 [2.1981, 2.8594]; width 3 also worsens
+in all five, median 1.1502 [1.1258, 3.1509]. Thus higher allowed CPU count is
+not a reliable tail-latency improvement. Whole-process server CPU includes
+startup, launcher and drain, with centisecond output, so small differences
+there do not resolve a steady-state per-request cost. Aggregate client CPU
+above one demonstrates work using the broader pool; it is not a guarantee
+that each worker has headroom or that all relevant kernel work is charged.
+
+The client envelope changes even the apparent server ranking. For 64 peers
+at 64 KiB, these are same-pass **server / epoll rate ratios at equal client
+width**, again with all-five ranges:
+
+| Server / epoll | Width 1 | Width 2 | Width 3 |
+| --- | --- | --- | --- |
+| uring-64k / epoll | 1.0420 [1.0103, 1.1074] | 0.8330 [0.8212, 0.8692] | 0.8777 [0.8613, 0.8884] |
+| callee-small / epoll | 1.0813 [1.0543, 1.1608] | 0.8237 [0.7930, 0.8550] | 0.8130 [0.7872, 0.8679] |
+| wf-coro-index / epoll | 1.0351 [1.0062, 1.1140] | 0.7905 [0.7837, 0.8320] | 0.8024 [0.7686, 0.8375] |
+
+All five passes reverse each of these comparisons. Epoll's separate rate
+medians are 40,246.9 / 57,954.2 / 56,053.1 trips/s at widths 1/2/3; indexed
+WF's are 41,476.7 / 45,979.5 / 44,915.8. A one-client result slightly favoring
+WF over epoll therefore cannot establish a server advantage: this unchanged
+epoll implementation advances much further when this guest allows the
+existing client to use another reported core. This is a within-ARM result;
+it does not numerically revise earlier x86 cohorts or establish epoll as the
+unrestricted best implementation.
+
+This large cell retains uring's 32 provided 64 KiB buffers (2 MiB total)
+versus WF's private initialized 64 KiB source capacity per peer (4 MiB at
+64 peers). Capacity is not resident memory, and the storage models remain
+different. Neither the provided-pool capacity nor the existing inline-send
+candidate was varied under the wider client here. Their earlier screening
+does not establish the best native configuration for this new client envelope;
+no part of this result attributes uring's gap to pool capacity.
+
+The separate observed rows expose another effect of increasing the worker
+pool. Every row still uses exactly one send call per verified trip. At
+64 KiB, receive calls/trip range from 2.0006 to 2.0963 and receive
+EAGAIN/trip from 0.9993 to 1.0666. For epoll's large cell, events per nonempty
+epoll wait fall 62.825 → 1.168 → 1.033 while waits/trip rise
+0.01591 → 0.91031 → 1.00816 across widths 1/2/3. The native 64-peer small
+cells likewise go from roughly 54–61 events per nonempty wait to roughly
+1.35–1.41 at width 2. These are client epoll event batches and syscall counts,
+not TCP packet counts. There is one instrumented observation per configuration;
+it does not assign causal timing costs or replace the five ordinary pairs.
+
+The measured variable combines more allowed client CPUs, more client workers
+and a different connection partition across their epoll instances. The
+server/client scheduling and loopback kernel interactions can consequently
+change. The successful large-message sensitivity and ranking reversal are
+strong evidence that the previous one-client envelope can mask differences
+between these servers; they do not isolate a copy, syscall or scheduler cost,
+nor prove a new server ceiling. Keep the unchanged default/service0 client,
+retain the small-message regressions, and carry client width and architecture
+as explicit comparison axes before declaring a performance frontier.
