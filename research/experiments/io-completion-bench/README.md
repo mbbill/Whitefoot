@@ -846,7 +846,14 @@ Separate observations require 15 publications per layout instead of 63,
 plus the unchanged builder's 63. This changes traversal/locality and code
 specialization as well as scheduling work, so it is a grain-strategy control,
 not an isolated deque-cost measurement. The isolated Linux route is
-`codex/io-cpu-grain-control`; native performance results remain pending.
+`codex/io-cpu-grain-control`. Its frozen native result finds no useful gain:
+short-task paired wall/CPU ratios are 1.0136/1.0137, while sixteen batches
+are nearly unchanged. The ordinary/manual ELF control is byte-identical;
+its same-binary wall spread limits attribution of small wall differences.
+All four observed publication totals and the actual specialized ELF task
+graph qualify. Native code grows and data moves, so this result does not
+isolate publication cost or establish available work or an OS cause. Keep
+the existing defaults; no next implementation is selected by this result.
 
 `make mixed-rayon-check` qualifies the optional `mixed-rayon` binary in the
 same standalone crate. Its CLI is `mixed-rayon PORT CONNECTIONS --threads B

@@ -4271,7 +4271,7 @@ name. A known limitation remains visible until its experiment is complete.
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
 | WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Experiments 39/44/48 qualify the threaded, owner and batched-owner paths. At `fc69af15`, batching adds 28% / 27% paired throughput at 64 / 1024 small-message peers, with separate counters confirming aggregated ring submissions. Experiment 54 removes 97..98% of pending-list visits, with only 1.0%/1.8% median paired rate gains and reversals at 1024 peers; native CPU/trip still leads. Client headroom and multi-owner compute remain open. Experiments 52/54 qualify the unchanged sequential mixed protocol on both Linux completion routes |
 | Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Go 1.27.1 release/race and both 64 KiB storage forms qualified (49/51). The fixed Linux screen (53) favors acceptor-heap/P1 for memory and tail latency within one server CPU; P4 oversubscription inflates p99. WF batch32 exceeds this Go candidate at 64/1024 small peers while native stays ahead. Large transfers approach the client ceiling; no universal optimum. Race moves both buffers to the heap |
-| Rust sequential / Rayon CPU pool | Existing recursive `par_layout.wf` port with exact floating-point order and every node write; sibling `join`, calibrated grain and explicit pool width | Essential CPU-parallel reference; separates sequential code generation from parallel scheduling. Broader `par_iter`/`scope` and unbalanced workloads remain candidate rows | Checksum-qualified and independently confirmed after grain calibration on M1/Linux (experiment 40). Experiment 45's stack/batch control reduces the WF12/Rayon paired wall gap from 13.9% at one batch to 1.6% at sixteen, supporting substantial fixed costs. Experiments 47/50 find no stable gain from unused-ring or lane-initialization changes. Corrected traces locate early underutilization during computation; experiment 55 associates about 90% of WF runnable waits with runtime-issued yields. Experiment 57's complete pre-exit attribution places over 99.4% of early yield-associated off-CPU time in the idle scan; three post-exit probes remain explicitly unpaired. Experiment 59 finds no wall improvement from removing those rounds, with +1.24% short-task CPU. Experiment 61 also finds no useful gain from sequential tree building plus relocated lazy startup; decoded hot operations/constants agree despite relocated code/data. Retain both defaults; neither control measures ready-work availability or an OS scheduling cause. This is not an optimal WF CPU setup claim |
+| Rust sequential / Rayon CPU pool | Existing recursive `par_layout.wf` port with exact floating-point order and every node write; sibling `join`, calibrated grain and explicit pool width | Essential CPU-parallel reference; separates sequential code generation from parallel scheduling. Broader `par_iter`/`scope` and unbalanced workloads remain candidate rows | Checksum-qualified and independently confirmed after grain calibration on M1/Linux (experiment 40). Experiment 45's stack/batch control reduces the WF12/Rayon paired wall gap from 13.9% at one batch to 1.6% at sixteen, supporting substantial fixed costs. Experiments 47/50 find no stable gain from unused-ring or lane-initialization changes. Corrected traces locate early underutilization during computation; experiment 55 associates about 90% of WF runnable waits with runtime-issued yields. Experiment 57's complete pre-exit attribution places over 99.4% of early yield-associated off-CPU time in the idle scan; three post-exit probes remain explicitly unpaired. Experiment 59 finds no wall improvement from removing those rounds, with +1.24% short-task CPU. Experiment 61 also finds no useful gain from sequential tree building plus relocated lazy startup; decoded hot operations/constants agree despite relocated code/data. Experiment 63 reduces layout publications from 63 to 15 with no useful gain: short CPU rises in all five pairs, while long work is nearly neutral. Traversal/inlining/code placement also change. Retain the existing defaults; these controls do not measure ready-work availability or an OS scheduling cause. This is not an optimal WF CPU setup claim |
 | Tokio I/O + bounded Rayon CPU offload | One current-thread I/O driver plus B-1 CPU workers, fixed 64-byte protocol, asynchronous bounded admission, one request/reply per connection | External mixed-load reference under one total execution budget; exposes CPU queue transfer, backpressure and light-request progress | Linux-qualified at `040bfc4b` (experiment 42), including saturation, errors, reset, partial input, half-close and slow output. Four short client smoke records are correctness evidence, not a performance ranking |
 | Tokio | Fixed-worker multithread runtime and a separate per-core current-thread/reactor configuration | External mainstream async baseline; distinguish work stealing from reactor locality | Source candidate only; pin toolchain/lockfile, socket distribution and blocking-pool budget |
 | Monoio | Per-core runtime, separately forced IoUringDriver and LegacyDriver | External completion/readiness comparison within one runtime family | Source candidate only; prohibit silent fusion fallback in backend-specific rows |
@@ -4294,7 +4294,7 @@ revision, compiler and dependency lockfile.
 | TCP closed-loop echo | 1/4/64/1024 peers × 64 B, 64 peers × 64 KiB; one outstanding request per peer; exact bytes and EOF | Current ten-cell split1/split2 screen. Add 4 KiB and pipeline depths 8/32 only after candidate screening |
 | TCP streaming / backpressure | Continuous 2 MiB or larger, arbitrary fragmentation, short sends, slow readers, half-close; preserve order and bounded live storage | Existing epoll stream oracle; uring joins it below. Idle 10k peers, churn and reset/cancellation remain separate qualification |
 | TCP fixed-arrival / mixed compute | Same recurrence and compute quantum; light paced requests alongside heavy work; below/near/above saturation | Existing paced mixed experiments cover selected controls. External candidates need scheduled-to-response p99/p99.9, goodput, missed deadlines, backlog and drain recovery |
-| CPU-only parallelism and CPU offload | Sequential Rust vs Rayon; balanced/unbalanced recursive and data-parallel jobs; matched arithmetic, tuned grain and pool width. Mixed mode charges enqueue, completion transfer and bounded queues | Recursive `join`, stack/batch, unused-ring and initializer controls are measured; caller traces identify the idle-yield path, but the ordinary zero-yield control finds no improvement. Experiment 61 also finds no useful gain from the tree-build/lazy-start control. The 63-versus-15 layout fork difference remains; observed owner inline executions are not failed acquisitions. Ready-work availability and same-budget worker placement remain open. Tokio + Rayon mixed qualification exists, with timing pending client-capacity control. Both executors share one total budget |
+| CPU-only parallelism and CPU offload | Sequential Rust vs Rayon; balanced/unbalanced recursive and data-parallel jobs; matched arithmetic, tuned grain and pool width. Mixed mode charges enqueue, completion transfer and bounded queues | Recursive `join`, stack/batch, unused-ring and initializer controls are measured; caller traces identify the idle-yield path, but the ordinary zero-yield control finds no improvement. Experiment 61 also finds no useful gain from the tree-build/lazy-start control. Experiment 63 qualifies a 63-to-15 publication control without useful gain; short CPU rises and long work is nearly neutral, with traversal and code specialization changing too. Owner inline executions are not failed acquisitions. Ready-work availability and same-budget worker placement remain open. Tokio + Rayon mixed qualification exists, with timing pending client-capacity control. Both executors share one total budget |
 | File reads | Open-once cache-hot vs cold buffered vs direct I/O; random/sequential; 4/64 KiB; QD 1/8/64; same offsets, bytes and checksum | Existing file experiments cover subsets. Extend native blocking/pread pool/uring comparisons; fio is a device-envelope cross-check, not an identical-program runtime row |
 | File writes | Buffered accepted bytes vs fdatasync/fsync durability are distinct contracts; name batch size, flush cadence and directory durability | Broader matrix required; no current TCP result supports a write or durability claim |
 | Dependent storage/network pipeline | Read → parse → request → write with the same dependency graph and compute work | Unmeasured; tests whether sequential-source overlap composes across stages |
@@ -9053,8 +9053,7 @@ ordinary Rayon comparison. Fewer publications may reduce useful exposed
 parallel work and worsen wall or utilization; a loss is a valid result.
 Any gain would support this combined grain/traversal/specialization strategy
 on this workload, not a claim about ready-work availability or OS delay.
-Local qualification and native Linux results are recorded separately; no
-native performance conclusion is available yet.
+Local qualification and the native Linux result below are separate evidence.
 
 Local M1 qualification passes the normal completion suite (four full
 harness executions), all four enumeration configurations, Rayon fmt/tests/
@@ -9073,6 +9072,127 @@ before host or compiler work. Linux x86-64 cross-links pass the actual ELF
 call guard, which also rejects an unchanged baseline as the candidate.
 LLVM 22 inlines the depth-four entries into the ABI body while retaining
 the lower copied levels, thunks and sequential child calls. This is inspected
-cross-code evidence, not native Linux execution or identical code topology;
-the native CI toolchain and ordinary result remain to be audited. Shell
-syntax, `make static` and patch checks pass locally.
+cross-code evidence, not native Linux execution or identical code topology.
+The native toolchain and result are audited below. Shell syntax, `make static`
+and patch checks pass locally.
+
+### Sixty-third measurement: fewer publications without a useful gain
+
+Frozen revision `a5cf6389d914b11198b277e30efa70c819aa5a14` on
+`codex/io-cpu-grain-control` completed
+[run 34124965508](https://github.com/mbbill/Whitefoot/actions/runs/34124965508)
+successfully. Linux CPU job `101751394964` and Windows completion job
+`101751394843` passed; six unrelated jobs were correctly skipped. The
+[CPU artifact 10019898853](https://github.com/mbbill/Whitefoot/actions/runs/34124965508/artifacts/10019898853)
+has ZIP SHA-256
+`7fe05f003fb7ed39e184f4b795f822647aea4c5a43c5ae5006faa62f066f8d67`,
+matching the API digest. This identifies the isolated measurement workflow,
+not a complete repository-gate result.
+
+The host was an AMD EPYC 9V74 with four allowed logical CPUs (0--3), two
+cores and two SMT threads per core, running Linux 6.17.0-1022-azure. Clang
+18.1.3 and Rust 1.98.0 built the cohort. No new affinity or dedicated-host
+guarantee was introduced. The normal completion target passed five full
+harness executions, the read/default-route/pure-compute probes, scheduler
+smoke and all four enumeration configurations (17/17/20/19 schedules).
+Native-ring and forced POSIX-adapter bridge checks passed. The optional
+owner-ring-only harness remains inapplicable to this default configuration;
+it is not counted as a sixth pass. Rayon fmt, both Rust tests and clippy
+also passed.
+
+Nine pre-timing artifact hashes, eleven final artifact hashes and all 34
+source entries verify against the retained files and frozen revision. The
+compiler executable is retained and rehashed. Independent reconstruction
+matches every one of the sixteen copied IR bodies and restores the complete
+original module after reversing only the two main entry calls. The retained
+transform also matches the frozen harness source. Manual link arguments
+differ only in IR input and output path. All four manual qualification
+stdout files and all four observer stdout files match the independent exact
+checksum. The runner checks ordinary/warmup output after trimming trailing
+CR/LF; those individual stdout files and warmup timings are not retained.
+
+The verified plan has eight warmup invocations followed by forty ordinary
+rows, with the first recorded pass reversed and subsequent passes alternating.
+Each comparison below pairs the same recorded pass. Ratios divide the
+four-level candidate by the same-IR manual default; brackets give the five
+paired minima/maxima, not confidence intervals. CPU is whole-process user
+plus system time, switches are wait4 counts and RSS is the child peak in KiB.
+
+| Batches | Wall ratio | Total CPU ratio | Voluntary switches | Involuntary switches | Total switches | Peak RSS ratio |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 1.013568 [1.013112, 1.022401] | 1.013702 [1.010639, 1.016863] | 1.709062 [1.646605, 1.813243] | 4.534211 [3.295405, 7.015152] | 2.880289 [2.361237, 3.458078] | 1.000000 [0.988193, 1.035950] |
+| 16 | 1.000606 [0.995249, 1.003126] | 1.000252 [0.999798, 1.001454] | 1.075412 [1.069254, 1.197097] | 1.829724 [1.552486, 2.589523] | 1.220466 [1.169940, 1.511647] | 1.010843 [0.975509, 1.051436] |
+
+Manual-default/candidate median walls are 399.000/406.987 ms at one batch
+and 5744.462/5755.521 ms at sixteen. Short-task candidate CPU is higher in
+all five pairs, by 1.064--1.686%, with median paired increase 19.743 ms.
+Long-task wall and CPU are nearly unchanged. Total switches increase in all
+pairs at both lengths; median paired absolute increases are 1822 and 2831.
+Peak RSS has mixed pair directions, with median changes 0 and 264 KiB.
+Neither switch counts nor RSS identify why wall or CPU differs.
+
+The ordinary and manual-default ELF files are byte-identical. Their
+ordinary/manual paired wall ratios are 1.013404 [0.988877, 1.028785] at one
+batch and 1.002665 [1.000177, 1.005196] at sixteen; CPU ratios are 1.001798
+[0.997302, 1.007336] and 1.000843 [1.000390, 1.002645]. The same-binary
+short wall median and spread are comparable to the candidate's wall change,
+so that wall change alone does not establish an isolated cutoff penalty.
+The candidate provides no useful gain in this cohort.
+
+The same-host competitive comparison retains the short/long WF-versus-Rayon
+gap. Each row below uses its own within-pass numerator/Rayon pairs; dividing
+unpaired medians would give a different statistic.
+
+| Batches | WF form / Rayon4 grain4 | Wall ratio median [min, max] | Total CPU ratio median [min, max] |
+| --- | --- | ---: | ---: |
+| 1 | Ordinary | 1.133981 [1.123713, 1.151191] | 1.026426 [1.025473, 1.033473] |
+| 1 | Manual default | 1.120132 [1.111714, 1.138480] | 1.026296 [1.023577, 1.028272] |
+| 1 | Four-level candidate | 1.145224 [1.126529, 1.153408] | 1.039212 [1.037601, 1.045229] |
+| 16 | Ordinary | 1.018341 [1.005078, 1.041944] | 1.010679 [1.008746, 1.014699] |
+| 16 | Manual default | 1.016945 [0.999882, 1.039175] | 1.010286 [1.007372, 1.012022] |
+| 16 | Four-level candidate | 1.017507 [1.003008, 1.034238] | 1.010440 [1.008605, 1.012907] |
+
+Four separate observations qualify the intended reduction while retaining
+four scheduler threads, three started workers, positive steals, default
+storage settings and 256 pause/look plus 16 idle-yield rounds. `grants`
+equals `steals`, and owner inline executions account for the other published
+tasks; they are not failed acquisitions.
+
+| Observed form | Batches | Steals | Owner inline executions | Sum |
+| --- | ---: | ---: | ---: | ---: |
+| Default | 1 | 6703 | 94160 | 100863 |
+| Four-level candidate | 1 | 5577 | 18486 | 24063 |
+| Default | 16 | 85406 | 1527457 | 1612863 |
+| Four-level candidate | 16 | 81075 | 302988 | 384063 |
+
+Every sum equals the 1600 layouts per batch times 63 or 15 publications,
+plus the unchanged builder's 63. The original and candidate therefore
+exercise different publication counts; these counters do not supply the
+ordinary performance ranking or a simultaneous ready-work timeline.
+
+Independent inspection of actual ELF instruction bytes resolves every
+relevant E8 call and RIP-derived thunk address through file-backed load
+segments and sized function symbols. The candidate has eight specialized
+static publication sites, each receiving its exact depth-specific thunk
+in the second argument register without an intervening overwrite or control
+transfer. Direct child calls and published-thunk calls follow the lower
+copied levels into the existing sequential clones. The depth-four entries
+are inlined into the ABI body, and its one parallel-builder call remains.
+The inspected main/build/layout/copy/clone/thunk bodies have no unmodeled
+indirect transfers or cross-function jumps; actual encoded branch targets
+are checked too. This bounded program graph has no edge from the selected
+candidate entries into either original parallel layout.
+
+The candidate is not an identical-code control: ELF `.text` grows from
+49,266 to 56,690 bytes (+7424), while the 4160-byte `.rodata` section moves
+from address 61,440 to 69,632 (+8192). Inlining, footprint and placement
+therefore change alongside the sequential clones' left-before-right
+subtree traversal and locality. The result cannot isolate publication,
+deque or atomic cost. It does not measure eligible work at an idle turn
+or establish an OS scheduling cause.
+
+Selection: retain the full-depth layout lowering, parallel builder and
+existing waiting defaults. This four-level grain/traversal/specialization
+control has no useful measured gain; its short CPU cost is higher and its
+long result is neutral within this small cohort's variation. No next
+implementation is selected by these results.
