@@ -655,6 +655,9 @@ jobs:
           bench=research/experiments/io-completion-bench
           build="$OUT/whitefoot-io-completion-bench/build"
           mkdir -p "$OUT/old"
+          for source in netload.c netload_observe.h compute_protocol.h; do
+            git show 063cbef4d182fac8c600c8ac2b6168ed4d24c4f6:"$bench/$source" | cmp - "$bench/$source"
+          done
           git show 063cbef4d182fac8c600c8ac2b6168ed4d24c4f6:"$bench/netload_check.c" > "$OUT/old/netload_check.c"
           /usr/bin/clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread \
             -fsanitize=address,undefined -DWF_NETLOAD_READINESS=1 -DWF_NETLOAD_SERVICE_ROUNDS=0 \
