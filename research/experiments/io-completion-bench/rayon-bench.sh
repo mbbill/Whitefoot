@@ -35,7 +35,7 @@ bounded_integer CALIBRATION_ROUNDS "$CALIBRATION_ROUNDS" 1 128
 bounded_integer BATCHES "$BATCHES" 1 16
 bounded_integer RAYON_PROFILE "$RAYON_PROFILE" 0 1
 
-bounded_integer RESOURCE_CONTROLS "$RESOURCE_CONTROLS" 0 5
+bounded_integer RESOURCE_CONTROLS "$RESOURCE_CONTROLS" 0 6
 if [[ $RESOURCE_CONTROLS != 0 && $RAYON_PROFILE == 1 ]]; then
     echo 'rayon-bench: resource controls and perf captures are separate experiments' >&2
     exit 2
@@ -45,7 +45,7 @@ if [[ $CPU_PHASE_TRACE == 1 && $RESOURCE_CONTROLS != 3 ]]; then
     echo 'rayon-bench: coarse phase traces require the startup control panel' >&2
     exit 2
 fi
-if [[ $RESOURCE_CONTROLS == 2 || $RESOURCE_CONTROLS == 3 || $RESOURCE_CONTROLS == 4 || $RESOURCE_CONTROLS == 5 ]]; then
+if [[ $RESOURCE_CONTROLS == 2 || $RESOURCE_CONTROLS == 3 || $RESOURCE_CONTROLS == 4 || $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ]]; then
     # The default row must really inherit no override; the disabled row sets
     # the existing control only in its own child process.
     unset WF_IO_NO_NATIVE_RING
@@ -85,13 +85,17 @@ for grain in "${grains[@]}"; do bounded_integer GRAIN "$grain" 1 64; done
     elif [[ $RESOURCE_CONTROLS == 4 ]]; then
         printf 'threads=4 grain=4 batches=1,16 stacks=12 idle_spin_rounds=256 idle_yield_rounds=16,0 confirmation=%s warmup=%s calibration=none\n' \
             "$ROUNDS" "$WARMUP"
-    else
+    elif [[ $RESOURCE_CONTROLS == 5 ]]; then
         printf 'threads=4 grain=4 batches=1,16 stacks=12 tree_build=parallel,sequential idle_spin_rounds=256 idle_yield_rounds=16 confirmation=%s warmup=%s calibration=none\n' \
+            "$ROUNDS" "$WARMUP"
+    fi
+    if [[ $RESOURCE_CONTROLS == 6 ]]; then
+        printf 'threads=4 grain=4 batches=1,16 stacks=12 layout_fork_depth=full,4 tree_build=parallel idle_spin_rounds=256 idle_yield_rounds=16 confirmation=%s warmup=%s calibration=none\n' \
             "$ROUNDS" "$WARMUP"
     fi
     printf 'timing=whole-process; Rayon pool created once, install once; no concurrent I/O\n'
     printf 'resource_controls=%s\n' "$RESOURCE_CONTROLS"
-    if [[ $RESOURCE_CONTROLS == 4 || $RESOURCE_CONTROLS == 5 ]]; then
+    if [[ $RESOURCE_CONTROLS == 4 || $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ]]; then
         echo 'runner_rusage=1; raw rows include wait4 context switches and peak RSS in KiB'
     fi
     if [[ $(uname -s) == Linux ]]; then
@@ -105,10 +109,10 @@ cargo build --release --locked --offline --manifest-path "$HERE/rayon-baseline/C
 cp "$CARGO_TARGET_DIR/release/whitefoot-rayon-baseline" "$OUT/rust-layout"
 cp "$HERE/rayon-baseline/Cargo.lock" "$OUT/Cargo.lock"
 runner_command=("$CLANG" -std=c11 -O2 -Wall -Wextra -Werror)
-if [[ $RESOURCE_CONTROLS == 4 || $RESOURCE_CONTROLS == 5 ]]; then runner_command+=(-DWF_BENCH_RUSAGE=1); fi
+if [[ $RESOURCE_CONTROLS == 4 || $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ]]; then runner_command+=(-DWF_BENCH_RUSAGE=1); fi
 runner_command+=("$HERE/runner.c" -o "$OUT/runner")
 "${runner_command[@]}"
-if [[ $RESOURCE_CONTROLS == 5 ]]; then
+if [[ $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ]]; then
     printf '%q ' "${runner_command[@]}" > "$OUT/runner.command"
     printf '\n' >> "$OUT/runner.command"
 fi
@@ -124,7 +128,7 @@ shasum -a 256 "$WFC" "$OUT/wf-seq" "$OUT/wf-par" "$OUT/rust-layout" "$OUT/runner
     "$HERE/rayon-baseline/Cargo.lock" >> "$OUT/host.txt"
 
 if [[ $RESOURCE_CONTROLS != 0 ]]; then
-    # Experiments 45/47/50/59/61 freeze the earlier four-worker calibration. No
+    # Experiments 45/47/50/59/61/63 freeze the earlier four-worker calibration. No
     # panel tunes against its confirmation samples or changes runtime sources.
     if [[ $RESOURCE_CONTROLS == 1 ]]; then
         resource_batches=(1 4 16)
@@ -148,15 +152,22 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
             candidate_name=idle0
             candidate_defines=(-DWF_SCHED_IDLE_YIELD_ROUNDS=0u -DWF_SCHED_INIT_USED_LANES=0 -DWF_SCHED_COMPACT_STACKS=0)
             printf 'resource_panel=workers4; Rayon grain4; batches1,16; WF_STACKS12; ordinary/manual-default/manual-idle-yield0; all other yield sites unchanged\n' >> "$OUT/host.txt"
-        else
+        elif [[ $RESOURCE_CONTROLS == 5 ]]; then
             resource_forms=(ordinary manual seqbuild)
             control_name=build
             candidate_name=seqbuild
             candidate_defines=(-DWF_SCHED_IDLE_YIELD_ROUNDS=16u -DWF_SCHED_INIT_USED_LANES=0 -DWF_SCHED_COMPACT_STACKS=0)
             printf 'resource_panel=workers4; Rayon grain4; batches1,16; WF_STACKS12; ordinary/manual-default/manual-sequential-build; lazy worker start moves to first layout\n' >> "$OUT/host.txt"
         fi
+        if [[ $RESOURCE_CONTROLS == 6 ]]; then
+            resource_forms=(ordinary manual grain4)
+            control_name=grain
+            candidate_name=grain4
+            candidate_defines=(-DWF_SCHED_IDLE_YIELD_ROUNDS=16u -DWF_SCHED_INIT_USED_LANES=0 -DWF_SCHED_COMPACT_STACKS=0)
+            printf 'resource_panel=workers4; Rayon grain4; batches1,16; WF_STACKS12; ordinary/manual-default/manual-four-fork-levels; default parallel build and lazy startup\n' >> "$OUT/host.txt"
+        fi
         completion_flags='-std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread'
-        if [[ $RESOURCE_CONTROLS != 5 ]]; then completion_flags+=" ${candidate_defines[*]}"; fi
+        if [[ $RESOURCE_CONTROLS != 5 && $RESOURCE_CONTROLS != 6 ]]; then completion_flags+=" ${candidate_defines[*]}"; fi
         if ! make -C "$ROOT/compiler" completion-test CC=/usr/bin/clang \
             COMPLETION_TMP="$OUT/$control_name-check" \
             COMPLETION_BASE_CFLAGS="$completion_flags" \
@@ -196,6 +207,101 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
             diff -u "$OUT/wf-par.ll" "$candidate_ir" > "$OUT/build-ir.diff" || [[ $? == 1 ]]
             echo 'main_build_call=one exact replacement; all other IR bytes unchanged' > "$OUT/build-ir-check.txt"
         fi
+        if [[ $RESOURCE_CONTROLS == 6 ]]; then
+            candidate_ir="$OUT/wf-grain4.ll"
+            # These bounded workload copies change no frame ABI or runtime.
+            # Reverse each copy to its source template, then restore the full
+            # original module independently from the saved candidate file.
+            cat > "$OUT/grain-transform.awk" <<'GRAIN_TRANSFORM'
+function need(ok, why) {if (!ok) {print "grain transform: " why > "/dev/stderr"; exit 1}}
+function replace(text, from, to, expected, pos, result, count) {
+    while ((pos=index(text, from))) {
+        result=result substr(text,1,pos-1) to
+        text=substr(text,pos+length(from)); count++
+    }
+    need(count==expected, "replacement count for " from)
+    return result text
+}
+function hot(kind, depth) {return "wf__grain4_" kind "_d" depth}
+function thunk(kind, depth) {return hot(kind,depth) "_thunk"}
+function child(kind, depth) {
+    return depth==1 ? "wf__par_seq_" kind : hot(kind,depth-1)
+}
+function forward(kind, depth, is_thunk, original, copy) {
+    original=is_thunk ? original_thunk[kind] : "wf_" kind
+    copy=body[original]
+    copy=replace(copy, "@" original "(", "@" (is_thunk ? thunk(kind,depth) : hot(kind,depth)) "(", is_thunk ? 1 : 3)
+    if (!is_thunk) {
+        copy=replace(copy, "call double @" hot(kind,depth) "(", "call double @" child(kind,depth) "(", 2)
+        copy=replace(copy, "ptr @" original_thunk[kind] ")", "ptr @" thunk(kind,depth) ")", 1)
+    } else {
+        copy=replace(copy, "call double @wf_" kind "(", "call double @" child(kind,depth) "(", 1)
+    }
+    return copy
+}
+function reverse(kind, depth, is_thunk, original, copy) {
+    original=is_thunk ? original_thunk[kind] : "wf_" kind
+    copy=body[is_thunk ? thunk(kind,depth) : hot(kind,depth)]
+    copy=replace(copy, "call double @" child(kind,depth) "(", "call double @wf_" kind "(", is_thunk ? 1 : 2)
+    copy=replace(copy, "@" (is_thunk ? thunk(kind,depth) : hot(kind,depth)) "(", "@" original "(", 1)
+    if (!is_thunk) copy=replace(copy, "ptr @" thunk(kind,depth) ")", "ptr @" original_thunk[kind] ")", 1)
+    need(copy==body[original], "reversed template " original " depth " depth)
+}
+BEGIN {
+    kinds[1]="layout"; kinds[2]="layout_banded"
+    original_thunk["layout"]="wf__par_thunk_1"
+    original_thunk["layout_banded"]="wf__par_thunk_2"
+    marker="; grain4 specialization begins\n"
+}
+{
+    all=all $0 "\n"
+    if ($0=="; grain4 specialization begins") {region++; need(region==1,"one specialization region")}
+    if (region) suffix=suffix $0 "\n"; else prefix=prefix $0 "\n"
+    if (/^define /) {
+        need(owner=="", "nested definition")
+        owner=$0; sub(/^.*@/,"",owner); sub(/\(.*/,"",owner)
+        seen[owner]++; need(seen[owner]==1,"unique definition " owner)
+    }
+    if (owner!="") body[owner]=body[owner] $0 "\n"
+    if (/^}/) owner=""
+}
+END {
+    # An earlier failure exits through END too; no output is accepted unless
+    # the caller sees success and the separate full-module cmp also passes.
+    need(owner=="" && seen["wf_main"]==1,"complete main")
+    for (k=1;k<=2;k++) {
+        kind=kinds[k]
+        need(seen["wf_" kind]==1 && seen["wf__par_seq_" kind]==1 && seen[original_thunk[kind]]==1,"source templates " kind)
+    }
+    if (mode=="generate") {
+        need(region==0 && !index(all,"@wf__grain4_"),"unspecialized input")
+        main=body["wf_main"]
+        for (k=1;k<=2;k++) main=replace(main,"call double @wf_" kinds[k] "(","call double @" hot(kinds[k],4) "(",1)
+        printf "%s", replace(all,body["wf_main"],main,1) marker
+        for (k=1;k<=2;k++) for (depth=1;depth<=4;depth++) {
+            printf "%s\n%s\n", forward(kinds[k],depth,0), forward(kinds[k],depth,1)
+        }
+    } else {
+        need(mode=="verify" && region==1,"verification mode/region")
+        expected=marker
+        for (k=1;k<=2;k++) for (depth=1;depth<=4;depth++) {
+            reverse(kinds[k],depth,0); reverse(kinds[k],depth,1)
+            expected=expected body[hot(kinds[k],depth)] "\n" body[thunk(kinds[k],depth)] "\n"
+        }
+        need(suffix==expected,"exact sixteen-copy suffix")
+        main=body["wf_main"]
+        for (k=1;k<=2;k++) main=replace(main,"call double @" hot(kinds[k],4) "(","call double @wf_" kinds[k] "(",1)
+        printf "%s", replace(prefix,body["wf_main"],main,1)
+    }
+}
+GRAIN_TRANSFORM
+            awk -v mode=generate -f "$OUT/grain-transform.awk" "$OUT/wf-par.ll" > "$candidate_ir"
+            awk -v mode=verify -f "$OUT/grain-transform.awk" "$candidate_ir" > "$OUT/grain-roundtrip.ll"
+            cmp "$OUT/wf-par.ll" "$OUT/grain-roundtrip.ll"
+            rm "$OUT/grain-roundtrip.ll"
+            diff -u "$OUT/wf-par.ll" "$candidate_ir" > "$OUT/grain-ir.diff" || [[ $? == 1 ]]
+            echo 'main_layout_calls=two replacements; sixteen reversed templates; all original IR bytes restored' > "$OUT/grain-ir-check.txt"
+        fi
         manual_sources=()
         for unit in wf_floor.c sched/core.c sched/prim_host.c sched/entry.c \
             completion/runtime.c completion/wait_host.c completion/file_adapter.c \
@@ -220,13 +326,13 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
             manual_command+=(-x ir - -Wno-override-module -O2 -lm -o "$OUT/wf-manual-$used")
             printf '%q ' "${manual_command[@]}" > "$OUT/manual-$used.command"
             manual_ir="$OUT/wf-par.ll"
-            if [[ $RESOURCE_CONTROLS == 5 && $used == 1 ]]; then manual_ir="$candidate_ir"; fi
+            if [[ ( $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ) && $used == 1 ]]; then manual_ir="$candidate_ir"; fi
             printf '< %q\n' "$manual_ir" >> "$OUT/manual-$used.command"
             "${manual_command[@]}" < "$manual_ir"
             shasum -a 256 "$OUT/wf-manual-$used" >> "$OUT/host.txt"
             WF_WORKERS=4 WF_STACKS=12 WF_SCHED_REPORT=0 "$OUT/wf-manual-$used" > "$OUT/manual-$used.out"
             printf '%s\n' "$EXPECTED" | cmp - "$OUT/manual-$used.out"
-            if [[ $RESOURCE_CONTROLS == 5 ]]; then
+            if [[ $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ]]; then
                 qualified_args=("$OUT/wf-manual-$used")
                 for ((batch=1; batch<16; batch++)); do qualified_args+=(batch); done
                 WF_WORKERS=4 WF_STACKS=12 WF_SCHED_REPORT=0 "${qualified_args[@]}" > "$OUT/manual-$used-b16.out"
@@ -281,7 +387,28 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
                     fi
                 done
             fi
-        elif [[ $RESOURCE_CONTROLS == 5 ]]; then
+            if [[ $RESOURCE_CONTROLS == 6 ]]; then
+                # Retain actual call sites, including copies that LLVM inlines
+                # into another depth. The observed publication totals below
+                # qualify the executed grain; names alone cannot do that.
+                for used in 0 1; do
+                    awk -v candidate="$used" '
+                        /^[0-9a-f]+ <[^>]+>:/ {
+                            owner=$0; sub(/^.*</,"",owner); sub(/>:.*/,"",owner)
+                        }
+                        /[[:space:]]callq?[[:space:]].*<(wf__grain4_|wf_layout|wf__par_seq_layout|wf__par_acquire_lane|wf__par_publish)/ {
+                            print owner ": " $0
+                            if (owner ~ /^(wf_main|wf__main_body|wf__grain4_)/) {
+                                if ($0 ~ /<wf__grain4_/) grain++
+                                if ($0 ~ /<wf__par_seq_layout/) sequential++
+                                if ($0 ~ /<wf__par_publish>/) publish++
+                            }
+                        }
+                        END {exit !(candidate ? grain>0 && sequential>0 && publish>0 : grain==0)}
+                    ' "$OUT/wf-manual-$used.disassembly" > "$OUT/grain-calls-$used.txt"
+                done
+            fi
+        elif [[ $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ]]; then
             echo 'ELF call and hot-layout checks require the native Linux cohort' > "$OUT/hot-layout-check.txt"
         fi
         shasum -a 256 "$OUT/wf-par.ll" "${manual_sources[@]}" >> "$OUT/host.txt"
@@ -299,7 +426,7 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
             resource_label="wf.w4.s12.$1"
             resource_environment='WF_WORKERS=4,WF_STACKS=12'
             if [[ $1 == manual ]]; then resource_binary="$OUT/wf-manual-0"; fi
-            if [[ $1 == lanes || $1 == idle0 || $1 == seqbuild ]]; then resource_binary="$OUT/wf-manual-1"; fi
+            if [[ $1 == lanes || $1 == idle0 || $1 == seqbuild || $1 == grain4 ]]; then resource_binary="$OUT/wf-manual-1"; fi
         fi
     }
     printf 'resource_budget=WF main+3 workers; Rayon 4 workers+sleeping caller; no CPU affinity\n' >> "$OUT/host.txt"
@@ -315,24 +442,24 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
             printf '\n' >> "$OUT/resource.plan"
         done
     done
-    if [[ $RESOURCE_CONTROLS == 5 ]]; then
+    if [[ $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ]]; then
         # Snapshot launched inputs before timing, then verify them again after
         # the separate observations. The retained compiler is rehashable too.
         cp "$WFC" "$OUT/whitefootc"
-        : > "$OUT/build-source.sha256"
+        : > "$OUT/$control_name-source.sha256"
         for source in "${manual_sources[@]}" "$backend/sched/grant_observer.c" \
             "$ROOT/tests/programs/par_layout.wf" "$HERE/runner.c" "$HERE/rayon-bench.sh" \
             "$HERE/Makefile" "$ROOT/.github/workflows/io-scheduler.yml" \
             "$HERE/rayon-baseline/src/main.rs" "$HERE/rayon-baseline/Cargo.toml" \
             "$HERE/rayon-baseline/Cargo.lock"; do
-            shasum -a 256 "$source" >> "$OUT/build-source.sha256"
+            shasum -a 256 "$source" >> "$OUT/$control_name-source.sha256"
         done
         # Header coverage includes all platform branches, not just this host.
         while IFS= read -r source; do
-            shasum -a 256 "$ROOT/$source" >> "$OUT/build-source.sha256"
+            shasum -a 256 "$ROOT/$source" >> "$OUT/$control_name-source.sha256"
         done < <(git -C "$ROOT" ls-files 'compiler/src/backend/*.h' 'compiler/src/backend/**/*.h')
         (cd "$OUT" && shasum -a 256 whitefootc runner rust-layout wf-seq wf-par wf-manual-0 wf-manual-1 \
-            wf-par.ll wf-seqbuild.ll > build-ordinary.sha256)
+            wf-par.ll "${candidate_ir##*/}" > "$control_name-ordinary.sha256")
     fi
     WF_BENCH_RAW="$OUT/resource.tsv" "$OUT/runner" "$OUT/resource.plan" \
         "$ROUNDS" "$WARMUP" "$EXPECTED" > "$OUT/resource.txt" 2> "$OUT/resource.err"
@@ -343,7 +470,7 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
     # and provide grant_observer.c's bridge-report dependency. Final stdout
     # output initializes the bridge even though the layout work is CPU-only.
     backend="$ROOT/compiler/src/backend"
-    if [[ $RESOURCE_CONTROLS != 3 && $RESOURCE_CONTROLS != 4 && $RESOURCE_CONTROLS != 5 ]]; then
+    if [[ $RESOURCE_CONTROLS != 3 && $RESOURCE_CONTROLS != 4 && $RESOURCE_CONTROLS != 5 && $RESOURCE_CONTROLS != 6 ]]; then
         "$WFC" --par --emit-llvm "$ROOT/tests/programs/par_layout.wf" -o "$OUT/wf-par.ll"
     fi
     observer_sources=()
@@ -357,7 +484,7 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
     printf '%q ' "${observer_command[@]}" > "$OUT/observer.command"
     printf '\n' >> "$OUT/observer.command"
     "${observer_command[@]}"
-    if [[ $RESOURCE_CONTROLS == 3 || $RESOURCE_CONTROLS == 4 || $RESOURCE_CONTROLS == 5 ]]; then
+    if [[ $RESOURCE_CONTROLS == 3 || $RESOURCE_CONTROLS == 4 || $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ]]; then
         observer_used_command=(/usr/bin/clang -std=c11 -O2 -pthread -I "$backend" \
             -I "$backend/completion" -DWF_SCHED_OBSERVE=1 "${candidate_defines[@]}" \
             -x c "${observer_sources[@]}" \
@@ -370,25 +497,25 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
     shasum -a 256 "$OUT/wf-par.ll" "$OUT/wf-par-observed" "${observer_sources[@]}" \
         "$backend/sched/core.h" "$backend/sched/prim.h" "$backend/sched/switch.h" \
         "$HERE/runner.c" "$HERE/rayon-bench.sh" >> "$OUT/host.txt"
-    if [[ $RESOURCE_CONTROLS == 5 ]]; then
+    if [[ $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ]]; then
         shasum -a 256 "$candidate_ir" >> "$OUT/host.txt"
         (cd "$OUT" && shasum -a 256 whitefootc runner rust-layout wf-seq wf-par wf-manual-0 wf-manual-1 \
-            wf-par.ll wf-seqbuild.ll wf-par-observed wf-seqbuild-observed > build-artifact.sha256)
+            wf-par.ll "${candidate_ir##*/}" wf-par-observed "wf-$candidate_name-observed" > "$control_name-artifact.sha256")
     fi
     printf 'observation=untimed WF_SCHED_OBSERVE=1; exhausted_compute counts no-target join turns, not peak stacks\n' >> "$OUT/host.txt"
     for batches in "${resource_batches[@]}"; do
         observed_args=("$OUT/wf-par-observed")
         for ((batch=1; batch<batches; batch++)); do observed_args+=(batch); done
         for form in "${resource_forms[@]}"; do
-            if [[ ( $RESOURCE_CONTROLS == 3 || $RESOURCE_CONTROLS == 4 || $RESOURCE_CONTROLS == 5 ) && $form == manual ]]; then continue; fi
+            if [[ ( $RESOURCE_CONTROLS == 3 || $RESOURCE_CONTROLS == 4 || $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ) && $form == manual ]]; then continue; fi
             resource_settings "$form"
             observed_args[0]="$OUT/wf-par-observed"
             if [[ $RESOURCE_CONTROLS == 3 && $form == lanes ]]; then observed_args[0]="$OUT/wf-lanes-observed"; fi
             if [[ $RESOURCE_CONTROLS == 4 && $form == idle0 ]]; then observed_args[0]="$OUT/wf-idle0-observed"; fi
-            if [[ $RESOURCE_CONTROLS == 5 && $form == seqbuild ]]; then observed_args[0]="$OUT/wf-seqbuild-observed"; fi
+            if [[ ( $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ) && $form == "$candidate_name" ]]; then observed_args[0]="$OUT/wf-$candidate_name-observed"; fi
             record="$OUT/observed-${resource_label#wf.w4.}-b$batches"
             IFS=, read -r -a observed_environment <<< "$resource_environment,WF_SCHED_REPORT=1"
-            if [[ $RESOURCE_CONTROLS == 5 ]]; then
+            if [[ $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ]]; then
                 printf '%q ' env "${observed_environment[@]}" "${observed_args[@]}" > "$record.command"
                 printf '\n' >> "$record.command"
             fi
@@ -403,13 +530,25 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
                     END {exit !(("compact_stacks" in v) && v["compact_stacks"]==0 &&
                         ("init_used_lanes" in v) && v["init_used_lanes"]==(form=="lanes"))}' "$record.err"
             fi
-            if [[ $RESOURCE_CONTROLS == 4 || $RESOURCE_CONTROLS == 5 ]]; then
+            if [[ $RESOURCE_CONTROLS == 4 || $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ]]; then
                 awk -v form="$form" '/^sched:/ {for(i=2;i<=NF;i++) {split($i,p,"=");v[p[1]]=p[2]+0}}
                     END {exit !(("spin_rounds" in v) && v["spin_rounds"]==256 &&
                         ("yield_rounds" in v) && v["yield_rounds"]==(form=="idle0" ? 0 : 16) &&
                         ("compact_stacks" in v) && v["compact_stacks"]==0 &&
                         ("init_used_lanes" in v) && v["init_used_lanes"]==0 &&
                         ("idle_steps" in v) && ("idle_looks" in v) && ("idle_waits" in v))}' "$record.err"
+            fi
+            if [[ $RESOURCE_CONTROLS == 6 ]]; then
+                # Grants are steals, not all successful acquisitions. Owner
+                # inline executions account for the rest of these CPU tasks.
+                awk -v form="$form" -v batches="$batches" '
+                    /^grants=/ {grants++; split($0,p,"="); count=p[2]+0}
+                    /^sched:/ {seen++; for(i=2;i<=NF;i++) {split($i,p,"=");v[p[1]]=p[2]+0}}
+                    END {expected=63+1600*batches*(form=="grain4" ? 15 : 63);
+                        print "published_executions=" v["steals"]+v["inline_runs"], "expected=" expected;
+                        exit !(grants==1 && seen==1 && count==v["steals"] &&
+                            ("inline_runs" in v) && v["steals"]+v["inline_runs"]==expected)}
+                ' "$record.err" > "$record.publications"
             fi
             if [[ $RESOURCE_CONTROLS == 2 && $(uname -s) == Linux ]]; then
                 # Qualify the mechanism outside timing. A Linux host without
@@ -424,10 +563,10 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
             fi
         done
     done
-    if [[ $RESOURCE_CONTROLS == 5 ]]; then
-        (cd "$OUT" && shasum -a 256 -c build-ordinary.sha256) > "$OUT/build-ordinary-check.txt"
-        (cd "$OUT" && shasum -a 256 -c build-artifact.sha256) > "$OUT/build-artifact-check.txt"
-        shasum -a 256 -c "$OUT/build-source.sha256" > "$OUT/build-source-check.txt"
+    if [[ $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ]]; then
+        (cd "$OUT" && shasum -a 256 -c "$control_name-ordinary.sha256") > "$OUT/$control_name-ordinary-check.txt"
+        (cd "$OUT" && shasum -a 256 -c "$control_name-artifact.sha256") > "$OUT/$control_name-artifact-check.txt"
+        shasum -a 256 -c "$OUT/$control_name-source.sha256" > "$OUT/$control_name-source-check.txt"
     fi
     cat "$OUT/resource.txt"
     printf 'rayon-bench: resource samples and separate observations retained in %s\n' "$OUT"

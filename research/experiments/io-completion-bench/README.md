@@ -824,6 +824,18 @@ resolving relocated code and data addresses; their placement still differs.
 The experiment retains the existing lowering and waiting defaults and does
 not measure ready-work availability or an OS scheduling cause.
 
+`make rayon-grain-bench` is [experiment 63](../../investigations/io-model/SCHEDULER-EXPERIMENT.md#63-control-layout-fork-depth).
+It keeps the same ordinary/manual/Rayon panel and default parallel tree
+build, but selects four copied fork levels for each layout entry. Below
+those levels, existing sequential clones perform the remaining traversal.
+Each copied layout/thunk reverses to its original template; removing the
+copies and reversing the two main calls restores the entire original IR.
+Separate observations require 15 publications per layout instead of 63,
+plus the unchanged builder's 63. This changes traversal/locality and code
+specialization as well as scheduling work, so it is a grain-strategy control,
+not an isolated deque-cost measurement. The isolated Linux route is
+`codex/io-cpu-grain-control`; native performance results remain pending.
+
 `make mixed-rayon-check` qualifies the optional `mixed-rayon` binary in the
 same standalone crate. Its CLI is `mixed-rayon PORT CONNECTIONS --threads B
 [--queue Q]`: B includes one current-thread Tokio I/O driver, leaving B-1

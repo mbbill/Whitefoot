@@ -8834,3 +8834,105 @@ shows no useful gain here. The remaining 63-versus-15 layout fork difference
 is exercised, whereas treating owner inline executions as acquisition
 failures would select an unsupported explanation. Neither ready-work
 availability nor an OS scheduling cause has been measured by this control.
+
+## 63. Control layout fork depth
+
+Experiment 61 rejects the proposed initialization control as a useful gain
+in its cohort and clarifies the operative task count. All 63 publications
+per layout are accounted for by steals plus owner inline executions; those
+inline executions are not failed acquisitions. Replacing only the two
+failed-acquire recursion edges with sequential calls therefore lacks an
+exercised path in that evidence. The next bounded comparison changes the
+layout's actual fork depth instead.
+
+The selected candidate specializes four parallel levels of `wf_layout` and
+`wf_layout_banded`, then calls their already-emitted sequential clones.
+With 64 leaves, this gives 1+2+4+8 = 15 publications per layout, matching the
+join count of frozen Rayon grain four; the default WF layout makes 63.
+The control keeps the default parallel 127-node builder and its lazy worker
+startup, all source arithmetic/loop bounds, frame layouts and runtime units.
+No compiler rule, source-language behavior, runtime ABI or shared demand
+signal changes. It is an executable experiment, not a selected lowering.
+
+`make rayon-grain-bench` selects `RESOURCE_CONTROLS=6`. Its transform copies
+each layout function and its matching thunk at depths one through four:
+eight function copies and eight thunk copies. Copied right-child calls,
+failed-acquire left-child calls and published thunks all enter the next
+depth; the last level uses the existing sequential clone. Only two calls
+in the original `wf_main` select the depth-four entries. Every original
+function, thunk and builder definition remains byte-for-byte unchanged.
+The saved candidate is independently read back. Each copied body must
+reverse to the complete original template with exact substitution counts,
+and the appended region must contain exactly those sixteen copies. Removing
+that region and reversing the two main calls must restore the entire
+original IR byte-for-byte before either candidate executable is compiled.
+Malformed definitions, duplicate/missing calls, pre-existing specialization
+or a changed copy fail qualification.
+
+This control tests a grain strategy, not pure deque or atomic overhead.
+The existing sequential clones evaluate left before right; the parallel
+body publishes the left child and directly evaluates the right child before
+its join or failed-acquire fallback. The cutoff therefore changes traversal
+order and locality below four levels. Copying functions can also change
+inlining, code size, addresses and instruction-cache behavior. The artifact
+retains actual ELF symbols/disassembly and relevant call sites for independent
+callgraph and publication-site inspection; identical hot-function topology
+is neither required nor claimed. WF's already-omitted unpublished node stores
+and the reference's source writes remain the executed-write parity limit
+described in experiment 61.
+
+The resource budget remains WF main plus three workers, twelve WF stacks,
+and Rayon four workers with its sleeping caller. One/sixteen batches each
+execute all 800 full layouts followed by all 800 banded layouts. Ordinary
+compiler WF, same-IR manual default, manual depth-four candidate and Rayon
+form eight entries. One complete warmup precedes five alternating passes,
+giving forty ordinary wall, user/system CPU, voluntary/involuntary switch
+and peak-RSS rows. Ordinary/manual binary identity is checked and retained;
+only a byte-identical pair supports a same-binary variation statement.
+The experiment keeps default 256 pause/look and 16 idle-yield rounds, uses
+no phase profiler or new affinity, and does not tune against these samples.
+
+The normal completion suite runs once because the runtime is unchanged.
+Both manual programs must print the independent checksum at both batch
+lengths before timing. Four separate observed executions check exact bytes,
+four scheduler threads, three started workers, positive steals and unchanged
+runtime settings. `grants` must equal `steals`; adding `inline_runs` must
+give 100863/1612863 for the default and 24063/384063 for the candidate at
+one/sixteen batches. These are 1600 layouts per batch times 63 or 15, plus
+the unchanged builder's 63. An unchanged candidate cannot pass that check.
+The observations qualify executed publications without assigning their
+counters to ordinary timing rows or inferring globally available work.
+
+The `codex/io-cpu-grain-control` CI route reuses the resource job and retains
+the compiler, runner, selected ordinary and observed executables, both IR
+files, exact transform/diff, source hashes, commands, plans, qualification
+outputs and raw samples. Every earlier resource mode and workflow branch
+keeps its existing route. Evaluate within-pass candidate/manual wall and
+total CPU alongside same-binary variation, context switches, RSS and the
+ordinary Rayon comparison. Fewer publications may reduce useful exposed
+parallel work and worsen wall or utilization; a loss is a valid result.
+Any gain would support this combined grain/traversal/specialization strategy
+on this workload, not a claim about ready-work availability or OS delay.
+Local qualification and native Linux results are recorded separately; no
+native performance conclusion is available yet.
+
+Local M1 qualification passes the normal completion suite (four full
+harness executions), all four enumeration configurations, Rayon fmt/tests/
+clippy, both manual batch-length checks, eight one-pass/no-warmup ordinary
+rows and all four observed publication totals. Nine ordinary, eleven final
+artifact and 34 source hashes verify; manual links differ only in IR input
+and output path. Ordinary/manual Mach-O files differ, while their complete
+disassemblies match apart from the file heading. These shared-host smoke
+timings provide no performance ranking.
+
+The actual transform rejects eight malformed original inputs and five
+candidate mutations. Bash 3.2 checks preserve all six previous runner/manual
+compiler modes; 46 previous workflow admissions, artifact names and target
+commands remain unchanged. Invalid mode/profile/phase combinations stop
+before host or compiler work. Linux x86-64 cross-links pass the actual ELF
+call guard, which also rejects an unchanged baseline as the candidate.
+LLVM 22 inlines the depth-four entries into the ABI body while retaining
+the lower copied levels, thunks and sequential child calls. This is inspected
+cross-code evidence, not native Linux execution or identical code topology;
+the native CI toolchain and ordinary result remain to be audited. Shell
+syntax, `make static` and patch checks pass locally.
