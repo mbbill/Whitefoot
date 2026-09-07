@@ -5095,3 +5095,18 @@ checked. Native Linux affinity/backend/resource qualification remains pending
 on the isolated branch. This promotes Go from an unspecified candidate to an
 implemented, locally protocol-qualified row; it does not measure its speed or
 claim that this idiom is Go's best possible tuning.
+
+The first Linux qualification at `62a3e885247f3890bb2dab1cf6e788a2e019ddc8`
+fails in the harness after successful quiet and observed release/P1 stream
+checks, before reset/race/residency. In
+[run 34092017030](https://github.com/mbbill/Whitefoot/actions/runs/34092017030),
+job 101647323881, GNU Make preserves the backslash/newline inside the recipe's
+single-quoted multi-line jq program; jq reports a parse error. The local
+Make 3.81 run had accepted that recipe. Artifact `10007191004` retains the
+partial evidence, SHA-256
+`5821ab8b07c06ee2e296afdad5c2734b92944420fa30e3761fa1bf5363ccb5ed`.
+The correction places the unchanged complete jq predicate in a non-recipe
+Make variable, where continuations become spaces. No assertion or fixture is
+removed or relaxed, and the Go implementation is unchanged. Linux qualification
+must run to completion on the corrected revision before its evidence status
+is promoted.
