@@ -127,6 +127,10 @@ scheduler-client-diagnostic:
 scheduler-client-readiness:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS=5 WARMUP=1 CORO_CXX="$(CORO_CXX)" CLIENT_READINESS=1 CONTINUATION_SCREEN=4 NATIVE_BASELINES=1 EXPERIMENT=allocator bash scheduler-bench.sh combine
 
+.PHONY: scheduler-client-capacity
+scheduler-client-capacity:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS=5 WARMUP=1 CORO_CXX="$(CORO_CXX)" CLIENT_CAPACITY=1 CONTINUATION_SCREEN=4 NATIVE_BASELINES=1 EXPERIMENT=allocator bash scheduler-bench.sh combine
+
 .PHONY: scheduler-allocation
 scheduler-allocation:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" EXPERIMENT=allocation bash scheduler-bench.sh bench
