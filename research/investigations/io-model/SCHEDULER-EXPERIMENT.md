@@ -6754,6 +6754,39 @@ by hash but not uploaded. The ordinary WF, Rust and IR hashes match experiments
 the original resource.tsv is
 `74471f805e030668ef72c4fff098839356cd46f4f770c3cc2cfa74939c93f9fd`.
 
+### Trace-only correction
+
+The `codex/io-cpu-phase-recheck` branch preserves 8dd's frozen branch and uses
+a ten-minute CI job to retrieve artifact 10008007005 directly. It verifies
+the recorded ZIP digest, extracts only the three WF forms needed for tracing,
+the Rayon binary, runner, IR, lock file and original host metadata, and checks
+all five executable hashes plus IR before execution. No current compiler
+build, Cargo dependency fetch, ordinary calibration or timing panel runs on
+this path. The original host description is labeled `source-8dd-host.txt`;
+the new trace records its own host and collector revision separately.
+Its topology and allowed CPU mask are captured on the new host; old ordinary
+timings are not combined with new trace intervals across hosted machines.
+
+The recorder uses an exec-in-place wrapper to retain its PID, adding native
+[`--exclude-perf`](https://github.com/torvalds/linux/blob/v6.17/tools/perf/Documentation/perf-record.txt#L202)
+immediately after each write entry/exit event selector.
+Scheduler events retain their system-wide scope, including switches from perf
+to a target. Each decoded capture must contain zero recorder-issued write
+events, in addition to the existing milestone and checksum checks. Failed
+recording now leaves any partial root-owned data and recorder PID readable by
+the job user for artifact retention. No global trace filters or unrelated
+probe registrations are removed.
+
+The wrapper/filter checks do not replace independent event auditing: the new
+capture must still be checked for exact duplicate records, actual exec/fork
+membership, consistent switch transitions, complete final X/Z events and a
+successful wait4 return naming the recorded child. The retained old record
+already exercises the new recorder-write detector, which finds all 335,616
+self-write events in pass 0 ordinary. A local selective extraction verified
+every fixed ZIP member/hash used by the new workflow; Linux capture remains
+the next qualification. The old contaminated trace and valid forty ordinary
+samples remain unchanged and separately linked above.
+
 
 ## Fifty-first experiment: compare Go buffer ownership
 

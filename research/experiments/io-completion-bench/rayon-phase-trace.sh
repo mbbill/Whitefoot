@@ -28,9 +28,13 @@ done
 {
     uname -a
     "$PERF" --version
+    lscpu
+    lscpu -e=CPU,CORE,SOCKET,NODE,ONLINE
+    awk '/Cpus_allowed_list:/ {print}' /proc/self/status
     printf 'tracefs=%s\nworkload_user=%s\n' "$trace_root" "$(id -un)"
     printf 'cohort=one batch; four forms; two opposite orders; no trace timing enters resource.tsv\n'
     printf 'probe_kind=entry only; no return probes, recursive layout probes or compute-join probes\n'
+    printf 'write_filter=per-event --exclude-perf; global scheduler events retained\n'
     cat /proc/sys/kernel/perf_event_paranoid /proc/sys/kernel/kptr_restrict
 } > "$TRACE/host.txt"
 sudo -n cat "$trace_root/available_events" > "$TRACE/available-events.txt"
@@ -42,6 +46,9 @@ for event in "${events[@]}"; do
     grep -Fxq "$event" "$TRACE/available-events.txt" || incomplete "missing required event $event"
     sudo -n cat "$trace_root/events/${event%%:*}/${event#*:}/format" > "$TRACE/${event/:/-}.format"
     event_args+=(-e "$event")
+    case "$event" in
+        syscalls:sys_enter_write|syscalls:sys_exit_write) event_args+=(--exclude-perf) ;;
+    esac
 done
 
 # perf probe resolves each ELF function to its file offset; do not treat a
@@ -96,7 +103,7 @@ fi
 exec "$@"
 LAUNCH
 chmod +x "$TRACE/launch"
-printf 'pass\tform\trunner_pid\tchild_pid\n' > "$TRACE/captures.tsv"
+printf 'pass\tform\trunner_pid\tchild_pid\trecorder_pid\n' > "$TRACE/captures.tsv"
 for pass in 0 1; do
     forms=(ordinary lanes seq rayon)
     if [[ $pass == 1 ]]; then forms=(rayon seq lanes ordinary); fi
@@ -112,12 +119,19 @@ for pass in 0 1; do
         printf '%s\t%s\t%s\t%s\tinherit' "$tag" "$environment" "$TRACE/launch" "$record.child" > "$record.plan"
         printf '\t%s' "${command[@]}" >> "$record.plan"
         printf '\n' >> "$record.plan"
-        record_command=(sudo -n "$PERF" record -a --clockid mono -m 16M "${event_args[@]}" -o "$record.data" --
+        record_command=(sudo -n "$TRACE/launch" "$record.recorder" inherit
+            "$PERF" record -a --clockid mono -m 16M "${event_args[@]}" -o "$record.data" --
             sudo -n -u "$(id -un)" -- env -u WF_IO_NO_NATIVE_RING "WF_BENCH_RAW=$record.tsv"
             "$TRACE/launch" "$record.runner" capture "$OUT/runner" "$record.plan" 1 0 "$EXPECTED")
         printf '%q ' "${record_command[@]}" > "$record.command"
         printf '\n' >> "$record.command"
-        if ! "${record_command[@]}" > "$record.recorder.out" 2> "$record.recorder.err"; then
+        record_status=0
+        "${record_command[@]}" > "$record.recorder.out" 2> "$record.recorder.err" || record_status=$?
+        # A failed recorder can still leave useful partial data owned by root.
+        # Make that file uploadable before taking the incomplete-result path.
+        if [[ -f $record.data ]]; then sudo -n chown "$(id -u):$(id -g)" "$record.data"; fi
+        if [[ -f $record.recorder.pid ]]; then sudo -n chown "$(id -u):$(id -g)" "$record.recorder.pid"; fi
+        if [[ $record_status != 0 ]]; then
             incomplete "recorder or checksum runner failed for p$pass-$tag; inspect retained stderr"
         fi
         [[ -s $record.child.pid && -s $record.runner.pid ]] || incomplete "missing PID in p$pass-$tag"
@@ -125,7 +139,6 @@ for pass in 0 1; do
         # runtime output remains a diagnostic rather than being discarded.
         printf 'runner: pass 1 of 1 (plan order)\n' | cmp - "$record.runner.err" || \
             incomplete "unexpected runner/workload stderr in p$pass-$tag"
-        sudo -n chown "$(id -u):$(id -g)" "$record.data"
         if ! "$PERF" script --ns --show-lost-events -i "$record.data" > "$record.samples" 2> "$record.script.err"; then
             incomplete "perf script failed for p$pass-$tag"
         fi
@@ -136,7 +149,12 @@ for pass in 0 1; do
         [[ -s $record.samples && ! -s $record.script.err ]] || incomplete "empty or errored decode in p$pass-$tag"
         child=$(cat "$record.child.pid")
         runner=$(cat "$record.runner.pid")
-        [[ $child =~ ^[0-9]+$ && $runner =~ ^[0-9]+$ ]] || incomplete "invalid PID in p$pass-$tag"
+        recorder=$(cat "$record.recorder.pid")
+        [[ $child =~ ^[0-9]+$ && $runner =~ ^[0-9]+$ && $recorder =~ ^[0-9]+$ ]] || incomplete "invalid PID in p$pass-$tag"
+        awk -v pid="$recorder" '
+            $0 ~ ("[[:space:]]" pid "[[:space:]]+\\[") &&
+              ($0 ~ /syscalls:sys_enter_write:/ || $0 ~ /syscalls:sys_exit_write:/) {seen++}
+            END {exit seen!=0}' "$record.samples" || incomplete "recorder write events survived filtering in p$pass-$tag"
         # Presence is a capture qualification, not yet a matched-retcode or
         # latency analysis. The retained tracepoint schemas and raw records
         # allow the later audit to reconstruct exec/fork membership and reap.
@@ -151,7 +169,7 @@ for pass in 0 1; do
                 grep -Fq "$group:${tag}_${name}:" "$record.samples" || incomplete "missing $tag/$name milestone in pass $pass"
             done
         fi
-        printf '%s\t%s\t%s\t%s\n' "$pass" "$tag" "$runner" "$child" >> "$TRACE/captures.tsv"
+        printf '%s\t%s\t%s\t%s\t%s\n' "$pass" "$tag" "$runner" "$child" "$recorder" >> "$TRACE/captures.tsv"
         echo "rayon-phase-trace: p$pass-$tag captured; PID/thread/reap attribution still requires audit"
     done
 done
