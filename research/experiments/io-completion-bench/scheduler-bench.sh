@@ -22,6 +22,10 @@ CONTINUATION_SCREEN=${CONTINUATION_SCREEN:-0}
 GO_SCREEN=${GO_SCREEN:-0}
 GO=${GO:-go}
 URING_DIAGNOSTIC=${URING_DIAGNOSTIC:-0}
+CLIENT_DIAGNOSTIC=${CLIENT_DIAGNOSTIC:-0}
+client_observer_active=0
+client_profile_active=0
+[[ $CLIENT_DIAGNOSTIC == 0 || $CLIENT_DIAGNOSTIC == 1 ]] || exit 2
 [[ $NATIVE_BASELINES == 0 || $NATIVE_BASELINES == 1 || $NATIVE_BASELINES == 2 ]] || exit 2
 [[ $CONTINUATION_SCREEN == 0 || $CONTINUATION_SCREEN == 1 || $CONTINUATION_SCREEN == 2 || $CONTINUATION_SCREEN == 3 || $CONTINUATION_SCREEN == 4 ]] || exit 2
 if [[ $CONTINUATION_SCREEN != 0 && $NATIVE_BASELINES != 1 ]]; then
@@ -29,6 +33,11 @@ if [[ $CONTINUATION_SCREEN != 0 && $NATIVE_BASELINES != 1 ]]; then
     exit 2
 fi
 CLIENT_HEADROOM=${CLIENT_HEADROOM:-0}
+if [[ $CLIENT_DIAGNOSTIC == 1 && ( $NATIVE_BASELINES != 1 || $CONTINUATION_SCREEN != 0 ||
+    $GO_SCREEN != 0 || $CLIENT_HEADROOM != 0 || $URING_DIAGNOSTIC != 0 || $ROUNDS != 3 || $WARMUP != 1 ) ]]; then
+    echo 'scheduler-bench: client diagnostic uses only NATIVE_BASELINES=1, three passes and one warmup' >&2
+    exit 2
+fi
 [[ $GO_SCREEN == 0 || $GO_SCREEN == 1 ]] || exit 2
 if [[ $GO_SCREEN == 1 && ( $CONTINUATION_SCREEN != 3 || $CLIENT_HEADROOM != 0 || $URING_DIAGNOSTIC != 0 ) ]]; then
     echo 'scheduler-bench: Go screen uses CONTINUATION_SCREEN=3 and the original single client' >&2
@@ -107,6 +116,9 @@ if [[ $MODE == check ]]; then
         make -C "$HERE" uring-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/uring-check"
         make -C "$HERE" coroutine-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/coroutine-check"
         make -C "$HERE" client-service-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/client-check"
+        make -C "$HERE" client-observer-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/client-observer-check"
+    else
+        make -C "$HERE" netload-observe-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/client-observer-check"
     fi
     exit 0
 fi
@@ -118,6 +130,7 @@ if [[ $MODE == combine && $EXPERIMENT != allocator ]]; then
     echo 'scheduler-bench: combine uses the qualified allocator echo workload' >&2
     exit 2
 fi
+if [[ $CLIENT_DIAGNOSTIC == 1 ]]; then PROFILE_PERF=$(command -v "$PROFILE_PERF"); fi
 if [[ ( $MODE == profile || $client_experiment == 1 ) && $EXPERIMENT != coroutine-paced ]]; then
     echo 'scheduler-bench: profile/client/placement uses the qualified coroutine-paced workload' >&2
     exit 2
@@ -268,6 +281,15 @@ fi
     fi
     echo "client_headroom=$CLIENT_HEADROOM"
     echo "uring_diagnostic=$URING_DIAGNOSTIC"
+    echo "client_diagnostic=$CLIENT_DIAGNOSTIC"
+    if [[ $CLIENT_DIAGNOSTIC == 1 ]]; then
+        "$PROFILE_PERF" --version
+        echo 'client_diagnostic_policy=observer-only send/recv and exchange epoll counts; original payload, memcmp, two clocks and one outstanding request; 12 unprofiled observed rows plus 4 separate cpu-clock 199Hz DWARF stack captures'
+        echo 'client_profile_scope=whole client process lifetime with inherited threads; recorder and client share the original client CPU; profiling overhead is not ordinary timing'
+        for setting in perf_event_paranoid kptr_restrict; do
+            printf '%s=' "$setting"; cat "/proc/sys/kernel/$setting"
+        done
+    fi
     if [[ $URING_DIAGNOSTIC == 1 ]]; then
         echo 'uring_diagnostic_policy=observed binaries only; requested bytes/vectors distinguish gathered requests from completed transfers; diagnostic timings are not an uninstrumented performance panel'
     fi
@@ -360,7 +382,7 @@ if [[ $CLIENT_HEADROOM == 1 ]]; then
     printf 'split1-client-one\t1\t1\t%s\t%s\nsplit1-client-smt2\t1\t2\t%s\t%s,%s\n' \
         "$server_one" "$client_first" "$server_one" "$client_first" "$client_second" > "$OUT/cohorts.tsv"
 fi
-if [[ $URING_DIAGNOSTIC == 1 ]]; then
+if [[ $URING_DIAGNOSTIC == 1 || $CLIENT_DIAGNOSTIC == 1 ]]; then
     printf 'split1\t1\t1\t%s\t%s\n' "$server_one" "$client_one" > "$OUT/cohorts.tsv"
 fi
 if [[ $page_experiment == 1 ]]; then
@@ -628,6 +650,33 @@ fi
 for tool in netload uring_echo epoll_echo runner gen; do
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread "$HERE/$tool.c" -o "$OUT/bin/$tool"
 done
+if [[ $CLIENT_DIAGNOSTIC == 1 ]]; then
+    mkdir -p "$OUT/codegen"
+    git -C "$ROOT" show 72fdd468287f08f590c7db8b3972d1b6b5902e83:research/experiments/io-completion-bench/netload.c > "$OUT/codegen/netload-before.c"
+    for revision in before after; do
+        client_source="$OUT/codegen/netload-before.c"
+        if [[ $revision == after ]]; then client_source="$HERE/netload.c"; fi
+        "$CLANG" -std=c11 -O2 -g0 -Wall -Wextra -Werror -Wpedantic -pthread -I "$HERE" -S -emit-llvm \
+            "$client_source" -o "$OUT/codegen/netload-$revision.ll"
+        sed '/^; ModuleID =/d; /^source_filename =/d' "$OUT/codegen/netload-$revision.ll" \
+            > "$OUT/codegen/netload-$revision.normalized.ll"
+    done
+    cmp "$OUT/codegen/netload-before.normalized.ll" "$OUT/codegen/netload-after.normalized.ll"
+    "$CLANG" -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread -DWF_NETLOAD_OBSERVE=1 \
+        "$HERE/netload.c" -o "$OUT/bin/netload-observed"
+    make -C "$HERE" client-service-check client-observer-check CLANG="$CLANG" \
+        WHITEFOOT_SCRATCH_ROOT="$OUT/client-observer-check" > "$OUT/client-observer-check.log" 2>&1 || {
+        cat "$OUT/client-observer-check.log" >&2; exit 1;
+    }
+    cat > "$OUT/bin/profile-client" <<'PROFILE_CLIENT'
+#!/usr/bin/env bash
+set -euo pipefail
+diagnostics=$1
+shift
+exec "$@" 2> "$diagnostics"
+PROFILE_CLIENT
+    chmod +x "$OUT/bin/profile-client"
+fi
 if [[ $NATIVE_BASELINES != 0 ]]; then
     inline_forms=(0); if [[ $NATIVE_BASELINES == 2 ]]; then inline_forms=(0 1); fi
     for bytes in 8192 65536; do
@@ -849,11 +898,38 @@ check_go_report() {
     ' "$report" > /dev/null
 }
 
+check_client_observation() {
+    local report=$1 peers=$2 trips=$3 bytes=$4 workers=$5 cpus=$6 admission=$7
+    awk -v peers="$peers" -v trips="$trips" -v bytes="$bytes" -v workers="$workers" -v cpus="$cpus" -v admission="$admission" '
+      {delete v; for(i=2;i<=NF;i++) {split($i,a,"="); if(a[1] in v) bad=1; v[a[1]]=a[2]}}
+      $1=="netload-worker" {
+        if(v["cpus"]!=cpus || v["tid"]+0<=0 || v["pid"]+0<=0 || v["worker"]+0>=workers || seen[v["worker"]]++) bad=1;
+        worker_rows++; next
+      }
+      $1=="netload-observe" {
+        phase=v["phase"]; key=v["worker"] "/" phase;
+        if((phase!="exchange" && phase!="admission") || (phase=="admission" && !admission) ||
+           !(v["worker"] in seen) || reports[key]++) bad=1;
+        n[phase]++; rounds[phase]+=v["verified"]; checked[phase]+=v["verified_bytes"];
+        sent[phase]+=v["send_bytes"]; received[phase]+=v["recv_bytes"]; next
+      }
+      {bad=1}
+      END {
+        if(worker_rows!=workers) bad=1;
+        for(p=0;p<=admission;p++) {phase=p ? "admission" : "exchange"; expected=peers*(p ? 1 : trips);
+          if(n[phase]!=workers || rounds[phase]!=expected || checked[phase]!=expected*bytes ||
+             sent[phase]!=expected*bytes || received[phase]!=expected*bytes) bad=1}
+        exit bad ? 1 : 0
+      }' "$report"
+}
+
 network_case() {
     local form=$1 connections=$2 trips=$3 bytes=$4 pass=$5 observed=$6
     local binary environment=() arguments=() launcher=() directory port server_stderr owner_progress progress_batch pending_buckets
     local go_owner go_width go_environment=()
     local client_binary="$OUT/bin/netload"
+    local client_launcher=() client_stderr
+    if [[ $client_observer_active == 1 ]]; then client_binary="$OUT/bin/netload-observed"; fi
     if [[ $cohort == *-client8 ]]; then client_binary="$OUT/bin/netload-service8"; fi
     if [[ $cohort == *-client1 ]]; then client_binary="$OUT/bin/netload-service1"; fi
     sample=$((sample + 1))
@@ -947,13 +1023,24 @@ network_case() {
     if [[ $admitted == 1 ]]; then client_arguments+=(--admit); fi
     if [[ $duration_ms != 0 ]]; then client_arguments+=(--duration-ms "$duration_ms"); fi
     if [[ ${light_per_second:-0} != 0 ]]; then client_arguments+=(--light-per-second "$light_per_second"); fi
+    client_stderr="$directory/client.err"
+    if [[ $client_profile_active == 1 ]]; then
+        client_launcher=("$PROFILE_PERF" record -e cpu-clock -F 199 --call-graph dwarf,8192 \
+            -o "$directory/client-perf.data" -- "$OUT/bin/profile-client" "$client_stderr")
+        client_stderr="$directory/client-perf-record.err"
+    fi
     timeout --signal=TERM --kill-after=5s 120s \
         /usr/bin/time -f '%U\t%S\t%M\t%w\t%c' -o "$directory/client-resources.tsv" taskset -c "$client_cpus" \
-        "$client_binary" "$port" "$connections" "$trips" "$bytes" --threads "$client_workers" "${client_arguments[@]}" \
-        > "$directory/client.tsv" 2> "$directory/client.err"
+        "${client_launcher[@]}" "$client_binary" "$port" "$connections" "$trips" "$bytes" --threads "$client_workers" "${client_arguments[@]}" \
+        > "$directory/client.tsv" 2> "$client_stderr"
     if ! wait "$server_pid"; then cat "$directory/server.err" "$server_stderr" >&2; return 1; fi
     server_pid=''
-    [[ ! -s $directory/server.out && ! -s $directory/client.err ]]
+    [[ ! -s $directory/server.out ]]
+    if [[ $client_observer_active == 1 ]]; then
+        check_client_observation "$directory/client.err" "$connections" "$trips" "$bytes" "$client_workers" "$client_cpus" "$admitted"
+    else
+        [[ ! -s $directory/client.err ]]
+    fi
     if [[ $observed == 0 ]]; then [[ ! -s $directory/server.err ]]; fi
     if [[ $cohort == *-client8 ]]; then [[ $(field "$directory/client.tsv" client_service_rounds) == 8 ]]; fi
     if [[ $cohort == *-client1 ]]; then
@@ -967,7 +1054,27 @@ network_case() {
             -F comm,pid,tid,time,event,ip,sym,dso,period > "$directory/perf-samples.txt" 2> "$directory/perf-script.err"
         [[ -s $directory/perf-samples.txt ]]
     fi
+    if [[ $client_profile_active == 1 ]]; then
+        "$PROFILE_PERF" report --stdio --header --show-nr-samples --no-children \
+            --sort comm,dso,symbol -i "$directory/client-perf.data" > "$directory/client-perf-report.txt" 2> "$directory/client-perf-report.err"
+        "$PROFILE_PERF" script -i "$directory/client-perf.data" \
+            -F comm,pid,tid,time,event,ip,sym,dso,period > "$directory/client-perf-samples.txt" 2> "$directory/client-perf-script.err"
+        [[ -s $directory/client-perf-samples.txt ]]
+        # Retain the symbol-visibility evidence; absence does not silently
+        # turn a user-only capture into kernel attribution.
+        { printf 'sample=%s\n' "$directory";
+          printf 'kernel_symbol_lines='; awk '/\[kernel.kallsyms\]/ {n++} END {print n+0}' "$directory/client-perf-report.txt";
+          printf 'unknown_symbol_lines='; awk '/\[unknown\]/ {n++} END {print n+0}' "$directory/client-perf-report.txt";
+        } >> "$OUT/client-profile-status.txt"
+    fi
     if [[ $pass -ge 0 ]]; then
+        if [[ $client_observer_active == 1 ]]; then
+            while IFS= read -r observation; do
+                [[ $observation == netload-observe* ]] || continue
+                printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$pass" "$form" "$bytes" "$client_profile_active" "$directory" "$observation" \
+                    >> "$OUT/client-diagnostic-counters.tsv"
+            done < "$directory/client.err"
+        fi
         printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
             "$pass" "$form" "$connections" "$bytes" "$trips" \
             "$(field "$directory/client.tsv" rt_per_s)" \
@@ -1075,6 +1182,7 @@ check_continuation_report() {
         v["peak"]>0 && v["peak"]<=peers)}' "$report"
 }
 if [[ $URING_DIAGNOSTIC == 1 ]]; then references=(uring uring-64k uring-inline uring-64k-inline); fi
+if [[ $CLIENT_DIAGNOSTIC == 1 ]]; then references=(uring-64k epoll); fi
 while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
     allocator_environment=()
     if [[ $EXPERIMENT == allocator ]]; then allocator_environment=("$(allocator_setting)"); fi
@@ -1270,7 +1378,7 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
     done
 done < "$OUT/cohorts.tsv"
 
-if [[ $page_experiment == 1 && $CLIENT_HEADROOM == 0 && $URING_DIAGNOSTIC == 0 ]]; then
+if [[ $page_experiment == 1 && $CLIENT_HEADROOM == 0 && $URING_DIAGNOSTIC == 0 && $CLIENT_DIAGNOSTIC == 0 ]]; then
     mkdir -p "$OUT/resident"
     printf 'repetition\tcohort\tform\tconnections\tbytes\tthp_disabled\trss_kib\tanonymous_kib\tanon_huge_kib\tprivate_dirty_kib\tswap_kib\n' > "$OUT/resident.tsv"
     # Same normal binaries as timing, with all peers held open after a checked
@@ -1338,6 +1446,7 @@ fi
 
 printf 'pass\tform\tconnections\tbytes\ttrips\trt_per_s\tp50_us\tp99_us\tuser_s\tsystem_s\tmax_rss_kib\tvoluntary_switches\tinvoluntary_switches\tsample\tcohort\tclient_user_s\tclient_system_s\tclient_max_rss_kib\tclient_voluntary_switches\tclient_involuntary_switches\tcompute_rounds\tlight_p99_us\theavy_p99_us\tlight_span_us\theavy_span_us\tclient_exchange_user_us\tclient_exchange_system_us\tadmitted\ttotal_roundtrips\tduration_ms\texchange_us\tdrain_us\tlight_count\theavy_count\tlight_min_count\tlight_worst_peer_p99_us\theavy_min_count\theavy_worst_peer_p99_us\tlight_per_second\tlight_planned\tlight_dispatch_p99_us\tlight_service_p99_us\tlight_completed_by_deadline\theavy_completed_by_deadline\n' > "$OUT/network.tsv"
 forward=("${forms[@]}" "${references[@]}")
+if [[ $CLIENT_DIAGNOSTIC == 1 ]]; then forward=(uring-64k epoll); fi
 reverse=()
 for ((at=${#forward[@]}-1;at>=0;at--)); do reverse+=("${forward[at]}"); done
 if [[ $network_compute == 1 ]]; then
@@ -1375,6 +1484,23 @@ if [[ $URING_DIAGNOSTIC == 1 ]]; then
     printf '64 500 65536 0\n' > "$OUT/cases.tsv"
     { printf 'pass\tform'; for field_name in $uring_diagnostic_fields; do printf '\t%s' "$field_name"; done; printf '\n'; } \
         > "$OUT/uring-diagnostic-counters.tsv"
+fi
+if [[ $CLIENT_DIAGNOSTIC == 1 ]]; then
+    printf '64 2000 64 0\n64 500 65536 0\n' > "$OUT/cases.tsv"
+    printf 'pass\tform\tbytes\tprofile\tsample\tobservation\n' > "$OUT/client-diagnostic-counters.tsv"
+    : > "$OUT/client-profile-status.txt"
+    sha256sum "$HERE/netload.c" "$HERE/netload_observe.h" "$HERE/netload_observe_check.c" \
+        "$HERE/scheduler-bench.sh" "$CLANG" "$PROFILE_PERF" "$OUT"/bin/* > "$OUT/build-sha256.txt"
+    cat /proc/stat /proc/softirqs /proc/net/sockstat > "$OUT/client-kernel-before.txt"
+    client_observer_active=1
+    # Keep admission accounting separate from exchange and prove both phases
+    # conserve the unchanged echo bytes before collecting diagnostic rows.
+    while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
+        admitted=1
+        network_case epoll 4 20 64 -1 0
+        network_case epoll 4 20 65536 -1 0
+        admitted=0
+    done < "$OUT/cohorts.tsv"
 fi
 if [[ $EXPERIMENT == fairness ]]; then
     # Zero-compute control plus two sustained compute costs; retain both peer counts.
@@ -1456,6 +1582,23 @@ for ((pass=-WARMUP; pass<ROUNDS; pass++)); do
     done < "$OUT/cases.tsv"
   done < "$OUT/cohorts-order.tsv"
 done
+
+if [[ $CLIENT_DIAGNOSTIC == 1 ]]; then
+    [[ $(wc -l < "$OUT/network.tsv") -eq 13 && $(wc -l < "$OUT/client-diagnostic-counters.tsv") -eq 13 ]]
+    mv "$OUT/network.tsv" "$OUT/client-diagnostic.tsv"
+    head -1 "$OUT/client-diagnostic.tsv" > "$OUT/network.tsv"
+    client_profile_active=1
+    while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
+        while read -r connections trips bytes compute_rounds; do
+            for form in epoll uring-64k; do network_case "$form" "$connections" "$trips" "$bytes" 0 0; done
+        done < "$OUT/cases.tsv"
+    done < "$OUT/cohorts.tsv"
+    [[ $(wc -l < "$OUT/network.tsv") -eq 5 && $(wc -l < "$OUT/client-diagnostic-counters.tsv") -eq 17 ]]
+    mv "$OUT/network.tsv" "$OUT/client-profile.tsv"
+    cat /proc/stat /proc/softirqs /proc/net/sockstat > "$OUT/client-kernel-after.txt"
+    cat "$OUT/client-diagnostic-counters.tsv" "$OUT/client-profile-status.txt"
+    exit 0
+fi
 
 if [[ $CONTINUATION_SCREEN == 4 ]]; then
     [[ ${#forward[@]} -eq 13 && $(wc -l < "$OUT/cases.tsv") -eq 5 ]]

@@ -73,6 +73,18 @@
 
 #include "compute_protocol.h"
 
+#ifndef WF_NETLOAD_OBSERVE
+#define WF_NETLOAD_OBSERVE 0
+#endif
+#if WF_NETLOAD_OBSERVE != 0 && WF_NETLOAD_OBSERVE != 1
+#error "WF_NETLOAD_OBSERVE must be zero or one"
+#endif
+#if WF_NETLOAD_OBSERVE
+#include "netload_observe.h"
+#include <sched.h>
+#include <sys/syscall.h>
+#endif
+
 /* A client-service control, independent of the server's execution budget.
  * Zero retains the original drive-until-EAGAIN client and its data layout. */
 #ifndef WF_NETLOAD_SERVICE_ROUNDS
@@ -113,6 +125,11 @@ struct client {
     uint64_t count;
     uint64_t outstanding;
     int admitting;
+#if WF_NETLOAD_OBSERVE
+    struct netload_observation observed[2]; /* exchange, admission */
+    cpu_set_t observed_affinity;
+    long observed_tid;
+#endif
 #if WF_NETLOAD_SERVICE_ROUNDS
     struct connection *ready_head;
     struct connection *ready_tail;
@@ -225,11 +242,10 @@ static uint32_t percentile(const uint32_t *sorted, uint64_t count, uint64_t shar
     return sorted[rank - 1];
 }
 
-/* The message a connection sends on every round. The payload depends on the
- * connection and on the position within the message, so a server that echoed
- * one connection's bytes to another, or that reordered a message, fails the
- * comparison rather than producing a fast time. The first byte carries the
- * round, so a stale echo cannot pass either. */
+/* Every received byte is compared with this payload. Connection, position and
+ * round distinguish many mixups, but their byte patterns repeat modulo 256:
+ * equal-pattern peer swaps, stale rounds and reordered 256-byte blocks can
+ * escape detection. This is an exact byte oracle, not a unique message ID. */
 static void fill_message(struct connection *link) {
     for (uint64_t at = 0; at < option_bytes; at++) {
         link->outgoing[at] = (unsigned char)(link->index * 131u + at * 7u + 11u);
@@ -276,6 +292,10 @@ static void enqueue_client(struct client *owner, struct connection *link) {
  * no more room to send or no more bytes to give, or when the optional client
  * service budget puts the next round on the owner's ready FIFO. */
 static void pump(struct client *owner, struct connection *link) {
+#if WF_NETLOAD_OBSERVE
+    struct netload_observation *observation = &owner->observed[owner->admitting];
+    observation->pumps++;
+#endif
 #if WF_NETLOAD_SERVICE_ROUNDS
     unsigned turns = 0;
 #endif
@@ -283,6 +303,10 @@ static void pump(struct client *owner, struct connection *link) {
         while (link->sent < option_bytes) {
             ssize_t moved = send(link->descriptor, link->outgoing + link->sent,
                                  (size_t)(option_bytes - link->sent), MSG_NOSIGNAL);
+#if WF_NETLOAD_OBSERVE
+            netload_observe_transfer(&observation->send, option_bytes - link->sent,
+                moved >= 0 ? moved : (errno == EAGAIN || errno == EWOULDBLOCK) ? -1 : -2);
+#endif
             if (moved > 0) {
                 link->sent += (uint64_t)moved;
                 continue;
@@ -297,6 +321,10 @@ static void pump(struct client *owner, struct connection *link) {
         while (link->received < option_bytes) {
             ssize_t moved = recv(link->descriptor, link->incoming + link->received,
                                  (size_t)(option_bytes - link->received), 0);
+#if WF_NETLOAD_OBSERVE
+            netload_observe_transfer(&observation->receive, option_bytes - link->received,
+                moved >= 0 ? moved : (errno == EAGAIN || errno == EWOULDBLOCK) ? -1 : -2);
+#endif
             if (moved > 0) {
                 link->received += (uint64_t)moved;
                 continue;
@@ -340,6 +368,10 @@ static void pump(struct client *owner, struct connection *link) {
                  (unsigned long long)at, link->incoming[at], expected[at]);
         }
         struct timespec now;
+#if WF_NETLOAD_OBSERVE
+        observation->verified++;
+        observation->verified_bytes += option_bytes;
+#endif
         clock_gettime(CLOCK_MONOTONIC, &now);
         uint64_t elapsed = microseconds_between(link->started, now);
         if (!owner->admitting) {
@@ -459,6 +491,10 @@ static void exchange(struct client *owner) {
                          -1
 #endif
                          );
+#if WF_NETLOAD_OBSERVE
+        struct netload_observation *observation = &owner->observed[owner->admitting];
+        netload_observe_poll(observation, ready >= 0 ? ready : errno == EINTR ? -1 : -2);
+#endif
         if (ready < 0) {
             if (errno == EINTR) {
                 continue;
@@ -467,11 +503,26 @@ static void exchange(struct client *owner) {
         }
         for (int at = 0; at < ready; at++) {
             struct connection *link = events[at].data.ptr;
+#if WF_NETLOAD_OBSERVE
+            uint32_t flags = events[at].events;
+            observation->input += (flags & EPOLLIN) != 0;
+            observation->output += (flags & EPOLLOUT) != 0;
+            observation->both += (flags & (EPOLLIN | EPOLLOUT)) == (EPOLLIN | EPOLLOUT);
+            observation->errors += (flags & EPOLLERR) != 0;
+            observation->hangups += (flags & EPOLLHUP) != 0;
+            observation->read_hangups += (flags & EPOLLRDHUP) != 0;
+            /* Count all returned events, including ones the old loop skips. */
+            observation->skipped++;
+#endif
             if (link->finished || link->waiting_arrival) {
                 continue;
             }
 #if WF_NETLOAD_SERVICE_ROUNDS
             if (link->queued) continue;
+#endif
+#if WF_NETLOAD_OBSERVE
+            observation->skipped--;
+            observation->dispatched++;
 #endif
             pump(owner, link);
         }
@@ -495,6 +546,11 @@ static void exchange(struct client *owner) {
 static void *client_main(void *raw) {
     struct client *owner = raw;
     struct epoll_event events[256];
+#if WF_NETLOAD_OBSERVE
+    owner->observed_tid = syscall(SYS_gettid);
+    if (sched_getaffinity(0, sizeof owner->observed_affinity, &owner->observed_affinity) != 0)
+        fail("observer cannot read client affinity: %s", strerror(errno));
+#endif
 
     if (option_duration_ms) {
         /* Fault in every capture page before release. A faster server must
@@ -801,6 +857,34 @@ int main(int argc, char **argv) {
         pthread_join(clients[at].thread, NULL);
     }
     pthread_barrier_destroy(&gate);
+
+#if WF_NETLOAD_OBSERVE
+    /* Join synchronizes every worker-owned counter. Check and print only
+     * after both exchange clocks and getrusage snapshots have finished. */
+    for (uint64_t worker = 0; worker < threads; worker++) {
+        struct client *owner = &clients[worker];
+        fprintf(stderr, "netload-worker worker=%llu pid=%ld tid=%ld cpus=", (unsigned long long)worker,
+                (long)getpid(), owner->observed_tid);
+        int separator = 0;
+        for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
+            if (CPU_ISSET(cpu, &owner->observed_affinity)) {
+                fprintf(stderr, "%s%d", separator ? "," : "", cpu);
+                separator = 1;
+            }
+        }
+        fputc('\n', stderr);
+        for (int admission = 0; admission <= option_admit; admission++) {
+            uint64_t rounds = admission ? owner->count : 0;
+            if (!admission)
+                for (uint64_t at = 0; at < owner->count; at++) rounds += owner->first[at].round;
+            if (!netload_observation_conserved(&owner->observed[admission], rounds, rounds * option_bytes))
+                fail("worker %llu: observer conservation failed in %s", (unsigned long long)worker,
+                     admission ? "admission" : "exchange");
+            netload_report_observation(stderr, worker, admission ? "admission" : "exchange",
+                                       &owner->observed[admission]);
+        }
+    }
+#endif
 
     uint64_t total = 0;
     for (uint64_t at = 0; at < option_connections; at++) total += connections[at].round;

@@ -15,14 +15,11 @@
 #                                  another build already put in $OUT
 #   sh linux-net-bench.sh verify-client   qualify NETLOAD's bounded service
 #                                  against the selected echo references
+#   sh linux-net-bench.sh verify-observer   qualify client counter conservation
 #
-# The bar this measures against is the one
-# research/investigations/io-model/NETWORK.md section 6 sets: the reference is
-# the fastest existing solution regardless of language, which on a Linux
-# loopback is a hand-written C server on io_uring using what the kernel offers
-# for exactly this shape. `uring_echo` is that server, `epoll_echo` is the
-# second reference, and Whitefoot's number is a ratio to them. The gap is the
-# result, not something to hide.
+# The tuned native uring and epoll references expose backend and runtime
+# costs under this protocol. Their quality and evidence scope are maintained
+# in io-model/SCHEDULER-EXPERIMENT.md; neither is universally fastest.
 set -e
 
 ROUNDS=${ROUNDS:-5}
@@ -144,10 +141,16 @@ run_case() {
     wait_for_listener "$port" "$server" "$label"
 
     measured=0
-    line=$("$NETLOAD" "$port" "$connections" "$roundtrips" "$bytes") || measured=$?
+    if [ "$MODE" = verify-observer ]; then
+        line=$("$NETLOAD" "$port" "$connections" "$roundtrips" "$bytes" --threads 2 \
+            2> "$OUT/$label-client-observe.err") || measured=$?
+    else
+        line=$("$NETLOAD" "$port" "$connections" "$roundtrips" "$bytes") || measured=$?
+    fi
     if [ "$measured" != 0 ]; then
         echo "$label: the load generator failed" >&2
         cat "$OUT/server.err" >&2
+        if [ "$MODE" = verify-observer ]; then cat "$OUT/$label-client-observe.err" >&2; fi
         wait "$server" 2>/dev/null || true
         exit 1
     fi
@@ -172,6 +175,21 @@ run_case() {
         test "$(field "$line" roundtrips)" -eq $((connections * roundtrips))
         printf 'client-service: budget=%s bytes=%s roundtrips=%s yields=%s PASS\n' \
             "$budget" "$bytes" "$(field "$line" roundtrips)" "$(field "$line" client_service_yields)"
+    fi
+    if [ "$MODE" = verify-observer ]; then
+        # The binary checks each worker's full conservation equations before
+        # publishing its normal report. Independently match the external work.
+        awk -v rounds="$((connections * roundtrips))" -v bytes="$((connections * roundtrips * bytes))" '
+          $1=="netload-worker" {workers++; next}
+          $1!="netload-observe" {bad=1; next}
+          {n++; for(i=2;i<=NF;i++) {split($i,a,"="); v[a[1]]=a[2]}
+           if(v["phase"]!="exchange" || seen[v["worker"]]++) bad=1;
+           trips+=v["verified"]; checked+=v["verified_bytes"];
+           sent+=v["send_bytes"]; received+=v["recv_bytes"]}
+          END {exit !(!bad && workers==2 && n==2 && trips==rounds && checked==bytes && sent==bytes && received==bytes)}
+        ' "$OUT/$label-client-observe.err"
+        test "$(field "$line" roundtrips)" -eq $((connections * roundtrips))
+        printf 'client-observer: bytes=%s rounds=%s workers=2 PASS\n' "$bytes" "$((connections * roundtrips))"
     fi
 
     if [ "$recording" = 1 ]; then
@@ -268,13 +286,13 @@ echo "$LINES" | while read -r name binary; do
         environment=$WF_ENVIRONMENT
     fi
     run_case "$name.verify" "$binary" "$environment" 4 200 64 0
-    if [ "$MODE" = verify-client ]; then
+    if [ "$MODE" = verify-client ] || [ "$MODE" = verify-observer ]; then
         run_case "$name.verify.large" "$binary" "$environment" 4 20 65536 0
     fi
 done
 echo "every server echoes what netload sent, at 4 connections"
 
-if [ "$MODE" = verify ] || [ "$MODE" = verify-client ]; then
+if [ "$MODE" = verify ] || [ "$MODE" = verify-client ] || [ "$MODE" = verify-observer ]; then
     exit 0
 fi
 
