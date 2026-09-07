@@ -26,14 +26,21 @@ CLIENT_DIAGNOSTIC=${CLIENT_DIAGNOSTIC:-0}
 CLIENT_READINESS=${CLIENT_READINESS:-0}
 CLIENT_CAPACITY=${CLIENT_CAPACITY:-0}
 NATIVE_FRONTIER=${NATIVE_FRONTIER:-0}
+STORAGE_CONTROL=${STORAGE_CONTROL:-0}
 client_observer_active=0
 client_profile_active=0
 [[ $CLIENT_DIAGNOSTIC == 0 || $CLIENT_DIAGNOSTIC == 1 ]] || exit 2
 [[ $CLIENT_READINESS == 0 || $CLIENT_READINESS == 1 ]] || exit 2
 [[ $CLIENT_CAPACITY == 0 || $CLIENT_CAPACITY == 1 ]] || exit 2
 [[ $NATIVE_FRONTIER == 0 || $NATIVE_FRONTIER == 1 ]] || exit 2
+[[ $STORAGE_CONTROL == 0 || $STORAGE_CONTROL == 1 ]] || exit 2
+server_observer_panel=$NATIVE_FRONTIER
+if [[ $STORAGE_CONTROL == 1 ]]; then
+    [[ $NATIVE_FRONTIER == 0 && $CLIENT_CAPACITY == 0 ]] || { echo 'scheduler-bench: storage control is a separate physical-client panel' >&2; exit 2; }
+    server_observer_panel=1
+fi
 physical_client_panel=$CLIENT_CAPACITY
-if [[ $NATIVE_FRONTIER == 1 ]]; then
+if [[ $server_observer_panel == 1 ]]; then
     [[ $CLIENT_CAPACITY == 0 ]] || { echo 'scheduler-bench: choose capacity or native frontier, not both' >&2; exit 2; }
     physical_client_panel=1
 fi
@@ -242,7 +249,7 @@ check_streams() {
     if [[ $(uname -s) == Linux ]]; then
         make -C "$HERE" compiler-continuation-check CLANG="$CLANG" CORO_CXX="$CORO_CXX" \
             WHITEFOOT_SCRATCH_ROOT="$OUT/completion-coroutine-check"
-        make -C "$HERE" stackful-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/stream-check"
+        make -C "$HERE" stackful-check CLANG="$CLANG" EPOLL_STORAGE_CHECK="$STORAGE_CONTROL" WHITEFOOT_SCRATCH_ROOT="$OUT/stream-check"
         make -C "$HERE" uring-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/uring-check"
         make -C "$HERE" coroutine-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/coroutine-check"
         make -C "$HERE" client-service-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/client-check"
@@ -368,7 +375,7 @@ if [[ $EXPERIMENT == owner || $EXPERIMENT == owner-paced || $EXPERIMENT == dispa
 fi
 
 if [[ $EXPERIMENT == stackful || $EXPERIMENT == stackful-paced || $storage_experiment == 1 || $coroutine_experiment == 1 ]]; then
-    if ! make -C "$HERE" stackful-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/stream-check" \
+    if ! make -C "$HERE" stackful-check CLANG="$CLANG" EPOLL_STORAGE_CHECK="$STORAGE_CONTROL" WHITEFOOT_SCRATCH_ROOT="$OUT/stream-check" \
         > "$OUT/stackful-check.log" 2>&1; then
         cat "$OUT/stackful-check.log"
         exit 1
@@ -382,7 +389,7 @@ if [[ $coroutine_experiment == 1 ]]; then
     fi
 fi
 if [[ $NATIVE_BASELINES != 0 ]]; then
-    make -C "$HERE" uring-check CLANG="$CLANG" URING_POOL_CHECK="$NATIVE_FRONTIER" WHITEFOOT_SCRATCH_ROOT="$OUT/uring-check" \
+    make -C "$HERE" uring-check CLANG="$CLANG" URING_POOL_CHECK="$server_observer_panel" WHITEFOOT_SCRATCH_ROOT="$OUT/uring-check" \
         > "$OUT/uring-check.log" 2>&1 || { cat "$OUT/uring-check.log"; exit 1; }
 fi
 if [[ $CONTINUATION_SCREEN != 0 ]]; then
@@ -426,8 +433,12 @@ fi
     echo "client_diagnostic=$CLIENT_DIAGNOSTIC"
     echo "client_readiness=$CLIENT_READINESS"
     echo "client_capacity=$CLIENT_CAPACITY"
+    echo "storage_control=$STORAGE_CONTROL"
     echo "native_frontier=$NATIVE_FRONTIER"
-    if [[ $NATIVE_FRONTIER == 1 ]]; then
+    if [[ $STORAGE_CONTROL == 1 ]]; then
+        echo 'storage_control_policy=default client service 0; fixed server CPU; 64-peer large width 2 and small width 1; shared-scratch/private-calloc epoll with spawned worker, pure uring 64 KiB/128 buffers, indexed WF; 40 ordinary, 8 warmups, 24 separate observations; joint allocation/working-set diagnostic'
+        strace --version
+    elif [[ $NATIVE_FRONTIER == 1 ]]; then
         echo 'native_frontier_policy=default client service 0; fixed server CPU; 64-peer large width 1/2 and small width 1; uring 64 KiB pure/inline with 32/64/128 buffers, epoll, indexed WF; 120 ordinary, 24 warmups, 72 separate observations; guest physical IDs and launch/worker affinity verified'
     elif [[ $physical_client_panel == 1 ]]; then
         echo 'client_capacity_policy=default client service0; fixed server CPU; pools of 1/2/3 workers on distinct reported cores; 180 ordinary, 36 warmups, 36 observed rows; launch and worker affinity readbacks; shared VM, not dedicated cores'
@@ -454,7 +465,9 @@ fi
     if [[ $CLIENT_HEADROOM == 1 ]]; then
         echo 'client_headroom_policy=one server logical CPU; one versus two client workers on a separate physical core; unchanged prefilled payload and full memcmp oracle'
     fi
-    if [[ $NATIVE_FRONTIER == 1 ]]; then
+    if [[ $STORAGE_CONTROL == 1 ]]; then
+        echo 'uring_buffer_policy=65536 bytes; explicit 128 buffers per worker provide 8 MiB; pure-ring; SQPOLL excluded'
+    elif [[ $NATIVE_FRONTIER == 1 ]]; then
         echo 'uring_buffer_policy=65536 bytes; explicit 32/64/128 buffers per worker provide 2/4/8 MiB; pure-ring and immediate-send pairs; SQPOLL excluded'
     elif [[ $NATIVE_BASELINES != 0 ]]; then
         echo 'uring_buffer_policy=8192/65536 bytes; equal provided bytes per worker; counts 256..2048 / 32..256; SQPOLL excluded'
@@ -900,7 +913,7 @@ if [[ $NATIVE_BASELINES != 0 ]]; then
       done
     done
 fi
-if [[ $NATIVE_FRONTIER == 1 ]]; then
+if [[ $server_observer_panel == 1 ]]; then
     # Compare the zero-count ordinary path with the separate corrected rearm
     # revision. Explicit counts select capacity; observer fields stay absent.
     git -C "$ROOT" show 4ad6c37cec63b4750d272225328a05aa5cc51a1f:research/experiments/io-completion-bench/uring_echo.c > "$OUT/codegen/uring-before.c"
@@ -915,7 +928,10 @@ if [[ $NATIVE_FRONTIER == 1 ]]; then
                 > "$OUT/codegen/uring-$revision-inline$inline_send.normalized.ll"
         done
         cmp "$OUT/codegen/uring-before-inline$inline_send.normalized.ll" "$OUT/codegen/uring-after-inline$inline_send.normalized.ll"
-        for count in 32 64 128; do
+        counts=(32 64 128)
+        if [[ $STORAGE_CONTROL == 1 ]]; then counts=(128); fi
+        if [[ $STORAGE_CONTROL == 1 && $inline_send == 1 ]]; then continue; fi
+        for count in "${counts[@]}"; do
             output="$OUT/bin/uring_echo-64k-p$count"
             if [[ $inline_send == 1 ]]; then output+=-inline; fi
             for observed in 0 1; do
@@ -1233,7 +1249,7 @@ network_case() {
     sample=$((sample + 1))
     directory="$OUT/samples/$sample-$cohort-$form-k$connections-b$bytes-r$compute_rounds-a$admitted-d$duration_ms-l${light_per_second:-0}"
     if [[ $observed == 1 ]]; then directory="$OUT/observed/$cohort-$form-k$connections-a$admitted"; fi
-    if [[ $NATIVE_FRONTIER == 1 && $observed == 1 && $pass -ge 0 ]]; then
+    if [[ $server_observer_panel == 1 && $observed == 1 && $pass -ge 0 ]]; then
         directory="$OUT/observed/$sample-$cohort-$form-k$connections-b$bytes-pass$pass"
     fi
     if [[ $URING_DIAGNOSTIC == 1 && $observed == 1 && $pass -ge 0 ]]; then directory="$directory-pass$pass"; fi
@@ -1360,13 +1376,15 @@ network_case() {
         [[ ! -s $directory/client.err ]]
     fi
     if [[ $observed == 0 ]]; then [[ ! -s $directory/server.err ]]; fi
-    if [[ $NATIVE_FRONTIER == 1 && $observed == 1 && $pass -ge 0 ]]; then
+    if [[ $server_observer_panel == 1 && $observed == 1 && $pass -ge 0 ]]; then
         if [[ $form == wf-coro-index ]]; then
             check_continuation_report "$connections" "$directory/server.err" "$owner_progress" "$progress_batch" "$pending_buckets"
-        elif [[ $form == epoll ]]; then
-            awk -v expected="$connections" '/^storage:/ {
+        elif [[ $form == epoll || $form == epoll-calloc ]]; then
+            local expected_storage=0
+            if [[ $form == epoll-calloc ]]; then expected_storage=3; fi
+            awk -v storage="$expected_storage" -v expected="$connections" '/^storage:/ {
                 for(i=2;i<=NF;i++) {split($i,a,"=");v[a[1]]=a[2]+0}; seen++
-            } END {exit !(seen==1 && v["policy"]==0 && v["accepted"]==expected && v["closed"]==expected)}' "$directory/server.err"
+            } END {exit !(seen==1 && ("policy" in v) && v["policy"]==storage && ("main_worker" in v) && v["main_worker"]==0 && v["transfer_bytes"]==65536 && v["accepted"]==expected && v["closed"]==expected)}' "$directory/server.err"
         fi
     fi
     if [[ $CLIENT_READINESS == 1 && $cohort == *-client* ]]; then
@@ -1413,10 +1431,10 @@ network_case() {
             "${light_per_second:-0}" "$(field "$directory/client.tsv" light_planned)" \
             "$(field "$directory/client.tsv" light_dispatch_p99_us)" "$(field "$directory/client.tsv" light_service_p99_us)" \
             "$(field "$directory/client.tsv" light_completed_by_deadline)" "$(field "$directory/client.tsv" heavy_completed_by_deadline)" >> "$OUT/network.tsv"
-        if [[ $NATIVE_FRONTIER == 1 && $observed == 1 && $form == uring-64k-p* ]]; then
+        if [[ $server_observer_panel == 1 && $observed == 1 && $form == uring-64k-p* ]]; then
             check_frontier_uring "$form" "$((connections * trips * bytes))" "$directory/server.err"
             printf '%s\t%s\t%s\t%s\t%s\n' "$pass" "$form" "$cohort" "$directory" "$(cat "$directory/server.err")" \
-                >> "$OUT/native-frontier-counters.tsv"
+                >> "$OUT/$native_counter_panel-counters.tsv"
         fi
         if [[ $URING_DIAGNOSTIC == 1 ]]; then
             awk -v fields="$uring_diagnostic_fields" -v pass="$pass" -v form="$form" \
@@ -1468,6 +1486,10 @@ check_frontier_uring() {
 }
 
 frontier_cell_selected() {
+    if [[ $STORAGE_CONTROL == 1 ]]; then
+        [[ ( $client_workers == 1 && $bytes == 64 ) || ( $client_workers == 2 && $bytes == 65536 ) ]]
+        return
+    fi
     [[ $client_workers == 1 || ( $client_workers == 2 && $bytes == 65536 ) ]]
 }
 
@@ -1543,7 +1565,9 @@ check_continuation_report() {
 }
 if [[ $URING_DIAGNOSTIC == 1 ]]; then references=(uring uring-64k uring-inline uring-64k-inline); fi
 if [[ $CLIENT_DIAGNOSTIC == 1 ]]; then references=(uring-64k epoll); fi
-if [[ $NATIVE_FRONTIER == 1 ]]; then
+if [[ $STORAGE_CONTROL == 1 ]]; then
+    references=(epoll epoll-calloc uring-64k-p128)
+elif [[ $NATIVE_FRONTIER == 1 ]]; then
     references=(uring-64k-p32 uring-64k-p32-inline uring-64k-p64 uring-64k-p64-inline uring-64k-p128 uring-64k-p128-inline epoll)
 fi
 while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
@@ -1825,14 +1849,24 @@ if [[ $CLIENT_READINESS == 1 || $physical_client_panel == 1 ]]; then
     if [[ $physical_client_panel == 1 ]]; then
         retained=(netload netload-observed storage-epoll uring_echo-64k echo-callee-small wf-coro)
     fi
-    if [[ $NATIVE_FRONTIER == 1 ]]; then
+    native_counter_panel=native-frontier
+    if [[ $STORAGE_CONTROL == 1 ]]; then
+        native_counter_panel=storage-control
+        forward=(epoll epoll-calloc uring-64k-p128 wf-coro-index)
+        retained=(netload netload-observed storage-epoll storage-epoll-observed
+            storage-epoll-calloc storage-epoll-calloc-observed uring_echo-64k-p128
+            uring_echo-64k-p128-observed wf-coro wf-coro-lookup-observed)
+        [[ ${#retained[@]} -eq 10 ]]
+    elif [[ $NATIVE_FRONTIER == 1 ]]; then
         forward=(uring-64k-p32 uring-64k-p32-inline uring-64k-p64 uring-64k-p64-inline uring-64k-p128 uring-64k-p128-inline epoll wf-coro-index)
         retained=(netload netload-observed storage-epoll storage-epoll-observed wf-coro wf-coro-lookup-observed)
         for form in "${forward[@]:0:6}"; do
             retained+=("uring_echo${form#uring}" "uring_echo${form#uring}-observed")
         done
         [[ ${#retained[@]} -eq 18 ]]
-        printf 'pass\tform\tcohort\tsample\tobservation\n' > "$OUT/native-frontier-counters.tsv"
+    fi
+    if [[ $server_observer_panel == 1 ]]; then
+        printf 'pass\tform\tcohort\tsample\tobservation\n' > "$OUT/$native_counter_panel-counters.tsv"
     fi
     : > "$OUT/build-sha256.txt"
     for binary in "${retained[@]}"; do
@@ -1883,7 +1917,7 @@ if [[ $CLIENT_HEADROOM == 1 ]]; then
 fi
 if [[ $physical_client_panel == 1 ]]; then
     printf '64 2000 64 0\n1024 200 64 0\n64 500 65536 0\n' > "$OUT/cases.tsv"
-    if [[ $NATIVE_FRONTIER == 1 ]]; then printf '64 2000 64 0\n64 500 65536 0\n' > "$OUT/cases.tsv"; fi
+    if [[ $server_observer_panel == 1 ]]; then printf '64 2000 64 0\n64 500 65536 0\n' > "$OUT/cases.tsv"; fi
     cat /proc/stat /proc/softirqs /proc/net/sockstat > "$OUT/client-kernel-before.txt"
     # Four peers split 2/1/1, so both admission and exchange exercise uneven
     # per-worker byte accounting. These are qualification, not panel rows.
@@ -2018,7 +2052,7 @@ for ((pass=-WARMUP; pass<ROUNDS; pass++)); do
       admitted=0
       for form in "${order[@]}"; do
         while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
-            if [[ $NATIVE_FRONTIER == 1 ]] && ! frontier_cell_selected; then continue; fi
+            if [[ $server_observer_panel == 1 ]] && ! frontier_cell_selected; then continue; fi
             network_case "$form" "$connections" "$trips" "$bytes" "$pass" 0
         done < "$OUT/cohorts-order.tsv"
       done
@@ -2044,11 +2078,16 @@ if [[ $CLIENT_READINESS == 1 || $physical_client_panel == 1 ]]; then
         panel=client-capacity
         panel_cases=3; panel_rows=180; panel_observations=36; panel_workers=72
     fi
-    if [[ $NATIVE_FRONTIER == 1 ]]; then
+    if [[ $STORAGE_CONTROL == 1 ]]; then
+        panel=storage-control
+        panel_cases=2; panel_rows=40; panel_observations=24; panel_workers=36; observer_passes=3
+    elif [[ $NATIVE_FRONTIER == 1 ]]; then
         panel=native-frontier
         panel_cases=2; panel_rows=120; panel_observations=72; panel_workers=96; panel_forms=8; observer_passes=3
     fi
-    [[ ${#forward[@]} -eq $panel_forms && $(wc -l < "$OUT/cases.tsv") -eq $panel_cases && $(wc -l < "$OUT/network.tsv") -eq $((panel_rows+1)) ]]
+    [[ ${#forward[@]} -eq $panel_forms && $(wc -l < "$OUT/cases.tsv") -eq $panel_cases && $(wc -l < "$OUT/network.tsv") -eq $((panel_rows+1)) ]] || {
+        echo "scheduler-bench: incomplete $panel ordinary cohort" >&2; exit 1;
+    }
     cp "$OUT/network.tsv" "$OUT/$panel.tsv"
     head -1 "$OUT/network.tsv" > "$OUT/$panel-observed.tsv"
     mv "$OUT/$panel-observed.tsv" "$OUT/network.tsv"
@@ -2057,17 +2096,22 @@ if [[ $CLIENT_READINESS == 1 || $physical_client_panel == 1 ]]; then
     while read -r connections trips bytes compute_rounds light_per_second; do
       for form in "${forward[@]}"; do
         while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
-            if [[ $NATIVE_FRONTIER == 1 ]] && ! frontier_cell_selected; then continue; fi
-            network_case "$form" "$connections" "$trips" "$bytes" "$observer_pass" "$NATIVE_FRONTIER"
+            if [[ $server_observer_panel == 1 ]] && ! frontier_cell_selected; then continue; fi
+            network_case "$form" "$connections" "$trips" "$bytes" "$observer_pass" "$server_observer_panel"
         done < "$OUT/cohorts.tsv"
       done
     done < "$OUT/cases.tsv"
     done
-    [[ $(wc -l < "$OUT/network.tsv") -eq $((panel_observations+1)) && $(wc -l < "$OUT/client-diagnostic-counters.tsv") -eq $((panel_workers+1)) ]]
+    [[ $(wc -l < "$OUT/network.tsv") -eq $((panel_observations+1)) && $(wc -l < "$OUT/client-diagnostic-counters.tsv") -eq $((panel_workers+1)) ]] || {
+        echo "scheduler-bench: incomplete $panel observed cohort" >&2; exit 1;
+    }
     mv "$OUT/network.tsv" "$OUT/$panel-observed.tsv"
     cp "$OUT/$panel.tsv" "$OUT/network.tsv"
     client_observer_active=0
-    if [[ $NATIVE_FRONTIER == 1 ]]; then [[ $(wc -l < "$OUT/native-frontier-counters.tsv") -eq 55 ]]; fi
+    if [[ $server_observer_panel == 1 ]]; then
+        native_rows=54; if [[ $STORAGE_CONTROL == 1 ]]; then native_rows=6; fi
+        [[ $(wc -l < "$OUT/$native_counter_panel-counters.tsv") -eq $((native_rows+1)) ]]
+    fi
     sha256sum -c "$OUT/build-sha256.txt" > "$OUT/hash-verification.log"
     if [[ $physical_client_panel == 1 ]]; then
         cat /proc/stat /proc/softirqs /proc/net/sockstat > "$OUT/client-kernel-after.txt"
@@ -2140,11 +2184,12 @@ for program in "${cpu_programs[@]}"; do
 done
 
 # Keep raw samples; summarize ranges as well as medians. Native frontier
-# uses epoll; other combine panels use callee-small, and other modes use base.
+# and storage control use epoll; other combine panels use callee-small,
+# and other modes use base.
 # Every ratio uses the same pass and cohort.
 paired_reference=base
 if [[ $MODE == combine ]]; then paired_reference=callee-small; fi
-if [[ $NATIVE_FRONTIER == 1 ]]; then paired_reference=epoll; fi
+if [[ $server_observer_panel == 1 ]]; then paired_reference=epoll; fi
 awk -F '\t' -v reference="$paired_reference" '
     NR == 1 { next }
     { key=$15 "/" $3 "/" $4 "/" ($21+0) "/" ($28+0) "/" ($30+0) "/" ($39+0); cohort=$1 SUBSEP key; group=$2 SUBSEP key
