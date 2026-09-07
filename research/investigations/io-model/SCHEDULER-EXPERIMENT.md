@@ -4237,7 +4237,7 @@ name. A known limitation remains visible until its experiment is complete.
 | Native C epoll | Manual state machine; per-worker edge-triggered reactor and `SO_REUSEPORT`; 64 KiB shared scratch, bounded private spill on backpressure | Competitive readiness control: immediate recv/send, no ordinary per-operation allocation, local connection state | Screened on Linux loopback; 2 MiB streams, short sends and half-close qualified. Physical NIC and overload confirmation missing |
 | Native C epoll with private storage | Arena, malloc or calloc per connection; main-thread worker variant | Diagnostic storage and allocator comparison; private backing remains owned through I/O | Screened and stream-qualified; these rows need not beat shared scratch to explain WF storage cost |
 | Native C io_uring | Multishot accept/recv, provided buffers, per-worker rings/listeners, ordered vectored sends; SINGLE_ISSUER + DEFER_TASKRUN, no SQPOLL | Competitive completion control: batching, no receive submission per arrival, loaned receive buffers reused for send | Stream-qualified and screened at `475008b5`: 64 KiB improves both large-message cells; small-message intervals overlap. No independently confirmed or universal winner |
-| Native C io_uring with immediate send | Same receive engine and loans, one nonblocking `sendmsg` attempt before ring fallback | Competitive hybrid candidate: avoids a submission/completion round trip when the socket accepts bytes immediately | Implemented and cross-compiled; native qualification and same-revision paired screen pending |
+| Native C io_uring with immediate send | Same receive engine and loans, one nonblocking `sendmsg` attempt before ring fallback | Competitive hybrid candidate: avoids a submission/completion round trip when the socket accepts bytes immediately | Stream-qualified and screened at `0357259d`; 8 KiB hybrid severely regresses large messages, 64 KiB mostly overlaps pure-ring control. Shutdown wake-storage correction requalified at `0ebe924b` |
 | Native C stackful / C++ stackless | Same epoll engine; private or shared receive storage; stackful, heap coroutine, and compiler-elided coroutine forms | Diagnostic representation control: separates coroutine/frame allocation, storage and reactor cost | Screened and stream/lifetime-qualified at their recorded revisions; not independent mature runtime comparisons |
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
 | WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Correctness-qualified at the revisions above; no concurrent server performance claim yet |
@@ -4283,7 +4283,7 @@ comparison remain explicit platform rows, not inferred coverage.
 | CPU placement | Record physical cores, SMT siblings, NUMA, cpuset and IRQ placement. Current split2 uses disjoint logical CPUs that may share physical cores; it is not a promise of two physical server cores. split1 separates physical cores |
 | Thread and poll budgets | Count runtime workers, blocking helpers, io-wq and SQPOLL kernel threads. Process taskset and process CPU alone do not bound or account for a kernel polling thread. A competitive CPU budget is an upper bound: tuning may use fewer workers at low occupancy rather than forcing every contender to start all available workers |
 | CPU cost | Existing `/usr/bin/time` `%U/%S` covers whole process lifetime with centisecond output: startup/drain and quantization matter in short cells. Separate steady-state CPU-ns/request, idle CPU and kernel CPU before fine low-load claims |
-| Load generator | Record client CPU and verify headroom using additional client cores or an independent host. Inline byte checking can saturate the client; flat throughput alone does not prove server saturation |
+| Load generator | Occupied echo cells demonstrably consume nearly all assigned client CPU, predominantly system time. Experiment43's extra client SMT worker does not establish spare capacity. Verify with more independent physical client cores or another host; flat throughput alone does not prove server saturation |
 | Latency / overload | Closed-loop echo p99 does not establish an overload SLO. Fixed-arrival latency begins at the intended send time and includes dispatch delay; report goodput, drops/deadlines, backlog and recovery |
 | Memory | Record total reserved/provided bytes, live RSS/PSS and slope versus peers, socket/kernel memory, faults and allocations. Equal provided bytes does not imply equal total or resident memory. Keep THP and allocator readbacks with each panel |
 | Mechanism evidence | Untimed observers: syscalls/submissions/CQEs, send/recv bytes, queue depth/exhaustion, context switches, task migration and frame allocations. An observer is not part of a timed binary |
@@ -4590,9 +4590,104 @@ and ring-fallback transfers under the shared small-send-buffer fixture:
 
 These are correctness-fixture counters, not hot-path timing measurements.
 The successful-exit lifetime qualification remains limited as audited below.
-The expanded paired screen is pending; the completed `475008b5` screen is
-preserved above. No hybrid speedup or default selection is claimed from
-implementation or protocol qualification alone.
+The completed screen below preserves the earlier `475008b5` result rather
+than combining denominators from different CI hosts.
+
+The separate `0357259d` Windows timing
+[job 101625562416](https://github.com/mbbill/Whitefoot/actions/runs/34084400899/job/101625562416)
+again stopped at the compute stability gate, before publishing a qualified
+table. Its [raw artifact 10005026530](https://github.com/mbbill/Whitefoot/actions/runs/34084400899/artifacts/10005026530)
+has SHA256 `bb67959767c3d5b3d1db2f386ceb208dd1fd9200216240e547d3eb1e9aa64cea`.
+The host is a Xeon Platinum 8370C, unlike the preceding EPYC Windows runs;
+absolute timings therefore are not paired with those runs. The two attempt
+median parallel/serial ratios are 0.3076 and 0.2925, MAD/median 0.0521 and
+0.0078, and spread/median 0.4104 and 0.1489. The unchanged spread limit rejects
+both cohorts. Windows owner checks passed, as did this revision's three
+Linux/macOS io-bench jobs; the Windows timing failure is not represented as
+a semantic failure or as an accepted performance result.
+
+### Same-revision hybrid screen results at 0357259d
+
+[Run 34084400987](https://github.com/mbbill/Whitefoot/actions/runs/34084400987)
+and measurement job `101625562590` passed, as did all fourteen canonical gate
+jobs and both io-hosts jobs. The
+[raw artifact 10005481127](https://github.com/mbbill/Whitefoot/actions/runs/34084400987/artifacts/10005481127)
+has SHA256 `0e02f6d15704b1dfd4098e00dafebf4ec56f545fcc3b2388fc8a49fc6ec9fae9`.
+This host is EPYC 9V74, Linux 6.17.0-1022-azure, Clang 20.1.2, with two
+physical cores and two SMT threads per core. split1 assigns server CPU 0 and
+client CPU 2; split2 assigns server 0,2 and client 1,3. The preceding EPYC
+7763 measurements are not paired with this host.
+
+The raw audit verifies 770 rows in 110 complete seven-pass groups, 198 live
+snapshots in complete three-repetition groups, every client byte/trip count,
+client and server resource field, and empty timed diagnostics. Recomputed
+smaps fields agree with every resident row; THP readback is disabled, huge
+pages and swap are zero, and glibc top_pad readback is zero. The ratios below
+pair the same pass/cell; brackets contain observed minimum and maximum,
+not confidence intervals.
+
+| Placement, peers × bytes | 8 KiB hybrid / pure rate | 8 KiB hybrid / pure CPU/trip | 64 KiB hybrid / pure rate | 64 KiB hybrid / pure CPU/trip |
+| --- | --- | --- | --- | --- |
+| split1, 1 × 64 | 1.0010 [0.9933, 1.0150] | 1.0000 [0.9375, 1.0000] | 0.9972 [0.9820, 1.0200] | 1.0000 [0.9375, 1.0000] |
+| split1, 4 × 64 | 0.9913 [0.9506, 1.0079] | 1.0000 [1.0000, 1.0303] | 0.9966 [0.9898, 1.0687] | 1.0000 [0.9412, 1.0303] |
+| split1, 64 × 64 | 0.9939 [0.9915, 1.0317] | 1.0189 [0.9908, 1.0189] | 0.9994 [0.9926, 1.0234] | 1.0093 [0.9907, 1.0189] |
+| split1, 64 × 65536 | 0.4251 [0.4171, 0.4342] | 2.3529 [2.3193, 2.4174] | 0.9986 [0.9744, 1.0365] | 0.9800 [0.9505, 1.0100] |
+| split1, 1024 × 64 | 1.0136 [0.9770, 1.1128] | 0.9891 [0.9297, 1.0263] | 1.0004 [0.9857, 1.0493] | 1.0107 [0.9730, 1.0273] |
+| split2, 1 × 64 | 0.9957 [0.9318, 1.0823] | 0.9500 [0.8947, 1.1176] | 0.9805 [0.9456, 1.0373] | 1.0556 [1.0000, 1.0625] |
+| split2, 4 × 64 | 0.9242 [0.6437, 1.2814] | 1.0208 [0.8909, 1.1739] | 0.9182 [0.5060, 1.2907] | 1.0909 [0.9434, 1.1739] |
+| split2, 64 × 64 | 1.0218 [1.0041, 1.0280] | 1.0078 [0.9922, 1.0156] | 1.0240 [1.0141, 1.0493] | 1.0078 [0.9922, 1.0236] |
+| split2, 64 × 65536 | 0.4604 [0.3927, 0.5094] | 2.2917 [2.2569, 2.3496] | 1.0125 [0.9204, 1.0390] | 0.9915 [0.9832, 1.0442] |
+| split2, 1024 × 64 | 1.0389 [0.9981, 1.0914] | 1.0045 [0.9819, 1.0317] | 1.0152 [0.9669, 1.0992] | 1.0090 [0.9685, 1.0419] |
+
+The 8 KiB hybrid loses more than half its large-message throughput and more
+than doubles server CPU/trip in every pair under both placements. Its large
+p99 ratios are 2.6075 [2.2807, 2.6778] at split1 and 2.4346 [2.1367, 2.8834]
+at split2. In contrast, 64 KiB hybrid large-message rate and p99 ranges cross
+1.0. Both sizes gain about 2% rate in all pairs at split2/64 small peers, but
+their CPU and p99 ranges overlap the controls; other small-rate ranges cross
+1.0. The default pure-ring policy is retained.
+
+A source-supported mechanism hypothesis is lost aggregation: pure-ring send
+remains in flight while later receive CQEs append buffers to its next vector,
+whereas a successful immediate send drains each 8 KiB arrival before later
+CQEs can accumulate. This could increase send operations and kernel TCP work.
+The backpressure qualification above is a different workload and cannot
+establish those operation counts here. The discriminating next observation
+is receive/send/inline/EAGAIN and packet aggregation counts on this exact
+64 KiB echo cell, before adding a deferred-batch send policy.
+
+For the competitive view, each row fixes the native candidate with the
+highest median rate among the nine controls. The same in-sample selection
+and client-headroom limitations as experiment36 apply; this does not identify
+a universally fastest backend or statistically separate every close form.
+
+| Placement, peers × bytes | Highest native median | Native k trips/s | callee-small / native rate | balanced-small / native rate | balanced-small / native CPU/trip |
+| --- | --- | ---: | --- | --- | --- |
+| split1, 1 × 64 | epoll-calloc-main | 30.1 | 0.8406 [0.8223, 0.9069] | 0.8074 [0.7997, 0.8631] | 2.6250 [2.4706, 2.8000] |
+| split1, 4 × 64 | fiber-calloc-main | 112.9 | 0.9596 [0.9109, 0.9679] | 0.9591 [0.9171, 0.9682] | 1.1143 [1.0571, 1.1176] |
+| split1, 64 × 64 | uring | 117.1 | 1.0038 [1.0020, 1.0315] | 1.0039 [0.9977, 1.0281] | 1.0377 [1.0183, 1.0377] |
+| split1, 64 × 65536 | epoll | 30.6 | 0.9670 [0.9053, 1.0344] | 0.9846 [0.9349, 1.0829] | 1.0594 [0.9596, 1.1111] |
+| split1, 1024 × 64 | epoll | 107.5 | 0.9978 [0.9194, 1.0315] | 0.9996 [0.8867, 1.0305] | 1.0513 [1.0213, 1.1746] |
+| split2, 1 × 64 | cpp-elide | 28.5 | 0.7761 [0.7194, 0.8324] | 0.7167 [0.6946, 0.7424] | 5.0556 [4.5500, 5.3529] |
+| split2, 4 × 64 | epoll-calloc-main | 131.4 | 0.7351 [0.7245, 1.0054] | 0.5464 [0.5262, 0.7533] | 2.1961 [1.8966, 2.2353] |
+| split2, 64 × 64 | uring-inline | 185.0 | 0.8804 [0.8746, 0.9126] | 1.0297 [1.0167, 1.0335] | 1.0465 [1.0308, 1.0547] |
+| split2, 64 × 65536 | cpp-elide | 52.9 | 0.8319 [0.8243, 0.8798] | 0.9572 [0.9258, 0.9804] | 1.1667 [1.1261, 1.1835] |
+| split2, 1024 × 64 | epoll | 175.5 | 0.8597 [0.7896, 0.9869] | 0.9488 [0.9154, 1.1096] | 1.0822 [1.0667, 1.1467] |
+
+The source/storage distinction remains visible in live RSS medians (KiB,
+three byte-checked snapshots). Immediate sending makes little difference to
+these allocations; 64 KiB provided buffers reduce touched storage relative
+to 8 KiB at the same reserved payload capacity. These are not equal
+initialization contracts or equal virtual reservation across WF and native.
+
+| Placement, peers × bytes | uring | uring-inline | uring-64k | uring-64k-inline | epoll | balanced-small |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| split1, 64 × 64 | 2376 | 2380 | 2248 | 2248 | 1640 | 3524 |
+| split1, 64 × 65536 | 4172 | 4176 | 3252 | 3236 | 1700 | 5440 |
+| split1, 1024 × 64 | 7312 | 7308 | 4192 | 4188 | 1660 | 15060 |
+| split2, 64 × 64 | 2800 | 2800 | 2784 | 2792 | 1656 | 3984 |
+| split2, 64 × 65536 | 6392 | 6396 | 4760 | 4700 | 1748 | 6392 |
+| split2, 1024 × 64 | 7784 | 7780 | 5636 | 5636 | 1672 | 15548 |
 
 ### Successful-exit loan audit after the 0357259d screen was started
 
@@ -4623,8 +4718,11 @@ half-close protocol; arbitrary reset recovery remains outside this evidence:
 
 This narrow lifetime correction does not retroactively turn an observed byte
 failure into a pass or claim that the timing screen witnessed a use-after-free.
-Native validation of the correction will use the existing full qualification
-suite after the running screen completes.
+At `0ebe924b`, the existing full
+[Linux scheduler qualification](https://github.com/mbbill/Whitefoot/actions/runs/34085705091/job/101629217631)
+passes with this correction, including all eight ASan/UBSan uring stream
+configurations. That separate branch leaves the earlier running screen
+unchanged.
 
 A separate source audit of the optional, unmeasured SQPOLL path found a
 missing store-to-load barrier between publishing the SQ tail and reading
@@ -4681,4 +4779,73 @@ rate cannot establish server saturation: SMT contention inside the client
 core may still cap both variants. Extra physical client cores or another
 host remain the stronger follow-up, and loopback remains distinct from a
 real NIC. Local shell parsing, Make dry-run, YAML parsing and diff checks
-pass; native results are pending.
+pass.
+
+### Client placement results at 0ebe924b
+
+[Run 34085705133](https://github.com/mbbill/Whitefoot/actions/runs/34085705133)
+and measurement job `101629217722` passed. All fourteen canonical gate jobs
+and both io-hosts jobs passed at this exact revision. The
+[raw artifact 10005493034](https://github.com/mbbill/Whitefoot/actions/runs/34085705133/artifacts/10005493034)
+has SHA256 `edb74ace6c9f6b23f32eb83c7aa7b86d23af529912f5c1270f494ceb6123de42`.
+The host is EPYC 7763, Linux 6.17.0-1022-azure and Clang 20.1.2. Server CPU 0
+and one worker are fixed; the client changes from CPU 2/one worker to CPU
+2,3/two workers on the other physical core. Its absolute numbers are not
+paired with experiment38's EPYC 9V74 host.
+
+The separate Windows io-bench timing
+[job 101629217220](https://github.com/mbbill/Whitefoot/actions/runs/34085705087/job/101629217220)
+stopped at the same `compute remained unstable after two complete cohorts`
+gate; its three Linux/macOS timing jobs and the Windows owner checks passed.
+That unrelated unqualified Windows timing result is not folded into this
+Linux client-placement comparison.
+
+The raw audit verifies all 168 rows and 24 seven-pass groups, matching client
+metrics, exact byte/trip totals and client/server resource files, and empty
+timed diagnostics. The following ratios pair the same pass, payload and
+server form with two versus one client workers. CPU cost is the unchanged
+whole-server-process CPU/trip measure. The final column is the median client
+exchange CPU/wall, in CPU-seconds per wall-second; client capacity is one
+logical CPU in the first cohort and two SMT siblings in the second.
+
+| Payload bytes | Form | Rate ratio | Server CPU/trip ratio | p99 ratio | Client CPU/wall, one → two |
+| --- | --- | --- | --- | --- | --- |
+| 64 | callee-small | 0.9772 [0.9506, 1.0384] | 1.0198 [0.9604, 1.0495] | 0.9972 [0.9259, 1.2367] | 0.982 → 1.347 |
+| 64 | balanced-small | 0.9850 [0.9177, 1.0316] | 1.0194 [0.9800, 1.0947] | 1.0139 [0.9169, 1.0691] | 0.986 → 1.326 |
+| 64 | uring-64k | 0.9714 [0.9007, 1.0414] | 1.0521 [1.0000, 1.1099] | 2.7021 [0.9594, 5.0501] | 1.000 → 1.541 |
+| 64 | uring-64k-inline | 1.0488 [0.9726, 1.1201] | 0.9691 [0.9158, 1.0330] | 1.0076 [0.8701, 1.1590] | 1.000 → 1.666 |
+| 64 | epoll | 0.9635 [0.9032, 1.0346] | 1.0408 [0.9592, 1.1087] | 1.0600 [1.0208, 1.2720] | 1.000 → 1.631 |
+| 64 | cpp-elide | 0.9632 [0.9267, 1.0304] | 1.0303 [0.9794, 1.0816] | 1.0778 [1.0000, 1.5291] | 1.000 → 1.634 |
+| 65536 | callee-small | 1.1024 [0.6260, 1.1209] | 0.8716 [0.8571, 1.5412] | 0.8707 [0.5707, 1.2034] | 0.999 → 1.989 |
+| 65536 | balanced-small | 1.0900 [0.6284, 1.1168] | 0.8836 [0.8707, 1.5476] | 1.0396 [0.7486, 1.7703] | 0.999 → 1.988 |
+| 65536 | uring-64k | 1.0149 [1.0021, 1.0433] | 0.9862 [0.9720, 1.0141] | 1.9541 [1.7651, 2.4880] | 1.000 → 1.819 |
+| 65536 | uring-64k-inline | 1.0289 [1.0163, 1.0597] | 0.9793 [0.9510, 0.9930] | 1.0157 [0.9371, 1.2568] | 1.000 → 1.833 |
+| 65536 | epoll | 0.7717 [0.5828, 1.1199] | 1.0111 [0.8208, 1.1750] | 0.9084 [0.6310, 1.5789] | 1.000 → 1.999 |
+| 65536 | cpp-elide | 0.9413 [0.5791, 1.0955] | 0.9200 [0.8762, 1.1235] | 0.9322 [0.5551, 1.5517] | 1.000 → 1.999 |
+
+Every small-message rate range includes 1.0. Both native uring
+large-message rates improve in all pairs, but only by median 1.5% and 2.9%;
+pure-ring p99 becomes 1.77--2.49 times worse. For the hybrid, absolute large
+rate medians are 21,840 → 22,531 trips/s and server CPU 45.312 → 44.062
+us/trip, while client CPU rises 45.778 → 81.795 us/trip. Thus the extra client
+SMT worker is neither free nor proof that the client now has spare capacity.
+
+The WF large-message median increases are not stable improvements: the
+single-client samples have two distinct observed ranges. `callee-small`
+has five samples around 21--22k trips/s and two around 36--38k;
+`balanced-small` has four around 21--22k and three around 37--38k. The faster
+samples also lower server CPU from roughly 46 to 26--28 us/trip and reduce
+client system CPU. The two-client WF samples cluster around 23--24k trips/s
+while occupying nearly two client logical CPUs. Epoll's single-client rates
+range from 20.7k to 39.1k. These are retained observations, not discarded
+outliers; aggregate counters do not establish their cause. Changing CPU work
+per request warrants syscall/packetization evidence rather than simply
+attributing the spread to host descheduling.
+
+This sensitivity screen does not produce a stronger, demonstrably idle
+generator for all forms. Future server claims need additional independent
+physical client cores or a separate host, and the complete same-client
+cohorts must remain the comparison units. On this available VM, the next
+bounded diagnostic is send/receive/EAGAIN/readiness and transfer-size counts
+for the variable large-message cell. No client verifier, source ABI, server
+default or performance threshold is changed by these results.
