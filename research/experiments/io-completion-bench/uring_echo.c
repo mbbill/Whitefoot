@@ -899,6 +899,18 @@ int main(int argc, char **argv) {
     for (unsigned at = 0; at < option_threads; at++) {
         pthread_join(workers[at].thread, NULL);
     }
+    int broken = atomic_load_explicit(&failed, memory_order_relaxed);
+    uint64_t accepted = atomic_load_explicit(&accepted_total, memory_order_relaxed);
+    uint64_t closed = atomic_load_explicit(&closed_total, memory_order_relaxed);
+    if (broken || accepted < option_connections || closed < option_connections) {
+        /* A failed run may still have kernel operations holding these loans.
+         * Ring close alone is not our cancel/drain proof. Keep the allocations
+         * and descriptors alive until process exit rather than reusing them. */
+        fprintf(stderr, "uring_echo: accepted %llu and closed %llu of %llu connections\n",
+                (unsigned long long)accepted, (unsigned long long)closed,
+                (unsigned long long)option_connections);
+        return 1;
+    }
     for (unsigned at = 0; at < option_threads; at++) {
         struct worker *worker = &workers[at];
         if (worker->ring.shared != NULL) {
@@ -922,16 +934,7 @@ int main(int argc, char **argv) {
         close(worker->wake);
         close(worker->listener);
     }
-    int broken = atomic_load_explicit(&failed, memory_order_relaxed);
-    uint64_t accepted = atomic_load_explicit(&accepted_total, memory_order_relaxed);
-    uint64_t closed = atomic_load_explicit(&closed_total, memory_order_relaxed);
     free(workers);
     free(table);
-    if (broken || accepted < option_connections || closed < option_connections) {
-        fprintf(stderr, "uring_echo: accepted %llu and closed %llu of %llu connections\n",
-                (unsigned long long)accepted, (unsigned long long)closed,
-                (unsigned long long)option_connections);
-        return 1;
-    }
     return 0;
 }
