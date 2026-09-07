@@ -70,6 +70,11 @@
   release order. Acquire backing first in source when allocation-first construction
   is required; do not hoist an allocation across observable initialization just to
   obtain destination passing. Retain every partial-construction responsibility.
+- Fresh binding destinations are selected before physical frame layout. A
+  single-use value with independent backing can initialize its same-block
+  binding directly in an acyclic activation or a selected pipeline's retired
+  per-slot storage. Other cases retain separate storage; source consume modes
+  grant no input/result aliasing permission.
 - Capture mutation targets before the RHS, but read the displaced old owner at
   the subsequent replace commit. An address's storage must survive RHS effects;
   a live root binding alone is insufficient if a descriptor replacement can
@@ -258,6 +263,20 @@
   [Cleanup subjects and groups](../../../compiler/src/lowering.rs),
   [Capture and release](../../../compiler/src/backend/emitter.rs),
   [Value, failure, and ordering controls](../../../compiler/src/backend/tests/owned_places.rs). (code)
+
+- 2026-09-07 (c4964ce2) pitfall: one static use does not exclude a pointer
+  retained from a previous dynamic iteration; the single-use condition alone
+  does not establish a fresh dynamic destination.
+  [Placement and lifetime guard](../../../compiler/src/backend/storage.rs). (code)
+
+- 2026-09-07 (c4964ce2) measurement: fresh destination placement removes the
+  scalar dense result-to-owner transfer and leaves one aggregate frame field.
+  At 4096 elements the static entry frame is 32,848 bytes, versus 93,040 at
+  the preceding checkpoint and 32,832 in the current native control. The same
+  arm64 macOS experiment still retains one-time payload zeroing and wrapped
+  element addressing. Removing an intermediate owner destination does not
+  establish optimal loop code or a universal storage-reuse analysis.
+  [Raw samples, generated-code analysis, and limits](../../../research/experiments/container-representation/dense/RESULTS.md#fresh-destination-checkpoint). (code)
 
 ## Moves
 

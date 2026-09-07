@@ -320,8 +320,14 @@ old owner only at the subsequent commit. Function definitions and ordinary,
 refused, staged, thunk and split calls consume the typed internal ABI in
 `src/backend/abi.rs`: inline aggregate parameters use content pointers and
 aggregate results use destinations. Descriptors retain value passing; qualified
-system wrappers retain their separate ABI. Shared destination normalization
-still needs to remove the one-time result-to-addressable-owner transfer.
+system wrappers retain their separate ABI. Before frame planning, a fresh
+addressable binding can become its producer's destination when the value has
+one use, independent backing, and a matching dynamic lifetime. Ordinary static
+destinations must be acyclic; repeated staged construction uses the selected
+pipeline's per-slot backing through retirement. This removes the intermediate
+result-to-owner transfer for those cases without input/result aliasing.
+Other cases keep separate storage; general alias-directed placement is not
+implemented.
 
 Checked cleanup names either a saved value or content at a typed place. Scope
 exit and whole-binding `dispose` project addressed owners without loading a

@@ -5,10 +5,11 @@ critical-case, and semantic reviews of 2026-09-06, their executable experiments,
 and adversarial cross-review, supplemented by the pinned external workload traces.
 It selects the architectural direction and first implementation scope below; it
 does not amend the active specification. The foundation review of 2026-09-07
-selects the information and phase boundary for the next implementation below,
-before further call-adapter work. The current implementation does not yet carry
-that complete representation and is not the definition of the foundation.
-Its checkpoint is distinct from the retained pre-implementation measurements and gate.
+selects the information and phase boundary described below. The first slice now
+uses retained checked call roles, typed cleanup subjects, a shared internal ABI,
+and fresh-destination planning before frame layout and emission. It does not
+implement general alias-directed placement or new public raw-storage authority.
+Its measurements are distinct from the retained pre-implementation evidence.
 Keep this decision and its linked evidence current as implementation replaces the
 old container paths. `DESIGN.md` points here for the superseding container choice;
 its separate resource research is outside this selection.
@@ -124,27 +125,30 @@ with overlap or completion pipelines. These are legitimate conservative compiler
 choices. That conservatism does not yet model the complete lifetime of an address
 carried across asynchronous execution.
 
-The more consequential gap is the phase boundary. An
+The earlier phase-boundary gap was visible at `bb8eb30f`. An
 [`IrOperation::Call`](../../../compiler/src/lowering.rs) names value arguments;
 the aggregate result-pointer ABI is introduced later by the
 [emitter bridge](../../../compiler/src/backend/emitter/places.rs).
 [`promote_binding_if_needed`](../../../compiler/src/lowering/builder/storage.rs)
-can then introduce separate addressable owner storage. The dense measurement
-retains a whole result-to-binding copy, and ordinary, system, and parallel emission
+could then introduce separate addressable owner storage. That dense measurement
+retained a whole result-to-binding copy, and ordinary, system, and parallel emission
 routes have each needed to honor that late bridge. The system-operand correction
-at `bb8eb30f` and remaining parallel failure are concrete evidence that the shared
+at `bb8eb30f` and its parallel failure were concrete evidence that the shared
 representation deserves review; they do not establish that every ABI conversion
 is avoidable or unsound.
 
-The selected next implementation direction is **one typed storage/call
+The selected implementation direction is **one typed storage/call
 normalization before emission**, extending the existing IR rather than building a
 second complete IR or a new source checker. Scalar SSA, CFG structure, typed place
 projections, checked cleanup, and permission-derived scheduling remain useful.
 Explicit aggregate destinations and a shared call representation must be consumed
 by ordinary, system, and parallel paths. Runtime-specific marshalling still exists,
 but must not independently reconstruct whether an operand is a value, a borrowed
-place, or an aggregate destination. This representation is not yet implemented or
-validated; the following boundary determines what its implementation must preserve.
+place, or an aggregate destination. The current implementation shares
+`FunctionAbi` across definitions and call routes and computes fresh destinations
+in `FunctionStoragePlan` before physical frame layout. Emitter consumers resolve
+that plan; they do not independently infer source permissions. The following
+boundary also constrains extensions beyond its conservative placement cases.
 
 #### Information retained at the checked boundary
 
@@ -246,7 +250,8 @@ late address read would lose that protection. The normalization must preserve th
 subject's contents until the checked release executes, or retain a real snapshot.
 The grouped capture implements that ordering. Proper-part consumes still evaluate
 their selected value and residual releases, and replacement/swap/phi snapshots
-remain. Shared fresh-result placement is the outstanding part of the dense chain.
+remain. Fresh-result planning now joins the last two physical destinations of the
+dense chain without removing those required snapshots.
 
 #### Calls and dynamic storage instances
 
@@ -281,6 +286,18 @@ adding a runtime storage protocol.
 | Granted handout | The admitted frame holds the existing argument/result layout. Borrowed pointers retain their external backing. Join returns before result delivery, and delivery reads the result before frame release. |
 | Staged iteration | Issue-side carry, result, and any borrowed backing belong to the same dynamic slot through that iteration's drain and retirement. A later issue cannot reuse it merely because the worker marked DONE. |
 
+Fresh destination selection requires one initializing value in its storage group,
+one use by the new addressable binding, and definition before that binding in
+the same block. Implicit staged carries count as uses. Static construction is
+limited to acyclic blocks: a single static use does not exclude an address from a
+previous dynamic iteration. Repeated blocks are eligible only when the actual
+selected pipeline supplies per-slot backing and drains before reuse. The emitter
+resolves that backing with the current block's slot and still publishes the
+address at its original definition. Failing these conditions retains separate
+storage; it neither rejects source nor asserts that a more general placement is
+impossible. Construction writes a complete admitted value; it grants no access
+to uninitialized source storage and moves no observable allocation or release.
+
 Final materialization accounts for the actualized schedule before STOR-6 target
 layout checks. Every route uses the same operand/result roles; adapters implement
 their existing transport and timing. No route gains permission by changing frame
@@ -288,10 +305,10 @@ capacity, replacing inline payload with pointers, or adding a scheduling edge.
 
 #### Scope selected by the comparison
 
-| Candidate | Decision for the next implementation |
+| Candidate | Decision and current status |
 | --- | --- |
 | Extend only the emitter's value-to-slot map | Useful for current conservative content coalescing, but not the selected foundation: it lacks checked use distinctions and leaves destination/cleanup conventions to multiple emission routes. |
-| Preserve checked uses and extend the existing typed IR, then normalize storage/calls once | Selected direction. It addresses the concrete information loss and dense result-to-binding chain while reusing the existing CFG and explicit release records. Exact implementation and complete regression evidence remain outstanding. |
+| Preserve checked uses and extend the existing typed IR, then normalize storage/calls once | Selected direction. Shared ABI roles, typed cleanup subjects, and fresh-destination planning address the first slice while reusing the CFG and explicit releases. General alias-directed reuse still requires additional origin and activation-lifetime evidence. |
 | Introduce a second complete storage IR | Not selected for this slice: the needed distinctions can extend the existing typed CFG. No current witness requires replacing scalar operations and control-flow machinery. |
 | Expose a public partial-object construction protocol first | Not a prerequisite for these existing value-return programs. It answers a separate source-authority question and needs its own workload and checked transition evidence. |
 
@@ -329,18 +346,19 @@ Use existing complete witnesses to judge the candidate, with their actual limits
 
 | Witness | Required distinction and current evidence |
 | --- | --- |
-| [Dense scalar, wide record, and inline view](../../experiments/container-representation/dense/RESULTS.md) | The retained matrix executes and element loops no longer copy whole payloads. Remaining result-to-binding copying and frame cost show that final placement is unfinished. These are cost/capability probes, not production prevalence data. |
+| [Dense scalar, wide record, and inline view](../../experiments/container-representation/dense/RESULTS.md) | The retained matrix executes, element loops no longer copy whole payloads, and the fresh-destination checkpoint removes the one-time result-to-binding transfer. These are cost/capability probes, not production prevalence data. |
 | [Owned-place execution tests](../../../compiler/src/backend/tests/owned_places.rs): `replace_reads_the_displaced_value_after_rhs_mutation` and `replaced_aggregate_snapshots_survive_writes_and_helper_returns` | Passed with normal and retained helper calls. RHS effects occur before old-owner readout, and the old aggregate remains a snapshot after the new target changes. A fresh-destination rewrite must not erase either behavior. |
 | Same suite: `partial_construction_refusal_preserves_effects_values_and_release_order` | Passed with retained calls and refusal at each of three allocations, observing exact allocation/release order and returned values. The source constructs two complete cells before making the pair; this does **not** demonstrate source-visible partially initialized struct authority. |
 | Same suite: `returned_element_borrows_and_inline_views_reach_the_owners_storage`; [semantic neighbors](../../../compiler/src/semantic/tests/owned_places.rs) | Passed owner-storage execution and bounds/loan checks, including refusal of raw-slot access and moving a borrowed owner. Root value liveness alone cannot replace loan/storage identity. |
 | [Linear lifecycle programs](../../experiments/container-representation/lifecycle/RESULTS.md) | Actual linear values are discharged on success and failure; the leak neighbor is rejected. A proved-empty run of linear values still cannot be discharged. That missing language capability is not solved by an aggregate ABI. |
 | [Parallel execution tests](../../../compiler/src/backend/tests/parallel.rs) and [generic nominals](../../../tests/programs/generic_nominals.wf) | At `bb8eb30f`, generic nominals exits abnormally with four workers. The corrected aggregate adapters now pass three focused native cases: ordinary aggregate results, staged aggregate results with cleanup, and staged inline storage mutated through a helper. Each compares sequential execution, forced refusal, actual workers, and deferred execution until join; the staged controls require multiple simultaneously held frames. The complete corpus and gate have separate validation below. |
 
-Validate the selected normalization using these witnesses and the frozen external
-contracts already recorded below. Existing positive runs are semantic constraints
-on the new implementation, not evidence that it has passed. This review precedes
-more adapter implementation; it does not expand the first slice into a public
-raw-storage framework or six application ports.
+The current placement is exercised by these same witnesses; their source results
+and effects remain constraints on future changes. The staged inline-place case
+also requires construction directly in the per-slot backing before observing
+deferred mutation and retirement. The frozen external contracts below guide the
+next semantic comparisons; they do not expand this slice into a public raw-storage
+framework or six application ports.
 
 ### Selected initialization states and public authority
 
@@ -463,7 +481,7 @@ Its concrete acceptance criteria are:
    boundary without replacing this foundation. No new I/O/runtime protocol is
    introduced, and private runtime slot layouts are not assumed.
 
-The in-progress implementation now executes the frozen scalar correctness matrix
+The implementation executes the frozen scalar correctness matrix
 and the mandatory wide-record and inline exclusive-view programs. Its
 [owned-place execution tests](../../../compiler/src/backend/tests/owned_places.rs)
 observe value snapshots, simultaneous assignment, returned element borrows,
@@ -494,24 +512,25 @@ proof-only argument erasure. Granted frames retain their complete inline argumen
 and result layout. A joined aggregate is copied into caller backing before frame
 release, and staged carries/results are materialized into their declared caller
 destinations. These adapters complete the current representation's delivery paths.
-The shared ABI classification does not yet remove the late result-to-owner copy
-or the split call's result load/save bridge. The additional per-iteration backing
-above addresses a distinct lifetime
-requirement that copying a descriptor into a frame could not satisfy.
+Fresh-destination planning removes the late result-to-owner transfer when its
+use and lifetime conditions hold. Granted task-frame results still transfer into
+caller backing before frame release. The split call retains a value load/save
+bridge, but current production split results are Unit or scalar reductions;
+aggregate split results are not admitted by its builder. The per-iteration backing
+above addresses a lifetime requirement that copying a descriptor could not satisfy.
 
 The [dense measurements and generated-code analysis](../../experiments/container-representation/dense/RESULTS.md)
 compare the pre-implementation baseline, first owned-storage checkpoint
-`f5dab70c`, and shared-ABI/place-cleanup checkpoint `d5c0bb86` under the same
-scalar kernels and procedure. The latest 168-sample run has four-pass medians
-of 107.17 ns/1.54 us/25.5 us at 16/256/4096 elements. Construction and update loops
-no longer transfer whole payloads. Removing cleanup-only snapshots reduces
-scalar aggregate frame fields from three to two; at N=4096 the measured static
-entry frame is 93,040 bytes, compared with 125,872 at `f5dab70c` and 32,832 in the
-current native control. A one-time result-to-addressable-binding copy remains
-visible in raw and optimized code. These dated local runs do not establish a
-statistically significant timing change between implementation checkpoints or a
-language performance ranking. Shared destination normalization remains
-incomplete; later work does not retroactively change the earlier measurements.
+`f5dab70c`, shared-ABI/place-cleanup checkpoint `d5c0bb86`, and fresh-destination
+implementation under the same scalar kernels and procedure. The latest 168-sample
+run has four-pass medians of 109.07 ns/1.50 us/24.5 us at 16/256/4096 elements.
+The scalar raw frame now contains one aggregate, and the constructor writes
+directly into its addressable binding. At N=4096 the static entry frame is
+32,848 bytes, compared with 93,040 at `d5c0bb86`, 125,872 at `f5dab70c`, and 32,832
+in the current native control. The remaining zeroing, window-address computation
+and target optimization choices are described with the generated code. These
+dated local runs do not establish a statistically significant timing change or a
+language performance ranking, and do not retroactively alter earlier results.
 
 Then implement the selected bounded semantic capabilities: full-state construction
 and sealing, checked empty-run consume, projected result contracts, and two-span
@@ -521,12 +540,13 @@ legacy retirement follow only when the replacement capabilities run the relevant
 programs, including fixed blocks on the stable-storage route. Do not retire the
 full-array guarantee merely because a variable run accepts a constant literal.
 
-The foundation review selects retained checked uses and normalization of the
-existing typed IR as the next implementation direction. Its concrete implementation
-remains to be validated and can replace the current call adapters. Later sparse,
-dynamic-refinement, destruction, and device extensions remain bounded follow-on
-questions. Neither the direction nor the measured checkpoint establishes that the
-first slice is complete or that proposed source rules have passed a compiler.
+This first slice preserves the existing typed IR and source judgments, centralizes
+ABI roles, and selects conservative destinations before physical frame planning.
+It does not need complete origin sets or input/result aliasing authority for its
+fresh-storage cases. General alias-directed reuse, sparse storage,
+dynamic refinements, destruction, and device extensions remain bounded follow-on
+questions. The measured implementation does not establish that proposed source
+rules or general checked-library representations have passed a compiler.
 
 ## Selection ground
 
@@ -691,7 +711,7 @@ a language design result:
 1. **Baseline implementation limitation, now a required positive:** forming an
    exclusive view of an inline run reported
    `SemanticUnsupported::ExclusiveViewOverInlineRun`. It was not a source-language
-   rejection. The in-progress implementation now compiles and executes the
+   rejection. The owned-place implementation now compiles and executes the
    mandatory inline-view probe; that closes this particular capability stop, not
    the complete storage/lifetime work. The minimal source form is:
 

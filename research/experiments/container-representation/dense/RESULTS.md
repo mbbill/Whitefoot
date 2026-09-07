@@ -10,13 +10,13 @@ representation experiment; supersede its measurements and remove obsolete
 variants when the representation question changes.
 
 The retained CSVs compare the pre-implementation baseline at `eff095c7` with
-the owned-storage implementation at `d5c0bb86`. The first implementation
-checkpoint at `f5dab70c` is also described below, with its raw samples linked to
-their recorded revision. All implementation runs pass the three scalar sizes,
+the fresh-destination implementation at `c4964ce2`. The earlier implementation
+checkpoints at `f5dab70c` and `d5c0bb86` are also described below, with raw samples
+linked to their recorded revisions. All implementation runs pass the three scalar sizes,
 the N=16 four-field record, and the inline exclusive-view program. Whole-payload
-transfers no longer occur in the element loops. At `d5c0bb86`, cleanup-only
-storage is gone from the scalar kernels, but a one-time result-to-owner transfer
-and excess frame storage remain. These measurements describe the named
+transfers no longer occur in the element loops. At `c4964ce2`, the scalar helper
+constructs in the addressable owner's backing, removing the last one-time
+result-to-owner transfer. These measurements describe the named
 revisions, not workload prevalence or merge readiness.
 
 ## Reproduction and scope
@@ -37,7 +37,7 @@ this experiment's generated `build/` artifacts. Use a clean build after changing
 compiler flags or tools. `make measure` writes new results under `build/`; it
 does not overwrite either retained CSV. `measurements.csv` owns the baseline
 samples; `owned-storage-measurements.csv` owns the latest examined implementation
-samples, currently `d5c0bb86`. Supersede the latter after a new run is examined,
+samples, currently `c4964ce2`. Supersede the latter after a new run is examined,
 and retain a revision link for earlier samples that support a dated comparison.
 
 Recorded run: 2026-09-06, arm64 macOS 26.6.2 (25G83), Apple Clang 21.0.0
@@ -264,7 +264,8 @@ The generator, WF sources, C kernels, harness and Makefile are byte-identical to
 and inline-view program returned 0. No fixture, checker, or timing threshold
 was changed for this run.
 
-`owned-storage-measurements.csv` now retains this run's 168 scalar samples.
+This run's 168 scalar samples remain available at the
+[recorded research revision](https://github.com/mbbill/Whitefoot/blob/aad08d24beb3541c59bada3f1611e9e2b9729cc5/research/experiments/container-representation/dense/owned-storage-measurements.csv).
 This task ran no concurrent build or agent workload during timing; other host
 activity was not controlled. These single-run medians do not establish a
 statistically significant speed change relative to `f5dab70c`, nor isolate the
@@ -308,6 +309,67 @@ copy is direct evidence that shared ABI classification has not completed
 destination reuse. The next placement comparison must preserve this workload's
 algorithm, as well as snapshots and staged retirement in the separate execution
 cases; it cannot infer their safety from dense timing alone.
+
+## Fresh-destination checkpoint
+
+The compiler code at `c4964ce2` was measured on 2026-09-07, with binary SHA-256
+`19d8b1de3208c64847b616adc30a374702f103625ef0a18749e3bf64f089c1a2`.
+The binary was built from the implementation before its checkpoint commit;
+the only subsequent code addition was a test assertion for staged placement.
+The OS, Rust, Clang, flags and seed match the recorded environment above. The
+generator, WF sources, native controls, harness and Makefile are unchanged from
+`d5c0bb86`. `make clean` followed by `make measure` rebuilt the experiment,
+passed the same scalar/wide 60-input four-variant matrices and the retained
+boundary's six-variant matrix, and executed every standalone command and the
+inline-view probe successfully. The latest implementation CSV retains all 168
+scalar samples. No other build or measurement was run by this task during timing;
+a concurrent review was read-only and unrelated host activity was uncontrolled.
+
+Median nanoseconds per complete kernel call:
+
+| Elements | Update passes | Whitefoot | C value return | C destination | C whole-value append |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 16 | 0 | 10.98 | 11.07 | 11.05 | 168.56 |
+| 16 | 4 | 109.07 | 61.42 | 61.66 | 207.48 |
+| 256 | 0 | 462.54 | 609.24 | 606.96 | 14,226.07 |
+| 256 | 4 | 1,496.77 | 1,475.59 | 1,468.51 | 15,186.04 |
+| 4096 | 0 | 8,069.58 | 12,997.56 | 12,918.95 | 3,545,375.00 |
+| 4096 | 4 | 24,537.11 | 28,874.02 | 28,941.41 | 3,611,625.00 |
+
+Static entry-function frames reported by Clang `-fstack-usage`, in bytes:
+
+| Elements | `d5c0bb86` Whitefoot | `c4964ce2` Whitefoot | Current C value/destination |
+| ---: | ---: | ---: | ---: |
+| 16 | 304 | 144 | 160 |
+| 256 | 4,176 | 2,112 | 2,112 |
+| 4096 | 93,040 | 32,848 | 32,832 |
+| 16 four-field records | 1,136 | 608 | 592 |
+
+The scalar raw frame now has one aggregate field. `wf_dense` passes its address
+`%v3` directly to `wf_build`; there is no distinct result object followed by an
+aggregate load/store into that binding. The constructors inline in all four
+optimized kernels. At N=4096, the generated assembly reserves 32,784 local bytes
+plus 64 saved-register bytes, matching 32,848. Construction writes into the same
+payload later updated and checksummed; the intervening transfer is gone in raw
+IR, optimized IR, and assembly. This is a physical-storage result, not an inference
+from the absence of a `memcpy` symbol. There is no heap allocation in these kernels.
+
+Remaining work is visible: the N=4096 kernel still zeros its 32,768-byte payload
+once, and its update loop loads window metadata and computes a wrapped physical
+index before the element load/store. These are linear-work operations, not the
+former whole-payload move per element. The N=16 four-pass timing is still above
+the native controls. This run does not isolate the contributions of window
+arithmetic, vectorization, register allocation, or initialization, and does not
+establish significance between implementation checkpoints. The native comparison
+still measures one workload on one host, not a language ranking.
+
+The timed constructors may inline. Retained Whitefoot helper boundaries, snapshots,
+ordered RHS effects and allocation-refusal cleanup are separately exercised by
+`compiler/src/backend/tests/owned_places.rs`. The staged inline-place test in
+`compiler/src/backend/tests/parallel.rs` requires direct construction into per-slot
+backing and then observes it through forced refusal, real workers, and publication
+deferred until join. Dense timing alone would not establish either call-boundary
+correctness or retirement safety. The wide case remains executed and untimed.
 
 ## Wide-record boundary and conclusions
 
