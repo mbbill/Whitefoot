@@ -1,225 +1,107 @@
 # Whitefoot
 
 Whitefoot is a proof-carrying systems language for AI-written, human-approved
-code. Here, proof-carrying means that the Whitefoot source itself carries the
-machine-checkable statements and proof steps needed to justify every partial
-operation and every performance fact the optimizer is allowed to trust. The
-compiler checks that source directly. Its syntax tree, fact state, and checked
-program are ordinary compiler data; an inconsistency among them is a compiler
-defect to repair in code and tests.
+code. Source carries the statements and finite proof steps needed to justify
+partial operations. The compiler checks that evidence and erases it before
+execution. Verified ownership, effects, bounds, and algebraic facts can also
+authorize optimization and execution overlap.
 
-The extra evidence is intended to buy safety and speed from the same
-mechanism. The target is that an accepted program may contain a logic error,
-but cannot execute memory corruption, a data race, an uninitialized read,
-silent overflow, or another unproved partial operation. The same checked
-ownership, aliasing, effect, bounds, and algebraic facts can remove runtime
-checks, authorize optimizations, and prove the ownership, effects, and
-independence facts required by `par`, without `unsafe`, speculation, or later
-rediscovery. Evidence is erased before execution and creates no runtime branch,
-lock, dependency, or scheduling edge.
+The language requires memory corruption, data races, uninitialized reads,
+silent overflow, and unproved partial operations to be unrepresentable in
+accepted programs, conditional on its declared trusted computing base. There
+is no writer-accessible `unsafe`, trusted assertion, or runtime proof trap.
+Expected failures use ordinary values and control flow. The active
+[specification](spec/kernel-spec.md) defines the exact guarantee, including
+the current external-resource boundary; compiler defects remain defects
+against that specification.
 
-The official compiler does not use SMT to decide acceptance. Its automatic
-core runs only specification-fixed, deterministic, terminating derivations.
-Each admitted rule family is run to its specified completion; there is no
-timeout, cumulative proof-work budget, solver seed, or heuristic stopping
-condition that can turn the same source into a different verdict. When those
-rules are not enough, the author writes finite proof steps in the same source
-file. AI or an offline tool may search while writing them, but compilation only
-checks the written steps.
+Acceptance uses no SMT, timeout, or cumulative proof-work budget. Automatic
+derivation follows fixed, deterministic, terminating rules. Authors can use
+AI or offline tools to search for proofs; the compiler checks only evidence
+the language admits. More explicit evidence can make a safe program writable,
+but the current proof language does not express every true proposition.
 
-The price is authoring difficulty: programs are more explicit, valid programs
-may need proof structure, and safe code without sufficient evidence is
-rejected. Whitefoot deliberately spends human ergonomics because its intended
-writer is AI. AI may search for programs and proofs and repair checker
-failures, but it is never trusted; humans approve the requirements and
-resulting changes, and the checker decides what has actually been proved.
+## Purpose
 
-## Project goal
+The target is a serious research compiler that compiles real programs and
+lets us test language and performance ideas. Whitefoot uses restrictions,
+interfaces, and writer guidance to make ordinary implementations fall into
+efficient, verifiable classes and to expose architectural mistakes early.
+The goal is useful default performance, not a guarantee that every accepted
+program is globally optimal.
 
-The target is a serious research compiler: general enough to implement the
-real language, clean enough to evolve, and capable of compiling nontrivial
-programs so we can test semantics and performance ideas quickly. It is not an
-untrusted-input service or a stable LLVM-scale product.
+The intended long-term use includes many lower-cost AI writers implementing
+components under architecture and interface decisions made by stronger AI,
+with human approval. This motivates local contracts and explicit state
+ownership. The collaboration design and browser-scale validation remain
+research directions, not current compiler capabilities or a required agent
+workflow. The [constitution](docs/constitution.md) owns the objectives and
+tradeoffs; [Agent instructions](AGENTS.md) own project priorities and workflow.
 
-This is more than a demo compiler: language behavior must come from general
-rules, correctness tests stay compiler-independent where useful, and the
-compiler must eventually emit and run real programs. Product-scale resource
-controls, stable binary-distribution interfaces, and release engineering are
-not current goals.
+## Start here
 
-[docs/roadmap.md](docs/roadmap.md) is the living Direction Outline: the current
-map of capabilities, open directions, evidence, and candidate projects.
-It does not grant or withhold permission to work on a branch. A selected
-direction is worked in [research/investigations/](research/investigations/),
-and what it settles is written to [mcts_mem/](mcts_mem/).
-[CLAUDE.md](CLAUDE.md) defines the complete four-rule branch and
-`main` boundary. [AGENTS.md](AGENTS.md) records the project's technical
-priorities and repository discipline.
+Read the material that owns the question you are working on:
 
-## Current state
-
-The active kernel specification is [`spec/kernel-spec.md`](spec/kernel-spec.md).
-Its version and exact SHA-256 are derived from the specification's own bytes
-by `compiler/build.rs` at build time; no file records them and no other
-document quotes them. Every superseded version is archived
-byte-for-byte as `spec/kernel-spec-vN.md`. A specification change lands as one
-change: the amended active file with its `Status: ACTIVE vN` line, the archive
-of the outgoing bytes, the appended approval record ending in its chain line,
-and the regenerated compiler identity. The approval record becomes effective
-with the owner's merge approval of the exact revision containing it.
-
-v0.40 checks `requires`, `ensures`, loop-header `invariant` relations,
-and local `invariant` statements in the ordinary semantic compiler. A local
-invariant may carry an explicit `use` block when the fixed automatic rules are
-insufficient. It accepts a supported partial operation only when the current
-proof context establishes that operation's exact domain, and it proves
-selected-target layout and address arithmetic before emitting the operation.
-The checked proof syntax and diagnostic derivations are erased before runtime
-lowering. Calls, the optimizer, and `par` consume only verified semantic
-consequences; no proof object or checker bookkeeping enters runtime IR. There
-is no writer-accessible runtime assertion or hidden fallback check.
-This implementation cycle does not introduce a `.wfproof` artifact,
-cross-module proof cache, incremental-proof protocol, or compiler
-self-verification layer. Those are possible future build concerns, not part of
-making source proof correct now.
-
-The automatic affine boundary is part of the language, not an implementation
-guess. For each goal, AUTO checks the zero-premise direct route, every available
-coefficient-one single premise, every unordered coefficient-one premise pair
-including a premise paired with itself, and the final fixed L0-image route.
-Those finite families are exhausted in specification order when the goal is
-not proved. A relation that needs three or more published affine premises
-outside the final fixed L0-image route, a special elimination route, or a
-future named nonlinear rule must carry explicit `use` steps. A
-nonempty `use` block is rejected as redundant when AUTO already proves its
-target under the same specification version.
-
-The canonical loop surface makes induction visible at the loop header:
-
-```wf
-for (
-  i in 0_u64..count,
-  invariant per_byte: sum <= 255_u32 * i
-) {
-  let w = deref(weights)[i];
-  let wide = cvt::<u8, u32>(w);
-  set sum = sum + wide;
-}
-```
-
-The first `for` header item is the binding and every later item is an
-`invariant`; the final item has no trailing comma. `loop` uses the same optional
-parenthesized invariant list but has no binding item. Header invariants cannot
-have `use` blocks, and their names exist only in the loop body. Local
-invariants are checked once at their program point; every `use` is proved from
-the same entering snapshot, only the outer conclusion is published, factor one
-is omitted, and repeating the same normalized premise is invalid. In this
-example AUTO subtracts the one published affine premise `per_byte`; DIRECT then
-proves the residual from the `u8` type interval of `wide`. Adding a `use` block
-would therefore be redundant and invalid.
-
-`par` consumes this same checked context together with ownership, effect,
-iteration-index, layout, target-domain, and bounded queue/completion facts.
-Proof checking adds no runtime dependency or scheduling edge. External resource
-availability, such as heap exhaustion, stack exhaustion, operating-system quota,
-or runtime-start failure, is the only boundary temporarily outside this
-implementation cycle; its final source-language failure model remains open.
-That scope choice changes neither the project direction nor the required
-layout, address, target, parallel-independence, and bounded-completion proofs.
-
-The I/O surface uses ordinary opaque values, `own`, `move`, `&`, and
-`&uniq` for every resource. `reads` and `writes` name formal parameters or
-their static struct fields rather than lifetimes. Resource types do not form a
-separate language capability category. There is no separate `world`,
-`capability-root`, `family-fragment`, or `Ordered` permission system. Completion is
-an internal lowering and target contract beneath ordinary calls. Every handle
-the target counts is one credit of one `HandleFactory` whose capacity is fixed
-at program start: `reserve_handle` hands out a one-shot `HandlePermit`, an
-open, listen, accept or connect consumes it and hands it back in its outcome
-when the host refuses, an explicit close returns it, and derived release spends
-it, so every dependency between a close and a later open is a relation the
-checker sees. Directory selectors remain shared and permit proof data is erased
-before the native ABI.
-
-The safe-Rust compiler currently implements one ordinary path:
-
-```text
-ordered source bundle
-  -> lossless lexer
-  -> context-free terminal classification
-  -> iterative strong-LL(2) parsing
-  -> one finalized source-bound syntax tree
-  -> exact FORM-2 source validation
-  -> CanonicalSyntaxUnit
-  -> direct lexical name resolution
-  -> ResolvedSyntaxUnit
-  -> semantic and ownership checking
-  -> private checked program
-  -> target-independent typed control-flow IR
-  -> proof-selected compute and completion lowering
-  -> conservative LLVM
-  -> host executable
-```
-
-The detailed implemented surface is maintained in the
-[compiler README](compiler/README.md); the Direction Outline summarizes it only
-at the level needed to choose projects and research. Valid language that a
-growing compiler does not yet implement stops as an explicit unsupported
-compiler feature; it is not reported as invalid Whitefoot.
-
-## Repository layout
-
-The top level is a small, curated set. Each entry has one clear purpose; scripts
-live next to what they check.
-
-| Directory | What it is |
+| Question | Source |
 |---|---|
-| [docs/](docs/) | The living [Direction Outline](docs/roadmap.md), project law ([constitution](docs/constitution.md)), seeded writer forms ([patterns](docs/patterns.md)), supporting direction notes ([ideas](docs/ideas.md)), and dated design synthesis ([why-whitefoot](docs/why-whitefoot.md)) |
-| [spec/](spec/) | The language: one stable active kernel specification, immutable flat version archives, and the rule-derivation ledger under `spec/derivation/` |
-| [compiler/](compiler/README.md) | The safe-Rust compiler: frontend, resolver, first semantic/IR slice, LLVM backend, and `whitefootc` |
-| [tests/](tests/) | Test evidence: the active compiler-independent `conformance/` behavior corpus, plus preserved `codegen/` source cases awaiting production-compiler integration |
-| [governance/](governance/) | The protected approval ledger, specification-evolution evidence, and the tracked archive-protection hooks |
-| [research/](research/) | Active language and compiler experiments |
-| [mcts_mem/](mcts_mem/) | The live design tree, consulted and maintained only through the `mcts-mem-use` skill |
-| [.github/](.github/workflows/) | Continuous integration on hosts this project does not own: the canonical `make check` and the completion-I/O evidence jobs that need a real Linux kernel or Windows |
-| [archive/](archive/) | Retired and superseded material, including the historical [decision log](archive/governance/decision-log.md), Python reference model, and democ-era codegen harness; inert — no active source, build, test, or tool depends on it. Its live disposition map is the [archive promotion audit](research/archive-promotion-audit.md) |
+| What does the language admit? | [Active kernel specification](spec/kernel-spec.md) |
+| What does this compiler implement, and how do I run it? | [Compiler README](compiler/README.md) |
+| What are the project goals and design principles? | [Constitution](docs/constitution.md) |
+| How do I work on a branch and prepare a merge? | [AGENTS.md](AGENTS.md); [CLAUDE.md](CLAUDE.md) is the identical alternate entry |
+| Which writer forms should I try? | [Patterns](docs/patterns.md) |
+| How should I investigate, verify, and maintain documentation? | [Engineering practice](docs/practice.md) |
+| Why was a design chosen? | [Decision memory](mcts_mem/whitefoot.md), with evidence links |
+| Which long-range directions have been considered? | [Reference roadmap](docs/roadmap.md) |
+
+The roadmap is outside the working loop and may be stale. It is not an
+implementation-status page or a work queue. Research and dated essays provide
+evidence and ideas; they do not add approval requirements. The reading and
+authority rules are in [AGENTS.md](AGENTS.md#authority-and-reading).
+
+## Repository
+
+- [compiler/](compiler/README.md): the Rust compiler, LLVM emission, and native
+  runtime support.
+- [spec/](spec/): the active language, immutable version archives, and rule
+  derivation evidence.
+- [tests/](tests/): normative conformance evidence, recorded-verdict snapshots,
+  executable programs, and code-generation evidence.
+- [docs/](docs/): principles, writer guidance, engineering practice, and
+  reference material.
+- [research/](research/README.md): investigations and experiments with their
+  designs, measurements, and rejected alternatives.
+- [mcts_mem/](mcts_mem/): settled decisions and their reasons.
+- [governance/](governance/): archive-protection hooks and specification-change
+  design evidence. The old approval ledger is retired.
+- [.github/](.github/): CI and the pull-request template.
+- [archive/](archive/): frozen historical material. Active source, builds,
+  tests, and tools do not depend on it.
 
 ## Verification
 
+From the repository root:
+
 ```sh
-make install-hooks   # once: enable immutable-archive pre-commit protection
-make check           # compiler, conformance, and specification identity gate
+make check
+make install-hooks   # optional: catch immutable-spec edits earlier
 ```
 
-`make check` ends with the wall time of each of its stages, so a gate that
-grew names the stage that grew it. The same stages run on every push through
-[`.github/workflows/gate.yml`](.github/workflows/gate.yml), on a GitHub-hosted
-Linux runner and a GitHub-hosted macOS runner: one job per stage rather than
-one job per host, so the wait is the slowest stage instead of the sum, and each
-job is capped at eight minutes.
-[`.github/workflows/io-hosts.yml`](.github/workflows/io-hosts.yml) carries the
-completion-I/O correctness evidence that no machine here can produce on every
-push: the Linux io_uring adapter and sanitizers on a real kernel, plus the
-native Windows compiler bootstrap, direct and bounded blocking adapters, IOCP
-correctness and capacity recovery, mandatory `--par` compute pool, and zero
-eligible-fallback checks;
-[`.github/workflows/io-bench.yml`](.github/workflows/io-bench.yml) carries the
-program-level I/O benches on real hardware, including the read-dominated
-tables on both a Linux and a macOS runner, and the fixed-host paired Windows
-compute, IOCP, and mixed qualification. The macOS runner is the only macOS
-host available to this project without an endpoint-security stack in its I/O
-path.
+`make check` is the canonical complete gate and prints stage timings. Its
+stage inventory is defined in the root [Makefile](Makefile) and
+[compiler Makefile](compiler/Makefile). For a shorter development feedback
+loop, use the [compiler's focused commands](compiler/README.md#running-and-checking).
+The complete gate is still required on the exact revision merged into main.
 
-The gate builds and tests the compiler, exercises the native completion
-harness, validates conformance structure and rule coverage, runs every
-non-pending conformance case through the native compile-run adapter, checks the
-maintained research fixtures, and verifies the specification/archive identity
-chain. Gate results are revision-specific, so this overview carries no floating
-pass count. Canonical `make check` requires the stable specification file to
-carry an ACTIVE identity whose outgoing archive and chain line are present,
-and a specification change carries all three in the same revision. A green
-result states only what the selected gate exercises and does not establish
-completeness.
+The [gate workflow](.github/workflows/gate.yml) runs those stages on Linux and
+macOS. Additional [I/O host checks](.github/workflows/io-hosts.yml) and
+[benchmarks](.github/workflows/io-bench.yml) own their platform-specific
+evidence. A green run describes its tested revision and coverage; it is not a
+proof of completeness or the absence of known defects. Conformance reports
+distinguish passing cases, expected compiler failures, and pending support.
+
+Specification identity is derived from the active file's bytes by
+[compiler/build.rs](compiler/build.rs). The work-branch and specification
+amendment rules are stated once in [AGENTS.md](AGENTS.md#branch-and-main-boundary).
 
 ## License
 

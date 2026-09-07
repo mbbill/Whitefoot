@@ -1,11 +1,14 @@
-- Whitefoot is a systems language whose sole intended writer is an AI; a human approves but does not author.
-- Every covered bug class (memory corruption, data races, silent overflow, uninitialized reads) is unrepresentable in accepted source; no writer-accessible unsafe exists anywhere — the sole trusted-assertion class is toolchain-gated, human-approved records the writer cannot author.
-- Machine-verified facts may later feed optimization, but optional facts never affect source acceptance or the execution of a written claim.
-- Every accepted hazardous operation is discharged by deterministic proof before lowering; an ordinary call to a required function proves every complete instantiated requirement before transfer, while the sole command entry has no contract or entry requirement.
-- The language has exactly one canonical spelling per program down to bytes.
-- Performance ranks above every remaining goal once AI-writability floors are met; every major decision names its delta over Rust.
+- Whitefoot is a systems language for AI-written, human-approved code. The constitution owns objectives and tradeoffs; AGENTS.md owns workflow, the active specification owns language judgments, and compiler/README.md owns implementation status.
+- W1 uses constraints, usable alternatives, and guidance to steer ordinary implementations toward efficient classes. It does not promise global optimality or universal coverage by a closed pattern catalog.
+- Every required source fact must be machine-checked. No writer-accessible unsafe, trusted theorem, or runtime proof trap exists; source contracts and invariants are erased before lowering.
+- Optional optimization facts may improve accepted code but never change acceptance or semantics. Current proof choices are recorded in [[checks-and-proofs]].
+- Backward compatibility is subordinate to language improvement; migration must still be checked for intended behavior and contracts.
+
+Dated Facts and Moves below preserve earlier decisions, terminology, and research states. They are evidence, not current approval requirements. Read the standing guidance and its owning documents before applying a historical statement.
 
 ## Facts
+
+- 2026-09-06 owner clarification: W1 means constraints plus usable guidance should steer lower-cost AI authors toward efficient implementation classes and expose architectural mistakes early. It does not mean every accepted program is globally optimal. The intended long-term collaboration has stronger AI designing architecture and interfaces while lower-cost AI implements components; browser-scale work is a motivating goal, and the organization remains to be investigated. Backward compatibility is lower priority because AI-assisted migration reduces editing cost, while verification of migrated behavior remains necessary. Self-hosting and proving core correctness are separate future objectives. (sourced)
 
 - 2026-07-05 rationale: the founding priority order and the Rust test (R0: a decision leaving parity with Rust on performance and cheat-proofness has failed) are fixed in CONSTITUTION.md; memory/thread safety is derived from AI-writability, not axiomatic. (sourced)
 - 2026-07-09 measurement: the three optimizer-fact channels measured against rustc — effect rows give O(n)->O(1) at opaque boundaries at per-file build cost; scoped aliasing wins short trips with 17x code-size advantage; checked laws give 3.3x on reductions with false laws refuted at compile time. See [[fact-channels]]. (sourced)

@@ -2,11 +2,13 @@
 
 Status: NON-AUTHORITATIVE DETAIL.
 
-The living [`Direction Outline`](roadmap.md) owns each idea's current state,
-next evidence gate, and candidate-project links. This file preserves longer
-mechanism sketches and possible first experiments; it does not order work.
-An entry here does not change the language, compiler, runtime, or deployment
-contract.
+The [reference roadmap](roadmap.md) groups long-range directions and candidate
+projects; it is outside the working loop and may be stale. This file preserves
+mechanism sketches and possible experiments. A selected question belongs in
+`research/investigations/`, and settled choices in `mcts_mem/`, under the
+reading and workflow rules in [AGENTS.md](../AGENTS.md). Current capabilities
+are described in the [compiler README](../compiler/README.md). An idea here
+does not change the language or select implementation work.
 
 Whitefoot keeps facts in source that other languages discard. LLVM optimization
 is one consumer of those facts. The ideas below ask whether the same checked

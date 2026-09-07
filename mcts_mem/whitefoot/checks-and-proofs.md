@@ -1,17 +1,12 @@
-- Every proof-required hazardous fact is established by a deterministic derivation, by executed control flow, or by the normal continuation of a named retained claim; otherwise the program is rejected. Index, integer-domain, allocation-fit, and system-range obligations follow [[obligation-discharge]], and function contracts follow [[requires-entry-contract]].
-- A partial operation lowers only after its exact domain is machine-discharged; a solver may promote performance facts but never licenses acceptance or elision, and no implicit operation check remains as a fallback.
-- No writer-accessible syntax removes, weakens, or silences a required proof. The sole writer-reachable runtime trap is a named claim admitted only as an exact, independently true proof residual that the normative checker cannot derive and a later terminal admission root needs; redundant, refuted, vacuous, overlapping, unsupported, and non-residual claims reject, while every admitted claim remains executable.
-- The affine layer carries integer relations over atoms that include measure terms and integer-typed named consts, so a contract clause states an exact affine relation over what a caller can measure. An admitted non-constant multiplication publishes the interval its own domain decision proved, so the value it binds carries a bound. A written certificate may scale a premise by a value; see [[certificate-fold]].
-- The active safe-Rust compiler reaches semantic and ownership checking, exact
-  memory-effect checking, normative index and ordinary-call requirement
-  discharge, verified normal-return postconditions, constrained-subject
-  provenance gating, a private checked program,
-  target-independent typed control-flow IR, target qualification, conservative
-  LLVM, and host execution. Retained claims remain runtime checks; no
-  optimizer assumption or effect-derived LLVM attribute is emitted.
-- The archived democ PROOF-1 implementation and accounting reports are historical evidence for a later optimizer experiment, not live compiler capability or acceptance authority.
+- Required partial-operation domains are established by the specification's deterministic proof system. Facts come from admitted types and declarations, selected control-flow edges, verified contracts, and checked invariants; no writer conclusion is trusted.
+- Automatic derivation is fixed and terminating. Finite explicit certificates extend the author's proof choices only through rules the specification admits; absence of SMT does not by itself determine the possible expressiveness of an explicit proof language.
+- Source proof syntax is erased before lowering. The old retained-claim model is superseded; [[obligation-discharge]] records the current decision and [[writer-trap-surface]] preserves the retired surface's rationale.
+- A partial operation never receives a runtime proof fallback. Optional optimizer facts do not select acceptance or change facts-off semantics.
+- Proof arithmetic and certificate folding follow the active INV-1, ENT, and PRF-1 rules; [[certificate-fold]] records the identity decision. compiler/README.md owns current coverage and measured limitations.
 
 ## Facts
+
+- 2026-09-06 reconciliation against SCOPE-2, FN-8/FN-9, INV-1, PRF-1, and ENT: retained claims and their masked provenance views are historical. Current source evidence is machine-checked and erased. The absence of SMT limits automatic derivation as specified; the chosen explicit proof language determines which further proofs can be written. The earlier dated entries describe their original checker and do not restore a runtime proof surface. (specification)
 
 - 2026-09-05 measurement: `[ENT-6]`'s interval-product rule proved the four endpoint products of a non-constant multiply, admitted the multiply on them, and discarded them, so an admitted product bound a value with no bound at all. Supplying exactly that discarded interval as a written guard turned the refused case into an accept — the whole missing premise — at a cost of 5 basic blocks, 1 branch and 1 unreachable `abort` arm per site. `[ENT-3.S14]` now publishes the least and greatest of those four products. Four independent sweeps against the v0.44 compiler converged on this sentence rather than on the strength of the prover. (sourced)
 - 2026-09-05 measurement: `requires len(out) >= 2 * len(src)`, the precondition of every expansion codec, needed three sentences that are each inert alone. Each was built and run by itself first: the exact clause rows alone make it form and leave it unprovable at every caller, because L0 is a two-term difference bound carrying no coefficient; the measure atom alone leaves the affine route unreachable, because the target is built and never consulted for a goal with no L0 projection; the route alone has no atom to work over. With all three the case compiles, and the accepted set moves by four programs across 186 constructed probes. (sourced)

@@ -245,8 +245,8 @@ fn titled_version(spec: &str) -> Option<&str> {
 /// The version named by the specification's own status line, the first
 /// non-blank line after the title, which must read `Status: ACTIVE vN ...`.
 /// There is no other status: an amended specification lands with its ACTIVE
-/// identity, the archive of the outgoing bytes, and its chain line in one
-/// change, so the stable file is always the installed authority.
+/// identity and the archive of the outgoing bytes in one change. The stable
+/// file is the language authority; build.rs derives its identity from bytes.
 fn active_status_version(spec: &str) -> Result<&str, String> {
     let Some(line) = spec.lines().skip(1).find(|line| !line.trim().is_empty()) else {
         return Err("the specification has no status line".to_owned());
@@ -316,11 +316,9 @@ fn validate_spec_integrity(spec: &str, ledger: &str) -> Result<usize, Vec<String
         errors.push(format!("derivation ledger has no row for [{rule}]"));
     }
 
-    // The v0.30 header profile carries no "Specification delta:" or
-    // "Selection ground:" sentences: the per-activation delta inventory lives
-    // in the review packet and the approval-ledger entry, never in the
-    // normative bytes. The former hard requirements on those two phrases are
-    // deliberately retired with it.
+    // META-5 places the delta and selection ground in the change's pull
+    // request, not the normative bytes. The former checks for those phrases
+    // in the specification header are retired.
 
     if errors.is_empty() {
         Ok(rules.len())

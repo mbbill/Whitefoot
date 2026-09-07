@@ -1,14 +1,9 @@
-- A program's system access is exactly its declared typed entry inputs under the sole [[program-entry-form]]; no ambient authority exists and unused inputs are omitted.
-- Source distinguishes immutable values, shared capabilities without caller-visible cursors, and unique stateful resources, expressed with the existing `own`/`&`/`&uniq` modes and no new writer keywords.
-- Parallel use of one logical service is an explicit family-defined construction — split, controller/port, or a scoped shared borrow of a Shareable capability; a cursor or output owner is never implicitly shared.
-- Exact `external` and `blocks` categories extend the effect row from [[effects]]; sequential external calls keep source program order, and resource identity and alias facts live in checked IR rather than parameterized source effects.
-- Synchronous hot I/O is one-attempt with operation-specific outcomes: a prelude `Result` instantiation for two-outcome operations, a bespoke enum beyond that, a closed portable error-class set, caller-owned initialized buffers, and at most one host transfer per call.
-- Arguments and paths are lossless target-indexed host strings with explicit fallible UTF-8 conversion; the first slice's string and path values are zero-copy inline leases whose command-lifetime argv backing is a required target-qualification guarantee.
-- Every resource family has a compiler-owned contract covering states, aliases, owner disposition on every outcome, concurrency, cleanup, and a cross-platform floor, and carries one of three completion policies: release-complete, explicitly abandonable, or completion-required; a failed claim aborts the whole process with no language cleanup.
-- System operations carry target-independent semantic IDs bound by a static (spec version, ID, target, program kind) qualification table with direct native lowering; hot paths admit no per-call dispatch, handle-table lookup, target tag, or global lock.
-- System names resolve from a distinct compiler-owned declaration domain; [[declaration-home]] fixes it.
-- The active specification carries the command slice and the directory-traversal surface ([[directory-enumeration]]) as executing capabilities rather than parsed-and-stopped ones; every later family remains an additive true subset, and a target with no enumeration facility fails qualification for those semantic IDs rather than emulating them.
-- Every range-bearing host operation accepts one half-open `start, end` window after two static obligations and returns an absolute next endpoint on success; it retains no operation-internal range check or trap.
+- System access uses the typed entry inputs and ordinary owned resources defined by the active SYS and FN rules. Shared selectors and uniquely mutable state use ordinary ownership; no separate capability category is added.
+- State effects are parameter paths under EFF-1/EFF-2. Regions describe lifetimes; the retired external/blocks categories and blanket external-order rule below do not describe the current interface.
+- Resource contracts state outcomes, ownership, cleanup, capacity relations, and target guarantees. Completion and host scheduling are lowering concerns; SCOPE-3 owns the external-availability boundary.
+- Arguments and paths preserve target host bytes with explicit conversion. Range-bearing operations expose their exact window and result relations in the specification so callers can prove later accesses.
+- System names belong to a compiler-owned declaration domain ([[declaration-home]]). Target qualification binds semantic operations to supported host implementations without granting writer-program proof authority.
+- compiler/README.md owns the implemented command, file, directory, stream, and network coverage. The dated slices below explain how those boundaries evolved.
 
 ## Facts
 

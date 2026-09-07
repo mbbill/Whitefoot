@@ -1,7 +1,6 @@
-- The named, justification-bearing `claim` is the sole writer-reachable language construct that can trap at runtime, and source admission requires it to be an independently true, checker-unknown, load-bearing theorem with exact premises, derivation, conclusion, checker gap, and terminal consumers.
-- If an admitted claim evaluates false, it emits its named accountability record and aborts without unwinding or language cleanup; that edge diagnoses a violated approved theorem (or an explicitly test-mutated checked IR), never a source-authored expected outcome. No contract clause, partial operation, allocation, range operation, or entry wrapper owns another language trap edge.
-- Every proof-required hazardous operation must discharge its exact static domain obligation before lowering. A branch, requirement, or retained claim continuation may establish the same goal; refuted and unproved operations reject instead of receiving a runtime fallback.
-- Contract definitions, requirements, and postconditions are erased proof metadata. They have no runtime value, storage, ABI component, effect, or failure path.
+- The writer-visible trap surface is retired. The active specification's SCOPE-2, INV-1, and PRF-1 require machine-checked, erased evidence and provide no `claim` statement or runtime proof trap.
+- Expected failure belongs to typed outcomes and intended control flow. An always-true relation belongs to verified contracts or invariants, never an impossible-case branch added to satisfy the checker.
+- External resource availability follows SCOPE-3; it does not create a source fact or a proof fallback. Historical claim admission, accountability, and abort behavior below describe the replaced design.
 
 ## Facts
 

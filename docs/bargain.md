@@ -1,8 +1,10 @@
 # The bargain ledger
 
-Status: DATED, NON-AUTHORITATIVE SYNTHESIS. The living
-[`Direction Outline`](roadmap.md) owns current status and candidate placement.
-Status words and
+Status: DATED, NON-AUTHORITATIVE SYNTHESIS. Current objectives are in the
+[constitution](constitution.md), language rules in the
+[specification](../spec/kernel-spec.md), and implementation status in the
+[compiler README](../compiler/README.md). The [roadmap](roadmap.md) is reference
+material outside the working loop. Status words and
 phase references below describe the ledger when compiled and must not be used
 as current instructions. Compiled 2026-07-28 from the founding directives,
 the round-2/3/4 design debates, the headline brainstorms, the research backlog,
@@ -17,8 +19,10 @@ it is no longer a work queue or periodic re-ranking owner. D0, 2026-07-01,
 gives away human ergonomics entirely and designs for an AI writer with a human
 approver. Every entry below answers one question: **what does that trade buy
 here, what does it cost, and what was its evidential status?** Promote a live
-status, gap, or next gate to the Direction Outline and leave measurements and
-long explanations in their canonical evidence owners.
+decision to its owning `mcts_mem/` node and leave measurements and designs in
+their evidence owners. The W1 and claim/trap descriptions below record earlier
+positions; the constitution and specification supersede them. None of the
+historical approval or phase language below controls branch work.
 
 Status vocabulary: **LAW** (constitution/spec/tree invariant) · **MEASURED**
 (a RESULTS record exists) · **ADOPTED** (in the language or doctrine, not

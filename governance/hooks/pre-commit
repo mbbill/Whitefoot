@@ -1,4 +1,5 @@
 #!/bin/sh
 # Reject any commit that modifies, renames, or deletes a released kernel spec.
-# Amend the language by adding a NEW spec/kernel-spec-v*.md version instead.
+# Amend spec/kernel-spec.md and archive its outgoing bytes under a new
+# spec/kernel-spec-v*.md name, as AGENTS.md describes.
 exec make --no-print-directory spec-append-only-staged

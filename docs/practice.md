@@ -25,6 +25,62 @@ and a falsifier.
 `mcts_mem/` can preserve durable design choices and rejected alternatives. It
 does not authorize work or add a workflow step.
 
+## Documentation and local context
+
+Use the ownership map in [AGENTS.md](../AGENTS.md#authority-and-reading).
+Implementation status belongs in the compiler README, language judgments in
+the specification, and goals in the constitution. Keep a summary short enough
+to point to its owner instead of copying the owner's changing details.
+
+For a change, identify the concepts it changes and follow their rule IDs,
+interfaces, and references into the affected documents. Read those sections
+with their surrounding qualifications. Update the standing text when the
+decision is settled, then record the reason and replaced alternatives in the
+owning memory node. A new dated fact beneath an old instruction leaves two
+conflicting instructions; it is not an update to the old one.
+
+Check concrete claims with concrete tools: resolve file links, inspect named
+make targets, and compile relevant examples through the ordinary compiler.
+Distinguish complete examples from fragments that need a caller or surrounding
+bindings. These checks establish paths and executable behavior, not consistency
+of the prose. Review the affected documents together for conflicts about
+authority, supported behavior, and what evidence actually established.
+
+Historical essays and experimental records keep their original conditions.
+Their introductions should identify them as evidence and point to the current
+owner; do not append a second implementation inventory to keep an old essay
+apparently current. The roadmap remains outside the working loop. A retained
+investigation need not be moved when implementation lands: its design and
+measurements remain useful evidence, while the implementation README changes.
+
+## Feedback and implementation boundaries
+
+Use the compiler README's focused development commands for the part being
+changed; run the complete root `make check` for the exact merge revision.
+Choose additional checks for a concrete uncertainty, not merely to repeat a
+successful run. A documentation edit needs relevant reference and example
+checks; it does not need a test that mirrors its prose.
+
+When improving a diagnostic, expose the operation, required fact, relevant
+location, and missing or invalidated evidence. Keep source rejection,
+unsupported capability, target failure, and internal compiler failure distinct.
+Measure the writer's repair loop as well as the compiler's individual stages.
+Proof checking should be profiled by formation, automatic derivation,
+certificate checking, and fact propagation before attributing a cost to `use`.
+
+Keep code organized around the invariants it owns. When a change exposes an
+ambiguous state flag or duplicated rule, prefer a precise representation and
+one owner of that decision. Split a large file when that clarifies a real
+responsibility; a line-count split or forwarding layer alone does not improve
+local reasoning.
+
+Writer trials can measure completion cost, repair attempts, required context,
+and cross-module rework. Performance comparisons also need a defined workload
+and attribution. These are separate observations: a program can be easy to
+write without being fast, and can be fast without the proof system causing
+the improvement. Agent collaboration models remain experiments rather than a
+mandatory project workflow.
+
 ## Technical failure categories
 
 - **Compiler defect:** implemented behavior contradicts the active spec. Add

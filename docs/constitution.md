@@ -1,33 +1,132 @@
 # The Whitefoot Constitution
 
-Adopted 2026-07-05; amended 2026-07-05 (priority structure), 2026-07-07 (D2a), 2026-07-27 (W1 floor reframe), 2026-08-01 (D17 proof-gated representation authority), 2026-08-25 (T3 defective executions never tax correct programs), and 2026-09-04 (T4 resource dependencies are API relations). This document supersedes and grounds the founding owner directives. Current project law is stated here, durable design choices live in `mcts_mem/`, and the original directive record and decision log live under `archive/governance/`.
+This document owns the project's objectives and language-design principles.
+The active [kernel specification](../spec/kernel-spec.md) defines accepted
+source; [AGENTS.md](../AGENTS.md) defines engineering priorities and the complete
+branch-and-main boundary. Principles motivate language changes but do not
+silently change existing language rules or add approval steps.
 
+The owner clarified W1, compatibility, and the intended AI collaboration model
+on 2026-09-06. The current text incorporates those decisions and the active
+specification's machine-checked, erased proof model. Reasons and superseded
+choices are recorded in [decision memory](../mcts_mem/whitefoot.md).
 
-Structured objective, in priority order:
+## Objectives
 
-**P0 — PERFORMANCE (the reason to exist):** machine-code performance ranks above the remaining goals. **The Rust test (R0): if a decision leaves us equivalent to Rust on performance + cheat-proofness, the decision failed — "use Rust" was cheaper. Every major decision names its delta over Rust.** R0 reading (owner-affirmed 2026-07-08; W1 leg reworded 2026-07-27): a decision satisfies R0 by naming a delta over Rust on ANY of P0 (machine performance), W3 (cheat-proofness), or W1 (floor robustness), not machine performance only; equivalence to Rust on all three is the failure condition.** Current deltas of record: more optimizer-visible facts than rustc emits (per-node numeric modes, exact effect rows, region-explicit borrows, checked laws), W3 (Rust's unsafe is writer-accessible everywhere), no debug/release semantic divergence.
+**P0 — Performance.** Machine-code performance is the reason to pursue a
+systems language. Checked facts and deliberate architecture should enable
+efficient implementations without relying on writer-accessible escape hatches.
+Measure gains on defined workloads and distinguish algorithm, representation,
+lowering, and proof contributions. A performance result for a program does not
+by itself establish a benefit from its proof mechanism.
 
-**P1 — AI-WRITABILITY (what "AI writes it without problems" means):**
-- **W1 — floor robustness (reframed 2026-07-27; formerly weak-writer robustness)**: default shape is optimal shape. An accepted program has been forced onto a fast shape; the writer's only alternative is a program that does not compile. W1 is a checked property of the language: written programs are compared with measured reference shapes, and every slower-but-accepted divergence is a technical defect covered by the repository's all-tests boundary. It is never a claim about model capability. Model behavior is unpredictable and improves independently of this project, so model runs serve only as generators of realistic mistakes; a model score is neither evidence for nor against W1.
-- **W2 — context economy**: spec/teaching pack fits limited context. DEPRIORITIZED per D2a (2026-07-07): windows are growing; token counts are measured, never gating; the regularity invariants survive under W1 grounding.
-- **W3 — cheat-proofness**: the writer cannot hack around the checker — no writer-emittable unsafe or trust; contracts cannot be weakened to make a failing body pass; exhaustiveness cannot be silenced; partial operations are admitted only by proof; a claim is admitted only as an independently true, checker-unknown, load-bearing theorem over the current function's own value and control authority, with an exact derivation record; a caller may rely on a user callee's result behavior only through its machine-verified callable boundary and on a system result only through specification-fixed facts or typed outcomes, never by using a claim to restate an unstated or stronger result property; accepted claims are never removed; expected failures are typed outcomes or ordinary value/control paths rather than false claims; and canonical bytes leave nowhere to hide edits. The retained runtime trap detects a violated approved theorem, but it cannot turn a hidden cross-function promise into legitimate proof authority, and source cannot intentionally request that abort. Some AIs cheat when stuck; cheating is made unrepresentable, not detected later.
+**R0 — The Rust comparison.** A major design decision names its expected or
+measured delta over Rust in performance, resistance to unchecked shortcuts
+(W3), or default implementation quality (W1). Equivalence on all three leaves
+no demonstrated reason for that decision. State the comparison boundary and
+the remaining uncertainty; a local win is not an ecosystem-wide claim.
 
-**Proof-gated representation authority (D17; long-term commitment):** within the checked D17 lane, a project implementation leaves any explicitly trusted boundary, and a user implementation gains a narrowly scoped representation privilege, only when a deterministic machine checker verifies that the exact implementation establishes and preserves every invariant and obligation required to make that exact privilege sound, without trusting the implementation's assertion and without proof search. The selected lane includes temporary partial initialization whose obligations still make uninitialized reads unrepresentable, and elimination of internal checks proved redundant. An absent or failed proof grants no privilege through this lane. A project kernel not yet proved, if a future active specification admits one at all, remains an explicit trusted boundary rather than a checked beneficiary of this lane. The invariant language is versioned, and every extension must carry hostile soundness tests in the repository's all-tests boundary. This commits the project to the lane, not to a current syntax or mechanism: only an active specification may define the proof language, admissible privileges, and exact consequences.
+**P1 — AI writability.** The intended writer is AI, with humans approving
+requirements and changes. A long-term use is stronger AI designing architecture
+and interfaces while many lower-cost agents implement components. That model
+motivates local reasoning and composable contracts; its organization and
+large-system effectiveness remain to be investigated.
 
-**STANDING THEOREMS (derived commitments — in full force; revisitable only by refuting a premise, never by preference):**
+- **W1 — Default performance and architectural guidance.** Restrictions,
+  interfaces, reusable components, diagnostics, and taught patterns should
+  steer ordinary writers toward efficient, verifiable implementation classes.
+  Prevent shortcuts that hide shared mutation or bypass required reasoning.
+  Each important restriction needs a usable alternative whose costs and
+  limitations are understood. Measure coverage on representative tasks,
+  performance under stated conditions, authoring effort, and architectural
+  rework. A slow accepted program is a finding to attribute; it is not
+  automatically a language defect. W1 does not promise global optimality or
+  that a fixed catalog covers every possible program.
+- **W2 — Context economy.** An agent should be able to find the current rules
+  and relevant interfaces without reading project history. Token counts alone
+  are not a gate. Conflicting instructions, repeated facts, long repair loops,
+  and unnecessary cross-module knowledge are engineering costs even when the
+  context window is large. Model trials measure the tested workflow and help
+  expose these costs; they do not prove language safety or universal writability.
+- **W3 — No unchecked shortcuts.** Source has no writer-emittable `unsafe`,
+  trusted theorem, or runtime proof trap. A required fact must come from the
+  specification's machine judgments; human approval and writer confidence are
+  not proof. Calls rely on verified contracts or specification-fixed system
+  facts. Expected failures use typed outcomes or intended control flow.
+  Canonical source makes changes explicit, but the checker cannot recover an
+  omitted requirement or prove an unstated property. Weakening a required
+  contract to rescue an implementation is a requirements change, not a proof
+  repair; independent behavior evidence must still test the intended task.
 
-- **T1 — Memory and thread safety (D1)**: data races, use-after-free, dangling references, double-free, and uninitialized reads are unrepresentable in accepted programs. NOT an axiom — deduced twice from the goals: (a) from P1 via R4/W1/W3 — an unattended writer cannot debug latent memory bugs, runtime failure is the worst AI feedback channel, and a cheating writer must not paper over them; (b) from P0 — ownership/exclusivity is the optimizer's noalias fact base (F001) and race-freedom keeps those proofs sound (a race falsifies compiler reasoning retroactively). Natural experiment: Rust (treatment) vs C/C++ (control) — one type system yields both safety and optimizer facts. 
-- **T2 — No-UB envelope**: accepted programs have no undefined behavior, conditional on the declared TCB (round-3 Layer 4). Derived from T1's premises plus R4: silent corruption is the forbidden failure mode.
-- **T3 — Defective executions never tax correct programs (owner rulings 2026-08-23, 2026-08-25)**: no permission, optimization, or fast path is withheld from correct programs to stabilize or reproduce a defective execution's observables; when a new capability makes such an observable schedule-dependent, the erroneous-execution promise widens — the schedule may select that observable too — and permission never narrows; the trusted base spends only on the trap path itself; deterministic reproduction of a defect is the sequential world's job (`WF_WORKERS=0`). NOT an axiom — derived from W3's claim discipline, which is the load-bearing premise: a claim is admitted only as a reviewed, independently true, always-true lemma, so the retained trap detects a violated approved theorem, an execution that reaches it is a defective program whose review was wrong, and a correct program cannot reach the trap path at all; therefore anything spent stabilizing what lies beyond that path buys correct programs nothing, while permission withheld from them costs real performance (P0). The theorem stands while that premise stands: a future construct admitting claim-like predicates that are not reviewed always-true lemmas — assertions, expected failures, unreviewed conditions — is outside this theorem until the derivation is redone against it. History: the claim-free eligibility gate was removed under this derivation (batch 0078) and independently re-proposed by fresh reviewers during the I/O design round of 2026-08-25; a proposal with that shape starts from this theorem, not from a blank page.
-- **T4 — Resource dependencies are API relations (owner ruling 2026-09-04)**: every finite resource a system operation consumes is an owned value in that operation's signature, produced by the operation that releases it and drawn from a factory whose capacity is a source-visible number fixed at start and never larger than what the target actually provides to the program. Under that mapping, ordinary move ordering is the only sequencing of resource use, and the proof that admits an overlap is a proof about the resource as well; an operation holding its resource cannot fail for want of it. An implementation never waits, awards, retries, or keeps a ledger to hide an outcome the sequential program does not produce; what the mapping cannot cover is honest target exhaustion — a limit changed outside the program — and that, only, is the operation's typed error. Test for every device API, present and future (descriptors today; DMA rings, buffers, and channels later): if overlap can invent an outcome the sequential program never produces, a resource is missing from the API, and the answer is on the API, never in the scheduler. NOT an axiom — derived from T1's premise that resources are bound to ownership, so a relation the API does not state does not exist for the checker, and from the [PAR] rule that overlap is unobservable. Evidence of the cost of violating it: [SYS-10] (unchanged from v0.39 through v0.41) makes `FilePermit` proof-only ("promises no native descriptor"), never returns it, and erases it before the native ABI, so `close` produces nothing the checker sees and a pipeline overlaps it with a later `open`; the runtime then invents `EMFILE` and hides it with a retirement ledger, a source-order award (`compiler/src/backend/completion/contract.h:409-417`; 963 of 1000 misawards without the order), and a thread-holding wait (`compiler/src/backend/completion/harness.c:4041-4047`), and the park-on-miss review spent three rounds (issue 30) on how a thread should wait for a relation the API had not stated. Closing the gap is a specification change with its derived work (roadmap BOUND-1), after which that machinery is deleted rather than ported.
+**Compatibility.** Backward compatibility has lower priority than improving
+the language. AI-assisted migration can make breaking changes affordable.
+Migration evidence must distinguish mechanical rewriting from changes to
+behavior or contracts; easy source edits do not establish semantic preservation.
 
-**BALANCE RULE:** W1/W2 and non-floor aspects of P0 trade off; no decision may claim to optimize all simultaneously. Evidence decides each case; where genuine conflict remains after evidence, P0 wins. Theorems stand while their premises stand — they are conclusions, not preferences, and are never traded against W1/W2 convenience.
+## Safety and representation commitments
 
-Decision rules R1-R6 remain in force under this ordering:
+These commitments follow from P0, P1, W3, and R4. They constrain design; their
+motivation is not a formal proof that the current compiler implements them.
 
-- **R1 — Earn your place.** A construct exists only if it serves P0 or P1. Serving human authorship counts for nothing.
-- **R2 — A cut that harms AI codegen is a wrong cut.** Simplicity is never a sufficient reason. Precedent: generics (round-2 checker-collapse); natural experiment: Go pre-1.18.
-- **R3 — One way to say anything, and the survivor is chosen by evidence** for P0+P1 among candidates, measured under W1 (weak writers). Minimality-selected forms are PROVISIONAL.
-- **R4 — Shift-left everything.** Unrepresentable > check-time rejection with rule-citing diagnostics > runtime trap > (forbidden) silent corruption.
-- **R5 — Human exceptions are explicit.** Readability is a non-goal; auditability of the trusted base (D0a) is the deliberate exception.
-- **R6 — The stack is negotiable long-horizon** (compiler, possibly self-improving; hardware); near-term, artifacts must not marry one backend or ISA.
+- **T1 — Memory and thread safety (D1).** Accepted programs must exclude data
+  races, use-after-free, dangling references, double-free, and uninitialized
+  reads. Ownership supports both this safety boundary and optimization facts.
+  Latent memory faults are unsuitable feedback for unattended authors.
+- **T2 — No undefined behavior.** The guarantee is conditional on the declared
+  trusted computing base. The specification's SCOPE-3 owns that boundary,
+  including external resource availability. An implementation defect does not
+  amend the guarantee.
+- **T3 — Defective executions do not tax correct programs.** Do not withhold
+  a proved optimization or overlap merely to reproduce the observables of a
+  compiler or trusted-base defect. Proof-required partial operations are
+  discharged before lowering and proofs are erased, so there is no source
+  proof-failure path to schedule or stabilize. This does not relax required
+  safety checks or the semantics of typed errors, intended branches, and
+  observable effects. The old derivation from human-approved claims and
+  retained traps is superseded by the active proof model.
+- **T4 — Resource dependencies are API relations.** Finite resources consumed
+  by system operations must be represented by ownership and source-visible
+  capacity relations. A release that enables later acquisition must produce
+  a relation the checker can use. Overlap must not invent resource exhaustion
+  absent from the corresponding sequential execution and then hide it with
+  scheduler waits or retries. External changes to host availability belong to
+  the specification's explicit outcome or resource boundary. This principle
+  guides each resource API; concrete operation contracts live in the spec.
+
+**D17 — Proof-gated representation authority.** The long-term direction is to
+admit representation privileges only when a deterministic machine checker
+verifies that the exact implementation establishes and preserves every
+required invariant. This includes temporary partial initialization without
+uninitialized reads and elimination of proved-redundant checks. Missing proof
+grants no privilege. A future unproved project primitive, if the specification
+admits one, remains in the declared trusted base. Extensions need hostile
+soundness evidence. This commitment selects no current syntax, universal
+predicate language, or trusted library exemption.
+
+## Design decisions
+
+**Balance.** Evidence decides tradeoffs between performance, authoring cost,
+and context economy; where a tradeoff remains, P0 has priority. Required safety
+and proof obligations are preserved. Day-to-day research-compiler priorities
+are defined in [AGENTS.md](../AGENTS.md#project-goal).
+
+- **R1 — Earn the construct.** A construct must serve P0 or P1. Familiarity or
+  human-writing comfort alone is not a reason to add it.
+- **R2 — Cuts must preserve useful authoring.** Simplicity alone does not
+  justify removing a capability. Test the replacement on the intended task,
+  including its proof effort and runtime cost.
+- **R3 — Select canonical forms by evidence.** Keep one chosen form per
+  construct and justify it against P0 and P1. A form chosen only for minimality
+  remains provisional. Regularity is not evidence of an efficient algorithm.
+- **R4 — Move failures earlier.** Prefer making defects unrepresentable, then
+  rule-citing compile-time rejection with actionable diagnostics. A runtime
+  proof trap or hidden fallback cannot substitute for required static proof.
+  Recoverable failures remain ordinary program behavior.
+- **R5 — Make human exceptions explicit.** Human authorship ergonomics is not
+  an independent goal; auditability of the trusted base remains an explicit
+  requirement. Clear contracts, representations, and diagnostics also serve
+  AI correctness and local reasoning under P1.
+- **R6 — Keep the stack open.** Compiler self-hosting and changes to the
+  backend or hardware are possible long-term work. Self-hosting tests language
+  capability; proving checker or lowering correctness is a separate task.
+  Near-term artifacts should not unnecessarily bind the language to one ISA.

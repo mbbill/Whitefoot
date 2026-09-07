@@ -1,11 +1,7 @@
-- A counted loop is judged in its own right: the permission attaches to the loop, not to a pair of calls written inside it.
-- v1 grants the reduction only: a full-range counted range whose body carries exactly one accumulator combined under a normatively enumerated exactly-associative operation set, with per-iteration owned data unrestricted.
-- The admitted combination set is fixed by the rule text rather than left to the implementation, and admits no inexact operation.
-- Element writes — the map — are refused, deferred with a named re-entry condition rather than left open.
-- The lowering is a synthesized recursive range split whose leaf is the loop over a subrange, never a single iteration; a split's two halves are an ordinary permitted pair of the same window machinery, and the sequential world renders the site as a call to the leaf, which is the original loop.
-- The split allowance is one runtime query per loop entry, taking a compiler-estimated body weight; no check is made per iteration, and the descent depth is bounded by the allowance rather than by the range.
-- A permitted loop carrying a `claim` is eligible like any other region ([[permission-judgment]]).
-- Condition 2 carries a loans half beside the written half: an exclusive [OWN-5] loan on storage the iteration does not introduce denies through its own slot and message, shared loans are unconstrained, and the written half's contract stays uses-only (`record_writes`).
+- A counted loop is judged in its own right under PAR-2. Its permission does not depend on manufacturing a sibling-call pair in source.
+- The specification owns the admitted index maps, exactly associative reductions, effects, loans, and control conditions. The original reduction-only v1 boundary below is historical.
+- Range splitting and scheduling are lowering choices under proved permission. Source invariants and use steps do not add runtime branches or scheduling edges.
+- compiler/README.md describes the implemented loop maps, reductions, and actualization limits. Reopen a lowering restriction for a concrete program and measure its cost rather than inferring current support from an old prototype.
 
 ## Facts
 

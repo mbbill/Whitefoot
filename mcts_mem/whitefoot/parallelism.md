@@ -1,9 +1,8 @@
-- Parallel execution is admitted by a compiler permission judgment derived from the proofs acceptance already computes (resolved places, effect rows, the overlap relation, callee-boundary signatures); no source construct declares, requests, or gates it.
-- Permission is never an obligation: actualization is a runtime choice, invisible in source, and published bytes are identical under every schedule and worker count.
-- The permission judgment never consults optimizer fact state; facts-on and facts-off builds produce one permission table.
-- Permission suffices to actualize; the schedule-unobservability guarantee is conditional on contract compliance, and an erroneous execution (a false executed claim) yields exactly one well-formed trap record whose identity a schedule may select.
-- Overlap-capable compilation is a compile-time opt-in (`--par`); the default build's output is byte-identical to a build with no parallel machinery at all.
-- A developer diagnostic channel reports a verdict for every judged site — windows and counted loops alike — the denial's judging condition, what the lowering actualized, and, for a refused loop only, a hint naming the split it would have taken.
+- Parallel permission derives from checked ownership, effects, dataflow, control flow, and domain proofs. Permission failure preserves sequential behavior rather than rejecting otherwise valid source.
+- Proof-only contracts and invariants introduce no scheduling edge. The old false-claim trap semantics are retired; observable program behavior follows the active PAR and system rules.
+- Permission and actualization are separate. compiler/README.md owns the current default completion path, --par compute behavior, --no-overlap reference, and target limits.
+- Optional optimizer facts cannot change acceptance or supply a separate parallel proof authority. Runtime scheduling must preserve the language's observable behavior.
+- Developer ledgers explain judgments and actualization but do not grant proof authority. The detailed current window and loop rules live in the specification, not the dated v1 designs below.
 
 ## Facts
 

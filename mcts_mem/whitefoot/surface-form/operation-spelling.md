@@ -1,7 +1,7 @@
 - Arithmetic and integer comparison are spelled infix; every other table operation is spelled as a named call.
 - An operation's spelling is fixed by its grammar class and never by its use site.
 - The bare infix spellings `+ - * / %` and dotless named spellings `ineg iabs ishl ishr` denote exact mathematical operations whose domain must be proved before lowering; none is a trapping mode.
-- Every exact partial family has one matching pure total domain query: `+defined -defined *defined /defined %defined` or the named `.defined` spelling. Branches, requirements, and claims can establish that exact canonical goal.
+- Every exact partial family has one matching pure total domain query: `+defined -defined *defined /defined %defined` or the named `.defined` spelling. The admitted branch and contract fact sources can establish that exact goal; proof-only invariants follow their own specified grammar. Retained claims are no longer a fact source.
 - Explicit `.wrap`, `.checked`, and `.sat` spellings retain their distinct total or value-returning semantics. The retired `.trap` suffix and hidden trapping aliases do not resolve.
 - There is no precedence, associativity, or parenthesization surface, and one expression admits exactly one operation.
 - An operator token resolves by its exact spelling and consults no name domain; it is never a declaration, a callee identifier, or an operation name.
