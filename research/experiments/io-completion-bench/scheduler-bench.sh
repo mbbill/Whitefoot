@@ -23,9 +23,11 @@ GO_SCREEN=${GO_SCREEN:-0}
 GO=${GO:-go}
 URING_DIAGNOSTIC=${URING_DIAGNOSTIC:-0}
 CLIENT_DIAGNOSTIC=${CLIENT_DIAGNOSTIC:-0}
+CLIENT_READINESS=${CLIENT_READINESS:-0}
 client_observer_active=0
 client_profile_active=0
 [[ $CLIENT_DIAGNOSTIC == 0 || $CLIENT_DIAGNOSTIC == 1 ]] || exit 2
+[[ $CLIENT_READINESS == 0 || $CLIENT_READINESS == 1 ]] || exit 2
 [[ $NATIVE_BASELINES == 0 || $NATIVE_BASELINES == 1 || $NATIVE_BASELINES == 2 ]] || exit 2
 [[ $CONTINUATION_SCREEN == 0 || $CONTINUATION_SCREEN == 1 || $CONTINUATION_SCREEN == 2 || $CONTINUATION_SCREEN == 3 || $CONTINUATION_SCREEN == 4 ]] || exit 2
 if [[ $CONTINUATION_SCREEN != 0 && $NATIVE_BASELINES != 1 ]]; then
@@ -33,6 +35,12 @@ if [[ $CONTINUATION_SCREEN != 0 && $NATIVE_BASELINES != 1 ]]; then
     exit 2
 fi
 CLIENT_HEADROOM=${CLIENT_HEADROOM:-0}
+if [[ $CLIENT_READINESS == 1 && ( $MODE != combine || $EXPERIMENT != allocator ||
+    $NATIVE_BASELINES != 1 || $CONTINUATION_SCREEN != 4 || $CLIENT_DIAGNOSTIC != 0 ||
+    $GO_SCREEN != 0 || $CLIENT_HEADROOM != 0 || $URING_DIAGNOSTIC != 0 || $ROUNDS != 5 || $WARMUP != 1 ) ]]; then
+    echo 'scheduler-bench: readiness screen uses combine/allocator, native=1, continuation=4, five passes and one warmup only' >&2
+    exit 2
+fi
 if [[ $CLIENT_DIAGNOSTIC == 1 && ( $MODE != combine || $EXPERIMENT != allocator ||
     $NATIVE_BASELINES != 1 || $CONTINUATION_SCREEN != 0 ||
     $GO_SCREEN != 0 || $CLIENT_HEADROOM != 0 || $URING_DIAGNOSTIC != 0 || $ROUNDS != 3 || $WARMUP != 1 ) ]]; then
@@ -118,6 +126,7 @@ if [[ $MODE == check ]]; then
         make -C "$HERE" coroutine-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/coroutine-check"
         make -C "$HERE" client-service-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/client-check"
         make -C "$HERE" client-observer-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/client-observer-check"
+        make -C "$HERE" client-readiness-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/client-readiness-check"
     else
         make -C "$HERE" netload-observe-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/client-observer-check"
     fi
@@ -283,6 +292,10 @@ fi
     echo "client_headroom=$CLIENT_HEADROOM"
     echo "uring_diagnostic=$URING_DIAGNOSTIC"
     echo "client_diagnostic=$CLIENT_DIAGNOSTIC"
+    echo "client_readiness=$CLIENT_READINESS"
+    if [[ $CLIENT_READINESS == 1 ]]; then
+        echo 'client_readiness_policy=ordinary default/readiness pairs; four fixed servers and five echo cases; five passes plus one warmup, 200 ordinary rows and 40 separate client counter rows; no profiler or added CPU'
+    fi
     if [[ $CLIENT_DIAGNOSTIC == 1 ]]; then
         "$PROFILE_PERF" --version
         echo 'client_diagnostic_policy=observer-only send/recv and exchange epoll counts; original payload, memcmp, two clocks and one outstanding request; 12 unprofiled observed rows plus 4 separate cpu-clock 199Hz DWARF stack captures'
@@ -414,6 +427,12 @@ if [[ $CONTINUATION_SCREEN != 0 ]]; then
     awk '$1=="split1-top0-no-thp"' "$OUT/cohorts.tsv" > "$OUT/cohorts-selected.tsv"
     mv "$OUT/cohorts-selected.tsv" "$OUT/cohorts.tsv"
     [[ $(wc -l < "$OUT/cohorts.tsv") -eq 1 ]]
+fi
+if [[ $CLIENT_READINESS == 1 ]]; then
+    [[ $server_one == 0 && $client_one == 2 ]] || {
+        echo 'scheduler-bench: readiness screen requires CPU 0 server and CPU 2 client on different physical cores' >&2
+        exit 2
+    }
 fi
 if [[ $GO_SCREEN == 1 ]]; then
     # Qualify the exact source on this host and CPU envelope before copying
@@ -651,7 +670,7 @@ fi
 for tool in netload uring_echo epoll_echo runner gen; do
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread "$HERE/$tool.c" -o "$OUT/bin/$tool"
 done
-if [[ $CLIENT_DIAGNOSTIC == 1 ]]; then
+if [[ $CLIENT_DIAGNOSTIC == 1 || $CLIENT_READINESS == 1 ]]; then
     mkdir -p "$OUT/codegen"
     git -C "$ROOT" show 72fdd468287f08f590c7db8b3972d1b6b5902e83:research/experiments/io-completion-bench/netload.c > "$OUT/codegen/netload-before.c"
     for revision in before after; do
@@ -677,6 +696,15 @@ shift
 exec "$@" 2> "$diagnostics"
 PROFILE_CLIENT
     chmod +x "$OUT/bin/profile-client"
+fi
+if [[ $CLIENT_READINESS == 1 ]]; then
+    make -C "$HERE" client-readiness-check CLANG="$CLANG" BUILD="$OUT/client-readiness-check" \
+        > "$OUT/client-readiness-check.log" 2>&1 || { cat "$OUT/client-readiness-check.log" >&2; exit 1; }
+    # These exact ordinary binaries passed the socket/error fixture above.
+    cp "$OUT/client-readiness-check/netload-ready0-service0" "$OUT/bin/netload-clientbase"
+    cp "$OUT/client-readiness-check/netload-ready1-service0" "$OUT/bin/netload-clientready"
+    cp "$OUT/client-readiness-check/netload-ready0-observed" "$OUT/bin/netload-clientbase-observed"
+    cp "$OUT/client-readiness-check/netload-ready1-observed" "$OUT/bin/netload-clientready-observed"
 fi
 if [[ $NATIVE_BASELINES != 0 ]]; then
     inline_forms=(0); if [[ $NATIVE_BASELINES == 2 ]]; then inline_forms=(0 1); fi
@@ -986,6 +1014,11 @@ network_case() {
     local client_binary="$OUT/bin/netload"
     local client_launcher=() client_stderr client_exit=0
     if [[ $client_observer_active == 1 ]]; then client_binary="$OUT/bin/netload-observed"; fi
+    if [[ $CLIENT_READINESS == 1 && $cohort == *-client* ]]; then
+        client_binary="$OUT/bin/netload-clientbase"
+        if [[ $cohort == *-clientready-* ]]; then client_binary="$OUT/bin/netload-clientready"; fi
+        if [[ $client_observer_active == 1 ]]; then client_binary="$client_binary-observed"; fi
+    fi
     if [[ $cohort == *-client8 ]]; then client_binary="$OUT/bin/netload-service8"; fi
     if [[ $cohort == *-client1 ]]; then client_binary="$OUT/bin/netload-service1"; fi
     sample=$((sample + 1))
@@ -1106,6 +1139,10 @@ network_case() {
         [[ ! -s $directory/client.err ]]
     fi
     if [[ $observed == 0 ]]; then [[ ! -s $directory/server.err ]]; fi
+    if [[ $CLIENT_READINESS == 1 && $cohort == *-client* ]]; then
+        if [[ $cohort == *-clientready-* ]]; then [[ $(field "$directory/client.tsv" client_readiness) == 1 ]];
+        else [[ -z $(field "$directory/client.tsv" client_readiness) ]]; fi
+    fi
     if [[ $cohort == *-client8 ]]; then [[ $(field "$directory/client.tsv" client_service_rounds) == 8 ]]; fi
     if [[ $cohort == *-client1 ]]; then
         [[ $(field "$directory/client.tsv" client_service_rounds) == 1 ]]
@@ -1432,7 +1469,7 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
     done
 done < "$OUT/cohorts.tsv"
 
-if [[ $page_experiment == 1 && $CLIENT_HEADROOM == 0 && $URING_DIAGNOSTIC == 0 && $CLIENT_DIAGNOSTIC == 0 ]]; then
+if [[ $page_experiment == 1 && $CLIENT_HEADROOM == 0 && $URING_DIAGNOSTIC == 0 && $CLIENT_DIAGNOSTIC == 0 && $CLIENT_READINESS == 0 ]]; then
     mkdir -p "$OUT/resident"
     printf 'repetition\tcohort\tform\tconnections\tbytes\tthp_disabled\trss_kib\tanonymous_kib\tanon_huge_kib\tprivate_dirty_kib\tswap_kib\n' > "$OUT/resident.tsv"
     # Same normal binaries as timing, with all peers held open after a checked
@@ -1501,6 +1538,24 @@ fi
 printf 'pass\tform\tconnections\tbytes\ttrips\trt_per_s\tp50_us\tp99_us\tuser_s\tsystem_s\tmax_rss_kib\tvoluntary_switches\tinvoluntary_switches\tsample\tcohort\tclient_user_s\tclient_system_s\tclient_max_rss_kib\tclient_voluntary_switches\tclient_involuntary_switches\tcompute_rounds\tlight_p99_us\theavy_p99_us\tlight_span_us\theavy_span_us\tclient_exchange_user_us\tclient_exchange_system_us\tadmitted\ttotal_roundtrips\tduration_ms\texchange_us\tdrain_us\tlight_count\theavy_count\tlight_min_count\tlight_worst_peer_p99_us\theavy_min_count\theavy_worst_peer_p99_us\tlight_per_second\tlight_planned\tlight_dispatch_p99_us\tlight_service_p99_us\tlight_completed_by_deadline\theavy_completed_by_deadline\n' > "$OUT/network.tsv"
 forward=("${forms[@]}" "${references[@]}")
 if [[ $CLIENT_DIAGNOSTIC == 1 ]]; then forward=(uring-64k epoll); fi
+if [[ $CLIENT_READINESS == 1 ]]; then
+    forward=(epoll uring-64k callee-small wf-coro-index)
+    # Keep page/allocator suffixes meaningful for the unchanged launcher.
+    printf 'split1-clientbase-top0-no-thp\t1\t1\t0\t2\nsplit1-clientready-top0-no-thp\t1\t1\t0\t2\n' > "$OUT/cohorts.tsv"
+    printf 'pass\tform\tbytes\tprofile\tsample\tobservation\n' > "$OUT/client-diagnostic-counters.tsv"
+    mkdir -p "$OUT/retained"
+    retained=(netload-clientbase netload-clientready netload-clientbase-observed netload-clientready-observed
+        storage-epoll uring_echo-64k echo-callee-small wf-coro)
+    : > "$OUT/build-sha256.txt"
+    for binary in "${retained[@]}"; do
+        cp "$OUT/bin/$binary" "$OUT/retained/$binary"
+        cmp "$OUT/bin/$binary" "$OUT/retained/$binary"
+        sha256sum "$OUT/bin/$binary" >> "$OUT/build-sha256.txt"
+    done
+    sha256sum "$HERE/netload.c" "$HERE/netload_check.c" "$HERE/netload_observe.h" "$HERE/scheduler-bench.sh" \
+        "$HERE/epoll_echo.c" "$HERE/uring_echo.c" "$HERE/coroutine_completion.cpp" "$CLANG" "$WFC" \
+        "$OUT/retained/"* >> "$OUT/build-sha256.txt"
+fi
 reverse=()
 for ((at=${#forward[@]}-1;at>=0;at--)); do reverse+=("${forward[at]}"); done
 if [[ $network_compute == 1 ]]; then
@@ -1625,6 +1680,17 @@ for ((pass=-WARMUP; pass<ROUNDS; pass++)); do
         # Alternate which policy runs first as well as representation order.
         tac "$OUT/cohorts.tsv" > "$OUT/cohorts-order.tsv"
     fi
+  if [[ $CLIENT_READINESS == 1 ]]; then
+    # Adjacent client pairs reduce drift within each same-server/cell/pass.
+    while read -r connections trips bytes compute_rounds light_per_second; do
+      admitted=0
+      for form in "${order[@]}"; do
+        while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
+            network_case "$form" "$connections" "$trips" "$bytes" "$pass" 0
+        done < "$OUT/cohorts-order.tsv"
+      done
+    done < "$OUT/cases.tsv"
+  else
   while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
     while read -r connections trips bytes compute_rounds light_per_second; do
       for admitted in "${admissions[@]}"; do
@@ -1635,7 +1701,28 @@ for ((pass=-WARMUP; pass<ROUNDS; pass++)); do
       done
     done < "$OUT/cases.tsv"
   done < "$OUT/cohorts-order.tsv"
+  fi
 done
+
+if [[ $CLIENT_READINESS == 1 ]]; then
+    [[ ${#forward[@]} -eq 4 && $(wc -l < "$OUT/cases.tsv") -eq 5 && $(wc -l < "$OUT/network.tsv") -eq 201 ]]
+    cp "$OUT/network.tsv" "$OUT/client-readiness.tsv"
+    head -1 "$OUT/network.tsv" > "$OUT/client-readiness-observed.tsv"
+    mv "$OUT/client-readiness-observed.tsv" "$OUT/network.tsv"
+    client_observer_active=1
+    while read -r connections trips bytes compute_rounds light_per_second; do
+      for form in "${forward[@]}"; do
+        while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
+            network_case "$form" "$connections" "$trips" "$bytes" 0 0
+        done < "$OUT/cohorts.tsv"
+      done
+    done < "$OUT/cases.tsv"
+    [[ $(wc -l < "$OUT/network.tsv") -eq 41 && $(wc -l < "$OUT/client-diagnostic-counters.tsv") -eq 41 ]]
+    mv "$OUT/network.tsv" "$OUT/client-readiness-observed.tsv"
+    cp "$OUT/client-readiness.tsv" "$OUT/network.tsv"
+    client_observer_active=0
+    sha256sum -c "$OUT/build-sha256.txt" > "$OUT/hash-verification.log"
+fi
 
 if [[ $CLIENT_DIAGNOSTIC == 1 ]]; then
     [[ $(wc -l < "$OUT/network.tsv") -eq 13 && $(wc -l < "$OUT/client-diagnostic-counters.tsv") -eq 13 ]]
@@ -1654,7 +1741,7 @@ if [[ $CLIENT_DIAGNOSTIC == 1 ]]; then
     exit 0
 fi
 
-if [[ $CONTINUATION_SCREEN == 4 ]]; then
+if [[ $CONTINUATION_SCREEN == 4 && $CLIENT_READINESS == 0 ]]; then
     [[ ${#forward[@]} -eq 13 && $(wc -l < "$OUT/cases.tsv") -eq 5 ]]
     [[ $(wc -l < "$OUT/network.tsv") -eq $((1 + 65 * ROUNDS)) ]]
     [[ $(wc -l < "$OUT/resident.tsv") -eq 118 ]]

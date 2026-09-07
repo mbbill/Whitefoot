@@ -94,6 +94,15 @@
 #error "The client service budget must be in 0..65536"
 #endif
 
+/* Optional experiment 58 control. A read edge remains actionable across
+ * partial writes and reads; a complete response consumes only its data edge. */
+#ifndef WF_NETLOAD_READINESS
+#define WF_NETLOAD_READINESS 0
+#endif
+#if WF_NETLOAD_READINESS != 0 && WF_NETLOAD_READINESS != 1
+#error "WF_NETLOAD_READINESS must be zero or one"
+#endif
+
 struct connection {
     int descriptor;
     int established;
@@ -112,6 +121,9 @@ struct connection {
     uint64_t completed_by_deadline;
     int waiting_arrival;
     struct timespec due;
+#if WF_NETLOAD_READINESS
+    uint32_t read_events;
+#endif
 #if WF_NETLOAD_SERVICE_ROUNDS
     struct connection *ready_next;
     int queued;
@@ -318,6 +330,9 @@ static void pump(struct client *owner, struct connection *link) {
                  (unsigned long long)link->index, (unsigned long long)link->sent,
                  (unsigned long long)option_bytes, strerror(errno));
         }
+#if WF_NETLOAD_READINESS
+        if (!link->read_events) return;
+#endif
         while (link->received < option_bytes) {
             ssize_t moved = recv(link->descriptor, link->incoming + link->received,
                                  (size_t)(option_bytes - link->received), 0);
@@ -335,11 +350,22 @@ static void pump(struct client *owner, struct connection *link) {
                      (unsigned long long)option_bytes, (unsigned long long)link->round);
             }
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
+#if WF_NETLOAD_READINESS
+                link->read_events &= ~EPOLLIN;
+#endif
                 return;
             }
             fail("connection %llu: receive failed: %s", (unsigned long long)link->index,
                  strerror(errno));
         }
+#if WF_NETLOAD_READINESS
+        /* Only one request is outstanding. Its whole response has now been
+         * consumed, and the next request has not been sent yet, so no valid
+         * next response can be waiting behind it. Keep terminal readiness:
+         * EOF/reset must still be observed after a final buffered response,
+         * including when admission and exchange use successive frames. */
+        link->read_events &= ~EPOLLIN;
+#endif
         unsigned char computed[COMPUTE_BYTES];
         const unsigned char *expected = link->outgoing;
         if (option_compute && option_duration_ms && !owner->admitting) {
@@ -503,6 +529,10 @@ static void exchange(struct client *owner) {
         }
         for (int at = 0; at < ready; at++) {
             struct connection *link = events[at].data.ptr;
+#if WF_NETLOAD_READINESS
+            /* Even a queued or not-yet-due peer owns the delivered edge. */
+            link->read_events |= events[at].events & (EPOLLIN | EPOLLERR | EPOLLHUP | EPOLLRDHUP);
+#endif
 #if WF_NETLOAD_OBSERVE
             uint32_t flags = events[at].events;
             observation->input += (flags & EPOLLIN) != 0;
@@ -658,6 +688,9 @@ static void *client_main(void *raw) {
         struct connection *link = &owner->first[at];
         struct epoll_event registration;
         registration.events = EPOLLIN | EPOLLOUT | EPOLLET;
+#if WF_NETLOAD_READINESS
+        registration.events |= EPOLLRDHUP;
+#endif
         registration.data.ptr = link;
         if (epoll_ctl(owner->epoll, EPOLL_CTL_ADD, link->descriptor, &registration) != 0) {
             fail("epoll_ctl on exchange: %s", strerror(errno));
@@ -979,6 +1012,9 @@ int main(int argc, char **argv) {
     for (uint64_t at = 0; at < threads; at++) service_yields += clients[at].service_yields;
     printf("client_service_rounds=%u\tclient_service_yields=%llu\t",
            (unsigned)WF_NETLOAD_SERVICE_ROUNDS, (unsigned long long)service_yields);
+#endif
+#if WF_NETLOAD_READINESS
+    printf("client_readiness=1\t");
 #endif
     printf("admitted=%d\tadmission_us=%llu\t", option_admit, (unsigned long long)microseconds_between(connect_end, exchange_start));
     printf("duration_ms=%llu\tdrain_us=%llu\t", (unsigned long long)option_duration_ms,

@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-continuation-screen', 'codex/io-rayon-baselines', 'codex/io-compute-profile', 'codex/io-mixed-rayon-baselines', 'codex/io-continuation-owner', 'codex/io-continuation-batch', 'codex/io-client-headroom', 'codex/io-cpu-resource-controls', 'codex/io-uring-aggregation-diagnostic', 'codex/io-cpu-ring-controls', 'codex/io-go-baselines', 'codex/io-cpu-startup-controls', 'codex/io-continuation-mixed', 'codex/io-go-storage', 'codex/io-cpu-phase-recheck', 'codex/io-go-screen', 'codex/io-continuation-index', 'codex/io-cpu-yield-attribution', 'codex/io-client-diagnostic', 'codex/io-cpu-yield-callers']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-continuation-screen', 'codex/io-rayon-baselines', 'codex/io-compute-profile', 'codex/io-mixed-rayon-baselines', 'codex/io-continuation-owner', 'codex/io-continuation-batch', 'codex/io-client-headroom', 'codex/io-cpu-resource-controls', 'codex/io-uring-aggregation-diagnostic', 'codex/io-cpu-ring-controls', 'codex/io-go-baselines', 'codex/io-cpu-startup-controls', 'codex/io-continuation-mixed', 'codex/io-go-storage', 'codex/io-cpu-phase-recheck', 'codex/io-go-screen', 'codex/io-continuation-index', 'codex/io-cpu-yield-attribution', 'codex/io-client-diagnostic', 'codex/io-cpu-yield-callers', 'codex/io-client-readiness']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -82,14 +82,15 @@ jobs:
           ROOT: ${{ github.workspace }}
           OUT: ${{ runner.temp }}/io-scheduler
           CARGO_TARGET_DIR: ${{ github.workspace }}/compiler/target
-          ROUNDS: ${{ (github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic' || github.ref == 'refs/heads/codex/io-client-diagnostic') && '3' || '7' }}
-          WARMUP: ${{ (github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic' || github.ref == 'refs/heads/codex/io-client-diagnostic') && '1' || '2' }}
+          ROUNDS: ${{ github.ref == 'refs/heads/codex/io-client-readiness' && '5' || (github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic' || github.ref == 'refs/heads/codex/io-client-diagnostic') && '3' || '7' }}
+          WARMUP: ${{ github.ref == 'refs/heads/codex/io-client-readiness' && '1' || (github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic' || github.ref == 'refs/heads/codex/io-client-diagnostic') && '1' || '2' }}
           EXPERIMENT: ${{ matrix.experiment }}
-          NATIVE_BASELINES: ${{ (github.ref == 'refs/heads/codex/io-native-baselines' || github.ref == 'refs/heads/codex/io-client-headroom' || github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic') && '2' || ((github.ref == 'refs/heads/codex/io-continuation-screen' || github.ref == 'refs/heads/codex/io-continuation-owner' || github.ref == 'refs/heads/codex/io-continuation-batch' || github.ref == 'refs/heads/codex/io-go-screen' || github.ref == 'refs/heads/codex/io-continuation-index' || github.ref == 'refs/heads/codex/io-client-diagnostic') && '1' || '0') }}
-          CONTINUATION_SCREEN: ${{ github.ref == 'refs/heads/codex/io-continuation-index' && '4' || (github.ref == 'refs/heads/codex/io-continuation-batch' || github.ref == 'refs/heads/codex/io-go-screen') && '3' || (github.ref == 'refs/heads/codex/io-continuation-owner' && '2' || (github.ref == 'refs/heads/codex/io-continuation-screen' && '1' || '0')) }}
+          NATIVE_BASELINES: ${{ (github.ref == 'refs/heads/codex/io-native-baselines' || github.ref == 'refs/heads/codex/io-client-headroom' || github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic') && '2' || ((github.ref == 'refs/heads/codex/io-continuation-screen' || github.ref == 'refs/heads/codex/io-continuation-owner' || github.ref == 'refs/heads/codex/io-continuation-batch' || github.ref == 'refs/heads/codex/io-go-screen' || github.ref == 'refs/heads/codex/io-continuation-index' || github.ref == 'refs/heads/codex/io-client-diagnostic' || github.ref == 'refs/heads/codex/io-client-readiness') && '1' || '0') }}
+          CONTINUATION_SCREEN: ${{ (github.ref == 'refs/heads/codex/io-continuation-index' || github.ref == 'refs/heads/codex/io-client-readiness') && '4' || (github.ref == 'refs/heads/codex/io-continuation-batch' || github.ref == 'refs/heads/codex/io-go-screen') && '3' || (github.ref == 'refs/heads/codex/io-continuation-owner' && '2' || (github.ref == 'refs/heads/codex/io-continuation-screen' && '1' || '0')) }}
           GO_SCREEN: ${{ github.ref == 'refs/heads/codex/io-go-screen' && '1' || '0' }}
           CLIENT_HEADROOM: ${{ github.ref == 'refs/heads/codex/io-client-headroom' && '1' || '0' }}
           URING_DIAGNOSTIC: ${{ github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic' && '1' || '0' }}
+          CLIENT_READINESS: ${{ github.ref == 'refs/heads/codex/io-client-readiness' && '1' || '0' }}
           CLIENT_DIAGNOSTIC: ${{ github.ref == 'refs/heads/codex/io-client-diagnostic' && '1' || '0' }}
           CLANG: /usr/bin/clang-20
           CORO_CXX: /usr/bin/clang++-20
@@ -100,7 +101,9 @@ jobs:
         run: |
           {
             echo '## Scheduler experiment: ${{ matrix.experiment }}'
-            if [[ "$GITHUB_REF" == refs/heads/codex/io-client-diagnostic ]]; then
+            if [[ "$GITHUB_REF" == refs/heads/codex/io-client-readiness ]]; then
+              echo 'Readiness-aware client control: ordinary default versus opt-in receive readiness; epoll, uring-64k, WF callee-small and indexed owner/batch32; five fixed echo cells, five alternating passes after one warmup yield 200 ordinary rows and 40 separate client counter rows. Client pairs run adjacently on CPU 2, server CPU 0, verified different physical cores. Every byte, one outstanding request, timestamps, admission and partial/error semantics remain. Strict actual-loop traces, lost-edge mutation, Linux stream/backpressure/error and scheduled compute checks precede timing. Default optimized IR must equal the frozen prior client; selected executables and checked hashes are retained. No profiler rerun or server-capacity claim.'
+            elif [[ "$GITHUB_REF" == refs/heads/codex/io-client-diagnostic ]]; then
               echo 'Client CPU attribution: compile-time-only outcome/transfer-size and exchange epoll counters; ordinary optimized client IR must match 72fdd468. Fixed uring-64k and epoll servers, one server CPU/worker and one client CPU/worker on another physical core, 64 peers x 64 B / 64 KiB; three passes after one warmup give 12 unprofiled observed rows. Four separate whole-client cpu-clock 199 Hz DWARF captures retain kernel visibility status. Counter conservation, client-service, native stream and admission checks precede capture. Every byte comparison, request, timestamp and affinity remains; these instrumented rows do not establish server capacity.'
             elif [[ "$GITHUB_REF" == refs/heads/codex/io-continuation-index ]]; then
               echo 'Continuation pending lookup: six WF forms and seven fixed native controls; split1; five echo cases, seven passes after two warmups: 455 ordinary rows and 117 live snapshots. One binary compares a single pending list and 1024 hash buckets under the same owner/batch32 policy, lock, record/frame ABI and lifetime protocol. Extra lookup counters are compiled only into the separately qualified observed host. Eight-root/two-bucket C++ collision tests and all generated native/helper cases precede timing. Separate 64/1024-peer observations test lookup work; no universal server capacity or hash-table optimum is claimed.'
@@ -123,6 +126,7 @@ jobs:
             fi
             echo '```text'
             files=(host.txt cohorts.tsv network-summary.txt small-check.log balanced-check.log balanced-small-check.log quiet-small-check.log allocation-check.log stackful-check.log coroutine-check.log uring-check.log continuation-check.log continuation-build.log)
+            if [[ "$GITHUB_REF" == refs/heads/codex/io-client-readiness ]]; then files+=(client-readiness-check.log hash-verification.log); fi
             if [[ "$GITHUB_REF" == refs/heads/codex/io-go-screen ]]; then files+=(go-check.log build-sha256.txt); fi
             if [[ "$GITHUB_REF" == refs/heads/codex/io-uring-aggregation-diagnostic ]]; then files=(host.txt cohorts.tsv uring-diagnostic-counters.tsv uring-check.log); fi
             if [[ "$GITHUB_REF" == refs/heads/codex/io-client-diagnostic ]]; then files=(host.txt cohorts.tsv client-observer-check.log client-diagnostic-counters.tsv client-profile-status.txt); fi
@@ -146,6 +150,7 @@ jobs:
             ${{ runner.temp }}/io-scheduler/samples/
             ${{ runner.temp }}/io-scheduler/codegen/
             ${{ runner.temp }}/io-scheduler/resident/
+            ${{ runner.temp }}/io-scheduler/retained/
             ${{ runner.temp }}/io-scheduler/go/whitefoot-io-completion-bench/build/go-qualification/
 
 

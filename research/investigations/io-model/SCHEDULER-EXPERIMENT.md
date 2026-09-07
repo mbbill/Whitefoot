@@ -7822,3 +7822,87 @@ work is available during a wait. No waiting policy, affinity, runtime ABI,
 source effect or compiler default changes here. A native capture and complete
 caller/timeline audit remain required before selecting a targeted backoff or
 placement comparison.
+
+## 58. Remove speculative client receive probes
+
+Experiment 56's checked operation counters show approximately one empty
+receive probe for each completed echo round. Large-message cells have nearly
+one successful receive per round, so their client cost cannot be explained
+by high application-level fragmentation alone. This experiment tests whether
+avoiding that probe changes ordinary throughput or CPU use. It does not
+assume that the probe dominates, nor that all server forms reach the same
+client limit.
+
+`WF_NETLOAD_READINESS=1` adds one per-connection read-event mask. A delivered
+EPOLLIN remains actionable while a partial send finishes and while the client
+drains a partial response. EAGAIN clears the data bit. A complete response
+also clears only the data bit: the protocol has one outstanding request, so
+the next valid response cannot already exist before its request is sent.
+EPOLLERR, EPOLLHUP and requested EPOLLRDHUP remain sticky across completed
+frames, admission and exchange. The event is recorded before skipping a peer
+that is finished, queued or waiting for its next scheduled arrival. An
+already delivered read edge is never discarded merely because a send just
+completed. No request bytes, full `memcmp`, per-trip clock calls, source
+semantics or runtime ABI change. The default flag is zero and its normalized
+optimized LLVM IR must equal the frozen 72fdd468 client.
+
+The fixed screen uses `CLIENT_READINESS=1 CONTINUATION_SCREEN=4
+NATIVE_BASELINES=1`, allocator combine mode, five passes and one warmup. It
+requires server CPU 0 and client CPU 2 to be on different physical cores;
+each role still has one worker and one logical CPU. No SMT sibling, profiler
+or extra client worker is added. Existing server page/allocator policies and
+all existing native/continuation qualifications remain. This resource-focused
+panel omits the separately studied resident-memory cohort; ordinary process
+RSS and both client/server CPU observations still accompany every row.
+
+| Axis | Frozen choices |
+| --- | --- |
+| Server | Native epoll; native pure-ring uring with 64 KiB provided buffers; WF callee-small; WF continuation with owner progress, batch 32 and 1024 pending buckets |
+| Client | Ordinary default and opt-in read readiness, service budget zero |
+| Requests | 1/4 peers × 10,000 rounds × 64 B; 64 peers × 2,000 × 64 B; 1024 peers × 200 × 64 B; 64 peers × 500 × 64 KiB |
+| Order | Adjacent client pairs within each server/cell/pass, both client order and server order alternate |
+| Ordinary evidence | 4 servers × 5 cells × 2 clients × 5 passes = 200 rows, plus 40 warmup runs excluded from that table |
+| Separate observations | One client-observed run per server/cell/client = 40 rows, with worker affinity, byte/outcome/bin/batch conservation |
+
+The exact ordinary client binaries used in the screen first pass the real
+socket fixture. It reads and verifies complete requests independently and
+tests 64 B/64 KiB echoes, admission, 8 MiB bidirectional fragmented streams,
+EOF, reset, truncated and corrupted responses. Error cases require both
+no published timing and the intended diagnostic: corruption cannot pass
+merely because a later round encounters EOF. Request bytes are drained before
+EOF/truncation to avoid an unintended reset. Two additional observer builds
+require actual short sends, short receives and send EAGAIN under the large
+backpressure fixture, and preserve separate admission/exchange byte counters.
+The two client policies at service budgets 0/1/8 also run admitted, scheduled
+compute checks with a bounded process-group watchdog. Their retained results
+must distinguish successful execution from timeout or early capacity failure.
+
+The scripted qualifier executes the actual `pump`/`exchange` code with strict
+send/receive/event sequences and a controlled monotonic clock. It covers a
+read edge delivered before a partial send completes, bidirectional partial
+progress, rearming after EAGAIN, terminal-only events, buffered admission
+followed by EOF, an event on an already finished peer, the ninth queued peer
+after the eight-item FIFO drain, and a terminal event while a light peer is
+waiting for its scheduled arrival. Each returned epoll batch contains distinct
+peers. Removing the event-recording operation must make the trace fail.
+
+Local M1 evidence consists of 28 ASan/UBSan actual-loop traces through
+temporary syscall/type shims (9/10/9 at budgets 0/1/8), Linux cross-compilation,
+the default IR comparison, and shell/workflow checks. These shims do not
+execute or qualify Linux epoll semantics. Real Linux socket checks, the
+mutation rejection on that platform, and all performance samples remain
+required before a result is claimed. The source and harness preserve the
+client's existing full-byte but modulo-256 message-identity limitation.
+
+`client-readiness.tsv` retains all ordinary rows and
+`client-readiness-observed.tsv` holds the forty separate instrumented runs.
+`client-diagnostic-counters.tsv` points to every observed raw report. Eight
+selected client/server executables are copied to `retained/`, checked against
+the actual launched files, and hashed with source/tool identities before the
+screen; hashes are checked again afterward. The artifact includes these
+executables, every raw sample and qualification log. Retained binaries make
+independent rehashing possible, correcting experiment 56's missing-executable
+limitation. Counter deltas are operations and bytes, not TCP packet counts;
+instrumented rates never substitute for ordinary paired timing. A faster
+client would improve this host's measurement headroom, without establishing
+unrestricted server capacity or a universal fastest implementation.

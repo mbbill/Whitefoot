@@ -316,6 +316,19 @@ workers and service budgets 0/1/8. These are different evidence scopes.
 The counters and their retirement condition are documented in
 [`SCHEDULER-EXPERIMENT.md`](../../investigations/io-model/SCHEDULER-EXPERIMENT.md#fifty-sixth-experiment-observe-the-client-syscall-and-readiness-work).
 
+`make scheduler-client-readiness` runs experiment 58's ordinary default versus
+`WF_NETLOAD_READINESS=1` client pairs, with four fixed servers and five echo
+cases. Five alternating passes produce 200 ordinary rows; forty separate
+client observations test whether empty receive probes decrease. The optional
+client preserves delivered read edges through partial I/O and retains terminal
+events across frames. Linux `make client-readiness-check` runs strict traces
+through the actual exchange body, rejects a deliberately lost edge, and checks
+real fragmented/backpressured streams, admission, scheduled compute and exact
+error reasons with service budgets 0/1/8. Default optimized IR must remain
+identical. Selected executables, hashes and every raw sample are retained;
+the evidence boundaries are in
+[experiment 58](../../investigations/io-model/SCHEDULER-EXPERIMENT.md#58-remove-speculative-client-receive-probes).
+
 `linux-net-bench.sh` is the protocol, and one protocol for every host that can
 run it, as `read-bench.sh` is for the read tables. It builds the compiler and
 the three tools from one worktree, checks that every server echoes what the

@@ -123,6 +123,10 @@ scheduler-uring-diagnostic:
 scheduler-client-diagnostic:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS=3 WARMUP=1 CORO_CXX="$(CORO_CXX)" CLIENT_DIAGNOSTIC=1 NATIVE_BASELINES=1 EXPERIMENT=allocator bash scheduler-bench.sh combine
 
+.PHONY: scheduler-client-readiness
+scheduler-client-readiness:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS=5 WARMUP=1 CORO_CXX="$(CORO_CXX)" CLIENT_READINESS=1 CONTINUATION_SCREEN=4 NATIVE_BASELINES=1 EXPERIMENT=allocator bash scheduler-bench.sh combine
+
 .PHONY: scheduler-allocation
 scheduler-allocation:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" EXPERIMENT=allocation bash scheduler-bench.sh bench
@@ -724,6 +728,40 @@ client-observer-check: netload-observe-check $(BUILD)/epoll_echo
 	  env ROOT="$(ROOT)" OUT="$(BUILD)" NET_LINES=epoll NETLOAD="$(BUILD)/netload-observe$$budget" \
 	    sh linux-net-bench.sh verify-observer; \
 	done
+
+# The scripted checks execute the real exchange body, with strict syscall
+# ordering that rejects a lost read edge. Socket checks execute each ordinary
+# client separately; observer-only cases prove partial I/O actually occurred.
+.PHONY: client-readiness-check
+client-readiness-check: prepare
+	$(CLANG) $(CFLAGS) -pthread -DWF_BENCH_COMPUTE epoll_echo.c -o "$(BUILD)/epoll_compute"
+	@set -e; \
+	for budget in 0 1 8; do \
+	  $(CLANG) $(CFLAGS) -g -Wpedantic -pthread -fsanitize=address,undefined \
+	    -DWF_NETLOAD_READINESS=1 "-DWF_NETLOAD_SERVICE_ROUNDS=$$budget" \
+	    netload_check.c -o "$(BUILD)/netload-check$$budget"; \
+	  "$(BUILD)/netload-check$$budget"; \
+	  for readiness in 0 1; do \
+	    $(CLANG) $(CFLAGS) -Wpedantic -pthread "-DWF_NETLOAD_READINESS=$$readiness" \
+	      "-DWF_NETLOAD_SERVICE_ROUNDS=$$budget" netload.c -o "$(BUILD)/netload-ready$$readiness-service$$budget"; \
+	    "$(BUILD)/netload-check$$budget" "$(BUILD)/netload-ready$$readiness-service$$budget"; \
+	    ROOT="$(ROOT)" OUT="$(BUILD)" NET_LINES=compute NETLOAD="$(BUILD)/netload-ready$$readiness-service$$budget" \
+	      timeout --signal=TERM --kill-after=5s 30s sh linux-net-bench.sh verify-readiness-paced; \
+	  done; \
+	done; \
+	for readiness in 0 1; do \
+	  $(CLANG) $(CFLAGS) -Wpedantic -pthread "-DWF_NETLOAD_READINESS=$$readiness" \
+	    -DWF_NETLOAD_OBSERVE=1 netload.c -o "$(BUILD)/netload-ready$$readiness-observed"; \
+	  "$(BUILD)/netload-check0" "$(BUILD)/netload-ready$$readiness-observed" observed; \
+	done; \
+	mkdir -p "$(BUILD)/netload-lost-edge"; \
+	cp netload_check.c "$(BUILD)/netload-lost-edge/"; \
+	sed '/link->read_events |= events\[at\].events/d' netload.c > "$(BUILD)/netload-lost-edge/netload.c"; \
+	$(CLANG) $(CFLAGS) -Wpedantic -pthread -I . -DWF_NETLOAD_READINESS=1 \
+	  "$(BUILD)/netload-lost-edge/netload_check.c" -o "$(BUILD)/netload-lost-edge/check"; \
+	status=0; "$(BUILD)/netload-lost-edge/check" > "$(BUILD)/netload-lost-edge/out" 2> "$(BUILD)/netload-lost-edge/err" || status=$$?; \
+	test "$$status" = 2; \
+	echo 'netload trace: missing read-edge mutation rejected PASS'
 
 # Completion lifetime uses the actual C runtime, without changing its ABI.
 # Only the bridge publisher is interposed by the test registration coordinator.
