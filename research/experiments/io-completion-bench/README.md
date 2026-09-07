@@ -1,17 +1,19 @@
 # io-completion-bench
 
 Program-level measurement of the unified-state completion I/O model against
-the best hand-written native shape and against Whitefoot's own sequential
-build.
+hand-written native candidates and Whitefoot's own sequential build.
 
 ## What it serves
 
 `research/investigations/io-model/RESULTS.md` held only C-level
 microbenchmarks of the completion core — round-trip cost, cached `pread`
 delta, park/wake parity. Those numbers cannot answer the question the design
-stands or falls on: whether a whole Whitefoot program that does real I/O
-reaches the best native performance. This bundle answers that question and
-supplies the evidence section that RESULTS.md now carries.
+needs to address: how a whole Whitefoot program that does real I/O compares
+with strong native implementations. This bundle supplies measurements within
+each recorded workload, platform and resource budget, and the evidence section
+that RESULTS.md now carries. Its current candidates do not establish the
+fastest possible implementation; the maintained comparison matrix records
+their qualification, tuning gaps and omitted workloads.
 
 It is removed when the completion model stops being an open performance
 question — when the numbers are stable, the bar is settled, and no further
@@ -22,10 +24,11 @@ runtime or lowering change is being measured against them.
 Every line publishes the same bytes; a line that publishes anything else
 cannot report a time.
 
-- **N** — the best hand-written native C shape. `baseline.c`: a single-threaded
+- **N** — hand-written native C candidates. `baseline.c`: a single-threaded
   blocking loop, a pthread pool over a striped index range, and on Linux a raw
   `io_uring` read pipeline (`uring_baseline.h`, kernel ABI directly, no
-  liburing). Compiled `-O2` with no handicap.
+  liburing). Compiled `-O2`; implementation and tuning limits remain part of
+  the recorded evidence.
 - **S** — the Whitefoot program built with `whitefootc --no-overlap`, which
   emits the module a compiler with no overlap lowering at all emits. Every I/O
   call is an ordinary direct call.

@@ -5,8 +5,8 @@
 #define _GNU_SOURCE
 #endif
 
-/* The N line of io-completion-bench: the best hand-written native shape for
- * the many-independent-files workload on this platform.
+/* The N line of io-completion-bench: hand-written native candidates for the
+ * many-independent-files workload on this platform.
  *
  * Every mode opens each generated file by name, transfers it with one
  * positioned read, folds the shared checksum from `workload.h`, and prints
