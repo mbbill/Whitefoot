@@ -4254,7 +4254,7 @@ name. A known limitation remains visible until its experiment is complete.
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
 | WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Qualified and screened at `2147857e` (experiment 39): lower small-message RSS but severe coordinator scheduling cost. Sole-resumer progress is the experiment 44 candidate |
 | Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Source candidate only; pin Go toolchain, GOMAXPROCS, buffers and complete protocol fixture before timing |
-| Rust sequential / Rayon CPU pool | Existing recursive `par_layout.wf` port with exact floating-point order and every node write; sibling `join`, calibrated grain and explicit pool width | Essential CPU-parallel reference; separates sequential code generation from parallel scheduling. Broader `par_iter`/`scope` and unbalanced workloads remain candidate rows | Exact-byte qualified and independently confirmed after grain calibration on M1/Linux (experiment 40). The inherited WF stack-pool size and startup amortization need separate control; measured configurations do not establish an optimal WF CPU setup |
+| Rust sequential / Rayon CPU pool | Existing recursive `par_layout.wf` port with exact floating-point order and every node write; sibling `join`, calibrated grain and explicit pool width | Essential CPU-parallel reference; separates sequential code generation from parallel scheduling. Broader `par_iter`/`scope` and unbalanced workloads remain candidate rows | Checksum-qualified and independently confirmed after grain calibration on M1/Linux (experiment 40). Experiment 45's stack/batch control reduces the WF12/Rayon paired wall gap from 13.9% at one batch to 1.6% at sixteen, supporting substantial fixed costs. Output-path ring initialization remains a separate attribution question; this is not an optimal WF CPU setup claim |
 | Tokio I/O + bounded Rayon CPU offload | One current-thread I/O driver plus B-1 CPU workers, fixed 64-byte protocol, asynchronous bounded admission, one request/reply per connection | External mixed-load reference under one total execution budget; exposes CPU queue transfer, backpressure and light-request progress | Linux-qualified at `040bfc4b` (experiment 42), including saturation, errors, reset, partial input, half-close and slow output. Four short client smoke records are correctness evidence, not a performance ranking |
 | Tokio | Fixed-worker multithread runtime and a separate per-core current-thread/reactor configuration | External mainstream async baseline; distinguish work stealing from reactor locality | Source candidate only; pin toolchain/lockfile, socket distribution and blocking-pool budget |
 | Monoio | Per-core runtime, separately forced IoUringDriver and LegacyDriver | External completion/readiness comparison within one runtime family | Source candidate only; prohibit silent fusion fallback in backend-specific rows |
@@ -4277,7 +4277,7 @@ revision, compiler and dependency lockfile.
 | TCP closed-loop echo | 1/4/64/1024 peers × 64 B, 64 peers × 64 KiB; one outstanding request per peer; exact bytes and EOF | Current ten-cell split1/split2 screen. Add 4 KiB and pipeline depths 8/32 only after candidate screening |
 | TCP streaming / backpressure | Continuous 2 MiB or larger, arbitrary fragmentation, short sends, slow readers, half-close; preserve order and bounded live storage | Existing epoll stream oracle; uring joins it below. Idle 10k peers, churn and reset/cancellation remain separate qualification |
 | TCP fixed-arrival / mixed compute | Same recurrence and compute quantum; light paced requests alongside heavy work; below/near/above saturation | Existing paced mixed experiments cover selected controls. External candidates need scheduled-to-response p99/p99.9, goodput, missed deadlines, backlog and drain recovery |
-| CPU-only parallelism and CPU offload | Sequential Rust vs Rayon; balanced/unbalanced recursive and data-parallel jobs; matched arithmetic, tuned grain and pool width. Mixed mode charges enqueue, completion transfer and bounded queues | Recursive `join` CPU confirmation exists; fixed-cost/stack-pool sensitivity is next. Tokio + Rayon mixed qualification exists, with timing pending client-capacity control. Both executors share one total budget |
+| CPU-only parallelism and CPU offload | Sequential Rust vs Rayon; balanced/unbalanced recursive and data-parallel jobs; matched arithmetic, tuned grain and pool width. Mixed mode charges enqueue, completion transfer and bounded queues | Recursive `join` confirmation and stack/batch sensitivity are measured; isolate output-path initialization next. Tokio + Rayon mixed qualification exists, with timing pending client-capacity control. Both executors share one total budget |
 | File reads | Open-once cache-hot vs cold buffered vs direct I/O; random/sequential; 4/64 KiB; QD 1/8/64; same offsets, bytes and checksum | Existing file experiments cover subsets. Extend native blocking/pread pool/uring comparisons; fio is a device-envelope cross-check, not an identical-program runtime row |
 | File writes | Buffered accepted bytes vs fdatasync/fsync durability are distinct contracts; name batch size, flush cadence and directory durability | Broader matrix required; no current TCP result supports a write or durability claim |
 | Dependent storage/network pipeline | Read → parse → request → write with the same dependency graph and compute work | Unmeasured; tests whether sequential-source overlap composes across stages |
@@ -5589,8 +5589,8 @@ The main comparison is owner versus threaded continuation within each
 paired pass, retaining throughput, p99, server CPU/trip, process switches
 and live RSS separately. Existing WF/native rows expose residual costs.
 The known client capacity limit still prevents calling close rates a server
-capacity frontier. Linux correctness and timing are pending; no performance
-improvement is claimed before those results arrive.
+capacity frontier. Linux timing is pending; no performance improvement is
+claimed before those results arrive.
 
 Local M1 qualification passes the generated suite at both settings with
 ASan/UBSan and ThreadSanitizer, the independent nested C++ lifetime suite,
@@ -5599,6 +5599,20 @@ the uninstrumented twelve-task/four-slot oracle, and the common four-peer
 tasks in both modes, with 64/64 and 75/75 registrations/dequeues respectively.
 These local runs use the helper route; they do not qualify Linux native
 completion or supply a comparative timing result.
+
+At `f72aacb893966b05796e7571c53f8f80b4e4806f`, the
+[Linux continuation/loan job](https://github.com/mbbill/Whitefoot/actions/runs/34087992851/job/101635635389)
+passed the generated suite at both owner settings, with native and forced
+helper routes. The stream/recursive, accept/connect/refusal, occupied-port,
+four-task fanout and twelve-task/four-slot cases all passed, including complete
+task retirement. The independent C++ heap and elided fixtures each passed
+their 640-case loan/drain oracle on both routes, retaining the explicit
+before-arm and during-arm publication cases. Those C++ ordering fixtures
+still use the progress thread; they are not owner-mode timing evidence.
+[Artifact 10006228142](https://github.com/mbbill/Whitefoot/actions/runs/34087992851/artifacts/10006228142)
+retains this qualification separately from the ongoing performance panel.
+The Windows memory/placement job in the same workflow also passed; it does
+not qualify generated continuations on Windows.
 
 ## Forty-fifth experiment: control CPU stack capacity and fixed costs
 
@@ -5696,24 +5710,18 @@ calibration; this cohort does not select it again.
 
 One plan contains all nine forms, grouped by batch count; each pass reverses
 the preceding pass's order. One complete warmup precedes five recorded passes
-(45 samples). Every invocation must exit successfully and print the exact
-corpus checksum bytes. Whole-process wall/user/system CPU include pool setup,
+(45 samples). Every invocation must exit successfully and print the corpus
+checksum; the ordinary runner compares it after trimming trailing CR/LF.
+Whole-process wall/user/system CPU include pool setup,
 tree setup and shutdown. WF uses the main thread plus three spawned workers;
 Rayon uses four workers and a caller that waits for the pool. The host CPU
 set/topology is recorded, but neither physical-core dedication nor affinity
 is assumed. The panel has no concurrent load generator and uses no perf.
 
-The generated parallel WF program still calls the completion bridge for its
-final `write_once` checksum. `wf_bridge_begin` requires bridge initialization,
-which attempts the native ring even though unpositioned WF_FILE_WRITE itself
-uses the typed adapter. Whole-process timing includes this output-path setup
-and shutdown; no ring line in a macOS observer means there is no native ring
-report, not that the bridge stayed uninitialized. Any remaining short-run
-fixed cost is therefore not automatically stack initialization or scheduling.
-
 After timing, a separate binary links the existing `WF_SCHED_OBSERVE=1`
 scheduler/grant observer. It runs each WF cell once, untimed, with the same
-exact-byte check and confirms three spawned workers and positive grants.
+checksum and a byte-exact `cmp`, and confirms three spawned workers and
+positive grants.
 `exhausted_compute` counts join turns without an available target stack;
 it is not a count of unique requests or a high-water mark. The runtime has
 no existing peak-live-stack counter, so this panel cannot report that value.
@@ -5748,7 +5756,9 @@ observations passed. The [45 raw confirmation samples](../../experiments/io-comp
 retain their original order and CPU fields. Independently re-reading them
 confirmed each plan's exact argument/batch mapping, all five alternating
 orders, finite nonnegative times and every printed median/min/max/CPU summary.
-The six observed stdout files matched the corpus bytes exactly.
+The six observed stdout files matched the corpus bytes exactly. Ordinary
+invocation stdout is checked by the runner but not separately retained;
+its aggregate stderr records all six complete passes without failures.
 
 | Batches | Form | Median wall, ms | Median user + system CPU, ms | Median CPU / wall |
 |---:|---|---:|---:|---:|
