@@ -9,7 +9,10 @@
 use std::fmt::Write;
 
 use super::parallel::{HandedOut, par_done_label};
-use super::system::{CompletionFileOperation, completion_file_operation, completion_mapper_symbol};
+use super::system::{
+    CompletionFileOperation, completion_file_operation, completion_mapper_symbol,
+    continuation_operation,
+};
 use super::*;
 
 /// The finite completion core contract embedded in the compiler.
@@ -165,8 +168,9 @@ pub(super) struct CompletionRetirement<'a> {
     pub(super) raw_value: &'a str,
     /// The slot the raw target error is published into.
     pub(super) raw_error: &'a str,
-    /// The open outcome slot and the name its load takes, for an open only.
-    pub(super) open_outcome: Option<(&'a str, &'a str)>,
+    /// Additional typed join outputs: LLVM type, reserved slot, loaded name.
+    /// Opens publish an outcome; accepts publish the three peer scalars.
+    pub(super) additional_outputs: &'a [(&'a str, &'a str, &'a str)],
     /// The names the loaded value and error take.
     pub(super) value: &'a str,
     pub(super) error: &'a str,
@@ -184,7 +188,7 @@ pub(super) fn completion_retirement(plan: &CompletionRetirement<'_>) -> String {
         record,
         raw_value,
         raw_error,
-        open_outcome,
+        additional_outputs,
         value,
         error,
         mapper,
@@ -192,13 +196,14 @@ pub(super) fn completion_retirement(plan: &CompletionRetirement<'_>) -> String {
         result,
         result_type,
     } = plan;
-    let (outcome_argument, outcome_load) = match open_outcome {
-        Some((slot, name)) => (
-            format!(", ptr {slot}"),
-            format!("  {name} = load i32, ptr {slot}\n"),
-        ),
-        None => (String::new(), String::new()),
-    };
+    let outcome_argument = additional_outputs
+        .iter()
+        .map(|(_, slot, _)| format!(", ptr {slot}"))
+        .collect::<String>();
+    let outcome_load = additional_outputs
+        .iter()
+        .map(|(ty, slot, name)| format!("  {name} = load {ty}, ptr {slot}\n"))
+        .collect::<String>();
     format!(
         "  call void @{join}(ptr {record}, ptr {raw_value}, ptr {raw_error}\
          {outcome_argument})\n  \
@@ -387,6 +392,9 @@ struct CompletionStorage {
 
 #[derive(Clone, Debug)]
 enum CompletionMapping {
+    Socket {
+        peer: Option<[CompletionStorage; 3]>,
+    },
     Open {
         outcome: CompletionStorage,
     },
@@ -614,8 +622,18 @@ impl FunctionEmitter<'_, '_> {
         operation: crate::IrSystemOperation,
         arguments: &[IrValueId],
     ) -> Result<(), BackendFailure> {
-        let completion = completion_file_operation(operation).ok_or(BackendFailure::InvalidIr)?;
+        let completion = if self.continuation {
+            continuation_operation(operation)
+        } else {
+            completion_file_operation(operation)
+        }
+        .ok_or(BackendFailure::InvalidIr)?;
         match completion {
+            CompletionFileOperation::Listen
+            | CompletionFileOperation::Accept
+            | CompletionFileOperation::Connect => {
+                return self.emit_handed_out_socket(result, ty, operation, arguments, completion);
+            }
             CompletionFileOperation::OpenRead
             | CompletionFileOperation::OpenDirectory
             | CompletionFileOperation::OpenDirectorySource
@@ -747,6 +765,89 @@ impl FunctionEmitter<'_, '_> {
         Ok(())
     }
 
+    fn emit_handed_out_socket(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        operation: crate::IrSystemOperation,
+        arguments: &[IrValueId],
+        completion: CompletionFileOperation,
+    ) -> Result<(), BackendFailure> {
+        // These sites retain the sequential schedule. Extending the ordinary
+        // hand-out inventory requires its own checked actualization work.
+        if !self.continuation {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let [_, resource] = arguments else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        let _qualified = self.qualification.operation(operation)?;
+        let token = self.completion_entry_slot(
+            result,
+            CompletionSlot::Record,
+            &completion_record_element_type(),
+        )?;
+        let raw_value = self.completion_entry_slot(result, CompletionSlot::RawValue, "i64")?;
+        let raw_error = self.completion_entry_slot(result, CompletionSlot::RawError, "i32")?;
+        let token_pointer = self.completion_storage_pointer(&token)?;
+        let resource_type = self
+            .value_type(*resource)
+            .ok_or(BackendFailure::InvalidIr)?;
+        let rendered = llvm_type(self.program, resource_type)?;
+        let (submit, submit_arguments, peer) = if completion == CompletionFileOperation::Accept {
+            if rendered != "i32" {
+                return Err(BackendFailure::InvalidIr);
+            }
+            (
+                SOCKET_ACCEPT_SUBMIT,
+                format!("i32 {}, ptr {token_pointer}", self.value_name(*resource)),
+                Some([
+                    self.completion_entry_slot(result, CompletionSlot::PeerLow, "i64")?,
+                    self.completion_entry_slot(result, CompletionSlot::PeerHigh, "i64")?,
+                    self.completion_entry_slot(result, CompletionSlot::PeerTag, "i32")?,
+                ]),
+            )
+        } else {
+            if rendered
+                != super::super::qualification::ResourceRepresentation::InternetAddress.llvm()
+            {
+                return Err(BackendFailure::InvalidIr);
+            }
+            let prefix = self.next_temporary()?;
+            self.output.push_str(&system::socket_address_scalars(
+                &self.value_name(*resource),
+                &prefix,
+            ));
+            let submit = match completion {
+                CompletionFileOperation::Listen => SOCKET_LISTEN_SUBMIT,
+                CompletionFileOperation::Connect => SOCKET_CONNECT_SUBMIT,
+                _ => return Err(BackendFailure::InvalidIr),
+            };
+            (
+                submit,
+                format!(
+                    "i64 %{prefix}.low, i64 %{prefix}.high, i32 %{prefix}.tag, ptr {token_pointer}"
+                ),
+                None,
+            )
+        };
+        self.output
+            .push_str(&completion_submit_call(submit, &submit_arguments));
+        *self.completion_used = true;
+        self.handed_out
+            .push(HandedOut::Completion(Box::new(CompletionHandedOut {
+                result,
+                result_type: ty,
+                operation: completion,
+                token,
+                raw_value,
+                raw_error,
+                not_submitted: None,
+                mapping: CompletionMapping::Socket { peer },
+            })));
+        Ok(())
+    }
+
     fn emit_handed_out_open(
         &mut self,
         result: IrValueId,
@@ -827,6 +928,9 @@ impl FunctionEmitter<'_, '_> {
             | CompletionFileOperation::Write
             | CompletionFileOperation::Receive
             | CompletionFileOperation::Send
+            | CompletionFileOperation::Listen
+            | CompletionFileOperation::Accept
+            | CompletionFileOperation::Connect
             | CompletionFileOperation::DirectoryNext => {
                 return Err(BackendFailure::InvalidIr);
             }
@@ -1208,13 +1312,30 @@ impl FunctionEmitter<'_, '_> {
         let completed_error = format!("%{}", self.next_temporary()?);
         let result_llvm = llvm_type(self.program, result_type)?;
         let target = self.qualification.target();
-        let (join, open_outcome, mapper_arguments) = match mapping {
+        let mut additional_outputs = Vec::new();
+        let (join, mapper_arguments) = match mapping {
+            CompletionMapping::Socket { peer } => {
+                let mut arguments = format!("i64 {completed_value}, i32 {completed_error}");
+                let join = if let Some(peer) = peer {
+                    for (storage, ty) in peer.into_iter().zip(["i64", "i64", "i32"]) {
+                        let slot = self.completion_storage_pointer(&storage)?;
+                        let name = format!("%{}", self.next_temporary()?);
+                        write!(arguments, ", {ty} {name}")
+                            .map_err(|_| BackendFailure::TextEmission)?;
+                        additional_outputs.push((ty, slot, name));
+                    }
+                    SOCKET_ACCEPT_JOIN
+                } else {
+                    FILE_JOIN
+                };
+                (join, arguments)
+            }
             CompletionMapping::Open { outcome } => {
                 let outcome = self.completion_storage_pointer(&outcome)?;
                 let completed_outcome = format!("%{}", self.next_temporary()?);
+                additional_outputs.push(("i32", outcome, completed_outcome.clone()));
                 (
                     target.file_open_join_symbol(),
-                    Some((outcome, completed_outcome.clone())),
                     format!(
                         "i64 {completed_value}, i32 {completed_error}, i32 {completed_outcome}"
                     ),
@@ -1225,7 +1346,6 @@ impl FunctionEmitter<'_, '_> {
                 let extent = self.load_completion_value(extent)?;
                 (
                     target.file_join_symbol(),
-                    None,
                     format!(
                         "i64 {completed_value}, i32 {completed_error}, i64 {start}, i64 {extent}"
                     ),
@@ -1245,7 +1365,6 @@ impl FunctionEmitter<'_, '_> {
                     // target, so its record is consumed through the runtime's
                     // own join beside it.
                     FILE_JOIN,
-                    None,
                     format!(
                         "i64 {completed_value}, i32 {completed_error}, {destination_type} \
                          {destination}, i64 {start}, i64 {extent}"
@@ -1255,15 +1374,17 @@ impl FunctionEmitter<'_, '_> {
         };
         let mapper = completion_mapper_symbol(operation);
         let continuation_wait = self.continuation_wait(&token, result)?;
+        let additional_outputs = additional_outputs
+            .iter()
+            .map(|(ty, slot, name)| (*ty, slot.as_str(), name.as_str()))
+            .collect::<Vec<_>>();
         let retirement = |result: &str| {
             completion_retirement(&CompletionRetirement {
                 join,
                 record: &token,
                 raw_value: &raw_value,
                 raw_error: &raw_error,
-                open_outcome: open_outcome
-                    .as_ref()
-                    .map(|(slot, name)| (slot.as_str(), name.as_str())),
+                additional_outputs: &additional_outputs,
                 value: &completed_value,
                 error: &completed_error,
                 mapper,

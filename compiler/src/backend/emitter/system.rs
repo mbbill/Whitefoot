@@ -105,6 +105,23 @@ pub(super) enum CompletionFileOperation {
     /// mappers below.
     Receive,
     Send,
+    Listen,
+    Accept,
+    Connect,
+}
+
+/// Awaiting a sequential operation changes its representation, not the
+/// permission to issue later source work. Keep this selection separate from
+/// the existing hand-out inventory until that schedule is qualified too.
+pub(super) fn continuation_operation(
+    operation: crate::IrSystemOperation,
+) -> Option<CompletionFileOperation> {
+    match operation.ordinal() {
+        TCP_LISTEN => Some(CompletionFileOperation::Listen),
+        TCP_ACCEPT => Some(CompletionFileOperation::Accept),
+        TCP_CONNECT => Some(CompletionFileOperation::Connect),
+        _ => completion_file_operation(operation),
+    }
 }
 
 pub(super) fn completion_file_operation(
@@ -146,6 +163,9 @@ pub(super) const fn completion_mapper_symbol(operation: CompletionFileOperation)
         // write does, so each shares that operation's one mapper [SYS-8].
         CompletionFileOperation::Receive => READ_COMPLETION_MAPPER,
         CompletionFileOperation::Send => WRITE_COMPLETION_MAPPER,
+        CompletionFileOperation::Listen => LISTEN_COMPLETION_MAPPER,
+        CompletionFileOperation::Accept => ACCEPT_COMPLETION_MAPPER,
+        CompletionFileOperation::Connect => CONNECT_COMPLETION_MAPPER,
     }
 }
 
@@ -1809,7 +1829,7 @@ fn open_retirement(target: SystemTarget, llvm: &str, mapper: &str) -> String {
         record: WRAPPER_RECORD,
         raw_value: WRAPPER_RAW_VALUE,
         raw_error: WRAPPER_RAW_ERROR,
-        open_outcome: Some((WRAPPER_RAW_OUTCOME, "%open.outcome")),
+        additional_outputs: &[("i32", WRAPPER_RAW_OUTCOME, "%open.outcome")],
         value: "%raw.descriptor",
         error: "%open.error",
         mapper,
@@ -1836,7 +1856,7 @@ fn transfer_retirement(join: &str, llvm: &str, mapper: &str, trailing: &str) -> 
         record: WRAPPER_RECORD,
         raw_value: WRAPPER_RAW_VALUE,
         raw_error: WRAPPER_RAW_ERROR,
-        open_outcome: None,
+        additional_outputs: &[],
         value: "%completed.value",
         error: "%completed.error",
         mapper,
@@ -3199,7 +3219,7 @@ fn emit_socket_address_v6(implementation: ApprovedImplementation) -> String {
 /// into an emitted value's storage (`completion/bridge.h`), so the layout is
 /// stated once here and once in `wf_socket_address`, and neither side holds a
 /// pointer into the other's.
-fn socket_address_scalars(value: &str, prefix: &str) -> String {
+pub(super) fn socket_address_scalars(value: &str, prefix: &str) -> String {
     let address = ResourceRepresentation::InternetAddress.llvm();
     format!(
         "  %{prefix}.low = extractvalue {address} {value}, 0\n  \
@@ -3331,6 +3351,23 @@ fn emit_tcp_accept(
         SOCKET_ACCEPT_SUBMIT,
         &format!("{listener} %listener, ptr {WRAPPER_RECORD}"),
     );
+    let retirement = completion_retirement(&CompletionRetirement {
+        join: SOCKET_ACCEPT_JOIN,
+        record: WRAPPER_RECORD,
+        raw_value: WRAPPER_RAW_VALUE,
+        raw_error: WRAPPER_RAW_ERROR,
+        additional_outputs: &[
+            ("i64", "%peer.low", "%peer.low.value"),
+            ("i64", "%peer.high", "%peer.high.value"),
+            ("i32", "%peer.tag", "%peer.tag.value"),
+        ],
+        value: "%completed.value",
+        error: "%completed.error",
+        mapper: ACCEPT_COMPLETION_MAPPER,
+        mapper_arguments: "i64 %completed.value, i32 %completed.error, i64 %peer.low.value, i64 %peer.high.value, i32 %peer.tag.value",
+        result: "%outcome",
+        result_type: llvm,
+    });
     let wrapper = format!(
         "define private {llvm} @{symbol}({listener} %listener) alwaysinline {{\n\
          entry:\n\
@@ -3338,17 +3375,7 @@ fn emit_tcp_accept(
          %peer.low = alloca i64, align 8\n  \
          %peer.high = alloca i64, align 8\n  \
          %peer.tag = alloca i32, align 4\n\
-         {submit}  \
-         call void @{SOCKET_ACCEPT_JOIN}(ptr {WRAPPER_RECORD}, ptr {WRAPPER_RAW_VALUE}, \
-         ptr {WRAPPER_RAW_ERROR}, ptr %peer.low, ptr %peer.high, ptr %peer.tag)\n  \
-         %completed.value = load i64, ptr {WRAPPER_RAW_VALUE}\n  \
-         %completed.error = load i32, ptr {WRAPPER_RAW_ERROR}\n  \
-         %peer.low.value = load i64, ptr %peer.low\n  \
-         %peer.high.value = load i64, ptr %peer.high\n  \
-         %peer.tag.value = load i32, ptr %peer.tag\n  \
-         %outcome = call {llvm} @{ACCEPT_COMPLETION_MAPPER}(i64 %completed.value, \
-         i32 %completed.error, i64 %peer.low.value, i64 %peer.high.value, \
-         i32 %peer.tag.value)\n  \
+         {submit}{retirement}  \
          ret {llvm} %outcome\n\
          }}\n\n",
         symbol = implementation.symbol(),

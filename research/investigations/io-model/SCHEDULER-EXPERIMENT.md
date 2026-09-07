@@ -4118,7 +4118,19 @@ requires nonzero actual io_uring publications for both stream programs and
 then repeats them with the helper backend explicitly forced. Those compiler
 checks are wired into the Linux canonical scheduler stage; the independent
 C++ fixture still requires its stricter all-ring or all-helper counters.
-Linux qualification of this new compiler mode is pending at this point.
+Revision `caa316ac` passes the native Linux qualification in
+[run 34079265361](https://github.com/mbbill/Whitefoot/actions/runs/34079265361),
+job 101611301155. Both generated stream programs pass their zero-byte and
+65,673-byte cases on the native ring and forced helper backend. The plain
+nonempty native run has 18 ring and 17 helper publications; the recursive
+run has 515 ring and 514 helper publications. Those helpers are the existing
+unpositioned `write_once` route, not silently substituted native reads.
+The corresponding forced-helper runs have 35 and 1,029 helper publications
+and no ring publications. All wait registration/dequeue counts match. The
+independent nested C++ fixture also passes all four runs with the required
+513-ring/zero-helper or 513-helper/zero-ring counts. The same revision's
+canonical gate and host workflow pass, including the maintained Windows
+runtime checks; the new continuation representation remains POSIX-only.
 
 This has not integrated staged task publication, compute checkpoints,
 asynchronous cleanup, Windows, concurrent roots, migration, or destruction
@@ -4136,3 +4148,60 @@ until that join returns. Copying a descriptor does not extend storage
 lifetime, and observing DONE does not replace returning from join. No new
 container pin, lease or release callback is introduced by this experimental
 LLVM-to-host interface.
+
+## Thirty-fifth experiment: network operations suspend the generated caller
+
+A concurrent continuation executor cannot call the old synchronous
+`tcp_accept` wrapper while other roots need its resumer. The network extension
+therefore adds `tcp_listen`, `tcp_accept` and `tcp_connect` to the experimental
+sequential await inventory. The ordinary hand-out inventory is unchanged:
+the new selection authorizes no additional source overlap. All three use
+the existing qualified runtime submits and typed outcome mappers. Accept's
+three peer-address outputs are reserved by the normal target frame planner,
+and the common retirement emitter now carries typed additional outputs for
+both open outcomes and accept peer scalars. Its ordinary accept wrapper also
+uses that retirement emitter, so the experiment does not maintain a second
+error/resource mapping.
+
+The existing `tcp_echo_server.wf` is compiled in continuation mode by
+`compiler-continuation-check`. The native oracle withholds a connection until
+the host has returned from resume with an accept node still pending; it then
+withholds all input until the same observation witnesses a pending receive.
+The host reads these nodes under the existing publication coordinator lock.
+An old wrapper blocking the resumer cannot produce these witnesses. Empty
+input and 65,673 pattern bytes exercise EOF, transfer and directional close
+after the two gated suspensions. No timing threshold selects a pass.
+
+The same target compiles existing `tcp_client.wf` and `tcp_refused.wf`.
+A native peer checks the client's `ABCDEFGH`, withholds its reply until the
+WF receive has suspended, then returns `abcdefgh` one byte at a time and
+half-closes. The stdout byte oracle requires exactly that reply and status 0.
+The refused program connects twice with the permit returned by the first
+`ConnectionRefused`; both attempts must preserve the original status-0
+expectation. A separate native listener retains the port during an occupied
+listen check, which requires the echo server's original status 7 and no
+stdout. Separate publication counters require each exercised connect, accept
+and receive kind to use the selected native-ring or helper route, with zero
+publications of that kind on the other route. One native receive therefore
+cannot conceal a helper accept. Listen remains the existing helper operation
+and is checked as such.
+
+An initial test held a bound-but-not-listening socket to reserve the refusal
+port. On this macOS host, the independent native connect reports
+`ETIMEDOUT`, and the WF refusal fixture correctly returns 49 rather than
+its required status 0. Using the released-port arrangement of the ordinary
+network tests makes the independent native call report `ECONNREFUSED` and
+both ordinary and continuation WF builds return 0. The oracle was corrected
+to use that arrangement; neither the expected error class nor the permit
+reuse requirement was relaxed. The occupied-listen case still retains its
+actual listening socket throughout.
+
+All new network cases and the existing file/pipe/recursive cases pass locally
+with the generated LLVM functions and C runtime instrumented by ASan/UBSan
+and separately by ThreadSanitizer. Eighty relevant ordinary backend tests
+and eleven native network integration tests also pass. Linux native
+qualification of the network extension is pending. The host
+still owns one root. Staged publication, compute checkpoints and asynchronous
+cleanup are not yet integrated, so this is the network prerequisite for the
+concurrent executor, not a concurrency or performance result. No source
+signature, container layout or existing staged-runtime interface changes.

@@ -700,11 +700,14 @@ compiler-continuation-check: completion-coroutine-check compiler
 	  thread) ir_attribute=sanitize_thread ;; \
 	  *) echo 'compiler-continuation-check needs address or thread instrumentation' >&2; exit 2 ;; \
 	esac; \
-	for program in boundary stdin recursive; do \
+	for program in boundary stdin recursive tcp client refused; do \
 	  case "$$program" in \
 	    boundary) source="$(ROOT)/tests/programs/completion_read_boundary.wf" ;; \
 	    stdin) source="$(ROOT)/tests/programs/stdin_echo.wf" ;; \
 	    recursive) source=programs/continuation_stream.wf ;; \
+	    tcp) source=programs/tcp_echo_server.wf ;; \
+	    client) source="$(ROOT)/tests/programs/tcp_client.wf" ;; \
+	    refused) source="$(ROOT)/tests/programs/tcp_refused.wf" ;; \
 	  esac; \
 	  "$(WFC)" --emit-llvm --continuations "$$source" -o "$$build/$$program.ll"; \
 	  awk -v attribute="$$ir_attribute" '/^define / {sub(/ \{$$/, " " attribute " {")} {print}' \
@@ -723,10 +726,17 @@ compiler-continuation-check: completion-coroutine-check compiler
 	status=0; "$$build/boundary" > "$$build/no-args" || status=$$?; \
 	test "$$status" = 1 && test ! -s "$$build/no-args"; \
 	echo 'compiled continuation file outcomes: PASS success/open-failure/EOF/no-I/O-return'; \
-	for program in stdin recursive; do \
-	  "$$build/stream-check" "$$build/$$program" $(COMPLETION_CORO_ARGS); \
+	for program in stdin recursive tcp client refused occupied; do \
+	  transport=''; \
+	  case "$$program" in \
+	    tcp) transport=--tcp ;; \
+	    client) transport=--client ;; \
+	    refused) transport=--refused ;; \
+	    occupied) transport=--occupied; program=tcp ;; \
+	  esac; \
+	  "$$build/stream-check" $$transport "$$build/$$program" $(COMPLETION_CORO_ARGS); \
 	  if [ "$$(uname -s)" = Linux ]; then \
-	    WF_IO_NO_NATIVE_RING=1 "$$build/stream-check" "$$build/$$program" --require-helper; \
+	    WF_IO_NO_NATIVE_RING=1 "$$build/stream-check" $$transport "$$build/$$program" --require-helper; \
 	  fi; \
 	done
 

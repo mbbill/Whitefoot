@@ -64,6 +64,9 @@ static uint64_t probe_dequeued;
 static uint64_t probe_before_arm;
 static uint64_t probe_during_arm;
 static uint64_t probe_routes[5];
+#if defined(PROBE_WF_GENERATED)
+static uint64_t probe_socket_routes[3][5];
+#endif
 
 int wf__sched_host_epoch(uint64_t *epoch);
 int wf__sched_host_park(uint64_t observed);
@@ -85,6 +88,11 @@ void wf_probe_publish(wf_sched_core *core, wf_sched_record *record) {
     pthread_mutex_lock(&probe_lock);
     assert(completion->route < 5);
     ++probe_routes[completion->route];
+#if defined(PROBE_WF_GENERATED)
+    if (completion->request.kind == WF_FILE_SOCKET_ACCEPT) ++probe_socket_routes[0][completion->route];
+    if (completion->request.kind == WF_FILE_SOCKET_CONNECT) ++probe_socket_routes[1][completion->route];
+    if (completion->request.kind == WF_FILE_SOCKET_RECEIVE) ++probe_socket_routes[2][completion->route];
+#endif
     for (link = &probe_pending; *link && (*link)->record != record;
          link = &(*link)->pending_next) {}
     waiter = *link;
@@ -273,8 +281,30 @@ int wf__continuation_arm(void *storage, void *frame) {
     return probe_arm(waiter, waiter->record, frame, NULL, 0);
 }
 
+/* Observe only after resume returns. Holding the coordinator lock keeps a
+ * pending node and its record live; publication removes the node before DONE.
+ * The native peer withholds connect/input until these suspension witnesses. */
+static unsigned probe_observe_socket_waits(unsigned seen) {
+    if (!getenv("WF_CONTINUATION_TRACE_SOCKET")) return seen;
+    pthread_mutex_lock(&probe_lock);
+    for (probe_waiter *waiter = probe_pending; waiter; waiter = waiter->pending_next) {
+        const wf_completion_record *record = waiter->record;
+        if (!(seen & 1) && record->request.kind == WF_FILE_SOCKET_ACCEPT) {
+            fputs("WF continuation host: accept suspended\n", stderr);
+            seen |= 1;
+        }
+        if (!(seen & 2) && record->request.kind == WF_FILE_SOCKET_RECEIVE) {
+            fputs("WF continuation host: receive suspended\n", stderr);
+            seen |= 2;
+        }
+    }
+    pthread_mutex_unlock(&probe_lock);
+    return seen;
+}
+
 void wf__continuation_run(void *frame) {
     static unsigned active;
+    unsigned socket_waits = 0;
     assert(!active);
     active = 1;
     atomic_store_explicit(&probe_stopping, 0, memory_order_release);
@@ -283,9 +313,11 @@ void wf__continuation_run(void *frame) {
         if (getenv("WF_CONTINUATION_OBSERVE")) {
             fputs("WF continuation host: suspended\n", stderr);
         }
+        socket_waits = probe_observe_socket_waits(socket_waits);
         assert(pthread_create(&probe_progress_thread, NULL, probe_progress, NULL) == 0);
         do {
             wf__continuation_resume(probe_take_ready());
+            socket_waits = probe_observe_socket_waits(socket_waits);
         } while (!wf__continuation_finished(frame));
         probe_stop();
     }
@@ -296,6 +328,15 @@ void wf__continuation_run(void *frame) {
                 (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_FILE_ADAPTER],
                 (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_LINUX_IO_URING],
                 (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_INLINE]);
+    }
+    if (getenv("WF_CONTINUATION_REPORT_SOCKET_ROUTES")) {
+        fprintf(stderr, "WF continuation host: accept_ring=%llu accept_helper=%llu connect_ring=%llu connect_helper=%llu receive_ring=%llu receive_helper=%llu\n",
+                (unsigned long long)probe_socket_routes[0][WF_COMPLETION_ROUTE_LINUX_IO_URING],
+                (unsigned long long)probe_socket_routes[0][WF_COMPLETION_ROUTE_FILE_ADAPTER],
+                (unsigned long long)probe_socket_routes[1][WF_COMPLETION_ROUTE_LINUX_IO_URING],
+                (unsigned long long)probe_socket_routes[1][WF_COMPLETION_ROUTE_FILE_ADAPTER],
+                (unsigned long long)probe_socket_routes[2][WF_COMPLETION_ROUTE_LINUX_IO_URING],
+                (unsigned long long)probe_socket_routes[2][WF_COMPLETION_ROUTE_FILE_ADAPTER]);
     }
     active = 0;
 }

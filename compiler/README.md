@@ -211,7 +211,9 @@ nested and recursive calls; pure functions keep their ordinary representation.
 Source signatures and proof checking are unchanged. The experiment keeps the
 serial source schedule and awaits each mapped direct completion operation
 before continuing. The native research host owns one root and resumes it
-after publication; it is not yet a concurrent executor. Staged hand-outs,
+after publication; it is not yet a concurrent executor. The network extension
+also awaits `tcp_listen`, `tcp_accept` and `tcp_connect`, using the same
+typed completion mappers and retirement as their ordinary wrappers. Staged hand-outs,
 compute checkpoints, asynchronous cleanup, Windows and normal executable
 linking are not integrated, so incompatible command-line modes fail explicitly.
 Other system wrappers and cleanup may still block the host. The new host ABI

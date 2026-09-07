@@ -768,6 +768,9 @@ enum CompletionSlot {
     Result,
     RawValue,
     RawError,
+    PeerLow,
+    PeerHigh,
+    PeerTag,
     OpenOutcome,
     Component,
     Cursor,
@@ -932,6 +935,7 @@ impl FunctionFramePlan {
                             *ty,
                             *operation,
                             arguments,
+                            continuation,
                         )?;
                     }
                     _ => {}
@@ -1102,9 +1106,14 @@ fn plan_completion_slots(
     result_type: IrType,
     operation: crate::IrSystemOperation,
     arguments: &[IrValueId],
+    continuation: bool,
 ) -> Result<(), BackendFailure> {
-    let operation =
-        system::completion_file_operation(operation).ok_or(BackendFailure::InvalidIr)?;
+    let operation = if continuation {
+        system::continuation_operation(operation)
+    } else {
+        system::completion_file_operation(operation)
+    }
+    .ok_or(BackendFailure::InvalidIr)?;
     let uses_ring =
         pipeline.is_some_and(|pipeline| pipeline.slots() > 1 && pipeline.carries(block));
     let slot_count = if uses_ring {
@@ -1158,7 +1167,26 @@ fn plan_completion_slots(
                 None,
             )?;
         }
-        system::CompletionFileOperation::Read
+        system::CompletionFileOperation::Accept => {
+            add(
+                CompletionSlot::PeerLow,
+                TargetStorageType::integer(64),
+                None,
+            )?;
+            add(
+                CompletionSlot::PeerHigh,
+                TargetStorageType::integer(64),
+                None,
+            )?;
+            add(
+                CompletionSlot::PeerTag,
+                TargetStorageType::integer(32),
+                None,
+            )?;
+        }
+        system::CompletionFileOperation::Listen
+        | system::CompletionFileOperation::Connect
+        | system::CompletionFileOperation::Read
         | system::CompletionFileOperation::Write
         | system::CompletionFileOperation::Receive
         | system::CompletionFileOperation::Send
@@ -1224,7 +1252,10 @@ fn plan_completion_slots(
         system::CompletionFileOperation::OpenRead
         | system::CompletionFileOperation::OpenDirectory
         | system::CompletionFileOperation::OpenDirectorySource
-        | system::CompletionFileOperation::OpenFile => {}
+        | system::CompletionFileOperation::OpenFile
+        | system::CompletionFileOperation::Listen
+        | system::CompletionFileOperation::Accept
+        | system::CompletionFileOperation::Connect => {}
     }
     Ok(())
 }
@@ -1446,7 +1477,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     ..
                 } = instruction
                     && target_action.may_suspend()
-                    && system::completion_file_operation(*operation).is_some()
+                    && system::continuation_operation(*operation).is_some()
                 {
                     completion_steps.insert(
                         *result,
