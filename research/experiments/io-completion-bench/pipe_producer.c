@@ -1,4 +1,4 @@
-/* The N line of the pipe-relay workload: the best hand-written native shapes
+/* The N line of the pipe-relay workload: hand-written native candidates
  * for pushing two independent byte streams at two independent consumers.
  *
  *   seq       one thread, write(1) then write(2) each round. This is what a
@@ -6,8 +6,8 @@
  *             operations in order, and it is the shape Whitefoot's sequential
  *             reference build reaches.
  *   threads   one thread per output. Nothing on either stream ever waits for
- *             the other, so this is the ceiling the completion path is trying
- *             to reach without asking the writer for a thread.
+ *             the other. It is a measured comparison target for the
+ *             completion path, not a proven throughput ceiling.
  *
  * Both modes publish the same bytes: ROUNDS chunks of 'A' on fd 1 and ROUNDS
  * chunks of 'B' on fd 2. */
