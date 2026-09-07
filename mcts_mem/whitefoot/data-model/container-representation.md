@@ -8,6 +8,12 @@
   independently of parameter and result representation. Compiler-synthesized
   functions carry no invented source signature. These modes alone supply no loan
   origin, lifetime, or input/result aliasing permission.
+- User-call arguments retain their checked occurrence uses independently of
+  their actual value identities. A direct borrow result retains its candidate
+  actual argument; this relation may cover a wider place than the returned
+  suffix and supplies neither exact disjointness nor a complete loan lifetime.
+  Absence of a candidate record does not imply that an owned view has no borrowed
+  backing.
 - Distinguish full fixed arrays, initialized prefixes, and circular windows.
   Persistent fixed extent and full initialization belong to the relevant type or
   state; variable length and head are not universal array metadata. Placement and
@@ -209,6 +215,18 @@
   and borrow-result provenance still need their own retained representation.
   [Signature lowering and source boundary](../../../compiler/src/lowering/builder.rs),
   [IR distinctions and focused tests](../../../compiler/src/lowering/tests.rs). (code)
+
+- 2026-09-07 correction: user-call lowering now retains argument-occurrence
+  consumption and the direct borrow result's candidate argument ordinal. The
+  controls distinguish borrowing and consuming the same descriptor value,
+  consuming a unique holder without owning its referent, projected-root
+  consumption, and an indexed borrow passed as the second argument. Referencing
+  the actual lowered argument avoids reevaluating its index or remapping a
+  separate source-root path. This addresses call-boundary information loss,
+  not standalone uses, owned-view origin sets, or activation lifetimes.
+  [Retained checked candidate](../../../compiler/src/semantic/check/expressions/calls/user.rs),
+  [Call lowering and distinctions](../../../compiler/src/lowering/builder.rs),
+  [Executable IR controls](../../../compiler/src/lowering/tests.rs). (code)
 
 ## Moves
 

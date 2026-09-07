@@ -162,10 +162,28 @@ reuse pass. A false consume flag alone does not establish a copy operation.
 The first implementation step now retains source parameter and result modes in
 `IrSourceSignature`, independently of the representation types. It is populated
 from the checked function for source declarations and monomorphized instances;
-compiler-synthesized functions carry no invented source signature. This step
-does not yet retain binding-occurrence use kinds or borrow-result provenance,
-normalize destinations, or change the emitted ABI. Its mode record carries no
-loan origin/lifetime and grants no input/result aliasing permission by itself.
+compiler-synthesized functions carry no invented source signature. Its mode record
+carries no loan origin/lifetime and grants no input/result aliasing permission by
+itself.
+
+User calls now also retain a per-occurrence `IrSourceCall`: direct binding and
+field-projection consumption, formed borrows/reborrows, place reads, and other
+computed values. The same descriptor value can be borrowed and then consumed;
+recording its role on the value alone would lose that distinction. Moving a
+unique holder consumes that holder, not its referent. The callee's retained formal
+mode supplies this distinction without duplicating its signature at every call.
+A place read does not imply enclosing-owner consumption or permission to copy an
+affine payload.
+
+For a direct borrow result, the checker retains the sole candidate argument's
+ordinal. Lowering relates the result to that existing actual operand and its
+address/projection graph. It does not reconstruct a source path or evaluate an
+index again. The candidate may cover a wider place than the returned suffix, so
+this relation does not grant exact disjointness. An absent candidate is not proof
+of fresh backing or of no outstanding loans: owned views have separate origin
+sets, not retained by this record. Standalone uses, constructor/kernel transfers,
+view-result origins, and activation lifetimes remain unfinished. These metadata
+steps do not normalize destinations or change the emitted ABI.
 
 | Information | Origin and use |
 | --- | --- |
@@ -825,3 +843,15 @@ That last comparison is exploratory emission evidence, not a committed staged
 runtime test. No parallel adapter was changed and no new aggregate/staged runtime
 result is claimed. The metadata step does not complete destination normalization
 or make the existing full gate green.
+
+The user-call metadata step passes all 34 lowering tests and all 37 focused
+borrow-semantic tests. Four new controls exercise borrowing and consuming the
+same actual value, unique-holder transfer, projected-root consumption, and a
+returned borrow tied to the second actual argument's indexed address. The
+gate-profile compiler build is warning-free, modified Rust files pass formatting,
+and the same five LLVM comparisons remain byte-identical to the signature step.
+This is evidence for preserving checked information, not a new performance or
+parallel execution result. The complete storage normalization and repository gate
+remain unfinished. The canonical Clippy invocation again reports only the
+existing `write_with_newline` diagnostic in the blocked parallel emitter; this is
+a failed lint run, not a whole-compiler lint pass.

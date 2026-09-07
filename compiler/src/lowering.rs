@@ -2055,6 +2055,47 @@ pub struct IrSourceSignature {
     result: IrSourceMode,
 }
 
+/// One source argument's checked use, distinct from its formal passing mode.
+///
+/// Consuming a unique holder transfers that holder, not ownership of its
+/// referent. Combine this record with the callee's source signature; neither
+/// the representation type nor a consume flag alone supplies that distinction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrSourceArgument {
+    /// A direct binding occurrence; the flag is the owning checker's verdict.
+    Binding {
+        /// Whether this occurrence consumes the source binding.
+        consume_root: bool,
+    },
+    /// A checked field projection, including its enclosing-root consumption.
+    Projection {
+        /// Whether this projection consumes its enclosing source binding.
+        consume_root: bool,
+    },
+    /// A borrow or reborrow formed over existing storage.
+    Borrow,
+    /// Content selected through a place or dereference. This does not claim
+    /// that the enclosing owner is consumed or that affine content is copyable.
+    PlaceRead,
+    /// A literal or another computed value, with no binding-transfer claim.
+    Value,
+}
+
+/// Source-call use and direct borrow-result relations tied to one IR call.
+///
+/// The actual arguments and their typed address/projection operations remain
+/// on the call. A result's origin is the complete candidate argument; it need
+/// not be the exact subplace selected inside the callee. No source offset is
+/// reevaluated to produce this metadata, and it adds no executable read.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IrSourceCall {
+    result: IrValueId,
+    arguments: Vec<IrSourceArgument>,
+    /// A direct borrow result's checked candidate. Absence says nothing about
+    /// loans carried inside owned view results or other aggregates.
+    returned_borrow_argument: Option<usize>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrFunction {
     name: String,
@@ -2062,6 +2103,9 @@ pub struct IrFunction {
     /// Checked source modes, or `None` for a compiler-synthesized function.
     /// Internal transfer contracts must not be invented from representation.
     source_signature: Option<IrSourceSignature>,
+    /// Only calls lowered from checked source; synthesized calls do not
+    /// acquire invented source use or provenance records.
+    source_calls: Vec<IrSourceCall>,
     result: IrType,
     values: Vec<IrType>,
     blocks: Vec<IrBlock>,

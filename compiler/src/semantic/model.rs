@@ -1758,6 +1758,10 @@ pub(crate) struct CheckedIntegerArgument {
 /// even when the callee returned a narrower suffix of it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedResultBorrow {
+    /// The sole provenance-candidate argument, in declared parameter order.
+    /// Lowering retains this relation to the actual argument value rather
+    /// than reconstructing an address from the resolved source path.
+    pub(crate) argument: usize,
     pub(crate) binding: BindingId,
     pub(crate) path: Vec<super::places::PlaceStep>,
 }

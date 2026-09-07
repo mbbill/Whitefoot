@@ -346,34 +346,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .and_then(|index| checked_borrows.get(index))
             .cloned()
             .flatten();
-        let result_borrow = if let Some(borrow) = &result_borrow_info {
-            if let Some(holder) = result_candidate
-                .and_then(|index| argument_holders.get(index))
-                .copied()
-                .flatten()
-            {
-                let parent_is_unique = bindings
-                    .get(&holder)
-                    .and_then(|local| local.borrow.as_ref())
-                    .is_some_and(|parent| parent.kind == BorrowKind::Unique);
-                if parent_is_unique {
-                    bindings
-                        .get_mut(&holder)
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                        .suspended = true;
+        let result_borrow =
+            if let Some((argument, borrow)) = result_candidate.zip(result_borrow_info.as_ref()) {
+                if let Some(holder) = result_candidate
+                    .and_then(|index| argument_holders.get(index))
+                    .copied()
+                    .flatten()
+                {
+                    let parent_is_unique = bindings
+                        .get(&holder)
+                        .and_then(|local| local.borrow.as_ref())
+                        .is_some_and(|parent| parent.kind == BorrowKind::Unique);
+                    if parent_is_unique {
+                        bindings
+                            .get_mut(&holder)
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                            .suspended = true;
+                    }
                 }
-            }
-            let root = bindings
-                .get(&borrow.place.root)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                .binding;
-            Some(CheckedResultBorrow {
-                binding: root,
-                path: borrow.place.path.clone(),
-            })
-        } else {
-            None
-        };
+                let root = bindings
+                    .get(&borrow.place.root)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                    .binding;
+                Some(CheckedResultBorrow {
+                    argument,
+                    binding: root,
+                    path: borrow.place.path.clone(),
+                })
+            } else {
+                None
+            };
         Ok(TypedExpression {
             expression: CheckedExpression::UserCall {
                 function: target,

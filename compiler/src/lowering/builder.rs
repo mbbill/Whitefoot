@@ -416,6 +416,30 @@ const fn lower_source_mode(mode: CheckedMode) -> IrSourceMode {
     }
 }
 
+fn lower_source_argument(argument: &CheckedExpression) -> IrSourceArgument {
+    match argument {
+        CheckedExpression::Binding { consume_root, .. } => IrSourceArgument::Binding {
+            consume_root: *consume_root,
+        },
+        CheckedExpression::Project { consume_root, .. } => IrSourceArgument::Projection {
+            consume_root: *consume_root,
+        },
+        CheckedExpression::BorrowAddressed { .. }
+        | CheckedExpression::BorrowBuffer { .. }
+        | CheckedExpression::BorrowBox { .. }
+        | CheckedExpression::BorrowSystemResource { .. }
+        | CheckedExpression::ReborrowAddressed { .. } => IrSourceArgument::Borrow,
+        CheckedExpression::ReadStorage { .. }
+        | CheckedExpression::DerefAddressed { .. }
+        | CheckedExpression::ArrayIndex { .. }
+        | CheckedExpression::BufferIndex { .. }
+        | CheckedExpression::SliceIndex { .. }
+        | CheckedExpression::BoxDeref { .. }
+        | CheckedExpression::ArenaDeref { .. } => IrSourceArgument::PlaceRead,
+        _ => IrSourceArgument::Value,
+    }
+}
+
 fn lower_parameter_type(
     erasure: &[IrNominalId],
     parameter: &CheckedParameter,
@@ -478,6 +502,7 @@ struct IrBuilder<'program> {
     constants: &'program [IrGlobalConstant],
     bindings: HashMap<BindingId, IrValueId>,
     parameters: Vec<(IrValueId, IrType)>,
+    source_calls: Vec<IrSourceCall>,
     values: Vec<IrType>,
     blocks: Vec<BuildingBlock>,
     current: Option<IrBlockId>,
@@ -558,6 +583,7 @@ impl<'program> IrBuilder<'program> {
             constants,
             bindings: HashMap::new(),
             parameters: Vec::new(),
+            source_calls: Vec::new(),
             values: Vec::new(),
             blocks: Vec::new(),
             current: None,
@@ -626,6 +652,7 @@ impl<'program> IrBuilder<'program> {
             name,
             parameters: self.parameters,
             source_signature: None,
+            source_calls: self.source_calls,
             result: self.result,
             values: self.values,
             blocks: self
@@ -1638,8 +1665,10 @@ impl<'program> IrBuilder<'program> {
             CheckedExpression::UserCall {
                 function,
                 arguments,
+                result_borrow,
                 ..
             } => {
+                let source_arguments = arguments.iter().map(lower_source_argument).collect();
                 let arguments = arguments
                     .iter()
                     .map(|argument| self.expression(argument))
@@ -1651,13 +1680,19 @@ impl<'program> IrBuilder<'program> {
                     .function_results
                     .get(function.0 as usize)
                     .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-                self.define(
+                let result = self.define(
                     result,
                     IrOperation::Call {
                         function: function.0,
                         arguments,
                     },
-                )
+                )?;
+                self.source_calls.push(IrSourceCall {
+                    result,
+                    arguments: source_arguments,
+                    returned_borrow_argument: result_borrow.as_ref().map(|borrow| borrow.argument),
+                });
+                Ok(result)
             }
             // A system operation is identified by its target-independent
             // semantic identity [QUAL-1]; no source spelling reaches the IR.
