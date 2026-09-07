@@ -134,7 +134,9 @@ static uint64_t reference(uint64_t seed, unsigned depth) {
 static void compute(void *frame) {
     frame_data data = read_frame(frame);
     if (owner_only) {
-        uintptr_t here = (uintptr_t)&data;
+        /* ASan may move address-taken locals onto its fake stack. Inspect
+         * the actual call frame while leaving that sanitizer mode enabled. */
+        uintptr_t here = (uintptr_t)__builtin_frame_address(0);
         uintptr_t distance = here > owner_address ? here - owner_address : owner_address - here;
         assert(pthread_equal(pthread_self(), owner));
         assert(distance < 1024 * 1024);
@@ -272,9 +274,8 @@ static void retired_frame(void) {
 }
 
 int wf__main_body(int argc, char **argv) {
-    char marker;
     owner = pthread_self();
-    owner_address = (uintptr_t)&marker;
+    owner_address = (uintptr_t)__builtin_frame_address(0);
     assert(argc == 2);
     assert(wf__par_pool_active());
     if (strcmp(argv[1], "zero-start") == 0) {

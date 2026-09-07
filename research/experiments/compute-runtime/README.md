@@ -72,6 +72,13 @@ recovered-runtime executable, and weak sequential executable. No timer is used
 to select WF source acceptance; bounded waits in the C probe only detect a
 hung test.
 
+ASan's use-after-return detection is enabled by default in this target, including
+on hosts where the sanitizer would otherwise leave it off. The owner-stack
+probe reads the physical call-frame address; an address-taken C local may live
+on ASan's fake stack instead. See the
+[sanitizer mode](https://clang.llvm.org/docs/AddressSanitizer.html#stack-use-after-return-uar)
+and [frame-address builtin](https://gcc.gnu.org/onlinedocs/gcc/Return-Address.html).
+
 The six C probe invocations exercise:
 
 - Actual foreign pthread execution with two and four lanes, plus held thieves
@@ -103,6 +110,12 @@ race between publish and steal. The test consumes the observed pointer before
 CAS, since an unused load in the broken variant could otherwise be eliminated
 on the losing path. These checks establish particular exercised behavior, not
 a proof of all concurrent interleavings or a speed comparison.
+
+The first Linux CI run at `6d6f84d9` failed the old local-address stack-distance
+assertion. Enabling `detect_stack_use_after_return=1` reproduced that failure on
+macOS. Observing the physical frame fixes this test while preserving detection;
+the runtime code is unchanged. Linux qualification of that correction remains
+pending.
 
 The sanitizers instrument the C runtime, floor and probe. Passing LLVM IR
 directly to Clang does not retroactively add full frontend memory-access

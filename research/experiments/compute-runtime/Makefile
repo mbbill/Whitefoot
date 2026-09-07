@@ -4,6 +4,8 @@ WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
 OUT ?= $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-compute-runtime
 CC := /usr/bin/clang
 SANITIZER ?= address,undefined
+ASAN_OPTIONS ?= detect_stack_use_after_return=1
+export ASAN_OPTIONS
 CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread
 FLOOR := $(ROOT)/compiler/src/backend/wf_floor.c
 WFC ?= $(OUT)/compiler/gate/whitefootc
