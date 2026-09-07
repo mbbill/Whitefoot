@@ -414,5 +414,8 @@ tree was checked against both input revisions. The dense, lifecycle, and authori
 experiment checks pass and are wired into the root research stage. A sandboxed root
 `make check` passed 1,518 library tests but failed seven existing loopback program
 tests because binding a local socket was prohibited; 66 other program tests passed.
-The unchanged canonical gate is being rerun with loopback permission. This record
-does not yet claim a complete green root gate or merge readiness.
+The unchanged canonical `make check` then passed with loopback permission, including
+the compiler and research checks, the full native conformance adapter (730 passed,
+3 skipped), and the snapshot corpus (484 passed, no flips). No test was weakened or
+removed to obtain this result. This completes the experiment and selection goal;
+production implementation has not begun, and no main merge is proposed here.
