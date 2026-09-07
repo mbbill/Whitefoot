@@ -750,7 +750,7 @@ impl FunctionFramePlan {
         let mut specifications = Vec::new();
         let mut ordered = Vec::new();
         for (slot, ty) in storage.slots().iter().copied().enumerate() {
-            if Some(slot) != result_slot {
+            if Some(slot) != result_slot && storage.destination(slot).is_none() {
                 push_function_slot(
                     &mut specifications,
                     &mut ordered,
@@ -1396,7 +1396,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             &completion_steps,
             sequential_clones.is_none(),
         )?;
-        let storage = FunctionStoragePlan::build(program, function)?;
+        let storage = FunctionStoragePlan::build(program, function, pipeline)?;
         let result_slot = places::returned_storage_slot(function, &storage);
         let frame = FunctionFramePlan::build(
             target,

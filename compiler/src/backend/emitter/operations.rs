@@ -20,36 +20,28 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         {
             return Err(BackendFailure::InvalidIr);
         }
-        let referent_type = llvm_type(self.program, referent.ty())?;
-        let address = if self
+        let address = self.binding_place(result)?;
+        if self
             .frame
             .slots
             .contains_key(&FunctionSlot::StagedAddress(result))
         {
-            let pipeline = self.pipeline.ok_or(BackendFailure::InvalidIr)?;
-            let slot = self
-                .block_slot
-                .ok_or(BackendFailure::MisaddressedCompletionSlot)?;
-            let backing = self.entry_slot(FunctionSlot::StagedAddress(result))?;
-            let address = value_name(result);
             writeln!(
                 self.output,
-                "  {address} = getelementptr inbounds [{} x {referent_type}], ptr {backing}, i64 0, i64 {}",
-                pipeline.slots(),
-                self.value_name(slot)
+                "  {} = getelementptr i8, ptr {address}, i64 0",
+                value_name(result)
             )
             .map_err(|_| BackendFailure::TextEmission)?;
-            address
-        } else {
-            self.entry_slot(FunctionSlot::Address(result))?
-        };
-        writeln!(
-            self.output,
-            "  store {referent_type} {}, ptr {}",
-            self.value_name(value),
-            address
-        )
-        .map_err(|_| BackendFailure::TextEmission)
+        }
+        if self
+            .storage
+            .slot(value)
+            .and_then(|slot| self.storage.destination(slot))
+            != Some(result)
+        {
+            self.store_value_at(value, &address)?;
+        }
+        Ok(())
     }
 
     pub(super) fn emit_load(

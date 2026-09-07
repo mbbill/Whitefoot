@@ -32,6 +32,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         operation: &IrOperation,
     ) -> Result<bool, BackendFailure> {
         match operation {
+            IrOperation::AddressOf { value, referent } => {
+                self.emit_address_of(result, ty, *value, *referent)?;
+            }
             IrOperation::Call {
                 function,
                 arguments,
@@ -157,9 +160,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 {
                     return Err(BackendFailure::InvalidIr);
                 }
+                let source = self.value_place(*aggregate)?;
                 let address = self.aggregate_field_pointer(
                     IrType::Nominal(*nominal),
-                    &self.value_place(*aggregate)?,
+                    &source,
                     *field as usize,
                 )?;
                 self.load_place_result(result, ty, &address)?;
@@ -191,11 +195,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     return Err(BackendFailure::InvalidIr);
                 }
                 let index = variant_field_base(variants, *variant)? + *field as usize;
-                let address = self.aggregate_field_pointer(
-                    IrType::Nominal(*nominal),
-                    &self.value_place(*aggregate)?,
-                    index,
-                )?;
+                let source = self.value_place(*aggregate)?;
+                let address =
+                    self.aggregate_field_pointer(IrType::Nominal(*nominal), &source, index)?;
                 self.load_place_result(result, ty, &address)?;
             }
             IrOperation::InsertStruct {
@@ -217,7 +219,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 // Read the replacement before a coalesced destination write.
                 let replacement = self.value_operand(*value)?;
                 let destination = self.value_place(result)?;
-                self.copy_storage(ty, &self.value_place(*aggregate)?, &destination)?;
+                let source = self.value_place(*aggregate)?;
+                self.copy_storage(ty, &source, &destination)?;
                 let field_address =
                     self.aggregate_field_pointer(ty, &destination, *field as usize)?;
                 let field_type = self.value_type(*value).ok_or(BackendFailure::InvalidIr)?;
@@ -279,11 +282,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         // reuse their storage only after those final reads have completed.
         self.emit_drops(drops)?;
         for (parameter, ty, operand) in transfers {
+            let destination = self.value_place(parameter)?;
             writeln!(
                 self.output,
-                "  store {} {operand}, ptr {}",
+                "  store {} {operand}, ptr {destination}",
                 llvm_type(self.program, ty)?,
-                self.value_place(parameter)?
             )
             .map_err(|_| BackendFailure::TextEmission)?;
         }
@@ -356,9 +359,42 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
-    pub(super) fn value_place(&self, value: IrValueId) -> Result<String, BackendFailure> {
+    /// Resolve the selected backing at the point where its contents are used.
+    /// A staged address must be recomputed from this block's slot, rather than
+    /// reusing an issue-block SSA pointer in a later retirement block.
+    pub(super) fn binding_place(&mut self, value: IrValueId) -> Result<String, BackendFailure> {
+        if !self
+            .frame
+            .slots
+            .contains_key(&FunctionSlot::StagedAddress(value))
+        {
+            return self.entry_slot(FunctionSlot::Address(value));
+        }
+        let Some(IrType::Address(referent)) = self.value_type(value) else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        let pipeline = self.pipeline.ok_or(BackendFailure::InvalidIr)?;
+        let slot = self
+            .block_slot
+            .ok_or(BackendFailure::MisaddressedCompletionSlot)?;
+        let backing = self.entry_slot(FunctionSlot::StagedAddress(value))?;
+        let address = format!("%{}", self.next_temporary()?);
+        writeln!(
+            self.output,
+            "  {address} = getelementptr inbounds [{} x {}], ptr {backing}, i64 0, i64 {}",
+            pipeline.slots(),
+            llvm_type(self.program, referent.ty())?,
+            self.value_name(slot)
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        Ok(address)
+    }
+
+    pub(super) fn value_place(&mut self, value: IrValueId) -> Result<String, BackendFailure> {
         let slot = self.storage.slot(value).ok_or(BackendFailure::InvalidIr)?;
-        if Some(slot) == self.result_slot {
+        if let Some(destination) = self.storage.destination(slot) {
+            self.binding_place(destination)
+        } else if Some(slot) == self.result_slot {
             Ok("%wf.result".to_owned())
         } else {
             self.entry_slot(FunctionSlot::OwnedValue(slot))
@@ -371,11 +407,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
         let temporary = self.next_temporary()?;
         let ty = self.value_type(value).ok_or(BackendFailure::InvalidIr)?;
+        let address = self.value_place(value)?;
         writeln!(
             self.output,
-            "  %{temporary} = load {}, ptr {}",
+            "  %{temporary} = load {}, ptr {address}",
             llvm_type(self.program, ty)?,
-            self.value_place(value)?,
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         Ok(format!("%{temporary}"))
@@ -420,7 +456,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     ) -> Result<(), BackendFailure> {
         let ty = self.value_type(value).ok_or(BackendFailure::InvalidIr)?;
         if self.storage.slot(value).is_some() {
-            return self.copy_storage(ty, &self.value_place(value)?, destination);
+            let source = self.value_place(value)?;
+            return self.copy_storage(ty, &source, destination);
         }
         writeln!(
             self.output,
@@ -436,12 +473,12 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Ok(());
         }
         let ty = self.value_type(result).ok_or(BackendFailure::InvalidIr)?;
+        let destination = self.value_place(result)?;
         writeln!(
             self.output,
-            "  store {} {}, ptr {}",
+            "  store {} {}, ptr {destination}",
             llvm_type(self.program, ty)?,
             value_name(result),
-            self.value_place(result)?,
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
@@ -469,7 +506,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         address: &str,
     ) -> Result<(), BackendFailure> {
         if self.storage.slot(result).is_some() {
-            return self.copy_storage(ty, address, &self.value_place(result)?);
+            let destination = self.value_place(result)?;
+            return self.copy_storage(ty, address, &destination);
         }
         writeln!(
             self.output,

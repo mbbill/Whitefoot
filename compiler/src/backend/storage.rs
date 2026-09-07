@@ -51,12 +51,16 @@ pub(super) fn is_stored_aggregate(
 pub(super) struct FunctionStoragePlan {
     values: Vec<Option<usize>>,
     slots: Vec<IrType>,
+    /// A fresh binding can be the destination of its initializing value.
+    /// The frame plan supplies this address's static or per-iteration backing.
+    destinations: Vec<Option<IrValueId>>,
 }
 
 impl FunctionStoragePlan {
     pub(super) fn build(
         program: &IrProgram<'_, '_, '_>,
         function: &IrFunction,
+        pipeline: Option<&crate::IrCompletionPipeline>,
     ) -> Result<Self, BackendFailure> {
         let types = function
             .value_types()
@@ -64,7 +68,9 @@ impl FunctionStoragePlan {
             .map(|ty| is_stored_aggregate(program, *ty).map(|stored| stored.then_some(*ty)))
             .collect::<Result<Vec<_>, _>>()?;
         let graph = FlowGraph::from_function(function);
-        graph.plan(types)
+        let mut plan = graph.plan(types)?;
+        plan.select_destinations(function, &graph, pipeline)?;
+        Ok(plan)
     }
 
     pub(super) fn slot(&self, value: IrValueId) -> Option<usize> {
@@ -75,6 +81,88 @@ impl FunctionStoragePlan {
     /// value in each group and does not depend on hashing or traversal timing.
     pub(super) fn slots(&self) -> &[IrType] {
         &self.slots
+    }
+
+    pub(super) fn destination(&self, slot: usize) -> Option<IrValueId> {
+        self.destinations.get(slot).copied().flatten()
+    }
+
+    /// Redirect a value's construction into the fresh place that consumes it.
+    /// This changes physical placement, not source ownership or initialization:
+    /// no old content is overwritten, and calls still have separate inputs.
+    ///
+    /// The single-use condition preserves independent snapshots and exposed
+    /// views. Both definitions must execute in the same block, hence the same
+    /// dynamic iteration. A static destination must be in an acyclic block;
+    /// otherwise only the actualized pipeline's per-slot backing has a proved
+    /// retirement-before-reuse boundary. Single-use alone cannot exclude a
+    /// previous iteration's address alias during the producer's reads.
+    /// AddressOf already freezes the value's storage group;
+    /// no other definition can subsequently reuse it. Staged carries count as
+    /// reads even though their stores are schedule metadata rather than IR.
+    fn select_destinations(
+        &mut self,
+        function: &IrFunction,
+        graph: &FlowGraph,
+        pipeline: Option<&crate::IrCompletionPipeline>,
+    ) -> Result<(), BackendFailure> {
+        let mut uses = vec![0_u8; self.values.len()];
+        for block in &graph.blocks {
+            for value in block
+                .instructions
+                .iter()
+                .flat_map(|instruction| &instruction.operands)
+                .chain(&block.terminal_uses)
+            {
+                uses[*value] = uses[*value].saturating_add(1);
+            }
+        }
+        if let Some(pipeline) = function.completion_pipeline() {
+            for (origin, _) in pipeline.staged_carries() {
+                let count = uses
+                    .get_mut(index(*origin))
+                    .ok_or(BackendFailure::InvalidIr)?;
+                *count = count.saturating_add(1);
+            }
+        }
+        let mut members = vec![0_usize; self.slots.len()];
+        for slot in self.values.iter().flatten() {
+            members[*slot] += 1;
+        }
+        for (block_index, block) in function.blocks().iter().enumerate() {
+            let block_id = crate::IrBlockId::from_index(block_index)
+                .map_err(|_| BackendFailure::CounterOverflow)?;
+            let per_slot = pipeline.is_some_and(|pipeline| {
+                pipeline.slot_index(block_id).is_some() && !pipeline.drains(block_id)
+            });
+            if !per_slot && graph.reentered(block_index) {
+                continue;
+            }
+            let mut defined = BTreeSet::new();
+            for instruction in block.instructions() {
+                let IrInstruction::Define {
+                    result,
+                    ty,
+                    operation,
+                } = instruction
+                else {
+                    continue;
+                };
+                if let IrOperation::AddressOf { value, referent } = operation
+                    && let Some(slot) = self.slot(*value)
+                    && members[slot] == 1
+                    && uses[index(*value)] == 1
+                    && defined.contains(value)
+                {
+                    if *ty != IrType::Address(*referent) || self.slots[slot] != referent.ty() {
+                        return Err(BackendFailure::InvalidIr);
+                    }
+                    self.destinations[slot] = Some(*result);
+                }
+                defined.insert(*result);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -105,6 +193,22 @@ struct FlowInstruction {
 }
 
 impl FlowGraph {
+    /// Whether a later CFG visit can overwrite this block's static backing.
+    /// No source ownership inference is needed for an acyclic initialization.
+    fn reentered(&self, block: usize) -> bool {
+        let mut pending = self.blocks[block].successors.clone();
+        let mut seen = BTreeSet::new();
+        while let Some(next) = pending.pop() {
+            if next == block {
+                return true;
+            }
+            if seen.insert(next) {
+                pending.extend(self.blocks[next].successors.iter().copied());
+            }
+        }
+        false
+    }
+
     fn from_function(function: &IrFunction) -> Self {
         let blocks = function
             .blocks()
@@ -229,7 +333,12 @@ impl FlowGraph {
                 values[value] = Some(slot);
             }
         }
-        Ok(FunctionStoragePlan { values, slots })
+        let destinations = vec![None; slots.len()];
+        Ok(FunctionStoragePlan {
+            values,
+            slots,
+            destinations,
+        })
     }
 
     fn validate(&self, values: usize) -> Result<(), BackendFailure> {
@@ -833,8 +942,9 @@ mod tests {
         else {
             panic!("terminals")
         };
-        let ParseOutcome::Complete(parsed) = parse(&classified, limits.parser) else {
-            panic!("parse")
+        let parsed = match parse(&classified, limits.parser) {
+            ParseOutcome::Complete(parsed) => parsed,
+            other => panic!("parse: {other:?}"),
         };
         let FinalizeOutcome::Complete(finalized) = finalize(parsed, limits.finalizer) else {
             panic!("finalize")
@@ -855,6 +965,111 @@ mod tests {
     }
 
     #[test]
+    fn fresh_binding_destinations_keep_call_inputs_and_snapshots_separate() {
+        with_program(
+            br#"struct Row {
+  left: u64;
+  right: u64;
+}
+
+fn build(seed: own u64) -> result: own Row pure {
+  let next = seed +wrap 1_u64;
+  return Row(left: seed, right: next);
+}
+
+fn exchange(old: &uniq Row) -> result: own Row reads(old.left, old.right), writes(old.left, old.right) {
+  let fresh = build(seed: 37_u64);
+  let previous = replace deref(old) = move fresh;
+  set deref(old).left = 99_u64;
+  return move previous;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let first = build(seed: 11_u64);
+  region {
+    let previous = exchange(old: &uniq first);
+    set previous.right = 23_u64;
+    if first.left != 99_u64 {
+      return exit_status(code: 1_u8);
+    }
+    if previous.left != 11_u64 {
+      return exit_status(code: 2_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+            |program| {
+                let mut direct_calls = 0;
+                for function in program.functions() {
+                    let plan = FunctionStoragePlan::build(program, function, None).expect("plan");
+                    for block in function.blocks() {
+                        for instruction in block.instructions() {
+                            let IrInstruction::Define {
+                                result, operation, ..
+                            } = instruction
+                            else {
+                                continue;
+                            };
+                            let Some(slot) = plan.slot(*result) else {
+                                continue;
+                            };
+                            if let Some(address) = plan.destination(slot) {
+                                assert_eq!(
+                                    plan.values
+                                        .iter()
+                                        .filter(|member| **member == Some(slot))
+                                        .count(),
+                                    1
+                                );
+                                assert!(block.instructions().iter().any(|instruction| matches!(instruction,
+                                    IrInstruction::Define { result: target, operation: IrOperation::AddressOf { value, .. }, .. }
+                                    if *target == address && value == result
+                                )));
+                                if let IrOperation::Call { arguments, .. } = operation {
+                                    direct_calls += 1;
+                                    for argument in arguments {
+                                        assert_ne!(plan.slot(*argument), Some(slot));
+                                        assert_ne!(*argument, address);
+                                    }
+                                }
+                            }
+                            if let IrOperation::Load { address, .. } = operation {
+                                // Reading an existing place remains a snapshot,
+                                // even when a later fresh owner adopts that snapshot.
+                                assert_ne!(plan.destination(slot), Some(*address));
+                            }
+                        }
+                    }
+                }
+                assert_eq!(
+                    direct_calls, 1,
+                    "the borrowed owner receives its helper result directly"
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn repeated_storage_is_distinct_from_acyclic_entry_and_exit_storage() {
+        let mut entry = block(&[], Vec::new(), &[]);
+        entry.successors.push(1);
+        let mut header = block(&[], Vec::new(), &[]);
+        header.successors.extend([2, 3]);
+        let mut body = block(&[], Vec::new(), &[]);
+        body.successors.push(1);
+        let graph = FlowGraph {
+            entry_parameters: Vec::new(),
+            blocks: vec![entry, header, body, block(&[], Vec::new(), &[])],
+            coalesce: true,
+        };
+        assert!(!graph.reentered(0));
+        assert!(graph.reentered(1));
+        assert!(graph.reentered(2));
+        assert!(!graph.reentered(3));
+    }
+
+    #[test]
     fn checked_dense_ir_coalesces_without_changing_ownership() {
         with_program(
             br#"command fn main() -> status: own ExitStatus pure {
@@ -872,7 +1087,7 @@ mod tests {
 "#,
             |program| {
                 let function = &program.functions()[program.main_ordinal() as usize];
-                let plan = FunctionStoragePlan::build(program, function).expect("plan");
+                let plan = FunctionStoragePlan::build(program, function, None).expect("plan");
                 let slots: BTreeSet<_> = function
                     .blocks()
                     .iter()

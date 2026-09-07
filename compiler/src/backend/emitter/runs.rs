@@ -67,7 +67,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         )
     }
 
-    fn run_storage(&self, run: IrValueId) -> Result<Option<String>, BackendFailure> {
+    fn run_storage(&mut self, run: IrValueId) -> Result<Option<String>, BackendFailure> {
         if matches!(self.value_type(run), Some(IrType::Address(_))) {
             Ok(Some(self.value_name(run)))
         } else if self.storage.slot(run).is_some() {
@@ -84,7 +84,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         ty: IrType,
     ) -> Result<IrValueId, BackendFailure> {
         if self.storage.slot(result).is_some() {
-            self.copy_storage(ty, &self.value_place(run)?, &self.value_place(result)?)?;
+            let source = self.value_place(run)?;
+            let destination = self.value_place(result)?;
+            self.copy_storage(ty, &source, &destination)?;
             Ok(result)
         } else {
             Ok(run)
@@ -131,10 +133,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         };
         let run_type = llvm_type(self.program, ty)?;
+        let destination = self.value_place(result)?;
         writeln!(
             self.output,
-            "  store {run_type} zeroinitializer, ptr {}",
-            self.value_place(result)?,
+            "  store {run_type} zeroinitializer, ptr {destination}",
         )
         .map_err(|_| BackendFailure::TextEmission)
     }

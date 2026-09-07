@@ -2866,6 +2866,20 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
     let module = emit_with_overlap(source);
     let main = function_body(&module, "@wf_main");
     assert!(main.contains("par.staged.offered."));
+    // Pin construction into the current iteration's backing, not merely a
+    // later copy into it. The native modes below then observe that same
+    // backing through deferred mutation, join and retirement.
+    let slot_projection = format!(
+        " = getelementptr inbounds [{} x %wf.t0], ptr ",
+        crate::LANE_SLOTS
+    );
+    assert!(main.lines().any(|line| {
+        let Some((address, _)) = line.trim().split_once(&slot_projection) else {
+            return false;
+        };
+        main.contains(&format!("store %wf.t0 zeroinitializer, ptr {address}\n"))
+    }));
+    assert!(!main.contains("load %wf.t0,"));
     run_owned_lane_cases(source, &module, 0, 4, 1, 0, 2);
 }
 
