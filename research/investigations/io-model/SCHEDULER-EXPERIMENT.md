@@ -4746,16 +4746,102 @@ The Apple Clang 21 optimized module requests a 42,552-byte issuer frame and
 a 1,784-byte frame per connection, plus a separate 65,536-byte `calloc`
 receive buffer per accepted connection. The nested send continuation is
 embedded in the connection frame. These are allocation requests from the
-emitted code, not resident-memory readings; allocator metadata, page touch
-and the runtime remain to be measured. Linux performance measurements for
-revision `2147857e` are pending in
-[run 34084346275](https://github.com/mbbill/Whitefoot/actions/runs/34084346275).
-The host still has locked
+emitted code, not resident-memory readings. The Linux Clang 20.1.2 optimized
+module retains these same three allocation sizes. The host still has locked
 pending-list lookup, a separate progress thread and synchronous cleanup;
 the screen measures that implementation and must not be read as a limit
 on the language or continuation representation. Its purpose is to locate
 the next measured cost while comparing actual compiler-generated sequential
 WF with stronger native references on the same host.
+
+### Linux confirmation at `2147857e`
+
+[Run 34084346275](https://github.com/mbbill/Whitefoot/actions/runs/34084346275)
+completed successfully, including measurement job 101625413250, native
+continuation job 101625413218 and Windows placement job 101625412997.
+Artifact `io-scheduler-allocator` 10005292466 has ZIP SHA256
+`f3fe8dada054e37d21847b717153e9ce4d6c94252262c57b16fa652150277ecb`.
+It retains all 350 timing rows, 90 live memory snapshots, separate observer
+runs, emitted modules and qualification logs. Every timing row was checked
+against its original client and process-resource files: exact trip counts,
+empty timed diagnostics and stdout, matching rate/latency/CPU fields. All
+90 memory rows match the summed original `smaps`; every process status
+confirms THP disabled, with zero huge anonymous pages and swap. No row was
+removed. Printed exchange microseconds truncate the higher-resolution time
+used for rate; recomputing rate allows that one-microsecond precision loss.
+
+The host was AMD EPYC 7763, Linux 6.17.0-1022-azure, glibc 2.39 and Clang
+20.1.2, with two physical cores and two SMT siblings per core exposed. The
+entire server process used CPU 0; the single client thread used CPU 2 on
+the other physical core. These are hosted, nonexclusive resources.
+
+| Peers × payload | Callee WF rt/s | Balanced WF rt/s | Generated continuation rt/s | Continuation / callee rate, paired median [min, max] | Continuation / callee CPU/trip, paired median [min, max] |
+| --- | ---: | ---: | ---: | --- | --- |
+| 1 × 64 B | 29,110 | 27,913 | 22,131 | 0.760 [0.686, 0.805] | 1.143 [1.086, 1.257] |
+| 4 × 64 B | 111,530 | 112,406 | 38,752 | 0.348 [0.314, 0.445] | 2.833 [2.239, 3.152] |
+| 64 × 64 B | 129,216 | 129,311 | 48,247 | 0.375 [0.371, 0.385] | 2.634 [2.573, 2.650] |
+| 1024 × 64 B | 122,117 | 121,684 | 32,357 | 0.276 [0.260, 0.285] | 3.494 [3.386, 3.678] |
+| 64 × 64 KiB | 21,824 | 21,800 | 21,071 | 0.967 [0.957, 0.976] | 1.034 [1.020, 1.041] |
+
+Rates are medians of seven passes. Ratios pair the same pass, rather than
+dividing independently selected samples; brackets are observed ranges,
+not confidence intervals. Server CPU is whole-process user plus system
+time, recorded to 0.01 seconds, divided by completed trips.
+
+| Peers × payload | Highest native median in this cohort | Native rt/s | Continuation / native rate, paired median [min, max] | Continuation / native CPU/trip, paired median [min, max] |
+| --- | --- | ---: | --- | --- |
+| 1 × 64 B | `fiber-calloc-main` | 23,938 | 0.922 [0.851, 0.972] | 2.000 [1.900, 2.200] |
+| 4 × 64 B | `uring-64k` | 127,433 | 0.307 [0.289, 0.383] | 3.367 [2.861, 3.586] |
+| 64 × 64 B | `uring-64k` | 130,479 | 0.371 [0.369, 0.376] | 2.732 [2.680, 2.771] |
+| 1024 × 64 B | `epoll-calloc-main` | 127,325 | 0.259 [0.251, 0.277] | 3.812 [3.574, 3.938] |
+| 64 × 64 KiB | `cpp-elide` | 34,222 | 0.616 [0.527, 0.976] | 1.798 [1.452, 1.913] |
+
+This native selection describes the measured cohort; it is not an
+independently calibrated and confirmed winner. In particular, the large
+`cpp-elide` cell ranges from 21,680 to 39,839 rt/s. Its median cannot stand
+for a stable universal target. Native shutdown loan qualifications also
+retain the experiment 38 limitation: revision 214 predates the correction
+that retains an outstanding eventfd READ's worker storage until process exit.
+
+The useful diagnostic is the generated host's process scheduling cost.
+Its voluntary plus involuntary switches per trip are 7.111, 3.745, 2.614,
+3.750 and 3.152 in the table's case order; callee WF records 0.0251, 0.0101,
+0.0013, 0.0012 and 0.0315. At 64 small-message peers, continuation CPU/trip
+is 20.703 microseconds versus callee WF's 7.812, and median p99 is 2,720
+versus 543 microseconds. At 1024 peers, p99 is 58,685 versus 9,708
+microseconds. These counters locate a costly implementation path, but
+cannot alone separate futex wakeups, ring submission, list lookup and other
+kernel work. The next discriminating change is to drive target progress on
+the sole resumer, removing the background-progress handoff while retaining
+the source, frame ABI, publication lifetime and remaining coordinator logic.
+
+Client exchange CPU divided by exchange wall time is about 0.998–1.000
+for the selected native forms at 4/64/1024 peers and large payloads. Thus
+their measured rate still has the client-headroom limitation identified
+in experiment 36. The continuation small-message clients use only 0.522,
+0.545 and 0.395 CPUs at 4/64/1024 peers, while its server uses approximately
+one CPU. Its large-payload client is already at 0.999 CPU. These observations
+support investigating the small-message server loss first; the nearly
+equal large-payload rates do not establish equal server capacity.
+
+Live resident memory, measured separately from timed peak RSS, is:
+
+| Form | 64 × 64 B, KiB | 1024 × 64 B, KiB | 64 × 64 KiB, KiB |
+| --- | ---: | ---: | ---: |
+| Callee WF | 3,504 | 15,024 | 5,492 |
+| Balanced WF | 3,524 | 15,060 | 6,212 |
+| Generated continuation | 3,040 | 12,448 | 5,504 |
+| `uring-64k` | 2,244 | 4,188 | 3,284 |
+| `epoll-calloc-main` | 2,008 | 9,720 | 3,804 |
+| `cpp-elide-calloc` | 4,132 | 12,104 | 5,912 |
+
+Values are medians of three live snapshots. The continuation's large-message
+range is 5,336–6,568 KiB. Its small-message storage saving does not compensate
+for the measured execution loss under the stated performance priority.
+Shared provided buffers, shared scratch and per-connection calloc retain
+different storage strategies; this table does not erase that distinction.
+The sequential source and continuation representation remain viable research
+inputs; this particular two-thread coordinator is not a competitive executor.
 
 ## Fortieth experiment: independent Rust and Rayon CPU reference
 
