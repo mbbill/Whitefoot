@@ -145,24 +145,27 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             .functions()
             .get(function as usize)
             .ok_or(BackendFailure::InvalidIr)?;
-        if target.result() != ty || target.parameters().len() != arguments.len() {
+        let abi = FunctionAbi::build(self.program, target)?;
+        if abi.result().ty() != ty || abi.parameters().len() != arguments.len() {
             return Err(BackendFailure::InvalidIr);
         }
         let mut rendered = Vec::with_capacity(arguments.len());
-        let stored_result = is_stored_aggregate(self.program, ty)?;
+        let stored_result = abi.result().uses_destination();
         if stored_result {
-            rendered.push(format!("ptr {}", self.value_place(result)?));
+            let destination = self.value_place(result)?;
+            rendered.push(format!("ptr {destination}"));
         }
-        for (argument, (_, parameter_type)) in arguments.iter().zip(target.parameters()) {
-            if self.value_type(*argument) != Some(*parameter_type) {
+        for (argument, parameter) in arguments.iter().zip(abi.parameters()) {
+            if self.value_type(*argument) != Some(parameter.ty()) {
                 return Err(BackendFailure::InvalidIr);
             }
-            if is_stored_aggregate(self.program, *parameter_type)? {
-                rendered.push(format!("ptr {}", self.value_place(*argument)?));
+            if parameter.is_indirect() {
+                let address = self.value_place(*argument)?;
+                rendered.push(format!("ptr {address}"));
             } else {
                 rendered.push(format!(
                     "{} {}",
-                    llvm_type(self.program, *parameter_type)?,
+                    llvm_type(self.program, parameter.ty())?,
                     self.value_name(*argument)
                 ));
             }

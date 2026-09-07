@@ -25,10 +25,11 @@ mod system;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write;
 
+use super::abi::FunctionAbi;
 use super::qualification::{
     Qualification, QualificationFailure, SystemTarget, qualified_representation, qualify_program,
 };
-use super::storage::{FunctionStoragePlan, is_stored_aggregate, operation_operands};
+use super::storage::{FunctionStoragePlan, operation_operands};
 use super::target::{
     TargetAggregateLayout, TargetFramePlan, TargetFrameSlot, TargetLayout, TargetLayoutFailure,
     TargetStorageType, parallel_lane_frame_layout, plan_target_frame, validate_program,
@@ -1461,6 +1462,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 
     fn emit(mut self) -> Result<String, BackendFailure> {
         self.incoming = self.collect_incoming()?;
+        let abi = FunctionAbi::build(self.program, self.function)?;
         let symbol = match self.sequential_clones {
             Some(_) => sequential_clone_symbol(self.function.name()),
             None => source_symbol(self.function.name()),
@@ -1468,22 +1470,28 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         write!(
             self.output,
             "define internal {} @{symbol}(",
-            if is_stored_aggregate(self.program, self.function.result())? {
+            if abi.result().uses_destination() {
                 "void".to_owned()
             } else {
-                llvm_type(self.program, self.function.result())?
+                llvm_type(self.program, abi.result().ty())?
             },
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        let result_address = is_stored_aggregate(self.program, self.function.result())?;
+        let result_address = abi.result().uses_destination();
         if result_address {
             self.output.push_str("ptr %wf.result");
         }
-        for (index, (value, ty)) in self.function.parameters().iter().enumerate() {
+        for (index, ((value, _), parameter)) in self
+            .function
+            .parameters()
+            .iter()
+            .zip(abi.parameters())
+            .enumerate()
+        {
             if index != 0 || result_address {
                 self.output.push_str(", ");
             }
-            if self.storage.slot(*value).is_some() {
+            if parameter.is_indirect() {
                 write!(self.output, "ptr %wf.arg.v{}", value.ordinal())
                     .map_err(|_| BackendFailure::TextEmission)?;
                 continue;
@@ -1491,7 +1499,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             write!(
                 self.output,
                 "{} {}",
-                llvm_type(self.program, *ty)?,
+                llvm_type(self.program, parameter.ty())?,
                 self.value_name(*value)
             )
             .map_err(|_| BackendFailure::TextEmission)?;
@@ -1509,12 +1517,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             }
             self.emit_block_parameters(block_id, block)?;
             if index == 0 {
-                for (value, ty) in self.function.parameters() {
-                    if self.storage.slot(*value).is_some() {
+                for ((value, _), parameter) in
+                    self.function.parameters().iter().zip(abi.parameters())
+                {
+                    if parameter.is_indirect() {
+                        let destination = self.value_place(*value)?;
                         self.copy_storage(
-                            *ty,
+                            parameter.ty(),
                             &format!("%wf.arg.v{}", value.ordinal()),
-                            &self.value_place(*value)?,
+                            &destination,
                         )?;
                     }
                 }
@@ -2126,10 +2137,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     .map_err(|_| BackendFailure::TextEmission)
             }
             IrTerminator::Return { value, drops } => {
-                if self.value_type(*value) != Some(self.function.result()) {
+                let abi = FunctionAbi::build(self.program, self.function)?;
+                if self.value_type(*value) != Some(abi.result().ty()) {
                     return Err(BackendFailure::InvalidIr);
                 }
-                if is_stored_aggregate(self.program, self.function.result())? {
+                if abi.result().uses_destination() {
                     self.store_value_at(*value, "%wf.result")?;
                     self.emit_drops(drops)?;
                     return writeln!(self.output, "  ret void")
@@ -2139,7 +2151,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 writeln!(
                     self.output,
                     "  ret {} {}",
-                    llvm_type(self.program, self.function.result())?,
+                    llvm_type(self.program, abi.result().ty())?,
                     self.value_name(*value)
                 )
                 .map_err(|_| BackendFailure::TextEmission)

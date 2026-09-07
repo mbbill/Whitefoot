@@ -1,5 +1,6 @@
 //! Conservative textual LLVM emission for the active Whitefoot specification.
 
+mod abi;
 mod emitter;
 mod qualification;
 mod stack_ledger;

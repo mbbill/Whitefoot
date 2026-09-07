@@ -58,7 +58,7 @@ use std::fmt::Write;
 
 use super::{BackendFailure, FunctionEmitter, llvm_type, source_symbol, value_name};
 use super::{Qualification, TargetLayout};
-use crate::backend::storage::is_stored_aggregate;
+use crate::backend::abi::{FunctionAbi, ResultAbi};
 use crate::{
     IrCompletionStep, IrFunction, IrInstruction, IrOperation, IrProgram, IrSynthesis, IrType,
     IrValueId,
@@ -376,7 +376,7 @@ pub(crate) struct ComputeHandedOut {
     /// The value the joined call defines: a granted lane's result read out of
     /// the frame, or a refused lane's own call, whichever edge ran.
     result: IrValueId,
-    result_type: IrType,
+    result_abi: ResultAbi,
     /// The frame's LLVM struct type, `{ arguments..., result }`.
     frame_type: String,
     /// The acquired lane's frame, or null when no lane was granted. It is both
@@ -420,6 +420,7 @@ pub(crate) struct StagedLane {
     /// The call's result, which the drain defines and the remainder reads.
     pub(super) result: IrValueId,
     pub(super) result_type: IrType,
+    abi: FunctionAbi,
     pub(super) result_llvm: String,
     /// The callee's ordinal and symbol, and the call's operand values.
     pub(super) callee_ordinal: u32,
@@ -461,33 +462,31 @@ impl FunctionEmitter<'_, '_> {
             .functions()
             .get(function as usize)
             .ok_or(BackendFailure::InvalidIr)?;
-        if target.result() != ty || target.parameters().len() != arguments.len() {
+        let abi = FunctionAbi::build(self.program, target)?;
+        if abi.result().ty() != ty || abi.parameters().len() != arguments.len() {
             return Err(BackendFailure::InvalidIr);
         }
         let mut field_types = Vec::with_capacity(arguments.len() + 1);
         let mut operands = Vec::with_capacity(arguments.len());
         let mut call_arguments = Vec::with_capacity(arguments.len());
-        let mut indirect_fields = Vec::with_capacity(arguments.len() + 1);
-        for (argument, (_, parameter_type)) in arguments.iter().zip(target.parameters()) {
-            if self.value_type(*argument) != Some(*parameter_type) {
+        for (argument, parameter) in arguments.iter().zip(abi.parameters()) {
+            if self.value_type(*argument) != Some(parameter.ty()) {
                 return Err(BackendFailure::InvalidIr);
             }
-            let parameter = llvm_type(self.program, *parameter_type)?;
-            let indirect = is_stored_aggregate(self.program, *parameter_type)?;
+            let parameter_type = llvm_type(self.program, parameter.ty())?;
             let operand = self.value_operand(*argument)?;
-            operands.push(format!("{parameter} {operand}"));
-            call_arguments.push(if indirect {
-                format!("ptr {}", self.value_place(*argument)?)
+            operands.push(format!("{parameter_type} {operand}"));
+            call_arguments.push(if parameter.is_indirect() {
+                let address = self.value_place(*argument)?;
+                format!("ptr {address}")
             } else {
-                format!("{parameter} {operand}")
+                format!("{parameter_type} {operand}")
             });
-            field_types.push(parameter);
-            indirect_fields.push(indirect);
+            field_types.push(parameter_type);
         }
         let result_type = llvm_type(self.program, ty)?;
         let result_field = field_types.len();
         field_types.push(result_type.clone());
-        indirect_fields.push(is_stored_aggregate(self.program, ty)?);
         let frame_type = format!("{{ {} }}", field_types.join(", "));
         let frame_layout = self
             .ordinary_lane_frames
@@ -501,7 +500,7 @@ impl FunctionEmitter<'_, '_> {
                 symbol,
                 &frame_type,
                 &field_types,
-                &indirect_fields,
+                &abi,
                 &callee,
                 &result_type,
             )
@@ -535,7 +534,7 @@ impl FunctionEmitter<'_, '_> {
         .map_err(|_| BackendFailure::TextEmission)?;
         self.handed_out.push(HandedOut::Compute(ComputeHandedOut {
             result,
-            result_type: ty,
+            result_abi: abi.result(),
             frame_type,
             frame,
             result_field,
@@ -632,25 +631,22 @@ impl FunctionEmitter<'_, '_> {
         }
         let mut operands = Vec::with_capacity(arguments.len());
         let mut call_arguments = Vec::with_capacity(arguments.len());
-        let mut indirect_fields = Vec::with_capacity(arguments.len() + 1);
-        for (argument, (_, parameter_type)) in arguments.iter().zip(target.parameters()) {
-            if self.value_type(*argument) != Some(*parameter_type) {
+        for (argument, parameter) in arguments.iter().zip(plan.abi.parameters()) {
+            if self.value_type(*argument) != Some(parameter.ty()) {
                 return Err(BackendFailure::InvalidIr);
             }
-            let parameter = llvm_type(self.program, *parameter_type)?;
+            let parameter_type = llvm_type(self.program, parameter.ty())?;
             let operand = self.value_operand(*argument)?;
-            let indirect = is_stored_aggregate(self.program, *parameter_type)?;
-            operands.push(format!("{parameter} {operand}"));
-            call_arguments.push(if indirect {
-                format!("ptr {}", self.value_place(*argument)?)
+            operands.push(format!("{parameter_type} {operand}"));
+            call_arguments.push(if parameter.is_indirect() {
+                let address = self.value_place(*argument)?;
+                format!("ptr {address}")
             } else {
-                format!("{parameter} {operand}")
+                format!("{parameter_type} {operand}")
             });
-            indirect_fields.push(indirect);
         }
         let rendered_arguments = call_arguments.join(", ");
-        let stored_result = is_stored_aggregate(self.program, ty)?;
-        indirect_fields.push(stored_result);
+        let stored_result = plan.abi.result().uses_destination();
         let result_type = plan.result_llvm.clone();
         let answer = self.staged_ring_element(
             super::FunctionSlot::StagedResult(result),
@@ -682,7 +678,7 @@ impl FunctionEmitter<'_, '_> {
                 symbol,
                 &plan.frame_type,
                 &plan.field_types,
-                &indirect_fields,
+                &plan.abi,
                 &callee,
                 &result_type,
             )
@@ -796,11 +792,9 @@ impl FunctionEmitter<'_, '_> {
         let done = par_staged_done_label(plan.result);
         // Preserve the existing value phi; copy the joined aggregate into
         // caller backing before the runtime can reuse the released lane.
-        let save_waited = if is_stored_aggregate(self.program, plan.result_type)? {
-            format!(
-                "store {result_type} {waited}, ptr {}\n  ",
-                self.value_place(plan.result)?
-            )
+        let save_waited = if plan.abi.result().uses_destination() {
+            let destination = self.value_place(plan.result)?;
+            format!("store {result_type} {waited}, ptr {destination}\n  ")
         } else {
             String::new()
         };
@@ -840,32 +834,6 @@ impl FunctionEmitter<'_, '_> {
         ty: IrType,
         split: &LoopSplitSite<'_>,
     ) -> Result<(), BackendFailure> {
-        let result_type = llvm_type(self.program, ty)?;
-        let mut arguments = Vec::with_capacity(split.captures.len() + 4);
-        arguments.push(if is_stored_aggregate(self.program, ty)? {
-            format!("ptr {}", self.value_place(split.seed)?)
-        } else {
-            format!("{result_type} {}", self.value_name(split.seed))
-        });
-        for endpoint in [split.lower, split.upper] {
-            if self.value_type(endpoint) != Some(U64) {
-                return Err(BackendFailure::InvalidIr);
-            }
-            arguments.push(format!("i64 {}", self.value_name(endpoint)));
-        }
-        for capture in split.captures {
-            let capture_type = self.value_type(*capture).ok_or(BackendFailure::InvalidIr)?;
-            arguments.push(if is_stored_aggregate(self.program, capture_type)? {
-                format!("ptr {}", self.value_place(*capture)?)
-            } else {
-                format!(
-                    "{} {}",
-                    llvm_type(self.program, capture_type)?,
-                    self.value_name(*capture)
-                )
-            });
-        }
-
         let target = if self.sequential_clones.is_some() {
             split.chunk
         } else {
@@ -876,36 +844,55 @@ impl FunctionEmitter<'_, '_> {
             .functions()
             .get(target as usize)
             .ok_or(BackendFailure::InvalidIr)?;
-        // The site's operands against the callee's declared parameters, exactly
-        // as a handed-out call checks its own. One lowering builds both lists
-        // from one computation, so a mismatch is a defect in that lowering
-        // rather than a shape this has to render; the point of the check is
-        // that such a defect stops here instead of reaching the assembler as
-        // type-mismatched text.
-        let declared = function.parameters();
-        // The splitter takes the allowance as one further parameter, which the
-        // overlapped world appends below; every other operand is already in
-        // `arguments`.
+        let abi = FunctionAbi::build(self.program, function)?;
+        let declared = abi.parameters();
+        // The splitter alone takes one trailing allowance. The chunk and
+        // splitter otherwise share the typed internal parameter/result ABI.
         let expected = declared
             .len()
             .checked_sub(usize::from(self.sequential_clones.is_none()))
             .ok_or(BackendFailure::InvalidIr)?;
-        if expected != arguments.len() {
-            return Err(BackendFailure::InvalidIr);
-        }
-        if function.result() != ty
-            || declared.first().map(|(_, ty)| *ty) != Some(ty)
+        if expected != split.captures.len() + 3
+            || abi.result().ty() != ty
+            || declared.first().map(|parameter| parameter.ty()) != Some(ty)
             || split
                 .captures
                 .iter()
                 .zip(declared.get(3..).unwrap_or_default())
-                .any(|(capture, (_, parameter))| self.value_type(*capture) != Some(*parameter))
+                .any(|(capture, parameter)| self.value_type(*capture) != Some(parameter.ty()))
         {
             return Err(BackendFailure::InvalidIr);
         }
+        let result_type = llvm_type(self.program, ty)?;
+        let mut arguments = Vec::with_capacity(split.captures.len() + 4);
+        arguments.push(if declared[0].is_indirect() {
+            let address = self.value_place(split.seed)?;
+            format!("ptr {address}")
+        } else {
+            format!("{result_type} {}", self.value_name(split.seed))
+        });
+        for endpoint in [split.lower, split.upper] {
+            if self.value_type(endpoint) != Some(U64) {
+                return Err(BackendFailure::InvalidIr);
+            }
+            arguments.push(format!("i64 {}", self.value_name(endpoint)));
+        }
+        for (capture, parameter) in split.captures.iter().zip(&declared[3..]) {
+            arguments.push(if parameter.is_indirect() {
+                let address = self.value_place(*capture)?;
+                format!("ptr {address}")
+            } else {
+                format!(
+                    "{} {}",
+                    llvm_type(self.program, parameter.ty())?,
+                    self.value_name(*capture)
+                )
+            });
+        }
+
         let callee = self.callee_symbol(target, function.name());
         if self.sequential_clones.is_some() {
-            return self.emit_split_call(result, ty, &callee, arguments);
+            return self.emit_split_call(result, abi.result(), &callee, arguments);
         }
 
         // The span, computed so an inverted range asks for nothing rather than
@@ -928,18 +915,18 @@ impl FunctionEmitter<'_, '_> {
         .map_err(|_| BackendFailure::TextEmission)?;
         self.parallel.queries_split_budget = true;
         arguments.push(format!("i64 {budget}"));
-        self.emit_split_call(result, ty, &callee, arguments)
+        self.emit_split_call(result, abi.result(), &callee, arguments)
     }
 
     fn emit_split_call(
         &mut self,
         result: IrValueId,
-        ty: IrType,
+        result_abi: ResultAbi,
         callee: &str,
         mut arguments: Vec<String>,
     ) -> Result<(), BackendFailure> {
-        let result_type = llvm_type(self.program, ty)?;
-        if is_stored_aggregate(self.program, ty)? {
+        let result_type = llvm_type(self.program, result_abi.ty())?;
+        if result_abi.uses_destination() {
             let destination = self.value_place(result)?;
             arguments.insert(0, format!("ptr {destination}"));
             // LoopSplit uses the value-definition bridge, whose ordinary
@@ -993,7 +980,7 @@ impl FunctionEmitter<'_, '_> {
             let inline = par_inline_label(pending.result);
             let wait = par_wait_label(pending.result);
             let done = par_done_label(pending.result);
-            let result_type = llvm_type(self.program, pending.result_type)?;
+            let result_type = llvm_type(self.program, pending.result_abi.ty())?;
             let ComputeHandedOut {
                 frame,
                 frame_type,
@@ -1002,10 +989,7 @@ impl FunctionEmitter<'_, '_> {
                 result_field,
                 ..
             } = &pending;
-            let (inline_call, save_waited) = if is_stored_aggregate(
-                self.program,
-                pending.result_type,
-            )? {
+            let (inline_call, save_waited) = if pending.result_abi.uses_destination() {
                 let destination = self.value_place(pending.result)?;
                 let arguments = if arguments.is_empty() {
                     format!("ptr {destination}")
@@ -1096,18 +1080,18 @@ fn thunk_definition(
     symbol: &str,
     frame_type: &str,
     field_types: &[String],
-    indirect_fields: &[bool],
+    abi: &FunctionAbi,
     callee: &str,
     result_type: &str,
 ) -> String {
     let mut body = format!("define internal void {symbol}(ptr %frame) {{\nentry:\n");
     let mut rendered = Vec::with_capacity(field_types.len() - 1);
-    for (index, field_type) in field_types.iter().enumerate().take(field_types.len() - 1) {
+    for (index, (field_type, parameter)) in field_types.iter().zip(abi.parameters()).enumerate() {
         let _ = writeln!(
             body,
             "  %p{index} = getelementptr inbounds {frame_type}, ptr %frame, i32 0, i32 {index}"
         );
-        if indirect_fields[index] {
+        if parameter.is_indirect() {
             // The field still owns the complete argument payload. The callee
             // snapshots this content into its own activation before mutation.
             rendered.push(format!("ptr %p{index}"));
@@ -1117,7 +1101,7 @@ fn thunk_definition(
         }
     }
     let field = field_types.len() - 1;
-    if indirect_fields[field] {
+    if abi.result().uses_destination() {
         // Construct into the same result field the existing join path reads.
         // No pointer to worker-local or released storage becomes the result.
         let _ = write!(
@@ -1247,6 +1231,7 @@ pub(super) fn staged_lane_plan(
     if callee.result() != result_type || callee.parameters().len() != arguments.len() {
         return Err(BackendFailure::InvalidIr);
     }
+    let abi = FunctionAbi::build(program, callee)?;
     let mut field_types = Vec::with_capacity(arguments.len() + 1);
     for (_, parameter_type) in callee.parameters() {
         field_types.push(llvm_type(program, *parameter_type)?);
@@ -1264,6 +1249,7 @@ pub(super) fn staged_lane_plan(
     Ok(Some(StagedLane {
         result,
         result_type,
+        abi,
         result_llvm,
         callee_ordinal: *callee_ordinal,
         callee: source_symbol(callee.name()),

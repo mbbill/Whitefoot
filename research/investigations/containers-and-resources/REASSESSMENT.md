@@ -295,12 +295,10 @@ capacity, replacing inline payload with pointers, or adding a scheduling edge.
 | Introduce a second complete storage IR | Not selected for this slice: the needed distinctions can extend the existing typed CFG. No current witness requires replacing scalar operations and control-flow machinery. |
 | Expose a public partial-object construction protocol first | Not a prerequisite for these existing value-return programs. It answers a separate source-authority question and needs its own workload and checked transition evidence. |
 
-Implementation can first preserve the checked information without changing the
-emitted ABI, then use it for ordinary fresh destinations and cleanup. A normalized
-form must not be routed into a consumer that has not been updated to understand
-it. Shared consumption by the parallel paths remains part of completion, subject
-to the existing rejected-edit boundary; this sequencing is not an alternative way
-to apply that edit or a reason to report the ordinary subset as the finished goal.
+Implementation first preserves checked information, then applies it to fresh
+destinations and cleanup. A normalized form must not reach a consumer that has
+not been updated to understand it. Shared consumption by ordinary and parallel
+paths remains part of completion; an ordinary-only subset is insufficient.
 
 These are requirements on the representation, not a mandate for a runtime
 per-field bitmap, a new allocation, a universal storage wrapper, or a second
@@ -487,14 +485,18 @@ restriction must prove captured target storage identity and lifetime, not merely
 that the root binding is live after the call.
 
 The [parallel aggregate adapters](../../../compiler/src/backend/emitter/parallel.rs)
-now use the existing aggregate parameter/result ABI on the ordinary, refused,
-staged, and split-call paths. Granted frames retain their complete inline argument
+now use one typed [internal ABI plan](../../../compiler/src/backend/abi.rs), shared
+with function definitions, on the ordinary, refused, staged, thunk and split-call
+paths. Parameters distinguish values from aggregate content pointers; results
+distinguish values from destination passing. Source modes do not grant aliasing
+permission, and qualified system wrappers retain their separate value ABI and
+proof-only argument erasure. Granted frames retain their complete inline argument
 and result layout. A joined aggregate is copied into caller backing before frame
 release, and staged carries/results are materialized into their declared caller
-destinations. The separate review patch has been applied and removed. These
-adapters complete the current representation's delivery paths; the selected
-shared storage/call normalization still needs to replace its late representation
-bridge. The additional per-iteration backing above addresses a distinct lifetime
+destinations. These adapters complete the current representation's delivery paths.
+The shared ABI classification does not yet remove the late result-to-owner copy
+or the split call's result load/save bridge. The additional per-iteration backing
+above addresses a distinct lifetime
 requirement that copying a descriptor into a frame could not satisfy.
 
 The committed implementation at `f5dab70c` now has a separate 168-sample run using

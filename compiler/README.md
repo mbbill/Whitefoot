@@ -316,8 +316,11 @@ Aggregate IR values remain independent snapshots; deterministic CFG liveness
 permits dead storage to be reused, and internal aggregate results use explicit
 destinations. An exposed address or deferred use prevents unsafe reuse. A
 mutation captures its target components before its RHS; replacement reads the
-old owner only at the subsequent commit. Ordinary, refused, staged and split
-calls use the aggregate parameter/result ABI. Shared destination normalization
+old owner only at the subsequent commit. Function definitions and ordinary,
+refused, staged, thunk and split calls consume the typed internal ABI in
+`src/backend/abi.rs`: inline aggregate parameters use content pointers and
+aggregate results use destinations. Descriptors retain value passing; qualified
+system wrappers retain their separate ABI. Shared destination normalization
 still needs to remove the one-time result-to-addressable-owner transfer.
 
 Checked cleanup names either a saved value or content at a typed place. Scope
