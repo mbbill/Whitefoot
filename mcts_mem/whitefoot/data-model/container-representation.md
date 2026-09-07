@@ -142,12 +142,18 @@
   `0101` separating state. An executable near-neighbor check corrected the paper
   claim. Cross-review also strengthened the model's independent oracle to retain
   the obligation count from trace entry instead of recomputing it before cleanup.
-- 2026-09-06 implementation checkpoint: the in-progress worktree passes the frozen
+- 2026-09-06 implementation checkpoint: commit `f5dab70c` passes the frozen
   scalar correctness matrix and mandatory wide-record/inline-view execution
   probes. This closes their specific baseline capability stops, not the whole
-  implementation slice. The previous 168 timing samples remain baseline evidence;
-  this checkpoint supplies neither final performance nor a full repository gate
-  for the modified tree. [Current implementation boundary](../../../research/investigations/containers-and-resources/REASSESSMENT.md#first-implementation-scope-and-completion-evidence).
+  implementation slice. A new 168-sample run of the same scalar kernels measures
+  four-pass medians of 108 ns/1.52 us/25.4 us at 16/256/4096 elements. Element loops
+  no longer move whole payloads; one-time result-to-binding copies and excess
+  physical storage remain. The N=4096 static entry frame is 125,872 bytes, with
+  its constructor now inlined. Keep the baseline and new run distinct, and do not
+  infer optimal storage or a language ranking from them. Parallel integration and
+  the full repository gate remain incomplete.
+  [Both measurements and limits](../../../research/experiments/container-representation/dense/RESULTS.md),
+  [current implementation boundary](../../../research/investigations/containers-and-resources/REASSESSMENT.md#first-implementation-scope-and-completion-evidence).
 
 ## Moves
 

@@ -244,9 +244,16 @@ superseded. It preserves frame layout and publication/join/release order, copyin
 aggregate results into caller storage before frame release. Current parallel
 integration is incomplete until this patch and its required validation land.
 
-This checkpoint is not completion of the slice: the full regression gate, final
-machine-shape evidence, and comparable post-change measurements remain pending.
-The retained 168 timing samples are still the old implementation's baseline.
+The committed implementation at `f5dab70c` now has a separate 168-sample run using
+the same scalar kernels and procedure. Four-pass medians at 16/256/4096 elements
+are 108.38 ns/1.52 us/25.4 us, versus the baseline's 408 ns/176 us/43.9 ms.
+Construction and update loops no longer transfer whole payloads. A one-time
+result-to-addressable-binding copy and excess frame storage remain: N=4096 uses
+125,872 static entry-frame bytes versus the new native control's 32,832 bytes.
+This bounds the result rather than establishing optimal placement or a language
+performance ranking. [Both runs, machine shape and limits](../../experiments/container-representation/dense/RESULTS.md)
+are retained together. The full regression gate and parallel integration still
+prevent treating this checkpoint as completion of the slice.
 
 Then implement the selected bounded semantic capabilities: full-state construction
 and sealing, checked empty-run consume, projected result contracts, and two-span
@@ -552,5 +559,17 @@ the compiler and research checks, the full native conformance adapter (730 passe
 3 skipped), and the snapshot corpus (484 passed, no flips). No test was weakened or
 removed to obtain this result. Those counts establish the pre-implementation
 experiment and selection revision. Implementation is now in progress; the
-capability checkpoint above is not a full gate run or final performance result for
-the modified worktree. No main merge is proposed here.
+implementation checkpoint above has its own bounded performance result, but the
+earlier green gate does not validate the modified compiler. No main merge is
+proposed here.
+
+At the `f5dab70c` implementation checkpoint, the canonical compiler `test-unit`
+stage passes 1,488 tests (67 sampling tests belong to its separate stage). The
+root `make check` passes specification archive/prose checks and conformance
+structure/coverage (25 runner tests, 161/161 rules), then stops at compiler
+formatting. A formatting-only correction in `cost_shape.rs` resolves the one
+unrelated diff; remaining format differences and the independent Clippy
+`write_with_newline` failure are in `backend/emitter/parallel.rs`, whose remaining
+edit is awaiting the explicit permission described above. No check was disabled.
+Sampling, integration, the full native conformance adapter and the complete gate
+must run after that integration; the unit-stage success is not their substitute.

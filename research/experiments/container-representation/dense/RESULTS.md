@@ -9,12 +9,13 @@ Whitefoot implementations. This fixture remains owned by the container
 representation experiment; supersede its measurements and remove obsolete
 variants when the representation question changes.
 
-The retained timings and frame measurements below are the pre-implementation
-baseline at `eff095c7`. The owned-storage implementation is being validated on
-this branch; its comparable timing run and full repository gate are still
-pending. Its first executable checkpoint passes all three scalar sizes, the
-N=16 four-field record, and the inline exclusive-view program. Those are
-capability results, not replacement timing measurements or workload prevalence.
+The two retained runs compare the pre-implementation baseline at `eff095c7` with
+the owned-storage checkpoint at `f5dab70c`. The latter removes whole-payload
+transfers from the element loops and passes all three scalar sizes, the N=16
+four-field record, and the inline exclusive-view program. It still retains a
+one-time aggregate transfer and excess frame storage. The full repository gate
+and parallel aggregate integration remain pending; these measurements establish
+this experiment's behavior and cost, not workload prevalence or merge readiness.
 
 ## Reproduction and scope
 
@@ -26,12 +27,16 @@ cargo build --manifest-path ../../../../compiler/Cargo.toml --locked --offline \
 make check
 make measure
 build/driver summarize measurements.csv
+build/driver summarize owned-storage-measurements.csv
 ```
 
 `WHITEFOOTC`, `CLANG`, and `RUSTC` can be overridden. `make clean` removes only
 this experiment's generated `build/` artifacts. Use a clean build after changing
 compiler flags or tools. `make measure` writes new results under `build/`; it
-does not overwrite the retained `measurements.csv`.
+does not overwrite either retained CSV. `measurements.csv` owns the baseline
+samples; `owned-storage-measurements.csv` owns the first implementation samples.
+Keep the pair while this before/after comparison is used, and supersede it when
+the experiment changes rather than accumulating unexamined runs.
 
 Recorded run: 2026-09-06, arm64 macOS 26.6.2 (25G83), Apple Clang 21.0.0
 (clang-2100.1.1.101), Rust 1.98.1. The sandbox did not permit querying the CPU
@@ -81,7 +86,7 @@ not award the references an initialization-elision advantage in their source.
 The native optimizer retains a one-time memset for the larger direct-storage
 variants, while their element loops remain linear.
 
-`make check` passes. For each N in {16,256,4096}, 12 runtime seeds and R in
+The baseline `make check` passed. For each N in {16,256,4096}, 12 runtime seeds and R in
 {0,1,3,4,8} give 60 differential inputs per variant. Every Whitefoot and native
 result agrees. Three complete Whitefoot command executables also agree with an
 independent safe-Rust oracle at seed=19, R=3. The timed run originally verified
@@ -89,7 +94,7 @@ independent safe-Rust oracle at seed=19, R=3. The timed run originally verified
 changing the measured kernels or timing procedure. Verification contains no
 timing threshold.
 
-## Measurements
+## Baseline measurements
 
 The retained CSV has 168 samples: 3 sizes × 2 round counts × 4 variants × 7
 samples. Each sample reports:
@@ -121,7 +126,7 @@ C-value spans 29,431.64–61,250.98 ns and Whitefoot spans
 43,335,000–61,049,000 ns. The large gap is also present in the minima; the small
 differences between C-value and C-destination do not justify ranking them.
 
-## Storage and copy evidence
+## Baseline storage and copy evidence
 
 Clang `-fstack-usage` reports these static entry-function frames in bytes:
 
@@ -137,7 +142,9 @@ usage. At N=4096, `wf_dense` additionally calls `wf_build`, whose frame is
 platform helper stack use. At N=16 a native update helper can add 16 bytes.
 No measured kernel allocates from the heap.
 
-The artifacts are reproducible with `make shape` and retained under `build/`:
+The artifacts are reproducible with `make shape` at the corresponding revision
+and retained under `build/`. A current build contains the new checkpoint's shape,
+not the historical baseline's:
 
 ```sh
 cat build/dense*.su build/native*.su
@@ -170,6 +177,75 @@ single aggregate allocation. `construct_across_boundary` receives that same
 single allocation as an ordinary pointer. Neither control has an intervening
 aggregate memcpy. This establishes feasibility of a direct destination across
 these retained internal calls, not timing parity for every ABI or aggregate.
+
+## Owned-storage checkpoint
+
+The compiler was freshly built from the clean implementation commit
+`f5dab70cf785a75122e96dfdaf835c4e8e6364aa` on 2026-09-06 local time
+(2026-09-07 UTC), with binary SHA-256
+`9fc3a257dfb148ee2f330954a2ef0cc9dd9b575a0ab03c1ff022d40a3be570db`.
+The OS, Rust, Clang, flags, seed and measurement procedure match the baseline.
+`make clean && make measure` rebuilt every artifact. The three scalar and one
+wide-record checks each passed 60 inputs against all four variants; the retained
+N=256 boundary control passed against all six variants. All command executables
+and the inline-view executable returned 0. The wide fixture correction below
+does not change any timed scalar kernel.
+
+The new CSV contains the same 168-sample matrix. Compiler builds finished before
+timing, and this task's agents were idle. Other host activity was not controlled;
+this is one local measurement, not a cross-platform or statistical speed claim.
+
+Median nanoseconds per complete kernel call:
+
+| Elements | Update passes | Whitefoot | C value return | C destination | C whole-value append |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 16 | 0 | 11.23 | 10.96 | 10.91 | 168.69 |
+| 16 | 4 | 108.38 | 60.66 | 61.25 | 208.15 |
+| 256 | 0 | 491.04 | 607.22 | 606.17 | 14,317.87 |
+| 256 | 4 | 1,522.03 | 1,480.22 | 1,479.98 | 15,321.78 |
+| 4096 | 0 | 9,077.64 | 13,236.82 | 13,140.62 | 3,618,125.00 |
+| 4096 | 4 | 25,380.86 | 28,943.36 | 29,020.51 | 3,626,875.00 |
+
+For four passes, Whitefoot's before/after median ratios are approximately
+3.77, 115.65 and 1,728.31. Against the C-value control in the new run, its ratios
+are 1.79, 1.03 and 0.88. The small case remains slower. These comparisons isolate
+this algorithm/layout; they do not rank the languages or establish a cause for
+every remaining difference.
+
+| Elements | Baseline Whitefoot entry frame | New Whitefoot entry frame | New C value/destination entry frame |
+| ---: | ---: | ---: | ---: |
+| 16 | 656 | 448 | 160 |
+| 256 | 10,464 | 6,240 | 2,112 |
+| 4096 | 164,160 | 125,872 | 32,832 |
+
+The new constructor is inlined in all three optimized kernels. At N=4096 there
+is therefore no additional 65,488-byte constructor frame; the former two-frame
+sum was 229,648 bytes. These remain static function reports, not RSS or a complete
+stack bound. The wide entry frame is 1,664 bytes and has no retained timing run.
+
+The raw constructor writes each new word and its run metadata directly into
+`%wf.result`; no payload snapshot crosses a construction-loop edge. Optimized
+update and checksum loops address one word at a time, with no aggregate transfers
+in those loops. There is no heap allocation in the measured kernels.
+
+The result destination and the subsequently addressable binding are still
+separate: raw `wf_dense` loads the completed aggregate from `%wf.slot.0` and
+stores it into `%v3` once before the update loops. The third slot is a snapshot
+loaded for final cleanup. This `u64` run has no element cleanup, so optimization
+removes that final transfer but retains the empty middle field in the unified
+frame. There are not three live source owners.
+
+In optimized N=4096 IR the initial transfer expands into payload loads and stores
+even though there is no `memcpy` spelling. The assembly reserves 98,352 bytes for
+the three aggregate fields, 27,360 further local/spill bytes and 160 saved-register
+bytes, totaling 125,872. Absence of `memcpy` is not evidence of absence of copying.
+No old aggregate snapshot is required by this particular source: construction,
+helper return and binding initialization transfer one owner, and element reads
+copy only `u64`. The remaining copies reflect conservative placement, rather than
+a source ownership requirement. This checkpoint removes the repeated work shape
+without claiming optimal placement or a single physical payload. Result-to-binding
+reuse and frame compaction require a general lifetime justification that also
+preserves actual snapshots in other programs.
 
 ## Wide-record boundary and conclusions
 

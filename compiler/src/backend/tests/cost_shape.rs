@@ -282,7 +282,9 @@ fn is_aggregate_destination<'module>(function: &'module str, mut pointer: &'modu
     loop {
         let first_parameter = function.lines().next().and_then(|header| {
             let (callee, _) = header.split_once('@')?.1.split_once('(')?;
-            call_argument(header, callee, 0)?.split_whitespace().next_back()
+            call_argument(header, callee, 0)?
+                .split_whitespace()
+                .next_back()
         });
         if pointer == "%wf.result" && first_parameter == Some(pointer) {
             return true;
