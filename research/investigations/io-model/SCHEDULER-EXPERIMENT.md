@@ -4199,9 +4199,21 @@ actual listening socket throughout.
 All new network cases and the existing file/pipe/recursive cases pass locally
 with the generated LLVM functions and C runtime instrumented by ASan/UBSan
 and separately by ThreadSanitizer. Eighty relevant ordinary backend tests
-and eleven native network integration tests also pass. Linux native
-qualification of the network extension is pending. The host
-still owns one root. Staged publication, compute checkpoints and asynchronous
+and eleven native network integration tests also pass. Revision
+`d5037bfc191073fe49bc8ceb0625ad544b960e99` also passes the Linux native
+[continuation qualification](https://github.com/mbbill/Whitefoot/actions/runs/34080707758/job/101615300619),
+the [canonical gate](https://github.com/mbbill/Whitefoot/actions/runs/34080707729)
+and [host qualification](https://github.com/mbbill/Whitefoot/actions/runs/34080707724).
+The native TCP byte oracles pass at 0 and 65,673 bytes, with respectively 3
+and 4 ring publications; the forced-helper runs have zero ring publications.
+The native client and refused-connect cases each have 2 ring publications,
+while their forced-helper counterparts have zero. In addition to these
+aggregate counts, each exercised accept/connect/receive kind must satisfy
+the oracle's selected-route requirement. Both occupied-listen routes report
+one helper publication, as required by the existing listen implementation.
+The earlier file, pipe, recursive-loan and independent C++ continuation
+qualifications also pass in the same job. The host still owns one root.
+Staged publication, compute checkpoints and asynchronous
 cleanup are not yet integrated, so this is the network prerequisite for the
 concurrent executor, not a concurrency or performance result. No source
 signature, container layout or existing staged-runtime interface changes.

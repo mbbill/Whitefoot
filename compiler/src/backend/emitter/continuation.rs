@@ -134,11 +134,7 @@ impl FunctionEmitter<'_, '_> {
             let id = IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
             writeln!(self.output, "{}:", block_label(id))
                 .map_err(|_| BackendFailure::TextEmission)?;
-            self.emit_block_parameters(id, block)?;
-            for (instruction_index, instruction) in block.instructions().iter().enumerate() {
-                self.emit_instruction(id, instruction_index, instruction)?;
-            }
-            self.emit_terminator(id, block.terminator())?;
+            self.emit_block_body(id, block)?;
         }
         if !self.handed_out.is_empty() {
             return Err(BackendFailure::UnretiredCompletionOperation);

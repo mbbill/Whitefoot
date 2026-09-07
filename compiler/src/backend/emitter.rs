@@ -1701,24 +1701,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             if index == 0 {
                 prelude_anchor = Some(self.output.len());
             }
-            self.emit_block_parameters(block_id, block)?;
-            self.block_slot = self
-                .pipeline
-                .and_then(|pipeline| pipeline.slot_index(block_id));
-            self.block_carries = self
-                .pipeline
-                .is_some_and(|pipeline| pipeline.carries(block_id));
-            self.block_drains = self
-                .pipeline
-                .is_some_and(|pipeline| pipeline.drains(block_id));
-            self.emit_completion_window(block_id)?;
-            if self.block_drains {
-                self.emit_staged_lane_retirement()?;
-            }
-            for (instruction_index, instruction) in block.instructions().iter().enumerate() {
-                self.emit_instruction(block_id, instruction_index, instruction)?;
-            }
-            self.emit_terminator(block_id, block.terminator())?;
+            self.emit_block_body(block_id, block)?;
         }
         // Every ordinary operation is joined at its block boundary. A driven
         // operation remains protected across emission until the exact drain
@@ -1736,6 +1719,33 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             self.output.insert_str(anchor, &self.entry_prelude);
         }
         Ok(self.output)
+    }
+
+    /// Both activation representations consume the same lowering-owned block
+    /// schedule, including the issue window and the exact staged drain.
+    fn emit_block_body(
+        &mut self,
+        block_id: IrBlockId,
+        block: &IrBlock,
+    ) -> Result<(), BackendFailure> {
+        self.emit_block_parameters(block_id, block)?;
+        self.block_slot = self
+            .pipeline
+            .and_then(|pipeline| pipeline.slot_index(block_id));
+        self.block_carries = self
+            .pipeline
+            .is_some_and(|pipeline| pipeline.carries(block_id));
+        self.block_drains = self
+            .pipeline
+            .is_some_and(|pipeline| pipeline.drains(block_id));
+        self.emit_completion_window(block_id)?;
+        if self.block_drains {
+            self.emit_staged_lane_retirement()?;
+        }
+        for (instruction_index, instruction) in block.instructions().iter().enumerate() {
+            self.emit_instruction(block_id, instruction_index, instruction)?;
+        }
+        self.emit_terminator(block_id, block.terminator())
     }
 
     fn collect_incoming(&self) -> Result<Vec<Vec<Incoming>>, BackendFailure> {
