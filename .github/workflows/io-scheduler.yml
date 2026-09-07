@@ -58,7 +58,7 @@ jobs:
           ROUNDS: '7'
           WARMUP: '2'
           EXPERIMENT: ${{ matrix.experiment }}
-          NATIVE_BASELINES: ${{ github.ref == 'refs/heads/codex/io-native-baselines' && '1' || '0' }}
+          NATIVE_BASELINES: ${{ github.ref == 'refs/heads/codex/io-native-baselines' && '2' || '0' }}
           CLANG: /usr/bin/clang-20
           CORO_CXX: /usr/bin/clang++-20
         run: |
@@ -69,7 +69,7 @@ jobs:
           {
             echo '## Scheduler experiment: ${{ matrix.experiment }}'
             if [[ "$GITHUB_REF" == refs/heads/codex/io-native-baselines ]]; then
-              echo 'Native baseline screen: two existing WF forms and seven native controls, including 8/64 KiB io_uring provided buffers at equal total provided-byte budget. Native uring now runs the same 2 MiB backpressure/half-close stream oracle as epoll, with ASan/UBSan and configuration/byte counters outside timing. Split1/split2 and five echo cases, seven passes after two warmups: 630 rows and 162 live snapshots. This is a new revision, not a reinterpretation of the earlier combined cohort. No claim of globally fastest controls; broader matrix and accounting limits are in SCHEDULER-EXPERIMENT.md.'
+              echo 'Native baseline screen: two existing WF forms and nine native controls. Native uring compares 8/64 KiB provided buffers at equal total provided-byte budget and pure-ring send versus an immediate nonblocking sendmsg fast path. Every configuration first passes the same 2 MiB backpressure/half-close stream oracle, ASan/UBSan and route/byte assertions; observers remain outside timing. Split1/split2 and five echo cases, seven passes after two warmups: 770 rows and 198 live snapshots. Pure-ring controls remain in this same-revision panel. No claim of globally fastest controls; broader matrix and accounting limits are in SCHEDULER-EXPERIMENT.md.'
             else
               echo 'Combine existing policies: handler-owned initialized buffers, compact stack metadata, configured-lane initialization, balanced pinned I/O dispatch and optional local self-wake omission. Four WF forms and five native manual/stackful/coroutine controls; split1/split2, five echo cases including underoccupied controls, seven passes after two warmups produce 630 rows. Every server has THP disabled and explicit glibc top_pad=0, with loader readback. Three live snapshots at 64/1024 small peers and 64 large peers give 162 records. Full completion qualification runs for each combined policy before measurements; all existing native stream and coroutine lifetime checks remain. Clang 20 throughout. No source signature, runtime ABI or default allocator changes. See the investigation for scope.'
             fi

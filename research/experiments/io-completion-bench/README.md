@@ -340,6 +340,10 @@ point is the fastest shape that kernel offers.
 
 The current scheduler experiments and their controls are described in
 [`SCHEDULER-EXPERIMENT.md`](../../investigations/io-model/SCHEDULER-EXPERIMENT.md).
+`scheduler-native-baselines` screens pure-ring and immediate-send io_uring at
+8/64 KiB with an equal provided-byte budget, alongside the existing epoll,
+stackful, C++ coroutine and WF controls. `uring-check` qualifies every native
+uring configuration against the shared 2 MiB stream oracle before timing.
 `scheduler-checkpoint`, `scheduler-footprint`, `scheduler-paced`,
 `scheduler-chunks`, `scheduler-canonical`, `scheduler-stackful` and
 `scheduler-stackful-paced`, `scheduler-nodelay`, `scheduler-owner` and
