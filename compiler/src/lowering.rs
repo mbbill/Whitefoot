@@ -1726,6 +1726,9 @@ pub struct IrCompletionPipeline {
     /// binds instead. This is the same per-slot storage a submitted
     /// operation's captured scalars take, named at the IR level because a
     /// compiler-derived release rides one of them.
+    /// Addressed bindings carry their addresses, not snapshots of content a
+    /// callee may still be writing. The issue stage's places have separate
+    /// backing per slot until that slot's remainder and releases complete.
     staged_carries: Vec<(IrValueId, IrValueId)>,
 }
 

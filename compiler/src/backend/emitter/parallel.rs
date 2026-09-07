@@ -497,7 +497,14 @@ impl FunctionEmitter<'_, '_> {
 
         let callee = source_symbol(target.name());
         let thunk = self.parallel.register(|symbol| {
-            thunk_definition(symbol, &frame_type, &field_types, &indirect_fields, &callee, &result_type)
+            thunk_definition(
+                symbol,
+                &frame_type,
+                &field_types,
+                &indirect_fields,
+                &callee,
+                &result_type,
+            )
         })?;
 
         // Target layout already computed the exact complete aggregate before
@@ -654,8 +661,12 @@ impl FunctionEmitter<'_, '_> {
         let Some(frame_bytes) = plan.frame_bytes else {
             if stored_result {
                 call_arguments.insert(0, format!("ptr {answer}"));
-                return writeln!(self.output, "  call void @{callee}({})", call_arguments.join(", "))
-                    .map_err(|_| BackendFailure::TextEmission);
+                return writeln!(
+                    self.output,
+                    "  call void @{callee}({})",
+                    call_arguments.join(", ")
+                )
+                .map_err(|_| BackendFailure::TextEmission);
             }
             let inline = format!("%{}", self.next_temporary()?);
             writeln!(
@@ -706,7 +717,9 @@ impl FunctionEmitter<'_, '_> {
             call_arguments.insert(0, format!("ptr {answer}"));
             format!("call void @{callee}({})", call_arguments.join(", "))
         } else {
-            format!("{refused} = call {result_type} @{callee}({rendered_arguments})\n  store {result_type} {refused}, ptr {answer}")
+            format!(
+                "{refused} = call {result_type} @{callee}({rendered_arguments})\n  store {result_type} {refused}, ptr {answer}"
+            )
         };
         writeln!(
             self.output,
@@ -750,6 +763,7 @@ impl FunctionEmitter<'_, '_> {
                 self.value_name(*reload)
             )
             .map_err(|_| BackendFailure::TextEmission)?;
+            self.save_value_result(*reload)?;
         }
         let result_type = plan.result_llvm.clone();
         let answer = self.staged_ring_element(
@@ -764,6 +778,7 @@ impl FunctionEmitter<'_, '_> {
                 value_name(plan.result)
             )
             .map_err(|_| BackendFailure::TextEmission)?;
+            self.save_value_result(plan.result)?;
             return Ok(());
         }
         let held = self.staged_ring_element(
@@ -779,6 +794,16 @@ impl FunctionEmitter<'_, '_> {
         let inline = par_staged_refused_label(plan.result);
         let wait = par_staged_wait_label(plan.result);
         let done = par_staged_done_label(plan.result);
+        // Preserve the existing value phi; copy the joined aggregate into
+        // caller backing before the runtime can reuse the released lane.
+        let save_waited = if is_stored_aggregate(self.program, plan.result_type)? {
+            format!(
+                "store {result_type} {waited}, ptr {}\n  ",
+                self.value_place(plan.result)?
+            )
+        } else {
+            String::new()
+        };
         writeln!(
             self.output,
             "  {frame} = load ptr, ptr {held}\n  \
@@ -789,13 +814,14 @@ impl FunctionEmitter<'_, '_> {
              {wait}:\n  call void @wf__par_join(ptr {frame})\n  \
              {field} = getelementptr inbounds {}, ptr {frame}, i32 0, i32 {}\n  \
              {waited} = load {result_type}, ptr {field}\n  \
-             call void @wf__par_release(ptr {frame})\n  br label %{done}\n\
+             {save_waited}call void @wf__par_release(ptr {frame})\n  br label %{done}\n\
              {done}:\n  {} = phi {result_type} [ {direct}, %{inline} ], [ {waited}, %{wait} ]",
             plan.frame_type,
             plan.result_field,
             value_name(plan.result),
         )
         .map_err(|_| BackendFailure::TextEmission)?;
+        self.save_value_result(plan.result)?;
         Ok(())
     }
 
@@ -816,7 +842,11 @@ impl FunctionEmitter<'_, '_> {
     ) -> Result<(), BackendFailure> {
         let result_type = llvm_type(self.program, ty)?;
         let mut arguments = Vec::with_capacity(split.captures.len() + 4);
-        arguments.push(format!("{result_type} {}", self.value_name(split.seed)));
+        arguments.push(if is_stored_aggregate(self.program, ty)? {
+            format!("ptr {}", self.value_place(split.seed)?)
+        } else {
+            format!("{result_type} {}", self.value_name(split.seed))
+        });
         for endpoint in [split.lower, split.upper] {
             if self.value_type(endpoint) != Some(U64) {
                 return Err(BackendFailure::InvalidIr);
@@ -825,11 +855,15 @@ impl FunctionEmitter<'_, '_> {
         }
         for capture in split.captures {
             let capture_type = self.value_type(*capture).ok_or(BackendFailure::InvalidIr)?;
-            arguments.push(format!(
-                "{} {}",
-                llvm_type(self.program, capture_type)?,
-                self.value_name(*capture)
-            ));
+            arguments.push(if is_stored_aggregate(self.program, capture_type)? {
+                format!("ptr {}", self.value_place(*capture)?)
+            } else {
+                format!(
+                    "{} {}",
+                    llvm_type(self.program, capture_type)?,
+                    self.value_name(*capture)
+                )
+            });
         }
 
         let target = if self.sequential_clones.is_some() {
@@ -871,14 +905,7 @@ impl FunctionEmitter<'_, '_> {
         }
         let callee = self.callee_symbol(target, function.name());
         if self.sequential_clones.is_some() {
-            writeln!(
-                self.output,
-                "  {} = call {result_type} @{callee}({})",
-                value_name(result),
-                arguments.join(", ")
-            )
-            .map_err(|_| BackendFailure::TextEmission)?;
-            return Ok(());
+            return self.emit_split_call(result, ty, &callee, arguments);
         }
 
         // The span, computed so an inverted range asks for nothing rather than
@@ -901,14 +928,37 @@ impl FunctionEmitter<'_, '_> {
         .map_err(|_| BackendFailure::TextEmission)?;
         self.parallel.queries_split_budget = true;
         arguments.push(format!("i64 {budget}"));
+        self.emit_split_call(result, ty, &callee, arguments)
+    }
+
+    fn emit_split_call(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        callee: &str,
+        mut arguments: Vec<String>,
+    ) -> Result<(), BackendFailure> {
+        let result_type = llvm_type(self.program, ty)?;
+        if is_stored_aggregate(self.program, ty)? {
+            let destination = self.value_place(result)?;
+            arguments.insert(0, format!("ptr {destination}"));
+            // LoopSplit uses the value-definition bridge, whose ordinary
+            // result save reads this snapshot of the completed destination.
+            return writeln!(
+                self.output,
+                "  call void @{callee}({})\n  {} = load {result_type}, ptr {destination}",
+                arguments.join(", "),
+                value_name(result)
+            )
+            .map_err(|_| BackendFailure::TextEmission);
+        }
         writeln!(
             self.output,
             "  {} = call {result_type} @{callee}({})",
             value_name(result),
             arguments.join(", ")
         )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        Ok(())
+        .map_err(|_| BackendFailure::TextEmission)
     }
 
     /// Completes every hand-out of the group whose last member just ran.
@@ -952,20 +1002,43 @@ impl FunctionEmitter<'_, '_> {
                 result_field,
                 ..
             } = &pending;
+            let (inline_call, save_waited) = if is_stored_aggregate(
+                self.program,
+                pending.result_type,
+            )? {
+                let destination = self.value_place(pending.result)?;
+                let arguments = if arguments.is_empty() {
+                    format!("ptr {destination}")
+                } else {
+                    format!("ptr {destination}, {arguments}")
+                };
+                (
+                    format!(
+                        "call void @{callee}({arguments})\n  {refused} = load {result_type}, ptr {destination}"
+                    ),
+                    format!("store {result_type} {waited}, ptr {destination}\n  "),
+                )
+            } else {
+                (
+                    format!("{refused} = call {result_type} @{callee}({arguments})"),
+                    String::new(),
+                )
+            };
             writeln!(
                 self.output,
                 "  {condition} = icmp eq ptr {frame}, null\n  \
                  br i1 {condition}, label %{inline}, label %{wait}\n\
-                 {inline}:\n  {refused} = call {result_type} @{callee}({arguments})\n  \
+                 {inline}:\n  {inline_call}\n  \
                  br label %{done}\n\
                  {wait}:\n  call void @wf__par_join(ptr {frame})\n  \
                  {field} = getelementptr inbounds {frame_type}, ptr {frame}, i32 0, i32 {result_field}\n  \
                  {waited} = load {result_type}, ptr {field}\n  \
-                 call void @wf__par_release(ptr {frame})\n  br label %{done}\n\
+                 {save_waited}call void @wf__par_release(ptr {frame})\n  br label %{done}\n\
                  {done}:\n  {} = phi {result_type} [ {refused}, %{inline} ], [ {waited}, %{wait} ]",
                 value_name(pending.result),
             )
             .map_err(|_| BackendFailure::TextEmission)?;
+            self.save_value_result(pending.result)?;
         }
         Ok(())
     }
@@ -1030,9 +1103,9 @@ fn thunk_definition(
     let mut body = format!("define internal void {symbol}(ptr %frame) {{\nentry:\n");
     let mut rendered = Vec::with_capacity(field_types.len() - 1);
     for (index, field_type) in field_types.iter().enumerate().take(field_types.len() - 1) {
-        let _ = write!(
+        let _ = writeln!(
             body,
-            "  %p{index} = getelementptr inbounds {frame_type}, ptr %frame, i32 0, i32 {index}\n"
+            "  %p{index} = getelementptr inbounds {frame_type}, ptr %frame, i32 0, i32 {index}"
         );
         if indirect_fields[index] {
             // The field still owns the complete argument payload. The callee
@@ -1047,9 +1120,12 @@ fn thunk_definition(
     if indirect_fields[field] {
         // Construct into the same result field the existing join path reads.
         // No pointer to worker-local or released storage becomes the result.
-        let _ = write!(body,
+        let _ = write!(
+            body,
             "  %slot = getelementptr inbounds {frame_type}, ptr %frame, i32 0, i32 {field}\n  call void @{callee}(ptr %slot{}{})\n  ret void\n}}\n\n",
-            if rendered.is_empty() { "" } else { ", " }, rendered.join(", "));
+            if rendered.is_empty() { "" } else { ", " },
+            rendered.join(", ")
+        );
         return body;
     }
     let _ = write!(

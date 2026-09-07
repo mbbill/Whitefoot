@@ -82,6 +82,10 @@
   return, result consumption, and corresponding retirement. DONE is not reuse
   authority. The runtime interface stays opaque; no private slot size or worker
   placement policy selects container correctness.
+- The bounded lane driver carries issue-local values and addressed owners per
+  pipeline slot. An addressed owner retains its address over distinct backing
+  until its remainder and checked releases finish; its mutable contents are not
+  snapshotted before the outstanding callee completes.
 
 ## Facts
 
@@ -227,6 +231,19 @@
   [Retained checked candidate](../../../compiler/src/semantic/check/expressions/calls/user.rs),
   [Call lowering and distinctions](../../../compiler/src/lowering/builder.rs),
   [Executable IR controls](../../../compiler/src/lowering/tests.rs). (code)
+
+- 2026-09-07 mechanism: a frame containing an address does not keep repeated
+  executions of one static address definition independent. The earlier lane
+  driver conservatively declined issue-local addressed owners and remainder
+  reads. The current typed frame plan gives issue-stage places per-slot backing,
+  while the drain carries their addresses and reads completed mutations after
+  join. A native control defers every granted publication until its join, requires
+  multiple frames held at once, and checks both per-iteration inputs and updated
+  inline content. This is evidence for activation storage and actual-use
+  boundaries, not a reason to change source ownership permissions.
+  [Lane carry lowering](../../../compiler/src/lowering/builder/loops.rs),
+  [Typed frame plan](../../../compiler/src/backend/emitter.rs),
+  [Execution and cleanup controls](../../../compiler/src/backend/tests/parallel.rs). (code)
 
 ## Moves
 

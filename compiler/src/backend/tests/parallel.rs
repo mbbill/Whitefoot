@@ -26,8 +26,9 @@ use crate::backend::target::{
 
 use super::system::{with_ir, with_parallel_ir};
 use super::{
-    HOST_OPTIMIZATION_ARGUMENTS, append_runtime_units, build_executable, compile_and_run, emit,
-    emit_with_overlap, emitted_function, module_requires_parallel_runtime, test_directory,
+    HOST_OPTIMIZATION_ARGUMENTS, append_runtime_units, build_executable, build_linked_executable,
+    compile_and_run, emit, emit_with_overlap, emitted_function, module_requires_parallel_runtime,
+    test_directory,
 };
 
 /// A pure recursive fold over a heap tree, the smallest shape that has
@@ -2677,3 +2678,383 @@ fn a_system_operation_bound_by_a_let_is_not_the_lane_form() {
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
+
+// Stored results need independent caller destinations after lane retirement;
+// scalar and descriptor-returning fixtures do not exercise that adapter.
+const OWNED_PAIR_RESULTS: &[u8] = br#"struct Pair {
+  left: u64;
+  right: u64;
+}
+
+fn make(seed: own u64) -> result: own Pair pure {
+  let scaled = seed *wrap 3_u64;
+  let adjacent = seed +wrap 100_u64;
+  return Pair(left: scaled, right: adjacent);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let first = make(seed: 7_u64);
+  let second = make(seed: 11_u64);
+  if first.left != 21_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if first.right != 107_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if second.left != 33_u64 {
+    return exit_status(code: 3_u8);
+  }
+  if second.right != 111_u64 {
+    return exit_status(code: 4_u8);
+  }
+  set first.left = 41_u64;
+  if second.left != 33_u64 {
+    return exit_status(code: 5_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+const STAGED_OWNED_RESULTS_AND_CLEANUP: &[u8] = br#"struct Scratch {
+  bytes: buffer<u8>;
+}
+
+struct Report {
+  answer: u8;
+  stored: u8;
+  stamp: u64;
+}
+
+fn probe(root: &DirectoryRead, permit: own HandlePermit, name: &buffer<u8>, scratch: &uniq buffer<u8>, mark: own u8, stamp: own u64) -> result: own Report reads(root, permit, name, scratch), writes(permit, scratch) contract {
+  define room = len_of(deref(scratch));
+  define named = len_of(deref(name));
+  requires 1_u64 <= room;
+  requires 4_u64 <= named;
+} {
+  doc "Opens one name and answers what the open reported, marked with this iteration's own byte.";
+  let answer = mark;
+  set deref(scratch)[0_u64] = mark;
+  region {
+    match open_file(permit: move permit, root: root, name: name, start: 0_u64, end: 4_u64) {
+      FileOpened(value: handle) => {
+        set answer = answer +wrap 1_u8;
+      }
+      FileOpenFailed(error: problem, permit: refused) => {
+        set answer = answer +wrap 2_u8;
+      }
+    }
+  }
+  let stored = deref(scratch)[0_u64];
+  return Report(answer: answer, stored: stored, stamp: stamp);
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+  doc "Probes four names in a fixed-trip loop whose staged call is a may-suspend user call [PAR-3].";
+  let name = buffer_new(4_u64, 97_u8);
+  let total = 0_u8;
+  let stamp_total = 0_u64;
+  for @scan (index in 0_u64..4_u64) {
+    let scratch = buffer_new(8_u64, 0_u8);
+    let spare = buffer_new(3_u64, 77_u8);
+    let cleanup = Scratch(bytes: move spare);
+    region {
+      match reserve_handle(factory: &uniq files) {
+        Ok(value: permit) => {
+          let reported = probe(root: &cwd, permit: move permit, name: &name, scratch: &uniq scratch, mark: 3_u8, stamp: index);
+          let amount = reported.answer +wrap reported.stored;
+          set total = total +wrap amount;
+          set stamp_total = stamp_total +wrap reported.stamp;
+        }
+        Err(error: spent) => {
+          return exit_status(code: 9_u8);
+        }
+      }
+    }
+  }
+  if stamp_total != 6_u64 {
+    return exit_status(code: 255_u8);
+  }
+  return exit_status(code: total);
+}
+"#;
+
+#[test]
+fn owned_pair_results_survive_ordinary_join_and_forced_refusal() {
+    let module = emit_with_overlap(OWNED_PAIR_RESULTS);
+    let main = function_body(&module, "@wf_main");
+    assert!(main.contains("call void @wf__par_publish(ptr "));
+    assert!(main.contains("call void @wf__par_join(ptr "));
+    assert!(main.contains("\npar.inline."));
+    let make = function_body(&module, "@wf_make");
+    assert!(make.starts_with("define internal void @wf_make(ptr "));
+    run_owned_lane_cases(OWNED_PAIR_RESULTS, &module, 0, 1, 0, 0, 1);
+}
+
+#[test]
+fn owned_staged_results_and_cleanup_survive_retirement_and_forced_refusal() {
+    let module = emit_with_overlap(STAGED_OWNED_RESULTS_AND_CLEANUP);
+    let main = function_body(&module, "@wf_main");
+    let issued = main
+        .find("call void @wf__par_publish(ptr ")
+        .expect("the aggregate-returning user call must be handed out");
+    let retired = main
+        .find("call void @wf__par_join(ptr ")
+        .expect("the drain must retire that hand-out");
+    assert!(issued < retired);
+    assert!(main[issued..retired].contains("par.staged.offered."));
+    assert!(main.contains("\npar.staged.inline."));
+    assert!(main.contains("\npar.staged.refused."));
+    // Both selected representations really cross the staging boundary: a
+    // Report result, and the Scratch owner released only by the drain.
+    for nominal in ["%wf.t0", "%wf.t1"] {
+        assert!(main.contains(&format!("[{} x {nominal}]", crate::LANE_SLOTS)));
+    }
+    run_owned_lane_cases(STAGED_OWNED_RESULTS_AND_CLEANUP, &module, 32, 4, 9, 4, 2);
+}
+
+#[test]
+fn owned_staged_inline_places_keep_each_iterations_backing_until_retirement() {
+    let source = br#"struct Scratch {
+  stamp: u64;
+}
+
+fn probe(root: &DirectoryRead, permit: own HandlePermit, name: &buffer<u8>, scratch: &uniq Scratch) -> result: own u64 reads(root, permit, name, scratch.stamp), writes(permit, scratch.stamp) contract {
+  define named = len_of(deref(name));
+  requires 4_u64 <= named;
+} {
+  let previous = deref(scratch).stamp;
+  region {
+    match open_file(permit: move permit, root: root, name: name, start: 0_u64, end: 4_u64) {
+      FileOpened(value: handle) => {
+      }
+      FileOpenFailed(error: problem, permit: refused) => {
+      }
+    }
+  }
+  set deref(scratch).stamp = previous +wrap 100_u64;
+  return previous;
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+  let name = buffer_new(4_u64, 97_u8);
+  let total = 0_u64;
+  let updated = 0_u64;
+  for @scan (index in 0_u64..4_u64) {
+    let scratch = Scratch(stamp: index);
+    region {
+      match reserve_handle(factory: &uniq files) {
+        Ok(value: permit) => {
+          let reported = probe(root: &cwd, permit: move permit, name: &name, scratch: &uniq scratch);
+          set total = total +wrap reported;
+          set updated = updated +wrap scratch.stamp;
+        }
+        Err(error: spent) => {
+          return exit_status(code: 9_u8);
+        }
+      }
+    }
+  }
+  if total != 6_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if updated != 406_u64 {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let module = emit_with_overlap(source);
+    let main = function_body(&module, "@wf_main");
+    assert!(main.contains("par.staged.offered."));
+    run_owned_lane_cases(source, &module, 0, 4, 1, 0, 2);
+}
+
+/// The native core still performs every real grant, publication, join and
+/// release. The observer can refuse acquisitions and selects the overlapped
+/// entry even then, so WF_WORKERS=1 cannot silently test a sequential clone.
+/// Only source allocator calls are observed; runtime allocations keep their
+/// normal facilities. The staged fixture allocates one name and two buffers
+/// per iteration, and its nominal cleanup must release each allocation once.
+fn run_owned_lane_cases(
+    source: &[u8],
+    module: &str,
+    expected_status: i32,
+    attempts: u32,
+    allocations: u32,
+    spares: u32,
+    minimum_pending: u32,
+) {
+    let directory = test_directory();
+    let reference = Command::new(build_executable(&emit(source), &directory))
+        .current_dir(&directory)
+        .env("WF_WORKERS", "1")
+        .output()
+        .expect("run the source without compute hand-outs");
+    assert_eq!(
+        reference.status.code(),
+        Some(expected_status),
+        "{reference:?}"
+    );
+    assert!(reference.stdout.is_empty() && reference.stderr.is_empty());
+
+    // Preserve the module's genuine runtime declarations and link markers;
+    // only call sites pass through the observer.
+    let observed = format!(
+        "{module}\ndeclare i32 @wf_test_parallel_world()\ndeclare ptr @wf_test_acquire_lane(i64)\ndeclare void @wf_test_release_lane(ptr)\ndeclare void @wf_test_publish_lane(ptr, ptr)\ndeclare void @wf_test_join_lane(ptr)\n"
+    )
+        .replace("call i32 @wf__par_pool_active(", "call i32 @wf_test_parallel_world(")
+        .replace("call ptr @wf__par_acquire_lane(", "call ptr @wf_test_acquire_lane(")
+        .replace("call void @wf__par_release(", "call void @wf_test_release_lane(")
+        .replace("call void @wf__par_publish(", "call void @wf_test_publish_lane(")
+        .replace("call void @wf__par_join(", "call void @wf_test_join_lane(")
+        .replace("@malloc(", "@wf_test_source_allocate(")
+        .replace("@free(", "@wf_test_source_release(");
+    let executable = build_linked_executable(&observed, Some(OWNED_LANE_OBSERVER), &[], &directory);
+    let mut outcomes = Vec::new();
+    for (mode, workers) in [("1", "1"), ("0", "4"), ("2", "4")] {
+        let output = Command::new(&executable)
+            .current_dir(&directory)
+            .env("WF_WORKERS", workers)
+            .env("WF_TEST_REFUSE_LANE", mode)
+            .env_remove("WF_SCHED_REPORT")
+            .output()
+            .expect("run the aggregate adapter with forced refusal or real lanes");
+        outcomes.push((mode, output));
+    }
+    std::fs::remove_dir_all(&directory).expect("remove aggregate lane artifacts");
+    // Execute every schedule before asserting. Deferral holds each acquired
+    // frame until its actual join, exposing premature backing reuse without
+    // relying on worker timing. The native runtime still publishes and joins it.
+    for (mode, output) in &outcomes {
+        assert_eq!(
+            output.status.code(),
+            Some(expected_status),
+            "mode={mode}; all schedules: {outcomes:?}"
+        );
+        assert_eq!(output.stdout, reference.stdout);
+        let report = String::from_utf8_lossy(&output.stderr);
+        let count = |name: &str| {
+            report
+                .split_whitespace()
+                .find_map(|field| field.strip_prefix(&format!("{name}=")))
+                .and_then(|value| value.parse::<u32>().ok())
+                .unwrap_or_else(|| panic!("missing {name} in observer report: {report}"))
+        };
+        assert_eq!(count("attempts"), attempts, "{report}");
+        let granted = count("granted");
+        if *mode == "1" {
+            assert_eq!(granted, 0, "the actual acquisition edge must refuse");
+        } else {
+            assert!(
+                granted > 0,
+                "a real lane must exercise the joined result: {report}"
+            );
+        }
+        assert_eq!(count("released"), granted, "{report}");
+        assert_eq!(count("allocations"), allocations, "{report}");
+        assert_eq!(count("frees"), allocations, "{report}");
+        assert_eq!(count("spares"), spares, "{report}");
+        assert_eq!(count("pending"), 0, "{report}");
+        if *mode == "2" {
+            assert!(count("peak") >= minimum_pending, "{report}");
+        }
+    }
+}
+
+const OWNED_LANE_OBSERVER: &str = r#"#include <stdatomic.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+extern void *wf__par_acquire_lane(unsigned long bytes);
+extern void wf__par_release(void *frame);
+extern void wf__par_publish(void *frame, void (*run)(void *));
+extern void wf__par_join(void *frame);
+static _Atomic unsigned attempts, granted, released, allocations, frees, spares;
+static _Atomic(void *) held[10];
+static size_t sizes[10];
+// These fixtures publish and join only on their command thread. The workers
+// run the fixture's leaf helpers; they do not access this deferred queue.
+static void *pending_frames[16];
+static void (*pending_runs[16])(void *);
+static unsigned pending, peak;
+
+int wf_test_parallel_world(void) { return 1; }
+
+void *wf_test_acquire_lane(unsigned long bytes) {
+    atomic_fetch_add(&attempts, 1);
+    const char *refuse = getenv("WF_TEST_REFUSE_LANE");
+    if (refuse != NULL && refuse[0] == '1') return NULL;
+    void *frame = wf__par_acquire_lane(bytes);
+    if (frame != NULL) atomic_fetch_add(&granted, 1);
+    return frame;
+}
+
+void wf_test_release_lane(void *frame) {
+    for (unsigned i = 0; i < 16; ++i) {
+        if (pending_frames[i] == frame) abort();
+    }
+    wf__par_release(frame);
+    atomic_fetch_add(&released, 1);
+}
+
+void wf_test_publish_lane(void *frame, void (*run)(void *)) {
+    const char *mode = getenv("WF_TEST_REFUSE_LANE");
+    if (mode == NULL || mode[0] != '2') {
+        wf__par_publish(frame, run);
+        return;
+    }
+    for (unsigned i = 0; i < 16; ++i) {
+        if (pending_frames[i] == NULL) {
+            pending_frames[i] = frame;
+            pending_runs[i] = run;
+            ++pending;
+            if (pending > peak) peak = pending;
+            return;
+        }
+    }
+    abort();
+}
+
+void wf_test_join_lane(void *frame) {
+    for (unsigned i = 0; i < 16; ++i) {
+        if (pending_frames[i] == frame) {
+            pending_frames[i] = NULL;
+            --pending;
+            wf__par_publish(frame, pending_runs[i]);
+            break;
+        }
+    }
+    wf__par_join(frame);
+}
+
+void *wf_test_source_allocate(size_t size) {
+    unsigned id = atomic_fetch_add(&allocations, 1) + 1;
+    if (id >= 10) abort();
+    void *value = malloc(size);
+    if (value == NULL) abort();
+    sizes[id] = size;
+    atomic_store(&held[id], value);
+    return value;
+}
+
+void wf_test_source_release(void *value) {
+    if (value == NULL) abort();
+    for (unsigned id = 1; id < 10; ++id) {
+        void *expected = value;
+        if (atomic_compare_exchange_strong(&held[id], &expected, NULL)) {
+            if (sizes[id] == 3) atomic_fetch_add(&spares, 1);
+            atomic_fetch_add(&frees, 1);
+            free(value);
+            return;
+        }
+    }
+    abort();
+}
+
+__attribute__((destructor)) static void report(void) {
+    fprintf(stderr, "attempts=%u granted=%u released=%u allocations=%u frees=%u spares=%u pending=%u peak=%u\n",
+        atomic_load(&attempts), atomic_load(&granted), atomic_load(&released),
+        atomic_load(&allocations), atomic_load(&frees), atomic_load(&spares), pending, peak);
+}
+"#;

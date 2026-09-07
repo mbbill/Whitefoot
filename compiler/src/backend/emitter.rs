@@ -672,6 +672,9 @@ enum FunctionSlot {
     ExtentStorage(IrValueId),
     ArrayFillIndex(IrValueId),
     Address(IrValueId),
+    /// One stable place per in-flight iteration. The issue-stage definition
+    /// selects its slot; the existing drain completes before that slot is reused.
+    StagedAddress(IrValueId),
     ArenaList(IrValueId),
     Completion(IrValueId, CompletionSlot),
     /// The lane frame each in-flight iteration of a staged loop was granted,
@@ -778,13 +781,21 @@ impl FunctionFramePlan {
                             None,
                         )?;
                     }
-                    IrOperation::AddressOf { referent, .. } => push_function_slot(
-                        &mut specifications,
-                        &mut ordered,
-                        FunctionSlot::Address(*result),
-                        TargetStorageType::source(referent.ty()),
-                        None,
-                    )?,
+                    IrOperation::AddressOf { referent, .. } => {
+                        let storage = TargetStorageType::source(referent.ty());
+                        let iteration = pipeline.filter(|pipeline| {
+                            pipeline.slot_index(block_id).is_some() && !pipeline.drains(block_id)
+                        });
+                        let (key, storage) = if let Some(iteration) = iteration {
+                            (
+                                FunctionSlot::StagedAddress(*result),
+                                TargetStorageType::array(storage, iteration.slots()),
+                            )
+                        } else {
+                            (FunctionSlot::Address(*result), storage)
+                        };
+                        push_function_slot(&mut specifications, &mut ordered, key, storage, None)?;
+                    }
                     IrOperation::ArenaListNew => push_function_slot(
                         &mut specifications,
                         &mut ordered,

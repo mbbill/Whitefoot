@@ -182,8 +182,10 @@ index again. The candidate may cover a wider place than the returned suffix, so
 this relation does not grant exact disjointness. An absent candidate is not proof
 of fresh backing or of no outstanding loans: owned views have separate origin
 sets, not retained by this record. Standalone uses, constructor/kernel transfers,
-view-result origins, and activation lifetimes remain unfinished. These metadata
-steps do not normalize destinations or change the emitted ABI.
+view-result origins, and general activation lifetimes remain unfinished. The
+bounded lane driver now retains issue-local values and addressed owners until its
+exact drain; this does not supply a general destination normalizer. These metadata
+steps themselves do not normalize destinations or change the emitted ABI.
 
 | Information | Origin and use |
 | --- | --- |
@@ -251,6 +253,16 @@ the existing activation/window slot, not only its static value ID. These are
 compiler relationships, not a request for runtime owner IDs or generation tags.
 The existing generated slot/drain CFG supplies the reuse boundary.
 
+The bounded lane implementation now carries an addressed binding's pointer, not
+a snapshot loaded while its callee may still be writing. Every issue-stage
+address definition receives one typed backing element per pipeline slot, planned
+and target-checked with the rest of the caller frame. The drain reloads that
+address and reads the callee's completed updates; a slot is reused only after its
+remainder and checked releases. Ordinary invocation places keep their ordinary
+backing. This closes the former conservative fallback for issue-local addressed
+owners and remainder reads without changing the source permission judgment or
+adding a runtime storage protocol.
+
 | Execution route | Storage obligation |
 | --- | --- |
 | Direct call | Inputs live through the call's reads; the fresh result is available on return. Its caller-owned backing survives subsequent reads and loans. |
@@ -313,7 +325,7 @@ Use existing complete witnesses to judge the candidate, with their actual limits
 | Same suite: `partial_construction_refusal_preserves_effects_values_and_release_order` | Passed with retained calls and refusal at each of three allocations, observing exact allocation/release order and returned values. The source constructs two complete cells before making the pair; this does **not** demonstrate source-visible partially initialized struct authority. |
 | Same suite: `returned_element_borrows_and_inline_views_reach_the_owners_storage`; [semantic neighbors](../../../compiler/src/semantic/tests/owned_places.rs) | Passed owner-storage execution and bounds/loan checks, including refusal of raw-slot access and moving a borrowed owner. Root value liveness alone cannot replace loan/storage identity. |
 | [Linear lifecycle programs](../../experiments/container-representation/lifecycle/RESULTS.md) | Actual linear values are discharged on success and failure; the leak neighbor is rejected. A proved-empty run of linear values still cannot be discharged. That missing language capability is not solved by an aggregate ABI. |
-| [Parallel corpus execution](../../../compiler/tests/programs/parallel.rs) using [generic nominals](../../../tests/programs/generic_nominals.wf) | At `bb8eb30f`, the canonical program stage reports 72 passes and this one failure: abnormal exit with four workers. Existing green sampling predominantly returns scalars. Aggregate-result and staged-cleanup test additions remain paused and unexecuted. Their Rust harness compiled during signature-metadata checks, which does not run or validate their embedded WF programs; no complete parallel aggregate lifetime result is claimed. |
+| [Parallel execution tests](../../../compiler/src/backend/tests/parallel.rs) and [generic nominals](../../../tests/programs/generic_nominals.wf) | At `bb8eb30f`, generic nominals exits abnormally with four workers. The corrected aggregate adapters now pass three focused native cases: ordinary aggregate results, staged aggregate results with cleanup, and staged inline storage mutated through a helper. Each compares sequential execution, forced refusal, actual workers, and deferred execution until join; the staged controls require multiple simultaneously held frames. The complete corpus and gate have separate validation below. |
 
 Validate the selected normalization using these witnesses and the frozen external
 contracts already recorded below. Existing positive runs are semantic constraints
@@ -463,17 +475,16 @@ through a source helper, including nested run owners. Any later lifting of that
 restriction must prove captured target storage identity and lifetime, not merely
 that the root binding is live after the call.
 
-The [parallel aggregate ABI patch](parallel-abi-review.patch) is an **inert review
-artifact**, not an applied compiler change. Automatic approval review rejected
-the remaining cross-worker adapter edit and requested explicit owner permission;
-the draft PR carries the exact proposed patch for inspection. Its owner is this
-implementation investigation, and it is deleted when that patch is applied or
-superseded. It proposes preserving frame layout and publication/join/release order,
-copying aggregate results into caller storage before frame release. The owner has
-questioned the adaptation strategy; foundation review now precedes further adapter
-work. Neither this patch nor another way to perform the rejected edit is assumed
-selected or authorized. Parallel integration remains incomplete and needs a
-reviewed implementation and its required validation.
+The [parallel aggregate adapters](../../../compiler/src/backend/emitter/parallel.rs)
+now use the existing aggregate parameter/result ABI on the ordinary, refused,
+staged, and split-call paths. Granted frames retain their complete inline argument
+and result layout. A joined aggregate is copied into caller backing before frame
+release, and staged carries/results are materialized into their declared caller
+destinations. The separate review patch has been applied and removed. These
+adapters complete the current representation's delivery paths; the selected
+shared storage/call normalization still needs to replace its late representation
+bridge. The additional per-iteration backing above addresses a distinct lifetime
+requirement that copying a descriptor into a frame could not satisfy.
 
 The committed implementation at `f5dab70c` now has a separate 168-sample run using
 the same scalar kernels and procedure. Four-pass medians at 16/256/4096 elements
@@ -801,8 +812,8 @@ root `make check` passes specification archive/prose checks and conformance
 structure/coverage (25 runner tests, 161/161 rules), then stops at compiler
 formatting. A formatting-only correction in `cost_shape.rs` resolves the one
 unrelated diff; remaining format differences and the independent Clippy
-`write_with_newline` failure are in `backend/emitter/parallel.rs`, whose remaining
-edit is awaiting the explicit permission described above. No check was disabled.
+`write_with_newline` failure were in the then-unapplied parallel adapter. They
+are corrected with the parallel implementation. No check was disabled.
 
 The subsequent canonical partition check confirms 1,555 library cases split into
 1,488 unit and 67 sampling cases; all 67 sampling cases pass. The snapshot corpus
@@ -821,14 +832,14 @@ reconstruction, and retains its unchanged runtime result checks. The canonical
 integration rerun passes its binary and adapter harnesses and 72 program cases;
 the remaining program case fails because `generic_nominals.wf` exits abnormally
 under `--par` with four workers. That existing fixture returns stored aggregates
-from eligible sibling calls. This is a remaining parallel integration defect,
+from eligible sibling calls. That run exposed a parallel integration defect,
 not a host loopback-permission failure or a reason to narrow the corpus.
 
 The complete gate must run after parallel integration. Existing green sampling
 counts do not establish aggregate result/carry retirement: their ordinary frame
 boundary case uses array arguments with a scalar result, and the staged user-call
-fixture also returns a scalar. Additional aggregate execution evidence belongs
-with the pending adapter. LoopSplit currently charges each aggregate capture the
+fixture also returns a scalar. The new aggregate and inline-place execution
+controls exercise that missing boundary. LoopSplit currently charges each aggregate capture the
 entire 256-byte lane payload during admission; a small record capture can be
 permission-eligible yet never select split actualization. A sequential fallback
 for that source is not evidence of a parallel aggregate capture.
@@ -853,5 +864,14 @@ and the same five LLVM comparisons remain byte-identical to the signature step.
 This is evidence for preserving checked information, not a new performance or
 parallel execution result. The complete storage normalization and repository gate
 remain unfinished. The canonical Clippy invocation again reports only the
-existing `write_with_newline` diagnostic in the blocked parallel emitter; this is
+then-existing `write_with_newline` diagnostic in the parallel emitter; this is
 a failed lint run, not a whole-compiler lint pass.
+
+The parallel integration step passes the three new native execution controls in
+all four worlds: the sequential reference, forced lane refusal, native workers,
+and publications deferred until their actual joins. Both staged controls require
+at least two frames held simultaneously, and all source allocations and lane
+frames are released exactly once. The canonical root gate now passes formatting,
+Clippy, and all 1,566 library cases (1,496 unit and 70 sampling). Its program,
+conformance, and remaining experiment stages are running; these partial results
+do not establish a complete green gate or complete destination normalization.

@@ -1,7 +1,8 @@
 use super::*;
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
-    /// The entry-block slot that gives a borrowed binding its stable address.
+    /// The planned backing that gives a binding its stable address. An issue
+    /// stage selects its own pipeline slot before exposing any borrowed address.
     ///
     /// Only directly stored content is addressed: a descriptor or opaque
     /// handle is already its own borrow and never reaches this operation.
@@ -19,7 +20,28 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         }
         let referent_type = llvm_type(self.program, referent.ty())?;
-        let address = self.entry_slot(FunctionSlot::Address(result))?;
+        let address = if self
+            .frame
+            .slots
+            .contains_key(&FunctionSlot::StagedAddress(result))
+        {
+            let pipeline = self.pipeline.ok_or(BackendFailure::InvalidIr)?;
+            let slot = self
+                .block_slot
+                .ok_or(BackendFailure::MisaddressedCompletionSlot)?;
+            let backing = self.entry_slot(FunctionSlot::StagedAddress(result))?;
+            let address = value_name(result);
+            writeln!(
+                self.output,
+                "  {address} = getelementptr inbounds [{} x {referent_type}], ptr {backing}, i64 0, i64 {}",
+                pipeline.slots(),
+                self.value_name(slot)
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+            address
+        } else {
+            self.entry_slot(FunctionSlot::Address(result))?
+        };
         writeln!(
             self.output,
             "  store {referent_type} {}, ptr {}",

@@ -194,6 +194,16 @@ Wider control flow, operation families, and multi-loop selection are possible
 future extensions, not v0.40 activation gaps or permission to infer a broader
 path from this one.
 
+With `--par`, an admitted may-suspend user call bound by `let` can drive a
+bounded lane batch. Issue-local values needed by the remainder or cleanup are
+carried per slot. An addressed owner retains its address over distinct backing
+for each in-flight iteration; its contents are read after join, including
+mutations made by the callee. The complete caller frame is planned and checked
+before emission. Joined aggregate results reach caller backing before the lane
+frame is released, and each iteration's remainder and checked cleanup finish
+before its pipeline slot is reused. These representations consume the existing
+source permission judgment and do not add an I/O or scheduling protocol.
+
 The completion runtime uses bounded, generation-checked operation storage and
 separate exactly-once result-ready, loan-released, and terminal milestones.
 Native queues, helper lanes, wakeups, and completion ports are target-private

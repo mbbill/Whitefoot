@@ -163,9 +163,11 @@ impl IrBuilder<'_> {
     /// Lowers the complete multi-slot staged schedule of one counted loop.
     ///
     /// The admitted IR topology is deliberately narrow: a straight-line
-    /// prologue ending at the staged call, and a remainder that does not read
-    /// the counted binder or a prologue-local value. Those are implementation
-    /// limits, not source-language rejections. A loop outside this subset
+    /// prologue ending at the staged call. The submitted-system form still
+    /// requires a remainder that does not read the counted binder or a
+    /// prologue-local value; the user-call form carries those values or places
+    /// per iteration. These are implementation limits, not source-language
+    /// rejections. A loop outside this subset
     /// continues through the ordinary graph and the complete one-slot driver
     /// below.
     ///
@@ -275,20 +277,34 @@ impl IrBuilder<'_> {
                 .iter()
                 .any(|statement| statement_uses_any(statement, &unavailable_in_remainder)),
         };
-        if unavailable_in_remainder
-            .iter()
-            .any(|binding| self.addressed_bindings.contains(binding))
-            || remainder_reads_the_issue_stage
+        if !lane
+            && (unavailable_in_remainder
+                .iter()
+                .any(|binding| self.addressed_bindings.contains(binding))
+                || remainder_reads_the_issue_stage)
         {
             return Ok(false);
         }
-        // The one thing the drain does read out of the issue stage: the
-        // compiler-derived release of the iteration's own storage. Each such
-        // binding becomes a ring element, so the release runs in the drain on
-        // the value that iteration allocated. A release that performs a system
-        // action is refused here rather than reordered, on the same rule an
-        // exiting arm's own binders take.
+        // The lane drain carries each issue-local binding its remainder reads,
+        // including the counted value. Keep source order deterministic; these
+        // identities are not permission to snapshot borrowed mutable content.
         let mut carried_bindings_in_drain = Vec::new();
+        if let StagedTail::Bound { remainder, .. } = &direct.tail {
+            let mut candidates: Vec<_> = unavailable_in_remainder.iter().copied().collect();
+            candidates.sort_by_key(|binding| binding.0);
+            for binding in candidates {
+                let selected = HashSet::from([binding]);
+                if remainder
+                    .iter()
+                    .any(|statement| statement_uses_any(statement, &selected))
+                {
+                    carried_bindings_in_drain.push(binding);
+                }
+            }
+        }
+        // Cleanup may be the only remaining use. Its checked order is still
+        // the backedge's order, independent of the carry layout. A release
+        // performing a system action keeps the existing early-exit restriction.
         for drop in backedge_drops {
             if !unavailable_in_remainder.contains(&drop.binding)
                 || !release_emits_nothing(&drop.release)
@@ -545,7 +561,15 @@ impl IrBuilder<'_> {
         // stage's own definitions are exactly the values live here.
         let mut staged_carries = Vec::with_capacity(carried_bindings_in_drain.len());
         for binding in &carried_bindings_in_drain {
-            let origin = self.binding_value(*binding)?;
+            // An addressed owner carries its place, not a read of its content
+            // while the callee may still be mutating it. Each issue-stage
+            // address has backing for its pipeline slot; the drain reloads the
+            // same address and performs subsequent reads after joining.
+            let origin = self
+                .bindings
+                .get(binding)
+                .copied()
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
             let reload = self.new_value(self.value_type(origin)?)?;
             staged_carries.push((*binding, origin, reload));
         }
