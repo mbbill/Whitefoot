@@ -1,5 +1,5 @@
 // Sequential Go net reference for the io-model comparison matrix.
-// Owned by go-check / experiment 49; retire with that comparison. One goroutine
+// Owned by go-check / experiments 49 and 51; retire with those comparisons. One goroutine
 // owns each connection and its initialized 64 KiB buffer through ordered writes.
 // There are no application-message boundaries, io.Copy/splice shortcuts, buffer
 // pools, custom reactors or manually pinned goroutines in this reference.
@@ -29,8 +29,7 @@ func positive(text string, maximum int) (int, error) {
 	return n, nil
 }
 
-func echo(conn *net.TCPConn) error {
-	buffer := make([]byte, bufferBytes)
+func echoBuffer(conn *net.TCPConn, buffer []byte) error {
 	for {
 		n, readErr := conn.Read(buffer)
 		for offset := 0; offset < n; {
@@ -52,6 +51,25 @@ func echo(conn *net.TCPConn) error {
 			return readErr
 		}
 	}
+}
+
+// Keep the stack-owning call separate: a conditional allocation inside the
+// common loop could reserve the large frame even for a supplied heap buffer.
+func echoStack(conn *net.TCPConn) error {
+	buffer := make([]byte, bufferBytes)
+	return echoBuffer(conn, buffer)
+}
+
+func startEchoStack(conn *net.TCPConn, complete func(error)) {
+	go func() { complete(echoStack(conn)) }()
+}
+
+func startEchoHeap(conn *net.TCPConn, complete func(error)) {
+	// The accepting goroutine transfers this private buffer to the new handler.
+	// Its asynchronous lifetime makes it heap-owned in ordinary Go; no global
+	// keeper, unsafe conversion or pool is needed to force its representation.
+	buffer := make([]byte, bufferBytes)
+	go func() { complete(echoBuffer(conn, buffer)) }()
 }
 
 type socketState struct {
@@ -88,7 +106,7 @@ func socketReadback(conn *net.TCPConn, sendBuffer int) (socketState, error) {
 	return state, nil
 }
 
-func report(stage string, sockets []socketState) error {
+func report(stage string, sockets []socketState, owner string) error {
 	var memory runtime.MemStats
 	runtime.ReadMemStats(&memory)
 	names := []string{
@@ -120,7 +138,8 @@ func report(stage string, sockets []socketState) error {
 		"kind": "go-net", "stage": stage, "version": runtime.Version(),
 		"goos": runtime.GOOS, "goarch": runtime.GOARCH, "num_cpu": runtime.NumCPU(),
 		"gomaxprocs": runtime.GOMAXPROCS(0), "buffer_bytes": bufferBytes,
-		"godebug": os.Getenv("GODEBUG"), "gogc": os.Getenv("GOGC"),
+		"buffer_owner": owner,
+		"godebug":      os.Getenv("GODEBUG"), "gogc": os.Getenv("GOGC"),
 		"gomemlimit": os.Getenv("GOMEMLIMIT"), "metrics": values, "sockets": sockets,
 		"memory": map[string]uint64{
 			"total_alloc": memory.TotalAlloc, "heap_alloc": memory.HeapAlloc,
@@ -148,6 +167,13 @@ func run() error {
 		return err
 	}
 	runtime.GOMAXPROCS(width)
+	owner := os.Getenv("WF_BENCH_GO_BUFFER_OWNER")
+	if owner == "" {
+		owner = "handler"
+	}
+	if owner != "handler" && owner != "acceptor" {
+		return errors.New("WF_BENCH_GO_BUFFER_OWNER must be handler or acceptor")
+	}
 	observe := os.Getenv("WF_BENCH_GO_OBSERVE") == "1"
 	sendBuffer := 0
 	if value := os.Getenv("WF_BENCH_GO_SNDBUF"); value != "" {
@@ -162,7 +188,7 @@ func run() error {
 	}
 	defer listener.Close()
 	if observe {
-		if err := report("listening", nil); err != nil {
+		if err := report("listening", nil, owner); err != nil {
 			return err
 		}
 	}
@@ -215,9 +241,8 @@ func run() error {
 		active[conn] = struct{}{}
 		lock.Unlock()
 		workers.Add(1)
-		go func() {
+		complete := func(err error) {
 			defer workers.Done()
-			err := echo(conn)
 			closeErr := conn.Close()
 			lock.Lock()
 			delete(active, conn)
@@ -227,7 +252,12 @@ func run() error {
 			} else if closeErr != nil {
 				fail(closeErr)
 			}
-		}()
+		}
+		if owner == "handler" {
+			startEchoStack(conn, complete)
+		} else {
+			startEchoHeap(conn, complete)
+		}
 	}
 	listener.Close()
 	workers.Wait()
@@ -235,7 +265,7 @@ func run() error {
 		return firstError
 	}
 	if observe {
-		return report("complete", sockets)
+		return report("complete", sockets, owner)
 	}
 	return nil
 }
