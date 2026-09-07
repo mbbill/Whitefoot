@@ -1,5 +1,5 @@
 /* Untimed stream/lifetime checks for the epoll representation comparison.
- * Usage: stream_check SERVER echo|compute|truncated WORKERS
+ * Usage: stream_check SERVER echo|compute|truncated|reset WORKERS
  *        stream_check SERVER resident WORKERS CONNECTIONS BYTES PREFIX
  *        stream_check launch SERVER [ARGUMENTS...]
  * Owned by scheduler-stackful/stackful-check and scheduler-pages; retire with
@@ -7,6 +7,7 @@
  * The compute answers below are fixed independent protocol vectors. */
 #define _POSIX_C_SOURCE 200809L
 #include <arpa/inet.h>
+#include <dirent.h>
 #include <errno.h>
 #include <pthread.h>
 #include <signal.h>
@@ -75,7 +76,11 @@ static void snapshot_process(const char *prefix, const char *name) {
     char destination[4096];
     int written = snprintf(source, sizeof source, "/proc/%ld/%s", (long)server_pid, name);
     require(written > 0 && (size_t)written < sizeof source, "snapshot source path overflow");
-    written = snprintf(destination, sizeof destination, "%s.%s", prefix, name);
+    char flat_name[128];
+    written = snprintf(flat_name, sizeof flat_name, "%s", name);
+    require(written > 0 && (size_t)written < sizeof flat_name, "snapshot name overflow");
+    for (char *at = flat_name; *at != '\0'; at++) if (*at == '/') *at = '-';
+    written = snprintf(destination, sizeof destination, "%s.%s", prefix, flat_name);
     require(written > 0 && (size_t)written < sizeof destination, "snapshot output path overflow");
     FILE *input = fopen(source, "r");
     require(input != NULL, "process snapshot unavailable");
@@ -88,6 +93,38 @@ static void snapshot_process(const char *prefix, const char *name) {
     }
     require(ferror(input) == 0, "snapshot read failed");
     require(fclose(input) == 0 && fclose(output) == 0, "snapshot close failed");
+}
+
+/* Opt-in Linux qualification snapshots include every live thread, not just
+ * the thread-group leader. CPU counters and namespace socket totals are raw
+ * evidence at one live instant, not process-lifetime or server-only totals. */
+static void snapshot_details(const char *prefix) {
+    const char *enabled = getenv("WF_BENCH_PROCESS_DETAILS");
+    if (enabled == NULL || strcmp(enabled, "1") != 0 || strcmp(prefix, "-") == 0) return;
+    snapshot_process(prefix, "stat");
+    snapshot_process(prefix, "io");
+    snapshot_process(prefix, "net/sockstat");
+    const char *kinds[] = {"task", "fdinfo"};
+    for (unsigned kind = 0; kind < 2; kind++) {
+        char path[128];
+        int written = snprintf(path, sizeof path, "/proc/%ld/%s", (long)server_pid, kinds[kind]);
+        require(written > 0 && (size_t)written < sizeof path, "snapshot directory overflow");
+        DIR *directory = opendir(path);
+        require(directory != NULL, "snapshot directory unavailable");
+        struct dirent *entry;
+        while ((entry = readdir(directory)) != NULL) {
+            if (entry->d_name[0] == '\0' || strspn(entry->d_name, "0123456789") != strlen(entry->d_name)) continue;
+            const char *suffixes[] = {"/stat", "/status"};
+            for (unsigned suffix = 0; suffix < (kind == 0 ? 2u : 1u); suffix++) {
+                char name[128];
+                written = snprintf(name, sizeof name, "%s/%s%s", kinds[kind], entry->d_name,
+                                   kind == 0 ? suffixes[suffix] : "");
+                require(written > 0 && (size_t)written < sizeof name, "snapshot member overflow");
+                snapshot_process(prefix, name);
+            }
+        }
+        require(closedir(directory) == 0, "snapshot directory close failed");
+    }
 }
 
 static void delay_ms(unsigned milliseconds) {
@@ -159,6 +196,7 @@ static void check_residency(unsigned count, unsigned length, const char *prefix)
      * RSS or allocator pages retained after connections have closed. */
     snapshot_process(prefix, "smaps");
     snapshot_process(prefix, "status");
+    snapshot_details(prefix);
     for (unsigned index = 0u; index < count; index++) {
         require(shutdown(descriptors[index], SHUT_WR) == 0, "residency half-close failed");
         unsigned char extra;
@@ -247,7 +285,7 @@ int main(int argc, char **argv) {
     mode = argv[2];
     int resident = strcmp(mode, "resident") == 0;
     require(strcmp(mode, "echo") == 0 || strcmp(mode, "compute") == 0 ||
-            strcmp(mode, "truncated") == 0 || resident, "unknown mode");
+            strcmp(mode, "truncated") == 0 || strcmp(mode, "reset") == 0 || resident, "unknown mode");
     require(argc == (resident ? 7 : 4), "incorrect arguments for stream mode");
     unsigned count = resident ? bounded_number(argv[4], 4096u) : 0u;
     unsigned bytes = resident ? bounded_number(argv[5], 65536u) : 0u;
@@ -279,6 +317,7 @@ int main(int argc, char **argv) {
     char port_text[16];
     snprintf(port_text, sizeof port_text, "%u", server_port);
     int truncated = strcmp(mode, "truncated") == 0;
+    int reset = strcmp(mode, "reset") == 0;
     pid_t child = fork();
     require(child >= 0, "fork failed");
     if (child == 0) {
@@ -297,6 +336,23 @@ int main(int argc, char **argv) {
     server_pid = child;
     if (resident) {
         check_residency(count, bytes, argv[6]);
+    } else if (reset) {
+        int idle[3];
+        for (unsigned at = 0; at < 3; at++) idle[at] = connect_peer();
+        int descriptor = connect_peer();
+        unsigned char bytes[65536] = {0};
+        send_all(descriptor, bytes, sizeof bytes);
+        struct linger abortive = {1, 0};
+        require(setsockopt(descriptor, SOL_SOCKET, SO_LINGER, &abortive, sizeof abortive) == 0,
+                "reset linger failed");
+        require(close(descriptor) == 0, "reset close failed");
+        for (unsigned at = 0; at < 3; at++) {
+            unsigned char extra;
+            ssize_t taken;
+            do { taken = recv(idle[at], &extra, 1, 0); } while (taken < 0 && errno == EINTR);
+            require(taken == 0, "reset did not close another waiting handler");
+            require(close(idle[at]) == 0, "reset idle close failed");
+        }
     } else if (truncated) {
         int descriptor = connect_peer();
         unsigned char prefix[17] = {0};
@@ -315,7 +371,7 @@ int main(int argc, char **argv) {
     int status;
     require(waitpid(child, &status, 0) == child, "server wait failed");
     server_pid = 0;
-    require(WIFEXITED(status) && WEXITSTATUS(status) == (truncated ? 1 : 0), "unexpected server exit");
+    require(WIFEXITED(status) && WEXITSTATUS(status) == (truncated || reset ? 1 : 0), "unexpected server exit");
     alarm(0);
     printf("stream_check: PASS mode=%s workers=%s", mode, argv[3]);
     if (resident) printf(" connections=%u bytes=%u", count, bytes);

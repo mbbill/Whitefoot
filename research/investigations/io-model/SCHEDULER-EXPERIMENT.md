@@ -4241,7 +4241,7 @@ name. A known limitation remains visible until its experiment is complete.
 | Native C stackful / C++ stackless | Same epoll engine; private or shared receive storage; stackful, heap coroutine, and compiler-elided coroutine forms | Diagnostic representation control: separates coroutine/frame allocation, storage and reactor cost | Screened and stream/lifetime-qualified at their recorded revisions; not independent mature runtime comparisons |
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
 | WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Correctness-qualified at the revisions above; no concurrent server performance claim yet |
-| Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Source candidate only; pin Go toolchain, GOMAXPROCS, buffers and complete protocol fixture before timing |
+| Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Experiment49 pins Go 1.27.1 and 64 KiB private initialized buffers; local release/race protocol qualification passes, native Linux resource/backend qualification pending; no timing yet |
 | Rust sequential / Rayon CPU pool | Sequential Rust control, then tuned `par_iter`, `join` and `scope` with explicit grain size and pool width | Essential CPU-parallel baseline for balanced/unbalanced data-parallel and recursive work; mixed-I/O row combines native I/O or Tokio with bounded Rayon offload | Source candidate only; count the total physical CPU budget across both executors, queue bounds and transfer cost. Blocking sockets on Rayon are not its strongest pure-network implementation |
 | Tokio | Fixed-worker multithread runtime and a separate per-core current-thread/reactor configuration | External mainstream async baseline; distinguish work stealing from reactor locality | Source candidate only; pin toolchain/lockfile, socket distribution and blocking-pool budget |
 | Monoio | Per-core runtime, separately forced IoUringDriver and LegacyDriver | External completion/readiness comparison within one runtime family | Source candidate only; prohibit silent fusion fallback in backend-specific rows |
@@ -5003,3 +5003,95 @@ batch has been collected, preserving stream ordering, short-send ownership
 and fairness without waiting for an application message boundary. It would
 need independent stream qualification followed by the same counters and
 uninstrumented comparisons. No default or such optimization is changed here.
+
+
+## Forty-ninth experiment: qualify a sequential Go net reference
+
+The external comparison now has a concrete normal sequential-API candidate:
+`go_echo.go` runs one goroutine per accepted connection, with a private
+initialized 64 KiB buffer, sequential `TCPConn.Read` and ordered `TCPConn.Write`.
+The CLI accepts a port, total connection count and `--threads` adapter argument;
+that argument sets GOMAXPROCS, not the number of OS threads. Each connection
+owns its buffer until all bytes returned by a read have been written.
+Bytes returned together with EOF are written before normal completion.
+A read/write failure closes the listener and every accepted connection, joins
+all handlers and exits unsuccessfully. No fixture identity, payload value or
+message-size recognition changes the algorithm. There is one listener, with
+the standard runtime scheduling its goroutines across execution processors.
+
+The official [Go release index](https://go.dev/dl/?mode=json) and
+[release tag](https://github.com/golang/go/tree/go1.27.1) identify Go 1.27.1;
+the tag resolves to `862c888e612ac346c7c4d99c9392bdfd265f33b0`. The local
+Darwin/arm64 official archive SHA-256 was verified as
+`ee215d57e0ec269c60cc9ceca68e6bda321ba9ee5afe24f4b0988703c2d87d12`.
+Canonical scheduler jobs and the dedicated qualification job install exactly
+1.27.1. `go-check` requires that readback and sets `GOTOOLCHAIN=local`, with no
+automatic toolchain fallback. There are no external Go modules; release uses
+`CGO_ENABLED=0`, while the separately identified race build enables cgo for
+the race runtime. Build metadata is retained. Only a release build may enter
+future timing.
+
+The downloaded release sources were inspected. Its
+[Linux netpoll implementation](https://github.com/golang/go/blob/go1.27.1/src/runtime/netpoll_epoll.go)
+uses epoll, edge-triggered registrations and an eventfd wakeup; initialization
+failure does not select a different backend. Its
+[Unix descriptor implementation](https://github.com/golang/go/blob/go1.27.1/src/internal/poll/fd_unix.go)
+attempts reads/writes directly and waits through the runtime poller on EAGAIN,
+retaining a partial-write offset. Thus a sequential socket call need not
+occupy an OS thread while waiting. The reference explicitly enables TCP_NODELAY
+and disables keepalive to match the native echo socket policy. Qualification
+sets SO_SNDBUF to 4096 and reads back effective send/receive buffers and the
+enabled no-delay flag. Darwin returns a nonzero no-delay value of 4 locally;
+the boolean check accordingly requires nonzero, not a Linux-specific value.
+[Go TCP socket methods](https://pkg.go.dev/net#TCPConn.SetNoDelay) describe these controls.
+
+`go-check` is wired into root `scheduler-experiment` and therefore `make check`.
+All older stream modes remain enabled. Each release/race × GOMAXPROCS 1/4
+combination runs four cases, sixteen total:
+
+- A quiet ordinary echo with the same four independent 2 MiB streams, complete
+  byte checking, delayed readers and half-close; stdout/stderr must contain
+  only the fixture's successful result.
+- The same stream oracle with runtime observations and the small send buffer,
+  exercising the runtime's short-write/backpressure handling.
+- A generic abortive reset while three other connections wait for input.
+  The reset must terminate all four handlers and produce the expected nonzero
+  process result; a partial response cannot be treated as success.
+- Sixty-four live connections, each exchanging and validating 64 KiB before
+  the live snapshot and orderly half-close.
+
+The new optional `WF_BENCH_PROCESS_DETAILS=1` residency snapshot records
+each enumerated live thread's status/stat, process status/stat/io, smaps,
+descriptor fdinfo and namespace socket totals. Existing callers keep their
+old snapshots. Linux Go qualification requires epoll fdinfo entries and checks
+every captured thread's affinity against the requested server CPU. Kernel
+and socket namespace totals include other processes, including the client;
+they are context, not CPU or memory attributed to this server. These live
+snapshots do not claim an atomic census or a lifetime thread peak.
+
+The dedicated `codex/io-go-baselines` job fixes all server OS threads to one
+logical CPU and the fixture to a different physical core. GOMAXPROCS 4 under
+that mask deliberately qualifies oversubscription; it does not allocate four
+CPU cores. GOMAXPROCS controls Go execution concurrency, while the OS mask
+limits the entire process, including runtime/GC threads and syscall execution.
+The [runtime documentation](https://pkg.go.dev/runtime#GOMAXPROCS) distinguishes
+the explicit setting from defaults derived from affinity/cgroup limits.
+The job records topology, build/compiler versions and runtime source hashes,
+plus host/kernel counters before and after qualification. Canonical jobs
+also run these correctness cases, without making an affinity/timing claim.
+
+Observed startup/exit records include GOMAXPROCS, live runtime threads,
+goroutines, GC policy/cycles, allocation/memory/stack counts and GC pause totals.
+`ReadMemStats` flushes the memory snapshot. Runtime CPU-class metrics remain
+their documented estimates, not replacements for OS process/kernel CPU
+accounting; in particular their total is tied to GOMAXPROCS and elapsed time.
+[Runtime metric definitions](https://pkg.go.dev/runtime/metrics) state these
+limits. There is no forced GC, disabled GC, buffer pool or custom scheduler
+policy in the reference.
+
+Local M1 qualification passes all sixteen release/race cases with the exact
+toolchain. Go vet, gofmt, strict C compilation and Linux cross-compilation are
+checked. Native Linux affinity/backend/resource qualification remains pending
+on the isolated branch. This promotes Go from an unspecified candidate to an
+implemented, locally protocol-qualified row; it does not measure its speed or
+claim that this idiom is Go's best possible tuning.

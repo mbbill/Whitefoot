@@ -102,6 +102,13 @@ jobs:
           rustup component add clippy rustfmt
           cargo --version
 
+      - name: Install the pinned Go reference toolchain
+        if: matrix.stage == 'scheduler'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.1'
+          cache: false
+
       # What is worth caching is what a run can actually reuse. The compiler
       # crate has no dependencies at all — `compiler/Cargo.lock` names one
       # package, itself — so a cached `compiler/target` can only be reused by a
