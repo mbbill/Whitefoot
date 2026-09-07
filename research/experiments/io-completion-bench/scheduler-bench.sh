@@ -1144,9 +1144,11 @@ for program in "${cpu_programs[@]}"; do
         > "$OUT/$program.txt" 2> "$OUT/$program.err"
 done
 
-# Keep raw samples; summarize ranges as well as medians. Ratios use base,
-# measured in the same pass and complete workload cohort.
-awk -F '\t' '
+# Keep raw samples; summarize ranges as well as medians. Combine's control
+# is callee-small; other panels retain base. Both use the same pass and cohort.
+paired_reference=base
+if [[ $MODE == combine ]]; then paired_reference=callee-small; fi
+awk -F '\t' -v reference="$paired_reference" '
     NR == 1 { next }
     { key=$15 "/" $3 "/" $4 "/" ($21+0) "/" ($28+0) "/" ($30+0) "/" ($39+0); cohort=$1 SUBSEP key; group=$2 SUBSEP key
       count[group]++; rates[group,count[group]]=$6; lat[group,count[group]]=$7;
@@ -1174,8 +1176,8 @@ awk -F '\t' '
       for(g in groups) {
         split(g,parts,SUBSEP); form=parts[1]; key=parts[2]; n=0;
         for(c in cohorts) { split(c,p,SUBSEP); if(p[2]==key) {
-          denominator=samples[c,"base"];
-          if(denominator<=0) { print "scheduler-bench: missing paired reference" > "/dev/stderr"; exit 1 }
+          denominator=samples[c,reference];
+          if(denominator<=0) { print "scheduler-bench: missing paired reference " reference > "/dev/stderr"; exit 1 }
           ratios[g,++n]=samples[c,form]/denominator;
         } }
         rate=summary(rates,g); low=sorted[1]; high=sorted[count[g]];
