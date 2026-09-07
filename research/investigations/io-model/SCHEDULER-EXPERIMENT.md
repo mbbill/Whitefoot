@@ -4252,7 +4252,7 @@ name. A known limitation remains visible until its experiment is complete.
 | Native C io_uring with immediate send | Same receive engine and loans, one nonblocking `sendmsg` attempt before ring fallback | Competitive hybrid candidate: avoids a submission/completion round trip when the socket accepts bytes immediately | Stream-qualified and screened at `0357259d`; 8 KiB hybrid severely regresses large messages; experiment 46 measures about 3.785x more send operations from lost application-level gathering, without short/EAGAIN retries. 64 KiB does not show the same loss. Shutdown wake-storage correction requalified at `0ebe924b` |
 | Native C stackful / C++ stackless | Same epoll engine; private or shared receive storage; stackful, heap coroutine, and compiler-elided coroutine forms | Diagnostic representation control: separates coroutine/frame allocation, storage and reactor cost | Screened and stream/lifetime-qualified at their recorded revisions; not independent mature runtime comparisons |
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
-| WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Qualified and screened at `2147857e` and `f72aacb8` (experiments 39/44). Sole-resumer progress improves occupied small-message throughput by 1.98-2.77x versus the threaded coordinator, but still loses to the existing WF/native controls. Submission batching is the next mechanism question |
+| WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Experiments 39/44/48 qualify the threaded, owner and batched-owner paths. At `fc69af15`, batching adds 28% / 27% paired throughput at 64 / 1024 small-message peers, with separate counters confirming aggregated ring submissions. Native controls still lead those cells; client headroom and multi-owner compute remain open. Experiment 52 qualifies the unchanged sequential mixed protocol on both Linux completion routes |
 | Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Experiment49 pins Go 1.27.1. Experiment51 qualifies handler-stack and acceptor-heap forms on macOS/Linux at equal 64 KiB private capacity. The heap form lowers single live release RSS snapshots but adds a GC cycle; retain both candidates until timing. Race moves both buffers to the heap and cannot represent that release storage comparison; no timing yet |
 | Rust sequential / Rayon CPU pool | Existing recursive `par_layout.wf` port with exact floating-point order and every node write; sibling `join`, calibrated grain and explicit pool width | Essential CPU-parallel reference; separates sequential code generation from parallel scheduling. Broader `par_iter`/`scope` and unbalanced workloads remain candidate rows | Checksum-qualified and independently confirmed after grain calibration on M1/Linux (experiment 40). Experiment 45's stack/batch control reduces the WF12/Rayon paired wall gap from 13.9% at one batch to 1.6% at sixteen, supporting substantial fixed costs. Experiment 47 finds no stable gain from disabling the unused output-path ring; remaining startup/exit costs need attribution. This is not an optimal WF CPU setup claim |
 | Tokio I/O + bounded Rayon CPU offload | One current-thread I/O driver plus B-1 CPU workers, fixed 64-byte protocol, asynchronous bounded admission, one request/reply per connection | External mixed-load reference under one total execution budget; exposes CPU queue transfer, backpressure and light-request progress | Linux-qualified at `040bfc4b` (experiment 42), including saturation, errors, reset, partial input, half-close and slow output. Four short client smoke records are correctness evidence, not a performance ranking |
@@ -6372,7 +6372,111 @@ runs establish local safety/behavior evidence, not Linux syscall behavior or
 a performance result. The ordinary same-binary twelve-task/four-slot checks
 and common four-peer 2 MiB stream oracle also pass all three policies, with
 all tasks completed and retired. The isolated Linux branch is
-`codex/io-continuation-batch`; its measurements remain pending.
+`codex/io-continuation-batch`.
+
+### Linux batching confirmation at fc69af15
+
+Frozen revision
+[`fc69af155ff6fe5cae535a2ca663f98004c87472`](https://github.com/mbbill/Whitefoot/commit/fc69af155ff6fe5cae535a2ca663f98004c87472)
+completed [run 34093974793](https://github.com/mbbill/Whitefoot/actions/runs/34093974793),
+including measurement job 101653329137, generated native/helper qualification
+and Windows placement checks. Its only difference from the preceding tested
+`f2ac5bc6` is two workflow comments to trigger the dedicated branch run.
+Artifact `10008989325`, `io-scheduler-allocator`, has SHA-256
+`e99d91e257caaeaecc548c65129eabeb6257df9edf4b2d8f96c79ca998b69cf3`.
+The ZIP retains all ordinary samples, observations, generated IR, qualification
+logs and residency maps. Independent audit reconciles all 420 timing rows in
+60 seven-pass groups against their raw client and process-resource records,
+exact trip counts, rate rounding intervals and alternating form order.
+Every ordinary server stdout/stderr and client stderr is empty. All 108
+snapshots reconcile with their smaps totals; THP is disabled, huge-page and
+swap totals are zero, and every retained process status has CPU mask 0.
+This panel does not retain a separate per-thread affinity census.
+
+The host is an Intel Xeon Platinum 8370C VM running Linux 6.17.0-1022-azure,
+Clang 20.1.2 and glibc 2.39. Its four logical CPUs represent two physical
+cores; the server uses CPU 0 and the client CPU 2. The allocator panel sets
+top_pad to zero. All three continuation modes use the same generated binary,
+1024 staged slots and private initialized 64 KiB source buffers. Neither
+the absolute rates nor the size of this panel's owner/threaded difference
+should be transplanted to experiment 44's different AMD host.
+
+Rates below are medians in verified round trips per second. Ratios are the
+median and full range of seven same-pass batch32/owner-one comparisons,
+not a ratio of independently selected samples.
+
+| Peers / bytes | Owner-one rate | Batch32 rate | Paired rate ratio | Paired server CPU/trip ratio | Paired p99 ratio |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 / 64 | 30184 | 30116 | 0.999 [0.958, 1.036] | 1.067 [1.000, 1.071] | 1.064 [0.912, 1.255] |
+| 4 / 64 | 144450 | 154859 | 1.075 [1.065, 1.112] | 0.926 [0.889, 0.962] | 0.959 [0.855, 0.980] |
+| 64 / 64 | 142075 | 183267 | 1.283 [1.254, 1.323] | 0.778 [0.761, 0.793] | 0.797 [0.572, 0.840] |
+| 1024 / 64 | 112075 | 142080 | 1.271 [1.261, 1.296] | 0.792 [0.779, 0.801] | 0.816 [0.650, 0.968] |
+| 64 / 65536 | 38081 | 42005 | 1.108 [1.066, 1.144] | 0.911 [0.880, 0.933] | 0.889 [0.660, 1.151] |
+
+At 64 small-message peers, median server CPU falls from 6.953 to 5.391 us
+per trip and p99 from 526 to 397 us. Context switches are already rare in
+both owner forms: 0.000289 and 0.000234 per trip. This gain is additional to
+the earlier handoff removal. At 1024 peers, CPU falls from 9.033 to 7.178 us
+and p99 from 10308 to 8505 us. One peer has no stable rate benefit and retains
+the occupied-versus-idle policy tradeoff; the threaded form's median there
+is 40111 versus batch32's 30116. No default is selected from this screen.
+
+Independent untimed reports provide mechanism evidence at 64 peers and
+2000 trips each. All nine continuation preflight/stream observations have
+the expected policy, balanced waiters, exact task retirement and native
+accept/receive routes. Completed submissions equal submissions in each.
+
+| Mode | Ring submissions | Submission kicks | Submissions/kick | Runtime parks |
+| --- | ---: | ---: | ---: | ---: |
+| Threaded | 125993 | 55606 | 2.266 | 115717 |
+| Owner-one | 127932 | 127869 | 1.0005 | 581 |
+| Owner-thirty-two | 128047 | 4031 | 31.766 | 14 |
+
+The adapter's `submission_enters` counts calls to its nonempty submission
+kick before any EINTR retries; it is not every io_uring syscall, completed
+byte count or TCP packet count. Owner-thirty-two preserves approximately the
+same number of ring operations while cutting these kicks by 96.8% in this
+observation. That directly confirms recovered submission aggregation. The
+four-peer, 80-trip preflight gathers only 2.75 submissions/kick, and the
+fragmented 2 MiB stream gathers about one: the policy progresses immediately
+when readiness runs out. It does not manufacture a full batch by waiting.
+These observations are separate executions and their times never enter the
+ordinary ranking.
+
+The stronger candidate still does not lead the small-message native cells.
+Batch32/callee paired rates are 0.940 / 0.937 / 0.987 at 4 / 64 / 1024 peers;
+against the fixed 64 KiB io_uring control they are 0.844 / 0.920 / 0.822.
+At 64 peers the seven native median rates span 196807-203013, versus 183267
+for batch32. At 1024 they span 161029-175022, versus 142080. These ranges
+describe the complete preselected native set rather than selecting one
+winning implementation as a proven frontier. The client consumes roughly
+0.93 CPU for batch32 at 64 peers and nearly 1.0 for the faster native forms.
+At 1024 the corresponding values are about 0.86 and 0.97-0.98. Additional
+client headroom has not been demonstrated.
+
+The large-message cell is especially unsuitable for a peak-throughput claim:
+client occupancy is about 1.0 CPU, and batch32's seven rates span 32819-44304,
+with p99 spanning 1640-2875 us. Its paired rate exceeds the fixed 64 KiB ring
+and shared-buffer epoll controls in all seven passes, but that is only an
+end-to-end result under this client limit. No samples are discarded. The
+64-peer small cell is steadier: batch32 spans 170712-188933 trips/s and
+p99 384-451 us; its owner-one paired gain is positive in every pass.
+
+Median live RSS for owner-one versus batch32 is 3104/3100 KiB at 64 small
+peers, 12508/12508 KiB at 1024 small peers, and 5760/5260 KiB at 64 large
+peers. The large-cell three-snapshot ranges overlap (5476-6124 versus
+5204-5648); no storage-representation change follows from that difference.
+The existing WF callee form uses 3664/15156/6156 KiB for those three cells;
+the explicit private-calloc epoll control uses 2136/9852/4268 KiB. Shared
+epoll and provided-buffer io_uring have different storage contracts and
+must not be described as equal-capacity memory controls.
+
+This experiment supports batching progress in an occupied continuation
+executor without changing sequential source, ownership rules or function
+signatures. It does not settle the remaining coordinator cost, idle policy,
+multi-owner execution, cancellation or compute fairness. Those are separate
+mechanism and workload questions; seven same-host samples cannot establish
+that a fixed budget of thirty-two is optimal.
 
 
 ## Forty-ninth experiment: qualify a sequential Go net reference
@@ -6981,5 +7085,24 @@ Tokio/Rayon tests, its four shared-oracle invocations, and all sixteen
 existing Go release/race checks pass with the strengthened common fixture.
 A negative check specifying exit 1 for WF's truncated-input result still
 fails and reports actual exit 9; the explicit status argument does not
-collapse source errors into generic success. Linux native/helper results
-remain pending on the isolated branch.
+collapse source errors into generic success. After integrating experiment
+51, both Go storage forms also pass all thirty-two local cases against this
+same fixture.
+
+Frozen revision
+[`6a8c19c1b7846d1aaed9a6a95f5ecfcdf1852d91`](https://github.com/mbbill/Whitefoot/commit/6a8c19c1b7846d1aaed9a6a95f5ecfcdf1852d91)
+passes Linux native/helper job 101660513221 in
+[run 34096270201](https://github.com/mbbill/Whitefoot/actions/runs/34096270201).
+The separate Windows placement job also passes; it does not execute generated
+WF continuations. Artifact `10008815869`, `completion-continuations`, has
+SHA-256 `f4e2575d387e0b849555bafec7248023c982f4bb00397fa9553811e36cf99cc6`.
+An independent log audit verifies all eighteen new mixed cases in the exact
+three-policy/two-route order, positive balanced waiter counts, the requested
+policy and exact completed/retired task counts. Each fragmented compute case
+records deferred receives on its required route. In this run, all truncated
+and oversized inputs are read inline; their accepts still use the required
+native/helper route, and the common oracle checks closure and exact exits.
+The previous 66 generated stream invocations, three file-outcome suites and
+four 640-case nested completion-loan fixtures also pass. The artifact retains
+ordinary and instrumented compute IR. These results qualify protocol and
+lifetime behavior, with the sole-resumer computation limitations above.

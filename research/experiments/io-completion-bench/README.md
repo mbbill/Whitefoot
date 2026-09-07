@@ -453,6 +453,11 @@ empty. This gives 420 timing rows and 108 live snapshots. All three policies
 run the generated lifetime/stream suite; separate observations enable
 `WF_CONTINUATION_REPORT_BRIDGE=1` to retain existing ring submission, enter,
 completion and wake counters. Experiment 48 owns this batching comparison.
+Its audited Linux panel at `fc69af15` improves paired 64/1024-peer small-message
+rate by 28%/27% over owner-one and confirms aggregated submissions in separate
+reports. One peer has no rate gain; native controls still lead the occupied
+small-message cells. Client capacity limits several cells, and no new default
+or universal throughput result is selected.
 
 The generated continuation qualification also compiles the unchanged
 `tcp_compute_server.wf` with `--continuations --par`. Experiment 52 reuses
@@ -464,6 +469,10 @@ without response bytes. All three progress policies check native/helper
 routes, complete task retirement and sanitizer results. Pure computation
 still runs on the sole resumer; this is protocol qualification, not a mixed
 performance, CPU-offload or fairness result.
+The frozen `6a8c19c1` Linux artifact passes all eighteen native/helper mixed
+invocations and the previous generated/loan suites; M1 ASan/UBSan and TSan
+each pass the nine local-route invocations. Experiment 52 records the exact
+artifact identity and independent audit.
 
 On native Windows, `windows-bench.ps1` owns a separate production
 qualification:
