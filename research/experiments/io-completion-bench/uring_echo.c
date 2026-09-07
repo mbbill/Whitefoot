@@ -331,6 +331,10 @@ static int ring_enter(struct ring *ring, unsigned wait_for) {
                               memory_order_release);
     }
     if (ring->poll_thread) {
+        /* Match liburing's SQPOLL wake protocol: the published tail must be
+         * visible before reading NEED_WAKEUP. A release store followed by an
+         * acquire load alone does not provide this store-to-load barrier. */
+        atomic_thread_fence(memory_order_seq_cst);
         unsigned state = atomic_load_explicit((_Atomic unsigned *)ring->submission_flags,
                                               memory_order_acquire);
         /* The poll thread reads the tail itself, so the count is ignored; the
