@@ -17,8 +17,6 @@ jobs:
   fir-linux:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    env:
-      OUT: ${{ runner.temp }}/compute-fir
     steps:
       - uses: actions/checkout@v4
       - name: Install and record compiler
@@ -29,11 +27,15 @@ jobs:
           cargo fetch --locked --manifest-path compiler/Cargo.toml
           /usr/bin/clang --version
       - name: Qualify sources and actual timing objects
+        env:
+          OUT: ${{ runner.temp }}/compute-fir
         run: |
           set -o pipefail
           make -C research/experiments/compute-runtime check-fir check-bench \
             OUT="$OUT" BENCH_ARCH=-march=native 2>&1 | tee "$RUNNER_TEMP/compute-build.log"
       - name: Calibrate sequentially on one recorded CPU mask
+        env:
+          OUT: ${{ runner.temp }}/compute-fir
         run: |
           # Restrict the experiment to at most four available logical CPUs.
           # Children inherit this mask; topology/SMT/quota remain in the record.
@@ -52,6 +54,8 @@ jobs:
             sh research/experiments/compute-runtime/fir-bench.sh calibrate
       - name: Publish calibration location and scope
         if: always()
+        env:
+          OUT: ${{ runner.temp }}/compute-fir
         run: |
           {
             echo '## FIR compute calibration'
