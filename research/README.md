@@ -18,6 +18,12 @@ compiler needs and test possible solutions. The active
 - [Archive promotion audit](archive-promotion-audit.md): a non-authoritative
   map from historical findings to useful successors and remaining questions.
 
+[Compute runtime without I/O scheduling](investigations/compute-runtime/README.md)
+recovers the original join/help/steal path and defines fresh native reference
+comparisons. Its initial audit distinguishes the historical compute runtime
+from the shared completion scheduler; implementation and timing status are
+recorded there.
+
 The [roadmap](../docs/roadmap.md) is reference material outside the working
 loop. Research does not update its status or wait for it. Dated results state
 what their recorded program, toolchain, and environment established; they are
