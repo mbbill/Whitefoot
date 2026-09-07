@@ -4797,8 +4797,97 @@ there is no separate kernel-time profile, sustained-load isolation, RSS
 comparison, unbalanced-tree qualification or real I/O in this panel. Native
 Rust and WF use different LLVM versions and different language frontends.
 The matched operations make the workload comparable but do not erase those
-code-generation differences. Linux CI qualification and measurements are
-pending at this local checkpoint.
+code-generation differences. The Linux cohort below is a separate hosted
+measurement, not a replication on the same hardware.
+
+### Linux qualification and independent confirmation
+
+[Run 34084372230, job 101625479691](https://github.com/mbbill/Whitefoot/actions/runs/34084372230/job/101625479691)
+completed successfully at d79ffaf1c1028e88832852b91764dbbc9967e875.
+Formatting, both correctness tests, clippy, compiled-WF byte qualification and
+every timed invocation passed. The job took approximately three minutes,
+including toolchain setup and builds. The canonical gate is a separate run;
+this successful experiment job does not claim that every repository check
+has completed.
+
+The host was an Ubuntu 24.04 Azure VM with kernel 6.17.0-1022-azure and an
+AMD EPYC 9V74 model string. Its four allowed vCPUs, 0-3, were reported as two
+cores with two SMT threads each, one socket and one NUMA node. This guest
+topology does not establish four dedicated physical cores. Rust 1.98.0 used
+LLVM 22.1.8. The job explicitly set CLANG=/usr/bin/clang, and that same path
+is selected by whitefootc for native linking; it reported Ubuntu Clang
+18.1.3. No affinity or exclusive physical-host allocation was established.
+
+Three calibration passes selected grains 16/16/4 for widths 1/2/4, then five
+independent confirmation passes used those frozen choices. Both cohorts had
+their own warmup. The [70 raw samples](../../experiments/io-completion-bench/rayon-baseline/linux-2026-09-07.tsv)
+retain all thirty calibration and forty confirmation observations. Counts,
+alternating execution order, all printed wall/user/system summaries and the
+four retained WF output files were independently checked successfully.
+
+| Confirmation form | Wall median ms | Wall min..max ms | User median ms | System median ms |
+|---|---:|---:|---:|---:|
+| Rust sequential | 1320.81 | 1320.57..1330.02 | 1320.31 | 1.00 |
+| Rayon 1 worker, grain 16 | 1321.48 | 1321.10..1324.43 | 1320.30 | 1.00 |
+| Rayon 2 workers, grain 16 | 670.37 | 669.57..670.60 | 1324.29 | 15.00 |
+| Rayon 4 workers, grain 4 | 354.04 | 353.33..354.20 | 1340.95 | 65.85 |
+| WF sequential | 1329.70 | 1326.20..1332.26 | 1327.42 | 3.00 |
+| WF parallel, 1 worker | 1356.16 | 1354.49..1359.79 | 1321.47 | 33.97 |
+| WF parallel, 2 workers | 707.68 | 705.59..710.12 | 1343.37 | 35.97 |
+| WF parallel, 4 workers | 425.54 | 423.84..429.29 | 1393.35 | 77.80 |
+
+Ratios below are calculated per pass before taking their median and range;
+they are not ratios of independently selected median samples. Total CPU
+means the process's measured user plus system time. CPU/wall is average
+running-thread equivalents during that complete process, not a measurement
+of useful work or physical-core occupancy.
+
+| Workers | WF/Rayon wall median [min,max] | WF/Rayon total CPU median [min,max] |
+|---|---:|---:|
+| 1 | 1.025992 [1.023958,1.029111] | 1.025329 [1.023379,1.028179] |
+| 2 | 1.056016 [1.052503,1.058935] | 1.029694 [1.027706,1.030356] |
+| 4 | 1.202192 [1.196595,1.214973] | 1.045739 [1.043629,1.049634] |
+
+| Form | CPU/wall median [min,max] | Own sequential/form wall median [min,max] |
+|---|---:|---:|
+| Rust sequential | 0.999781 [0.999746,0.999807] | 1.000000 |
+| Rayon 1 worker | 0.999884 [0.999864,0.999904] | 0.999614 [0.999404,1.004225] |
+| Rayon 2 workers | 1.997914 [1.997783,1.997958] | 1.972625 [1.969231,1.984005] |
+| Rayon 4 workers | 3.973502 [3.972294,3.975693] | 3.734575 [3.728268,3.757458] |
+| WF sequential | 0.999783 [0.999762,0.999793] | 1.000000 |
+| WF parallel, 1 worker | 0.999252 [0.998979,0.999324] | 0.979345 [0.978429,0.982377] |
+| WF parallel, 2 workers | 1.948090 [1.941758,1.950716] | 1.878948 [1.867566,1.883669] |
+| WF parallel, 4 workers | 3.454002 [3.434661,3.465551] | 3.124893 [3.102125,3.130760] |
+
+Every pair favors Rayon in wall time and total CPU. At four workers WF takes
+about 20% more wall time but only about 4.6% more CPU in this sample set; its
+CPU/wall ratio is about 3.45 against Rayon's 3.97. This supports investigating
+parallel utilization and additional CPU work separately. It does not yet
+identify whether the missing concurrency comes from ready-work distribution,
+parking, granularity or the program's critical path. The sequential median
+gap is only about 0.7%, so differing backend versions do not explain away
+the observed parallel loss. The next diagnostic experiment should retain
+ordinary timing as its own cohort and add separate four-worker CPU/scheduler
+observations. These hosted results do not establish a universal ranking.
+
+The [complete artifact](https://github.com/mbbill/Whitefoot/actions/runs/34084372230/artifacts/10004859489)
+contains plans, host metadata, raw samples, summaries, dependency lock and
+native binaries. Its ZIP SHA-256 is
+`203f614da02ae7946a9ff1ac7cb4db956f259816a5f1d7788d4d556709ea678c`.
+The WF source hash is unchanged from the local cohort. The following hashes
+identify the measured code and dependency profile; the source/profile hashes
+were verified from the exact d79ffaf1 tree after downloading its artifact.
+
+| Artifact or source | SHA-256 |
+|---|---|
+| whitefootc binary | `5c03c1893b63243bc51b5f3a9a396603cdf0ce8aaa25e2f1c45526f9b827a803` |
+| WF sequential binary | `4f23a160e412fa00d90478b94668ac34efd6d7dd51bf1c23e001c4475ac23d3c` |
+| WF parallel binary | `948ec36393b60f922cc4132c36b5cd1012fd4b8559a2523aa692a12f6e16db54` |
+| Rust reference binary | `2a8289d8ca19fb74b0b035edb732cba533ab033c053379d36ae58c764b4d7d45` |
+| whitefootc.rs | `66697813475573bedb116443f022284562c83938b6d705c61f03958e60566e67` |
+| Rust reference main.rs | `86f4e33f5ec386cbcfbc111274dc8908fd9cd66a787eaffd1ee38cdf2e7be259` |
+| Rust reference Cargo.toml | `7c11ba05d8e9bebc61bad049c5fc1150b17acb893bc2aec01535a4496aa4525b` |
+| Rust reference Cargo.lock | `49a17a4292edea7a2e68dc2189c470404ffa5442170cf4e0fc21f8115b7e0637` |
 
 The next mixed-I/O reference should use an async network/file driver plus a
 bounded Rayon CPU pool, retaining the existing request framing and recurrence
