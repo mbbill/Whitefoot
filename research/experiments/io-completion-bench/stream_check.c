@@ -1,5 +1,6 @@
 /* Untimed stream/lifetime checks for the epoll representation comparison.
- * Usage: stream_check SERVER echo|compute|truncated|reset WORKERS
+ * Usage: stream_check SERVER echo|compute WORKERS
+ *        stream_check SERVER truncated|oversized|reset WORKERS [ERROR_STATUS]
  *        stream_check SERVER resident WORKERS CONNECTIONS BYTES PREFIX
  *        stream_check launch SERVER [ARGUMENTS...]
  * Owned by scheduler-stackful/stackful-check and scheduler-pages; retire with
@@ -64,7 +65,7 @@ static void select_page_policy(void) {
 static unsigned bounded_number(const char *text, unsigned limit) {
     char *end = NULL;
     unsigned long value = strtoul(text, &end, 10);
-    require(end != text && *end == '\0' && value != 0 && value <= limit, "invalid residency size");
+    require(end != text && *end == '\0' && value != 0 && value <= limit, "invalid positive numeric argument");
     return (unsigned)value;
 }
 
@@ -281,12 +282,20 @@ int main(int argc, char **argv) {
         execv(argv[2], argv + 2);
         require(0, "server launch failed");
     }
-    require(argc == 4 || argc == 7, "expected SERVER MODE WORKERS [CONNECTIONS BYTES PREFIX]");
+    require(argc == 4 || argc == 5 || argc == 7, "expected SERVER MODE WORKERS [ERROR_STATUS | CONNECTIONS BYTES PREFIX]");
     mode = argv[2];
     int resident = strcmp(mode, "resident") == 0;
+    int truncated = strcmp(mode, "truncated") == 0;
+    int oversized = strcmp(mode, "oversized") == 0;
+    int reset = strcmp(mode, "reset") == 0;
+    int error_case = truncated || oversized || reset;
     require(strcmp(mode, "echo") == 0 || strcmp(mode, "compute") == 0 ||
-            strcmp(mode, "truncated") == 0 || strcmp(mode, "reset") == 0 || resident, "unknown mode");
-    require(argc == (resident ? 7 : 4), "incorrect arguments for stream mode");
+            error_case || resident, "unknown mode");
+    require(resident ? argc == 7 : error_case ? (argc == 4 || argc == 5) : argc == 4,
+            "incorrect arguments for stream mode");
+    /* Different source programs assign different error codes. Preserve the
+     * native reference default, and require an exact code when specified. */
+    unsigned error_status = error_case && argc == 5 ? bounded_number(argv[4], 255u) : 1u;
     unsigned count = resident ? bounded_number(argv[4], 4096u) : 0u;
     unsigned bytes = resident ? bounded_number(argv[5], 65536u) : 0u;
     if (resident) {
@@ -316,8 +325,6 @@ int main(int argc, char **argv) {
     close(probe);
     char port_text[16];
     snprintf(port_text, sizeof port_text, "%u", server_port);
-    int truncated = strcmp(mode, "truncated") == 0;
-    int reset = strcmp(mode, "reset") == 0;
     pid_t child = fork();
     require(child >= 0, "fork failed");
     if (child == 0) {
@@ -327,10 +334,10 @@ int main(int argc, char **argv) {
             /* The Linux residency caller pins its client separately. taskset
              * execs in place, preserving the PID used for the live snapshot. */
             execlp("taskset", "taskset", "-c", server_cpus, argv[1], port_text,
-                   resident ? argv[4] : (truncated ? "1" : "4"), "--threads", argv[3], (char *)NULL);
+                   resident ? argv[4] : (truncated || oversized ? "1" : "4"), "--threads", argv[3], (char *)NULL);
             _exit(127);
         }
-        execl(argv[1], argv[1], port_text, resident ? argv[4] : (truncated ? "1" : "4"), "--threads", argv[3], (char *)NULL);
+        execl(argv[1], argv[1], port_text, resident ? argv[4] : (truncated || oversized ? "1" : "4"), "--threads", argv[3], (char *)NULL);
         _exit(127);
     }
     server_pid = child;
@@ -353,12 +360,18 @@ int main(int argc, char **argv) {
             require(taken == 0, "reset did not close another waiting handler");
             require(close(idle[at]) == 0, "reset idle close failed");
         }
-    } else if (truncated) {
+    } else if (truncated || oversized) {
         int descriptor = connect_peer();
-        unsigned char prefix[17] = {0};
-        send_all(descriptor, prefix, sizeof prefix);
-        delay_ms(20);
-        close(descriptor);
+        unsigned char request[64] = {0};
+        /* Big-endian 16777217 is one beyond the shared protocol limit. */
+        if (oversized) { request[12] = 1; request[15] = 1; }
+        send_all(descriptor, request, oversized ? sizeof request : 17u);
+        require(shutdown(descriptor, SHUT_WR) == 0, "error-case half-close failed");
+        unsigned char extra;
+        ssize_t taken;
+        do { taken = recv(descriptor, &extra, 1, 0); } while (taken < 0 && errno == EINTR);
+        require(taken == 0, "invalid request produced response bytes or failed to close");
+        require(close(descriptor) == 0, "error-case close failed");
     } else {
         struct peer peers[4];
         pthread_t threads[4];
@@ -371,7 +384,12 @@ int main(int argc, char **argv) {
     int status;
     require(waitpid(child, &status, 0) == child, "server wait failed");
     server_pid = 0;
-    require(WIFEXITED(status) && WEXITSTATUS(status) == (truncated || reset ? 1 : 0), "unexpected server exit");
+    if (!WIFEXITED(status) || (unsigned)WEXITSTATUS(status) != (error_case ? error_status : 0u)) {
+        fprintf(stderr, "stream_check: expected exit %u, raw wait status %d\n",
+                error_case ? error_status : 0u, status);
+    }
+    require(WIFEXITED(status) && (unsigned)WEXITSTATUS(status) == (error_case ? error_status : 0u),
+            "unexpected server exit");
     alarm(0);
     printf("stream_check: PASS mode=%s workers=%s", mode, argv[3]);
     if (resident) printf(" connections=%u bytes=%u", count, bytes);

@@ -742,12 +742,13 @@ compiler-continuation-check: completion-coroutine-check compiler
 	$(CORO_CLANG) $(CFLAGS) -g -Wpedantic -pthread -fsanitize=$(COMPLETION_CORO_SANITIZERS) \
 	  -I "$$backend" -c "$$backend/wf_floor.c" -o "$$build/floor.o"; \
 	$(CORO_CLANG) $(CFLAGS) -Wpedantic -pthread continuation_stream.c -o "$$build/stream-check"; \
+	$(CORO_CLANG) $(CFLAGS) -Wpedantic -pthread stream_check.c -o "$$build/protocol-check"; \
 	case "$(COMPLETION_CORO_SANITIZERS)" in \
 	  *address*) ir_attribute=sanitize_address ;; \
 	  thread) ir_attribute=sanitize_thread ;; \
 	  *) echo 'compiler-continuation-check needs address or thread instrumentation' >&2; exit 2 ;; \
 	esac; \
-	for program in boundary stdin recursive tcp client refused fanout staged; do \
+	for program in boundary stdin recursive tcp client refused fanout staged compute; do \
 	  staging=''; \
 	  case "$$program" in \
 	    boundary) source="$(ROOT)/tests/programs/completion_read_boundary.wf" ;; \
@@ -758,6 +759,7 @@ compiler-continuation-check: completion-coroutine-check compiler
 	    refused) source="$(ROOT)/tests/programs/tcp_refused.wf" ;; \
 	    fanout) source="$(ROOT)/tests/programs/tcp_fanout.wf"; staging=--par ;; \
 	    staged) source=programs/tcp_echo_server.wf; staging=--par ;; \
+	    compute) source=programs/tcp_compute_server.wf; staging=--par ;; \
 	  esac; \
 	  "$(WFC)" --emit-llvm --continuations $$staging "$$source" -o "$$build/$$program.ll"; \
 	  awk -v attribute="$$ir_attribute" '/^define / {sub(/ \{$$/, " " attribute " {")} {print}' \
@@ -793,6 +795,35 @@ compiler-continuation-check: completion-coroutine-check compiler
 	  if [ "$$(uname -s)" = Linux ]; then \
 	    WF_IO_NO_NATIVE_RING=1 "$$build/stream-check" $$transport "$$build/$$program" --require-helper; \
 	  fi; \
+	done; \
+	for force_helper in 0 1; do \
+	  if [ "$$force_helper" = 1 ] && [ "$$(uname -s)" != Linux ]; then continue; fi; \
+	  route=0; no_ring=$$force_helper; \
+	  if [ "$(COMPLETION_CORO_ARGS)" = --require-ring ]; then route=1; fi; \
+	  if [ "$(COMPLETION_CORO_ARGS)" = --require-helper ]; then route=2; no_ring=1; fi; \
+	  if [ "$$force_helper" = 1 ]; then route=2; fi; \
+	  for mode in compute truncated oversized; do \
+	    tasks=4; error_arg=''; \
+	    if [ "$$mode" = truncated ]; then tasks=1; error_arg=9; fi; \
+	    if [ "$$mode" = oversized ]; then tasks=1; error_arg=10; fi; \
+	    log="$$build/compute-$$mode-$${policy%:*}-$${policy#*:}-helper$$force_helper.log"; \
+	    if ! env -u WF_CONTINUATION_REPORT_BRIDGE WF_WORKERS=1 WF_IO_NO_NATIVE_RING=$$no_ring \
+	      WF_CONTINUATION_WINDOW=16 WF_CONTINUATION_OBSERVE=1 WF_CONTINUATION_REPORT_SOCKET_ROUTES=1 \
+	      WF_CONTINUATION_REPORT_TASKS=1 "$$build/protocol-check" "$$build/compute" "$$mode" 1 $$error_arg \
+	      > "$$log" 2>&1; then cat "$$log"; exit 1; fi; \
+	    cat "$$log"; \
+	    awk -v owner=$${policy%:*} -v batch=$${policy#*:} -v tasks="$$tasks" -v route="$$route" -v mode="$$mode" \
+	      '/^WF continuation host: suspended$$/ {next} \
+	       /^WF continuation host:/ {reports++; for(i=4;i<=NF;i++) {split($$i,a,"=");v[a[1]]=a[2]+0}; next} \
+	       /^stream_check: PASS/ {passes++; if($$3!="mode=" mode || $$4!="workers=1") bad=1; next} \
+	       {bad=1} END {exit !(reports==3 && passes==1 && !bad && v["registered"]>0 && \
+	         v["registered"]==v["dequeued"] && ("owner_progress" in v) && v["owner_progress"]==owner && \
+	         ("progress_batch" in v) && v["progress_batch"]==batch && v["tasks"]==tasks && \
+	         v["completed"]==tasks && v["retired"]==tasks && v["peak"]==tasks && \
+	         v["accept_ring"]+v["accept_helper"]==tasks && (mode!="compute" || v["receive_ring"]+v["receive_helper"]>0) && \
+	         (route!=1 || (v["uring"]>0 && v["accept_ring"]==tasks && (mode!="compute" || v["receive_ring"]>0) && v["receive_helper"]==0)) && \
+	         (route!=2 || (v["uring"]==0 && v["helper"]>0 && v["accept_helper"]==tasks && v["receive_ring"]==0)))}' "$$log"; \
+	  done; \
 	done; \
 	done
 

@@ -447,6 +447,17 @@ run the generated lifetime/stream suite; separate observations enable
 `WF_CONTINUATION_REPORT_BRIDGE=1` to retain existing ring submission, enter,
 completion and wake counters. Experiment 48 owns this batching comparison.
 
+The generated continuation qualification also compiles the unchanged
+`tcp_compute_server.wf` with `--continuations --par`. Experiment 52 reuses
+the common fragmented compute oracle, then checks truncated and oversized
+requests with the source's exact exit codes 9 and 10. Error-mode callers may
+provide `stream_check SERVER MODE WORKERS ERROR_STATUS`; omitting the status
+keeps the existing native/Go default of one. Invalid requests must close
+without response bytes. All three progress policies check native/helper
+routes, complete task retirement and sanitizer results. Pure computation
+still runs on the sole resumer; this is protocol qualification, not a mixed
+performance, CPU-offload or fairness result.
+
 On native Windows, `windows-bench.ps1` owns a separate production
 qualification:
 

@@ -6629,3 +6629,73 @@ Rayon through the existing runner, preserving both checksum payloads and
 distinct runner/child PID records. It also verified the runner's expected
 progress stderr, which the trace qualification permits exactly. This checks
 wrapper/pipe wiring, not Linux event collection.
+
+## Fifty-second experiment: qualify generated continuations on the mixed protocol
+
+The current continuation comparison must eventually include computation
+between socket operations. The existing `tcp_compute_server.wf` already
+expresses that workload as ordinary sequential source: assemble a 64-byte
+request, decode its seed and round count, evaluate the dependent recurrence,
+encode its result and send the complete reply before reading again. This
+experiment compiles those unchanged bytes with `--continuations --par` and
+reuses the existing generated host and compiler path. It changes no runtime,
+source language rule, proof, emitted representation policy or source workload.
+
+The initial ordinary-binary smoke passed the common four-connection compute
+oracle, but the old truncated-input invocation failed its final status check.
+A diagnostic re-run established an ordinary process exit of exactly 9, which
+is the source-defined truncated-request result. The fixture had required 1
+for every program. Its error modes now accept an explicit optional expected
+status in 1-255, retaining default 1 for existing callers. No arbitrary
+nonzero code or signal is accepted. Truncated requests are still incomplete
+17-byte frames; the fixture now half-closes and verifies that the server
+closes without any response bytes before checking the exact exit status.
+The added `oversized` mode sends a complete request with 16777217 rounds,
+one beyond the existing protocol limit, and checks the same no-response
+closure with WF's source-defined exit code 10.
+
+`compiler-continuation-check` compiles the compute source alongside all
+previous generated programs, with the same LLVM and C sanitizer settings.
+At each threaded, owner-one and owner-thirty-two policy it runs:
+
+- Four concurrent clients, each sending the three existing independently
+  fixed seed/round/result vectors in one-byte fragments and checking all
+  response bytes, then half-closing and requiring clean EOF.
+- One truncated request with expected exit 9 and no response bytes.
+- One oversized request with expected exit 10 and no response bytes.
+
+The common oracle owns bytes and process results. Separate generated-host
+reports must show the requested owner/batch policy, balanced positive waiter
+registration/dequeue counts, exactly four or one completed and retired task,
+and matching accept/receive routes. Fragmented compute requests must exercise
+a suspended receive. The complete error input may already be queued when
+the handler runs, so its receive may legitimately complete inline. Initial
+local sanitizer runs exposed that case and rejected an overstrict new report
+assertion even though byte checks and exact source error codes passed. Error
+cases now admit inline receives while retaining route checks for every
+reported deferred receive. The Linux native-ring invocation requires native
+accepts and no helper receives; its fragmented compute case also requires
+native receives. The forced-helper repetition requires no native ring routes.
+Unexpected diagnostics fail the qualification. The same three
+policies retain the existing file, pipe, recursive, socket, fanout and bounded
+window tests. The isolated `codex/io-continuation-mixed` CI branch runs this
+qualification without a new timing panel.
+
+Pure `churn` remains an ordinary function called by the sole continuation
+resumer. It has no new compute offload or checkpoint. Correct answers from
+four clients therefore do not establish multicore computation, light-request
+progress during long computation, mixed throughput, or cancellation of
+sibling tasks on failure. The error cases intentionally have one connection;
+they do not qualify a multi-connection abort/drain policy. Those distinctions
+remain necessary before comparing a future unified WF runtime with the
+bounded Tokio/Rayon mixed reference.
+
+Local M1 ASan/UBSan and ThreadSanitizer runs pass the entire generated suite,
+including all nine new mixed-protocol invocations in each build. The
+existing nested C++ registration/loan fixtures also pass. All five
+Tokio/Rayon tests, its four shared-oracle invocations, and all sixteen
+existing Go release/race checks pass with the strengthened common fixture.
+A negative check specifying exit 1 for WF's truncated-input result still
+fails and reports actual exit 9; the explicit status argument does not
+collapse source errors into generic success. Linux native/helper results
+remain pending on the isolated branch.
