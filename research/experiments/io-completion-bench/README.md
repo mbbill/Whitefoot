@@ -803,6 +803,21 @@ uses no perf probes and does not change affinity or choose a runtime default.
 The isolated Linux CI route is `codex/io-cpu-idle-controls`; M1 runs qualify
 the local path but do not substitute for its Linux performance evidence.
 
+`make rayon-build-bench` is [experiment 61](../../investigations/io-model/SCHEDULER-EXPERIMENT.md#61-control-parallel-tree-initialization).
+It retains that four-thread, twelve-stack, 1/16-batch panel and Rayon grain
+four, but changes only the emitted `wf_main` call from `wf_build` to its
+existing sequential clone. A checked reverse substitution proves that every
+other IR byte is unchanged. Ordinary WF, manual default, manual sequential
+build and Rayon give forty samples after one warmup; four separate observed
+runs retain the default 256 pause/look and 16 yield rounds. The ordinary
+completion suite and both candidate batch lengths qualify before timing.
+This controls initialization and the relocation of lazy worker startup to
+the first layout; it does not isolate allocation cost or prove available
+ready work. Retained ELF calls, normalized hot-layout disassembly, both IR
+files, executables including the compiler, source hashes and raw resource
+records support the Linux audit. The route is `codex/io-cpu-build-control`;
+local M1 checks do not supply its native Linux result.
+
 `make mixed-rayon-check` qualifies the optional `mixed-rayon` binary in the
 same standalone crate. Its CLI is `mixed-rayon PORT CONNECTIONS --threads B
 [--queue Q]`: B includes one current-thread Tokio I/O driver, leaving B-1
