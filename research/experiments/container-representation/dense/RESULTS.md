@@ -9,14 +9,15 @@ Whitefoot implementations. This fixture remains owned by the container
 representation experiment; supersede its measurements and remove obsolete
 variants when the representation question changes.
 
-The two retained runs compare the pre-implementation baseline at `eff095c7` with
-the owned-storage checkpoint at `f5dab70c`. The latter removes whole-payload
-transfers from the element loops and passes all three scalar sizes, the N=16
-four-field record, and the inline exclusive-view program. It still retains a
-one-time aggregate transfer and excess frame storage. Parallel integration later
-passes the full repository gate at `bf8cdc56`. These measurements describe the
-two named revisions, not later cleanup/destination work, workload prevalence, or
-merge readiness.
+The retained CSVs compare the pre-implementation baseline at `eff095c7` with
+the owned-storage implementation at `d5c0bb86`. The first implementation
+checkpoint at `f5dab70c` is also described below, with its raw samples linked to
+their recorded revision. All implementation runs pass the three scalar sizes,
+the N=16 four-field record, and the inline exclusive-view program. Whole-payload
+transfers no longer occur in the element loops. At `d5c0bb86`, cleanup-only
+storage is gone from the scalar kernels, but a one-time result-to-owner transfer
+and excess frame storage remain. These measurements describe the named
+revisions, not workload prevalence or merge readiness.
 
 ## Reproduction and scope
 
@@ -35,9 +36,9 @@ build/driver summarize owned-storage-measurements.csv
 this experiment's generated `build/` artifacts. Use a clean build after changing
 compiler flags or tools. `make measure` writes new results under `build/`; it
 does not overwrite either retained CSV. `measurements.csv` owns the baseline
-samples; `owned-storage-measurements.csv` owns the first implementation samples.
-Keep the pair while this before/after comparison is used, and supersede it when
-the experiment changes rather than accumulating unexamined runs.
+samples; `owned-storage-measurements.csv` owns the latest examined implementation
+samples, currently `d5c0bb86`. Supersede the latter after a new run is examined,
+and retain a revision link for earlier samples that support a dated comparison.
 
 Recorded run: 2026-09-06, arm64 macOS 26.6.2 (25G83), Apple Clang 21.0.0
 (clang-2100.1.1.101), Rust 1.98.1. The sandbox did not permit querying the CPU
@@ -192,9 +193,10 @@ N=256 boundary control passed against all six variants. All command executables
 and the inline-view executable returned 0. The wide fixture correction below
 does not change any timed scalar kernel.
 
-The new CSV contains the same 168-sample matrix. Compiler builds finished before
-timing, and this task's agents were idle. Other host activity was not controlled;
-this is one local measurement, not a cross-platform or statistical speed claim.
+The [raw CSV at the recorded revision](https://github.com/mbbill/Whitefoot/blob/15400e20a3ab58977641224c7fbfc5cd5b00db98/research/experiments/container-representation/dense/owned-storage-measurements.csv)
+contains the same 168-sample matrix. Compiler builds finished before timing, and
+this task's agents were idle. Other host activity was not controlled; this is
+one local measurement, not a cross-platform or statistical speed claim.
 
 Median nanoseconds per complete kernel call:
 
@@ -247,6 +249,65 @@ a source ownership requirement. This checkpoint removes the repeated work shape
 without claiming optimal placement or a single physical payload. Result-to-binding
 reuse and frame compaction require a general lifetime justification that also
 preserves actual snapshots in other programs.
+
+## Shared ABI and place-cleanup checkpoint
+
+The clean compiler revision `d5c0bb860c66db56d616bb50630701883f3f4c23` was
+measured on 2026-09-07, with binary SHA-256
+`4f67154db84ebd6ee433cfb1081ff80f357252d25b8582321de77d7c151523c1`.
+The OS, Rust, Clang, flags and seed match the recorded environment above.
+The generator, WF sources, C kernels, harness and Makefile are byte-identical to
+`f5dab70c`. After confirming the compiler build, `make clean` followed by
+`make measure` rebuilt all artifacts and passed the complete correctness matrix:
+60 inputs for each scalar size and the wide case across four variants, and
+60 inputs across all six retained-boundary variants. The standalone commands
+and inline-view program returned 0. No fixture, checker, or timing threshold
+was changed for this run.
+
+`owned-storage-measurements.csv` now retains this run's 168 scalar samples.
+This task ran no concurrent build or agent workload during timing; other host
+activity was not controlled. These single-run medians do not establish a
+statistically significant speed change relative to `f5dab70c`, nor isolate the
+effect of the ABI refactor from intervening compiler changes.
+
+Median nanoseconds per complete kernel call:
+
+| Elements | Update passes | Whitefoot | C value return | C destination | C whole-value append |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 16 | 0 | 11.05 | 10.78 | 10.78 | 164.99 |
+| 16 | 4 | 107.17 | 61.12 | 61.11 | 208.11 |
+| 256 | 0 | 495.35 | 608.95 | 612.30 | 14,154.30 |
+| 256 | 4 | 1,541.26 | 1,483.58 | 1,495.67 | 15,485.35 |
+| 4096 | 0 | 9,334.72 | 13,103.52 | 13,141.11 | 3,609,750.00 |
+| 4096 | 4 | 25,528.32 | 29,198.24 | 29,044.92 | 3,625,375.00 |
+
+Static entry-function frames reported by Clang `-fstack-usage`, in bytes:
+
+| Elements | `f5dab70c` Whitefoot | `d5c0bb86` Whitefoot | Current C value/destination |
+| ---: | ---: | ---: | ---: |
+| 16 | 448 | 304 | 160 |
+| 256 | 6,240 | 4,176 | 2,112 |
+| 4096 | 125,872 | 93,040 | 32,832 |
+| 16 four-field records | 1,664 | 1,136 | 592 |
+
+The constructor is inlined in all four optimized kernels; there is no additional
+`wf_build` frame in these generated functions. The scalar raw frame has two
+aggregate fields, rather than the earlier three. Cleanup no longer requests a
+final whole-value snapshot. The two remaining fields are still separate: the
+helper fills `%wf.slot.0`, then `wf_dense` loads that aggregate and stores it to
+the addressable binding `%v3` before entering the update loops.
+
+At N=4096, optimized IR still expands this transfer into payload loads and stores
+between construction and update. The construction, update and checksum loops
+operate on individual words. The assembly reserves 92,880 local/spill bytes and
+160 saved-register bytes, agreeing with the 93,040-byte report. No heap allocation
+is present in these kernels. The wide case is executed but remains untimed.
+
+Thus the smaller frames are evidence of reduced storage, while the remaining
+copy is direct evidence that shared ABI classification has not completed
+destination reuse. The next placement comparison must preserve this workload's
+algorithm, as well as snapshots and staged retirement in the separate execution
+cases; it cannot infer their safety from dense timing alone.
 
 ## Wide-record boundary and conclusions
 

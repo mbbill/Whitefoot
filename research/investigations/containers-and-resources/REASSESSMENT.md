@@ -499,17 +499,19 @@ or the split call's result load/save bridge. The additional per-iteration backin
 above addresses a distinct lifetime
 requirement that copying a descriptor into a frame could not satisfy.
 
-The committed implementation at `f5dab70c` now has a separate 168-sample run using
-the same scalar kernels and procedure. Four-pass medians at 16/256/4096 elements
-are 108.38 ns/1.52 us/25.4 us, versus the baseline's 408 ns/176 us/43.9 ms.
-Construction and update loops no longer transfer whole payloads. A one-time
-result-to-addressable-binding copy and excess frame storage remain: N=4096 uses
-125,872 static entry-frame bytes versus the new native control's 32,832 bytes.
-This bounds the result rather than establishing optimal placement or a language
-performance ranking. [Both runs, machine shape and limits](../../experiments/container-representation/dense/RESULTS.md)
-are retained together. Parallel integration subsequently passes the complete gate
-at `bf8cdc56`; shared destination normalization remains incomplete. Later cleanup
-work does not retroactively change the measured frame or timings at `f5dab70c`.
+The [dense measurements and generated-code analysis](../../experiments/container-representation/dense/RESULTS.md)
+compare the pre-implementation baseline, first owned-storage checkpoint
+`f5dab70c`, and shared-ABI/place-cleanup checkpoint `d5c0bb86` under the same
+scalar kernels and procedure. The latest 168-sample run has four-pass medians
+of 107.17 ns/1.54 us/25.5 us at 16/256/4096 elements. Construction and update loops
+no longer transfer whole payloads. Removing cleanup-only snapshots reduces
+scalar aggregate frame fields from three to two; at N=4096 the measured static
+entry frame is 93,040 bytes, compared with 125,872 at `f5dab70c` and 32,832 in the
+current native control. A one-time result-to-addressable-binding copy remains
+visible in raw and optimized code. These dated local runs do not establish a
+statistically significant timing change between implementation checkpoints or a
+language performance ranking. Shared destination normalization remains
+incomplete; later work does not retroactively change the earlier measurements.
 
 Then implement the selected bounded semantic capabilities: full-state construction
 and sealing, checked empty-run consume, projected result contracts, and two-span
