@@ -77,9 +77,10 @@ the workload, changing its expected answer, or adding a test-specific lowering.
 
 A row advances through **source seed**, **implemented WF program**, **qualified
 correctness and actualization**, and **measured application with native
-references**. The filter row has local FIR correctness and recursive tile
-actualization evidence; channel co-scheduling, a multistage pipeline and measured
-native comparisons remain open. The other rows are source seeds or explicit gaps.
+references**. The filter row has FIR correctness, recursive tile actualization
+and a [first Linux native comparison](../../experiments/compute-runtime/README.md#first-linux-calibration-before-static-workers)
+for independent blocks. Channel co-scheduling, a multistage pipeline and held-out
+performance confirmation remain open. The other rows are source seeds or explicit gaps.
 New maintained programs must have a real correctness-test caller and a benchmark
 caller in the owning experiment; do not leave disconnected fixtures or scripts.
 

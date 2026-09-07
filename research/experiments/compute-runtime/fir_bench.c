@@ -14,6 +14,9 @@
 #include <sys/resource.h>
 #include <time.h>
 #include "fir_native.h"
+#ifdef WF_FILTER_STATIC
+#include "fir_static.h"
+#endif
 
 #ifndef FIR_RUNTIME
 #error FIR_RUNTIME must name the linked runtime control
@@ -41,6 +44,12 @@ extern int wf__sched_report(char *, size_t);
 #endif
 
 static uint64_t entered_at;
+#ifdef WF_FILTER_STATIC
+static int static_enabled;
+static unsigned static_requested;
+static FirStatic *static_pool;
+static FirStaticInfo static_info;
+#endif
 
 static void require(int condition, const char *message) {
     if (!condition) {
@@ -101,9 +110,30 @@ static Reading invoke(FilterEntry wf, FirNativeKernel native,
     double *flat = native ? allocate(n) : NULL;
     uint64_t core_start = now();
     void *tree = NULL;
-    if (native)
+    if (native) {
+#ifdef WF_FILTER_STATIC
+        if (static_enabled) {
+            /* Lazy initialization charges allocation, actual thread startup
+             * and readiness to the first core/cycle, including empty calls. */
+            if (static_pool == NULL) {
+                static_pool = fir_static_create(static_requested, &static_info);
+                if (static_pool == NULL || static_info.actual_lanes != static_requested ||
+                    static_info.creation_error != 0) {
+                    fprintf(stderr, "FIR bench static startup: requested=%u actual=%u creation_error=%d errno=%d\n",
+                            static_requested, static_info.actual_lanes,
+                            static_info.creation_error, errno);
+                    if (static_pool != NULL) {
+                        fir_static_destroy(static_pool);
+                        static_pool = NULL;
+                    }
+                    require(0, "static pool did not start exact requested lanes");
+                }
+            }
+            fir_static_run(static_pool, native, prefix, taps, k, n, flat);
+        } else
+#endif
         native(prefix, taps, k, n, flat);
-    else
+    } else
         tree = wf(prefix, h + n, taps, k, h, h + n, h, tile);
     uint64_t core_end = now();
     if (native) {
@@ -126,7 +156,11 @@ static Reading invoke(FilterEntry wf, FirNativeKernel native,
 
 int wf__main_body(int argc, char **argv) {
     uint64_t body_at = now();
+#ifdef WF_FILTER_STATIC
+    require(argc == 8, "usage: bench wf|direct|lanes4|lanes8|lanes16|static-direct|static-lanes4|static-lanes8|static-lanes16 K N TILE REPS SEED PASS");
+#else
     require(argc == 8, "usage: bench wf|direct|lanes4|lanes8|lanes16 K N TILE REPS SEED PASS");
+#endif
     size_t k = number(argv[2], 64);
     size_t n = number(argv[3], 16777216);
     size_t tile = number(argv[4], 65536);
@@ -140,6 +174,15 @@ int wf__main_body(int argc, char **argv) {
                                       fir_native_lanes8, fir_native_lanes16};
     for (size_t i = 0; i < 4; ++i)
         if (strcmp(argv[1], names[i]) == 0) native = entries[i];
+#ifdef WF_FILTER_STATIC
+    const char *static_names[] = {"static-direct", "static-lanes4", "static-lanes8", "static-lanes16"};
+    for (size_t i = 0; i < 4; ++i) {
+        if (strcmp(argv[1], static_names[i]) == 0) {
+            native = entries[i];
+            static_enabled = 1;
+        }
+    }
+#endif
     require(native != NULL || strcmp(argv[1], "wf") == 0, "unknown kernel");
     uint64_t select_at = now();
     int parallel = native ? 0 : wf__par_pool_active();
@@ -148,6 +191,14 @@ int wf__main_body(int argc, char **argv) {
     const char *workers = getenv("WF_WORKERS");
     require(workers != NULL, "set WF_WORKERS explicitly");
     (void)number(workers, 64);
+#ifdef WF_FILTER_STATIC
+    if (static_enabled) {
+        size_t lanes = number(workers, 4);
+        require(lanes == 0 || lanes == 1 || lanes == 2 || lanes == 4,
+                "static mode requires WF_WORKERS=0,1,2,4");
+        static_requested = lanes < 2 ? 1 : (unsigned)lanes;
+    }
+#endif
 
     size_t h = k - 1;
     double *input = allocate(n), *history = allocate(h), *taps = allocate(k);
@@ -192,7 +243,11 @@ int wf__main_body(int argc, char **argv) {
     require(getrusage(RUSAGE_SELF, &after) == 0, "getrusage failed");
     printf("# runtime=%s kernel=%s workers_requested=%s world=%s entry_ns=%" PRIu64
            " select_ns=%" PRIu64 " clock_pair_min_ns=%" PRIu64 "\n",
-           FIR_RUNTIME, argv[1], workers, parallel ? "parallel" : "sequential",
+           FIR_RUNTIME, argv[1], workers,
+#ifdef WF_FILTER_STATIC
+           static_enabled ? "static" :
+#endif
+           parallel ? "parallel" : "sequential",
            body_at - entered_at, select_ns, clock_min);
     printf("# clock=CLOCK_MONOTONIC_RAW reported_resolution_ns=%" PRIu64
            " clock_pair_positive_min_ns=%" PRIu64 "\n",
@@ -223,6 +278,23 @@ int wf__main_body(int argc, char **argv) {
                i, i == 0 ? "first" : "warm", readings[i].core, readings[i].cycle);
     printf("# FIR bench PASS: calls=%zu samples=%zu history=%zu\n",
            reps + 1, (reps + 1) * n, (reps + 1) * h);
+#ifdef WF_FILTER_STATIC
+    if (static_enabled) {
+        /* Pool shutdown is outside the batch snapshot and sample output. It
+         * is reported separately; entry/first-call is not total cold process. */
+        require(fflush(stdout) == 0, "output flush failed");
+        uint64_t shutdown_start = now();
+        fir_static_destroy(static_pool);
+        uint64_t shutdown_ns = now() - shutdown_start;
+        static_pool = NULL;
+        printf("# static_requested_lanes=%u static_actual_lanes=%u static_helpers=%u"
+               " static_creation_error=%d static_idle=condvar static_spin=0"
+               " static_startup_in_first_core=1 static_shutdown_outside_batch=1"
+               " static_shutdown_ns=%" PRIu64 "\n", static_info.requested_lanes,
+               static_info.actual_lanes, static_info.actual_lanes - 1,
+               static_info.creation_error, shutdown_ns);
+    }
+#endif
     free(readings);
     free(input); free(history); free(taps); free(expected); free(expected_state);
     free(output); free(state);

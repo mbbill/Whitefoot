@@ -244,11 +244,47 @@ input immutability and rounding witnesses: 107,408 calls and 1,294,336 output
 samples. The ordinary object is then reused unchanged by the timing binaries.
 The older standalone and WF-host checks remain separate and retain their counts.
 
-`fir_bench.c` is an explicit C host for the actual FIR program. All three
+### Static worker control
+
+`fir_static.c` dispatches those same four kernels over balanced contiguous
+partitions, with one persistent owner/caller and up to three helper pthreads.
+The timed object is qualified unchanged, with only the oracle translation
+unit's callee references renamed to the `fir_static_check.c` adapters. No
+kernel or tail implementation is rebuilt or renamed for ordinary qualification.
+`check-static`, required by `build-bench`, runs the full native oracle with
+one/two/four actual lanes in both the selected sanitizer and the ordinary build,
+plus sanitizer cases with four requested lanes and only one/two actually started.
+Its hooks verify actual thread identity, partition coverage, waiting for a held
+helper before returning borrowed storage, and twelve create/run/destroy cycles.
+The fixed test watchdog detects a hung check; it is not a dispatch policy.
+
+`bench-static` accepts `static-direct`, `static-lanes4`, `static-lanes8` and
+`static-lanes16`. Requested widths zero/one mean one caller lane; two/four
+require exactly that many actual lanes. Failed or partial startup is cleaned up
+and rejects the comparison. Lazy creation and helper readiness are inside the
+first core and cycle, including the empty diagnostic. Every dispatch waits for
+all participating helpers before returning. Destruction runs after the batch
+resource snapshot and sample output; its duration and actual capacity appear
+in a required final report. The earlier sample PASS alone does not qualify a
+static run. Peak RSS and batch CPU therefore exclude shutdown attribution.
+
+Warm dispatch uses one mutex, work/done condition variables and per-helper
+pending bits, with no spin or explicit heap allocation in that path. This is
+a qualified static contender, not a selected optimal barrier/idle policy.
+Small-job wakeup costs and idle CPU tradeoffs still need measurement. The pool
+supports one dispatching owner and no concurrent or nested dispatch into the
+same pool; it is not a general scheduler or a WF runtime interface. Keep its
+source/header/checker while this control distinguishes native partitioning from
+WF scheduling; consolidate or remove them when that comparison is superseded.
+
+### Timing boundaries
+
+`fir_bench.c` is an explicit C host for the actual FIR program. All four
 executables contain the **same `fir-wf.o` and `fir-native.o`**, compiled once at
 O3 with strict FP and without LTO. `bench-weak` links the weak sequential path;
 `bench-recovered` links the current-stack control; `bench-shared` links main's
-compute scheduler units (`core.c`, `prim_host.c`, `entry.c`). All retain the real
+compute scheduler units (`core.c`, `prim_host.c`, `entry.c`); `bench-static` adds
+the qualified static object to the weak host. All retain the real
 floor and the same research wrappers. The shared runtime is an architectural
 control, not a native performance ceiling. Current runtime statistics remain
 enabled, including recovery's shared atomic steal counter; differences include
@@ -276,12 +312,13 @@ per-process means and ranges, not confidence intervals or reliable tail
 percentiles. Tiny/empty rows diagnose overhead and do not establish nanosecond
 kernel rankings.
 
-`check-bench`, included by canonical `check`, runs 33 processes: three empty,
+`check-bench`, included by canonical `check`, runs 69 processes: three empty,
 short and uneven cells across four native forms, weak WF and recovered/shared
-WF with requested widths 0/2/4. It checks the exact full report, every result,
+WF with requested widths 0/2/4, and all four static forms at those widths.
+It checks the exact full report, every result,
 and the complete ordered row sequence and configuration keys;
-there are no elapsed-time assertions. Alongside the previous nineteen and two
-native checks, the experiment now runs 54 invocations. The host metadata read
+there are no elapsed-time assertions. Alongside the previous nineteen, two
+native and eight static checks, the experiment now runs 98 invocations. The host metadata read
 may require permission in a local sandbox; native CI has that access.
 
 Run a calibration explicitly, with a target appropriate to the measured host:
@@ -295,11 +332,14 @@ On the local M1, use `BENCH_ARCH=-mcpu=apple-m1`. `OUT` must be absolute. The
 caller builds and qualifies first, then runs one process at a time. Its default
 five passes rotate/reverse configuration order over K={3,15,64},
 N={33,4097,262144}, plus an empty diagnostic. WF tiles are 257/4096/65536;
-requested widths are 0 and, when available, 2/4. Every configuration and losing
+requested WF and static widths are 0 and, when available, 2/4. Static partitioning
+does not use the WF tile parameter. On four allowed logical CPUs this gives
+37 configurations per cell and 1,850 processes over five passes. Every configuration and losing
 row remains. `ROUNDS` can shorten a smoke/calibration replay, never manufacture
 confirmation. Results go to a fresh directory recorded in `OUT/last-calibrate-path.txt`;
 an existing directory is not overwritten. Exact objects, assembly, tool flags,
-source hashes, host topology/quota and CPU masks accompany the raw data.
+source hashes, host topology and CPU masks accompany the raw data. A missing
+cgroup quota or cpuset file is explicitly unqualified, not evidence of no limit.
 
 [compute-bench](../../../.github/workflows/compute-bench.yml) runs this screen
 on a GitHub-hosted Linux runner, restricting all children to the same mask of
@@ -307,7 +347,47 @@ at most four allowed logical CPUs. VM interference, frequency and per-thread
 placement are uncontrolled; this is same-host calibration, not dedicated-host
 confirmation. The job artifact preserves the raw calls, failures and objects.
 Held-out K={1,7,31,63}, N={1,65,65539} and independent input families are reserved
-for a later frozen-candidate confirmation. Cache-cold working sets, static
-native workers and dynamic library references remain separate next experiments.
+for a later frozen-candidate confirmation. Cache-cold working sets and dynamic
+library references remain separate next experiments.
 Keep the native/bench files while this FIR comparison is maintained; consolidate
 them into a broader workload harness or remove them when it supersedes this API.
+
+### First Linux calibration, before static workers
+
+Revision `9e66c2557685bff843c1c2c00400440fd58cf04d` ran five passes in
+[Linux CI](https://github.com/mbbill/Whitefoot/actions/runs/34157403518), with
+Clang 18.1.3, strict O3 `-march=native`, and a four-logical-CPU mask on a VM
+reporting AMD EPYC 9V74 and two SMT2 cores. These are reported virtual topology,
+not dedicated physical cores. The run did not capture a readable CPU quota.
+All 1,250 process summaries are retained in
+[`fir-calibration-9e66c255.tsv`](fir-calibration-9e66c255.tsv); 183,500 raw calls,
+source/host manifests, exact objects and assembly are in artifact `10031465699`
+(`compute-fir-linux`, expires 2026-12-06). The downloaded ZIP's SHA-256 is
+`10a7f821ddaa597fbd8dcb86f0c4e534f2e18a61cd8bc34e1999474280f0d6e0`.
+The compiler executable's hash was captured, but its bytes are not in that
+artifact. Keep this complete summary with the interpretation while the dated
+comparison remains useful; remove both if the investigation drops this evidence.
+
+For K=64, N=262,144, and WF tile=4,096, medians of the five per-process warm
+means were as follows. Native tile settings are ignored.
+
+| Form | Core, microseconds | Complete cycle, microseconds |
+|---|---:|---:|
+| C direct, one caller | 10,687.451 | 10,834.823 |
+| C 16-output lanes, one caller | 1,142.274 | 1,275.530 |
+| WF weak sequential | 10,494.536 | 12,381.825 |
+| WF recovered, four requested lanes | 4,160.929 | 6,209.572 |
+| WF shared, four requested lanes | 4,725.145 | 7,897.166 |
+
+Across paired passes, direct/native-lanes16 core ratios ranged 8.44–9.41
+(median 9.36); recovered-four/native-lanes16 ranged 3.33–3.65 (median 3.59).
+The retained Linux assembly uses scalar `vmulsd/vaddsd` in direct C and WF,
+and `ymm vmulpd/vaddpd` without FMA in native output-lane forms. Independent
+accumulators also reduce dependence-chain pressure; vector width alone does
+not explain the whole ratio. Native flat-output and WF allocating-tree core
+boundaries differ, and the cycle adds distinct materialization costs. These
+results motivate improving WF kernel expression/code generation before drawing
+scheduler-ceiling conclusions. They do not measure static workers or establish
+held-out confirmation. All twelve Linux/macOS jobs of the matching
+[canonical gate](https://github.com/mbbill/Whitefoot/actions/runs/34157403358)
+passed; that revision ran 54 experiment invocations, before the static addition.

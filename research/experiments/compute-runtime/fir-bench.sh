@@ -25,20 +25,22 @@ printf '%s\n' "$result" > "$OUT/last-$mode-path.txt"
         lscpu
         cat /proc/self/status
         for path in /sys/fs/cgroup/cpu.max /sys/fs/cgroup/cpuset.cpus.effective; do
-            if test -r "$path"; then printf '%s: ' "$path"; cat "$path"; fi
+            printf '%s: ' "$path"
+            if test -r "$path"; then cat "$path"; else printf 'not readable; unqualified\n'; fi
         done
     else
         sysctl hw.model hw.ncpu hw.physicalcpu hw.l1dcachesize hw.l2cachesize machdep.cpu.brand_string
     fi
     shasum -a 256 fir.wf fir_host.ll fir_bench.c fir_native.c fir_native.h fir_check.c \
-        runtime.c runtime.h Makefile fir-bench.sh \
+        fir_static.c fir_static.h fir_static_check.c runtime.c runtime.h Makefile fir-bench.sh \
         ../../../compiler/src/backend/wf_floor.c ../../../compiler/src/backend/sched/core.c \
         ../../../compiler/src/backend/sched/prim_host.c ../../../compiler/src/backend/sched/entry.c \
-        "$OUT/fir-host.ll" "$OUT/fir-wf.o" "$OUT/fir-native.o" \
-        "$OUT/bench-weak" "$OUT/bench-recovered" "$OUT/bench-shared"
+        "$OUT/fir-host.ll" "$OUT/fir-wf.o" "$OUT/fir-native.o" "$OUT/fir-static.o" \
+        "$OUT/bench-weak" "$OUT/bench-static" "$OUT/bench-recovered" "$OUT/bench-shared"
 } > "$result/manifest.txt"
 git diff --binary HEAD -- . ../../../.github/workflows/compute-bench.yml > "$result/source.patch"
 cp "$OUT/fir-native-release-check.log" "$result/native-qualification.txt"
+for lanes in 1 2 4; do cp "$OUT/fir-static-release-$lanes.log" "$result/"; done
 
 if test "$mode" = check; then
     printf '3 0\n7 33\n64 4097\n' > "$result/cells.txt"
@@ -59,6 +61,9 @@ else
 fi
 {
     for kernel in direct lanes4 lanes8 lanes16; do printf 'weak %s 0 65536\n' "$kernel"; done
+    for kernel in direct lanes4 lanes8 lanes16; do
+        for width in $widths; do printf 'static static-%s %s 65536\n' "$kernel" "$width"; done
+    done
     for tile in $tiles; do
         printf 'weak wf 0 %s\n' "$tile"
         for runtime in recovered shared; do
@@ -85,8 +90,27 @@ while read -r k n; do
         while read -r runtime kernel width tile; do
             log="$result/k$k-n$n-$runtime-$kernel-w$width-t$tile-p$pass.tsv"
             WF_WORKERS=$width WF_SCHED_REPORT=1 "$OUT/bench-$runtime" \
-                "$kernel" "$k" "$n" "$tile" "$reps" "$seed" "$pass" > "$log"
+                "$kernel" "$k" "$n" "$tile" "$reps" "$seed" "$pass" > "$log" 2>&1
             grep -Fxq "# FIR bench PASS: calls=$((reps + 1)) samples=$(((reps + 1) * n)) history=$(((reps + 1) * (k - 1)))" "$log"
+            if test "$runtime" = static; then
+                lanes=$width; if test "$lanes" -lt 2; then lanes=1; fi
+                # The ordinary PASS precedes separately timed shutdown. A
+                # complete comparison also requires exact capacity and the
+                # final lifecycle report after successful pool destruction.
+                awk -v lanes="$lanes" '
+                    /^# FIR bench PASS:/ {passed=1}
+                    /^# static_requested_lanes=/ {
+                        if(!passed || reports++)bad=1;
+                        expected="# static_requested_lanes=" lanes " static_actual_lanes=" lanes \
+                          " static_helpers=" (lanes-1) " static_creation_error=0 static_idle=condvar static_spin=0" \
+                          " static_startup_in_first_core=1 static_shutdown_outside_batch=1 static_shutdown_ns=";
+                        if(substr($0,1,length(expected))!=expected ||
+                           substr($0,length(expected)+1) !~ /^[0-9]+$/)bad=1;
+                        last=NR
+                    }
+                    END {exit bad || reports!=1 || last!=NR}
+                ' "$log"
+            fi
             # Raw calls are retained. This table contains per-process warm
             # means/ranges, not confidence intervals or percentile claims.
             awk -F '\t' -v runtime="$runtime" -v kernel="$kernel" -v width="$width" \
@@ -109,7 +133,7 @@ while read -r k n; do
                 if(count==1 || $12<ymin)ymin=$12; if($12>ymax)ymax=$12;
                 key=$1 FS $2 FS $3 FS $4 FS $5 FS $6 FS $7 FS $8
             } END { if(bad || header!=1 || rows!=reps+1 || count!=reps)exit 1;
-                printf "%s\t%d\t%.3f\t%d\t%d\t%.3f\t%d\t%d\n",
+                printf "%s\t%d\t%.3f\t%.0f\t%.0f\t%.3f\t%.0f\t%.0f\n",
                     key,count,core/count,cmin,cmax,cycle/count,ymin,ymax
             }' "$log" >> "$result/summary.tsv"
         done < "$result/order.txt"

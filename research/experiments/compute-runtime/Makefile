@@ -13,6 +13,9 @@ SHARED := $(ROOT)/compiler/src/backend/sched
 BENCH_ARCH ?=
 BENCH_CFLAGS := -std=c11 -O3 -g -Wall -Wextra -Werror -Wpedantic -pthread \
 	-fno-fast-math -ffp-contract=off $(BENCH_ARCH)
+STATIC_ORACLE_FLAGS := -DWF_FILTER_NATIVE -Dmain=fir_qualified_oracle_main \
+	-Dfir_native_direct=fir_static_check_direct -Dfir_native_lanes4=fir_static_check_lanes4 \
+	-Dfir_native_lanes8=fir_static_check_lanes8 -Dfir_native_lanes16=fir_static_check_lanes16
 
 # Mach-O plain nm prints T for weak function definitions too. Check its full
 # binding description; ELF nm distinguishes a strong T from weak W directly.
@@ -26,7 +29,7 @@ define require-strong
 	fi
 endef
 
-.PHONY: check build check-runtime check-abi check-fir fir-ir check-native native-object \
+.PHONY: check build check-runtime check-abi check-fir fir-ir check-native native-object check-static \
 	build-bench check-bench bench-calibrate compiler force
 
 force:
@@ -152,20 +155,54 @@ check-native: native-object
 			"$(OUT)/fir-native-$$form.log" || exit 1; \
 	done
 
-build-bench: fir-ir check-native
+# Rename only oracle references. Both ordinary kernels and the static pool
+# retain their original symbols and link unchanged into the measured host.
+check-static: native-object
+	$(CC) $(BENCH_CFLAGS) -c fir_static.c -o "$(OUT)/fir-static.o"
+	$(CC) $(BENCH_CFLAGS) $(STATIC_ORACLE_FLAGS) -c fir_check.c -o "$(OUT)/fir-static-oracle.o"
+	$(CC) $(BENCH_CFLAGS) fir_static_check.c "$(OUT)/fir-static.o" \
+		"$(OUT)/fir-native.o" "$(OUT)/fir-static-oracle.o" -lm -o "$(OUT)/fir-static-release-check"
+	$(CC) $(BENCH_CFLAGS) -fsanitize=$(SANITIZER) -fno-sanitize-recover=all \
+		-fno-omit-frame-pointer -c fir_native.c -o "$(OUT)/fir-static-native-sanitized.o"
+	$(CC) $(BENCH_CFLAGS) $(STATIC_ORACLE_FLAGS) -fsanitize=$(SANITIZER) \
+		-fno-sanitize-recover=all -fno-omit-frame-pointer -c fir_check.c -o "$(OUT)/fir-static-oracle-sanitized.o"
+	$(CC) $(BENCH_CFLAGS) -DFIR_STATIC_TEST -fsanitize=$(SANITIZER) \
+		-fno-sanitize-recover=all -fno-omit-frame-pointer fir_static.c fir_static_check.c \
+		"$(OUT)/fir-static-native-sanitized.o" "$(OUT)/fir-static-oracle-sanitized.o" \
+		-lm -o "$(OUT)/fir-static-check"
+	@for lanes in 1 2 4; do \
+		"$(OUT)/fir-static-release-check" $$lanes > "$(OUT)/fir-static-release-$$lanes.log" || exit $$?; \
+		cat "$(OUT)/fir-static-release-$$lanes.log"; \
+		grep -Fxq 'Native FIR qualification PASS: forms=4 calls=107408 samples=1294336 K=1..64' \
+			"$(OUT)/fir-static-release-$$lanes.log" || exit 1; \
+		grep -Fxq "FIR static ordinary PASS: requested=$$lanes actual=$$lanes helpers=$$((lanes - 1)) idle=condvar spin=0" \
+			"$(OUT)/fir-static-release-$$lanes.log" || exit 1; \
+	done
+	@for setting in '1 3' '2 3' '4 3' '4 1' '4 0'; do \
+		set -- $$setting; \
+		"$(OUT)/fir-static-check" $$1 $$2 > "$(OUT)/fir-static-$$1-$$2.log" || exit $$?; \
+		cat "$(OUT)/fir-static-$$1-$$2.log"; \
+		grep -Fxq 'Native FIR qualification PASS: forms=4 calls=107408 samples=1294336 K=1..64' \
+			"$(OUT)/fir-static-$$1-$$2.log" || exit 1; \
+	done
+
+build-bench: fir-ir check-native check-static
 	$(CC) $(BENCH_CFLAGS) -Wno-override-module -c "$(OUT)/fir-host.ll" -o "$(OUT)/fir-wf.o"
 	$(CC) $(BENCH_CFLAGS) -Wno-override-module -S "$(OUT)/fir-host.ll" -o "$(OUT)/fir-wf.s"
 	$(CC) $(BENCH_CFLAGS) -DFIR_RUNTIME='"weak"' fir_bench.c $(FLOOR) \
 		"$(OUT)/fir-wf.o" "$(OUT)/fir-native.o" -lm -o "$(OUT)/bench-weak"
+	$(CC) $(BENCH_CFLAGS) -DFIR_RUNTIME='"static"' -DWF_FILTER_STATIC fir_bench.c $(FLOOR) \
+		"$(OUT)/fir-wf.o" "$(OUT)/fir-native.o" "$(OUT)/fir-static.o" -lm -o "$(OUT)/bench-static"
 	$(CC) $(BENCH_CFLAGS) -DFIR_RUNTIME='"recovered"' -DWF_COMPUTE_CONTROL \
 		fir_bench.c runtime.c $(FLOOR) "$(OUT)/fir-wf.o" "$(OUT)/fir-native.o" -lm -o "$(OUT)/bench-recovered"
 	$(CC) $(BENCH_CFLAGS) -DFIR_RUNTIME='"shared"' -DWF_SHARED_CONTROL \
 		fir_bench.c $(FLOOR) $(SHARED)/core.c $(SHARED)/prim_host.c $(SHARED)/entry.c \
 		"$(OUT)/fir-wf.o" "$(OUT)/fir-native.o" -lm -o "$(OUT)/bench-shared"
-	@for form in weak recovered shared; do \
+	@for form in weak static recovered shared; do \
 		nm "$(OUT)/bench-$$form" > "$(OUT)/bench-$$form.symbols"; \
 	done
 	$(call require-strong,$(OUT)/bench-weak,wf__floor_run)
+	$(call require-strong,$(OUT)/bench-static,wf__floor_run)
 	$(call require-strong,$(OUT)/bench-recovered,wf__floor_run)
 	$(call require-strong,$(OUT)/bench-shared,wf__floor_run)
 	$(call require-strong,$(OUT)/bench-recovered,wf__par_acquire_lane)
