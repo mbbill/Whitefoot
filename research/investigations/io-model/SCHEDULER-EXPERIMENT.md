@@ -4973,6 +4973,11 @@ retain their original order and CPU fields. Independently re-reading them
 confirmed each plan's exact argument/batch mapping, all five alternating
 orders, finite nonnegative times and every printed median/min/max/CPU summary.
 The six observed stdout files matched the corpus bytes exactly.
+Ordinary invocations do not retain separate stdout files: the existing runner
+checks each checksum after trimming trailing CR/LF, and only then admits its
+timing. Thus their checksum payloads are validated in the runner; they are
+not independently archived exact stdout-byte records. The separate observed
+files retain their newline and were compared without this normalization.
 
 | Batches | Form | Median wall, ms | Median user + system CPU, ms | Median CPU / wall |
 |---:|---|---:|---:|---:|
