@@ -4296,7 +4296,7 @@ comparison remain explicit platform rows, not inferred coverage.
 | CPU placement | Record physical cores, SMT siblings, NUMA, cpuset and IRQ placement. Current split2 uses disjoint logical CPUs that may share physical cores; it is not a promise of two physical server cores. split1 separates physical cores |
 | Thread and poll budgets | Count runtime workers, blocking helpers, io-wq and SQPOLL kernel threads. Process taskset and process CPU alone do not bound or account for a kernel polling thread. A competitive CPU budget is an upper bound: tuning may use fewer workers at low occupancy rather than forcing every contender to start all available workers |
 | CPU cost | Existing `/usr/bin/time` `%U/%S` covers whole process lifetime with centisecond output: startup/drain and quantization matter in short cells. Separate steady-state CPU-ns/request, idle CPU and kernel CPU before fine low-load claims |
-| Load generator | Occupied echo cells demonstrably consume nearly all assigned client CPU, predominantly system time. Experiment43's extra client SMT worker does not establish spare capacity. Experiment56 confirms roughly one full receive plus one empty probe per round, with only rare large-transfer fragmentation and large-transfer mean readiness batches of 60.78..62.92 events; complete profile attribution is unqualified. Test a readiness-aware client and independent physical client resources; flat throughput alone does not prove server saturation |
+| Load generator | Occupied echo cells consume nearly all assigned client CPU, predominantly system time. Experiment 43's extra SMT worker does not establish spare capacity. Experiment 58's readiness client removes empty receive probes but leaves large transfers near one client CPU, with a 64-small uring rate/tail regression; it remains opt-in. Verify with more independent physical client cores or another host; flat throughput alone does not prove server saturation |
 | Latency / overload | Closed-loop echo p99 does not establish an overload SLO. Fixed-arrival latency begins at the intended send time and includes dispatch delay; report goodput, drops/deadlines, backlog and recovery |
 | Memory | Record total reserved/provided bytes, live RSS/PSS and slope versus peers, socket/kernel memory, faults and allocations. Equal provided bytes does not imply equal total or resident memory. Keep THP and allocator readbacks with each panel |
 | Mechanism evidence | Untimed observers: syscalls/submissions/CQEs, send/recv bytes, queue depth/exhaustion, context switches, task migration and frame allocations. An observer is not part of a timed binary |
@@ -8024,10 +8024,10 @@ peers. Removing the event-recording operation must make the trace fail.
 Local M1 evidence consists of 28 ASan/UBSan actual-loop traces through
 temporary syscall/type shims (9/10/9 at budgets 0/1/8), Linux cross-compilation,
 the default IR comparison, and shell/workflow checks. These shims do not
-execute or qualify Linux epoll semantics. Real Linux socket checks, the
-mutation rejection on that platform, and all performance samples remain
-required before a result is claimed. The source and harness preserve the
-client's existing full-byte but modulo-256 message-identity limitation.
+execute or qualify Linux epoll semantics. The separate real Linux socket,
+mutation and paired timing evidence is recorded below. The source and harness
+preserve the client's existing full-byte but modulo-256 message-identity
+limitation.
 
 `client-readiness.tsv` retains all ordinary rows and
 `client-readiness-observed.tsv` holds the forty separate instrumented runs.
@@ -8041,6 +8041,130 @@ limitation. Counter deltas are operations and bytes, not TCP packet counts;
 instrumented rates never substitute for ordinary paired timing. A faster
 client would improve this host's measurement headroom, without establishing
 unrestricted server capacity or a universal fastest implementation.
+
+### Qualified Linux result at 063cbef4
+
+The readiness client removes the measured empty receive probes, but it is
+not a uniformly better load generator. At 64 peers × 64 B, native uring
+throughput falls in all five ordinary pairs and p99 rises in all five. At
+64 KiB, all four servers still approach one full client CPU and their paired
+median rate changes range from -0.1% to +2.3%. Keep the policy opt-in; this
+screen does not establish spare client capacity or change the default client.
+
+Frozen revision `063cbef4d182fac8c600c8ac2b6168ed4d24c4f6` passed
+[run 34110355837](https://github.com/mbbill/Whitefoot/actions/runs/34110355837),
+including Linux measurement job `101704901081` and Windows placement checks.
+The [raw artifact 10014715642](https://github.com/mbbill/Whitefoot/actions/runs/34110355837/artifacts/10014715642)
+has SHA256 `98628bd0051372ce8cf2215f76647cf094caa161a5f121f14e8155980dd5706d`,
+verified against the downloaded 1,634,662-byte archive. The host is an Intel
+Xeon Platinum 8370C VM, Linux 6.17.0-1022-azure and Clang 20.1.2. CPU 0 is
+server core 0 and CPU 2 is client core 1; their SMT siblings 1 and 3 are not
+added to either budget. The observed client worker reports CPU mask `2` in
+all forty panel records. The same-revision io-hosts and io-bench runs passed;
+the canonical gate was cancelled, so this is not a full-gate claim.
+
+The real Linux qualification contains 28 actual-loop traces (9/10/9 for
+service budgets 0/1/8), the deliberately removed read-edge mutation rejected
+with exit 2, 48 ordinary socket cases, 16 additional observer socket cases,
+and six admitted, scheduled compute checks. These are additional to the
+local shim evidence above. The twelve successful qualification counter phases
+preserve admission/exchange separation and exact sent, received and verified
+bytes. Both 8 MiB observer clients actually encounter short sends, short
+receives and send EAGAIN in both phases. The readiness policy still drains
+partial responses to EAGAIN; eliminating speculative probes after full frames
+does not eliminate the necessary partial-stream EAGAIN outcomes.
+
+The independent raw audit verifies 200 ordinary rows, 40 distinct retained
+warmup directories and 40 separate observed rows, including adjacent client
+pairs and alternating order. Raw client outputs equal the table's rate,
+latency, exchange CPU and byte/trip fields; client/server resource files also
+match. Every ordinary client/server diagnostic channel is empty. Observed
+send/receive outcome sums, positive-size bins, byte totals, verified rounds,
+poll batches, event dispatch and budget-zero pump identities conserve.
+Normalized default LLVM IR equals the retained pre-change source's IR. All
+eight retained executables are independently rehashed and match their launched
+binary manifest entries; all seven recorded source hashes match the frozen
+revision. The Clang and WFC executable hashes are identifiers only: those two
+tools were not uploaded or independently rehashed. The end-of-run manifest
+check passed; it does not replace the separate checks on uploaded bytes.
+
+The table reports the median of five same-pass readiness/default ratios,
+with the full paired rate minimum and maximum. CPU is client exchange
+user + system CPU per completed trip, measured in the ordinary binaries.
+It is not the observer run's timing. A rate ratio above 1 is faster; CPU and
+p99 ratios below 1 are lower. These are one-host screening samples, without
+post-result tuning or an independent confirmation cohort.
+
+| Peers × bytes | Server | Rate ratio [min, max] | Client CPU/trip ratio | p99 ratio |
+| --- | --- | --- | --- | --- |
+| 1 × 64 | epoll | 0.9906 [0.9781, 0.9982] | 0.9889 | 1.0476 |
+| 1 × 64 | uring-64k | 0.9995 [0.9676, 1.0211] | 0.9739 | 1.0000 |
+| 1 × 64 | callee-small | 0.9626 [0.9528, 1.0517] | 0.9964 | 1.0571 |
+| 1 × 64 | wf-coro-index | 1.0086 [0.9905, 1.0290] | 0.9767 | 0.9556 |
+| 4 × 64 | epoll | 1.0198 [1.0091, 1.0240] | 0.9705 | 1.2121 |
+| 4 × 64 | uring-64k | 1.0569 [1.0398, 1.0651] | 0.9450 | 1.0000 |
+| 4 × 64 | callee-small | 0.9775 [0.9474, 0.9992] | 0.9823 | 0.9767 |
+| 4 × 64 | wf-coro-index | 1.0102 [0.9949, 1.0141] | 0.9648 | 1.0000 |
+| 64 × 64 | epoll | 0.9979 [0.9731, 0.9995] | 0.9935 | 1.0265 |
+| 64 × 64 | uring-64k | 0.9648 [0.9539, 0.9831] | 0.9885 | 2.6023 |
+| 64 × 64 | callee-small | 1.0111 [0.9957, 1.0259] | 0.9468 | 0.9802 |
+| 64 × 64 | wf-coro-index | 1.0092 [1.0017, 1.1341] | 0.9361 | 1.0000 |
+| 1024 × 64 | epoll | 0.9975 [0.9348, 1.0396] | 0.9617 | 1.0392 |
+| 1024 × 64 | uring-64k | 1.1319 [1.0623, 1.1834] | 0.8699 | 0.8930 |
+| 1024 × 64 | callee-small | 0.9913 [0.8169, 1.1380] | 0.9711 | 1.0266 |
+| 1024 × 64 | wf-coro-index | 1.0684 [0.9039, 1.2028] | 0.9236 | 1.0231 |
+| 64 × 65536 | epoll | 1.0225 [0.9935, 1.0375] | 0.9780 | 0.9481 |
+| 64 × 65536 | uring-64k | 1.0096 [0.9786, 1.0347] | 0.9908 | 1.1427 |
+| 64 × 65536 | callee-small | 1.0041 [0.9818, 1.0169] | 0.9963 | 0.9908 |
+| 64 × 65536 | wf-coro-index | 0.9989 [0.9967, 1.0241] | 1.0001 | 1.0146 |
+
+The 64-small uring result is a regression: rate ratios are 0.9539..0.9831,
+and p99 ratios are 1.0251..3.1556, with no favorable pair in either metric.
+Conversely, uring improves at 4 and 1024 small-message peers in all five rate
+pairs. The 1024-peer WF cells are variable: indexed continuation rates span
+0.9039..1.2028 and callee rates span 0.8169..1.1380. The indexed row's median
+paired increase is 6.8%, but its unpaired absolute rate medians are only
+165,186 → 165,750 trips/s. Retain both facts and all samples; neither metric
+alone establishes a stable improvement. Epoll at four peers gains 2.0% rate
+while its p99 is worse in all five pairs (1.1471..1.2500).
+
+At 64 KiB, median client exchange CPU/wall is 0.996..1.000 before and
+0.997..1.000 after the change across the four forms. Median client system
+CPU remains about 19.0..19.6 microseconds/trip, versus 2.2..2.8 microseconds
+of user CPU. Thus removing the empty probe does not solve the observed
+large-transfer client limit. The artifact also retains server lifetime CPU,
+RSS and context switches; centisecond `/usr/bin/time` CPU and startup/drain
+cost prevent interpreting small server CPU differences as fine-grained
+steady-state savings.
+
+Separate counter observations confirm the intended operation change: all
+sixteen small-message readiness cells have zero receive EAGAIN, versus
+approximately one per completed round in their default controls. The four
+large-message readiness cells have 0, 1, 3 and 1 receive EAGAIN outcomes for
+epoll, uring, callee and indexed continuation respectively, across 32,000
+rounds each; their controls have 32,194, 32,202, 32,654 and 33,031. All forty
+panel samples have exactly one successful send per round and no send EAGAIN;
+large-response positive receive counts remain close to one per round.
+
+Reducing receive calls can also change event batching. The following are
+one separate observer pair per row, not a latency profile or an explanation
+of the ordinary timing by itself:
+
+| 64 peers, server/payload | Receive calls/trip, default → ready | Polls/trip, default → ready | Events/ready poll, default → ready |
+| --- | --- | --- | --- |
+| epoll / 64 B | 2.0000 → 1.0000 | 0.0240 → 0.4025 | 41.75 → 2.48 |
+| uring / 64 B | 2.0000 → 1.0000 | 0.1775 → 0.2332 | 5.63 → 4.29 |
+| epoll / 64 KiB | 2.0062 → 1.0000 | 0.0159 → 0.0159 | 63.25 → 63.22 |
+| uring / 64 KiB | 2.0063 → 1.0002 | 0.0208 → 0.1153 | 48.42 → 8.83 |
+
+These are application operations and event batches, not TCP packet counts.
+Observer instrumentation and changed scheduling can affect aggregation;
+these rows do not isolate a kernel cause for the uring tail regression.
+No incomplete experiment 56 stack profile is used to supply that missing
+attribution. Extra independent physical client resources or another host,
+and a qualified client engine comparison, remain possible next controls.
+Neither is measured here. Existing throughput proximity between WF and native
+servers therefore remains an end-to-end result with unresolved client limits.
 
 ## 59. Ordinary CPU control without idle-scan yields
 
