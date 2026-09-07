@@ -860,6 +860,14 @@ uring-check: prepare
 # Toolchain upgrades are new comparison revisions, never an implicit download.
 GO ?= go
 GO_VERSION := go1.27.1
+# Non-recipe continuations become spaces. Inside a single-quoted recipe jq
+# program GNU Make preserves the backslash/newline, which jq cannot parse.
+GO_QUALIFY_FILTER = length == (if $$mode=="reset" then 1 else 2 end) and \
+    all(.[]; .kind=="go-net" and .version=="$(GO_VERSION)" and .gomaxprocs==$$width and .buffer_bytes==65536 and \
+      .metrics["/sched/gomaxprocs:threads"]==$$width and .metrics["/sched/threads/total:threads"]>=1) and \
+    .[0].stage=="listening" and (if $$mode=="reset" then true else \
+      .[1].stage=="complete" and (.[1].sockets|length)==(if $$mode=="resident" then 64 else 4 end) and \
+      all(.[1].sockets[]; .nodelay!=0 and .send_buffer>=4096) end)
 .PHONY: go-check
 go-check: prepare
 	@set -eu; \
@@ -894,12 +902,7 @@ go-check: prepare
 	      cat "$$log"; \
 	      awk -v mode="$$mode" '/^\{/ {next} /^stream_check: PASS/ {passes++; next} /^go_echo:/ && mode=="reset" {errors++; next} {bad=1} END {exit !(passes==1 && !bad && (mode=="reset" ? errors==1 : errors==0))}' "$$log"; \
 	      awk '/^\{/' "$$log" | jq -s -e --argjson width "$$width" --arg mode "$$mode" \
-	        'length == (if $$mode=="reset" then 1 else 2 end) and \
-	        all(.[]; .kind=="go-net" and .version=="$(GO_VERSION)" and .gomaxprocs==$$width and .buffer_bytes==65536 and \
-	          .metrics["/sched/gomaxprocs:threads"]==$$width and .metrics["/sched/threads/total:threads"]>=1) and \
-	        .[0].stage=="listening" and (if $$mode=="reset" then true else \
-	          .[1].stage=="complete" and (.[1].sockets|length)==(if $$mode=="resident" then 64 else 4 end) and \
-	          all(.[1].sockets[]; .nodelay!=0 and .send_buffer>=4096) end)' > /dev/null; \
+	        '$(GO_QUALIFY_FILTER)' > /dev/null; \
 	      if test "$$mode" = resident && test "$$prefix" != "-"; then \
 	        test -s "$$prefix.smaps"; test -s "$$prefix.status"; \
 	        awk -v expected="$${WF_BENCH_SERVER_CPUS:-}" '/^Cpus_allowed_list:/ {seen++; if(expected!="" && $$2!=expected) bad=1} END {exit !(seen>0 && !bad)}' "$$prefix".task-*-status; \
