@@ -14,6 +14,7 @@ CALIBRATION_ROUNDS=${CALIBRATION_ROUNDS:-3}
 BATCHES=${BATCHES:-1}
 RAYON_THREADS=${RAYON_THREADS:-"1 2 4"}
 RAYON_GRAINS=${RAYON_GRAINS:-"1 4 16"}
+RESOURCE_CONTROLS=${RESOURCE_CONTROLS:-0}
 EXPECTED='420a993efa7437a1 41fa962893d45299'
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
@@ -29,6 +30,7 @@ bounded_integer ROUNDS "$ROUNDS" 1 128
 bounded_integer WARMUP "$WARMUP" 0 128
 bounded_integer CALIBRATION_ROUNDS "$CALIBRATION_ROUNDS" 1 128
 bounded_integer BATCHES "$BATCHES" 1 16
+bounded_integer RESOURCE_CONTROLS "$RESOURCE_CONTROLS" 0 1
 read -r -a threads <<< "$RAYON_THREADS"
 read -r -a grains <<< "$RAYON_GRAINS"
 (( ${#threads[@]} > 0 && ${#grains[@]} > 0 )) || exit 2
@@ -49,9 +51,15 @@ for grain in "${grains[@]}"; do bounded_integer GRAIN "$grain" 1 64; done
     /usr/bin/clang --version
     printf 'RUSTFLAGS=%s\nCARGO_ENCODED_RUSTFLAGS=%s\n' \
         "${RUSTFLAGS:-}" "${CARGO_ENCODED_RUSTFLAGS:-}"
-    printf 'threads=%s grains=%s batches=%s calibration=%s confirmation=%s warmup=%s\n' \
-        "$RAYON_THREADS" "$RAYON_GRAINS" "$BATCHES" "$CALIBRATION_ROUNDS" "$ROUNDS" "$WARMUP"
+    if [[ $RESOURCE_CONTROLS == 0 ]]; then
+        printf 'threads=%s grains=%s batches=%s calibration=%s confirmation=%s warmup=%s\n' \
+            "$RAYON_THREADS" "$RAYON_GRAINS" "$BATCHES" "$CALIBRATION_ROUNDS" "$ROUNDS" "$WARMUP"
+    else
+        printf 'threads=4 grain=4 batches=1,4,16 stacks=12,1100 confirmation=%s warmup=%s calibration=none\n' \
+            "$ROUNDS" "$WARMUP"
+    fi
     printf 'timing=whole-process; Rayon pool created once, install once; no concurrent I/O\n'
+    printf 'resource_controls=%s\n' "$RESOURCE_CONTROLS"
     if [[ $(uname -s) == Linux ]]; then
         lscpu
         awk '/Cpus_allowed_list:/ {print}' /proc/self/status
@@ -73,6 +81,64 @@ shasum -a 256 "$WFC" "$OUT/wf-seq" "$OUT/wf-par" "$OUT/rust-layout" \
     "$ROOT/tests/programs/par_layout.wf" "$ROOT/compiler/src/bin/whitefootc.rs" \
     "$HERE/rayon-baseline/src/main.rs" "$HERE/rayon-baseline/Cargo.toml" \
     "$HERE/rayon-baseline/Cargo.lock" >> "$OUT/host.txt"
+
+if [[ $RESOURCE_CONTROLS == 1 ]]; then
+    # Experiment 45 freezes the earlier four-worker calibration. Do not tune
+    # against these samples: only WF stack capacity and batch count vary.
+    printf 'resource_panel=workers4; Rayon grain4; batches1,4,16; WF_STACKS12,1100\n' >> "$OUT/host.txt"
+    printf 'resource_budget=WF main+3 workers; Rayon 4 workers+sleeping caller; no CPU affinity\n' >> "$OUT/host.txt"
+    : > "$OUT/resource.plan"
+    for batches in 1 4 16; do
+        printf 'rayon.w4.g4.b%s\t\t%s\trayon\t4\t4\t%s\n' \
+            "$batches" "$OUT/rust-layout" "$batches" >> "$OUT/resource.plan"
+        for stacks in 12 1100; do
+            printf 'wf.w4.s%s.b%s\tWF_WORKERS=4,WF_STACKS=%s,WF_SCHED_REPORT=0\t%s' \
+                "$stacks" "$batches" "$stacks" "$OUT/wf-par" >> "$OUT/resource.plan"
+            for ((batch=1; batch<batches; batch++)); do printf '\tbatch' >> "$OUT/resource.plan"; done
+            printf '\n' >> "$OUT/resource.plan"
+        done
+    done
+    WF_BENCH_RAW="$OUT/resource.tsv" "$OUT/runner" "$OUT/resource.plan" \
+        "$ROUNDS" "$WARMUP" "$EXPECTED" > "$OUT/resource.txt" 2> "$OUT/resource.err"
+
+    # Existing observer, separately linked and never timed. The normal WF
+    # executable above remains the compiler's ordinary native output. The
+    # completion units provide grant_observer.c's bridge-report dependency;
+    # this compute-only module does not initialize an I/O engine.
+    backend="$ROOT/compiler/src/backend"
+    "$WFC" --par --emit-llvm "$ROOT/tests/programs/par_layout.wf" -o "$OUT/wf-par.ll"
+    observer_sources=()
+    for unit in wf_floor.c sched/core.c sched/prim_host.c sched/entry.c \
+        completion/runtime.c completion/wait_host.c completion/file_adapter.c \
+        completion/file_posix.c completion/bridge.c completion/linux_io_uring.c \
+        sched/grant_observer.c; do observer_sources+=("$backend/$unit"); done
+    observer_command=(/usr/bin/clang -std=c11 -O2 -pthread -I "$backend" \
+        -I "$backend/completion" -DWF_SCHED_OBSERVE=1 -x c "${observer_sources[@]}" \
+        -x ir "$OUT/wf-par.ll" -Wno-override-module -lm -o "$OUT/wf-par-observed")
+    printf '%q ' "${observer_command[@]}" > "$OUT/observer.command"
+    printf '\n' >> "$OUT/observer.command"
+    "${observer_command[@]}"
+    shasum -a 256 "$OUT/wf-par.ll" "$OUT/wf-par-observed" "${observer_sources[@]}" \
+        "$backend/sched/core.h" "$backend/sched/prim.h" "$backend/sched/switch.h" \
+        "$HERE/runner.c" "$HERE/rayon-bench.sh" >> "$OUT/host.txt"
+    printf 'observation=untimed WF_SCHED_OBSERVE=1; exhausted_compute counts no-target join turns, not peak stacks\n' >> "$OUT/host.txt"
+    for batches in 1 4 16; do
+        observed_args=("$OUT/wf-par-observed")
+        for ((batch=1; batch<batches; batch++)); do observed_args+=(batch); done
+        for stacks in 12 1100; do
+            record="$OUT/observed-s$stacks-b$batches"
+            WF_WORKERS=4 WF_STACKS=$stacks WF_SCHED_REPORT=1 "${observed_args[@]}" \
+                > "$record.out" 2> "$record.err"
+            printf '%s\n' "$EXPECTED" | cmp - "$record.out"
+            awk '/^sched:/ {seen++; for(i=2;i<=NF;i++) {split($i,p,"=");v[p[1]]=p[2]+0}}
+                END {exit !(seen==1 && v["observed"]==1 && v["threads"]==4 &&
+                    v["workers_started"]==3 && v["steals"]>0 && ("exhausted_compute" in v))}' "$record.err"
+        done
+    done
+    cat "$OUT/resource.txt"
+    printf 'rayon-bench: resource samples and separate observations retained in %s\n' "$OUT"
+    exit 0
+fi
 
 # Each native process requests BATCHES explicitly. WF's complete argument
 # count includes its executable, so BATCHES - 1 dummy args select the same work.

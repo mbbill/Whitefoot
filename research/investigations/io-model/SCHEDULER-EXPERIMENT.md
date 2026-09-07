@@ -4787,7 +4787,9 @@ branch excludes the larger allocator and CPU-layout timing panels.
 The [Linux qualification job](https://github.com/mbbill/Whitefoot/actions/runs/34086375759/job/101631101434)
 passed at 040bfc4b08f1b4d164b50281212f2c053323964e. All five Rust tests
 passed in 0.23 seconds, all four external C oracle invocations passed, and
-all four ordinary/observed netload qualifications passed. Every sample
+all four ordinary/observed netload qualifications passed. Its separate
+[canonical gate](https://github.com/mbbill/Whitefoot/actions/runs/34086375764)
+also passed all fourteen Linux/macOS jobs. Every sample
 completed all 600 planned light requests before its nominal deadline and
 drained every heavy reply. The [four raw qualification rows](../../experiments/io-completion-bench/rayon-baseline/mixed-linux-2026-09-07.tsv)
 retain the full client reports, process resources and observer fields;
@@ -4831,3 +4833,126 @@ queue/driver settings, count the I/O thread within total budgets 2/4, give
 the client separately established CPU capacity, and compare paced light
 tails, heavy completions, drain and CPU/RSS against qualified native and WF
 forms. Alternative I/O backends and richer CPU tasks remain separate rows.
+
+## Forty-fifth experiment: control CPU stack capacity and fixed costs
+
+Experiment 40's CPU panel inherited `WF_STACKS=1100` from the many-connection
+I/O panel. That is a valid capacity setting, but it was not independently
+tuned for `par_layout.wf`. At four workers the runtime default is twelve
+stacks: four worker stacks plus eight spare stacks. `wf_sched_init` reserves
+the requested count, prepares every stack context and touches its metadata;
+the POSIX primitive also protects a guard for every stack. The setting can
+therefore affect both startup and the chance of taking a no-free-target
+compute join path. Reducing it is not automatically a cost-free optimization.
+
+The separate four-batch perf audit at 0d15c7cc found no recorded lost-event or
+throttle diagnostics and the expected execution threads. It did not reproduce
+the ordinary single-batch utilization gap: raw scheduler switches in the
+common worker lifetime gave WF/Rayon run-time-to-wall ratios 3.894/3.862.
+WF had less blocked time in that capture. The perf CPU report denominator
+included wrapper samples despite its PID filter, and the sched timehist final
+summary omitted most of the workload; the audit instead filtered raw samples
+by TGID and reconstructed switch/waking intervals. Kernel symbols were
+unresolved and there were no callchains, so neither a specific kernel wait
+nor all layout-symbol samples can be attributed precisely. This evidence
+does not establish excessive WF parking as the cause of the timing gap.
+
+The audited [CPU/perf job](https://github.com/mbbill/Whitefoot/actions/runs/34086189734/job/101630615030)
+and [artifact 10005361082](https://github.com/mbbill/Whitefoot/actions/runs/34086189734/artifacts/10005361082)
+retain separate CPU-clock and scheduler captures, ordinary confirmations,
+commands, workload PIDs and exact outputs. The artifact ZIP SHA-256 is
+`435f53a48bf743cbd20b277f5dc0b45ce004da072fa2b64e7f3fcb28634385ff`.
+The CPU-clock audit selects raw records for TGID 3874 (WF: TIDs 3874-3877)
+or 3891 (Rayon: caller 3891, workers 3892-3895), and sums their periods.
+Each sample has period 1001001 ns, so the figures are sampled CPU estimates,
+not exact instruction costs. The few wrapper records in another TGID are
+excluded even though perf's displayed denominator included them.
+
+| Four-batch CPU-clock capture | WF4 sampled CPU, ms | Rayon4 sampled CPU, ms |
+|---|---:|---:|
+| Total in workload TGID | 5228.23 | 5160.16 |
+| Layout functions, including their inlined code | 4809.81 | 4818.82 |
+| WF runtime / Rayon and Crossbeam functions | 106.11 | 56.06 |
+| pthread mutex functions | 81.08 | 0.00 |
+| WF pause / explicit sched_yield symbol | 53.05 | 26.03 |
+| Unresolved kernel | 134.13 | 251.25 |
+| Remaining symbols | 44.04 | 8.01 |
+
+The zero entry means no samples in that category, not proof of no such work.
+The separate scheduler trace targets WF PID 4022 with children 4023-4025,
+and Rayon PID 4003 with workers 4004-4007. Excluding Rayon's waiting caller,
+raw switch intervals were clipped to each pool's common lifetime, from its
+last worker fork to its first worker exit. A switch out in state R remains
+runnable; other states count as blocked until the recorded waking event,
+then runnable until switch-in. Waking is wake intent, so these are conservative
+state estimates rather than exact activation timestamps. Waking records while
+the target was already running were ignored; no unmatched running-state
+transitions occurred. Exit-boundary unknown intervals were under 0.02 ms.
+
+| Four-batch scheduler capture | WF4 | Rayon4 workers |
+|---|---:|---:|
+| Common pool lifetime, ms | 1313.481 | 1333.479 |
+| Summed running time, ms | 5114.989 | 5150.403 |
+| Summed runnable delay, ms | 125.262 | 141.007 |
+| Summed blocked time, ms | 13.657 | 42.497 |
+| Running time / lifetime | 3.894 | 3.862 |
+
+The scheduler captures even reverse the ordinary confirmation's wall-time
+ordering. They are separate, instrumented four-batch executions and cannot
+be spliced into a one-batch confirmation as if they described that sample.
+WF's first scheduled main-thread interval to final worker fork spans 21.315
+ms and its first worker exit to main exit spans 14.690 ms; Rayon's startup
+window spans 1.811 ms. These windows include other startup/shutdown and host
+activity and are not measured stack setup/destruction costs. They motivate
+the following ordinary fixed-resource experiment, not a runtime conclusion.
+
+`make rayon-resource-bench ROUNDS=5 WARMUP=1` executes a deliberately small
+control before any runtime changes. It uses the same compiler/runtime and
+`par_layout.wf` bytes as 0d15c7cc, the existing independent Rust implementation,
+and the following fixed panel. Grain four is frozen from the prior four-worker
+calibration; this cohort does not select it again.
+
+| Computing-thread budget | Implementation | Stack capacity | Batches per invocation |
+|---|---|---|---|
+| 4 | Ordinary Rust/Rayon, grain 4 | Rayon defaults | 1, 4, 16 |
+| 4 | Ordinary generated WF parallel | 12 | 1, 4, 16 |
+| 4 | Same ordinary generated WF binary | 1100 | 1, 4, 16 |
+
+One plan contains all nine forms, grouped by batch count; each pass reverses
+the preceding pass's order. One complete warmup precedes five recorded passes
+(45 samples). Every invocation must exit successfully and print the exact
+corpus checksum bytes. Whole-process wall/user/system CPU include pool setup,
+tree setup and shutdown. WF uses the main thread plus three spawned workers;
+Rayon uses four workers and a caller that waits for the pool. The host CPU
+set/topology is recorded, but neither physical-core dedication nor affinity
+is assumed. The panel has no concurrent load generator and uses no perf.
+
+After timing, a separate binary links the existing `WF_SCHED_OBSERVE=1`
+scheduler/grant observer. It runs each WF cell once, untimed, with the same
+exact-byte check and confirms three spawned workers and positive grants.
+`exhausted_compute` counts join turns without an available target stack;
+it is not a count of unique requests or a high-water mark. The runtime has
+no existing peak-live-stack counter, so this panel cannot report that value.
+Observed counters may perturb scheduling and cannot be assigned to the
+ordinary samples. No runtime implementation, policy default, or compiler
+lowering changes in this experiment.
+
+OUT retains the ordinary raw `resource.tsv`, alternating plan, summaries,
+exact observation output/counters, generated IR, binaries, observer command,
+locked dependencies, actual compiler versions and source/binary hashes.
+The dedicated `codex/io-cpu-resource-controls` CI branch runs only this CPU
+timing panel in place of the large allocator screen; canonical correctness
+remains enabled. Compare paired wall and CPU ratios within each batch count,
+CPU/wall concurrency, and per-batch cost as duration grows. Those results can
+separate capacity sensitivity from amortized fixed costs; hosted noise and
+whole-process timing still limit a precise causal cost decomposition.
+
+The local M1 smoke passed the existing two Rust correctness tests, fmt and
+clippy, all nine ordinary byte checks, and all six observed byte/counter
+checks. Its 12-stack/16-batch observation took fifty no-target compute-join
+turns; every other observed cell reported zero. These counters establish
+that the small-capacity resource path ran without changing result bytes,
+not that the same turns occurred in ordinary samples. The one-pass local
+times were visibly affected by shared-host load and are not ranking evidence.
+The raw smoke remains in the scratch `whitefoot-rayon-resource-smoke` folder;
+Linux confirmation is the separate five-pass cohort.
