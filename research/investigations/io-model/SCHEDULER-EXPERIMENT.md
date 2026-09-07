@@ -4252,7 +4252,7 @@ name. A known limitation remains visible until its experiment is complete.
 | Native C io_uring with immediate send | Same receive engine and loans, one nonblocking `sendmsg` attempt before ring fallback | Competitive hybrid candidate: avoids a submission/completion round trip when the socket accepts bytes immediately | Stream-qualified and screened at `0357259d`; 8 KiB hybrid severely regresses large messages, 64 KiB mostly overlaps pure-ring control. Shutdown wake-storage correction requalified at `0ebe924b` |
 | Native C stackful / C++ stackless | Same epoll engine; private or shared receive storage; stackful, heap coroutine, and compiler-elided coroutine forms | Diagnostic representation control: separates coroutine/frame allocation, storage and reactor cost | Screened and stream/lifetime-qualified at their recorded revisions; not independent mature runtime comparisons |
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
-| WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Qualified and screened at `2147857e` (experiment 39): lower small-message RSS but severe coordinator scheduling cost. Sole-resumer progress is the experiment 44 candidate |
+| WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Qualified and screened at `2147857e` and `f72aacb8` (experiments 39/44). Sole-resumer progress improves occupied small-message throughput by 1.98-2.77x versus the threaded coordinator, but still loses to the existing WF/native controls. Submission batching is the next mechanism question |
 | Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Source candidate only; pin Go toolchain, GOMAXPROCS, buffers and complete protocol fixture before timing |
 | Rust sequential / Rayon CPU pool | Existing recursive `par_layout.wf` port with exact floating-point order and every node write; sibling `join`, calibrated grain and explicit pool width | Essential CPU-parallel reference; separates sequential code generation from parallel scheduling. Broader `par_iter`/`scope` and unbalanced workloads remain candidate rows | Checksum-qualified and independently confirmed after grain calibration on M1/Linux (experiment 40). Experiment 45's stack/batch control reduces the WF12/Rayon paired wall gap from 13.9% at one batch to 1.6% at sixteen, supporting substantial fixed costs. Output-path ring initialization remains a separate attribution question; this is not an optimal WF CPU setup claim |
 | Tokio I/O + bounded Rayon CPU offload | One current-thread I/O driver plus B-1 CPU workers, fixed 64-byte protocol, asynchronous bounded admission, one request/reply per connection | External mixed-load reference under one total execution budget; exposes CPU queue transfer, backpressure and light-request progress | Linux-qualified at `040bfc4b` (experiment 42), including saturation, errors, reset, partial input, half-close and slow output. Four short client smoke records are correctness evidence, not a performance ranking |
@@ -5573,7 +5573,7 @@ port, fanout and multi-batch staged-window qualifications run at both
 settings. The independent C++ completion-loan fixture keeps its threaded
 publisher-ordering cases. Every generated observer reports its actual owner
 mode, checked against the requested setting as well as existing exact bytes,
-route counts and complete task retirement. The uninstrumented timing build
+route counts and complete task retirement. The build without sanitizers
 also runs the four-slot, twelve-task oracle at both settings.
 
 `CONTINUATION_SCREEN=2 NATIVE_BASELINES=1 EXPERIMENT=allocator` extends the
@@ -5589,12 +5589,11 @@ The main comparison is owner versus threaded continuation within each
 paired pass, retaining throughput, p99, server CPU/trip, process switches
 and live RSS separately. Existing WF/native rows expose residual costs.
 The known client capacity limit still prevents calling close rates a server
-capacity frontier. Linux timing is pending; no performance improvement is
-claimed before those results arrive.
+capacity frontier. The Linux comparison is recorded below.
 
 Local M1 qualification passes the generated suite at both settings with
 ASan/UBSan and ThreadSanitizer, the independent nested C++ lifetime suite,
-the uninstrumented twelve-task/four-slot oracle, and the common four-peer
+the twelve-task/four-slot oracle without sanitizers, and the common four-peer
 2 MiB stream/backpressure/half-close oracle. The latter retires all four
 tasks in both modes, with 64/64 and 75/75 registrations/dequeues respectively.
 These local runs use the helper route; they do not qualify Linux native
@@ -5613,6 +5612,92 @@ still use the progress thread; they are not owner-mode timing evidence.
 retains this qualification separately from the ongoing performance panel.
 The Windows memory/placement job in the same workflow also passed; it does
 not qualify generated continuations on Windows.
+
+### Linux owner-progress confirmation at f72aacb8
+
+The [measurement job](https://github.com/mbbill/Whitefoot/actions/runs/34087992851/job/101635635457)
+completed successfully with all 385 timing rows and 99 live-memory snapshots.
+[Artifact 10006435248](https://github.com/mbbill/Whitefoot/actions/runs/34087992851/artifacts/10006435248)
+has ZIP SHA-256 `42dbb10f1d4a6b7a2355dbd2dfa012b85c015e1dc437eb1780516442c95320f3`.
+Its host was AMD EPYC 7763, Linux 6.17.0-1022-azure and Clang 20.1.2, with
+four guest vCPUs on two cores and two SMT threads per core. The single server
+CPU was 0 and the single client CPU was 2. Both continuation forms use the
+same binary, source, allocation policy and reporting counters; timed runs
+disable reports and sanitizers, not the coordinator counters themselves.
+
+Independent raw-data audit found all 55 groups had seven unique passes.
+Every timing row matches its client output, server/client resource files,
+roundtrip count and rate within the printed rate and truncated-microsecond
+precision. Every selected server stdout/stderr and client stderr is empty.
+All 99 RSS/anonymous/private-dirty/swap totals were recomputed from smaps;
+every process reports THP disabled, zero anonymous huge pages and zero swap.
+All samples remain in the result, including broad native large-message and
+latency ranges. These are same-revision comparisons; earlier hosts' absolute
+rates are not substituted into this panel.
+
+| Peers x bytes | Threaded median trips/s | Owner median trips/s | Paired owner/threaded rate median [min, max] | Paired owner/threaded CPU/trip median |
+|---|---:|---:|---|---:|
+| 1 x 64 | 22774 | 21969 | 0.963 [0.889, 0.999] | 0.634 |
+| 4 x 64 | 38338 | 95110 | 2.500 [2.422, 2.606] | 0.398 |
+| 64 x 64 | 47149 | 93433 | 1.975 [1.964, 2.028] | 0.506 |
+| 1024 x 64 | 31689 | 89144 | 2.774 [2.746, 2.858] | 0.368 |
+| 64 x 65536 | 20977 | 21142 | 1.007 [0.994, 1.020] | 0.796 |
+
+The occupied small-message results strongly support removing this
+cross-thread handoff. At 64 peers the median server CPU/trip drops from
+21.172 to 10.703 us, switches/trip from 2.743 to 0.000305, and p99 from
+2569 to 750 us. At 1024 peers switches/trip drops from 3.861 to 0.002354
+and p99 from 58957 to 12660 us. The single-peer case instead loses throughput
+in every pair while using less CPU; eliminating a thread is not a universal
+latency/throughput improvement. Large-message throughput intervals overlap
+while CPU cost falls, and its client consumes approximately one full CPU.
+
+| Peers x bytes | Paired owner/callee rate median [min, max] | Paired owner/callee CPU/trip median | Paired owner/uring-64k rate median | Paired owner/uring-64k CPU/trip median |
+|---|---|---:|---:|---:|
+| 1 x 64 | 0.759 [0.741, 0.776] | 0.714 | 0.960 | 1.200 |
+| 4 x 64 | 0.832 [0.775, 0.873] | 1.167 | 0.739 | 1.400 |
+| 64 x 64 | 0.719 [0.709, 0.738] | 1.374 | 0.716 | 1.417 |
+| 1024 x 64 | 0.752 [0.728, 0.779] | 1.306 | 0.721 | 1.469 |
+| 64 x 65536 | 0.978 [0.970, 0.986] | 0.811 | 0.974 | 0.823 |
+
+`uring-64k` is a fixed reference in this table, not a per-sample winner.
+The remaining occupied small-message loss is material. The owner's client
+CPU/exchange ratio is about 0.875/0.877/0.859 at 4/64/1024 peers, below the
+near-full client occupancy of the faster native controls. This supports
+investigating residual server work, but does not establish spare client
+capacity for a future faster server. In particular, the close large-message
+rates cannot establish equal server capacity.
+
+| Form | Median RSS KiB, 64 x 64 | 1024 x 64 | 64 x 65536 |
+|---|---:|---:|---:|
+| WF callee-small | 3484 | 15036 | 5512 |
+| WF balanced-small | 3528 | 15092 | 6048 |
+| WF threaded continuation | 3040 | 12448 | 6204 |
+| WF owner continuation | 2968 | 12380 | 4956 |
+| Native uring-64k | 2248 | 4188 | 3272 |
+| Native epoll shared scratch | 1640 | 1664 | 1700 |
+| Native C++ elided shared scratch | 3604 | 3820 | 3636 |
+
+Memory remains a separate axis. Large-message threaded/owner samples span
+5392-6568/4820-5040 KiB. Removing a thread does not explain that entire
+difference: receive chunking and the touched portion of each calloc-backed
+buffer also affect residency. Shared native scratch and WF per-connection
+storage have different ownership, so these are competitive resource figures,
+not matched-storage representation costs.
+
+The remaining coordinator still calls target progress before taking each
+ready waiter. Progress flushes deferred SQEs before reaping, so this can
+prevent a group of ready continuations from combining their next submissions.
+That mechanism is a source-code hypothesis, not a measured syscall count:
+the current continuation report does not expose ring submission/enter totals.
+The next bounded control will vary the number of ready resumptions allowed
+between progress calls, retain an immediate progress step when no ready work
+exists, and report the existing bridge counters in separate observations.
+Registration, wake epochs, publication, source storage and the single owner
+remain unchanged. Skipping self-wakes is not the first control: the existing
+wake implementation already avoids eventfd writes when no sleeper is
+announced, so the disappearance of switches alone does not identify excessive
+wake syscalls in owner mode.
 
 ## Forty-fifth experiment: control CPU stack capacity and fixed costs
 
