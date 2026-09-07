@@ -590,6 +590,14 @@ Raw CPU samples, scheduler events, per-thread reports, PIDs and commands stay
 under `OUT/profile`. These observations never enter the performance TSVs.
 Inspect capture loss and observer overhead before using them for attribution.
 
+`make rayon-resource-bench` is experiment 45's fixed CPU resource control:
+four computing threads, Rayon grain four, WF stack counts 12/1100, and
+1/4/16 workload batches. It bypasses calibration and retains nine forms in
+one alternating plan. `ROUNDS=5 WARMUP=1` produces 45 ordinary samples;
+separate untimed builds use the existing scheduler observer to expose
+no-target compute-join turns. No counter currently reports peak live stacks.
+The experiment changes process settings only, not runtime code or defaults.
+
 `make mixed-rayon-check` qualifies the optional `mixed-rayon` binary in the
 same standalone crate. Its CLI is `mixed-rayon PORT CONNECTIONS --threads B
 [--queue Q]`: B includes one current-thread Tokio I/O driver, leaving B-1
