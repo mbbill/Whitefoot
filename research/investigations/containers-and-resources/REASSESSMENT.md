@@ -2,8 +2,10 @@
 
 This is the container architecture selection from the independent workload,
 critical-case, and semantic reviews of 2026-09-06, their executable experiments,
-and adversarial cross-review. It selects the architecture and first implementation
-scope below; it does not amend the active specification or claim implementation.
+and adversarial cross-review, supplemented by the pinned external workload traces.
+It selects the architecture and first implementation scope below; it does not
+amend the active specification. Implementation is in progress; the checkpoint
+below is distinct from the retained pre-implementation measurements and gate.
 Keep this decision and its linked evidence current as implementation replaces the
 old container paths. `DESIGN.md` points here for the superseding container choice;
 its separate resource research is outside this selection.
@@ -42,7 +44,7 @@ demand or establish that the selected families cover production use.
 
 | Evidence | Observation | Selection consequence |
 | --- | --- | --- |
-| [Dense storage](../../experiments/container-representation/dense/RESULTS.md) | With four updates, 16/256/4096 `u64` elements cost about 408 ns/176 us/43.9 ms in current Whitefoot, versus 65 ns/1.50 us/29.7 us in the native local-build/value-return control. Whole-payload transfers remain in element loops. | Final storage placement and in-place element work are an immediate architecture requirement. The gap is for this workload and host, not a language-wide speed claim. |
+| [Dense storage baseline](../../experiments/container-representation/dense/RESULTS.md) | With four updates, 16/256/4096 `u64` elements cost about 408 ns/176 us/43.9 ms at the examined compiler baseline, versus 65 ns/1.50 us/29.7 us in the native local-build/value-return control. Whole-payload transfers remain in that baseline's element loops. | Final storage placement and in-place element work are an immediate architecture requirement. The gap is for this workload and host, not a language-wide speed claim or a measurement of the new implementation. |
 | Same-layout native controls | Value return and explicit destination are close; forcing whole-value transfer at every append is also expensive in C. A separate retained-call control uses a caller-provided `sret` destination without an aggregate copy. | Keep value semantics, but make storage reuse/result destinations an explicit lowering responsibility. Do not hope an optimizer repairs every aggregate chain. |
 | [Lifecycle source](../../experiments/container-representation/lifecycle/RESULTS.md) | Five complete programs execute. Pool count contracts, direct result contracts, and several local field/variant paths work. Ten probes identify precise limitations, invalid programs, or two compiler defects. | Preserve working contracts and fix the exact missing relationships. A broad claim that all container facts are lost is false. |
 | Static-block alternative | A normal struct containing `FixedVector<u8,4>` retains capacity through checkout, use, and return. The neighboring initialized-length claim still fails. | Put persistent fixed extent and full initialization in the relevant type/state. This pool does not yet justify general quantified element refinements. |
@@ -53,6 +55,12 @@ The dense comparison keeps the same data and descriptor layout in the controls.
 It does **not** attribute the measured gap to ring metadata. The reason to
 distinguish full arrays from prefix/ring states is their different initialization
 guarantees and representation needs, also exposed by the static-block negative.
+
+The [external sample](EXTERNAL-WORKLOADS.md) adds six source-level traces from
+ripgrep 14.1.1, DuckDB v1.2.0, and Kubernetes v1.32.0 at pinned commits. It recovers
+application contracts and candidate needs across Rust, C++, and Go; it includes no
+upstream timing, allocation profile, or prevalence measurement. Its consequences
+and remaining causal uncertainties are recorded under workload evidence below.
 
 ### Storage and lowering boundary
 
@@ -66,13 +74,19 @@ guarantees and representation needs, also exposed by the static-block negative.
   permit it. This is a storage decision, not a second source mutation API. Do not
   mark two potentially identical input/output pointers as independent `noalias`
   destinations or duplicate their ownership to obtain this representation.
+- A known place is not proof of target uniqueness or initialized payload. In the
+  external grouping trace, different input rows can map to one aggregate state;
+  a slot reserved during construction is not yet a usable row reference. Keep
+  those relations separate from address formation and result placement.
 - Track which fields/elements own initialized values throughout construction and
   replacement, including failure and variant returns. A location alone is not
   enough information to generate correct cleanup. Scalar/Copy values may remain
   ordinary SSA values; owned aggregate representation must support real places.
-- Preserve evaluation, allocation, and release order. In particular,
-  `heap_box(value: construct(...))` may not become allocate-first merely to avoid
-  a copy: refusal could skip observable construction effects. A program needing
+- Preserve evaluation, allocation, and release order. In the current flat source
+  form, `let value = construct(...);` followed by
+  `heap_box(store: &uniq heap, value: move value)` may not become allocate-first
+  merely to avoid a copy: refusal could skip observable construction effects.
+  A program needing
   allocation-first construction must acquire backing first in its source, then
   construct and seal it. Typed failure returns the actual initialized prefix,
   unconsumed inputs, and remaining resource responsibilities.
@@ -97,9 +111,9 @@ Backing placement is a separate axis: inline, a provider allocation, or an ownin
 cell/store. This is not a demand for a runtime tagged union of every representation
 or a new wrapper/indirection on every array. A fully initialized fixed block held
 at a stable allocation should retain its full-state type when the owning reference
-moves through a free list. The boxed source probes are currently blocked by
-incorrect region inference and owned-cell measure resolution; those compiler
-defects do not refute that representation.
+moves through a free list. At the examined baseline, the boxed source probes
+were blocked by incorrect region inference and owned-cell measure resolution;
+those compiler defects do not refute that representation.
 
 Construction proceeds through a checked partial state. Sealing into a full fixed
 array requires full initialization, matching extent, and the correct contiguous
@@ -109,6 +123,13 @@ and its identity. It must account for exact backing extent/alignment and release
 authority, not silently substitute a second allocation. Dynamic full extents and
 arbitrary sparse source containers are later selection questions, not additional
 metadata required by the fixed-array implementation.
+
+These families are not an exhaustive account of application state. DuckDB's
+nullable list producer writes payload only for valid cells while its logical
+extent includes NULL positions; its dictionary selection is a separate mapping.
+An `Option<T>` element representation is a candidate, while a separate bitmap and
+payload layout requires its own checked initialization relation. Neither the
+need for that layout nor its cost advantage is established by source occurrence.
 
 Internal range/loan relationships must be explicit enough to justify disjoint
 views and initialized accesses, using finite specified checks. This does not mean
@@ -168,9 +189,10 @@ long-term commitment remains intact.
 ## First implementation scope and completion evidence
 
 Begin with **general owned-place and result-destination support**, including the
-semantic projection/borrow support needed by the existing probes. This is not
-lowering-only work: the wide-record and inline-view programs presently stop before
-the relevant backend path. Preserve source semantics during this first slice.
+semantic projection/borrow support needed by the existing probes. This includes
+semantic work: the wide-record and inline-view programs stopped before the
+relevant backend path at the examined baseline. Preserve source semantics during
+this first slice.
 
 Its concrete acceptance criteria are:
 
@@ -191,6 +213,14 @@ Its concrete acceptance criteria are:
    so subsequent staged-window integration can preserve the supplied retirement
    boundary without replacing this foundation. No new I/O/runtime protocol is
    introduced, and private runtime slot layouts are not assumed.
+
+The in-progress worktree now passes the frozen scalar correctness matrix and the
+mandatory wide-record and inline exclusive-view execution probes. This is a
+capability checkpoint, not completion of the slice: the full regression gate,
+retained-call/alias/cleanup review, final machine-shape evidence, and comparable
+post-change measurements must still establish the complete result. The retained
+168 timing samples remain the old implementation's baseline; they have not become
+measurements of this checkpoint.
 
 Then implement the selected bounded semantic capabilities: full-state construction
 and sealing, checked empty-run consume, projected result contracts, and two-span
@@ -282,7 +312,8 @@ the latter require representative runtime measurements. Language/library default
 and corpus selection can bias the observed forms, so infer requirements from the
 program's behavior and resource contract rather than copying its container API.
 Report conclusions within the sampled corpus instead of claiming industry-wide
-percentages. No such external distribution study has been performed here.
+percentages. The external source sample below is now available; no external
+distribution study or upstream runtime measurement has been performed here.
 
 For each consequential representation, ask the counterfactual question: which
 constraints remain if the source language's ownership, borrowing, proof, layout,
@@ -307,6 +338,36 @@ Use those external traces to select and ground subsequent Whitefoot experiments.
 Keep the existing probes for the narrower semantic and cost questions they answer;
 their successful execution does not substitute for external demand evidence.
 
+### External sample and the decisions it can change
+
+[EXTERNAL-WORKLOADS.md](EXTERNAL-WORKLOADS.md) carries the six complete operation
+traces, precise revisions, source links, and failure/lifetime boundaries. The
+sample was selected for discriminating contracts, not weighted by prevalence.
+Its three domains are text search, analytical query execution, and scheduler
+state. Multiple traces from one application are related evidence, not additional
+independent samples.
+
+| External trace | Recovered need | Unknown cause or cost | Next implementation decision |
+| --- | --- | --- | --- |
+| EW1, ripgrep search window | Retain context and incomplete lines, compact/reuse backing, preserve configured growth refusal and contiguous matcher input | Whether copying tails or initializing new capacity materially costs time; whether a ring wins after boundary handling | Compare prefix compaction with two-span/coalescing only under the same matcher and memory contract; do not select a ring from byte-buffer occurrence alone |
+| EW2, DuckDB nullable nested columns and selection | Distinguish logical extent, valid payload, nested intervals, and selected row mappings | Separate bitmap versus per-cell enum layout, copying, and vectorization costs; reused NULL bytes are not an initialization contract | Ground a later nullable-storage/relational-contract probe; first test a checked ordinary element form before requiring public library layout authority |
+| EW3, DuckDB string construction | Reserve, populate, then publish; inline short values coexist with stable long-string backing and retained references | Optimal inline threshold/chunk policy; cost of replacing pointers with handles | Keep destinations and stable backing separate; compare optional store forms while preserving construction and refusal order |
+| EW4, DuckDB grouped aggregation | Distinguish empty, reserved, and usable slots; preserve row references during pointer-table rehash; admit many-to-one group mappings | Need for pointer/salt packing versus a typed state sum; collision-dependent costs and complete failure recovery | Require reservation and target-alias contracts in a bounded map/scatter experiment; no automatic disjointness from distinct input indices |
+| EW5, Kubernetes indexed heap | Preserve map-domain/key-array correspondence and positions while heap order changes | Best map representation and the role of Go pointer/runtime conventions | Exercise compositional contracts through swap/update/remove helpers; neither stable array addresses nor a universal handle layer follows from key identity |
+| EW6, Kubernetes event history | Retire interior reader markers out of order and reclaim only history no remaining reader needs | List versus segmented-log costs; maximum retained history under slow readers | Compare stable-node and indexed-log ownership with the same ordering, repeated-finish, and reclamation contract; this is container evidence, not an I/O/runtime protocol change |
+
+None of these traces falsifies owned places as the current lowering foundation.
+They do prevent its address knowledge, the initial state-family list, or the
+finite range model from being treated as a complete library proof system. They
+also make the reconsideration condition concrete: if an ordinary checked form
+cannot preserve one of these frozen contracts, fix the owning semantic layer or
+reopen representation authority rather than adding a guard, hard cap, extra scan,
+or allocation that changes the contract. A more compact upstream layout alone is
+insufficient evidence that the alternative is required. These follow-up questions
+do not expand the current slice into six application ports.
+
+### Local capability witnesses and remaining gaps
+
 | Class | Complete trace to preserve | Local demand source |
 | --- | --- | --- |
 | Tiny temporary sequences | Empty, a few inserts, occasional spill, helper transfer, clear and reuse | `compiler/src/lowering/builder.rs`: block successors and builder collections |
@@ -330,15 +391,17 @@ DMA mapping/coherence, general cancellation, arbitrary strided splitting, and
 concurrent reclamation remain boundary questions. Their possible future value is
 not a reason to add pinning, atomic metadata, or a registry to every container now.
 
-## What the existing implementation establishes
+## Baseline defects and current implementation boundary
 
 The following distinctions prevent an implementation gap from being mistaken for
 a language design result:
 
-1. **Confirmed implementation limitation:** forming an exclusive view of an inline
-   run reports `SemanticUnsupported::ExclusiveViewOverInlineRun`. The relevant path
-   is `compiler/src/semantic/check/expressions/flat_storage/slices.rs`. This is not a
-   proof that the source operation is semantically invalid. A minimal probe is:
+1. **Baseline implementation limitation, now a required positive:** forming an
+   exclusive view of an inline run reported
+   `SemanticUnsupported::ExclusiveViewOverInlineRun`. It was not a source-language
+   rejection. The in-progress implementation now compiles and executes the
+   mandatory inline-view probe; that closes this particular capability stop, not
+   the complete storage/lifetime work. The minimal source form is:
 
    ```whitefoot
    command fn main() -> status: own ExitStatus pure {
@@ -353,8 +416,8 @@ a language design result:
    }
    ```
 
-2. **Confirmed lowering concern:** `compiler/src/backend/emitter/runs.rs` represents
-   inline runs as aggregates and stages whole values through storage slots around
+2. **Confirmed baseline lowering concern:** inline-run emission represented
+   runs as aggregates and staged whole values through storage slots around
    element operations. A 4096-byte fill probe retained whole-aggregate work inside
    its loop after local Apple Clang 21 `-O2` lowering. This establishes a problematic
    machine shape for that probe, not a portable timing result. By-value source
@@ -461,5 +524,7 @@ tests because binding a local socket was prohibited; 66 other program tests pass
 The unchanged canonical `make check` then passed with loopback permission, including
 the compiler and research checks, the full native conformance adapter (730 passed,
 3 skipped), and the snapshot corpus (484 passed, no flips). No test was weakened or
-removed to obtain this result. This completes the experiment and selection goal;
-production implementation has not begun, and no main merge is proposed here.
+removed to obtain this result. Those counts establish the pre-implementation
+experiment and selection revision. Implementation is now in progress; the
+capability checkpoint above is not a full gate run or final performance result for
+the modified worktree. No main merge is proposed here.

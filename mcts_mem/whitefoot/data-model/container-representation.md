@@ -20,12 +20,13 @@
   from a fact that a fixed-capacity type already preserves. Do not infer that
   dynamic capacities or graph relations can always be reduced to constants.
 - Treat current Whitefoot tests and small programs as capability/cost witnesses,
-  not evidence of production workload distribution. Ground prevalence and broader
-  demand priorities in an explicit cross-domain sample of established C++, Rust,
-  and Go applications. Distinguish static use sites from measured execution,
-  sizes, allocations, and lifetimes, and retain the corpus and language biases.
-  Translate external requirements into Whitefoot probes without treating either
-  a library API or a successful probe as a representative demand distribution.
+  not evidence of production workload distribution. Use an explicit cross-domain
+  source sample of established applications to recover candidate needs; prevalence
+  and hot-path priorities require representative runtime evidence. Distinguish
+  static use sites from measured execution, sizes, allocations, and lifetimes, and
+  retain corpus and language biases. Translate external requirements into
+  Whitefoot probes without treating a library API, a qualitative source sample,
+  or a successful probe as a representative demand distribution.
 - Infer the need behind an external representation: separate semantic and
   measured cost constraints from language/library workarounds, compatibility,
   and history. Ask what survives without those expression limits. Preserve actual
@@ -33,6 +34,18 @@
   validate its advantage rather than assuming static proof removes every cost.
   Mixed or unknown causes stay explicit, and cross-language frequency is not
   proof that a representation is necessary.
+- Keep physical capacity, initialized payload, logical membership, NULL validity,
+  selection mappings, and reserved/ready states distinct. A known address or
+  distinct input index is not permission to read a payload or proof of distinct
+  mutable targets. Nullable columns and many-to-one aggregation supply concrete
+  pressure beyond a universal prefix/window model; they do not by themselves
+  select bitmap storage, packed pointers, or a new public proof framework.
+- Preserve composed relations through library operations: map/array correspondence
+  during heap repair, reservation accounting before row publication, and the
+  oldest remaining reader's reclamation boundary. Stable keys, stable addresses,
+  and collection positions are different choices. A source representation's
+  convenience under GC or unchecked pointers is not evidence that every
+  Whitefoot container needs handles or stable backing.
 - A checked empty run may discharge its own backing responsibility after every
   element obligation is gone, with the provider and loan rules still satisfied.
   Emptiness of a field does not discharge an independently declared linear wrapper.
@@ -59,7 +72,8 @@
   requirements and implementation failures, not how often workloads occur. No
   external C++/Rust/Go distribution study was performed; production prevalence
   remains unmeasured. The general storage foundation has witness-based support,
-  while broader container prioritization needs external demand evidence.
+  while the subsequent qualitative external sample supplies additional needs
+  without measuring their prevalence or runtime importance.
   External forms are themselves constrained by their languages; the owner requires
   recovering underlying needs rather than treating observed forms as requirements.
 - 2026-09-06 selection ground: main's `existence-only` correction separates a
@@ -71,12 +85,30 @@
   [the container assessment](../../../research/investigations/containers-and-resources/REASSESSMENT.md).
 - 2026-09-06 measurement: on one arm64 macOS/Clang 21 run, the dense construction
   plus four-update trace at 16/256/4096 `u64` elements measured approximately
-  408 ns/176 us/43.9 ms in the existing compiler versus 65 ns/1.50 us/29.7 us in
-  the same-layout native local-build/value-return control. Retained whole-payload
-  transfers explain an adverse work shape; at 4096 elements the Whitefoot entry
+  408 ns/176 us/43.9 ms in the examined compiler baseline versus
+  65 ns/1.50 us/29.7 us in the same-layout native local-build/value-return control.
+  Retained whole-payload transfers explain an adverse work shape; at 4096 elements the Whitefoot entry
   and its constructor have simultaneous static frames totaling 229,648 bytes,
   excluding platform helpers. This is a workload result, not a general language
   ranking. [Sources, 168 raw samples, controls, and limits](../../../research/experiments/container-representation/dense/RESULTS.md).
+- 2026-09-06 external evidence: six complete source traces cover ripgrep 14.1.1
+  (Rust/text search, `4649aa9700619f94cf9c66876e9549d83420e16c`), DuckDB v1.2.0
+  (C++/analytical execution, `5f5512b827df6397afd31daedb4bbdee76520019`), and
+  Kubernetes v1.32.0 (Go/scheduler state,
+  `70d3cc986aa8221cd1dfb1121852688902d3bf53`). The sample recovers retained windows,
+  nullable nested payloads and selections, stable/inline strings, sparse aggregate
+  reservations, indexed heap correspondence, and out-of-order reader retirement.
+  Multiple traces from one application are correlated evidence. No upstream
+  timings, allocation profiles, or prevalence measurements were performed.
+  [Pinned sources, traces, alternative hypotheses, and unknowns](../../../research/investigations/containers-and-resources/EXTERNAL-WORKLOADS.md).
+- 2026-09-06 external interpretation: the sample does not falsify owned places or
+  value semantics. It requires distinguishing location from initialization and
+  access authority, and it gives concrete relational workloads for reconsidering
+  the initial state families and eventual checked-library authority. Whether a
+  separate NULL bitmap, pointer/salt packing, stable list, or particular growth
+  factor is necessary for a frozen cost contract remains unmeasured. Safe enum,
+  ordinary collection, or indexed-log alternatives are hypotheses until checked
+  against the same behavior, failure, lifetime, and resource obligations.
 - 2026-09-06 control: native whole-value append also retains copies, whereas a
   separate noinline aggregate-return control writes directly to a caller's `sret`
   destination. Value semantics and physical aggregate copies are distinct; the
@@ -102,6 +134,12 @@
   `0101` separating state. An executable near-neighbor check corrected the paper
   claim. Cross-review also strengthened the model's independent oracle to retain
   the obligation count from trace entry instead of recomputing it before cleanup.
+- 2026-09-06 implementation checkpoint: the in-progress worktree passes the frozen
+  scalar correctness matrix and mandatory wide-record/inline-view execution
+  probes. This closes their specific baseline capability stops, not the whole
+  implementation slice. The previous 168 timing samples remain baseline evidence;
+  this checkpoint supplies neither final performance nor a full repository gate
+  for the modified tree. [Current implementation boundary](../../../research/investigations/containers-and-resources/REASSESSMENT.md#first-implementation-scope-and-completion-evidence).
 
 ## Moves
 
@@ -121,3 +159,11 @@
   the selected states, or a complete checked alternative demonstrates a better
   form. Minimal operation count, a successful workaround that changes the contract,
   and majority agreement among reviewers are not selection evidence.
+- Made the reconsideration questions concrete with the external traces: compare
+  ordinary nullable elements against separate validity/payload storage, require
+  helper-preserved index/reservation relations, and compare stable nodes with a
+  segmented history while preserving oldest-reader reclamation. These select
+  later bounded experiments; they do not require six application ports or change
+  the first slice into a universal storage proof framework. Reopen the owning
+  layer if the checked ordinary form breaks the frozen contract, rather than
+  hiding the gap with a guard, hard cap, extra scan, or extra allocation.
