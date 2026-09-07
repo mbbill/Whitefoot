@@ -90,8 +90,14 @@ OUT=$(cd "$OUT" && pwd)
 
 read_topology() {
     local topology=${1:-$OUT/topology.csv}
+    # Only capacity admission compares IDs with sysfs. lscpu's default
+    # topology IDs are logical renumberings; --physical keeps kernel IDs.
     allowed=$(awk '/Cpus_allowed_list:/ { print $2 }' /proc/self/status)
-    lscpu -b -p=CPU,CORE,SOCKET > "$topology"
+    if [[ $CLIENT_CAPACITY == 1 ]]; then
+        lscpu -b --physical -p=CPU,CORE,SOCKET > "$topology"
+    else
+        lscpu -b -p=CPU,CORE,SOCKET > "$topology"
+    fi
     mapfile -t physical_groups < <(awk -F, -v allowed="$allowed" '
         BEGIN { n=split(allowed,a,","); for(i=1;i<=n;i++) { m=split(a[i],b,"-");
           for(j=b[1]+0;j<=(m==1 ? b[1]+0 : b[2]+0);j++) available[j]=1; } }
@@ -117,6 +123,8 @@ capacity_admission() {
     cat /proc/self/cgroup
     getconf PAGESIZE
     [[ $(uname -m) == aarch64 ]] || { echo 'capacity requires native Linux AArch64' >&2; return 2; }
+    lscpu --version
+    printf 'topology_ids=kernel-physical cpu_ids=logical\n'
     read_topology "$topology"
     cat "$topology"
     [[ ${#physical_groups[@]} -ge 4 ]] || { echo 'capacity requires four allowed reported physical cores' >&2; return 2; }
@@ -134,7 +142,11 @@ capacity_admission() {
         keys+="$key,"
         awk -F, -v cpu="$cpu" -v package="$package" -v core="$core" '
             !/^#/ && $1==cpu {found++; if($2!=core || $3!=package) bad=1}
-            END {exit !(found==1 && !bad)}' "$topology" || return 2
+            END {exit !(found==1 && !bad)}' "$topology" || {
+            printf 'capacity physical topology mismatch: cpu=%s sysfs_package=%s sysfs_core=%s lscpu_rows=' "$cpu" "$package" "$core" >&2
+            awk -F, -v cpu="$cpu" '!/^#/ && $1==cpu {printf "%s;",$0} END {print ""}' "$topology" >&2
+            return 2
+        }
         siblings=$(expand_cpu_list "$siblings")
         printf 'cpu=%s package=%s core=%s siblings=%s\n' "$cpu" "$package" "$core" "$siblings" >> "$selection"
         siblings=",$siblings,"

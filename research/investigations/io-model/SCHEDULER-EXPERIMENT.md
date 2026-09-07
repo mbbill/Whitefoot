@@ -8339,7 +8339,7 @@ The existing `scheduler-bench.sh` harness, reached through
 [standard runner documentation](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
 advertises four vCPUs for public `ubuntu-24.04-arm` runners. That is an
 availability hypothesis: the harness requires native AArch64, four allowed
-reported package/core pairs, matching `lscpu` and sysfs identities, each CPU in
+reported package/core pairs, matching `lscpu --physical` and sysfs identities, each CPU in
 its own sibling list, and no selected CPUs sharing a sibling list. It records
 all allowed topology, selected sibling lists, page size, image/kernel/tool
 versions, cgroup-v2 ancestry, effective cpusets, quota and throttling counters.
@@ -8435,3 +8435,39 @@ target. `make static` and patch checks pass. These local checks use filesystem
 shims for Linux admission and do not execute the Linux ELF files. Native ARM
 qualification, real topology/socket/ring behavior and performance remain
 pending; no complete gate or server-capacity result is claimed.
+
+### First ARM admission: f2e0f460
+
+The frozen `f2e0f460b86c66c31098b0f1c1b8ae2077bf79e1` allocator job
+`101726879322` in run
+[34117260936](https://github.com/mbbill/Whitefoot/actions/runs/34117260936)
+failed before compilation or runtime qualification. Artifact `10016763576`
+contains four admission files (1,123-byte ZIP, SHA-256
+`b4106dcb17fb7062b49e253acaf093013adbc30372790371f10387113616e3bf`).
+The guest reports AArch64, Linux `6.17.0-1022-azure`, image
+`20260831.111.1`, 4 KiB pages and allowed CPUs 0..3. The retained default
+`lscpu -b -p=CPU,CORE,SOCKET` rows are `0,0,0` through `3,3,0`, while the
+first sysfs read reports CPU 0 as package 36/core 1, siblings `0`. The equality
+guard returns status 2 at that first comparison; its stderr was empty.
+Replaying the captured table and first CPU's fields through the frozen
+admission source reproduces this exact stopping point. No later CPU's raw
+IDs, quota checks, io_uring qualification or performance samples were captured.
+
+This comparison mixed two ID namespaces. The
+[util-linux manual](https://man7.org/linux/man-pages/man1/lscpu.1.html)
+defines `--physical`/`-y` as selecting kernel-provided topology IDs while
+leaving CPU logical numbers unchanged. The
+[upstream implementation](https://github.com/util-linux/util-linux/blob/v2.39.3/sys-utils/lscpu.c)
+uses `__fill_id` to choose between those IDs and logical topology-map indices.
+Thus the retained mismatch exposes an admission implementation error; it
+does not show shared physical cores. It also cannot establish that all four
+raw pairs will qualify on this or the next guest.
+
+The correction requests `--physical` only for the capacity panel, retaining
+strict raw package/core equality, composite pair uniqueness, complete sibling
+disjointness, quota checks and initial/final snapshots. Earlier panels keep
+their original logical grouping. Admission now records the `lscpu` version
+and ID mode before reading topology, and a mismatch names the CPU, expected
+sysfs package/core and actual table rows. There is no fallback from missing or
+inconsistent physical IDs. Synthetic sparse-ID cases exercise this distinction;
+the corrected native ARM qualification and timing remain pending.

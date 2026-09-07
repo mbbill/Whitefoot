@@ -333,7 +333,9 @@ the evidence boundaries are in
 
 `make scheduler-client-capacity` runs the bounded Linux AArch64 client-capacity
 screen. It requires four allowed, distinct reported package/core IDs with
-disjoint sibling lists and enough visible CPU quota; the CI route uses
+disjoint sibling lists and enough visible CPU quota. Capacity admission uses
+`lscpu --physical` so topology IDs can be compared with sysfs without logical
+renumbering; other panels retain their existing grouping. The CI route uses
 `ubuntu-24.04-arm` and installs Clang 20 explicitly. One fixed server CPU
 serves the unchanged default/service0 client using pools of 1/2/3 workers on
 the other cores. Workers inherit the whole selected pool; they are not pinned
