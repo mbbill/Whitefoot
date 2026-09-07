@@ -4395,6 +4395,43 @@ Both observed buffer variants also cross-compile to Linux-musl objects with
 Zig 0.14 and strict C11 warnings; shell syntax, YAML, Make dry-run and diff
 checks pass locally.
 
+The separate Windows timing workflow at this revision did not qualify a
+measurement: [job 101619282069](https://github.com/mbbill/Whitefoot/actions/runs/34082126614/job/101619282069)
+stopped at `compute remained unstable after two complete cohorts`. Its Linux
+and macOS timing jobs passed. This is distinct from the passing Windows owner
+and completion correctness checks; no failed byte oracle or IOCP operation is
+reported by this timing failure. Both complete 15-pair raw compute cohorts
+remain in [artifact 10004121543](https://github.com/mbbill/Whitefoot/actions/runs/34082126614/artifacts/10004121543),
+SHA256 `db0637fb5a6099d6fff0521cb699c61991a62b5aa7ddf4333e15adc29eed5e33`.
+
+An independent branch revision `f0d633c1` encountered the same stability
+failure in [job 101621961875](https://github.com/mbbill/Whitefoot/actions/runs/34083089083/job/101621961875).
+Its [raw artifact 10004458999](https://github.com/mbbill/Whitefoot/actions/runs/34083089083/artifacts/10004458999)
+has SHA256 `b2cc4db261b0d8f3e0b25bc122b7cb4d788789d59b05d72ddb3e6620cac0fb6d`.
+Both report EPYC 7763, four logical processors, affinity `0xf`, four compute
+batches per child and Windows image `win25-vs2026 20260824.214.3`; this does
+not establish the same physical host. Recomputing each paired parallel/serial
+wall ratio reproduces the refusal to publish a stable table:
+
+| Revision, attempt | Median ratio | MAD / median | (p90 - p10) / median |
+| --- | ---: | ---: | ---: |
+| 475008b5, 1 | 0.2840 | 0.0372 | 0.1266 |
+| 475008b5, 2 | 0.2859 | 0.0077 | 0.1940 |
+| f0d633c1, 1 | 0.2935 | 0.0386 | 0.2536 |
+| f0d633c1, 2 | 0.2874 | 0.0349 | 0.4570 |
+
+Every cohort passes the 0.05 MAD limit but exceeds the 0.10 spread limit.
+Serial median wall time stays near 4.74 s; parallel medians are 1.35--1.39 s,
+with slow observations up to 1.82 s at `475008b5` and 2.09 s at `f0d633c1`.
+Parallel process CPU remains approximately 5.0--5.25 s even in these slow
+observations, while CPU/wall falls from roughly 3.8 to 2.5--2.8. This suggests
+lost parallel overlap or pauses rather than a large increase in total work.
+Aggregate process CPU cannot distinguish host descheduling from internal
+load imbalance or parking; per-thread/off-CPU evidence or a controlled host
+is needed before attributing the cause. The stability threshold is unchanged,
+and these unqualified cohorts are not performance evidence for a Windows
+continuation implementation.
+
 ### Native screen results at 475008b5
 
 [Run 34082126598](https://github.com/mbbill/Whitefoot/actions/runs/34082126598)
