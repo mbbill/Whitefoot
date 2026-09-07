@@ -733,6 +733,15 @@ eight captures. Reconstruct each workload thread's syscall intervals and
 their overlap with runnable off-CPU intervals before attributing the early
 utilization gap to a waiting policy or placement. No source, executable,
 worker budget or ordinary timing changes; tracing can perturb scheduling.
+Experiment 57's `codex/io-cpu-yield-callers` path additionally sets
+`CPU_YIELD_CALLER=1`, requiring yield syscall capture and an x86-64 host.
+An entry probe at `wf_prim_yield` records the return address from the first
+stack word. Its probe IP and retained ELF symbol/disassembly allow the audit
+to remove ASLR and identify the actual preceding call instruction. The eight
+captures keep the same hashed binaries and resource budget. Extra WF probes
+can affect scheduling and are not performance samples. Raw record dumps also
+check LOST, LOST_SAMPLES and throttle records. Caller/syscall/thread pairing
+and complete wait-path coverage must pass before drawing an attribution.
 
 `make mixed-rayon-check` qualifies the optional `mixed-rayon` binary in the
 same standalone crate. Its CLI is `mixed-rayon PORT CONNECTIONS --threads B

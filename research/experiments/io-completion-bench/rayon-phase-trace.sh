@@ -8,8 +8,17 @@ TRACE="$OUT/phase-trace"
 EXPECTED='420a993efa7437a1 41fa962893d45299'
 PERF=${PROFILE_PERF:-perf}
 CPU_YIELD_TRACE=${CPU_YIELD_TRACE:-0}
+CPU_YIELD_CALLER=${CPU_YIELD_CALLER:-0}
 [[ $CPU_YIELD_TRACE == 0 || $CPU_YIELD_TRACE == 1 ]] || {
     echo 'rayon-phase-trace: CPU_YIELD_TRACE must be 0 or 1' >&2
+    exit 2
+}
+[[ $CPU_YIELD_CALLER == 0 || $CPU_YIELD_CALLER == 1 ]] || {
+    echo 'rayon-phase-trace: CPU_YIELD_CALLER must be 0 or 1' >&2
+    exit 2
+}
+[[ $CPU_YIELD_CALLER == 0 || $CPU_YIELD_TRACE == 1 ]] || {
+    echo 'rayon-phase-trace: CPU_YIELD_CALLER requires CPU_YIELD_TRACE=1' >&2
     exit 2
 }
 mkdir -p "$TRACE"
@@ -23,6 +32,10 @@ incomplete() {
     exit 0
 }
 [[ $(uname -s) == Linux ]] || incomplete 'Linux tracepoints are unavailable on this host'
+if [[ $CPU_YIELD_CALLER == 1 ]]; then
+    [[ $(uname -m) == x86_64 ]] || incomplete 'yield caller capture requires the x86-64 entry stack convention'
+    command -v objdump > /dev/null || incomplete 'objdump is unavailable for caller attribution'
+fi
 command -v "$PERF" > /dev/null || incomplete 'perf executable is unavailable'
 sudo -n true || incomplete 'noninteractive privileged recording is unavailable'
 trace_root=''
@@ -41,6 +54,8 @@ done
     printf 'probe_kind=entry only; no return probes, recursive layout probes or compute-join probes\n'
     printf 'write_filter=per-event --exclude-perf; global scheduler events retained\n'
     printf 'yield_syscalls=%s; paired enter/exit records, no call stacks\n' "$CPU_YIELD_TRACE"
+    printf 'yield_caller=%s; entry stack word and probe IP, no return probe\n' "$CPU_YIELD_CALLER"
+    if [[ $CPU_YIELD_CALLER == 1 ]]; then objdump --version; fi
     printf 'attribution=observed intervals only; syscall tracing may change scheduling\n'
     cat /proc/sys/kernel/perf_event_paranoid /proc/sys/kernel/kptr_restrict
 } > "$TRACE/host.txt"
@@ -95,6 +110,28 @@ for tag in ordinary lanes seq; do
         event_args+=(-e "$group:$event")
         sudo -n cat "$trace_root/events/$group/$event/format" > "$TRACE/$event.format"
     done
+    if [[ $CPU_YIELD_CALLER == 1 ]]; then
+        # At the exact x86-64 function entry, stack0 is the caller's return
+        # address. The event's implicit probe IP supplies the same-image ASLR
+        # base: caller - probe_ip + ELF(wf_prim_yield). Retain the full
+        # disassembly so the audit can require an actual preceding call and
+        # distinguish multiple waits in the same function. This adds one
+        # uprobe per WF yield and can perturb scheduling; it is not a timing.
+        awk '$3=="wf_prim_yield" {seen++} END {exit seen!=1}' "$TRACE/$tag.symbols" || \
+            incomplete "missing or ambiguous yield symbol for $tag"
+        objdump -f "$binary" > "$TRACE/$tag.elf"
+        grep -Fq 'file format elf64-x86-64' "$TRACE/$tag.elf" || \
+            incomplete "yield caller capture requires x86-64 ELF for $tag"
+        objdump -d "$binary" > "$TRACE/$tag.disassembly"
+        event="${tag}_yield_caller"
+        if ! sudo -n "$PERF" probe -x "$binary" \
+            --add "$group:$event=wf_prim_yield+0 caller=\$stack0:x64" \
+            >> "$TRACE/probe-registration.log" 2>&1; then
+            incomplete "yield caller probe registration failed for $tag"
+        fi
+        event_args+=(-e "$group:$event")
+        sudo -n cat "$trace_root/events/$group/$event/format" > "$TRACE/$event.format"
+    fi
 done
 sudo -n cat "$trace_root/uprobe_events" | awk -v group="$group/" 'index($1,group)>0' > "$TRACE/registered-probes.txt"
 printf 'probe_group=%s\n' "$group" >> "$TRACE/host.txt"
@@ -157,6 +194,17 @@ for pass in 0 1; do
             incomplete "loss/throttling marker in p$pass-$tag"
         fi
         [[ -s $record.samples && ! -s $record.script.err ]] || incomplete "empty or errored decode in p$pass-$tag"
+        if [[ $CPU_YIELD_CALLER == 1 ]]; then
+            # Raw records expose LOST_SAMPLES and throttling even when the
+            # ordinary event rendering does not print a corresponding line.
+            if ! "$PERF" script -D -i "$record.data" > "$record.raw" 2> "$record.raw.err"; then
+                incomplete "raw record decode failed for p$pass-$tag"
+            fi
+            [[ -s $record.raw && ! -s $record.raw.err ]] || incomplete "empty or errored raw decode in p$pass-$tag"
+            if grep -E 'PERF_RECORD_(LOST|THROTTLE|UNTHROTTLE)' "$record.raw" >> "$record.loss.txt"; then
+                incomplete "raw loss/throttling record in p$pass-$tag"
+            fi
+        fi
         child=$(cat "$record.child.pid")
         runner=$(cat "$record.runner.pid")
         recorder=$(cat "$record.recorder.pid")

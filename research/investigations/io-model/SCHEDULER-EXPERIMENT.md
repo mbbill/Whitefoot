@@ -7768,3 +7768,57 @@ Synthetic decoder-output checks separately verify the status policy for clean,
 lost, throttled, failed-decode, unknown-symbol, user-only and mismatched-sample
 captures while preserving the preceding observation table. Invalid diagnostic
 mode/experiment combinations fail at preflight; no timing threshold changes.
+
+## 57. Locate the yield wait path in the same CPU executables
+
+Experiment 55 places about 90% of the captured early WF runnable off-CPU
+time inside explicit yields. A yield while awaiting a completing record is
+different from a yield after an empty work search or during pool startup.
+Changing their shared primitive before identifying the path would combine
+different hypotheses. The next capture adds caller identity to the same
+frozen executables, without rebuilding the workload or changing placement.
+
+The `codex/io-cpu-yield-callers` CI route restores the same six SHA-verified
+files through artifact 10009398989. It runs the same four forms in two
+opposite orders with `CPU_YIELD_TRACE=1 CPU_YIELD_CALLER=1`. The latter adds
+one entry uprobe at `wf_prim_yield` in each WF executable. On these x86-64
+ELFs its first instruction jumps to libc's yield entry; no prologue has
+changed the caller's stack. The probe records `$stack0:x64`, the return
+address, alongside the event's implicit probe instruction pointer. This
+uses the documented [Linux uprobe fetch argument interface](https://www.kernel.org/doc/html/latest/trace/uprobetracer.html).
+Other host architectures are explicitly incomplete for this experiment.
+
+Each event's return address is normalized within its own image as
+`caller - probe_ip + ELF(wf_prim_yield)`. The audit must match that address to
+the instruction immediately after a real call to `wf_prim_yield`, not merely
+the nearest function name. The retained ordinary and used-lanes binaries
+have these return sites, verified by local LLVM disassembly:
+
+| Wait path | Ordinary return offset | Used-lanes return offset |
+| --- | --- | --- |
+| Join sees COMPLETING | `0x485c` | `0x485c` |
+| Compute join exhausted targets and finds no work/progress | `0x4a66` | `0x4a66` |
+| Park handshake sees COMPLETING | `0x4b8d` | `0x4b8d` |
+| Idle scan's yield rounds | `0x4df5` | `0x4df5` |
+| Generic once wait | `0x6362` | `0x6382` |
+| Worker-start once wait, inlined into lane acquisition | `0x663a` | `0x665a` |
+| Worker-ready rendezvous | `0x66d5` | `0x66f5` |
+| Completion bridge join sees COMPLETING | `0x8be5` | `0x8c05` |
+
+Full native disassembly, symbols, ELF segments and event schemas accompany
+the raw captures. The normal decoded events still include scheduler states,
+yield entry/exit, process membership, output milestones and successful reap.
+A separate raw-record decode checks LOST, LOST_SAMPLES and throttle records;
+decode errors retain explicit incomplete status. The final attribution must
+pair each caller event with its own thread's next yield entry and successful
+exit, reject missing/duplicate/faulted or unmapped records, and intersect
+those intervals with the already-required complete scheduler timeline.
+An absent yield in a control is a possible result, not a required probe hit.
+
+The additional traps affect WF and may change its scheduling. This is a
+wait-path diagnostic, not another ordinary timing panel or a measurement of
+the earlier host's exact deficit. It does not yet observe whether useful
+work is available during a wait. No waiting policy, affinity, runtime ABI,
+source effect or compiler default changes here. A native capture and complete
+caller/timeline audit remain required before selecting a targeted backoff or
+placement comparison.
