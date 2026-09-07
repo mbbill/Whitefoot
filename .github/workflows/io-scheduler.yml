@@ -321,7 +321,10 @@ jobs:
         if: github.ref == 'refs/heads/codex/io-compute-profile'
         run: |
           sudo apt-get install -y --no-install-recommends linux-tools-generic-hwe-24.04
-          perf_binary=$(dpkg-query -L 'linux-tools-*' | awk '/^\/usr\/lib\/.*\/perf$/ {print}' | sort -V | tail -1)
+          mapfile -t perf_packages < <(dpkg-query -W -f='${binary:Package}\t${db:Status-Status}\n' |
+            awk '$2=="installed" && $1 ~ /^linux-.*tools/ {print $1}')
+          test "${#perf_packages[@]}" -gt 0
+          perf_binary=$(dpkg-query -L "${perf_packages[@]}" | awk '/^\/usr\/lib\/.*\/perf$/ {print}' | sort -V | tail -1)
           test -x "$perf_binary"
           "$perf_binary" --version
           echo "PROFILE_PERF=$perf_binary" >> "$GITHUB_ENV"

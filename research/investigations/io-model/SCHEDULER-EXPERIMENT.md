@@ -5021,3 +5021,11 @@ policy. The next policy change should follow the observed source of lost
 overlap, then receive independent uninstrumented confirmation against both
 the retained WF form and Rayon. Retire this optional capture mode when that
 question has a measured answer.
+
+The first CI attempt at `caafda17`
+([job 101629327356](https://github.com/mbbill/Whitefoot/actions/runs/34085744798/job/101629327356))
+installs perf 7.0's packages but stops before compiling or measuring: unlike
+the package-list query, `dpkg-query -L` rejects a package-name wildcard.
+The follow-up enumerates installed Linux tools packages first, then queries
+those exact names, including the HWE package that owns the executable.
+No workload verdict, measurement threshold or capture option changes.
