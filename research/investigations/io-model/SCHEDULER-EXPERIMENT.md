@@ -5958,6 +5958,107 @@ All eight strict Linux-musl size/send/observation builds pass locally. For
 each of the four normal builds, optimized LLVM IR is identical before and
 after these counters once source-file identity is excluded and debug info is
 disabled. Shell parsing, Make dry-run, YAML parsing and diff checks pass.
-Native execution and the diagnostic records are pending on the independent
-`codex/io-uring-aggregation-diagnostic` branch; measured remote `0ebe924b`
-remains unchanged.
+The native run and audit below complete this bounded diagnostic on the
+independent `codex/io-uring-aggregation-diagnostic` branch; measured remote
+`0ebe924b` remains unchanged.
+
+The exact measured revision is
+[`f6ff40f740b90fbe5e8d25a0352d4dfce9257cbc`](https://github.com/mbbill/Whitefoot/commit/f6ff40f740b90fbe5e8d25a0352d4dfce9257cbc).
+[Run 34088489262](https://github.com/mbbill/Whitefoot/actions/runs/34088489262),
+measure job 101637039662, succeeds. Artifact `10006491666`
+(`io-scheduler-allocator`) has SHA-256
+`9955f1598c320b53ae8845a60ee1d8ff9f0951569fb08ff2a073b1c733f5db18`.
+Its twelve metadata rows, twelve counter rows, all per-pass raw observer/client
+files and resource records were reconciled. All have exactly 32,000 completed
+round trips and the required byte totals. The measured host is an EPYC 9V74 VM,
+Linux 6.17.0-1022-azure, Clang 20.1.2, glibc 2.39. Topology identifies CPU 0
+(server) and CPU 2 (client) as different physical cores; each side has one
+worker and one permitted logical CPU. SQPOLL remains excluded, THP disabled
+and allocator top padding zero. Every observed server reports 4,096 ring
+entries and exactly 2 MiB of provided payload storage: 256 × 8 KiB or
+32 × 64 KiB. This is a new VM cohort; the matching processor model does not
+make it pairable with experiment38.
+
+The measure job also passes all eight native ASan/UBSan stream configurations
+and their counter checks. The pressured inline tests actually encounter short
+sends and EAGAIN before successful ring fallback; all four-connection streams
+retain the complete 8 MiB byte oracle. These are separate from the unpressured
+echo diagnostic below, where neither inline policy needs fallback. Linux and
+Windows completion-host qualification also passes at this revision. Both
+canonical scheduler jobs pass, including Linux job 101637040328 in
+[gate run 34088489263](https://github.com/mbbill/Whitefoot/actions/runs/34088489263).
+Two unrelated gate jobs remain queued when these results are recorded; this
+is not a claim that the entire gate has completed.
+
+The following are the **twelve raw counter records**, with constant receive
+and send totals of 2,097,152,000 bytes per record omitted from the table.
+“Send CQEs” counts positive ring-send completions; receive counts likewise
+exclude terminal/error CQEs. Inline bytes are actual completed bytes, not the
+sum of requested suffixes. Queue depth counts owned queued buffers, including
+the prefix of any active send.
+
+| Pass | Form | Receive CQEs | Send CQEs | Inline calls | Inline bytes | Max queue | ENOBUFS CQEs |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 8 KiB ring | 256000 | 67602 | 0 | 0 | 8 | 59027 |
+| 0 | 8 KiB inline | 256000 | 0 | 256000 | 2097152000 | 1 | 0 |
+| 0 | 64 KiB ring | 42889 | 42889 | 0 | 0 | 2 | 6274 |
+| 0 | 64 KiB inline | 43389 | 0 | 43389 | 2097152000 | 1 | 0 |
+| 1 | 8 KiB ring | 256000 | 67657 | 0 | 0 | 8 | 59675 |
+| 1 | 8 KiB inline | 256000 | 0 | 256000 | 2097152000 | 1 | 0 |
+| 1 | 64 KiB ring | 44207 | 44206 | 0 | 0 | 3 | 1738 |
+| 1 | 64 KiB inline | 41778 | 0 | 41778 | 2097152000 | 1 | 0 |
+| 2 | 8 KiB ring | 256000 | 67640 | 0 | 0 | 8 | 58959 |
+| 2 | 8 KiB inline | 256000 | 0 | 256000 | 2097152000 | 1 | 0 |
+| 2 | 64 KiB ring | 38938 | 38937 | 0 | 0 | 3 | 18172 |
+| 2 | 64 KiB inline | 39869 | 0 | 39869 | 2097152000 | 1 | 0 |
+
+Every inline call succeeds completely: all six records have zero short sends,
+zero EAGAIN and zero ring fallback. Each has one requested iovec per inline
+call, and requested bytes equal actual bytes. Every pure-ring record also
+has requested bytes equal actual sent bytes and one positive send CQE per
+request; short-send retries do not explain its aggregation. The 8 KiB ring
+records each request 256,000 total iovecs. The 64 KiB ring records request
+42,889, 44,207 and 38,938 iovecs respectively.
+
+Derived values below are median [minimum, maximum] across the three records.
+A ring request is a send operation, not an individual submission syscall:
+multiple operations can share one `io_uring_enter` call.
+
+| Form | Received bytes / CQE | Actual bytes / send operation | Requested iovecs / send | Send operations / round trip |
+| --- | ---: | ---: | ---: | ---: |
+| 8 KiB ring | 8192 [8192, 8192] | 31005 [30997, 31022] | 3.7847 [3.7838, 3.7869] | 2.1138 [2.1126, 2.1143] |
+| 8 KiB inline | 8192 [8192, 8192] | 8192 [8192, 8192] | 1 [1, 1] | 8 [8, 8] |
+| 64 KiB ring | 48897 [47439, 53859] | 48897 [47440, 53860] | 1.00002 [1, 1.00003] | 1.3403 [1.2168, 1.3814] |
+| 64 KiB inline | 50198 [48334, 52601] | 50198 [48334, 52601] | 1 [1, 1] | 1.3056 [1.2459, 1.3559] |
+
+This establishes an application-level aggregation difference. Both 8 KiB
+forms receive exactly eight buffers per round trip. Pure ring's one pending
+send permits later receives to accumulate; subsequent vectored sends average
+3.785 buffers. Immediate success empties the queue on each receive, resulting
+in eight separate `sendmsg` calls per round trip. The inline/ring send-operation
+ratio is 3.7847 [3.7838, 3.7869]. It removes the ring-send CQEs and buffer
+exhaustion yet performs substantially more sends. For 64 KiB, each receive
+already carries roughly 47--54 kB, and both forms send almost every received
+buffer separately; the same aggregation penalty is absent. This supports a
+specific implementation mechanism, not a conclusion that immediate syscalls
+or io_uring are inherently unsuitable.
+
+The observed timing reproduces the large 8 KiB regression: median rate
+27,760 → 11,579 trips/s and process CPU 35.94 → 86.25 us/trip. Paired rate
+ratios are 0.4171 [0.4167, 0.4214], CPU ratios 2.400 [2.379, 2.400].
+64 KiB paired rate ratios span 0.9815--1.0324. These instrumented figures are
+context only, with three samples and process-lifetime centisecond CPU
+accounting; experiment38 retains the uninstrumented timing evidence.
+Client exchange CPU/wall is 0.884--0.886 for 8 KiB ring, 0.650--0.652 for
+8 KiB inline, and 0.987--1.000 across 64 KiB forms. Whole-client CPU saturation
+is therefore unsupported as the cause of this particular 8 KiB slowdown,
+while the 64 KiB cohort still cannot establish a server ceiling.
+
+The evidence counts **send operations, not TCP packets**, and does not assign
+the entire CPU difference to syscall entry cost: kernel transmission,
+packetization and scheduling effects remain unmeasured. A discriminating
+future implementation would defer an immediate send until a bounded completion
+batch has been collected, preserving stream ordering, short-send ownership
+and fairness without waiting for an application message boundary. It would
+need independent stream qualification followed by the same counters and
+uninstrumented comparisons. No default or such optimization is changed here.
