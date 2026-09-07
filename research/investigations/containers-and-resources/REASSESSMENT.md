@@ -901,7 +901,7 @@ the specified traversal, including enum payloads and partial-consume residuals;
 binding scope order remains STOR-3's reverse declaration order. The regression
 test keeps the normative expected trace. This is a compiler correction, not a
 specification or conformance-verdict amendment.
-Two ordinary semantic tests had encoded the same reversed field order; their
+Three ordinary semantic tests had encoded the same reversed field order; their
 expected paths now follow PROV-6, retaining their exact release counts and the
 separate assertion of reverse binding order. A native test that counted releases
 without observing their order no longer claims an order in its name or comments.

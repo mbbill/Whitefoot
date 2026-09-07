@@ -1021,9 +1021,11 @@ command fn main() -> status: own ExitStatus pure {
             panic!("take must return one ownership-consuming projection");
         };
         assert_eq!(residual_drops.len(), 3);
-        assert_eq!(residual_drops[0].fields, [2]);
+        // PROV-6 visits prefix, the surviving nested field, then suffix;
+        // the moved subtree contributes no release at any depth.
+        assert_eq!(residual_drops[0].fields, [0]);
         assert_eq!(residual_drops[1].fields, [1, 1]);
-        assert_eq!(residual_drops[2].fields, [0]);
+        assert_eq!(residual_drops[2].fields, [2]);
     });
 }
 
