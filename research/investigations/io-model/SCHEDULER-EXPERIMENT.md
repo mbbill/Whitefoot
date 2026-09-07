@@ -4453,6 +4453,38 @@ from its smaps. THP was disabled, huge pages and swap were zero, and the actual
 loader's top_pad readback was zero. These checks establish a complete screen,
 not absence of all environmental bottlenecks.
 
+The existing exchange-interval client CPU counters expose a material ceiling:
+`(client_exchange_user_us + client_exchange_system_us) / exchange_us` is near
+the full assigned client CPU budget in most occupied cells. The table uses
+the same fixed highest-native-median selections as the rate table below;
+values are CPU-seconds per exchange wall-second, median [minimum, maximum]
+across seven samples, not percentages of the whole machine.
+
+| Placement, peers × bytes | Native form | Client CPU / wall |
+| --- | --- | --- |
+| split1, 1 × 64 | epoll-calloc-main | 0.4820 [0.4794, 0.4865] |
+| split1, 4 × 64 | uring | 0.9972 [0.9950, 0.9976] |
+| split1, 64 × 64 | uring | 0.9999 [0.9999, 1.0000] |
+| split1, 64 × 65536 | cpp-elide | 0.9998 [0.9991, 0.9999] |
+| split1, 1024 × 64 | epoll-calloc-main | 0.9999 [0.9766, 0.9999] |
+| split2, 1 × 64 | fiber-calloc-main | 0.5016 [0.4903, 0.5176] |
+| split2, 4 × 64 | epoll | 1.3810 [1.0490, 1.8507] |
+| split2, 64 × 64 | uring | 1.9811 [1.8815, 1.9945] |
+| split2, 64 × 65536 | epoll | 1.9218 [1.7960, 1.9640] |
+| split2, 1024 × 64 | cpp-elide | 1.9158 [1.8240, 1.9421] |
+
+split1 assigns one client logical CPU; split2 assigns two and shares physical
+cores with the server. These samples have little client headroom, so close
+WF/native rates do not establish equal server saturation throughput. Client
+CPU alone does not prove it is the only bottleneck. In the occupied split1
+native selections, user CPU is only about 0.050--0.068 CPU and system CPU
+0.932--0.950; the existing client already precomputes echo payloads before
+connect, changes only the round byte, and verifies full responses with
+`memcmp`. A claim that repeated payload construction or a byte-at-a-time
+success-path verifier explains this ceiling would contradict the source.
+Experiment43 tests more client execution resources on its own physical core
+before attributing that ceiling to server code.
+
 Ratios below pair the same pass and cell. Values are median [minimum, maximum]
 across seven pairs; these ranges are not confidence intervals.
 
