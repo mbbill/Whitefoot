@@ -6887,9 +6887,79 @@ membership, consistent switch transitions, complete final X/Z events and a
 successful wait4 return naming the recorded child. The retained old record
 already exercises the new recorder-write detector, which finds all 335,616
 self-write events in pass 0 ordinary. A local selective extraction verified
-every fixed ZIP member/hash used by the new workflow; Linux capture remains
-the next qualification. The old contaminated trace and valid forty ordinary
-samples remain unchanged and separately linked above.
+every fixed ZIP member/hash used by the new workflow. The old contaminated
+trace and valid forty ordinary samples remain unchanged and separately
+linked above.
+
+### Corrected trace audit at c81ac477
+
+Frozen revision
+[`c81ac477261fa69065caba44a37c54f4258c6c6d`](https://github.com/mbbill/Whitefoot/commit/c81ac477261fa69065caba44a37c54f4258c6c6d)
+completes [run 34096629728](https://github.com/mbbill/Whitefoot/actions/runs/34096629728),
+CPU job 101661622687. Artifact `10009398989`, `io-cpu-phase-recheck`, has
+SHA-256 `f117d23ff93ed900b6418b677e76223318012b8a66866060eaaf5e9507b0a44a`.
+Independent audit rehashes all six replay files and reconciles all eight
+capture commands and timing rows. Every runner uses the expected checksum
+argument and emits only its single expected progress diagnostic. The pinned
+runner checks the checksum after trimming trailing CR/LF; these captures
+retain its summary, not a separate byte-exact workload stdout file.
+
+Each trace contains 1136-3587 records, with no recorder-issued write entry or
+exit events. Every script diagnostic and loss file is empty. There are no
+adjacent duplicate scheduler records, unlike four original captures. Exec
+and fork payloads identify four threads for each parallel WF process, one
+for sequential WF, and a caller plus four Rayon workers. Every expected WF
+entry probe appears once, except the run entry which appears once per
+computing thread. Switch payload TIDs, including negative-header records,
+reconstruct consistent running intervals and final X/Z switches for every
+thread. Each parent wait4 return names its exact child and follows all final
+thread switches. No duplicate folding or inferred missing exit is needed.
+
+The new host is an AMD EPYC 9V74 VM with Linux 6.17.0-1022-azure and perf
+7.0.14. All four logical CPUs are allowed, representing two SMT cores, with
+no per-worker pinning. This is a new hosted machine: the following probe
+intervals cannot be subtracted from experiment50's earlier ordinary samples
+to allocate that panel's gap. There are two opposite-order observations per
+form, not a new uninstrumented performance cohort.
+
+| WF form / pass | Init entry to first run ms | Body entry to output submission ms | Submission to post-status ms | Post-status to exit_group ms | exit_group to parent reap ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Ordinary / 0 | 1.689 | 313.012 | 0.211 | 0.028 | 0.701 |
+| Ordinary / 1 | 1.870 | 304.545 | 0.208 | 0.029 | 0.647 |
+| Used-lanes / 0 | 0.701 | 306.825 | 0.199 | 0.044 | 0.541 |
+| Used-lanes / 1 | 0.646 | 307.667 | 0.211 | 0.031 | 0.568 |
+| Sequential / 0 | 1.682 | 1026.135 | 0.221 | 0.067 | 0.454 |
+| Sequential / 1 | 1.776 | 1027.951 | 0.210 | 0.072 | 0.455 |
+
+Here ordinary WF exec-to-exit intervals are 315.328/307.068 ms, used-lanes
+308.170/308.908 ms, and Rayon 276.311/277.293 ms. Aggregate running intervals
+through reap are about 1119.7/1120.9 ms for ordinary WF and 1093.9/1094.8 ms
+for Rayon. The observed short-run difference lies overwhelmingly inside
+the source-body interval, not a long initializer or an unobserved process
+teardown. Neither a 1-2 ms initializer nor a sub-millisecond exit/reap
+interval accounts for tens of milliseconds in these captures. The ordinary
+used-lanes gain still changes sign between observations, consistent with
+the negative ordinary-timing result rather than a default selection.
+
+A further scheduler-interval audit narrows the next question. In the first
+100 ms after exec, ordinary WF accumulates 273.5/295.6 ms of group running
+time, and used-lanes 288.7/293.6 ms. Rayon accumulates about 393.2/397.0 ms
+(including its mostly sleeping caller). Most early WF 10 ms windows thus
+use about three logical CPUs, then approach four after roughly 100 ms;
+Rayon uses close to four from the start. WF's early off-CPU intervals are
+predominantly R-state switch-outs. Individual WF threads accrue 58.5-67.7 ms
+of runnable off-CPU time in that first 100 ms, often switching away from
+and returning to the same CPU. Sleeping intervals are much smaller.
+
+This is occupancy evidence, not useful-compute attribution. R-state delay
+does not by itself distinguish kernel placement from an explicit
+`sched_yield`: the WF platform layer has yield calls, and this capture did
+not record those syscalls or per-thread affinity readbacks. It also does not
+show which ready task was locally available. A same-budget worker-placement
+control and yield attribution now address a more concrete hypothesis than
+another initializer/exit change. Keep the old trace rejection and forty
+ordinary samples; no runtime default or language design follows from two
+profiled timelines per form.
 
 
 ## Fifty-first experiment: compare Go buffer ownership
