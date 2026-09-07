@@ -7451,6 +7451,101 @@ native/helper qualification and performance remain pending on the isolated
 tradeoffs, multi-owner computation and fairness retain their earlier limits;
 even a lookup win would only identify another implementation cost.
 
+The frozen index source is `1192ef351cd22eff92ed07b0320543d44419f38e`.
+Its [Linux native/helper qualification](https://github.com/mbbill/Whitefoot/actions/runs/34099556884/job/101670620592)
+passes. Artifact `10010458552`, `completion-continuations`, has ZIP SHA-256
+`45f1532c4a7b31f3ed6780dad3082d44221547a29bf6cf220c36b7950223a546`.
+An independent raw-log audit checks all six exact bucket/progress settings,
+132 generated stream cases, six file-outcome suites, 36 mixed-protocol cases
+and twelve 640-case C++ nested loan fixtures. Mixed cases have balanced
+waiter registration/dequeue, exact task completion/retirement and matching
+native/helper routes; the C++ fixtures retain forced two-bucket collisions
+and exact heap/elided allocation/free counts. The separate Windows placement
+job also passes; it does not run generated WF continuation code. The timing
+panel below remains separate from qualification observations.
+
+### Frozen index performance result
+
+The same run's [measurement job 101670620437](https://github.com/mbbill/Whitefoot/actions/runs/34099556884/job/101670620437)
+passes. Artifact `10011087479`, `io-scheduler-allocator`, has ZIP SHA-256
+`be485fc5fc662da44d902ad1dcecb833c1bb855d87cfc8411a8714d220ad1e5b`.
+The host is EPYC 9V74, four logical CPUs/two SMT cores, Linux
+6.17.0-1022-azure, Clang 20.1.2 and glibc 2.39. Server CPU 0 and client
+CPU 2 belong to different physical cores. This is a different host from
+experiments48/53; compare forms within this panel instead of pooling rates.
+
+The independent audit verifies 455 ordinary rows, 65 complete seven-pass
+groups, exact alternating form and fixed case order, all raw client and
+process resource fields, trip counts, rate rounding intervals and empty
+ordinary output/diagnostic channels. It also verifies all 117 smaps sums,
+THP disabled, zero huge pages/swap and retained process affinity masks.
+Five frozen source hashes and four retained executable/IR hashes match.
+The artifact records the compiler executable's hash but does not retain that
+executable, so it is not independently rehashed here. ELF symbol tables
+confirm that all three lookup counters are absent from the ordinary binary
+and present in the observed binary. No counter-derived sample enters timing.
+
+The selected comparison holds owner progress and batch32 fixed. Rates and
+CPU values below are ordinary medians; each ratio is the median of seven
+same-pass index/one-bucket ratios, with the complete range in brackets.
+CPU is whole-process user+system time per round trip, including startup/drain.
+
+| Peers / bytes | One-bucket rate/s | Index rate/s | Paired rate ratio [min, max] | Paired CPU ratio [min, max] | Paired p99 ratio [min, max] |
+|---|---:|---:|---|---|---|
+| 1 / 64 | 35822.2 | 35770.2 | 1.000618 [0.987249, 1.005021] | 1.000000 [0.941176, 1.062500] | 1.000000 [0.923077, 1.027778] |
+| 4 / 64 | 134370.6 | 133846.1 | 0.997269 [0.964683, 1.013273] | 1.034483 [1.000000, 1.035714] | 1.000000 [0.956522, 1.073171] |
+| 64 / 64 | 147101.1 | 148657.2 | 1.009701 [1.005300, 1.014297] | 0.988506 [0.977011, 1.000000] | 0.978858 [0.950104, 1.008791] |
+| 1024 / 64 | 136268.4 | 139792.6 | 1.018090 [0.990758, 1.037157] | 0.980263 [0.961039, 1.006579] | 0.954892 [0.732471, 1.214468] |
+| 64 / 65536 | 42165.0 | 42721.7 | 1.005607 [0.957901, 1.077448] | 0.986667 [0.935897, 1.041667] | 0.998762 [0.920976, 1.514391] |
+
+At 64 small peers the approximately 1% rate improvement has the same sign
+in all seven pairs; median CPU falls 6.796875 to 6.718750 us/round trip.
+The 1024-peer median CPU falls 7.519531 to 7.275391 us, but paired rate,
+CPU and tail-latency ranges retain reversals. Low-peer and large-message
+cells do not establish a repeatable gain. Their negative pairs are retained.
+
+All fourteen separate continuation reports pass exact bucket/progress,
+balanced waiter, native route, ring submission/completion and task-retirement
+checks. The occupied batch32 observations explain what the index changes:
+
+| Peers | Buckets | Lookup calls | Visited nodes | Nodes/call | Maximum nodes | SQEs/nonempty kick |
+|---|---:|---:|---:|---:|---:|---:|
+| 64 | 1 | 256258 | 4677075 | 18.2514 | 64 | 31.5198 |
+| 64 | 1024 | 256258 | 134136 | 0.5234 | 2 | 31.6177 |
+| 1024 | 1 | 413698 | 11658924 | 28.1822 | 1024 | 27.9419 |
+| 1024 | 1024 | 413698 | 219886 | 0.5315 | 7 | 28.1641 |
+
+Visited nodes fall about 97.1%/98.1% while submission batching stays similar.
+Sub-unit nodes/call is valid because inline completion may find no registered
+waiter. These counts show elimination of lookup work, not proportional CPU
+or throughput savings. Hash collisions remain real in the measured index
+case; equality lookup and lifetime checks still complete correctly.
+
+The ordinary index's paired rate versus native `uring-64k` is 0.982409 at
+64 small peers and 1.004297 at 1024, both with ranges crossing one. Its paired
+CPU ratios are 1.048780 and 1.072464: native still does less measured CPU
+work. Versus native epoll the paired rates are 0.992218 and 0.976348.
+The stackful WF `callee-small` control also remains faster in these two
+cells (index/callee 0.980513 and 0.963978). Thus a narrow near-tie with one
+native form is not a frontier result.
+
+The client complicates that comparison: at 64 small peers the index,
+one-bucket batch32, stackful WF and fast native controls all use approximately
+one client CPU. At 1024 small peers index uses 0.979 CPU/wall and native
+epoll 0.984. Large native forms are again near one client CPU, while the
+index's median is 0.919; server-specific transfer behavior can expose
+different limiting work even for the same client. A faster or independently
+scaled client is still required before treating clustered rates as server
+ceilings. The complete large-message spread remains in the raw artifact.
+
+Median live RSS at 64-small/1024-small/64-large peers is 3108/12512/5456 KiB
+for one-bucket batch32 and 3112/12516/5040 KiB for the index. The small-message
+difference is one 4 KiB page; both settings already contain the same static
+8 KiB bucket array. Large-message page-touch variability is not evidence
+that hashing changes frame representation or buffer capacity. This screen
+supports a small lookup improvement under occupancy, not a default change
+or the conclusion that pending lookup explains the remaining native gap.
+
 ## 55. Attribute early runnable waits before changing CPU placement
 
 The corrected experiment50 traces show WF using roughly three logical CPUs
@@ -7495,5 +7590,61 @@ the next discriminating control is same-budget worker placement. If waits
 overlap yields, locate the runtime waiting path before selecting a replacement.
 
 Local checks cover shell/YAML syntax, branch selection, invalid mode rejection
-and restoring the exact six files from the retained ZIP. Actual yield event
-availability, capture balance and attribution remain Linux CI work.
+and restoring the exact six files from the retained ZIP. The Linux capture
+and independent attribution audit follow below.
+
+### Frozen yield attribution result
+
+Frozen revision `ab3879e99a0f9e3eb9e922acf1b487a6842bba9f` completed
+[Linux CPU capture job 101678868378](https://github.com/mbbill/Whitefoot/actions/runs/34102171268/job/101678868378).
+Artifact `10010930480`, `io-cpu-yield-attribution`, has ZIP SHA-256
+`18138d2e4417004ec596e206f9c99fc9b469f53fabe0b3dfa72973f8afd55b5d`.
+This host is AMD EPYC 7763, four logical CPUs on two SMT cores, Linux
+6.17.0-1022-azure and perf 7.0.14, with allowed CPUs 0..3. It is a different
+host from the c81 EPYC 9V74 capture; the six restored executable/IR hashes
+match exactly, while absolute times from the two hosts are not pooled.
+
+The independent audit accepts all eight complete streams: monotonically
+ordered timestamps, no duplicate scheduler records, no lost/throttled data,
+zero recorder write records, complete exec/fork thread sets, balanced running
+intervals, unique WF milestones, terminal thread states and exact successful
+parent reaps. Every workload yield entry has one matching zero-status exit;
+there are no censored or unmatched calls. The runner's exact checksum
+argument and sole expected stderr line are retained; as in experiment50,
+the runner validates output after trimming trailing CR/LF. Its summary is
+not a retained copy of workload stdout.
+
+These are sums across all workload threads during the first 100 ms after
+exec. CPU and off-CPU values are thread milliseconds, so four simultaneously
+running threads can contribute 400 ms. Rayon includes its mostly sleeping
+caller plus four workers; WF uses the main thread plus three workers.
+Yield count covers the complete process, while the other columns cover the
+first 100 ms only.
+
+| Form/pass | Yield calls | Running ms | R-state off-CPU ms | R-state ms inside a yield | Share inside yield |
+|---|---:|---:|---:|---:|---:|
+| Ordinary WF / 0 | 1131 | 286.277 | 94.678 | 85.665 | 90.48% |
+| Ordinary WF / 1 | 1165 | 291.437 | 93.964 | 84.897 | 90.35% |
+| Used lanes WF / 0 | 977 | 294.611 | 96.927 | 89.871 | 92.72% |
+| Used lanes WF / 1 | 770 | 291.642 | 101.443 | 90.979 | 89.68% |
+| Rayon / 0 | 32280 | 398.260 | 0.143 | 0.022 | 15.53% |
+| Rayon / 1 | 32142 | 396.819 | 1.040 | 0.932 | 89.60% |
+
+Sequential WF makes no yield calls. Across each WF body-to-output-submit
+interval, 89.22..90.53% of R-state off-CPU time lies inside an explicit
+yield. The longest ordinary-WF gaps are 2.99..4.55 ms on the same CPU, fully
+inside yield calls. Rayon's far larger number of yields mostly returns
+without descheduling; its small denominator makes the last percentage alone
+misleading. Removing yields based on their count is therefore not a justified
+optimization. In these captures it is the placement and duration of WF's
+yields that matter.
+
+The first-100-ms utilization deficit recurs with syscall observation, so
+the previous R-state gap is now associated with explicit yielding in a
+second host capture. This does not prove how much time a new waiting policy
+would recover: syscall trace overhead differs between executors, the kernel
+still chooses which thread runs after a yield, and neither ready-task
+availability nor the yielding call site was captured. The selected next
+control must locate the runtime wait path and distinguish per-worker
+placement from changing its backoff; changing initialization or source
+effects is not supported by this result. No runtime default is selected.
