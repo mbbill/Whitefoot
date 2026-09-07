@@ -131,6 +131,7 @@ research-tests:
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-baseline" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/rust-baseline/Cargo.toml
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-harness" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/harness/Cargo.toml
 	$(MAKE) -C research/experiments/io-completion-bench rayon-check RAYON_CARGO_TARGET="$(RESEARCH_CARGO_TARGET)/rayon-baseline"
+	$(MAKE) -C research/experiments/io-completion-bench mixed-rayon-check RAYON_CARGO_TARGET="$(RESEARCH_CARGO_TARGET)/rayon-baseline"
 
 # The experimental ready policies change scheduling only. Each still owes the
 # complete scheduler enumeration, independently of the performance readings.

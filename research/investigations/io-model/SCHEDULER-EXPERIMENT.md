@@ -5121,3 +5121,107 @@ also stops during setup: the package lists contain a Python module directory
 named `perf`, and an executable-bit test also accepts searchable directories.
 Tool discovery now requires a regular executable file. Neither failed
 setup produces workload measurements or profiling evidence.
+
+## Forty-second experiment: async TCP with bounded Rayon CPU offload
+
+The mixed reference is now an optional `mixed` feature and a separate
+`mixed-rayon` binary in the existing standalone Rayon crate. It serves the
+existing `compute_protocol.h` and `tcp_compute_server.wf` workload, without
+changing the CPU-only layout binary, compiler dependencies or WF semantics.
+This subsection owns the binary and `mixed-rayon-smoke.sh`; remove them when
+this comparison is superseded. No comparative mixed-load winner is selected
+by this implementation checkpoint.
+
+The reference uses a single
+[`Tokio current-thread runtime`](https://docs.rs/tokio/1.53.1/tokio/runtime/struct.Builder.html#method.new_current_thread)
+for nonblocking TCP I/O and B-1 Rayon workers for a total execution-thread
+budget B. The normal CLI is `mixed-rayon PORT CONNECTIONS --threads B
+[--queue Q]`, with B at least two and Q defaulting to 2*(B-1). The driver
+does not enter `ThreadPool::install`, execute a nonzero recurrence, call
+`spawn_blocking`, resolve DNS or perform blocking filesystem I/O. There is
+one async sequential request loop per accepted connection.
+
+Every request is the same 64 bytes: big-endian u64 seed and round count,
+followed by 48 ignored reserved bytes. Counts above 16777216 fail the
+protocol. The dependent rotate/XOR/wrapping multiply/add recurrence is
+sequential within a request. The 64-byte reply encodes the result's bits
+least-significant first. Only independent requests enter the CPU pool.
+Zero rounds return the seed directly and require no CPU-pool transfer;
+the implementation never examines connection identity or a known heavy-peer
+index to select execution behavior.
+
+For a nonzero request the handler asynchronously acquires one of Q
+[`Semaphore`](https://docs.rs/tokio/1.53.1/tokio/sync/struct.Semaphore.html)
+permits before submitting an owned Rayon job. Q counts queued plus executing
+CPU jobs, not merely workers. The job carries seed, count, a one-value
+oneshot sender and the permit; it retains no socket or buffer reference.
+Its result wakes the awaiting handler. The permit is released before any
+response write, so a slow receiver cannot reserve CPU admission indefinitely.
+The handler encodes and completely writes that result before reading another
+frame. There is at most one partial/full request, pending admission or pending
+reply per accepted connection; total handler storage is bounded by CONNECTIONS.
+Semaphore admission is FIFO; no strict global FIFO claim is made about
+Rayon's work scheduling.
+
+Reads retain an explicit cursor so frame-boundary EOF succeeds while a
+partial frame fails. A full frame followed by a write-half close is answered
+before EOF is consumed. Short writes use Tokio's `write_all`. Any protocol
+or I/O error stops new accepts even if fewer than CONNECTIONS peers arrived,
+aborts and joins the remaining handlers, and waits to acquire all Q permits
+before returning failure. Dropped receivers discard completed CPU values
+safely; jobs remain finite and release their permits. Dropping ThreadPool is
+not mistaken for a synchronous join. Normal completion waits for all accepted
+connections to finish. The admission and lifetime bounds hold for arbitrary
+valid seeds, counts and TCP segmentation, not just the load generator's shape.
+
+Tokio 1.53.1 is exactly pinned with rt/net/io-util/sync features; no macros,
+multithreaded Tokio scheduler or timer driver is requested. Socket2 0.6.5 is
+an optional direct dependency used only in tests for safe socket-buffer and
+RST configuration. The updated lock also records bytes 1.12.1, mio 1.2.3,
+libc 0.2.189, pin-project-lite 0.2.17 and their platform dependencies; the
+Rayon dependency versions from experiment 40 remain unchanged. Existing
+canonical fetch wiring fetches this lock once; all checks/builds remain
+locked and offline.
+
+`make mixed-rayon-check` is wired into canonical `research-tests`. The
+following local M1 checks passed with Rust 1.98.1, Apple Clang 21.0.0 and
+the optimized gate profile:
+
+| Qualification | Observed result |
+|---|---|
+| Three independently fixed C-oracle vectors, every request split at 1..63, coalesced frames and full-frame half close | Exact ordered response bits and final EOF |
+| B=2/Q=1 and B=4/Q=6, more heavy requests than CPU admission slots, each doing 16777216 real recurrence steps | Every CPU worker active, admission full, at least two waiting handlers; zero-round replies completed while all CPU workers were active |
+| Illegal count and truncated frame while another request computes, with fewer peers than planned CONNECTIONS | Failure stops admission, cancels handlers and drains CPU jobs |
+| TCP RST during a CPU job | I/O failure, no surviving admission permit or unfinished CPU job |
+| Forced 4096-byte socket buffers, 2048 pipelined replies and a receiver that initially does not read | Actual write future returned Pending; another connection completed, then every buffered reply drained correctly |
+| Existing external `stream_check` compute and truncated modes, total threads 2 and 4 | All four runs passed |
+| Formatting, all-feature clippy with denied warnings | Passed |
+
+The five Rust tests completed in approximately 0.20 seconds on the local
+host. Every server finish checks submitted=completed, zero active/inflight/
+waiting counts, restored permits, inflight peak at most Q and active peak
+at most B-1. The max-round seed-seven expected value
+`c39350d53d849e85` was computed independently using the existing C
+`compute_churn(7, COMPUTE_MAX_ROUNDS)` implementation before fixing the
+literal in the Rust protocol test. Qualification socket limits and atomic
+observers are not part of ordinary timing builds.
+
+`make mixed-rayon-smoke` is a separate Linux-only caller using unchanged
+`netload.c` with its service budget of eight. It performs four short
+qualifications: B=2/4, ordinary/observed binary, 16 admitted connections,
+1048576 heavy rounds on every fourth peer, and 100 planned light arrivals
+per second per other peer for 500 ms. Every planned request is drained and
+checked by netload's existing oracle. It records the ordinary output and
+resource figures separately from `mixed-observe` counters and requires
+observed light progress while all CPU workers are active. Host, toolchain,
+source/lock/binary hashes and output files remain in OUT. Its dedicated CI
+branch excludes the larger allocator and CPU-layout timing panels.
+
+Linux mixed qualification is pending at this local checkpoint. These small
+shared-host smoke samples, even after passing, are not a fair performance
+comparison: the client shares the unrestricted host CPU set and there is no
+independent tuning or confirmation cohort. The next comparison should freeze
+queue/driver settings, count the I/O thread within total budgets 2/4, give
+the client separately established CPU capacity, and compare paced light
+tails, heavy completions, drain and CPU/RSS against qualified native and WF
+forms. Alternative I/O backends and richer CPU tasks remain separate rows.

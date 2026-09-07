@@ -4,8 +4,23 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+[features]
+mixed = ["dep:tokio", "dep:socket2"]
+mixed-observe = ["mixed"]
+
+[[bin]]
+name = "whitefoot-rayon-baseline"
+path = "src/main.rs"
+
+[[bin]]
+name = "mixed-rayon"
+path = "src/mixed.rs"
+required-features = ["mixed"]
+
 [dependencies]
 rayon = "=1.12.0"
+tokio = { version = "=1.53.1", optional = true, features = ["rt", "net", "io-util", "sync"] }
+socket2 = { version = "=0.6.5", optional = true }
 
 [lints.rust]
 unsafe_code = "forbid"

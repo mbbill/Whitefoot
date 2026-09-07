@@ -155,7 +155,7 @@ WFC := $(ROOT)/compiler/target/gate/whitefootc
 
 # Independent CPU reference: no Rayon dependency enters the compiler crate.
 RAYON_CARGO_TARGET ?= $(WORK)/rayon-target
-.PHONY: rayon-check rayon-bench
+.PHONY: rayon-check rayon-bench mixed-rayon-check mixed-rayon-smoke
 rayon-check:
 	cargo fmt --manifest-path rayon-baseline/Cargo.toml -- --check
 	CARGO_TARGET_DIR="$(RAYON_CARGO_TARGET)" cargo test --profile gate --locked --offline --manifest-path rayon-baseline/Cargo.toml
@@ -163,6 +163,21 @@ rayon-check:
 
 rayon-bench: compiler rayon-check
 	ROOT="$(ROOT)" WFC="$(WFC)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" CARGO_TARGET_DIR="$(RAYON_CARGO_TARGET)" CLANG="$(CLANG)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" bash rayon-bench.sh
+
+# Optional mixed feature does not enter the CPU-only binary. Its correctness
+# includes real bounded-offload saturation and the existing external oracle.
+mixed-rayon-check: prepare
+	cargo fmt --manifest-path rayon-baseline/Cargo.toml -- --check
+	CARGO_TARGET_DIR="$(RAYON_CARGO_TARGET)" cargo test --profile gate --features mixed --bin mixed-rayon --locked --offline --manifest-path rayon-baseline/Cargo.toml
+	CARGO_TARGET_DIR="$(RAYON_CARGO_TARGET)" cargo clippy --profile gate --all-targets --all-features --locked --offline --manifest-path rayon-baseline/Cargo.toml -- -D warnings
+	CARGO_TARGET_DIR="$(RAYON_CARGO_TARGET)" cargo build --profile gate --features mixed --bin mixed-rayon --locked --offline --manifest-path rayon-baseline/Cargo.toml
+	$(CLANG) $(CFLAGS) -Wpedantic -pthread stream_check.c -o "$(BUILD)/stream_check"
+	@set -e; for threads in 2 4; do for mode in compute truncated; do \
+	  "$(BUILD)/stream_check" "$(RAYON_CARGO_TARGET)/gate/mixed-rayon" "$$mode" "$$threads"; \
+	done; done
+
+mixed-rayon-smoke: mixed-rayon-check
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" CARGO_TARGET_DIR="$(RAYON_CARGO_TARGET)" CLANG="$(CLANG)" bash mixed-rayon-smoke.sh
 
 # The workload's shape. FILES x up to MAX_KIB, read through one positioned
 # read each. The checksum below is a property of these two numbers alone, so
