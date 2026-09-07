@@ -573,6 +573,11 @@ the WF sequential control and parent reap. `PROFILE_PERF` selects perf.
 Missing events, failed recording or lost data leave an explicit incomplete
 trace status; even captured traces require independent attribution audit.
 No probe-derived timing enters the ordinary ranking and no default changes.
+The isolated `codex/io-cpu-phase-recheck` CI path downloads experiment 50's
+exact retained binary artifact and verifies its ZIP and individual hashes
+before an eight-trace-only recapture. It neither rebuilds nor retimes the
+ordinary panel. Recorder-issued write events are explicitly filtered and
+checked against the saved recorder PID; global scheduler events remain.
 
 `make mixed-rayon-check` qualifies the optional `mixed-rayon` binary in the
 same standalone crate. Its CLI is `mixed-rayon PORT CONNECTIONS --threads B

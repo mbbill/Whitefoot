@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-rayon-baselines', 'codex/io-mixed-rayon-baselines', 'codex/io-cpu-resource-controls', 'codex/io-cpu-ring-controls', 'codex/io-cpu-startup-controls']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-rayon-baselines', 'codex/io-mixed-rayon-baselines', 'codex/io-cpu-resource-controls', 'codex/io-cpu-ring-controls', 'codex/io-cpu-startup-controls', 'codex/io-cpu-phase-recheck']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -36,7 +36,7 @@ jobs:
   measure:
     # Correctness-only branches retain the independently running timing
     # revisions. Canonical and native correctness jobs still run.
-    if: github.ref != 'refs/heads/codex/io-windows-wake-fix' && github.ref != 'refs/heads/codex/io-continuation-experiments' && github.ref != 'refs/heads/codex/io-continuation-lowering' && github.ref != 'refs/heads/codex/io-continuation-network' && github.ref != 'refs/heads/codex/io-continuation-staged' && github.ref != 'refs/heads/codex/io-rayon-baselines' && github.ref != 'refs/heads/codex/io-mixed-rayon-baselines' && github.ref != 'refs/heads/codex/io-cpu-resource-controls' && github.ref != 'refs/heads/codex/io-cpu-ring-controls' && github.ref != 'refs/heads/codex/io-cpu-startup-controls'
+    if: github.ref != 'refs/heads/codex/io-windows-wake-fix' && github.ref != 'refs/heads/codex/io-continuation-experiments' && github.ref != 'refs/heads/codex/io-continuation-lowering' && github.ref != 'refs/heads/codex/io-continuation-network' && github.ref != 'refs/heads/codex/io-continuation-staged' && github.ref != 'refs/heads/codex/io-rayon-baselines' && github.ref != 'refs/heads/codex/io-mixed-rayon-baselines' && github.ref != 'refs/heads/codex/io-cpu-resource-controls' && github.ref != 'refs/heads/codex/io-cpu-ring-controls' && github.ref != 'refs/heads/codex/io-cpu-startup-controls' && github.ref != 'refs/heads/codex/io-cpu-phase-recheck'
     name: measure (${{ matrix.experiment }})
     strategy:
       fail-fast: false
@@ -373,13 +373,17 @@ jobs:
             ${{ runner.temp }}/mixed-rayon-check.log
 
   cpu-resource-controls:
-    if: github.ref == 'refs/heads/codex/io-cpu-resource-controls' || github.ref == 'refs/heads/codex/io-cpu-ring-controls' || github.ref == 'refs/heads/codex/io-cpu-startup-controls'
+    if: github.ref == 'refs/heads/codex/io-cpu-resource-controls' || github.ref == 'refs/heads/codex/io-cpu-ring-controls' || github.ref == 'refs/heads/codex/io-cpu-startup-controls' || github.ref == 'refs/heads/codex/io-cpu-phase-recheck'
     name: ordinary CPU resource controls and separate phase traces
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: ${{ github.ref == 'refs/heads/codex/io-cpu-phase-recheck' && 10 || 20 }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
       - name: Fetch locked toolchain dependencies
+        if: github.ref != 'refs/heads/codex/io-cpu-phase-recheck'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends clang
@@ -387,8 +391,9 @@ jobs:
           cargo fetch --locked --manifest-path compiler/Cargo.toml
           cargo fetch --locked --manifest-path research/experiments/io-completion-bench/rayon-baseline/Cargo.toml
       - name: Install phase tracing tools
-        if: github.ref == 'refs/heads/codex/io-cpu-startup-controls'
+        if: github.ref == 'refs/heads/codex/io-cpu-startup-controls' || github.ref == 'refs/heads/codex/io-cpu-phase-recheck'
         run: |
+          if [[ $GITHUB_REF == refs/heads/codex/io-cpu-phase-recheck ]]; then sudo apt-get update; fi
           sudo apt-get install -y --no-install-recommends linux-tools-generic-hwe-24.04
           mapfile -t perf_packages < <(dpkg-query -W -f='${binary:Package}\t${db:Status-Status}\n' |
             awk '$2=="installed" && $1 ~ /^linux-.*tools/ {print $1}')
@@ -400,7 +405,38 @@ jobs:
           test -n "$perf_binary"
           "$perf_binary" --version
           echo "PROFILE_PERF=$perf_binary" >> "$GITHUB_ENV"
+      - name: Restore exact qualified 8dd binaries for trace-only recapture
+        if: github.ref == 'refs/heads/codex/io-cpu-phase-recheck'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUT: ${{ runner.temp }}/cpu-resource-controls
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT"
+          gh api repos/mbbill/Whitefoot/actions/artifacts/10008007005/zip > "$RUNNER_TEMP/startup-8dd.zip"
+          printf '%s  %s\n' 'a390db0c1c26664db02157e40c7e4da64c9f6a7d76257008a2e208681069168c' "$RUNNER_TEMP/startup-8dd.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/startup-8dd.zip" wf-par wf-seq wf-manual-1 rust-layout runner wf-par.ll Cargo.lock host.txt -d "$OUT"
+          mv "$OUT/host.txt" "$OUT/source-8dd-host.txt"
+          cat > "$OUT/source-binaries.sha256" <<'HASHES'
+          948ec36393b60f922cc4132c36b5cd1012fd4b8559a2523aa692a12f6e16db54  wf-par
+          4f23a160e412fa00d90478b94668ac34efd6d7dd51bf1c23e001c4475ac23d3c  wf-seq
+          0be6cbbb5579df3aaca4c81d497101668060dc87b0cca68aadea72ef5569e5ae  wf-manual-1
+          2a8289d8ca19fb74b0b035edb732cba533ab033c053379d36ae58c764b4d7d45  rust-layout
+          708f3b50e9cc0b8904a7655eda24f00e827791d5f9dfe9978262bf8e11704001  runner
+          111320f992b02a384d5eb0c7705f67dbeda74c9bf42685e06bb362836588b7c8  wf-par.ll
+          HASHES
+          (cd "$OUT" && sha256sum -c source-binaries.sha256) | tee "$OUT/source-check.log"
+          chmod u+x "$OUT/wf-par" "$OUT/wf-seq" "$OUT/wf-manual-1" "$OUT/rust-layout" "$OUT/runner"
+          printf 'source_revision=8dd5b44a4e090601c276431ff4f83da55e443c43\nsource_artifact=10008007005\n' > "$OUT/recheck.txt"
+          printf 'trace_revision=%s\n' "$GITHUB_SHA" >> "$OUT/recheck.txt"
+          sha256sum research/experiments/io-completion-bench/rayon-phase-trace.sh >> "$OUT/recheck.txt"
+      - name: Recapture only the eight process traces
+        if: github.ref == 'refs/heads/codex/io-cpu-phase-recheck'
+        env:
+          OUT: ${{ runner.temp }}/cpu-resource-controls
+        run: bash research/experiments/io-completion-bench/rayon-phase-trace.sh
       - name: Qualify and measure fixed resource controls
+        if: github.ref != 'refs/heads/codex/io-cpu-phase-recheck'
         env:
           OUT: ${{ runner.temp }}/cpu-resource-controls
           CPU_PHASE_TRACE: ${{ github.ref == 'refs/heads/codex/io-cpu-startup-controls' && '1' || '0' }}
@@ -415,7 +451,9 @@ jobs:
         run: |
           {
             echo '## CPU resource controls'
-            if [[ $GITHUB_REF == refs/heads/codex/io-cpu-startup-controls ]]; then
+            if [[ $GITHUB_REF == refs/heads/codex/io-cpu-phase-recheck ]]; then
+              echo 'Trace-only correction using exact SHA-verified 8dd artifact binaries; no compiler build or ordinary timing panel rerun. Recorder write events are excluded per event, global scheduler events and successful reap remain. Eight one-batch captures; independent duplicate/thread/state audit remains required.'
+            elif [[ $GITHUB_REF == refs/heads/codex/io-cpu-startup-controls ]]; then
               echo 'Four computing threads; frozen Rayon grain four; WF_STACKS 12; 1/16 batches. Ordinary compiler WF, same-IR manual default and used-lanes links, and Rayon: forty ordinary samples. Full candidate completion checks and separate observed storage flags/bytes. Eight additional one-batch coarse traces include sequential WF and parent reap; their status is explicit below and captured data still require attribution audit. No runtime defaults change.'
             elif [[ $GITHUB_REF == refs/heads/codex/io-cpu-ring-controls ]]; then
               echo 'Four computing threads; frozen Rayon grain four; WF_STACKS 12; 1/16 batches; WF_IO_NO_NATIVE_RING unset/1. Six forms, five alternating passes after one warmup. Separate Linux observations qualify initialized but unused ring vs disabled ring. No algorithm, output-path or runtime default changes.'
@@ -424,7 +462,11 @@ jobs:
             fi
             echo 'Whole-process ordinary binaries without perf. Every checksum is checked after trailing CR/LF normalization; separate observed stdout is retained for byte comparison. No CPU affinity or dedicated-host guarantee.'
             echo '```text'
-            for file in host.txt resource.txt link-comparison.txt observed-*.err phase-trace/status.txt phase-trace/host.txt phase-trace/captures.tsv; do
+            files=(host.txt resource.txt link-comparison.txt observed-*.err phase-trace/status.txt phase-trace/host.txt phase-trace/captures.tsv)
+            if [[ $GITHUB_REF == refs/heads/codex/io-cpu-phase-recheck ]]; then
+              files=(recheck.txt source-check.log phase-trace/status.txt phase-trace/host.txt phase-trace/captures.tsv)
+            fi
+            for file in "${files[@]}"; do
               for path in "$RUNNER_TEMP/cpu-resource-controls"/$file; do
                 cat "$path" 2>/dev/null || echo "$file not produced"
               done
@@ -434,5 +476,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: io-cpu-resource-controls
+          name: ${{ github.ref == 'refs/heads/codex/io-cpu-phase-recheck' && 'io-cpu-phase-recheck' || 'io-cpu-resource-controls' }}
           path: ${{ runner.temp }}/cpu-resource-controls
