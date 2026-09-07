@@ -4595,9 +4595,10 @@ measurement, not a replication on the same hardware.
 completed successfully at d79ffaf1c1028e88832852b91764dbbc9967e875.
 Formatting, both correctness tests, clippy, compiled-WF byte qualification and
 every timed invocation passed. The job took approximately three minutes,
-including toolchain setup and builds. The canonical gate is a separate run;
-this successful experiment job does not claim that every repository check
-has completed.
+including toolchain setup and builds. The separate
+[canonical gate 34084372209](https://github.com/mbbill/Whitefoot/actions/runs/34084372209)
+subsequently completed with all fourteen Linux/macOS jobs passing at the same
+d79ffaf1 revision.
 
 The host was an Ubuntu 24.04 Azure VM with kernel 6.17.0-1022-azure and an
 AMD EPYC 9V74 model string. Its four allowed vCPUs, 0-3, were reported as two
@@ -4783,8 +4784,47 @@ observed light progress while all CPU workers are active. Host, toolchain,
 source/lock/binary hashes and output files remain in OUT. Its dedicated CI
 branch excludes the larger allocator and CPU-layout timing panels.
 
-Linux mixed qualification is pending at this local checkpoint. These small
-shared-host smoke samples, even after passing, are not a fair performance
+The [Linux qualification job](https://github.com/mbbill/Whitefoot/actions/runs/34086375759/job/101631101434)
+passed at 040bfc4b08f1b4d164b50281212f2c053323964e. All five Rust tests
+passed in 0.23 seconds, all four external C oracle invocations passed, and
+all four ordinary/observed netload qualifications passed. Every sample
+completed all 600 planned light requests before its nominal deadline and
+drained every heavy reply. The [four raw qualification rows](../../experiments/io-completion-bench/rayon-baseline/mixed-linux-2026-09-07.tsv)
+retain the full client reports, process resources and observer fields;
+ordinary rows leave observer fields empty.
+
+| Observed total budget | CPU workers | Admission limit / peak | Submitted = completed | Light handled while all CPU workers active | Final active / inflight / acquiring |
+|---|---:|---:|---:|---:|---|
+| 2 threads | 1 | 2 / 2 | 256 | 599 | 0 / 0 / 0 |
+| 4 threads | 3 | 6 / 5 | 756 | 582 | 0 / 0 / 0 |
+
+The acquisition counter includes the short immediate-permit path as well as
+suspended acquisitions; it is not itself a count of blocked requests. CPU
+inflight includes completion handoff until the worker retires its permit.
+The max-round Rust test separately proves admission saturation for B=4/Q=6;
+the four-heavy-peer smoke need not fill that limit. These qualifications
+establish observable light progress and bounded lifetimes, not an upper
+bound on latency under arbitrary loads.
+
+The hosted machine reported AMD EPYC 7763, four allowed vCPUs 0-3, two
+guest cores with two SMT threads per core, Linux 6.17.0-1022-azure, Rust
+1.98.0/LLVM 22.1.8 and Ubuntu Clang 18.1.3 for the C client. The complete
+[artifact 10005404525](https://github.com/mbbill/Whitefoot/actions/runs/34086375759/artifacts/10005404525)
+retains the qualification log, host, lock, binaries and raw files. Its ZIP
+SHA-256 is `05a187b37b4fa659e65acece9391716cb346ee0a7a98c31d7e12cb2c8c71cac2`.
+Every retained binary/source/lock hash and the four rows' lifecycle conditions
+were independently checked after downloading it:
+
+| Artifact or source | SHA-256 |
+|---|---|
+| Ordinary mixed binary | `d11ae51aac21f6303745e8ac8089f64e3844a9f2944bc8ff104b30178fed39a5` |
+| Observed mixed binary | `53adce70a93c210107d25c151b8165111b51a4cbb8e453b425a393d96b588389` |
+| netload binary | `68692d0a80033e2069eb7a00034e6b4ad68f1cae470ec5c0a89f600ce8a360a8` |
+| mixed.rs | `9182022c836bdd581ee5e670e65065d4fe1f313894a1fc4414f33433ea24835f` |
+| Cargo.toml | `6d681897a3b35a83f487782ad29edc5b41af3954335b57c5b4273bee7db5889b` |
+| Cargo.lock | `f9b36940fad5eea154d9dcb3e683caeaf0d7831f1510ba5479d253093c6c99cf` |
+
+These small shared-host smoke samples are not a fair performance
 comparison: the client shares the unrestricted host CPU set and there is no
 independent tuning or confirmation cohort. The next comparison should freeze
 queue/driver settings, count the I/O thread within total budgets 2/4, give
