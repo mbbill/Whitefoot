@@ -122,6 +122,10 @@ scheduler-profile:
 scheduler-client-service:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" CORO_CXX="$(CORO_CXX)" EXPERIMENT=coroutine-paced bash scheduler-bench.sh client
 
+.PHONY: scheduler-placement
+scheduler-placement:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" CORO_CXX="$(CORO_CXX)" EXPERIMENT=coroutine-paced bash scheduler-bench.sh placement
+
 WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
 WORK := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-io-completion-bench
 BUILD := $(WORK)/build

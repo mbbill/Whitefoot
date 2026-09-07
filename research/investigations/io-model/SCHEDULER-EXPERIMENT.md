@@ -3210,6 +3210,47 @@ WF lowering. Keep allocation placement and CPU attribution separate from
 the eventual compiler/ABI decision. No source coloring or container runtime
 interface is changed by this reference comparison.
 
+### Direct LLVM pipeline feasibility
+
+A separate M1/Clang 21 probe feeds the existing native coroutine servers
+through an IR-only second compilation. The C++ frontend first emits LLVM
+with `-O2 -S -emit-llvm -Xclang -disable-llvm-passes`, retaining
+presplitcoroutine and coro.suspend. The ordinary C driver then consumes that
+IR with `-O2 -x ir`, plus the existing C compatibility objects. This is a
+toolchain probe using real echo/compute/quantum servers, not a new WF source
+lowering. No repository runtime or source ABI is changed.
+
+All three IR inputs split and link without a C++ runtime library; the
+ordinary quantum binary's only dynamic dependency is libSystem. Ten stream
+cases pass across one/four workers, echo backpressure and compute/quantum
+normal/truncated requests. Allocation observations retain exactly one root
+per connection, including the truncated case: child elision survives the
+IR transport. Local observed root sizes are 176 bytes for echo and 256 for
+quantum; these are not compared numerically to another target/toolchain's
+frame layout. The existing suspended-nested-frame lifetime source also
+passes through this path under ASan/UBSan: heap form allocates/frees 2048
+frames, parent-contained form 1024, over 1024 destructions each. Sanitizer
+attributes are emitted by the frontend before the IR-only compilation.
+
+This establishes that the current host driver can lower coroutine IR
+without introducing generated C++ source into WF's compilation path. It
+does not establish a portable intrinsic dialect: local Clang 21 emits
+`i1 @llvm.coro.end(ptr, i1, token)`, whereas the current upstream
+[LLVM coroutine documentation](https://llvm.org/docs/Coroutines.html)
+shows a void return. A future emitter must qualify the actual supported
+toolchains. The documented presplit marker and coroutine intrinsics carry
+compiler representation; they do not themselves require writer-visible
+suspension syntax.
+
+The unresolved work remains semantic and operational: generic WF CFG/call
+lowering, stable frame-owned addresses, nested/recursive frame ownership,
+completion-driven resumption, and draining kernel buffer loans before
+destruction. The native readiness test has no outstanding kernel buffer
+loan at EAGAIN and does not prove that completion cancellation is safe.
+Keeping a parked root stack per connection merely to drive heap continuations
+would retain the live stack-page cost, so that compatibility arrangement is
+not selected as the intended memory representation.
+
 ## Twenty-seventh experiment: allocation inside the sequential handler
 
 The page experiment locates 46572 KiB of resident memory in the WF process's
@@ -3456,7 +3497,70 @@ reports 796 yields over 800 small exchanges and 76 over 80 large exchanges;
 budget eight reports zero in those small cases. This is why the timed panel
 includes both budgets: one stays a forced control if eight never exhausts.
 These are correctness checks through the local epoll compatibility layer,
-not Linux timings. The native client-policy panel remains pending CI.
+not Linux timings. The native client-policy results follow.
+
+### Native client-service results
+
+Revision `f42ebdd8ca2425d9094a4e9afa9a6bb56fe3a30e` completed the
+[native client panel](https://github.com/mbbill/Whitefoot/actions/runs/34069452611)
+on AMD EPYC 9V74, four logical CPUs on two SMT cores, Linux 6.17 and Clang
+20.1.2. Artifact 10000418135 retains all 630 rows. Independent analysis checks
+18 placement/client/workload cells, all five forms and seven passes, every
+raw client count, empty diagnostics, all 4800/24000 planned light requests,
+and exact default LLVM identity for the client and three C server modes.
+Budget-one yields equal heavy_count minus the 16 heavy peers in every row.
+The canonical gate, host qualification and scheduler Windows checks pass.
+The separate io-bench Windows job rejects its compute timings as unstable
+after two complete cohorts; its Linux/macOS jobs pass. No stability threshold
+is changed and that Windows performance table is not qualified.
+
+Budget eight never exhausts in any of its 210 timed rows. Budget one yields
+9473361 times over its 210 rows, so it is a real service-policy control.
+It does not remove the split2 tail gap. Backlog-inclusive light p99 medians
+in microseconds are:
+
+| Placement / heavy steps / light arrivals per peer/s | WF balanced, original | WF balanced, budget 1 | Native elided, original | Native elided, budget 1 |
+| --- | ---: | ---: | ---: | ---: |
+| split1 / 0 / 100 | 292 | 191 | 252 | 168 |
+| split1 / 2097152 / 100 | 1086 | 1093 | 917 | 916 |
+| split1 / 2097152 / 500 | 1078 | 1125 | 995 | 995 |
+| split2 / 0 / 100 | 1671 | 2048 | 181 | 162 |
+| split2 / 2097152 / 100 | 1316 | 1270 | 690 | 673 |
+| split2 / 2097152 / 500 | 1049 | 989 | 687 | 673 |
+
+At split2/zero, WF balanced budget-one/original paired tail ratios range
+0.4675..2.2673 with median 1.0694, and its rate ratio is 0.9875
+(0.9682..1.0318). There is no consistent WF improvement. Against the same
+budget-one native elided server, every WF rate pair loses (median 0.9426,
+range 0.9288..0.9696) and every end-to-end tail pair loses (11.9627,
+1.6319..20.5867). The original-client ratios are 0.9083 for rate and 9.2320
+for tail. Their apparent convergence in throughput is partly a native loss:
+native budget-one/original rate is 0.9661 (0.9438..0.9852), losing every
+pass, with higher server and client CPU per exchange. It is not a WF speedup.
+
+The zero-compute split2 dispatch-wait median remains 1472 us for WF balanced
+versus 54 us for native under budget one. Post-dispatch medians are 175 and
+125 us; their paired ratio is 1.6667 (1.0219..27.3455), still losing every
+pass. Quantiles remain separate measurements, not additive components.
+Restricting consecutive exchanges within a pump does not establish the
+cause of dispatch waiting: serial per-peer request backlog, delayed client
+service, scheduling and kernel execution are still different possibilities.
+
+There are local improvements. Budget one lowers every split1/zero balanced
+tail pair (median 0.6541) and native elided tail pair (0.6520), with rate
+ranges crossing parity. Long-compute split2/100 still loses every balanced
+tail pair to native, median 1.8277; heavy deadline capacity is essentially
+unchanged, with one-second count granularity limiting small distinctions.
+At split2/500 tail ranges cross parity under budget one, so the panel does
+not support a universal tail ordering across all cells.
+
+Keep the original client as the default. Retain budget one as a measured
+control; budget eight's code-layout changes without an actual yield are
+not evidence of service fairness. This rejects the proposed pump cap as
+the explanation/fix for the large two-worker gap. It preserves experiment
+28's attribution limit: backlog-inclusive latency still cannot all be
+assigned to execution inside the server. The next same-host control changes
+whether client and server share physical cores.
 
 ## Thirtieth experiment: main-thread allocation and heap padding
 
@@ -3526,3 +3630,32 @@ can vary. Lower live memory does not establish a better performance frontier
 unless CPU, throughput and tails support it. No runtime allocator default,
 source initialization rule, container address guarantee or ABI is changed
 by this experiment.
+
+## Thirty-first experiment: separate client/server physical cores
+
+The two-worker split2 cohort uses distinct logical CPUs, but on the measured
+four-vCPU/two-core SMT hosts it puts a client and a server thread on each
+physical core. The one-worker control uses different physical cores. The
+client budget did not resolve the large difference, so `make scheduler-placement`
+adds a same-host `separate2` cohort. It assigns the first core's two SMT
+siblings to the two server workers and the second core's siblings to the
+two client workers. Both roles retain two logical CPUs and two workers;
+the runner verifies that this sibling topology exists before measuring.
+
+The new panel retains split1 and split2, original and budget-one clients,
+all five WF/native server forms, the three fixed-arrival cases, seven passes
+and two warmups: 630 rows. Budget eight is omitted from this new comparison
+because it never exhausted in experiment 29; its original experiment and
+maintained qualification remain available. Form and cohort order alternate.
+No server, compiler or runtime code changes for this placement control, and
+all preceding completion, stream, coroutine lifetime, forced-client and
+unchanged-default-LLVM checks remain enabled on Clang 20.
+
+This changes where physical-core resources are shared, not how many workers
+exist. It also changes each role from using two physical cores to sharing
+one core internally. A result must therefore be reported as a placement
+interaction, not proof of one kernel lock or of SMT being the sole cause.
+Server rate, CPU/exchange, light dispatch/post-dispatch tails and heavy
+deadline capacity are still required together. In particular, lower tails
+bought by reducing the native reference's capacity do not establish a WF
+improvement. Native measurements remain pending CI.

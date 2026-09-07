@@ -10,6 +10,8 @@ OUT=${OUT:-${WHITEFOOT_SCRATCH_ROOT:-$HOME/do_not_scan}/whitefoot-scheduler-expe
 CLANG=${CLANG:-/usr/bin/clang}
 BACKEND=$ROOT/compiler/src/backend
 MODE=${1:-bench}
+client_experiment=0
+if [[ $MODE == client || $MODE == placement ]]; then client_experiment=1; fi
 profile_active=0
 PROFILE_PERF=${PROFILE_PERF:-perf}
 ROUNDS=${ROUNDS:-7}
@@ -73,12 +75,12 @@ if [[ $MODE == check ]]; then
     fi
     exit 0
 fi
-if [[ ( $MODE != bench && $MODE != profile && $MODE != client ) || $(uname -s) != Linux ]]; then
-    echo 'scheduler-bench: use check on POSIX, or bench/profile/client on Linux with io_uring' >&2
+if [[ ( $MODE != bench && $MODE != profile && $client_experiment != 1 ) || $(uname -s) != Linux ]]; then
+    echo 'scheduler-bench: use check on POSIX, or bench/profile/client/placement on Linux with io_uring' >&2
     exit 2
 fi
-if [[ ( $MODE == profile || $MODE == client ) && $EXPERIMENT != coroutine-paced ]]; then
-    echo 'scheduler-bench: profile/client uses the qualified coroutine-paced workload' >&2
+if [[ ( $MODE == profile || $client_experiment == 1 ) && $EXPERIMENT != coroutine-paced ]]; then
+    echo 'scheduler-bench: profile/client/placement uses the qualified coroutine-paced workload' >&2
     exit 2
 fi
 [[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == footprint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical || $EXPERIMENT == stackful || $EXPERIMENT == stackful-paced || $EXPERIMENT == nodelay || $EXPERIMENT == owner || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced || $EXPERIMENT == memory || $EXPERIMENT == dispatch || $EXPERIMENT == wake || $EXPERIMENT == service || $storage_experiment == 1 || $coroutine_experiment == 1 ]] || exit 2
@@ -246,6 +248,19 @@ if [[ $storage_experiment == 1 || $coroutine_experiment == 1 ]]; then
     awk '$1=="split1" || $1=="split2"' "$OUT/cohorts.tsv" > "$OUT/cohorts-selected.tsv"
     mv "$OUT/cohorts-selected.tsv" "$OUT/cohorts.tsv"
 fi
+if [[ $MODE == placement ]]; then
+    # Keep two workers and two logical CPUs per role, but stop the client and
+    # server from sharing physical cores. Require the topology being tested.
+    [[ ${physical_groups[0]} == *,* && ${physical_groups[1]} == *,* ]] || {
+        echo 'scheduler-bench: placement requires two physical cores with SMT siblings' >&2
+        exit 2
+    }
+    IFS=, read -r first second rest <<< "${physical_groups[0]}"
+    server_separate="$first,$second"
+    IFS=, read -r first second rest <<< "${physical_groups[1]}"
+    client_separate="$first,$second"
+    printf 'separate2\t2\t2\t%s\t%s\n' "$server_separate" "$client_separate" >> "$OUT/cohorts.tsv"
+fi
 if [[ $page_experiment == 1 ]]; then
     # Both policies inherit the same host setting; disable=0 permits THP,
     # rather than forcing a huge-page allocation. Keep policy in each row.
@@ -259,10 +274,11 @@ if [[ $page_experiment == 1 ]]; then
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -pthread \
         "$HERE/stream_check.c" -o "$OUT/bin/stream_check"
 fi
-if [[ $MODE == client ]]; then
+if [[ $client_experiment == 1 ]]; then
     # A forced one-round control stays informative if eight never exhausts.
     # All client policies use the same worker counts and CPU placement.
-    awk 'BEGIN {OFS="\t"} {name=$1; print; $1=name "-client8"; print; $1=name "-client1"; print}' \
+    awk -v mode="$MODE" 'BEGIN {OFS="\t"} {name=$1; print;
+        if(mode=="client") {$1=name "-client8"; print}; $1=name "-client1"; print}' \
         "$OUT/cohorts.tsv" > "$OUT/cohorts-selected.tsv"
     mv "$OUT/cohorts-selected.tsv" "$OUT/cohorts.tsv"
 fi
@@ -481,7 +497,7 @@ if [[ $EXPERIMENT == allocator ]]; then
         [[ -n $actual && $((actual)) -eq $top_pad ]]
     done
 fi
-if [[ $MODE == client ]]; then
+if [[ $client_experiment == 1 ]]; then
     mkdir -p "$OUT/codegen"
     git -C "$ROOT" show d72d0d253838c1e0134cb7f3f97ea681af105b7f:research/experiments/io-completion-bench/netload.c \
         > "$OUT/codegen/netload-before.c"
@@ -784,7 +800,7 @@ if [[ $EXPERIMENT == coroutine-paced ]]; then references=(q16384 cpp-manual cpp-
 while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
     allocator_environment=()
     if [[ $EXPERIMENT == allocator ]]; then allocator_environment=("$(allocator_setting)"); fi
-    if [[ $MODE == client && ( $cohort == split1 || $cohort == split2 ) ]]; then
+    if [[ $client_experiment == 1 && ( $cohort == split1 || $cohort == split2 || $cohort == separate2 ) ]]; then
         # Force the userspace continuation path even when every kernel poll
         # could otherwise supply another edge. Verify computation and pacing.
         cohort="$cohort-client1"
@@ -1060,7 +1076,7 @@ exec "$@" 2> "$diagnostics"
 PROFILE_SERVER
     chmod +x "$OUT/bin/profile-server"
 fi
-if [[ $MODE == client ]]; then
+if [[ $client_experiment == 1 ]]; then
     forward=(base ch16384 chbalanced16384 q16384 cpp-elide)
     reverse=(cpp-elide q16384 chbalanced16384 ch16384 base)
 fi
@@ -1068,7 +1084,7 @@ for ((pass=-WARMUP; pass<ROUNDS; pass++)); do
     order=("${forward[@]}")
     if (( (pass + WARMUP) % 2 )); then order=("${reverse[@]}"); fi
     cp "$OUT/cohorts.tsv" "$OUT/cohorts-order.tsv"
-    if [[ $page_experiment == 1 || $MODE == client ]] && (( (pass + WARMUP) % 2 )); then
+    if [[ $page_experiment == 1 || $client_experiment == 1 ]] && (( (pass + WARMUP) % 2 )); then
         # Alternate which policy runs first as well as representation order.
         tac "$OUT/cohorts.tsv" > "$OUT/cohorts-order.tsv"
     fi
