@@ -8729,6 +8729,7 @@ These ELF files are not executed locally and use different tools from the
 native CI cohort. Its actual ELF checks, qualifications, forty-row ordinary
 result and full gate status remain pending. `make static`, shell syntax and
 patch checks pass locally.
+
 ## 62. Native large-message candidates with a wider ARM client
 
 Experiment 60 shows that the one-client envelope can mask server differences
@@ -8787,3 +8788,84 @@ AArch64 headers. These are simulated CQE executions on macOS and cross-builds,
 not a native Linux streaming qualification or a new performance result. The
 new fixture belongs to the existing benchmark qualification and is removed
 if the native reference is retired.
+
+### Bounded native capacity and send-policy panel
+
+The separate corrected baseline is `4ad6c37cec63b4750d272225328a05aa5cc51a1f`.
+`scheduler-native-frontier` uses the existing scheduler harness, ARM admission
+and full-byte client. The default `WF_BENCH_URING_BUFFER_COUNT=0` retains the
+connection-derived byte budget. Explicit counts must be powers of two no
+larger than 32768; the screen selects only 32/64/128. Buffer capacity and send
+policy are the only native candidate axes after the shared rearm correction.
+
+| Forms | Receive storage per worker | Send path |
+| --- | --- | --- |
+| `uring-64k-p32`, `uring-64k-p32-inline` | 32 × 64 KiB = 2 MiB | Pure ring / immediate nonblocking send with ordered ring fallback |
+| `uring-64k-p64`, `uring-64k-p64-inline` | 64 × 64 KiB = 4 MiB | Same pair |
+| `uring-64k-p128`, `uring-64k-p128-inline` | 128 × 64 KiB = 8 MiB | Same pair |
+| `epoll` | Existing 64 KiB shared scratch with bounded private spill | Existing readiness loop |
+| `wf-coro-index` | Existing initialized 64 KiB private source buffer per peer | Existing sole-owner, batch-32, indexed-waiter continuation |
+
+Every form runs 64 peers × 500 trips × 64 KiB with client widths one and two,
+plus 64 peers × 2000 trips × 64 B with width one as a small-message control.
+The server remains one worker on one admitted reported core; client workers
+use separate admitted cores. The client remains default/service 0, one
+outstanding request per peer, both latency clocks and every-byte comparison.
+The experiment does not enable readiness-aware receive or SQPOLL.
+Five predetermined rotation/reversal passes yield **120 ordinary rows after
+24 warmups**. Three separate observer passes yield **72 rows, 96 client worker
+reports and 54 native uring reports**. Two additional three-worker admitted
+smokes preserve uneven 2/1/1 peer partition checks and stay outside the panel.
+
+Admission again requires four allowed distinct package/core IDs, matching raw
+physical `lscpu`/sysfs topology and sibling lists, visible quota accounting,
+actual launch and worker affinity, and unchanged topology/selection at the
+end. These guest reports do not establish dedicated host cores. Width two is
+a same-host sensitivity control, not a server-ceiling certificate: partition
+of the client service loop, kernel work, shared-VM interference and remaining
+client saturation can all affect the result. No cross-architecture ranking
+or extrapolation from experiment 60's single observer rows is made.
+
+`URING_POOL_CHECK=1` extends the existing eight Linux stream configurations
+with the 64 KiB pools 2/32/64/128 at both send policies and one/four workers:
+24 stream cases total, each retaining the 8 MiB byte oracle and existing
+partial-transfer, backpressure and EOF checks. The two-buffer cases must
+actually exhaust and rearm; deterministic source traces separately force the
+delayed-CQE order. Qualification failure stops timing rather than removing a
+candidate. Required io_uring support, all existing client/continuation/native
+qualification, and the two admitted smokes remain in the path.
+
+The observed build adds per-buffer ownership marks and counts acquisitions,
+returns, terminal-buffer CQEs, live/peak loans, receive arms, parks, ordinary
+and return-since-arm rearms, closed parked entries, peak parked count, queued
+aggregation and existing sends/bytes/vectors. A loan starts when userspace
+consumes its buffer-select CQE; unread kernel CQEs are outside that count.
+The checks require acquires = receives + terminal = returns, zero final live
+loans, peak loans within capacity, parks = rearms + closed, and exhaustion =
+parks + return-since-arm retries. Each worker must provide its own complete
+record; a missing field cannot inherit a previous worker's value. Observer
+ownership fields change the loan-node layout, so these counters describe
+instrumented executions, not ordinary timings. No loan-age clocks are added.
+
+Ordinary zero-count optimized IR must match the corrected parent before the
+timed capacity candidates are built. Eighteen selected ELF files are retained and hashed:
+eight ordinary servers, eight observed servers and both clients. The existing
+source/tool IDs, generated IR, whole-process CPU/RSS/tails, raw rows, settings
+and affinity reports remain available. Provided bytes and loan-node capacity
+are allocation capacities, not actual RSS; the existing whole-process RSS
+measurement is retained without a new memory harness. Ordinary paired rates,
+p99 and CPU/trip determine the bounded comparison; observed exhaustion or
+send counts can motivate a later control but do not by themselves establish
+why a candidate wins. This frozen screen ends after its audit; it neither
+autotunes against the recorded samples nor promotes a global default.
+
+Local validation cross-links 20 strict AArch64 Linux binaries (counts
+0/2/32/64/128 × pure/inline × ordinary/observed). Four ordinary optimized-IR
+comparisons, at 8/64 KiB and both send modes, equal the corrected parent;
+invalid counts 3 and 32769 fail compilation. The full overlay also passes the
+same 28 simulated ASan/UBSan traces. Source-extracted driver checks establish
+the new row/order/mask/retention counts and preserve experiment 60's prior
+180/36/36/72 counts; synthetic admission, observer-record mutation and all
+46 prior workflow-route checks pass. These local checks validate compilation
+and harness contracts, not Linux syscalls or performance. Native stream,
+exhaustion, real-host admission, measurements and full gate remain pending.

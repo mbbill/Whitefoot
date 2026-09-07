@@ -407,6 +407,14 @@ pure-ring/inline builds, then qualifies the native configurations against the
 shared streaming oracle. Experiment 62 records the delayed-exhaustion defect,
 its generation-based correction and the limits of local simulated evidence;
 the earlier measured revisions remain frozen.
+`scheduler-native-frontier` compares 64 KiB uring pure/inline sends with
+32/64/128 provided buffers against epoll and indexed WF on an admitted ARM
+host. Large-message client widths one/two and a small-message width-one
+control yield 120 ordinary rows after 24 warmups, with three separate
+observer passes. It preserves the default client and qualifies the corrected
+exhaustion path plus tiny/selected pools before timing; experiment 62 records
+its matrix and pending native evidence. This is a capacity/send-policy screen,
+not an assertion that an earlier native form was already optimal.
 `scheduler-client-headroom` holds one server worker/CPU fixed and compares
 one client hardware thread with both SMT siblings of a separate physical
 core. It retains full byte verification and all qualification checks while
