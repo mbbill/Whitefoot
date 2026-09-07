@@ -4253,7 +4253,7 @@ name. A known limitation remains visible until its experiment is complete.
 | Native C stackful / C++ stackless | Same epoll engine; private or shared receive storage; stackful, heap coroutine, and compiler-elided coroutine forms | Diagnostic representation control: separates coroutine/frame allocation, storage and reactor cost | Screened and stream/lifetime-qualified at their recorded revisions; not independent mature runtime comparisons |
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
 | WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Qualified and screened at `2147857e` and `f72aacb8` (experiments 39/44). Sole-resumer progress improves occupied small-message throughput by 1.98-2.77x versus the threaded coordinator, but still loses to the existing WF/native controls. Submission batching is the next mechanism question |
-| Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Experiment49 pins Go 1.27.1 and qualifies release/race on macOS/Linux. Release buffer is goroutine-stack storage; heap counters omit that cost. Experiment51 compares handler-stack versus acceptor-heap ownership at equal 64 KiB private capacity before ranking; no timing yet |
+| Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Experiment49 pins Go 1.27.1. Experiment51 qualifies handler-stack and acceptor-heap forms on macOS/Linux at equal 64 KiB private capacity. The heap form lowers single live release RSS snapshots but adds a GC cycle; retain both candidates until timing. Race moves both buffers to the heap and cannot represent that release storage comparison; no timing yet |
 | Rust sequential / Rayon CPU pool | Existing recursive `par_layout.wf` port with exact floating-point order and every node write; sibling `join`, calibrated grain and explicit pool width | Essential CPU-parallel reference; separates sequential code generation from parallel scheduling. Broader `par_iter`/`scope` and unbalanced workloads remain candidate rows | Checksum-qualified and independently confirmed after grain calibration on M1/Linux (experiment 40). Experiment 45's stack/batch control reduces the WF12/Rayon paired wall gap from 13.9% at one batch to 1.6% at sixteen, supporting substantial fixed costs. Experiment 47 finds no stable gain from disabling the unused output-path ring; remaining startup/exit costs need attribution. This is not an optimal WF CPU setup claim |
 | Tokio I/O + bounded Rayon CPU offload | One current-thread I/O driver plus B-1 CPU workers, fixed 64-byte protocol, asynchronous bounded admission, one request/reply per connection | External mixed-load reference under one total execution budget; exposes CPU queue transfer, backpressure and light-request progress | Linux-qualified at `040bfc4b` (experiment 42), including saturation, errors, reset, partial input, half-close and slow output. Four short client smoke records are correctness evidence, not a performance ranking |
 | Tokio | Fixed-worker multithread runtime and a separate per-core current-thread/reactor configuration | External mainstream async baseline; distinguish work stealing from reactor locality | Source candidate only; pin toolchain/lockfile, socket distribution and blocking-pool budget |
@@ -6820,9 +6820,66 @@ qualification. There is no performance panel.
 Local M1 release/race qualification passes all thirty-two cases. Compiler
 escape diagnostics, the Linux/amd64 frame predicate against the actual
 cross-built binary, Go formatting/vet, shell/Make expansion and diff checks
-pass. Native Linux paired live snapshots are pending. Release storage
-candidates remain unranked until those results and later properly resourced
-timing evidence establish their tradeoffs.
+pass. Native Linux qualification also succeeds at frozen revision
+[`56102eac700427fe74e38b021fa8dfdb3e30df01`](https://github.com/mbbill/Whitefoot/commit/56102eac700427fe74e38b021fa8dfdb3e30df01),
+[run 34094123069](https://github.com/mbbill/Whitefoot/actions/runs/34094123069),
+job 101653778721. Artifact `10008168851`, `go-reference-qualification`, has
+SHA-256 `a53efbed6c70d5937db663f1fec2e4d8d4d5578bf72e6c6521f0f12f6a1c3622`.
+Independent raw audit reconciles all 32 logs and eight live snapshots with
+the recorded build profiles, allocation sites and disassembly. All lifecycle
+cases precede residency. There are no byte mismatches, unexpected output or
+race reports; reset cases preserve the intended error and close the other
+three blocked handlers.
+
+The actual CI release artifact confirms the cross-build's representation:
+the handler wrapper reserves `0x10028` stack bytes and explicitly zeroes
+64 KiB, the acceptor calls `runtime.makeslice`, its handler reserves `0x28`
+bytes, and both call the same `echoBuffer` with a `0x40`-byte frame. The actual
+race artifact confirms **both** allocations escape to the heap; its handler
+wrapper calls `runtime.makeslice` and has a `0x30`-byte frame. Similar race
+memory therefore does not contradict the release allocation difference.
+
+The Intel Xeon 6973P-C VM runs Linux 6.17.0-1022-azure, with CPU 0 as the
+entire server mask and CPU 2 on a different physical core for the fixture.
+All observed threads have mask `0`, their census matches process status,
+and each live snapshot has one epoll descriptor with 65 registrations.
+Every runtime observation reports NumCPU 1, the requested GOMAXPROCS,
+GOGC 100 and no memory-limit or GODEBUG override. Effective socket send
+buffers are 8,192 bytes and TCP_NODELAY is enabled. The two runtime source
+hashes match experiment49's pinned toolchain. P4 still means oversubscribing
+one allowed logical CPU, not a four-CPU performance comparison.
+
+These are single live snapshots per cell on the **same host and revision**,
+after 64 simultaneously open peers each finish a verified 64 KiB exchange:
+
+| Build | Buffer owner | GOMAXPROCS | Live OS threads | RSS KiB | PSS KiB | GC cycles at exit |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Release | Handler / stack | 1 | 3 | 13292 | 13284 | 0 |
+| Release | Handler / stack | 4 | 3 | 15344 | 15336 | 0 |
+| Release | Acceptor / heap | 1 | 3 | 11824 | 11816 | 1 |
+| Release | Acceptor / heap | 4 | 7 | 11836 | 11828 | 1 |
+| Race | Handler / heap | 1 | 4 | 41772 | 40156 | 1 |
+| Race | Handler / heap | 4 | 7 | 42340 | 40724 | 1 |
+| Race | Acceptor / heap | 1 | 4 | 41760 | 40144 | 1 |
+| Race | Acceptor / heap | 4 | 7 | 42368 | 40752 | 1 |
+
+The release heap form reduces these RSS snapshots by 1,468 KiB at P1 and
+3,508 KiB at P4 (11.0% and 22.9%). It also allocates into the GC-managed heap:
+exit TotalAlloc is 4,437,664/4,512,304 bytes, versus 240,688/290,640 for the
+stack form, and one GC cycle occurs. Both still own the same 4 MiB aggregate
+source buffer capacity. TotalAlloc excludes the stack payload, exit stack
+counters follow handler teardown, and smaps covers the whole process;
+none alone isolates live payload storage or lifetime peaks. The snapshots
+do not quantify GC's timing cost, thread peaks, connection-churn behavior or
+memory scaling beyond these 64 peers.
+
+The heap form is a qualified lower-residency candidate in these cells; it
+does not establish the fastest Go implementation. Keep both release forms
+for a future fixed-resource calibration, since their throughput/CPU and GC
+tradeoffs have not been measured. The canonical gate at this revision is
+still queued/running when this evidence is recorded. No Go timing cohort,
+pooling or splice experiment has run, and neither frozen experiment49 nor
+any earlier native/WF measurements are replaced.
 
 ## Fifty-second experiment: qualify generated continuations on the mixed protocol
 
