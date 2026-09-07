@@ -6756,3 +6756,76 @@ tradeoffs have not been measured. The canonical gate at this revision is
 still queued/running when this evidence is recorded. No Go timing cohort,
 pooling or splice experiment has run, and neither frozen experiment49 nor
 any earlier native/WF measurements are replaced.
+
+## Fifty-third experiment: sequential Go in the fixed echo screen
+
+Experiments49/51 establish byte-stream, lifecycle and storage evidence for
+Go's normal sequential `net` form. This experiment brings both qualified
+storage choices and both runtime widths into the same controlled Linux echo
+screen as experiment48. The new `codex/io-go-screen` branch starts at root
+revision `96e6cd2d` and integrates the two experiment51 commits; earlier
+qualification and measurement branches remain frozen. No Go loop, compiler,
+runtime, source buffer capacity or protocol changes in this experiment.
+
+`make scheduler-go-screen` selects `GO_SCREEN=1`, `CONTINUATION_SCREEN=3`,
+`NATIVE_BASELINES=1` and the existing `combine`/`allocator` harness. It retains
+all prior qualification, instrumentation boundaries and alternating order.
+The candidate list is fixed before measuring:
+
+| Group | Forms | Resource/storage interpretation |
+| --- | --- | --- |
+| WF stackful | `callee-small`, `balanced-small` | Existing private initialized source buffers and qualified runtime policies |
+| WF generated continuations | `wf-coro`, `wf-coro-owner`, `wf-coro-batch32` | Existing threaded progress, sole-owner progress and 32-resumption batching control |
+| Native C/C++ | `uring`, `uring-64k`, `epoll`, `epoll-calloc-main`, `fiber-calloc-main`, `cpp-elide`, `cpp-elide-calloc` | The same seven controls as experiment48; matched provided bytes for the two ring buffer sizes, other storage models remain explicit |
+| Go release | `go-handler-p1`, `go-handler-p4`, `go-acceptor-p1`, `go-acceptor-p4` | Same sequential loop and initialized private 64 KiB capacity; handler stack versus acceptor heap, GOMAXPROCS 1/4 |
+
+Every form runs on `split1-top0-no-thp`: one logical CPU for the entire server,
+with the client on another physical core. All Go runtime/GC threads inherit
+that server mask. P4 oversubscribes one allowed CPU; it is not a four-CPU row.
+The existing THP-disable launch policy also applies to Go. The glibc top-pad
+setting remains common but does not choose Go's cgo-disabled allocator.
+Go uses GOGC 100, default memory/debug limits and TCP_NODELAY. Ordinary samples
+explicitly clear the qualification send-buffer override and turn reporting
+off. Race instrumentation never enters the measured binary.
+
+The five unchanged cells are 1/4/64/1024 peers at 64 bytes and 64 peers at
+65,536 bytes. Per-peer trip counts are 10,000/10,000/2,000/200/500. Sixteen
+forms × five cells × seven recorded passes produce **560 ordinary rows**
+after two complete warmups. The existing three live cases (64/1024 peers at
+64 bytes and 64 peers at 65,536 bytes), repeated three times for every form,
+produce **144 panel snapshots**. The harness checks these counts and retains
+every sample, including startup/drain CPU, quantized process resource data,
+client exchange CPU, latency and raw RSS maps. No configuration is selected
+by tuning against these samples.
+
+Before Go joins the panel, the same job reruns all 32 release/race tests at
+the exact revision and within the chosen CPU mask. The eight live snapshots
+from that qualification stay in its separate artifact directory and do not
+count toward 144. Both release allocation sites and actual Linux/amd64 stack
+frames must still match the experiment51 control. The panel copies the exact
+qualified release binary; it does not rebuild with different flags. Observed
+preflight runs verify Go version, buffer owner, runtime width, default GC
+settings and effective socket options. Normal live panel runs additionally
+capture every enumerated thread's status and epoll fdinfo, checking the one
+CPU mask and one reactor with all peers plus its wakeup registered. These
+snapshots remain thread censuses rather than lifetime peaks.
+
+The artifact retains Go release/race build metadata, escape diagnostics,
+disassembly and qualification logs; Go source and the release binary; source,
+compiler/tool and panel-binary SHA-256 hashes; runtime backend source hashes;
+all existing WF/native observed logs; and process/host resource snapshots.
+Runtime GC observations are outside timing and do not substitute for OS CPU
+accounting. Race-induced heap escape remains a qualification caveat, not a
+release storage result.
+
+This is a fixed comparison within the existing loopback/client envelope.
+The earlier client-headroom limitation remains: similar throughput can mean
+client saturation, and p99 is from closed-loop requests with one outstanding
+request per peer, not an open-loop overload SLO. Neither matching a reference
+nor beating it in these five cells establishes universal optimality. Local M1 checks pass all 32 Go release/race cases and four additional
+quiet launches through the new configuration helper, including deliberately
+inherited report/send-buffer/GC overrides that the helper must clear. The
+observed-report predicate accepts all four frozen Linux release records and
+rejects a mismatched owner. Shell/workflow parsing, Make expansion and diff
+checks pass. Native Linux qualification and timing for this exact screen
+are pending.

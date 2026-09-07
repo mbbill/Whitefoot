@@ -19,6 +19,8 @@ WARMUP=${WARMUP:-2}
 EXPERIMENT=${EXPERIMENT:-idle}
 NATIVE_BASELINES=${NATIVE_BASELINES:-0}
 CONTINUATION_SCREEN=${CONTINUATION_SCREEN:-0}
+GO_SCREEN=${GO_SCREEN:-0}
+GO=${GO:-go}
 URING_DIAGNOSTIC=${URING_DIAGNOSTIC:-0}
 [[ $NATIVE_BASELINES == 0 || $NATIVE_BASELINES == 1 || $NATIVE_BASELINES == 2 ]] || exit 2
 [[ $CONTINUATION_SCREEN == 0 || $CONTINUATION_SCREEN == 1 || $CONTINUATION_SCREEN == 2 || $CONTINUATION_SCREEN == 3 ]] || exit 2
@@ -27,6 +29,11 @@ if [[ $CONTINUATION_SCREEN != 0 && $NATIVE_BASELINES != 1 ]]; then
     exit 2
 fi
 CLIENT_HEADROOM=${CLIENT_HEADROOM:-0}
+[[ $GO_SCREEN == 0 || $GO_SCREEN == 1 ]] || exit 2
+if [[ $GO_SCREEN == 1 && ( $CONTINUATION_SCREEN != 3 || $CLIENT_HEADROOM != 0 || $URING_DIAGNOSTIC != 0 ) ]]; then
+    echo 'scheduler-bench: Go screen uses CONTINUATION_SCREEN=3 and the original single client' >&2
+    exit 2
+fi
 [[ $CLIENT_HEADROOM == 0 || $CLIENT_HEADROOM == 1 ]] || exit 2
 [[ $URING_DIAGNOSTIC == 0 || $URING_DIAGNOSTIC == 1 ]] || exit 2
 if [[ $URING_DIAGNOSTIC == 1 && ( $NATIVE_BASELINES != 2 || $CLIENT_HEADROOM != 0 ) ]]; then
@@ -245,6 +252,7 @@ fi
     echo "experiment=$EXPERIMENT mode=$MODE rounds=$ROUNDS warmup=$WARMUP"
     echo "native_baselines=$NATIVE_BASELINES"
     echo "continuation_screen=$CONTINUATION_SCREEN"
+    echo "go_screen=$GO_SCREEN"
     if [[ $CONTINUATION_SCREEN != 0 ]]; then
         echo 'wf-coro=generated --continuations --par; one resumer; window=1024; qualified test coordinator; counters enabled in timed and observed binary'
         if [[ $CONTINUATION_SCREEN == 2 || $CONTINUATION_SCREEN == 3 ]]; then
@@ -379,6 +387,29 @@ if [[ $CONTINUATION_SCREEN != 0 ]]; then
     awk '$1=="split1-top0-no-thp"' "$OUT/cohorts.tsv" > "$OUT/cohorts-selected.tsv"
     mv "$OUT/cohorts-selected.tsv" "$OUT/cohorts.tsv"
     [[ $(wc -l < "$OUT/cohorts.tsv") -eq 1 ]]
+fi
+if [[ $GO_SCREEN == 1 ]]; then
+    # Qualify the exact source on this host and CPU envelope before copying
+    # its release binary into the timed panel. Race never enters that panel.
+    if ! env -u GODEBUG -u GOMEMLIMIT GOGC=100 WF_BENCH_THP_DISABLE=1 \
+        WF_BENCH_SERVER_CPUS="$server_one" taskset -c "$client_one" \
+        make -C "$HERE" go-check GO="$GO" CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/go" \
+        > "$OUT/go-check.log" 2>&1; then
+        cat "$OUT/go-check.log" >&2
+        exit 1
+    fi
+    cp "$OUT/go/whitefoot-io-completion-bench/build/go-qualification/go-echo-release" "$OUT/bin/go-echo"
+    cp "$OUT/bin/go-echo" "$OUT/codegen/go-echo-release"
+    cp "$HERE/go_echo.go" "$OUT/codegen/go_echo.go"
+    {
+        "$GO" version
+        echo 'go_forms=go-handler-p1 go-handler-p4 go-acceptor-p1 go-acceptor-p4; initialized private capacity=65536; GOGC=100; default runtime limits; no socket send-buffer override'
+        echo 'go_cpu_policy=all runtime/GC threads inherit the one server logical CPU; P4 is oversubscription, not four CPUs; glibc top_pad does not select the cgo-disabled Go allocator'
+        sha256sum "$(command -v "$GO")" \
+            "$(GOTOOLCHAIN=local "$GO" env GOROOT)/src/runtime/netpoll_epoll.go" \
+            "$(GOTOOLCHAIN=local "$GO" env GOROOT)/src/internal/poll/fd_unix.go"
+    } >> "$OUT/host.txt"
+    cat /proc/stat /proc/softirqs /proc/net/sockstat > "$OUT/go-kernel-before.txt"
 fi
 forms=(base sleep short spin poll1 poll16)
 if [[ $network_compute == 1 ]]; then
@@ -788,10 +819,34 @@ continuation_policy() {
         *) return 2 ;;
     esac
 }
+go_policy() {
+    case $1 in go-handler-p1|go-handler-p4|go-acceptor-p1|go-acceptor-p4) ;; *) return 2 ;; esac
+    go_owner=${1#go-}; go_owner=${go_owner%-p*}
+    go_width=${1##*-p}
+    # Empty overrides select Go's normal defaults. Explicitly suppress the
+    # qualification-only small send buffer and any inherited report setting.
+    go_environment=(GOGC=100 GOMEMLIMIT= GODEBUG= "WF_BENCH_GO_BUFFER_OWNER=$go_owner"
+        WF_BENCH_GO_SNDBUF= "WF_BENCH_GO_OBSERVE=${2:-0}")
+}
+check_go_report() {
+    local peers=$1 report=$2 owner=$3 width=$4
+    jq -s -e --arg owner "$owner" --argjson width "$width" --argjson peers "$peers" '
+      length==2 and all(.[]; .kind=="go-net" and .version=="go1.27.1" and
+        .goos=="linux" and .goarch=="amd64" and .num_cpu==1 and
+        .buffer_owner==$owner and .buffer_bytes==65536 and .gomaxprocs==$width and
+        .gogc=="100" and .gomemlimit=="" and .godebug=="" and
+        .metrics["/sched/gomaxprocs:threads"]==$width and
+        .metrics["/sched/threads/total:threads"]>=1) and
+      .[0].stage=="listening" and .[1].stage=="complete" and
+      (.[1].sockets|length)==$peers and
+      all(.[1].sockets[]; .nodelay!=0 and .send_buffer>0 and .receive_buffer>0)
+    ' "$report" > /dev/null
+}
 
 network_case() {
     local form=$1 connections=$2 trips=$3 bytes=$4 pass=$5 observed=$6
     local binary environment=() arguments=() launcher=() directory port server_stderr owner_progress progress_batch
+    local go_owner go_width go_environment=()
     local client_binary="$OUT/bin/netload"
     if [[ $cohort == *-client8 ]]; then client_binary="$OUT/bin/netload-service8"; fi
     if [[ $cohort == *-client1 ]]; then client_binary="$OUT/bin/netload-service1"; fi
@@ -802,6 +857,11 @@ network_case() {
     mkdir -p "$directory"
     port=$(free_port)
     case $form in
+        go-handler-p1|go-handler-p4|go-acceptor-p1|go-acceptor-p4)
+            binary="$OUT/bin/go-echo"
+            go_policy "$form" "$observed"
+            environment=("${go_environment[@]}")
+            arguments=(--threads "$go_width") ;;
         wf-coro|wf-coro-owner|wf-coro-batch32)
             binary="$OUT/bin/wf-coro"
             continuation_policy "$form"
@@ -964,6 +1024,11 @@ if [[ $EXPERIMENT == coroutine-paced ]]; then references=(q16384 cpp-manual cpp-
 if [[ $MODE == combine ]]; then references=(epoll epoll-calloc-main fiber-calloc-main cpp-elide cpp-elide-calloc); fi
 if [[ $NATIVE_BASELINES != 0 ]]; then references=(uring uring-64k "${references[@]}"); fi
 if [[ $NATIVE_BASELINES == 2 ]]; then references=(uring-inline uring-64k-inline "${references[@]}"); fi
+if [[ $GO_SCREEN == 1 ]]; then
+    references+=(go-handler-p1 go-handler-p4 go-acceptor-p1 go-acceptor-p4)
+    sha256sum "$HERE/go_echo.go" "$HERE/netload.c" "$HERE/stream_check.c" "$HERE/scheduler-bench.sh" \
+        "$CLANG" "$CORO_CXX" "$WFC" "$OUT"/bin/* > "$OUT/build-sha256.txt"
+fi
 if [[ $CLIENT_HEADROOM == 1 ]]; then references=(uring-64k uring-64k-inline epoll cpp-elide); fi
 # This list also carries alternative executors through the common harness.
 # wf-coro is a WF candidate, never a native frontier reference.
@@ -1042,10 +1107,15 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
         for form in "${references[@]}" "${forms[@]}"; do
             preflight_observed=0
             if [[ $form == cpp-* ]]; then preflight_observed=1; fi
+            if [[ $form == go-* ]]; then preflight_observed=1; fi
             if [[ $form == wf-coro || $form == wf-coro-owner || $form == wf-coro-batch32 ]]; then preflight_observed=1; fi
             if [[ $NATIVE_BASELINES != 0 && $form == uring* ]]; then preflight_observed=1; fi
             if [[ $EXPERIMENT == nodelay || ( $storage_experiment == 1 && ( $form == epoll* || $form == fiber* ) ) ]]; then preflight_observed=1; fi
             network_case "$form" 4 20 64 -1 "$preflight_observed"
+            if [[ $form == go-* ]]; then
+                go_policy "$form"
+                check_go_report 4 "$OUT/observed/$cohort-$form-k4-a0/server.err" "$go_owner" "$go_width"
+            fi
             if [[ $form == wf-coro || $form == wf-coro-owner || $form == wf-coro-batch32 ]]; then
                 continuation_policy "$form"
                 check_continuation_report 4 "$OUT/observed/$cohort-$form-k4-a0/server.err" "$owner_progress" "$progress_batch"
@@ -1198,6 +1268,14 @@ if [[ $page_experiment == 1 && $CLIENT_HEADROOM == 0 && $URING_DIAGNOSTIC == 0 ]
           if [[ $form == uring-* ]]; then binary="$OUT/bin/uring_echo${form#uring}"; fi
           if [[ $form == cpp-* ]]; then binary="$OUT/bin/$form"; fi
           continuation_environment=()
+          go_environment=()
+          resident_workers=$server_workers
+          if [[ $form == go-* ]]; then
+              binary="$OUT/bin/go-echo"
+              go_policy "$form"
+              go_environment+=(WF_BENCH_PROCESS_DETAILS=1)
+              resident_workers=$go_width
+          fi
           if [[ $form == wf-coro || $form == wf-coro-owner || $form == wf-coro-batch32 ]]; then
               binary="$OUT/bin/wf-coro"
               continuation_policy "$form"
@@ -1208,12 +1286,18 @@ if [[ $page_experiment == 1 && $CLIENT_HEADROOM == 0 && $URING_DIAGNOSTIC == 0 ]
             record="$OUT/resident/r$repetition-$cohort-$form-k$connections-b$bytes"
             if ! taskset -c "$client_cpus" env "WF_WORKERS=$server_workers" WF_STACKS=1100 WF_SCHED_REPORT=0 \
                 "WF_BENCH_THP_DISABLE=$disabled" "WF_BENCH_SERVER_CPUS=$server_cpus" "${allocator_environment[@]}" "${continuation_environment[@]}" \
-                "$OUT/bin/stream_check" "$binary" resident "$server_workers" "$connections" "$bytes" "$record" \
+                "${go_environment[@]}" "$OUT/bin/stream_check" "$binary" resident "$resident_workers" "$connections" "$bytes" "$record" \
                 > "$record.log" 2> "$record.err"; then
                 cat "$record.log" "$record.err" >&2
                 exit 1
             fi
             [[ ! -s $record.err && -s $record.smaps && -s $record.status ]]
+            if [[ $form == go-* ]]; then
+                awk -v expected="$server_cpus" '/^Cpus_allowed_list:/ {seen++; if($2!=expected) bad=1}
+                    END {exit !(seen>0 && !bad)}' "$record".task-*-status
+                awk -v peers="$connections" '/^tfd:/ {targets++; files[FILENAME]=1}
+                    END {for(file in files) reactors++; exit !(reactors==1 && targets==peers+1)}' "$record".fdinfo-*
+            fi
             awk -v disabled="$disabled" '$1=="THP_enabled:" {seen=1; enabled=$2}
                 END {exit !(seen && enabled==1-disabled)}' "$record.status"
             printf '%s\t%s\t%s\t%s\t%s\t%s\t' "$repetition" "$cohort" "$form" "$connections" "$bytes" "$disabled" >> "$OUT/resident.tsv"
@@ -1349,6 +1433,13 @@ for ((pass=-WARMUP; pass<ROUNDS; pass++)); do
     done < "$OUT/cases.tsv"
   done < "$OUT/cohorts-order.tsv"
 done
+
+if [[ $GO_SCREEN == 1 ]]; then
+    [[ ${#forward[@]} -eq 16 && $(wc -l < "$OUT/cases.tsv") -eq 5 ]]
+    [[ $(wc -l < "$OUT/network.tsv") -eq $((1 + 80 * ROUNDS)) ]]
+    [[ $(wc -l < "$OUT/resident.tsv") -eq 145 ]]
+    cat /proc/stat /proc/softirqs /proc/net/sockstat > "$OUT/go-kernel-after.txt"
+fi
 
 if [[ $URING_DIAGNOSTIC == 1 ]]; then
     # Preserve instrumented metadata separately; do not publish a normal
