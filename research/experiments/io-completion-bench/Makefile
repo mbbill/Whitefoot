@@ -119,6 +119,10 @@ scheduler-client-headroom:
 scheduler-uring-diagnostic:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS=3 WARMUP=1 CORO_CXX="$(CORO_CXX)" URING_DIAGNOSTIC=1 NATIVE_BASELINES=2 EXPERIMENT=allocator bash scheduler-bench.sh combine
 
+.PHONY: scheduler-client-diagnostic
+scheduler-client-diagnostic:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS=3 WARMUP=1 CORO_CXX="$(CORO_CXX)" CLIENT_DIAGNOSTIC=1 NATIVE_BASELINES=1 EXPERIMENT=allocator bash scheduler-bench.sh combine
+
 .PHONY: scheduler-allocation
 scheduler-allocation:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" EXPERIMENT=allocation bash scheduler-bench.sh bench
@@ -705,6 +709,20 @@ client-service-check: $(BUILD)/epoll_echo
 	    netload.c -o "$(BUILD)/netload-service$$budget"; \
 	  env ROOT="$(ROOT)" OUT="$(BUILD)" NET_LINES=epoll NETLOAD="$(BUILD)/netload-service$$budget" \
 	    sh linux-net-bench.sh verify-client; \
+	done
+
+.PHONY: netload-observe-check client-observer-check
+netload-observe-check: prepare
+	$(CLANG) $(CFLAGS) -Wpedantic -fsanitize=address,undefined netload_observe_check.c -o "$(BUILD)/netload-observe-check"
+	"$(BUILD)/netload-observe-check"
+
+client-observer-check: netload-observe-check $(BUILD)/epoll_echo
+	@set -e; \
+	for budget in 0 1 8; do \
+	  $(CLANG) $(CFLAGS) -Wpedantic -pthread -DWF_NETLOAD_OBSERVE=1 "-DWF_NETLOAD_SERVICE_ROUNDS=$$budget" \
+	    netload.c -o "$(BUILD)/netload-observe$$budget"; \
+	  env ROOT="$(ROOT)" OUT="$(BUILD)" NET_LINES=epoll NETLOAD="$(BUILD)/netload-observe$$budget" \
+	    sh linux-net-bench.sh verify-observer; \
 	done
 
 # Completion lifetime uses the actual C runtime, without changing its ABI.

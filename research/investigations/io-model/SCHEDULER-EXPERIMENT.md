@@ -7648,3 +7648,103 @@ availability nor the yielding call site was captured. The selected next
 control must locate the runtime wait path and distinguish per-worker
 placement from changing its backoff; changing initialization or source
 effects is not supported by this result. No runtime default is selected.
+
+## Fifty-sixth experiment: observe the client syscall and readiness work
+
+This bounded diagnostic starts from 72fdd468 and preserves experiment 53's
+frozen source and rows. That Xeon host's 64-peer, 64-KiB fast controls spend
+about 2.4--2.8 client user microseconds and 18.4--19.0 client system
+microseconds per completed round, with client exchange CPU/wall near one.
+This is evidence of occupied client CPU on that host, not proof that every
+server on another host reaches the same limit or that system time is all
+syscall-entry overhead. TCP work, copying and synchronous loopback processing
+can also be charged to the client. Experiment 43's added client SMT sibling
+did not establish spare physical client capacity.
+
+Source inspection rules out redundant payload generation as the next fix:
+`fill_message` runs before connecting; only the first echo byte changes per
+round; full `memcmp` is already the successful verification path. Per-round
+allocation is absent and percentile sorting follows exchange timing and CPU
+snapshots. Two round-trip clocks remain. The echo pattern repeats modulo 256
+in peer, position and round, so the old comment promising detection of every
+misrouting, reordering or stale reply was too strong. The comment is corrected
+without changing a payload byte or the existing error policy.
+
+`WF_NETLOAD_OBSERVE=1` adds worker-owned accounting, with separate admission
+and exchange records. `netload_observe.h` owns the portable accounting and
+`netload_observe_check.c` supplies an operation-trace check through
+`make netload-observe-check`; both are removed with this diagnostic when the
+client limitation is resolved or a replacement supersedes it. Ordinary
+builds have neither the observer fields nor its statements. The diagnostic
+compares ordinary optimized LLVM IR against 72fdd468, normalizing only the
+module/source filename lines, and fails on any remaining difference.
+
+The observation fields have these meanings:
+
+| Fields | Scope and interpretation |
+| --- | --- |
+| send/recv calls, positive, short, again, zero, error | Each actual socket call; short means positive and smaller than that call's requested length. EINTR remains the existing fatal socket error. No probe or retry is removed. |
+| send/recv requested, bytes, maximum | Requested bytes include repeated suffixes and unsuccessful probes; bytes sum only successful transfers. Maximum is the largest successful return, not an application message or TCP packet size. |
+| send/recv size0..size8 | Disjoint successful-return bins: 1; 2..64; 65..512; 513..4096; 4097..8192; 8193..16384; 16385..32768; 32769..65536; above 65536 bytes. |
+| pumps, verified, verified_bytes | Pump invocations and completed comparisons. This panel is ordinary echo with full byte validation inside timing; existing duration-compute recurrence verification retains its prior separate semantics. |
+| polls, ready, empty, interrupted, poll_errors | Exchange/admission epoll calls only, excluding connection establishment. Ready counts positive calls; events counts the returned entries. |
+| input, output, both, errors, hangups, read_hangups | Returned event flags, including skipped events; input/output overlap in both. The unchanged interest mask does not request RDHUP, so a zero read_hangups count cannot establish absence of peer half-close. |
+| skipped, dispatched, maximum_batch, batch0..batch3 | Returned entries skipped or dispatched by the original loop; maximum returned batch; positive poll bins 1, 2..8, 9..64, 65..256. |
+
+No observer operation calls a clock, allocates, changes the requested bytes
+or retries I/O. The original send/receive/EPOLLET control flow, one outstanding
+round and full comparison remain. Startup captures each worker's actual TID
+and CPU mask; it does not change affinity. After exchange CPU/timing snapshots
+and all thread joins, the main thread checks outcome and histogram counts,
+send=receive=checked bytes, checked rounds and event/batch conservation, then
+prints the records. The shell independently checks recorded rounds/bytes and
+the requested worker mask. Any failure remains a failed sample. Instrumented
+counter updates still consume CPU and can perturb scheduling; these rows are
+not an uninstrumented performance ranking.
+
+`make scheduler-client-diagnostic` fixes the existing `uring-64k` and `epoll`
+controls, one server worker on one logical CPU, and one client worker on a
+logical CPU of another physical core. The server's existing top_pad=0 and
+THP-disabled launch policy stays fixed. Two cells are retained verbatim:
+64 peers x 64 bytes x 2000 rounds and 64 peers x 65536 bytes x 500 rounds.
+One warmup followed by three alternating passes produces twelve rows in
+`client-diagnostic.tsv`. Existing ordinary client-service and native stream
+qualifications precede capture. The new real-client check uses two workers,
+service budgets 0/1/8 and both message sizes; two extra four-peer admission
+checks establish the separate phase accounting before diagnostic rows.
+
+Four additional executions, one per server/cell, use the same observed
+client under `perf record -e cpu-clock -F 199 --call-graph dwarf,8192`.
+They go to `client-profile.tsv`, not the twelve-row table. Recorder and client
+inherit the same client CPU mask; no extra worker, polling thread, SMT sibling
+or host is added. The profile covers whole client lifetime and inherited
+threads, including startup and post-timing output; exchange `getrusage`
+continues to report only the client's original exchange interval. The outer
+process-resource row for these four samples also includes recorder costs.
+Stack capture can perturb the workload and is used only for attribution.
+
+The conditional CI job installs a concrete Linux perf executable, requests
+per-process kernel sampling and visible kernel symbols, and fails explicitly
+if the capability probe fails. Raw `perf.data`, reports, period-bearing stack
+samples and recorder diagnostics are retained. `client-profile-status.txt`
+records visible kernel and unknown-symbol report lines: successful recording
+alone does not qualify kernel symbol attribution. Host topology, runtime
+settings, source/tool/binary hashes and kernel CPU/softirq/socket snapshots
+surround the panel. `client-diagnostic-counters.tsv` links all sixteen records
+to their raw sample directories and identifies the four profiled records.
+
+The first discriminator is calls, empty probes and received bytes per call,
+together with sampled client user/kernel work. Many recv/EAGAIN/epoll round
+trips would motivate a separately qualified batching candidate; dominant TCP
+copy/stack work would instead limit that hypothesis and motivate independent
+physical client resources. Neither a new client backend nor a server policy
+is implemented here. Counter counts must not be called TCP packet counts.
+
+Local M1 qualification passes the ASan/UBSan synthetic operation trace,
+including full/fragmented transfers, unsuccessful probes, EOF/error outcome
+classes, every size-bin boundary and deliberately broken conservation edges.
+All three observed service-budget forms cross-compile for x86-64 Linux with
+strict C11 warnings, and ordinary optimized Linux IR matches 72fdd468. Shell
+syntax and workflow YAML checks pass. These local checks do not execute Linux
+syscalls: real Linux socket/stream qualification, stack visibility and all
+diagnostic measurements remain pending on `codex/io-client-diagnostic`.

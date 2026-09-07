@@ -298,6 +298,24 @@ whole result is one line of tab-separated `key=value` fields, and the latency
 samples live in one array of `CONNECTIONS*ROUNDTRIPS` 32-bit microsecond
 values allocated before the first connect.
 
+The echo pattern varies by peer, byte position and round modulo 256. Every
+returned byte is checked, but identical-pattern peer swaps, old rounds and
+reordered 256-byte blocks can escape this oracle; it is not a unique message
+identifier. The diagnostic work preserves these exact historical bytes.
+
+`make scheduler-client-diagnostic` runs experiment 56: an optional
+`WF_NETLOAD_OBSERVE=1` client records send/receive outcomes, transfer-size
+histograms and exchange epoll event/batch counts. The ordinary client has no
+observer fields or branches; its optimized IR must match the fixed baseline.
+Two native servers and two 64-peer echo cases produce twelve unprofiled
+observed rows plus four separate client stack captures. Reporting and byte/
+round conservation checks happen after exchange timing and thread joins.
+`make netload-observe-check` checks synthetic operation traces on POSIX;
+Linux `client-observer-check` additionally runs the actual client with two
+workers and service budgets 0/1/8. These are different evidence scopes.
+The counters and their retirement condition are documented in
+[`SCHEDULER-EXPERIMENT.md`](../../investigations/io-model/SCHEDULER-EXPERIMENT.md#fifty-sixth-experiment-observe-the-client-syscall-and-readiness-work).
+
 `linux-net-bench.sh` is the protocol, and one protocol for every host that can
 run it, as `read-bench.sh` is for the read tables. It builds the compiler and
 the three tools from one worktree, checks that every server echoes what the
