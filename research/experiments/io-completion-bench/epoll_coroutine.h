@@ -89,6 +89,89 @@ struct connection_pause {
     void await_resume() noexcept {}
 };
 
+#if defined(WF_BENCH_CHUNK_LEASE)
+/* While workers run, only the owner accesses its free list. After joins,
+ * final cleanup may return remaining loans before destroying the pool.
+ * A live lease keeps its node's
+ * address stable; no byte is shared with another handler and no unsent suffix
+ * is copied on suspension. Nodes survive until every root has been destroyed.
+ * Each handler owns at most one node, so growth is bounded by admitted peers,
+ * without assuming SO_REUSEPORT distributes them evenly among workers. */
+struct chunk_node {
+    chunk_node *free_next;
+    chunk_node *all_next;
+#if defined(WF_BENCH_OBSERVE)
+    bool held;
+#endif
+    unsigned char bytes[TRANSFER_BYTES];
+};
+
+struct chunk_lease {
+    worker *owner;
+    chunk_node *node;
+    size_t length = 0;
+
+    explicit chunk_lease(worker *value) noexcept : owner(value), node(value->chunk_free) {
+        if (node != nullptr) owner->chunk_free = node->free_next;
+        else {
+            if (owner->chunk_count == option_connections) {
+                mark_failed();
+                return;
+            }
+            node = (chunk_node *)malloc(sizeof *node);
+            if (node == nullptr) { mark_failed(); return; }
+            node->all_next = owner->chunk_all;
+            owner->chunk_all = node;
+            owner->chunk_count++;
+#if defined(WF_BENCH_OBSERVE)
+            node->held = false;
+#endif
+        }
+#if defined(WF_BENCH_OBSERVE)
+        if (node->held) abort();
+        node->held = true;
+        owner->chunk_acquires++;
+        if (++owner->chunk_live > owner->chunk_peak) owner->chunk_peak = owner->chunk_live;
+#endif
+    }
+    chunk_lease(const chunk_lease &) = delete;
+    chunk_lease &operator=(const chunk_lease &) = delete;
+    chunk_lease(chunk_lease &&other) noexcept
+        : owner(other.owner), node(std::exchange(other.node, nullptr)), length(other.length) {}
+    ~chunk_lease() { reset(); }
+    void reset() noexcept {
+        if (node == nullptr) return;
+#if defined(WF_BENCH_OBSERVE)
+        if (!node->held || owner->chunk_live == 0 || length > TRANSFER_BYTES) abort();
+        node->held = false;
+        owner->chunk_returns++;
+        owner->chunk_live--;
+#endif
+        node->free_next = owner->chunk_free;
+        owner->chunk_free = std::exchange(node, nullptr);
+        length = 0;
+    }
+};
+
+static void chunk_pool_destroy(worker *owner) {
+#if defined(WF_BENCH_OBSERVE)
+    if (owner->chunk_live != 0 || owner->chunk_acquires != owner->chunk_returns) abort();
+    fprintf(stderr, "chunks: worker=%d nodes=%llu capacity_bytes=%llu node_bytes=%zu allocated_bytes=%llu acquires=%llu returns=%llu live=%llu peak=%llu\n",
+            owner->index, (unsigned long long)owner->chunk_count,
+            (unsigned long long)(owner->chunk_count * TRANSFER_BYTES),
+            sizeof(chunk_node), (unsigned long long)(owner->chunk_count * sizeof(chunk_node)),
+            (unsigned long long)owner->chunk_acquires, (unsigned long long)owner->chunk_returns,
+            (unsigned long long)owner->chunk_live, (unsigned long long)owner->chunk_peak);
+#endif
+    while (owner->chunk_all != nullptr) {
+        chunk_node *node = owner->chunk_all;
+        owner->chunk_all = node->all_next;
+        free(node);
+    }
+    owner->chunk_free = nullptr;
+}
+#endif
+
 #if defined(WF_BENCH_COMPUTE)
 static connection_task receive_request(struct connection *link) {
     unsigned received = 0;
@@ -108,7 +191,13 @@ static connection_task receive_request(struct connection *link) {
 }
 #endif
 
+#if defined(WF_BENCH_CHUNK_LEASE)
+static connection_task send_response(struct connection *link, chunk_lease chunk) {
+    unsigned char *source = chunk.node->bytes;
+    size_t length = chunk.length;
+#else
 static connection_task send_response(struct connection *link, unsigned char *source, size_t length) {
+#endif
     size_t offset = 0;
     while (offset < length) {
         ssize_t moved = send(link->descriptor, source + offset, length - offset, MSG_NOSIGNAL);
@@ -117,12 +206,14 @@ static connection_task send_response(struct connection *link, unsigned char *sou
 #if defined(WF_BENCH_OBSERVE)
             link->owner->send_waits++;
 #endif
+#if !defined(WF_BENCH_CHUNK_LEASE)
             if (source != link->pending) {
                 length -= offset;
                 memcpy(link->pending, source + offset, length);
                 source = link->pending;
                 offset = 0;
             }
+#endif
             co_await connection_pause{link, false};
         } else co_return 0;
     }
@@ -152,11 +243,27 @@ static connection_task connection_main(struct connection *link) {
         if (++link->owner->replies == 8u) co_await connection_pause{link, true};
 #endif
 #else
+#if defined(WF_BENCH_CHUNK_LEASE)
+        chunk_lease chunk(link->owner);
+        if (chunk.node == nullptr) break;
+        ssize_t taken = recv(link->descriptor, chunk.node->bytes, TRANSFER_BYTES, 0);
+#else
         ssize_t taken = recv(link->descriptor, WF_BENCH_RECEIVE_BUFFER(link->owner, link), TRANSFER_BYTES, 0);
+#endif
         if (taken > 0) {
+#if defined(WF_BENCH_CHUNK_LEASE)
+            chunk.length = (size_t)taken;
+            if (!(co_await send_response(link, std::move(chunk)))) break;
+#else
             if (!(co_await send_response(link, WF_BENCH_RECEIVE_BUFFER(link->owner, link), (size_t)taken))) break;
+#endif
         } else if (taken < 0 && errno == EINTR) continue;
         else if (taken < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+#if defined(WF_BENCH_CHUNK_LEASE)
+            /* Readiness waits hold no native buffer loan. Return the unused
+             * node before yielding, rather than pinning one per idle peer. */
+            chunk.reset();
+#endif
             co_await connection_pause{link, false};
         } else break;
 #endif

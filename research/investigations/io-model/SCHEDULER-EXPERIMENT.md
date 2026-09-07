@@ -4267,7 +4267,7 @@ name. A known limitation remains visible until its experiment is complete.
 | Native C epoll with private storage | Arena, malloc or calloc per connection; main-thread worker variant | Diagnostic storage and allocator comparison; private backing remains owned through I/O | Experiment 65 qualifies spawned-worker policy 0/3 with actual short-transfer/backpressure traces and sanitizers. Under its two-worker ARM large-message client, private/shared epoll paired rate is 0.8475 and CPU/trip 1.1607, both worse in all five pairs. WF/private rate is 0.9245. This is a measured joint allocation/working-set cost, not cache attribution or identical WF representation; shared epoll remains the competitive reference |
 | Native C io_uring | Multishot accept/recv, provided buffers, per-worker rings/listeners, ordered vectored sends; SINGLE_ISSUER + DEFER_TASKRUN, no SQPOLL | Competitive completion control: batching, no receive submission per arrival, loaned receive buffers reused for send | Stream-qualified and screened at `475008b5`: 64 KiB improves both large-message cells; small-message intervals overlap. No independently confirmed or universal winner. Experiment 62 requalifies the delayed-ENOBUFS correction and 2/32/64/128 pools. Its complete `b82647d5` raw cohort is audited despite a final summary-reference failure; the strongest measured uring median remains below epoll at large-message client width two. Earlier cohorts remain frozen |
 | Native C io_uring with immediate send | Same receive engine and loans, one nonblocking `sendmsg` attempt before ring fallback | Competitive hybrid candidate: avoids a submission/completion round trip when the socket accepts bytes immediately | Stream-qualified and screened at `0357259d`; 8 KiB hybrid severely regresses large messages; experiment 46 measures about 3.785x more send operations from lost application-level gathering, without short/EAGAIN retries. 64 KiB does not show the same loss. Shutdown wake-storage correction requalified at `0ebe924b`. Experiment 62 qualifies corrected exhaustion recovery at all selected capacities; width-two large-message inline gains depend on pool size and do not beat the pure-ring 128-buffer median. Its final summary-reference failure is separate from the audited raw cohort |
-| Native C stackful / C++ stackless | Same epoll engine; private or shared receive storage; stackful, heap coroutine, and compiler-elided coroutine forms | Diagnostic representation control: separates coroutine/frame allocation, storage and reactor cost | Screened and stream/lifetime-qualified at their recorded revisions; not independent mature runtime comparisons |
+| Native C stackful / C++ stackless | Same epoll engine; private or shared receive storage; stackful, heap coroutine, and compiler-elided coroutine forms | Diagnostic representation control: separates coroutine/frame allocation, storage and reactor cost | Screened and stream/lifetime-qualified at their recorded revisions. Experiment 67 adds an owner-local initialized-prefix chunk lease retained across nested send waits; local lifetime/codegen checks pass, native qualification and timing remain pending. This is a bench-only readiness representation, not a WF API or independent mature runtime comparison |
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
 | WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Experiments 39/44/48 qualify the threaded, owner and batched-owner paths. At `fc69af15`, batching adds 28% / 27% paired throughput at 64 / 1024 small-message peers, with separate counters confirming aggregated ring submissions. Experiment 54 removes 97..98% of pending-list visits, with only 1.0%/1.8% median paired rate gains and reversals at 1024 peers; native CPU/trip still leads. Client headroom and multi-owner compute remain open. Experiments 52/54 qualify the unchanged sequential mixed protocol on both Linux completion routes |
 | Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Go 1.27.1 release/race and both 64 KiB storage forms qualified (49/51). The fixed Linux screen (53) favors acceptor-heap/P1 for memory and tail latency within one server CPU; P4 oversubscription inflates p99. WF batch32 exceeds this Go candidate at 64/1024 small peers while native stays ahead. Large transfers approach the client ceiling; no universal optimum. Race moves both buffers to the heap |
@@ -9810,3 +9810,148 @@ measured optimization target under the wider large-message client, while
 WF still has a residual cost against private epoll. These results do not
 select a runtime, language, allocator or storage default change and do not
 establish a globally fastest backend.
+
+## Sixty-seventh experiment: owned receive chunks in a sequential handler
+
+Experiment 65 measures a large-message penalty when the same manual epoll
+engine changes from shared scratch to private calloc. Experiments 23 and 26
+already show that a sequential stackful or C++ coroutine handler can use
+shared scratch: it copies any unsent suffix into connection-private storage
+before suspension. Repeating that comparison would not test a new ownership
+mechanism. This experiment asks whether a stable owned chunk can cross the
+nested send's waits, then return its backing for reuse by another connection,
+without copying an unsent suffix or pinning a buffer to every idle handler.
+
+### Selected representation and ownership boundary
+
+`WF_BENCH_CHUNK_LEASE` selects only the existing elided C++ echo engine. The
+root still performs nonblocking receive directly and directly awaits one
+`send_response` child; no receive coroutine or new scheduling layer is added.
+A move-only `chunk_lease` owns a node and its initialized prefix length. The
+root acquires a node immediately before receive, publishes only the positive
+returned prefix, and moves the lease into the nested send. Positive short
+sends retain that same address and offset; a blocked send suspends with the
+lease still live. Completion or destruction of the owned child returns its
+node exactly once. There is no spill copy into `link->pending` in this form.
+An unused node is returned before a receive-EAGAIN wait, and receive EOF/error
+also releases it. Storage beyond the received prefix is never exposed as
+initialized payload; this is not removal of a WF initialization requirement.
+
+Each worker keeps its own LIFO free list and a list of allocated nodes. During
+execution only that worker accesses its pool. Nodes grow lazily when the free
+list is empty and remain allocated until teardown. One handler holds at most
+one live node, and a worker cannot allocate beyond the process's declared
+connection quota. The controlled client opens exactly that many peers in
+total, so the qualified sum of worker high-water allocations is bounded by
+that total; the generic per-worker guard alone is not a process-wide
+admission mechanism against extra external connections. No even
+`SO_REUSEPORT` distribution is assumed. Exhaustion of the declared bound or
+allocation failure ends the diagnostic run explicitly rather than waiting
+for a credit that the same handler holds. After all workers join, cleanup
+first destroys remaining roots, then frees their pools. No pool is freed
+while a live lease can return into it.
+
+This is readiness I/O: a recv returning EAGAIN leaves no buffer address held
+by a pending native operation, and ordinary send returns after accepting its
+source bytes. It does not qualify retiring an io_uring destination before a
+terminal CQE, migrating leases between owners, or using a source-visible
+`&uniq pool` across independent suspended calls. Current `receive_next` takes
+an exclusive fixed destination for the call. A future owned-chunk operation
+would need its own complete resource/effect/ownership contract; none is
+selected here. Compiler, WF source, runtime and container interfaces stay
+unchanged.
+
+### Qualification before comparison
+
+The existing `coroutine_lifetime.cpp` gains a separately selected variant that
+uses the actual handler source and real socket calls. Its wrappers only count
+handler outcomes; fixture/client calls cannot satisfy short-transfer guards.
+Two distinct payload leases are held in suspended nested sends simultaneously.
+A third node is returned and reacquired while both remain live, and all bytes
+of the held prefixes are checked unchanged. One send is drained with every
+byte verified, then its node is reused while the other send remains suspended.
+Destroying the second parent must destroy its child and return that loan.
+The same owner admits all three nodes despite four configured workers; an
+attempt past the quota must fail without allocation. Actual root cases cover
+idle receive release, a short initialized prefix, half-close/EOF, broken send,
+and TCP reset. Final live loans are zero, acquires equal returns, and every
+coroutine frame is freed. Separate assertions require actual positive short
+receive/send and send EAGAIN outcomes.
+
+`make chunk-lease-check` is a dependency of the maintained `coroutine-check`.
+It runs this fixture under fatal ASan/UBSan, then an instrumented lease server
+through the unchanged 8 MiB/four-peer byte-stream oracle with one and four
+workers, forced send backpressure and NODELAY readback. Per-worker reports
+must have all fields, unique worker IDs, balanced loans, peak equal to grown
+nodes, and the admitted allocation bound. The stream cases require exactly
+four elided root allocations/frees and actual send waits. All existing C and
+C++ stream cases and both previous nested-frame destruction forms remain.
+Local socket scheduling and a native Linux epoll stream are distinct evidence;
+the former does not establish edge-triggered service correctness.
+
+### Frozen comparison settings
+
+`make scheduler-chunk-lease` reuses the existing physical-client panel in
+`scheduler-bench.sh`. Native Linux ARM admission requires four allowed,
+distinct reported package/core IDs and pairwise disjoint sibling lists,
+checks visible ancestor quotas, and compares initial/final topology and CPU
+selection. The fixed spawned server worker uses the first selected CPU;
+client masks use one/two other reported cores. Actual launch and client-worker
+masks are read back. Guest topology does not guarantee dedicated host cores.
+The client remains the default receive policy and service budget zero, with
+full byte verification, one outstanding round and existing timestamps.
+THP is disabled for the server and glibc top_pad remains zero.
+
+| Form | Representation and receive storage | Role |
+|---|---|---|
+| `epoll` | Existing manual C; shared scratch/private spill; spawned worker | Strong competitive reference |
+| `cpp-elide` | Existing elided C++ root/child; shared scratch/private spill | Same-language shared-storage control |
+| `cpp-elide-calloc` | Same elided root/child; per-connection private calloc | Same-language private-storage control |
+| `cpp-elide-lease` | Same root/child call shape; stable move-only chunk, owner-local reuse | Candidate representation |
+
+The two cells are 64 peers × 2000 trips × 64 B with client width one and
+64 peers × 500 trips × 64 KiB with client width two. Five alternating passes
+after one warmup give **40 ordinary rows and eight warmups**. Three separate
+observer passes give **24 rows, 36 client-worker reports and six lease
+reports**. Two three-worker uneven-admission smokes remain separate. The
+existing qualification routes also remain; uring and WF are qualified but
+not timed in this four-form panel. No cross-run WF or uring ratio is formed.
+
+Ten selected ordinary/observed server/client executables are retained with
+checked hashes. The artifact also retains the old/current C++ source and
+headers, qualification source/Makefile, normal optimized IR, code sizes, raw
+rates, p99, whole-process CPU/RSS and observations. The actual runner must
+prove ordinary C manual/shared-C++/private-C++ IR equality against `6e6eaa2a`,
+removing only module path headers. Frame allocation observations remain
+separate from ordinary timings. Pool capacity bytes, node allocation bytes
+and peak RSS are different quantities: node metadata and coroutine frames
+cost space too. The observer adds a held marker to each node, so its layout
+and execution are not ordinary-layout measurements.
+
+The timing question is whether stable ownership retains the useful cost of
+shared reuse under this resource envelope. A pool reaching one node per
+concurrent blocked handler is correct, but would not show low live-storage
+cost in that workload. Consistent ordinary rate/CPU/tail losses or repeated
+allocation despite bounded reuse remain negative evidence. Neither outcome
+alone selects a WF operation, backend or globally fastest implementation.
+
+### Local qualification scope
+
+The M1 actual-socket ASan/UBSan fixture passes with three allocated/peak nodes,
+two simultaneous suspended loans, all final loans returned and five root
+allocations/frees. It observes 16 positive short sends, 16 send-EAGAIN results,
+one short receive and one send/receive error each. Acquire/return counts may
+vary with reset delivery, and are checked for equality. Linux epoll/eventfd
+entry points are aborting local stubs and are not exercised by this fixture.
+Actual-source mutations omitting idle release or destructor return fail at
+their intended lifetime assertions. The report parser rejects missing zero
+fields, duplicate/missing worker identities and inconsistent live/peak state.
+
+Local LLVM 22.1.8 AArch64 codegen preserves three old C++ ordinary control IR
+pairs and cross-links four Linux ELFs; this is not native execution or the CI
+Clang 20 result. Its elided root size is 168 bytes for shared/calloc versus
+184 for leases, and the lease node allocation is 65,552 bytes for 65,536 bytes
+of capacity. Local linked text sizes are shared 8,284, calloc 8,430 and leased
+8,639 bytes. The new ownership representation therefore has real frame and
+code costs, not an assumed zero-cost abstraction. Native Linux qualification,
+the exact-runner default IR checks and all performance results remain pending.

@@ -27,6 +27,7 @@ CLIENT_READINESS=${CLIENT_READINESS:-0}
 CLIENT_CAPACITY=${CLIENT_CAPACITY:-0}
 NATIVE_FRONTIER=${NATIVE_FRONTIER:-0}
 STORAGE_CONTROL=${STORAGE_CONTROL:-0}
+CHUNK_LEASE_CONTROL=${CHUNK_LEASE_CONTROL:-0}
 client_observer_active=0
 client_profile_active=0
 [[ $CLIENT_DIAGNOSTIC == 0 || $CLIENT_DIAGNOSTIC == 1 ]] || exit 2
@@ -34,7 +35,12 @@ client_profile_active=0
 [[ $CLIENT_CAPACITY == 0 || $CLIENT_CAPACITY == 1 ]] || exit 2
 [[ $NATIVE_FRONTIER == 0 || $NATIVE_FRONTIER == 1 ]] || exit 2
 [[ $STORAGE_CONTROL == 0 || $STORAGE_CONTROL == 1 ]] || exit 2
+[[ $CHUNK_LEASE_CONTROL == 0 || $CHUNK_LEASE_CONTROL == 1 ]] || exit 2
 server_observer_panel=$NATIVE_FRONTIER
+if [[ $CHUNK_LEASE_CONTROL == 1 ]]; then
+    [[ $STORAGE_CONTROL == 0 && $NATIVE_FRONTIER == 0 && $CLIENT_CAPACITY == 0 ]] || { echo 'scheduler-bench: chunk leases use a separate physical-client panel' >&2; exit 2; }
+    server_observer_panel=1
+fi
 if [[ $STORAGE_CONTROL == 1 ]]; then
     [[ $NATIVE_FRONTIER == 0 && $CLIENT_CAPACITY == 0 ]] || { echo 'scheduler-bench: storage control is a separate physical-client panel' >&2; exit 2; }
     server_observer_panel=1
@@ -433,9 +439,12 @@ fi
     echo "client_diagnostic=$CLIENT_DIAGNOSTIC"
     echo "client_readiness=$CLIENT_READINESS"
     echo "client_capacity=$CLIENT_CAPACITY"
+    echo "chunk_lease_control=$CHUNK_LEASE_CONTROL"
     echo "storage_control=$STORAGE_CONTROL"
     echo "native_frontier=$NATIVE_FRONTIER"
-    if [[ $STORAGE_CONTROL == 1 ]]; then
+    if [[ $CHUNK_LEASE_CONTROL == 1 ]]; then
+        echo 'chunk_lease_policy=default client service0; fixed spawned server worker/CPU;64-peer large width2 and small width1; manual shared epoll and C++ elided shared/spill, private calloc, owned chunks;40 ordinary,8 warmups,24 separate observations; readiness-backed owner-local leases, no WF interface change'
+    elif [[ $STORAGE_CONTROL == 1 ]]; then
         echo 'storage_control_policy=default client service 0; fixed server CPU; 64-peer large width 2 and small width 1; shared-scratch/private-calloc epoll with spawned worker, pure uring 64 KiB/128 buffers, indexed WF; 40 ordinary, 8 warmups, 24 separate observations; joint allocation/working-set diagnostic'
         strace --version
     elif [[ $NATIVE_FRONTIER == 1 ]]; then
@@ -465,7 +474,9 @@ fi
     if [[ $CLIENT_HEADROOM == 1 ]]; then
         echo 'client_headroom_policy=one server logical CPU; one versus two client workers on a separate physical core; unchanged prefilled payload and full memcmp oracle'
     fi
-    if [[ $STORAGE_CONTROL == 1 ]]; then
+    if [[ $CHUNK_LEASE_CONTROL == 1 ]]; then
+        echo 'uring_buffer_policy=qualified but not timed in this C++ representation panel'
+    elif [[ $STORAGE_CONTROL == 1 ]]; then
         echo 'uring_buffer_policy=65536 bytes; explicit 128 buffers per worker provide 8 MiB; pure-ring; SQPOLL excluded'
     elif [[ $NATIVE_FRONTIER == 1 ]]; then
         echo 'uring_buffer_policy=65536 bytes; explicit 32/64/128 buffers per worker provide 2/4/8 MiB; pure-ring and immediate-send pairs; SQPOLL excluded'
@@ -913,7 +924,7 @@ if [[ $NATIVE_BASELINES != 0 ]]; then
       done
     done
 fi
-if [[ $server_observer_panel == 1 ]]; then
+if [[ $server_observer_panel == 1 && $CHUNK_LEASE_CONTROL == 0 ]]; then
     # Compare the zero-count ordinary path with the separate corrected rearm
     # revision. Explicit counts select capacity; observer fields stay absent.
     git -C "$ROOT" show 4ad6c37cec63b4750d272225328a05aa5cc51a1f:research/experiments/io-completion-bench/uring_echo.c > "$OUT/codegen/uring-before.c"
@@ -1056,6 +1067,7 @@ if [[ $coroutine_experiment == 1 ]]; then
     # Compile the same engine as C++ for manual and stackful controls too.
     # Every normal form has a separate untimed allocation/continuation observer.
     cpp_storage=(0 3)
+    if [[ $CHUNK_LEASE_CONTROL == 1 ]]; then cpp_storage+=(lease); fi
     cpp_protocol=()
     if [[ $network_compute == 1 ]]; then cpp_storage=(0); cpp_protocol=(-DWF_BENCH_COMPUTE -DWF_BENCH_QUANTUM); fi
     for representation in manual stackful heap elide; do
@@ -1064,21 +1076,51 @@ if [[ $coroutine_experiment == 1 ]]; then
         if [[ $representation == heap || $representation == elide ]]; then cpp_flags+=(-DWF_BENCH_COROUTINE); fi
         if [[ $representation == elide ]]; then cpp_flags+=(-DWF_BENCH_CORO_ELIDE); fi
         for storage in "${cpp_storage[@]}"; do
+            if [[ $storage == lease && $representation != elide ]]; then continue; fi
+            selected_storage=$storage
+            lease_flags=()
+            if [[ $storage == lease ]]; then selected_storage=0; lease_flags=(-DWF_BENCH_CHUNK_LEASE); fi
             form="cpp-$representation"
+            if [[ $storage == lease ]]; then form+=-lease; fi
             if [[ $storage == 3 ]]; then form="$form-calloc"; fi
             for observed in 0 1; do
                 output="$OUT/bin/$form"
                 observe_flags=()
                 if [[ $observed == 1 ]]; then output="$output-observed"; observe_flags=(-DWF_BENCH_OBSERVE -DWF_BENCH_STORAGE_OBSERVE); fi
+                if [[ $observed == 1 && $CHUNK_LEASE_CONTROL == 1 ]]; then observe_flags+=(-DWF_BENCH_TCP_VERIFY); fi
                 "$CORO_CXX" -std=c++20 -O2 -Wall -Wextra -Werror -Wpedantic -fno-exceptions -pthread \
-                    "${cpp_flags[@]}" "${cpp_protocol[@]}" "${observe_flags[@]}" "-DWF_BENCH_RECEIVE_STORAGE=$storage" \
+                    "${cpp_flags[@]}" "${cpp_protocol[@]}" "${observe_flags[@]}" "${lease_flags[@]}" "-DWF_BENCH_RECEIVE_STORAGE=$selected_storage" \
                     -x c++ "$HERE/epoll_echo.c" -o "$output"
             done
             "$CORO_CXX" -std=c++20 -O2 -Wall -Wextra -Werror -Wpedantic -fno-exceptions -pthread \
-                "${cpp_flags[@]}" "${cpp_protocol[@]}" "-DWF_BENCH_RECEIVE_STORAGE=$storage" \
+                "${cpp_flags[@]}" "${cpp_protocol[@]}" "${lease_flags[@]}" "-DWF_BENCH_RECEIVE_STORAGE=$selected_storage" \
                 -x c++ -S -emit-llvm "$HERE/epoll_echo.c" -o "$OUT/codegen/$form.ll"
         done
     done
+fi
+if [[ $CHUNK_LEASE_CONTROL == 1 ]]; then
+    # Same-toolchain default representation check; preserve the actual source,
+    # headers and all compared LLVM, not merely their recorded identifiers.
+    mkdir -p "$OUT/codegen/chunk-before" "$OUT/codegen/chunk-current"
+    for input in epoll_echo.c epoll_coroutine.h epoll_stackful.h; do
+        git -C "$ROOT" show "6e6eaa2a843eee482994c8dd2bf5b15f9bb5ca38:research/experiments/io-completion-bench/$input" > "$OUT/codegen/chunk-before/$input"
+        cp "$HERE/$input" "$OUT/codegen/chunk-current/$input"
+    done
+    cp "$HERE/coroutine_lifetime.cpp" "$HERE/Makefile" "$OUT/codegen/chunk-current/"
+    for form in epoll cpp-elide cpp-elide-calloc; do
+        storage=0; flags=(); tool=$CLANG; standard=c11
+        if [[ $form == cpp-* ]]; then tool=$CORO_CXX; standard=c++20; flags=(-fno-exceptions -DWF_BENCH_STACKFUL -DWF_BENCH_COROUTINE -DWF_BENCH_CORO_ELIDE); fi
+        if [[ $form == *-calloc ]]; then storage=3; fi
+        for revision in before current; do
+            language=c; if [[ $standard == c++20 ]]; then language=c++; fi
+            "$tool" "-std=$standard" -O2 -g0 -Wall -Wextra -Werror -Wpedantic -pthread "${flags[@]}" \
+                "-DWF_BENCH_RECEIVE_STORAGE=$storage" -x "$language" -S -emit-llvm \
+                "$OUT/codegen/chunk-$revision/epoll_echo.c" -o "$OUT/codegen/chunk-$revision-$form.ll"
+            sed '/^; ModuleID =/d; /^source_filename =/d' "$OUT/codegen/chunk-$revision-$form.ll" > "$OUT/codegen/chunk-$revision-$form.normalized.ll"
+        done
+        cmp "$OUT/codegen/chunk-before-$form.normalized.ll" "$OUT/codegen/chunk-current-$form.normalized.ll"
+    done
+    size "$OUT/bin/storage-epoll" "$OUT/bin/cpp-elide" "$OUT/bin/cpp-elide-calloc" "$OUT/bin/cpp-elide-lease" > "$OUT/chunk-code-size.txt"
 fi
 "$OUT/bin/gen" "$OUT/tree" 2 65536 fixed
 
@@ -1379,6 +1421,8 @@ network_case() {
     if [[ $server_observer_panel == 1 && $observed == 1 && $pass -ge 0 ]]; then
         if [[ $form == wf-coro-index ]]; then
             check_continuation_report "$connections" "$directory/server.err" "$owner_progress" "$progress_batch" "$pending_buckets"
+        elif [[ $CHUNK_LEASE_CONTROL == 1 && $form == cpp-* ]]; then
+            check_chunk_report "$form" "$connections" "$directory/server.err"
         elif [[ $form == epoll || $form == epoll-calloc ]]; then
             local expected_storage=0
             if [[ $form == epoll-calloc ]]; then expected_storage=3; fi
@@ -1436,6 +1480,10 @@ network_case() {
             printf '%s\t%s\t%s\t%s\t%s\n' "$pass" "$form" "$cohort" "$directory" "$(cat "$directory/server.err")" \
                 >> "$OUT/$native_counter_panel-counters.tsv"
         fi
+        if [[ $CHUNK_LEASE_CONTROL == 1 && $observed == 1 && $form == cpp-elide-lease ]]; then
+            printf '%s\t%s\t%s\t%s\t%s\n' "$pass" "$form" "$cohort" "$directory" "$(sed -n '/^chunks:/p' "$directory/server.err")" \
+                >> "$OUT/$native_counter_panel-counters.tsv"
+        fi
         if [[ $URING_DIAGNOSTIC == 1 ]]; then
             awk -v fields="$uring_diagnostic_fields" -v pass="$pass" -v form="$form" \
                 -v expected="$((connections * trips * bytes))" '/^uring:/ {
@@ -1453,6 +1501,33 @@ network_case() {
             }' "$directory/server.err" >> "$OUT/uring-diagnostic-counters.tsv"
         fi
     fi
+}
+
+# The four-form panel has one spawned server worker. Frame and pool reports
+# describe separate observer executions, never ordinary syscall/cost counts.
+check_chunk_report() {
+    local form=$1 peers=$2 log=$3 storage=0 leased=0
+    if [[ $form == cpp-elide-calloc ]]; then storage=3; fi
+    if [[ $form == cpp-elide-lease ]]; then leased=1; fi
+    awk -v peers="$peers" -v storage="$storage" -v leased="$leased" '
+      /^chunks:/ {
+        chunks++; for(i=2;i<=NF;i++) {split($i,a,"="); if(a[2]!~/^[0-9]+$/) bad=1; c[a[1]]=a[2]+0}
+      }
+      /^coroutine:/ {frames++; for(i=2;i<=NF;i++) {split($i,a,"="); f[a[1]]=a[2]+0}}
+      /^storage:/ {reports++; for(i=2;i<=NF;i++) {split($i,a,"="); s[a[1]]=a[2]+0}}
+      END {
+        if(leased) {
+          n=split("worker nodes capacity_bytes node_bytes allocated_bytes acquires returns live peak",names," ");
+          for(i=1;i<=n;i++) if(!(names[i] in c)) bad=1;
+          if(c["worker"]!=0 || c["nodes"]<1 || c["nodes"]>peers || c["peak"]!=c["nodes"] ||
+             c["capacity_bytes"]!=c["nodes"]*65536 || c["node_bytes"]<65536 ||
+             c["allocated_bytes"]!=c["nodes"]*c["node_bytes"] || c["live"]!=0 || c["acquires"]<c["nodes"] ||
+             c["acquires"]!=c["returns"]) bad=1;
+        }
+        exit !(!bad && chunks==leased && frames==1 && f["allocations"]==peers && f["frees"]==peers && f["bytes"]>0 &&
+          reports==1 && ("policy" in s) && s["policy"]==storage && ("main_worker" in s) && s["main_worker"]==0 &&
+          s["transfer_bytes"]==65536 && s["accepted"]==peers && s["closed"]==peers)
+      }' "$log"
 }
 
 # User-visible loans start at the buffer-select CQE and end when the last
@@ -1486,7 +1561,7 @@ check_frontier_uring() {
 }
 
 frontier_cell_selected() {
-    if [[ $STORAGE_CONTROL == 1 ]]; then
+    if [[ $STORAGE_CONTROL == 1 || $CHUNK_LEASE_CONTROL == 1 ]]; then
         [[ ( $client_workers == 1 && $bytes == 64 ) || ( $client_workers == 2 && $bytes == 65536 ) ]]
         return
     fi
@@ -1565,7 +1640,9 @@ check_continuation_report() {
 }
 if [[ $URING_DIAGNOSTIC == 1 ]]; then references=(uring uring-64k uring-inline uring-64k-inline); fi
 if [[ $CLIENT_DIAGNOSTIC == 1 ]]; then references=(uring-64k epoll); fi
-if [[ $STORAGE_CONTROL == 1 ]]; then
+if [[ $CHUNK_LEASE_CONTROL == 1 ]]; then
+    references=(epoll cpp-elide cpp-elide-calloc cpp-elide-lease)
+elif [[ $STORAGE_CONTROL == 1 ]]; then
     references=(epoll epoll-calloc uring-64k-p128)
 elif [[ $NATIVE_FRONTIER == 1 ]]; then
     references=(uring-64k-p32 uring-64k-p32-inline uring-64k-p64 uring-64k-p64-inline uring-64k-p128 uring-64k-p128-inline epoll)
@@ -1654,6 +1731,9 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
                     "$OUT/observed/$cohort-$form-k4-a0/server.err"
             fi
             if [[ $form == cpp-* ]]; then
+                if [[ $CHUNK_LEASE_CONTROL == 1 ]]; then
+                    check_chunk_report "$form" 4 "$OUT/observed/$cohort-$form-k4-a0/server.err"
+                fi
                 expected_storage=0
                 if [[ $form == *-calloc ]]; then expected_storage=3; fi
                 awk -v expected="$expected_storage" '/^storage:/ {for(i=2;i<=NF;i++) {split($i,a,"=");v[a[1]]=a[2]+0}; seen=1}
@@ -1850,7 +1930,13 @@ if [[ $CLIENT_READINESS == 1 || $physical_client_panel == 1 ]]; then
         retained=(netload netload-observed storage-epoll uring_echo-64k echo-callee-small wf-coro)
     fi
     native_counter_panel=native-frontier
-    if [[ $STORAGE_CONTROL == 1 ]]; then
+    if [[ $CHUNK_LEASE_CONTROL == 1 ]]; then
+        native_counter_panel=chunk-lease
+        forward=(epoll cpp-elide cpp-elide-calloc cpp-elide-lease)
+        retained=(netload netload-observed storage-epoll storage-epoll-observed
+            cpp-elide cpp-elide-observed cpp-elide-calloc cpp-elide-calloc-observed cpp-elide-lease cpp-elide-lease-observed)
+        [[ ${#retained[@]} -eq 10 ]]
+    elif [[ $STORAGE_CONTROL == 1 ]]; then
         native_counter_panel=storage-control
         forward=(epoll epoll-calloc uring-64k-p128 wf-coro-index)
         retained=(netload netload-observed storage-epoll storage-epoll-observed
@@ -1874,6 +1960,7 @@ if [[ $CLIENT_READINESS == 1 || $physical_client_panel == 1 ]]; then
         cmp "$OUT/bin/$binary" "$OUT/retained/$binary"
         sha256sum "$OUT/bin/$binary" >> "$OUT/build-sha256.txt"
     done
+    if [[ $CHUNK_LEASE_CONTROL == 1 ]]; then sha256sum "$OUT/codegen/chunk-before/"* "$OUT/codegen/chunk-current/"* "$HERE/Makefile" >> "$OUT/build-sha256.txt"; fi
     sha256sum "$HERE/netload.c" "$HERE/netload_check.c" "$HERE/netload_observe.h" "$HERE/scheduler-bench.sh" \
         "$HERE/epoll_echo.c" "$HERE/uring_echo.c" "$HERE/coroutine_completion.cpp" "$CLANG" "$WFC" \
         "$OUT/retained/"* >> "$OUT/build-sha256.txt"
@@ -2078,7 +2165,10 @@ if [[ $CLIENT_READINESS == 1 || $physical_client_panel == 1 ]]; then
         panel=client-capacity
         panel_cases=3; panel_rows=180; panel_observations=36; panel_workers=72
     fi
-    if [[ $STORAGE_CONTROL == 1 ]]; then
+    if [[ $CHUNK_LEASE_CONTROL == 1 ]]; then
+        panel=chunk-lease
+        panel_cases=2; panel_rows=40; panel_observations=24; panel_workers=36; observer_passes=3
+    elif [[ $STORAGE_CONTROL == 1 ]]; then
         panel=storage-control
         panel_cases=2; panel_rows=40; panel_observations=24; panel_workers=36; observer_passes=3
     elif [[ $NATIVE_FRONTIER == 1 ]]; then
@@ -2109,8 +2199,10 @@ if [[ $CLIENT_READINESS == 1 || $physical_client_panel == 1 ]]; then
     cp "$OUT/$panel.tsv" "$OUT/network.tsv"
     client_observer_active=0
     if [[ $server_observer_panel == 1 ]]; then
-        native_rows=54; if [[ $STORAGE_CONTROL == 1 ]]; then native_rows=6; fi
-        [[ $(wc -l < "$OUT/$native_counter_panel-counters.tsv") -eq $((native_rows+1)) ]]
+        native_rows=54; if [[ $STORAGE_CONTROL == 1 || $CHUNK_LEASE_CONTROL == 1 ]]; then native_rows=6; fi
+        [[ $(wc -l < "$OUT/$native_counter_panel-counters.tsv") -eq $((native_rows+1)) ]] || {
+            echo "scheduler-bench: incomplete $panel ownership reports" >&2; exit 1;
+        }
     fi
     sha256sum -c "$OUT/build-sha256.txt" > "$OUT/hash-verification.log"
     if [[ $physical_client_panel == 1 ]]; then

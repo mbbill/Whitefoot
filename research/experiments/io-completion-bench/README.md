@@ -435,6 +435,13 @@ pairs worse on each metric. WF/private epoll still has rate 0.9245 and
 CPU/trip 1.0923. This makes receive-storage policy a measured cost without
 isolating cache effects or matching WF representation; shared epoll remains
 the competitive reference and no default changes.
+`scheduler-chunk-lease` tests the next representation question in the same
+ARM two-cell envelope: manual shared epoll and C++ elided shared/spill,
+private-calloc and owned-chunk handlers. `chunk-lease-check`, also reached
+through `coroutine-check`, qualifies stable loans across nested send waits,
+reuse, destruction and stream backpressure. Experiment 67 records the
+selected design, frame/storage differences and pending native evidence;
+this bench-only API does not change WF or container interfaces.
 `scheduler-client-headroom` holds one server worker/CPU fixed and compares
 one client hardware thread with both SMT siblings of a separate physical
 core. It retains full byte verification and all qualification checks while
