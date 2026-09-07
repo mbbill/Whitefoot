@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-continuation-screen', 'codex/io-rayon-baselines', 'codex/io-compute-profile', 'codex/io-mixed-rayon-baselines', 'codex/io-continuation-owner', 'codex/io-continuation-batch', 'codex/io-client-headroom', 'codex/io-cpu-resource-controls', 'codex/io-uring-aggregation-diagnostic', 'codex/io-cpu-ring-controls', 'codex/io-go-baselines', 'codex/io-cpu-startup-controls', 'codex/io-continuation-mixed', 'codex/io-go-storage', 'codex/io-cpu-phase-recheck', 'codex/io-go-screen', 'codex/io-continuation-index', 'codex/io-cpu-yield-attribution', 'codex/io-client-diagnostic', 'codex/io-cpu-yield-callers']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-continuation-screen', 'codex/io-rayon-baselines', 'codex/io-compute-profile', 'codex/io-mixed-rayon-baselines', 'codex/io-continuation-owner', 'codex/io-continuation-batch', 'codex/io-client-headroom', 'codex/io-cpu-resource-controls', 'codex/io-uring-aggregation-diagnostic', 'codex/io-cpu-ring-controls', 'codex/io-go-baselines', 'codex/io-cpu-startup-controls', 'codex/io-continuation-mixed', 'codex/io-go-storage', 'codex/io-cpu-phase-recheck', 'codex/io-go-screen', 'codex/io-continuation-index', 'codex/io-cpu-yield-attribution', 'codex/io-client-diagnostic', 'codex/io-cpu-yield-callers', 'codex/io-cpu-idle-controls']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -37,7 +37,7 @@ jobs:
   measure:
     # Correctness-only branches retain the independently running timing
     # revisions. Canonical and native correctness jobs still run.
-    if: github.ref != 'refs/heads/codex/io-windows-wake-fix' && github.ref != 'refs/heads/codex/io-continuation-experiments' && github.ref != 'refs/heads/codex/io-continuation-lowering' && github.ref != 'refs/heads/codex/io-continuation-network' && github.ref != 'refs/heads/codex/io-continuation-staged' && github.ref != 'refs/heads/codex/io-rayon-baselines' && github.ref != 'refs/heads/codex/io-compute-profile' && github.ref != 'refs/heads/codex/io-mixed-rayon-baselines' && github.ref != 'refs/heads/codex/io-cpu-resource-controls' && github.ref != 'refs/heads/codex/io-cpu-ring-controls' && github.ref != 'refs/heads/codex/io-go-baselines' && github.ref != 'refs/heads/codex/io-cpu-startup-controls' && github.ref != 'refs/heads/codex/io-continuation-mixed' && github.ref != 'refs/heads/codex/io-go-storage' && github.ref != 'refs/heads/codex/io-cpu-phase-recheck' && github.ref != 'refs/heads/codex/io-cpu-yield-attribution' && github.ref != 'refs/heads/codex/io-cpu-yield-callers'
+    if: github.ref != 'refs/heads/codex/io-windows-wake-fix' && github.ref != 'refs/heads/codex/io-continuation-experiments' && github.ref != 'refs/heads/codex/io-continuation-lowering' && github.ref != 'refs/heads/codex/io-continuation-network' && github.ref != 'refs/heads/codex/io-continuation-staged' && github.ref != 'refs/heads/codex/io-rayon-baselines' && github.ref != 'refs/heads/codex/io-compute-profile' && github.ref != 'refs/heads/codex/io-mixed-rayon-baselines' && github.ref != 'refs/heads/codex/io-cpu-resource-controls' && github.ref != 'refs/heads/codex/io-cpu-ring-controls' && github.ref != 'refs/heads/codex/io-go-baselines' && github.ref != 'refs/heads/codex/io-cpu-startup-controls' && github.ref != 'refs/heads/codex/io-continuation-mixed' && github.ref != 'refs/heads/codex/io-go-storage' && github.ref != 'refs/heads/codex/io-cpu-phase-recheck' && github.ref != 'refs/heads/codex/io-cpu-yield-attribution' && github.ref != 'refs/heads/codex/io-cpu-yield-callers' && github.ref != 'refs/heads/codex/io-cpu-idle-controls'
     name: measure (${{ matrix.experiment }})
     strategy:
       fail-fast: false
@@ -489,7 +489,7 @@ jobs:
             ${{ runner.temp }}/mixed-rayon-check.log
 
   cpu-resource-controls:
-    if: github.ref == 'refs/heads/codex/io-cpu-resource-controls' || github.ref == 'refs/heads/codex/io-cpu-ring-controls' || github.ref == 'refs/heads/codex/io-cpu-startup-controls' || (github.ref == 'refs/heads/codex/io-cpu-phase-recheck' || github.ref == 'refs/heads/codex/io-cpu-yield-attribution' || github.ref == 'refs/heads/codex/io-cpu-yield-callers')
+    if: github.ref == 'refs/heads/codex/io-cpu-idle-controls' || github.ref == 'refs/heads/codex/io-cpu-resource-controls' || github.ref == 'refs/heads/codex/io-cpu-ring-controls' || github.ref == 'refs/heads/codex/io-cpu-startup-controls' || (github.ref == 'refs/heads/codex/io-cpu-phase-recheck' || github.ref == 'refs/heads/codex/io-cpu-yield-attribution' || github.ref == 'refs/heads/codex/io-cpu-yield-callers')
     name: ordinary CPU resource controls and separate phase traces
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ (github.ref == 'refs/heads/codex/io-cpu-phase-recheck' || github.ref == 'refs/heads/codex/io-cpu-yield-attribution' || github.ref == 'refs/heads/codex/io-cpu-yield-callers') && 10 || 20 }}
@@ -502,7 +502,7 @@ jobs:
         if: github.ref != 'refs/heads/codex/io-cpu-phase-recheck' && github.ref != 'refs/heads/codex/io-cpu-yield-attribution' && github.ref != 'refs/heads/codex/io-cpu-yield-callers'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang
+          sudo apt-get install -y --no-install-recommends clang binutils
           rustup default stable
           cargo fetch --locked --manifest-path compiler/Cargo.toml
           cargo fetch --locked --manifest-path research/experiments/io-completion-bench/rayon-baseline/Cargo.toml
@@ -575,6 +575,7 @@ jobs:
           target=rayon-resource-bench
           if [[ $GITHUB_REF == refs/heads/codex/io-cpu-ring-controls ]]; then target=rayon-ring-bench; fi
           if [[ $GITHUB_REF == refs/heads/codex/io-cpu-startup-controls ]]; then target=rayon-startup-bench; fi
+          if [[ $GITHUB_REF == refs/heads/codex/io-cpu-idle-controls ]]; then target=rayon-idle-bench; fi
           make -C research/experiments/io-completion-bench "$target" \
             WHITEFOOT_SCRATCH_ROOT="$RUNNER_TEMP" ROUNDS=5 WARMUP=1
       - name: Publish resource control summary
@@ -590,6 +591,8 @@ jobs:
               echo 'Trace-only correction using exact SHA-verified 8dd artifact binaries; no compiler build or ordinary timing panel rerun. Recorder write events are excluded per event, global scheduler events and successful reap remain. Eight one-batch captures; independent duplicate/thread/state audit remains required.'
             elif [[ $GITHUB_REF == refs/heads/codex/io-cpu-startup-controls ]]; then
               echo 'Four computing threads; frozen Rayon grain four; WF_STACKS 12; 1/16 batches. Ordinary compiler WF, same-IR manual default and used-lanes links, and Rayon: forty ordinary samples. Full candidate completion checks and separate observed storage flags/bytes. Eight additional one-batch coarse traces include sequential WF and parent reap; their status is explicit below and captured data still require attribution audit. No runtime defaults change.'
+            elif [[ $GITHUB_REF == refs/heads/codex/io-cpu-idle-controls ]]; then
+              echo 'Four computing threads; frozen Rayon grain four; WF_STACKS 12; 1/16 batches. Ordinary compiler WF, same-IR manual default and idle-yield0 links, and Rayon: forty ordinary samples. Candidate completion and scheduler checks precede timing; separate observed runs verify 256 spin rounds and 16/0 idle yield rounds. Other runtime yield sites and wake protocol are unchanged. No probes, affinity or runtime default changes; available ready work is not inferred from the earlier trace.'
             elif [[ $GITHUB_REF == refs/heads/codex/io-cpu-ring-controls ]]; then
               echo 'Four computing threads; frozen Rayon grain four; WF_STACKS 12; 1/16 batches; WF_IO_NO_NATIVE_RING unset/1. Six forms, five alternating passes after one warmup. Separate Linux observations qualify initialized but unused ring vs disabled ring. No algorithm, output-path or runtime default changes.'
             else
@@ -611,5 +614,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ${{ github.ref == 'refs/heads/codex/io-cpu-yield-callers' && 'io-cpu-yield-callers' || github.ref == 'refs/heads/codex/io-cpu-yield-attribution' && 'io-cpu-yield-attribution' || github.ref == 'refs/heads/codex/io-cpu-phase-recheck' && 'io-cpu-phase-recheck' || 'io-cpu-resource-controls' }}
+          name: ${{ github.ref == 'refs/heads/codex/io-cpu-idle-controls' && 'io-cpu-idle-controls' || github.ref == 'refs/heads/codex/io-cpu-yield-callers' && 'io-cpu-yield-callers' || github.ref == 'refs/heads/codex/io-cpu-yield-attribution' && 'io-cpu-yield-attribution' || github.ref == 'refs/heads/codex/io-cpu-phase-recheck' && 'io-cpu-phase-recheck' || 'io-cpu-resource-controls' }}
           path: ${{ runner.temp }}/cpu-resource-controls

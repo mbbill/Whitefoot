@@ -41,10 +41,24 @@
 #define MAX_LINES 128
 #define MAX_OUTPUT 4096
 
+/* Experiment 59 retains additional wait4 fields in its raw rows. Default
+ * builds keep the existing sample layout and five-column output contract. */
+#ifndef WF_BENCH_RUSAGE
+#define WF_BENCH_RUSAGE 0
+#endif
+#if WF_BENCH_RUSAGE != 0 && WF_BENCH_RUSAGE != 1
+#error "WF_BENCH_RUSAGE must be zero or one"
+#endif
+
 struct sample {
     double wall_ms;
     double user_ms;
     double system_ms;
+#if WF_BENCH_RUSAGE
+    long voluntary_switches;
+    long involuntary_switches;
+    long max_rss_kib;
+#endif
 };
 
 static int compare_double(const void *left, const void *right) {
@@ -140,6 +154,15 @@ static int run_once(char **argument, char *environment, const char *expected,
                    ((double)(end.tv_nsec - start.tv_nsec) / 1000000.0);
     out->user_ms = milliseconds(usage.ru_utime);
     out->system_ms = milliseconds(usage.ru_stime);
+#if WF_BENCH_RUSAGE
+    out->voluntary_switches = usage.ru_nvcsw;
+    out->involuntary_switches = usage.ru_nivcsw;
+#if defined(__APPLE__)
+    out->max_rss_kib = usage.ru_maxrss / 1024;
+#else
+    out->max_rss_kib = usage.ru_maxrss;
+#endif
+#endif
     if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
         fprintf(stderr, "runner: %s exited with status %d\n", argument[0], status);
         return 1;
@@ -270,7 +293,11 @@ int main(int argc, char **argv) {
             free(lines);
             return 2;
         }
-        fprintf(raw, "pass\tlabel\twall_ms\tuser_ms\tsystem_ms\n");
+        fprintf(raw, "pass\tlabel\twall_ms\tuser_ms\tsystem_ms"
+#if WF_BENCH_RUSAGE
+                "\tvoluntary_switches\tinvoluntary_switches\tmax_rss_kib"
+#endif
+                "\n");
     }
 
     /* Passes, alternating direction. The pass index decides the direction, so
@@ -302,8 +329,16 @@ int main(int argc, char **argv) {
             line->system_time[line->recorded] = sample.system_ms;
             line->recorded++;
             if (raw != NULL) {
-                fprintf(raw, "%lu\t%s\t%.6f\t%.6f\t%.6f\n", pass - warmup,
-                        line->label, sample.wall_ms, sample.user_ms, sample.system_ms);
+                fprintf(raw, "%lu\t%s\t%.6f\t%.6f\t%.6f"
+#if WF_BENCH_RUSAGE
+                        "\t%ld\t%ld\t%ld"
+#endif
+                        "\n", pass - warmup,
+                        line->label, sample.wall_ms, sample.user_ms, sample.system_ms
+#if WF_BENCH_RUSAGE
+                        , sample.voluntary_switches, sample.involuntary_switches, sample.max_rss_kib
+#endif
+                        );
             }
         }
     }

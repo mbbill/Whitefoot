@@ -35,7 +35,7 @@ bounded_integer CALIBRATION_ROUNDS "$CALIBRATION_ROUNDS" 1 128
 bounded_integer BATCHES "$BATCHES" 1 16
 bounded_integer RAYON_PROFILE "$RAYON_PROFILE" 0 1
 
-bounded_integer RESOURCE_CONTROLS "$RESOURCE_CONTROLS" 0 3
+bounded_integer RESOURCE_CONTROLS "$RESOURCE_CONTROLS" 0 4
 if [[ $RESOURCE_CONTROLS != 0 && $RAYON_PROFILE == 1 ]]; then
     echo 'rayon-bench: resource controls and perf captures are separate experiments' >&2
     exit 2
@@ -45,7 +45,7 @@ if [[ $CPU_PHASE_TRACE == 1 && $RESOURCE_CONTROLS != 3 ]]; then
     echo 'rayon-bench: coarse phase traces require the startup control panel' >&2
     exit 2
 fi
-if [[ $RESOURCE_CONTROLS == 2 || $RESOURCE_CONTROLS == 3 ]]; then
+if [[ $RESOURCE_CONTROLS == 2 || $RESOURCE_CONTROLS == 3 || $RESOURCE_CONTROLS == 4 ]]; then
     # The default row must really inherit no override; the disabled row sets
     # the existing control only in its own child process.
     unset WF_IO_NO_NATIVE_RING
@@ -79,12 +79,18 @@ for grain in "${grains[@]}"; do bounded_integer GRAIN "$grain" 1 64; done
     elif [[ $RESOURCE_CONTROLS == 2 ]]; then
         printf 'threads=4 grain=4 batches=1,16 stacks=12 no_native_ring=unset,1 confirmation=%s warmup=%s calibration=none\n' \
             "$ROUNDS" "$WARMUP"
-    else
+    elif [[ $RESOURCE_CONTROLS == 3 ]]; then
         printf 'threads=4 grain=4 batches=1,16 stacks=12 init_used_lanes=0,1 compact_stacks=0 confirmation=%s warmup=%s calibration=none\n' \
+            "$ROUNDS" "$WARMUP"
+    else
+        printf 'threads=4 grain=4 batches=1,16 stacks=12 idle_spin_rounds=256 idle_yield_rounds=16,0 confirmation=%s warmup=%s calibration=none\n' \
             "$ROUNDS" "$WARMUP"
     fi
     printf 'timing=whole-process; Rayon pool created once, install once; no concurrent I/O\n'
     printf 'resource_controls=%s\n' "$RESOURCE_CONTROLS"
+    if [[ $RESOURCE_CONTROLS == 4 ]]; then
+        echo 'runner_rusage=1; raw rows include wait4 context switches and peak RSS in KiB'
+    fi
     if [[ $(uname -s) == Linux ]]; then
         lscpu
         awk '/Cpus_allowed_list:/ {print}' /proc/self/status
@@ -95,20 +101,23 @@ for grain in "${grains[@]}"; do bounded_integer GRAIN "$grain" 1 64; done
 cargo build --release --locked --offline --manifest-path "$HERE/rayon-baseline/Cargo.toml"
 cp "$CARGO_TARGET_DIR/release/whitefoot-rayon-baseline" "$OUT/rust-layout"
 cp "$HERE/rayon-baseline/Cargo.lock" "$OUT/Cargo.lock"
-"$CLANG" -std=c11 -O2 -Wall -Wextra -Werror "$HERE/runner.c" -o "$OUT/runner"
+runner_command=("$CLANG" -std=c11 -O2 -Wall -Wextra -Werror)
+if [[ $RESOURCE_CONTROLS == 4 ]]; then runner_command+=(-DWF_BENCH_RUSAGE=1); fi
+runner_command+=("$HERE/runner.c" -o "$OUT/runner")
+"${runner_command[@]}"
 if [[ ! -x $WFC ]]; then
     echo 'rayon-bench: build whitefootc or set WFC to the compiler for this revision' >&2
     exit 2
 fi
 "$WFC" --no-overlap "$ROOT/tests/programs/par_layout.wf" -o "$OUT/wf-seq"
 "$WFC" --par "$ROOT/tests/programs/par_layout.wf" -o "$OUT/wf-par"
-shasum -a 256 "$WFC" "$OUT/wf-seq" "$OUT/wf-par" "$OUT/rust-layout" \
+shasum -a 256 "$WFC" "$OUT/wf-seq" "$OUT/wf-par" "$OUT/rust-layout" "$OUT/runner" \
     "$ROOT/tests/programs/par_layout.wf" "$ROOT/compiler/src/bin/whitefootc.rs" \
     "$HERE/rayon-baseline/src/main.rs" "$HERE/rayon-baseline/Cargo.toml" \
     "$HERE/rayon-baseline/Cargo.lock" >> "$OUT/host.txt"
 
 if [[ $RESOURCE_CONTROLS != 0 ]]; then
-    # Experiments 45/47/50 freeze the earlier four-worker calibration. No
+    # Experiments 45/47/50/59 freeze the earlier four-worker calibration. No
     # panel tunes against its confirmation samples or changes runtime sources.
     if [[ $RESOURCE_CONTROLS == 1 ]]; then
         resource_batches=(1 4 16)
@@ -120,13 +129,24 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
         printf 'resource_panel=workers4; Rayon grain4; batches1,16; WF_STACKS12; WF_IO_NO_NATIVE_RING unset/1\n' >> "$OUT/host.txt"
     else
         resource_batches=(1 16)
-        resource_forms=(ordinary manual lanes)
-        printf 'resource_panel=workers4; Rayon grain4; batches1,16; WF_STACKS12; ordinary/manual-default/manual-used-lanes\n' >> "$OUT/host.txt"
+        if [[ $RESOURCE_CONTROLS == 3 ]]; then
+            resource_forms=(ordinary manual lanes)
+            control_name=startup
+            candidate_name=lanes
+            candidate_defines=(-DWF_SCHED_INIT_USED_LANES=1 -DWF_SCHED_COMPACT_STACKS=0)
+            printf 'resource_panel=workers4; Rayon grain4; batches1,16; WF_STACKS12; ordinary/manual-default/manual-used-lanes\n' >> "$OUT/host.txt"
+        else
+            resource_forms=(ordinary manual idle0)
+            control_name=idle
+            candidate_name=idle0
+            candidate_defines=(-DWF_SCHED_IDLE_YIELD_ROUNDS=0u -DWF_SCHED_INIT_USED_LANES=0 -DWF_SCHED_COMPACT_STACKS=0)
+            printf 'resource_panel=workers4; Rayon grain4; batches1,16; WF_STACKS12; ordinary/manual-default/manual-idle-yield0; all other yield sites unchanged\n' >> "$OUT/host.txt"
+        fi
         if ! make -C "$ROOT/compiler" completion-test CC=/usr/bin/clang \
-            COMPLETION_TMP="$OUT/startup-check" \
-            COMPLETION_BASE_CFLAGS='-std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread -DWF_SCHED_INIT_USED_LANES=1 -DWF_SCHED_COMPACT_STACKS=0' \
-            > "$OUT/startup-check.log" 2>&1; then
-            cat "$OUT/startup-check.log"
+            COMPLETION_TMP="$OUT/$control_name-check" \
+            COMPLETION_BASE_CFLAGS="-std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread ${candidate_defines[*]}" \
+            > "$OUT/$control_name-check.log" 2>&1; then
+            cat "$OUT/$control_name-check.log"
             exit 1
         fi
         backend="$ROOT/compiler/src/backend"
@@ -138,10 +158,17 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
             manual_sources+=("$backend/$unit")
         done
         # Mirror whitefootc's source order, C11/-pthread/-O2/-lm and stdin IR.
-        # Explicit zero macros are the existing defaults, not a new policy.
+        # Storage macros spell the existing defaults. The idle panel varies
+        # only the existing yield-round override in its candidate link.
         for used in 0 1; do
             manual_command=(/usr/bin/clang -std=c11 -pthread -I "$backend" \
-                -I "$backend/completion" -DWF_SCHED_COMPACT_STACKS=0 "-DWF_SCHED_INIT_USED_LANES=$used")
+                -I "$backend/completion")
+            if [[ $RESOURCE_CONTROLS == 3 ]]; then
+                manual_command+=(-DWF_SCHED_COMPACT_STACKS=0 "-DWF_SCHED_INIT_USED_LANES=$used")
+            else
+                manual_command+=(-DWF_SCHED_COMPACT_STACKS=0 -DWF_SCHED_INIT_USED_LANES=0 \
+                    "-DWF_SCHED_IDLE_YIELD_ROUNDS=$((16 * (1 - used)))u")
+            fi
             for source in "${manual_sources[@]}"; do manual_command+=(-x c "$source"); done
             manual_command+=(-x ir - -Wno-override-module -O2 -lm -o "$OUT/wf-manual-$used")
             printf '%q ' "${manual_command[@]}" > "$OUT/manual-$used.command"
@@ -157,6 +184,7 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
             echo 'manual_default_binary=differs; retain both controls and inspect code/layout before attribution' > "$OUT/link-comparison.txt"
         fi
         if [[ $(uname -s) == Linux ]]; then
+            objdump --version > "$OUT/objdump-version.txt"
             for form in wf-par wf-manual-0 wf-manual-1; do
                 objdump -t "$OUT/$form" > "$OUT/$form.symbols"
                 objdump -d "$OUT/$form" > "$OUT/$form.disassembly"
@@ -177,7 +205,7 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
             resource_label="wf.w4.s12.$1"
             resource_environment='WF_WORKERS=4,WF_STACKS=12'
             if [[ $1 == manual ]]; then resource_binary="$OUT/wf-manual-0"; fi
-            if [[ $1 == lanes ]]; then resource_binary="$OUT/wf-manual-1"; fi
+            if [[ $1 == lanes || $1 == idle0 ]]; then resource_binary="$OUT/wf-manual-1"; fi
         fi
     }
     printf 'resource_budget=WF main+3 workers; Rayon 4 workers+sleeping caller; no CPU affinity\n' >> "$OUT/host.txt"
@@ -202,7 +230,7 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
     # and provide grant_observer.c's bridge-report dependency. Final stdout
     # output initializes the bridge even though the layout work is CPU-only.
     backend="$ROOT/compiler/src/backend"
-    if [[ $RESOURCE_CONTROLS != 3 ]]; then
+    if [[ $RESOURCE_CONTROLS != 3 && $RESOURCE_CONTROLS != 4 ]]; then
         "$WFC" --par --emit-llvm "$ROOT/tests/programs/par_layout.wf" -o "$OUT/wf-par.ll"
     fi
     observer_sources=()
@@ -216,15 +244,15 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
     printf '%q ' "${observer_command[@]}" > "$OUT/observer.command"
     printf '\n' >> "$OUT/observer.command"
     "${observer_command[@]}"
-    if [[ $RESOURCE_CONTROLS == 3 ]]; then
+    if [[ $RESOURCE_CONTROLS == 3 || $RESOURCE_CONTROLS == 4 ]]; then
         observer_used_command=(/usr/bin/clang -std=c11 -O2 -pthread -I "$backend" \
-            -I "$backend/completion" -DWF_SCHED_OBSERVE=1 -DWF_SCHED_INIT_USED_LANES=1 \
-            -DWF_SCHED_COMPACT_STACKS=0 -x c "${observer_sources[@]}" \
-            -x ir "$OUT/wf-par.ll" -Wno-override-module -lm -o "$OUT/wf-lanes-observed")
-        printf '%q ' "${observer_used_command[@]}" > "$OUT/observer-lanes.command"
-        printf '\n' >> "$OUT/observer-lanes.command"
+            -I "$backend/completion" -DWF_SCHED_OBSERVE=1 "${candidate_defines[@]}" \
+            -x c "${observer_sources[@]}" \
+            -x ir "$OUT/wf-par.ll" -Wno-override-module -lm -o "$OUT/wf-$candidate_name-observed")
+        printf '%q ' "${observer_used_command[@]}" > "$OUT/observer-$candidate_name.command"
+        printf '\n' >> "$OUT/observer-$candidate_name.command"
         "${observer_used_command[@]}"
-        shasum -a 256 "$OUT/wf-lanes-observed" "$HERE/rayon-phase-trace.sh" >> "$OUT/host.txt"
+        shasum -a 256 "$OUT/wf-$candidate_name-observed" "$HERE/rayon-phase-trace.sh" >> "$OUT/host.txt"
     fi
     shasum -a 256 "$OUT/wf-par.ll" "$OUT/wf-par-observed" "${observer_sources[@]}" \
         "$backend/sched/core.h" "$backend/sched/prim.h" "$backend/sched/switch.h" \
@@ -234,10 +262,11 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
         observed_args=("$OUT/wf-par-observed")
         for ((batch=1; batch<batches; batch++)); do observed_args+=(batch); done
         for form in "${resource_forms[@]}"; do
-            if [[ $RESOURCE_CONTROLS == 3 && $form == manual ]]; then continue; fi
+            if [[ ( $RESOURCE_CONTROLS == 3 || $RESOURCE_CONTROLS == 4 ) && $form == manual ]]; then continue; fi
             resource_settings "$form"
             observed_args[0]="$OUT/wf-par-observed"
             if [[ $RESOURCE_CONTROLS == 3 && $form == lanes ]]; then observed_args[0]="$OUT/wf-lanes-observed"; fi
+            if [[ $RESOURCE_CONTROLS == 4 && $form == idle0 ]]; then observed_args[0]="$OUT/wf-idle0-observed"; fi
             record="$OUT/observed-${resource_label#wf.w4.}-b$batches"
             IFS=, read -r -a observed_environment <<< "$resource_environment,WF_SCHED_REPORT=1"
             env "${observed_environment[@]}" "${observed_args[@]}" \
@@ -250,6 +279,14 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
                 awk -v form="$form" '/^sched:/ {for(i=2;i<=NF;i++) {split($i,p,"=");v[p[1]]=p[2]+0}}
                     END {exit !(("compact_stacks" in v) && v["compact_stacks"]==0 &&
                         ("init_used_lanes" in v) && v["init_used_lanes"]==(form=="lanes"))}' "$record.err"
+            fi
+            if [[ $RESOURCE_CONTROLS == 4 ]]; then
+                awk -v form="$form" '/^sched:/ {for(i=2;i<=NF;i++) {split($i,p,"=");v[p[1]]=p[2]+0}}
+                    END {exit !(("spin_rounds" in v) && v["spin_rounds"]==256 &&
+                        ("yield_rounds" in v) && v["yield_rounds"]==(form=="idle0" ? 0 : 16) &&
+                        ("compact_stacks" in v) && v["compact_stacks"]==0 &&
+                        ("init_used_lanes" in v) && v["init_used_lanes"]==0 &&
+                        ("idle_steps" in v) && ("idle_looks" in v) && ("idle_waits" in v))}' "$record.err"
             fi
             if [[ $RESOURCE_CONTROLS == 2 && $(uname -s) == Linux ]]; then
                 # Qualify the mechanism outside timing. A Linux host without

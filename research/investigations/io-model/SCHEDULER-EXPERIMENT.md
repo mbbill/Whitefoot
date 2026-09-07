@@ -7957,3 +7957,45 @@ initial pause/look rounds and other yield sites unchanged. Compare short
 and amortized CPU workloads against the frozen Rayon grain, with CPU and
 context-switch costs as well as wall time. A later same-budget placement
 control remains useful; neither policy is selected as a runtime default.
+
+## 59. Ordinary CPU control without idle-scan yields
+
+Experiment 57 locates the dominant observed early yield wait in the runtime's
+idle scan, but adds traps and does not record whether ready work exists.
+This experiment tests the performance consequence with ordinary binaries.
+The candidate uses the existing `WF_SCHED_IDLE_YIELD_ROUNDS=0u` build override
+instead of the default 16. It retains 256 pause/look rounds, the epoch and
+last-look wake protocol, and all COMPLETING, exhausted-compute and startup
+yield sites. No WF source construct, runtime ABI or default changes.
+
+`make rayon-idle-bench` reuses `rayon-bench.sh` with `RESOURCE_CONTROLS=4`.
+It fixes four computing threads, twelve WF stacks and the earlier Rayon
+grain-four calibration. The short and amortized cases use 1/16 source
+batches. Each has four forms: ordinary compiler WF, same-IR manual default,
+same-IR manual idle-yield0, and Rayon. Five alternating passes after one
+warmup produce forty ordinary samples. The manual default retains a check
+against the ordinary executable's bytes; if they differ, both controls and
+their code/layout evidence remain rather than assuming equivalent links.
+These are fresh builds on one host, not a new timing of the frozen 8dd
+executables. Do not pool absolute times with experiments 45, 55 or 57.
+
+Before any performance row, the candidate runs the full existing completion
+test target with its build override. This includes real scheduler smoke,
+completion/helper checks and the unchanged four interleaving enumerations.
+The enumerator already fixes one pause/look round and zero yield rounds to
+model the wake protocol; passing it does not simulate host scheduling or
+establish that an arbitrary waiting policy is fastest. Normal and candidate
+programs must produce the independent expected bytes. Four separate observed
+executions check four workload threads, three started workers, real grants,
+spin rounds 256, yield rounds 16/0, default storage flags and idle counters.
+Observed counters remain separate from the performance rows.
+
+The retained ordinary rows include wall, user/system CPU, voluntary and
+involuntary context switches and maximum RSS. Commands, tools, emitted IR,
+source hashes and executables accompany the results; Linux disassembly
+supports checking which call path disappeared. `codex/io-cpu-idle-controls`
+runs this panel on Linux without profiler probes or changed affinity. Lower
+wall time must be considered with CPU cost and both batch lengths; a negative
+result rejects this isolated candidate, not the ownership-based parallel
+model. Available-work and placement questions remain distinct. Native Linux
+qualification and results are pending; no policy is selected yet.

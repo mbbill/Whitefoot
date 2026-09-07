@@ -743,6 +743,22 @@ can affect scheduling and are not performance samples. Raw record dumps also
 check LOST, LOST_SAMPLES and throttle records. Caller/syscall/thread pairing
 and complete wait-path coverage must pass before drawing an attribution.
 
+`make rayon-idle-bench` is experiment 59's ordinary performance control for
+that runtime wait path. It keeps the four-thread, twelve-stack, 1/16-batch
+panel and frozen Rayon grain four. The same emitted WF IR is linked with
+the default 16 idle yield rounds and with `WF_SCHED_IDLE_YIELD_ROUNDS=0u`;
+ordinary compiler output remains a third WF control. The 256 pause/look
+rounds, other runtime yield sites and capture-to-park wake protocol stay.
+Five alternating passes after one warmup produce forty ordinary samples.
+The candidate runs the full existing completion suite, including scheduler
+smoke and the unchanged reduced-round interleaving enumerator, before timing.
+Four separate observed executions check the actual spin/yield settings,
+worker count, grants and output bytes. Executables, emitted IR, link commands,
+Linux symbols/disassembly and raw resource samples are retained. This panel
+uses no perf probes and does not change affinity or choose a runtime default.
+The isolated Linux CI route is `codex/io-cpu-idle-controls`; M1 runs qualify
+the local path but do not substitute for its Linux performance evidence.
+
 `make mixed-rayon-check` qualifies the optional `mixed-rayon` binary in the
 same standalone crate. Its CLI is `mixed-rayon PORT CONNECTIONS --threads B
 [--queue Q]`: B includes one current-thread Tokio I/O driver, leaving B-1
