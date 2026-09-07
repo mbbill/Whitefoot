@@ -4,8 +4,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     /// The planned backing that gives a binding its stable address. An issue
     /// stage selects its own pipeline slot before exposing any borrowed address.
     ///
-    /// Only directly stored content is addressed: a descriptor or opaque
-    /// handle is already its own borrow and never reaches this operation.
+    /// This is the address of stored content. Source borrows of descriptors
+    /// and handles keep their existing value ABI; they do not implicitly
+    /// expose a mutable descriptor slot.
     pub(super) fn emit_address_of(
         &mut self,
         result: IrValueId,
@@ -102,6 +103,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             | IrAddressed::Bool
             | IrAddressed::Integer { .. }
             | IrAddressed::Float { .. }
+            | IrAddressed::Buffer { .. }
+            | IrAddressed::Slice { .. }
             // A run's storage — inline slots, or the descriptor of a
             // store-resident one — lives in its owner, so a borrow of either
             // run addresses that storage [BLK-1].

@@ -458,7 +458,7 @@ fn lower_borrow_mode_type(
     ty: IrType,
     nominals: &[IrNominal],
 ) -> Result<IrType, LoweringFailure> {
-    if mode == CheckedMode::Own {
+    if mode == CheckedMode::Own || matches!(ty, IrType::Buffer { .. } | IrType::Slice { .. }) {
         return Ok(ty);
     }
     let Some(referent) = IrAddressed::of(ty) else {
@@ -1245,16 +1245,22 @@ impl<'program> IrBuilder<'program> {
                 // [PROV-6] `dispose p;` runs exactly the walk the scope exit
                 // would have run for this value, at the point it is written.
                 CheckedStatement::Dispose { value, drops, .. } => {
-                    let root = self.expression(value)?;
+                    // Reading a binding solely to release it does not need a
+                    // value snapshot. Computed/proper-part consumes still run
+                    // their checked expression, including residual releases.
+                    let root = if let CheckedExpression::Binding { binding, .. } = value {
+                        self.bindings
+                            .get(binding)
+                            .copied()
+                            .ok_or(LoweringFailure::InvalidCheckedProgram)?
+                    } else {
+                        self.expression(value)?
+                    };
                     let mut lowered = Vec::with_capacity(drops.len());
                     for drop in drops {
                         lowered.push(self.lower_projected_drop(root, drop)?);
                     }
-                    for drop in lowered {
-                        self.current_block_mut()?
-                            .instructions
-                            .push(IrInstruction::Drop(drop));
-                    }
+                    self.append_drops(lowered)?;
                 }
                 CheckedStatement::DropExpression {
                     value: expression,
@@ -1263,13 +1269,11 @@ impl<'program> IrBuilder<'program> {
                 } => {
                     let value = self.expression(expression)?;
                     let drop = IrDrop {
-                        value,
+                        subject: IrDropSubject::Value(value),
                         ty: self.value_type(value)?,
                         release: *release,
                     };
-                    self.current_block_mut()?
-                        .instructions
-                        .push(IrInstruction::Drop(drop));
+                    self.append_drops(vec![drop])?;
                 }
                 // PRF-1 proof statements have already contributed their
                 // checked fact to semantic flow. They have no runtime value,
@@ -1366,11 +1370,7 @@ impl<'program> IrBuilder<'program> {
                     self.lower_statements(body, give_target.clone())?;
                     if self.current.is_some() {
                         let drops = self.lower_drops(fallthrough_drops)?;
-                        for drop in drops {
-                            self.current_block_mut()?
-                                .instructions
-                                .push(IrInstruction::Drop(drop));
-                        }
+                        self.append_drops(drops)?;
                     }
                 }
                 CheckedStatement::Match {
@@ -2169,11 +2169,7 @@ impl<'program> IrBuilder<'program> {
                 if self.value_type(value)? != lower_type(self.erasure, *ty)? {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
-                for drop in lowered_drops {
-                    self.current_block_mut()?
-                        .instructions
-                        .push(IrInstruction::Drop(drop));
-                }
+                self.append_drops(lowered_drops)?;
                 Ok(value)
             }
             CheckedExpression::ProjectValue {
@@ -2448,26 +2444,64 @@ impl<'program> IrBuilder<'program> {
         )
     }
 
+    fn append_drops(&mut self, drops: Vec<IrDrop>) -> Result<(), LoweringFailure> {
+        if !drops.is_empty() {
+            self.current_block_mut()?
+                .instructions
+                .push(IrInstruction::Drops(drops));
+        }
+        Ok(())
+    }
+
     fn lower_projected_drop(
         &mut self,
         root: IrValueId,
         drop: &CheckedProjectedDrop,
     ) -> Result<IrDrop, LoweringFailure> {
-        // [PROV-6] the release-graph walk visits the value's own node as well
-        // as its components, and the empty path names that node.
-        let value = if drop.fields.is_empty() {
-            root
+        self.lower_drop_subject(
+            root,
+            &drop.fields,
+            lower_type(self.erasure, drop.ty)?,
+            drop.release,
+        )
+    }
+
+    fn lower_drop_subject(
+        &mut self,
+        root: IrValueId,
+        fields: &[u32],
+        ty: IrType,
+        release: SystemRelease,
+    ) -> Result<IrDrop, LoweringFailure> {
+        // [PROV-6] the empty path is the value's own release-graph node.
+        // A checked release of an addressed binding needs its place, not an
+        // immutable snapshot of the entire enclosing owner.
+        let (subject, actual) = if matches!(self.value_type(root)?, IrType::Address(_)) {
+            let path: Vec<_> = fields
+                .iter()
+                .copied()
+                .map(crate::semantic::CheckedPlaceStep::Field)
+                .collect();
+            let address = self.project_address_path(root, &path)?;
+            let IrType::Address(referent) = self.value_type(address)? else {
+                return Err(LoweringFailure::InvalidCheckedProgram);
+            };
+            (IrDropSubject::Place(address), referent.ty())
         } else {
-            self.project_struct_path(root, &drop.fields, false)?
+            let value = if fields.is_empty() {
+                root
+            } else {
+                self.project_struct_path(root, fields, false)?
+            };
+            (IrDropSubject::Value(value), self.value_type(value)?)
         };
-        let ty = lower_type(self.erasure, drop.ty)?;
-        if self.value_type(value)? != ty {
+        if actual != ty {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         Ok(IrDrop {
-            value,
+            subject,
             ty,
-            release: drop.release,
+            release,
         })
     }
 
@@ -2493,24 +2527,16 @@ impl<'program> IrBuilder<'program> {
     fn lower_drops(&mut self, drops: &[CheckedDrop]) -> Result<Vec<IrDrop>, LoweringFailure> {
         let mut lowered = Vec::with_capacity(drops.len());
         for drop in drops {
-            let root = self.binding_value(drop.binding)?;
-            let value = if drop.fields.is_empty() {
-                root
-            } else {
-                self.project_struct_path(root, &drop.fields, false)?
-            };
+            let root = self
+                .bindings
+                .get(&drop.binding)
+                .copied()
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
             let ty = lower_type(self.erasure, drop.ty)?;
-            if self.value_type(value)? != ty {
-                return Err(LoweringFailure::InvalidCheckedProgram);
-            }
             // The checked program already fixed what this release performs
             // [STOR-3]; lowering preserves the record and the edge's reverse
             // declaration order rather than rederiving either.
-            lowered.push(IrDrop {
-                value,
-                ty,
-                release: drop.release,
-            });
+            lowered.push(self.lower_drop_subject(root, &drop.fields, ty, drop.release)?);
         }
         Ok(lowered)
     }

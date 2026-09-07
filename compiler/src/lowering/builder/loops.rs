@@ -695,11 +695,7 @@ impl IrBuilder<'_> {
                 // iteration ends: after the join, on the ring element that
                 // iteration owns, once per retired slot.
                 let drops = self.lower_drops(backedge_drops)?;
-                for drop in drops {
-                    self.current_block_mut()?
-                        .instructions
-                        .push(crate::IrInstruction::Drop(drop));
-                }
+                self.append_drops(drops)?;
             }
         }
         if self.current.is_none() {

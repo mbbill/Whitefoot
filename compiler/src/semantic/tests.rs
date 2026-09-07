@@ -1540,8 +1540,10 @@ command fn main() -> status: own ExitStatus pure {
             panic!("affine field move must consume its root");
         };
         assert_eq!(residual_drops.len(), 2);
-        assert_eq!(residual_drops[0].fields, vec![1]);
-        assert_eq!(residual_drops[1].fields, vec![0, 1]);
+        // The partial consume excludes its selected field; the remaining
+        // release graph is still visited in PROV-6 declaration order.
+        assert_eq!(residual_drops[0].fields, vec![0, 1]);
+        assert_eq!(residual_drops[1].fields, vec![1]);
         let CheckedStatement::Return { drops, .. } = &projection.body[6] else {
             panic!("consume_projection must end in return");
         };

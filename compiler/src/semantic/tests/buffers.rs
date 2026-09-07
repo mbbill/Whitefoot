@@ -572,7 +572,7 @@ fn zero_length_arrays_have_the_empty_sequence_layout_ceiling() {
 /// heap's own family — `reaches_ambient_heap`, the `BufferFill` record and
 /// the two target domains it installs — none of which a store-backed run
 /// has. The run twin of its access and cleanup half is
-/// `struct_run_paths_and_reverse_cleanup_are_explicit` below.
+/// `struct_run_paths_and_declaration_order_cleanup_are_explicit` below.
 #[test]
 fn primitive_buffers_retain_allocation_checks_accesses_and_cleanup() {
     let source = br#"fn make() -> result: own buffer<u16> pure {
@@ -878,7 +878,7 @@ fn buffer_new_keeps_its_primitive_only_operation_domain() {
 }
 
 #[test]
-fn struct_run_paths_and_reverse_cleanup_are_explicit() {
+fn struct_run_paths_and_declaration_order_cleanup_are_explicit() {
     let source = br#"struct Columns {
   left: FixedVector<u64, 4>;
   right: FixedVector<u64, 4>;
@@ -952,7 +952,9 @@ command fn main() -> status: own ExitStatus pure {
             panic!("main must end in return");
         };
         assert_eq!(drops.len(), 3);
-        assert_eq!(drops[0].fields, [1]);
+        // PROV-6 visits struct fields in declaration order. STOR-3's
+        // reverse declaration order applies to bindings, not these fields.
+        assert_eq!(drops[0].fields, [0]);
         assert_eq!(
             drops[0].ty,
             CheckedType::FixedVector {
@@ -960,7 +962,7 @@ command fn main() -> status: own ExitStatus pure {
                 length: super::super::model::CheckedConst::Value(4),
             }
         );
-        assert_eq!(drops[1].fields, [0]);
+        assert_eq!(drops[1].fields, [1]);
         assert_eq!(drops[1].ty, drops[0].ty);
         assert!(drops[2].fields.is_empty());
         assert_eq!(drops[2].ty, CheckedType::Nominal(NominalId(0)));

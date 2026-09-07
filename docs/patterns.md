@@ -1716,13 +1716,14 @@ while it lives: an element write through the `MutSlice` is refused until the
 child's last use, and admitted after it. That is how a reader and a writer of
 one buffer are spelled without two exclusive views.
 
-**View a `buffer<T>` or a `Vector<'s, T>`, not an `array<T, N>` or a
-`FixedVector<T, n>`, when you mean to write.** Inline storage is a value in this
-compiler — an element commit rebuilds it and writes it back to its binding — so
-a view of one carries a snapshot, and an exclusive view over inline storage
-stops as an explicit unsupported capability rather than writing where nobody can
-see it. A shared view is unaffected, because a live shared loan refuses every
-write to that storage while the view can be read.
+**Write through a view of the owning storage.** A `MutSlice` over a
+`FixedVector` reaches its inline owner's stable storage, including through a
+field or element projection; an element write updates that storage. `buffer`
+and `Vector` views reach their backing allocation. The nonwrapping-window and
+loan rules above still apply. The [inline-view program](../research/experiments/container-representation/dense/inline-view.wf)
+shows the complete `FixedVector` form. Exclusive views over legacy `array`
+storage remain an explicit compiler capability limit; see the
+[compiler guide](../compiler/README.md#implemented-language-surface).
 
 Replaces: taking a run or a buffer by value in order to write it, passing a
 `&uniq buffer<T>` where the callee only needs a window, and the `Option<T>`

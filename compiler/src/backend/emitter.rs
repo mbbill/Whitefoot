@@ -36,10 +36,10 @@ use super::target::{
 };
 use crate::{
     IrAddressed, IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation, IrCompletionStep, IrConstant,
-    IrDrop, IrEntry, IrEnumType, IrFloatOperation, IrFunction, IrGlobalValue, IrInstruction,
-    IrIntegerOperation, IrLayoutCeiling, IrNominal, IrNominalId, IrNominalKind, IrOperation,
-    IrOverlap, IrProgram, IrRuntimeTargetObligations, IrTargetDomainObligation, IrTerminator,
-    IrType, IrValueId, SystemResourceType,
+    IrDrop, IrDropSubject, IrEntry, IrEnumType, IrFloatOperation, IrFunction, IrGlobalValue,
+    IrInstruction, IrIntegerOperation, IrLayoutCeiling, IrNominal, IrNominalId, IrNominalKind,
+    IrOperation, IrOverlap, IrProgram, IrRuntimeTargetObligations, IrTargetDomainObligation,
+    IrTerminator, IrType, IrValueId, SystemResourceType,
 };
 use buffer::{buffer_fill_done_label, buffer_probe_join_label, buffer_vacant_done_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
@@ -1678,7 +1678,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrInstruction::Store { address, value, .. } => {
                 self.materialize_operands([*address, *value])?;
             }
-            IrInstruction::Drop(drop) => self.materialize_operands([drop.value()])?,
+            IrInstruction::Drops(_) => {}
             IrInstruction::Define { .. } => {}
         }
         self.emit_instruction_body(block, index, instruction)?;
@@ -1776,7 +1776,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 value,
                 referent,
             } => self.emit_store(*address, *value, *referent),
-            IrInstruction::Drop(drop) => self.emit_drop(*drop),
+            IrInstruction::Drops(drops) => self.emit_drops(drops),
         }
     }
 
@@ -2230,100 +2230,96 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             .ok_or(BackendFailure::InvalidIr)
     }
 
-    fn emit_drop(&mut self, drop: IrDrop) -> Result<(), BackendFailure> {
-        if self.value_type(drop.value()) != Some(drop.ty()) {
+    /// Validate the checked release and capture only content it actually
+    /// reads. In particular, a no-op owner node requires no aggregate load.
+    fn prepare_drop(&mut self, drop: IrDrop) -> Result<Option<String>, BackendFailure> {
+        let actual = match drop.subject() {
+            IrDropSubject::Value(value) => self.value_type(value),
+            IrDropSubject::Place(address) => match self.value_type(address) {
+                Some(IrType::Address(referent)) => Some(referent.ty()),
+                _ => return Err(BackendFailure::InvalidIr),
+            },
+        };
+        if actual != Some(drop.ty()) {
             return Err(BackendFailure::InvalidIr);
         }
-        let owner_name = value_name(drop.value());
-        let value_name = self.value_operand(drop.value())?;
-        match drop.ty() {
-            IrType::Array { .. } | IrType::Slice { .. } => {}
-            // [STOR-3] a run's and a provider's release actions. A
-            // frame-resident run reclaims no storage of its own; a
-            // store-resident run's own run is reclaimed by its store's
-            // release [PROV-6]; and a bump extent's action resets its cursor,
-            // which at a frame extent's scope exit is the frame itself. Each
-            // still walks its elements when one derives a release action.
+        let reads_content = match drop.ty() {
+            IrType::Array { .. } | IrType::Slice { .. } => false,
             IrType::FixedVector { .. } | IrType::Vector { .. } | IrType::Provider => {
-                if type_requires_cleanup(self.program, drop.ty())? {
+                type_requires_cleanup(self.program, drop.ty())?
+            }
+            IrType::Buffer { .. } => true,
+            IrType::Nominal(nominal) if !self.nominal(nominal)?.is_tag_only_enum() => {
+                match self.nominal(nominal)?.kind() {
+                    // The checker supplied separate component records. The
+                    // struct node must not recursively release them again.
+                    IrNominalKind::Struct { .. } | IrNominalKind::Arena { .. } => false,
+                    IrNominalKind::ArenaStorage => true,
+                    IrNominalKind::SystemResource(contract) => {
+                        if drop.release().action != Some(contract.action) {
+                            return Err(BackendFailure::InvalidIr);
+                        }
+                        true
+                    }
+                    IrNominalKind::Enum { .. } | IrNominalKind::Box { .. } => {
+                        type_requires_cleanup(self.program, drop.ty())?
+                    }
+                }
+            }
+            _ => return Err(BackendFailure::InvalidIr),
+        };
+        if !reads_content {
+            return Ok(None);
+        }
+        match drop.subject() {
+            IrDropSubject::Value(value) => self.value_operand(value).map(Some),
+            IrDropSubject::Place(address) => {
+                let snapshot = format!("%{}", self.next_temporary()?);
+                writeln!(
+                    self.output,
+                    "  {snapshot} = load {}, ptr {}",
+                    llvm_type(self.program, drop.ty())?,
+                    self.value_name(address)
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+                Ok(Some(snapshot))
+            }
+        }
+    }
+
+    fn emit_drops(&mut self, drops: &[IrDrop]) -> Result<(), BackendFailure> {
+        // Capture the complete edge/group before its first effectful release,
+        // just as lowering's former value snapshots did. Phi inputs are also
+        // captured before this group; destination writes follow it.
+        let snapshots = drops
+            .iter()
+            .map(|drop| self.prepare_drop(*drop))
+            .collect::<Result<Vec<_>, _>>()?;
+        for (drop, snapshot) in drops.iter().zip(snapshots) {
+            if let Some(value) = snapshot {
+                if let IrType::Nominal(nominal) = drop.ty()
+                    && let IrNominalKind::SystemResource(contract) = self.nominal(nominal)?.kind()
+                {
+                    let contract = *contract;
+                    system::emit_resource_release(
+                        self.qualification,
+                        &mut self.output,
+                        contract,
+                        &value,
+                    )?;
+                } else {
                     emit_value_cleanup(
                         self.program,
                         self.qualification,
                         &mut self.output,
                         &mut self.temporary,
                         drop.ty(),
-                        value_name.clone(),
+                        value,
                     )?;
                 }
             }
-            IrType::Buffer { .. } => {
-                emit_value_cleanup(
-                    self.program,
-                    self.qualification,
-                    &mut self.output,
-                    &mut self.temporary,
-                    drop.ty(),
-                    value_name.clone(),
-                )?;
-            }
-            IrType::Nominal(nominal) if !self.nominal(nominal)?.is_tag_only_enum() => {
-                match self.nominal(nominal)?.kind() {
-                    IrNominalKind::Struct { .. } => {}
-                    // An arena value derives no owner-scope drop action; its
-                    // storage is released with its region [STOR-3, STOR-4].
-                    IrNominalKind::Arena { .. } => {}
-                    // The region's allocation-list drop is that release:
-                    // walk the list and free every registered allocation.
-                    IrNominalKind::ArenaStorage => {
-                        emit_value_cleanup(
-                            self.program,
-                            self.qualification,
-                            &mut self.output,
-                            &mut self.temporary,
-                            drop.ty(),
-                            value_name.clone(),
-                        )?;
-                    }
-                    // The checked program's own [SYS-5] record is the single
-                    // source of truth for which action runs here, so a table
-                    // row disagreeing with it stops rather than silently
-                    // emitting a different release.
-                    IrNominalKind::SystemResource(contract) => {
-                        if drop.release().action != Some(contract.action) {
-                            return Err(BackendFailure::InvalidIr);
-                        }
-                        let contract = *contract;
-                        system::emit_resource_release(
-                            self.qualification,
-                            &mut self.output,
-                            contract,
-                            &value_name,
-                        )?;
-                    }
-                    IrNominalKind::Enum { .. } | IrNominalKind::Box { .. } => {
-                        if type_requires_cleanup(self.program, drop.ty())? {
-                            emit_value_cleanup(
-                                self.program,
-                                self.qualification,
-                                &mut self.output,
-                                &mut self.temporary,
-                                drop.ty(),
-                                value_name.clone(),
-                            )?;
-                        }
-                    }
-                }
-            }
-            _ => return Err(BackendFailure::InvalidIr),
-        }
-        // The annotation names the logical IR owner, independently of the
-        // temporary snapshot through which its physical cleanup was emitted.
-        writeln!(self.output, "  ; drop {owner_name}").map_err(|_| BackendFailure::TextEmission)
-    }
-
-    fn emit_drops(&mut self, drops: &[IrDrop]) -> Result<(), BackendFailure> {
-        for drop in drops {
-            self.emit_drop(*drop)?;
+            writeln!(self.output, "  ; drop {}", value_name(drop.operand()))
+                .map_err(|_| BackendFailure::TextEmission)?;
         }
         Ok(())
     }

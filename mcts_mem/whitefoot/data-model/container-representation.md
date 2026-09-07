@@ -86,6 +86,10 @@
   pipeline slot. An addressed owner retains its address over distinct backing
   until its remainder and checked releases finish; its mutable contents are not
   snapshotted before the outstanding callee completes.
+- Cleanup subjects distinguish saved values from initialized content at typed
+  places. A checked release group captures the content its actions need before
+  its first release. A no-op owner node requires no whole-value materialization;
+  release responsibility does not create another aggregate owner.
 
 ## Facts
 
@@ -244,6 +248,16 @@
   [Lane carry lowering](../../../compiler/src/lowering/builder/loops.rs),
   [Typed frame plan](../../../compiler/src/backend/emitter.rs),
   [Execution and cleanup controls](../../../compiler/src/backend/tests/parallel.rs). (code)
+
+- 2026-09-07 mechanism: the dense cleanup snapshot at `f5dab70c` exists even
+  though its scalar run has no element release. Naming the existing owner
+  place removes that cleanup-only value while preserving saved-value subjects
+  where prior content matters. Capturing a complete release group before its
+  first effect and writing phi destinations only after that group preserves
+  the distinction between release responsibility and content lifetime.
+  [Cleanup subjects and groups](../../../compiler/src/lowering.rs),
+  [Capture and release](../../../compiler/src/backend/emitter.rs),
+  [Value, failure, and ordering controls](../../../compiler/src/backend/tests/owned_places.rs). (code)
 
 ## Moves
 

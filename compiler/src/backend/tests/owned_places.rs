@@ -543,6 +543,120 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
     assert!(output.stderr.is_empty(), "{output:?}");
 }
 
+#[test]
+fn addressed_owner_cleanup_releases_descriptor_fields_in_checked_order() {
+    let module = compile(br#"struct Holder['s] {
+  cell: Box<'s, u64>;
+  bytes: buffer<u8>;
+  stamp: u64;
+}
+
+fn touch(value: &uniq u64) -> result: own unit writes(value) {
+  set deref(value) = 41_u64;
+  return unit;
+}
+
+fn release['s](value: own Holder<'s>, store: &uniq Heap<'s>, early: own Bool) -> result: own u8 reads(value.stamp), writes(value.cell, value.bytes, value.stamp, store) {
+  region {
+    touch(value: &uniq value.stamp);
+  }
+  if value.stamp != 41_u64 {
+    return 2_u8;
+  }
+  if early {
+    dispose value;
+    return 0_u8;
+  }
+  return 0_u8;
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  for (round in 0_u64..2_u64) {
+    match heap_box(store: &uniq heap, value: 17_u64) {
+      Err(error: returned) => {
+        return exit_status(code: 1_u8);
+      }
+      Ok(value: cell) => {
+        let bytes = buffer_new(3_u64, 23_u8);
+        let holder = Holder(cell: move cell, bytes: move bytes, stamp: 0_u64);
+        let early = round == 0_u64;
+        let status = release(value: move holder, store: &uniq heap, early: early);
+        if status != 0_u8 {
+          return exit_status(code: status);
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#);
+    let observed = retain_calls(&module)
+        .replace("@malloc(", "@wf_test_allocate(")
+        .replace("@free(", "@wf_test_release(");
+    let host = allocation_observer(4, 0);
+    let output = compile_link_and_run(&observed, Some(&host), &[]);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    // PROV-6 visits fields in declaration order. Both explicit disposal and
+    // scope exit must preserve the cell/descriptor identity after a real
+    // borrowed helper call, without releasing either field twice.
+    assert_eq!(output.stdout, b"A1;A2;F1;F2;A3;A4;F3;F4;");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
+#[test]
+fn nested_and_residual_cleanup_preserve_release_graph_order() {
+    let module = compile(
+        br#"struct Pair {
+  first: box<u64>;
+  second: box<u64>;
+}
+
+struct Triple {
+  first: box<u64>;
+  selected: box<u64>;
+  last: box<u64>;
+}
+
+enum Packet {
+  Held(pair: Pair, extra: box<u64>);
+  Empty();
+}
+
+command fn main() -> status: own ExitStatus pure {
+  region {
+    let first = box_new(11_u64);
+    let second = box_new(22_u64);
+    let pair = Pair(first: move first, second: move second);
+    let extra = box_new(33_u64);
+    let packet = Held(pair: move pair, extra: move extra);
+  }
+  region {
+    let first = box_new(44_u64);
+    let selected = box_new(55_u64);
+    let last = box_new(66_u64);
+    let triple = Triple(first: move first, selected: move selected, last: move last);
+    let retained = move triple.selected;
+    if deref(retained) != 55_u64 {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+    );
+    let observed = retain_calls(&module)
+        .replace("@malloc(", "@wf_test_allocate(")
+        .replace("@free(", "@wf_test_release(");
+    let host = allocation_observer(6, 0);
+    let output = compile_link_and_run(&observed, Some(&host), &[]);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    // The active payload walks its nested struct before the next payload
+    // field. A partial consume releases only the residual fields, in their
+    // declaration order; the selected owner remains live to scope exit.
+    assert_eq!(output.stdout, b"A1;A2;A3;F1;F2;F3;A4;A5;A6;F4;F6;F5;");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
 /// Observe only source allocations, without changing the host floor allocator.
 /// A duplicate or unknown release aborts instead of allowing a use-after-free
 /// to appear successful because its bytes happened to remain unchanged.

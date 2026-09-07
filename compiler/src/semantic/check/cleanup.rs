@@ -437,7 +437,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     match &nominal.kind {
                         CheckedNominalKind::Struct { fields } => {
                             pending.push((current, path.clone(), true));
-                            for (index, field) in fields.iter().enumerate() {
+                            // PROV-6 visits fields in declaration order; the
+                            // explicit work stack is last-in, first-out.
+                            for (index, field) in fields.iter().enumerate().rev() {
                                 if self.is_copy_type(field.ty)? {
                                     continue;
                                 }
@@ -557,7 +559,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             return Err(SemanticCompilerFailure::InvalidResolution.into());
                         }
                     }
-                    for (index, field) in fields.iter().enumerate() {
+                    for (index, field) in fields.iter().enumerate().rev() {
                         if self.is_copy_type(field.ty)? {
                             continue;
                         }

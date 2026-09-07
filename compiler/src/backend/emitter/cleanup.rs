@@ -391,7 +391,9 @@ fn emit_cleanup_jobs(
                     let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
                     match nominal.kind() {
                         IrNominalKind::Struct { fields } => {
-                            for (index, field) in fields.iter().enumerate() {
+                            // Jobs are popped: enqueue in reverse to preserve
+                            // PROV-6's declaration-order traversal.
+                            for (index, field) in fields.iter().enumerate().rev() {
                                 if type_requires_cleanup(program, field.ty())? {
                                     jobs.push(CleanupJob::Field {
                                         aggregate_ty: ty,
@@ -550,7 +552,7 @@ fn emit_enum_cleanup_body(
         writeln!(output, "variant.{}:", variant.tag()).map_err(|_| BackendFailure::TextEmission)?;
         let base = variant_field_base(variants, variant.tag())?;
         let mut jobs = Vec::new();
-        for (field, declaration) in variant.fields().iter().enumerate() {
+        for (field, declaration) in variant.fields().iter().enumerate().rev() {
             if type_requires_cleanup(program, declaration.ty())? {
                 jobs.push(CleanupJob::Field {
                     aggregate_ty: ty,

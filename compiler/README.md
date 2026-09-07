@@ -316,9 +316,18 @@ Aggregate IR values remain independent snapshots; deterministic CFG liveness
 permits dead storage to be reused, and internal aggregate results use explicit
 destinations. An exposed address or deferred use prevents unsafe reuse. A
 mutation captures its target components before its RHS; replacement reads the
-old owner only at the subsequent commit. Pending integration of the parallel
-aggregate ABI is tracked in the container investigation; the implementation
-checkpoint is not yet a completed full-gate result.
+old owner only at the subsequent commit. Ordinary, refused, staged and split
+calls use the aggregate parameter/result ABI. Shared destination normalization
+still needs to remove the one-time result-to-addressable-owner transfer.
+
+Checked cleanup names either a saved value or content at a typed place. Scope
+exit and whole-binding `dispose` project addressed owners without loading a
+second aggregate. Each release group captures the content its actions need
+before its first release; a no-op owner node needs no load. Incoming phi values
+are captured before cleanup and destination writes follow it. Required value
+snapshots, including proper-part consumes with residual releases, remain intact.
+Exclusive views over legacy arrays remain explicitly unsupported
+(`ExclusiveViewOverArray`); the inline `FixedVector` view path is implemented.
 
 Rebinding a legacy `buffer` descriptor through a borrowed root is explicitly
 unsupported (`BorrowedBufferDescriptorMutation`). The legacy borrowed-parameter

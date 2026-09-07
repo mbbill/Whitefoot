@@ -377,7 +377,7 @@ impl FlowInstruction {
             IrInstruction::StoreBuffer { .. }
             | IrInstruction::StoreSlice { .. }
             | IrInstruction::Store { .. }
-            | IrInstruction::Drop(_) => (None, None, None),
+            | IrInstruction::Drops(_) => (None, None, None),
         };
         Self {
             result,
@@ -409,7 +409,7 @@ fn instruction_operands(instruction: &IrInstruction) -> Vec<IrValueId> {
             value,
         } => vec![*slice, *index, *value],
         IrInstruction::Store { address, value, .. } => vec![*address, *value],
-        IrInstruction::Drop(drop) => vec![drop.value()],
+        IrInstruction::Drops(drops) => drops.iter().map(|drop| drop.operand()).collect(),
     }
 }
 
@@ -421,11 +421,11 @@ fn terminator_operands(terminator: &IrTerminator) -> Vec<IrValueId> {
         } => arguments
             .iter()
             .copied()
-            .chain(drops.iter().map(|drop| drop.value()))
+            .chain(drops.iter().map(|drop| drop.operand()))
             .collect(),
         IrTerminator::Match { scrutinee, .. } => vec![*scrutinee],
         IrTerminator::Return { value, drops } => std::iter::once(*value)
-            .chain(drops.iter().map(|drop| drop.value()))
+            .chain(drops.iter().map(|drop| drop.operand()))
             .collect(),
     }
 }

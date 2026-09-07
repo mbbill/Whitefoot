@@ -775,7 +775,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn nested_struct_cleanup_releases_run_fields_in_reverse_order() {
+fn nested_struct_cleanup_releases_every_run_field() {
     let source = br#"struct Pair['s] {
   first: Vector<'s, u8>;
   second: Vector<'s, u16>;
@@ -788,7 +788,7 @@ struct Owner['s] {
 }
 
 fn release['s](owner: own Owner<'s>, store: &uniq Heap<'s>) -> result: own unit writes(store) {
-  doc "Holds the whole nested owner and nothing else, so its one return edge carries exactly the four field releases in reverse declared order.";
+  doc "Holds the whole nested owner and nothing else, so its one return edge carries exactly four run releases.";
   return unit;
 }
 
@@ -833,8 +833,8 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
 "#;
     let llvm = compile(source);
     // `release` holds the whole nested owner and nothing else, so its one
-    // return edge carries exactly the four field releases in reverse declared
-    // order — the number and the order the buffer fields had.
+    // return edge carries exactly four run releases. Allocation identities
+    // and their order are checked by the owned-place execution controls.
     let release = emitted_function(&llvm, "release");
     assert_eq!(release.matches("call void @free").count(), 4);
     // A store take is refusable where `buffer_new` aborted, so `main` also

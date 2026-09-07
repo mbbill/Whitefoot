@@ -206,11 +206,10 @@ pub struct IrRefusal {
     pub refused: u32,
 }
 
-/// The referent of an [`IrType::Address`]: directly stored content that a
-/// borrow addresses.
-///
-/// Descriptor values (`buffer`, `slice`) and opaque handles (`box`, system
-/// resources) are already their own borrow and never appear here.
+/// The content of an [`IrType::Address`]. A typed place may hold inline
+/// content, a descriptor, or a handle. Source borrows of descriptors and
+/// handles still use their value ABI; a place containing one is distinct
+/// from the storage or resource that descriptor or handle denotes.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum IrAddressed {
     Unit,
@@ -223,6 +222,12 @@ pub enum IrAddressed {
         width: u8,
     },
     Nominal(IrNominalId),
+    Buffer {
+        element: IrFlatElement,
+    },
+    Slice {
+        element: IrFlatElement,
+    },
     /// One `FixedVector<T, n>` [BLK-1]. A frame-resident run is inline
     /// storage in its owner, exactly as a struct is, so a borrow of one is
     /// the address of that storage rather than a copy of the run.
@@ -257,6 +262,8 @@ impl IrAddressed {
             Self::Integer { width, signed } => IrType::Integer { width, signed },
             Self::Float { width } => IrType::Float { width },
             Self::Nominal(id) => IrType::Nominal(id),
+            Self::Buffer { element } => IrType::Buffer { element },
+            Self::Slice { element } => IrType::Slice { element },
             Self::FixedVector { element, length } => IrType::FixedVector { element, length },
             Self::Array { element, length } => IrType::Array { element, length },
             Self::Vector { element, release } => IrType::Vector { element, release },
@@ -271,11 +278,13 @@ impl IrAddressed {
             IrType::Integer { width, signed } => Self::Integer { width, signed },
             IrType::Float { width } => Self::Float { width },
             IrType::Nominal(id) => Self::Nominal(id),
+            IrType::Buffer { element } => Self::Buffer { element },
+            IrType::Slice { element } => Self::Slice { element },
             IrType::FixedVector { element, length } => Self::FixedVector { element, length },
             IrType::Array { element, length } => Self::Array { element, length },
             IrType::Vector { element, release } => Self::Vector { element, release },
             IrType::Provider => Self::Provider,
-            IrType::Address(_) | IrType::Buffer { .. } | IrType::Slice { .. } => return None,
+            IrType::Address(_) => return None,
         })
     }
 }
@@ -1394,28 +1403,45 @@ pub enum IrInstruction {
         value: IrValueId,
         referent: IrAddressed,
     },
-    Drop(IrDrop),
+    /// Capture every cleanup subject before running this checked release
+    /// sequence. A release must not change a later subject's saved value.
+    Drops(Vec<IrDrop>),
+}
+
+/// A release consumes either an already captured value or the initialized
+/// content at an existing typed place. Naming a cleanup place does not read
+/// its entire content into another owned aggregate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrDropSubject {
+    Value(IrValueId),
+    Place(IrValueId),
 }
 
 /// One compiler-derived release, explicit on the normal control-flow edge
 /// that carries it [STOR-3].
 ///
 /// Every drop and every release is represented before lowering. The IR places
-/// these records on `Jump` and `Return` terminators and as `Drop` instructions
+/// these records on `Jump` and `Return` terminators and as `Drops` instructions
 /// in straight-line position. Their order inside one edge is the checked
 /// program's reverse declaration order, and their position relative to
 /// surrounding calls is the order [EFF-5] requires of every conforming
 /// lowering.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IrDrop {
-    value: IrValueId,
+    subject: IrDropSubject,
     ty: IrType,
     release: SystemRelease,
 }
 
 impl IrDrop {
-    pub const fn value(self) -> IrValueId {
-        self.value
+    pub const fn subject(self) -> IrDropSubject {
+        self.subject
+    }
+
+    pub const fn operand(self) -> IrValueId {
+        match self.subject {
+            IrDropSubject::Value(value) | IrDropSubject::Place(value) => value,
+        }
     }
 
     pub const fn ty(self) -> IrType {

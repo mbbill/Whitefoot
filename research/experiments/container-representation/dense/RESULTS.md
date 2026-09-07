@@ -13,9 +13,10 @@ The two retained runs compare the pre-implementation baseline at `eff095c7` with
 the owned-storage checkpoint at `f5dab70c`. The latter removes whole-payload
 transfers from the element loops and passes all three scalar sizes, the N=16
 four-field record, and the inline exclusive-view program. It still retains a
-one-time aggregate transfer and excess frame storage. The full repository gate
-and parallel aggregate integration remain pending; these measurements establish
-this experiment's behavior and cost, not workload prevalence or merge readiness.
+one-time aggregate transfer and excess frame storage. Parallel integration later
+passes the full repository gate at `bf8cdc56`. These measurements describe the
+two named revisions, not later cleanup/destination work, workload prevalence, or
+merge readiness.
 
 ## Reproduction and scope
 

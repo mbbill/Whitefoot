@@ -221,7 +221,7 @@ an internal snapshot of affine representation does not grant a second owning
 responsibility or permit a new source copy. The exact enum/tag and padding rules
 remain the target representation's, not inferred from this notation.
 
-For the dense witness, the current logical chain is `v2 = Call build(seed)`,
+At `f5dab70c`, the dense witness's logical chain is `v2 = Call build(seed)`,
 `v3 = AddressOf(v2)`, projected updates through `v3`, then a whole-owner `Load`
 feeding cleanup. The retained raw LLVM has three aggregate fields: call result,
 addressable owner, and cleanup snapshot. The selected shape instead reserves the
@@ -231,11 +231,22 @@ later read actually needs the old content. This describes the intended removal o
 the recorded copy and extra fields; it is not a new measurement or a claim that
 current target code already has that shape.
 
+The cleanup step now carries a saved value or typed place as the checked release
+subject. Scope exits and whole-binding disposal project existing addressed owners;
+they do not create another whole-owner value. Straight-line releases form one
+ordered group, just as edge releases already do. Emission captures all content
+needed by that group before its first release and skips loads for no-op owner
+nodes. Descriptor fields are ordinary typed places; this does not change the
+source borrow ABI of a descriptor or grant descriptor replacement through a borrow.
+
 Direct cleanup of a place needs its own ordering argument. Existing jump delivery
 snapshots incoming values before cleanup because a reused destination may overwrite
 an owner that cleanup still reads. Replacing every cleanup load with an arbitrary
 late address read would lose that protection. The normalization must preserve the
 subject's contents until the checked release executes, or retain a real snapshot.
+The grouped capture implements that ordering. Proper-part consumes still evaluate
+their selected value and residual releases, and replacement/swap/phi snapshots
+remain. Shared fresh-result placement is the outstanding part of the dense chain.
 
 #### Calls and dynamic storage instances
 
@@ -455,7 +466,7 @@ Its concrete acceptance criteria are:
    introduced, and private runtime slot layouts are not assumed.
 
 The in-progress implementation now executes the frozen scalar correctness matrix
-and the mandatory wide-record and inline exclusive-view programs. Its seven
+and the mandatory wide-record and inline exclusive-view programs. Its
 [owned-place execution tests](../../../compiler/src/backend/tests/owned_places.rs)
 observe value snapshots, simultaneous assignment, returned element borrows,
 retained helper calls, allocation refusal, cleanup order, and mutation evaluation
@@ -494,8 +505,9 @@ result-to-addressable-binding copy and excess frame storage remain: N=4096 uses
 125,872 static entry-frame bytes versus the new native control's 32,832 bytes.
 This bounds the result rather than establishing optimal placement or a language
 performance ranking. [Both runs, machine shape and limits](../../experiments/container-representation/dense/RESULTS.md)
-are retained together. The full regression gate and parallel integration still
-prevent treating this checkpoint as completion of the slice.
+are retained together. Parallel integration subsequently passes the complete gate
+at `bf8cdc56`; shared destination normalization remains incomplete. Later cleanup
+work does not retroactively change the measured frame or timings at `f5dab70c`.
 
 Then implement the selected bounded semantic capabilities: full-state construction
 and sealing, checked empty-run consume, projected result contracts, and two-span
@@ -878,4 +890,18 @@ experiments, full native conformance (732 passed, one declared pending), and the
 snapshot corpus (484 passed, zero flips). The previously failing
 `generic_nominals.wf --par` corpus case now passes. This establishes the parallel
 integration checkpoint, not complete destination normalization or new performance
-measurements. The result-to-binding and cleanup placement work remains open.
+measurements. Its green result does not validate subsequent compiler changes.
+
+The cleanup-place controls observe both explicit disposal and scope exit of an
+addressed owner containing a store-branded cell and a legacy buffer. Their expected
+allocation/release trace follows PROV-6's field declaration order. They exposed
+an existing reversal: the checker and recursive cleanup emitter pushed fields in
+forward order onto last-in-first-out work stacks. Reversing insertion preserves
+the specified traversal, including enum payloads and partial-consume residuals;
+binding scope order remains STOR-3's reverse declaration order. The regression
+test keeps the normative expected trace. This is a compiler correction, not a
+specification or conformance-verdict amendment.
+Two ordinary semantic tests had encoded the same reversed field order; their
+expected paths now follow PROV-6, retaining their exact release counts and the
+separate assertion of reverse binding order. A native test that counted releases
+without observing their order no longer claims an order in its name or comments.

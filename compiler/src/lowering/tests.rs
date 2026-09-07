@@ -17,9 +17,9 @@ use crate::{
 };
 
 use super::{
-    IrBlock, IrDrop, IrEntry, IrFunction, IrInstruction, IrIntegerOperation, IrNominalKind,
-    IrOperation, IrProgram, IrSourceArgument, IrSourceCall, IrSourceMode, IrTerminator, IrType,
-    IrValueId, lower_checked,
+    IrBlock, IrDrop, IrDropSubject, IrEntry, IrFunction, IrInstruction, IrIntegerOperation,
+    IrNominalKind, IrOperation, IrProgram, IrSourceArgument, IrSourceCall, IrSourceMode,
+    IrTerminator, IrType, IrValueId, lower_checked,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -806,7 +806,7 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
             );
             // The released value is the parameter itself: nothing between the
             // entry and the release replaced the resource identity.
-            assert_eq!(drop.value(), function.parameters()[0].0);
+            assert_eq!(drop.operand(), function.parameters()[0].0);
         }
     });
 }
@@ -832,7 +832,7 @@ fn a_move_keeps_the_resource_identity_and_its_release() {
         );
         // A move rebinds without materializing another value, so the release
         // still names the incoming resource.
-        assert_eq!(drop.value(), function.parameters()[0].0);
+        assert_eq!(drop.operand(), function.parameters()[0].0);
     });
 }
 
@@ -862,13 +862,87 @@ fn a_struct_field_release_reaches_the_contained_resource() {
             Some(SystemReleaseAction::NativeCloseAttempt)
         );
         assert_eq!(field.release().row, close_row());
-        assert_ne!(field.value(), function.parameters()[0].0);
+        assert_ne!(field.operand(), function.parameters()[0].0);
         // The struct itself has no release action of its own, and its row is
         // the union of what its owned content may run.
         assert_eq!(dropped_resource(program, *aggregate), None);
         assert_eq!(aggregate.release().action, None);
         assert_eq!(aggregate.release().row, close_row());
-        assert_eq!(aggregate.value(), function.parameters()[0].0);
+        assert_eq!(aggregate.operand(), function.parameters()[0].0);
+    });
+}
+
+#[test]
+fn addressed_cleanup_keeps_places_instead_of_whole_owner_snapshots() {
+    let source = format!(
+        r#"struct Holder {{
+  bytes: buffer<u8>;
+  stamp: u64;
+}}
+
+fn touch(value: &uniq Holder) -> result: own unit writes(value.stamp) {{
+  set deref(value).stamp = 41_u64;
+  return unit;
+}}
+
+fn release_holder(value: own Holder, early: own Bool) -> result: own unit writes(value.bytes, value.stamp) {{
+  region {{
+    touch(value: &uniq value);
+  }}
+  if early {{
+    dispose value;
+    return unit;
+  }}
+  return unit;
+}}
+
+{COMMAND_ENTRY}"#
+    );
+    with_ir(source.as_bytes(), |program| {
+        let function = function(program, "release_holder");
+        let mut groups = Vec::new();
+        for block in function.blocks() {
+            for instruction in block.instructions() {
+                assert!(
+                    !matches!(
+                        instruction,
+                        IrInstruction::Define {
+                            operation: IrOperation::Load {
+                                referent: super::IrAddressed::Nominal(_),
+                                ..
+                            },
+                            ..
+                        }
+                    ),
+                    "cleanup must not capture a second aggregate owner"
+                );
+                if let IrInstruction::Drops(drops) = instruction {
+                    groups.push(drops.as_slice());
+                }
+            }
+            if let IrTerminator::Return { drops, .. } = block.terminator()
+                && !drops.is_empty()
+            {
+                groups.push(drops.as_slice());
+            }
+        }
+        assert_eq!(groups.len(), 2, "explicit disposal and normal scope exit");
+        for drops in groups {
+            let [field, owner] = drops else {
+                panic!("field release then owner node");
+            };
+            assert!(matches!(field.ty(), IrType::Buffer { .. }));
+            assert!(matches!(owner.ty(), IrType::Nominal(_)));
+            for drop in drops {
+                let IrDropSubject::Place(address) = drop.subject() else {
+                    panic!("an addressed owner keeps its cleanup place");
+                };
+                let Some(IrType::Address(referent)) = function.value_type(address) else {
+                    panic!("cleanup place must retain its content type");
+                };
+                assert_eq!(referent.ty(), drop.ty());
+            }
+        }
     });
 }
 
@@ -992,7 +1066,7 @@ fn returning_or_passing_an_owner_derives_no_release_here() {
             Some(SystemReleaseAction::NativeCloseAttempt)
         );
         // It is the call result, not the incoming parameter.
-        assert_ne!(drop.value(), receive.parameters()[0].0);
+        assert_ne!(drop.operand(), receive.parameters()[0].0);
     });
 }
 
@@ -1011,13 +1085,13 @@ fn releases_keep_reverse_declaration_order_on_the_normal_edge() {
             block
                 .instructions()
                 .iter()
-                .all(|instruction| !matches!(instruction, IrInstruction::Drop(_)))
+                .all(|instruction| !matches!(instruction, IrInstruction::Drops(_)))
         );
         // Both releases sit on the one normal edge, in the reverse
         // declaration order [STOR-3] fixes, which is the order [EFF-5]
         // requires of every conforming lowering.
         let drops = return_drops(function);
-        let ordered: Vec<IrValueId> = drops.iter().map(|drop| drop.value()).collect();
+        let ordered: Vec<IrValueId> = drops.iter().map(|drop| drop.operand()).collect();
         assert_eq!(
             ordered,
             vec![function.parameters()[1].0, function.parameters()[0].0]
