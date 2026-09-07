@@ -232,6 +232,19 @@ fn direct_field_index_writes_respect_borrowed_subfields() {
 }
 
 #[test]
+fn repeated_affine_element_read_out_keeps_type2_diagnostic_priority() {
+    let source = rows("  set (rows[0_u64], rows[1_u64]) = move rows[1_u64], move rows[0_u64];\n");
+    accepts(&source);
+    assert_rule_kind(
+        source
+            .replace("move rows[0_u64];", "move rows[1_u64];")
+            .as_bytes(),
+        SemanticRule::Type2,
+        |kind| matches!(kind, SemanticIssueKind::AffineElementMove { .. }),
+    );
+}
+
+#[test]
 fn returned_scalar_borrow_writes_preserve_the_enclosing_run_measure() {
     let source = rows(
         r#"  region {

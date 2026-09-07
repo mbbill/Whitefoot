@@ -551,9 +551,8 @@ pub(crate) enum CheckedType {
         release: CheckedReleaseClass,
     },
     /// One `Heap<'s>` [PROV-1]: the proof-only provider value of the general
-    /// store `'s` names. The one route by which a program would obtain it is
-    /// [FN-7]'s `heap` standard input, which is DEFERRED, so the type is
-    /// nameable and no source produces a value of it.
+    /// store `'s` names. [FN-7]'s `command.heap` entry supplies the provider;
+    /// calls transport it through their declared store region.
     Heap {
         region: DeclarationId,
     },

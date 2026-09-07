@@ -571,5 +571,32 @@ formatting. A formatting-only correction in `cost_shape.rs` resolves the one
 unrelated diff; remaining format differences and the independent Clippy
 `write_with_newline` failure are in `backend/emitter/parallel.rs`, whose remaining
 edit is awaiting the explicit permission described above. No check was disabled.
-Sampling, integration, the full native conformance adapter and the complete gate
-must run after that integration; the unit-stage success is not their substitute.
+
+The subsequent canonical partition check confirms 1,555 library cases split into
+1,488 unit and 67 sampling cases; all 67 sampling cases pass. The snapshot corpus
+passes all 484 cases with no flips. The full native conformance run exposed one
+diagnostic-priority regression: a repeated affine element read-out must report
+TYPE-2 before its simultaneous OWN-1 violation under DIAG-1. Correcting the
+compiler preserves the original case and verdict, and the rerun passes 732 cases
+with one declared pending case. The 19 focused storage semantic tests include
+the legal swap control and the repeated-read-out negative.
+
+Integration exposed two further ordinary-path observations. System wrapper calls
+must render a stored aggregate's materialized operand rather than its former SSA
+name; the corrected path passes all 11 network program tests. The FIR observer
+now checks direct enclosing-field addresses instead of requiring aggregate
+reconstruction, and retains its unchanged runtime result checks. The canonical
+integration rerun passes its binary and adapter harnesses and 72 program cases;
+the remaining program case fails because `generic_nominals.wf` exits abnormally
+under `--par` with four workers. That existing fixture returns stored aggregates
+from eligible sibling calls. This is a remaining parallel integration defect,
+not a host loopback-permission failure or a reason to narrow the corpus.
+
+The complete gate must run after parallel integration. Existing green sampling
+counts do not establish aggregate result/carry retirement: their ordinary frame
+boundary case uses array arguments with a scalar result, and the staged user-call
+fixture also returns a scalar. Additional aggregate execution evidence belongs
+with the pending adapter. LoopSplit currently charges each aggregate capture the
+entire 256-byte lane payload during admission; a small record capture can be
+permission-eligible yet never select split actualization. A sequential fallback
+for that source is not evidence of a parallel aggregate capture.

@@ -821,27 +821,33 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &HashMap<DeclarationId, LocalBinding>,
         options: PlaceUseOptions,
     ) -> Result<TypedExpression, CheckStop> {
-        self.check_commit_place_live(&place.resolved, node, false)?;
+        let liveness = self.check_commit_place_live(&place.resolved, node, false);
         let copy = self.is_copy_type(place.root.ty)?;
-        let read_out = options.explicit_move
+        let read_out = liveness.is_ok()
+            && options.explicit_move
             && !copy
             && self.take_commit_element_read_out(&place.resolved, &place.root.place_path());
+        // [DIAG-1] an explicit affine element move without an admitted
+        // read-out violates TYPE-2 even when that same use is also dead under
+        // OWN-1. TYPE-2 is defined first and owns their simultaneous event.
+        // Liveness still prevents spending another read-out and owns later
+        // scalar reads, which have no affine-element violation.
+        if options.explicit_move && !copy && !read_out {
+            return self.issue_node(
+                SemanticRule::Type2,
+                node,
+                SemanticIssueKind::AffineElementMove {
+                    mechanical_fix: "exchange the element with `let old = replace p = e;`",
+                },
+            );
+        }
+        liveness?;
         if !copy && !read_out {
             return self.issue_node(
-                if options.explicit_move {
-                    SemanticRule::Type2
-                } else {
-                    SemanticRule::Own1
-                },
+                SemanticRule::Own1,
                 node,
-                if options.explicit_move {
-                    SemanticIssueKind::AffineElementMove {
-                        mechanical_fix: "exchange the element with `let old = replace p = e;`",
-                    }
-                } else {
-                    SemanticIssueKind::BareAffineUse {
-                        mechanical_fix: "exchange the element with `let old = replace p = e;`",
-                    }
+                SemanticIssueKind::BareAffineUse {
+                    mechanical_fix: "exchange the element with `let old = replace p = e;`",
                 },
             );
         }

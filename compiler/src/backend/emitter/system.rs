@@ -4239,7 +4239,7 @@ impl FunctionEmitter<'_, '_> {
                 continue;
             }
             let rendered_type = llvm_type(self.program, argument_type)?;
-            rendered.push(format!("{rendered_type} {}", value_name(*argument)));
+            rendered.push(format!("{rendered_type} {}", self.value_name(*argument)));
         }
         writeln!(
             self.output,

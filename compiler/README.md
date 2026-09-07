@@ -247,27 +247,31 @@ supports them:
 This list is an implementation map, not a second language specification. The
 compiler deliberately reports remaining active-spec gaps as unsupported and
 keeps conservative LLVM when no specification-backed optimization fact exists.
-The largest such gap today is the general store. Both runs execute:
-`fixed_vector` forms a frame-resident one, `arena_frame` reserves one bump extent
-in the reserving activation's own frame and `arena_vector_proved` and `arena_vector`
-take a store-resident one from it, [BLK-3]'s four boundary operations move
-either run's boundaries, `len_of`, `cap_of`, `room_of` and `head_of` read the
-measures of a run and of a store, a subscript reads the window at
-`(head_of + i) mod cap_of`, each row's requirement is discharged at the call
-under [MSR-4] and each row's declared relations are published at the caller
-under [CALL-6]. What is not implemented is `heap_vector`, which stops as an
-explicit unsupported capability, now for one reason rather than two: [FN-7]'s
-`command.heap` row is DEFERRED, so no program can obtain a `Heap<'s>` value at
-all. The second reason is gone — a run's release class is decided from its
-store region's declaration alone and travels on `CheckedType::Vector` and
-`IrType::Vector`, so a region-erased lowering can select a heap-backed run's
-free from an arena-backed run's empty action; nothing spends one yet, and a
-unit test pins the four classifications. A source function is generic over a
-store now: a parameter type naming a formal region determines that region from
-its actual and is substituted with it, so `fn carve['s: affine](store: &uniq
+The implemented run placements cover inline storage, bump extents, and the
+general store:
+`fixed_vector` forms an inline run, `arena_frame` reserves a bump extent in the
+reserving activation's frame, and `arena_vector_proved` and `arena_vector` take
+a store-resident run from that extent. [FN-7]'s `command.heap` entry supplies a
+`Heap<'s>` provider, and `heap_vector` takes a run from it, returning `Some` on
+success or `None` when the store cannot satisfy the allocation. The row still
+requires [OP-9]'s static allocation-fit proof; runtime refusal does not replace
+that proof. [BLK-3]'s four boundary operations move either run's boundaries,
+the measure readers observe the cells defined for each run or bump extent, and
+a subscript selects the window at `(head_of + i) mod cap_of`. Each row's
+requirements are discharged at the call under [MSR-4], and its declared
+relations are published at the caller under [CALL-6]. A run's release class is
+derived from its store region and travels on `CheckedType::Vector` and
+`IrType::Vector`, so lowering emits heap-backed reclamation and leaves
+arena-backed reclamation to the extent. The backend tests in
+`src/backend/tests/buffers.rs` exercise runtime-count heap allocation and
+cleanup on return and break edges.
+
+A source function can be generic over a store: a parameter type naming a formal
+region determines that region from its actual and is substituted with it, so
+`fn carve['s: affine](store: &uniq
 Arena<'s, 256, 16>) -> made: own Option<Vector<'s, u64>>` declares, checks and
-runs. Two stops remain. A proved take whose count is not a closed expression
-stops, because `advance<T>(count)` is then an opaque term with no source
+runs. Two further container limits remain here. A proved take whose count is not
+a closed expression stops, because `advance<T>(count)` is then an opaque term with no source
 spelling and its requirement has no difference-bound form a caller could
 discharge; the refusing row is the one for that position. And a run whose
 element type is itself a run of runs stops, explicitly: the element domain
