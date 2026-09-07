@@ -1,9 +1,9 @@
 # Engineering and evidence practice
 
-None of this is workflow. The four branch-and-main rules, and what they mean
-exactly, are in `CLAUDE.md`; nothing here adds an approval point or a merge
-condition. This is how to do the work well, and most of it was learned by
-getting it wrong.
+Use concrete compiler questions, independent behavior evidence, and measured
+costs to guide engineering choices. The four branch-and-main rules are in
+[AGENTS.md](../AGENTS.md#branch-and-main-boundary); completion checks are
+collected in the [review checklist](review-checklist.md).
 
 ## Engineering guidance
 
@@ -27,19 +27,15 @@ does not authorize work or add a workflow step.
 
 Maintain the memory with the `mcts-mem-use` skill named in AGENTS.md. Walk from
 the root through the relevant subsystem and its rejected alternatives before
-changing a decision. Keep current assertions in Items and dated evidence in
-Facts; a replacement needs the frozen alternative and paired Moves. Run
-`npx mcts-mem lint` after edits. Link, command, and text checks below complement
-that linter; they do not replace its history and structure checks.
-Check that replacement twins resolve back to the same historical nodes;
-matching rationale text alone does not establish the two endpoints.
+changing a decision. The skill defines how to maintain nodes and evidence;
+the [completion checklist](review-checklist.md#m-decision-memory--changed-decisions-or-memory-nodes)
+collects the review checks, including lint and replacement endpoints.
 
 ## Documentation and local context
 
-Use the ownership map in [AGENTS.md](../AGENTS.md#authority-and-reading).
-Implementation status belongs in the compiler README, language judgments in
-the specification, and goals in the constitution. Keep a summary short enough
-to point to its owner instead of copying the owner's changing details.
+Use the [document roles and citation boundaries](review-checklist.md#document-roles)
+when choosing where to write. Keep a summary short enough to point to its
+owner instead of copying the owner's changing details.
 
 For a change, identify the concepts it changes and follow their rule IDs,
 interfaces, and references into the affected documents. Read those sections
@@ -48,16 +44,13 @@ decision is settled, then record the reason and replaced alternatives in the
 owning memory node. A new dated fact beneath an old instruction leaves two
 conflicting instructions; it is not an update to the old one.
 
-Check concrete claims with concrete tools: resolve file links, inspect named
-make targets, and compile relevant examples through the ordinary compiler.
-Distinguish complete examples from fragments that need a caller or surrounding
-bindings. These checks establish paths and executable behavior, not consistency
-of the prose. Review the affected documents together for conflicts about
-authority, supported behavior, and what evidence actually established.
+At task completion, use the [review checklist](review-checklist.md) to check
+content placement, references, examples and consistency in this affected set.
+Mechanical checks establish paths and executable behavior, not consistency
+of the prose or suitability for its reader.
 
-Historical essays and experimental records keep their original conditions.
-Their introductions should identify them as evidence and point to the current
-owner; do not append a second implementation inventory to keep an old essay
+Historical essays and experimental records keep their original conditions;
+do not append a second implementation inventory to keep an old essay
 apparently current. The roadmap remains outside the working loop. A retained
 investigation need not be moved when implementation lands: its design and
 measurements remain useful evidence, while the implementation README changes.
@@ -116,8 +109,6 @@ A soundness defect is a correctness issue regardless of planning status.
   change.
 - Resolve every commit id, digest, path, and count with the relevant tool before
   writing it. Do not copy old measurements forward.
-- When adding tests, verify the collected count increased as expected and that
-  a deliberate negative control makes the check fail.
 - If diagnostic ordering, precedence, or rule citation may move, compare every
   affected case's result and cited rule across both binaries; an unchanged
   failure set is insufficient.

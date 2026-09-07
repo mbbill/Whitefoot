@@ -71,7 +71,8 @@ probably not the next work.
   written to again, and not cited. A finished task is not evidence — a claim
   that needs support cites the specification, a conformance case, a measured
   result under `research/experiments/`, a design under
-  `research/investigations/`, or a decision in `mcts_mem/`. None of these
+  `research/investigations/`, or decision rationale where the completion
+  checklist's citation boundaries permit memory references. None of these
   defines live approval or workflow requirements. Any imperative process
   wording retained in those evidence artifacts is historical and superseded by
   the four rules below.
@@ -93,9 +94,26 @@ a text search cannot establish logical consistency. Dated evidence retains its
 experimental conditions and is not rewritten as a current capability claim.
 The practical maintenance method is in `docs/practice.md`.
 
+At the end of a repository-changing task, run the applicable checks in
+[the completion review checklist](docs/review-checklist.md) before reporting
+completion or handing over the result. It defines document content and
+citation boundaries and the bounded checks for a fast reviewing agent.
+Report concrete findings in the task or PR and recheck affected items after
+fixes; no separate review record or owner approval is required.
+
+When working on an existing open PR, use that PR as the owner's review
+surface. After each completed round of changes, applicable checks, and review,
+commit and push the task's changes to the same PR branch and refresh its
+description and validation results before reporting completion. Do not wait
+for another request to update the PR or leave the reviewable result only in
+the local worktree. Verify the remote PR contains the delivered revision and
+link to it in the reply. If publication fails, report the blocker and which
+changes remain unpublished. Updating a work-branch PR does not authorize a
+merge into `main`.
+
 ## Branch and main boundary
 
-These are the complete approval and workflow rules:
+These are the complete approval and merge rules:
 
 1. Any change may be made on a work branch without approval, including plans,
    repository layout, specifications, conformance evidence, gate wiring, code,
@@ -178,9 +196,10 @@ one-time cleanup.
   native path cannot do the job; if it cannot, it does not ship.
 - Supersede in place. When new material replaces old, update, merge, or delete
   the old in the same change. Do not accumulate parallel versions, stale
-  dossiers, or abandoned experiments beside their replacements. The single
-  deliberate retained-history model is `spec/`: its active file is superseded
-  in place, while its flat versioned archives are append-only.
+  dossiers, or abandoned experiments beside their replacements. This applies
+  to current guidance and replaceable implementation artifacts; frozen
+  archives, useful dated evidence, and skill-managed decision memory retain
+  history under their own rules.
 - Keep important folders as clean as the root. The same discipline applies
   inside `spec/`, `compiler/`, `tools/`, `conformance/`, and the research
   directories. An important folder turning into a junk drawer is the same
