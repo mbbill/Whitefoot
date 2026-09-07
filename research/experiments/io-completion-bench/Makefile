@@ -243,6 +243,13 @@ mixed-rayon-check: prepare
 	@set -e; for threads in 2 4; do for mode in compute truncated; do \
 	  "$(BUILD)/stream_check" "$(RAYON_CARGO_TARGET)/gate/mixed-rayon" "$$mode" "$$threads"; \
 	done; done
+	# Separate diagnostic: admission follows the result to its consumer. Keep
+	# the original executable and its external cases in their existing paths.
+	CARGO_TARGET_DIR="$(RAYON_CARGO_TARGET)/mixed-retain" cargo test --profile gate --features mixed-retain --bin mixed-rayon --locked --offline --manifest-path rayon-baseline/Cargo.toml
+	CARGO_TARGET_DIR="$(RAYON_CARGO_TARGET)/mixed-retain" cargo build --profile gate --features mixed-retain --bin mixed-rayon --locked --offline --manifest-path rayon-baseline/Cargo.toml
+	@set -e; for threads in 2 4; do for mode in compute truncated oversized; do \
+	  "$(BUILD)/stream_check" "$(RAYON_CARGO_TARGET)/mixed-retain/gate/mixed-rayon" "$$mode" "$$threads"; \
+	done; done
 
 mixed-rayon-smoke: mixed-rayon-check
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" CARGO_TARGET_DIR="$(RAYON_CARGO_TARGET)" CLANG="$(CLANG)" bash mixed-rayon-smoke.sh

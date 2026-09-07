@@ -1,6 +1,8 @@
 //! Async TCP plus bounded CPU offload for the existing compute_protocol.h.
 //! One current-thread I/O driver and B-1 Rayon workers share a total B-thread
 //! execution budget. The CPU-only layout control remains an independent bin.
+//! `mixed-retain` transfers admission with the result until its consumer takes
+//! or discards it. Without that feature the original publication policy stays.
 
 use std::{
     env,
@@ -105,12 +107,135 @@ mod observe {
     }
 }
 
+#[cfg(feature = "mixed-retain")]
+mod retained {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering::SeqCst},
+    };
+    use tokio::sync::{Notify, OwnedSemaphorePermit};
+
+    #[derive(Default)]
+    pub(super) struct Tails {
+        unfinished: AtomicUsize,
+        changed: Notify,
+        #[cfg(any(test, feature = "mixed-observe"))]
+        pub produced: AtomicUsize,
+        #[cfg(any(test, feature = "mixed-observe"))]
+        pub consumed: AtomicUsize,
+        #[cfg(any(test, feature = "mixed-observe"))]
+        pub discarded: AtomicUsize,
+        #[cfg(any(test, feature = "mixed-observe"))]
+        pub held: AtomicUsize,
+        #[cfg(any(test, feature = "mixed-observe"))]
+        pub held_peak: AtomicUsize,
+    }
+
+    impl Tails {
+        pub fn start(self: &Arc<Self>) -> Tail {
+            self.unfinished.fetch_add(1, SeqCst);
+            Tail(self.clone())
+        }
+
+        pub fn unfinished(&self) -> usize {
+            self.unfinished.load(SeqCst)
+        }
+
+        pub async fn drain(&self) {
+            // The sole owner calls this after all handlers are joined: no new
+            // submission can race the zero check. notify_one retains a permit
+            // if the final decrement precedes polling the notification.
+            while self.unfinished() != 0 {
+                self.changed.notified().await;
+            }
+        }
+    }
+
+    pub(super) struct Tail(Arc<Tails>);
+
+    impl Tail {
+        pub fn result(&self, value: u64, permit: OwnedSemaphorePermit) -> Result {
+            Result::new(value, permit, &self.0)
+        }
+    }
+
+    impl Drop for Tail {
+        fn drop(&mut self) {
+            if self.0.unfinished.fetch_sub(1, SeqCst) == 1 {
+                self.0.changed.notify_one();
+            }
+        }
+    }
+
+    pub(super) struct Result {
+        value: u64,
+        _permit: OwnedSemaphorePermit,
+        #[cfg(any(test, feature = "mixed-observe"))]
+        tails: Arc<Tails>,
+        #[cfg(any(test, feature = "mixed-observe"))]
+        consumed: std::cell::Cell<bool>,
+    }
+
+    impl Result {
+        pub fn new(value: u64, permit: OwnedSemaphorePermit, tails: &Arc<Tails>) -> Self {
+            // Produced includes a send rejected by an already canceled owner.
+            // Discarded also covers a received-but-never-consumed channel value.
+            #[cfg(any(test, feature = "mixed-observe"))]
+            {
+                tails.produced.fetch_add(1, SeqCst);
+                let held = tails.held.fetch_add(1, SeqCst) + 1;
+                tails.held_peak.fetch_max(held, SeqCst);
+            }
+            #[cfg(not(any(test, feature = "mixed-observe")))]
+            let _ = tails;
+            Self {
+                value,
+                _permit: permit,
+                #[cfg(any(test, feature = "mixed-observe"))]
+                tails: tails.clone(),
+                #[cfg(any(test, feature = "mixed-observe"))]
+                consumed: std::cell::Cell::new(false),
+            }
+        }
+
+        pub fn take(self) -> u64 {
+            #[cfg(any(test, feature = "mixed-observe"))]
+            {
+                self.consumed.set(true);
+            }
+            // Destruction returns admission before the handler encodes/writes.
+            self.value
+        }
+    }
+
+    impl Drop for Result {
+        fn drop(&mut self) {
+            #[cfg(any(test, feature = "mixed-observe"))]
+            {
+                self.tails.held.fetch_sub(1, SeqCst);
+                let counter = if self.consumed.get() {
+                    &self.tails.consumed
+                } else {
+                    &self.tails.discarded
+                };
+                counter.fetch_add(1, SeqCst);
+            }
+        }
+    }
+}
+
 struct Engine {
     pool: rayon::ThreadPool,
     slots: Arc<Semaphore>,
     queue: u32,
     #[cfg(any(test, feature = "mixed-observe"))]
     stats: observe::Stats,
+    #[cfg(feature = "mixed-retain")]
+    tails: Arc<retained::Tails>,
+    #[cfg(test)]
+    gates: std::sync::Mutex<Option<Arc<tests::JobGates>>>,
+    #[cfg(test)]
+    write_gate: std::sync::Mutex<Option<tests::WriteGate>>,
 }
 
 impl Engine {
@@ -124,6 +249,12 @@ impl Engine {
             queue: config.queue,
             #[cfg(any(test, feature = "mixed-observe"))]
             stats: observe::Stats::default(),
+            #[cfg(feature = "mixed-retain")]
+            tails: Arc::default(),
+            #[cfg(test)]
+            gates: std::sync::Mutex::new(None),
+            #[cfg(test)]
+            write_gate: std::sync::Mutex::new(None),
         }))
     }
 
@@ -139,6 +270,10 @@ impl Engine {
         #[cfg(any(test, feature = "mixed-observe"))]
         drop(waiting);
         let (send, receive) = oneshot::channel();
+        #[cfg(feature = "mixed-retain")]
+        let tail = self.tails.start();
+        #[cfg(test)]
+        let gates = self.gates.lock().unwrap().clone();
         #[cfg(any(test, feature = "mixed-observe"))]
         let engine = self.clone();
         #[cfg(any(test, feature = "mixed-observe"))]
@@ -149,9 +284,14 @@ impl Engine {
             self.stats.inflight_peak.fetch_max(count, SeqCst);
         }
         self.pool.spawn_fifo(move || {
+            #[cfg(test)]
+            if let Some(gates) = &gates {
+                gates.before.wait();
+            }
             #[cfg(any(test, feature = "mixed-observe"))]
             let active = observe::Count::enter(&engine.stats.active, &engine.stats.active_peak);
             let value = churn(seed, rounds);
+            #[cfg(not(feature = "mixed-retain"))]
             let _ = send.send(value);
             #[cfg(any(test, feature = "mixed-observe"))]
             {
@@ -162,23 +302,50 @@ impl Engine {
             }
             // Release admission independently of socket backpressure after
             // publishing the result; the receiver may already be writing.
+            #[cfg(not(feature = "mixed-retain"))]
             drop(permit);
+            #[cfg(feature = "mixed-retain")]
+            let _ = send.send(tail.result(value, permit));
+            #[cfg(test)]
+            if let Some(gates) = &gates {
+                gates.after.wait();
+            }
             #[cfg(any(test, feature = "mixed-observe"))]
             drop(engine);
+            // The consumer can release the logical permit before this point.
+            // Drain also waits for this final source-controlled cleanup point;
+            // the guard's notification/Arc drop and Rayon's internal epilogue
+            // can still be finishing. Their storage remains independently owned.
+            #[cfg(feature = "mixed-retain")]
+            drop(tail);
         });
-        receive.await.map_err(io::Error::other)
+        #[cfg(not(feature = "mixed-retain"))]
+        {
+            receive.await.map_err(io::Error::other)
+        }
+        #[cfg(feature = "mixed-retain")]
+        {
+            receive
+                .await
+                .map(retained::Result::take)
+                .map_err(io::Error::other)
+        }
     }
 
     async fn drain(&self) -> io::Result<()> {
         // All handlers must first finish or be aborted and joined. Taking
-        // every slot then proves that no queued/running job retains a permit;
-        // dropping ThreadPool alone is not used as a synchronous join.
+        // every slot then proves that no queued/running job retains a permit.
+        // Retained results can return theirs while the publisher is finishing,
+        // so that mode also awaits its independent closure-tail accounting.
+        // Dropping ThreadPool alone is not used as a synchronous join.
         let permits = self
             .slots
             .acquire_many(self.queue)
             .await
             .map_err(io::Error::other)?;
         drop(permits);
+        #[cfg(feature = "mixed-retain")]
+        self.tails.drain().await;
         Ok(())
     }
 }
@@ -240,10 +407,21 @@ async fn serve_one(mut socket: TcpStream, engine: Arc<Engine>) -> io::Result<()>
         {
             use std::{future::Future, sync::atomic::Ordering::SeqCst};
             let mut writing = std::pin::pin!(socket.write_all(&bytes));
+            #[cfg(test)]
+            let mut pause = None;
             poll_fn(|cx| {
+                #[cfg(test)]
+                if tests::poll_write_pause(&mut pause, cx) {
+                    return Poll::Pending;
+                }
                 let result = writing.as_mut().poll(cx);
                 if result.is_pending() {
                     engine.stats.send_waits.fetch_add(1, SeqCst);
+                    #[cfg(test)]
+                    if let Some(gate) = engine.write_gate.lock().unwrap().take() {
+                        pause = Some(gate.pause());
+                        tests::poll_write_pause(&mut pause, cx);
+                    }
                 }
                 result
             })
@@ -328,6 +506,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             s.send_waits.load(SeqCst)
         );
     }
+    #[cfg(all(feature = "mixed-retain", feature = "mixed-observe"))]
+    {
+        use std::sync::atomic::Ordering::SeqCst;
+        let t = &engine.tails;
+        eprintln!(
+            "mixed-retain: permit_release=consumer produced={} consumed={} discarded={} held={} held_peak={} unfinished_tails={}",
+            t.produced.load(SeqCst),
+            t.consumed.load(SeqCst),
+            t.discarded.load(SeqCst),
+            t.held.load(SeqCst),
+            t.held_peak.load(SeqCst),
+            t.unfinished(),
+        );
+    }
     result?;
     Ok(())
 }
@@ -346,12 +538,231 @@ fn main() -> ExitCode {
 mod tests {
     use super::*;
     use std::{
+        future::Future,
         io::{Read, Write},
         net::{Shutdown, SocketAddr, TcpStream as BlockingStream},
         sync::{atomic::Ordering::SeqCst, mpsc},
         thread,
         time::{Duration, Instant},
     };
+
+    pub(super) struct Gate {
+        entered: mpsc::Sender<()>,
+        release: std::sync::Mutex<mpsc::Receiver<()>>,
+    }
+
+    impl Gate {
+        pub(super) fn wait(&self) {
+            self.entered.send(()).unwrap();
+            self.release
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap();
+        }
+    }
+
+    pub(super) struct JobGates {
+        pub before: Gate,
+        pub after: Gate,
+    }
+
+    pub(super) struct WriteGate {
+        entered: mpsc::Sender<()>,
+        release: Arc<Semaphore>,
+    }
+
+    type WritePause = std::pin::Pin<Box<dyn Future<Output = ()> + Send>>;
+
+    impl WriteGate {
+        pub fn pause(self) -> WritePause {
+            Box::pin(async move {
+                self.entered.send(()).unwrap();
+                self.release.acquire().await.unwrap().forget();
+            })
+        }
+    }
+
+    pub(super) fn poll_write_pause(
+        pause: &mut Option<WritePause>,
+        cx: &mut std::task::Context<'_>,
+    ) -> bool {
+        if let Some(future) = pause {
+            if future.as_mut().poll(cx).is_pending() {
+                return true;
+            }
+            *pause = None;
+        }
+        false
+    }
+
+    struct GateControl {
+        entered: mpsc::Receiver<()>,
+        release: mpsc::Sender<()>,
+    }
+
+    impl GateControl {
+        fn pair() -> (Gate, Self) {
+            let (entered, receive) = mpsc::channel();
+            let (release, next) = mpsc::channel();
+            (
+                Gate {
+                    entered,
+                    release: std::sync::Mutex::new(next),
+                },
+                Self {
+                    entered: receive,
+                    release,
+                },
+            )
+        }
+
+        fn entered(&self) {
+            self.entered.recv_timeout(Duration::from_secs(5)).unwrap();
+        }
+
+        fn release(&self) {
+            self.release.send(()).unwrap();
+        }
+    }
+
+    fn gated_engine(queue: u32) -> (Arc<Engine>, GateControl, GateControl) {
+        let engine = Engine::new(Config {
+            port: 1,
+            connections: 4,
+            threads: 2,
+            queue,
+        })
+        .unwrap();
+        let (before, start) = GateControl::pair();
+        let (after, finish) = GateControl::pair();
+        *engine.gates.lock().unwrap() = Some(Arc::new(JobGates { before, after }));
+        (engine, start, finish)
+    }
+
+    fn poll_once<F: Future>(future: std::pin::Pin<&mut F>) -> Poll<F::Output> {
+        future.poll(&mut std::task::Context::from_waker(std::task::Waker::noop()))
+    }
+
+    fn finish_engine(engine: &Engine) {
+        Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(engine.drain())
+            .unwrap();
+        assert_eq!(engine.slots.available_permits(), engine.queue as usize);
+        assert_eq!(engine.stats.inflight.load(SeqCst), 0);
+        assert_eq!(engine.stats.active.load(SeqCst), 0);
+        assert_eq!(engine.stats.waiting.load(SeqCst), 0);
+        assert_eq!(
+            engine.stats.submitted.load(SeqCst),
+            engine.stats.completed.load(SeqCst)
+        );
+        #[cfg(feature = "mixed-retain")]
+        assert_retired(engine);
+    }
+
+    #[cfg(feature = "mixed-retain")]
+    fn assert_retired(engine: &Engine) {
+        let t = &engine.tails;
+        assert_eq!(t.unfinished(), 0);
+        assert_eq!(t.held.load(SeqCst), 0);
+        assert!(t.held_peak.load(SeqCst) <= engine.queue as usize);
+        assert_eq!(t.produced.load(SeqCst), engine.stats.completed.load(SeqCst));
+        assert_eq!(
+            t.produced.load(SeqCst),
+            t.consumed.load(SeqCst) + t.discarded.load(SeqCst)
+        );
+    }
+
+    #[test]
+    fn finished_results_distinguish_admission_from_consumption_and_closure_tail() {
+        let (engine, start, finish) = gated_engine(2);
+        let mut first = Box::pin(engine.compute(0, 1));
+        let mut second = Box::pin(engine.compute(0, 1));
+        assert!(poll_once(first.as_mut()).is_pending());
+        assert!(poll_once(second.as_mut()).is_pending());
+        start.entered();
+        start.release();
+        finish.entered();
+        finish.release();
+        start.entered();
+        start.release();
+        finish.entered();
+        // Both values are published, and neither consumer has been polled.
+        assert_eq!(engine.stats.completed.load(SeqCst), 2);
+        assert_eq!(
+            engine.slots.available_permits(),
+            if cfg!(feature = "mixed-retain") { 0 } else { 2 }
+        );
+        let mut third = Box::pin(engine.compute(0, 1));
+        assert!(poll_once(third.as_mut()).is_pending());
+        assert_eq!(
+            engine.stats.submitted.load(SeqCst),
+            if cfg!(feature = "mixed-retain") { 2 } else { 3 }
+        );
+        // Cancellation while awaiting admission must neither create a job nor
+        // release a permit held by another request.
+        #[cfg(feature = "mixed-retain")]
+        {
+            let mut canceled_waiter = Box::pin(engine.compute(0, 1));
+            assert!(poll_once(canceled_waiter.as_mut()).is_pending());
+            drop(canceled_waiter);
+            assert_eq!(engine.slots.available_permits(), 0);
+            assert_eq!(engine.stats.submitted.load(SeqCst), 2);
+        }
+        assert!(matches!(
+            poll_once(first.as_mut()),
+            Poll::Ready(Ok(1_442_695_040_888_963_407))
+        ));
+        assert!(poll_once(third.as_mut()).is_pending());
+        assert_eq!(engine.stats.submitted.load(SeqCst), 3);
+        drop(first);
+        drop(second); // A published result is discarded, releasing its permit.
+        drop(third); // A queued producer still owns its permit until completion.
+        let mut draining = Box::pin(engine.drain());
+        assert!(poll_once(draining.as_mut()).is_pending());
+        finish.release();
+        start.entered();
+        start.release();
+        finish.entered();
+        drop(draining);
+        assert_eq!(engine.slots.available_permits(), 2);
+        #[cfg(feature = "mixed-retain")]
+        {
+            assert_eq!(engine.tails.consumed.load(SeqCst), 1);
+            assert_eq!(engine.tails.discarded.load(SeqCst), 2);
+            assert_eq!(engine.tails.unfinished(), 1);
+            let mut draining = Box::pin(engine.drain());
+            assert!(poll_once(draining.as_mut()).is_pending());
+        }
+        finish.release();
+        finish_engine(&engine);
+    }
+
+    #[test]
+    fn canceling_a_running_consumer_keeps_admission_until_the_producer_finishes() {
+        let (engine, start, finish) = gated_engine(1);
+        let mut computing = Box::pin(engine.compute(0, 1));
+        assert!(poll_once(computing.as_mut()).is_pending());
+        start.entered();
+        drop(computing);
+        assert_eq!(engine.slots.available_permits(), 0);
+        let mut draining = Box::pin(engine.drain());
+        assert!(poll_once(draining.as_mut()).is_pending());
+        start.release();
+        finish.entered();
+        drop(draining);
+        assert_eq!(engine.slots.available_permits(), 1);
+        #[cfg(feature = "mixed-retain")]
+        {
+            assert_eq!(engine.tails.discarded.load(SeqCst), 1);
+            let mut draining = Box::pin(engine.drain());
+            assert!(poll_once(draining.as_mut()).is_pending());
+        }
+        finish.release();
+        finish_engine(&engine);
+    }
 
     struct Server {
         address: SocketAddr,
@@ -425,6 +836,8 @@ mod tests {
                 self.engine.slots.available_permits(),
                 self.engine.queue as usize
             );
+            #[cfg(feature = "mixed-retain")]
+            assert_retired(&self.engine);
         }
     }
 
@@ -601,5 +1014,51 @@ mod tests {
         slow.shutdown(Shutdown::Write).unwrap();
         eof(&mut slow);
         server.finish(Ok(()));
+    }
+
+    #[cfg(feature = "mixed-retain")]
+    #[test]
+    fn a_backpressured_cpu_reply_has_already_returned_its_permit() {
+        let server = Server::new(2, 2, 1);
+        let (entered, paused) = mpsc::channel();
+        let release = Arc::new(Semaphore::new(0));
+        *server.engine.write_gate.lock().unwrap() = Some(WriteGate {
+            entered,
+            release: release.clone(),
+        });
+        let mut slow = server.connect();
+        let mut other = server.connect();
+        socket2::SockRef::from(&slow)
+            .set_recv_buffer_size(4096)
+            .unwrap();
+        let mut requests = Vec::with_capacity(64 * 2048);
+        for seed in 0..2048 {
+            requests.extend_from_slice(&request(seed, 1));
+        }
+        slow.write_all(&requests).unwrap();
+        // Freeze this writer after a real Pending, without blocking the I/O
+        // owner. A historical send_waits count alone is not a stable snapshot.
+        paused.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(server.engine.stats.send_waits.load(SeqCst) > 0);
+        assert_eq!(server.engine.slots.available_permits(), 1);
+        assert_eq!(server.engine.tails.held.load(SeqCst), 0);
+        // A real CPU job on another connection must obtain that same slot
+        // while the first socket remains backpressured.
+        other.write_all(&request(0, 1)).unwrap();
+        response(&mut other, 1_442_695_040_888_963_407);
+        other.shutdown(Shutdown::Write).unwrap();
+        eof(&mut other);
+        release.add_permits(1);
+        for seed in 0..2048 {
+            response(&mut slow, churn(seed, 1));
+        }
+        slow.shutdown(Shutdown::Write).unwrap();
+        eof(&mut slow);
+        let engine = server.engine.clone();
+        server.finish(Ok(()));
+        finish_engine(&engine);
+        assert_eq!(engine.tails.produced.load(SeqCst), 2049);
+        assert_eq!(engine.tails.consumed.load(SeqCst), 2049);
+        assert_eq!(engine.tails.discarded.load(SeqCst), 0);
     }
 }

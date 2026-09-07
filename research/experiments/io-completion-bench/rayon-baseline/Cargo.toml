@@ -7,6 +7,7 @@ publish = false
 [features]
 mixed = ["dep:tokio", "dep:socket2"]
 mixed-observe = ["mixed"]
+mixed-retain = ["mixed"]
 
 [[bin]]
 name = "whitefoot-rayon-baseline"
