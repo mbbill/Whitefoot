@@ -107,6 +107,10 @@ scheduler-allocation:
 scheduler-allocator:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" EXPERIMENT=allocator bash scheduler-bench.sh bench
 
+.PHONY: scheduler-combined
+scheduler-combined:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" CORO_CXX="$(CORO_CXX)" EXPERIMENT=allocator bash scheduler-bench.sh combine
+
 .PHONY: scheduler-coroutine scheduler-coroutine-paced
 scheduler-coroutine:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" CORO_CXX="$(CORO_CXX)" EXPERIMENT=coroutine bash scheduler-bench.sh bench

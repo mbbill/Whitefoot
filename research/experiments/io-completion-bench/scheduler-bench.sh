@@ -24,7 +24,7 @@ if [[ $EXPERIMENT == pages || $allocation_experiment == 1 ]]; then page_experime
 storage_experiment=0
 if [[ $EXPERIMENT == storage || $page_experiment == 1 || $EXPERIMENT == coroutine ]]; then storage_experiment=1; fi
 coroutine_experiment=0
-if [[ $EXPERIMENT == coroutine || $EXPERIMENT == coroutine-paced ]]; then coroutine_experiment=1; fi
+if [[ $EXPERIMENT == coroutine || $EXPERIMENT == coroutine-paced || $MODE == combine ]]; then coroutine_experiment=1; fi
 CORO_CXX=${CORO_CXX:-$(command -v clang++-20 || command -v clang++)}
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
@@ -75,8 +75,12 @@ if [[ $MODE == check ]]; then
     fi
     exit 0
 fi
-if [[ ( $MODE != bench && $MODE != profile && $client_experiment != 1 ) || $(uname -s) != Linux ]]; then
-    echo 'scheduler-bench: use check on POSIX, or bench/profile/client/placement on Linux with io_uring' >&2
+if [[ ( $MODE != bench && $MODE != profile && $MODE != combine && $client_experiment != 1 ) || $(uname -s) != Linux ]]; then
+    echo 'scheduler-bench: use check on POSIX, or bench/profile/client/placement/combine on Linux with io_uring' >&2
+    exit 2
+fi
+if [[ $MODE == combine && $EXPERIMENT != allocator ]]; then
+    echo 'scheduler-bench: combine uses the qualified allocator echo workload' >&2
     exit 2
 fi
 if [[ ( $MODE == profile || $client_experiment == 1 ) && $EXPERIMENT != coroutine-paced ]]; then
@@ -141,22 +145,24 @@ if [[ $EXPERIMENT == memory || $storage_experiment == 1 ]]; then
     done
 fi
 
-if [[ $EXPERIMENT == owner || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch || $EXPERIMENT == wake || $EXPERIMENT == service || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced ]]; then
+if [[ $EXPERIMENT == owner || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch || $EXPERIMENT == wake || $EXPERIMENT == service || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced || $MODE == combine ]]; then
     candidates=(pinned rings owner)
     if [[ $EXPERIMENT == dispatch || $EXPERIMENT == dispatch-paced ]]; then candidates=(rings owner balanced); fi
     if [[ $EXPERIMENT == wake || $EXPERIMENT == wake-paced ]]; then candidates=(rings balanced quiet); fi
     if [[ $EXPERIMENT == service || $EXPERIMENT == service-paced ]]; then candidates=(balanced service1 service16 servicepoll16); fi
     if [[ $EXPERIMENT == coroutine-paced ]]; then candidates=(balanced); fi
+    if [[ $MODE == combine ]]; then candidates=(balanced balanced-small quiet-small); fi
     for policy in "${candidates[@]}"; do
         case $policy in
             pinned) candidate_flags='-DWF_SCHED_READY_SHARDS=2 -DWF_SCHED_READY_PINNED=1' ;;
             rings) candidate_flags='-DWF_IO_OWNER_RINGS=1' ;;
             owner) candidate_flags='-DWF_SCHED_READY_SHARDS=2 -DWF_SCHED_READY_PINNED=1 -DWF_IO_OWNER_RINGS=1' ;;
-            balanced) candidate_flags='-DWF_SCHED_IO_ROUND_ROBIN=1 -DWF_SCHED_READY_SHARDS=2 -DWF_SCHED_READY_PINNED=1 -DWF_IO_OWNER_RINGS=1' ;;
+            balanced|balanced-small) candidate_flags='-DWF_SCHED_IO_ROUND_ROBIN=1 -DWF_SCHED_READY_SHARDS=2 -DWF_SCHED_READY_PINNED=1 -DWF_IO_OWNER_RINGS=1' ;;
             servicepoll16) candidate_flags="-DWF_SCHED_IO_QUANTUM=16 -DWF_SCHED_IO_RESET_TURN=0 -DWF_SCHED_IO_ROUND_ROBIN=1 -DWF_SCHED_READY_SHARDS=2 -DWF_SCHED_READY_PINNED=1 -DWF_IO_OWNER_RINGS=1" ;;
             service1|service16) candidate_flags="-DWF_SCHED_IO_QUANTUM=${policy#service} -DWF_SCHED_IO_ROUND_ROBIN=1 -DWF_SCHED_READY_SHARDS=2 -DWF_SCHED_READY_PINNED=1 -DWF_IO_OWNER_RINGS=1" ;;
-            quiet) candidate_flags='-DWF_SCHED_LOCAL_WAKE=1 -DWF_SCHED_IO_ROUND_ROBIN=1 -DWF_SCHED_READY_SHARDS=2 -DWF_SCHED_READY_PINNED=1 -DWF_IO_OWNER_RINGS=1' ;;
+            quiet|quiet-small) candidate_flags='-DWF_SCHED_LOCAL_WAKE=1 -DWF_SCHED_IO_ROUND_ROBIN=1 -DWF_SCHED_READY_SHARDS=2 -DWF_SCHED_READY_PINNED=1 -DWF_IO_OWNER_RINGS=1' ;;
         esac
+        if [[ $policy == *-small ]]; then candidate_flags+=' -DWF_SCHED_COMPACT_STACKS=1 -DWF_SCHED_INIT_USED_LANES=1'; fi
         if ! make -C "$ROOT/compiler" completion-test CC="$CLANG" \
             COMPLETION_TMP="$OUT/$policy-check" \
             COMPLETION_BASE_CFLAGS="-std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread -DWF_TCP_NODELAY=1 $candidate_flags" \
@@ -164,7 +170,7 @@ if [[ $EXPERIMENT == owner || $EXPERIMENT == owner-paced || $EXPERIMENT == dispa
             cat "$OUT/$policy-check.log"
             exit 1
         fi
-        if [[ $policy == rings || $policy == owner || $policy == balanced || $policy == quiet || $policy == service* ]]; then
+        if [[ $policy == rings || $policy == owner || $policy == balanced* || $policy == quiet* || $policy == service* ]]; then
             grep -q '^native-adapter-probe two-ring-epoch=pass$' "$OUT/$policy-check.log"
             grep -q '^completion owner-bridge four-thread-read: PASS$' "$OUT/$policy-check.log"
         fi
@@ -207,6 +213,7 @@ fi
     if [[ $page_experiment == 1 || $coroutine_experiment == 1 ]]; then
         if [[ $EXPERIMENT == allocator ]]; then
             echo 'page_policy=per-process PR_SET_THP_DISABLE=1; allocator_policy=glibc.malloc.top_pad=131072/0; timed server environments only'
+            if [[ $MODE == combine ]]; then echo 'combined_policy=top_pad=0 only; accepted-handler buffers; allocator defaults remain unchanged'; fi
         elif [[ $page_experiment == 1 ]]; then
             echo 'page_policy=per-process PR_SET_THP_DISABLE=0/1; no global policy changes'
         fi
@@ -265,7 +272,8 @@ if [[ $page_experiment == 1 ]]; then
     # Both policies inherit the same host setting; disable=0 permits THP,
     # rather than forcing a huge-page allocation. Keep policy in each row.
     if [[ $EXPERIMENT == allocator ]]; then
-        awk 'BEGIN {OFS="\t"} {name=$1; $1=name "-no-thp"; print; $1=name "-top0-no-thp"; print}' \
+        awk -v mode="$MODE" 'BEGIN {OFS="\t"} {name=$1;
+            if(mode!="combine") {$1=name "-no-thp"; print}; $1=name "-top0-no-thp"; print}' \
             "$OUT/cohorts.tsv" > "$OUT/cohorts-selected.tsv"
     else
         awk 'BEGIN {OFS="\t"} {print; $1=$1 "-no-thp"; print}' "$OUT/cohorts.tsv" > "$OUT/cohorts-selected.tsv"
@@ -312,6 +320,7 @@ if [[ $EXPERIMENT == wake-paced ]]; then forms=(base ch16384 chbalanced16384 chq
 if [[ $EXPERIMENT == service ]]; then forms=(base balanced service1 service16 servicepoll16); fi
 if [[ $EXPERIMENT == service-paced ]]; then forms=(base chbalanced16384 chservice1 chservice16 chservicepoll16); fi
 if [[ $EXPERIMENT == coroutine-paced ]]; then forms=(base ch16384 chbalanced16384); fi
+if [[ $MODE == combine ]]; then forms=(callee-small balanced balanced-small quiet-small); fi
 form_flags() {
     local_inline=0
     init_used=0
@@ -330,10 +339,10 @@ form_flags() {
         pinned) spin=256; yields=16; progress=0; ready_shards=2; ready_pinned=1 ;;
         rings) spin=256; yields=16; progress=0; owner_rings=1 ;;
         owner|chowner16384) spin=256; yields=16; progress=0; ready_shards=2; ready_pinned=1; owner_rings=1 ;;
-        balanced|chbalanced16384) spin=256; yields=16; progress=0; ready_shards=2; ready_pinned=1; owner_rings=1; io_dispatch=1 ;;
+        balanced|balanced-small|chbalanced16384) spin=256; yields=16; progress=0; ready_shards=2; ready_pinned=1; owner_rings=1; io_dispatch=1 ;;
         servicepoll16|chservicepoll16) spin=256; yields=16; progress=0; ready_shards=2; ready_pinned=1; owner_rings=1; io_dispatch=1; io_quantum=16; io_reset_turn=0 ;;
         service1|service16|chservice1|chservice16) spin=256; yields=16; progress=0; ready_shards=2; ready_pinned=1; owner_rings=1; io_dispatch=1; io_quantum=${1##*service} ;;
-        quiet|chquiet16384) spin=256; yields=16; progress=0; ready_shards=2; ready_pinned=1; owner_rings=1; io_dispatch=1; local_wake=1 ;;
+        quiet|quiet-small|chquiet16384) spin=256; yields=16; progress=0; ready_shards=2; ready_pinned=1; owner_rings=1; io_dispatch=1; local_wake=1 ;;
         nodelay) spin=256; yields=16; progress=0; tcp_nodelay=1 ;;
         lanes) spin=256; yields=16; progress=0; init_used=1 ;;
         compact) spin=256; yields=16; progress=0; compact_stacks=1 ;;
@@ -347,6 +356,7 @@ form_flags() {
         poll16) spin=256; yields=0; progress=16 ;;
         *) return 2 ;;
     esac
+    if [[ $1 == *-small ]]; then compact_stacks=1; init_used=1; fi
 }
 link_form() {
     local module=$1 output=$2 policy=$3 observed=$4
@@ -386,7 +396,12 @@ if [[ $EXPERIMENT == checkpoint || $EXPERIMENT == chunks || $EXPERIMENT == canon
     "$WFC" --par --emit-llvm -o "$OUT/mixed.ll" "$HERE/programs/windows_runtime_mixed.wf"
 fi
 "$WFC" --par --emit-llvm -o "$OUT/echo.ll" "$echo_source"
-if [[ $allocation_experiment == 1 ]]; then
+if [[ $MODE == combine ]]; then
+    mkdir -p "$OUT/codegen"
+    cp "$echo_source" "$OUT/codegen/echo-callee.wf"
+    cp "$OUT/echo.ll" "$OUT/codegen/echo-callee.ll"
+fi
+if [[ $allocation_experiment == 1 && $MODE != combine ]]; then
     # Isolate where the sequential source owns its receive buffer. Compile
     # the retained caller-owned source with this compiler and this runtime.
     allocation_baseline=2de6c00039243aee98554eabba5143f011991461
@@ -688,7 +703,7 @@ network_case() {
         f16384)
             binary="$OUT/bin/epoll_stackful_quantum"
             arguments=(--threads "$server_workers" --quantum 16384) ;;
-        servicepoll16|service16|service1|chservicepoll16|chservice16|chservice1|base|callee|callee-small|nodelay|pinned|rings|owner|chowner16384|balanced|chbalanced16384|quiet|chquiet16384|local|lanes|compact|small|sleep|short|spin|poll1|poll16|cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|old1024|old16384)
+        servicepoll16|service16|service1|chservicepoll16|chservice16|chservice1|base|callee|callee-small|nodelay|pinned|rings|owner|chowner16384|balanced|balanced-small|chbalanced16384|quiet|quiet-small|chquiet16384|local|lanes|compact|small|sleep|short|spin|poll1|poll16|cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|old1024|old16384)
             binary="$OUT/bin/echo-$form"
             if [[ $observed == 1 ]]; then binary="$binary-observed"; fi
             environment=("WF_WORKERS=$server_workers" WF_STACKS=1100 "WF_SCHED_REPORT=$observed") ;;
@@ -797,6 +812,7 @@ if [[ $EXPERIMENT == coroutine ]]; then
     references=(uring epoll epoll-calloc cpp-manual cpp-manual-calloc cpp-stackful cpp-stackful-calloc cpp-heap cpp-heap-calloc cpp-elide cpp-elide-calloc)
 fi
 if [[ $EXPERIMENT == coroutine-paced ]]; then references=(q16384 cpp-manual cpp-stackful cpp-heap cpp-elide); fi
+if [[ $MODE == combine ]]; then references=(epoll epoll-calloc-main fiber-calloc-main cpp-elide cpp-elide-calloc); fi
 while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
     allocator_environment=()
     if [[ $EXPERIMENT == allocator ]]; then allocator_environment=("$(allocator_setting)"); fi
@@ -874,8 +890,8 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
         if [[ $EXPERIMENT == memory || $storage_experiment == 1 ]]; then
             compact=0
             used=0
-            if [[ $form == compact || $form == small || $form == callee-small ]]; then compact=1; fi
-            if [[ $form == lanes || $form == small || $form == callee-small ]]; then used=1; fi
+            if [[ $form == compact || $form == small || $form == *-small ]]; then compact=1; fi
+            if [[ $form == lanes || $form == small || $form == *-small ]]; then used=1; fi
             awk -v compact="$compact" -v used="$used" '
                  /^sched:|^ring:/ { for(i=2;i<=NF;i++) { split($i,a,"="); value[a[1]]=a[2]+0 } }
                  END { exit !(value["tcp_nodelay"]==1 && ("compact_stacks" in value) &&
@@ -889,13 +905,13 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
                  END { exit !(("tcp_nodelay" in value) && value["tcp_nodelay"]==expected) }' \
                 "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
         fi
-        if [[ $EXPERIMENT == owner || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch || $EXPERIMENT == wake || $EXPERIMENT == service || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced ]]; then
+        if [[ $EXPERIMENT == owner || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch || $EXPERIMENT == wake || $EXPERIMENT == service || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced || $MODE == combine ]]; then
             local_wake=0
-            if [[ $form == quiet || $form == chquiet16384 ]]; then local_wake=1; fi
+            if [[ $form == quiet* || $form == chquiet16384 ]]; then local_wake=1; fi
             pinned=0
             rings=0
-            if [[ $form == pinned || $form == owner || $form == chowner16384 || $form == balanced || $form == chbalanced16384 || $form == quiet || $form == chquiet16384 || $form == service* || $form == chservice* ]]; then pinned=1; fi
-            if [[ $form == rings || $form == owner || $form == chowner16384 || $form == balanced || $form == chbalanced16384 || $form == quiet || $form == chquiet16384 || $form == service* || $form == chservice* ]]; then rings=1; fi
+            if [[ $form == pinned || $form == owner || $form == chowner16384 || $form == balanced* || $form == chbalanced16384 || $form == quiet* || $form == chquiet16384 || $form == service* || $form == chservice* ]]; then pinned=1; fi
+            if [[ $form == rings || $form == owner || $form == chowner16384 || $form == balanced* || $form == chbalanced16384 || $form == quiet* || $form == chquiet16384 || $form == service* || $form == chservice* ]]; then rings=1; fi
             # Initial work stealing is opportunistic. A valid pinned run can
             # keep all connections on one thread, which is a load-balancing
             # defect to measure, not evidence that its bridge failed. The
@@ -914,7 +930,7 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
                     "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
             fi
         fi
-        if [[ $form == balanced || $form == chbalanced16384 || $form == quiet || $form == chquiet16384 || $form == service* || $form == chservice* ]]; then
+        if [[ $form == balanced* || $form == chbalanced16384 || $form == quiet* || $form == chquiet16384 || $form == service* || $form == chservice* ]]; then
             # This source has one producer and one staged task per connection.
             # Check actual starts, not steals: deliberate placement bypasses deques.
             awk -v workers="$server_workers" -v peers="$connections" '
@@ -962,8 +978,9 @@ if [[ $page_experiment == 1 ]]; then
         if [[ $EXPERIMENT == allocator ]]; then allocator_environment=("$(allocator_setting)"); fi
         for form in "${resident_forms[@]}"; do
           binary="$OUT/bin/storage-$form"
-          if [[ $form == base || $form == small || $form == callee || $form == callee-small ]]; then binary="$OUT/bin/echo-$form"; fi
+          if [[ $form == base || $form == small || $form == callee || $form == *-small || $form == balanced ]]; then binary="$OUT/bin/echo-$form"; fi
           if [[ $form == uring ]]; then binary="$OUT/bin/uring_echo"; fi
+          if [[ $form == cpp-* ]]; then binary="$OUT/bin/$form"; fi
           for resident_case in '64 64' '1024 64' '64 65536'; do
             read -r connections bytes <<< "$resident_case"
             record="$OUT/resident/r$repetition-$cohort-$form-k$connections-b$bytes"
@@ -1015,7 +1032,7 @@ fi
 if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == stackful || $EXPERIMENT == nodelay || $EXPERIMENT == owner || $EXPERIMENT == dispatch || $EXPERIMENT == wake || $EXPERIMENT == service || $EXPERIMENT == memory || $storage_experiment == 1 ]]; then
     printf '1024 200 64 0\n64 500 65536 0\n' >> "$OUT/cases.tsv"
 fi
-if [[ $page_experiment == 1 ]]; then
+if [[ $page_experiment == 1 && $MODE != combine ]]; then
     awk '$1>=64' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
     mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
 fi

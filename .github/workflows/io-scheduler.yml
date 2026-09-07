@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        experiment: [coroutine-paced]
+        experiment: [allocator]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -59,15 +59,15 @@ jobs:
           CLANG: /usr/bin/clang-20
           CORO_CXX: /usr/bin/clang++-20
         run: |
-          bash research/experiments/io-completion-bench/scheduler-bench.sh placement
+          bash research/experiments/io-completion-bench/scheduler-bench.sh combine
       - name: Publish measurement summary
         if: always()
         run: |
           {
             echo '## Scheduler experiment: ${{ matrix.experiment }}'
-            echo 'Same-host placement control: split2 gives client/server distinct logical CPUs sharing physical cores; separate2 puts their SMT siblings on separate physical cores, retaining two workers and two logical CPUs per role. Split1 remains a control. Cross five unchanged WF/native server forms with original and forced one-round clients, retaining every planned arrival and backlog-inclusive latency. Seven passes after two warmups produce 630 rows. The host must expose the tested two-core SMT topology. Clang 20 throughout; all completion, stream, coroutine lifetime and unchanged default LLVM qualifications remain enabled. See the investigation for scope.'
+            echo 'Combine existing policies: handler-owned initialized buffers, compact stack metadata, configured-lane initialization, balanced pinned I/O dispatch and optional local self-wake omission. Four WF forms and five native manual/stackful/coroutine controls; split1/split2, five echo cases including underoccupied controls, seven passes after two warmups produce 630 rows. Every server has THP disabled and explicit glibc top_pad=0, with loader readback. Three live snapshots at 64/1024 small peers and 64 large peers give 162 records. Full completion qualification runs for each combined policy before measurements; all existing native stream and coroutine lifetime checks remain. Clang 20 throughout. No source signature, runtime ABI or default allocator changes. See the investigation for scope.'
             echo '```text'
-            for file in host.txt cohorts.tsv network-summary.txt client-service-check.log balanced-check.log stackful-check.log coroutine-check.log; do
+            for file in host.txt cohorts.tsv network-summary.txt small-check.log balanced-check.log balanced-small-check.log quiet-small-check.log allocation-check.log stackful-check.log coroutine-check.log; do
               cat "$RUNNER_TEMP/io-scheduler/$file" 2>/dev/null || echo "$file was not produced"
             done
             echo '```'

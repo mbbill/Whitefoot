@@ -3750,4 +3750,113 @@ interaction, not proof of one kernel lock or of SMT being the sole cause.
 Server rate, CPU/exchange, light dispatch/post-dispatch tails and heavy
 deadline capacity are still required together. In particular, lower tails
 bought by reducing the native reference's capacity do not establish a WF
-improvement. Native measurements remain pending CI.
+improvement.
+
+### Native placement results
+
+Revision dce5ef95 completed
+[the scheduler experiment](https://github.com/mbbill/Whitefoot/actions/runs/34071706036),
+[the canonical gate](https://github.com/mbbill/Whitefoot/actions/runs/34071706024),
+[host checks](https://github.com/mbbill/Whitefoot/actions/runs/34071706042) and
+[the independent I/O benchmarks](https://github.com/mbbill/Whitefoot/actions/runs/34071706033).
+Linux job 101590147030 used EPYC 7763, four logical CPUs/two reported SMT
+cores, Linux 6.17.0-1022-azure and Clang 20.1.2. Artifact 10001161255,
+`io-scheduler-coroutine-paced`, retains all 630 verified rows: 18 cells,
+five forms, seven passes. Every planned light request, exact raw/deadline
+count, budget-one yield count and empty normal-process diagnostic is checked.
+All four unchanged-default LLVM comparisons pass. Split2 assigns server
+0,2 / client 1,3; separate2 assigns server 0,1 / client 2,3. These are the
+guest's reported core relationships, not verified host physical-CPU pinning.
+
+Zero-compute p99 medians in microseconds show an interaction between client
+policy and placement. They do not establish a placement-only cure.
+
+| Placement / client budget | WF balanced light | Native elided light | WF dispatch | Native dispatch | WF post-dispatch | Native post-dispatch |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Split2 / original | 1790 | 172 | 1259 | 56 | 202 | 130 |
+| Separate2 / original | 2037 | 177 | 1755 | 64 | 377 | 131 |
+| Split2 / one | 2302 | 167 | 715 | 55 | 195 | 133 |
+| Separate2 / one | 466 | 166 | 215 | 51 | 301 | 140 |
+
+For the original client, separate2/split2 WF rate is 0.9943
+[0.9366, 1.0277] and light tail 1.3571 [0.2251, 8.1459]. Neither improves
+consistently. Native elided rate loses every placement pair, 0.9739
+[0.9567, 0.9838], while CPU/exchange increases every pair, 1.0174
+[1.0078, 1.0343]. A relative WF/native rate improvement here would partly
+come from slowing the reference.
+
+With the one-round client, separate2 improves every WF rate pair, 1.0242
+[1.0022, 1.0633]. Its light-tail ratio is 0.1499 [0.0214, 1.1223], a large
+median reduction with a range still crossing parity. Under separate2, WF
+nevertheless loses every native-elided light-tail and post-dispatch pair:
+2.7251 [2.0387, 8.4027] and 2.0680 [1.1286, 9.8490]. Rate is 0.9452
+[0.9152, 1.2213] and CPU/exchange 1.1082 [0.9593, 1.1264]; one native
+slow sample crosses those ranges. Separate quantiles cannot be added, and
+post-dispatch still includes kernel and client handling, not just server code.
+
+At 2097152 heavy steps and 100 light requests/second/peer, separate2 with
+the one-round client gives WF/native light-tail ratio 1.8435
+[1.0030, 2.3527] and post-dispatch ratio 1.9812 [1.0187, 2.3618], both
+losing every pair. Heavy deadline capacity is 1.0000 [0.9647, 1.0021].
+At 500 light requests/second/peer, the tail ranges cross parity, but WF
+heavy capacity loses every pair, 0.9811 [0.9764, 0.9905], and CPU/exchange
+also loses every pair, 1.0152 [1.0053, 1.0251]. Median heavy counts are
+416/424. Thus moving the roles apart does not remove the mixed-load service
+gap either. Client CPU/exchange falls about 10..20% with separate2 for
+both WF and native long-compute cases, a measurable placement effect that
+does not by itself identify the remaining server cost.
+
+Keep separate2 and budget one as diagnostic controls. Reject physical-role
+sharing as a sufficient explanation or standalone repair for the gap.
+The original and forced-client cohorts must remain distinguishable, and
+the relative amount of physical-core resource sharing is not an isolated
+kernel-lock experiment. No scheduler or source default is selected here.
+
+## Thirty-second experiment: combine measured dispatch and storage policies
+
+`make scheduler-combined` combines existing policies after experiment 30
+has separated the large calloc residency effect. It runs allocator echo
+mode `combine`, using one unchanged accepted-handler WF module for all
+four forms. `callee-small` retains the original global scheduling/ring
+policy with compact stack metadata and configured-lane initialization.
+`balanced` uses pinned owner rings and round-robin initial I/O dispatch
+with the original storage policy. `balanced-small` adds both storage
+optimizations to balanced; `quiet-small` additionally omits the running
+owner's redundant self-wake. No completed-I/O service budget is added.
+This separates the storage combination from the further wake change.
+
+Every server has THP disabled and explicit glibc top_pad=0. The existing
+two loader readbacks remain, but only zero is used in this timed panel.
+This is a controlled server environment, not a proposed process-wide
+default. Native controls are shared-scratch manual epoll, private-calloc
+manual and stackful with worker zero on the main thread, and elided C++
+coroutines with shared scratch or private calloc. The coroutine engine
+retains its original spawned-worker startup. Both storage forms are kept
+visible rather than assigning all native memory differences to continuations.
+
+Split1 and split2 cross nine total forms with five echo cases: one, four,
+64 and 1024 small-message peers, and 64 large-message peers. Seven passes
+after two warmups give 630 rows. Underoccupied cases remain because the
+dispatch and wake policies have different results there. Three snapshots
+of all nine forms at 64/1024 small peers and 64 large peers give 162 live
+smaps/status records. Form and cohort order alternate. Throughput, tail,
+CPU/exchange and peak/live memory all remain separate selection grounds;
+this echo panel cannot settle fixed-arrival mixed-load fairness.
+
+Before timing, each combined policy runs the full existing completion
+suite. The original small and balanced qualifications, all 36 native
+stream cases, all 48 C++ stream cases, both sanitized coroutine-lifetime
+checks and native LLVM identity checks remain enabled. Linux observations
+require the exact memory/wake flags, evenly distributed initial calls,
+actual owner rings and zero pinned resume migrations.
+
+Locally, both new combined policies pass the complete M1 completion target,
+including every existing schedule/configuration. The actual maintained WF
+build block produces all four normal and four observed binaries; all 16
+stream checks pass at one/four workers. All eight observers confirm the
+selected storage/wake flags and pinned dispatch where requested. Executing
+the actual configuration blocks against the captured guest topology produces
+630 rows/162 snapshots for combine and preserves the prior allocator mode's
+672 rows/288 snapshots. Native Linux combined performance remains pending.
+This experiment changes no source signature, runtime ABI, container storage
+contract or default runtime policy.
