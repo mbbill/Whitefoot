@@ -17,6 +17,9 @@ typedef struct probe_waiter {
     struct probe_waiter *pending_next;
     struct probe_waiter *ready_next;
     unsigned phase;
+#if defined(PROBE_WF_GENERATED)
+    struct probe_task *owner;
+#endif
 } probe_waiter;
 
 #ifdef __cplusplus
@@ -66,6 +69,22 @@ static uint64_t probe_during_arm;
 static uint64_t probe_routes[5];
 #if defined(PROBE_WF_GENERATED)
 static uint64_t probe_socket_routes[3][5];
+/* Task descriptors live in their issuer's generated frame until retirement.
+ * Only the sole resumer reads or writes task state and the new-task queue.
+ * Native publishers use the locked waiter queue and never resume source. */
+typedef struct probe_task {
+    void *frame;
+    struct probe_task *next;
+    probe_waiter *join_waiter;
+    unsigned done;
+} probe_task;
+static probe_task *probe_active_task;
+static probe_task *probe_new_head;
+static probe_task *probe_new_tail;
+static uint64_t probe_tasks_created;
+static uint64_t probe_tasks_completed;
+static uint64_t probe_tasks_retired;
+static uint64_t probe_tasks_peak;
 #endif
 
 int wf__sched_host_epoch(uint64_t *epoch);
@@ -135,6 +154,10 @@ int probe_arm(probe_waiter *waiter, void *record, void *continuation,
     assert(((wf_completion_record *)record)->sched.waiter == NULL);
     waiter->record = record;
     waiter->continuation = continuation;
+#if defined(PROBE_WF_GENERATED)
+    assert(probe_active_task != NULL);
+    waiter->owner = probe_active_task;
+#endif
     waiter->pending_next = probe_pending;
     waiter->phase = 1;
     probe_pending = waiter;
@@ -163,6 +186,10 @@ void *probe_take_ready(void) {
     probe_ready_head = waiter->ready_next;
     if (!probe_ready_head) probe_ready_tail = NULL;
     continuation = waiter->continuation;
+#if defined(PROBE_WF_GENERATED)
+    probe_active_task = waiter->owner;
+    assert(probe_active_task != NULL && !probe_active_task->done);
+#endif
     waiter->ready_next = NULL;
     waiter->phase = 3;
     ++probe_dequeued;
@@ -261,8 +288,10 @@ void probe_report(int required_route) {
  * publication coordinator as the nested C++ fixture, not a production
  * scheduler. Source code performs its own first system operation; the host
  * does not open a bootstrap file or manufacture an ambient source input. */
-_Static_assert(sizeof(probe_waiter) == 40, "continuation waiter size");
+_Static_assert(sizeof(probe_waiter) == 48, "continuation waiter size");
 _Static_assert(_Alignof(probe_waiter) == 8, "continuation waiter alignment");
+_Static_assert(sizeof(probe_task) == 32, "continuation task size");
+_Static_assert(_Alignof(probe_task) == 8, "continuation task alignment");
 void wf__continuation_resume(void *frame);
 int wf__continuation_finished(void *frame);
 
@@ -281,14 +310,108 @@ int wf__continuation_arm(void *storage, void *frame) {
     return probe_arm(waiter, waiter->record, frame, NULL, 0);
 }
 
+uint64_t wf__continuation_window(uint64_t span, uint64_t slot_bytes, uint64_t ceiling) {
+    (void)slot_bytes;
+    uint64_t limit = 64;
+    const char *requested = getenv("WF_CONTINUATION_WINDOW");
+    if (requested) {
+        char *end;
+        errno = 0;
+        unsigned long long value = strtoull(requested, &end, 10);
+        assert(errno == 0 && *requested != '\0' && *end == '\0' && value > 0 && value <= 1024);
+        limit = value;
+    }
+    /* IrCompletionWindow uses zero for an absent bound, including the trip
+     * count of a loop whose endpoint is supplied by the invocation. */
+    if (ceiling && limit > ceiling) limit = ceiling;
+    if (span && limit > span) limit = span;
+    return limit ? limit : 1;
+}
+
+void wf__continuation_publish(void *storage, void *frame) {
+    probe_task *task = storage;
+    assert(probe_active_task && !probe_active_task->done);
+    memset(task, 0, sizeof(*task));
+    task->frame = frame;
+    if (probe_new_tail) probe_new_tail->next = task;
+    else probe_new_head = task;
+    probe_new_tail = task;
+    ++probe_tasks_created;
+    uint64_t live = probe_tasks_created - probe_tasks_retired - 1;
+    if (live > probe_tasks_peak) probe_tasks_peak = live;
+}
+
+int wf__continuation_task_done(void *storage) {
+    const probe_task *task = storage;
+    return task->done != 0;
+}
+
+int wf__continuation_task_arm(void *storage, void *frame) {
+    probe_waiter *waiter = storage;
+    probe_task *task = waiter->record;
+    if (task->done) return 0;
+    assert(probe_active_task && task != probe_active_task && task->join_waiter == NULL);
+    assert(waiter->phase == 0);
+    waiter->continuation = frame;
+    waiter->owner = probe_active_task;
+    waiter->phase = 1;
+    task->join_waiter = waiter;
+    pthread_mutex_lock(&probe_lock);
+    ++probe_registered;
+    pthread_mutex_unlock(&probe_lock);
+    return 1;
+}
+
+void wf__continuation_retire(void *storage) {
+    probe_task *task = storage;
+    assert(task->done && task->frame && !task->join_waiter && !task->next);
+    task->frame = NULL;
+    ++probe_tasks_retired;
+}
+
+/* Nested symmetric transfers stay inside one task. The host inspects that
+ * task's root only after resume returns, so no child can free a queued node
+ * or publish its parent's join while its own resume call still uses it. */
+static void probe_complete_task(void) {
+    probe_task *task = probe_active_task;
+    assert(task && !task->done);
+    if (!wf__continuation_finished(task->frame)) return;
+    task->done = 1;
+    ++probe_tasks_completed;
+    probe_waiter *waiter = task->join_waiter;
+    task->join_waiter = NULL;
+    if (!waiter) return;
+    pthread_mutex_lock(&probe_lock);
+    assert(waiter->phase == 1);
+    waiter->phase = 2;
+    waiter->ready_next = NULL;
+    if (probe_ready_tail) probe_ready_tail->ready_next = waiter;
+    else probe_ready_head = waiter;
+    probe_ready_tail = waiter;
+    pthread_cond_broadcast(&probe_changed);
+    pthread_mutex_unlock(&probe_lock);
+}
+
+static void *probe_next_continuation(void) {
+    if (!probe_new_head) return probe_take_ready();
+    probe_task *task = probe_new_head;
+    probe_new_head = task->next;
+    if (!probe_new_head) probe_new_tail = NULL;
+    task->next = NULL;
+    probe_active_task = task;
+    return task->frame;
+}
+
 /* Observe only after resume returns. Holding the coordinator lock keeps a
  * pending node and its record live; publication removes the node before DONE.
  * The native peer withholds connect/input until these suspension witnesses. */
 static unsigned probe_observe_socket_waits(unsigned seen) {
     if (!getenv("WF_CONTINUATION_TRACE_SOCKET")) return seen;
     pthread_mutex_lock(&probe_lock);
+    unsigned receives = 0;
     for (probe_waiter *waiter = probe_pending; waiter; waiter = waiter->pending_next) {
         const wf_completion_record *record = waiter->record;
+        if (record->request.kind == WF_FILE_SOCKET_RECEIVE) ++receives;
         if (!(seen & 1) && record->request.kind == WF_FILE_SOCKET_ACCEPT) {
             fputs("WF continuation host: accept suspended\n", stderr);
             seen |= 1;
@@ -297,6 +420,10 @@ static unsigned probe_observe_socket_waits(unsigned seen) {
             fputs("WF continuation host: receive suspended\n", stderr);
             seen |= 2;
         }
+    }
+    if (!(seen & 4) && receives == 4 && getenv("WF_CONTINUATION_TRACE_STAGED")) {
+        fputs("WF continuation host: staged suspended=4\n", stderr);
+        seen |= 4;
     }
     pthread_mutex_unlock(&probe_lock);
     return seen;
@@ -307,21 +434,33 @@ void wf__continuation_run(void *frame) {
     unsigned socket_waits = 0;
     assert(!active);
     active = 1;
+    assert(!probe_new_head && !probe_new_tail && !probe_active_task);
+    probe_task root = {0};
+    root.frame = frame;
+    probe_active_task = &root;
+    probe_tasks_created = 1;
+    probe_tasks_completed = probe_tasks_retired = probe_tasks_peak = 0;
     atomic_store_explicit(&probe_stopping, 0, memory_order_release);
     wf__continuation_resume(frame);
-    if (!wf__continuation_finished(frame)) {
+    probe_complete_task();
+    if (!root.done) {
         if (getenv("WF_CONTINUATION_OBSERVE")) {
             fputs("WF continuation host: suspended\n", stderr);
         }
         socket_waits = probe_observe_socket_waits(socket_waits);
         assert(pthread_create(&probe_progress_thread, NULL, probe_progress, NULL) == 0);
         do {
-            wf__continuation_resume(probe_take_ready());
+            wf__continuation_resume(probe_next_continuation());
+            probe_complete_task();
             socket_waits = probe_observe_socket_waits(socket_waits);
-        } while (!wf__continuation_finished(frame));
+        } while (!root.done);
         probe_stop();
     }
     probe_idle();
+    assert(!probe_new_head && !probe_new_tail);
+    assert(probe_tasks_created == probe_tasks_completed);
+    assert(probe_tasks_retired + 1 == probe_tasks_created);
+    probe_active_task = NULL;
     if (getenv("WF_CONTINUATION_OBSERVE")) {
         fprintf(stderr, "WF continuation host: registered=%llu dequeued=%llu helper=%llu uring=%llu inline=%llu\n",
                 (unsigned long long)probe_registered, (unsigned long long)probe_dequeued,
@@ -337,6 +476,13 @@ void wf__continuation_run(void *frame) {
                 (unsigned long long)probe_socket_routes[1][WF_COMPLETION_ROUTE_FILE_ADAPTER],
                 (unsigned long long)probe_socket_routes[2][WF_COMPLETION_ROUTE_LINUX_IO_URING],
                 (unsigned long long)probe_socket_routes[2][WF_COMPLETION_ROUTE_FILE_ADAPTER]);
+    }
+    if (getenv("WF_CONTINUATION_TRACE_STAGED")) {
+        fprintf(stderr, "WF continuation host: tasks=%llu completed=%llu retired=%llu peak=%llu\n",
+                (unsigned long long)(probe_tasks_created - 1),
+                (unsigned long long)(probe_tasks_completed - 1),
+                (unsigned long long)probe_tasks_retired,
+                (unsigned long long)probe_tasks_peak);
     }
     active = 0;
 }

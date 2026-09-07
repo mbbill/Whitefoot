@@ -754,6 +754,7 @@ enum FunctionSlot {
     /// for the lane form, exactly as the record block is what it holds for a
     /// submitted system operation.
     StagedFrame(IrValueId),
+    StagedTask(IrValueId),
     /// Each in-flight iteration's own answer, written where the call ran and
     /// read by the drain.
     StagedResult(IrValueId),
@@ -958,13 +959,25 @@ impl FunctionFramePlan {
         // and the issue-stage values its drain reads back.
         if let Some(staged) = staged_lane {
             let slots = staged.slots;
-            if staged.frame_bytes.is_some() {
+            if continuation || staged.frame_bytes.is_some() {
                 push_function_slot(
                     &mut specifications,
                     &mut ordered,
                     FunctionSlot::StagedFrame(staged.result),
                     TargetStorageType::array(TargetStorageType::pointer(), slots),
                     None,
+                )?;
+            }
+            if continuation {
+                push_function_slot(
+                    &mut specifications,
+                    &mut ordered,
+                    FunctionSlot::StagedTask(staged.result),
+                    TargetStorageType::array(
+                        TargetStorageType::bytes(continuation::TASK_BYTES),
+                        slots,
+                    ),
+                    Some(continuation::TASK_ALIGN),
                 )?;
             }
             push_function_slot(
@@ -1428,43 +1441,44 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let mut completion_steps: HashMap<_, _> =
             if qualification.target().supports_posix_file_completion() {
                 function
-                    .completion_steps()
-                    .iter()
-                    .cloned()
-                    .map(|step| {
-                        // A step submits only where the typed adapter has a
-                        // hand-out form for that exact operation. Every other
-                        // permitted may-suspend call keeps its qualified
-                        // wrapper, which is the same one lowering — submit,
-                        // then join, through the frame's own record — and
-                        // differs only in holding one operation of that site
-                        // rather than several. Selecting the wrapper here is
-                        // an emission choice over one accepted program; it
-                        // changes no judgment, no outcome, and no published
-                        // byte (`backend/qualification.rs`, the [PAR-1]
-                        // review: "a may-suspend record selects completion
-                        // lowering only when the backend has a typed adapter
-                        // for the exact operation").
-                        let handed_out = matches!(
-                            definition_operation(function, step.call()),
-                            Some(IrOperation::SystemCall { operation, .. })
-                                if system::completion_file_operation(*operation).is_some()
-                        ) || staged_lane_call == Some(step.call());
-                        let step = if handed_out {
-                            step
-                        } else {
-                            step.without_submission()
-                        };
-                        (step.call(), step)
-                    })
-                    .collect()
+                .completion_steps()
+                .iter()
+                .cloned()
+                .map(|step| {
+                    // A step submits only where the typed adapter has a
+                    // hand-out form for that exact operation. Every other
+                    // permitted may-suspend call keeps its qualified
+                    // wrapper, which is the same one lowering — submit,
+                    // then join, through the frame's own record — and
+                    // differs only in holding one operation of that site
+                    // rather than several. Selecting the wrapper here is
+                    // an emission choice over one accepted program; it
+                    // changes no judgment, no outcome, and no published
+                    // byte (`backend/qualification.rs`, the [PAR-1]
+                    // review: "a may-suspend record selects completion
+                    // lowering only when the backend has a typed adapter
+                    // for the exact operation").
+                    let handed_out = matches!(
+                        definition_operation(function, step.call()),
+                        Some(IrOperation::SystemCall { operation, .. })
+                            if (if continuation { system::continuation_operation(*operation) }
+                                else { system::completion_file_operation(*operation) }).is_some()
+                    ) || staged_lane_call == Some(step.call());
+                    let step = if handed_out {
+                        step
+                    } else {
+                        step.without_submission()
+                    };
+                    (step.call(), step)
+                })
+                .collect()
             } else {
                 HashMap::new()
             };
         if continuation {
-            // A sequential continuation awaits each direct operation before
-            // its next source instruction. The existing typed submit/mapper
-            // path owns the outcome and the frame's buffer loans.
+            // Preserve the checked issue/drain schedule when present. Other
+            // direct operations await before the next source instruction.
+            // The typed submit/mapper owns each outcome and buffer loan.
             for instruction in function.blocks().iter().flat_map(IrBlock::instructions) {
                 if let IrInstruction::Define {
                     result,
@@ -1479,10 +1493,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     && target_action.may_suspend()
                     && system::continuation_operation(*operation).is_some()
                 {
-                    completion_steps.insert(
-                        *result,
-                        IrCompletionStep::new(*result, Vec::new(), true, true),
-                    );
+                    completion_steps
+                        .entry(*result)
+                        .or_insert_with(|| IrCompletionStep::new(*result, Vec::new(), true, true));
                 }
             }
         }
@@ -2174,6 +2187,17 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             Some(value) => self.value_name(value).trim_start_matches('%').to_owned(),
             None => self.next_temporary()?,
         };
+        if self.continuation {
+            writeln!(
+                self.output,
+                "  %{name} = call i64 @wf__continuation_window(i64 {}, i64 {}, i64 {})",
+                window.span(),
+                window.slot_bytes(),
+                window.ceiling()
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+            return Ok(());
+        }
         // A target without the native completion adapter keeps the same
         // compiler-generated CFG but admits exactly one issue before every
         // drain. The direct call's SSA result is therefore the result of that

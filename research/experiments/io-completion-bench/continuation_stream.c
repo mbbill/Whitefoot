@@ -61,7 +61,7 @@ static void expect_line(FILE *diagnostics, char **line, size_t *capacity, const 
 
 static void finish(pid_t child, FILE *diagnostics, int expected_status,
                    int required_route, int require_wait, int socket_operations,
-                   const char *kind, size_t bytes) {
+                   const char *kind, size_t bytes, unsigned expected_tasks) {
     char *line = NULL;
     size_t capacity = 0;
     unsigned long long registered, dequeued, helper, ring, immediate;
@@ -96,6 +96,15 @@ static void finish(pid_t child, FILE *diagnostics, int expected_status,
         }
         printf("compiled continuation socket routes: %s accept=%llu/%llu connect=%llu/%llu receive=%llu/%llu (ring/helper)\n",
                kind, rings[0], helpers[0], rings[1], helpers[1], rings[2], helpers[2]);
+    }
+    if (expected_tasks) {
+        unsigned long long tasks, completed, retired, peak;
+        assert(getline(&line, &capacity, diagnostics) > 0);
+        assert(sscanf(line, "WF continuation host: tasks=%llu completed=%llu retired=%llu peak=%llu",
+                      &tasks, &completed, &retired, &peak) == 4);
+        assert(tasks == expected_tasks && completed == tasks && retired == tasks && peak == 4);
+        printf("compiled continuation staged drain: PASS tasks=%llu completed=%llu retired=%llu peak=%llu\n",
+               tasks, completed, retired, peak);
     }
     assert(getline(&line, &capacity, diagnostics) == -1 && feof(diagnostics));
     free(line);
@@ -184,7 +193,7 @@ static void check(const char *binary, size_t bytes, int required_route, int netw
         assert(close(output[0]) == 0);
     }
     free(line);
-    finish(child, diagnostics, 0, required_route, 1, network ? 5 : -1, network ? "TCP" : "pipe", bytes);
+    finish(child, diagnostics, 0, required_route, 1, network ? 5 : -1, network ? "TCP" : "pipe", bytes, 0);
 }
 
 /* Existing WF client/refusal programs define this byte/outcome protocol.
@@ -270,22 +279,95 @@ static void endpoint(const char *binary, int required_route, int mode) {
      * participates in the native-ring requirement. */
     int route = mode == 4 && required_route == 1 ? 2 : required_route;
     finish(child, diagnostics, mode == 4 ? 7 : 0, route, mode == 2, mode == 2 ? 6 : mode == 3 ? 2 : 0,
-           mode == 2 ? "TCP-client" : mode == 3 ? "TCP-refused" : "TCP-occupied", count);
+           mode == 2 ? "TCP-client" : mode == 3 ? "TCP-refused" : "TCP-occupied", count, 0);
+}
+
+/* All four peers connect before any sends. The last connected peer must
+ * complete first while the earlier three remain silent. A serial loop cannot
+ * satisfy this protocol. The repeated form also reuses every issuer slot. */
+static void staged(const char *binary, int required_route, unsigned batches) {
+    struct sockaddr_in address = {0};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(UINT32_C(0x7f000001));
+    int reservation = socket(AF_INET, SOCK_STREAM, 0);
+    assert(reservation >= 0);
+    assert(bind(reservation, (struct sockaddr *)&address, sizeof(address)) == 0);
+    socklen_t length = sizeof(address);
+    assert(getsockname(reservation, (struct sockaddr *)&address, &length) == 0);
+    assert(close(reservation) == 0);
+    char port[16], peers[16];
+    assert(snprintf(port, sizeof(port), "%u", (unsigned)ntohs(address.sin_port)) > 0);
+    assert(snprintf(peers, sizeof(peers), "%u", batches * 4) > 0);
+    int errors[2], output[2];
+    assert(pipe(errors) == 0 && pipe(output) == 0);
+    pid_t child = fork();
+    assert(child >= 0);
+    if (!child) {
+        assert(dup2(errors[1], STDERR_FILENO) == STDERR_FILENO);
+        assert(dup2(output[1], STDOUT_FILENO) == STDOUT_FILENO);
+        assert(close(errors[0]) == 0 && close(errors[1]) == 0);
+        assert(close(output[0]) == 0 && close(output[1]) == 0);
+        assert(setenv("WF_IO_HELPERS", "4", 1) == 0);
+        assert(setenv("WF_CONTINUATION_WINDOW", "4", 1) == 0);
+        assert(setenv("WF_CONTINUATION_OBSERVE", "1", 1) == 0);
+        assert(setenv("WF_CONTINUATION_TRACE_SOCKET", "1", 1) == 0);
+        assert(setenv("WF_CONTINUATION_REPORT_SOCKET_ROUTES", "1", 1) == 0);
+        assert(setenv("WF_CONTINUATION_TRACE_STAGED", "1", 1) == 0);
+        execl(binary, binary, port, peers, (char *)NULL);
+        _exit(127);
+    }
+    assert(close(errors[1]) == 0 && close(output[1]) == 0);
+    FILE *diagnostics = fdopen(errors[0], "r");
+    assert(diagnostics);
+    char *line = NULL;
+    size_t capacity = 0;
+    expect_line(diagnostics, &line, &capacity, "WF continuation host: suspended\n");
+    expect_line(diagnostics, &line, &capacity, "WF continuation host: accept suspended\n");
+    for (unsigned batch = 0; batch < batches; ++batch) {
+        int sockets[4];
+        for (unsigned i = 0; i < 4; ++i) {
+            sockets[i] = socket(AF_INET, SOCK_STREAM, 0);
+            assert(sockets[i] >= 0);
+            assert(connect(sockets[i], (struct sockaddr *)&address, sizeof(address)) == 0);
+        }
+        if (batch == 0) {
+            expect_line(diagnostics, &line, &capacity, "WF continuation host: receive suspended\n");
+            expect_line(diagnostics, &line, &capacity, "WF continuation host: staged suspended=4\n");
+        }
+        for (unsigned i = 4; i-- > 0;) {
+            unsigned char sent = (unsigned char)(31 + batch * 4 + i), received;
+            assert(write(sockets[i], &sent, 1) == 1);
+            assert(shutdown(sockets[i], SHUT_WR) == 0);
+            assert(read(sockets[i], &received, 1) == 1 && received == sent);
+            assert(read(sockets[i], &received, 1) == 0);
+            assert(close(sockets[i]) == 0);
+        }
+    }
+    free(line);
+    unsigned char unexpected;
+    assert(read(output[0], &unexpected, 1) == 0 && close(output[0]) == 0);
+    finish(child, diagnostics, 0, required_route, 1, 5, "TCP-staged", batches * 4, batches * 4);
 }
 
 int main(int argc, char **argv) {
+    /* A missing protocol event fails qualification; it must not leave a CI
+     * job parked indefinitely. This watchdog never affects source checking. */
+    alarm(120);
     int mode = 0;
     if (argc > 1) {
         if (strcmp(argv[1], "--tcp") == 0) mode = 1;
         else if (strcmp(argv[1], "--client") == 0) mode = 2;
         else if (strcmp(argv[1], "--refused") == 0) mode = 3;
         else if (strcmp(argv[1], "--occupied") == 0) mode = 4;
+        else if (strcmp(argv[1], "--fanout") == 0) mode = 5;
+        else if (strcmp(argv[1], "--staged") == 0) mode = 6;
     }
     if (mode) { --argc; ++argv; }
     assert(argc == 2 || (argc == 3 &&
            (strcmp(argv[2], "--require-ring") == 0 || strcmp(argv[2], "--require-helper") == 0)));
     int route = argc == 2 ? 0 : strcmp(argv[2], "--require-ring") == 0 ? 1 : 2;
-    if (mode >= 2) endpoint(argv[1], route, mode);
+    if (mode >= 5) staged(argv[1], route, mode == 5 ? 1 : 3);
+    else if (mode >= 2) endpoint(argv[1], route, mode);
     else {
         check(argv[1], 0, route, mode);
         check(argv[1], 65673, route, mode);

@@ -700,7 +700,8 @@ compiler-continuation-check: completion-coroutine-check compiler
 	  thread) ir_attribute=sanitize_thread ;; \
 	  *) echo 'compiler-continuation-check needs address or thread instrumentation' >&2; exit 2 ;; \
 	esac; \
-	for program in boundary stdin recursive tcp client refused; do \
+	for program in boundary stdin recursive tcp client refused fanout staged; do \
+	  staging=''; \
 	  case "$$program" in \
 	    boundary) source="$(ROOT)/tests/programs/completion_read_boundary.wf" ;; \
 	    stdin) source="$(ROOT)/tests/programs/stdin_echo.wf" ;; \
@@ -708,8 +709,10 @@ compiler-continuation-check: completion-coroutine-check compiler
 	    tcp) source=programs/tcp_echo_server.wf ;; \
 	    client) source="$(ROOT)/tests/programs/tcp_client.wf" ;; \
 	    refused) source="$(ROOT)/tests/programs/tcp_refused.wf" ;; \
+	    fanout) source="$(ROOT)/tests/programs/tcp_fanout.wf"; staging=--par ;; \
+	    staged) source=programs/tcp_echo_server.wf; staging=--par ;; \
 	  esac; \
-	  "$(WFC)" --emit-llvm --continuations "$$source" -o "$$build/$$program.ll"; \
+	  "$(WFC)" --emit-llvm --continuations $$staging "$$source" -o "$$build/$$program.ll"; \
 	  awk -v attribute="$$ir_attribute" '/^define / {sub(/ \{$$/, " " attribute " {")} {print}' \
 	    "$$build/$$program.ll" > "$$build/$$program-instrumented.ll"; \
 	  $(CORO_CLANG) -Wno-override-module -O2 -g -pthread -fsanitize=$(COMPLETION_CORO_SANITIZERS) \
@@ -726,13 +729,15 @@ compiler-continuation-check: completion-coroutine-check compiler
 	status=0; "$$build/boundary" > "$$build/no-args" || status=$$?; \
 	test "$$status" = 1 && test ! -s "$$build/no-args"; \
 	echo 'compiled continuation file outcomes: PASS success/open-failure/EOF/no-I/O-return'; \
-	for program in stdin recursive tcp client refused occupied; do \
+	for program in stdin recursive tcp client refused occupied fanout staged; do \
 	  transport=''; \
 	  case "$$program" in \
 	    tcp) transport=--tcp ;; \
 	    client) transport=--client ;; \
 	    refused) transport=--refused ;; \
 	    occupied) transport=--occupied; program=tcp ;; \
+	    fanout) transport=--fanout ;; \
+	    staged) transport=--staged ;; \
 	  esac; \
 	  "$$build/stream-check" $$transport "$$build/$$program" $(COMPLETION_CORO_ARGS); \
 	  if [ "$$(uname -s)" = Linux ]; then \

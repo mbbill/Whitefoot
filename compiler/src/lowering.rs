@@ -1049,6 +1049,9 @@ pub enum OverlapLowering {
     /// therefore byte-identical to `Off`, while completion I/O needs no flag.
     #[default]
     Completion,
+    /// Experimental continuation policy: include staged may-suspend user
+    /// calls, while retaining the ordinary representation of pure compute.
+    Staged,
     /// Actualize completion operations and eligible compute groups.
     On,
 }

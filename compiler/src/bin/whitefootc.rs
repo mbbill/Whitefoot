@@ -249,7 +249,7 @@ fn run() -> Result<(), String> {
         .collect();
     let overlap = options.overlap();
     let module = if options.continuations {
-        compile_with_continuations(&inputs, CompilerLimits::default())
+        compile_with_continuations(&inputs, CompilerLimits::default(), options.par)
             .map_err(|failure| failure.to_string())?
             .module
     } else if let Some(interval) = options.sched_quantum {
@@ -715,14 +715,9 @@ impl Options {
             return Err("--no-overlap and --par select opposite lowerings: write one".to_owned());
         }
         if continuations
-            && (!emit_llvm
-                || par
-                || no_overlap
-                || sched_quantum.is_some()
-                || par_ledger
-                || stack_ledger)
+            && (!emit_llvm || no_overlap || sched_quantum.is_some() || par_ledger || stack_ledger)
         {
-            return Err("--continuations currently requires --emit-llvm and the serial experiment host; parallel and ledger modes are not integrated yet".to_owned());
+            return Err("--continuations requires --emit-llvm and the experiment host; --par enables staged I/O, while checkpoints and ledgers are not integrated yet".to_owned());
         }
         if sched_quantum.is_some() && !par {
             return Err("scheduler checkpoints require --par for this experiment".to_owned());
@@ -796,7 +791,8 @@ mod tests {
                 .continuations
         );
         assert!(parse(&["--continuations", "value.wf"]).is_err());
-        for incompatible in ["--par", "--no-overlap", "--par-ledger", "--stack-ledger"] {
+        assert!(parse(&["--continuations", "--emit-llvm", "--par", "value.wf"]).is_ok());
+        for incompatible in ["--no-overlap", "--par-ledger", "--stack-ledger"] {
             assert!(
                 parse(&[
                     "--continuations",

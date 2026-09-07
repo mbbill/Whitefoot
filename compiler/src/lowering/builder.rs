@@ -61,7 +61,9 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     // compilation asked for overlap lowering, so the default emits the same
     // module a compiler with no such lowering emits.
     let permission = match overlap {
-        OverlapLowering::On | OverlapLowering::Completion => Some(&checked.data.permission),
+        OverlapLowering::On | OverlapLowering::Completion | OverlapLowering::Staged => {
+            Some(&checked.data.permission)
+        }
         OverlapLowering::Off => None,
     };
     // Where a synthesized function's ordinal starts. A [PAR-2] split appends

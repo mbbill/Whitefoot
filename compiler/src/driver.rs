@@ -369,18 +369,24 @@ pub struct CompilationReport {
     pub notices: Vec<String>,
 }
 
-/// Experimental stackless LLVM emission. The serial source schedule is kept;
-/// operation outcomes and proofs use the ordinary compilation path. The
+/// Experimental stackless LLVM emission. Staging may actualize the existing
+/// checked loop permissions; otherwise the serial source schedule is kept.
+/// Operation outcomes and proofs use the ordinary compilation path. The
 /// experimental continuation host supplies the emitted resume/await ABI.
 pub fn compile_with_continuations(
     inputs: &[SourceInput<'_>],
     limits: CompilerLimits,
+    staged: bool,
 ) -> Result<CompilationReport, CompilationFailure> {
     compile_reporting_with_policy(
         inputs,
         limits,
         crate::Inventory::ACTIVE,
-        crate::OverlapLowering::Off,
+        if staged {
+            crate::OverlapLowering::Staged
+        } else {
+            crate::OverlapLowering::Off
+        },
         None,
         true,
     )
@@ -727,14 +733,42 @@ mod tests {
     #[test]
     #[cfg(not(target_os = "windows"))]
     fn continuation_representation_leaves_pure_modules_unchanged() {
-        let source = b"command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+        let source = br#"fn fib(n: own u64) -> result: own u64 pure {
+  if n < 2_u64 {
+    return n;
+  }
+  let left_n = n -wrap 1_u64;
+  let right_n = n -wrap 2_u64;
+  let left = fib(n: left_n);
+  let right = fib(n: right_n);
+  return left +wrap right;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let answer = fib(n: 10_u64);
+  if answer == 55_u64 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}
+"#;
         let inputs = [SourceInput::new("pure.wf", source)];
         let ordinary =
             super::compile_with_overlap(&inputs, CompilerLimits::default(), OverlapLowering::Off)
                 .expect("pure module must compile");
-        let continuation = super::compile_with_continuations(&inputs, CompilerLimits::default())
-            .expect("pure module must compile in the experiment");
-        assert_eq!(ordinary, continuation.module);
+        let compute_parallel =
+            super::compile_with_overlap(&inputs, CompilerLimits::default(), OverlapLowering::On)
+                .expect("the recursive compute overlap must compile");
+        assert_ne!(
+            ordinary, compute_parallel,
+            "the control must exercise compute outlining"
+        );
+        for staged in [false, true] {
+            let continuation =
+                super::compile_with_continuations(&inputs, CompilerLimits::default(), staged)
+                    .expect("pure module must compile in the experiment");
+            assert_eq!(ordinary, continuation.module);
+        }
     }
 
     /// The permission ledger of one compiled source, in the order the driver

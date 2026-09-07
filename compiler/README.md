@@ -208,13 +208,16 @@ an experimental scheduling policy without a source progress guarantee.
 experiment qualified with Linux LLVM 20 and local Apple clang 21. Existing derived
 `may_suspend` effects select switched-resume coroutine frames, including
 nested and recursive calls; pure functions keep their ordinary representation.
-Source signatures and proof checking are unchanged. The experiment keeps the
-serial source schedule and awaits each mapped direct completion operation
-before continuing. The native research host owns one root and resumes it
-after publication; it is not yet a concurrent executor. The network extension
+Source signatures and proof checking are unchanged. Without `--par`, the
+experiment keeps the serial source schedule and awaits each mapped direct
+completion operation before continuing. Adding `--par` actualizes existing
+checked staged-loop permissions with independently suspended task roots;
+pure compute outlining stays off. One research-host thread resumes all roots
+and their nested callees. The issuer's frame owns task descriptors and results
+until the original drain joins and destroys each child. The network extension
 also awaits `tcp_listen`, `tcp_accept` and `tcp_connect`, using the same
-typed completion mappers and retirement as their ordinary wrappers. Staged hand-outs,
-compute checkpoints, asynchronous cleanup, Windows and normal executable
+typed completion mappers and retirement as their ordinary wrappers.
+Compute checkpoints, asynchronous cleanup, Windows and normal executable
 linking are not integrated, so incompatible command-line modes fail explicitly.
 Other system wrappers and cleanup may still block the host. The new host ABI
 is experimental and does not alter the existing staged runtime or container

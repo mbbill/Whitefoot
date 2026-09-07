@@ -1,16 +1,18 @@
 //! Experimental switched-resume lowering of the existing checked functions.
 //!
 //! Function effects select representation; names and source shapes do not.
-//! The first host keeps the serial source schedule. Staged task publication,
-//! checkpoints, and asynchronous cleanup are separate integration work, so
-//! this emitter is currently exposed only for experimental LLVM linking.
+//! The experiment host actualizes the checked issue/drain schedule. Compute
+//! checkpoints and asynchronous cleanup remain separate integration work, so
+//! this emitter is exposed only for experimental LLVM linking.
 
 use super::*;
 
 // Qualified by the C experiment host's size/alignment assertions. One node
-// suffices for this serial schedule; it is never reused while registered.
-pub(super) const WAITER_BYTES: u64 = 40;
+// suffices for each activation; it is never reused while registered.
+pub(super) const WAITER_BYTES: u64 = 48;
 pub(super) const WAITER_ALIGN: u64 = 8;
+pub(super) const TASK_BYTES: u64 = 32;
+pub(super) const TASK_ALIGN: u64 = 8;
 
 pub(super) fn symbol(name: &str) -> String {
     format!("wf__coro_{name}")
@@ -45,6 +47,11 @@ declare i32 @wf__continuation_record_done(ptr)
 declare void @wf__continuation_prepare(ptr, ptr)
 declare i32 @wf__continuation_arm(ptr, ptr)
 declare void @wf__continuation_run(ptr)
+declare void @wf__continuation_publish(ptr, ptr)
+declare i32 @wf__continuation_task_done(ptr)
+declare i32 @wf__continuation_task_arm(ptr, ptr)
+declare void @wf__continuation_retire(ptr)
+declare i64 @wf__continuation_window(i64, i64, i64)
 
 define void @wf__continuation_resume(ptr %frame) {
 entry:
@@ -64,6 +71,12 @@ entry:
 define private i1 @wf__continuation_register(ptr %waiter, ptr %self) {
 entry:
   %armed = call i32 @wf__continuation_arm(ptr %waiter, ptr %self)
+  %suspend = icmp ne i32 %armed, 0
+  ret i1 %suspend
+}
+define private i1 @wf__continuation_register_task(ptr %waiter, ptr %self) {
+entry:
+  %armed = call i32 @wf__continuation_task_arm(ptr %waiter, ptr %self)
   %suspend = icmp ne i32 %armed, 0
   ret i1 %suspend
 }
@@ -188,22 +201,104 @@ wf.coro.suspended:
         record: &str,
         value: IrValueId,
     ) -> Result<String, BackendFailure> {
+        self.continuation_wait_on(record, value, false)
+    }
+
+    fn continuation_wait_on(
+        &self,
+        record: &str,
+        value: IrValueId,
+        task: bool,
+    ) -> Result<String, BackendFailure> {
         if !self.continuation {
             return Ok(String::new());
         }
         let waiter = self.entry_slot(FunctionSlot::ContinuationWaiter)?;
         let prefix = format!("wf.coro.wait.v{}", value.ordinal());
+        let done = if task { "task_done" } else { "record_done" };
+        let register = if task { "register_task" } else { "register" };
         Ok(format!(
-            "  %{prefix}.isdone = call i32 @wf__continuation_record_done(ptr {record})\n  \
+            "  %{prefix}.isdone = call i32 @wf__continuation_{done}(ptr {record})\n  \
              %{prefix}.ready = icmp ne i32 %{prefix}.isdone, 0\n  \
              br i1 %{prefix}.ready, label %{prefix}.done, label %{prefix}.prepare\n\
              {prefix}.prepare:\n  call void @wf__continuation_prepare(ptr {waiter}, ptr {record})\n  \
              %{prefix}.saved = call token @llvm.coro.save(ptr null)\n  \
-             %{prefix}.armed = call i1 @llvm.coro.await.suspend.bool(ptr {waiter}, ptr %wf.coro.handle, ptr @wf__continuation_register)\n  \
+             %{prefix}.armed = call i1 @llvm.coro.await.suspend.bool(ptr {waiter}, ptr %wf.coro.handle, ptr @wf__continuation_{register})\n  \
              br i1 %{prefix}.armed, label %{prefix}.suspend, label %{prefix}.done\n\
              {prefix}.suspend:\n  %{prefix}.state = call i8 @llvm.coro.suspend(token %{prefix}.saved, i1 false)\n  \
              switch i8 %{prefix}.state, label %wf.coro.suspended [ i8 0, label %{prefix}.done i8 1, label %wf.coro.destroy ]\n\
              {prefix}.done:\n"
         ))
+    }
+
+    pub(super) fn emit_continuation_staged_call(
+        &mut self,
+        plan: &parallel::StagedLane,
+        arguments: &str,
+    ) -> Result<(), BackendFailure> {
+        let callee = self
+            .program
+            .functions()
+            .get(plan.callee_ordinal as usize)
+            .ok_or(BackendFailure::InvalidIr)?;
+        if !callee.target_action().may_suspend() {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let factory = symbol(callee.name());
+        let answer = self.staged_ring_element(
+            FunctionSlot::StagedResult(plan.result),
+            &plan.result_llvm,
+            plan.slots,
+        )?;
+        let held =
+            self.staged_ring_element(FunctionSlot::StagedFrame(plan.result), "ptr", plan.slots)?;
+        let task = self.staged_ring_element(
+            FunctionSlot::StagedTask(plan.result),
+            &format!("[{TASK_BYTES} x i8]"),
+            plan.slots,
+        )?;
+        let suffix = if arguments.is_empty() {
+            String::new()
+        } else {
+            format!(", {arguments}")
+        };
+        let prefix = format!("wf.coro.stage.v{}", plan.result.ordinal());
+        // Iterations can remain live across the next factory invocation.
+        // Do not assert the nested-call frame-elision contract at this site.
+        writeln!(
+            self.output,
+            "  %{prefix}.noop = call ptr @llvm.coro.noop()\n  \
+             %{prefix}.child = call ptr @{factory}(ptr {answer}, ptr %{prefix}.noop{suffix})\n  \
+             store ptr %{prefix}.child, ptr {held}\n  \
+             call void @wf__continuation_publish(ptr {task}, ptr %{prefix}.child)"
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+
+    pub(super) fn emit_continuation_staged_retirement(
+        &mut self,
+        plan: &parallel::StagedLane,
+        answer: &str,
+    ) -> Result<(), BackendFailure> {
+        let held =
+            self.staged_ring_element(FunctionSlot::StagedFrame(plan.result), "ptr", plan.slots)?;
+        let task = self.staged_ring_element(
+            FunctionSlot::StagedTask(plan.result),
+            &format!("[{TASK_BYTES} x i8]"),
+            plan.slots,
+        )?;
+        let wait = self.continuation_wait_on(&task, plan.result, true)?;
+        self.output.push_str(&wait);
+        let prefix = format!("wf.coro.retire.v{}", plan.result.ordinal());
+        writeln!(
+            self.output,
+            "  %{prefix}.child = load ptr, ptr {held}\n  \
+             call void @llvm.coro.destroy(ptr %{prefix}.child)\n  \
+             call void @wf__continuation_retire(ptr {task})\n  \
+             {} = load {}, ptr {answer}",
+            value_name(plan.result),
+            plan.result_llvm
+        )
+        .map_err(|_| BackendFailure::TextEmission)
     }
 }

@@ -219,7 +219,12 @@ impl IrBuilder<'_> {
                 true
             }
         };
-        if lane && self.overlap != crate::OverlapLowering::On {
+        if lane
+            && !matches!(
+                self.overlap,
+                crate::OverlapLowering::On | crate::OverlapLowering::Staged
+            )
+        {
             return Ok(false);
         }
         if give_target.is_some() || self.addressed_bindings.contains(&binder) {

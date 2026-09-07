@@ -553,7 +553,7 @@ impl FunctionEmitter<'_, '_> {
     /// the drain's own slot for a retirement — so a hand-out addresses the
     /// element its iteration took and a join addresses the element it is
     /// retiring, exactly as a completion ring is addressed.
-    fn staged_ring_element(
+    pub(super) fn staged_ring_element(
         &mut self,
         key: super::FunctionSlot,
         element_type: &str,
@@ -649,6 +649,9 @@ impl FunctionEmitter<'_, '_> {
             ));
         }
         let rendered_arguments = operands.join(", ");
+        if self.continuation {
+            return self.emit_continuation_staged_call(&plan, &rendered_arguments);
+        }
         let result_type = plan.result_llvm.clone();
         let answer = self.staged_ring_element(
             super::FunctionSlot::StagedResult(result),
@@ -751,6 +754,9 @@ impl FunctionEmitter<'_, '_> {
             &result_type,
             plan.slots,
         )?;
+        if self.continuation {
+            return self.emit_continuation_staged_retirement(&plan, &answer);
+        }
         if plan.frame_bytes.is_none() {
             writeln!(
                 self.output,
