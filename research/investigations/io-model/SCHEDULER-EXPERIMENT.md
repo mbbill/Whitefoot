@@ -4267,7 +4267,7 @@ name. A known limitation remains visible until its experiment is complete.
 | Native C epoll with private storage | Arena, malloc or calloc per connection; main-thread worker variant | Diagnostic storage and allocator comparison; private backing remains owned through I/O | Experiment 65 qualifies spawned-worker policy 0/3 with actual short-transfer/backpressure traces and sanitizers. Under its two-worker ARM large-message client, private/shared epoll paired rate is 0.8475 and CPU/trip 1.1607, both worse in all five pairs. WF/private rate is 0.9245. This is a measured joint allocation/working-set cost, not cache attribution or identical WF representation; shared epoll remains the competitive reference |
 | Native C io_uring | Multishot accept/recv, provided buffers, per-worker rings/listeners, ordered vectored sends; SINGLE_ISSUER + DEFER_TASKRUN, no SQPOLL | Competitive completion control: batching, no receive submission per arrival, loaned receive buffers reused for send | Stream-qualified and screened at `475008b5`: 64 KiB improves both large-message cells; small-message intervals overlap. No independently confirmed or universal winner. Experiment 62 requalifies the delayed-ENOBUFS correction and 2/32/64/128 pools. Its complete `b82647d5` raw cohort is audited despite a final summary-reference failure; the strongest measured uring median remains below epoll at large-message client width two. Earlier cohorts remain frozen |
 | Native C io_uring with immediate send | Same receive engine and loans, one nonblocking `sendmsg` attempt before ring fallback | Competitive hybrid candidate: avoids a submission/completion round trip when the socket accepts bytes immediately | Stream-qualified and screened at `0357259d`; 8 KiB hybrid severely regresses large messages; experiment 46 measures about 3.785x more send operations from lost application-level gathering, without short/EAGAIN retries. 64 KiB does not show the same loss. Shutdown wake-storage correction requalified at `0ebe924b`. Experiment 62 qualifies corrected exhaustion recovery at all selected capacities; width-two large-message inline gains depend on pool size and do not beat the pure-ring 128-buffer median. Its final summary-reference failure is separate from the audited raw cohort |
-| Native C stackful / C++ stackless | Same epoll engine; private or shared receive storage; stackful, heap coroutine, and compiler-elided coroutine forms | Diagnostic representation control: separates coroutine/frame allocation, storage and reactor cost | Screened and stream/lifetime-qualified at their recorded revisions. Experiment 67 adds an owner-local initialized-prefix chunk lease retained across nested send waits; local lifetime/codegen checks pass, native qualification and timing remain pending. This is a bench-only readiness representation, not a WF API or independent mature runtime comparison |
+| Native C stackful / C++ stackless | Same epoll engine; private or shared receive storage; stackful, heap coroutine, and compiler-elided coroutine forms | Diagnostic representation control: separates coroutine/frame allocation, storage and reactor cost | Screened and stream/lifetime-qualified at their recorded revisions. Experiment 67 qualifies owner-local initialized-prefix chunk leases across nested send waits. Its ARM large-message lease/private-C++ paired rate is 1.1431, CPU/trip 0.8730, with no rate advantage over shared C++ or manual epoll; one adverse lease tail and client limits remain. This is a bench-only readiness representation, not a WF API or independent mature runtime comparison |
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
 | WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Experiments 39/44/48 qualify the threaded, owner and batched-owner paths. At `fc69af15`, batching adds 28% / 27% paired throughput at 64 / 1024 small-message peers, with separate counters confirming aggregated ring submissions. Experiment 54 removes 97..98% of pending-list visits, with only 1.0%/1.8% median paired rate gains and reversals at 1024 peers; native CPU/trip still leads. Client headroom and multi-owner compute remain open. Experiments 52/54 qualify the unchanged sequential mixed protocol on both Linux completion routes |
 | Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Go 1.27.1 release/race and both 64 KiB storage forms qualified (49/51). The fixed Linux screen (53) favors acceptor-heap/P1 for memory and tail latency within one server CPU; P4 oversubscription inflates p99. WF batch32 exceeds this Go candidate at 64/1024 small peers while native stays ahead. Large transfers approach the client ceiling; no universal optimum. Race moves both buffers to the heap |
@@ -9953,5 +9953,136 @@ Clang 20 result. Its elided root size is 168 bytes for shared/calloc versus
 184 for leases, and the lease node allocation is 65,552 bytes for 65,536 bytes
 of capacity. Local linked text sizes are shared 8,284, calloc 8,430 and leased
 8,639 bytes. The new ownership representation therefore has real frame and
-code costs, not an assumed zero-cost abstraction. Native Linux qualification,
-the exact-runner default IR checks and all performance results remain pending.
+code costs, not an assumed zero-cost abstraction. The following native result
+records the separate CI compiler, qualification and measurements.
+
+### Native result: reuse survives owned nested sends in this workload
+
+Frozen `878b6ae77b8f2fbd91e0813d9331823ebe88c41b` completed
+[io-scheduler run 34138346137](https://github.com/mbbill/Whitefoot/actions/runs/34138346137),
+including ARM allocator job `101794424719` and the separate Windows placement
+job. Artifact `10025261272` is 2,609,989 bytes with SHA-256
+`15b37af51d90bf2938fee11ca85ab6f917c2c1b77dfc7a5806c6746676a9f351`.
+The ZIP was independently rehashed. Raw tables contain exactly 40 ordinary
+rows, eight warmups, 24 separate observer rows, 36 client-worker reports and
+six lease reports, plus two separate uneven-admission smokes with 12 counter
+phases. All selected source/retained executable hashes, row identities,
+alternating order, client byte/outcome counters and both topology snapshots
+pass audit. Replaying the actual final summary block reproduces all eight
+summary rows; independent raw-row calculation agrees with its paired ratios.
+
+The host reports Neoverse-N2, Linux `6.17.0-1022-azure`, Clang/Clang++ 20.1.2
+and glibc 2.39. Allowed CPUs 0..3 have raw package 36/core IDs 1..4 and
+singleton sibling lists 0..3. The server uses CPU 0; the small client uses
+CPU 1, the large client a two-worker pool on CPUs 1,2. Launch masks and all
+observed client-worker masks agree. Initial/final selection and topology
+match. Visible non-root ancestors report `cpu.max=max 100000`; the root has
+no `cpu.max` interface. All report zero throttling, which does not exclude
+VM-level host contention. Loader readback
+confirms top_pad zero; the existing launcher enforces per-server THP disable.
+These are loopback results, not a dedicated-core or real-NIC capacity claim.
+
+The native lease fixture reports three allocated/peak nodes, 15 acquires and
+15 returns, zero final live loans, and five allocated/freed root frames. Its
+actual handler calls include nine positive short sends, nine send-EAGAIN
+results, one short receive, one send error and one receive error. It passes
+the distinct simultaneous loans, reuse beside a live borrower, quota/skew,
+idle release, EOF, reset and nested destruction assertions described above.
+The two additional 8 MiB stream cases pass with four elided roots each and
+154/168 send waits at one/four workers. Summed per-worker allocated/peak counts
+are four; the four-worker distribution is 3,0,1,0. All final loans return. The
+48 previous C++ stream cases, both previous nested-frame destruction forms,
+36 C/stackful stream cases, 24 uring stream configurations and 28 actual-source
+uring traces also pass, including actual tiny-pool exhaustion/rearm. Client
+qualification retains all 64 socket cases, 28 traces, the lost-edge negative,
+six paced cases and 12 observed counter phases.
+
+Both retained lease qualification ELFs contain actual ASan and fatal UBSan
+calls in the source handlers and lease operations, checked against encoded
+AArch64 branch targets. `__ubsan_handle_builtin_unreachable` has no `_abort`
+suffix but its retained body calls `__sanitizer::Die`; it is not a recovering
+handler. Sanitizer flags come from the frozen retained Makefile, whose silent
+recipe is not echoed in the job log. The ten timed/observed executables and
+retained source/IR are independently rehashed; Clang, Clang++ and WFC hashes
+identify tool executables that are not themselves uploaded.
+
+Actual CI ordinary root frames are 168 bytes for shared/private C++ and
+184 bytes for leases. All three elided send children have no allocation call.
+The lease form has the root allocation and a 65,552-byte pool-node allocation
+for 65,536 bytes of capacity. Ordinary linked text sizes are manual C 8,413,
+shared C++ 9,532, private C++ 9,670 and leased C++ 9,923 bytes. The three prior
+manual/shared/private control IR pairs remain byte-identical after removing
+only module path headers. The observed node is 65,560 bytes because of its
+extra held marker. Neither node-size figure is a measurement of peak RSS.
+
+Ordinary medians follow; rates are round trips/s, CPU is whole-server-process
+user plus system microseconds per completed round trip, and RSS is median
+per-run maximum KiB. CPU includes startup/drain and comes from centisecond
+`/usr/bin/time` readings. Client CPU/wall uses the exchange phase only.
+
+| Cell / client width | Form | Rate | p99 (us) | Server CPU/trip (us) | Server max RSS (KiB) | Client CPU/wall |
+|---|---|---:|---:|---:|---:|---:|
+| 64 peers, 64 B / 1 | manual shared epoll | 221,248.0 | 313 | 4.531 | 3,648 | 0.9994 |
+| 64 peers, 64 B / 1 | shared C++ | 220,786.6 | 311 | 4.609 | 3,648 | 0.9994 |
+| 64 peers, 64 B / 1 | private C++ | 221,072.3 | 311 | 4.531 | 3,648 | 0.9994 |
+| 64 peers, 64 B / 1 | leased C++ | 220,896.5 | 314 | 4.609 | 3,648 | 0.9992 |
+| 64 peers, 64 KiB / 2 | manual shared epoll | 58,103.3 | 1,155 | 17.188 | 3,648 | 1.4731 |
+| 64 peers, 64 KiB / 2 | shared C++ | 57,259.2 | 1,175 | 17.500 | 3,648 | 1.4507 |
+| 64 peers, 64 KiB / 2 | private C++ | 50,396.5 | 1,425 | 20.000 | 7,084 | 1.2784 |
+| 64 peers, 64 KiB / 2 | leased C++ | 58,154.9 | 1,182 | 17.188 | 3,648 | 1.4663 |
+
+Each ratio below is the median of five same-pass numerator/denominator ratios,
+followed by their full range. Higher rate is better; lower CPU and p99 are
+better. Ratios of the displayed unpaired medians are not substituted.
+
+| Cell | Paired comparison | Rate ratio | Server CPU/trip ratio | p99 ratio |
+|---|---|---|---|---|
+| 64 B | lease / private C++ | 1.0032 (0.9776..1.0136) | 1.0000 (0.9831..1.0172) | 1.0000 (0.9744..1.0194) |
+| 64 B | lease / shared C++ | 0.9980 (0.9941..1.0217) | 1.0000 (0.9831..1.0172) | 1.0096 (0.9652..1.0097) |
+| 64 B | lease / manual epoll | 0.9981 (0.9899..1.0137) | 1.0000 (1.0000..1.0172) | 1.0000 (0.9744..1.0096) |
+| 64 KiB | lease / private C++ | 1.1431 (1.1001..1.1904) | 0.8730 (0.8462..0.9048) | 0.8295 (0.3178..2.8303) |
+| 64 KiB | lease / shared C++ | 0.9991 (0.9803..1.0411) | 0.9821 (0.9649..1.0179) | 0.9898 (0.4907..3.2077) |
+| 64 KiB | lease / manual epoll | 0.9959 (0.9684..1.0012) | 1.0000 (1.0000..1.0179) | 1.0234 (1.0087..3.2050) |
+
+The large lease form is faster and uses less CPU than private C++ in all
+five pairs. Its paired max-RSS ratio is 0.5150 (0.5144..0.5158).
+The CPU difference mostly appears in system time: median large private
+user/system times are 0.01/0.63 s versus leased 0.01/0.55 s. This does not
+isolate cache behavior, page touching or allocator work. A private calloc
+capacity is not proof of eager physical initialization.
+
+Leases do not show a rate advantage over shared C++ or manual epoll. Tails
+also prevent calling the forms equivalent: every large lease/manual p99
+pair is worse, and pass 2 has lease p99 3,753 us versus manual 1,171 us and
+private 1,326 us. Large lease p99 spans 1,162..3,753 us; shared C++ spans
+1,147..2,425, private spans 1,299..3,745, and manual spans 1,145..1,171.
+All five samples remain, including these adverse tails. The small client is
+near one CPU in every form, so its near-equal rates do not establish equal
+server capacity. Large client CPU/wall below two likewise does not prove
+that closed-loop service, per-worker load or shared kernel work is unlimited.
+
+All six separate lease observations grow exactly one node and report peak
+one, zero final live loans and zero send waits. Small-message acquires/returns
+are 256,192 each; large-message counts are 64,309, 64,279 and 64,294. Each
+observation allocates/frees 64 root frames. This shows reuse in the observed
+closed-loop execution, not ordinary timing loan counts or low storage under
+many simultaneously blocked sends. The separate qualification above does
+exercise multiple live nodes and real backpressure. Ordinary runs contain no
+lease counters; the instrumented node layout and timing are kept separate.
+
+Selection: retain shared manual epoll as the competitive reference. The
+owned-chunk form provides a qualified bench-level example in which sequential
+nested sends preserve stable ownership and recover the private-storage rate,
+CPU and RSS penalty under this workload, without beating shared reuse. It
+supports investigating an ownership contract for received chunks; it does
+not select a WF/container API, prove suspension can borrow one exclusive pool,
+or qualify completion-backend buffer retirement. No default changes follow.
+
+The exact frozen revision's [canonical gate 34138345898](https://github.com/mbbill/Whitefoot/actions/runs/34138345898)
+has 15 successful jobs and one failed Linux sampling job: 70 of 71 tests
+pass, while `the_runtime_replaces_the_modules_weak_refusal` reports that no
+lane was granted. The separate [integration gate 34138282669](https://github.com/mbbill/Whitefoot/actions/runs/34138282669)
+at `a350b9e8b7ca97fdc1c7afe859a204a3ee663b08` passes all 16 jobs with the same
+tree `2bb7e0fe35fe9863a38eb5d137dc6c556d6eb0d8`. These are distinct runs;
+the successful integration does not rewrite the frozen failure or establish
+its cause. No timing was rerun or candidate retuned after this cohort.

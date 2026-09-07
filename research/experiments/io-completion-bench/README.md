@@ -440,8 +440,15 @@ ARM two-cell envelope: manual shared epoll and C++ elided shared/spill,
 private-calloc and owned-chunk handlers. `chunk-lease-check`, also reached
 through `coroutine-check`, qualifies stable loans across nested send waits,
 reuse, destruction and stream backpressure. Experiment 67 records the
-selected design, frame/storage differences and pending native evidence;
-this bench-only API does not change WF or container interfaces.
+qualified `878b6ae7` ARM cohort: large-message lease/private-C++ paired rate
+1.1431 and CPU/trip 0.8730, with lower peak RSS in all five pairs. Leases
+show no rate advantage over shared C++ or manual epoll, and every large
+lease/manual p99 pair is worse, including one 3.2050 ratio. Separate
+observations reuse one node without send waits; multiple live loans are
+exercised by the qualification fixture, not inferred from timed runs.
+The investigation retains the adverse tails, client limits, frame/storage
+costs and distinct gate outcomes. Shared epoll stays the competitive
+reference; this bench-only API does not change WF or container interfaces.
 `scheduler-client-headroom` holds one server worker/CPU fixed and compares
 one client hardware thread with both SMT siblings of a separate physical
 core. It retains full byte verification and all qualification checks while
