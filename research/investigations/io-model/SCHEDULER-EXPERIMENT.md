@@ -5265,3 +5265,64 @@ queue/driver settings, count the I/O thread within total budgets 2/4, give
 the client separately established CPU capacity, and compare paced light
 tails, heavy completions, drain and CPU/RSS against qualified native and WF
 forms. Alternative I/O backends and richer CPU tasks remain separate rows.
+
+## Forty-fourth experiment: let the continuation resumer drive target progress
+
+Experiment 39 identifies a concrete implementation loss: the generated
+continuation host uses several process context switches per echo trip and
+is much slower than both stackful WF and native forms for concurrent small
+messages. The first isolated change removes the handoff between its sole
+resumer and background progress thread. It does not change the source,
+compiler lowering, frames, task window, buffer policy, completion record or
+the established `wf__par_*` interface used by other work.
+
+`WF_CONTINUATION_OWNER_PROGRESS=1` selects the new path in the same host
+binary; the default and explicit zero keep the threaded control. The source
+still returns to its owning resumer on suspension. When the new-task queue
+is empty, that owner captures the completion wake epoch, drives target
+progress, and checks the locked ready queue. If empty, it parks against the
+captured epoch. A helper publication between that check and park changes
+the epoch and therefore prevents a lost wake. Progress runs outside the
+coordinator lock because reaping may synchronously call the publication
+bridge. The owner never resumes source from inside a publisher.
+
+The existing pending-list search, ready queue, counters, condition broadcasts
+and target notifications remain. Thus a win would isolate the value of
+avoiding the inter-thread handoff; it would not establish that this still
+unoptimized coordinator is the best executor. Helpers retain their existing
+responsibilities and resource accounting. With no helper, target progress
+can execute an adapter request synchronously, as its existing contract
+already permits; this experiment does not introduce cancellation or general
+nonblocking cleanup semantics.
+
+All generated file, pipe, recursive, TCP accept/connect/refusal, occupied
+port, fanout and multi-batch staged-window qualifications run at both
+settings. The independent C++ completion-loan fixture keeps its threaded
+publisher-ordering cases. Every generated observer reports its actual owner
+mode, checked against the requested setting as well as existing exact bytes,
+route counts and complete task retirement. The uninstrumented timing build
+also runs the four-slot, twelve-task oracle at both settings.
+
+`CONTINUATION_SCREEN=2 NATIVE_BASELINES=1 EXPERIMENT=allocator` extends the
+experiment 39 panel with `wf-coro-owner`. The same generated binary supplies
+both continuation rows. Four WF forms plus seven native forms, five cases,
+seven alternating passes and three repetitions of three live memory cases
+give 385 timing rows and 99 snapshots. All server threads still share CPU 0
+and the client uses the other physical core. Native/helper ASan/UBSan and
+the common 2 MiB backpressure/half-close oracle precede timing for both
+continuation settings. The work branch is `codex/io-continuation-owner`.
+
+The main comparison is owner versus threaded continuation within each
+paired pass, retaining throughput, p99, server CPU/trip, process switches
+and live RSS separately. Existing WF/native rows expose residual costs.
+The known client capacity limit still prevents calling close rates a server
+capacity frontier. Linux correctness and timing are pending; no performance
+improvement is claimed before those results arrive.
+
+Local M1 qualification passes the generated suite at both settings with
+ASan/UBSan and ThreadSanitizer, the independent nested C++ lifetime suite,
+the uninstrumented twelve-task/four-slot oracle, and the common four-peer
+2 MiB stream/backpressure/half-close oracle. The latter retires all four
+tasks in both modes, with 64/64 and 75/75 registrations/dequeues respectively.
+These local runs use the helper route; they do not qualify Linux native
+completion or supply a comparative timing result.

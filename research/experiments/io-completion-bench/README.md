@@ -403,6 +403,14 @@ snapshots. Experiment 39 in
 and limitations of this temporary coordinator; retire this screen when the
 next executor comparison supersedes it.
 
+`CONTINUATION_SCREEN=2` adds `wf-coro-owner` to that same panel: the identical
+generated binary runs with `WF_CONTINUATION_OWNER_PROGRESS=1`, driving target
+progress on its sole resumer instead of a background thread. Both modes keep
+the existing locked publication protocol and pass the complete generated
+continuation suite. The eleven-form panel produces 385 timing rows and 99
+live snapshots. Experiment 44 owns this isolated handoff comparison; no
+source or completion-record ABI change is involved.
+
 On native Windows, `windows-bench.ps1` owns a separate production
 qualification:
 

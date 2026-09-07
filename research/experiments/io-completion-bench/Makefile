@@ -748,6 +748,9 @@ compiler-continuation-check: completion-coroutine-check compiler
 	  $(CORO_CLANG) -Wno-override-module -O2 -g -pthread -fsanitize=$(COMPLETION_CORO_SANITIZERS) \
 	    "$$build/$$program-instrumented.ll" "$$build/host.o" "$$build/floor.o" "$$@" -o "$$build/$$program"; \
 	done; \
+	for owner in 0 1; do \
+	export WF_CONTINUATION_OWNER_PROGRESS=$$owner; \
+	echo "compiled continuation progress owner=$$owner"; \
 	printf A > "$$build/tree/a"; printf B > "$$build/tree/b"; printf AB > "$$build/expected"; \
 	(cd "$$build/tree" && WF_IO_HELPERS=4 ../boundary a b) > "$$build/actual"; \
 	cmp "$$build/expected" "$$build/actual"; \
@@ -773,6 +776,7 @@ compiler-continuation-check: completion-coroutine-check compiler
 	  if [ "$$(uname -s)" = Linux ]; then \
 	    WF_IO_NO_NATIVE_RING=1 "$$build/stream-check" $$transport "$$build/$$program" --require-helper; \
 	  fi; \
+	done; \
 	done
 
 # The first generated-WF timing form keeps the qualified coordinator and one
@@ -798,7 +802,9 @@ compiler-continuation-bench: prepare compiler
 	  "$$build/host.o" "$$@" -o "$$build/wf-coro"; \
 	$(CORO_CLANG) -O2 -S -emit-llvm -Wno-override-module "$$build/echo.ll" -o "$$build/echo-optimized.ll"; \
 	$(CORO_CLANG) $(CFLAGS) -Wpedantic -pthread continuation_stream.c -o "$$build/stream-check"; \
-	"$$build/stream-check" --staged "$$build/wf-coro" $(COMPLETION_CORO_ARGS)
+	for owner in 0 1; do \
+	  WF_CONTINUATION_OWNER_PROGRESS=$$owner "$$build/stream-check" --staged "$$build/wf-coro" $(COMPLETION_CORO_ARGS); \
+	done
 
 # Linux-only native completion reference correctness. The full streaming
 # oracle is shared with the epoll controls; no request-size bound substitutes

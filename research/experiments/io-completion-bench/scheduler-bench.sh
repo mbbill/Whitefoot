@@ -20,8 +20,8 @@ EXPERIMENT=${EXPERIMENT:-idle}
 NATIVE_BASELINES=${NATIVE_BASELINES:-0}
 CONTINUATION_SCREEN=${CONTINUATION_SCREEN:-0}
 [[ $NATIVE_BASELINES == 0 || $NATIVE_BASELINES == 1 || $NATIVE_BASELINES == 2 ]] || exit 2
-[[ $CONTINUATION_SCREEN == 0 || $CONTINUATION_SCREEN == 1 ]] || exit 2
-if [[ $CONTINUATION_SCREEN == 1 && $NATIVE_BASELINES != 1 ]]; then
+[[ $CONTINUATION_SCREEN == 0 || $CONTINUATION_SCREEN == 1 || $CONTINUATION_SCREEN == 2 ]] || exit 2
+if [[ $CONTINUATION_SCREEN != 0 && $NATIVE_BASELINES != 1 ]]; then
     echo 'scheduler-bench: continuation screen requires the native baseline panel' >&2
     exit 2
 fi
@@ -210,7 +210,7 @@ if [[ $NATIVE_BASELINES != 0 ]]; then
     make -C "$HERE" uring-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/uring-check" \
         > "$OUT/uring-check.log" 2>&1 || { cat "$OUT/uring-check.log"; exit 1; }
 fi
-if [[ $CONTINUATION_SCREEN == 1 ]]; then
+if [[ $CONTINUATION_SCREEN != 0 ]]; then
     make -C "$HERE" compiler-continuation-check CLANG="$CLANG" CORO_CXX="$CORO_CXX" CORO_CLANG="$CLANG" \
         WHITEFOOT_SCRATCH_ROOT="$OUT/continuation" BUILD="$OUT/continuation-check" COMPLETION_CORO_ARGS=--require-ring \
         > "$OUT/continuation-check.log" 2>&1 || { cat "$OUT/continuation-check.log"; exit 1; }
@@ -232,8 +232,11 @@ fi
     echo "experiment=$EXPERIMENT mode=$MODE rounds=$ROUNDS warmup=$WARMUP"
     echo "native_baselines=$NATIVE_BASELINES"
     echo "continuation_screen=$CONTINUATION_SCREEN"
-    if [[ $CONTINUATION_SCREEN == 1 ]]; then
+    if [[ $CONTINUATION_SCREEN != 0 ]]; then
         echo 'wf-coro=generated --continuations --par; one resumer; window=1024; qualified test coordinator; counters enabled in timed and observed binary'
+        if [[ $CONTINUATION_SCREEN == 2 ]]; then
+            echo 'wf-coro-owner=same generated binary with WF_CONTINUATION_OWNER_PROGRESS=1; sole resumer drives progress; no background progress thread; all other coordinator logic retained'
+        fi
     fi
     if [[ $NATIVE_BASELINES != 0 ]]; then
         echo 'uring_buffer_policy=8192/65536 bytes; equal provided bytes per worker; counts 256..2048 / 32..256; SQPOLL excluded'
@@ -332,7 +335,7 @@ if [[ $client_experiment == 1 ]]; then
         "$OUT/cohorts.tsv" > "$OUT/cohorts-selected.tsv"
     mv "$OUT/cohorts-selected.tsv" "$OUT/cohorts.tsv"
 fi
-if [[ $CONTINUATION_SCREEN == 1 ]]; then
+if [[ $CONTINUATION_SCREEN != 0 ]]; then
     # The experimental continuation host currently has one owning resumer.
     # All its helper and progress threads inherit this same one-CPU budget.
     awk '$1=="split1-top0-no-thp"' "$OUT/cohorts.tsv" > "$OUT/cohorts-selected.tsv"
@@ -738,7 +741,7 @@ allocator_setting() {
 sample=0
 network_case() {
     local form=$1 connections=$2 trips=$3 bytes=$4 pass=$5 observed=$6
-    local binary environment=() arguments=() launcher=() directory port server_stderr
+    local binary environment=() arguments=() launcher=() directory port server_stderr owner_progress
     local client_binary="$OUT/bin/netload"
     if [[ $cohort == *-client8 ]]; then client_binary="$OUT/bin/netload-service8"; fi
     if [[ $cohort == *-client1 ]]; then client_binary="$OUT/bin/netload-service1"; fi
@@ -748,9 +751,10 @@ network_case() {
     mkdir -p "$directory"
     port=$(free_port)
     case $form in
-        wf-coro)
+        wf-coro|wf-coro-owner)
             binary="$OUT/bin/wf-coro"
-            environment=(WF_WORKERS=1 WF_CONTINUATION_WINDOW=1024)
+            owner_progress=0; if [[ $form == wf-coro-owner ]]; then owner_progress=1; fi
+            environment=(WF_WORKERS=1 WF_CONTINUATION_WINDOW=1024 "WF_CONTINUATION_OWNER_PROGRESS=$owner_progress")
             if [[ $observed == 1 ]]; then
                 environment+=(WF_CONTINUATION_OBSERVE=1 WF_CONTINUATION_REPORT_SOCKET_ROUTES=1 WF_CONTINUATION_REPORT_TASKS=1)
             fi ;;
@@ -895,12 +899,18 @@ if [[ $NATIVE_BASELINES != 0 ]]; then references=(uring uring-64k "${references[
 if [[ $NATIVE_BASELINES == 2 ]]; then references=(uring-inline uring-64k-inline "${references[@]}"); fi
 # This list also carries alternative executors through the common harness.
 # wf-coro is a WF candidate, never a native frontier reference.
-if [[ $CONTINUATION_SCREEN == 1 ]]; then references+=(wf-coro); fi
+if [[ $CONTINUATION_SCREEN != 0 ]]; then references+=(wf-coro); fi
+continuation_forms=(wf-coro)
+if [[ $CONTINUATION_SCREEN == 2 ]]; then
+    references+=(wf-coro-owner)
+    continuation_forms+=(wf-coro-owner)
+fi
 check_continuation_report() {
-    local peers=$1 report=$2
-    awk -v peers="$peers" '/^WF continuation host:/ {
+    local peers=$1 report=$2 owner=$3
+    awk -v peers="$peers" -v owner="$owner" '/^WF continuation host:/ {
         for(i=4;i<=NF;i++) {split($i,a,"=");v[a[1]]=a[2]+0}
     } END {exit !(v["registered"]>0 && v["registered"]==v["dequeued"] &&
+        "owner_progress" in v && v["owner_progress"]==owner &&
         v["uring"]>0 && v["accept_ring"]>0 && v["accept_helper"]==0 &&
         v["receive_ring"]>0 && v["receive_helper"]==0 &&
         v["tasks"]==peers && v["completed"]==peers && v["retired"]==peers &&
@@ -934,31 +944,36 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
             fi
             cat "$log" >> "$OUT/allocation-check.log"
         done
-        if [[ $CONTINUATION_SCREEN == 1 ]]; then
-            log="$OUT/observed/$cohort-wf-coro-stream.log"
+        if [[ $CONTINUATION_SCREEN != 0 ]]; then
+          for form in "${continuation_forms[@]}"; do
+            owner_progress=0; if [[ $form == wf-coro-owner ]]; then owner_progress=1; fi
+            log="$OUT/observed/$cohort-$form-stream.log"
             if ! taskset -c "$client_cpus" env WF_WORKERS=1 WF_CONTINUATION_WINDOW=1024 \
+                "WF_CONTINUATION_OWNER_PROGRESS=$owner_progress" \
                 WF_CONTINUATION_OBSERVE=1 WF_CONTINUATION_REPORT_SOCKET_ROUTES=1 WF_CONTINUATION_REPORT_TASKS=1 \
                 "WF_BENCH_THP_DISABLE=$disabled" "WF_BENCH_SERVER_CPUS=$server_cpus" "${allocator_environment[@]}" \
                 "$OUT/bin/stream_check" "$OUT/bin/wf-coro" echo 1 > "$log" 2>&1; then
                 cat "$log" >&2
                 exit 1
             fi
-            check_continuation_report 4 "$log"
+            check_continuation_report 4 "$log" "$owner_progress"
             cat "$log" >> "$OUT/allocation-check.log"
+          done
         fi
     fi
     for admitted in "${admissions[@]}"; do
         for form in "${references[@]}" "${forms[@]}"; do
             preflight_observed=0
             if [[ $form == cpp-* ]]; then preflight_observed=1; fi
-            if [[ $form == wf-coro ]]; then preflight_observed=1; fi
+            if [[ $form == wf-coro || $form == wf-coro-owner ]]; then preflight_observed=1; fi
             if [[ $NATIVE_BASELINES != 0 && $form == uring* ]]; then preflight_observed=1; fi
             if [[ $EXPERIMENT == nodelay || ( $storage_experiment == 1 && ( $form == epoll* || $form == fiber* ) ) ]]; then preflight_observed=1; fi
             network_case "$form" 4 20 64 -1 "$preflight_observed"
-            if [[ $form == wf-coro ]]; then
-                check_continuation_report 4 "$OUT/observed/$cohort-$form-k4-a0/server.err"
+            if [[ $form == wf-coro || $form == wf-coro-owner ]]; then
+                owner_progress=0; if [[ $form == wf-coro-owner ]]; then owner_progress=1; fi
+                check_continuation_report 4 "$OUT/observed/$cohort-$form-k4-a0/server.err" "$owner_progress"
                 network_case "$form" 64 2000 64 -1 1
-                check_continuation_report 64 "$OUT/observed/$cohort-$form-k64-a0/server.err"
+                check_continuation_report 64 "$OUT/observed/$cohort-$form-k64-a0/server.err" "$owner_progress"
             fi
             if [[ $NATIVE_BASELINES != 0 && $form == uring* ]]; then
                 expected_bytes=8192; if [[ $form == *64k* ]]; then expected_bytes=65536; fi
@@ -1106,9 +1121,10 @@ if [[ $page_experiment == 1 ]]; then
           if [[ $form == uring-* ]]; then binary="$OUT/bin/uring_echo${form#uring}"; fi
           if [[ $form == cpp-* ]]; then binary="$OUT/bin/$form"; fi
           continuation_environment=()
-          if [[ $form == wf-coro ]]; then
+          if [[ $form == wf-coro || $form == wf-coro-owner ]]; then
               binary="$OUT/bin/wf-coro"
-              continuation_environment=(WF_CONTINUATION_WINDOW=1024)
+              owner_progress=0; if [[ $form == wf-coro-owner ]]; then owner_progress=1; fi
+              continuation_environment=(WF_CONTINUATION_WINDOW=1024 "WF_CONTINUATION_OWNER_PROGRESS=$owner_progress")
           fi
           for resident_case in '64 64' '1024 64' '64 65536'; do
             read -r connections bytes <<< "$resident_case"

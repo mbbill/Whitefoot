@@ -62,6 +62,7 @@ static probe_waiter *probe_ready_head;
 static probe_waiter *probe_ready_tail;
 static pthread_t probe_progress_thread;
 static _Atomic unsigned probe_stopping;
+static unsigned probe_owner_progress;
 static uint64_t probe_registered;
 static uint64_t probe_dequeued;
 static uint64_t probe_before_arm;
@@ -179,8 +180,24 @@ int probe_arm(probe_waiter *waiter, void *record, void *continuation,
 void *probe_take_ready(void) {
     probe_waiter *waiter;
     void *continuation;
-    pthread_mutex_lock(&probe_lock);
-    while (!probe_ready_head) pthread_cond_wait(&probe_changed, &probe_lock);
+    if (probe_owner_progress) {
+        for (;;) {
+            uint64_t epoch;
+            /* Capture the wake epoch before progress and the ready check.
+             * A helper publishing after that check changes the epoch, so
+             * park cannot miss its wake. Never progress with probe_lock held:
+             * reaping may synchronously enter wf_probe_publish. */
+            assert(wf__sched_host_epoch(&epoch));
+            (void)wf__sched_target_progress(NULL);
+            pthread_mutex_lock(&probe_lock);
+            if (probe_ready_head) break;
+            pthread_mutex_unlock(&probe_lock);
+            assert(wf__sched_host_park(epoch));
+        }
+    } else {
+        pthread_mutex_lock(&probe_lock);
+        while (!probe_ready_head) pthread_cond_wait(&probe_changed, &probe_lock);
+    }
     waiter = probe_ready_head;
     assert(waiter->phase == 2);
     probe_ready_head = waiter->ready_next;
@@ -249,6 +266,7 @@ void probe_idle(void) {
 
 void probe_stop(void) {
     probe_idle();
+    if (probe_owner_progress) return;
     atomic_store_explicit(&probe_stopping, 1, memory_order_release);
     assert(wf__sched_host_wake());
     assert(pthread_join(probe_progress_thread, NULL) == 0);
@@ -434,6 +452,9 @@ void wf__continuation_run(void *frame) {
     unsigned socket_waits = 0;
     assert(!active);
     active = 1;
+    const char *owner_progress = getenv("WF_CONTINUATION_OWNER_PROGRESS");
+    assert(!owner_progress || strcmp(owner_progress, "0") == 0 || strcmp(owner_progress, "1") == 0);
+    probe_owner_progress = owner_progress && strcmp(owner_progress, "1") == 0;
     assert(!probe_new_head && !probe_new_tail && !probe_active_task);
     probe_task root = {0};
     root.frame = frame;
@@ -448,7 +469,9 @@ void wf__continuation_run(void *frame) {
             fputs("WF continuation host: suspended\n", stderr);
         }
         socket_waits = probe_observe_socket_waits(socket_waits);
-        assert(pthread_create(&probe_progress_thread, NULL, probe_progress, NULL) == 0);
+        if (!probe_owner_progress) {
+            assert(pthread_create(&probe_progress_thread, NULL, probe_progress, NULL) == 0);
+        }
         do {
             wf__continuation_resume(probe_next_continuation());
             probe_complete_task();
@@ -462,11 +485,11 @@ void wf__continuation_run(void *frame) {
     assert(probe_tasks_retired + 1 == probe_tasks_created);
     probe_active_task = NULL;
     if (getenv("WF_CONTINUATION_OBSERVE")) {
-        fprintf(stderr, "WF continuation host: registered=%llu dequeued=%llu helper=%llu uring=%llu inline=%llu\n",
+        fprintf(stderr, "WF continuation host: registered=%llu dequeued=%llu helper=%llu uring=%llu inline=%llu owner_progress=%u\n",
                 (unsigned long long)probe_registered, (unsigned long long)probe_dequeued,
                 (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_FILE_ADAPTER],
                 (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_LINUX_IO_URING],
-                (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_INLINE]);
+                (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_INLINE], probe_owner_progress);
     }
     if (getenv("WF_CONTINUATION_REPORT_SOCKET_ROUTES")) {
         fprintf(stderr, "WF continuation host: accept_ring=%llu accept_helper=%llu connect_ring=%llu connect_helper=%llu receive_ring=%llu receive_helper=%llu\n",
