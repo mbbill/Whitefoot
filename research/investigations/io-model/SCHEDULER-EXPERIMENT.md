@@ -6630,6 +6630,130 @@ distinct runner/child PID records. It also verified the runner's expected
 progress stderr, which the trace qualification permits exactly. This checks
 wrapper/pipe wiring, not Linux event collection.
 
+### Fiftieth measurement: ordinary controls and a contaminated trace
+
+The [Linux job](https://github.com/mbbill/Whitefoot/actions/runs/34093661039/job/101652368768)
+passed at 8dd5b44a4e090601c276431ff4f83da55e443c43. The candidate completion
+suite, Rust tests/fmt/clippy, forty-eight ordinary checksum validations
+including warmup, two manual stdout checks and four observer checks passed.
+The [forty raw ordinary samples](../../experiments/io-completion-bench/rayon-baseline/startup-linux-2026-09-07.tsv)
+were independently re-read for every command/environment/batch mapping,
+reverse/forward pass order and finite nonnegative CPU/wall values. Ordinary
+stdout remains runner-validated after trailing CR/LF normalization; the six
+separate retained stdout files were independently compared including newline.
+
+| Batches | Form | Median wall, ms | Median aggregate CPU, ms | Median CPU / wall |
+|---:|---|---:|---:|---:|
+| 1 | Rayon4, grain4 | 274.497 | 1090.805 | 3.975 |
+| 1 | Compiler WF4/12 | 310.030 | 1118.880 | 3.607 |
+| 1 | Manual default WF4/12 | 309.883 | 1118.993 | 3.611 |
+| 1 | Manual used-lanes WF4/12 | 313.448 | 1119.552 | 3.573 |
+| 16 | Rayon4, grain4 | 4372.349 | 17430.688 | 3.987 |
+| 16 | Compiler WF4/12 | 4454.889 | 17607.348 | 3.952 |
+| 16 | Manual default WF4/12 | 4463.918 | 17608.316 | 3.947 |
+| 16 | Manual used-lanes WF4/12 | 4454.994 | 17604.266 | 3.952 |
+
+| Batches | Within-pass comparison | Wall ratio median [min, max] | CPU ratio median |
+|---:|---|---|---:|
+| 1 | Compiler WF / Rayon | 1.129864 [1.115232, 1.136003] | 1.025279 |
+| 1 | Manual used-lanes / manual default | 1.011730 [0.985687, 1.030206] | 1.000500 |
+| 1 | Compiler WF / manual default | 1.005970 [0.967859, 1.007037] | 0.999775 |
+| 16 | Compiler WF / Rayon | 1.018947 [1.011446, 1.022726] | 1.010254 |
+| 16 | Manual used-lanes / manual default | 0.998001 [0.996936, 1.001039] | 0.999744 |
+| 16 | Compiler WF / manual default | 0.998126 [0.996570, 1.004517] | 0.999592 |
+
+Compiler and manual-default Linux binaries are byte-identical. Their paired
+differences therefore also expose sampling variation, not a link-policy
+effect. Used-lanes-minus-manual-default median differences were +3.634 ms
+wall / +0.559 ms CPU at one batch, and -8.924 ms wall / -4.507 ms CPU at sixteen.
+The sign changes across passes at both lengths. This result gives no stable
+material short-run benefit and does not select a new default. The established
+footprint saving is a different measurement. All four observer executions
+reported the requested storage flags, four scheduler threads, three started
+workers, positive grants and zero no-target compute-join turns. Their rings
+reported zero submissions, submission enters and completions.
+
+The trace preflight succeeded on the actual Linux 6.17.0-1022-azure kernel
+with perf 7.0.14: all requested tracepoints and twenty-one function-entry
+probes were available. Eight captures passed the harness's basic marker/PID
+checks, but the independent audit found a recorder defect. System-wide write
+events include perf's own writes to its output, producing a large stream of
+self-recorded writes. In the first ordinary capture they account for 335,616
+of 338,471 decoded lines, about 99.2%. Ordinary WF body-to-submit intervals
+are 430.523/426.745 ms in these traces, while the separate ordinary unprobed
+whole-process median is 310.030 ms. The trace is therefore **not qualified
+for performance attribution**, despite no reported LOST/throttling marker.
+The preceding ordinary panel ran before probe registration and remains valid.
+
+| Capture | Decoded lines | Recorder write entry + exit events | Adjacent exact duplicate switch lines |
+|---|---:|---:|---:|
+| Pass 0, ordinary | 338471 | 335616 | 1 |
+| Pass 0, used-lanes | 316619 | 314094 | 0 |
+| Pass 0, sequential WF | 949600 | 948170 | 0 |
+| Pass 0, Rayon | 350258 | 317108 | 1 |
+| Pass 1, Rayon | 342404 | 309684 | 1 |
+| Pass 1, sequential WF | 948293 | 947088 | 0 |
+| Pass 1, used-lanes | 315577 | 312666 | 1 |
+| Pass 1, ordinary | 320194 | 317530 | 0 |
+
+The four duplicate records have identical nanosecond timestamps, CPU and
+complete switch payload, with no intervening transition. Raw files remain
+unchanged. For diagnostic reconstruction only, removing that second identical
+copy permits consistent running-state transitions throughout all eight target
+thread sets. No further unmatched transition was found. The duplicate source
+has not been isolated. Some final worker records have a decoded header PID
+of -1 while their switch payload identifies the actual departing thread;
+reconstruction uses those payload IDs rather than dropping the records.
+
+Fork/exec membership confirms four target threads for each parallel WF,
+one for sequential WF and a waiting caller plus four Rayon workers. Each
+required single-occurrence WF marker has exactly one target hit, with one
+run-entry per configured executing thread. Output/join/status-post may occur
+on different worker IDs, as the runtime permits. All eight runner wait4 return
+values exactly identify their respective children. Final X/Z transitions for
+every target thread are present before the successful reaps in these captures.
+The twenty-one invocation-specific probes were removed successfully.
+
+| Diagnostic capture | Init to main run, ms | Submit to status post, ms | Status post to exit-group, ms | Exit-group to successful reap, ms |
+|---|---:|---:|---:|---:|
+| Pass 0, ordinary | 1.700 | 0.240 | 0.030 | 0.541 |
+| Pass 0, used-lanes | 0.702 | 0.201 | 0.029 | 0.572 |
+| Pass 0, sequential WF | 1.769 | 0.177 | 0.070 | 0.464 |
+| Pass 0, Rayon | — | — | — | 0.188 |
+| Pass 1, Rayon | — | — | — | 0.207 |
+| Pass 1, sequential WF | 1.697 | 0.197 | 0.078 | 0.435 |
+| Pass 1, used-lanes | 0.326 | 0.214 | 0.027 | 0.590 |
+| Pass 1, ordinary | 1.664 | 0.222 | 0.031 | 0.728 |
+
+For example, pass 0 ordinary has main Z at 823.136163934, workers X at
+823.136164730/.136172136/.136646825, and runner wait4 returning child 4284 at
+823.136669684. There is no old 1100-stack trace's 14.691 ms main tail in this
+contaminated twelve-stack execution. This is a record-level observation, not
+a claim that ordinary short-run cost has now been attributed or excluded.
+All phase values above retain the observer's severe workload perturbation.
+
+The correction is a bounded trace-only recapture using the exact archived
+8dd ordinary binaries, checking their hashes before execution. Perf's native
+[per-event `--exclude-perf` filter](https://man7.org/linux/man-pages/man1/perf-record.1.html)
+can suppress recorder-issued write entry/exit events. Global scheduler events
+must remain intact so switches from the recorder to a target are not lost.
+The new audit must verify that recorder writes disappeared, independently
+check state consistency and match successful reaps; absence of LOST reports
+is insufficient. It will not rerun or replace these forty ordinary samples.
+
+The host reported AMD EPYC 9V74, four allowed vCPUs 0-3, two guest cores with
+two SMT threads each, one NUMA node, Rust 1.98.0/LLVM 22.1.8 and Clang 18.1.3
+for both the runner and native WF link. No affinity or host dedication was
+controlled. The [complete artifact 10008007005](https://github.com/mbbill/Whitefoot/actions/runs/34093661039/artifacts/10008007005)
+has ZIP SHA-256 `a390db0c1c26664db02157e40c7e4da64c9f6a7d76257008a2e208681069168c`.
+Thirty unique available source/binary/artifact hashes and the lock file were
+independently verified against 8dd; the compiler executable remains recorded
+by hash but not uploaded. The ordinary WF, Rust and IR hashes match experiments
+45/47. The used-lanes binary is
+`0be6cbbb5579df3aaca4c81d497101668060dc87b0cca68aadea72ef5569e5ae`;
+the original resource.tsv is
+`74471f805e030668ef72c4fff098839356cd46f4f770c3cc2cfa74939c93f9fd`.
+
 ## Fifty-second experiment: qualify generated continuations on the mixed protocol
 
 The current continuation comparison must eventually include computation
