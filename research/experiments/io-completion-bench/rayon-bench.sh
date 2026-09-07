@@ -35,7 +35,7 @@ bounded_integer CALIBRATION_ROUNDS "$CALIBRATION_ROUNDS" 1 128
 bounded_integer BATCHES "$BATCHES" 1 16
 bounded_integer RAYON_PROFILE "$RAYON_PROFILE" 0 1
 
-bounded_integer RESOURCE_CONTROLS "$RESOURCE_CONTROLS" 0 6
+bounded_integer RESOURCE_CONTROLS "$RESOURCE_CONTROLS" 0 7
 if [[ $RESOURCE_CONTROLS != 0 && $RAYON_PROFILE == 1 ]]; then
     echo 'rayon-bench: resource controls and perf captures are separate experiments' >&2
     exit 2
@@ -45,7 +45,7 @@ if [[ $CPU_PHASE_TRACE == 1 && $RESOURCE_CONTROLS != 3 ]]; then
     echo 'rayon-bench: coarse phase traces require the startup control panel' >&2
     exit 2
 fi
-if [[ $RESOURCE_CONTROLS == 2 || $RESOURCE_CONTROLS == 3 || $RESOURCE_CONTROLS == 4 || $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ]]; then
+if [[ $RESOURCE_CONTROLS == 2 || $RESOURCE_CONTROLS == 3 || $RESOURCE_CONTROLS == 4 || $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 || $RESOURCE_CONTROLS == 7 ]]; then
     # The default row must really inherit no override; the disabled row sets
     # the existing control only in its own child process.
     unset WF_IO_NO_NATIVE_RING
@@ -93,9 +93,13 @@ for grain in "${grains[@]}"; do bounded_integer GRAIN "$grain" 1 64; done
         printf 'threads=4 grain=4 batches=1,16 stacks=12 layout_fork_depth=full,4 tree_build=parallel idle_spin_rounds=256 idle_yield_rounds=16 confirmation=%s warmup=%s calibration=none\n' \
             "$ROUNDS" "$WARMUP"
     fi
+    if [[ $RESOURCE_CONTROLS == 7 ]]; then
+        printf 'threads=4 grain=4 batches=1,16 stacks=12,12,5 layout_fork_depth=full tree_build=parallel idle_spin_rounds=256 idle_yield_rounds=16 confirmation=%s warmup=%s calibration=none\n' \
+            "$ROUNDS" "$WARMUP"
+    fi
     printf 'timing=whole-process; Rayon pool created once, install once; no concurrent I/O\n'
     printf 'resource_controls=%s\n' "$RESOURCE_CONTROLS"
-    if [[ $RESOURCE_CONTROLS == 4 || $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ]]; then
+    if [[ $RESOURCE_CONTROLS == 4 || $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 || $RESOURCE_CONTROLS == 7 ]]; then
         echo 'runner_rusage=1; raw rows include wait4 context switches and peak RSS in KiB'
     fi
     if [[ $(uname -s) == Linux ]]; then
@@ -109,10 +113,10 @@ cargo build --release --locked --offline --manifest-path "$HERE/rayon-baseline/C
 cp "$CARGO_TARGET_DIR/release/whitefoot-rayon-baseline" "$OUT/rust-layout"
 cp "$HERE/rayon-baseline/Cargo.lock" "$OUT/Cargo.lock"
 runner_command=("$CLANG" -std=c11 -O2 -Wall -Wextra -Werror)
-if [[ $RESOURCE_CONTROLS == 4 || $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ]]; then runner_command+=(-DWF_BENCH_RUSAGE=1); fi
+if [[ $RESOURCE_CONTROLS == 4 || $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 || $RESOURCE_CONTROLS == 7 ]]; then runner_command+=(-DWF_BENCH_RUSAGE=1); fi
 runner_command+=("$HERE/runner.c" -o "$OUT/runner")
 "${runner_command[@]}"
-if [[ $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ]]; then
+if [[ $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 || $RESOURCE_CONTROLS == 7 ]]; then
     printf '%q ' "${runner_command[@]}" > "$OUT/runner.command"
     printf '\n' >> "$OUT/runner.command"
 fi
@@ -128,7 +132,7 @@ shasum -a 256 "$WFC" "$OUT/wf-seq" "$OUT/wf-par" "$OUT/rust-layout" "$OUT/runner
     "$HERE/rayon-baseline/Cargo.lock" >> "$OUT/host.txt"
 
 if [[ $RESOURCE_CONTROLS != 0 ]]; then
-    # Experiments 45/47/50/59/61/63 freeze the earlier four-worker calibration. No
+    # Experiments 45/47/50/59/61/63/64 freeze the earlier four-worker calibration. No
     # panel tunes against its confirmation samples or changes runtime sources.
     if [[ $RESOURCE_CONTROLS == 1 ]]; then
         resource_batches=(1 4 16)
@@ -138,6 +142,47 @@ if [[ $RESOURCE_CONTROLS != 0 ]]; then
         resource_batches=(1 16)
         resource_forms=(default disabled)
         printf 'resource_panel=workers4; Rayon grain4; batches1,16; WF_STACKS12; WF_IO_NO_NATIVE_RING unset/1\n' >> "$OUT/host.txt"
+    elif [[ $RESOURCE_CONTROLS == 7 ]]; then
+        resource_batches=(1 16)
+        resource_forms=(s12 s12duplicate s5)
+        control_name=stack
+        backend="$ROOT/compiler/src/backend"
+        printf 'resource_panel=workers4; Rayon grain4; batches1,16; same ordinary executable at WF_STACKS12/12-duplicate/5; full-depth layout and parallel build\n' >> "$OUT/host.txt"
+        if ! make -C "$ROOT/compiler" completion-test CC=/usr/bin/clang \
+            COMPLETION_TMP="$OUT/stack-check" \
+            COMPLETION_BASE_CFLAGS='-std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread' \
+            > "$OUT/stack-check.log" 2>&1; then
+            cat "$OUT/stack-check.log"
+            exit 1
+        fi
+        "$WFC" --par --emit-llvm "$ROOT/tests/programs/par_layout.wf" -o "$OUT/wf-par.ll"
+        manual_sources=()
+        for unit in wf_floor.c sched/core.c sched/prim_host.c sched/entry.c \
+            completion/runtime.c completion/wait_host.c completion/file_adapter.c \
+            completion/file_posix.c completion/bridge.c completion/linux_io_uring.c; do
+            manual_sources+=("$backend/$unit")
+        done
+        # Scratch-only companion: these core fields are initialized once and
+        # retain static storage through exit. Only the observed link carries it.
+        cat > "$OUT/stack-observer.c" <<'STACK_OBSERVER'
+#include "sched/core.h"
+#include <stdio.h>
+#include <stdlib.h>
+extern wf_sched_core wf__sched_core;
+static void report_stack_capacity(void) {
+    const wf_sched_core *core = &wf__sched_core;
+    const char *requested = getenv("WF_STACKS");
+    (void)fprintf(stderr,
+        "stack_capacity: requested=%s threads=%u effective=%u stack_bytes=%zu stride_bytes=%zu reservation_bytes=%zu\n",
+        requested == NULL ? "unset" : requested, core->thread_count,
+        core->stack_count, core->stack_bytes, core->stack_stride,
+        (size_t)core->stack_count * core->stack_stride);
+}
+__attribute__((constructor)) static void register_stack_capacity(void) {
+    if (atexit(report_stack_capacity) != 0) exit(1);
+}
+STACK_OBSERVER
+        echo 'ordinary_stack_controls=one compiler-produced wf-par path; S12 primary/duplicate and S5 have identical executable bytes' > "$OUT/link-comparison.txt"
     else
         resource_batches=(1 16)
         if [[ $RESOURCE_CONTROLS == 3 ]]; then
@@ -422,6 +467,10 @@ GRAIN_TRANSFORM
             resource_label="wf.w4.s12.r$1"
             resource_environment='WF_WORKERS=4,WF_STACKS=12'
             if [[ $1 == disabled ]]; then resource_environment+=',WF_IO_NO_NATIVE_RING=1'; fi
+        elif [[ $RESOURCE_CONTROLS == 7 ]]; then
+            resource_label="wf.w4.$1"
+            resource_environment='WF_WORKERS=4,WF_STACKS=12'
+            if [[ $1 == s5 ]]; then resource_environment='WF_WORKERS=4,WF_STACKS=5'; fi
         else
             resource_label="wf.w4.s12.$1"
             resource_environment='WF_WORKERS=4,WF_STACKS=12'
@@ -442,7 +491,7 @@ GRAIN_TRANSFORM
             printf '\n' >> "$OUT/resource.plan"
         done
     done
-    if [[ $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ]]; then
+    if [[ $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 || $RESOURCE_CONTROLS == 7 ]]; then
         # Snapshot launched inputs before timing, then verify them again after
         # the separate observations. The retained compiler is rehashable too.
         cp "$WFC" "$OUT/whitefootc"
@@ -458,8 +507,39 @@ GRAIN_TRANSFORM
         while IFS= read -r source; do
             shasum -a 256 "$ROOT/$source" >> "$OUT/$control_name-source.sha256"
         done < <(git -C "$ROOT" ls-files 'compiler/src/backend/*.h' 'compiler/src/backend/**/*.h')
-        (cd "$OUT" && shasum -a 256 whitefootc runner rust-layout wf-seq wf-par wf-manual-0 wf-manual-1 \
-            wf-par.ll "${candidate_ir##*/}" > "$control_name-ordinary.sha256")
+        if [[ $RESOURCE_CONTROLS == 7 ]]; then
+            shasum -a 256 "$OUT/stack-observer.c" >> "$OUT/$control_name-source.sha256"
+            ordinary_artifacts=(whitefootc runner rust-layout wf-seq wf-par wf-par.ll stack-observer.c)
+        else
+            ordinary_artifacts=(whitefootc runner rust-layout wf-seq wf-par wf-manual-0 wf-manual-1 wf-par.ll "${candidate_ir##*/}")
+        fi
+        (cd "$OUT" && shasum -a 256 "${ordinary_artifacts[@]}" > "$control_name-ordinary.sha256")
+    fi
+    if [[ $RESOURCE_CONTROLS == 7 ]]; then
+        # Require the exact row/command mapping before launching any timings.
+        awk -F '\t' -v binary="$OUT/wf-par" -v rayon="$OUT/rust-layout" '
+            {batch=(NR<=4 ? 1 : 16); row=(NR-1)%4;
+             label=(row==0 ? "rayon.w4.g4" : row==1 ? "wf.w4.s12" : row==2 ? "wf.w4.s12duplicate" : "wf.w4.s5");
+             if ($1!=label ".b" batch) bad=1;
+             if (row==0) {if ($2!="" || $3!=rayon || NF!=7 || $4!="rayon" || $5!=4 || $6!=4 || $7!=batch) bad=1}
+             else {if ($2!="WF_WORKERS=4,WF_STACKS=" (row==3 ? 5 : 12) ",WF_SCHED_REPORT=0" || $3!=binary || NF!=batch+2) bad=1;
+                   for(i=4;i<=NF;i++) if($i!="batch") bad=1}}
+            END {exit !(NR==8 && !bad)}' "$OUT/resource.plan"
+        for stacks in 12 5; do
+            for batches in "${resource_batches[@]}"; do
+                qualified_args=("$OUT/wf-par")
+                for ((batch=1; batch<batches; batch++)); do qualified_args+=(batch); done
+                record="$OUT/qualified-s$stacks-b$batches"
+                printf '%q ' env WF_WORKERS=4 "WF_STACKS=$stacks" WF_SCHED_REPORT=0 "${qualified_args[@]}" > "$record.command"
+                printf '\n' >> "$record.command"
+                env WF_WORKERS=4 "WF_STACKS=$stacks" WF_SCHED_REPORT=0 "${qualified_args[@]}" > "$record.out" 2> "$record.err"
+                printf '%s\n' "$EXPECTED" | cmp - "$record.out"
+                test ! -s "$record.err"
+            done
+        done
+        printf '%q ' env "WF_BENCH_RAW=$OUT/resource.tsv" "$OUT/runner" "$OUT/resource.plan" \
+            "$ROUNDS" "$WARMUP" "$EXPECTED" > "$OUT/resource.command"
+        printf '\n' >> "$OUT/resource.command"
     fi
     WF_BENCH_RAW="$OUT/resource.tsv" "$OUT/runner" "$OUT/resource.plan" \
         "$ROUNDS" "$WARMUP" "$EXPECTED" > "$OUT/resource.txt" 2> "$OUT/resource.err"
@@ -470,7 +550,7 @@ GRAIN_TRANSFORM
     # and provide grant_observer.c's bridge-report dependency. Final stdout
     # output initializes the bridge even though the layout work is CPU-only.
     backend="$ROOT/compiler/src/backend"
-    if [[ $RESOURCE_CONTROLS != 3 && $RESOURCE_CONTROLS != 4 && $RESOURCE_CONTROLS != 5 && $RESOURCE_CONTROLS != 6 ]]; then
+    if [[ $RESOURCE_CONTROLS != 3 && $RESOURCE_CONTROLS != 4 && $RESOURCE_CONTROLS != 5 && $RESOURCE_CONTROLS != 6 && $RESOURCE_CONTROLS != 7 ]]; then
         "$WFC" --par --emit-llvm "$ROOT/tests/programs/par_layout.wf" -o "$OUT/wf-par.ll"
     fi
     observer_sources=()
@@ -478,6 +558,7 @@ GRAIN_TRANSFORM
         completion/runtime.c completion/wait_host.c completion/file_adapter.c \
         completion/file_posix.c completion/bridge.c completion/linux_io_uring.c \
         sched/grant_observer.c; do observer_sources+=("$backend/$unit"); done
+    if [[ $RESOURCE_CONTROLS == 7 ]]; then observer_sources+=("$OUT/stack-observer.c"); fi
     observer_command=(/usr/bin/clang -std=c11 -O2 -pthread -I "$backend" \
         -I "$backend/completion" -DWF_SCHED_OBSERVE=1 -x c "${observer_sources[@]}" \
         -x ir "$OUT/wf-par.ll" -Wno-override-module -lm -o "$OUT/wf-par-observed")
@@ -502,11 +583,17 @@ GRAIN_TRANSFORM
         (cd "$OUT" && shasum -a 256 whitefootc runner rust-layout wf-seq wf-par wf-manual-0 wf-manual-1 \
             wf-par.ll "${candidate_ir##*/}" wf-par-observed "wf-$candidate_name-observed" > "$control_name-artifact.sha256")
     fi
+    if [[ $RESOURCE_CONTROLS == 7 ]]; then
+        (cd "$OUT" && shasum -a 256 "${ordinary_artifacts[@]}" wf-par-observed > "$control_name-artifact.sha256")
+        echo 'stack_readback=observed-only immutable core fields at exit; ordinary effective count follows the retained init clamp and exact same binary' >> "$OUT/host.txt"
+        echo 'stack_reservation=count*stride virtual bytes, not RSS; exhausted_compute is no-target join turns; line4 owner pop and direct yield lack dedicated counters' >> "$OUT/host.txt"
+    fi
     printf 'observation=untimed WF_SCHED_OBSERVE=1; exhausted_compute counts no-target join turns, not peak stacks\n' >> "$OUT/host.txt"
     for batches in "${resource_batches[@]}"; do
         observed_args=("$OUT/wf-par-observed")
         for ((batch=1; batch<batches; batch++)); do observed_args+=(batch); done
         for form in "${resource_forms[@]}"; do
+            if [[ $RESOURCE_CONTROLS == 7 && $form == s12duplicate ]]; then continue; fi
             if [[ ( $RESOURCE_CONTROLS == 3 || $RESOURCE_CONTROLS == 4 || $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ) && $form == manual ]]; then continue; fi
             resource_settings "$form"
             observed_args[0]="$OUT/wf-par-observed"
@@ -515,7 +602,7 @@ GRAIN_TRANSFORM
             if [[ ( $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ) && $form == "$candidate_name" ]]; then observed_args[0]="$OUT/wf-$candidate_name-observed"; fi
             record="$OUT/observed-${resource_label#wf.w4.}-b$batches"
             IFS=, read -r -a observed_environment <<< "$resource_environment,WF_SCHED_REPORT=1"
-            if [[ $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ]]; then
+            if [[ $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 || $RESOURCE_CONTROLS == 7 ]]; then
                 printf '%q ' env "${observed_environment[@]}" "${observed_args[@]}" > "$record.command"
                 printf '\n' >> "$record.command"
             fi
@@ -530,13 +617,23 @@ GRAIN_TRANSFORM
                     END {exit !(("compact_stacks" in v) && v["compact_stacks"]==0 &&
                         ("init_used_lanes" in v) && v["init_used_lanes"]==(form=="lanes"))}' "$record.err"
             fi
-            if [[ $RESOURCE_CONTROLS == 4 || $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ]]; then
+            if [[ $RESOURCE_CONTROLS == 4 || $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 || $RESOURCE_CONTROLS == 7 ]]; then
                 awk -v form="$form" '/^sched:/ {for(i=2;i<=NF;i++) {split($i,p,"=");v[p[1]]=p[2]+0}}
                     END {exit !(("spin_rounds" in v) && v["spin_rounds"]==256 &&
                         ("yield_rounds" in v) && v["yield_rounds"]==(form=="idle0" ? 0 : 16) &&
                         ("compact_stacks" in v) && v["compact_stacks"]==0 &&
                         ("init_used_lanes" in v) && v["init_used_lanes"]==0 &&
                         ("idle_steps" in v) && ("idle_looks" in v) && ("idle_waits" in v))}' "$record.err"
+            fi
+            if [[ $RESOURCE_CONTROLS == 7 ]]; then
+                # Read back capacity; no steal+owner-join conservation demand:
+                # line4 and scheduler-loop owner pops do not increment inline_runs.
+                awk -v stacks="${form#s}" '
+                    /^stack_capacity:/ {seen++; for(i=2;i<=NF;i++) {split($i,p,"=");v[p[1]]=p[2]+0}}
+                    END {exit !(seen==1 && v["requested"]==stacks && v["effective"]==stacks &&
+                        v["threads"]==4 && v["stack_bytes"]==1073741824 &&
+                        v["stride_bytes"]>v["stack_bytes"] &&
+                        v["reservation_bytes"]==stacks*v["stride_bytes"])}' "$record.err"
             fi
             if [[ $RESOURCE_CONTROLS == 6 ]]; then
                 # Grants are steals, not all successful acquisitions. Owner
@@ -563,7 +660,7 @@ GRAIN_TRANSFORM
             fi
         done
     done
-    if [[ $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 ]]; then
+    if [[ $RESOURCE_CONTROLS == 5 || $RESOURCE_CONTROLS == 6 || $RESOURCE_CONTROLS == 7 ]]; then
         (cd "$OUT" && shasum -a 256 -c "$control_name-ordinary.sha256") > "$OUT/$control_name-ordinary-check.txt"
         (cd "$OUT" && shasum -a 256 -c "$control_name-artifact.sha256") > "$OUT/$control_name-artifact-check.txt"
         shasum -a 256 -c "$OUT/$control_name-source.sha256" > "$OUT/$control_name-source-check.txt"

@@ -4294,7 +4294,7 @@ revision, compiler and dependency lockfile.
 | TCP closed-loop echo | 1/4/64/1024 peers × 64 B, 64 peers × 64 KiB; one outstanding request per peer; exact bytes and EOF | Current ten-cell split1/split2 screen. Add 4 KiB and pipeline depths 8/32 only after candidate screening |
 | TCP streaming / backpressure | Continuous 2 MiB or larger, arbitrary fragmentation, short sends, slow readers, half-close; preserve order and bounded live storage | Existing epoll stream oracle; uring joins it below. Idle 10k peers, churn and reset/cancellation remain separate qualification |
 | TCP fixed-arrival / mixed compute | Same recurrence and compute quantum; light paced requests alongside heavy work; below/near/above saturation | Existing paced mixed experiments cover selected controls. External candidates need scheduled-to-response p99/p99.9, goodput, missed deadlines, backlog and drain recovery |
-| CPU-only parallelism and CPU offload | Sequential Rust vs Rayon; balanced/unbalanced recursive and data-parallel jobs; matched arithmetic, tuned grain and pool width. Mixed mode charges enqueue, completion transfer and bounded queues | Recursive `join`, stack/batch, unused-ring and initializer controls are measured; caller traces identify the idle-yield path, but the ordinary zero-yield control finds no improvement. Experiment 61 also finds no useful gain from the tree-build/lazy-start control. Experiment 63 qualifies a 63-to-15 publication control without useful gain; short CPU rises and long work is nearly neutral, with traversal and code specialization changing too. Owner inline executions are not failed acquisitions. Ready-work availability and same-budget worker placement remain open. Tokio + Rayon mixed qualification exists, with timing pending client-capacity control. Both executors share one total budget |
+| CPU-only parallelism and CPU offload | Sequential Rust vs Rayon; balanced/unbalanced recursive and data-parallel jobs; matched arithmetic, tuned grain and pool width. Mixed mode charges enqueue, completion transfer and bounded queues | Recursive `join`, stack/batch, unused-ring and initializer controls are measured; caller traces identify the idle-yield path, but the ordinary zero-yield control finds no improvement. Experiment 61 also finds no useful gain from the tree-build/lazy-start control. Experiment 63 qualifies a 63-to-15 publication control without useful gain; short CPU rises and long work is nearly neutral, with traversal and code specialization changing too. Owner inline executions are not failed acquisitions. Experiment 64 selects a same-binary five/twelve-stack capacity/setup/join-route control with a duplicate twelve-stack baseline; its Linux result is pending. Ready-work availability and same-budget worker placement remain open. Tokio + Rayon mixed qualification exists, with timing pending client-capacity control. Both executors share one total budget |
 | File reads | Open-once cache-hot vs cold buffered vs direct I/O; random/sequential; 4/64 KiB; QD 1/8/64; same offsets, bytes and checksum | Existing file experiments cover subsets. Extend native blocking/pread pool/uring comparisons; fio is a device-envelope cross-check, not an identical-program runtime row |
 | File writes | Buffered accepted bytes vs fdatasync/fsync durability are distinct contracts; name batch size, flush cadence and directory durability | Broader matrix required; no current TCP result supports a write or durability claim |
 | Dependent storage/network pipeline | Read → parse → request → write with the same dependency graph and compute work | Unmeasured; tests whether sequential-source overlap composes across stages |
@@ -9321,3 +9321,114 @@ existing waiting defaults. This four-level grain/traversal/specialization
 control has no useful measured gain; its short CPU cost is higher and its
 long result is neutral within this small cohort's variation. No next
 implementation is selected by these results.
+
+## 64. Control stack capacity at the supported floor
+
+Selected question: with four computing threads, does `WF_STACKS=5` improve
+the CPU layout workload relative to twelve stacks when every ordinary row
+runs the same executable? Experiment 45 compared twelve with 1100 stacks;
+its mostly fixed extra cost did not test the supported floor. Experiment 55
+and the corrected caller audit in 57 do not establish available work at an
+idle turn. Removing the sixteen idle-yield rounds in 59 and reducing layout
+fork depth in 63 gave no useful gain. This control keeps the full-depth
+layout, parallel builder, lazy startup point and existing waiting policy.
+
+`wf_sched_init` in `compiler/src/backend/sched/core.c` raises a requested
+stack count below `thread_count + 1` to that floor. With four computing
+threads, five is therefore an actual supported capacity. Worker stacks are
+reserved by their creator before those workers enter; a switching thread
+returns its old empty stack only after saving its context on another stack.
+A join first checks completion and its own newest child, then takes a READY
+or free stack and parks. Without such a target, compute joins try owner-pop
+and foreign-steal execution in place, and may directly issue the runtime's
+host yield when they find neither a task nor progress. This is internal runtime
+behavior, not a WF source construct. Capacity does not change the lane's
+1024 task slots or make failed acquisition synonymous with unavailable
+work. A smaller pool may reduce park/resume and migration traffic while
+increasing repeated no-target drain/yield turns; either outcome can cost CPU.
+
+The existing `rayon-stack-bench` target selects resource mode 7 in
+`rayon-bench.sh`. Its frozen comparison uses four computing threads, the
+qualified Rayon4/grain4 reference, one and sixteen source batches, five
+alternating passes and one warmup per form/batch: forty ordinary rows after
+eight warmups. The WF forms are S12 primary, S12 duplicate and S5. All three
+map to the same compiler-produced `wf-par` path; an exact plan check enforces
+that identity and the only differing WF environment value, `WF_STACKS`.
+The duplicate retains a same-command variation check, especially relevant
+to the short cohort's wall spread in 63. No manual relink, IR substitution,
+new runtime policy, affinity change or perf capture enters these rows.
+
+The normal completion target, including its existing scheduler smoke and
+complete reduced-round enumerations, runs once with default runtime flags.
+These harnesses include fixed stack configurations; this does not relabel
+every case as a four-thread/five-stack test. The actual ordinary layout is
+also executed at S12/S5 and both batch lengths before timing, requiring exact
+checksum bytes, exit success and empty stderr. The unchanged runner checks
+all timed outputs and retains each process's wall, user/system CPU, voluntary
+and involuntary context switches, and peak RSS in KiB. Pair S5 with the S12
+primary by pass and batch; report the S12 duplicate spread and WF/Rayon
+comparison alongside it. Do not attribute a small ratio outside its cohort.
+
+Four separate observed runs use one observed executable at S12/S5 and both
+lengths. In addition to the existing scheduler/grant observer, a tiny C
+companion is generated into the artifact directory and linked only there.
+Its registered exit handler reads `wf__sched_core.thread_count`,
+`stack_count`, `stack_bytes` and `stack_stride`: initialized once, their
+static storage remains valid through exit. Checks require the requested
+and effective count to agree, four scheduler threads, three started workers,
+positive steals, exact bytes, and unchanged storage and 256/16 waiting
+settings. Ordinary effective counts follow the same retained initialization
+source and exact environment; only observed runs perform runtime readback.
+
+`exhausted_compute` counts no-target join turns, without saying whether a
+turn executed a task or yielded. `inline_runs` counts owner execution at the
+join's second line; owner pops in its fourth line or the scheduler loop do
+not increment that counter. Consequently the sum of steals and owner-inline
+runs is reported as partial execution accounting, not imposed as a universal
+S5 publication identity or interpreted as failed acquisition. `idle_waits`
+also omits the fourth-line direct host yield. Existing counts can distinguish
+park/resume traffic from no-target turns, but cannot supply a simultaneous
+ready-work history or an OS scheduling cause.
+
+Capacity also changes setup and addresses. Each stack reserves one GiB plus
+a guard-page stride, populated on touch; removing seven removes seven GiB
+plus seven guard pages of pool virtual address space, not seven GiB of RSS.
+The observed `effective * stride_bytes` value reports that pool reservation,
+separately from the runner's process peak RSS. Header/context preparation,
+guard setup and dynamic stack placement change too. Thus even with identical
+program instructions this is a combined capacity/setup/join-route control,
+not pure switching cost. Batch length helps expose amortization without
+isolating those mechanisms.
+
+The artifact retains the ordinary and observed executables, generated
+unchanged IR, compiler, Rayon reference, runner, generated companion source,
+exact qualification and observation commands, the timing command and plan,
+source/header hashes, raw rows, outputs and full completion log. Ordinary
+inputs are hashed before timing; their hashes and the separately built
+observed artifact are checked again after observations. The dedicated
+`codex/io-cpu-stack-floor` route uses the existing CPU resource job with phase
+tracing disabled; earlier modes and routes retain their settings. Native
+Linux evidence is pending. This selected test changes no compiler, runtime,
+language surface, ABI or default.
+
+Local qualification on macOS arm64 ran the actual target with `ROUNDS=1`
+and `WARMUP=0`: eight ordinary rows and four observations passed, together
+with four normal completion harnesses and all four existing enumerations.
+All four direct ordinary checks produced the exact expected bytes with empty
+stderr. The ordinary executable and emitted IR match the retained default
+from 63 byte-for-byte. The companion symbol is absent from ordinary output
+and present in the observed link. All seven pre-timing artifact entries,
+eight final entries and 35 source/header entries rehash successfully; plan,
+command, output and raw-row mappings agree. Both observed capacities read
+back correctly with four threads and default settings. The M1 stride is
+1,073,758,208 bytes, giving pool reservations of 12,885,098,496 bytes at S12
+and 5,368,791,040 at S5; these are virtual bytes, not measured RSS.
+
+Focused checks preserve all seven earlier runner modes, eight manual link
+commands, six earlier resource plans and 48 earlier workflow branches,
+including their job/step routes, targets and artifact names. Five malformed
+plans, seven missing/incorrect capacity reports and three early mode/profile/
+phase combinations are rejected. Shell syntax, `make static` and diff checks
+pass. These checks qualify the new command/readback contract and local path;
+they do not constitute a native Linux five-pass result or a full gate for
+this revision.

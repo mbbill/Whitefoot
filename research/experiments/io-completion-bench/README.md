@@ -860,6 +860,25 @@ graph qualify. Native code grows and data moves, so this result does not
 isolate publication cost or establish available work or an OS cause. Keep
 the existing defaults; no next implementation is selected by this result.
 
+`make rayon-stack-bench` is [experiment 64](../../investigations/io-model/SCHEDULER-EXPERIMENT.md#64-control-stack-capacity-at-the-supported-floor).
+It uses one unchanged ordinary WF executable for twelve stacks, a duplicate
+of that same twelve-stack command, and five stacks, with four computing
+threads and the qualified Rayon4/grain4 anchor. The full-depth layout,
+parallel builder and default 256 pause/look plus 16 idle-yield rounds stay
+in place. Five passes over one/sixteen batches give forty ordinary samples
+after eight warmups; separate observations read actual capacity from the
+core's immutable fields through an experiment-built exit companion. That
+companion is absent from the ordinary executable. The source-derived clamp
+explains ordinary effective counts; ordinary runs do not carry readback.
+The normal completion suite and exact outputs at both capacities and batch
+lengths qualify the panel. It retains executables, compiler, generated IR,
+commands, source hashes and raw wall/CPU/context-switch/RSS records. This
+joint capacity/setup/join-route control can reduce parking while increasing
+in-place drain or yield turns; it does not isolate switch cost or measure
+available work. Reservation bytes describe virtual address space, separately
+from peak RSS. The isolated Linux route is `codex/io-cpu-stack-floor`;
+its native result is pending and no default changes.
+
 `make mixed-rayon-check` qualifies the optional `mixed-rayon` binary in the
 same standalone crate. Its CLI is `mixed-rayon PORT CONNECTIONS --threads B
 [--queue Q]`: B includes one current-thread Tokio I/O driver, leaving B-1
