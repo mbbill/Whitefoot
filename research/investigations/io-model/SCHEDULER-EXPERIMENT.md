@@ -3857,9 +3857,102 @@ stream checks pass at one/four workers. All eight observers confirm the
 selected storage/wake flags and pinned dispatch where requested. Executing
 the actual configuration blocks against the captured guest topology produces
 630 rows/162 snapshots for combine and preserves the prior allocator mode's
-672 rows/288 snapshots. Native Linux combined performance remains pending.
+672 rows/288 snapshots. Native Linux results follow below.
 This experiment changes no source signature, runtime ABI, container storage
 contract or default runtime policy.
+
+### Native combined results
+
+Revision `5ca8a674`, scheduler run
+[34073711463](https://github.com/mbbill/Whitefoot/actions/runs/34073711463),
+finishes all sampling on an EPYC 9V74 guest with four logical CPUs, two
+reported SMT cores, Linux 6.17 and clang 20.1.2. Its Linux job is **failed**:
+the final summary still requested `base`, which the combined panel replaces
+with `callee-small`. This is a reporting defect, not a missing timed sample.
+The artifact contains all 630 rows in 90 complete seven-pass cells and all
+162 live snapshots in 54 complete three-repetition cells. Raw client trip
+counts and timing fields match every row; sample diagnostics are empty;
+smaps sums match every snapshot with THP disabled and no huge pages or swap.
+Both allocator readbacks and all three native LLVM identities agree.
+
+The full four completion qualifications pass. Small retains its existing
+17/17/20/19 enumerated schedules; the three owner policies run 18/18/21/20.
+Both native-ring and fallback bridge routes pass, including the owner
+four-thread bridge checks. All 36 C stream and 48 C++ stream cases pass,
+as do both existing sanitized nested-destruction checks. All 16 WF
+observations confirm the exact memory/wake flags; pinned forms distribute
+initial calls evenly, use the requested owner rings and never migrate a
+resumed stack. The same revision's native Windows scheduler check, gate
+and io-hosts workflows pass. These results do not relabel the failed Linux
+summary job as successful.
+
+The summary now selects `callee-small` only for combine and retains `base`
+elsewhere. Replaying its actual corrected block against the saved combined
+and prior allocator data regenerates 90 and 96 groups; independently
+computed same-pass ratios agree with every printed ratio. Removing one
+paired control still fails. Measurements are not rerun or substituted to
+repair this reporting error.
+
+The useful combination survives. In split2, balanced-small versus
+callee-small has rate ratios 1.1572 [1.1490, 1.1734] at 64 small-message
+peers and 1.1315 [1.0976, 1.1472] at 1024; CPU/exchange improves every
+pair, with medians 0.9574 and 0.9671. At 64 large-message peers rate also
+improves every pair, 1.1515 [1.1277, 1.1716], but CPU worsens every pair,
+1.1121 [1.1019, 1.1495]. Relative to balanced alone, adding compact metadata
+and configured-lane initialization has throughput ranges crossing parity
+in all ten cells. It therefore retains the measured dispatch gain without
+establishing a further consistent throughput gain.
+
+Live RSS medians in KiB, with identical explicit allocator/THP controls:
+
+| Form | Split1, 64 small | Split2, 64 small | Split1, 1024 small | Split2, 1024 small |
+| --- | ---: | ---: | ---: | ---: |
+| Balanced | 27064 | 27204 | 34756 | 34892 |
+| Balanced-small | 3528 | 3972 | 15064 | 15504 |
+| Native manual, shared scratch | 1644 | 1652 | 1660 | 1676 |
+| Native manual, main-worker calloc | 2008 | 2184 | 9724 | 9900 |
+| Native stackful, main-worker calloc | 2260 | 2440 | 13832 | 14016 |
+| Native elided, shared scratch | 3608 | 3628 | 3820 | 3840 |
+| Native elided, private calloc | 4140 | 4192 | 12060 | 12096 |
+
+Thus the combination removes most startup metadata residency while
+preserving the separately attributed buffer-allocation improvement. The
+remaining 1024-peer WF residency is about 11% above the native stackful
+private-buffer control, 28% above elided private buffers, and much further
+above the manual shared-scratch engine. Fixed process costs matter at
+64 peers; this table cannot assign every difference to continuation frames.
+
+For orientation, select the fastest native form by its cell's median rate
+from the five controls, then retain that fixed form for all seven paired
+ratios below. This is a descriptive comparison within this panel, not a
+claim to have enumerated the fastest possible native implementation.
+
+| Cohort/case | Fixed native reference | WF balanced-small/native rate | CPU/exchange |
+| --- | --- | --- | --- |
+| Split1, 64 small | Manual shared | 1.0137 [0.9945, 1.0155] | 1.0000 [1.0000, 1.0278] |
+| Split1, 1024 small | Manual main calloc | 1.0107 [0.9937, 1.0392] | 1.0272 [0.9946, 1.0380] |
+| Split2, 64 small | Elided private calloc | 1.0423 [0.9779, 1.3796] | 0.9927 [0.9571, 1.0385] |
+| Split2, 1024 small | Elided shared | 0.9922 [0.9777, 1.0761] | 1.0586 [1.0304, 1.0682] |
+| Split2, 64 large | Manual main calloc | 0.9536 [0.9351, 1.0118] | 1.1182 [1.1019, 1.1415] |
+
+Higher-concurrency throughput is close to these native controls, with
+crossing ranges, but CPU and memory still prevent a general win. Except
+for split1/64-small versus manual shared (tail 0.9729 [0.9613, 0.9914]),
+the table's p99 comparisons cross parity. Low-concurrency regressions remain
+substantial: split2 balanced-small/callee-small rate loses every one-peer
+pair (0.8655 median) and every four-peer pair (0.7338), while four-peer CPU
+rises 1.4737 [1.4026, 1.4805]. The one-peer rate versus native elided private
+is 0.6635 [0.6384, 0.7775], CPU 5.3529 [4.5500, 5.5625]. This is not a
+throughput-optimal default across occupancies.
+
+Quiet-small roughly halves split2 one-peer CPU relative to balanced-small
+(0.5161 [0.5054, 0.5618]) but still uses 2.7059 [2.3000, 2.9375] times its
+native control. Its rate improvement crosses parity there, and every
+split2/1024 rate pair loses against balanced-small (0.9955 [0.9641, 0.9980]).
+Keep wake omission as a control, not a universal addition. The surviving
+result is that dispatch and storage optimizations compose; neither that
+combination nor wake omission solves the low-occupancy, remaining CPU,
+per-connection memory or previously measured mixed-load gaps.
 
 ## Thirty-third experiment: nested continuations retain real completion loans
 
@@ -3917,15 +4010,35 @@ in-registration completions and 513 helper publications. Heap mode makes
 1,280 frame allocations/frees; elided mode makes 640. Total requested frame
 bytes are equal between forms: 307,200 under ASan/UBSan, 312,320 under TSan.
 The allocation-count reduction is therefore not evidence of reduced total
-frame bytes or a throughput improvement. Linux io_uring qualification is
-pending. This fixture is lifetime evidence, not a WF stackless backend or
-a performance result.
+frame bytes or a throughput improvement. Native Linux qualification follows
+below. This fixture is lifetime evidence, not a WF stackless backend or a
+performance result.
 
 The first Linux qualification at `ea1d08be` reaches the final route guard
 and fails it. Its bootstrap used pread on descriptor -1; the Linux native
 adapter deliberately refuses negative transfer descriptors, so that one
 initialization operation takes the helper route and violates the explicit
-zero-helper requirement. Replace the bootstrap with a checked byte read
-from a real temporary file, which both adapters carry. Keep the same route
-requirements and report both counters on failure. The failed native job
-is not a pass; the corrected fixture needs its own native qualification.
+zero-helper requirement. The corrected bootstrap uses a checked byte read
+from a real temporary file, which both adapters carry. It keeps the same
+route requirements and reports both counters on failure. The old revision's
+canonical Linux job separately confirms exactly 512 ring publications and
+one helper publication; the specialized zero-helper job remains failed.
+
+Revision `207b271e` passes the specialized native qualification in
+[run 34075853738](https://github.com/mbbill/Whitefoot/actions/runs/34075853738),
+job 101601679643. Under clang 20 and ASan/UBSan, both heap and elided forms
+pass all 640 cases and 192 logical exits on each of the two actual backends.
+Each native run has 513 ring publications and zero helper publications;
+each forced-fallback run has 513 helper publications and zero ring
+publications. Every run has 384 registrations/dequeues, 128 completions
+before registration and 128 during registration. Native frame allocations
+and frees are 1280/1280 for heap and 640/640 for elided, with 312320 total
+requested bytes in either form. The workflow's Windows owner checks also
+pass; they do not qualify this POSIX-only coroutine fixture on Windows.
+The same corrected source passes both local sanitizer configurations again.
+
+This closes the real-completion loan gap left by the readiness-only
+coroutine probe: nested stackless frames can retain parent-owned addresses
+through actual io_uring completion and scoped draining. It does not supply
+a general WF coroutine ABI, a lock-free continuation-registration protocol,
+cross-thread coroutine migration, native cancellation or a faster scheduler.
