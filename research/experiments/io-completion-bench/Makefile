@@ -101,7 +101,7 @@ scheduler-pages:
 
 .PHONY: scheduler-native-baselines
 scheduler-native-baselines:
-	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" NATIVE_BASELINES=1 EXPERIMENT=allocator bash scheduler-bench.sh combine
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" NATIVE_BASELINES=2 EXPERIMENT=allocator bash scheduler-bench.sh combine
 
 .PHONY: scheduler-allocation
 scheduler-allocation:
@@ -793,21 +793,25 @@ uring-check: prepare
 	@set -e; \
 	$(CLANG) $(CFLAGS) -Wpedantic -pthread stream_check.c -o "$(BUILD)/stream_check"; \
 	for bytes in 8192 65536; do \
-	  binary="$(BUILD)/check-uring-$$bytes"; \
+	 for inline_send in 0 1; do \
+	  binary="$(BUILD)/check-uring-$$bytes-inline$$inline_send"; \
 	  $(CLANG) $(CFLAGS) -g -Wpedantic -pthread -fsanitize=address,undefined \
 	    -DWF_BENCH_SNDBUF=4096 -DWF_BENCH_TCP_VERIFY -DWF_BENCH_URING_OBSERVE \
-	    "-DWF_BENCH_URING_BUFFER_BYTES=$$bytes" uring_echo.c -o "$$binary"; \
+	    "-DWF_BENCH_URING_BUFFER_BYTES=$$bytes" "-DWF_BENCH_URING_INLINE_SEND=$$inline_send" uring_echo.c -o "$$binary"; \
 	  for workers in 1 4; do \
 	    log="$$binary-w$$workers.log"; \
 	    if ! "$(BUILD)/stream_check" "$$binary" echo "$$workers" > "$$log" 2>&1; then cat "$$log"; exit 1; fi; \
 	    cat "$$log"; \
-	    awk -v bytes="$$bytes" -v workers="$$workers" '/^uring:/ { \
+	    awk -v bytes="$$bytes" -v workers="$$workers" -v inline_send="$$inline_send" '/^uring:/ { \
 	      for(i=2;i<=NF;i++) {split($$i,a,"=");v[a[1]]=a[2]+0}; seen++; \
 	      if(v["buffer_bytes"]!=bytes || v["provided_bytes"]!=2097152 || \
-	         v["buffers"]*bytes!=v["provided_bytes"]) bad=1; \
-	      received+=v["receive_bytes"]; sent+=v["send_bytes"] \
-	    } END {exit !(seen==workers && !bad && received==8388608 && sent==received)}' "$$log"; \
+	         v["buffers"]*bytes!=v["provided_bytes"] || v["inline_send"]!=inline_send) bad=1; \
+	      received+=v["receive_bytes"]; sent+=v["send_bytes"]; ring_sends+=v["sends"]; \
+	      inline_bytes+=v["inline_bytes"]; attempts+=v["inline_attempts"] \
+	    } END {exit !(seen==workers && !bad && received==8388608 && sent==received && ring_sends>0 && \
+	      (inline_send ? inline_bytes>0 && attempts>0 : inline_bytes==0 && attempts==0))}' "$$log"; \
 	  done; \
+	 done; \
 	done
 
 # Linux-only reference correctness, also reached by scheduler-check on Linux.

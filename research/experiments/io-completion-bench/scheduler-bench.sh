@@ -19,13 +19,13 @@ WARMUP=${WARMUP:-2}
 EXPERIMENT=${EXPERIMENT:-idle}
 NATIVE_BASELINES=${NATIVE_BASELINES:-0}
 CONTINUATION_SCREEN=${CONTINUATION_SCREEN:-0}
-[[ $NATIVE_BASELINES == 0 || $NATIVE_BASELINES == 1 ]] || exit 2
+[[ $NATIVE_BASELINES == 0 || $NATIVE_BASELINES == 1 || $NATIVE_BASELINES == 2 ]] || exit 2
 [[ $CONTINUATION_SCREEN == 0 || $CONTINUATION_SCREEN == 1 ]] || exit 2
 if [[ $CONTINUATION_SCREEN == 1 && $NATIVE_BASELINES != 1 ]]; then
     echo 'scheduler-bench: continuation screen requires the native baseline panel' >&2
     exit 2
 fi
-if [[ $NATIVE_BASELINES == 1 && ( $MODE != combine || $EXPERIMENT != allocator ) ]]; then
+if [[ $NATIVE_BASELINES != 0 && ( $MODE != combine || $EXPERIMENT != allocator ) ]]; then
     echo 'scheduler-bench: native baseline panel uses combine with EXPERIMENT=allocator' >&2
     exit 2
 fi
@@ -206,7 +206,7 @@ if [[ $coroutine_experiment == 1 ]]; then
         exit 1
     fi
 fi
-if [[ $NATIVE_BASELINES == 1 ]]; then
+if [[ $NATIVE_BASELINES != 0 ]]; then
     make -C "$HERE" uring-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/uring-check" \
         > "$OUT/uring-check.log" 2>&1 || { cat "$OUT/uring-check.log"; exit 1; }
 fi
@@ -235,8 +235,11 @@ fi
     if [[ $CONTINUATION_SCREEN == 1 ]]; then
         echo 'wf-coro=generated --continuations --par; one resumer; window=1024; qualified test coordinator; counters enabled in timed and observed binary'
     fi
-    if [[ $NATIVE_BASELINES == 1 ]]; then
+    if [[ $NATIVE_BASELINES != 0 ]]; then
         echo 'uring_buffer_policy=8192/65536 bytes; equal provided bytes per worker; counts 256..2048 / 32..256; SQPOLL excluded'
+    fi
+    if [[ $NATIVE_BASELINES == 2 ]]; then
+        echo 'uring_send_policy=ring-only versus one immediate nonblocking sendmsg attempt before ordered ring fallback'
     fi
     if [[ $MODE == profile ]]; then
         "$PROFILE_PERF" --version
@@ -367,7 +370,7 @@ if [[ $EXPERIMENT == service ]]; then forms=(base balanced service1 service16 se
 if [[ $EXPERIMENT == service-paced ]]; then forms=(base chbalanced16384 chservice1 chservice16 chservicepoll16); fi
 if [[ $EXPERIMENT == coroutine-paced ]]; then forms=(base ch16384 chbalanced16384); fi
 if [[ $MODE == combine ]]; then forms=(callee-small balanced balanced-small quiet-small); fi
-if [[ $NATIVE_BASELINES == 1 ]]; then forms=(callee-small balanced-small); fi
+if [[ $NATIVE_BASELINES != 0 ]]; then forms=(callee-small balanced-small); fi
 form_flags() {
     local_inline=0
     init_used=0
@@ -548,16 +551,21 @@ fi
 for tool in netload uring_echo epoll_echo runner gen; do
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread "$HERE/$tool.c" -o "$OUT/bin/$tool"
 done
-if [[ $NATIVE_BASELINES == 1 ]]; then
+if [[ $NATIVE_BASELINES != 0 ]]; then
+    inline_forms=(0); if [[ $NATIVE_BASELINES == 2 ]]; then inline_forms=(0 1); fi
     for bytes in 8192 65536; do
+      for inline_send in "${inline_forms[@]}"; do
         output="$OUT/bin/uring_echo"; if [[ $bytes == 65536 ]]; then output="$output-64k"; fi
+        if [[ $inline_send == 1 ]]; then output="$output-inline"; fi
         for observed in 0 1; do
             observe_flags=()
             if [[ $observed == 1 ]]; then observe_flags=(-DWF_BENCH_URING_OBSERVE -DWF_BENCH_TCP_VERIFY); fi
             binary="$output"; if [[ $observed == 1 ]]; then binary="$binary-observed"; fi
             "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -pthread \
-                "-DWF_BENCH_URING_BUFFER_BYTES=$bytes" "${observe_flags[@]}" "$HERE/uring_echo.c" -o "$binary"
+                "-DWF_BENCH_URING_BUFFER_BYTES=$bytes" "-DWF_BENCH_URING_INLINE_SEND=$inline_send" \
+                "${observe_flags[@]}" "$HERE/uring_echo.c" -o "$binary"
         done
+      done
     done
 fi
 if [[ $EXPERIMENT == allocator ]]; then
@@ -750,15 +758,15 @@ network_case() {
             binary="$OUT/bin/$form"
             if [[ $observed == 1 ]]; then binary="$binary-observed"; fi
             arguments=(--threads "$server_workers") ;;
-        uring-64k)
-            binary="$OUT/bin/uring_echo-64k"
+        uring-64k|uring-inline|uring-64k-inline)
+            binary="$OUT/bin/uring_echo${form#uring}"
             if [[ $observed == 1 ]]; then binary="$binary-observed"; fi
             arguments=(--threads "$server_workers") ;;
         uring|epoll|uring-nagle|epoll-nagle)
             binary="$OUT/bin/${form%-nagle}_echo"
             if [[ $form == *-nagle ]]; then binary="$binary-nagle"; fi
             if [[ $EXPERIMENT == nodelay && $observed == 1 ]]; then binary="$binary-verified"; fi
-            if [[ $NATIVE_BASELINES == 1 && $form == uring && $observed == 1 ]]; then binary="$binary-observed"; fi
+            if [[ $NATIVE_BASELINES != 0 && $form == uring && $observed == 1 ]]; then binary="$binary-observed"; fi
             if [[ $network_compute == 1 ]]; then binary="$OUT/bin/epoll_compute"; fi
             arguments=(--threads "$server_workers") ;;
         q1024|q16384|q65536)
@@ -883,7 +891,8 @@ if [[ $EXPERIMENT == coroutine ]]; then
 fi
 if [[ $EXPERIMENT == coroutine-paced ]]; then references=(q16384 cpp-manual cpp-stackful cpp-heap cpp-elide); fi
 if [[ $MODE == combine ]]; then references=(epoll epoll-calloc-main fiber-calloc-main cpp-elide cpp-elide-calloc); fi
-if [[ $NATIVE_BASELINES == 1 ]]; then references=(uring uring-64k "${references[@]}"); fi
+if [[ $NATIVE_BASELINES != 0 ]]; then references=(uring uring-64k "${references[@]}"); fi
+if [[ $NATIVE_BASELINES == 2 ]]; then references=(uring-inline uring-64k-inline "${references[@]}"); fi
 # This list also carries alternative executors through the common harness.
 # wf-coro is a WF candidate, never a native frontier reference.
 if [[ $CONTINUATION_SCREEN == 1 ]]; then references+=(wf-coro); fi
@@ -943,7 +952,7 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
             preflight_observed=0
             if [[ $form == cpp-* ]]; then preflight_observed=1; fi
             if [[ $form == wf-coro ]]; then preflight_observed=1; fi
-            if [[ $NATIVE_BASELINES == 1 && $form == uring* ]]; then preflight_observed=1; fi
+            if [[ $NATIVE_BASELINES != 0 && $form == uring* ]]; then preflight_observed=1; fi
             if [[ $EXPERIMENT == nodelay || ( $storage_experiment == 1 && ( $form == epoll* || $form == fiber* ) ) ]]; then preflight_observed=1; fi
             network_case "$form" 4 20 64 -1 "$preflight_observed"
             if [[ $form == wf-coro ]]; then
@@ -951,13 +960,15 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
                 network_case "$form" 64 2000 64 -1 1
                 check_continuation_report 64 "$OUT/observed/$cohort-$form-k64-a0/server.err"
             fi
-            if [[ $NATIVE_BASELINES == 1 && $form == uring* ]]; then
-                expected_bytes=8192; if [[ $form == uring-64k ]]; then expected_bytes=65536; fi
-                awk -v bytes="$expected_bytes" -v workers="$server_workers" '/^uring:/ {
+            if [[ $NATIVE_BASELINES != 0 && $form == uring* ]]; then
+                expected_bytes=8192; if [[ $form == *64k* ]]; then expected_bytes=65536; fi
+                expected_inline=0; if [[ $form == *-inline ]]; then expected_inline=1; fi
+                awk -v bytes="$expected_bytes" -v workers="$server_workers" -v inline_send="$expected_inline" '/^uring:/ {
                     for(i=2;i<=NF;i++) {split($i,a,"=");v[a[1]]=a[2]+0}; seen++;
-                    if(v["buffer_bytes"]!=bytes || v["provided_bytes"]!=2097152 || v["buffers"]*bytes!=v["provided_bytes"]) bad=1;
-                    received+=v["receive_bytes"]; sent+=v["send_bytes"]
-                } END {exit !(seen==workers && !bad && received==5120 && sent==received)}' \
+                    if(v["buffer_bytes"]!=bytes || v["provided_bytes"]!=2097152 || v["buffers"]*bytes!=v["provided_bytes"] || v["inline_send"]!=inline_send) bad=1;
+                    received+=v["receive_bytes"]; sent+=v["send_bytes"]; inline_bytes+=v["inline_bytes"]
+                } END {exit !(seen==workers && !bad && received==5120 && sent==received &&
+                    (inline_send ? inline_bytes>0 : inline_bytes==0))}' \
                     "$OUT/observed/$cohort-$form-k4-a0/server.err"
             fi
             if [[ $form == cpp-* ]]; then
@@ -1092,7 +1103,7 @@ if [[ $page_experiment == 1 ]]; then
           binary="$OUT/bin/storage-$form"
           if [[ $form == base || $form == small || $form == callee || $form == *-small || $form == balanced ]]; then binary="$OUT/bin/echo-$form"; fi
           if [[ $form == uring ]]; then binary="$OUT/bin/uring_echo"; fi
-          if [[ $form == uring-64k ]]; then binary="$OUT/bin/uring_echo-64k"; fi
+          if [[ $form == uring-* ]]; then binary="$OUT/bin/uring_echo${form#uring}"; fi
           if [[ $form == cpp-* ]]; then binary="$OUT/bin/$form"; fi
           continuation_environment=()
           if [[ $form == wf-coro ]]; then

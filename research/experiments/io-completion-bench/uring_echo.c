@@ -75,6 +75,11 @@
 #define BUFFER_BYTES WF_BENCH_URING_BUFFER_BYTES
 _Static_assert(BUFFER_BYTES == 8192u || BUFFER_BYTES == 65536u,
                "the paired buffer experiment uses 8 KiB or 64 KiB buffers");
+#ifndef WF_BENCH_URING_INLINE_SEND
+#define WF_BENCH_URING_INLINE_SEND 0
+#endif
+_Static_assert(WF_BENCH_URING_INLINE_SEND == 0 || WF_BENCH_URING_INLINE_SEND == 1,
+               "inline send is an explicit paired configuration");
 
 /* One send gathers at most this many buffers. The pending queue itself uses
  * one node per provided buffer, so its capacity follows actual buffer loans
@@ -154,6 +159,8 @@ struct worker {
     uint64_t receive_bytes;
     uint64_t send_bytes;
     uint64_t exhausted;
+    uint64_t inline_attempts;
+    uint64_t inline_bytes;
     unsigned deepest_queue;
 #endif
 };
@@ -473,17 +480,25 @@ static void arm_wake(struct worker *worker) {
     entry->user_data = tag(OPERATION_WAKE, worker->wake);
 }
 
-/* The echo queue, sent straight out of the buffers the kernel filled: no
- * extra userspace copy. Exactly one send is in flight per
- * connection, so the bytes leave in the order they arrived. A send gathers up
- * to SEND_VECTOR_MAX arrivals rather than submitting one operation per buffer. */
-static void arm_send(struct worker *worker, int descriptor) {
-    struct connection *link = &table[descriptor];
-    struct io_uring_sqe *entry = ring_next(&worker->ring);
-    if (entry == NULL) {
-        mark_failed();
-        return;
+/* A completed send, whether a syscall or a CQE, retires exactly its queue
+ * prefix. Appended receive buffers are outside that prefix and stay loaned. */
+static void retire_send_bytes(struct worker *worker, struct connection *link, uint32_t left) {
+    while (left > 0 && link->count > 0) {
+        uint16_t identifier = link->head;
+        struct buffer_loan *loan = &worker->loans[identifier];
+        uint32_t remaining = loan->length - loan->offset;
+        if (left < remaining) {
+            loan->offset += left;
+            break;
+        }
+        left -= remaining;
+        link->head = loan->next;
+        link->count--;
+        buffer_return(worker, identifier);
     }
+}
+
+static void prepare_send_message(struct worker *worker, struct connection *link) {
     unsigned vectors = link->count < SEND_VECTOR_MAX ? link->count : SEND_VECTOR_MAX;
     uint16_t identifier = link->head;
     for (unsigned at = 0; at < vectors; at++) {
@@ -496,6 +511,51 @@ static void arm_send(struct worker *worker, int descriptor) {
     memset(&link->message, 0, sizeof link->message);
     link->message.msg_iov = link->vector;
     link->message.msg_iovlen = vectors;
+}
+
+static void close_connection(struct worker *worker, int descriptor);
+static void check_finished(void);
+
+/* The echo queue, sent straight out of the buffers the kernel filled: no
+ * extra userspace copy. Exactly one send is in flight per connection, and its
+ * vector stays unchanged until completion. A send gathers up to
+ * SEND_VECTOR_MAX arrivals rather than one operation per buffer. */
+static void arm_send(struct worker *worker, int descriptor) {
+    struct connection *link = &table[descriptor];
+    prepare_send_message(worker, link);
+#if WF_BENCH_URING_INLINE_SEND
+    /* One nonblocking attempt per arm. Success releases only the bytes the
+     * syscall copied; short-send debt and EAGAIN enter the existing ring path.
+     * A submitted send still owns its vector and buffers until its CQE. */
+#if defined(WF_BENCH_URING_OBSERVE)
+    worker->inline_attempts++;
+#endif
+    ssize_t moved = sendmsg(descriptor, &link->message, MSG_DONTWAIT | MSG_NOSIGNAL);
+    if (moved > 0) {
+#if defined(WF_BENCH_URING_OBSERVE)
+        worker->inline_bytes += (uint64_t)moved;
+        worker->send_bytes += (uint64_t)moved;
+#endif
+        retire_send_bytes(worker, link, (uint32_t)moved);
+        if (link->count == 0) {
+            if (link->closing) {
+                close_connection(worker, descriptor);
+                check_finished();
+            }
+            return;
+        }
+        prepare_send_message(worker, link);
+    } else if (moved < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+        report("inline send", errno);
+        mark_failed();
+        return;
+    }
+#endif
+    struct io_uring_sqe *entry = ring_next(&worker->ring);
+    if (entry == NULL) {
+        mark_failed();
+        return;
+    }
     entry->opcode = IORING_OP_SENDMSG;
     entry->fd = descriptor;
     entry->addr = (unsigned long long)(uintptr_t)&link->message;
@@ -736,20 +796,7 @@ static void *worker_main(void *raw) {
                     /* A short send leaves the rest of the queue where it is,
                      * with the partly sent buffer's offset advanced; the next
                      * send re-issues from there. */
-                    uint32_t left = (uint32_t)result;
-                    while (left > 0 && link->count > 0) {
-                        uint16_t identifier = link->head;
-                        struct buffer_loan *loan = &worker->loans[identifier];
-                        uint32_t remaining = loan->length - loan->offset;
-                        if (left < remaining) {
-                            loan->offset += left;
-                            break;
-                        }
-                        left -= remaining;
-                        link->head = loan->next;
-                        link->count--;
-                        buffer_return(worker, identifier);
-                    }
+                    retire_send_bytes(worker, link, (uint32_t)result);
                     if (link->count > 0) {
                         arm_send(worker, descriptor);
                         continue;
@@ -919,11 +966,14 @@ int main(int argc, char **argv) {
 #if defined(WF_BENCH_URING_OBSERVE)
         fprintf(stderr, "uring: worker=%u buffer_bytes=%u buffers=%u provided_bytes=%zu "
                 "ring_entries=%u receives=%llu sends=%llu receive_bytes=%llu send_bytes=%llu "
-                "exhausted=%llu deepest_queue=%u\n", at, BUFFER_BYTES, worker->buffer_count,
+                "exhausted=%llu deepest_queue=%u inline_send=%u inline_attempts=%llu inline_bytes=%llu\n",
+                at, BUFFER_BYTES, worker->buffer_count,
                 (size_t)worker->buffer_count * BUFFER_BYTES, RING_ENTRIES,
                 (unsigned long long)worker->receives, (unsigned long long)worker->sends,
                 (unsigned long long)worker->receive_bytes, (unsigned long long)worker->send_bytes,
-                (unsigned long long)worker->exhausted, worker->deepest_queue);
+                (unsigned long long)worker->exhausted, worker->deepest_queue,
+                (unsigned)WF_BENCH_URING_INLINE_SEND,
+                (unsigned long long)worker->inline_attempts, (unsigned long long)worker->inline_bytes);
 #endif
         free(worker->starved_list);
         free(worker->loans);

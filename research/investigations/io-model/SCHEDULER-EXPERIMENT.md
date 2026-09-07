@@ -4249,6 +4249,7 @@ name. A known limitation remains visible until its experiment is complete.
 | Native C epoll | Manual state machine; per-worker edge-triggered reactor and `SO_REUSEPORT`; 64 KiB shared scratch, bounded private spill on backpressure | Competitive readiness control: immediate recv/send, no ordinary per-operation allocation, local connection state | Screened on Linux loopback; 2 MiB streams, short sends and half-close qualified. Physical NIC and overload confirmation missing |
 | Native C epoll with private storage | Arena, malloc or calloc per connection; main-thread worker variant | Diagnostic storage and allocator comparison; private backing remains owned through I/O | Screened and stream-qualified; these rows need not beat shared scratch to explain WF storage cost |
 | Native C io_uring | Multishot accept/recv, provided buffers, per-worker rings/listeners, ordered vectored sends; SINGLE_ISSUER + DEFER_TASKRUN, no SQPOLL | Competitive completion control: batching, no receive submission per arrival, loaned receive buffers reused for send | Earlier closed-loop cells screened. New queue/submission corrections and 8/64 KiB equal-byte variants stream-qualified at `475008b5`; new timing screen pending |
+| Native C io_uring with immediate send | Same receive engine and loans, one nonblocking `sendmsg` attempt before ring fallback | Competitive hybrid candidate: avoids a submission/completion round trip when the socket accepts bytes immediately | Implemented and cross-compiled; native qualification and same-revision paired screen pending |
 | Native C stackful / C++ stackless | Same epoll engine; private or shared receive storage; stackful, heap coroutine, and compiler-elided coroutine forms | Diagnostic representation control: separates coroutine/frame allocation, storage and reactor cost | Screened and stream/lifetime-qualified at their recorded revisions; not independent mature runtime comparisons |
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
 | WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Correctness-qualified at the revisions above; no concurrent server performance claim yet |
@@ -4344,7 +4345,8 @@ send buffer, TCP_NODELAY readback and untimed configuration/byte counters.
 The original epoll, stackful and C++ checks stay intact. Native execution is
 Linux-only; local shell/YAML/diff checks cannot substitute for it.
 
-The runnable `scheduler-native-baselines` target selects a new panel:
+At `475008b5`, `scheduler-native-baselines` selected a new panel with
+`NATIVE_BASELINES=1`:
 `callee-small` and `balanced-small` WF controls, the existing five competitive
 manual/stackful/elided-C++ controls, and native uring at 8 and 64 KiB. Two CPU
 cohorts × five echo cases × nine forms × seven passes give 630 timed records;
@@ -4486,6 +4488,45 @@ source cancellation, asynchronous cleanup, compute checkpoints, multiple
 resumers and Windows are not qualified here. Other system wrappers and
 cleanup can still block the owner. There is no performance result for this
 concurrent WF representation yet.
+
+## Thirty-eighth experiment: native completion receive with immediate send
+
+The pure-ring native reference submits every send through io_uring. The WF
+runtime already has an immediate nonblocking socket-transfer path, so pure
+ring submission is not automatically the strongest competitive control.
+`WF_BENCH_URING_INLINE_SEND=1` now selects one `sendmsg(MSG_DONTWAIT |
+MSG_NOSIGNAL)` attempt per send arm while retaining multishot provided-buffer
+receive. The default remains the pure-ring reference.
+
+A successful syscall retires exactly the same FIFO byte prefix as a send CQE.
+A short syscall rebuilds the remaining vector before submitting it, and EAGAIN
+falls back to the existing ordered ring send. Buffers covered by a submitted
+send remain owned until its completion; an appended receive cannot modify an
+active vector. If an inline completion drains the last bytes after EOF, it
+closes the connection immediately rather than waiting for a CQE that will
+never exist. There is one attempt per arm, not an unbounded new userspace send
+loop. Terminal failures retain native loan storage through process exit.
+
+The existing `uring-check` now covers both send policies at both buffer sizes
+and one/four workers. Along with exact bytes, ASan/UBSan, backpressure and
+half-close, it asserts positive ring-send completions in the streaming case;
+the hybrid forms must also report positive immediate-send bytes and attempts.
+Pure-ring forms must report zero for those counters. `send_bytes` counts both
+paths, while `sends` still counts successful ring-send CQEs.
+
+`NATIVE_BASELINES=2` and the current `scheduler-native-baselines` target retain
+all nine forms from experiment36 and add `uring-inline` and
+`uring-64k-inline`. The same ten workload/placement cells, two warm-ups and
+seven passes produce 770 timed records and 198 live snapshots. Qualification
+runs before any timing. Buffer payload capacity remains matched between the
+8/64 KiB variants; the pure-ring controls remain in the same-revision panel,
+so no timing ratio depends on comparing different CI machines.
+
+Strict Linux-musl cross-compilation passes for all eight combinations of
+buffer size, send policy and observation. Shell/YAML parsing, Make dry-run and
+diff checks pass locally. Linux execution and the expanded paired screen are pending; the earlier
+`475008b5` screen is preserved while it runs. No hybrid speedup or default
+selection is claimed from implementation alone.
 
 ## Thirty-ninth experiment: measure generated staged WF against the native panel
 
