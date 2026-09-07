@@ -475,6 +475,19 @@ reports. One peer has no rate gain; native controls still lead the occupied
 small-message cells. Client capacity limits several cells, and no new default
 or universal throughput result is selected.
 
+`make scheduler-continuation-index` selects `CONTINUATION_SCREEN=4` with the
+same native panel and adds `wf-coro-index`: owner progress, batch 32 and 1024
+pending-waiter buckets versus the default single list. One normal binary
+contains both choices. The 8 KiB bucket array has collision lists under the
+existing lock; it adds no waiter-capacity bound or frame/record ABI field.
+Thirteen forms produce 455 rows and 117 live snapshots at seven passes.
+An additional host build enables lookup counters only for untimed observations,
+including 64/1024-peer comparisons. Both binaries pass the common stream and
+bounded-retirement oracle. Sanitizer qualification includes 1/1024 buckets
+under all progress modes; the C++ fixture additionally uses two buckets with
+eight simultaneously pending roots to force collisions. Experiment 54 owns
+this candidate and its pending Linux result.
+
 The generated continuation qualification also compiles the unchanged
 `tcp_compute_server.wf` with `--continuations --par`. Experiment 52 reuses
 the common fragmented compute oracle, then checks truncated and oversized

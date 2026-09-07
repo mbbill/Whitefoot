@@ -7179,3 +7179,78 @@ observed-report predicate accepts all four frozen Linux release records and
 rejects a mismatched owner. Shell/workflow parsing, Make expansion and diff
 checks pass. Native Linux qualification and timing for this exact screen
 are pending.
+
+## Fifty-fourth experiment: index pending continuation waiters
+
+Experiment 48 recovers submission batching but leaves the generated candidate
+behind native small-message controls. Every completion currently searches
+the coordinator's single pending list while holding its mutex, including
+inline completions that have no registered waiter. With many suspended
+connections that work can grow with the number of unrelated waiters. The
+remaining measured CPU gap and this concrete path select a lookup control;
+they do not yet prove that lookup dominates the loss.
+
+`WF_CONTINUATION_PENDING_BUCKETS` accepts powers of two from 1 through 1024,
+default one. One bucket retains the original LIFO pending-list behavior.
+The candidate hashes the completion-record address into 1024 buckets;
+pointer equality still identifies a waiter within its collision list. The
+static array occupies 8192 bytes on the supported 64-bit targets in both
+modes, while which pages are touched may differ. There is no allocation,
+table resize, load-factor rejection or new maximum number of waiters.
+The fixed 1024 choice serves this screen's connection range; it is not
+claimed to be optimal or a language-level resource rule.
+
+Configuration is read before the host starts source or completion publishers
+and stays fixed for that process. Registration and lookup use the same
+function and the existing mutex. Publication removes the matching pending
+node before invoking the real completion publisher, then enqueues its waiter
+on the existing FIFO. It still never reads the record after DONE. The sole
+resumer owns the queued frame until dequeue; compiler-generated joins and
+retirement preserve the established storage lifetime. Task joins retain
+their separate direct waiter link. Bucket membership changes no ready order,
+completion-record fields, generated waiter/task layout, source bytes,
+ownership/proof rule or `wf__par_*` entry point. Hash collision or address
+layout cannot select source acceptance, completion validity or a failure.
+
+`make scheduler-continuation-index` selects `CONTINUATION_SCREEN=4`,
+`NATIVE_BASELINES=1` and the unchanged allocator/combine panel. It keeps all
+twelve experiment48 forms and adds `wf-coro-index`. The selected comparison
+is the same uninstrumented executable at owner progress and batch 32 with
+one versus 1024 buckets. The threaded and owner-one controls retain one.
+All six WF forms and seven native controls use the same one-server-CPU and
+separate-client-core envelope, initialized buffer capacities, THP setting,
+source workload and five cases. Seven alternating passes after two complete
+warmups yield 455 ordinary rows; three repetitions of three live cases yield
+117 snapshots. The harness checks these counts. Source, generated IR and
+both continuation executables are hashed and retained in the CI artifact.
+
+The new `PROBE_LOOKUP_OBSERVE` compile-time switch adds completion-lookup
+calls, visited list nodes and maximum nodes visited in one lookup. The
+ordinary executable is built with zero, so these counters and increments
+are absent. A separate host object built with one links the identical
+generated IR and runtime objects. Existing coordinator and bridge counters
+remain in both builds, as in experiment48. All fourteen continuation
+observations use the counted host: a common large stream and 4/64-peer
+preflights for each of four modes, plus 1024-peer runs for the two batch32
+lookup choices. The reported bucket count must match the requested mode;
+waiters, routes, submitted/completed operations and task retirement retain
+their existing checks. Observed time is excluded from ordinary tables.
+
+The C++ fixture runs both frame-allocation forms at one, two and 1024
+buckets. Its eight roots remain gated until every root suspends, so two
+buckets necessarily exercise collision chains. All previous before-arm,
+during-arm, cancellation-request-with-drain and exact allocation/free checks
+remain. The generated sanitizer suite runs both one and 1024 buckets at each
+of the three progress policies, including mixed-protocol exact error exits.
+The normal and lookup-counted release executables each run the twelve-task,
+four-slot retirement oracle at all six settings. No error case is converted
+to generic success to accommodate the index.
+
+Local M1 ASan/UBSan and ThreadSanitizer runs pass all six generated settings:
+66 stream invocations, six file-outcome suites and eighteen mixed-protocol
+checks per sanitizer, plus six 640-case C++ fixtures. The ordinary and
+counted release builds each pass all six bounded-retirement settings. Linux
+native/helper qualification and performance remain pending on the isolated
+`codex/io-continuation-index` branch. Client headroom, single-peer idle
+tradeoffs, multi-owner computation and fairness retain their earlier limits;
+even a lookup win would only identify another implementation cost.

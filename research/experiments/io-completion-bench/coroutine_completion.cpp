@@ -57,7 +57,17 @@ _Static_assert(PROBE_RECORD_ALIGN == WF_COMPLETION_RECORD_ALIGN, "record alignme
 
 static pthread_mutex_t probe_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t probe_changed = PTHREAD_COND_INITIALIZER;
-static probe_waiter *probe_pending;
+enum { PROBE_PENDING_BUCKET_LIMIT = 1024 };
+static probe_waiter *probe_pending[PROBE_PENDING_BUCKET_LIMIT];
+static unsigned probe_pending_buckets = 1;
+#ifndef PROBE_LOOKUP_OBSERVE
+#define PROBE_LOOKUP_OBSERVE 0
+#endif
+#if PROBE_LOOKUP_OBSERVE
+static uint64_t probe_lookup_calls;
+static uint64_t probe_lookup_steps;
+static uint64_t probe_lookup_max_steps;
+#endif
 static probe_waiter *probe_ready_head;
 static probe_waiter *probe_ready_tail;
 static pthread_t probe_progress_thread;
@@ -96,6 +106,31 @@ int wf__sched_host_wake(void);
 int wf__sched_target_progress(struct wf_sched_core *core);
 int wf__bridge_report(char *buffer, size_t capacity);
 
+/* Configure before starting source or publishers. A single bucket retains
+ * the original LIFO list. More buckets change lookup only: collisions retain
+ * the same list protocol under probe_lock, without a waiter-capacity limit. */
+static void probe_configure_pending(void) {
+    const char *requested = getenv("WF_CONTINUATION_PENDING_BUCKETS");
+    if (!requested) return;
+    char *end;
+    errno = 0;
+    unsigned long value = strtoul(requested, &end, 10);
+    assert(errno == 0 && *requested != '\0' && *end == '\0');
+    assert(value >= 1 && value <= PROBE_PENDING_BUCKET_LIMIT && !(value & (value - 1)));
+    probe_pending_buckets = (unsigned)value;
+}
+
+static unsigned probe_pending_bucket(const void *record) {
+    if (probe_pending_buckets == 1) return 0;
+    /* Mix aligned frame addresses before masking. Equality, not the hash,
+     * chooses the waiter; no scheduling or lifetime property needs uniqueness. */
+    uint64_t key = (uint64_t)(uintptr_t)record;
+    key ^= key >> 17;
+    key *= UINT64_C(0x9e3779b97f4a7c15);
+    key ^= key >> 32;
+    return (unsigned)key & (probe_pending_buckets - 1);
+}
+
 int probe_done(const void *record) {
     const wf_completion_record *held = record;
     return wf_prim_load_u(&held->sched.state, WF_PRIM_ACQUIRE) == WF_SCHED_DONE;
@@ -116,8 +151,22 @@ void wf_probe_publish(wf_sched_core *core, wf_sched_record *record) {
     if (completion->request.kind == WF_FILE_SOCKET_CONNECT) ++probe_socket_routes[1][completion->route];
     if (completion->request.kind == WF_FILE_SOCKET_RECEIVE) ++probe_socket_routes[2][completion->route];
 #endif
-    for (link = &probe_pending; *link && (*link)->record != record;
-         link = &(*link)->pending_next) {}
+    link = &probe_pending[probe_pending_bucket(record)];
+#if PROBE_LOOKUP_OBSERVE
+    uint64_t steps = 0;
+#endif
+    while (*link) {
+#if PROBE_LOOKUP_OBSERVE
+        ++steps;
+#endif
+        if ((*link)->record == record) break;
+        link = &(*link)->pending_next;
+    }
+#if PROBE_LOOKUP_OBSERVE
+    ++probe_lookup_calls;
+    probe_lookup_steps += steps;
+    if (steps > probe_lookup_max_steps) probe_lookup_max_steps = steps;
+#endif
     waiter = *link;
     if (waiter) {
         assert(waiter->phase == 1 && record->waiter == NULL);
@@ -162,9 +211,10 @@ int probe_arm(probe_waiter *waiter, void *record, void *continuation,
     assert(probe_active_task != NULL);
     waiter->owner = probe_active_task;
 #endif
-    waiter->pending_next = probe_pending;
+    unsigned bucket = probe_pending_bucket(record);
+    waiter->pending_next = probe_pending[bucket];
     waiter->phase = 1;
-    probe_pending = waiter;
+    probe_pending[bucket] = waiter;
     ++probe_registered;
     pthread_mutex_unlock(&probe_lock);
     /* A native ring may still have a deferred SQE; wake its progress thread. */
@@ -261,6 +311,7 @@ static void *probe_progress(void *unused) {
 }
 
 void probe_start(void) {
+    probe_configure_pending();
     wf_completion_record record;
     unsigned char byte = 0;
     int64_t value;
@@ -280,7 +331,10 @@ void probe_start(void) {
 
 void probe_idle(void) {
     pthread_mutex_lock(&probe_lock);
-    assert(probe_pending == NULL && probe_ready_head == NULL && probe_ready_tail == NULL);
+    for (unsigned bucket = 0; bucket < probe_pending_buckets; ++bucket) {
+        assert(probe_pending[bucket] == NULL);
+    }
+    assert(probe_ready_head == NULL && probe_ready_tail == NULL);
     assert(probe_registered == probe_dequeued);
     pthread_mutex_unlock(&probe_lock);
 }
@@ -314,12 +368,12 @@ void probe_report(int required_route) {
                 (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_FILE_ADAPTER]);
         abort();
     }
-    printf("completion continuation: PASS registered=%llu dequeued=%llu before=%llu during=%llu helper=%llu uring=%llu inline=%llu\n",
+    printf("completion continuation: PASS registered=%llu dequeued=%llu before=%llu during=%llu helper=%llu uring=%llu inline=%llu pending_buckets=%u\n",
            (unsigned long long)probe_registered, (unsigned long long)probe_dequeued,
            (unsigned long long)probe_before_arm, (unsigned long long)probe_during_arm,
            (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_FILE_ADAPTER],
            (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_LINUX_IO_URING],
-           (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_INLINE]);
+           (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_INLINE], probe_pending_buckets);
 }
 
 #if defined(PROBE_WF_GENERATED)
@@ -448,16 +502,18 @@ static unsigned probe_observe_socket_waits(unsigned seen) {
     if (!getenv("WF_CONTINUATION_TRACE_SOCKET")) return seen;
     pthread_mutex_lock(&probe_lock);
     unsigned receives = 0;
-    for (probe_waiter *waiter = probe_pending; waiter; waiter = waiter->pending_next) {
-        const wf_completion_record *record = waiter->record;
-        if (record->request.kind == WF_FILE_SOCKET_RECEIVE) ++receives;
-        if (!(seen & 1) && record->request.kind == WF_FILE_SOCKET_ACCEPT) {
-            fputs("WF continuation host: accept suspended\n", stderr);
-            seen |= 1;
-        }
-        if (!(seen & 2) && record->request.kind == WF_FILE_SOCKET_RECEIVE) {
-            fputs("WF continuation host: receive suspended\n", stderr);
-            seen |= 2;
+    for (unsigned bucket = 0; bucket < probe_pending_buckets; ++bucket) {
+        for (probe_waiter *waiter = probe_pending[bucket]; waiter; waiter = waiter->pending_next) {
+            const wf_completion_record *record = waiter->record;
+            if (record->request.kind == WF_FILE_SOCKET_RECEIVE) ++receives;
+            if (!(seen & 1) && record->request.kind == WF_FILE_SOCKET_ACCEPT) {
+                fputs("WF continuation host: accept suspended\n", stderr);
+                seen |= 1;
+            }
+            if (!(seen & 2) && record->request.kind == WF_FILE_SOCKET_RECEIVE) {
+                fputs("WF continuation host: receive suspended\n", stderr);
+                seen |= 2;
+            }
         }
     }
     if (!(seen & 4) && receives == 4 && getenv("WF_CONTINUATION_TRACE_STAGED")) {
@@ -473,6 +529,7 @@ void wf__continuation_run(void *frame) {
     unsigned socket_waits = 0;
     assert(!active);
     active = 1;
+    probe_configure_pending();
     const char *owner_progress = getenv("WF_CONTINUATION_OWNER_PROGRESS");
     assert(!owner_progress || strcmp(owner_progress, "0") == 0 || strcmp(owner_progress, "1") == 0);
     probe_owner_progress = owner_progress && strcmp(owner_progress, "1") == 0;
@@ -517,12 +574,18 @@ void wf__continuation_run(void *frame) {
     assert(probe_tasks_retired + 1 == probe_tasks_created);
     probe_active_task = NULL;
     if (getenv("WF_CONTINUATION_OBSERVE")) {
-        fprintf(stderr, "WF continuation host: registered=%llu dequeued=%llu helper=%llu uring=%llu inline=%llu owner_progress=%u progress_batch=%u\n",
+        fprintf(stderr, "WF continuation host: registered=%llu dequeued=%llu helper=%llu uring=%llu inline=%llu owner_progress=%u progress_batch=%u pending_buckets=%u",
                 (unsigned long long)probe_registered, (unsigned long long)probe_dequeued,
                 (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_FILE_ADAPTER],
                 (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_LINUX_IO_URING],
                 (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_INLINE], probe_owner_progress,
-                probe_progress_batch);
+                probe_progress_batch, probe_pending_buckets);
+#if PROBE_LOOKUP_OBSERVE
+        fprintf(stderr, " lookup_calls=%llu lookup_steps=%llu lookup_max_steps=%llu",
+                (unsigned long long)probe_lookup_calls, (unsigned long long)probe_lookup_steps,
+                (unsigned long long)probe_lookup_max_steps);
+#endif
+        fputc('\n', stderr);
     }
     if (getenv("WF_CONTINUATION_REPORT_SOCKET_ROUTES")) {
         fprintf(stderr, "WF continuation host: accept_ring=%llu accept_helper=%llu connect_ring=%llu connect_helper=%llu receive_ring=%llu receive_helper=%llu\n",

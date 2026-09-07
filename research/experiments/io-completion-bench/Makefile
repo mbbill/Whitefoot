@@ -107,6 +107,10 @@ scheduler-native-baselines:
 scheduler-go-screen:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" GO="$(GO)" CORO_CXX="$(CORO_CXX)" GO_SCREEN=1 CONTINUATION_SCREEN=3 NATIVE_BASELINES=1 EXPERIMENT=allocator bash scheduler-bench.sh combine
 
+.PHONY: scheduler-continuation-index
+scheduler-continuation-index:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" CORO_CXX="$(CORO_CXX)" CONTINUATION_SCREEN=4 NATIVE_BASELINES=1 EXPERIMENT=allocator bash scheduler-bench.sh combine
+
 .PHONY: scheduler-client-headroom
 scheduler-client-headroom:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" CORO_CXX="$(CORO_CXX)" CLIENT_HEADROOM=1 NATIVE_BASELINES=2 EXPERIMENT=allocator bash scheduler-bench.sh combine
@@ -726,8 +730,10 @@ completion-coroutine-check: prepare
 	  define=''; if [ "$$form" = elide ]; then define=-DPROBE_ELIDE; fi; \
 	  $(CORO_CXX) $(CORO_FLAGS) -g -fsanitize=$(COMPLETION_CORO_SANITIZERS) \
 	    -I "$$backend" $$define coroutine_completion.cpp "$$build/protocol.o" "$$@" -o "$$build/$$form"; \
-	  "$$build/$$form" $(COMPLETION_CORO_ARGS); \
-	  if [ "$$(uname -s)" = Linux ]; then WF_IO_NO_NATIVE_RING=1 "$$build/$$form" --require-helper; fi; \
+	  for buckets in 1 2 1024; do \
+	    WF_CONTINUATION_PENDING_BUCKETS=$$buckets "$$build/$$form" $(COMPLETION_CORO_ARGS); \
+	    if [ "$$(uname -s)" = Linux ]; then WF_CONTINUATION_PENDING_BUCKETS=$$buckets WF_IO_NO_NATIVE_RING=1 "$$build/$$form" --require-helper; fi; \
+	  done; \
 	done
 
 # The same coordinator now drives actual WF-generated continuations. Keep the
@@ -742,7 +748,7 @@ compiler-continuation-check: completion-coroutine-check compiler
 	mkdir -p "$$build/tree"; set --; \
 	for source in $(CONTINUATION_RUNTIME_UNITS); do set -- "$$@" "$$common/$$(basename "$$source").o"; done; \
 	$(CORO_CLANG) $(CFLAGS) -g -Wpedantic -pthread -fsanitize=$(COMPLETION_CORO_SANITIZERS) \
-	  -I "$$backend" -DPROBE_WF_GENERATED -x c -c coroutine_completion.cpp -o "$$build/host.o"; \
+	  -I "$$backend" -DPROBE_WF_GENERATED -DPROBE_LOOKUP_OBSERVE=1 -x c -c coroutine_completion.cpp -o "$$build/host.o"; \
 	$(CORO_CLANG) $(CFLAGS) -g -Wpedantic -pthread -fsanitize=$(COMPLETION_CORO_SANITIZERS) \
 	  -I "$$backend" -c "$$backend/wf_floor.c" -o "$$build/floor.o"; \
 	$(CORO_CLANG) $(CFLAGS) -Wpedantic -pthread continuation_stream.c -o "$$build/stream-check"; \
@@ -771,9 +777,11 @@ compiler-continuation-check: completion-coroutine-check compiler
 	  $(CORO_CLANG) -Wno-override-module -O2 -g -pthread -fsanitize=$(COMPLETION_CORO_SANITIZERS) \
 	    "$$build/$$program-instrumented.ll" "$$build/host.o" "$$build/floor.o" "$$@" -o "$$build/$$program"; \
 	done; \
+	for buckets in 1 1024; do \
+	export WF_CONTINUATION_PENDING_BUCKETS=$$buckets; \
 	for policy in 0:1 1:1 1:32; do \
 	export WF_CONTINUATION_OWNER_PROGRESS=$${policy%:*} WF_CONTINUATION_PROGRESS_BATCH=$${policy#*:}; \
-	echo "compiled continuation progress owner=$${policy%:*} batch=$${policy#*:}"; \
+	echo "compiled continuation progress owner=$${policy%:*} batch=$${policy#*:} pending_buckets=$$buckets"; \
 	printf A > "$$build/tree/a"; printf B > "$$build/tree/b"; printf AB > "$$build/expected"; \
 	(cd "$$build/tree" && WF_IO_HELPERS=4 ../boundary a b) > "$$build/actual"; \
 	cmp "$$build/expected" "$$build/actual"; \
@@ -810,24 +818,26 @@ compiler-continuation-check: completion-coroutine-check compiler
 	    tasks=4; error_arg=''; \
 	    if [ "$$mode" = truncated ]; then tasks=1; error_arg=9; fi; \
 	    if [ "$$mode" = oversized ]; then tasks=1; error_arg=10; fi; \
-	    log="$$build/compute-$$mode-$${policy%:*}-$${policy#*:}-helper$$force_helper.log"; \
+	    log="$$build/compute-$$mode-$${policy%:*}-$${policy#*:}-buckets$$buckets-helper$$force_helper.log"; \
 	    if ! env -u WF_CONTINUATION_REPORT_BRIDGE WF_WORKERS=1 WF_IO_NO_NATIVE_RING=$$no_ring \
 	      WF_CONTINUATION_WINDOW=16 WF_CONTINUATION_OBSERVE=1 WF_CONTINUATION_REPORT_SOCKET_ROUTES=1 \
 	      WF_CONTINUATION_REPORT_TASKS=1 "$$build/protocol-check" "$$build/compute" "$$mode" 1 $$error_arg \
 	      > "$$log" 2>&1; then cat "$$log"; exit 1; fi; \
 	    cat "$$log"; \
-	    awk -v owner=$${policy%:*} -v batch=$${policy#*:} -v tasks="$$tasks" -v route="$$route" -v mode="$$mode" \
+	    awk -v owner=$${policy%:*} -v batch=$${policy#*:} -v buckets=$$buckets -v tasks="$$tasks" -v route="$$route" -v mode="$$mode" \
 	      '/^WF continuation host: suspended$$/ {next} \
 	       /^WF continuation host:/ {reports++; for(i=4;i<=NF;i++) {split($$i,a,"=");v[a[1]]=a[2]+0}; next} \
 	       /^stream_check: PASS/ {passes++; if($$3!="mode=" mode || $$4!="workers=1") bad=1; next} \
 	       {bad=1} END {exit !(reports==3 && passes==1 && !bad && v["registered"]>0 && \
 	         v["registered"]==v["dequeued"] && ("owner_progress" in v) && v["owner_progress"]==owner && \
-	         ("progress_batch" in v) && v["progress_batch"]==batch && v["tasks"]==tasks && \
+	         ("progress_batch" in v) && v["progress_batch"]==batch && v["pending_buckets"]==buckets && v["tasks"]==tasks && \
+	         v["lookup_calls"]>0 && v["lookup_steps"]>=v["lookup_max_steps"] && \
 	         v["completed"]==tasks && v["retired"]==tasks && v["peak"]==tasks && \
 	         v["accept_ring"]+v["accept_helper"]==tasks && (mode!="compute" || v["receive_ring"]+v["receive_helper"]>0) && \
 	         (route!=1 || (v["uring"]>0 && v["accept_ring"]==tasks && (mode!="compute" || v["receive_ring"]>0) && v["receive_helper"]==0)) && \
 	         (route!=2 || (v["uring"]==0 && v["helper"]>0 && v["accept_helper"]==tasks && v["receive_ring"]==0)))}' "$$log"; \
 	  done; \
+	done; \
 	done; \
 	done
 
@@ -847,16 +857,21 @@ compiler-continuation-bench: prepare compiler
 	    -c "$$backend/$$source" -o "$$object"; \
 	  set -- "$$@" "$$object"; \
 	done; \
-	$(CORO_CLANG) $(CFLAGS) -g -Wpedantic -pthread -I "$$backend" $$flags \
-	  -DPROBE_WF_GENERATED -x c -c coroutine_completion.cpp -o "$$build/host.o"; \
 	"$(WFC)" --emit-llvm --continuations --par programs/tcp_echo_server.wf -o "$$build/echo.ll"; \
-	$(CORO_CLANG) -O2 -g -Wno-override-module -pthread "$$build/echo.ll" \
-	  "$$build/host.o" "$$@" -o "$$build/wf-coro"; \
 	$(CORO_CLANG) -O2 -S -emit-llvm -Wno-override-module "$$build/echo.ll" -o "$$build/echo-optimized.ll"; \
 	$(CORO_CLANG) $(CFLAGS) -Wpedantic -pthread continuation_stream.c -o "$$build/stream-check"; \
+	for observed in 0 1; do \
+	  suffix=''; if [ "$$observed" = 1 ]; then suffix=-lookup-observed; fi; \
+	  $(CORO_CLANG) $(CFLAGS) -g -Wpedantic -pthread -I "$$backend" $$flags \
+	    -DPROBE_WF_GENERATED -DPROBE_LOOKUP_OBSERVE=$$observed -x c -c coroutine_completion.cpp -o "$$build/host$$suffix.o"; \
+	  $(CORO_CLANG) -O2 -g -Wno-override-module -pthread "$$build/echo.ll" \
+	    "$$build/host$$suffix.o" "$$@" -o "$$build/wf-coro$$suffix"; \
+	for buckets in 1 1024; do \
 	for policy in 0:1 1:1 1:32; do \
-	  WF_CONTINUATION_OWNER_PROGRESS=$${policy%:*} WF_CONTINUATION_PROGRESS_BATCH=$${policy#*:} \
-	    "$$build/stream-check" --staged "$$build/wf-coro" $(COMPLETION_CORO_ARGS); \
+	  WF_CONTINUATION_OWNER_PROGRESS=$${policy%:*} WF_CONTINUATION_PROGRESS_BATCH=$${policy#*:} WF_CONTINUATION_PENDING_BUCKETS=$$buckets \
+	    "$$build/stream-check" --staged "$$build/wf-coro$$suffix" $(COMPLETION_CORO_ARGS); \
+	done; \
+	done; \
 	done
 
 # Linux-only native completion reference correctness. The full streaming

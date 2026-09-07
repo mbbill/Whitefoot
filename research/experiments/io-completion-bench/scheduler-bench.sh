@@ -23,7 +23,7 @@ GO_SCREEN=${GO_SCREEN:-0}
 GO=${GO:-go}
 URING_DIAGNOSTIC=${URING_DIAGNOSTIC:-0}
 [[ $NATIVE_BASELINES == 0 || $NATIVE_BASELINES == 1 || $NATIVE_BASELINES == 2 ]] || exit 2
-[[ $CONTINUATION_SCREEN == 0 || $CONTINUATION_SCREEN == 1 || $CONTINUATION_SCREEN == 2 || $CONTINUATION_SCREEN == 3 ]] || exit 2
+[[ $CONTINUATION_SCREEN == 0 || $CONTINUATION_SCREEN == 1 || $CONTINUATION_SCREEN == 2 || $CONTINUATION_SCREEN == 3 || $CONTINUATION_SCREEN == 4 ]] || exit 2
 if [[ $CONTINUATION_SCREEN != 0 && $NATIVE_BASELINES != 1 ]]; then
     echo 'scheduler-bench: continuation screen requires the native baseline panel' >&2
     exit 2
@@ -238,6 +238,7 @@ if [[ $CONTINUATION_SCREEN != 0 ]]; then
         WHITEFOOT_SCRATCH_ROOT="$OUT/continuation" BUILD="$OUT/continuation-build" COMPLETION_CORO_ARGS=--require-ring \
         > "$OUT/continuation-build.log" 2>&1 || { cat "$OUT/continuation-build.log"; exit 1; }
     cp "$OUT/continuation-build/compiler-continuation-bench/wf-coro" "$OUT/bin/wf-coro"
+    cp "$OUT/continuation-build/compiler-continuation-bench/wf-coro-lookup-observed" "$OUT/bin/wf-coro-lookup-observed"
     mkdir -p "$OUT/codegen"
     cp "$OUT/continuation-build/compiler-continuation-bench/echo.ll" "$OUT/codegen/wf-coro.ll"
     cp "$OUT/continuation-build/compiler-continuation-bench/echo-optimized.ll" "$OUT/codegen/wf-coro-optimized.ll"
@@ -252,13 +253,16 @@ fi
     echo "experiment=$EXPERIMENT mode=$MODE rounds=$ROUNDS warmup=$WARMUP"
     echo "native_baselines=$NATIVE_BASELINES"
     echo "continuation_screen=$CONTINUATION_SCREEN"
+    if [[ $CONTINUATION_SCREEN == 4 ]]; then
+        echo 'wf-coro-index=same owner/batch32 binary; pending waiter buckets 1/1024; 8 KiB fixed bucket array; collisions use existing locked lists; separate lookup-counted host outside timing'
+    fi
     echo "go_screen=$GO_SCREEN"
     if [[ $CONTINUATION_SCREEN != 0 ]]; then
-        echo 'wf-coro=generated --continuations --par; one resumer; window=1024; qualified test coordinator; counters enabled in timed and observed binary'
-        if [[ $CONTINUATION_SCREEN == 2 || $CONTINUATION_SCREEN == 3 ]]; then
+        echo 'wf-coro=generated --continuations --par; one resumer; window=1024; qualified test coordinator; existing coordinator counters enabled in timing; extra lookup counters only in screen4 observed host'
+        if [[ $CONTINUATION_SCREEN == 2 || $CONTINUATION_SCREEN == 3 || $CONTINUATION_SCREEN == 4 ]]; then
             echo 'wf-coro-owner=same generated binary with WF_CONTINUATION_OWNER_PROGRESS=1; sole resumer drives progress; no background progress thread; all other coordinator logic retained'
         fi
-        if [[ $CONTINUATION_SCREEN == 3 ]]; then
+        if [[ $CONTINUATION_SCREEN == 3 || $CONTINUATION_SCREEN == 4 ]]; then
             echo 'wf-coro-batch32=same owner binary with WF_CONTINUATION_PROGRESS_BATCH=32; at most 32 ready resumptions per explicit progress turn; empty-ready progress remains immediate; bridge counters reported only in observations'
         fi
     fi
@@ -812,10 +816,12 @@ sample=0
 continuation_policy() {
     owner_progress=0
     progress_batch=1
+    pending_buckets=1
     case $1 in
         wf-coro) ;;
         wf-coro-owner) owner_progress=1 ;;
         wf-coro-batch32) owner_progress=1; progress_batch=32 ;;
+        wf-coro-index) owner_progress=1; progress_batch=32; pending_buckets=1024 ;;
         *) return 2 ;;
     esac
 }
@@ -845,7 +851,7 @@ check_go_report() {
 
 network_case() {
     local form=$1 connections=$2 trips=$3 bytes=$4 pass=$5 observed=$6
-    local binary environment=() arguments=() launcher=() directory port server_stderr owner_progress progress_batch
+    local binary environment=() arguments=() launcher=() directory port server_stderr owner_progress progress_batch pending_buckets
     local go_owner go_width go_environment=()
     local client_binary="$OUT/bin/netload"
     if [[ $cohort == *-client8 ]]; then client_binary="$OUT/bin/netload-service8"; fi
@@ -862,11 +868,12 @@ network_case() {
             go_policy "$form" "$observed"
             environment=("${go_environment[@]}")
             arguments=(--threads "$go_width") ;;
-        wf-coro|wf-coro-owner|wf-coro-batch32)
+        wf-coro|wf-coro-owner|wf-coro-batch32|wf-coro-index)
             binary="$OUT/bin/wf-coro"
             continuation_policy "$form"
-            environment=(WF_WORKERS=1 WF_CONTINUATION_WINDOW=1024 "WF_CONTINUATION_OWNER_PROGRESS=$owner_progress" "WF_CONTINUATION_PROGRESS_BATCH=$progress_batch")
+            environment=(WF_WORKERS=1 WF_CONTINUATION_WINDOW=1024 "WF_CONTINUATION_OWNER_PROGRESS=$owner_progress" "WF_CONTINUATION_PROGRESS_BATCH=$progress_batch" "WF_CONTINUATION_PENDING_BUCKETS=$pending_buckets")
             if [[ $observed == 1 ]]; then
+                if [[ $CONTINUATION_SCREEN == 4 ]]; then binary="$OUT/bin/wf-coro-lookup-observed"; fi
                 environment+=(WF_CONTINUATION_OBSERVE=1 WF_CONTINUATION_REPORT_SOCKET_ROUTES=1 WF_CONTINUATION_REPORT_TASKS=1 WF_CONTINUATION_REPORT_BRIDGE=1)
             fi ;;
         cpp-*)
@@ -1034,22 +1041,32 @@ if [[ $CLIENT_HEADROOM == 1 ]]; then references=(uring-64k uring-64k-inline epol
 # wf-coro is a WF candidate, never a native frontier reference.
 if [[ $CONTINUATION_SCREEN != 0 ]]; then references+=(wf-coro); fi
 continuation_forms=(wf-coro)
-if [[ $CONTINUATION_SCREEN == 2 || $CONTINUATION_SCREEN == 3 ]]; then
+if [[ $CONTINUATION_SCREEN == 2 || $CONTINUATION_SCREEN == 3 || $CONTINUATION_SCREEN == 4 ]]; then
     references+=(wf-coro-owner)
     continuation_forms+=(wf-coro-owner)
 fi
-if [[ $CONTINUATION_SCREEN == 3 ]]; then
+if [[ $CONTINUATION_SCREEN == 3 || $CONTINUATION_SCREEN == 4 ]]; then
     references+=(wf-coro-batch32)
     continuation_forms+=(wf-coro-batch32)
 fi
+if [[ $CONTINUATION_SCREEN == 4 ]]; then
+    references+=(wf-coro-index)
+    continuation_forms+=(wf-coro-index)
+    cp "$OUT/bin/wf-coro" "$OUT/codegen/wf-coro-bin"
+    cp "$OUT/bin/wf-coro-lookup-observed" "$OUT/codegen/wf-coro-lookup-observed-bin"
+    sha256sum "$HERE/coroutine_completion.cpp" "$HERE/scheduler-bench.sh" "$HERE/continuation_stream.c" \
+        "$HERE/netload.c" "$HERE/stream_check.c" "$WFC" "$OUT/codegen/"wf-coro* > "$OUT/build-sha256.txt"
+fi
 check_continuation_report() {
-    local peers=$1 report=$2 owner=$3 batch=$4
-    awk -v peers="$peers" -v owner="$owner" -v batch="$batch" '/^WF continuation host:|^ring:/ {
+    local peers=$1 report=$2 owner=$3 batch=$4 buckets=$5
+    awk -v peers="$peers" -v owner="$owner" -v batch="$batch" -v buckets="$buckets" -v lookup="$CONTINUATION_SCREEN" '/^WF continuation host:|^ring:/ {
         start=4; if ($1=="ring:") {rings++; start=2}
         for(i=start;i<=NF;i++) {split($i,a,"=");v[a[1]]=a[2]+0}
     } END {exit !(v["registered"]>0 && v["registered"]==v["dequeued"] &&
         "owner_progress" in v && v["owner_progress"]==owner &&
         "progress_batch" in v && v["progress_batch"]==batch &&
+        v["pending_buckets"]==buckets &&
+        (lookup!=4 || (v["lookup_calls"]>0 && v["lookup_steps"]>=v["lookup_max_steps"])) &&
         rings==1 && v["submissions"]>0 && v["submissions"]==v["completions"] &&
         v["submission_enters"]>0 &&
         v["uring"]>0 && v["accept_ring"]>0 && v["accept_helper"]==0 &&
@@ -1090,15 +1107,17 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
           for form in "${continuation_forms[@]}"; do
             continuation_policy "$form"
             log="$OUT/observed/$cohort-$form-stream.log"
+            continuation_binary="$OUT/bin/wf-coro"
+            if [[ $CONTINUATION_SCREEN == 4 ]]; then continuation_binary="$OUT/bin/wf-coro-lookup-observed"; fi
             if ! taskset -c "$client_cpus" env WF_WORKERS=1 WF_CONTINUATION_WINDOW=1024 \
-                "WF_CONTINUATION_OWNER_PROGRESS=$owner_progress" "WF_CONTINUATION_PROGRESS_BATCH=$progress_batch" \
+                "WF_CONTINUATION_OWNER_PROGRESS=$owner_progress" "WF_CONTINUATION_PROGRESS_BATCH=$progress_batch" "WF_CONTINUATION_PENDING_BUCKETS=$pending_buckets" \
                 WF_CONTINUATION_OBSERVE=1 WF_CONTINUATION_REPORT_SOCKET_ROUTES=1 WF_CONTINUATION_REPORT_TASKS=1 WF_CONTINUATION_REPORT_BRIDGE=1 \
                 "WF_BENCH_THP_DISABLE=$disabled" "WF_BENCH_SERVER_CPUS=$server_cpus" "${allocator_environment[@]}" \
-                "$OUT/bin/stream_check" "$OUT/bin/wf-coro" echo 1 > "$log" 2>&1; then
+                "$OUT/bin/stream_check" "$continuation_binary" echo 1 > "$log" 2>&1; then
                 cat "$log" >&2
                 exit 1
             fi
-            check_continuation_report 4 "$log" "$owner_progress" "$progress_batch"
+            check_continuation_report 4 "$log" "$owner_progress" "$progress_batch" "$pending_buckets"
             cat "$log" >> "$OUT/allocation-check.log"
           done
         fi
@@ -1108,7 +1127,7 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
             preflight_observed=0
             if [[ $form == cpp-* ]]; then preflight_observed=1; fi
             if [[ $form == go-* ]]; then preflight_observed=1; fi
-            if [[ $form == wf-coro || $form == wf-coro-owner || $form == wf-coro-batch32 ]]; then preflight_observed=1; fi
+            if [[ $form == wf-coro || $form == wf-coro-owner || $form == wf-coro-batch32 || $form == wf-coro-index ]]; then preflight_observed=1; fi
             if [[ $NATIVE_BASELINES != 0 && $form == uring* ]]; then preflight_observed=1; fi
             if [[ $EXPERIMENT == nodelay || ( $storage_experiment == 1 && ( $form == epoll* || $form == fiber* ) ) ]]; then preflight_observed=1; fi
             network_case "$form" 4 20 64 -1 "$preflight_observed"
@@ -1116,11 +1135,15 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
                 go_policy "$form"
                 check_go_report 4 "$OUT/observed/$cohort-$form-k4-a0/server.err" "$go_owner" "$go_width"
             fi
-            if [[ $form == wf-coro || $form == wf-coro-owner || $form == wf-coro-batch32 ]]; then
+            if [[ $form == wf-coro || $form == wf-coro-owner || $form == wf-coro-batch32 || $form == wf-coro-index ]]; then
                 continuation_policy "$form"
-                check_continuation_report 4 "$OUT/observed/$cohort-$form-k4-a0/server.err" "$owner_progress" "$progress_batch"
+                check_continuation_report 4 "$OUT/observed/$cohort-$form-k4-a0/server.err" "$owner_progress" "$progress_batch" "$pending_buckets"
                 network_case "$form" 64 2000 64 -1 1
-                check_continuation_report 64 "$OUT/observed/$cohort-$form-k64-a0/server.err" "$owner_progress" "$progress_batch"
+                check_continuation_report 64 "$OUT/observed/$cohort-$form-k64-a0/server.err" "$owner_progress" "$progress_batch" "$pending_buckets"
+                if [[ $CONTINUATION_SCREEN == 4 && ( $form == wf-coro-batch32 || $form == wf-coro-index ) ]]; then
+                    network_case "$form" 1024 200 64 -1 1
+                    check_continuation_report 1024 "$OUT/observed/$cohort-$form-k1024-a0/server.err" "$owner_progress" "$progress_batch" "$pending_buckets"
+                fi
             fi
             if [[ $NATIVE_BASELINES != 0 && $form == uring* ]]; then
                 expected_bytes=8192; if [[ $form == *64k* ]]; then expected_bytes=65536; fi
@@ -1276,10 +1299,10 @@ if [[ $page_experiment == 1 && $CLIENT_HEADROOM == 0 && $URING_DIAGNOSTIC == 0 ]
               go_environment+=(WF_BENCH_PROCESS_DETAILS=1)
               resident_workers=$go_width
           fi
-          if [[ $form == wf-coro || $form == wf-coro-owner || $form == wf-coro-batch32 ]]; then
+          if [[ $form == wf-coro || $form == wf-coro-owner || $form == wf-coro-batch32 || $form == wf-coro-index ]]; then
               binary="$OUT/bin/wf-coro"
               continuation_policy "$form"
-              continuation_environment=(WF_CONTINUATION_WINDOW=1024 "WF_CONTINUATION_OWNER_PROGRESS=$owner_progress" "WF_CONTINUATION_PROGRESS_BATCH=$progress_batch")
+              continuation_environment=(WF_CONTINUATION_WINDOW=1024 "WF_CONTINUATION_OWNER_PROGRESS=$owner_progress" "WF_CONTINUATION_PROGRESS_BATCH=$progress_batch" "WF_CONTINUATION_PENDING_BUCKETS=$pending_buckets")
           fi
           for resident_case in '64 64' '1024 64' '64 65536'; do
             read -r connections bytes <<< "$resident_case"
@@ -1434,6 +1457,11 @@ for ((pass=-WARMUP; pass<ROUNDS; pass++)); do
   done < "$OUT/cohorts-order.tsv"
 done
 
+if [[ $CONTINUATION_SCREEN == 4 ]]; then
+    [[ ${#forward[@]} -eq 13 && $(wc -l < "$OUT/cases.tsv") -eq 5 ]]
+    [[ $(wc -l < "$OUT/network.tsv") -eq $((1 + 65 * ROUNDS)) ]]
+    [[ $(wc -l < "$OUT/resident.tsv") -eq 118 ]]
+fi
 if [[ $GO_SCREEN == 1 ]]; then
     [[ ${#forward[@]} -eq 16 && $(wc -l < "$OUT/cases.tsv") -eq 5 ]]
     [[ $(wc -l < "$OUT/network.tsv") -eq $((1 + 80 * ROUNDS)) ]]
