@@ -107,6 +107,10 @@ scheduler-native-baselines:
 scheduler-client-headroom:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" CORO_CXX="$(CORO_CXX)" CLIENT_HEADROOM=1 NATIVE_BASELINES=2 EXPERIMENT=allocator bash scheduler-bench.sh combine
 
+.PHONY: scheduler-uring-diagnostic
+scheduler-uring-diagnostic:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS=3 WARMUP=1 CORO_CXX="$(CORO_CXX)" URING_DIAGNOSTIC=1 NATIVE_BASELINES=2 EXPERIMENT=allocator bash scheduler-bench.sh combine
+
 .PHONY: scheduler-allocation
 scheduler-allocation:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" EXPERIMENT=allocation bash scheduler-bench.sh bench
@@ -769,6 +773,10 @@ uring-check: prepare
 	      for(i=2;i<=NF;i++) {split($$i,a,"=");v[a[1]]=a[2]+0}; seen++; \
 	      if(v["buffer_bytes"]!=bytes || v["provided_bytes"]!=2097152 || \
 	         v["buffers"]*bytes!=v["provided_bytes"] || v["inline_send"]!=inline_send) bad=1; \
+	      if(v["ring_requests"]!=v["sends"] || v["ring_requested_bytes"]<v["send_bytes"]-v["inline_bytes"] || \
+	         v["ring_requested_vectors"]<v["ring_requests"] || v["inline_requested_bytes"]<v["inline_bytes"] || \
+	         v["inline_requested_vectors"]<v["inline_attempts"] || v["inline_short"]>v["inline_succeeded"] || \
+	         v["inline_succeeded"]+v["inline_eagain"]>v["inline_attempts"]) bad=1; \
 	      received+=v["receive_bytes"]; sent+=v["send_bytes"]; ring_sends+=v["sends"]; \
 	      inline_bytes+=v["inline_bytes"]; attempts+=v["inline_attempts"] \
 	    } END {exit !(seen==workers && !bad && received==8388608 && sent==received && ring_sends>0 && \

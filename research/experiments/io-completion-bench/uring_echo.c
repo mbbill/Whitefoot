@@ -161,6 +161,14 @@ struct worker {
     uint64_t exhausted;
     uint64_t inline_attempts;
     uint64_t inline_bytes;
+    uint64_t inline_succeeded;
+    uint64_t inline_short;
+    uint64_t inline_eagain;
+    uint64_t inline_requested_bytes;
+    uint64_t inline_requested_vectors;
+    uint64_t ring_requests;
+    uint64_t ring_requested_bytes;
+    uint64_t ring_requested_vectors;
     unsigned deepest_queue;
 #endif
 };
@@ -517,6 +525,18 @@ static void prepare_send_message(struct worker *worker, struct connection *link)
     link->message.msg_iovlen = vectors;
 }
 
+#if defined(WF_BENCH_URING_OBSERVE)
+/* Requested aggregation is distinct from bytes actually moved: a short send
+ * may submit the same suffix again. This observer never enters normal code. */
+static uint64_t send_message_bytes(const struct msghdr *message) {
+    uint64_t bytes = 0;
+    for (size_t at = 0; at < (size_t)message->msg_iovlen; at++) {
+        bytes += message->msg_iov[at].iov_len;
+    }
+    return bytes;
+}
+#endif
+
 static void close_connection(struct worker *worker, int descriptor);
 static void check_finished(void);
 
@@ -532,13 +552,18 @@ static void arm_send(struct worker *worker, int descriptor) {
      * syscall copied; short-send debt and EAGAIN enter the existing ring path.
      * A submitted send still owns its vector and buffers until its CQE. */
 #if defined(WF_BENCH_URING_OBSERVE)
+    uint64_t requested = send_message_bytes(&link->message);
     worker->inline_attempts++;
+    worker->inline_requested_bytes += requested;
+    worker->inline_requested_vectors += link->message.msg_iovlen;
 #endif
     ssize_t moved = sendmsg(descriptor, &link->message, MSG_DONTWAIT | MSG_NOSIGNAL);
     if (moved > 0) {
 #if defined(WF_BENCH_URING_OBSERVE)
         worker->inline_bytes += (uint64_t)moved;
         worker->send_bytes += (uint64_t)moved;
+        worker->inline_succeeded++;
+        if ((uint64_t)moved < requested) worker->inline_short++;
 #endif
         retire_send_bytes(worker, link, (uint32_t)moved);
         if (link->count == 0) {
@@ -554,12 +579,20 @@ static void arm_send(struct worker *worker, int descriptor) {
         mark_failed();
         return;
     }
+#if defined(WF_BENCH_URING_OBSERVE)
+    if (moved < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) worker->inline_eagain++;
+#endif
 #endif
     struct io_uring_sqe *entry = ring_next(&worker->ring);
     if (entry == NULL) {
         mark_failed();
         return;
     }
+#if defined(WF_BENCH_URING_OBSERVE)
+    worker->ring_requests++;
+    worker->ring_requested_bytes += send_message_bytes(&link->message);
+    worker->ring_requested_vectors += link->message.msg_iovlen;
+#endif
     entry->opcode = IORING_OP_SENDMSG;
     entry->fd = descriptor;
     entry->addr = (unsigned long long)(uintptr_t)&link->message;
@@ -970,14 +1003,24 @@ int main(int argc, char **argv) {
 #if defined(WF_BENCH_URING_OBSERVE)
         fprintf(stderr, "uring: worker=%u buffer_bytes=%u buffers=%u provided_bytes=%zu "
                 "ring_entries=%u receives=%llu sends=%llu receive_bytes=%llu send_bytes=%llu "
-                "exhausted=%llu deepest_queue=%u inline_send=%u inline_attempts=%llu inline_bytes=%llu\n",
+                "exhausted=%llu deepest_queue=%u inline_send=%u inline_attempts=%llu inline_bytes=%llu "
+                "inline_succeeded=%llu inline_short=%llu inline_eagain=%llu "
+                "inline_requested_bytes=%llu inline_requested_vectors=%llu "
+                "ring_requests=%llu ring_requested_bytes=%llu ring_requested_vectors=%llu\n",
                 at, BUFFER_BYTES, worker->buffer_count,
                 (size_t)worker->buffer_count * BUFFER_BYTES, RING_ENTRIES,
                 (unsigned long long)worker->receives, (unsigned long long)worker->sends,
                 (unsigned long long)worker->receive_bytes, (unsigned long long)worker->send_bytes,
                 (unsigned long long)worker->exhausted, worker->deepest_queue,
                 (unsigned)WF_BENCH_URING_INLINE_SEND,
-                (unsigned long long)worker->inline_attempts, (unsigned long long)worker->inline_bytes);
+                (unsigned long long)worker->inline_attempts, (unsigned long long)worker->inline_bytes,
+                (unsigned long long)worker->inline_succeeded, (unsigned long long)worker->inline_short,
+                (unsigned long long)worker->inline_eagain,
+                (unsigned long long)worker->inline_requested_bytes,
+                (unsigned long long)worker->inline_requested_vectors,
+                (unsigned long long)worker->ring_requests,
+                (unsigned long long)worker->ring_requested_bytes,
+                (unsigned long long)worker->ring_requested_vectors);
 #endif
         free(worker->starved_list);
         free(worker->loans);
