@@ -103,6 +103,10 @@ scheduler-pages:
 scheduler-allocation:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" EXPERIMENT=allocation bash scheduler-bench.sh bench
 
+.PHONY: scheduler-allocator
+scheduler-allocator:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" EXPERIMENT=allocator bash scheduler-bench.sh bench
+
 .PHONY: scheduler-coroutine scheduler-coroutine-paced
 scheduler-coroutine:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" CORO_CXX="$(CORO_CXX)" EXPERIMENT=coroutine bash scheduler-bench.sh bench
@@ -695,23 +699,28 @@ stackful-check: prepare
 	    extra=''; \
 	    if [ "$$form" = stackful ]; then extra='-DWF_BENCH_STACKFUL -DWF_BENCH_OBSERVE'; fi; \
 	   for storage in $$storage_policies; do \
-	    binary="$(BUILD)/check-$$mode-$$form-s$$storage"; \
+	    placements=0; if [ "$$mode" = echo ] && [ "$$storage" = 3 ]; then placements='0 1'; fi; \
+	    for placement in $$placements; do \
+	    placement_flags=''; suffix=''; \
+	    if [ "$$placement" = 1 ]; then placement_flags=-DWF_BENCH_MAIN_WORKER; suffix=-main; fi; \
+	    binary="$(BUILD)/check-$$mode-$$form-s$$storage$$suffix"; \
 	    $(CLANG) $(CFLAGS) -Wpedantic -pthread -DWF_BENCH_SNDBUF=4096 \
-	      -DWF_BENCH_STORAGE_OBSERVE "-DWF_BENCH_RECEIVE_STORAGE=$$storage" $$flags $$extra epoll_echo.c -o "$$binary"; \
+	      -DWF_BENCH_STORAGE_OBSERVE "-DWF_BENCH_RECEIVE_STORAGE=$$storage" $$flags $$extra $$placement_flags epoll_echo.c -o "$$binary"; \
 	    cases='compute truncated'; \
 	    if [ "$$mode" = echo ]; then cases=echo; fi; \
 	    for workers in 1 4; do \
 	      for case_name in $$cases; do \
-	        log="$(BUILD)/check-$$mode-$$form-s$$storage-w$$workers-$$case_name.log"; \
+	        log="$$binary-w$$workers-$$case_name.log"; \
 	        if ! "$(BUILD)/stream_check" "$$binary" "$$case_name" "$$workers" > "$$log" 2>&1; then cat "$$log"; exit 1; fi; \
 	        cat "$$log"; \
-	        awk -v storage="$$storage" '/^storage:/ {for(i=2;i<=NF;i++) {split($$i,a,"=");v[a[1]]=a[2]+0}; seen=1} \
-	          END {exit !(seen && v["policy"]==storage && v["accepted"]>0 && v["closed"]==v["accepted"])}' "$$log"; \
+	        awk -v storage="$$storage" -v placement="$$placement" '/^storage:/ {for(i=2;i<=NF;i++) {split($$i,a,"=");v[a[1]]=a[2]+0}; seen=1} \
+	          END {exit !(seen && v["policy"]==storage && ("main_worker" in v) && v["main_worker"]==placement && v["accepted"]>0 && v["closed"]==v["accepted"])}' "$$log"; \
 	        if [ "$$form" = stackful ] && [ "$$case_name" != truncated ]; then \
 	          awk -v mode="$$mode" '/^stackful:/ {for(i=2;i<=NF;i++) {split($$i,a,"=");v[a[1]]+=a[2]+0}} \
 	            END {exit !(v["resumes"]>0 && v["waits"]>0 && (mode!="echo" || v["send_waits"]>0) && (mode!="quantum" || v["yields"]>0))}' "$$log"; \
 	        fi; \
 	      done; \
+	    done; \
 	    done; \
 	   done; \
 	  done; \

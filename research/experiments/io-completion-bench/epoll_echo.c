@@ -85,6 +85,12 @@ typedef _Atomic int wf_atomic_int;
 #if defined(WF_BENCH_QUANTUM) && !defined(WF_BENCH_COMPUTE)
 #error "The compute quantum reference requires the compute protocol"
 #endif
+#ifndef WF_BENCH_MAIN_WORKER
+#define WF_BENCH_MAIN_WORKER 0
+#endif
+#if WF_BENCH_MAIN_WORKER != 0 && WF_BENCH_MAIN_WORKER != 1
+#error "The main-worker control must be zero or one"
+#endif
 
 /* One receive per thread and one pending buffer per connection, both this
  * size. The loop reads only when the pending buffer is empty, so what a short
@@ -751,13 +757,18 @@ int main(int argc, char **argv) {
         }
     }
 
-    for (unsigned at = 0; at < option_threads; at++) {
+    /* Separate main-arena allocation from the continuation representation.
+     * The optional worker zero runs the same engine on the entry thread. */
+    for (unsigned at = WF_BENCH_MAIN_WORKER; at < option_threads; at++) {
         if (pthread_create(&workers[at].thread, NULL, worker_main, &workers[at]) != 0) {
             fprintf(stderr, "epoll_echo: pthread_create failed\n");
             return 1;
         }
     }
-    for (unsigned at = 0; at < option_threads; at++) {
+#if WF_BENCH_MAIN_WORKER
+    worker_main(&workers[0]);
+#endif
+    for (unsigned at = WF_BENCH_MAIN_WORKER; at < option_threads; at++) {
         pthread_join(workers[at].thread, NULL);
     }
 #if defined(WF_BENCH_COROUTINE)
@@ -794,9 +805,9 @@ int main(int argc, char **argv) {
     uint64_t accepted = atomic_load_explicit(&accepted_total, memory_order_relaxed);
     uint64_t closed = atomic_load_explicit(&closed_total, memory_order_relaxed);
 #if defined(WF_BENCH_STORAGE_OBSERVE)
-    fprintf(stderr, "storage: policy=%u transfer_bytes=%u accepted=%llu closed=%llu\n",
+    fprintf(stderr, "storage: policy=%u transfer_bytes=%u accepted=%llu closed=%llu main_worker=%u\n",
             (unsigned)WF_BENCH_RECEIVE_STORAGE, (unsigned)TRANSFER_BYTES,
-            (unsigned long long)accepted, (unsigned long long)closed);
+            (unsigned long long)accepted, (unsigned long long)closed, (unsigned)WF_BENCH_MAIN_WORKER);
 #endif
 #if WF_BENCH_RECEIVE_STORAGE >= 2
     /* A failed run may stop with accepted connections still live. Normal

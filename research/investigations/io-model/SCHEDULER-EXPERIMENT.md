@@ -3457,3 +3457,72 @@ budget eight reports zero in those small cases. This is why the timed panel
 includes both budgets: one stays a forced control if eight never exhausts.
 These are correctness checks through the local epoll compatibility layer,
 not Linux timings. The native client-policy panel remains pending CI.
+
+## Thirtieth experiment: main-thread allocation and heap padding
+
+Experiment 27 leaves the one-worker ordinary heap unchanged after moving
+buffer ownership into the handler, while two-worker heap residency falls
+substantially. The WF entry thread executes worker zero. In the native
+references every worker, including a one-worker server, is created with
+pthread_create. This difference can select another libc arena even when
+both handlers call calloc for the same initialized 65536-byte allocation.
+It needs a controlled native comparison before changing WF initialization
+or its container/storage contract.
+
+`make scheduler-allocator` adds WF_BENCH_MAIN_WORKER=1 to the shared native
+engine. All listeners still exist before any worker starts. Workers one
+through N-1 are spawned normally, worker zero runs the same worker_main
+on the process entry thread, and cleanup waits for every worker. The flag
+defaults to zero. With zero, optimized C LLVM remains byte-identical to the
+retained manual reference after removing only module/source filename lines,
+for echo, computation and quantum modes. No connection state machine,
+buffer size, ownership, initialization or send policy changes. Untimed
+storage diagnostics identify the worker-start policy.
+
+The second axis sets glibc.malloc.top_pad to 131072 or zero explicitly. The
+[glibc 2.39 tunable documentation](https://sourceware.org/glibc/manual/2.39/html_node/Memory-Allocation-Tunables.html)
+describes padding as extra heap growth and retained shrink space that saves
+system calls; its default value is 131072 bytes. This is not the buffer size.
+The [glibc implementation](https://raw.githubusercontent.com/bminor/glibc/glibc-2.39/malloc/malloc.c)
+also disables dynamic threshold adjustment when setting top_pad, so both
+padding policies use explicit settings. The 131072 control means the explicit default
+numeric value, not an assertion of identity to an entirely unset allocator.
+The experiment does not separately attribute dynamic threshold behavior.
+The server binary's ELF interpreter is read from readelf, then its
+[--list-tunables output](https://sourceware.org/glibc/manual/2.39/html_node/Tunables.html)
+must report the requested value for each environment. Actual loader output
+is retained. The timed load generator keeps its original environment;
+untimed stream/residency launchers inherit the selected server setting.
+
+Every server process disables THP through the existing checked launcher.
+Split1 and split2 each have explicit-default and top0 cohorts. Eight forms
+are measured: WF caller base, caller small, accepted-handler callee-small,
+native shared-scratch epoll, private-calloc manual epoll on spawned/main
+workers, and private-calloc stackful on spawned/main workers. All forms
+use the same Clang 18 toolchain. Three echo cases (64/1024 peers with 64-byte
+messages and 64 peers with 65536-byte messages), seven passes and two
+warmups yield 672 timed rows. Form and cohort order alternate. Three
+byte-checked live snapshots per cell yield 288 smaps/status records. The
+original client is retained; fixed-arrival fairness is measured separately
+by experiment 29. Pure compute/file timings are not repeated because this
+panel attributes connection allocation, not a changed WF scheduler.
+
+The existing native stream target retains its 32 cases and adds four
+main-worker private-calloc cases: manual/stackful, each with one/four workers.
+It verifies fragmented streams, short sends, backpressure, half-close,
+cleanup and the observer's startup-policy value. All 36 pass locally on M1
+through the existing epoll compatibility layer. The actual maintained WF
+build block produces the three normal binaries and three observers with
+the intended caller/callee source selection. All twelve WF stream cases
+(three forms, normal/observed, one/four workers) pass locally. Native Linux tunable behavior,
+heap maps and performance remain pending CI.
+
+The decisive memory observation is the ordinary heap mapping while every
+connection remains live, separately from total peak RSS. Moving worker zero
+also changes pthread startup and stack reservation, so a rate difference
+alone cannot identify calloc behavior. At one worker every accepted native
+buffer necessarily uses that worker; at two workers listener distribution
+can vary. Lower live memory does not establish a better performance frontier
+unless CPU, throughput and tails support it. No runtime allocator default,
+source initialization rule, container address guarantee or ABI is changed
+by this experiment.

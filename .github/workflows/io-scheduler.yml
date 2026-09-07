@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        experiment: [coroutine-paced]
+        experiment: [allocator]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -56,18 +56,18 @@ jobs:
           ROUNDS: '7'
           WARMUP: '2'
           EXPERIMENT: ${{ matrix.experiment }}
-          CLANG: /usr/bin/clang-20
+          CLANG: /usr/bin/clang-18
           CORO_CXX: /usr/bin/clang++-20
         run: |
-          bash research/experiments/io-completion-bench/scheduler-bench.sh client
+          bash research/experiments/io-completion-bench/scheduler-bench.sh bench
       - name: Publish measurement summary
         if: always()
         run: |
           {
             echo '## Scheduler experiment: ${{ matrix.experiment }}'
-            echo 'Client-service control on the fixed-arrival mixed workload: original drive-until-EAGAIN versus bounded eight-round and one-round client FIFOs. All keep every planned light request and its backlog-inclusive latency. Cross WF base/chunks/balanced chunks with native C manual quantum and compact C++ coroutine quantum; seven paired passes and two warmups on split1/split2. Default client optimized LLVM must remain identical to d72d0d25, and budget one forces queued continuation in byte/compute/paced qualification. Server policies and source ABI are unchanged. Clang 20 is used throughout. See the investigation for scope.'
+            echo 'Allocator-path control: native manual/stackful calloc handlers run on all spawned workers or with worker zero on the main thread. Cross both with explicit glibc malloc top_pad=131072/0, alongside WF caller base/small, callee-small and native shared-scratch controls. Every server process disables THP. All eight forms use the same Clang 18 toolchain, split1/split2, three echo cases, seven passes and two warmups; 288 checked live snapshots separate ordinary heap residency from stack/storage costs. Loader tunable readback, main-worker observer checks and unchanged default C LLVM checks precede measurement. See the investigation for scope.'
             echo '```text'
-            for file in host.txt cohorts.tsv network-summary.txt client-service-check.log balanced-check.log stackful-check.log coroutine-check.log; do
+            for file in host.txt cohorts.tsv allocator-top131072.txt allocator-top0.txt network-summary.txt allocation-check.log stackful-check.log small-check.log; do
               cat "$RUNNER_TEMP/io-scheduler/$file" 2>/dev/null || echo "$file was not produced"
             done
             echo '```'
