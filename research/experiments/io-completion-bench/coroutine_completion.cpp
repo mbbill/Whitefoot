@@ -63,6 +63,8 @@ static probe_waiter *probe_ready_tail;
 static pthread_t probe_progress_thread;
 static _Atomic unsigned probe_stopping;
 static unsigned probe_owner_progress;
+static unsigned probe_progress_batch = 1;
+static unsigned probe_progress_remaining;
 static uint64_t probe_registered;
 static uint64_t probe_dequeued;
 static uint64_t probe_before_arm;
@@ -92,6 +94,7 @@ int wf__sched_host_epoch(uint64_t *epoch);
 int wf__sched_host_park(uint64_t observed);
 int wf__sched_host_wake(void);
 int wf__sched_target_progress(struct wf_sched_core *core);
+int wf__bridge_report(char *buffer, size_t capacity);
 
 int probe_done(const void *record) {
     const wf_completion_record *held = record;
@@ -183,15 +186,33 @@ void *probe_take_ready(void) {
     if (probe_owner_progress) {
         for (;;) {
             uint64_t epoch;
+            /* Consume a bounded group already made ready before kicking new
+             * SQEs. The owner alone spends this budget. An empty queue always
+             * reaches progress, even when part of the budget remains. */
+            if (probe_progress_remaining) {
+                pthread_mutex_lock(&probe_lock);
+                if (probe_ready_head) {
+                    --probe_progress_remaining;
+                    break;
+                }
+                pthread_mutex_unlock(&probe_lock);
+            }
             /* Capture the wake epoch before progress and the ready check.
              * A helper publishing after that check changes the epoch, so
              * park cannot miss its wake. Never progress with probe_lock held:
              * reaping may synchronously enter wf_probe_publish. */
             assert(wf__sched_host_epoch(&epoch));
             (void)wf__sched_target_progress(NULL);
+            probe_progress_remaining = probe_progress_batch;
             pthread_mutex_lock(&probe_lock);
-            if (probe_ready_head) break;
+            if (probe_ready_head) {
+                --probe_progress_remaining;
+                break;
+            }
             pthread_mutex_unlock(&probe_lock);
+            /* Keep the next post-park turn's explicit progress step, including
+             * batch one, identical to the original owner policy. */
+            probe_progress_remaining = 0;
             assert(wf__sched_host_park(epoch));
         }
     } else {
@@ -455,6 +476,17 @@ void wf__continuation_run(void *frame) {
     const char *owner_progress = getenv("WF_CONTINUATION_OWNER_PROGRESS");
     assert(!owner_progress || strcmp(owner_progress, "0") == 0 || strcmp(owner_progress, "1") == 0);
     probe_owner_progress = owner_progress && strcmp(owner_progress, "1") == 0;
+    const char *progress_batch = getenv("WF_CONTINUATION_PROGRESS_BATCH");
+    probe_progress_batch = 1;
+    if (progress_batch) {
+        char *end;
+        errno = 0;
+        unsigned long value = strtoul(progress_batch, &end, 10);
+        assert(errno == 0 && *progress_batch != '\0' && *end == '\0' && value >= 1 && value <= 64);
+        probe_progress_batch = (unsigned)value;
+    }
+    assert(probe_owner_progress || probe_progress_batch == 1);
+    probe_progress_remaining = 0;
     assert(!probe_new_head && !probe_new_tail && !probe_active_task);
     probe_task root = {0};
     root.frame = frame;
@@ -485,11 +517,12 @@ void wf__continuation_run(void *frame) {
     assert(probe_tasks_retired + 1 == probe_tasks_created);
     probe_active_task = NULL;
     if (getenv("WF_CONTINUATION_OBSERVE")) {
-        fprintf(stderr, "WF continuation host: registered=%llu dequeued=%llu helper=%llu uring=%llu inline=%llu owner_progress=%u\n",
+        fprintf(stderr, "WF continuation host: registered=%llu dequeued=%llu helper=%llu uring=%llu inline=%llu owner_progress=%u progress_batch=%u\n",
                 (unsigned long long)probe_registered, (unsigned long long)probe_dequeued,
                 (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_FILE_ADAPTER],
                 (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_LINUX_IO_URING],
-                (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_INLINE], probe_owner_progress);
+                (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_INLINE], probe_owner_progress,
+                probe_progress_batch);
     }
     if (getenv("WF_CONTINUATION_REPORT_SOCKET_ROUTES")) {
         fprintf(stderr, "WF continuation host: accept_ring=%llu accept_helper=%llu connect_ring=%llu connect_helper=%llu receive_ring=%llu receive_helper=%llu\n",
@@ -506,6 +539,10 @@ void wf__continuation_run(void *frame) {
                 (unsigned long long)(probe_tasks_completed - 1),
                 (unsigned long long)probe_tasks_retired,
                 (unsigned long long)probe_tasks_peak);
+    }
+    if (getenv("WF_CONTINUATION_REPORT_BRIDGE")) {
+        char counters[1024];
+        if (wf__bridge_report(counters, sizeof(counters))) fprintf(stderr, "%s\n", counters);
     }
     active = 0;
 }

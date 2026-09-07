@@ -65,7 +65,7 @@ static void finish(pid_t child, FILE *diagnostics, int expected_status,
     char *line = NULL;
     size_t capacity = 0;
     unsigned long long registered, dequeued, helper, ring, immediate;
-    unsigned owner_progress;
+    unsigned owner_progress, progress_batch;
     ssize_t count = getline(&line, &capacity, diagnostics);
     assert(count > 0);
     /* A refused operation may finish before registration. A pending refusal
@@ -74,15 +74,17 @@ static void finish(pid_t child, FILE *diagnostics, int expected_status,
         count = getline(&line, &capacity, diagnostics);
         assert(count > 0);
     }
-    int fields = sscanf(line, "WF continuation host: registered=%llu dequeued=%llu helper=%llu uring=%llu inline=%llu owner_progress=%u",
-                        &registered, &dequeued, &helper, &ring, &immediate, &owner_progress);
-    if (fields != 6) {
+    int fields = sscanf(line, "WF continuation host: registered=%llu dequeued=%llu helper=%llu uring=%llu inline=%llu owner_progress=%u progress_batch=%u",
+                        &registered, &dequeued, &helper, &ring, &immediate, &owner_progress, &progress_batch);
+    if (fields != 7) {
         fprintf(stderr, "continuation stream: unexpected diagnostic: %s", line);
         abort();
     }
     assert((!require_wait || registered > 0) && registered == dequeued);
     const char *owner = getenv("WF_CONTINUATION_OWNER_PROGRESS");
     assert(owner_progress == (unsigned)(owner && strcmp(owner, "1") == 0));
+    const char *batch = getenv("WF_CONTINUATION_PROGRESS_BATCH");
+    assert(progress_batch == (batch ? strtoul(batch, NULL, 10) : 1));
     if (required_route == 1) assert(ring > 0);
     if (required_route == 2) assert(ring == 0 && helper > 0);
     if (socket_operations >= 0) {

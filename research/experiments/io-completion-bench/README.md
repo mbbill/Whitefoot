@@ -404,7 +404,7 @@ The generated-WF continuation screen uses
 It compares the actual sequential echo source compiled with
 `--continuations --par` against two stackful WF forms and seven native
 controls, with one server CPU and a client on another physical core.
-`compiler-continuation-bench` builds the uninstrumented candidate and checks
+`compiler-continuation-bench` builds the candidate without sanitizers and checks
 its four-slot, twelve-task protocol; the Linux harness additionally requires
 the native/helper ASan/UBSan suite and the common large-stream oracle before
 timing. A 1024-task window admits all peers held open by the fixed benchmark
@@ -423,6 +423,15 @@ the existing locked publication protocol and pass the complete generated
 continuation suite. The eleven-form panel produces 385 timing rows and 99
 live snapshots. Experiment 44 owns this isolated handoff comparison; no
 source or completion-record ABI change is involved.
+
+`CONTINUATION_SCREEN=3` additionally keeps `wf-coro-batch32`: the same owner
+binary with `WF_CONTINUATION_PROGRESS_BATCH=32` instead of the default one.
+It resumes at most that many already-ready waiters between explicit target
+progress calls, and always progresses immediately when the ready queue is
+empty. This gives 420 timing rows and 108 live snapshots. All three policies
+run the generated lifetime/stream suite; separate observations enable
+`WF_CONTINUATION_REPORT_BRIDGE=1` to retain existing ring submission, enter,
+completion and wake counters. Experiment 48 owns this batching comparison.
 
 On native Windows, `windows-bench.ps1` owns a separate production
 qualification:

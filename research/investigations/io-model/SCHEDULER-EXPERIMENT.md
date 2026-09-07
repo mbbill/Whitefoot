@@ -4249,12 +4249,12 @@ name. A known limitation remains visible until its experiment is complete.
 | Native C epoll | Manual state machine; per-worker edge-triggered reactor and `SO_REUSEPORT`; 64 KiB shared scratch, bounded private spill on backpressure | Competitive readiness control: immediate recv/send, no ordinary per-operation allocation, local connection state | Screened on Linux loopback; 2 MiB streams, short sends and half-close qualified. Physical NIC and overload confirmation missing |
 | Native C epoll with private storage | Arena, malloc or calloc per connection; main-thread worker variant | Diagnostic storage and allocator comparison; private backing remains owned through I/O | Screened and stream-qualified; these rows need not beat shared scratch to explain WF storage cost |
 | Native C io_uring | Multishot accept/recv, provided buffers, per-worker rings/listeners, ordered vectored sends; SINGLE_ISSUER + DEFER_TASKRUN, no SQPOLL | Competitive completion control: batching, no receive submission per arrival, loaned receive buffers reused for send | Stream-qualified and screened at `475008b5`: 64 KiB improves both large-message cells; small-message intervals overlap. No independently confirmed or universal winner |
-| Native C io_uring with immediate send | Same receive engine and loans, one nonblocking `sendmsg` attempt before ring fallback | Competitive hybrid candidate: avoids a submission/completion round trip when the socket accepts bytes immediately | Stream-qualified and screened at `0357259d`; 8 KiB hybrid severely regresses large messages, 64 KiB mostly overlaps pure-ring control. Shutdown wake-storage correction requalified at `0ebe924b` |
+| Native C io_uring with immediate send | Same receive engine and loans, one nonblocking `sendmsg` attempt before ring fallback | Competitive hybrid candidate: avoids a submission/completion round trip when the socket accepts bytes immediately | Stream-qualified and screened at `0357259d`; 8 KiB hybrid severely regresses large messages; experiment 46 measures about 3.785x more send operations from lost application-level gathering, without short/EAGAIN retries. 64 KiB does not show the same loss. Shutdown wake-storage correction requalified at `0ebe924b` |
 | Native C stackful / C++ stackless | Same epoll engine; private or shared receive storage; stackful, heap coroutine, and compiler-elided coroutine forms | Diagnostic representation control: separates coroutine/frame allocation, storage and reactor cost | Screened and stream/lifetime-qualified at their recorded revisions; not independent mature runtime comparisons |
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
 | WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Qualified and screened at `2147857e` and `f72aacb8` (experiments 39/44). Sole-resumer progress improves occupied small-message throughput by 1.98-2.77x versus the threaded coordinator, but still loses to the existing WF/native controls. Submission batching is the next mechanism question |
 | Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Source candidate only; pin Go toolchain, GOMAXPROCS, buffers and complete protocol fixture before timing |
-| Rust sequential / Rayon CPU pool | Existing recursive `par_layout.wf` port with exact floating-point order and every node write; sibling `join`, calibrated grain and explicit pool width | Essential CPU-parallel reference; separates sequential code generation from parallel scheduling. Broader `par_iter`/`scope` and unbalanced workloads remain candidate rows | Checksum-qualified and independently confirmed after grain calibration on M1/Linux (experiment 40). Experiment 45's stack/batch control reduces the WF12/Rayon paired wall gap from 13.9% at one batch to 1.6% at sixteen, supporting substantial fixed costs. Output-path ring initialization remains a separate attribution question; this is not an optimal WF CPU setup claim |
+| Rust sequential / Rayon CPU pool | Existing recursive `par_layout.wf` port with exact floating-point order and every node write; sibling `join`, calibrated grain and explicit pool width | Essential CPU-parallel reference; separates sequential code generation from parallel scheduling. Broader `par_iter`/`scope` and unbalanced workloads remain candidate rows | Checksum-qualified and independently confirmed after grain calibration on M1/Linux (experiment 40). Experiment 45's stack/batch control reduces the WF12/Rayon paired wall gap from 13.9% at one batch to 1.6% at sixteen, supporting substantial fixed costs. Experiment 47 finds no stable gain from disabling the unused output-path ring; remaining startup/exit costs need attribution. This is not an optimal WF CPU setup claim |
 | Tokio I/O + bounded Rayon CPU offload | One current-thread I/O driver plus B-1 CPU workers, fixed 64-byte protocol, asynchronous bounded admission, one request/reply per connection | External mixed-load reference under one total execution budget; exposes CPU queue transfer, backpressure and light-request progress | Linux-qualified at `040bfc4b` (experiment 42), including saturation, errors, reset, partial input, half-close and slow output. Four short client smoke records are correctness evidence, not a performance ranking |
 | Tokio | Fixed-worker multithread runtime and a separate per-core current-thread/reactor configuration | External mainstream async baseline; distinguish work stealing from reactor locality | Source candidate only; pin toolchain/lockfile, socket distribution and blocking-pool budget |
 | Monoio | Per-core runtime, separately forced IoUringDriver and LegacyDriver | External completion/readiness comparison within one runtime family | Source candidate only; prohibit silent fusion fallback in backend-specific rows |
@@ -4277,7 +4277,7 @@ revision, compiler and dependency lockfile.
 | TCP closed-loop echo | 1/4/64/1024 peers × 64 B, 64 peers × 64 KiB; one outstanding request per peer; exact bytes and EOF | Current ten-cell split1/split2 screen. Add 4 KiB and pipeline depths 8/32 only after candidate screening |
 | TCP streaming / backpressure | Continuous 2 MiB or larger, arbitrary fragmentation, short sends, slow readers, half-close; preserve order and bounded live storage | Existing epoll stream oracle; uring joins it below. Idle 10k peers, churn and reset/cancellation remain separate qualification |
 | TCP fixed-arrival / mixed compute | Same recurrence and compute quantum; light paced requests alongside heavy work; below/near/above saturation | Existing paced mixed experiments cover selected controls. External candidates need scheduled-to-response p99/p99.9, goodput, missed deadlines, backlog and drain recovery |
-| CPU-only parallelism and CPU offload | Sequential Rust vs Rayon; balanced/unbalanced recursive and data-parallel jobs; matched arithmetic, tuned grain and pool width. Mixed mode charges enqueue, completion transfer and bounded queues | Recursive `join` confirmation and stack/batch sensitivity are measured; isolate output-path initialization next. Tokio + Rayon mixed qualification exists, with timing pending client-capacity control. Both executors share one total budget |
+| CPU-only parallelism and CPU offload | Sequential Rust vs Rayon; balanced/unbalanced recursive and data-parallel jobs; matched arithmetic, tuned grain and pool width. Mixed mode charges enqueue, completion transfer and bounded queues | Recursive `join`, stack/batch and unused-ring controls are measured; attribute the remaining short-run startup/exit window next. Tokio + Rayon mixed qualification exists, with timing pending client-capacity control. Both executors share one total budget |
 | File reads | Open-once cache-hot vs cold buffered vs direct I/O; random/sequential; 4/64 KiB; QD 1/8/64; same offsets, bytes and checksum | Existing file experiments cover subsets. Extend native blocking/pread pool/uring comparisons; fio is a device-envelope cross-check, not an identical-program runtime row |
 | File writes | Buffered accepted bytes vs fdatasync/fsync durability are distinct contracts; name batch size, flush cadence and directory durability | Broader matrix required; no current TCP result supports a write or durability claim |
 | Dependent storage/network pipeline | Read → parse → request → write with the same dependency graph and compute work | Unmeasured; tests whether sequential-source overlap composes across stages |
@@ -6176,3 +6176,66 @@ Its original resource.tsv has SHA-256
 Plans, host metadata, commands, ordinary binaries and all separate output
 and observation files remain there. No performance-policy change follows
 from this negative attribution result.
+
+## Forty-eighth experiment: batch ready continuations before target progress
+
+Experiment 44 removes most coordinator context switches at occupied small
+messages, but the owner form still spends about 37% more server CPU per trip
+than the existing WF callee form at 64 peers. Its current `probe_take_ready`
+flushes/reaps target I/O before every ready dequeue. The target progress
+implementation first kicks deferred SQEs, so one-at-a-time progress can lose
+submission aggregation even when other continuations are already ready.
+This is a mechanism hypothesis selected from code and the remaining measured
+loss, not a claim that submission counts were already measured in experiment 44.
+
+`WF_CONTINUATION_PROGRESS_BATCH` selects a bounded owner-ready budget, default
+one, accepted range 1-64. A value greater than one requires owner progress.
+The comparison freezes one versus thirty-two rather than tuning from these
+confirmation samples. After explicit target progress, the sole owner may
+resume up to that many ready waiters before its next explicit progress call.
+If the ready queue empties first, it immediately progresses again; it never
+waits for a batch to fill. Once the budget is spent, progress occurs even if
+ready work remains. The existing bounded new-task queue keeps its precedence.
+
+The pending/ready locks, registration handshake, completion publication,
+helper behavior, wake notifications, source bytes, frames, window and buffer
+ownership are unchanged. Target progress still runs outside the coordinator
+lock. Before a park, the owner captures the epoch, progresses and checks the
+queue under its lock, retaining the helper-publication lost-wake protection.
+A queued waiter remains owned until dequeue, and source resumes only after
+publication/progress returns. No source-level preemption, cancellation,
+worker identity guarantee or new `wf__par_*` interface follows from this flag.
+
+The default one preserves the preceding owner's progress frequency. The
+same ordinary binary implements the threaded control, owner-one and
+owner-thirty-two; reports and sanitizers are disabled during timing but the
+existing coordinator counters remain in all three. Their observer reports
+include actual owner/batch settings. A separate
+`WF_CONTINUATION_REPORT_BRIDGE=1` reads already-maintained bridge counters at
+completion; it adds no per-operation counting. Linux preflight requires a
+native ring, matching completed submissions, positive submission enters,
+expected native socket routes and complete task retirement. It does not
+assert that larger batches must produce fewer enters or better performance.
+
+`CONTINUATION_SCREEN=3 NATIVE_BASELINES=1 EXPERIMENT=allocator` uses the
+existing `scheduler-bench.sh combine` caller. It retains the previous eleven
+forms and adds `wf-coro-batch32`: five WF candidates and seven fixed native
+controls, five echo cases, seven alternating passes after two complete
+warmups, yielding 420 ordinary timing rows and 108 live-memory snapshots.
+The resource and byte contracts are the same split1 panel: one server CPU,
+one client CPU on the other physical core, 1024 staged slots, exact payload
+verification, THP disabled and explicit allocator setting. Threaded/owner
+qualifications plus the common 2 MiB partial-send/backpressure/half-close
+oracle run before timing for all three policies. Observation records remain
+separate from ordinary timings; sample dispersion and client occupancy are
+retained regardless of which form wins.
+
+Local M1 ASan/UBSan and ThreadSanitizer qualifications pass the generated
+file, pipe, recursive and TCP outcomes at all three settings, including
+four-task fanout and twelve-task/four-slot retirement. The independent nested
+C++ before-arm/during-arm and loan-drain fixtures still pass. These helper
+runs establish local safety/behavior evidence, not Linux syscall behavior or
+a performance result. The ordinary same-binary twelve-task/four-slot checks
+and common four-peer 2 MiB stream oracle also pass all three policies, with
+all tasks completed and retired. The isolated Linux branch is
+`codex/io-continuation-batch`; its measurements remain pending.
