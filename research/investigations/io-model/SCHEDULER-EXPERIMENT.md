@@ -3920,3 +3920,12 @@ The allocation-count reduction is therefore not evidence of reduced total
 frame bytes or a throughput improvement. Linux io_uring qualification is
 pending. This fixture is lifetime evidence, not a WF stackless backend or
 a performance result.
+
+The first Linux qualification at `ea1d08be` reaches the final route guard
+and fails it. Its bootstrap used pread on descriptor -1; the Linux native
+adapter deliberately refuses negative transfer descriptors, so that one
+initialization operation takes the helper route and violates the explicit
+zero-helper requirement. Replace the bootstrap with a checked byte read
+from a real temporary file, which both adapters carry. Keep the same route
+requirements and report both counters on failure. The failed native job
+is not a pass; the corrected fixture needs its own native qualification.

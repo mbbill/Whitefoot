@@ -192,11 +192,16 @@ void probe_start(void) {
     unsigned char byte = 0;
     int64_t value;
     int error;
-    /* Initialize the actual bridge with an operation that needs no peer.
-     * Its ordinary join itself drives any deferred native submission. */
-    wf__completion_file_pread_submit(-1, &byte, 1, 0, &record);
+    FILE *input = tmpfile();
+    assert(input != NULL && fputc(0x5a, input) == 0x5a && fflush(input) == 0);
+    /* Initialize with a valid positioned read, which both routes support.
+     * An invalid descriptor would be deliberately refused by the native
+     * adapter and would contaminate the no-helper qualification below.
+     * The ordinary join itself drives any deferred native submission. */
+    wf__completion_file_pread_submit(fileno(input), &byte, 1, 0, &record);
     wf__completion_file_join(&record, &value, &error);
-    assert(value < 0 && error == EBADF);
+    assert(value == 1 && error == 0 && byte == 0x5a);
+    assert(fclose(input) == 0);
     assert(pthread_create(&probe_progress_thread, NULL, probe_progress, NULL) == 0);
 }
 
@@ -222,13 +227,17 @@ void probe_report(int required_route) {
     if (required_route == 1 &&
         (probe_routes[WF_COMPLETION_ROUTE_LINUX_IO_URING] < gated ||
          probe_routes[WF_COMPLETION_ROUTE_FILE_ADAPTER] != 0)) {
-        fputs("coroutine completion: native io_uring route requirement failed\n", stderr);
+        fprintf(stderr, "coroutine completion: native io_uring route requirement failed: ring=%llu helper=%llu\n",
+                (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_LINUX_IO_URING],
+                (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_FILE_ADAPTER]);
         abort();
     }
     if (required_route == 2 &&
         (probe_routes[WF_COMPLETION_ROUTE_FILE_ADAPTER] < gated ||
          probe_routes[WF_COMPLETION_ROUTE_LINUX_IO_URING] != 0)) {
-        fputs("coroutine completion: helper route requirement failed\n", stderr);
+        fprintf(stderr, "coroutine completion: helper route requirement failed: ring=%llu helper=%llu\n",
+                (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_LINUX_IO_URING],
+                (unsigned long long)probe_routes[WF_COMPLETION_ROUTE_FILE_ADAPTER]);
         abort();
     }
     printf("completion continuation: PASS registered=%llu dequeued=%llu before=%llu during=%llu helper=%llu uring=%llu inline=%llu\n",
