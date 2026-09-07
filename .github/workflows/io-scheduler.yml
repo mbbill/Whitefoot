@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-rayon-baselines']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-rayon-baselines', 'codex/io-mixed-rayon-baselines']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -23,6 +23,7 @@ on:
       - 'research/experiments/io-completion-bench/Makefile'
       - 'research/experiments/io-completion-bench/scheduler-bench.sh'
       - 'research/experiments/io-completion-bench/rayon-bench.sh'
+      - 'research/experiments/io-completion-bench/mixed-rayon-smoke.sh'
       - 'research/experiments/io-completion-bench/rayon-baseline/**'
       - '.github/workflows/io-scheduler.yml'
 
@@ -34,7 +35,7 @@ jobs:
   measure:
     # Correctness-only branches retain the independently running timing
     # revisions. Canonical and native correctness jobs still run.
-    if: github.ref != 'refs/heads/codex/io-windows-wake-fix' && github.ref != 'refs/heads/codex/io-continuation-experiments' && github.ref != 'refs/heads/codex/io-continuation-lowering' && github.ref != 'refs/heads/codex/io-continuation-network' && github.ref != 'refs/heads/codex/io-continuation-staged' && github.ref != 'refs/heads/codex/io-rayon-baselines'
+    if: github.ref != 'refs/heads/codex/io-windows-wake-fix' && github.ref != 'refs/heads/codex/io-continuation-experiments' && github.ref != 'refs/heads/codex/io-continuation-lowering' && github.ref != 'refs/heads/codex/io-continuation-network' && github.ref != 'refs/heads/codex/io-continuation-staged' && github.ref != 'refs/heads/codex/io-rayon-baselines' && github.ref != 'refs/heads/codex/io-mixed-rayon-baselines'
     name: measure (${{ matrix.experiment }})
     strategy:
       fail-fast: false
@@ -341,3 +342,31 @@ jobs:
         with:
           name: io-rayon-baselines
           path: ${{ runner.temp }}/rayon-baselines
+
+  mixed-rayon:
+    if: github.ref == 'refs/heads/codex/io-mixed-rayon-baselines'
+    name: bounded async I/O and Rayon qualification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch locked reference dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang time
+          rustup default stable
+          cargo fetch --locked --manifest-path research/experiments/io-completion-bench/rayon-baseline/Cargo.toml
+      - name: Qualify lifecycle and the existing paced compute client
+        env:
+          OUT: ${{ runner.temp }}/mixed-rayon
+        run: |
+          set -euo pipefail
+          make -C research/experiments/io-completion-bench mixed-rayon-smoke \
+            WHITEFOOT_SCRATCH_ROOT="$RUNNER_TEMP" 2>&1 | tee "$RUNNER_TEMP/mixed-rayon-check.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: io-mixed-rayon
+          path: |
+            ${{ runner.temp }}/mixed-rayon
+            ${{ runner.temp }}/mixed-rayon-check.log

@@ -543,3 +543,21 @@ processes, including tree and pool construction; no concurrent I/O or CPU
 offload transfer is measured. Experiment 40 in
 `research/investigations/io-model/SCHEDULER-EXPERIMENT.md` owns its findings and
 the condition for retiring this reference.
+
+`make mixed-rayon-check` qualifies the optional `mixed-rayon` binary in the
+same standalone crate. Its CLI is `mixed-rayon PORT CONNECTIONS --threads B
+[--queue Q]`: B includes one current-thread Tokio I/O driver, leaving B-1
+Rayon CPU workers. Q bounds queued plus running CPU jobs and defaults to
+2*(B-1). Each connection retains one framed request/reply; a full CPU queue
+asynchronously suspends its handler. Zero-round requests stay on the I/O
+thread, and CPU admission is released before response writes. Protocol
+errors terminate the sample after handlers and CPU jobs are drained.
+
+The canonical gate calls its five lifecycle tests and the existing independent
+`stream_check` compute/truncation oracle. The optional `mixed-observe` feature
+adds queue/concurrency/lifecycle counters; ordinary builds omit them. Socket2
+is used only by the Rust tests to force TCP backpressure and RST safely.
+`make mixed-rayon-smoke` adds four Linux-only, half-second runs of the existing
+paced `netload` client at total budgets 2/4 with ordinary/observed binaries.
+Those are protocol qualifications on a shared host, not a performance ranking.
+Experiment 42 owns this bin, its caller and their retirement condition.
