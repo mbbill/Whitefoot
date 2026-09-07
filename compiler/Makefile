@@ -263,7 +263,7 @@ completion-test: completion-core-read-test completion-default-route-test sched-s
 	fi
 	@echo "completion pure-compute link boundary: PASS"
 	@if [ "$$(uname -s)" = Linux ]; then \
-		$(CC) $(COMPLETION_CFLAGS) \
+		$(CC) $(COMPLETION_CFLAGS) -DWF_NATIVE_WAKE_PROBE \
 			$(SCHED_SOURCES) \
 			$(COMPLETION_DIR)/runtime.c \
 			$(COMPLETION_DIR)/wait_host.c \

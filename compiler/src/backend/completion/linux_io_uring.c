@@ -17,6 +17,13 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#if defined(WF_NATIVE_WAKE_PROBE)
+/* Test-only gates distinguish a provisional announcement from a park that
+ * has passed its final recheck. Ordinary adapter builds contain neither. */
+extern void wf_linux_io_uring_probe_announced(void);
+extern void wf_linux_io_uring_probe_committed(void);
+#endif
+
 static unsigned wf_linux_load_acquire(const unsigned *value) {
     return __atomic_load_n(value, __ATOMIC_ACQUIRE);
 }
@@ -1212,6 +1219,9 @@ int wf_linux_io_uring_park(
     adapter->parked_schedulers += 1u;
 #endif
     announced = 1;
+#if defined(WF_NATIVE_WAKE_PROBE)
+    wf_linux_io_uring_probe_announced();
+#endif
     if (atomic_load_explicit(
             &adapter->runtime->wake_epoch,
             memory_order_seq_cst
@@ -1237,6 +1247,9 @@ int wf_linux_io_uring_park(
         : timeout_milliseconds > (uint32_t)INT_MAX
             ? INT_MAX
             : (int)timeout_milliseconds;
+#if defined(WF_NATIVE_WAKE_PROBE)
+    wf_linux_io_uring_probe_committed();
+#endif
     atomic_fetch_add_explicit(
         &adapter->stat_kernel_waits,
         1,

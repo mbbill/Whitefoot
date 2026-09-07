@@ -11,6 +11,10 @@
 
 #define _GNU_SOURCE
 
+#if !defined(WF_NATIVE_WAKE_PROBE)
+#error "the Linux native adapter probe requires WF_NATIVE_WAKE_PROBE"
+#endif
+
 #include "linux_io_uring.h"
 #include "../sched/core.h"
 
@@ -21,8 +25,10 @@
 #include <sched.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/syscall.h>
+#include <time.h>
 #include <unistd.h>
 
 #define PROBE_CHECK(condition)                                                \
@@ -95,31 +101,159 @@ static int probe_record_done(const wf_completion_record *record) {
         == WF_SCHED_DONE;
 }
 
+/* These gates select both sides of the announce/recheck race without relying
+ * on observing a transient count. A deadline only fails a stalled test; it is
+ * never accepted as a wake. The production protocol contains no gate calls. */
+typedef struct probe_wake_gate {
+    pthread_mutex_t lock;
+    pthread_cond_t changed;
+    unsigned arrived;
+    int open;
+} probe_wake_gate;
+
+#define PROBE_WAKE_GATE_INITIALIZER { PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER, 0u, 0 }
+enum { PROBE_PARK_TIMEOUT_MS = 5000u };
+
+static void probe_gate_check(int error, const char *operation) {
+    if (error != 0) {
+        fprintf(stderr, "native wake gate failed: %s: %s\n", operation, strerror(error));
+        _Exit(1);
+    }
+}
+
+static struct timespec probe_gate_deadline(void) {
+    struct timespec deadline;
+    if (clock_gettime(CLOCK_REALTIME, &deadline) != 0) {
+        probe_gate_check(errno, "clock");
+    }
+    deadline.tv_sec += 10;
+    return deadline;
+}
+
+static void probe_gate_arrive(probe_wake_gate *gate) {
+    if (gate == NULL) return;
+    struct timespec deadline = probe_gate_deadline();
+    probe_gate_check(pthread_mutex_lock(&gate->lock), "arrival lock");
+    if (!gate->open) {
+        ++gate->arrived;
+        probe_gate_check(pthread_cond_broadcast(&gate->changed), "arrival signal");
+        while (!gate->open) {
+            probe_gate_check(pthread_cond_timedwait(&gate->changed, &gate->lock, &deadline), "release wait");
+        }
+    }
+    probe_gate_check(pthread_mutex_unlock(&gate->lock), "arrival unlock");
+}
+
+static void probe_gate_wait(probe_wake_gate *gate, unsigned count) {
+    struct timespec deadline = probe_gate_deadline();
+    probe_gate_check(pthread_mutex_lock(&gate->lock), "observer lock");
+    while (gate->arrived < count) {
+        probe_gate_check(pthread_cond_timedwait(&gate->changed, &gate->lock, &deadline), "arrival wait");
+    }
+    if (gate->arrived != count) probe_gate_check(EINVAL, "unexpected arrival count");
+    probe_gate_check(pthread_mutex_unlock(&gate->lock), "observer unlock");
+}
+
+static void probe_gate_release(probe_wake_gate *gate) {
+    probe_gate_check(pthread_mutex_lock(&gate->lock), "release lock");
+    gate->open = 1;
+    probe_gate_check(pthread_cond_broadcast(&gate->changed), "release signal");
+    probe_gate_check(pthread_mutex_unlock(&gate->lock), "release unlock");
+}
+
+static void probe_gate_destroy(probe_wake_gate *gate) {
+    probe_gate_check(pthread_cond_destroy(&gate->changed), "condition destroy");
+    probe_gate_check(pthread_mutex_destroy(&gate->lock), "mutex destroy");
+}
+
+static _Thread_local probe_wake_gate *probe_announcement_gate;
+static _Thread_local probe_wake_gate *probe_committed_gate;
+static _Thread_local probe_wake_gate *probe_epoch_gate;
+
+void wf_linux_io_uring_probe_announced(void) {
+    probe_gate_arrive(probe_announcement_gate);
+}
+
+void wf_linux_io_uring_probe_committed(void) {
+    probe_gate_arrive(probe_committed_gate);
+}
+
+void wf_completion_probe_after_epoch(void) {
+    probe_gate_arrive(probe_epoch_gate);
+}
+
 typedef struct probe_park_context {
     wf_linux_io_uring_adapter *adapter;
     uint64_t epoch;
     int result;
+    probe_wake_gate *announced;
+    probe_wake_gate *committed;
 } probe_park_context;
 
 static void *probe_park_thread(void *opaque) {
     probe_park_context *context = opaque;
+    probe_announcement_gate = context->announced;
+    probe_committed_gate = context->committed;
     context->result = wf_linux_io_uring_park(
         context->adapter,
         context->epoch,
-        UINT32_MAX
+        PROBE_PARK_TIMEOUT_MS
     );
     return NULL;
 }
 
-static int probe_wait_until_announced(wf_completion_runtime *runtime) {
-    unsigned attempt;
-    for (attempt = 0; attempt < 1000000u; ++attempt) {
-        if (wf_completion_parked_scheduler_count(runtime) != 0) {
-            return 0;
-        }
-        (void)sched_yield();
-    }
-    return 1;
+typedef struct probe_notify_context {
+    wf_completion_runtime *runtime;
+    probe_wake_gate *raised;
+} probe_notify_context;
+
+static void *probe_notify_thread(void *opaque) {
+    probe_notify_context *context = opaque;
+    probe_epoch_gate = context->raised;
+    wf_completion_notify_compute(context->runtime);
+    return NULL;
+}
+
+/* The former count-only handshake could notify here: sleep was announced,
+ * but its second epoch check had not committed to epoll. Correct execution
+ * cancels the park and needs no eventfd write. Select that ordering directly. */
+static int probe_epoch_cancels_provisional_park(
+    wf_completion_runtime *runtime,
+    wf_linux_io_uring_adapter *adapter
+) {
+    probe_wake_gate announced = PROBE_WAKE_GATE_INITIALIZER;
+    probe_wake_gate raised = PROBE_WAKE_GATE_INITIALIZER;
+    wf_linux_io_uring_statistics before = wf_linux_io_uring_statistics_snapshot(adapter);
+    probe_park_context parked = {
+        .adapter = adapter,
+        .epoch = wf_completion_wake_epoch(runtime),
+        .result = -1,
+        .announced = &announced,
+    };
+    probe_notify_context notification = { .runtime = runtime, .raised = &raised };
+    pthread_t sleeper;
+    pthread_t publisher;
+    uint64_t counter;
+    PROBE_CHECK(pthread_create(&sleeper, NULL, probe_park_thread, &parked) == 0);
+    probe_gate_wait(&announced, 1u);
+    PROBE_CHECK(wf_completion_parked_scheduler_count(runtime) == 1u);
+    PROBE_CHECK(pthread_create(&publisher, NULL, probe_notify_thread, &notification) == 0);
+    probe_gate_wait(&raised, 1u);
+    PROBE_CHECK(wf_completion_wake_epoch(runtime) == parked.epoch + 1u);
+    probe_gate_release(&announced);
+    PROBE_CHECK(pthread_join(sleeper, NULL) == 0);
+    probe_gate_release(&raised);
+    PROBE_CHECK(pthread_join(publisher, NULL) == 0);
+    PROBE_CHECK(parked.result == 0);
+    PROBE_CHECK(wf_completion_parked_scheduler_count(runtime) == 0u);
+    PROBE_CHECK(wf_linux_io_uring_statistics_snapshot(adapter).kernel_waits == before.kernel_waits);
+    PROBE_CHECK(wf_linux_io_uring_statistics_snapshot(adapter).host_wake_writes == before.host_wake_writes);
+    errno = 0;
+    PROBE_CHECK(read(adapter->wake_descriptor, &counter, sizeof(counter)) < 0 && errno == EAGAIN);
+    probe_gate_destroy(&announced);
+    probe_gate_destroy(&raised);
+    printf("native-adapter-probe provisional-park=epoch-cancelled\n");
+    return 0;
 }
 
 #if WF_IO_OWNER_RINGS
@@ -134,9 +268,9 @@ static void probe_notify_two_rings(void *context) {
 static int probe_two_rings_share_one_epoch(void) {
     wf_completion_runtime runtime;
     wf_linux_io_uring_adapter adapters[2];
-    probe_park_context contexts[4];
+    probe_park_context contexts[4] = {0};
     pthread_t threads[4];
-    unsigned announced = 0;
+    probe_wake_gate committed = PROBE_WAKE_GATE_INITIALIZER;
     PROBE_CHECK(wf_completion_runtime_init(&runtime) == 0);
     for (unsigned index = 0; index < 2u; ++index) {
         PROBE_CHECK(wf_linux_io_uring_init(&adapters[index], &runtime, 8u, 16u) == 0);
@@ -146,17 +280,13 @@ static int probe_two_rings_share_one_epoch(void) {
         contexts[index].adapter = &adapters[index / 2u];
         contexts[index].epoch = wf_completion_wake_epoch(&runtime);
         contexts[index].result = -1;
+        contexts[index].committed = &committed;
         PROBE_CHECK(pthread_create(&threads[index], NULL, probe_park_thread, &contexts[index]) == 0);
     }
-    for (unsigned attempt = 0; attempt < 1000000u; ++attempt) {
-        if (wf_completion_parked_scheduler_count(&runtime) == 4u) {
-            announced = 1u;
-            break;
-        }
-        (void)sched_yield();
-    }
-    PROBE_CHECK(announced != 0u);
+    probe_gate_wait(&committed, 4u);
+    PROBE_CHECK(wf_completion_parked_scheduler_count(&runtime) == 4u);
     wf_completion_notify_compute(&runtime);
+    probe_gate_release(&committed);
     for (unsigned index = 0; index < 4u; ++index) {
         PROBE_CHECK(pthread_join(threads[index], NULL) == 0);
         PROBE_CHECK(contexts[index].result == 0);
@@ -170,6 +300,7 @@ static int probe_two_rings_share_one_epoch(void) {
         PROBE_CHECK(wf_linux_io_uring_destroy(&adapters[index]) == 0);
     }
     PROBE_CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    probe_gate_destroy(&committed);
     (void)printf("native-adapter-probe two-ring-epoch=pass\n");
     return 0;
 }
@@ -248,6 +379,7 @@ typedef struct probe_record_wait_context {
     wf_completion_record record;
     int64_t expected;
     int result;
+    probe_wake_gate *committed;
 } probe_record_wait_context;
 
 /* One lane waiting in place on its own record: register the in-place marker,
@@ -255,6 +387,7 @@ typedef struct probe_record_wait_context {
  * runs (design §2's fourth line, §6 step 4). */
 static void *probe_wait_for_own_record(void *opaque) {
     probe_record_wait_context *context = opaque;
+    probe_committed_gate = context->committed;
     for (;;) {
         uint64_t epoch;
         void *expected = NULL;
@@ -279,7 +412,7 @@ static void *probe_wait_for_own_record(void *opaque) {
             context->result = wf_linux_io_uring_park(
                 context->adapter,
                 epoch,
-                UINT32_MAX
+                PROBE_PARK_TIMEOUT_MS
             );
             if (context->result != 0) {
                 return NULL;
@@ -856,14 +989,18 @@ int main(int argc, char **argv) {
         );
     }
 
+    PROBE_CHECK(probe_epoch_cancels_provisional_park(&runtime, &adapter) == 0);
+
     /* Compute and native CQ facts share one kernel wait set. A runtime
-     * notification wakes an announced sleeper through eventfd, and the
+     * notification after the final epoch check wakes through eventfd, and the
      * eventfd is empty again before that sleeper becomes active. */
     {
+        probe_wake_gate committed = PROBE_WAKE_GATE_INITIALIZER;
         probe_park_context parked = {
             .adapter = &adapter,
             .epoch = wf_completion_wake_epoch(&runtime),
             .result = -1,
+            .committed = &committed,
         };
         pthread_t sleeper;
         uint64_t writes = wf_linux_io_uring_statistics_snapshot(&adapter)
@@ -872,8 +1009,10 @@ int main(int argc, char **argv) {
         PROBE_CHECK(
             pthread_create(&sleeper, NULL, probe_park_thread, &parked) == 0
         );
-        PROBE_CHECK(probe_wait_until_announced(&runtime) == 0);
+        probe_gate_wait(&committed, 1u);
+        PROBE_CHECK(wf_completion_parked_scheduler_count(&runtime) == 1u);
         wf_completion_notify_compute(&runtime);
+        probe_gate_release(&committed);
         PROBE_CHECK(pthread_join(sleeper, NULL) == 0);
         PROBE_CHECK(parked.result == 0);
         PROBE_CHECK(
@@ -885,6 +1024,8 @@ int main(int argc, char **argv) {
             read(adapter.wake_descriptor, &counter, sizeof(counter)) < 0
             && errno == EAGAIN
         );
+        probe_gate_destroy(&committed);
+        printf("native-adapter-probe committed-park=eventfd-woken\n");
     }
 
     /* The ring descriptor itself, not a millisecond condvar poll and not the
@@ -915,6 +1056,7 @@ int main(int argc, char **argv) {
      * and coalesce into one eventfd level, but no lane may consume that
      * broadcast fact before every already-announced waiter has left epoll. */
     {
+        probe_wake_gate committed = PROBE_WAKE_GATE_INITIALIZER;
         probe_record_wait_context contexts[PROBE_RECORD_WAITERS];
         pthread_t waiters[PROBE_RECORD_WAITERS];
         unsigned index;
@@ -926,6 +1068,7 @@ int main(int argc, char **argv) {
             contexts[index].runtime = &runtime;
             contexts[index].expected = (int64_t)index + 100;
             contexts[index].result = -1;
+            contexts[index].committed = &committed;
             PROBE_CHECK(
                 pthread_create(
                     &waiters[index],
@@ -935,14 +1078,14 @@ int main(int argc, char **argv) {
                 ) == 0
             );
         }
-        PROBE_CHECK(
-            probe_wait_for_parked_count(&runtime, PROBE_RECORD_WAITERS) == 0
-        );
+        probe_gate_wait(&committed, PROBE_RECORD_WAITERS);
+        PROBE_CHECK(wf_completion_parked_scheduler_count(&runtime) == PROBE_RECORD_WAITERS);
         for (index = 0; index < PROBE_RECORD_WAITERS; ++index) {
             contexts[index].record.result.kind = WF_FILE_PREAD;
             contexts[index].record.result.value = contexts[index].expected;
             contexts[index].record.result.error_code = 0;
             wf_completion_record_complete(&contexts[index].record);
+            if (index == 0) probe_gate_release(&committed);
             PROBE_CHECK(pthread_join(waiters[index], NULL) == 0);
             PROBE_CHECK(contexts[index].result == 0);
             PROBE_CHECK(
@@ -965,6 +1108,7 @@ int main(int argc, char **argv) {
                 && errno == EAGAIN
             );
         }
+        probe_gate_destroy(&committed);
     }
 
     PROBE_CHECK(probe_open_and_close_cases(&adapter, argv[1]) == 0);

@@ -34,6 +34,11 @@
 
 static void wf_completion_notify_scheduler(wf_completion_runtime *runtime);
 
+#if defined(WF_NATIVE_WAKE_PROBE)
+/* The standalone native probe controls the epoch-before-recheck ordering. */
+extern void wf_completion_probe_after_epoch(void);
+#endif
+
 int wf_completion_runtime_init(wf_completion_runtime *runtime) {
     int error;
 
@@ -111,6 +116,9 @@ int wf_completion_runtime_destroy(wf_completion_runtime *runtime) {
  * recheck. */
 static void wf_completion_notify_scheduler(wf_completion_runtime *runtime) {
     atomic_fetch_add_explicit(&runtime->wake_epoch, 1, memory_order_seq_cst);
+#if defined(WF_NATIVE_WAKE_PROBE)
+    wf_completion_probe_after_epoch();
+#endif
     if (atomic_load_explicit(&runtime->parked_schedulers, memory_order_seq_cst)
         == 0) {
         return;
