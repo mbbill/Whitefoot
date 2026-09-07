@@ -382,6 +382,23 @@ wake only when the target owner is the current executing core thread. External
 helpers, other workers, in-place waiters and process exit retain their wake
 paths. The same candidate runs the full completion suite before timing.
 
+The generated-WF continuation screen uses
+`CONTINUATION_SCREEN=1 NATIVE_BASELINES=1 EXPERIMENT=allocator bash scheduler-bench.sh combine`.
+It compares the actual sequential echo source compiled with
+`--continuations --par` against two stackful WF forms and seven native
+controls, with one server CPU and a client on another physical core.
+`compiler-continuation-bench` builds the uninstrumented candidate and checks
+its four-slot, twelve-task protocol; the Linux harness additionally requires
+the native/helper ASan/UBSan suite and the common large-stream oracle before
+timing. A 1024-task window admits all peers held open by the fixed benchmark
+protocol. The same counter-enabled binary supplies observed and timed runs,
+with reports disabled during timing. Seven passes over five cases produce
+350 rows and three repetitions of the three residency cases produce 90
+snapshots. Experiment 39 in
+`research/investigations/io-model/SCHEDULER-EXPERIMENT.md` owns the results
+and limitations of this temporary coordinator; retire this screen when the
+next executor comparison supersedes it.
+
 On native Windows, `windows-bench.ps1` owns a separate production
 qualification:
 

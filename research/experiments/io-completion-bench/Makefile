@@ -749,6 +749,31 @@ compiler-continuation-check: completion-coroutine-check compiler
 	  fi; \
 	done
 
+# The first generated-WF timing form keeps the qualified coordinator and one
+# resumer. Root-scheduler metadata and TCP_NODELAY match the small stackful
+# control. Host counters remain enabled in both timed and observed runs.
+.PHONY: compiler-continuation-bench
+compiler-continuation-bench: prepare compiler
+	@set -e; \
+	backend="$(ROOT)/compiler/src/backend"; \
+	build="$(BUILD)/compiler-continuation-bench"; mkdir -p "$$build"; set --; \
+	flags='-DWF_TCP_NODELAY=1 -DWF_SCHED_COMPACT_STACKS=1 -DWF_SCHED_INIT_USED_LANES=1'; \
+	for source in $(CONTINUATION_RUNTIME_UNITS) wf_floor.c; do \
+	  define=''; if [ "$$source" = completion/bridge.c ]; then define=-Dwf_sched_complete=wf_probe_publish; fi; \
+	  object="$$build/$$(basename "$$source").o"; \
+	  $(CORO_CLANG) $(CFLAGS) -g -Wpedantic -pthread -I "$$backend" $$flags $$define \
+	    -c "$$backend/$$source" -o "$$object"; \
+	  set -- "$$@" "$$object"; \
+	done; \
+	$(CORO_CLANG) $(CFLAGS) -g -Wpedantic -pthread -I "$$backend" $$flags \
+	  -DPROBE_WF_GENERATED -x c -c coroutine_completion.cpp -o "$$build/host.o"; \
+	"$(WFC)" --emit-llvm --continuations --par programs/tcp_echo_server.wf -o "$$build/echo.ll"; \
+	$(CORO_CLANG) -O2 -g -Wno-override-module -pthread "$$build/echo.ll" \
+	  "$$build/host.o" "$$@" -o "$$build/wf-coro"; \
+	$(CORO_CLANG) -O2 -S -emit-llvm -Wno-override-module "$$build/echo.ll" -o "$$build/echo-optimized.ll"; \
+	$(CORO_CLANG) $(CFLAGS) -Wpedantic -pthread continuation_stream.c -o "$$build/stream-check"; \
+	"$$build/stream-check" --staged "$$build/wf-coro" $(COMPLETION_CORO_ARGS)
+
 # Linux-only native completion reference correctness. The full streaming
 # oracle is shared with the epoll controls; no request-size bound substitutes
 # for handling TCP back pressure, short transfers and EOF.

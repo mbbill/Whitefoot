@@ -4454,7 +4454,19 @@ both report a peak of 4 retained child tasks. Every existing file, pipe,
 recursive-loan, endpoint-outcome and independent C++ continuation case also
 passes in those runs. The compiler library's 1,504 tests pass, and the
 strengthened recursive pure-control test passes separately. Format, clippy
-and diff checks pass. Linux native-ring staged qualification is pending.
+and diff checks pass. Revision `f0d633c1` passes the canonical gate
+([run 34083089080](https://github.com/mbbill/Whitefoot/actions/runs/34083089080))
+and actual Linux native-ring staged qualification
+([job 101621961511](https://github.com/mbbill/Whitefoot/actions/runs/34083089056/job/101621961511)).
+The borrowed-buffer case records 4 ring accepts and 4 ring receives; the
+three-batch case records 12 ring accepts and 10 ring receives. Both record
+zero accept/receive helpers, a peak of 4 tasks, and exact completion and
+retirement totals of 4 and 12 respectively. The forced-helper repetitions
+also pass, as do the retained independent C++ nested-loan cases. Immediate
+receives need no pending native request, so receive counts need not equal
+the number of peers. Windows checks for the unchanged stackful path and the
+cross-platform host checks also pass; they do not qualify continuations on
+Windows.
 
 The old `wf__par_*` runtime ABI and container storage contract are unchanged.
 Only the experimental continuation-host interface adds publication, task
@@ -4466,3 +4478,60 @@ source cancellation, asynchronous cleanup, compute checkpoints, multiple
 resumers and Windows are not qualified here. Other system wrappers and
 cleanup can still block the owner. There is no performance result for this
 concurrent WF representation yet.
+
+## Thirty-ninth experiment: measure generated staged WF against the native panel
+
+The first continuation performance screen reuses the exact sequential
+`tcp_echo_server.wf` source and the experiment 37 publication/join lowering.
+`compiler-continuation-bench` builds the generated module at `-O2`, without
+sanitizers, and links the existing experimental continuation coordinator.
+Its compact scheduler metadata, configured-lane initialization and TCP_NODELAY
+flags match the small stackful control. The timed and observed continuation
+form is the same counter-enabled binary; observation only enables reports.
+The unoptimized and optimized LLVM modules accompany the raw artifacts.
+
+`CONTINUATION_SCREEN=1 NATIVE_BASELINES=1 EXPERIMENT=allocator` selects this
+panel through `scheduler-bench.sh combine`, also wired to the
+`codex/io-continuation-screen` CI branch. It includes `callee-small`,
+`balanced-small`, generated `wf-coro`, and the seven native controls from
+experiment 36. Only the split1 cohort runs: the server, including every
+helper and progress thread, shares one logical CPU; the client uses a CPU
+on a different physical core. The current continuation host has one resumer,
+so a two-worker row would not compare the intended execution configuration.
+The continuation entry is mechanically carried through the harness's
+alternative-executor list but is always a WF candidate, never a native
+frontier control.
+
+Five existing echo cases cover 1, 4, 64 and 1024 small-message peers and
+64 peers exchanging 64 KiB messages. Seven alternating passes after two
+warmups yield 350 measured rows. Three live snapshots for each of the three
+resident cases yield 90 records. Every form uses THP disabled and explicit
+glibc `top_pad=0`, with the existing readback and raw resource accounting.
+Throughput, latency, CPU and resident memory remain separate outcomes.
+
+The host uses an explicit 1024-task window in this panel. Every connection
+handler lives until peer EOF, and the client holds its peers until all
+finish exchanging. A window below the fixed cohort's connection count would
+admit only a prefix whose peers wait for the remainder, preventing progress.
+This is a benchmark admission requirement, not a source-language guarantee
+for arbitrary protocols. The runtime default stays 64 and the compiler's
+current experiment ceiling stays 1024. The four-slot, twelve-task gated
+oracle continues to test actual slot reuse before any timing.
+
+Linux timing requires the full ASan/UBSan native/helper continuation suite,
+the same-flags uninstrumented staged oracle, and the common four-peer 2 MiB
+stream/backpressure/half-close oracle. Untimed 4/64-peer observations require
+native accept and receive activity with no helpers for those operations,
+balanced registration/dequeue, and exactly one completion and retirement
+per task. Timed runs emit no reports. Existing reference qualifications and
+legacy scheduler assertions remain intact.
+
+The local M1 build, uninstrumented multi-batch helper oracle, and common
+four-peer 2 MiB stream oracle pass. The large-stream run retires all four
+tasks and balances 36 registrations/dequeues on the helper route.
+Linux performance measurements are pending. The host still has locked
+pending-list lookup, a separate progress thread and synchronous cleanup;
+the screen measures that implementation and must not be read as a limit
+on the language or continuation representation. Its purpose is to locate
+the next measured cost while comparing actual compiler-generated sequential
+WF with stronger native references on the same host.

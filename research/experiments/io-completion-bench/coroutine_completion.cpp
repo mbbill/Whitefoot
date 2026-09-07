@@ -477,7 +477,7 @@ void wf__continuation_run(void *frame) {
                 (unsigned long long)probe_socket_routes[2][WF_COMPLETION_ROUTE_LINUX_IO_URING],
                 (unsigned long long)probe_socket_routes[2][WF_COMPLETION_ROUTE_FILE_ADAPTER]);
     }
-    if (getenv("WF_CONTINUATION_TRACE_STAGED")) {
+    if (getenv("WF_CONTINUATION_TRACE_STAGED") || getenv("WF_CONTINUATION_REPORT_TASKS")) {
         fprintf(stderr, "WF continuation host: tasks=%llu completed=%llu retired=%llu peak=%llu\n",
                 (unsigned long long)(probe_tasks_created - 1),
                 (unsigned long long)(probe_tasks_completed - 1),

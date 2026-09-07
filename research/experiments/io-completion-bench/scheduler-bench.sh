@@ -18,7 +18,13 @@ ROUNDS=${ROUNDS:-7}
 WARMUP=${WARMUP:-2}
 EXPERIMENT=${EXPERIMENT:-idle}
 NATIVE_BASELINES=${NATIVE_BASELINES:-0}
+CONTINUATION_SCREEN=${CONTINUATION_SCREEN:-0}
 [[ $NATIVE_BASELINES == 0 || $NATIVE_BASELINES == 1 ]] || exit 2
+[[ $CONTINUATION_SCREEN == 0 || $CONTINUATION_SCREEN == 1 ]] || exit 2
+if [[ $CONTINUATION_SCREEN == 1 && $NATIVE_BASELINES != 1 ]]; then
+    echo 'scheduler-bench: continuation screen requires the native baseline panel' >&2
+    exit 2
+fi
 if [[ $NATIVE_BASELINES == 1 && ( $MODE != combine || $EXPERIMENT != allocator ) ]]; then
     echo 'scheduler-bench: native baseline panel uses combine with EXPERIMENT=allocator' >&2
     exit 2
@@ -204,6 +210,18 @@ if [[ $NATIVE_BASELINES == 1 ]]; then
     make -C "$HERE" uring-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/uring-check" \
         > "$OUT/uring-check.log" 2>&1 || { cat "$OUT/uring-check.log"; exit 1; }
 fi
+if [[ $CONTINUATION_SCREEN == 1 ]]; then
+    make -C "$HERE" compiler-continuation-check CLANG="$CLANG" CORO_CXX="$CORO_CXX" CORO_CLANG="$CLANG" \
+        WHITEFOOT_SCRATCH_ROOT="$OUT/continuation" BUILD="$OUT/continuation-check" COMPLETION_CORO_ARGS=--require-ring \
+        > "$OUT/continuation-check.log" 2>&1 || { cat "$OUT/continuation-check.log"; exit 1; }
+    make -C "$HERE" compiler-continuation-bench CLANG="$CLANG" CORO_CLANG="$CLANG" \
+        WHITEFOOT_SCRATCH_ROOT="$OUT/continuation" BUILD="$OUT/continuation-build" COMPLETION_CORO_ARGS=--require-ring \
+        > "$OUT/continuation-build.log" 2>&1 || { cat "$OUT/continuation-build.log"; exit 1; }
+    cp "$OUT/continuation-build/compiler-continuation-bench/wf-coro" "$OUT/bin/wf-coro"
+    mkdir -p "$OUT/codegen"
+    cp "$OUT/continuation-build/compiler-continuation-bench/echo.ll" "$OUT/codegen/wf-coro.ll"
+    cp "$OUT/continuation-build/compiler-continuation-bench/echo-optimized.ll" "$OUT/codegen/wf-coro-optimized.ll"
+fi
 
 {
     git -C "$ROOT" rev-parse HEAD
@@ -213,6 +231,10 @@ fi
     lscpu
     echo "experiment=$EXPERIMENT mode=$MODE rounds=$ROUNDS warmup=$WARMUP"
     echo "native_baselines=$NATIVE_BASELINES"
+    echo "continuation_screen=$CONTINUATION_SCREEN"
+    if [[ $CONTINUATION_SCREEN == 1 ]]; then
+        echo 'wf-coro=generated --continuations --par; one resumer; window=1024; qualified test coordinator; counters enabled in timed and observed binary'
+    fi
     if [[ $NATIVE_BASELINES == 1 ]]; then
         echo 'uring_buffer_policy=8192/65536 bytes; equal provided bytes per worker; counts 256..2048 / 32..256; SQPOLL excluded'
     fi
@@ -306,6 +328,13 @@ if [[ $client_experiment == 1 ]]; then
         if(mode=="client") {$1=name "-client8"; print}; $1=name "-client1"; print}' \
         "$OUT/cohorts.tsv" > "$OUT/cohorts-selected.tsv"
     mv "$OUT/cohorts-selected.tsv" "$OUT/cohorts.tsv"
+fi
+if [[ $CONTINUATION_SCREEN == 1 ]]; then
+    # The experimental continuation host currently has one owning resumer.
+    # All its helper and progress threads inherit this same one-CPU budget.
+    awk '$1=="split1-top0-no-thp"' "$OUT/cohorts.tsv" > "$OUT/cohorts-selected.tsv"
+    mv "$OUT/cohorts-selected.tsv" "$OUT/cohorts.tsv"
+    [[ $(wc -l < "$OUT/cohorts.tsv") -eq 1 ]]
 fi
 forms=(base sleep short spin poll1 poll16)
 if [[ $network_compute == 1 ]]; then
@@ -711,6 +740,12 @@ network_case() {
     mkdir -p "$directory"
     port=$(free_port)
     case $form in
+        wf-coro)
+            binary="$OUT/bin/wf-coro"
+            environment=(WF_WORKERS=1 WF_CONTINUATION_WINDOW=1024)
+            if [[ $observed == 1 ]]; then
+                environment+=(WF_CONTINUATION_OBSERVE=1 WF_CONTINUATION_REPORT_SOCKET_ROUTES=1 WF_CONTINUATION_REPORT_TASKS=1)
+            fi ;;
         cpp-*)
             binary="$OUT/bin/$form"
             if [[ $observed == 1 ]]; then binary="$binary-observed"; fi
@@ -849,6 +884,19 @@ fi
 if [[ $EXPERIMENT == coroutine-paced ]]; then references=(q16384 cpp-manual cpp-stackful cpp-heap cpp-elide); fi
 if [[ $MODE == combine ]]; then references=(epoll epoll-calloc-main fiber-calloc-main cpp-elide cpp-elide-calloc); fi
 if [[ $NATIVE_BASELINES == 1 ]]; then references=(uring uring-64k "${references[@]}"); fi
+# This list also carries alternative executors through the common harness.
+# wf-coro is a WF candidate, never a native frontier reference.
+if [[ $CONTINUATION_SCREEN == 1 ]]; then references+=(wf-coro); fi
+check_continuation_report() {
+    local peers=$1 report=$2
+    awk -v peers="$peers" '/^WF continuation host:/ {
+        for(i=4;i<=NF;i++) {split($i,a,"=");v[a[1]]=a[2]+0}
+    } END {exit !(v["registered"]>0 && v["registered"]==v["dequeued"] &&
+        v["uring"]>0 && v["accept_ring"]>0 && v["accept_helper"]==0 &&
+        v["receive_ring"]>0 && v["receive_helper"]==0 &&
+        v["tasks"]==peers && v["completed"]==peers && v["retired"]==peers &&
+        v["peak"]>0 && v["peak"]<=peers)}' "$report"
+}
 while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
     allocator_environment=()
     if [[ $EXPERIMENT == allocator ]]; then allocator_environment=("$(allocator_setting)"); fi
@@ -877,14 +925,32 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
             fi
             cat "$log" >> "$OUT/allocation-check.log"
         done
+        if [[ $CONTINUATION_SCREEN == 1 ]]; then
+            log="$OUT/observed/$cohort-wf-coro-stream.log"
+            if ! taskset -c "$client_cpus" env WF_WORKERS=1 WF_CONTINUATION_WINDOW=1024 \
+                WF_CONTINUATION_OBSERVE=1 WF_CONTINUATION_REPORT_SOCKET_ROUTES=1 WF_CONTINUATION_REPORT_TASKS=1 \
+                "WF_BENCH_THP_DISABLE=$disabled" "WF_BENCH_SERVER_CPUS=$server_cpus" "${allocator_environment[@]}" \
+                "$OUT/bin/stream_check" "$OUT/bin/wf-coro" echo 1 > "$log" 2>&1; then
+                cat "$log" >&2
+                exit 1
+            fi
+            check_continuation_report 4 "$log"
+            cat "$log" >> "$OUT/allocation-check.log"
+        fi
     fi
     for admitted in "${admissions[@]}"; do
         for form in "${references[@]}" "${forms[@]}"; do
             preflight_observed=0
             if [[ $form == cpp-* ]]; then preflight_observed=1; fi
+            if [[ $form == wf-coro ]]; then preflight_observed=1; fi
             if [[ $NATIVE_BASELINES == 1 && $form == uring* ]]; then preflight_observed=1; fi
             if [[ $EXPERIMENT == nodelay || ( $storage_experiment == 1 && ( $form == epoll* || $form == fiber* ) ) ]]; then preflight_observed=1; fi
             network_case "$form" 4 20 64 -1 "$preflight_observed"
+            if [[ $form == wf-coro ]]; then
+                check_continuation_report 4 "$OUT/observed/$cohort-$form-k4-a0/server.err"
+                network_case "$form" 64 2000 64 -1 1
+                check_continuation_report 64 "$OUT/observed/$cohort-$form-k64-a0/server.err"
+            fi
             if [[ $NATIVE_BASELINES == 1 && $form == uring* ]]; then
                 expected_bytes=8192; if [[ $form == uring-64k ]]; then expected_bytes=65536; fi
                 awk -v bytes="$expected_bytes" -v workers="$server_workers" '/^uring:/ {
@@ -1028,11 +1094,16 @@ if [[ $page_experiment == 1 ]]; then
           if [[ $form == uring ]]; then binary="$OUT/bin/uring_echo"; fi
           if [[ $form == uring-64k ]]; then binary="$OUT/bin/uring_echo-64k"; fi
           if [[ $form == cpp-* ]]; then binary="$OUT/bin/$form"; fi
+          continuation_environment=()
+          if [[ $form == wf-coro ]]; then
+              binary="$OUT/bin/wf-coro"
+              continuation_environment=(WF_CONTINUATION_WINDOW=1024)
+          fi
           for resident_case in '64 64' '1024 64' '64 65536'; do
             read -r connections bytes <<< "$resident_case"
             record="$OUT/resident/r$repetition-$cohort-$form-k$connections-b$bytes"
             if ! taskset -c "$client_cpus" env "WF_WORKERS=$server_workers" WF_STACKS=1100 WF_SCHED_REPORT=0 \
-                "WF_BENCH_THP_DISABLE=$disabled" "WF_BENCH_SERVER_CPUS=$server_cpus" "${allocator_environment[@]}" \
+                "WF_BENCH_THP_DISABLE=$disabled" "WF_BENCH_SERVER_CPUS=$server_cpus" "${allocator_environment[@]}" "${continuation_environment[@]}" \
                 "$OUT/bin/stream_check" "$binary" resident "$server_workers" "$connections" "$bytes" "$record" \
                 > "$record.log" 2> "$record.err"; then
                 cat "$record.log" "$record.err" >&2
