@@ -4254,7 +4254,7 @@ name. A known limitation remains visible until its experiment is complete.
 | WF stackful runtime | Sequential source, checked staged calls; shared or owner rings, source loans, compact stacks, dispatch/wake variants | Candidate language/runtime under test | Screened; candidate choices trade occupancy, CPU and throughput. No universal winning default selected |
 | WF generated LLVM continuations | Sequential source, nested calls and recursion, completion-owned loans | Candidate to remove parked native-stack cost without signature coloring | Experiments 39/44/48 qualify the threaded, owner and batched-owner paths. At `fc69af15`, batching adds 28% / 27% paired throughput at 64 / 1024 small-message peers, with separate counters confirming aggregated ring submissions. Experiment 54 removes 97..98% of pending-list visits, with only 1.0%/1.8% median paired rate gains and reversals at 1024 peers; native CPU/trip still leads. Client headroom and multi-owner compute remain open. Experiments 52/54 qualify the unchanged sequential mixed protocol on both Linux completion routes |
 | Go `net` | Goroutine per connection, sequential read/write loop; runtime netpoll and scheduler | External sequential-API baseline and runtime-preemption comparison | Go 1.27.1 release/race and both 64 KiB storage forms qualified (49/51). The fixed Linux screen (53) favors acceptor-heap/P1 for memory and tail latency within one server CPU; P4 oversubscription inflates p99. WF batch32 exceeds this Go candidate at 64/1024 small peers while native stays ahead. Large transfers approach the client ceiling; no universal optimum. Race moves both buffers to the heap |
-| Rust sequential / Rayon CPU pool | Existing recursive `par_layout.wf` port with exact floating-point order and every node write; sibling `join`, calibrated grain and explicit pool width | Essential CPU-parallel reference; separates sequential code generation from parallel scheduling. Broader `par_iter`/`scope` and unbalanced workloads remain candidate rows | Checksum-qualified and independently confirmed after grain calibration on M1/Linux (experiment 40). Experiment 45's stack/batch control reduces the WF12/Rayon paired wall gap from 13.9% at one batch to 1.6% at sixteen, supporting substantial fixed costs. Experiments 47/50 find no stable gain from unused-ring or lane-initialization changes. Corrected traces locate early underutilization during computation; experiment 55 associates about 90% of WF runnable waits with explicit yields. Experiment 57 adds exact-binary caller capture to distinguish wait paths before changing backoff or worker placement; native attribution is pending. This is not an optimal WF CPU setup claim |
+| Rust sequential / Rayon CPU pool | Existing recursive `par_layout.wf` port with exact floating-point order and every node write; sibling `join`, calibrated grain and explicit pool width | Essential CPU-parallel reference; separates sequential code generation from parallel scheduling. Broader `par_iter`/`scope` and unbalanced workloads remain candidate rows | Checksum-qualified and independently confirmed after grain calibration on M1/Linux (experiment 40). Experiment 45's stack/batch control reduces the WF12/Rayon paired wall gap from 13.9% at one batch to 1.6% at sixteen, supporting substantial fixed costs. Experiments 47/50 find no stable gain from unused-ring or lane-initialization changes. Corrected traces locate early underutilization during computation; experiment 55 associates about 90% of WF runnable waits with explicit yields. Experiment 57's complete pre-exit attribution places over 99.4% of early yield-associated off-CPU time in the idle scan; three post-exit probes remain explicitly unpaired. Compare only the idle yield rounds in an ordinary same-budget panel next. This is not an optimal WF CPU setup claim |
 | Tokio I/O + bounded Rayon CPU offload | One current-thread I/O driver plus B-1 CPU workers, fixed 64-byte protocol, asynchronous bounded admission, one request/reply per connection | External mixed-load reference under one total execution budget; exposes CPU queue transfer, backpressure and light-request progress | Linux-qualified at `040bfc4b` (experiment 42), including saturation, errors, reset, partial input, half-close and slow output. Four short client smoke records are correctness evidence, not a performance ranking |
 | Tokio | Fixed-worker multithread runtime and a separate per-core current-thread/reactor configuration | External mainstream async baseline; distinguish work stealing from reactor locality | Source candidate only; pin toolchain/lockfile, socket distribution and blocking-pool budget |
 | Monoio | Per-core runtime, separately forced IoUringDriver and LegacyDriver | External completion/readiness comparison within one runtime family | Source candidate only; prohibit silent fusion fallback in backend-specific rows |
@@ -4277,7 +4277,7 @@ revision, compiler and dependency lockfile.
 | TCP closed-loop echo | 1/4/64/1024 peers × 64 B, 64 peers × 64 KiB; one outstanding request per peer; exact bytes and EOF | Current ten-cell split1/split2 screen. Add 4 KiB and pipeline depths 8/32 only after candidate screening |
 | TCP streaming / backpressure | Continuous 2 MiB or larger, arbitrary fragmentation, short sends, slow readers, half-close; preserve order and bounded live storage | Existing epoll stream oracle; uring joins it below. Idle 10k peers, churn and reset/cancellation remain separate qualification |
 | TCP fixed-arrival / mixed compute | Same recurrence and compute quantum; light paced requests alongside heavy work; below/near/above saturation | Existing paced mixed experiments cover selected controls. External candidates need scheduled-to-response p99/p99.9, goodput, missed deadlines, backlog and drain recovery |
-| CPU-only parallelism and CPU offload | Sequential Rust vs Rayon; balanced/unbalanced recursive and data-parallel jobs; matched arithmetic, tuned grain and pool width. Mixed mode charges enqueue, completion transfer and bounded queues | Recursive `join`, stack/batch, unused-ring and initializer controls are measured; attribute the yielding wait path and test same-budget worker placement next. Tokio + Rayon mixed qualification exists, with timing pending client-capacity control. Both executors share one total budget |
+| CPU-only parallelism and CPU offload | Sequential Rust vs Rayon; balanced/unbalanced recursive and data-parallel jobs; matched arithmetic, tuned grain and pool width. Mixed mode charges enqueue, completion transfer and bounded queues | Recursive `join`, stack/batch, unused-ring and initializer controls are measured; caller traces identify the idle-yield path. Compare idle backoff and same-budget worker placement next. Tokio + Rayon mixed qualification exists, with timing pending client-capacity control. Both executors share one total budget |
 | File reads | Open-once cache-hot vs cold buffered vs direct I/O; random/sequential; 4/64 KiB; QD 1/8/64; same offsets, bytes and checksum | Existing file experiments cover subsets. Extend native blocking/pread pool/uring comparisons; fio is a device-envelope cross-check, not an identical-program runtime row |
 | File writes | Buffered accepted bytes vs fdatasync/fsync durability are distinct contracts; name batch size, flush cadence and directory durability | Broader matrix required; no current TCP result supports a write or durability claim |
 | Dependent storage/network pipeline | Read → parse → request → write with the same dependency graph and compute work | Unmeasured; tests whether sequential-source overlap composes across stages |
@@ -7844,7 +7844,9 @@ does not itself prove spare capacity or a server performance frontier.
 ## 57. Locate the yield wait path in the same CPU executables
 
 Experiment 55 places about 90% of the captured early WF runnable off-CPU
-time inside explicit yields. A yield while awaiting a completing record is
+time inside runtime-issued `sched_yield` calls. These are compiler-owned
+runtime operations; WF source has no `yield` construct. A yield while
+awaiting a completing record is
 different from a yield after an empty work search or during pool startup.
 Changing their shared primitive before identifying the path would combine
 different hypotheses. The next capture adds caller identity to the same
@@ -7894,3 +7896,63 @@ work is available during a wait. No waiting policy, affinity, runtime ABI,
 source effect or compiler default changes here. A native capture and complete
 caller/timeline audit remain required before selecting a targeted backoff or
 placement comparison.
+
+### Frozen caller result
+
+The frozen trace revision is `01aabbb6c6a0ad0e621a9236c15b3a1425209ea0`;
+[run 34106967917](https://github.com/mbbill/Whitefoot/actions/runs/34106967917)
+and CPU job 101694101286 completed successfully. Artifact 10012917872 has
+ZIP SHA-256
+`d3ac4c1546584a0b29719dd23e563c51f9e14e67499e5b4f1d839ddf379d7cb8`.
+This host reports EPYC 9V74, four logical CPUs on two SMT cores, Linux
+6.17.0-1022-azure and perf 7.0.14. Its absolute intervals are not pooled with
+experiment 55's EPYC 7763 capture.
+
+All six executable/IR hashes match. The registered probe file offsets map
+through each ELF's executable segment to exactly `wf_prim_yield`'s entry.
+Across eight traces, 188,130 raw samples match decoded events with no
+loss/throttle records, recorder-write feedback or duplicate scheduler
+transitions. Workload thread sets, phase order, complete switch lifetimes,
+normal group exit and exact successful parent reap all pass. All 75,939
+entered yield syscalls return successfully; each of the 3,465 WF calls also
+pairs with a same-thread entry probe whose normalized return matches one of
+the actual call instructions above. Sequential WF makes no yield calls.
+
+The original unconditional caller-pair criterion has one explicit limit:
+three extra idle caller probes never enter their yield syscall. Two occur
+in used-lanes pass 1 and one in ordinary pass 1, respectively 1,959/6,215
+and 7,716 ns **after** the recorded `exit_group` entry and before their own
+thread-exit records. They are interrupted by process exit and are retained
+as unpaired post-exit probes, not counted as successful yields. Every caller
+before `exit_group`, including all first-100-ms and body intervals, pairs
+completely. No unmatched entered syscall or unexplained pre-exit caller is
+accepted. Thus the pre-exit attribution is complete; unconditional pairing
+of every probe in the full capture is not claimed.
+
+The first 100 ms after exec identify the dominant wait path. Values are
+sums across WF's four workload threads, in thread milliseconds:
+
+| Form / pass | Running | R-state off CPU | R-state inside any yield | R-state inside idle-scan yield | Idle share of yield off-CPU |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Ordinary / 0 | 285.816 | 98.199 | 69.586 | 69.184 | 99.4221% |
+| Ordinary / 1 | 284.424 | 104.262 | 93.099 | 92.915 | 99.8020% |
+| Used lanes / 0 | 285.405 | 88.135 | 73.851 | 73.561 | 99.6062% |
+| Used lanes / 1 | 292.944 | 96.991 | 79.679 | 79.535 | 99.8187% |
+
+The matching Rayon captures use 396.881/396.290 thread ms in this window.
+WF's startup rendezvous and COMPLETING handshakes account for less than
+0.6% of yield-associated runnable off-CPU time. The expensive observed wait
+path is the idle scan, not the completion-publication handshake or the
+exhausted-compute fallback. This locates a path; it does not prove useful
+work was available during each of its waits.
+
+Instrumentation remains material: the interval from caller probe to syscall
+entry itself reaches 2.477..3.064 ms in three WF captures, outside the yield
+interval counted in the table. These are not uninstrumented elapsed costs
+or evidence that removing a syscall would recover all reported off-CPU
+time. The next ordinary control should retain the same source and core
+algorithm while disabling only the idle scan's yield rounds, keeping the
+initial pause/look rounds and other yield sites unchanged. Compare short
+and amortized CPU workloads against the frozen Rayon grain, with CPU and
+context-switch costs as well as wall time. A later same-budget placement
+control remains useful; neither policy is selected as a runtime default.
