@@ -335,8 +335,8 @@ the lines it holds.
     make -C research/experiments/io-completion-bench linux-net    # the TCP table
 
 The TCP targets are Linux-only, as `linux` and `linux-read` are: `epoll_echo`
-and `uring_echo` are written against Linux interfaces, and the workload's
-point is the fastest shape that kernel offers.
+and `uring_echo` are written against Linux interfaces to compare tuned
+kernel-specific I/O paths.
 
 The current scheduler experiments and their controls are described in
 [`SCHEDULER-EXPERIMENT.md`](../../investigations/io-model/SCHEDULER-EXPERIMENT.md).
@@ -344,6 +344,11 @@ The current scheduler experiments and their controls are described in
 8/64 KiB with an equal provided-byte budget, alongside the existing epoll,
 stackful, C++ coroutine and WF controls. `uring-check` qualifies every native
 uring configuration against the shared 2 MiB stream oracle before timing.
+`scheduler-client-headroom` holds one server worker/CPU fixed and compares
+one client hardware thread with both SMT siblings of a separate physical
+core. It retains full byte verification and all qualification checks while
+screening six server forms at 64 peers and 64 B/64 KiB. This isolates a
+client resource limit; it does not compare servers using different clients.
 `scheduler-checkpoint`, `scheduler-footprint`, `scheduler-paced`,
 `scheduler-chunks`, `scheduler-canonical`, `scheduler-stackful` and
 `scheduler-stackful-paced`, `scheduler-nodelay`, `scheduler-owner` and
