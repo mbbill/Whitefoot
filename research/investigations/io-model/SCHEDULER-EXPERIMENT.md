@@ -4466,3 +4466,128 @@ source cancellation, asynchronous cleanup, compute checkpoints, multiple
 resumers and Windows are not qualified here. Other system wrappers and
 cleanup can still block the owner. There is no performance result for this
 concurrent WF representation yet.
+
+## Fortieth experiment: independent Rust and Rayon CPU reference
+
+The external baseline matrix now has an executable CPU-only row. The selected
+workload is the existing `tests/programs/par_layout.wf`, already used by the
+scheduler experiment's finite compute controls. It builds a depth-six box
+tree with 127 nodes, fills an 8192-entry word-metric table, and performs 800
+full-table layouts followed by 800 layouts using a 4096-entry prefix per
+batch. Each layout writes the resolved result into every node. This is a
+recursive shared-read/disjoint-write workload, not a newly selected integer
+kernel made convenient for Rayon. The integer recurrence in
+`windows_runtime_mixed.wf` and `compute_protocol.h` was inspected but is not
+parallelized internally: each recurrence step depends on the preceding one.
+
+`research/experiments/io-completion-bench/rayon-baseline/` is a standalone
+native reference crate. It belongs to this comparison and is removed when
+the comparison is replaced. It adds no dependency to the compiler. The lock
+records Rayon 1.12.0, rayon-core 1.13.0, crossbeam-deque 0.8.8,
+crossbeam-epoch 0.9.21, crossbeam-utils 0.8.23 and either 1.18.0. The release
+profile uses one codegen unit and thin LTO, without fast-math or reassociation.
+
+The sequential port preserves the floating-point expression order, explicit
+fused multiply-adds, table traversal order, child-result grouping, node
+writes and sequential repetition order. The Rayon port uses
+[`rayon::join`](https://docs.rs/rayon/1.12.0/rayon/fn.join.html) for disjoint
+sibling calls. Grain means the maximum leaf count of a subtree executed
+sequentially. The word sum and repeated mutations of the same tree remain
+sequential. The explicit pool is created once, and one `install` encloses the
+whole invocation; there is no unnecessary pool entry per node or layout.
+One-worker Rayon still creates a one-worker pool; ordinary sequential Rust
+creates none. These are different useful startup controls. WF_WORKERS is the
+existing WF execution-thread budget, including its calling execution thread.
+
+`make rayon-check` performs the small deterministic qualification. The
+complete sequential result matches the independent corpus expectation
+`420a993efa7437a1 41fa962893d45299`. A second test compares all 127 written
+node values, not just the root, over pool widths 1/2/4, grains 1/3/4/16/64,
+and repeated full/empty/prefix-table walks. The canonical root
+`research-tests` target calls this check; its tests use the optimized gate
+profile with overflow checks and debug assertions. Formatting and clippy
+with denied warnings are included. The gate's explicit fetch step includes
+this separate lock file; subsequent builds remain `--locked --offline`.
+
+`make -C research/experiments/io-completion-bench rayon-bench` runs the actual
+comparison. It compiles the existing WF program with `--no-overlap` and
+`--par`, checks their output at every requested worker count, then uses
+`runner.c` to alternate native configurations in forward/reverse order.
+The first cohort calibrates grains 1/4/16 at pool widths 1/2/4. The lowest
+median grain for each width is frozen in `selected.tsv` before an independent
+confirmation cohort is run. Selection uses the printed 0.01 ms medians; an
+exact tie retains the first configured grain. It does not choose a lucky
+confirmation sample as the reference. BATCHES defaults to one; WF's complete
+argument count selects the same count using BATCHES minus one dummy argument.
+
+The runner's optional `WF_BENCH_RAW` output retains every successful recorded
+sample in order, with wall/user/system milliseconds before summary sorting.
+Its ordinary output and correctness criterion are unchanged. A local
+wrong-output negative control fails and emits no measured sample. The script
+retains calibration/confirmation plans, raw TSVs, summaries, exact WF output,
+the dependency lock, host details, source hash, compiler hash and binary
+hashes in OUT. Only correctness belongs to the gate; timing selects no
+source-language acceptance or performance pass/fail threshold. The separate
+`io-scheduler` Rayon branch job runs this bounded panel instead of the larger
+allocator/network timing panel.
+
+### Local qualification and indicative measurement
+
+The first local cohort used MacBookPro18,3, arm64 Darwin 25.6.0, eight physical
+and eight logical CPUs, 32 GiB RAM; no CPU affinity or exclusive host ownership
+was established. Rust was 1.98.1 with LLVM 22.1.8; WF native linking used
+Apple Clang 21.0.0. The WF source SHA-256 was
+`7bfd197936acdd03fa1adf387e7038279874a3728c23be1f0d33f3eafc93df09`,
+and the compiler binary SHA-256 was
+`f3ecdb38d00945002c5a73e39f8b8a2417a547d9a8cb46c2ee4aae1c26409285`.
+The implementation was based on f0d633c1; these local samples precede its
+Rayon-reference commit and therefore describe that tested worktree.
+
+All native tests, formatting and clippy passed. Compiled WF sequential and
+parallel programs and every measured native invocation published the exact
+expected bytes. Three calibration passes followed one warmup; five
+confirmation passes followed a separate warmup. Calibration selected grains
+16/1/1 for widths 1/2/4. The [70 raw samples](../../experiments/io-completion-bench/rayon-baseline/m1-2026-09-06.tsv)
+retain both cohorts. Their counts, alternating execution order and every
+reported wall/user/system summary were independently recomputed; agreement
+is within the summary's printed precision.
+
+| Confirmation form | Wall median ms | Wall min..max ms | User median ms | System median ms |
+|---|---:|---:|---:|---:|
+| Rust sequential | 1586.33 | 1582.19..1591.35 | 1559.46 | 18.85 |
+| Rayon 1 worker, grain 16 | 1585.56 | 1583.18..1619.89 | 1558.38 | 18.68 |
+| Rayon 2 workers, grain 1 | 834.45 | 833.04..837.89 | 1607.77 | 23.97 |
+| Rayon 4 workers, grain 1 | 488.01 | 486.27..490.91 | 1695.81 | 77.83 |
+| WF sequential | 1585.54 | 1583.51..1603.10 | 1556.43 | 20.02 |
+| WF parallel, 1 worker | 1605.48 | 1600.86..1688.85 | 1558.27 | 33.07 |
+| WF parallel, 2 workers | 848.64 | 844.38..855.29 | 1620.18 | 29.65 |
+| WF parallel, 4 workers | 491.89 | 491.19..494.77 | 1712.20 | 95.93 |
+
+Same-pass WF-parallel/Rayon wall ratios at widths 1/2/4 have medians
+1.012758/1.018216/1.010128 and ranges
+1.009084..1.042568 / 1.007744..1.023051 / 1.001996..1.013856.
+All five pairs favor Rayon at each width. Corresponding total user+system
+CPU ratio medians are 1.009477/1.011172/1.018964, with every pair above one.
+The sequential medians are essentially equal; four-worker native speedup
+over sequential Rust is about 3.25x. These small gaps are useful evidence of
+a competitive independently implemented CPU reference, not evidence of
+universal Rayon/WF rankings or scheduler-only causation.
+
+These are complete-process timings including allocation, pool startup,
+formatting and shutdown. The platform schedules heterogeneous laptop cores;
+there is no separate kernel-time profile, sustained-load isolation, RSS
+comparison, unbalanced-tree qualification or real I/O in this panel. Native
+Rust and WF use different LLVM versions and different language frontends.
+The matched operations make the workload comparable but do not erase those
+code-generation differences. Linux CI qualification and measurements are
+pending at this local checkpoint.
+
+The next mixed-I/O reference should use an async network/file driver plus a
+bounded Rayon CPU pool, retaining the existing request framing and recurrence
+result. Only independent requests or independent outer jobs may be offered
+to the CPU pool. Charge enqueue, wakeup, completed-result transfer and queue
+storage to the request, keep driver and CPU workers within one total CPU
+budget, and measure paced light-request tails under heavy CPU work. Rayon
+`join` is intended for CPU work; its documentation explicitly describes
+blocking-I/O hazards. This panel does not qualify that transfer path and
+does not claim that blocking I/O placed inside Rayon is the intended model.

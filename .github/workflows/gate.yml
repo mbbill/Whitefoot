@@ -140,7 +140,8 @@ jobs:
             research/experiments/default-floor/utf8parse/rust-baseline/Cargo.toml \
             research/experiments/default-floor/utf8parse/harness/Cargo.toml \
             research/experiments/default-floor/percent-decode/rust-baseline/Cargo.toml \
-            research/experiments/default-floor/percent-decode/harness/Cargo.toml; do
+            research/experiments/default-floor/percent-decode/harness/Cargo.toml \
+            research/experiments/io-completion-bench/rayon-baseline/Cargo.toml; do
             cargo fetch --locked --manifest-path "$manifest"
           done
 

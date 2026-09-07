@@ -516,10 +516,30 @@ cache state is checked by the probe above before and after it runs.
 `READ_PROBES`, `READ_THRESHOLD_US`, and `READ_TOLERANCE_PERCENT` set that
 check.
 
-This bundle is deliberately not reachable from the repository's canonical
-`make check`. It generates a large tree and runs for minutes, so correctness
-builds do not depend on a performance host. The dedicated `io-bench` workflow
+The timing targets are deliberately not reachable from the repository's
+canonical `make check`. They generate large trees and run for minutes, so
+correctness builds do not depend on a performance host. The dedicated `io-bench` workflow
 owns the Windows qualification and the exploratory Linux/macOS tables.
 Generated trees, binaries, and raw output stay in the selected scratch
 directory; durable results retain the host identity and raw artifact beside
 their summarized table.
+
+`make rayon-check` is the small canonical correctness check for an independent
+Rust/Rayon port of `tests/programs/par_layout.wf`. It checks the corpus's exact
+floating-point result bits and every mutated node across pool widths and
+subtree grains. `rayon-baseline/Cargo.lock` pins its dependencies separately
+from the compiler. Fetch them once with `cargo fetch --locked --manifest-path
+rayon-baseline/Cargo.toml`; builds and checks then run offline.
+
+`make rayon-bench` builds the WF sequential/parallel and native Rust controls,
+qualifies their output, calibrates Rayon subtree grain, freezes one candidate
+per pool width, and runs a separate alternating confirmation cohort.
+`RAYON_THREADS="1 2 4"`, `RAYON_GRAINS="1 4 16"`, `BATCHES=1` and
+`CALIBRATION_ROUNDS=3` select a bounded initial screen; `ROUNDS` and `WARMUP`
+select confirmation passes. `OUT` selects the artifact directory. Calibration
+and confirmation plans, raw per-pass TSVs, summaries, pinned dependencies,
+host identity and compiler/binary hashes remain there. Times cover complete
+processes, including tree and pool construction; no concurrent I/O or CPU
+offload transfer is measured. Experiment 40 in
+`research/investigations/io-model/SCHEDULER-EXPERIMENT.md` owns its findings and
+the condition for retiring this reference.
