@@ -1,0 +1,45 @@
+@DECLARATION@
+fn build(seed: own u64) -> result: own FixedVector<@TYPE@, @N@> pure contract {
+  ensures len_of(result) >= @N@_u64;
+  ensures len_of(result) <= @N@_u64;
+  ensures head_of(result) <= 0_u64;
+} {
+  let values = fixed_vector::<@TYPE@, @N@>();
+  let state = seed;
+  for @fill (
+    at in 0_u64..@N@_u64,
+    invariant filled_lo: len_of(values) >= at,
+    invariant filled_hi: len_of(values) <= at,
+    invariant spare: room_of(values) + at >= @N@_u64,
+    invariant flat: head_of(values) <= 0_u64
+  ) {
+@BUILD_ELEMENT@
+  }
+  return move values;
+}
+
+fn dense(seed: own u64, rounds: own u64) -> result: own u64 pure {
+  let values = build(seed: seed);
+  let state = seed;
+  for (pass in 0_u64..rounds) {
+    for (at in 0_u64..@N@_u64) {
+      let previous = values[at];
+@UPDATE_ELEMENT@
+    }
+  }
+  let checksum = 0_u64;
+  for (at in 0_u64..@N@_u64) {
+    let value = values[at];
+@CONSUME_ELEMENT@
+  }
+  return checksum;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let observed = dense(seed: 19_u64, rounds: 3_u64);
+  if observed == @EXPECTED@_u64 {
+    return exit_status(code: 0_u8);
+  } else {
+    return exit_status(code: 1_u8);
+  }
+}

@@ -1,0 +1,28 @@
+fn attempt(fail: own Bool) -> result: own u8 pure {
+  let first = Ticket(number: 1_u8);
+  match acquire(fail: fail) {
+    Err(error: problem) => {
+      let one = consume(ticket: move first);
+      return problem;
+    }
+    Ok(value: second) => {
+      let one = consume(ticket: move first);
+      let two = consume(ticket: move second);
+      return one +wrap two;
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let no = 0_u8 == 1_u8;
+  let yes = 0_u8 == 0_u8;
+  let success = attempt(fail: no);
+  let failure = attempt(fail: yes);
+  let correct_success = success == 3_u8;
+  let correct_failure = failure == 7_u8;
+  let correct = band(correct_success, correct_failure);
+  if correct {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}

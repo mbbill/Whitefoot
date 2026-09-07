@@ -1,0 +1,14 @@
+struct Block['s] {
+  bytes: Vector<'s, u8>;
+}
+
+fn pass_block['s: affine](block: own Block<'s>) -> result: own Block<'s> pure contract {
+  ensures cap_of(result.bytes) == cap_of(block.bytes);
+  ensures len_of(result.bytes) == len_of(block.bytes);
+} {
+  return move block;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

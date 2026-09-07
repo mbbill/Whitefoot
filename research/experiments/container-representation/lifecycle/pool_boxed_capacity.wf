@@ -1,0 +1,42 @@
+command fn main() -> status: own ExitStatus pure {
+  region 'a {
+    let store = arena_frame::<64, 8, 'a>();
+    region {
+      let empty = fixed_vector::<u8, 4>();
+      let one = place_back(vector: move empty, value: 1_u8);
+      let two = place_back(vector: move one, value: 2_u8);
+      let three = place_back(vector: move two, value: 3_u8);
+      let payload = place_back(vector: move three, value: 4_u8);
+      match arena_box(store: &uniq store, value: move payload) {
+        Err(error: back) => {
+          return exit_status(code: 1_u8);
+        }
+        Ok(value: cell) => {
+          let free = fixed_vector::<Box<'a, FixedVector<u8, 4>>, 2>();
+          let full = place_back(vector: move free, value: move cell);
+          let (rest, block) = take_back(vector: move full);
+          let block_capacity = cap_of(deref(block));
+          invariant capacity: block_capacity >= 4_u64;
+          let length = len_of(deref(block));
+          for (at in 0_u64..length) {
+            let byte = deref(block)[at];
+            let next = byte +wrap 1_u8;
+            set deref(block)[at] = next;
+          }
+          let returned = place_back(vector: move rest, value: move block);
+          let (restored, recovered) = take_back(vector: move returned);
+          let recovered_length = len_of(deref(recovered));
+          let sum = 0_u8;
+          for (at in 0_u64..recovered_length) {
+            let byte = deref(recovered)[at];
+            set sum = sum +wrap byte;
+          }
+          let complete = place_back(vector: move restored, value: move recovered);
+          invariant conserved: len_of(complete) >= 1_u64;
+          let result = sum -wrap 14_u8;
+          return exit_status(code: result);
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+struct Block['s] {
+  bytes: Vector<'s, u8>;
+}
+
+fn pass_bytes['s: affine](bytes: own Vector<'s, u8>) -> result: own Vector<'s, u8> pure contract {
+  ensures cap_of(result) == cap_of(bytes);
+  ensures len_of(result) == len_of(bytes);
+} {
+  return move bytes;
+}
+
+fn take_block['s: affine](free: own FixedVector<Vector<'s, u8>, 2>) -> (rest: own FixedVector<Vector<'s, u8>, 2>, block: own Vector<'s, u8>) reads(free), writes(free) contract {
+  requires len_of(free) > 0_u64;
+  ensures len_of(rest) + 1_u64 == len_of(free);
+  ensures room_of(rest) == room_of(free) + 1_u64;
+} {
+  let (rest, block) = take_back(vector: move free);
+  return move rest, move block;
+}
+
+fn return_block['s: affine](free: own FixedVector<Vector<'s, u8>, 2>, block: own Vector<'s, u8>) -> rest: own FixedVector<Vector<'s, u8>, 2> reads(free), writes(free) contract {
+  requires room_of(free) > 0_u64;
+  ensures len_of(rest) == len_of(free) + 1_u64;
+} {
+  let rest = place_back(vector: move free, value: move block);
+  return move rest;
+}

@@ -1,10 +1,12 @@
 # Containers and resources: the integrated design
 
-The [independent architecture reassessment](REASSESSMENT.md) records the current
-implementation evidence, broader workload demands, and alternative representation
-boundaries. It reopens the design question without changing the active specification.
+The container choices in this earlier integrated dossier are superseded by the
+[empirical architecture selection](REASSESSMENT.md), which states the decision,
+executable evidence, rejected defaults, and first implementation scope. Resource
+research below is retained outside that selection. Neither document overrides the
+active specification or adds an approval step.
 
-The single design for batch 0116: one set of laws, one set of rules, one vocabulary, one
+The following records the integrated design developed for batch 0116: one set of laws, one set of rules, one vocabulary, one
 amendment register. `RESOURCES.md` beside it keeps the writer's-eye resource migrations
 and `CONTAINERS.md` the longer library functions of 3.L; neither carries rule text, and a
 reader who reads only this file has the whole design.
