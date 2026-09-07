@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-continuation-screen', 'codex/io-rayon-baselines', 'codex/io-compute-profile', 'codex/io-mixed-rayon-baselines', 'codex/io-continuation-owner', 'codex/io-continuation-batch', 'codex/io-client-headroom', 'codex/io-cpu-resource-controls', 'codex/io-uring-aggregation-diagnostic', 'codex/io-cpu-ring-controls', 'codex/io-go-baselines', 'codex/io-cpu-startup-controls', 'codex/io-continuation-mixed', 'codex/io-go-storage', 'codex/io-cpu-phase-recheck', 'codex/io-go-screen', 'codex/io-continuation-index', 'codex/io-cpu-yield-attribution', 'codex/io-client-diagnostic', 'codex/io-cpu-yield-callers', 'codex/io-cpu-idle-controls', 'codex/io-client-readiness', 'codex/io-client-fixture', 'codex/io-client-capacity', 'codex/io-cpu-build-control', 'codex/io-cpu-grain-control', 'codex/io-native-frontier']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-continuation-screen', 'codex/io-rayon-baselines', 'codex/io-compute-profile', 'codex/io-mixed-rayon-baselines', 'codex/io-continuation-owner', 'codex/io-continuation-batch', 'codex/io-client-headroom', 'codex/io-cpu-resource-controls', 'codex/io-uring-aggregation-diagnostic', 'codex/io-cpu-ring-controls', 'codex/io-go-baselines', 'codex/io-cpu-startup-controls', 'codex/io-continuation-mixed', 'codex/io-go-storage', 'codex/io-cpu-phase-recheck', 'codex/io-go-screen', 'codex/io-continuation-index', 'codex/io-cpu-yield-attribution', 'codex/io-client-diagnostic', 'codex/io-cpu-yield-callers', 'codex/io-cpu-idle-controls', 'codex/io-client-readiness', 'codex/io-client-fixture', 'codex/io-client-capacity', 'codex/io-cpu-build-control', 'codex/io-cpu-grain-control', 'codex/io-native-frontier', 'codex/io-storage-control']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -43,7 +43,7 @@ jobs:
       fail-fast: false
       matrix:
         experiment: [allocator]
-    runs-on: ${{ (github.ref == 'refs/heads/codex/io-client-capacity' || github.ref == 'refs/heads/codex/io-native-frontier') && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    runs-on: ${{ (github.ref == 'refs/heads/codex/io-client-capacity' || github.ref == 'refs/heads/codex/io-native-frontier' || github.ref == 'refs/heads/codex/io-storage-control') && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -55,6 +55,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends clang clang-20 libclang-rt-20-dev time
           rustup default stable
           cargo fetch --locked --manifest-path compiler/Cargo.toml
+      - name: Install the storage qualification tracer
+        if: github.ref == 'refs/heads/codex/io-storage-control'
+        run: sudo apt-get install -y --no-install-recommends strace
       - name: Install the pinned Go screen toolchain
         if: github.ref == 'refs/heads/codex/io-go-screen'
         uses: actions/setup-go@v5
@@ -82,14 +85,15 @@ jobs:
           ROOT: ${{ github.workspace }}
           OUT: ${{ runner.temp }}/io-scheduler
           CARGO_TARGET_DIR: ${{ github.workspace }}/compiler/target
-          ROUNDS: ${{ (github.ref == 'refs/heads/codex/io-client-readiness' || github.ref == 'refs/heads/codex/io-client-capacity' || github.ref == 'refs/heads/codex/io-native-frontier') && '5' || (github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic' || github.ref == 'refs/heads/codex/io-client-diagnostic') && '3' || '7' }}
-          WARMUP: ${{ (github.ref == 'refs/heads/codex/io-client-readiness' || github.ref == 'refs/heads/codex/io-client-capacity' || github.ref == 'refs/heads/codex/io-native-frontier') && '1' || (github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic' || github.ref == 'refs/heads/codex/io-client-diagnostic') && '1' || '2' }}
+          ROUNDS: ${{ (github.ref == 'refs/heads/codex/io-client-readiness' || github.ref == 'refs/heads/codex/io-client-capacity' || github.ref == 'refs/heads/codex/io-native-frontier' || github.ref == 'refs/heads/codex/io-storage-control') && '5' || (github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic' || github.ref == 'refs/heads/codex/io-client-diagnostic') && '3' || '7' }}
+          WARMUP: ${{ (github.ref == 'refs/heads/codex/io-client-readiness' || github.ref == 'refs/heads/codex/io-client-capacity' || github.ref == 'refs/heads/codex/io-native-frontier' || github.ref == 'refs/heads/codex/io-storage-control') && '1' || (github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic' || github.ref == 'refs/heads/codex/io-client-diagnostic') && '1' || '2' }}
           EXPERIMENT: ${{ matrix.experiment }}
-          NATIVE_BASELINES: ${{ (github.ref == 'refs/heads/codex/io-native-baselines' || github.ref == 'refs/heads/codex/io-client-headroom' || github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic') && '2' || ((github.ref == 'refs/heads/codex/io-continuation-screen' || github.ref == 'refs/heads/codex/io-continuation-owner' || github.ref == 'refs/heads/codex/io-continuation-batch' || github.ref == 'refs/heads/codex/io-go-screen' || github.ref == 'refs/heads/codex/io-continuation-index' || github.ref == 'refs/heads/codex/io-client-diagnostic' || github.ref == 'refs/heads/codex/io-client-readiness' || github.ref == 'refs/heads/codex/io-client-capacity' || github.ref == 'refs/heads/codex/io-native-frontier') && '1' || '0') }}
-          CONTINUATION_SCREEN: ${{ (github.ref == 'refs/heads/codex/io-continuation-index' || github.ref == 'refs/heads/codex/io-client-readiness' || github.ref == 'refs/heads/codex/io-client-capacity' || github.ref == 'refs/heads/codex/io-native-frontier') && '4' || (github.ref == 'refs/heads/codex/io-continuation-batch' || github.ref == 'refs/heads/codex/io-go-screen') && '3' || (github.ref == 'refs/heads/codex/io-continuation-owner' && '2' || (github.ref == 'refs/heads/codex/io-continuation-screen' && '1' || '0')) }}
+          NATIVE_BASELINES: ${{ (github.ref == 'refs/heads/codex/io-native-baselines' || github.ref == 'refs/heads/codex/io-client-headroom' || github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic') && '2' || ((github.ref == 'refs/heads/codex/io-continuation-screen' || github.ref == 'refs/heads/codex/io-continuation-owner' || github.ref == 'refs/heads/codex/io-continuation-batch' || github.ref == 'refs/heads/codex/io-go-screen' || github.ref == 'refs/heads/codex/io-continuation-index' || github.ref == 'refs/heads/codex/io-client-diagnostic' || github.ref == 'refs/heads/codex/io-client-readiness' || github.ref == 'refs/heads/codex/io-client-capacity' || github.ref == 'refs/heads/codex/io-native-frontier' || github.ref == 'refs/heads/codex/io-storage-control') && '1' || '0') }}
+          CONTINUATION_SCREEN: ${{ (github.ref == 'refs/heads/codex/io-continuation-index' || github.ref == 'refs/heads/codex/io-client-readiness' || github.ref == 'refs/heads/codex/io-client-capacity' || github.ref == 'refs/heads/codex/io-native-frontier' || github.ref == 'refs/heads/codex/io-storage-control') && '4' || (github.ref == 'refs/heads/codex/io-continuation-batch' || github.ref == 'refs/heads/codex/io-go-screen') && '3' || (github.ref == 'refs/heads/codex/io-continuation-owner' && '2' || (github.ref == 'refs/heads/codex/io-continuation-screen' && '1' || '0')) }}
           GO_SCREEN: ${{ github.ref == 'refs/heads/codex/io-go-screen' && '1' || '0' }}
           CLIENT_HEADROOM: ${{ github.ref == 'refs/heads/codex/io-client-headroom' && '1' || '0' }}
           URING_DIAGNOSTIC: ${{ github.ref == 'refs/heads/codex/io-uring-aggregation-diagnostic' && '1' || '0' }}
+          STORAGE_CONTROL: ${{ github.ref == 'refs/heads/codex/io-storage-control' && '1' || '0' }}
           NATIVE_FRONTIER: ${{ github.ref == 'refs/heads/codex/io-native-frontier' && '1' || '0' }}
           CLIENT_CAPACITY: ${{ github.ref == 'refs/heads/codex/io-client-capacity' && '1' || '0' }}
           CLIENT_READINESS: ${{ github.ref == 'refs/heads/codex/io-client-readiness' && '1' || '0' }}
@@ -103,7 +107,9 @@ jobs:
         run: |
           {
             echo '## Scheduler experiment: ${{ matrix.experiment }}'
-            if [[ "$GITHUB_REF" == refs/heads/codex/io-native-frontier ]]; then
+            if [[ "$GITHUB_REF" == refs/heads/codex/io-storage-control ]]; then
+              echo 'ARM storage control: unchanged default/service 0 client, fixed server CPU; 64-peer large width 2 and small width 1. Existing shared-scratch and private-calloc epoll use the same spawned-worker placement, with pure uring 64 KiB/128-buffer and indexed WF anchors. Five alternating passes after one warmup give 40 ordinary rows/8 warmups; three separate observed passes give 24 rows/36 client reports, including 6 native buffer reports. Four separate server-only strace runs and four untraced ASan/UBSan runs qualify actual 8 MiB byte streams, short send/recv, send EAGAIN and policy/lifetime before timing; all prior native/client/continuation checks remain. Ten selected executables plus source/tool hashes, raw CPU/RSS/tails and checked affinity are retained. This is a joint allocation/working-set diagnostic, not proof of matched representation, cache cause or a new default.'
+            elif [[ "$GITHUB_REF" == refs/heads/codex/io-native-frontier ]]; then
               echo 'ARM native frontier: unchanged default/service 0 client, fixed server CPU and large-message client widths 1/2; 64-peer small width 1 negative control. Six uring 64 KiB pure/inline forms with 32/64/128 provided buffers plus epoll/indexed WF anchors give 120 ordinary rows after 24 warmups. Three separate observer passes give 72 rows/96 client worker reports; 54 native reports retain actual ENOBUFS, rearm, buffer ownership/peak loans, queues and sends. Native pool streams and tiny-pool exhaustion/recovery qualify first. Eighteen selected executables, ordinary default IR equality against the corrected rearm parent, source/tool IDs, raw CPU/RSS/tails and actual affinity are retained. VM topology is not dedicated cores; no observer clocks, new default or universal-best claim.'
             elif [[ "$GITHUB_REF" == refs/heads/codex/io-client-capacity ]]; then
               echo 'ARM client capacity: unchanged default/service0 client and epoll, uring-64k, WF callee-small, indexed owner/batch32 servers; one fixed server CPU and client pools of 1/2/3 workers on distinct allowed package/core IDs. Topology, sibling lists, visible quota and actual launch/worker affinity are checked; VM topology does not promise dedicated host cores. Three occupied cells, five frozen rotation/reversal passes after one warmup yield 180 ordinary rows, 36 warmups and 36 separate client observations (72 worker reports). Full native-ring/stream/client qualification and a separate three-worker uneven admitted smoke precede timing. Six selected executables, default IR equality, tool IDs and checked hashes are retained. This tests same-host client capacity sensitivity; no cross-architecture speed ranking or unrestricted server ceiling is claimed.'
@@ -132,8 +138,8 @@ jobs:
             fi
             echo '```text'
             files=(host.txt cohorts.tsv network-summary.txt small-check.log balanced-check.log balanced-small-check.log quiet-small-check.log allocation-check.log stackful-check.log coroutine-check.log uring-check.log continuation-check.log continuation-build.log)
-            if [[ "$GITHUB_REF" == refs/heads/codex/io-client-readiness || "$GITHUB_REF" == refs/heads/codex/io-client-capacity || "$GITHUB_REF" == refs/heads/codex/io-native-frontier ]]; then files+=(client-readiness-check.log hash-verification.log); fi
-            if [[ "$GITHUB_REF" == refs/heads/codex/io-client-capacity || "$GITHUB_REF" == refs/heads/codex/io-native-frontier ]]; then files+=(capacity-admission.txt capacity-admission.err client-capacity-smoke.tsv); fi
+            if [[ "$GITHUB_REF" == refs/heads/codex/io-client-readiness || "$GITHUB_REF" == refs/heads/codex/io-client-capacity || "$GITHUB_REF" == refs/heads/codex/io-native-frontier || "$GITHUB_REF" == refs/heads/codex/io-storage-control ]]; then files+=(client-readiness-check.log hash-verification.log); fi
+            if [[ "$GITHUB_REF" == refs/heads/codex/io-client-capacity || "$GITHUB_REF" == refs/heads/codex/io-native-frontier || "$GITHUB_REF" == refs/heads/codex/io-storage-control ]]; then files+=(capacity-admission.txt capacity-admission.err client-capacity-smoke.tsv); fi
             if [[ "$GITHUB_REF" == refs/heads/codex/io-go-screen ]]; then files+=(go-check.log build-sha256.txt); fi
             if [[ "$GITHUB_REF" == refs/heads/codex/io-uring-aggregation-diagnostic ]]; then files=(host.txt cohorts.tsv uring-diagnostic-counters.tsv uring-check.log); fi
             if [[ "$GITHUB_REF" == refs/heads/codex/io-client-diagnostic ]]; then files=(host.txt cohorts.tsv client-observer-check.log client-diagnostic-counters.tsv client-profile-status.txt); fi
@@ -159,6 +165,7 @@ jobs:
             ${{ runner.temp }}/io-scheduler/codegen/
             ${{ runner.temp }}/io-scheduler/resident/
             ${{ runner.temp }}/io-scheduler/retained/
+            ${{ runner.temp }}/io-scheduler/stream-check/whitefoot-io-completion-bench/build/storage-*
             ${{ runner.temp }}/io-scheduler/go/whitefoot-io-completion-bench/build/go-qualification/
 
 

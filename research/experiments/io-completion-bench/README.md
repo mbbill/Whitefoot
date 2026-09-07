@@ -420,6 +420,16 @@ postprocessing uses epoll without rerunning timing. At large-message client
 width two, pure-ring 128/32 buffers improves paired median rate by 5.54% with higher
 peak RSS, but epoll still beats every other selected form in all five passes.
 This result preserves the default client and makes no universal winner claim.
+`scheduler-storage-control` follows with the existing shared-scratch and
+private-calloc epoll policies at identical spawned-worker placement, retaining
+pure-ring 128-buffer uring and indexed WF anchors. It uses the admitted ARM
+host, large-message client width two and small-message width one: 40 ordinary
+rows after eight warmups, then 24 separate observer rows. The opt-in
+`EPOLL_STORAGE_CHECK=1` extension of `stackful-check` requires `strace` and
+adds server-only short-transfer/backpressure traces plus untraced sanitizer
+runs; ordinary server/client source and default checks are unchanged.
+Experiment 65 defines the allocation/working-set diagnostic and its limits;
+native qualification and measurements remain pending.
 `scheduler-client-headroom` holds one server worker/CPU fixed and compares
 one client hardware thread with both SMT siblings of a separate physical
 core. It retains full byte verification and all qualification checks while

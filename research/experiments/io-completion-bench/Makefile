@@ -142,6 +142,10 @@ scheduler-client-capacity:
 scheduler-native-frontier:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS=5 WARMUP=1 CORO_CXX="$(CORO_CXX)" NATIVE_FRONTIER=1 CONTINUATION_SCREEN=4 NATIVE_BASELINES=1 EXPERIMENT=allocator bash scheduler-bench.sh combine
 
+.PHONY: scheduler-storage-control
+scheduler-storage-control:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS=5 WARMUP=1 CORO_CXX="$(CORO_CXX)" STORAGE_CONTROL=1 CONTINUATION_SCREEN=4 NATIVE_BASELINES=1 EXPERIMENT=allocator bash scheduler-bench.sh combine
+
 .PHONY: scheduler-allocation
 scheduler-allocation:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" EXPERIMENT=allocation bash scheduler-bench.sh bench
@@ -1154,6 +1158,10 @@ coroutine-check: prepare
 	  "$$binary"; \
 	done
 
+# The ARM storage control adds server-only syscall evidence. LeakSanitizer
+# runs without ptrace first; traced repetitions retain ASan/UBSan but disable
+# leak detection, which cannot operate under strace. Neither enters timing.
+EPOLL_STORAGE_CHECK ?= 0
 stackful-check: prepare
 	@set -e; \
 	$(CLANG) $(CFLAGS) -Wpedantic -pthread stream_check.c -o "$(BUILD)/stream_check"; \
@@ -1193,6 +1201,65 @@ stackful-check: prepare
 	   done; \
 	  done; \
 	done
+	@if test "$(EPOLL_STORAGE_CHECK)" = 1; then \
+	  set -e; command -v strace; strace --version; \
+	  for storage in 0 3; do \
+	    binary="$(BUILD)/storage-sanitized-s$$storage"; \
+	    $(CLANG) $(CFLAGS) -g -Wpedantic -pthread -fsanitize=address,undefined -fno-sanitize-recover=all \
+	      -DWF_BENCH_SNDBUF=4096 -DWF_BENCH_STORAGE_OBSERVE \
+	      "-DWF_BENCH_RECEIVE_STORAGE=$$storage" epoll_echo.c -o "$$binary"; \
+	    for workers in 1 4; do \
+	      prefix="$$binary-w$$workers"; \
+	      ASAN_OPTIONS=detect_leaks=1 "$(BUILD)/stream_check" "$$binary" echo "$$workers" > "$$prefix-sanitizer.log" 2>&1 || { cat "$$prefix-sanitizer.log"; exit 1; }; \
+	      cat "$$prefix-sanitizer.log"; \
+	      printf '#!/usr/bin/env bash\nset -euo pipefail\nexec strace --kill-on-exit -ff -o "%s" -e trace=execve,clone,clone3,sendto,recvfrom,close -e raw=sendto,recvfrom "%s" "$$@"\n' \
+	        "$$prefix-trace" "$$binary" > "$$prefix-launch"; \
+	      chmod +x "$$prefix-launch"; \
+	      ASAN_OPTIONS=detect_leaks=0 "$(BUILD)/stream_check" "$$prefix-launch" echo "$$workers" > "$$prefix-trace.log" 2>&1 || { cat "$$prefix-trace.log"; exit 1; }; \
+	      cat "$$prefix-trace.log"; \
+	      for kind in sanitizer trace; do \
+	        awk -v storage="$$storage" '/^storage:/ {for(i=2;i<=NF;i++) {split($$i,a,"=");v[a[1]]=a[2]+0}; seen++} \
+	          END {exit !(seen==1 && ("policy" in v) && v["policy"]==storage && ("main_worker" in v) && v["main_worker"]==0 && \
+	            v["transfer_bytes"]==65536 && v["accepted"]==4 && v["closed"]==4)}' "$$prefix-$$kind.log"; \
+	      done; \
+	      awk -v binary="$$binary" -v workers="$$workers" 'function number(s, i,n,d) { \
+	        if(s ~ /^0x[0-9a-f]+$$/) {n=0; for(i=3;i<=length(s);i++) {d=index("0123456789abcdef",substr(s,i,1))-1; n=16*n+d}; return n} \
+	        if(s ~ /^[0-9]+$$/) return s+0; bad=1; return -1 \
+	      } function transfer(line, call,a,r,requested,moved,sending) { \
+	        call=line; split(call,a,", "); requested=number(a[3]); \
+	        if(call !~ /\) += /) {bad=1; return}; sub(/^.*\) += /,"",call); split(call,r," "); \
+	        sending=(line ~ /^sendto/); \
+	        calls[FILENAME]++; \
+	        if(r[1]=="-1") {if(r[2]=="EAGAIN" && sending) again++; else if(r[2]!="EAGAIN" && r[2]!="EINTR") bad=1; return} \
+	        moved=number(r[1]); if(moved>requested) bad=1; \
+	        if(sending) sent+=moved; else received+=moved; \
+	        if(moved>0 && moved<requested) {if(sending) short_send++; else short_recv++} \
+	      } /^execve\(/ { \
+	        if(index($$0,"execve(\"" binary "\",")==1 && / = 0$$/) {execs++; main_file=FILENAME} else bad=1 \
+	      } /^clone3?\(|^<\.\.\. clone3? resumed>/ { \
+	        if(/\) += [1-9][0-9]*$$/) children[$$NF]=1 \
+	      } /^sendto\(|^recvfrom\(/ { \
+	        if(FILENAME in pending) bad=1; \
+	        if(/<unfinished \.\.\.>$$/) {pending[FILENAME]=$$0; sub(/<unfinished \.\.\.>$$/,"",pending[FILENAME])} \
+	        else transfer($$0); next \
+	      } /^<\.\.\. (sendto|recvfrom) resumed>/ { \
+	        if(!(FILENAME in pending)) {bad=1; next}; \
+	        resumed=$$0; sub(/^<\.\.\. /,"",resumed); sub(/ resumed>.*$$/,"",resumed); \
+	        if(index(pending[FILENAME],resumed "(")!=1) bad=1; \
+	        suffix=$$0; sub(/^<\.\.\. [a-z]+ resumed>/,"",suffix); \
+	        transfer(pending[FILENAME] suffix); delete pending[FILENAME] \
+	      } END {for(file in pending) bad=1; \
+	        for(tid in children) child_count++; \
+	        for(file in calls) {tid=file; sub(/^.*\./,"",tid); if(file==main_file || !(tid in children)) bad=1; \
+	          printf "storage-trace-thread: file=%s tid=%s network_outcomes=%d\n",file,tid,calls[file]}; \
+	        printf "storage-trace-process: executable=%s main_file=%s worker_threads=%d\n",binary,main_file,child_count; \
+	        printf "storage-trace: receive_bytes=%.0f send_bytes=%.0f short_recv=%d short_send=%d send_eagain=%d\n",received,sent,short_recv,short_send,again; \
+	        exit !(!bad && execs==1 && child_count==workers && received==8388608 && sent==received && short_recv>0 && short_send>0 && again>0)}' \
+	        "$$prefix-trace".[0-9]* > "$$prefix-counts.log" || { cat "$$prefix-counts.log"; exit 1; }; \
+	      cat "$$prefix-counts.log"; \
+	    done; \
+	  done; \
+	else test "$(EPOLL_STORAGE_CHECK)" = 0; fi
 
 $(BUILD)/wf_echo: programs/tcp_echo_server.wf compiler | prepare
 	$(WFC) --par -o $@ $<
