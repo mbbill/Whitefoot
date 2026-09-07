@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-continuation-screen', 'codex/io-rayon-baselines', 'codex/io-compute-profile', 'codex/io-mixed-rayon-baselines', 'codex/io-continuation-owner', 'codex/io-continuation-batch', 'codex/io-client-headroom', 'codex/io-cpu-resource-controls', 'codex/io-uring-aggregation-diagnostic', 'codex/io-cpu-ring-controls', 'codex/io-go-baselines', 'codex/io-cpu-startup-controls', 'codex/io-continuation-mixed', 'codex/io-go-storage', 'codex/io-cpu-phase-recheck', 'codex/io-go-screen', 'codex/io-continuation-index', 'codex/io-cpu-yield-attribution', 'codex/io-client-diagnostic', 'codex/io-cpu-yield-callers', 'codex/io-cpu-idle-controls', 'codex/io-client-readiness']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments', 'codex/io-profile-experiments', 'codex/io-client-service-experiments', 'codex/io-allocator-experiments', 'codex/io-placement-experiments', 'codex/io-combined-experiments', 'codex/io-continuation-experiments', 'codex/io-continuation-lowering', 'codex/io-continuation-network', 'codex/io-continuation-staged', 'codex/io-native-baselines', 'codex/io-continuation-screen', 'codex/io-rayon-baselines', 'codex/io-compute-profile', 'codex/io-mixed-rayon-baselines', 'codex/io-continuation-owner', 'codex/io-continuation-batch', 'codex/io-client-headroom', 'codex/io-cpu-resource-controls', 'codex/io-uring-aggregation-diagnostic', 'codex/io-cpu-ring-controls', 'codex/io-go-baselines', 'codex/io-cpu-startup-controls', 'codex/io-continuation-mixed', 'codex/io-go-storage', 'codex/io-cpu-phase-recheck', 'codex/io-go-screen', 'codex/io-continuation-index', 'codex/io-cpu-yield-attribution', 'codex/io-client-diagnostic', 'codex/io-cpu-yield-callers', 'codex/io-cpu-idle-controls', 'codex/io-client-readiness', 'codex/io-client-fixture']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -37,7 +37,7 @@ jobs:
   measure:
     # Correctness-only branches retain the independently running timing
     # revisions. Canonical and native correctness jobs still run.
-    if: github.ref != 'refs/heads/codex/io-windows-wake-fix' && github.ref != 'refs/heads/codex/io-continuation-experiments' && github.ref != 'refs/heads/codex/io-continuation-lowering' && github.ref != 'refs/heads/codex/io-continuation-network' && github.ref != 'refs/heads/codex/io-continuation-staged' && github.ref != 'refs/heads/codex/io-rayon-baselines' && github.ref != 'refs/heads/codex/io-compute-profile' && github.ref != 'refs/heads/codex/io-mixed-rayon-baselines' && github.ref != 'refs/heads/codex/io-cpu-resource-controls' && github.ref != 'refs/heads/codex/io-cpu-ring-controls' && github.ref != 'refs/heads/codex/io-go-baselines' && github.ref != 'refs/heads/codex/io-cpu-startup-controls' && github.ref != 'refs/heads/codex/io-continuation-mixed' && github.ref != 'refs/heads/codex/io-go-storage' && github.ref != 'refs/heads/codex/io-cpu-phase-recheck' && github.ref != 'refs/heads/codex/io-cpu-yield-attribution' && github.ref != 'refs/heads/codex/io-cpu-yield-callers' && github.ref != 'refs/heads/codex/io-cpu-idle-controls'
+    if: github.ref != 'refs/heads/codex/io-client-fixture' && github.ref != 'refs/heads/codex/io-windows-wake-fix' && github.ref != 'refs/heads/codex/io-continuation-experiments' && github.ref != 'refs/heads/codex/io-continuation-lowering' && github.ref != 'refs/heads/codex/io-continuation-network' && github.ref != 'refs/heads/codex/io-continuation-staged' && github.ref != 'refs/heads/codex/io-rayon-baselines' && github.ref != 'refs/heads/codex/io-compute-profile' && github.ref != 'refs/heads/codex/io-mixed-rayon-baselines' && github.ref != 'refs/heads/codex/io-cpu-resource-controls' && github.ref != 'refs/heads/codex/io-cpu-ring-controls' && github.ref != 'refs/heads/codex/io-go-baselines' && github.ref != 'refs/heads/codex/io-cpu-startup-controls' && github.ref != 'refs/heads/codex/io-continuation-mixed' && github.ref != 'refs/heads/codex/io-go-storage' && github.ref != 'refs/heads/codex/io-cpu-phase-recheck' && github.ref != 'refs/heads/codex/io-cpu-yield-attribution' && github.ref != 'refs/heads/codex/io-cpu-yield-callers' && github.ref != 'refs/heads/codex/io-cpu-idle-controls'
     name: measure (${{ matrix.experiment }})
     strategy:
       fail-fast: false
@@ -621,3 +621,62 @@ jobs:
         with:
           name: ${{ github.ref == 'refs/heads/codex/io-cpu-idle-controls' && 'io-cpu-idle-controls' || github.ref == 'refs/heads/codex/io-cpu-yield-callers' && 'io-cpu-yield-callers' || github.ref == 'refs/heads/codex/io-cpu-yield-attribution' && 'io-cpu-yield-attribution' || github.ref == 'refs/heads/codex/io-cpu-phase-recheck' && 'io-cpu-phase-recheck' || 'io-cpu-resource-controls' }}
           path: ${{ runner.temp }}/cpu-resource-controls
+
+  client-fixture:
+    # Experiment 58 qualification-runtime correction; compare fixtures, not
+    # client policies. The frozen job is retained with that result's evidence.
+    if: github.ref == 'refs/heads/codex/io-client-fixture'
+    name: client fixture coverage and same-binary runtime control
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install the qualification toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang libclang-rt-18-dev time
+      - name: Run all client readiness qualification
+        env:
+          OUT: ${{ runner.temp }}/client-fixture
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT"
+          { git rev-parse HEAD; uname -srvmo; lscpu; /usr/bin/clang --version; } > "$OUT/host.txt"
+          /usr/bin/time -v -o "$OUT/full-check.time" \
+            make -C research/experiments/io-completion-bench client-readiness-check \
+            WHITEFOOT_SCRATCH_ROOT="$OUT" 2>&1 | tee "$OUT/full-check.log"
+      - name: Compare the old and new fixtures with identical clients
+        env:
+          OUT: ${{ runner.temp }}/client-fixture
+        run: |
+          set -euo pipefail
+          bench=research/experiments/io-completion-bench
+          build="$OUT/whitefoot-io-completion-bench/build"
+          mkdir -p "$OUT/old"
+          git show 063cbef4d182fac8c600c8ac2b6168ed4d24c4f6:"$bench/netload_check.c" > "$OUT/old/netload_check.c"
+          /usr/bin/clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread \
+            -fsanitize=address,undefined -DWF_NETLOAD_READINESS=1 -DWF_NETLOAD_SERVICE_ROUNDS=0 \
+            -I "$bench" "$OUT/old/netload_check.c" -o "$OUT/old/check"
+          sha256sum "$build/netload-check0" "$OUT/old/check" \
+            "$build/netload-ready0-observed" "$build/netload-ready1-observed" \
+            "$OUT/old/netload_check.c" "$bench/netload_check.c" "$bench/netload.c" \
+            "$bench/netload_observe.h" "$bench/compute_protocol.h" > "$OUT/manifest.sha256"
+          for readiness in 0 1; do
+            forms=(old new)
+            if [[ $readiness == 1 ]]; then forms=(new old); fi
+            for form in "${forms[@]}"; do
+              checker="$OUT/old/check"
+              if [[ $form == new ]]; then checker="$build/netload-check0"; fi
+              /usr/bin/time -v -o "$OUT/$form-$readiness.time" \
+                "$checker" "$build/netload-ready$readiness-observed" observed \
+                > "$OUT/$form-$readiness.log" 2> "$OUT/$form-$readiness.err"
+            done
+          done
+          sha256sum -c "$OUT/manifest.sha256" > "$OUT/manifest-check.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: io-client-fixture
+          path: ${{ runner.temp }}/client-fixture
