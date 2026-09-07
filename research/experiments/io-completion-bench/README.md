@@ -428,8 +428,13 @@ rows after eight warmups, then 24 separate observer rows. The opt-in
 `EPOLL_STORAGE_CHECK=1` extension of `stackful-check` requires `strace` and
 adds server-only short-transfer/backpressure traces plus untraced sanitizer
 runs; ordinary server/client source and default checks are unchanged.
-Experiment 65 defines the allocation/working-set diagnostic and its limits;
-native qualification and measurements remain pending.
+Experiment 65 records the successful native qualification and complete
+`396b1123` cohort. At large-message client width two, private/shared epoll
+has paired median rate 0.8475, CPU/trip 1.1607 and p99 1.2792, with all five
+pairs worse on each metric. WF/private epoll still has rate 0.9245 and
+CPU/trip 1.0923. This makes receive-storage policy a measured cost without
+isolating cache effects or matching WF representation; shared epoll remains
+the competitive reference and no default changes.
 `scheduler-client-headroom` holds one server worker/CPU fixed and compares
 one client hardware thread with both SMT siblings of a separate physical
 core. It retains full byte verification and all qualification checks while

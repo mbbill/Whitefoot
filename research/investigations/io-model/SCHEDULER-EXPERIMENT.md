@@ -4264,7 +4264,7 @@ name. A known limitation remains visible until its experiment is complete.
 | Implementation / backend | Source form, storage and scheduling | Role and expected source of performance | Evidence and remaining question |
 | --- | --- | --- | --- |
 | Native C epoll | Manual state machine; per-worker edge-triggered reactor and `SO_REUSEPORT`; 64 KiB shared scratch, bounded private spill on backpressure | Competitive readiness control: immediate recv/send, no ordinary per-operation allocation, local connection state | Screened on Linux loopback; 2 MiB streams, short sends and half-close qualified. Physical NIC and overload confirmation missing |
-| Native C epoll with private storage | Arena, malloc or calloc per connection; main-thread worker variant | Diagnostic storage and allocator comparison; private backing remains owned through I/O | Screened and stream-qualified under earlier client envelopes. Experiment 65 adds the existing spawned-worker calloc policy beside shared scratch under the qualified two-worker ARM large-message client; native qualification/timing pending. This is a joint allocation/working-set diagnostic; private storage need not beat shared scratch |
+| Native C epoll with private storage | Arena, malloc or calloc per connection; main-thread worker variant | Diagnostic storage and allocator comparison; private backing remains owned through I/O | Experiment 65 qualifies spawned-worker policy 0/3 with actual short-transfer/backpressure traces and sanitizers. Under its two-worker ARM large-message client, private/shared epoll paired rate is 0.8475 and CPU/trip 1.1607, both worse in all five pairs. WF/private rate is 0.9245. This is a measured joint allocation/working-set cost, not cache attribution or identical WF representation; shared epoll remains the competitive reference |
 | Native C io_uring | Multishot accept/recv, provided buffers, per-worker rings/listeners, ordered vectored sends; SINGLE_ISSUER + DEFER_TASKRUN, no SQPOLL | Competitive completion control: batching, no receive submission per arrival, loaned receive buffers reused for send | Stream-qualified and screened at `475008b5`: 64 KiB improves both large-message cells; small-message intervals overlap. No independently confirmed or universal winner. Experiment 62 requalifies the delayed-ENOBUFS correction and 2/32/64/128 pools. Its complete `b82647d5` raw cohort is audited despite a final summary-reference failure; the strongest measured uring median remains below epoll at large-message client width two. Earlier cohorts remain frozen |
 | Native C io_uring with immediate send | Same receive engine and loans, one nonblocking `sendmsg` attempt before ring fallback | Competitive hybrid candidate: avoids a submission/completion round trip when the socket accepts bytes immediately | Stream-qualified and screened at `0357259d`; 8 KiB hybrid severely regresses large messages; experiment 46 measures about 3.785x more send operations from lost application-level gathering, without short/EAGAIN retries. 64 KiB does not show the same loss. Shutdown wake-storage correction requalified at `0ebe924b`. Experiment 62 qualifies corrected exhaustion recovery at all selected capacities; width-two large-message inline gains depend on pool size and do not beat the pure-ring 128-buffer median. Its final summary-reference failure is separate from the audited raw cohort |
 | Native C stackful / C++ stackless | Same epoll engine; private or shared receive storage; stackful, heap coroutine, and compiler-elided coroutine forms | Diagnostic representation control: separates coroutine/frame allocation, storage and reactor cost | Screened and stream/lifetime-qualified at their recorded revisions; not independent mature runtime comparisons |
@@ -9663,3 +9663,150 @@ patch whitespace and `make static` pass. These synthetic/representation
 checks and the native macOS sanitizer probe do not qualify Linux syscalls,
 ptrace cleanup, ASan socket lifetimes or performance. Those remain required
 from the exact CI revision before interpreting the panel.
+
+### Sixty-fifth measurement: private receive storage is a material cost
+
+Frozen revision `396b1123088b733eba087cc1010b5bf0fa564ba0`,
+[run 34132017912](https://github.com/mbbill/Whitefoot/actions/runs/34132017912),
+finishes successfully, including the ARM allocator job `101774108034`,
+Windows checks and the complete final summary. Its separate exact-revision
+[canonical gate 34132017911](https://github.com/mbbill/Whitefoot/actions/runs/34132017911)
+passes all sixteen jobs. Artifact `10022825395` (`io-scheduler-allocator`)
+is 2,810,885 bytes; its independently checked ZIP SHA-256 is
+`dd9d94bbff78f870d1be5320e218b84b4ada01661de6fbaf6af6da8bf26c63eb`.
+The raw `storage-control.tsv`/`network.tsv`, separate observer tables,
+qualification traces, retained executables, hashes and final summary all
+belong to this single cohort; no timing is regenerated or borrowed from 62.
+
+The runner reports Neoverse-N2, Linux `6.17.0-1022-azure`, Clang 20.1.2 and
+image `20260831.111.1`. Allowed CPUs 0–3 map to package 36/core IDs 1–4,
+with singleton sibling lists. The server stays on CPU 0; small-message
+clients use CPU 1 and large-message clients use the pool mask 1,2. Each
+client worker reports that pool mask, not a distinct one-CPU pin. Both
+admission snapshots agree, visible non-root quotas are unlimited, and the
+root-only missing `cpu.max` interface is recorded with its defined meaning.
+Launch/worker affinities, protocol bytes, hashes and row ordering pass the
+independent audit. Guest topology still does not promise dedicated host cores.
+
+#### Native qualification and provenance
+
+All four new untraced ASan/UBSan/leak cases and four server-only traced
+repetitions finish normally with four accepted/closed peers and exactly
+8 MiB received and sent per case. Independent parsing of the retained
+server PID/TID trace trees reproduces these actual syscall counts:
+
+| Storage policy | Workers | Positive short receives | Positive short sends | Send `EAGAIN` |
+|---|---:|---:|---:|---:|
+| Shared scratch (0) | 1 | 50 | 119 | 126 |
+| Shared scratch (0) | 4 | 70 | 97 | 196 |
+| Private calloc (3) | 1 | 75 | 93 | 217 |
+| Private calloc (3) | 4 | 84 | 84 | 226 |
+
+All network outcomes come from the selected server's spawned worker TIDs;
+client calls cannot supply these assertions. These are instrumented
+qualification executions, not operation counts from ordinary performance
+samples. The earlier 36 `stackful-check` cases remain, giving 44 complete
+stream cases with this extension. Native uring separately passes all 28
+actual-source traces and 24 stream configurations, including four tiny-pool
+exhaustion/recovery cases and the selected 128-buffer capacity. Existing
+Linux client trace/socket/paced checks and two three-worker admitted smokes
+also pass, with their counter phases kept out of the measured rows.
+
+The build commands are defined by the frozen Makefile; its silent recipe
+does not echo sanitizer flags into the job log. The two retained qualification
+ELFs provide additional direct evidence: `main`, `worker_main`, `service`
+and `close_connection` call fatal UBSan `_abort` handlers and ASan report
+functions in both policies. All decoded sanitizer calls in those four functions match
+their encoded AArch64 branch targets and target symbols. The corresponding
+fatal UBSan call-site counts are 41/12/11/4 for policy 0 and 40/13/7/4 for
+policy 3. This checks actual source-function instrumentation, not merely
+sanitizer symbols linked elsewhere in the binary. Their retained-byte hashes
+are `aa171a21cb21eaedbf8441ff398e64439245dc66184510abd40ede8bdff81a6f`
+and `2b03c2130143a5df15039cace7caf9bf5045c74aae1d4f11977ca52a34daa529`;
+these identify the retained qualification binaries rather than recheck a
+separate earlier digest. The exact retained launchers contain
+`strace --kill-on-exit`; successful normal exits do not separately test a
+forced tracer-death cleanup. Leak detection runs untraced before each
+traced repetition, as specified above, with no sanitizer diagnostic.
+
+All ten selected ordinary/observed performance ELFs and retained source/IR
+inputs match their manifest hashes; all 74 manifest entries pass the final
+on-runner check. Three compiler/tool executables are identified by hash but
+not uploaded and cannot be independently rehashed from this artifact. The
+ordinary tables contain 40 rows after eight warmups; three observer passes
+contain 24 distinct rows, 36 client worker reports and six native reports.
+The final eight-row summary agrees with independently recomputed raw rates
+and paired ratios. All reported comparisons below use the same pass, host,
+work and client resources.
+
+#### Ordinary large-message results
+
+For 64 peers × 500 trips × 64 KiB, client width two, the following are
+five-pass medians with observed minima/maxima in brackets. CPU is whole
+server-process lifetime user plus system time per round trip; RSS is
+whole-process peak, with the previously stated accounting limitations.
+
+| Form | Round trips/s [range] | p99 µs [range] | Server CPU µs/trip | Peak RSS KiB |
+|---|---:|---:|---:|---:|
+| `epoll` | 58414 [57229, 58931] | 1146 [1132, 1201] | 17.500 | 3648 |
+| `epoll-calloc` | 49694 [47986, 50853] | 1457 [1314, 1731] | 20.313 | 5228 |
+| `uring-64k-p128` | 49964 [49730, 50395] | 1505 [1489, 1636] | 20.313 | 9988 |
+| `wf-coro-index` | 45411 [45031, 45944] | 1846 [1467, 1925] | 22.188 | 6176 |
+
+| Same-pass numerator/denominator | Rate ratio [range] | CPU/trip ratio [range] | p99 ratio [range] |
+|---|---:|---:|---:|
+| Private/shared epoll | 0.84748 [0.83216, 0.88859] | 1.16071 [1.14286, 1.19643] | 1.27919 [1.09409, 1.51047] |
+| Uring/shared epoll | 0.86272 [0.85185, 0.86897] | 1.16071 [1.14286, 1.16364] | 1.31803 [1.30729, 1.36220] |
+| WF/shared epoll | 0.78092 [0.77093, 0.79349] | 1.26786 [1.26786, 1.28571] | 1.56973 [1.22148, 1.69008] |
+| WF/private epoll | 0.92454 [0.89298, 0.93842] | 1.09231 [1.05970, 1.12500] | 1.11644 [1.07221, 1.32121] |
+| Uring/private epoll | 1.00516 [0.97792, 1.04122] | 1.00000 [0.97015, 1.01563] | 1.02196 [0.86944, 1.24505] |
+
+Private epoll loses rate, CPU/trip and p99 against shared scratch in every
+pass: paired median rate is 15.25% lower and CPU/trip 16.07% higher, with peak RSS
+3648 → 5228 KiB. WF remains behind private epoll on all three metrics in
+every pass, but the rate comparison changes from 0.78092 against shared to
+0.92454 against private. The change of storage policy within epoll therefore
+materially changes the apparent WF gap. It does not assign a percentage of
+WF cost to a specific mechanism or make private epoll's full representation
+identical to WF. Private epoll and uring overlap in paired rate/CPU/tail
+ordering; shared epoll remains the strongest selected large-message reference
+in all five passes.
+
+The extra ordinary CPU is mostly system time: shared epoll uses
+0.00–0.01 user/0.55–0.56 system seconds per 32,000 trips; private uses
+0.00–0.01/0.63–0.66, uring 0.00–0.01/0.64–0.65, and WF
+0.02–0.03/0.68–0.69. This does not identify cache behavior, faults or specific
+syscalls. Changing private-buffer allocation, page touching, working set and
+short-write storage together remains the stated diagnostic boundary.
+Client exchange CPU/wall medians are 1.472 for shared epoll, 1.267 for
+private, 1.186 for uring and 1.090 for WF within the two-CPU client mask.
+This resource envelope supports the named comparison, not an unrestricted
+server ceiling.
+
+#### Small-message control and separate observers
+
+At 64 peers × 2000 trips × 64 B with one client worker, median rates are
+211444 shared epoll, 212314 private epoll, 214404 uring and 203739 WF.
+Private/shared paired rate is 1.00683 [0.99876, 1.00863], CPU/trip
+1.00000 [0.98361, 1.00000] and p99 0.99385 [0.98471, 1.00308]. Thus the
+large-message loss is absent from this small-message control. Native client
+CPU/wall medians are 0.9996–0.9998; WF is 0.9681. These small-message rates
+cannot establish an unconstrained server ranking or spare client capacity.
+
+All six separate 128-buffer uring observations have zero `ENOBUFS` and zero
+late-exhaustion retries. The three large-message observations have peak
+user-visible loans 40, receive/send operation counts 32026/32026,
+32002/32002 and 32001/32001, each transferring 2,097,152,000 bytes in both
+directions. These counters describe observed executions and exclude buffers
+selected by the kernel whose CQEs are unread; they are not ordinary timing
+counts or proof of exact kernel occupancy. Both epoll policies report the
+selected storage/placement and full peer retirement in all observations;
+WF reports the selected owner/batch/index, native socket routes and task
+retirement.
+
+Selection: keep the default client and shared epoll competitive reference.
+Private epoll remains a diagnostic row. Receive-storage policy is now a
+measured optimization target under the wider large-message client, while
+WF still has a residual cost against private epoll. These results do not
+select a runtime, language, allocator or storage default change and do not
+establish a globally fastest backend.
