@@ -4,6 +4,10 @@ cd "$(dirname "$0")"
 mode=${1:?mode required}
 case "$mode" in check|calibrate) ;; *) echo 'unknown records mode' >&2; exit 1;; esac
 : "${OUT:?build output required}"
+# The real WF and native anchors are a scalar, non-LTO cohort.
+for flag in -fno-vectorize -fno-slp-vectorize -fno-lto; do
+    head -n 1 "$OUT/records-flags.txt" | grep -Eq "(^| )$flag( |$)"
+done
 rounds=${ROUNDS:-5}
 case "$rounds" in ''|*[!0-9]*) exit 1;; esac
 test "$rounds" -ge 1 && test "$rounds" -le 20
@@ -46,13 +50,19 @@ if test "$mode" = check; then
 ascii 0 0
 unicode 33 17
 skew 4097 64
+unicode 256 65536
+error-first 256 65536
 CELLS
 else
+    # Keep existing cell ordinals/seeds when adding the long-record cases.
     for shape in ascii unicode error-first error-last skew; do
         for size in '1 32' '33 64' '4097 128' '65536 16'; do
             printf '%s %s\n' "$shape" "$size"
         done
     done > "$results/cells.txt"
+    for shape in ascii unicode error-first error-last skew; do
+        printf '%s 256 65536\n' "$shape"
+    done >> "$results/cells.txt"
 fi
 printf 'runtime\tkernel\tworkers\tshape\trecords\tbytes\tmax_length\tseed\tpass\tcalls\tcore_mean_ns\tcore_min_ns\tcore_max_ns\tcycle_mean_ns\tcycle_min_ns\tcycle_max_ns\n' > "$results/summary.tsv"
 cell=0

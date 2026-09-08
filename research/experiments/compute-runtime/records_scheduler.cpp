@@ -288,4 +288,15 @@ extern "C" int wf__main_body(int argc, char **argv) {
     require(std::fflush(stdout) == 0, "report flush");
     return status;
 }
+#if defined(RECORD_SCHEDULER_SELECT)
+extern "C" void records_scheduler_select(const char *name);
+int main(int argc, char **argv) {
+    // Select once before floor entry and every measured interval. The common
+    // host, callback and leaf then have one image layout for every backend.
+    require(argc >= 2, "shared-image backend argument");
+    records_scheduler_select(argv[1]);
+    return wf__floor_run(argc - 1, argv + 1);
+}
+#else
 int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+#endif

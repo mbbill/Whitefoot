@@ -14,6 +14,7 @@ SHARED := $(ROOT)/compiler/src/backend/sched
 BENCH_ARCH ?=
 BENCH_CFLAGS := -std=c11 -O3 -g -Wall -Wextra -Werror -Wpedantic -pthread \
 	-fno-fast-math -ffp-contract=off $(BENCH_ARCH)
+RECORD_FLAGS := $(BENCH_CFLAGS) -fno-vectorize -fno-slp-vectorize -fno-lto
 SCHEDULER_FLAGS := -O3 -g -DNDEBUG -Wall -Wextra -Werror -Wpedantic -pthread \
 	$(BENCH_ARCH) -fno-vectorize -fno-slp-vectorize -fno-lto
 SCHEDULER_COMMON := $(OUT)/scheduler-host.o $(OUT)/scheduler-native.o \
@@ -45,7 +46,8 @@ endef
 .PHONY: check build check-runtime check-abi check-fir fir-ir check-native native-object check-static \
 	wf-objects check-wf-objects build-bench check-bench bench-calibrate compiler force \
 	records-build check-records records-calibrate scheduler-fetch scheduler-build \
-	check-scheduler check-scheduler-memory scheduler-calibrate
+	check-scheduler check-scheduler-memory scheduler-calibrate scheduler-layout-build \
+	check-scheduler-layout scheduler-layout-calibrate
 
 force:
 
@@ -57,7 +59,7 @@ $(OUT)/probe $(OUT)/probe-no-stats: runtime.c runtime.h probe.c $(FLOOR) force
 		-DWF_COMPUTE_STATS=$(if $(filter $(OUT)/probe-no-stats,$@),0,1) \
 		runtime.c probe.c $(FLOOR) -o "$@"
 
-check: check-runtime check-abi check-fir check-bench check-records check-scheduler
+check: check-runtime check-abi check-fir check-bench check-records check-scheduler-layout
 
 check-runtime: build
 	@set -e; for probe in probe probe-no-stats; do \
@@ -91,17 +93,17 @@ records-build: $(WFC)
 	sed -e 's/@main(/@wf_record_command_main(/g' \
 		-e 's/@wf__main_body(/@wf_record_command_body(/g' "$(OUT)/records.ll" > "$(OUT)/records-host.ll"
 	cat records_host.ll >> "$(OUT)/records-host.ll"
-	$(CC) $(BENCH_CFLAGS) -Wno-override-module -c "$(OUT)/records-host.ll" -o "$(OUT)/records-wf.o"
-	$(CC) $(BENCH_CFLAGS) -Wno-override-module -S "$(OUT)/records-host.ll" -o "$(OUT)/records-wf.s"
-	$(CC) $(BENCH_CFLAGS) -Wno-override-module runtime.c $(FLOOR) "$(OUT)/records.ll" -o "$(OUT)/records-command"
-	$(CC) $(BENCH_CFLAGS) -c records_native.c -o "$(OUT)/records-native.o"
-	$(CC) $(BENCH_CFLAGS) -S records_native.c -o "$(OUT)/records-native.s"
-	$(CC) $(BENCH_CFLAGS) records.c records_oracle.c $(FLOOR) "$(OUT)/records-wf.o" "$(OUT)/records-native.o" -o "$(OUT)/records-weak"
-	$(CC) $(BENCH_CFLAGS) -DWF_COMPUTE_CONTROL -DRECORD_RUNTIME='"recovered"' \
+	$(CC) $(RECORD_FLAGS) -Wno-override-module -c "$(OUT)/records-host.ll" -o "$(OUT)/records-wf.o"
+	$(CC) $(RECORD_FLAGS) -Wno-override-module -S "$(OUT)/records-host.ll" -o "$(OUT)/records-wf.s"
+	$(CC) $(RECORD_FLAGS) -Wno-override-module runtime.c $(FLOOR) "$(OUT)/records.ll" -o "$(OUT)/records-command"
+	$(CC) $(RECORD_FLAGS) -c records_native.c -o "$(OUT)/records-native.o"
+	$(CC) $(RECORD_FLAGS) -S records_native.c -o "$(OUT)/records-native.s"
+	$(CC) $(RECORD_FLAGS) records.c records_oracle.c $(FLOOR) "$(OUT)/records-wf.o" "$(OUT)/records-native.o" -o "$(OUT)/records-weak"
+	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_CONTROL -DRECORD_RUNTIME='"recovered"' \
 		records.c records_oracle.c runtime.c $(FLOOR) "$(OUT)/records-wf.o" "$(OUT)/records-native.o" -o "$(OUT)/records-recovered"
-	$(CC) $(BENCH_CFLAGS) -fsanitize=$(SANITIZER) -fno-sanitize-recover=all \
+	$(CC) $(RECORD_FLAGS) -fsanitize=$(SANITIZER) -fno-sanitize-recover=all \
 		-fno-omit-frame-pointer -c records_native.c -o "$(OUT)/records-native-sanitized.o"
-	$(CC) $(BENCH_CFLAGS) -DWF_COMPUTE_CONTROL -DRECORD_RUNTIME='"recovered"' -fsanitize=$(SANITIZER) \
+	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_CONTROL -DRECORD_RUNTIME='"recovered"' -fsanitize=$(SANITIZER) \
 		-fno-sanitize-recover=all -fno-omit-frame-pointer records.c records_oracle.c runtime.c $(FLOOR) \
 		"$(OUT)/records-wf.o" "$(OUT)/records-native-sanitized.o" -o "$(OUT)/records-sanitized"
 	@for mode in weak recovered sanitized; do nm "$(OUT)/records-$$mode" > "$(OUT)/records-$$mode.symbols"; done
@@ -110,7 +112,7 @@ records-build: $(WFC)
 	$(call require-strong,$(OUT)/records-sanitized,wf__floor_run)
 	$(call require-strong,$(OUT)/records-recovered,wf__par_acquire_lane)
 	$(call require-strong,$(OUT)/records-sanitized,wf__par_acquire_lane)
-	@printf '%s\n' '$(BENCH_CFLAGS)' > "$(OUT)/records-flags.txt"
+	@printf '%s\n' '$(RECORD_FLAGS)' > "$(OUT)/records-flags.txt"
 	$(CC) --version >> "$(OUT)/records-flags.txt"
 	shasum -a 256 "$(WFC)" >> "$(OUT)/records-flags.txt"
 
@@ -275,6 +277,92 @@ check-scheduler: scheduler-build check-scheduler-memory records-build
 
 scheduler-calibrate: check-scheduler
 	OUT="$(OUT)" sh records-scheduler-bench.sh calibrate
+
+# Keep one common machine-code image while changing only the selected adapter.
+# Macro renames affect each adapter's three public entry points; all common C
+# objects are exactly those already qualified by the standalone scheduler panel.
+scheduler-layout-build: scheduler-build
+	$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -DRECORD_SCHEDULER_SELECT \
+		-c records_scheduler.cpp -o "$(OUT)/scheduler-layout-host.o"
+	$(CC) -std=c11 $(SCHEDULER_FLAGS) -c records_selector.c -o "$(OUT)/scheduler-layout-selector.o"
+	@for mode in $(SCHEDULERS); do \
+		prefix=layout_$$(printf '%s' "$$mode" | tr - _); \
+		set -- -Drecords_scheduler_run=$${prefix}_run -Drecords_scheduler_name=$${prefix}_name \
+			-Drecords_scheduler_stop=$${prefix}_stop; \
+		case $$mode in \
+			wf|static) source=records_static.c; if test $$mode = wf; then source=records_runtime.c; fi; \
+				$(CC) -std=c11 $(SCHEDULER_FLAGS) "$$@" -c $$source -o "$(OUT)/scheduler-layout-$$mode.o" || exit $$?;; \
+			tbb|parlay) $(CXX) -std=c++17 $(SCHEDULER_FLAGS) "$$@" -isystem "$(OUT)/scheduler-deps/include" \
+				-c records_$$mode.cpp -o "$(OUT)/scheduler-layout-$$mode.o" || exit $$?;; \
+			rayon-join|rayon-iter) variant=0; if test $$mode = rayon-iter; then variant=1; fi; \
+				$(CC) -std=c11 $(SCHEDULER_FLAGS) "$$@" -DRAYON_STRATEGY=$$variant -I"$(OUT)/scheduler-deps" \
+				-c records_rayon.c -o "$(OUT)/scheduler-layout-$$mode.o" || exit $$?;; \
+		esac; \
+	done
+	@set -- "$(OUT)/scheduler-layout-host.o" "$(OUT)/scheduler-layout-selector.o"; \
+	for unit in native oracle work floor runtime; do set -- "$$@" "$(OUT)/scheduler-$$unit.o"; done; \
+	for mode in $(SCHEDULERS); do set -- "$$@" "$(OUT)/scheduler-layout-$$mode.o"; done; \
+	$(CXX) -pthread -fno-lto "$$@" -L"$(OUT)/scheduler-deps/lib" -Wl,-rpath,"$(OUT)/scheduler-deps/lib" \
+		-ltbb "$(RAYON_LIB)" $(RAYON_SYSTEM_LIBS) -o "$(OUT)/scheduler-layout"
+	@nm -n "$(OUT)/scheduler-layout" > "$(OUT)/scheduler-layout.symbols"
+	$(call require-strong,$(OUT)/scheduler-layout,wf__floor_run)
+	$(call require-strong,$(OUT)/scheduler-layout,records_state)
+	$(call require-strong,$(OUT)/scheduler-layout,records_scheduler_chunk)
+	@for symbol in records_state records_scheduler_chunk; do \
+		test "$$(awk -v name="$$symbol" '$$2=="T" && ($$3==name || $$3=="_"name) {n++} END {print n+0}' \
+			"$(OUT)/scheduler-layout.symbols")" -eq 1 || exit 1; \
+	done
+	@printf '%s\n' 'image=scheduler-layout selection=before-floor-entry dispatch=common-indirect' \
+		'loaded=WF-runtime,static,oneTBB,Parlay,Rayon-join,Rayon-iter' \
+		'common_objects=scheduler-native.o,scheduler-work.o,scheduler-oracle.o,scheduler-floor.o,scheduler-runtime.o' \
+		'sanitizer_scope=selector-and-host; ordinary-qualified-adapters-and-common-objects' > "$(OUT)/scheduler-layout-flags.txt"
+
+check-scheduler-layout: check-scheduler scheduler-layout-build
+	@for mode in $(SCHEDULERS); do \
+		for width in 1 2 4; do \
+			log="$(OUT)/scheduler-layout-$$mode-check-w$$width.log"; status=0; \
+			WF_WORKERS=$$width "$(OUT)/scheduler-layout" $$mode check $$width > "$$log" 2>&1 || status=$$?; \
+			sh records-scheduler-memory.sh validate-clean "$$log" $$status $$mode $$width qualify || { cat "$$log" >&2; exit 1; }; \
+			cat "$$log"; \
+		done; \
+	done
+	# This additional check instruments the new selector and shared host only.
+	# Existing standalone sanitizer qualification above still covers all adapters.
+	$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -fsanitize=$(SANITIZER) -fno-sanitize-recover=all \
+		-fno-omit-frame-pointer -DRECORD_SCHEDULER_SELECT -c records_scheduler.cpp -o "$(OUT)/scheduler-layout-memory-host.o"
+	$(CC) -std=c11 $(SCHEDULER_FLAGS) -fsanitize=$(SANITIZER) -fno-sanitize-recover=all \
+		-fno-omit-frame-pointer -c records_selector.c -o "$(OUT)/scheduler-layout-memory-selector.o"
+	@set -- "$(OUT)/scheduler-layout-memory-host.o" "$(OUT)/scheduler-layout-memory-selector.o"; \
+	for unit in native oracle work floor runtime; do set -- "$$@" "$(OUT)/scheduler-$$unit.o"; done; \
+	for mode in $(SCHEDULERS); do set -- "$$@" "$(OUT)/scheduler-layout-$$mode.o"; done; \
+	$(CXX) -pthread -fno-lto -fsanitize=$(SANITIZER) -fno-sanitize-recover=all "$$@" \
+		-L"$(OUT)/scheduler-deps/lib" -Wl,-rpath,"$(OUT)/scheduler-deps/lib" \
+		-ltbb "$(RAYON_LIB)" $(RAYON_SYSTEM_LIBS) -o "$(OUT)/scheduler-layout-memory-image"
+	@mkdir -p "$(OUT)/scheduler-layout-memory"; failures=0; \
+	for mode in $(SCHEDULERS); do \
+		image="$(OUT)/scheduler-layout-memory/scheduler-memory-$$mode"; \
+		ln -f "$(OUT)/scheduler-layout-memory-image" "$$image" || exit $$?; \
+		cmp "$(OUT)/scheduler-layout-memory-image" "$$image" || exit $$?; \
+		for width in 1 2 4; do \
+			log="$(OUT)/scheduler-layout-memory-$$mode-w$$width.log"; status=0; \
+			env $(SCHEDULER_MEMORY_ENV) WF_WORKERS=$$width "$$image" $$mode check $$width > "$$log" 2>&1 || status=$$?; \
+			if sh records-scheduler-memory.sh $(SCHEDULER_MEMORY_MODE) "$$log" $$status $$mode $$width qualify; then \
+				printf 'scheduler layout memory accepted: backend=%s width=%s child_status=%s\n' $$mode $$width $$status; \
+			else failures=$$((failures+1)); cat "$$log" >&2; fi; \
+		done; \
+	done; test $$failures -eq 0
+	@for argument in missing invalid; do \
+		set --; if test $$argument = invalid; then set -- unknown check 1; fi; \
+		status=0; "$(OUT)/scheduler-layout" "$$@" > "$(OUT)/scheduler-layout-$$argument.log" 2>&1 || status=$$?; \
+		test $$status -eq 1 || exit 1; \
+		message='record scheduler: shared-image backend argument'; \
+		if test $$argument = invalid; then message='record scheduler: invalid or repeated shared-image selection'; fi; \
+		grep -Fxq "$$message" "$(OUT)/scheduler-layout-$$argument.log" || exit 1; \
+	done
+	OUT="$(OUT)" sh records-scheduler-bench.sh layout-check
+
+scheduler-layout-calibrate: check-scheduler-layout
+	OUT="$(OUT)" sh records-scheduler-bench.sh layout
 
 # Refresh the default compiler after source changes. A supplied compiler is
 # an explicit caller-owned dependency and must already be built for this tree.

@@ -567,8 +567,12 @@ long-record outliers. Canary comparisons detect input writes, not every possible
 out-of-slice read; three/four-byte combinations are not exhaustive.
 
 `check-records` runs the original WF command at widths zero/four, ordinary weak
-and recovered full qualifiers, a C-sanitized qualifier, and eighteen timing-host
+and recovered full qualifiers, a C-sanitized qualifier, and thirty timing-host
 smokes. Both timing hosts reuse the exact qualified O3 WF and native objects.
+The record builds explicitly disable loop/SLP vectorization and LTO, including
+the WF LLVM object. The driver rejects a flags manifest missing those controls;
+assembly remains available to inspect the generated bodies. Earlier record
+artifacts without these explicit flags are a separate historical cohort.
 The C-sanitized qualifier also instruments a separate native object; ordinary
 WF LLVM does not thereby acquire frontend sanitizer instrumentation. Keep these
 record source/adapter/native/host/driver files while this workload needs the
@@ -576,9 +580,9 @@ experiment; consolidate them if a shared workload harness supersedes their role.
 
 Run `make -C research/experiments/compute-runtime records-calibrate OUT=/path/to/output
 BENCH_ARCH=-march=native` on the selected Linux host (one shell line). The driver
-records five rotating/reversing passes across twenty cells and six controls:
+records five rotating/reversing passes across twenty-five cells and six controls:
 native state/word, weak WF, and recovered WF at requested zero/two/four lanes.
-The 600 processes cover ASCII, mixed Unicode, early/late invalid bytes and
+The 750 processes cover ASCII, mixed Unicode, early/late invalid bytes and
 skewed lengths at one to 65,536 records. Every output is checked after each
 timed call. Raw calls, per-process warm means/ranges, code/flags and host
 manifests are retained. The CI matrix gives FIR and records separate hosts and
@@ -597,6 +601,15 @@ Parallel-world selection does not imply that a small batch starts workers.
 The current estimated map weight is 812 and the recovered split policy admits
 no split below 2,956 records. Reports retain actual capacity and steals; a
 partial started pool is rejected, and the full qualifier requires four lanes.
+The compiler estimates nested loops with a fixed factor of 16 and substitutes
+callee estimates to three levels; it does not observe the record's scanned
+length or data-dependent early exit.
+The 256-record, maximum-length 65,536 cells expose expensive batches below
+that threshold; valid Unicode and early-invalid versions also run in the
+smoke matrix. At 4,097 records the current budget admits only two chunks, even
+when the pool has four lanes. Pool capacity alone is not useful parallel width.
+The scheduler panel's manually partitioned C adapter bypasses this estimate,
+so it cannot establish that the compiled WF program exploits the same work.
 The two native kernels are initial scalar anchors. This end-to-end panel does
 not establish a native frontier or full application throughput. SIMD work is
 parked. The separate scheduler comparison below supplies matched static/dynamic
@@ -604,7 +617,7 @@ controls; held-out inputs and dedicated-core measurements remain open.
 
 ## Scalar scheduler comparison
 
-This panel isolates scheduling with six forms: the recovered WF runtime,
+This panel investigates scheduling with six forms: the recovered WF runtime,
 a persistent static busy-spin pool, oneTBB, Parlay, and Rayon join/parallel
 iterator. All six link
 the **same separately compiled** `records_state` computation and
@@ -620,6 +633,9 @@ The retained assembly permits
 inspection of the actual compute/callback functions. These controls concern
 compiler-generated code in this experiment and its native library, not the
 implementation of operating-system routines.
+Identical object bytes do not guarantee identical linked instruction placement.
+The first complete Linux panel below has a substantial width-one difference
+that prevents attributing its full parallel timing gap to scheduling.
 
 `records_runtime.c` drives the real `runtime.c` acquisition/publication/join/
 release protocol with a 32-byte C frame. It publishes one half of a range, runs
@@ -788,6 +804,98 @@ oneTBB library use their default host targets. The explicit target avoids
 Clang 18's invalid AVX10 combination inferred by `-march=native` on one CI
 host; strict warnings and scalar controls remain enabled. New measurements
 are not pooled with the earlier native-target cohort.
+
+### Shared executable layout control
+
+`scheduler-layout` links namespaced copies of all six adapters into one image.
+Its first argument selects exactly one backend before floor entry; each
+process retains that selection and width. The leaf, callback and common C
+objects are those qualified by the standalone panel. Their addresses within
+the image are identical across backend selections, including alignment under
+page-aligned ASLR. Symbol checks require one strong leaf and callback definition;
+the driver retains the image hash and symbols and rejects an image changed
+during calibration. The added `records_selector.c` belongs to this diagnostic
+and is retired when the shared-image control is superseded.
+
+All modes pay one common indirect dispatch and load the same linked libraries.
+This controls leaf/callback placement within the shared panel, but changes the
+executable and initialization environment from the standalone forms. It is not
+an isolated alignment-only intervention. Comparisons with the preceding
+standalone run also retain run-order effects; neither result should be silently
+pooled with the other.
+
+`check-scheduler-layout` retains the complete `check-scheduler` prerequisite,
+then runs all eighteen shared-image backend/width qualifiers and 72 dense smoke
+processes / 216 calls. An additional eighteen ASan/UBSan qualifiers instrument
+the new selector and shared host, linking the ordinary qualified common objects
+and adapters. The broader standalone sanitizer coverage remains necessary.
+Hardlinked aliases preserve the unchanged strict Linux Rayon report grammar;
+they contain the same sanitizer image. Missing and invalid backend arguments
+must fail with the expected diagnostic before execution.
+
+The canonical experiment `check` includes this target. CI runs the standalone
+calibration followed by the shared-image panel under the same CPU mask. The
+`layout` driver mode uses four dense input cells: valid Unicode and early-invalid
+records at 256 / maximum 65,536 bytes and 4,097 / maximum 128 bytes, grain 16.
+Seeds match their standalone counterparts. Five passes over all eighteen
+configurations yield 360 processes / 3,780 calls. Raw grammar, full-output checks
+and post-timing capacity requirements are unchanged. Build and run it with:
+
+```sh
+make -C research/experiments/compute-runtime scheduler-layout-calibrate OUT=/tmp/wf-scheduler
+```
+
+Dependencies must first be fetched as shown above. Linux execution of the new
+shared-image control remains pending; the dated standalone result below does
+not qualify it.
+
+### First complete Linux scalar panel and attribution limit
+
+The [`f8766994` run](https://github.com/mbbill/Whitefoot/actions/runs/34186817212)
+completed all 5,940 processes / 58,860 calls, checking 1,087,845,120 output
+positions. Artifact `compute-scheduler-linux`, ID `10040879095`, ZIP SHA-256
+`6dc84ee149ccb08d70021c665f56fd3a039576141166a4f5f7a51ca234e28fd5`, retains
+all raw rows, qualifiers and build objects. Independent reconstruction matched
+every raw identity and all 33 summary fields; all 517 manifest entries and
+the dependency hashes match, including previously omitted hidden Cargo files.
+All 42 sanitizer cases and the actual extra-allocation negative check passed.
+Six timed processes needed the second post-timing capacity wave; none needed
+the third. These waves do not change or repeat measured samples.
+
+This host was an AMD EPYC 7763 VM with two physical cores, four logical CPUs
+(SMT2), and mask 0-3. CPU quota and individual thread placement are unqualified.
+The following are microseconds, median of five process warm means, at width
+four, grain 16, dense cadence. Width includes the caller. The 256-record cells
+have four warm calls per process; the 4,097-record cells have fifteen.
+
+| Input (records / maximum bytes per record) | WF runtime C adapter | Static spin | oneTBB | Parlay | Rayon join | Rayon iterator |
+|---|---:|---:|---:|---:|---:|---:|
+| Unicode 256 / 65,536 | 6,221.531 | 3,946.476 | 6,508.005 | 4,142.592 | 4,001.768 | 4,032.950 |
+| Unicode 4,097 / 128 | 298.782 | 1,955.208 | 281.870 | 231.500 | 218.178 | 211.964 |
+| Early invalid 256 / 65,536 | 1.711 | 3,502.936 | 3.972 | 2.339 | 7.436 | 14.479 |
+| Early invalid 4,097 / 128 | 16.548 | 2,269.907 | 19.337 | 16.653 | 26.732 | 26.500 |
+
+The long Unicode difference already exists at width one: WF's executable takes
+10.72 ms, oneTBB's 10.68 ms, and the other four about 7.3 ms. WF's width-one
+adapter directly calls the common callback without entering the runtime.
+All six linked `records_state` bodies have identical 258-byte instruction
+sequences (SHA-256
+`01177681415f446ee487fc4c41ca50c4b3146d4b8bb421b1a1f4dc9a10e9de9c`).
+Their function addresses modulo 64 are 48 for WF and oneTBB, 0 for static
+and both Rayon forms, and 16 for Parlay. The comparison at function offset
+`0x4e` crosses a 64-byte boundary only in the slower pair. This is a layout
+correlation, not a demonstrated hardware cause; it invalidates a scheduler-only
+explanation of the full gap. Shared-executable and instruction-placement
+controls are needed before selecting a runtime optimization from this result.
+
+Cadence also changes the conclusion. For early-invalid 256 records, WF's
+median increases from 1.711 microseconds dense to 12.676 with requested 100-us
+gaps and 13.573 with requested 1-ms gaps. Parlay's corresponding values are
+2.339, 3.707 and 3.830. The static pool's millisecond short-call costs coincide
+with batch CPU/wall ratios near three on this two-core VM; they do not establish
+a general WF advantage or a measured syscall cause. Idle CPU and wakeup latency
+must be considered together. The 20 or 75 warm observations per cell support
+descriptive samples, not production tail estimates or a universal ranking.
 
 The scheduler header, common callback/host, adapters, locked Rayon crate, shell
 drivers and shared report validators

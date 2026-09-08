@@ -2,12 +2,14 @@
 set -eu
 cd "$(dirname "$0")"
 mode=${1:?mode required}
-case "$mode" in check|calibrate) ;; *) echo 'unknown scheduler mode' >&2; exit 1;; esac
+case "$mode" in check|calibrate|layout|layout-check) ;; *) echo 'unknown scheduler mode' >&2; exit 1;; esac
+layout=0
+case "$mode" in layout|layout-check) layout=1;; esac
 : "${OUT:?build output required}"
 rounds=${ROUNDS:-5}
 case "$rounds" in ''|*[!0-9]*) exit 1;; esac
 test "$rounds" -ge 1 && test "$rounds" -le 20
-if test "$mode" = check; then rounds=1; fi
+case "$mode" in check|layout-check) rounds=1;; esac
 results=${RESULTS:-$OUT/scheduler-$mode-$$}
 test ! -e "$results"
 test -s "$OUT/scheduler-flags.txt"
@@ -18,6 +20,11 @@ for unit in host native oracle work floor runtime wf-adapter static-adapter tbb-
 done
 for unit in native work; do test -s "$OUT/scheduler-$unit.s"; done
 for scheduler in wf static tbb parlay rayon-join rayon-iter; do test -x "$OUT/scheduler-$scheduler"; done
+if test "$layout" = 1; then
+    test -x "$OUT/scheduler-layout"
+    grep -Fxq 'image=scheduler-layout selection=before-floor-entry dispatch=common-indirect' "$OUT/scheduler-layout-flags.txt"
+    layout_hash=$(shasum -a 256 "$OUT/scheduler-layout")
+fi
 # Both common C computation and C++ dispatch are ordinary scalar release builds.
 awk '
     /^C: / || /^C\+\+: / {
@@ -31,8 +38,15 @@ mkdir -p "$results"
 printf '%s\n' "$results" > "$OUT/last-scheduler-$mode-path.txt"
 {
     printf 'mode=%s rounds=%s kernel=scalar-records-state\n' "$mode" "$rounds"
-    printf '%s\n' 'common_leaf=scheduler-native.o common_callback=scheduler-work.o' \
-        'measured_executables=scheduler-wf,scheduler-static,scheduler-tbb,scheduler-parlay,scheduler-rayon-join,scheduler-rayon-iter' \
+    printf '%s\n' 'common_leaf=scheduler-native.o common_callback=scheduler-work.o'
+    if test "$layout" = 1; then
+        printf '%s\n' 'measured_executable=scheduler-layout all18configs=same-image' \
+            'comparison=within-shared-image; standalone order/layout/library-load effects remain separate'
+        cat "$OUT/scheduler-layout-flags.txt"
+    else
+        printf '%s\n' 'measured_executables=scheduler-wf,scheduler-static,scheduler-tbb,scheduler-parlay,scheduler-rayon-join,scheduler-rayon-iter'
+    fi
+    printf '%s\n' \
         'interval=joined-dispatch first=lazy-start warm=separate post-timing-capacity=excluded' \
         'outputs=distinct-preallocated-per-call batch=all-calls-and-gaps final-verification=excluded'
     git rev-parse HEAD
@@ -50,7 +64,7 @@ printf '%s\n' "$results" > "$OUT/last-scheduler-$mode-path.txt"
         sysctl hw.model hw.ncpu hw.physicalcpu hw.logicalcpu hw.memsize
     fi
     shasum -a 256 records_scheduler.cpp records_scheduler.h records_work.c records_native.c records_native.h \
-        records_oracle.c records_runtime.c records_static.c records_tbb.cpp records_parlay.cpp \
+        records_oracle.c records_runtime.c records_static.c records_tbb.cpp records_parlay.cpp records_selector.c \
         runtime.c runtime.h records-scheduler-bench.sh records-scheduler-deps.sh \
         records-scheduler-record.awk records-scheduler-memory.sh records-scheduler-memory.awk Makefile \
         records.c records.wf records_host.ll ../../../compiler/src/backend/wf_floor.c \
@@ -58,6 +72,11 @@ printf '%s\n' "$results" > "$OUT/last-scheduler-$mode-path.txt"
     shasum -a 256 "$OUT"/scheduler-*.o "$OUT"/scheduler-*.s "$OUT/scheduler-flags.txt" \
         "$OUT/scheduler-wf" "$OUT/scheduler-static" "$OUT/scheduler-tbb" "$OUT/scheduler-parlay" \
         "$OUT/scheduler-rayon-join" "$OUT/scheduler-rayon-iter"
+    if test "$layout" = 1; then
+        printf '%s\n' "$layout_hash"
+        shasum -a 256 "$OUT/scheduler-layout-flags.txt" "$OUT/scheduler-layout.symbols"
+        cat "$OUT/scheduler-layout.symbols"
+    fi
     find "$OUT/scheduler-deps" -type f -exec shasum -a 256 {} +
 } > "$results/manifest.txt"
 git diff --binary HEAD > "$results/source.patch"
@@ -73,6 +92,7 @@ rayon-iter rayon-1.12.0-par-iter 0
 CONFIG
 while read -r scheduler backend width shutdown; do
     qualifier="$OUT/scheduler-$scheduler-check-w$width.log"
+    if test "$layout" = 1; then qualifier="$OUT/scheduler-layout-$scheduler-check-w$width.log"; fi
     awk -v backend="$backend" -v width="$width" -v shutdown="$shutdown" '
         { if (NR!=1 || $8 !~ /^capacity_waves=[1-3]$/ ||
             $0 != "record scheduler qualification PASS: backend=" backend " width=" width " actual=" width " " $8 \
@@ -90,7 +110,16 @@ cp "$OUT/scheduler-leaf-check.log" "$results/"
 
 # Each input retains the same seed across grains, cadences, widths and passes.
 # Fields: shape, count, max length, records per callback, seed, cadence.
-if test "$mode" = check; then
+if test "$layout" = 1; then
+    # Same inputs/seeds and grain16 as the corresponding standalone cells.
+    # Four dense cells bound this layout diagnostic independently of the full panel.
+    cat > "$results/cells.txt" <<'CELLS'
+unicode 256 65536 16 844057 dense
+unicode 4097 128 16 851976 dense
+error-first 256 65536 16 867814 dense
+error-first 4097 128 16 875733 dense
+CELLS
+elif test "$mode" = check; then
     while read -r shape count limit grain seed; do
         for cadence in checked dense sleep-100us sleep-1ms; do
             printf '%s %s %s %s %s %s\n' "$shape" "$count" "$limit" "$grain" "$seed" "$cadence"
@@ -133,7 +162,7 @@ while read -r shape count limit grain seed cadence; do
     reps=$((8000000/(count*limit+1)))
     if test "$reps" -lt 4; then reps=4; fi
     if test "$reps" -gt 32; then reps=32; fi
-    if test "$mode" = check; then reps=2; fi
+    case "$mode" in check|layout-check) reps=2;; esac
     checks=0
     case "$cadence" in
         checked) requested_gap=0; checks=1;;
@@ -149,7 +178,8 @@ while read -r shape count limit grain seed cadence; do
         ' "$results/configurations.txt" > "$results/order.txt"
         while read -r scheduler backend width shutdown; do
             file="$results/$shape-n$count-l$limit-g$grain-$cadence-$scheduler-w$width-p$pass.tsv"
-            if WF_WORKERS="$width" "$OUT/scheduler-$scheduler" "$width" "$count" "$limit" "$shape" \
+            if test "$layout" = 1; then set -- "$OUT/scheduler-layout" "$scheduler"; else set -- "$OUT/scheduler-$scheduler"; fi
+            if WF_WORKERS="$width" "$@" "$width" "$count" "$limit" "$shape" \
                 "$grain" "$reps" "$seed" "$pass" "$cadence" > "$file" 2>&1; then :; else
                 status=$?
                 printf 'scheduler child rejected: status=%s file=%s\n' "$status" "$file" >&2
@@ -178,4 +208,5 @@ done < "$results/cells.txt"
 expected=$((cell*18*rounds))
 test "$processes" -eq "$expected"
 test "$(wc -l < "$results/summary.tsv")" -eq "$((expected+1))"
+if test "$layout" = 1; then test "$(shasum -a 256 "$OUT/scheduler-layout")" = "$layout_hash"; fi
 printf 'record scheduler %s PASS: processes=%s results=%s\n' "$mode" "$processes" "$results"
