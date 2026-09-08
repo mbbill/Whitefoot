@@ -56,6 +56,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::Expr)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let header_loan_base = self.statement_loans.borrow().len();
         let scrutinee =
             self.check_match_expression(function, expression_node, bindings, scope.loops.len())?;
         // [OWN-13] matches an enum value or a place reached through a borrow.
@@ -77,6 +78,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         let descriptor = self.match_descriptor(scrutinee.expression.ty(), expression_node)?;
+        // [OWN-6] an owned enum cannot carry an argument borrow through its
+        // payloads [STOR-5]. Its completed header ends only the temporaries
+        // created there; bound loans and enclosing evaluation loans survive.
+        if scrutinee.mode == CheckedMode::Own {
+            self.statement_loans.borrow_mut().truncate(header_loan_base);
+        }
         let base_bindings = bindings.clone();
         let base_keys = base_bindings.keys().copied().collect::<Vec<_>>();
         let base_key_set = base_keys.iter().copied().collect::<HashSet<_>>();
@@ -244,6 +251,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::Expr)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let header_loan_base = self.statement_loans.borrow().len();
         let condition =
             self.check_match_expression(function, expression_node, bindings, scope.loops.len())?;
         // [TYPE-7] exclusivity, which [GRAM-6] keeps: a condition reached
@@ -274,6 +282,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
+        // The exact owned Bool judgment gives the same non-escaping header
+        // boundary as an owned enum match [OWN-6, GRAM-6].
+        self.statement_loans.borrow_mut().truncate(header_loan_base);
         let blocks = self.tree.conditional_blocks(node)?;
         self.reject_unspellable_else(node, &blocks.alternative, value_if)?;
 

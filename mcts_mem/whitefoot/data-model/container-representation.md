@@ -75,8 +75,9 @@
   binding directly in an acyclic activation or a selected pipeline's retired
   per-slot storage. Other cases retain separate storage; source consume modes
   grant no input/result aliasing permission.
-- Capture mutation targets before the RHS, but read the displaced old owner at
-  the subsequent replace commit. An address's storage must survive RHS effects;
+- Capture mutation targets before the RHS and revalidate their writability under
+  the complete post-RHS loan state. Read the displaced old owner at the admitted
+  replace commit. An address's storage must survive RHS effects;
   a live root binding alone is insufficient if a descriptor replacement can
   retire its backing. The legacy borrowed-buffer path explicitly lacks that
   capability; do not turn this implementation limit into a source rejection.
@@ -277,6 +278,23 @@
   element addressing. Removing an intermediate owner destination does not
   establish optimal loop code or a universal storage-reuse analysis.
   [Raw samples, generated-code analysis, and limits](../../../research/experiments/container-representation/dense/RESULTS.md#fresh-destination-checkpoint). (code)
+
+- 2026-09-07 correction: the preceding bb8eb30f replacement witness was accepted
+  by a checker missing post-RHS temporary loans. Its RHS borrowed a field of the
+  selected old owner, so OWN-5 and OWN-6 forbid the subsequent replacement while
+  that loan lives. The legal ordering witness changes a separate index after
+  capturing the target; the same-target form is rejection evidence. Preserve
+  evaluation order and loan admission together when selecting destinations.
+  [Mutation and temporary-loan controls](../../../compiler/src/semantic/tests/owned_places.rs),
+  [Captured-index execution](../../../compiler/src/backend/tests/owned_places.rs). (code)
+
+- 2026-09-07 rationale: sequential typed acquisition through a retained unique
+  provider uses the selected completed-control-header endpoint. A future storage
+  planner may reuse the provider in the selected arm only after all temporary
+  children created by that header end; it must preserve longer bound, view, result,
+  and borrowed-match loans and the ordinary statement endpoint elsewhere.
+  [Selected boundary and alternatives](../../../research/investigations/containers-and-resources/REASSESSMENT.md#selected-control-header-temporary-loan-boundary),
+  [ownership decision](../ownership/no-reborrow/control-header-temporary-loans.md). (sourced)
 
 ## Moves
 

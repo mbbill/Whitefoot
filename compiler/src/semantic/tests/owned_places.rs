@@ -310,8 +310,8 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn replacement_rhs_may_write_the_selected_values_scalar_field() {
-    accepts(
+fn replacement_commit_conflicts_with_its_rhs_temporary_borrow() {
+    rejects(
         r#"struct Payload {
   value: u64;
 }
@@ -333,6 +333,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
+        SemanticRule::Own5,
     );
 }
 
@@ -348,6 +349,195 @@ const INLINE_VIEW: &str = r#"command fn main() -> status: own ExitStatus pure {
   return exit_status(code: result);
 }
 "#;
+
+const TEMPORARY_SCALARS: &str = r#"fn change(value: &uniq u64) -> result: own u64 writes(value) {
+  set deref(value) = 9_u64;
+  return 7_u64;
+}
+
+fn inspect(value: &u64) -> result: own u64 reads(value) {
+  return deref(value);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let value = 3_u64;
+  let left = 0_u64;
+  let right = 0_u64;
+  region {
+BODY
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+#[test]
+fn argument_loans_cover_later_rhs_accesses_and_the_commit() {
+    for body in [
+        "    set value = change(value: &uniq value);",
+        "    set value = inspect(value: &value);",
+        "    set (left, right) = change(value: &uniq value), value;",
+        "    set (left, right) = change(value: &uniq value), change(value: &uniq value);",
+        "    set (left, right) = inspect(value: &value), change(value: &uniq value);",
+    ] {
+        rejects(&TEMPORARY_SCALARS.replace("BODY", body), SemanticRule::Own5);
+    }
+    for body in [
+        "    set (left, right) = inspect(value: &value), value;",
+        "    set (left, right) = inspect(value: &value), inspect(value: &value);",
+        "    let observed = change(value: &uniq value);\n    set value = 5_u64;",
+    ] {
+        accepts(&TEMPORARY_SCALARS.replace("BODY", body));
+    }
+}
+
+#[test]
+fn owned_match_headers_end_their_non_escaping_temporary_loans() {
+    let source = TEMPORARY_SCALARS.replace(
+        "command fn main()",
+        "fn decide(value: &uniq u64) -> result: own Option<u64> pure {\n  return Some<u64>(value: 7_u64);\n}\n\ncommand fn main()",
+    );
+    let arms = "      None() => {\n      }\n      Some(value: chosen) => {\n        set value = chosen;\n      }\n    }";
+    accepts(&source.replace(
+        "BODY",
+        &format!("    match decide(value: &uniq value) {{\n{arms}"),
+    ));
+    accepts(&source.replace(
+        "BODY",
+        &format!("    let decided = decide(value: &uniq value);\n    match decided {{\n{arms}"),
+    ));
+}
+
+#[test]
+fn control_headers_resume_only_their_own_temporary_children() {
+    accepts(include_str!(
+        "../../../../tests/conformance/cases/own6-pos-owned-control-headers-return-temporaries.wf"
+    ));
+    for source in [
+        include_str!(
+            "../../../../tests/conformance/cases/own5-neg-owned-header-keeps-bound-borrow.wf"
+        ),
+        include_str!(
+            "../../../../tests/conformance/cases/own5-neg-owned-header-keeps-result-parent-suspended.wf"
+        ),
+        include_str!(
+            "../../../../tests/conformance/cases/own13-neg-borrowed-header-keeps-parent-suspended.wf"
+        ),
+        include_str!(
+            "../../../../tests/conformance/cases/own5-neg-owned-header-keeps-view-origin.wf"
+        ),
+    ] {
+        rejects(source, SemanticRule::Own5);
+    }
+}
+
+#[test]
+fn statement_children_allow_disjoint_siblings_but_suspend_parent_transfer() {
+    let source = r#"struct Pair {
+  left: u64;
+  right: u64;
+}
+
+fn change(value: &uniq u64) -> result: own u64 writes(value) {
+  set deref(value) = 9_u64;
+  return 7_u64;
+}
+
+fn sink(value: &uniq Pair) -> result: own u64 pure {
+  return 11_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let pair = Pair(left: 3_u64, right: 5_u64);
+  let left = 0_u64;
+  let right = 0_u64;
+  region {
+    let holder = &uniq pair;
+    region {
+      set (left, right) = change(value: &uniq deref(holder).left), change(value: &uniq deref(holder).right);
+    }
+    set deref(holder).left = 13_u64;
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_unsupported(
+        source.as_bytes(),
+        UnsupportedSemanticFeature::RegionsAndBorrows,
+    );
+    let buffers = source
+        .replace("left: u64;", "left: buffer<u8>;")
+        .replace("right: u64;", "right: buffer<u8>;")
+        .replace("fn change(value: &uniq u64) -> result: own u64 writes(value) {\n  set deref(value) = 9_u64;", "fn change(value: &uniq buffer<u8>) -> result: own u64 reads(value), writes(value) {\n  let size = len_of(deref(value));\n  let available = size != 0_u64;\n  if available {\n    set deref(value)[0_u64] = 9_u8;\n  }")
+        .replace("  let pair = Pair(left: 3_u64, right: 5_u64);", "  let first = buffer_new(1_u64, 3_u8);\n  let second = buffer_new(1_u64, 5_u8);\n  let pair = Pair(left: move first, right: move second);")
+        .replace("    set deref(holder).left = 13_u64;", "    region {\n      let resumed = change(value: &uniq deref(holder).left);\n    }");
+    accepts(&buffers);
+    rejects(
+        &buffers.replace(
+            "change(value: &uniq deref(holder).right)",
+            "change(value: &uniq deref(holder).left)",
+        ),
+        SemanticRule::Own5,
+    );
+    let source = source.replace(
+        "fn sink(value:",
+        "fn touch(value: &uniq Pair) -> result: own u64 writes(value.left) {\n  set deref(value).left = 9_u64;\n  return 7_u64;\n}\n\nfn sink(value:",
+    ).replace("change(value: &uniq deref(holder).left)", "touch(value: &uniq deref(holder))");
+    rejects(
+        &source.replace(
+            "change(value: &uniq deref(holder).right)",
+            "sink(value: move holder)",
+        ),
+        SemanticRule::Own5,
+    );
+    rejects(
+        &source.replace(
+            "change(value: &uniq deref(holder).right)",
+            "change(value: &uniq deref(holder).left)",
+        ),
+        SemanticRule::Own5,
+    );
+    rejects(
+        &source.replace(
+            "change(value: &uniq deref(holder).right)",
+            "deref(holder).right",
+        ),
+        SemanticRule::Own5,
+    );
+}
+
+#[test]
+fn view_descriptor_loans_cover_element_reads_measures_and_commits() {
+    let source = r#"fn inspect(view: &uniq MutSlice<u8>) -> result: own u64 pure {
+  return 7_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let empty = fixed_vector::<u8, 1>();
+  let bytes = place_back(vector: move empty, value: 3_u8);
+  let left = 0_u64;
+  let right = 0_u64;
+  let byte = 0_u8;
+  region {
+    let view = mut_slice_of(&uniq bytes);
+    region {
+BODY
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for body in [
+        "      set (left, byte) = inspect(view: &uniq view), view[0_u64];",
+        "      set (left, right) = inspect(view: &uniq view), len_of(view);",
+        "      set (left, view[0_u64]) = inspect(view: &uniq view), 5_u8;",
+    ] {
+        rejects(&source.replace("BODY", body), SemanticRule::Own5);
+    }
+    accepts(&source.replace(
+        "BODY",
+        "      let observed = inspect(view: &uniq view);\n      set view[0_u64] = 5_u8;",
+    ));
+}
 
 #[test]
 fn exclusive_inline_view_retains_bounds_and_owner_loan() {

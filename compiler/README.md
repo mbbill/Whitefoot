@@ -310,13 +310,25 @@ logical offset `(head_of + i) mod cap_of`, under [OP-4]'s ordinary subscript
 obligation judged at the target place and [MSR-2]'s storage-granular kill, so
 the store kills every measure of the element and none of the run's own.
 
+**Control headers retire only their own non-escaping temporary loans.** After an
+`own` enum scrutinee or exact `own Bool` condition has completed, the checker
+ends the call-scoped argument loans that header created before checking the
+selected arm or branch. This applies to statement and value forms. A suspended
+parent resumes only after its last such child ends. Bound borrow holders,
+surviving views, candidate-position borrowed results, and borrowed matches keep
+their existing loans; temporary arguments in ordinary `set`, `replace`, and
+ordered-result statements still last through the statement. The local region
+written for a child remains its formation and type-validity ceiling even when
+the control-header endpoint is earlier.
+
 **Owned values and physical storage are separate.** The lowering retains typed
 field/index addresses for reads, writes and borrows of container content.
 Aggregate IR values remain independent snapshots; deterministic CFG liveness
 permits dead storage to be reused, and internal aggregate results use explicit
 destinations. An exposed address or deferred use prevents unsafe reuse. A
-mutation captures its target components before its RHS; replacement reads the
-old owner only at the subsequent commit. Function definitions and ordinary,
+mutation captures its target components before its RHS. The commit rechecks
+writability under the complete post-RHS loan state; replacement reads the old
+owner only at that admitted commit. Function definitions and ordinary,
 refused, staged, thunk and split calls consume the typed internal ABI in
 `src/backend/abi.rs`: inline aggregate parameters use content pointers and
 aggregate results use destinations. Descriptors retain value passing; qualified
@@ -411,13 +423,12 @@ referent is a view is admitted at a source declaration for the same reason
 through its exclusive view, just as a store-backed `Vector<'s, T>` can. Its
 backing must remain live until every borrowed use retires; copying the view
 descriptor does not extend that lifetime.
-**One judgment does not follow a view yet, and it is the permission one.** The
-[PAR] footprint resolver reads a direct `slice_of` expression and a borrow; a
-*bound* view value resolves to no place, so an overlap pair or a staged loop
-whose call hands one on is denied for the unresolved-footprint condition rather
-than for its own reason. `par_layout.wf` therefore hands its metric table on as
-`&Vector<f64>`, a shared borrow of the run, and keeps both of its eligible
-folds.
+**Parallel footprints use resolved view origins.** A locally formed view and
+a shared copy of it retain their source storage footprint
+(`par1-pos-a-view-argument-is-a-footprint-on-its-origin`). Opaque parameter and
+callee-returned origins still reach an unresolved-footprint denial where the
+permission judgment cannot identify their backing. `par_layout.wf` passes its
+metric table as `&Vector<f64>` and retains both eligible folds.
 **A shared borrow of a run is the ordinary borrow.** `&FixedVector<T, n>` as a
 parameter, a `let`-bound holder over either run, and a run reached through a
 shared borrow of the nominal that owns it all reach the borrow through one path:
@@ -513,10 +524,11 @@ a formal fixes it, so two runs of two extents no longer satisfy one `'s` by
 taking the least region.
 
 Two source-shape bounds the pool met are worth naming. A loop that allocates
-from a `&uniq` store parameter has **one statement per iteration**, because a
-child reborrow's region may not extend beyond its own statement [OWN-6] and a
-loop body's own region extends over the whole body; `pool_new`'s body is
-therefore one `match` over the acquiring row's own call. And every clause naming
+from a `&uniq` store parameter writes the acquiring row as the direct scrutinee
+of a `match`: [OWN-6] ends the header-created child before its arm, while the
+child's local region remains confined to that match statement. This permits
+later arm statements to reuse the store; splitting the call into a preceding
+`let` does not let one child region span both statements. And every clause naming
 a measure over a *result*'s field — `ensures head_of(rest.free) == ...` — is
 [CALL-4]'s own first DEFERRED admission, so the pool states none and its caller
 reads `room_of(rest.free)` and branches; a `requires` over a **parameter**'s

@@ -25,7 +25,7 @@ use super::super::borrows::{
 use super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PlaceAccess, TypedExpression,
 };
-use super::{MutationForm, MutationTarget, PlaceUseOptions};
+use super::{MutationAccess, MutationForm, MutationTarget, PlaceUseOptions};
 
 #[derive(Clone)]
 pub(in crate::semantic::check) struct CheckedArrayPlace {
@@ -1223,6 +1223,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
             return Ok(MutationTarget {
                 declaration: container.resolved.root,
+                access: MutationAccess::Place {
+                    holder: container.holder,
+                    place: container.resolved.clone(),
+                },
                 place: container.resolved,
                 element: true,
                 target: CheckedSetTarget::Storage(container.root),
@@ -1311,6 +1315,41 @@ view",
             CheckedIndexedPlace::Slice(slice) => slice.root.element.ty(),
         };
         self.check_mutation_target_class(node, element_type, form)?;
+        let offset_place = Self::place_offset_of(&offset.expression).unwrap_or(PlaceOffset::Opaque);
+        let access = match &indexed {
+            CheckedIndexedPlace::Array(array) => MutationAccess::Place {
+                holder: None,
+                place: ResolvedPlace {
+                    root: array.declaration.ok_or_else(|| {
+                        self.issue_value(
+                            SemanticRule::Const2,
+                            node,
+                            SemanticIssueKind::ImmutableSetTarget,
+                        )
+                    })?,
+                    path: indexed.indexed_element_path(offset_place),
+                },
+            },
+            CheckedIndexedPlace::Buffer(buffer) => {
+                let mut place = buffer.resolved.clone();
+                place.path.push(PlaceStep::Subscript(offset_place));
+                MutationAccess::Place {
+                    holder: buffer.holder,
+                    place,
+                }
+            }
+            CheckedIndexedPlace::Slice(slice) => MutationAccess::View {
+                descriptor: slice.declaration,
+                place: slice.descriptor.as_ref().map_or_else(
+                    || ResolvedPlace::fields(slice.declaration, Vec::new()),
+                    |borrow| borrow.place.clone(),
+                ),
+                origins: slice.slice.effect_places(),
+            },
+            CheckedIndexedPlace::Container(_) => {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            }
+        };
         let mut effects = offset.effects;
         let (declaration, place, target) = match indexed {
             CheckedIndexedPlace::Array(array) => {
@@ -1405,6 +1444,7 @@ view",
         Ok(MutationTarget {
             declaration,
             place,
+            access,
             element: true,
             target,
             effects,
@@ -1734,6 +1774,13 @@ view",
                 if slice.region != region {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
+                self.check_loan_access(
+                    bindings,
+                    None,
+                    &ResolvedPlace::fields(declaration, Vec::new()),
+                    AccessKind::Read,
+                    node,
+                )?;
                 Ok(CheckedIndexedPlace::Slice(CheckedSlicePlace {
                     root: CheckedSliceRoot {
                         binding,

@@ -2883,6 +2883,62 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
     run_owned_lane_cases(source, &module, 0, 4, 1, 0, 2);
 }
 
+#[test]
+fn owned_match_headers_and_staged_results_observe_completed_scratch() {
+    let source = std::str::from_utf8(STAGED_OWNED_RESULTS_AND_CLEANUP)
+        .expect("the fixture is UTF-8")
+        .replace(
+            "struct Report {\n  answer: u8;\n  stored: u8;\n  stamp: u64;\n}",
+            "struct Cell {\n  byte: u8;\n}\n\nenum Report {\n  Reported(answer: u8, stored: u8, stamp: u64);\n}",
+        )
+        .replace("return Report(", "return Reported(")
+        .replace(
+            "scratch: &uniq buffer<u8>",
+            "scratch: &uniq Cell",
+        )
+        .replace("reads(root, permit, name, scratch), writes(permit, scratch)", "reads(root, permit, name, scratch.byte), writes(permit, scratch.byte)")
+        .replace("  define room = len_of(deref(scratch));\n", "")
+        .replace("  requires 1_u64 <= room;\n", "")
+        .replace("deref(scratch)[0_u64]", "deref(scratch).byte")
+        .replace("let scratch = buffer_new(8_u64, 0_u8);", "let scratch = Cell(byte: 0_u8);")
+        .replace(
+            "          let reported = probe(root: &cwd, permit: move permit, name: &name, scratch: &uniq scratch, mark: 3_u8, stamp: index);\n          let amount = reported.answer +wrap reported.stored;\n          set total = total +wrap amount;\n          set stamp_total = stamp_total +wrap reported.stamp;",
+            "          match probe(root: &cwd, permit: move permit, name: &name, scratch: &uniq scratch, mark: 3_u8, stamp: index) {\n            Reported(answer: reported_answer, stored: reported_stored, stamp: reported_stamp) => {\n              set scratch[0_u64] = scratch[0_u64] +wrap 1_u8;\n              let partial = reported_answer +wrap reported_stored;\n              let amount = partial +wrap scratch[0_u64];\n              set total = total +wrap amount;\n              set stamp_total = stamp_total +wrap reported_stamp;\n            }\n          }",
+        )
+        .replace("scratch[0_u64]", "scratch.byte");
+    // The callee writes 3, then returns (5, 3). Only after its match header
+    // completes may the arm update scratch to 4: (5 + 3 + 4) * 4 = 48.
+    let directory = test_directory();
+    for module in [
+        emit(source.as_bytes()),
+        emit_with_overlap(source.as_bytes()),
+    ] {
+        let output = Command::new(build_executable(&module, &directory))
+            .current_dir(&directory)
+            .env("WF_WORKERS", "4")
+            .output()
+            .expect("run the owned match header");
+        assert_eq!(output.status.code(), Some(48), "{output:?}");
+        assert!(output.stdout.is_empty() && output.stderr.is_empty());
+    }
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+
+    // The current staged optimizer selects user calls bound by let; direct
+    // user-call match headers above use ordinary completion. Exercise the
+    // actual staged path too, retaining the same enum result and arm access.
+    let staged = source.replace(
+        "match probe(root: &cwd, permit: move permit, name: &name, scratch: &uniq scratch, mark: 3_u8, stamp: index) {",
+        "let reported = probe(root: &cwd, permit: move permit, name: &name, scratch: &uniq scratch, mark: 3_u8, stamp: index);\n          match reported {",
+    );
+    let module = emit_with_overlap(staged.as_bytes());
+    let main = function_body(&module, "@wf_main");
+    assert!(main.contains("call void @wf__par_publish(ptr "));
+    assert!(main.contains("\npar.staged.offered."));
+    // Deferred publication makes an early arm observe stale scratch, while
+    // the observer checks exact frame/source release and real overlap.
+    run_owned_lane_cases(staged.as_bytes(), &module, 48, 4, 5, 4, 2);
+}
+
 /// The native core still performs every real grant, publication, join and
 /// release. The observer can refuse acquisitions and selects the overlapped
 /// entry even then, so WF_WORKERS=1 cannot silently test a sequential clone.

@@ -1,0 +1,25 @@
+fn passthru['r](value: &uniq 'r u64) -> result: &uniq 'r u64 pure {
+  return &uniq 'r deref(value);
+}
+
+fn choose(value: &uniq u64) -> result: own Option<u64> writes(value) {
+  set deref(value) = 9_u64;
+  return Some<u64>(value: 7_u64);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let value = 3_u64;
+  let other = 5_u64;
+  region {
+    let holder = &uniq value;
+    let saved = passthru(value: &uniq deref(holder));
+    match choose(value: &uniq other) {
+      None() => {
+      }
+      Some(value: chosen) => {
+        set deref(holder) = chosen;
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

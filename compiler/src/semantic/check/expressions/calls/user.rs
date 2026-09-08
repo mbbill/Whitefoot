@@ -14,7 +14,8 @@ use super::super::super::super::model::{
     CheckedSliceOrigin, CheckedStateOrigins, CheckedType, LoanStrength,
 };
 use super::super::super::borrows::{
-    AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, SliceInfo, places_overlap, push_slice_origin,
+    AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, SliceInfo, TemporaryLoan, places_overlap,
+    push_slice_origin,
 };
 use super::super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, ResultProvenance,
@@ -159,7 +160,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut argument_places = Vec::with_capacity(fields.len());
         let mut argument_nodes = Vec::with_capacity(fields.len());
         let mut goal_arguments = Vec::with_capacity(fields.len());
-        let mut call_scoped_borrows: Vec<BorrowInfo> = Vec::new();
+        let mut call_scoped_borrows: Vec<TemporaryLoan> = Vec::new();
         let call = self.tree.path(node)?.clone();
         // Payload-free heap allocation transfers by presence at a call
         // boundary [EFF-2]; region entries are projected below.
@@ -195,7 +196,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 result_candidate == Some(ordinal),
             )?;
             for access in &argument.accesses {
-                for borrow in &call_scoped_borrows {
+                for temporary in &call_scoped_borrows {
+                    let borrow = &temporary.borrow;
                     if places_overlap(&access.place, &borrow.place)
                         && match access.kind {
                             AccessKind::Read => borrow.kind == BorrowKind::Unique,
@@ -302,7 +304,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             )?);
             argument_nodes.push(self.tree.path(atom)?.clone());
             if explicit_borrow && let Some(borrow) = &argument.borrow {
-                call_scoped_borrows.push(borrow.clone());
+                call_scoped_borrows.push(TemporaryLoan::new(borrow.clone(), &argument));
             }
             checked_borrows.push(passed_borrow);
             checked_slices.push(argument.slice.clone());
@@ -376,6 +378,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             } else {
                 None
             };
+        self.statement_loans
+            .borrow_mut()
+            .extend(call_scoped_borrows);
         Ok(TypedExpression {
             expression: CheckedExpression::UserCall {
                 function: target,
@@ -1504,7 +1509,7 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                     let mut place = borrow.place.clone();
                     place.extend_fields(&formal.fields);
-                    self.check_loan_access(
+                    self.check_call_loan_access(
                         bindings,
                         holders.get(index).copied().flatten(),
                         &place,
@@ -1533,7 +1538,7 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
                     for (mut place, _) in slice.source_places() {
                         place.extend_fields(&formal.fields);
                         if judged {
-                            self.check_loan_access(
+                            self.check_call_loan_access(
                                 bindings,
                                 holders.get(index).copied().flatten(),
                                 &place,

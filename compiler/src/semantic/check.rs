@@ -732,6 +732,10 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// Empty everywhere else: `check_commit` installs it around exactly that
     /// one expression and removes it before any rejection leaves.
     commit_read_outs: RefCell<Vec<control::CommitReadOut>>,
+    /// Explicit argument loans survive their call until the enclosing statement
+    /// or non-escaping control header ends [OWN-6]. Nested checking retains
+    /// loans created before its own evaluation boundary.
+    statement_loans: RefCell<Vec<borrows::TemporaryLoan>>,
     prelude_nominals: HashMap<PreludeType, NominalId>,
     system_nominals: HashMap<u8, NominalId>,
     prelude_types: Vec<Option<PreludeType>>,
@@ -1271,6 +1275,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             general_store_reachable: std::cell::Cell::new(None),
             template_spelling_authority: std::cell::Cell::new(false),
             commit_read_outs: RefCell::new(Vec::new()),
+            statement_loans: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
             system_nominals: HashMap::new(),
             prelude_types: Vec::new(),

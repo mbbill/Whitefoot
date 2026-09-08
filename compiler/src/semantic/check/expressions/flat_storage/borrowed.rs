@@ -6,6 +6,7 @@ use crate::{DeclarationId, SemanticCompilerFailure, UnsupportedSemanticFeature};
 use super::super::super::super::model::{
     CheckedBufferRoot, CheckedContainerRoot, CheckedPlaceStep, CheckedSliceRoot, CheckedType,
 };
+use super::super::super::borrows::AccessKind;
 use super::super::super::{CheckStop, Checker, LocalBinding};
 use super::{
     CarriedOperands, CheckedBufferPlace, CheckedContainerPlace, CheckedIndexedPlace,
@@ -45,6 +46,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element,
                 strength,
             } if fields.is_empty() => {
+                self.check_holder_not_suspended(&local, node)?;
+                self.check_loan_access(
+                    bindings,
+                    Some(declaration),
+                    &borrow.place,
+                    AccessKind::Read,
+                    node,
+                )?;
                 let slice = local
                     .slice
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;

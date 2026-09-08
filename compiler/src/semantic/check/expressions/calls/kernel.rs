@@ -29,7 +29,9 @@ use super::super::super::super::model::{
     CheckedConst, CheckedExpression, CheckedIntegerOperation, CheckedKernelInstance,
     CheckedMeasure, CheckedType, CheckedValue, IntegerType, MeasuredKind,
 };
-use super::super::super::borrows::{AccessKind, BorrowInfo, BorrowKind, places_overlap};
+use super::super::super::borrows::{
+    AccessKind, BorrowInfo, BorrowKind, TemporaryLoan, places_overlap,
+};
 use super::super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PendingNominal, TypedExpression,
 };
@@ -104,7 +106,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut argument_holders = Vec::with_capacity(fields.len());
         let mut state_origins = Vec::with_capacity(fields.len());
         let mut argument_places = Vec::with_capacity(fields.len());
-        let mut call_scoped_borrows: Vec<BorrowInfo> = Vec::new();
+        let mut call_scoped_borrows: Vec<TemporaryLoan> = Vec::new();
         let mut effects = EffectSet::NONE;
 
         for (ordinal, (field, parameter)) in
@@ -128,7 +130,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let argument =
                 self.check_call_argument_atom(function, atom, bindings, loop_depth, true, false)?;
             for access in &argument.accesses {
-                for borrow in &call_scoped_borrows {
+                for temporary in &call_scoped_borrows {
+                    let borrow = &temporary.borrow;
                     if places_overlap(&access.place, &borrow.place)
                         && match access.kind {
                             AccessKind::Read => borrow.kind == BorrowKind::Unique,
@@ -200,7 +203,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             )?);
             argument_nodes.push(self.tree.path(atom)?.clone());
             if explicit_borrow && let Some(borrow) = &argument.borrow {
-                call_scoped_borrows.push(borrow.clone());
+                call_scoped_borrows.push(TemporaryLoan::new(borrow.clone(), &argument));
             }
             checked_borrows.push(passed_borrow);
             argument_holders.push(argument.holder);
@@ -228,6 +231,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let result = self.kernel_result_type(node, record, signature, &instance)?;
         let requirements = self.kernel_requirements(signature, &instance, &goal_arguments)?;
 
+        self.statement_loans
+            .borrow_mut()
+            .extend(call_scoped_borrows);
         Ok(TypedExpression::owned(
             CheckedExpression::KernelCall {
                 operation: operation_index,
@@ -1029,7 +1035,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .get(index)
                     .and_then(Option::as_ref)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                self.check_loan_access(
+                self.check_call_loan_access(
                     bindings,
                     holders.get(index).copied().flatten(),
                     &borrow.place,

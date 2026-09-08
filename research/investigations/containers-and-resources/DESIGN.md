@@ -8234,23 +8234,26 @@ holder* — leaving five.
   diagnostic about such a const still names `array<T, N>`, because that is the internal
   spelling of the const run until [S34]'s retirement renames it.
 
-**What the corpus paid, and what it found.** Every conformance case is off `buffer<T>`,
-`box<T>` and `arena<'r, T>`. The `&uniq` of a **measured non-view** referent, which four
-cases pinned over `buffer<u8>`, is the bump extent [BLK-4] and its measure is `room_of`,
-so those cases move from an [OP-4] residual to a [BLK-0] row requirement; the whole-place
-replacement moves to `Box<'s, u64>` at [STOR-1]; the arena escape moves to [BLK-2]'s
-reservation placement; and `x-buffer-borrowed-columns-run` and `x-borrowed-pool-tree-run`
-are restructured to lend views and a scalar borrow rather than a `&uniq` of a struct
-holding runs, both keeping exit 0.
+**What the corpus paid, and what it found.** The migration moved the positive programs
+to the successor run and extent surfaces, including restructuring
+`x-buffer-borrowed-columns-run` and `x-borrowed-pool-tree-run` to lend views and a
+scalar borrow rather than a `&uniq` of a struct holding runs. It did not retire the
+legacy conformance obligations. Active v0.51 still admits `array<T, N>`, `buffer<T>`,
+and `arena<'r, T>`, so six cases over those forms remain in the corpus alongside the
+successor evidence: the array-length case, the measured-buffer call case, the whole-buffer
+replacement case, the FN-1 arena-origin case, and the two STOR-4 arena cases. The measured
+buffer call remains `xfail` until the adapter verifies the CALL-5 transport repair; its
+expected source verdict remains the OP-4 rejection.
 
 **Three defects the migration found, each recorded rather than papered over.**
 
-1. **[FN-1]'s ceiling containment refusal has no program on this surface.** Every shape
-   that would reach it — a view over a parameter run, over a borrowed run, over cell
-   content — is refused earlier by [OWN-10], which forbids a borrow of storage the callee
-   reaches at a caller-supplied region. `fn1-neg-returned-slice-arena-origin` is deleted
-   with that reason and FN-1 keeps four other negatives. Whether the containment check is
-   now dead code or merely unreachable from *this* corpus is open.
+1. **[FN-1]'s ceiling containment refusal is still pinned on the legacy arena
+   surface.** The attempted successor shapes — a view over a parameter run, over a
+   borrowed run, or over cell content — are refused earlier by [OWN-10], which forbids a
+   borrow of storage the callee reaches at a caller-supplied region. That observation
+   does not remove `fn1-neg-returned-slice-arena-origin`: active v0.51 still admits its
+   arena spelling, so the case remains the direct conformance obligation. Whether a
+   successor-only shape reaches the same refusal remains open.
 
 2. **The [PAR] footprint judgment does not resolve a view argument.** `argument_place`
    resolves a direct `slice_of` expression and a borrow, and a **bound** view value
@@ -8279,15 +8282,14 @@ took, applied across a program of four hundred to fourteen hundred lines with it
 proof obligations at every call. They are stated here as the remaining work rather than
 half-migrated.
 
-**Verdicts.** The adapter moves from Pass=697 over 700 to Pass=702 over 705, the three
-skips unchanged in id, expectation and status, with coverage complete at 157/157. Twelve
-cases are added and six deleted, each deletion with the reason its program no longer
-exists on this surface. The recorded-verdict snapshot corpus moves from Pass=491 to
-Pass=484: fifty-two rows keep their verdict over migrated sources, seven move from
-`reject` to `accept` because a write through a view kills no measure of its origin
-[CALL-3], one keeps its `reject` and moves the rule it cites, and seven are retired with
-their sources because their program cannot be written on the run surface without changing
-what the row records.
+**Verdicts.** The successor cases are additions. All six restored legacy cases remain
+obligations because their source forms remain in active v0.51; none is deleted by the
+migration. Five retain their expected runnable verdicts. The measured-buffer call case
+retains its expected OP-4 rejection and remains tracked as `xfail` only until the adapter
+verifies the CALL-5 repair, after which it can run without changing that expected verdict.
+The final corpus has 749 rows, 206 added and zero removed from the 543-row base; its
+manifest has one `xfail` and one skip. The earlier pass totals and deletion counts in this
+section described the abandoned removal and are not current corpus measurements.
 
 ### 6.0w B7c4b-2 landed in part (v0.45)
 

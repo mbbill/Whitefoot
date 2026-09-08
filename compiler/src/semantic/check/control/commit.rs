@@ -17,7 +17,7 @@ use super::super::super::model::{
 };
 use super::super::super::places::{PlaceOffset, PlaceStep, paths_diverge};
 use super::super::borrows::{ResolvedPlace, places_overlap};
-use super::super::expressions::MutationTarget;
+use super::super::expressions::{MutationAccess, MutationTarget};
 use super::super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
 use super::{ControlScope, StatementResult};
 
@@ -271,6 +271,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             let mutation = MutationTarget {
                 declaration,
+                access: MutationAccess::Place {
+                    holder: None,
+                    place: place.clone(),
+                },
                 place,
                 element: false,
                 target: CheckedSetTarget::Place(CheckedWritablePlace {
@@ -478,6 +482,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
+        self.revalidate_mutation_access(&target.mutation.access, bindings, target.node)?;
         let ty = target.mutation.target.ty();
         // [VIEW-4] a commit may not displace a live loan. A commit that
         // displaces a value of loan-bearing type is admitted exactly when the

@@ -113,8 +113,12 @@ Problem: a callee chain must transform exclusive state and hand it back.
 Pattern: pass the affine value (or `&uniq`) in, return it (or the derived
 state) out — possession flows like a token. v0 admits only bounded
 statement-scoped reborrowing (OWN-6): a child borrow of a holder is a transient,
-non-escaping call argument that suspends its parent for one statement, so the
-token never silently forks or escapes.
+non-escaping call argument that normally suspends its parent through the
+enclosing statement. When that child is created while evaluating an `own` enum
+match header or exact `own Bool` condition, it ends after the header completes
+and before the selected arm or branch begins. Bound holders, surviving views,
+borrowed-result candidates, and borrowed matches keep their own longer loans, so
+the token never silently forks or escapes.
 Current value: borrow-holder singleton provenance keeps the checker simple; a
 suspended parent yields no usable alias under the checked relation.
 Direct slices are the separate v0.17 case: they carry a finite static origin
@@ -123,7 +127,8 @@ runtime descriptor points to one root. A future alias-metadata consumer would
 also need the holder-singleton and finite-origin coverage proofs; none ships in
 the current backend.
 Replaces: Rust's unbounded implicit `&mut` reborrow chains and aliased mutable
-captures; Whitefoot's reborrow is bounded to one statement and cannot escape.
+captures; Whitefoot's reborrow is bounded by one statement, may end at the
+selected non-escaping control-header boundary, and cannot escape.
 
 ## P5. Env-struct behavior parameterization (FN-5)
 
@@ -531,39 +536,17 @@ copy rather than a fact to rediscover:
                      one position cannot be held by two iterations at once, at &uniq files
   ```
 
-  When the factory is itself a borrow — which it is in any recursive walker —
-  [OWN-6] pushes the other way and admits no inline `region { let
-  permit = …; match open_… }`, because that region holds two statements. The
-  two rules genuinely conflict there, and the resolution is that only one of
-  the two forms is a program at all. Which form to write is decided by how the
-  loop holds its factory, and the three measured outcomes are (‹loop› again
-  stands for the writer's own file and line):
-
-  ```text
-  owned factory, inline    PAR stage  ‹loop›                   for  permitted  staged at
-                           open_file(permit: move permit, root: &'f cwd, name: &name,
-                           start: 0_u64, end: 4_u64); 4 places classified
-  borrowed factory, inline [OWN-6] InvalidChildReborrow — the program does not compile
-  borrowed factory, helper PAR stage  ‹loop›                   for  denied     condition 3: a
-                           may-suspend call retains a borrow past its own submission on storage the
-                           body writes and the iteration does not introduce; … at
-                           &uniq deref(factory)
-  ```
-
-  So: **in a loop whose factory is an owned entry parameter — every top-level
-  I/O loop — write the reserve and the open inline, and the staged permission
-  is granted.** **In a recursive walker, whose factory is a `&uniq` borrow,
-  write the helper factoring, and the pipeline is the price.** There is no
-  third form: the inline shape does not compile there, so the choice is between
-  a denied loop and no program. The helper is the whole of the idiom only when
-  its two companions come with it — the region's single statement is the
-  `match` on the helper's call, and every statement that uses the opened value
-  lives inside that `match` arm, because the opened value dies with the region.
-  `tests/programs/dir_walk.wf` is that form written out, and [OWN-6]'s own
-  rejection now states all three parts. The blind-writer trial that found this
-  also proposed that the helper boundary should not cost the pipeline; that is
-  a compiler change and is still open, so the price above is today's price and
-  not a fixed one.
+  When the factory is itself a borrow — as in a recursive walker — put the
+  child reborrow in the acquiring call that is the direct `match` scrutinee.
+  The header-created temporary ends after the owned outcome is complete and
+  before an arm begins, so the arm may reborrow the factory for a later
+  acquisition. The child's local region remains its formation and type ceiling;
+  it still may not extend beyond the enclosing match statement. Binding the
+  outcome in a preceding `let` is not equivalent: that child's region cannot
+  span the `let` and the later match, and direct-result route facts attach only
+  to the direct matched call. A helper that retains the factory loan in its own
+  signature remains a different shape and [PAR-3] judges that retained loan.
+  The control-header boundary does not grant staged permission by itself.
 
 Read the verdict rather than guessing it. An ordinary `whitefootc` compile
 prints a denied staged verdict to stderr, prefixed `whitefootc: note:`, with
@@ -615,11 +598,13 @@ permission judgment and its ledger still apply to those loops; only the
 multi-operation schedule is narrower.
 
 `dir_walk.wf`, `wfgrep.wf`, and `byte_string.wf` remain useful negative
-boundaries. Their walker loops use the helper factoring because the inline
-borrow form does not compile, and their chunk loops leave on a read result, so
-condition 2 keeps them sequential. They are not evidence for the new direct
-counted-loop driver. The driver evidence currently lives in lowering and
-backend tests rather than in a selected real program.
+boundaries for the current actualizer. Their walker loops retain helper
+factoring, whose declared retained loan [PAR-3] sees, and their chunk loops leave
+on a read result, so condition 2 keeps them sequential. The control-header loan
+boundary makes the direct borrowed-factory spelling source-valid; it does not
+change what these existing sources say or establish that the narrower driver
+covers their complete bodies. The driver evidence currently lives in lowering
+and backend tests rather than in a selected real program.
 
 Replaces: hoisting scratch buffers out of loops for allocation cost, and every
 writer-visible depth, window, batch, or `par for` marker a language would
@@ -1603,9 +1588,10 @@ apart, so a payload of a `Result` arrives with no measures and a caller that
 needs one reads it and branches.
 
 Two shapes to design around. A loop that allocates from a `&uniq` store
-parameter has **one statement per iteration** — a child reborrow's region cannot
-extend beyond its own statement, so write the loop body as one `match` over the
-acquiring call itself rather than a `let` and then a `match` on its binding. And
+parameter writes the acquisition as the direct scrutinee of a `match`: the
+header-created child ends before the selected arm, so later statements in that
+arm may reuse the store while the acquired owned value remains live. A preceding
+`let` plus a later match still cannot share that child's local region. Separately,
 a contract clause may name a measure of a **parameter**'s field
 (`requires room_of(pool.free) > 0_u64;`) but not of a *result*'s, so a caller
 that needs a figure about a returned nominal reads it and branches.

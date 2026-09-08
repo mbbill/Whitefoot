@@ -65,6 +65,9 @@ pub(in crate::semantic::check) struct MutationTarget {
     pub(in crate::semantic::check) declaration: DeclarationId,
     /// The resolved place this target writes [OWN-6].
     pub(in crate::semantic::check) place: ResolvedPlace,
+    /// The access captured during target formation, rechecked after the RHS
+    /// without evaluating its source offsets again [SET-1, OWN-5].
+    pub(in crate::semantic::check) access: MutationAccess,
     /// Whether the write selects one element of `place` rather than `place`
     /// itself, which is the granularity [MSR-2] states over storage.
     pub(in crate::semantic::check) element: bool,
@@ -78,10 +81,75 @@ pub(in crate::semantic::check) struct MutationTarget {
     pub(in crate::semantic::check) unsupported: Option<UnsupportedSemanticFeature>,
 }
 
+pub(in crate::semantic::check) enum MutationAccess {
+    Place {
+        holder: Option<DeclarationId>,
+        place: ResolvedPlace,
+    },
+    /// A view's own origin loan permits this write; later loans must still
+    /// leave both its descriptor and its origins usable [PROV-3].
+    View {
+        descriptor: DeclarationId,
+        place: ResolvedPlace,
+        origins: Vec<ResolvedPlace>,
+    },
+}
+
 impl MutationForm {
     /// Whether this is the [SET-2] side, whose commit also reads the target.
     pub(super) const fn is_replace(self) -> bool {
         matches!(self, Self::Replace)
+    }
+}
+
+impl Checker<'_, '_, '_, '_> {
+    /// Re-establish writability at commit under the complete post-RHS loan
+    /// state. All paths here were captured before evaluating that RHS.
+    pub(super) fn revalidate_mutation_access(
+        &self,
+        access: &MutationAccess,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        node: NodeId,
+    ) -> Result<(), CheckStop> {
+        match access {
+            MutationAccess::Place { holder, place } => {
+                if let Some(holder) = holder {
+                    let local = bindings
+                        .get(holder)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    self.check_holder_not_suspended(local, node)?;
+                }
+                self.check_loan_access(bindings, *holder, place, AccessKind::Write, node)
+            }
+            MutationAccess::View {
+                descriptor,
+                place,
+                origins,
+            } => {
+                let local = bindings
+                    .get(descriptor)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                self.check_holder_not_suspended(local, node)?;
+                self.check_loan_access(
+                    bindings,
+                    Some(*descriptor),
+                    place,
+                    AccessKind::Write,
+                    node,
+                )?;
+                self.check_child_reborrow_freeze(bindings, origins, node)?;
+                for origin in origins {
+                    self.check_temporary_loan_access(
+                        bindings,
+                        Some(*descriptor),
+                        origin,
+                        AccessKind::Write,
+                        node,
+                    )?;
+                }
+                Ok(())
+            }
+        }
     }
 }
 
@@ -269,6 +337,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
         Ok(MutationTarget {
             declaration,
+            access: MutationAccess::Place {
+                holder: None,
+                place: resolved.clone(),
+            },
             place: resolved,
             element: false,
             target: CheckedSetTarget::Place(CheckedWritablePlace {
@@ -1267,6 +1339,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     // spelling judgments above are defined first and cite
                     // first at this node [DIAG-1].
                     self.check_holder_not_suspended(&local, use_node)?;
+                    // A pure callee still receives the holder's authority.
+                    // Its empty effect row cannot bypass a live child loan.
+                    if let Some(borrow) = &local.borrow {
+                        self.check_temporary_loan_access(
+                            bindings,
+                            Some(declaration),
+                            &borrow.place,
+                            if copy {
+                                AccessKind::Read
+                            } else {
+                                AccessKind::Move
+                            },
+                            use_node,
+                        )?;
+                    }
                     if !copy {
                         bindings
                             .get_mut(&declaration)
@@ -1624,6 +1711,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         });
         Ok(MutationTarget {
             declaration: local.declaration,
+            access: MutationAccess::Place {
+                holder: None,
+                place: ResolvedPlace::fields(local.declaration, fields.clone()),
+            },
             place: ResolvedPlace::fields(local.declaration, fields.clone()),
             element: false,
             target: CheckedSetTarget::Place(CheckedWritablePlace {
@@ -1688,6 +1779,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         Ok(MutationTarget {
             declaration,
+            access: MutationAccess::Place {
+                holder: Some(declaration),
+                place: resolved.clone(),
+            },
             place: resolved,
             element: false,
             target: CheckedSetTarget::Place(CheckedWritablePlace {

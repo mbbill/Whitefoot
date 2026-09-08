@@ -35,18 +35,20 @@ corresponding specification amendments. The initial programs need no new public
 container syntax. Their implementation now supplies evidence for reviewing the
 foundation's concrete form, rather than committing to every mechanism it introduced.
 
-### Proposed control-header temporary-loan boundary
+### Selected control-header temporary-loan boundary
 
 The 2026-09-07 closeout review distinguishes target capture from authority to
 commit. Capturing an index before the RHS permits that RHS to change the index;
 it does not permit the RHS to borrow the selected storage and then commit through
 an overlapping path while that temporary loan remains live. SET-1/SET-2 already
 require the complete post-RHS loan judgment. Enforcing it exposed a separate
-choice in OWN-6: the current statement-end rule also retains a direct match
-call's temporary arguments throughout every arm. The proposal below is research;
-it has not amended OWN-6 or the corresponding expected compiler verdicts.
+choice in OWN-6: the statement-end rule also retained a direct match call's
+temporary arguments throughout every arm. On 2026-09-07 the owner selected the
+exact boundary below for implementation and specification amendment. The
+implementation evidence listed at the end of this subsection remains the
+completion criterion; this selection does not claim that those checks have run.
 
-**Recommendation:** complete an owned enum scrutinee, then end just the temporary
+**Decision:** complete an owned enum scrutinee, then end just the temporary
 argument loans created while evaluating it before entering an arm. Cover both
 statement and value matches. Apply the corresponding boundary to the exact
 owned Bool condition of statement and value conditionals; GRAM-4/GRAM-5 admit
@@ -70,7 +72,7 @@ Three alternatives were considered:
 | Every call return | Also changes ordered RHS lists and mutation commits. It requires a separate account of borrowed results, surviving views, and their parent authority throughout expression evaluation. | Broader than the composition problem studied here; not recommended in this amendment. |
 | Completed non-escaping control header | Retains ordinary statement loans and all persistent/result loans; permits provider reuse before the selected arm's work. | Recommended using the existing mode and stored-content judgments. |
 
-The proposed OWN-4/OWN-6 amendment has the following exact boundaries:
+The selected OWN-4/OWN-6 amendment has the following exact boundaries:
 
 1. A successfully checked `own` enum scrutinee in `match_stmt` or `value_match`,
    or the exact `own Bool` condition in `if_stmt` or `value_if`, ends the temporary
@@ -114,7 +116,7 @@ are `emit_terminator` in `compiler/src/backend/emitter.rs` and
 Staged permission separately retains call loans from typed argument footprints;
 it does not read the lexical checker's temporary-loan stack. Task-frame backing
 must still last through join return and the corresponding retirement, including
-suspension or worker migration. This proposal needs no runtime API or I/O
+suspension or worker migration. This boundary needs no runtime API or I/O
 scheduling change. The separate I/O branch's publication entry is not present in
 this worktree, so this inspection does not certify its unmerged implementation.
 
@@ -129,12 +131,12 @@ local judgment; its W3 boundary remains mandatory static proof with no writer
 escape. This choice claims no measured speed advantage over Rust and no general
 substitute for Rust's wider borrowed-result expressiveness.
 
-The proposed delta is numbered rules +0, tokens +0, operation spellings +0,
+The selected delta is numbered rules +0, tokens +0, operation spellings +0,
 exceptions +1: one non-escaping control-header lifetime boundary in OWN-6,
 including child resumption at that boundary, with OWN-4 explicitly deferring
 temporary-loan liveness to OWN-6. The selection ground is the
 composition obstruction and type-based non-escape argument, not preservation of
-existing compiler output. Before delivery, implementation evidence must cover
+existing compiler output. Implementation evidence must cover
 owned statement/value headers, parent resumption, named and result-carrying loans,
 borrowed matches, sibling argument overlap, repeated acquisition, and native
 staged retirement. Existing negative mutation cases remain negative. The full
@@ -365,8 +367,10 @@ storage by default. Consuming an argument ends the caller's owning use, not the
 callee's reads of it. Input/result aliasing therefore needs explicit read/write
 ordering evidence; a move annotation alone cannot permit it. The existing
 aggregate swap and `rewrite` witnesses retain both old field values before their
-writes. Existing-place replacement is stronger still: the RHS can mutate the old
-target before the subsequent old-owner readout.
+writes. Existing-place replacement reads the old owner after the RHS, but only
+when the target remains writable under the complete post-RHS loan state. An
+RHS temporary borrow of the target prevents that commit; the ordering rule does
+not authorize using storage while it is still borrowed.
 
 Each ordinary invocation has its own storage instance. A staged static definition
 can have several dynamic instances in flight: the place must be associated with
@@ -452,7 +456,7 @@ Use existing complete witnesses to judge the candidate, with their actual limits
 | Witness | Required distinction and current evidence |
 | --- | --- |
 | [Dense scalar, wide record, and inline view](../../experiments/container-representation/dense/RESULTS.md) | The retained matrix executes, element loops no longer copy whole payloads, and the fresh-destination checkpoint removes the one-time result-to-binding transfer. These are cost/capability probes, not production prevalence data. |
-| [Owned-place execution tests](../../../compiler/src/backend/tests/owned_places.rs): `replace_reads_the_displaced_value_after_rhs_mutation` and `replaced_aggregate_snapshots_survive_writes_and_helper_returns` | Passed with normal and retained helper calls. RHS effects occur before old-owner readout, and the old aggregate remains a snapshot after the new target changes. A fresh-destination rewrite must not erase either behavior. |
+| [Owned-place execution tests](../../../compiler/src/backend/tests/owned_places.rs): `replace_captures_the_target_before_rhs_changes_its_index` and `replaced_aggregate_snapshots_survive_writes_and_helper_returns` | Normal and retained helper calls preserve the captured target when the RHS changes a separate index, and the old aggregate remains a snapshot after later target writes. The earlier same-target RHS mutation witness was erroneously accepted: its temporary loan conflicts with the subsequent commit under OWN-5/OWN-6. That source now supplies a semantic rejection case, not ordering evidence. |
 | Same suite: `partial_construction_refusal_preserves_effects_values_and_release_order` | Passed with retained calls and refusal at each of three allocations, observing exact allocation/release order and returned values. The source constructs two complete cells before making the pair; this does **not** demonstrate source-visible partially initialized struct authority. |
 | Same suite: `returned_element_borrows_and_inline_views_reach_the_owners_storage`; [semantic neighbors](../../../compiler/src/semantic/tests/owned_places.rs) | Passed owner-storage execution and bounds/loan checks, including refusal of raw-slot access and moving a borrowed owner. Root value liveness alone cannot replace loan/storage identity. |
 | [Linear lifecycle programs](../../experiments/container-representation/lifecycle/RESULTS.md) | Actual linear values are discharged on success and failure; the leak neighbor is rejected. A proved-empty run of linear values still cannot be discharged. That missing language capability is not solved by an aggregate ABI. |
@@ -592,7 +596,8 @@ and the mandatory wide-record and inline exclusive-view programs. Its
 observe value snapshots, simultaneous assignment, returned element borrows,
 retained helper calls, allocation refusal, cleanup order, and mutation evaluation
 order. In particular, SET-1 captures target components before the RHS, while
-SET-2 reads the displaced owner after the RHS. A phi edge snapshots its inputs,
+SET-2 reads the displaced owner after the RHS only if post-RHS liveness and
+loan checks still admit the commit. A phi edge snapshots its inputs,
 performs predecessor cleanup, then writes the destination: liveness may allow the
 destination to reuse storage that cleanup still needs before that point.
 
@@ -1034,3 +1039,12 @@ Three ordinary semantic tests had encoded the same reversed field order; their
 expected paths now follow PROV-6, retaining their exact release counts and the
 separate assertion of reverse binding order. A native test that counted releases
 without observing their order no longer claims an order in its name or comments.
+
+After the selected control-header boundary was implemented, the focused native
+`owned_match_headers_and_staged_results_observe_completed_scratch` test passed once
+in 3.48 seconds. Its direct user-call match establishes source admission but takes
+the ordinary completion path in the current actualizer. The separate bound-result
+then match shape uses the staged handout; its deferred native observer sees the
+expected value 48 and the exact release trace after join. This is focused evidence
+for header-loan semantics and staged retirement, not evidence that a direct
+user-call match currently selects staged actualization or that the full gate passes.

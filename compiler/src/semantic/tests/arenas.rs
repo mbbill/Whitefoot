@@ -100,16 +100,13 @@ fn missing_main_wins_over_an_unsupported_capability() {
 
 /// [FN-1] an `arena<'r, U>` parameter is not an input-slice supplier: a view
 /// formed over its content has a resolved source-place origin outside the
-/// return-origin ceiling, rejected at the `return_stmt`. It was the
-/// fn1-neg-returned-slice-arena-origin conformance case byte for byte until
-/// B7c4b-1 took that corpus off `arena<'r, T>` and recorded that no program on
-/// the run surface reaches this refusal — [OWN-10] gets there first. The
-/// program is kept here because the refusal itself is untouched.
+/// return-origin ceiling, rejected at the `return_stmt`. The independent
+/// fn1-neg-returned-slice-arena-origin conformance case preserves this same
+/// obligation while the legacy arena type remains in the language.
 ///
 /// Its content type stays `array<u8, 2>` for the same reason: an arena of a
 /// run is a composite value the checker stops on before [FN-1] is reached, so
-/// the migrated program would record a different verdict. Both spellings
-/// retire together.
+/// the migrated program would record a different verdict.
 #[test]
 fn arena_content_views_stay_outside_the_slice_return_ceiling() {
     assert_rule(

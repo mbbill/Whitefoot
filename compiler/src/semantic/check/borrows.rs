@@ -165,6 +165,22 @@ pub(super) struct BorrowInfo {
     pub(super) origin_region: Option<DeclarationId>,
 }
 
+/// A non-escaping argument temporary and the holder its child suspends.
+/// This does not change permanent suspension by a borrow-result candidate.
+pub(super) struct TemporaryLoan {
+    pub(super) borrow: BorrowInfo,
+    pub(super) parent: Option<DeclarationId>,
+}
+
+impl TemporaryLoan {
+    pub(super) fn new(borrow: BorrowInfo, argument: &TypedExpression) -> Self {
+        Self {
+            borrow,
+            parent: argument.holder,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct SliceInfo {
     pub(super) region: DeclarationId,
@@ -1886,7 +1902,71 @@ and name it on the returned reborrow"
         )
     }
 
+    pub(super) fn check_temporary_loan_access(
+        &self,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        through_holder: Option<DeclarationId>,
+        place: &ResolvedPlace,
+        access: AccessKind,
+        node: NodeId,
+    ) -> Result<(), CheckStop> {
+        for loan in self.statement_loans.borrow().iter() {
+            let suspended_parent = through_holder.is_some()
+                && through_holder == loan.parent
+                && through_holder
+                    .and_then(|holder| bindings.get(&holder))
+                    .and_then(|local| local.borrow.as_ref())
+                    .is_some_and(|parent| parent.kind == BorrowKind::Unique)
+                && !matches!(access, AccessKind::SharedBorrow | AccessKind::UniqueBorrow);
+            let overlaps = places_overlap(&loan.borrow.place, place)
+                && (loan.borrow.kind == BorrowKind::Unique
+                    || !matches!(access, AccessKind::Read | AccessKind::SharedBorrow));
+            if suspended_parent || overlaps {
+                return self.issue_node(
+                    SemanticRule::Own5,
+                    node,
+                    SemanticIssueKind::BorrowConflict,
+                );
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn check_loan_access(
+        &self,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        through_holder: Option<DeclarationId>,
+        place: &ResolvedPlace,
+        access: AccessKind,
+        node: NodeId,
+    ) -> Result<(), CheckStop> {
+        self.check_temporary_loan_access(bindings, through_holder, place, access, node)?;
+        self.check_persistent_loan_access(bindings, through_holder, place, access, node)
+    }
+
+    /// Argument formation has already checked holder transfer and child
+    /// creation. A projected effect uses that argument's authority, including
+    /// a disjoint sibling child's, rather than its suspended parent's OWN-5
+    /// allowance. Temporary overlap checks still apply to the actual place.
+    pub(super) fn check_call_loan_access(
+        &self,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        through_holder: Option<DeclarationId>,
+        place: &ResolvedPlace,
+        access: AccessKind,
+        node: NodeId,
+    ) -> Result<(), CheckStop> {
+        let claim = match access {
+            AccessKind::Read | AccessKind::SharedBorrow => AccessKind::SharedBorrow,
+            AccessKind::Write | AccessKind::Move | AccessKind::UniqueBorrow => {
+                AccessKind::UniqueBorrow
+            }
+        };
+        self.check_temporary_loan_access(bindings, through_holder, place, claim, node)?;
+        self.check_persistent_loan_access(bindings, through_holder, place, access, node)
+    }
+
+    fn check_persistent_loan_access(
         &self,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         through_holder: Option<DeclarationId>,

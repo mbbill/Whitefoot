@@ -1,0 +1,14 @@
+fn change(value: &uniq u64) -> result: own u64 writes(value) {
+  set deref(value) = 9_u64;
+  return 7_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let value = 3_u64;
+  let left = 0_u64;
+  let right = 0_u64;
+  region {
+    set (left, right) = change(value: &uniq value), change(value: &uniq value);
+  }
+  return exit_status(code: 0_u8);
+}

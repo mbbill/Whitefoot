@@ -22,7 +22,7 @@ use super::super::super::super::model::{
     LoanStrength,
 };
 use super::super::super::borrows::{
-    AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, places_overlap,
+    AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, TemporaryLoan, places_overlap,
 };
 use super::super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
@@ -68,7 +68,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut argument_holders = Vec::with_capacity(fields.len());
         let mut state_origins = Vec::with_capacity(fields.len());
         let mut argument_places = Vec::with_capacity(fields.len());
-        let mut call_scoped_borrows: Vec<BorrowInfo> = Vec::new();
+        let mut call_scoped_borrows: Vec<TemporaryLoan> = Vec::new();
         let mut effects = EffectSet {
             allocates_heap: false,
             ..EffectSet::NONE
@@ -95,7 +95,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let argument =
                 self.check_call_argument_atom(function, atom, bindings, loop_depth, true, false)?;
             for access in &argument.accesses {
-                for borrow in &call_scoped_borrows {
+                for temporary in &call_scoped_borrows {
+                    let borrow = &temporary.borrow;
                     if places_overlap(&access.place, &borrow.place)
                         && match access.kind {
                             AccessKind::Read => borrow.kind == BorrowKind::Unique,
@@ -160,7 +161,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .collect::<Vec<_>>(),
             );
             if explicit_borrow && let Some(borrow) = &argument.borrow {
-                call_scoped_borrows.push(borrow.clone());
+                call_scoped_borrows.push(TemporaryLoan::new(borrow.clone(), &argument));
             }
             checked_borrows.push(passed_borrow);
             argument_holders.push(argument.holder);
@@ -185,6 +186,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let result = self
             .system_type(operation.result)?
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        // [SYS-10] reserve_handle explicitly returns its factory loan at call end.
+        if operation.spelling != "reserve_handle" {
+            self.statement_loans
+                .borrow_mut()
+                .extend(call_scoped_borrows);
+        }
         Ok(TypedExpression::owned(
             CheckedExpression::SystemCall {
                 operation: operation_index,
@@ -289,7 +296,7 @@ occurs at one parameter position, so this call's own arguments determine it",
                         .get(index)
                         .and_then(Option::as_ref)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    self.check_loan_access(
+                    self.check_call_loan_access(
                         bindings,
                         actuals.holders.get(index).copied().flatten(),
                         &borrow.place,

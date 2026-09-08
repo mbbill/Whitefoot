@@ -33,7 +33,7 @@ fn assert_success(module: &str) {
 }
 
 #[test]
-fn indexed_targets_are_captured_before_ordered_rhs_effects() {
+fn indexed_targets_are_captured_before_disjoint_rhs_effects() {
     let module = compile(
         br#"fn advance(offset: &uniq u64, trace: &uniq u64) -> result: own u64 reads(trace), writes(offset, trace) {
   set deref(offset) = 1_u64;
@@ -78,10 +78,12 @@ command fn main() -> status: own ExitStatus pure {
   set offset = 0_u64;
   set trace = 0_u64;
   set left[0_u64] = 3_u64;
+  let next_offset = 1_u64;
+  let next_trace = 0_u64;
   invariant first_target_bound: offset < len_of(left);
   invariant second_target_bound: offset < len_of(right);
   region {
-    set (left[offset], right[offset]) = advance(offset: &uniq offset, trace: &uniq trace), finish(offset: &uniq offset, trace: &uniq trace);
+    set (left[offset], right[offset]) = advance(offset: &uniq offset, trace: &uniq trace), finish(offset: &uniq next_offset, trace: &uniq next_trace);
   }
   if left[0_u64] != 41_u64 {
     return exit_status(code: 5_u8);
@@ -95,10 +97,16 @@ command fn main() -> status: own ExitStatus pure {
   if right[1_u64] != 11_u64 {
     return exit_status(code: 8_u8);
   }
-  if offset != 0_u64 {
+  if offset != 1_u64 {
     return exit_status(code: 9_u8);
   }
-  if trace != 12_u64 {
+  if next_offset != 0_u64 {
+    return exit_status(code: 11_u8);
+  }
+  if next_trace != 2_u64 {
+    return exit_status(code: 12_u8);
+  }
+  if trace != 1_u64 {
     return exit_status(code: 10_u8);
   }
   return exit_status(code: 0_u8);
@@ -110,15 +118,14 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn replace_reads_the_displaced_value_after_rhs_mutation() {
+fn replace_captures_the_target_before_rhs_changes_its_index() {
     let module = compile(
         br#"struct Row {
   left: u64;
   right: u64;
 }
 
-fn replacement(previous: &uniq u64, offset: &uniq u64) -> result: own Row reads(previous), writes(previous, offset) {
-  set deref(previous) = deref(previous) +wrap 100_u64;
+fn replacement(offset: &uniq u64) -> result: own Row writes(offset) {
   set deref(offset) = 1_u64;
   return Row(left: 19_u64, right: 23_u64);
 }
@@ -132,8 +139,8 @@ command fn main() -> status: own ExitStatus pure {
   let offset = 0_u64;
   invariant target_bound: offset < len_of(rows);
   region {
-    let old = replace rows[offset] = replacement(previous: &uniq rows[0_u64].left, offset: &uniq offset);
-    if old.left != 103_u64 {
+    let old = replace rows[offset] = replacement(offset: &uniq offset);
+    if old.left != 3_u64 {
       return exit_status(code: 1_u8);
     }
     if old.right != 5_u64 {

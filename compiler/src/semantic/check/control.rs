@@ -146,6 +146,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         counters: &mut ControlCounters<'_>,
         scope: ControlScope<'_>,
     ) -> Result<StatementResult, CheckStop> {
+        let loan_base = self.statement_loans.borrow().len();
+        let result = self.check_statement_body(function, node, bindings, counters, scope);
+        self.statement_loans.borrow_mut().truncate(loan_base);
+        result
+    }
+
+    fn check_statement_body(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        counters: &mut ControlCounters<'_>,
+        scope: ControlScope<'_>,
+    ) -> Result<StatementResult, CheckStop> {
         match self.tree.production(node)? {
             Production::LetStmt | Production::ContractDefine => {
                 self.check_let(function, node, bindings, counters, scope)
@@ -736,6 +750,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             target,
             effects: target_effects,
             unsupported: target_unsupported,
+            access,
             ..
         } = self.check_replace_target(function, target_node, bindings, scope.loops.len())?;
         let value =
@@ -764,6 +779,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
+        self.revalidate_mutation_access(&access, bindings, target_node)?;
         // Every source rejection of this statement is judged above; a target
         // this compiler cannot lower stops here and nowhere earlier [DIAG-1].
         if let Some(feature) = target_unsupported {
