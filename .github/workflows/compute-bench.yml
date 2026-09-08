@@ -134,6 +134,7 @@ jobs:
           include-hidden-files: true
           path: |
             ${{ runner.temp }}/compute-${{ matrix.workload }}-build.log
+            ${{ runner.temp }}/compute-${{ matrix.workload }}/compiler/gate/whitefootc
             ${{ runner.temp }}/compute-${{ matrix.workload }}/calibration/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/budget-calibration/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/record-events-calibration/

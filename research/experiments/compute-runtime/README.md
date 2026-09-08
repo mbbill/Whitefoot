@@ -1061,7 +1061,75 @@ static W1 has heavy-cell paired median ratios 0.986–1.013; that comparison
 also includes generated kernel and allocation/representation differences.
 At 33 points the native grain creates only one callback, so nominal W4 is
 not a four-way parallel control. Native grain tuning, held-out confirmation,
-dedicated-core scaling, nested workloads and Linux qualification remain open.
+dedicated-core scaling and nested workloads remain open.
+
+The [Linux run at `2bf3c7bd`](https://github.com/mbbill/Whitefoot/actions/runs/34218165282)
+also passed Mandelbrot qualification and all 850 calibration processes. Artifact
+`compute-mandelbrot-linux`, ID `10052718007`, has ZIP SHA256
+`1c2edebfff429822b0c82a3b1330681a229a8cb2d11c5862d042a76fc4a17b0a`.
+This is a separate EPYC 7763 VM cohort: two physical cores, four SMT logical
+CPUs, inherited mask 0–3, no individual worker pinning, and unqualified CPU
+quota. Clang 18.1.3 targets x86-64-v3 with the same scalar/strict-FP/no-LTO
+conditions. The compiler executable is not retained in the artifact, so its
+recorded hash cannot be independently recomputed. The source revision, emitted
+IR, objects, libraries and images remain available. All 34 qualifier/lifecycle
+logs passed replay, including the four expected Rayon sanitizer reports with
+exactly 1,904 bytes in two allocations; this qualifies the new Linux image's
+known lifecycle boundary, without treating it as leak-free.
+
+Core microseconds, using the same five-process warm-mean statistic:
+
+| Input / 4097 points | WF sequential W1 | WF cost W4 | WF capacity W4 | WF team W4 |
+| --- | ---: | ---: | ---: | ---: |
+| Plane | 667.145 | 672.209 | 247.560 | 345.134 |
+| Boundary | 1284.251 | 1286.642 | 489.710 | 702.400 |
+| Clustered | 850.053 | 854.533 | 336.437 | 883.483 |
+| Interleaved | 849.762 | 852.934 | 326.938 | 450.315 |
+| Interior | 3369.780 | 3350.219 | 1276.209 | 1740.493 |
+| Exterior | 8.688 | 10.302 | 7.323 | 7.097 |
+
+Generated cost still admits no parallel work in this matrix. Heavy-cell
+capacity/cost paired median ratios are 0.368–0.393, faster in every pair.
+Clustered team remains slower than cost in all five pairs; capacity recovers
+parallel work on both clustered and interleaved inputs. Unlike M1, team is
+also consistently slower than capacity on the interleaved input. The logical
+CPU budget does not establish equal simultaneous progress on four cores.
+For 33 points, capacity loses to cost in all five plane/interior/exterior
+pairs; boundary is mixed, with two faster pairs. The small-work conclusion
+must retain that host-specific exception.
+
+The common C callback at W4 / grain 64 gives:
+
+| Input / 4097 points | WF adapter | Static | oneTBB | Parlay | Rayon join | Rayon iterator |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Plane | 246.576 | 3263.983 | 249.862 | 455.445 | 255.953 | 252.125 |
+| Boundary | 626.556 | 2857.543 | 471.461 | 727.039 | 500.172 | 663.296 |
+| Clustered | 344.027 | 3827.325 | 336.262 | 450.976 | 344.977 | 459.001 |
+| Interleaved | 323.931 | 3582.558 | 324.099 | 528.774 | 333.238 | 327.499 |
+| Interior | 1283.185 | 2457.241 | 1234.718 | 1440.170 | 1241.298 | 1267.340 |
+| Exterior | 6.655 | 4111.591 | 10.686 | 10.738 | 12.884 | 14.010 |
+
+The static medians contain millisecond excursions accompanied by OS scheduling
+activity; they do not establish an intrinsic dispatch cost. Exterior pass zero has eight warm calls
+at 3.526–3.957 microseconds and zero batch involuntary switches; passes one
+through four each contain millisecond calls and 65–117 involuntary switches.
+Several calls cluster near six milliseconds. No observations are discarded.
+This is evidence to investigate worker placement and OS scheduling, not proof
+of the cause or a general WF advantage over static partitioning. Batch CPU
+still includes startup, checks and printing. Native WF boundary is also slower
+than oneTBB in this screen. The data do not establish a universal winner.
+
+These two hosts reproduce admission and imbalance losses while disagreeing
+on important scheduling details. Before promoting a generic adaptive policy,
+the reference comparison needs grain sensitivity and normal automatic-grain
+forms as well as fixed callback work. In the pinned Parlay implementation,
+automatic grain executes a growing prefix until one sampled block takes at
+least 1,000 ns (or the range ends), then partitions the remainder. The current
+adapter deliberately supplies grain one over host chunks, bypassing that
+calibration. It is a same-chunk scheduler control, not evidence against Parlay's
+automatic-grain policy. Any WF sampling experiment must charge its probe,
+preserve exactly-once execution and include inputs whose expensive region
+appears after the sampled prefix.
 
 ## Scalar scheduler comparison
 
