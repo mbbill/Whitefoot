@@ -241,6 +241,74 @@ rehash, and many-to-one result mappings. The first owned-place slice can provide
 storage identity and legal destinations, but cannot by itself prove these
 relations or admit parallel writes to the returned addresses.
 
+## Focused revalidation: contracts and host mechanisms
+
+A second primary-source pass reread the EW1, EW3, and EW4 files cited above and
+the Rust standard library at the peeled Rust 1.89.0 tag commit
+[`29483883eed69d5fb4db01964cdf2af4d86e9cb2`](https://github.com/rust-lang/rust/tree/29483883eed69d5fb4db01964cdf2af4d86e9cb2).
+It supplies qualitative demand and comparison contracts, not occurrence counts,
+profiles, or evidence that these forms are common.
+
+| Evidence reread | Contract that a replacement must preserve | Host mechanism that the source does not make a Whitefoot requirement |
+| --- | --- | --- |
+| ripgrep `LineBuffer` state, fill, roll, and growth [state][rg-state], [fill][rg-fill], [growth][rg-growth] | Preserve the byte stream, searchable complete-line window, retained incomplete suffix, absolute offsets, EOF publication, binary cutoff, configured growth refusal, and reuse after reset. A scan view ends before mutation or relocation. | Rust `Vec<u8>`, zero-filled spare bytes, `copy_within`, and the observed three-times eager growth are choices. In particular, the zero fill satisfies this implementation's writable-slice route; the workload requires safe writable capacity, not readable zeros. |
+| DuckDB concat, `string_t`, heap, and vector ownership [concat][dd-concat], [representation][dd-string-type], [heap][dd-string-contract], [retention][dd-string-refs] | For each row, compute the same NULL/value result, reserve its final payload destination, fill it, and publish only after completion. Long payload addresses remain valid through the retaining heap/vector lifetime. The batch implementation reserves all result destinations before copying any payload. | The twelve-byte inline cutoff, cached prefix, C++ return by value, arena chunk policy, and the name `EmptyString` are not semantic requirements. The source also does not promise rollback or resumable progress if a later batch allocation fails. |
+| DuckDB packed entry and aggregate find/resize [entry][dd-entry], [find/create][dd-agg-find], [resize][dd-agg-resize] | A reserved slot cannot supply a row pointer before append and aggregate-state initialization; rehash preserves lookup and does not move pinned rows; equal groups may intentionally share one output address. | Empty/reserved/ready is a temporal protocol, not an explicit three-tag representation: `SetSalt` makes `IsOccupied()` true before `SetPointer`, and phase selections keep that state away from pointer readers. Salt/pointer packing, pointer width, linear probing, and C++ exceptions are choices. |
+| Rust boxed-slice, vector spare-capacity, `MaybeUninit`, and array iteration source [boxed construction][rust-box-uninit], [boxed publication][rust-box-publish], [vector layout][rust-vec-layout], [spare capacity][rust-vec-spare], [length publication][rust-vec-publish], [partial cleanup][rust-maybe-partial], [array consume][rust-array-consume], [array residual cleanup][rust-array-cleanup] | These APIs witness demand for final-place element construction, an initialized/raw boundary, publication only after the new range is initialized, partial cleanup, and by-value consumption of a complete fixed array with exact cleanup of the unconsumed range. | Rust represents raw slots with `MaybeUninit` and makes `Box::assume_init` and `Vec::set_len` unsafe. Its array iterator also uses unsafe library internals. That is evidence for a checked transition, not evidence that Whitefoot writers need raw pointers, public unsafe authority, or the same surface types. |
+
+### Decisive same-contract comparisons
+
+The smallest useful comparisons keep observable behavior and resource policy
+fixed, then vary only the storage/state mechanism:
+
+1. **Reusable search window.** Feed identical chunk boundaries, long lines, EOF,
+   binary bytes, and capacity limits to the rolled contiguous design and a
+   candidate ring/two-span design. Require identical visible bytes, matches,
+   offsets, context, and refusal point. Record allocations, peak capacity,
+   initialized bytes, bytes moved/coalesced, and bytes scanned. A two-span result
+   is equivalent only if the matcher consumes both spans with the same boundary
+   behavior or the coalescing cost is included.
+2. **Fixed-block pool and direct construction.** Allocate a fixed pool once;
+   exhaust it, return blocks in a different order, and reuse it without another
+   backing allocation. For a block of non-copy, drop-counted elements, fail after
+   constructing element `k`: exactly the constructed prefix is destroyed and the
+   slot returns to the pool. On success, publication transfers the complete block
+   without a whole-block copy. Compare a safe initialized baseline, Rust's pinned
+   `MaybeUninit` route, and the checked Whitefoot place route at the same pool
+   capacity and refusal points; count provider allocations, element
+   constructions/destructions, copied bytes, peak storage, and steady-state work.
+3. **Direct string result.** Use the same row validity and segment order, including
+   empty, inline-sized, and long results. Require identical result bytes and
+   lifetimes, one final payload reservation per long result, and no extra
+   full-payload temporary copy. Count payload writes/copies, arena calls and
+   chunks, peak retained bytes, and cleanup. Failure comparisons need an explicit
+   common contract; DuckDB's inspected path does not supply a strong rollback
+   contract to inherit.
+4. **Sparse reserve and rehash.** Replay the same keys, hashes, collisions, resize
+   thresholds, and aggregate updates. Require the same groups and results, no
+   pointer read during reservation, stable row addresses across pointer-table
+   reallocation, and no aggregate-payload move during rehash. Count allocations,
+   metadata bytes, probes, reinsertions, payload bytes moved, and peak storage.
+   Injection immediately after reservation and after row initialization checks
+   cleanup, but its observable failure result must be defined rather than inferred
+   from the throwing C++ path.
+5. **Full-array consume.** Consume `k` values from a by-value fixed array of
+   non-copy, drop-counted elements, then stop. Require ownership of those `k`
+   values to transfer and exactly the other `N-k` values to be destroyed, with no
+   second allocation or whole-array element copy. This separates consumption of
+   a proven-full value from construction of a partial one even if both lower to a
+   tracked live interval.
+
+Two rare adversarial cases remain hard falsifiers without being prevalence
+claims. A nullable slot whose validity is false may retain stale payload bits from
+a previously destroyed or moved owner; it must neither read nor destroy those
+bits, and validity may become true only after the replacement payload is
+constructed. A recycled pool slot may later occupy the same address: a retained
+identity for generation `g` must not read, release, or mutate generation `g+1`.
+Static lifetime exclusion can make that trace impossible; a runtime generation
+tag is needed only when identities are allowed to outlive retirement. Neither
+case justifies bitmap storage or generation metadata on every dense container.
+
 ## EW5: Kubernetes maintains a key-to-position relation during heap mutation
 
 **Observed trace.** The scheduler heap stores a slice of keys and a map from key
@@ -398,6 +466,14 @@ rather than being converted into mandatory representation rules.
 [dd-agg-find]: https://github.com/duckdb/duckdb/blob/5f5512b827df6397afd31daedb4bbdee76520019/src/execution/aggregate_hashtable.cpp#L566-L751
 [dd-agg-update]: https://github.com/duckdb/duckdb/blob/5f5512b827df6397afd31daedb4bbdee76520019/src/execution/aggregate_hashtable.cpp#L522-L540
 [dd-agg-finalize]: https://github.com/duckdb/duckdb/blob/5f5512b827df6397afd31daedb4bbdee76520019/src/execution/radix_partitioned_hashtable.cpp#L799-L844
+[rust-box-uninit]: https://github.com/rust-lang/rust/blob/29483883eed69d5fb4db01964cdf2af4d86e9cb2/library/alloc/src/boxed.rs#L632-L652
+[rust-box-publish]: https://github.com/rust-lang/rust/blob/29483883eed69d5fb4db01964cdf2af4d86e9cb2/library/alloc/src/boxed.rs#L965-L994
+[rust-vec-layout]: https://github.com/rust-lang/rust/blob/29483883eed69d5fb4db01964cdf2af4d86e9cb2/library/alloc/src/vec/mod.rs#L290-L332
+[rust-vec-spare]: https://github.com/rust-lang/rust/blob/29483883eed69d5fb4db01964cdf2af4d86e9cb2/library/alloc/src/vec/mod.rs#L2907-L2946
+[rust-vec-publish]: https://github.com/rust-lang/rust/blob/29483883eed69d5fb4db01964cdf2af4d86e9cb2/library/alloc/src/vec/mod.rs#L1875-L1955
+[rust-maybe-partial]: https://github.com/rust-lang/rust/blob/29483883eed69d5fb4db01964cdf2af4d86e9cb2/library/core/src/mem/maybe_uninit.rs#L112-L156
+[rust-array-consume]: https://github.com/rust-lang/rust/blob/29483883eed69d5fb4db01964cdf2af4d86e9cb2/library/core/src/array/iter.rs#L35-L73
+[rust-array-cleanup]: https://github.com/rust-lang/rust/blob/29483883eed69d5fb4db01964cdf2af4d86e9cb2/library/core/src/array/iter/iter_inner.rs#L29-L82
 [k-heap]: https://github.com/kubernetes/kubernetes/blob/70d3cc986aa8221cd1dfb1121852688902d3bf53/pkg/scheduler/backend/heap/heap.go#L17-L239
 [k-queues]: https://github.com/kubernetes/kubernetes/blob/70d3cc986aa8221cd1dfb1121852688902d3bf53/pkg/scheduler/backend/queue/scheduling_queue.go#L341-L350
 [k-key]: https://github.com/kubernetes/kubernetes/blob/70d3cc986aa8221cd1dfb1121852688902d3bf53/pkg/scheduler/backend/queue/scheduling_queue.go#L1395-L1397

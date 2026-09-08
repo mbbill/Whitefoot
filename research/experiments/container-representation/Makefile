@@ -10,6 +10,7 @@ compiler:
 
 check: compiler
 	$(MAKE) -C authority check
+	$(MAKE) -C foundation check
 	$(MAKE) -C lifecycle check WHITEFOOTC="$(WHITEFOOTC)"
 	$(MAKE) -C dense check WHITEFOOTC="$(WHITEFOOTC)"
 

@@ -4,7 +4,7 @@ This bundle supplies executable evidence for the container architecture choice
 before production implementation or migration. The design question belongs to
 `research/investigations/containers-and-resources/`; this directory owns only the
 reproducible source probes, finite checker model, native controls, and measurements.
-Its three parts answer different questions:
+Its four parts answer different questions:
 
 - `dense/`: executable Whitefoot construction/update probes, helper boundaries,
   and native controls for aggregate versus final-destination storage; source
@@ -15,6 +15,9 @@ Its three parts answer different questions:
 - `authority/`: finite concrete range certificates compared with an independent
   per-slot oracle; this is neither a language extension nor evidence that a
   symbolic library implementation already passes the compiler.
+- `foundation/`: matched native layouts and concrete construction, failure,
+  relocation, and retirement protocols for the next foundation decision. Native
+  timings, model invariants, and implemented Whitefoot capability stay separate.
 
 These small programs test specific capabilities and costs. They are not a
 representative corpus of real applications and supply no workload-frequency data.
