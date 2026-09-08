@@ -1,0 +1,18 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "The formation row's declared requirement head_of(vector) <= room_of(vector) is the non-wrap premise, submitted at the formation and judged under MSR-4 exactly as every other row requirement is. This run has had a front removal and has been refilled, so its window wraps: the premise is unproved and the formation is refused citing BLK-0, naming the row and the position of the requirement in its own list. Without the refusal the view descriptor is one range over a window that is two, and the program below read a byte the run does not own.";
+  let empty = fixed_vector::<u8, 4>();
+  let one = place_back(vector: move empty, value: 1_u8);
+  let two = place_back(vector: move one, value: 2_u8);
+  let three = place_back(vector: move two, value: 3_u8);
+  let four = place_back(vector: move three, value: 4_u8);
+  let (rest, gone) = take_front(vector: move four);
+  let full = place_back(vector: move rest, value: 5_u8);
+  region {
+    let window = slice_of(&full);
+    let last = window[3_u64];
+    if last == 5_u8 {
+      return exit_status(code: 0_u8);
+    }
+  }
+  return exit_status(code: 1_u8);
+}

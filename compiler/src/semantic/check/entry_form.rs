@@ -47,19 +47,25 @@ const fn input(tail: &'static str, written: &'static str, nominal: &'static str)
 /// [FN-7]'s closed standard-input table for kind `command`, in table-ordinal
 /// order. Ordinal identity, never type identity, selects the supplied value:
 /// `command.stdout` and `command.stderr` share one type and stay two inputs.
-const COMMAND_INPUTS: [StandardInput; 6] = [
+const COMMAND_INPUTS: [StandardInput; 7] = [
     input("args", "own Args", "Args"),
     input("cwd", "own DirectoryRead", "DirectoryRead"),
     input("stdout", "own OutputStream", "OutputStream"),
     input("stderr", "own OutputStream", "OutputStream"),
     input("handles", "own HandleFactory", "HandleFactory"),
     input("stdin", "own InputStream", "InputStream"),
+    // [S22] the seventh row is the one route by which a program obtains the
+    // general store [PROV-1]. Its written type is the compiler-owned
+    // container nominal `Heap` [TYPE-2] rather than a [SYS-2] one, written
+    // bare because the entry heap's store region has no spelling; the label
+    // tail became writable when [EFF-1]'s allocation atom retired [S23].
+    input("heap", "own Heap", "Heap"),
 ];
 
 const COMMAND_RESULT: &str = "own ExitStatus";
 const COMMAND_RESULT_NOMINAL: &str = "ExitStatus";
 const COMMAND_EFFECTS: &str = "parameter-rooted reads/writes over selected command inputs, \
-     and `allocates(heap)` in EFF-1 canonical order";
+     and `pure` in EFF-1 canonical order";
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     /// Admits the unit's [FN-7] entry and returns the form it admitted.
@@ -379,24 +385,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// Reports whether every category written in a `command` entry's row is
     /// admitted by that kind row.
     ///
-    /// The admitted set is parameter-rooted `reads`/`writes` and
-    /// `allocates(heap)`; `pure` is the empty subset. Arena allocation still
-    /// fails here. EFF-1 separately resolves and type-checks every state path.
+    /// The admitted set is parameter-rooted `reads`, `writes` and
+    /// `allocates` paths; `pure` is the empty subset. Every category now takes
+    /// the same formal-rooted `effect_path` [S23], so this judgment is one of
+    /// category membership and EFF-1 separately resolves and type-checks every
+    /// state path, the entry's own labelled inputs being its only formals.
     fn command_effects_admitted(&self, effects: NodeId) -> Result<bool, CheckStop> {
         if self.has_fixed(effects, FixedTerminal::Pure)? {
             return Ok(true);
         }
         for effect in self.tree.children_with(effects, Production::Effect)? {
-            let admitted = if self.has_fixed(effect, FixedTerminal::Reads)?
+            let admitted = self.has_fixed(effect, FixedTerminal::Reads)?
                 || self.has_fixed(effect, FixedTerminal::Writes)?
-            {
-                true
-            } else if self.has_fixed(effect, FixedTerminal::Allocates)? {
-                self.has_fixed(effect, FixedTerminal::Heap)?
-                    && !self.has_fixed(effect, FixedTerminal::Arena)?
-            } else {
-                false
-            };
+                || self.has_fixed(effect, FixedTerminal::Allocates)?;
             if !admitted {
                 return Ok(false);
             }
@@ -417,6 +418,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let Ok(usage) = self.use_at(ty, LexicalUseRole::Type) else {
             return Ok(false);
         };
+        // [PROV-1] the entry heap's DEFERRED row would write the bare `Heap`,
+        // which is a compiler-owned container nominal [TYPE-2] rather than a
+        // [SYS-2] one; every row this table carries writes a system nominal,
+        // and this arm is what keeps the two classes one judgment.
+        if let ResolvedTarget::Container(id) = usage.target() {
+            return Ok(crate::container_nominal(id).is_some_and(|entry| entry.spelling == nominal));
+        }
         let ResolvedTarget::System(id) = usage.target() else {
             return Ok(false);
         };
@@ -434,14 +442,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.decoded(tail)
     }
 
-    fn decoded(&self, terminal: usize) -> Result<String, CheckStop> {
+    pub(super) fn decoded(&self, terminal: usize) -> Result<String, CheckStop> {
         std::str::from_utf8(self.tree.token_bytes(terminal)?)
             .map(str::to_owned)
             .map_err(|_| SemanticCompilerFailure::InvalidSourceEncoding.into())
     }
 
     /// Returns every node of one production in finalized node order.
-    fn nodes_with(&self, production: Production) -> Result<Vec<NodeId>, CheckStop> {
+    pub(super) fn nodes_with(&self, production: Production) -> Result<Vec<NodeId>, CheckStop> {
         let mut nodes = Vec::new();
         for index in 0..self.tree.topology().nodes.len() {
             let node = NodeId::from_index(index).ok_or(SemanticCompilerFailure::CounterOverflow)?;

@@ -1,0 +1,9 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "OP-4: a subscript carries the bounds obligation `i < len_of(p)` wherever it is written, and a read is written no differently from a target. The run below is formed empty, so `0 < len_of(run)` is false at this read and no ProofContext discharges it.";
+  let run = fixed_vector::<u8, 4>();
+  let seen = run[0_u64];
+  if seen == 0_u8 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}

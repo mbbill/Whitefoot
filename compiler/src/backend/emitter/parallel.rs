@@ -58,6 +58,7 @@ use std::fmt::Write;
 
 use super::{BackendFailure, FunctionEmitter, llvm_type, source_symbol, value_name};
 use super::{Qualification, TargetLayout};
+use crate::backend::abi::{FunctionAbi, ResultAbi};
 use crate::{
     IrCompletionStep, IrFunction, IrInstruction, IrOperation, IrProgram, IrSynthesis, IrType,
     IrValueId,
@@ -375,7 +376,7 @@ pub(crate) struct ComputeHandedOut {
     /// The value the joined call defines: a granted lane's result read out of
     /// the frame, or a refused lane's own call, whichever edge ran.
     result: IrValueId,
-    result_type: IrType,
+    result_abi: ResultAbi,
     /// The frame's LLVM struct type, `{ arguments..., result }`.
     frame_type: String,
     /// The acquired lane's frame, or null when no lane was granted. It is both
@@ -419,6 +420,7 @@ pub(crate) struct StagedLane {
     /// The call's result, which the drain defines and the remainder reads.
     pub(super) result: IrValueId,
     pub(super) result_type: IrType,
+    abi: FunctionAbi,
     pub(super) result_llvm: String,
     /// The callee's ordinal and symbol, and the call's operand values.
     pub(super) callee_ordinal: u32,
@@ -460,18 +462,27 @@ impl FunctionEmitter<'_, '_> {
             .functions()
             .get(function as usize)
             .ok_or(BackendFailure::InvalidIr)?;
-        if target.result() != ty || target.parameters().len() != arguments.len() {
+        let abi = FunctionAbi::build(self.program, target)?;
+        if abi.result().ty() != ty || abi.parameters().len() != arguments.len() {
             return Err(BackendFailure::InvalidIr);
         }
         let mut field_types = Vec::with_capacity(arguments.len() + 1);
         let mut operands = Vec::with_capacity(arguments.len());
-        for (argument, (_, parameter_type)) in arguments.iter().zip(target.parameters()) {
-            if self.value_type(*argument) != Some(*parameter_type) {
+        let mut call_arguments = Vec::with_capacity(arguments.len());
+        for (argument, parameter) in arguments.iter().zip(abi.parameters()) {
+            if self.value_type(*argument) != Some(parameter.ty()) {
                 return Err(BackendFailure::InvalidIr);
             }
-            let parameter = llvm_type(self.program, *parameter_type)?;
-            operands.push(format!("{parameter} {}", self.value_name(*argument)));
-            field_types.push(parameter);
+            let parameter_type = llvm_type(self.program, parameter.ty())?;
+            let operand = self.value_operand(*argument)?;
+            operands.push(format!("{parameter_type} {operand}"));
+            call_arguments.push(if parameter.is_indirect() {
+                let address = self.value_place(*argument)?;
+                format!("ptr {address}")
+            } else {
+                format!("{parameter_type} {operand}")
+            });
+            field_types.push(parameter_type);
         }
         let result_type = llvm_type(self.program, ty)?;
         let result_field = field_types.len();
@@ -485,7 +496,14 @@ impl FunctionEmitter<'_, '_> {
 
         let callee = source_symbol(target.name());
         let thunk = self.parallel.register(|symbol| {
-            thunk_definition(symbol, &frame_type, &field_types, &callee, &result_type)
+            thunk_definition(
+                symbol,
+                &frame_type,
+                &field_types,
+                &abi,
+                &callee,
+                &result_type,
+            )
         })?;
 
         // Target layout already computed the exact complete aggregate before
@@ -516,12 +534,12 @@ impl FunctionEmitter<'_, '_> {
         .map_err(|_| BackendFailure::TextEmission)?;
         self.handed_out.push(HandedOut::Compute(ComputeHandedOut {
             result,
-            result_type: ty,
+            result_abi: abi.result(),
             frame_type,
             frame,
             result_field,
             callee,
-            arguments: operands.join(", "),
+            arguments: call_arguments.join(", "),
         }));
         Ok(())
     }
@@ -575,13 +593,7 @@ impl FunctionEmitter<'_, '_> {
             &rendered,
             plan.slots,
         )?;
-        writeln!(
-            self.output,
-            "  store {rendered} {}, ptr {element}",
-            self.value_name(value)
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        Ok(())
+        self.store_value_at(value, &element)
     }
 
     /// Hands the staged call of a driven [PAR-3] loop to a compute lane.
@@ -618,17 +630,23 @@ impl FunctionEmitter<'_, '_> {
             return Err(BackendFailure::InvalidIr);
         }
         let mut operands = Vec::with_capacity(arguments.len());
-        for (argument, (_, parameter_type)) in arguments.iter().zip(target.parameters()) {
-            if self.value_type(*argument) != Some(*parameter_type) {
+        let mut call_arguments = Vec::with_capacity(arguments.len());
+        for (argument, parameter) in arguments.iter().zip(plan.abi.parameters()) {
+            if self.value_type(*argument) != Some(parameter.ty()) {
                 return Err(BackendFailure::InvalidIr);
             }
-            operands.push(format!(
-                "{} {}",
-                llvm_type(self.program, *parameter_type)?,
-                self.value_name(*argument)
-            ));
+            let parameter_type = llvm_type(self.program, parameter.ty())?;
+            let operand = self.value_operand(*argument)?;
+            operands.push(format!("{parameter_type} {operand}"));
+            call_arguments.push(if parameter.is_indirect() {
+                let address = self.value_place(*argument)?;
+                format!("ptr {address}")
+            } else {
+                format!("{parameter_type} {operand}")
+            });
         }
-        let rendered_arguments = operands.join(", ");
+        let rendered_arguments = call_arguments.join(", ");
+        let stored_result = plan.abi.result().uses_destination();
         let result_type = plan.result_llvm.clone();
         let answer = self.staged_ring_element(
             super::FunctionSlot::StagedResult(result),
@@ -637,6 +655,15 @@ impl FunctionEmitter<'_, '_> {
         )?;
         let callee = plan.callee.clone();
         let Some(frame_bytes) = plan.frame_bytes else {
+            if stored_result {
+                call_arguments.insert(0, format!("ptr {answer}"));
+                return writeln!(
+                    self.output,
+                    "  call void @{callee}({})",
+                    call_arguments.join(", ")
+                )
+                .map_err(|_| BackendFailure::TextEmission);
+            }
             let inline = format!("%{}", self.next_temporary()?);
             writeln!(
                 self.output,
@@ -651,6 +678,7 @@ impl FunctionEmitter<'_, '_> {
                 symbol,
                 &plan.frame_type,
                 &plan.field_types,
+                &plan.abi,
                 &callee,
                 &result_type,
             )
@@ -681,13 +709,20 @@ impl FunctionEmitter<'_, '_> {
             .map_err(|_| BackendFailure::TextEmission)?;
         }
         let refused = format!("%{}", self.next_temporary()?);
+        let fallback = if stored_result {
+            call_arguments.insert(0, format!("ptr {answer}"));
+            format!("call void @{callee}({})", call_arguments.join(", "))
+        } else {
+            format!(
+                "{refused} = call {result_type} @{callee}({rendered_arguments})\n  store {result_type} {refused}, ptr {answer}"
+            )
+        };
         writeln!(
             self.output,
             "  call void @wf__par_publish(ptr {frame}, ptr {thunk})\n  \
              br label %{offered}\n\
              {inline}:\n  \
-             {refused} = call {result_type} @{callee}({rendered_arguments})\n  \
-             store {result_type} {refused}, ptr {answer}\n  \
+             {fallback}\n  \
              br label %{offered}\n\
              {offered}:"
         )
@@ -724,6 +759,7 @@ impl FunctionEmitter<'_, '_> {
                 self.value_name(*reload)
             )
             .map_err(|_| BackendFailure::TextEmission)?;
+            self.save_value_result(*reload)?;
         }
         let result_type = plan.result_llvm.clone();
         let answer = self.staged_ring_element(
@@ -738,6 +774,7 @@ impl FunctionEmitter<'_, '_> {
                 value_name(plan.result)
             )
             .map_err(|_| BackendFailure::TextEmission)?;
+            self.save_value_result(plan.result)?;
             return Ok(());
         }
         let held = self.staged_ring_element(
@@ -753,6 +790,14 @@ impl FunctionEmitter<'_, '_> {
         let inline = par_staged_refused_label(plan.result);
         let wait = par_staged_wait_label(plan.result);
         let done = par_staged_done_label(plan.result);
+        // Preserve the existing value phi; copy the joined aggregate into
+        // caller backing before the runtime can reuse the released lane.
+        let save_waited = if plan.abi.result().uses_destination() {
+            let destination = self.value_place(plan.result)?;
+            format!("store {result_type} {waited}, ptr {destination}\n  ")
+        } else {
+            String::new()
+        };
         writeln!(
             self.output,
             "  {frame} = load ptr, ptr {held}\n  \
@@ -763,13 +808,14 @@ impl FunctionEmitter<'_, '_> {
              {wait}:\n  call void @wf__par_join(ptr {frame})\n  \
              {field} = getelementptr inbounds {}, ptr {frame}, i32 0, i32 {}\n  \
              {waited} = load {result_type}, ptr {field}\n  \
-             call void @wf__par_release(ptr {frame})\n  br label %{done}\n\
+             {save_waited}call void @wf__par_release(ptr {frame})\n  br label %{done}\n\
              {done}:\n  {} = phi {result_type} [ {direct}, %{inline} ], [ {waited}, %{wait} ]",
             plan.frame_type,
             plan.result_field,
             value_name(plan.result),
         )
         .map_err(|_| BackendFailure::TextEmission)?;
+        self.save_value_result(plan.result)?;
         Ok(())
     }
 
@@ -788,24 +834,6 @@ impl FunctionEmitter<'_, '_> {
         ty: IrType,
         split: &LoopSplitSite<'_>,
     ) -> Result<(), BackendFailure> {
-        let result_type = llvm_type(self.program, ty)?;
-        let mut arguments = Vec::with_capacity(split.captures.len() + 4);
-        arguments.push(format!("{result_type} {}", self.value_name(split.seed)));
-        for endpoint in [split.lower, split.upper] {
-            if self.value_type(endpoint) != Some(U64) {
-                return Err(BackendFailure::InvalidIr);
-            }
-            arguments.push(format!("i64 {}", self.value_name(endpoint)));
-        }
-        for capture in split.captures {
-            let capture_type = self.value_type(*capture).ok_or(BackendFailure::InvalidIr)?;
-            arguments.push(format!(
-                "{} {}",
-                llvm_type(self.program, capture_type)?,
-                self.value_name(*capture)
-            ));
-        }
-
         let target = if self.sequential_clones.is_some() {
             split.chunk
         } else {
@@ -816,43 +844,55 @@ impl FunctionEmitter<'_, '_> {
             .functions()
             .get(target as usize)
             .ok_or(BackendFailure::InvalidIr)?;
-        // The site's operands against the callee's declared parameters, exactly
-        // as a handed-out call checks its own. One lowering builds both lists
-        // from one computation, so a mismatch is a defect in that lowering
-        // rather than a shape this has to render; the point of the check is
-        // that such a defect stops here instead of reaching the assembler as
-        // type-mismatched text.
-        let declared = function.parameters();
-        // The splitter takes the allowance as one further parameter, which the
-        // overlapped world appends below; every other operand is already in
-        // `arguments`.
+        let abi = FunctionAbi::build(self.program, function)?;
+        let declared = abi.parameters();
+        // The splitter alone takes one trailing allowance. The chunk and
+        // splitter otherwise share the typed internal parameter/result ABI.
         let expected = declared
             .len()
             .checked_sub(usize::from(self.sequential_clones.is_none()))
             .ok_or(BackendFailure::InvalidIr)?;
-        if expected != arguments.len() {
-            return Err(BackendFailure::InvalidIr);
-        }
-        if function.result() != ty
-            || declared.first().map(|(_, ty)| *ty) != Some(ty)
+        if expected != split.captures.len() + 3
+            || abi.result().ty() != ty
+            || declared.first().map(|parameter| parameter.ty()) != Some(ty)
             || split
                 .captures
                 .iter()
                 .zip(declared.get(3..).unwrap_or_default())
-                .any(|(capture, (_, parameter))| self.value_type(*capture) != Some(*parameter))
+                .any(|(capture, parameter)| self.value_type(*capture) != Some(parameter.ty()))
         {
             return Err(BackendFailure::InvalidIr);
         }
+        let result_type = llvm_type(self.program, ty)?;
+        let mut arguments = Vec::with_capacity(split.captures.len() + 4);
+        arguments.push(if declared[0].is_indirect() {
+            let address = self.value_place(split.seed)?;
+            format!("ptr {address}")
+        } else {
+            format!("{result_type} {}", self.value_name(split.seed))
+        });
+        for endpoint in [split.lower, split.upper] {
+            if self.value_type(endpoint) != Some(U64) {
+                return Err(BackendFailure::InvalidIr);
+            }
+            arguments.push(format!("i64 {}", self.value_name(endpoint)));
+        }
+        for (capture, parameter) in split.captures.iter().zip(&declared[3..]) {
+            arguments.push(if parameter.is_indirect() {
+                let address = self.value_place(*capture)?;
+                format!("ptr {address}")
+            } else {
+                format!(
+                    "{} {}",
+                    llvm_type(self.program, parameter.ty())?,
+                    self.value_name(*capture)
+                )
+            });
+        }
+
         let callee = self.callee_symbol(target, function.name());
         if self.sequential_clones.is_some() {
-            writeln!(
-                self.output,
-                "  {} = call {result_type} @{callee}({})",
-                value_name(result),
-                arguments.join(", ")
-            )
-            .map_err(|_| BackendFailure::TextEmission)?;
-            return Ok(());
+            return self.emit_split_call(result, abi.result(), &callee, arguments);
         }
 
         // The span, computed so an inverted range asks for nothing rather than
@@ -875,14 +915,37 @@ impl FunctionEmitter<'_, '_> {
         .map_err(|_| BackendFailure::TextEmission)?;
         self.parallel.queries_split_budget = true;
         arguments.push(format!("i64 {budget}"));
+        self.emit_split_call(result, abi.result(), &callee, arguments)
+    }
+
+    fn emit_split_call(
+        &mut self,
+        result: IrValueId,
+        result_abi: ResultAbi,
+        callee: &str,
+        mut arguments: Vec<String>,
+    ) -> Result<(), BackendFailure> {
+        let result_type = llvm_type(self.program, result_abi.ty())?;
+        if result_abi.uses_destination() {
+            let destination = self.value_place(result)?;
+            arguments.insert(0, format!("ptr {destination}"));
+            // LoopSplit uses the value-definition bridge, whose ordinary
+            // result save reads this snapshot of the completed destination.
+            return writeln!(
+                self.output,
+                "  call void @{callee}({})\n  {} = load {result_type}, ptr {destination}",
+                arguments.join(", "),
+                value_name(result)
+            )
+            .map_err(|_| BackendFailure::TextEmission);
+        }
         writeln!(
             self.output,
             "  {} = call {result_type} @{callee}({})",
             value_name(result),
             arguments.join(", ")
         )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        Ok(())
+        .map_err(|_| BackendFailure::TextEmission)
     }
 
     /// Completes every hand-out of the group whose last member just ran.
@@ -917,7 +980,7 @@ impl FunctionEmitter<'_, '_> {
             let inline = par_inline_label(pending.result);
             let wait = par_wait_label(pending.result);
             let done = par_done_label(pending.result);
-            let result_type = llvm_type(self.program, pending.result_type)?;
+            let result_type = llvm_type(self.program, pending.result_abi.ty())?;
             let ComputeHandedOut {
                 frame,
                 frame_type,
@@ -926,20 +989,40 @@ impl FunctionEmitter<'_, '_> {
                 result_field,
                 ..
             } = &pending;
+            let (inline_call, save_waited) = if pending.result_abi.uses_destination() {
+                let destination = self.value_place(pending.result)?;
+                let arguments = if arguments.is_empty() {
+                    format!("ptr {destination}")
+                } else {
+                    format!("ptr {destination}, {arguments}")
+                };
+                (
+                    format!(
+                        "call void @{callee}({arguments})\n  {refused} = load {result_type}, ptr {destination}"
+                    ),
+                    format!("store {result_type} {waited}, ptr {destination}\n  "),
+                )
+            } else {
+                (
+                    format!("{refused} = call {result_type} @{callee}({arguments})"),
+                    String::new(),
+                )
+            };
             writeln!(
                 self.output,
                 "  {condition} = icmp eq ptr {frame}, null\n  \
                  br i1 {condition}, label %{inline}, label %{wait}\n\
-                 {inline}:\n  {refused} = call {result_type} @{callee}({arguments})\n  \
+                 {inline}:\n  {inline_call}\n  \
                  br label %{done}\n\
                  {wait}:\n  call void @wf__par_join(ptr {frame})\n  \
                  {field} = getelementptr inbounds {frame_type}, ptr {frame}, i32 0, i32 {result_field}\n  \
                  {waited} = load {result_type}, ptr {field}\n  \
-                 call void @wf__par_release(ptr {frame})\n  br label %{done}\n\
+                 {save_waited}call void @wf__par_release(ptr {frame})\n  br label %{done}\n\
                  {done}:\n  {} = phi {result_type} [ {refused}, %{inline} ], [ {waited}, %{wait} ]",
                 value_name(pending.result),
             )
             .map_err(|_| BackendFailure::TextEmission)?;
+            self.save_value_result(pending.result)?;
         }
         Ok(())
     }
@@ -997,19 +1080,38 @@ fn thunk_definition(
     symbol: &str,
     frame_type: &str,
     field_types: &[String],
+    abi: &FunctionAbi,
     callee: &str,
     result_type: &str,
 ) -> String {
     let mut body = format!("define internal void {symbol}(ptr %frame) {{\nentry:\n");
     let mut rendered = Vec::with_capacity(field_types.len() - 1);
-    for (index, field_type) in field_types.iter().enumerate().take(field_types.len() - 1) {
-        let _ = write!(
+    for (index, (field_type, parameter)) in field_types.iter().zip(abi.parameters()).enumerate() {
+        let _ = writeln!(
             body,
-            "  %p{index} = getelementptr inbounds {frame_type}, ptr %frame, i32 0, i32 {index}\n  %a{index} = load {field_type}, ptr %p{index}\n"
+            "  %p{index} = getelementptr inbounds {frame_type}, ptr %frame, i32 0, i32 {index}"
         );
-        rendered.push(format!("{field_type} %a{index}"));
+        if parameter.is_indirect() {
+            // The field still owns the complete argument payload. The callee
+            // snapshots this content into its own activation before mutation.
+            rendered.push(format!("ptr %p{index}"));
+        } else {
+            let _ = writeln!(body, "  %a{index} = load {field_type}, ptr %p{index}");
+            rendered.push(format!("{field_type} %a{index}"));
+        }
     }
     let field = field_types.len() - 1;
+    if abi.result().uses_destination() {
+        // Construct into the same result field the existing join path reads.
+        // No pointer to worker-local or released storage becomes the result.
+        let _ = write!(
+            body,
+            "  %slot = getelementptr inbounds {frame_type}, ptr %frame, i32 0, i32 {field}\n  call void @{callee}(ptr %slot{}{})\n  ret void\n}}\n\n",
+            if rendered.is_empty() { "" } else { ", " },
+            rendered.join(", ")
+        );
+        return body;
+    }
     let _ = write!(
         body,
         "  %result = call {result_type} @{callee}({})\n  %slot = getelementptr inbounds {frame_type}, ptr %frame, i32 0, i32 {field}\n  store {result_type} %result, ptr %slot\n  ret void\n}}\n\n",
@@ -1129,6 +1231,7 @@ pub(super) fn staged_lane_plan(
     if callee.result() != result_type || callee.parameters().len() != arguments.len() {
         return Err(BackendFailure::InvalidIr);
     }
+    let abi = FunctionAbi::build(program, callee)?;
     let mut field_types = Vec::with_capacity(arguments.len() + 1);
     for (_, parameter_type) in callee.parameters() {
         field_types.push(llvm_type(program, *parameter_type)?);
@@ -1146,6 +1249,7 @@ pub(super) fn staged_lane_plan(
     Ok(Some(StagedLane {
         result,
         result_type,
+        abi,
         result_llvm,
         callee_ordinal: *callee_ordinal,
         callee: source_symbol(callee.name()),

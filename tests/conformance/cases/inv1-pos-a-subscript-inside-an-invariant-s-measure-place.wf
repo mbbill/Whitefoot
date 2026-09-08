@@ -1,0 +1,17 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "INV-1, MSR-1: an affine factor's measure place is formed with subscripts as well as field selections, under the enclosing concrete instance and at the enclosing loop depth. The header invariant below measures one element of a run of runs, and MSR-2's standing ordering over that element's own measures is what discharges it.";
+  let inner = fixed_vector::<u8, 4>();
+  let table = fixed_vector::<FixedVector<u8, 4>, 2>();
+  let grid = place_back(vector: move table, value: move inner);
+  let seen = 0_u8;
+  for @scan (
+    at in 0_u64..1_u64,
+    invariant flat: len_of(grid[0_u64]) <= cap_of(grid[0_u64])
+  ) {
+    set seen = 1_u8;
+  }
+  if seen == 1_u8 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}

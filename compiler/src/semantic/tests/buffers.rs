@@ -1,10 +1,26 @@
+//! [OP-9] allocation fit, and the access and cleanup of the values the
+//! allocating rows produce.
+//!
+//! B7c4b moved every program that had a run twin onto the container surface:
+//! a runtime-sized allocation is `heap_vector` at a store the scope holds,
+//! which carries the same allocation-fit obligation `buffer_new` did, and a
+//! fixed-capacity one is `fixed_vector`. What stays on the retiring surface,
+//! each with the reason at its own case, is what has no twin: `buffer_fits`
+//! itself, whose spelling retires with the surface it names; the
+//! target-domain ceiling `BufferFill` and `BufferVacant` install, which no
+//! container row carries; `buffer_vacant`'s all-`None` construction; the
+//! ambient heap's empty effect row; and the [CALL-5] transport a
+//! `&uniq buffer<T>` destination selects, which [BLK-4] no longer admits at
+//! all.
+
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
 
 use super::super::entailment::{DerivationNode, GoalSign, ObligationFamily, SourceAffineFactRef};
 use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{
-    CheckedExpression, CheckedFlatElement, CheckedLayoutMagnitude, CheckedSetTarget,
-    CheckedStatement, CheckedTargetDomainObligation, CheckedType, IntegerType, NominalId,
+    CheckedElement, CheckedExpression, CheckedFlatElement, CheckedLayoutMagnitude,
+    CheckedPlaceStep, CheckedSetTarget, CheckedStatement, CheckedTargetDomainObligation,
+    CheckedType, IntegerType, NominalId,
 };
 use super::{
     assert_rule, assert_rule_kind, assert_unsupported, with_semantics, with_semantics_dark,
@@ -12,8 +28,17 @@ use super::{
 
 #[test]
 fn a_failed_length_expression_prevents_the_unreached_allocation_fit_obligation() {
-    let source = br#"fn allocate(lengths: own array<u64, 1>) -> result: own unit allocates(heap) {
-  let values = buffer_new(lengths[1_u64], 0_u8);
+    let source = br#"const lengths: FixedVector<u64, 1> =[0_u64];
+
+fn allocate(store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+  region {
+    match heap_vector::<u8>(store: &uniq deref(store), count: lengths[1_u64]) {
+      Some(value: values) => {
+      }
+      None() => {
+      }
+    }
+  }
   return unit;
 }
 
@@ -42,8 +67,15 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn allocation_fit_is_static_exact_componentized_and_contradiction_closing() {
-    let unproved = br#"fn allocate(n: own u64) -> result: own unit allocates(heap) {
-  let values = buffer_new(n, 0_u16);
+    let unproved = br#"fn allocate(n: own u64, store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+  region {
+    match heap_vector::<u16>(store: &uniq deref(store), count: n) {
+      Some(value: values) => {
+      }
+      None() => {
+      }
+    }
+  }
   return unit;
 }
 
@@ -82,9 +114,16 @@ command fn main() -> status: own ExitStatus pure {
   }
 }
 
-fn allocate(n: own u64) -> result: own unit allocates(heap) {
+fn allocate(n: own u64, store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
   let bounded = bounded_count(n: n);
-  let values = buffer_new(bounded, 0_u16);
+  region {
+    match heap_vector::<u16>(store: &uniq deref(store), count: bounded) {
+      Some(value: values) => {
+      }
+      None() => {
+      }
+    }
+  }
   return unit;
 }
 
@@ -99,10 +138,17 @@ command fn main() -> status: own ExitStatus pure {
         );
     });
 
-    let component = br#"fn allocate(n: own u64) -> result: own unit allocates(heap) {
+    let component = br#"fn allocate(n: own u64, store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
   let within = n <= 9223372036854775807_u64;
   if within {
-    let values = buffer_new(n, 0_u16);
+    region {
+      match heap_vector::<u16>(store: &uniq deref(store), count: n) {
+        Some(value: values) => {
+        }
+        None() => {
+        }
+      }
+    }
   }
   return unit;
 }
@@ -133,13 +179,20 @@ command fn main() -> status: own ExitStatus pure {
         ));
     });
 
-    let refuted = br#"fn allocate(n: own u64) -> result: own unit allocates(heap) {
+    let refuted = br#"fn allocate(n: own u64, store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
   let fits = buffer_fits::<u8>(n);
   let does_not_fit = bnot(fits);
   if does_not_fit {
     let within = n <= 18446744073709551615_u64;
     if within {
-      let values = buffer_new(n, 0_u8);
+      region {
+        match heap_vector::<u8>(store: &uniq deref(store), count: n) {
+          Some(value: values) => {
+          }
+          None() => {
+          }
+        }
+      }
     }
   }
   return unit;
@@ -173,16 +226,23 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// B7c4b left this case on the retiring surface: what it pins is the source
+/// ceiling *installed in the checked target domain*, and
+/// `CheckedRuntimeTargetObligations` is carried by `BufferFill` and
+/// `BufferVacant` alone. No container row installs one, so the migrated
+/// program has nothing to assert; the obligation-side half of the same
+/// property is pinned by the migrated ceiling cases above and below. It
+/// retires with `buffer_new`.
 #[test]
 fn allocation_fit_retains_and_installs_the_proved_source_length_ceiling() {
-    let source = br#"fn allocate(n: own u64) -> result: own unit allocates(heap) contract {
+    let source = br#"fn allocate(n: own u64) -> result: own unit pure contract {
   requires n <= 1000_u64;
 } {
   let values = buffer_new(n, 0_u16);
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   allocate(n: 4_u64);
   return exit_status(code: 0_u8);
 }
@@ -217,10 +277,16 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     });
 }
 
+/// B7c4b left this case on the retiring surface: what it pins is the source
+/// ceiling *installed in the checked target domain*, and
+/// `CheckedRuntimeTargetObligations` is carried by `BufferFill` and
+/// `BufferVacant` alone. No container row installs one, so the migrated
+/// program has nothing to assert; the obligation-side half of the same
+/// property is pinned by the migrated ceiling cases above and below. It
+/// retires with `buffer_new`.
 #[test]
 fn a_local_invariant_allocation_ceiling_is_installed_in_the_target_domain() {
-    let source =
-        br#"fn allocate(n: own u64, middle: own u64) -> result: own unit allocates(heap) contract {
+    let source = br#"fn allocate(n: own u64, middle: own u64) -> result: own unit pure contract {
   requires n <= middle;
   requires middle <= 1000_u64;
 } {
@@ -229,7 +295,7 @@ fn a_local_invariant_allocation_ceiling_is_installed_in_the_target_domain() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   allocate(n: 4_u64, middle: 5_u64);
   return exit_status(code: 0_u8);
 }
@@ -266,15 +332,21 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 
 #[test]
 fn an_affine_invariant_supplies_the_only_tight_allocation_ceiling() {
-    let source =
-        br#"fn allocate(n: own u64, half: own u64) -> result: own unit allocates(heap) contract {
+    let source = br#"fn allocate(n: own u64, half: own u64, store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) contract {
   requires half <= 500_u64;
 } {
   let doubled = half * 2_u64;
   let within = n <= doubled;
   if within {
     invariant tight: n <= 1000_u64;
-    let values = buffer_new(n, 0_u16);
+    region {
+      match heap_vector::<u16>(store: &uniq deref(store), count: n) {
+        Some(value: values) => {
+        }
+        None() => {
+        }
+      }
+    }
   }
   return unit;
 }
@@ -320,10 +392,17 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_ordinary_branch_fact_gives_the_allocation_ceiling() {
-    let source = br#"fn allocate(n: own u64) -> result: own unit allocates(heap) {
+    let source = br#"fn allocate(n: own u64, store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
   let within = n <= 777_u64;
   if within {
-    let values = buffer_new(n, 0_u16);
+    region {
+      match heap_vector::<u16>(store: &uniq deref(store), count: n) {
+        Some(value: values) => {
+        }
+        None() => {
+        }
+      }
+    }
   }
   return unit;
 }
@@ -356,16 +435,25 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_exact_buffer_fits_fact_retains_its_language_ceiling_when_no_tighter_bound_exists() {
-    let source = br#"fn allocate(n: own u64) -> result: own unit allocates(heap) {
+    let source = br#"fn allocate(n: own u64, store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
   let fits = buffer_fits::<u16>(n);
   if fits {
-    let values = buffer_new(n, 0_u16);
+    region {
+      match heap_vector::<u16>(store: &uniq deref(store), count: n) {
+        Some(value: values) => {
+        }
+        None() => {
+        }
+      }
+    }
   }
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
-  allocate(n: 4_u64);
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    allocate(n: 4_u64, store: &uniq heap);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -393,6 +481,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     });
 }
 
+/// B7c4b left this case on the retiring surface: `buffer_fits`'s admitted
+/// type domain *is* `array<T, n>` and `buffer<T>`, and the row refuses a run
+/// argument at [OP-1]. The predicate's spelling retires with the surface it
+/// names.
 #[test]
 fn buffer_fits_admits_direct_region_free_array_and_buffer_types() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
@@ -428,9 +520,12 @@ fn buffer_fits_admits_direct_region_free_array_and_buffer_types() {
     });
 }
 
+/// B7c4b left this case on the retiring surface: both halves read a layout
+/// ceiling off a row that retires — `buffer_fits`'s type domain and
+/// `buffer_vacant`'s allocation record — and neither has a container twin.
 #[test]
 fn zero_length_arrays_have_the_empty_sequence_layout_ceiling() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let array_fit = buffer_fits::<array<u64, 0>>(18446744073709551615_u64);
   let slots = buffer_vacant::<array<u64, 0>>(0_u64);
   return exit_status(code: 0_u8);
@@ -473,15 +568,20 @@ fn zero_length_arrays_have_the_empty_sequence_layout_ceiling() {
     });
 }
 
+/// B7c4b left this case on the retiring surface: its subject is the ambient
+/// heap's own family — `reaches_ambient_heap`, the `BufferFill` record and
+/// the two target domains it installs — none of which a store-backed run
+/// has. The run twin of its access and cleanup half is
+/// `struct_run_paths_and_declaration_order_cleanup_are_explicit` below.
 #[test]
 fn primitive_buffers_retain_allocation_checks_accesses_and_cleanup() {
-    let source = br#"fn make() -> result: own buffer<u16> allocates(heap) {
+    let source = br#"fn make() -> result: own buffer<u16> pure {
   return buffer_new(4_u64, 3_u16);
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let values = make();
-  let length = len(values);
+  let length = len_of(values);
   let ok = 2_u64 < length;
   if ok {
   } else {
@@ -497,7 +597,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
             panic!("primitive buffer family must check: {outcome:?}");
         };
         let make = &checked.data.functions[0];
-        assert!(make.declared_allocates_heap);
+        assert!(make.reaches_ambient_heap);
         assert!(matches!(
             &make.body[0],
             CheckedStatement::Return {
@@ -516,7 +616,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         ));
 
         let main = &checked.data.functions[1];
-        assert!(main.declared_allocates_heap);
+        assert!(main.reaches_ambient_heap);
 
         let CheckedStatement::Set { target, .. } = &main.body[4] else {
             panic!("the statement after the dominating length branch must be indexed SET-1");
@@ -543,7 +643,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         assert!(matches!(
             &main.body[1],
             CheckedStatement::Let {
-                value: CheckedExpression::BufferLength { .. },
+                value: CheckedExpression::BufferMeasure { .. },
                 ..
             }
         ));
@@ -571,29 +671,47 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     });
 }
 
+/// [EFF-1, S23] the ambient heap has no provider value, so no `effect_path`
+/// names it and a `buffer_new` body carries no allocation entry at all: the
+/// exact row of such a body is `pure`, and there is no second spelling for
+/// [EFF-2] to check it against.
+///
+/// This test used to check that row both ways over the retired `heap` atom.
+/// The both-ways judgment is unchanged and is exercised here over the store
+/// whose provider *is* a value: a `heap_vector` body that declares only
+/// `reads` and `writes` is missing its `allocates`, and the same body that
+/// declares all three is accepted.
+/// The ambient half stays on the retiring surface: the ambient heap is the
+/// one store with no provider value, which is exactly what the case pins, and
+/// it has no container twin. The store half is already written over
+/// `heap_vector`.
 #[test]
-fn buffer_effect_rows_are_checked_both_ways() {
-    assert_rule_kind(
+fn an_ambient_allocation_writes_no_row_and_a_store_take_is_checked_both_ways() {
+    with_semantics(
         b"command fn main() -> status: own ExitStatus pure {\n  let values = buffer_new(2_u64, 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
+        |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
+    );
+    assert_rule_kind(
+        b"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap) {\n  region {\n    match heap_vector::<u8>(store: &uniq heap, count: 2_u64) {\n      None() => {\n        return exit_status(code: 1_u8);\n      }\n      Some(value: run) => {\n        return exit_status(code: 0_u8);\n      }\n    }\n  }\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
     with_semantics(
-        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let values = buffer_new(2_u64, 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {\n  region {\n    match heap_vector::<u8>(store: &uniq heap, count: 2_u64) {\n      None() => {\n        return exit_status(code: 1_u8);\n      }\n      Some(value: run) => {\n        return exit_status(code: 0_u8);\n      }\n    }\n  }\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
-    );
-    assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  return exit_status(code: 0_u8);\n}\n",
-        SemanticRule::Eff2,
-        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
 }
 
+/// B7c4b left the three `buffer_vacant` cases on the retiring surface: no
+/// container row constructs an all-`None` run from a written payload type,
+/// and none installs the target domains this record carries. The run form of
+/// the same idea is `vacant<T, n>` in `tests/programs/fixed_run_library.wf`,
+/// which is ordinary source rather than a row.
 #[test]
 fn buffer_vacant_constructs_an_all_none_affine_element_buffer() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let slots = buffer_vacant::<box<u64>>(3_u64);
-  let count = len(slots);
+  let count = len_of(slots);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -638,34 +756,33 @@ fn buffer_vacant_constructs_an_all_none_affine_element_buffer() {
         assert!(matches!(
             &main.body[1],
             CheckedStatement::Let {
-                value: CheckedExpression::BufferLength { .. },
+                value: CheckedExpression::BufferMeasure { .. },
                 ..
             }
         ));
     });
 }
 
+/// The `effect row` half of this test's old name is gone with [EFF-1]'s
+/// `heap` atom [S23]: `buffer_vacant`'s allocation is from the ambient heap,
+/// which has no provider value and therefore no `effect_path`, so the row it
+/// contributes is empty and the accepted declaration is `pure`. What the test
+/// still holds is the written payload and the one operand [TYPE-5].
 #[test]
-fn buffer_vacant_requires_its_written_payload_and_effect_row() {
+fn buffer_vacant_requires_its_written_payload_and_operand() {
     // [TYPE-5]: the element payload type is a retained written argument.
     assert_rule(
-        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let slots = buffer_vacant(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let slots = buffer_vacant(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         SemanticIssueKind::InvalidOperation,
     );
-    // [EFF-2]: allocation is the only effect; OP-9 is statically discharged.
-    assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus pure {\n  let slots = buffer_vacant::<u32>(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
-        SemanticRule::Eff2,
-        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
-    );
     with_semantics(
-        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let slots = buffer_vacant::<u32>(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let slots = buffer_vacant::<u32>(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     // [TYPE-5]: the one operand is the own u64 length.
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let slots = buffer_vacant::<u32>(3_u32);\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let slots = buffer_vacant::<u32>(3_u32);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -674,8 +791,8 @@ fn buffer_vacant_requires_its_written_payload_and_effect_row() {
 #[test]
 fn buffer_vacant_rejects_a_region_bearing_payload_under_stor5() {
     assert_rule(
-        br#"fn invalid(value: own slice<u8>) -> result: own unit allocates(heap) {
-  let slots = buffer_vacant::<slice<u8>>(2_u64);
+        br#"fn invalid(value: own Slice<u8>) -> result: own unit pure {
+  let slots = buffer_vacant::<Slice<u8>>(2_u64);
   return unit;
 }
 
@@ -685,7 +802,7 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         SemanticRule::Stor5,
         SemanticIssueKind::RegionBearingStorage {
-            mechanical_fix: "keep the slice or arena as a direct local, parameter, or result; do not store it inside another value",
+            mechanical_fix: "keep the slice, arena, or provider as a direct local, parameter, or result; do not store it inside another value",
         },
     );
 }
@@ -695,8 +812,8 @@ fn affine_element_views_and_structural_composites_stop_explicitly() {
     // A slice over an affine-element buffer has no implemented in-place
     // read; it stops as capability, not as a source rejection.
     assert_unsupported(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
-  let slots = buffer_vacant::<u32>(4_u64);
+        br#"command fn main() -> status: own ExitStatus pure {
+  let slots = fixed_vector::<Option<u32>, 4>();
   region {
     let view = slice_of(&slots);
   }
@@ -707,6 +824,11 @@ fn affine_element_views_and_structural_composites_stop_explicitly() {
     );
     // A structural affine element (a nested buffer) is spec-formable
     // [TYPE-2] but has no implemented representation.
+    //
+    // B7c4b left this half on the retiring surface: a run *of* runs is an
+    // ordinary [BLK-1] element (`CheckedElement::FixedVector`) and is
+    // accepted, so the migrated declaration records no stop at all. The
+    // property is `buffer<T>`'s own and retires with it.
     assert_unsupported(
         br#"fn keep(value: own buffer<buffer<u8>>) -> result: own unit pure {
   return unit;
@@ -720,6 +842,9 @@ command fn main() -> status: own ExitStatus pure {
     );
 }
 
+/// B7c4b left this case on the retiring surface: [TYPE-2]'s flat-element
+/// restriction is `array<T, n>`'s own, and a run admits an affine element, so
+/// the migrated declaration records no rejection.
 #[test]
 fn array_elements_stay_copy_only_under_type2() {
     with_semantics(
@@ -740,77 +865,104 @@ command fn main() -> status: own ExitStatus pure {
     );
 }
 
+/// B7c4b left this case on the retiring surface: it is `buffer_new`'s own
+/// operation domain, and no container row selects its element from a fill
+/// value at all.
 #[test]
 fn buffer_new_keeps_its_primitive_only_operation_domain() {
     assert_rule(
-        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let initial = False();\n  let values = buffer_new(2_u64, initial);\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let initial = False();\n  let values = buffer_new(2_u64, initial);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
 }
 
 #[test]
-fn struct_buffer_paths_and_reverse_cleanup_are_explicit() {
+fn struct_run_paths_and_declaration_order_cleanup_are_explicit() {
     let source = br#"struct Columns {
-  left: buffer<u64>;
-  right: buffer<u64>;
+  left: FixedVector<u64, 4>;
+  right: FixedVector<u64, 4>;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
-  let left = buffer_new(4_u64, 0_u64);
-  let right = buffer_new(4_u64, 0_u64);
+command fn main() -> status: own ExitStatus pure {
+  let left = fixed_vector::<u64, 4>();
+  for @fill_left (
+    at in 0_u64..4_u64,
+    invariant grown: len_of(left) >= at,
+    invariant spare: room_of(left) + at >= 4_u64,
+    invariant flat: head_of(left) <= 0_u64
+  ) {
+    set left = place_back(vector: move left, value: 0_u64);
+  }
+  let right = fixed_vector::<u64, 4>();
+  for @fill_right (
+    at in 0_u64..4_u64,
+    invariant grown: len_of(right) >= at,
+    invariant spare: room_of(right) + at >= 4_u64,
+    invariant flat: head_of(right) <= 0_u64
+  ) {
+    set right = place_back(vector: move right, value: 0_u64);
+  }
   let columns = Columns(left: move left, right: move right);
-  let left_room = len(columns.left);
+  let left_room = len_of(columns.left);
   let ok = 2_u64 < left_room;
   if ok {
     set columns.left[2_u64] = 7_u64;
     let value = columns.left[2_u64];
   }
-  let length = len(columns.right);
+  let length = len_of(columns.right);
   return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("struct-of-buffers must check: {outcome:?}");
+            panic!("struct-of-runs must check: {outcome:?}");
         };
         let main = &checked.data.functions[0];
-        let CheckedStatement::Match { arms, .. } = &main.body[5] else {
+        // Each run costs two statements where `buffer_new` cost one, so the
+        // proved branch is the eighth statement rather than the sixth.
+        let CheckedStatement::Match { arms, .. } = &main.body[7] else {
             panic!("the proved branch must retain its checked control-flow statement");
         };
         let CheckedStatement::Set { target, .. } = &arms[0].body[0] else {
             panic!("the true branch must contain projected indexed SET-1");
         };
-        let CheckedSetTarget::BufferIndex(target) = target else {
-            panic!("SET-1 must retain a projected buffer root");
+        let CheckedSetTarget::Storage(target) = target else {
+            panic!("SET-1 must retain a projected run root");
         };
-        assert_eq!(target.root.fields, [0]);
+        assert!(matches!(
+            target.path.as_slice(),
+            [CheckedPlaceStep::Field(0), CheckedPlaceStep::Subscript(_)]
+        ));
         assert!(matches!(
             &arms[0].body[1],
             CheckedStatement::Let {
-                value: CheckedExpression::BufferIndex { root, .. },
+                value: CheckedExpression::ReadStorage { root, .. },
                 ..
-            } if root.fields == [0]
+            } if matches!(root.path.as_slice(), [CheckedPlaceStep::Field(0), CheckedPlaceStep::Subscript(_)])
         ));
         assert!(matches!(
-            &main.body[6],
+            &main.body[8],
             CheckedStatement::Let {
-                value: CheckedExpression::BufferLength { root, .. },
+                value: CheckedExpression::ContainerMeasure { root, .. },
                 ..
-            } if root.fields == [1]
+            } if root.path == [CheckedPlaceStep::Field(1)]
         ));
-        let CheckedStatement::Return { drops, .. } = &main.body[7] else {
+        let CheckedStatement::Return { drops, .. } = &main.body[9] else {
             panic!("main must end in return");
         };
         assert_eq!(drops.len(), 3);
-        assert_eq!(drops[0].fields, [1]);
+        // PROV-6 visits struct fields in declaration order. STOR-3's
+        // reverse declaration order applies to bindings, not these fields.
+        assert_eq!(drops[0].fields, [0]);
         assert_eq!(
             drops[0].ty,
-            CheckedType::Buffer {
-                element: CheckedFlatElement::Integer(IntegerType::U64),
+            CheckedType::FixedVector {
+                element: CheckedElement::Flat(CheckedFlatElement::Integer(IntegerType::U64)),
+                length: super::super::model::CheckedConst::Value(4),
             }
         );
-        assert_eq!(drops[1].fields, [0]);
+        assert_eq!(drops[1].fields, [1]);
         assert_eq!(drops[1].ty, drops[0].ty);
         assert!(drops[2].fields.is_empty());
         assert_eq!(drops[2].ty, CheckedType::Nominal(NominalId(0)));
@@ -820,7 +972,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 #[test]
 fn resource_bearing_enum_owners_have_one_variant_dependent_drop() {
     with_semantics(
-        b"enum MaybeBuffer {\n  Empty();\n  Full(value: buffer<u8>);\n}\n\nfn abandon(value: own MaybeBuffer) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum MaybeRun {\n  Empty();\n  Full(value: FixedVector<u8, 2>);\n}\n\nfn abandon(value: own MaybeRun) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(checked) = outcome else {
                 panic!("resource-bearing enum payload must check: {outcome:?}");
@@ -839,17 +991,17 @@ fn resource_bearing_enum_owners_have_one_variant_dependent_drop() {
 #[test]
 fn nested_partial_move_skips_the_moved_subtree_in_structural_drop_order() {
     let source = br#"struct Pair {
-  first: buffer<u8>;
-  second: buffer<u8>;
+  first: FixedVector<u8, 2>;
+  second: FixedVector<u8, 2>;
 }
 
 struct Owner {
-  prefix: buffer<u8>;
+  prefix: FixedVector<u8, 2>;
   pair: Pair;
-  suffix: buffer<u8>;
+  suffix: FixedVector<u8, 2>;
 }
 
-fn take(owner: own Owner) -> result: own buffer<u8> pure {
+fn take(owner: own Owner) -> result: own FixedVector<u8, 2> pure {
   return move owner.pair.first;
 }
 
@@ -859,7 +1011,7 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("projected buffer move must check: {outcome:?}");
+            panic!("projected run move must check: {outcome:?}");
         };
         let CheckedStatement::Return {
             value: CheckedExpression::Project { residual_drops, .. },
@@ -869,19 +1021,25 @@ command fn main() -> status: own ExitStatus pure {
             panic!("take must return one ownership-consuming projection");
         };
         assert_eq!(residual_drops.len(), 3);
-        assert_eq!(residual_drops[0].fields, [2]);
+        // PROV-6 visits prefix, the surviving nested field, then suffix;
+        // the moved subtree contributes no release at any depth.
+        assert_eq!(residual_drops[0].fields, [0]);
         assert_eq!(residual_drops[1].fields, [1, 1]);
-        assert_eq!(residual_drops[2].fields, [0]);
+        assert_eq!(residual_drops[2].fields, [2]);
     });
 }
 
 #[test]
 fn region_bearing_buffer_content_rejects_under_stor5() {
     let expected = SemanticIssueKind::RegionBearingStorage {
-        mechanical_fix: "keep the slice or arena as a direct local, parameter, or result; do not store it inside another value",
+        mechanical_fix: "keep the slice, arena, or provider as a direct local, parameter, or result; do not store it inside another value",
     };
+    // B7c4b left the declaration half on the retiring surface: a run whose
+    // element is a view stops earlier as an unsupported composite value,
+    // which is a different verdict from this refusal. It retires with
+    // `buffer<T>`.
     assert_rule(
-        br#"fn invalid(value: own buffer<slice<u8>>) -> result: own unit pure {
+        br#"fn invalid(value: own buffer<Slice<u8>>) -> result: own unit pure {
   return unit;
 }
 
@@ -892,17 +1050,18 @@ command fn main() -> status: own ExitStatus pure {
         SemanticRule::Stor5,
         expected.clone(),
     );
-    // The operation half. In v0.22 this was `buffer_new::<slice<'r, u8>>(…)`,
+    // The operation half. In v0.22 this was `buffer_new::<Slice<'r, u8>>(…)`,
     // whose *written* element carried the violation and was cited at the
     // `targ`; A1 deletes that argument [OP-9], and a region-bearing fill is
     // then caught by the flat-element requirement citing OP-1 before STOR-5 is
-    // reached. [STOR-5] names `box_new` and `arena_new` — not `buffer_new` —
-    // as the derived-content path it owns, and `box_new`'s content type is
-    // derived from its operand [STOR-2, OP-2], so that is where the recorded
-    // rule and kind still fire, at the operand atom the rule names.
+    // reached. [STOR-5] owns the derived-content path of a cell, whose content
+    // type comes from its operand [S39], so that is where the recorded rule
+    // and kind still fire, at the operand atom the rule names.
     assert_rule(
-        br#"fn invalid(value: own slice<u8>) -> result: own unit allocates(heap) {
-  box_new(move value);
+        br#"fn invalid(value: own Slice<u8>, store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+  region {
+    heap_box(store: &uniq deref(store), value: value);
+  }
   return unit;
 }
 
@@ -915,27 +1074,35 @@ command fn main() -> status: own ExitStatus pure {
     );
 }
 
-/// [ENT-5]'s element-storage exception holds across a callee boundary: one
-/// `len` bound above every write still discharges a later requirement.
+/// [CALL-3]'s viewed range holds across a callee boundary: one length bound
+/// above every write still discharges a later requirement.
 ///
-/// The rule says "for each length term `len(P)`, the root binding of `P` but
-/// not `P`'s element storage", so an element write never kills a length fact.
-/// A writer reading the rule's kill clause concluded the opposite and re-bound
-/// `len` after every call that wrote through a `&uniq` parameter: 34 of the 41
+/// A writer reading [ENT-5]'s kill clause concluded that every callee write
+/// killed the caller's length and re-bound it after each call: 34 of the 41
 /// length bindings in five programs existed only to re-establish a fact that
-/// had never died. Nothing in the tree showed a length fact surviving a write,
-/// so the belief cost them nothing the compiler could tell them about.
+/// had never died. What decides it is the callee's declared parameter and
+/// nothing else [CALL-5]. A `&uniq MutSlice<u8>` destination is a viewed range,
+/// so the write reaches element storage only and every measure the caller
+/// retained stands; a `&uniq buffer<u8>` destination selects no transport, so
+/// the same body costs its caller the length. Both halves are checked here.
 ///
-/// The second half is what makes the first half worth stating: the guard is
-/// load-bearing. Without any live length fact the call is undischarged, so the
-/// hoisted fact is doing real work rather than being redundant ceremony.
+/// The third is what makes the first worth stating: the guard is load-bearing.
+/// Without any live length fact the call is undischarged, so the hoisted fact
+/// is doing real work rather than being redundant ceremony.
+///
+/// B7c4b moved the first half to the container surface — the destination is a
+/// view of a store-resident run and the consumed prefix is a view of the same
+/// run — and left the second and third there, because their subject is the
+/// transport a `&uniq buffer<T>` destination does *not* select and [BLK-4]
+/// admits no `&uniq` that reaches a run at all. They retire with the
+/// spelling.
 #[test]
-fn a_hoisted_length_fact_survives_a_callee_element_write() {
+fn a_hoisted_length_fact_survives_a_callee_write_through_a_view() {
     with_semantics(
-        br#"fn fill(destination: &uniq buffer<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
-  doc "Writes one byte through the borrow and returns the next position.";
-  let room = len(deref(destination));
-  let inside = at < room;
+        br#"fn fill(destination: &uniq MutSlice<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
+  doc "Writes one byte through the view and returns the next position.";
+  let spare = len_of(deref(destination));
+  let inside = at < spare;
   if inside {
     set deref(destination)[at] = 65_u8;
   }
@@ -943,31 +1110,42 @@ fn a_hoisted_length_fact_survives_a_callee_element_write() {
   return next;
 }
 
-fn emit(source: &buffer<u8>, length: own u64) -> result: own u64 reads(source) contract {
-  define capacity = len(deref(source));
+fn emit(source: own Slice<u8>, length: own u64) -> result: own u64 reads(source) contract {
+  define capacity = len_of(source);
   requires length <= capacity;
 } {
   doc "Consumes a prefix whose length the caller has proved.";
   let first = 0_u8;
   let present = 0_u64 < length;
   if present {
-    set first = deref(source)[0_u64];
+    set first = source[0_u64];
   }
   return length;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
-  doc "Emits a prefix without a live length fact.";
-  let line = buffer_new(64_u64, 0_u8);
-  let room = len(line);
-  let end = 0_u64;
-  region {
-    set end = fill(destination: &uniq line, at: end);
-  }
-  let fits = end <= room;
-  if fits {
+command fn main() -> status: own ExitStatus pure {
+  doc "Emits a prefix bounded by a length the view write left standing.";
+  region 'a {
+    let workspace = arena_frame::<64, 8, 'a>();
     region {
-      let sent = emit(source: &line, length: end);
+      let line = arena_vector_proved::<u8>(store: &uniq workspace, count: 64_u64);
+      let spare = len_of(line);
+      let end = 0_u64;
+      region {
+        let window = mut_slice_of(&uniq line);
+        region {
+          set end = fill(destination: &uniq window, at: end);
+        }
+      }
+      let fits = end <= spare;
+      if fits {
+        region {
+          let view = slice_of(&line);
+          region {
+            let sent = emit(source: view, length: end);
+          }
+        }
+      }
     }
   }
   return exit_status(code: 0_u8);
@@ -975,15 +1153,15 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 "#,
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
-                panic!("a length fact bound above the write must survive it: {outcome:?}");
+                panic!("a length fact bound above a view write must survive it: {outcome:?}");
             };
         },
     );
     with_semantics(
         br#"fn fill(destination: &uniq buffer<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
   doc "Writes one byte through the borrow and returns the next position.";
-  let room = len(deref(destination));
-  let inside = at < room;
+  let spare = len_of(deref(destination));
+  let inside = at < spare;
   if inside {
     set deref(destination)[at] = 65_u8;
   }
@@ -992,7 +1170,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 }
 
 fn emit(source: &buffer<u8>, length: own u64) -> result: own u64 reads(source) contract {
-  define capacity = len(deref(source));
+  define capacity = len_of(deref(source));
   requires length <= capacity;
 } {
   doc "Consumes a prefix whose length the caller has proved.";
@@ -1004,7 +1182,7 @@ fn emit(source: &buffer<u8>, length: own u64) -> result: own u64 reads(source) c
   return length;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "Emits a prefix without a live length fact.";
   let line = buffer_new(64_u64, 0_u8);
   let end = 0_u64;
@@ -1024,22 +1202,78 @@ command fn main() -> status: own ExitStatus allocates(heap) {
             assert_eq!(issue.rule(), SemanticRule::Fn8);
         },
     );
+    // [CALL-5] the same body at a `&uniq buffer<u8>` destination selects no
+    // transport, so hoisting the length above the write does not save it.
+    with_semantics(
+        br#"fn fill(destination: &uniq buffer<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
+  doc "Writes one byte through the borrow and returns the next position.";
+  let spare = len_of(deref(destination));
+  let inside = at < spare;
+  if inside {
+    set deref(destination)[at] = 65_u8;
+  }
+  let next = at +wrap 1_u64;
+  return next;
+}
+
+fn emit(source: &buffer<u8>, length: own u64) -> result: own u64 reads(source) contract {
+  define capacity = len_of(deref(source));
+  requires length <= capacity;
+} {
+  doc "Consumes a prefix whose length the caller has proved.";
+  let first = 0_u8;
+  let present = 0_u64 < length;
+  if present {
+    set first = deref(source)[0_u64];
+  }
+  return length;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "Hoists the length above a write the callee makes through a unique buffer borrow.";
+  let line = buffer_new(64_u64, 0_u8);
+  let spare = len_of(line);
+  let end = 0_u64;
+  region {
+    set end = fill(destination: &uniq line, at: end);
+  }
+  let fits = end <= spare;
+  if fits {
+    region {
+      let sent = emit(source: &line, length: end);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        |outcome| {
+            let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("an unselected transport must cost the caller its length: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), SemanticRule::Fn8);
+        },
+    );
 }
 
 #[test]
 fn an_indexed_buffer_fits_guard_discharges_the_same_allocation_goal() {
-    let source =
-        br#"fn make_buffer(lengths: own array<u64, 1>) -> result: own buffer<u8> allocates(heap) {
+    let source = br#"const lengths: FixedVector<u64, 1> =[1_u64];
+
+fn make_run(store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
   if buffer_fits::<u8>(lengths[0_u64]) {
-    return buffer_new(lengths[0_u64], 0_u8);
-  } else {
-    return buffer_new(0_u64, 0_u8);
+    region {
+      match heap_vector::<u8>(store: &uniq deref(store), count: lengths[0_u64]) {
+        Some(value: values) => {
+        }
+        None() => {
+        }
+      }
+    }
   }
+  return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
-  let lengths = array_new::<u64, 1>(1_u64);
-  let result = make_buffer(lengths: move lengths);
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1047,13 +1281,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("the indexed predicate and allocation must share one exact goal: {outcome:?}");
         };
-        let make_buffer = checked
+        let make_run = checked
             .data
             .functions
             .iter()
-            .find(|function| function.name == "make_buffer")
-            .expect("make_buffer is checked");
-        let indexed = make_buffer
+            .find(|function| function.name == "make_run")
+            .expect("make_run is checked");
+        let indexed = make_run
             .entailment
             .obligations
             .iter()

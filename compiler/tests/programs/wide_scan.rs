@@ -11,6 +11,29 @@
 //! fixed input/output/status triples;
 //! the compiler has no optimizer-fact channel, so this single ordinary
 //! mode is the facts-off mode.
+//!
+//! **LEFT ON `buffer<T>` DELIBERATELY, and the reason is the probe itself.**
+//! The subject of this oracle is the wide probe, and the wide probe is a
+//! buffer-only lowering at both ends: the recognizer matches a
+//! `CheckedExpression::BufferIndex` walk and nothing else, and the emitter
+//! refuses any operand whose IR type is not `IrType::Buffer`. A run walk is
+//! therefore not recognized at all, so a migrated oracle would assert three
+//! wide loads and find none, and the case would stop being evidence of
+//! anything.
+//!
+//! Extending the probe to a run is not a rename. A buffer is one contiguous
+//! range whose descriptor's second word is its length, which is exactly what
+//! the probe's window guard reads; a run is a *window* — `len_of` slots
+//! beginning at `head_of` modulo `cap_of` [BLK-1] — so `base + index` is the
+//! right address only where `head_of` is proved identically zero, and the
+//! guard needs the run's own three measure words rather than one. That is a
+//! backend change with its own proof obligation and its own cases, and it is
+//! a precondition of the retirement rather than part of this batch.
+//!
+//! The other two blockers this file was expected to have are real but
+//! secondary: `publish_all`'s `&uniq buffer<u8>` source becomes a
+//! `&Slice<u8>` and every fixture becomes a store take, which needs a
+//! `command.heap` entry row.
 
 use super::support::{build_program, compile_sources, fixture_directory};
 
@@ -22,7 +45,7 @@ const ORACLE: &[u8] = br#"fn opaque_length(n: own u64) -> result: own u64 pure c
 }
 
 fn publish_all(output: &uniq OutputStream, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
-  define source_length = len(deref(source));
+  define source_length = len_of(deref(source));
   requires length <= source_length;
 } {
   doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
@@ -47,7 +70,7 @@ fn publish_all(output: &uniq OutputStream, source: &buffer<u8>, length: own u64)
   return Ok<unit, IoError>(value: unit);
 }
 
-command fn main(command.args as args: own Args, command.stdout as out: own OutputStream) -> status: own ExitStatus reads(args, out), writes(out), allocates(heap) {
+command fn main(command.args as args: own Args, command.stdout as out: own OutputStream) -> status: own ExitStatus reads(args, out), writes(out) {
   doc "Runs three equivalence byte walks, publishes their recorded positions, then runs one argument-selected boundary walk with a typed exhaustion status.";
   let selector = 111_u8;
   let choice = buffer_new(8_u64, 0_u8);
@@ -83,7 +106,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   let found = buffer_new(64_u64, 0_u8);
   let count = 0_u64;
   let mark = 88_u8;
-  let stop = len(data);
+  let stop = len_of(data);
   let cursor = 0_u64;
   loop @first_walk {
     let done = cursor >= stop;
@@ -133,7 +156,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     return exit_status(code: 6_u8);
   }
   let blank = buffer_new(40_u64, 97_u8);
-  let blank_stop = len(blank);
+  let blank_stop = len_of(blank);
   let blank_cursor = 0_u64;
   loop @second_walk {
     let blank_done = blank_cursor >= blank_stop;
@@ -207,7 +230,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   } else {
     return exit_status(code: 6_u8);
   }
-  let phase_room = len(found);
+  let phase_room = len_of(found);
   let phase_fits = count <= phase_room;
   if phase_fits {
     region {
@@ -222,7 +245,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   if selector == 102_u8 {
     let empty_length = opaque_length(n: 0_u64);
     let empty = buffer_new(empty_length, 0_u8);
-    let empty_room = len(empty);
+    let empty_room = len_of(empty);
     let empty_bound = 5_u64;
     let empty_cursor = 0_u64;
     loop @empty_walk {
@@ -247,7 +270,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     set field[21_u64] = 88_u8;
     set field[36_u64] = 89_u8;
     let scratch = buffer_new(1_u64, 0_u8);
-    let field_room = len(field);
+    let field_room = len_of(field);
     let wall = 64_u64;
     let probe = 0_u64;
     loop @bounded_walk {

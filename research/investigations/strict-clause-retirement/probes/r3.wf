@@ -12,7 +12,7 @@ deny_claims fn ping(values: own array<u8, 4>, index: own u64, fuel: own u64) -> 
 
 fn pong(values: own array<u8, 4>, index: own u64, fuel: own u64) -> own u8 traps {
   doc "The SCC sibling holding the claim.";
-  let room = len(values);
+  let room = len_of(values);
   claim inside: ilt(index, room) because "the caller passes a bounded index";
   let result = ping(values: move values, index: index, fuel: fuel);
   return result;

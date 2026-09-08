@@ -2,7 +2,7 @@ struct Held {
   v: i32;
 }
 
-fn pick<T>(value: own T) -> result: own T pure {
+fn pick<T: affine>(value: own T) -> result: own T pure {
   doc "A generic fn declaring one type parameter [FN-2].";
   return move value;
 }

@@ -26,8 +26,8 @@ fn measure_words(words: &buffer<f64>, kern: &buffer<f64>, count: own u64, font: 
   let min_width = 0.0_f64;
   let max_width = 0.0_f64;
   let k = 0_u64;
-  let room = len(deref(words));
-  let kroom = len(deref(kern));
+  let room = len_of(deref(words));
+  let kroom = len_of(deref(kern));
   loop @scan {
     let done = ieq(k, count);
     if done {

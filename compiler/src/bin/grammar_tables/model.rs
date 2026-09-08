@@ -84,6 +84,7 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("contract", "Contract"),
         ("define", "Define"),
         ("when", "When"),
+        ("is", "Is"),
         ("law", "Law"),
         ("conform", "Conform"),
         ("const", "Const"),
@@ -105,7 +106,8 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("f64", "F64"),
         ("unit", "Unit"),
         ("array", "Array"),
-        ("slice", "Slice"),
+        ("Slice", "Slice"),
+        ("MutSlice", "MutSlice"),
         ("box", "Box"),
         ("arena", "Arena"),
         ("buffer", "Buffer"),
@@ -131,7 +133,6 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("reads", "Reads"),
         ("writes", "Writes"),
         ("allocates", "Allocates"),
-        ("heap", "Heap"),
         ("as", "As"),
         // FLOOR-5 additions: `if` plus the twenty `infix_op` spellings.
         // `else` already exists for statement and value conditionals. Verified
@@ -173,6 +174,13 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("<=", "LessEqual"),
         (">=", "GreaterEqual"),
         ("::", "ColonColon"),
+        // v0.45 [PROV-6]: the declaration modifier, the linearity bound
+        // alternatives, and the early-release statement.
+        ("linear", "Linear"),
+        ("affine", "Affine"),
+        ("copy", "Copy"),
+        ("dispose", "Dispose"),
+        // v0.48 [PRF-1]: the cited-premise multiplicity atom.
         ("times", "Times"),
     ];
     if spelling == "[0-9]+" {

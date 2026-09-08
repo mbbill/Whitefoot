@@ -1,6 +1,11 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: cursor resets to 0 once when a marker is seen, then continues within bounds";
-  let data = array_new::<u8, 5>(0_u8);
+  let data = fixed_vector::<u8, 5>();
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
   set data[0_u64] = 1_u8;
   set data[1_u64] = 9_u8;
   set data[2_u64] = 3_u8;

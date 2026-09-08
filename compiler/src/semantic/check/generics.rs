@@ -10,36 +10,49 @@ use crate::{
 
 use super::super::goal::{CheckedRequirement, GoalDatum, GoalExpression, GoalOperation};
 use super::super::model::{
-    CheckedConst, CheckedFlatElement, CheckedGenericRequirement, CheckedNominalKind, CheckedType,
-    CheckedValue, FloatType, IntegerType, NominalId,
+    CheckedConst, CheckedElement, CheckedFlatElement, CheckedGenericRequirement,
+    CheckedNominalKind, CheckedType, CheckedValue, FloatType, IntegerType, LoanStrength, NominalId,
 };
 use super::{
     CheckStop, Checker, FunctionSignature, FunctionTemplate, PreludeType,
     derive_slice_return_ceiling,
 };
 
+/// [FN-2, PROV-6, S37] the one mandatory bound a type parameter carries.
+///
+/// A bound is a closed class the argument must fall into, derived from the
+/// language's existing classifications, and never a user trait: `Int` and
+/// `Float` are [OP-1]'s numeric rows and each implies the copy class, and the
+/// three linearity classes are [OWN-1]'s copy class and [PROV-6]'s two
+/// linearity classes. It selects no behavior and admits no contract member.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) enum GenericBound {
-    Unbounded,
     Int,
     Float,
+    Class(super::linearity::LinearityClass),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) enum GenericParameter {
     Type {
         declaration: DeclarationId,
+        /// [PROV-6, FN-2, S37] the written bound this parameter's body is
+        /// written for. It is mandatory, always written and never inferred.
         bound: GenericBound,
     },
+    /// One const `gparam`. The written integer type is retained because
+    /// [MSR-6] admits the parameter as a value, whose exact type is that
+    /// written type.
     Const {
         declaration: DeclarationId,
+        ty: IntegerType,
     },
 }
 
 impl GenericParameter {
     pub(super) const fn declaration(self) -> DeclarationId {
         match self {
-            Self::Type { declaration, .. } | Self::Const { declaration } => declaration,
+            Self::Type { declaration, .. } | Self::Const { declaration, .. } => declaration,
         }
     }
 }
@@ -53,6 +66,17 @@ pub(super) enum GenericArgument {
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub(super) struct GenericSubstitution {
     bindings: Vec<(DeclarationId, GenericArgument)>,
+    /// [S20, PROV-1] the region axis of one nominal instance: each
+    /// `region_params` member of the owning declaration bound to the actual
+    /// region this instance names.
+    ///
+    /// A nominal's region parameters are components of its type name
+    /// [TYPE-2], so two instances of one declaration at two regions are two
+    /// types and the instance key carries them beside the type and const
+    /// arguments. A function's region parameters are not in this axis: a call
+    /// substitutes them positionally from its own actuals [FORM-8] and mints
+    /// no second signature for a second region.
+    regions: Vec<(DeclarationId, DeclarationId)>,
 }
 
 /// Nominal-arena-independent identity for a concrete substitution discovered
@@ -61,6 +85,7 @@ pub(super) struct GenericSubstitution {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct StableGenericSubstitution {
     bindings: Vec<(DeclarationId, StableGenericArgument)>,
+    regions: Vec<(DeclarationId, DeclarationId)>,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -90,8 +115,42 @@ enum StableCheckedType {
     Slice {
         region: DeclarationId,
         element: StableFlatElement,
+        strength: LoanStrength,
     },
     Buffer {
+        element: StableFlatElement,
+    },
+    FixedVector {
+        element: StableElement,
+        length: CheckedConst,
+    },
+    Vector {
+        region: DeclarationId,
+        element: StableElement,
+    },
+    Heap {
+        region: DeclarationId,
+    },
+    Extent {
+        region: DeclarationId,
+        bytes: CheckedConst,
+        align: CheckedConst,
+    },
+}
+
+/// The interned form of [BLK-1]'s element domain, with the same one-level
+/// lift [`crate::semantic::CheckedElement`] carries.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+enum StableElement {
+    Flat(StableFlatElement),
+    FixedVector {
+        element: StableFlatElement,
+        length: CheckedConst,
+    },
+    /// A store-branded element run. Its release class is a function of its
+    /// region alone, so it is recomputed on reification rather than interned.
+    Vector {
+        region: DeclarationId,
         element: StableFlatElement,
     },
 }
@@ -106,6 +165,9 @@ enum StableFlatElement {
     GenericFloat(DeclarationId),
     TagOnlyNominal(Box<StableCheckedType>),
     Nominal(Box<StableCheckedType>),
+    /// [BLK-1] one unbounded type parameter in a run element position, which
+    /// only a symbolic instance carries [FN-2].
+    Generic(DeclarationId),
 }
 
 /// One symbolic generic requirement while its scratch nominal suffix is
@@ -141,11 +203,32 @@ impl GenericSubstitution {
                 return Err(SemanticCompilerFailure::InvalidResolution);
             }
         }
-        Ok(Self { bindings })
+        Ok(Self {
+            bindings,
+            regions: Vec::new(),
+        })
+    }
+
+    /// The same substitution carrying one nominal's region axis [S20].
+    pub(super) fn with_regions(mut self, regions: Vec<(DeclarationId, DeclarationId)>) -> Self {
+        self.regions = regions;
+        self
     }
 
     pub(super) fn len(&self) -> usize {
         self.bindings.len()
+    }
+
+    /// The actual region one formal region parameter of the owning nominal
+    /// denotes in this instance [S20, PROV-1].
+    pub(super) fn region_argument(&self, declaration: DeclarationId) -> Option<DeclarationId> {
+        self.regions
+            .iter()
+            .find_map(|(formal, actual)| (*formal == declaration).then_some(*actual))
+    }
+
+    pub(super) fn region_arguments(&self) -> &[(DeclarationId, DeclarationId)] {
+        &self.regions
     }
 
     pub(super) fn type_argument(&self, declaration: DeclarationId) -> Option<CheckedType> {
@@ -271,11 +354,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             name: declaration.spelling().to_owned(),
             generic_parameters: self.parse_generic_parameters(node)?,
         };
-        if !template.generic_parameters.is_empty()
-            && let Some(regions) = self.tree.first_child_with(node, Production::RegionParams)?
-        {
-            return self.unsupported(UnsupportedSemanticFeature::Generics, regions);
-        }
         let index = self.function_templates.len();
         if self
             .templates_by_declaration
@@ -560,9 +638,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 declaration,
                 class: DeclarationClass::Function,
             } => declaration,
-            // A system operation is not a user function template; recursion
-            // through it is impossible, so it contributes no cycle edge.
-            ResolvedTarget::Operation(_) | ResolvedTarget::System(_) => return Ok(None),
+            // A system operation and a kernel-domain row [BLK-0] are not user
+            // function templates; recursion through either is impossible, so
+            // neither contributes a cycle edge.
+            ResolvedTarget::Operation(_)
+            | ResolvedTarget::System(_)
+            | ResolvedTarget::Kernel(_) => {
+                return Ok(None);
+            }
             _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
         };
         let Some(index) = self.templates_by_declaration.get(&declaration).copied() else {
@@ -604,7 +687,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .get(id.0 as usize)
                     .is_some_and(|instance| instance.substitution == substitution)
             })
-            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     fn instantiate_function_signature(
@@ -751,15 +834,104 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // [FORM-8] every region a parameter position leaves unwritten is a
         // formal region of this callable too.
         Self::append_elided_formal_regions(&mut region_parameters, &parameters);
-        let result_binding = self
+        // [GRAM-2] the declaration writes one result or an ordered result
+        // list. Every ordinal is judged by the ordinary result rules below;
+        // a list additionally hands its caller one value of the compiler-owned
+        // result-list nominal, which is this callable's result [CALL-4].
+        let result_bindings = self
             .tree
-            .first_child_with(template.node, Production::ResultBinding)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let rtype = self
-            .tree
-            .first_child_with(result_binding, Production::Rtype)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let (result_mode, result) = self.parse_rtype_with(rtype, &substitution)?;
+            .children_with(template.node, Production::ResultBinding)?;
+        let mut results = Vec::with_capacity(result_bindings.len());
+        for binding in &result_bindings {
+            let rtype = self
+                .tree
+                .first_child_with(*binding, Production::Rtype)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            // [FN-1] the binder spelling is out of callable-signature
+            // equality; the resolution record carries it where a route or a
+            // diagnostic names it.
+            let (mode, ty) = self.parse_rtype_with(rtype, &substitution)?;
+            results.push(super::ResultSignature { mode, ty, rtype });
+        }
+        let [first_result, ..] = results.as_slice() else {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        };
+        // [VIEW-6] two results of the same view type at the same formal
+        // region are refused at the second `result_binding`: [FN-1]'s ceiling
+        // is stated over the type and the region, so each of them would carry
+        // every origin the other does and a demux written with one region
+        // would return views that all alias all of its inputs. The type's
+        // exact identity carries the strength, the region and the element
+        // [TYPE-5], so equality is the whole judgment.
+        //
+        // The whole list is judged before any per-ordinal capability refusal
+        // below, because a source-language rejection is never replaced by a
+        // compiler-capability stop.
+        for (ordinal, entry) in results.iter().enumerate() {
+            if matches!(entry.ty, super::super::model::CheckedType::Slice { .. })
+                && results[..ordinal]
+                    .iter()
+                    .any(|earlier| earlier.ty == entry.ty)
+            {
+                return self.issue_node(
+                    SemanticRule::View6,
+                    entry.rtype,
+                    SemanticIssueKind::SameRegionViewResults {
+                        result_type: self.checked_type_name(entry.ty)?,
+                        mechanical_fix: "give each result its own formal region",
+                    },
+                );
+            }
+        }
+        let single = results.len() == 1;
+        let rtype = first_result.rtype;
+        let (result_mode, result, result_list) = if single {
+            (first_result.mode, first_result.ty, None)
+        } else {
+            for entry in &results {
+                // [STOR-4] an arena ordinal has no legal producing return, the
+                // same judgment a single arena result receives.
+                if self.arena_instance(entry.ty)?.is_some() {
+                    return self.issue_node(
+                        SemanticRule::Stor4,
+                        entry.rtype,
+                        SemanticIssueKind::ArenaEscape {
+                            mechanical_fix: super::ARENA_ESCAPE_RESTRUCTURING,
+                        },
+                    );
+                }
+                // A view ordinal at a region no other ordinal shares needs
+                // [FN-1]'s parameter-derived return-origin ceiling stated over
+                // an ordinal rather than over the one written result. That
+                // derivation is not built yet, so the ordinal is an explicit
+                // capability refusal here instead of an unchecked escape.
+                if matches!(entry.ty, super::super::model::CheckedType::Slice { .. }) {
+                    return self
+                        .unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, entry.rtype);
+                }
+            }
+            // A borrow-mode ordinal would have to carry its loan through the
+            // one value the boundary hands back, which this compiler cannot
+            // represent yet. It is an explicit capability refusal at the
+            // offending ordinal, never a source-language rejection.
+            let Some(fields) = self.result_list_fields(template.node, &substitution)? else {
+                let offending = results
+                    .iter()
+                    .find(|entry| entry.mode != super::super::model::CheckedMode::Own)
+                    .map_or(rtype, |entry| entry.rtype);
+                return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, offending);
+            };
+            let nominal = self
+                .result_list_nominals
+                .get(&fields)
+                .copied()
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            (
+                super::super::model::CheckedMode::Own,
+                super::super::model::CheckedType::Nominal(nominal),
+                Some(nominal),
+            )
+        };
         // [STOR-4] a value of type `arena<'r, T>` may not be returned, so a
         // result type naming an arena has no legal producing return and is
         // rejected at the callable boundary.
@@ -809,6 +981,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             parameters,
             result_mode,
             result,
+            results,
+            result_list,
             slice_return_ceiling,
             effects_node: effects,
             declared_effects,
@@ -1054,7 +1228,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
             bindings.push((*declaration, stable));
         }
-        Ok(Some(StableGenericSubstitution { bindings }))
+        Ok(Some(StableGenericSubstitution {
+            bindings,
+            regions: substitution.regions.clone(),
+        }))
     }
 
     fn stabilize_concrete_type(
@@ -1073,7 +1250,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         visiting: &mut HashSet<NominalId>,
     ) -> Result<StableCheckedType, CheckStop> {
         self.stabilize_type(ty, nominal_checkpoint, visiting, true)?
-            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     fn stabilize_type(
@@ -1144,7 +1321,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     StableCheckedType::System(system)
                 } else {
                     match kind {
-                        CheckedNominalKind::Box { referent } => {
+                        CheckedNominalKind::Box { referent, .. } => {
                             let Some(referent) = self.stabilize_type(
                                 referent,
                                 nominal_checkpoint,
@@ -1201,7 +1378,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 StableCheckedType::Array { element, length }
             }
-            CheckedType::Slice { region, element } => {
+            CheckedType::Slice {
+                region,
+                element,
+                strength,
+            } => {
                 let Some(element) = self.stabilize_flat_element(
                     element,
                     nominal_checkpoint,
@@ -1211,7 +1392,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 else {
                     return Ok(None);
                 };
-                StableCheckedType::Slice { region, element }
+                StableCheckedType::Slice {
+                    region,
+                    element,
+                    strength,
+                }
             }
             CheckedType::Buffer { element } => {
                 let Some(element) = self.stabilize_flat_element(
@@ -1224,6 +1409,45 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return Ok(None);
                 };
                 StableCheckedType::Buffer { element }
+            }
+            CheckedType::FixedVector { element, length } => {
+                let Some(element) =
+                    self.stabilize_element(element, nominal_checkpoint, visiting, allow_symbolic)?
+                else {
+                    return Ok(None);
+                };
+                if !allow_symbolic && !length.is_concrete() {
+                    return Ok(None);
+                }
+                StableCheckedType::FixedVector { element, length }
+            }
+            CheckedType::Vector {
+                region, element, ..
+            } => {
+                let Some(element) =
+                    self.stabilize_element(element, nominal_checkpoint, visiting, allow_symbolic)?
+                else {
+                    return Ok(None);
+                };
+                StableCheckedType::Vector { region, element }
+            }
+            CheckedType::Heap { region } => StableCheckedType::Heap { region },
+            CheckedType::Extent {
+                region,
+                bytes,
+                align,
+            } => {
+                if !allow_symbolic && !bytes.is_concrete() {
+                    return Ok(None);
+                }
+                if !allow_symbolic && !align.is_concrete() {
+                    return Ok(None);
+                }
+                StableCheckedType::Extent {
+                    region,
+                    bytes,
+                    align,
+                }
             }
         };
         Ok(Some(stable))
@@ -1256,7 +1480,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
             bindings.push((*declaration, stable));
         }
-        Ok(Some(StableGenericSubstitution { bindings }))
+        Ok(Some(StableGenericSubstitution {
+            bindings,
+            regions: substitution.regions.clone(),
+        }))
+    }
+
+    fn stabilize_element(
+        &self,
+        element: CheckedElement,
+        nominal_checkpoint: usize,
+        visiting: &mut HashSet<NominalId>,
+        allow_symbolic: bool,
+    ) -> Result<Option<StableElement>, CheckStop> {
+        Ok(match element {
+            CheckedElement::Flat(flat) => self
+                .stabilize_flat_element(flat, nominal_checkpoint, visiting, allow_symbolic)?
+                .map(StableElement::Flat),
+            CheckedElement::FixedVector { element, length } => {
+                if !allow_symbolic && !length.is_concrete() {
+                    return Ok(None);
+                }
+                self.stabilize_flat_element(element, nominal_checkpoint, visiting, allow_symbolic)?
+                    .map(|element| StableElement::FixedVector { element, length })
+            }
+            CheckedElement::Vector {
+                region, element, ..
+            } => self
+                .stabilize_flat_element(element, nominal_checkpoint, visiting, allow_symbolic)?
+                .map(|element| StableElement::Vector { region, element }),
+        })
     }
 
     fn stabilize_flat_element(
@@ -1276,6 +1529,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedFlatElement::GenericFloat(declaration) => {
                 allow_symbolic.then_some(StableFlatElement::GenericFloat(declaration))
+            }
+            CheckedFlatElement::Generic(declaration) => {
+                allow_symbolic.then_some(StableFlatElement::Generic(declaration))
             }
             CheckedFlatElement::TagOnlyNominal(id) => self
                 .stabilize_type(
@@ -1340,7 +1596,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
             bindings.push((*declaration, argument));
         }
-        GenericSubstitution::from_bindings(bindings).map_err(CheckStop::Compiler)
+        GenericSubstitution::from_bindings(bindings)
+            .map(|reified| reified.with_regions(substitution.regions.clone()))
+            .map_err(CheckStop::Compiler)
     }
 
     fn reify_concrete_type(&mut self, ty: &StableCheckedType) -> Result<CheckedType, CheckStop> {
@@ -1383,12 +1641,51 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element: self.reify_flat_element(element)?,
                 length: *length,
             },
-            StableCheckedType::Slice { region, element } => CheckedType::Slice {
+            StableCheckedType::Slice {
+                region,
+                element,
+                strength,
+            } => CheckedType::Slice {
                 region: *region,
                 element: self.reify_flat_element(element)?,
+                strength: *strength,
             },
             StableCheckedType::Buffer { element } => CheckedType::Buffer {
                 element: self.reify_flat_element(element)?,
+            },
+            StableCheckedType::FixedVector { element, length } => CheckedType::FixedVector {
+                element: self.reify_element(element)?,
+                length: *length,
+            },
+            StableCheckedType::Vector { region, element } => CheckedType::Vector {
+                region: *region,
+                element: self.reify_element(element)?,
+                release: self.vector_release_class(*region)?,
+            },
+            StableCheckedType::Heap { region } => CheckedType::Heap { region: *region },
+            StableCheckedType::Extent {
+                region,
+                bytes,
+                align,
+            } => CheckedType::Extent {
+                region: *region,
+                bytes: *bytes,
+                align: *align,
+            },
+        })
+    }
+
+    fn reify_element(&mut self, element: &StableElement) -> Result<CheckedElement, CheckStop> {
+        Ok(match element {
+            StableElement::Flat(flat) => CheckedElement::Flat(self.reify_flat_element(flat)?),
+            StableElement::FixedVector { element, length } => CheckedElement::FixedVector {
+                element: self.reify_flat_element(element)?,
+                length: *length,
+            },
+            StableElement::Vector { region, element } => CheckedElement::Vector {
+                region: *region,
+                element: self.reify_flat_element(element)?,
+                release: self.vector_release_class(*region)?,
             },
         })
     }
@@ -1408,6 +1705,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             StableFlatElement::GenericFloat(declaration) => {
                 CheckedFlatElement::GenericFloat(*declaration)
             }
+            StableFlatElement::Generic(declaration) => CheckedFlatElement::Generic(*declaration),
             StableFlatElement::TagOnlyNominal(ty) => {
                 let CheckedType::Nominal(id) = self.reify_concrete_type(ty)? else {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
@@ -1498,16 +1796,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     GenericParameter::Type {
                         declaration,
                         bound: GenericBound::Int,
+                        ..
                     } => GenericArgument::Type(CheckedType::GenericInt(declaration)),
                     GenericParameter::Type {
                         declaration,
                         bound: GenericBound::Float,
+                        ..
                     } => GenericArgument::Type(CheckedType::GenericFloat(declaration)),
                     GenericParameter::Type {
                         declaration,
-                        bound: GenericBound::Unbounded,
+                        bound: GenericBound::Class(_),
+                        ..
                     } => GenericArgument::Type(CheckedType::Generic(declaration)),
-                    GenericParameter::Const { declaration } => {
+                    GenericParameter::Const { declaration, .. } => {
                         GenericArgument::Const(CheckedConst::Parameter(declaration))
                     }
                 };
@@ -1515,6 +1816,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             })
             .collect();
         GenericSubstitution::from_bindings(bindings).map_err(CheckStop::Compiler)
+    }
+
+    /// The symbolic instance of one nominal template: every type and const
+    /// parameter stands for itself, and so does every region parameter
+    /// [S20]. It is the instance a declaration is judged once at, before any
+    /// concrete instance exists.
+    pub(super) fn symbolic_nominal_substitution(
+        &self,
+        parameters: &[GenericParameter],
+        region_parameters: &[DeclarationId],
+    ) -> Result<GenericSubstitution, CheckStop> {
+        Ok(self
+            .symbolic_generic_substitution(parameters)?
+            .with_regions(
+                region_parameters
+                    .iter()
+                    .map(|region| (*region, *region))
+                    .collect(),
+            ))
     }
 
     fn reject_generic_call_cycles(&self) -> Result<(), CheckStop> {
@@ -1534,7 +1854,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        if let Some(call) = self.generic_cycle_components(&edges).1 {
+        if let Some(call) = self.generic_cycle_components(&edges)?.1 {
             return self.unsupported(UnsupportedSemanticFeature::Generics, call);
         }
         Ok(())
@@ -1648,6 +1968,33 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }))
     }
 
+    /// The written integer type of one const `gparam` [MSR-6].
+    ///
+    /// A const generic is declared by exactly one function or nominal
+    /// template, and its `gparam` fixes its type once; scanning the templates
+    /// reads that one declaration rather than re-deriving it from a use.
+    pub(super) fn const_generic_type(
+        &self,
+        declaration: DeclarationId,
+    ) -> Result<IntegerType, CheckStop> {
+        self.function_templates
+            .iter()
+            .flat_map(|template| template.generic_parameters.iter())
+            .chain(
+                self.nominal_templates
+                    .iter()
+                    .flat_map(|template| template.generic_parameters.iter()),
+            )
+            .find_map(|parameter| match parameter {
+                GenericParameter::Const {
+                    declaration: candidate,
+                    ty,
+                } if *candidate == declaration => Some(*ty),
+                _ => None,
+            })
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
+    }
+
     fn type_parameters(template: &FunctionTemplate) -> Vec<DeclarationId> {
         template
             .generic_parameters
@@ -1723,18 +2070,35 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     fn generic_cycle_analysis(&self) -> Result<(Vec<bool>, Option<NodeId>), CheckStop> {
         let edges = self.generic_call_edges()?;
-        Ok(self.generic_cycle_components(&edges))
+        self.generic_cycle_components(&edges)
     }
 
+    /// The generic call cycles whose instance set this compiler cannot
+    /// enumerate, and the first call that makes one of them so.
+    ///
+    /// [FN-6] has already refused every cycle whose call writes anything but
+    /// the caller's own *type* parameters, so what survives it is a cycle each
+    /// of whose calls repeats the caller's type parameters. That leaves the
+    /// const arguments, which FN-6 does not speak about: a call writing a
+    /// const argument derived from the caller's own const parameter mints a
+    /// second instance, which mints a third, and the worklist does not
+    /// terminate. Such a cycle is an explicit unsupported capability.
+    ///
+    /// A call that repeats the caller's complete parameter list — every type
+    /// parameter and every const parameter, in position — is the caller's own
+    /// instance and mints nothing, so its cycle is finite and is compiled.
     fn generic_cycle_components(
         &self,
         edges: &[Vec<(usize, NodeId)>],
-    ) -> (Vec<bool>, Option<NodeId>) {
+    ) -> Result<(Vec<bool>, Option<NodeId>), CheckStop> {
         let mut unavailable = vec![false; self.function_templates.len()];
         let mut first = None;
         for (caller, outgoing) in edges.iter().enumerate() {
             for (callee, call) in outgoing {
                 if !Self::graph_reaches(*callee, caller, edges) {
+                    continue;
+                }
+                if self.call_repeats_caller_generic_arguments(*call, caller, *callee)? {
                     continue;
                 }
                 let generic_component = (0..self.function_templates.len()).any(|candidate| {
@@ -1758,7 +2122,100 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
         }
-        (unavailable, first)
+        Ok((unavailable, first))
+    }
+
+    /// Whether one call writes exactly its caller's own generic parameters,
+    /// in order, at every one of the callee's generic-parameter positions.
+    ///
+    /// The judgment is syntactic, as [FN-6]'s own is: a type position is
+    /// satisfied by a bare TYPEID carrying no arguments that resolves to the
+    /// caller's type parameter there, and a const position by a bare
+    /// identifier — no literal, no operator — that resolves to the caller's
+    /// const parameter there. A callee with a different parameter shape, or a
+    /// call writing no argument list at all, satisfies neither.
+    fn call_repeats_caller_generic_arguments(
+        &self,
+        call: NodeId,
+        caller: usize,
+        callee: usize,
+    ) -> Result<bool, CheckStop> {
+        let caller_parameters = &self.function_templates[caller].generic_parameters;
+        let callee_parameters = &self.function_templates[callee].generic_parameters;
+        if caller_parameters.is_empty() || caller_parameters.len() != callee_parameters.len() {
+            return Ok(caller_parameters.is_empty() && callee_parameters.is_empty());
+        }
+        let Some(targs) = self.tree.first_child_with(call, Production::Targs)? else {
+            return Ok(false);
+        };
+        let arguments = self.tree.children_with(targs, Production::Targ)?;
+        if arguments.len() != callee_parameters.len() {
+            return Ok(false);
+        }
+        for ((caller_parameter, callee_parameter), argument) in caller_parameters
+            .iter()
+            .zip(callee_parameters)
+            .zip(&arguments)
+        {
+            let repeats = match (caller_parameter, callee_parameter) {
+                (
+                    GenericParameter::Type {
+                        declaration: expected,
+                        ..
+                    },
+                    GenericParameter::Type { .. },
+                ) => self.targ_names_type_parameter(*argument, *expected)?,
+                (
+                    GenericParameter::Const {
+                        declaration: expected,
+                        ..
+                    },
+                    GenericParameter::Const { .. },
+                ) => self.targ_names_const_parameter(*argument, *expected)?,
+                _ => false,
+            };
+            if !repeats {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Whether one `targ` is written as exactly the named const parameter.
+    fn targ_names_const_parameter(
+        &self,
+        argument: NodeId,
+        expected: DeclarationId,
+    ) -> Result<bool, CheckStop> {
+        let Some(value) = self.tree.first_child_with(argument, Production::Const)? else {
+            return Ok(false);
+        };
+        if self
+            .tree
+            .first_child_with(value, Production::InfixOp)?
+            .is_some()
+            || !self
+                .tree
+                .direct_tokens_matching(value, &[TerminalPredicate::Digits])?
+                .is_empty()
+        {
+            return Ok(false);
+        }
+        let [_] = self.tree.direct_identifiers(value)?.as_slice() else {
+            return Ok(false);
+        };
+        let path = self.tree.path(value)?;
+        Ok(self.resolved.lexical_uses().iter().any(|usage| {
+            usage.role() == LexicalUseRole::Const
+                && usage.origin().node() == path
+                && matches!(
+                    usage.target(),
+                    ResolvedTarget::Source {
+                        declaration,
+                        class: DeclarationClass::ConstGeneric,
+                    } if declaration == expected
+                )
+        }))
     }
 
     pub(super) fn call_is_inside_postcondition(&self, call: NodeId) -> Result<bool, CheckStop> {
@@ -1809,20 +2266,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .tree
                     .first_child_with(node, Production::Type)?
                     .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-                if self.integer_type(ty)?.is_none() {
+                let Some(ty) = self.integer_type(ty)? else {
                     return self.issue_node(
                         SemanticRule::Const1,
                         ty,
                         SemanticIssueKind::InvalidConstValue,
                     );
-                }
-                parameters.push(GenericParameter::Const { declaration });
+                };
+                parameters.push(GenericParameter::Const { declaration, ty });
                 continue;
             }
             let declaration = self
                 .declaration_at(node, DeclarationRole::GenericType)?
                 .id();
             let path = self.tree.path(node)?;
+            // [GRAM-2, S37] the bound is mandatory, so the grammar admits no
+            // `gparam` without one: either a `linearity_bound` atom or a
+            // marker TYPEID is present, and an unbounded parameter is a
+            // parse rejection before this reader runs.
             let bound = match self
                 .resolved
                 .lexical_uses()
@@ -1832,7 +2293,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 })
                 .map(|usage| (usage.target(), usage.origin().coordinate()))
             {
-                None => GenericBound::Unbounded,
+                None => GenericBound::Class(
+                    self.written_linearity_bound(node)?
+                        .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?,
+                ),
                 Some((ResolvedTarget::Prelude(id), _)) if id == PreludeDeclarationId::new(22) => {
                     GenericBound::Int
                 }
@@ -1873,19 +2337,146 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             caller,
             true,
             SemanticRule::Fn2,
+            0,
         )
     }
 
+    /// One nominal instance's complete argument list: its region arguments,
+    /// then its type and const arguments [S20, TYPE-5, FORM-8].
+    ///
+    /// A nominal's region parameters are components of its type name, so a
+    /// `type` and a `construct` alike write them, as the leading members of
+    /// the same `targs` list its type and const arguments follow — the
+    /// spelling the two runs and the two providers already use. They are
+    /// written on exactly the ground [TYPE-5] gives a construct's type
+    /// arguments: construction consults no expected nominal type, so nothing
+    /// but the written arguments fixes the instance.
     pub(super) fn nominal_generic_substitution(
         &self,
         node: NodeId,
         parameters: &[GenericParameter],
+        region_parameters: &[DeclarationId],
+        caller: &GenericSubstitution,
+    ) -> Result<GenericSubstitution, CheckStop> {
+        self.nominal_generic_substitution_with(node, parameters, region_parameters, &[], caller)
+    }
+
+    /// The same list where some region parameters are already fixed [FORM-8].
+    ///
+    /// A `type` position determines none of them and writes every one; a
+    /// `construct`'s field operands determine the ones their declared types
+    /// name, and the position writes exactly the rest, still as the leading
+    /// members of the same `targs` list. The two are one function because the
+    /// difference between them is exactly which formals arrive already bound.
+    pub(super) fn nominal_generic_substitution_with(
+        &self,
+        node: NodeId,
+        parameters: &[GenericParameter],
+        region_parameters: &[DeclarationId],
+        determined: &[(DeclarationId, DeclarationId)],
         caller: &GenericSubstitution,
     ) -> Result<GenericSubstitution, CheckStop> {
         // [TYPE-5] a generic nominal's construct writes that nominal's
         // arguments, and their absence or a wrong count is TYPE-5's own
         // violation, "at the complete `construct`".
-        self.generic_substitution(node, parameters, caller, false, SemanticRule::Type5)
+        let written_parameters = region_parameters
+            .iter()
+            .copied()
+            .filter(|formal| !determined.iter().any(|(bound, _)| bound == formal))
+            .collect::<Vec<_>>();
+        let written = self.nominal_region_arguments(node, &written_parameters, caller)?;
+        let mut regions = Vec::with_capacity(region_parameters.len());
+        for formal in region_parameters {
+            let actual = determined
+                .iter()
+                .chain(written.iter())
+                .find(|(bound, _)| bound == formal)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            regions.push(*actual);
+        }
+        Ok(self
+            .generic_substitution(
+                node,
+                parameters,
+                caller,
+                false,
+                SemanticRule::Type5,
+                written_parameters.len(),
+            )?
+            .with_regions(regions))
+    }
+
+    /// The leading region members of one nominal's written argument list
+    /// [S20, FORM-8].
+    ///
+    /// Each member is a bare REGIONID resolved in the writing scope, and one
+    /// that resolves to a region parameter of an enclosing nominal instance
+    /// takes that instance's own actual: a field type `Inner<'s>` inside
+    /// `struct Outer['s]` names `Outer`'s region, so `Outer<'a>` holds an
+    /// `Inner<'a>` and not an `Inner<'s>` [PROV-1].
+    fn nominal_region_arguments(
+        &self,
+        node: NodeId,
+        region_parameters: &[DeclarationId],
+        caller: &GenericSubstitution,
+    ) -> Result<Vec<(DeclarationId, DeclarationId)>, CheckStop> {
+        if region_parameters.is_empty() {
+            return Ok(Vec::new());
+        }
+        let arguments = match self.tree.first_child_with(node, Production::Targs)? {
+            Some(targs) => self.tree.children_with(targs, Production::Targ)?,
+            None => Vec::new(),
+        };
+        if arguments.len() < region_parameters.len() {
+            return self.issue_node(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    crate::semantic::written_count(region_parameters.len(), "region argument"),
+                    crate::semantic::written_count(arguments.len(), "type argument"),
+                ),
+            );
+        }
+        let mut regions = Vec::with_capacity(region_parameters.len());
+        for (formal, argument) in region_parameters.iter().copied().zip(arguments) {
+            if self
+                .tree
+                .first_child_with(argument, Production::Type)?
+                .is_some()
+                || self
+                    .tree
+                    .first_child_with(argument, Production::Const)?
+                    .is_some()
+            {
+                return self.issue_node(
+                    SemanticRule::Type5,
+                    argument,
+                    SemanticIssueKind::type_mismatch(
+                        "a region argument in this position, which this nominal declares a \
+region parameter for",
+                        "an argument that does not name a region",
+                    ),
+                );
+            }
+            let usage = self.use_at(argument, LexicalUseRole::TypeArgumentRegion)?;
+            let ResolvedTarget::Source {
+                declaration,
+                class: DeclarationClass::Region,
+            } = usage.target()
+            else {
+                return self.issue_node(
+                    SemanticRule::Type5,
+                    argument,
+                    SemanticIssueKind::type_mismatch(
+                        "a region argument in this position",
+                        "an argument that does not name a region",
+                    ),
+                );
+            };
+            let actual = caller.region_argument(declaration).unwrap_or(declaration);
+            regions.push((formal, actual));
+        }
+        Ok(regions)
     }
 
     /// One argument list, read for two callee classes.
@@ -1902,9 +2493,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         caller: &GenericSubstitution,
         allow_trailing_regions: bool,
         argument_rule: SemanticRule,
+        leading_regions: usize,
     ) -> Result<GenericSubstitution, CheckStop> {
         if parameters.is_empty() {
-            if !allow_trailing_regions
+            if leading_regions == 0
+                && !allow_trailing_regions
                 && self
                     .tree
                     .first_child_with(node, Production::Targs)?
@@ -1919,6 +2512,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ),
                 );
             }
+            // A nominal that declares only region parameters writes exactly
+            // those and nothing else [S20, TYPE-5].
+            if leading_regions > 0 {
+                let written = match self.tree.first_child_with(node, Production::Targs)? {
+                    Some(targs) => self.tree.children_with(targs, Production::Targ)?.len(),
+                    None => 0,
+                };
+                if written != leading_regions {
+                    return self.issue_node(
+                        argument_rule,
+                        node,
+                        SemanticIssueKind::type_mismatch(
+                            crate::semantic::written_count(leading_regions, "region argument"),
+                            crate::semantic::written_count(written, "type argument"),
+                        ),
+                    );
+                }
+            }
             return Ok(GenericSubstitution::default());
         }
         let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
@@ -1932,25 +2543,32 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
-        if (allow_trailing_regions && arguments.len() < parameters.len())
-            || (!allow_trailing_regions && arguments.len() != parameters.len())
+        let expected = parameters.len().saturating_add(leading_regions);
+        if (allow_trailing_regions && arguments.len() < expected)
+            || (!allow_trailing_regions && arguments.len() != expected)
         {
             return self.issue_node(
                 argument_rule,
                 node,
                 SemanticIssueKind::type_mismatch(
-                    crate::semantic::written_count(parameters.len(), "type argument"),
+                    crate::semantic::written_count(expected, "type argument"),
                     crate::semantic::written_count(arguments.len(), "type argument"),
                 ),
             );
         }
+        // [S20, FORM-8] the leading members are the nominal's region
+        // arguments, already read by `nominal_region_arguments`.
+        let arguments = arguments
+            .into_iter()
+            .skip(leading_regions)
+            .collect::<Vec<_>>();
         for argument in arguments.iter().take(parameters.len()) {
             self.reject_region_bearing_generic_argument(*argument, caller)?;
         }
         let mut bindings = Vec::with_capacity(parameters.len());
         for (parameter, argument) in parameters.iter().copied().zip(arguments) {
             let value = match parameter {
-                GenericParameter::Type { bound, .. } => {
+                GenericParameter::Type { bound, declaration } => {
                     let Some(ty) = self.tree.first_child_with(argument, Production::Type)? else {
                         return self.issue_node(
                             argument_rule,
@@ -1962,11 +2580,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         );
                     };
                     let ty = self.parse_type_with(ty, caller)?;
-                    // `Unbounded` states no requirement, so it has no sentence
-                    // to print and no argument to refuse; the two bounds that
-                    // do carry a requirement carry the requirement's own words.
+                    // A marker bound is a numeric row and carries the
+                    // requirement's own words; a linearity bound is checked by
+                    // [PROV-6] below and prints that rule's sentence instead.
                     let requirement = match bound {
-                        GenericBound::Unbounded => None,
+                        GenericBound::Class(_) => None,
                         GenericBound::Int => {
                             Some("an integer type, which the parameter's `Int` bound requires")
                         }
@@ -1975,7 +2593,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         }
                     };
                     let satisfies_bound = match bound {
-                        GenericBound::Unbounded => true,
+                        GenericBound::Class(_) => true,
                         GenericBound::Int => {
                             matches!(ty, CheckedType::Integer(_) | CheckedType::GenericInt(_))
                         }
@@ -1991,6 +2609,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             argument,
                             SemanticIssueKind::type_mismatch(required, self.checked_type_name(ty)?),
                         );
+                    }
+                    // [PROV-6, S37] the bound is checked at every
+                    // instantiation, against the class the argument's own
+                    // release graph gives it in this scope, and satisfaction
+                    // is the chain `copy < affine < linear` read left to
+                    // right. A marker bound implies `copy` and is admitted by
+                    // its own numeric requirement above.
+                    if let GenericBound::Class(required) = bound {
+                        let spelling = self
+                            .resolved
+                            .declarations()
+                            .iter()
+                            .find(|candidate| candidate.id() == declaration)
+                            .map_or_else(String::new, |candidate| candidate.spelling().to_owned());
+                        self.check_linearity_bound(&spelling, required, ty, argument)?;
                     }
                     GenericArgument::Type(ty)
                 }
@@ -2058,13 +2691,19 @@ fn collect_operation_nominals(operation: GoalOperation, output: &mut Vec<Nominal
             ..
         } => collect_type_nominals(operand_type, output),
         GoalOperation::ArrayFill { element, .. }
-        | GoalOperation::ArrayLength { element, .. }
+        | GoalOperation::ArrayMeasure { element, .. }
         | GoalOperation::ArrayIndex { element, .. }
-        | GoalOperation::BufferLength { element }
+        | GoalOperation::BufferMeasure { element, .. }
         | GoalOperation::BufferIndex { element }
-        | GoalOperation::SliceLength { element, .. }
+        | GoalOperation::SliceMeasure { element, .. }
         | GoalOperation::SliceIndex { element, .. } => {
             collect_flat_element_nominals(element, output);
+        }
+        GoalOperation::RunIndex { element, .. } => collect_element_nominals(element, output),
+        GoalOperation::ContainerMeasure { element, .. } => {
+            if let Some(element) = element {
+                collect_element_nominals(element, output);
+            }
         }
         GoalOperation::NumericConversion { .. }
         | GoalOperation::Reinterpret { .. }
@@ -2078,13 +2717,27 @@ fn collect_type_nominals(ty: CheckedType, output: &mut Vec<NominalId>) {
         CheckedType::Array { element, .. }
         | CheckedType::Slice { element, .. }
         | CheckedType::Buffer { element } => collect_flat_element_nominals(element, output),
+        CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
+            collect_element_nominals(element, output);
+        }
         CheckedType::Unit
         | CheckedType::Bool
         | CheckedType::Integer(_)
         | CheckedType::Float(_)
         | CheckedType::Generic(_)
         | CheckedType::GenericInt(_)
-        | CheckedType::GenericFloat(_) => {}
+        | CheckedType::GenericFloat(_)
+        | CheckedType::Heap { .. }
+        | CheckedType::Extent { .. } => {}
+    }
+}
+
+fn collect_element_nominals(element: CheckedElement, output: &mut Vec<NominalId>) {
+    match element {
+        CheckedElement::Flat(flat) => collect_flat_element_nominals(flat, output),
+        CheckedElement::FixedVector { element, .. } | CheckedElement::Vector { element, .. } => {
+            collect_flat_element_nominals(element, output);
+        }
     }
 }
 
@@ -2096,7 +2749,8 @@ fn collect_flat_element_nominals(element: CheckedFlatElement, output: &mut Vec<N
         | CheckedFlatElement::Integer(_)
         | CheckedFlatElement::Float(_)
         | CheckedFlatElement::GenericInt(_)
-        | CheckedFlatElement::GenericFloat(_) => {}
+        | CheckedFlatElement::GenericFloat(_)
+        | CheckedFlatElement::Generic(_) => {}
     }
 }
 
@@ -2115,7 +2769,8 @@ fn collect_value_nominals(value: &CheckedValue, output: &mut Vec<NominalId>) {
                 collect_value_nominals(field, output);
             }
         }
-        CheckedValue::Unit
+        CheckedValue::ConstGeneric { .. }
+        | CheckedValue::Unit
         | CheckedValue::Bool(_)
         | CheckedValue::Integer { .. }
         | CheckedValue::Float { .. } => {}
@@ -2174,13 +2829,21 @@ fn rewrite_operation_nominals(
             ..
         } => rewrite_type_nominals(operand_type, checkpoint, replacements)?,
         GoalOperation::ArrayFill { element, .. }
-        | GoalOperation::ArrayLength { element, .. }
+        | GoalOperation::ArrayMeasure { element, .. }
         | GoalOperation::ArrayIndex { element, .. }
-        | GoalOperation::BufferLength { element }
+        | GoalOperation::BufferMeasure { element, .. }
         | GoalOperation::BufferIndex { element }
-        | GoalOperation::SliceLength { element, .. }
+        | GoalOperation::SliceMeasure { element, .. }
         | GoalOperation::SliceIndex { element, .. } => {
             rewrite_flat_element_nominals(element, checkpoint, replacements)?;
+        }
+        GoalOperation::RunIndex { element, .. } => {
+            rewrite_element_nominals(element, checkpoint, replacements)?;
+        }
+        GoalOperation::ContainerMeasure { element, .. } => {
+            if let Some(element) = element {
+                rewrite_element_nominals(element, checkpoint, replacements)?;
+            }
         }
         GoalOperation::NumericConversion { .. }
         | GoalOperation::Reinterpret { .. }
@@ -2205,6 +2868,9 @@ fn rewrite_type_nominals(
         | CheckedType::Buffer { element } => {
             rewrite_flat_element_nominals(element, checkpoint, replacements)?;
         }
+        CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
+            rewrite_element_nominals(element, checkpoint, replacements)?;
+        }
         CheckedType::Unit
         | CheckedType::Bool
         | CheckedType::Integer(_)
@@ -2212,9 +2878,24 @@ fn rewrite_type_nominals(
         | CheckedType::Generic(_)
         | CheckedType::GenericInt(_)
         | CheckedType::GenericFloat(_)
+        | CheckedType::Heap { .. }
+        | CheckedType::Extent { .. }
         | CheckedType::Nominal(_) => {}
     }
     Ok(())
+}
+
+fn rewrite_element_nominals(
+    element: &mut CheckedElement,
+    checkpoint: usize,
+    replacements: &HashMap<NominalId, NominalId>,
+) -> Result<(), CheckStop> {
+    match element {
+        CheckedElement::Flat(flat) => rewrite_flat_element_nominals(flat, checkpoint, replacements),
+        CheckedElement::FixedVector { element, .. } | CheckedElement::Vector { element, .. } => {
+            rewrite_flat_element_nominals(element, checkpoint, replacements)
+        }
+    }
 }
 
 fn rewrite_flat_element_nominals(
@@ -2237,7 +2918,8 @@ fn rewrite_flat_element_nominals(
         | CheckedFlatElement::GenericInt(_)
         | CheckedFlatElement::GenericFloat(_)
         | CheckedFlatElement::TagOnlyNominal(_)
-        | CheckedFlatElement::Nominal(_) => {}
+        | CheckedFlatElement::Nominal(_)
+        | CheckedFlatElement::Generic(_) => {}
     }
     Ok(())
 }
@@ -2263,7 +2945,8 @@ fn rewrite_value_nominals(
                 rewrite_value_nominals(field, checkpoint, replacements)?;
             }
         }
-        CheckedValue::Unit
+        CheckedValue::ConstGeneric { .. }
+        | CheckedValue::Unit
         | CheckedValue::Bool(_)
         | CheckedValue::Integer { .. }
         | CheckedValue::Float { .. } => {}

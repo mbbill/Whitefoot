@@ -6,9 +6,9 @@
 //! judgment.
 
 use crate::semantic::{
-    CheckedBooleanOperation, CheckedEnumType, CheckedFlatElement, CheckedFloatOperation,
-    CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedLoopId,
-    CheckedNumericType, CheckedProgram, CheckedRuntimeTargetObligations,
+    CheckedBooleanOperation, CheckedElement, CheckedEnumType, CheckedFlatElement,
+    CheckedFloatOperation, CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude,
+    CheckedLoopId, CheckedNumericType, CheckedProgram, CheckedRuntimeTargetObligations,
     CheckedTargetDomainObligation, CheckedType,
 };
 use crate::{SystemRelease, SystemResourceContract};
@@ -104,18 +104,154 @@ impl IrFlatElement {
     }
 }
 
-/// The referent of an [`IrType::Address`]: directly stored content that a
-/// borrow addresses.
-///
-/// Descriptor values (`buffer`, `slice`) and opaque handles (`box`, system
-/// resources) are already their own borrow and never appear here.
+/// [BLK-1] the type of one slot of a run, with the same one-level lift the
+/// checked element domain carries: a flat element, or one run of flat
+/// elements whose descriptor lives in the slot.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum IrElement {
+    Flat(IrFlatElement),
+    FixedVector {
+        element: IrFlatElement,
+        length: u64,
+    },
+    Vector {
+        element: IrFlatElement,
+        release: IrReleaseClass,
+    },
+}
+
+impl IrElement {
+    pub const fn ty(self) -> IrType {
+        match self {
+            Self::Flat(element) => element.ty(),
+            Self::FixedVector { element, length } => IrType::FixedVector {
+                element: Self::Flat(element),
+                length,
+            },
+            Self::Vector { element, release } => IrType::Vector {
+                element: Self::Flat(element),
+                release,
+            },
+        }
+    }
+}
+
+/// One [BLK-2] take from a store, in the shape its emission reads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IrStoreTake {
+    /// The address of the `&uniq` provider operand: the take reads the
+    /// store's state and writes it back through the same borrow.
+    pub store: IrValueId,
+    pub count: IrValueId,
+    /// The slot's own type, which the target stage lays out to check its
+    /// actual size, alignment and stride against the ceilings below [STOR-6].
+    pub element: IrType,
+    /// [OP-9]'s language ceilings for that element type.
+    pub layout_ceiling: IrLayoutCeiling,
+    /// The upper bound [OP-9]'s accepted judgment retained for `count`, which
+    /// target qualification scales by the actual stride [STOR-6].
+    pub count_upper_bound: u64,
+    /// The stride one slot occupies [OP-9], which is the spacing a run's
+    /// window is laid out at [BLK-1].
+    pub stride: u64,
+    /// The bump extent's own byte extent and alignment. A general store has
+    /// neither and asks its host instead.
+    pub extent: Option<IrExtentConstants>,
+    /// The `Option` the row hands back when the store has nothing to give; a
+    /// row whose domain requirement is proved carries none.
+    pub refusal: Option<IrRefusal>,
+}
+
+/// The two type constants of one bump extent [BLK-2]: its byte extent and
+/// its alignment.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IrExtentConstants {
+    pub bytes: u64,
+    pub align: u64,
+}
+
+/// S39 one cell formation: the store's own take, the value the cell takes,
+/// and the outcome that carries either.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IrStoreBox {
+    /// The `&uniq` provider operand's address.
+    pub store: IrValueId,
+    /// The value the cell takes, consumed by this operation.
+    pub value: IrValueId,
+    /// The cell's referent type, laid out by the target stage to check its
+    /// actual size and alignment against the ceilings below and against the
+    /// store's own [STOR-6].
+    pub element: IrType,
+    /// [OP-9]'s language ceilings for that referent type.
+    pub layout_ceiling: IrLayoutCeiling,
+    /// The bytes one cell occupies, which is one stride rounded up to the
+    /// store's own alignment where it has one [OP-9].
+    pub bytes: u64,
+    /// `Some` for a bump extent, whose take is a cursor advance inside the
+    /// reservation; `None` for the general store, which is asked.
+    pub extent: Option<IrExtentConstants>,
+    /// The `Result<Box<'s, T>, T>` the row hands back: `made` is the `Ok`
+    /// tag and `refused` the `Err` tag.
+    pub outcome: IrRefusal,
+}
+
+/// The `Option` a refusing [BLK-2] row hands back, by the tags [PRE-1] gives
+/// its two variants.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IrRefusal {
+    pub nominal: IrNominalId,
+    /// The tag of the variant carrying the run.
+    pub made: u32,
+    /// The tag of the empty variant.
+    pub refused: u32,
+}
+
+/// The content of an [`IrType::Address`]. A typed place may hold inline
+/// content, a descriptor, or a handle. Source borrows of descriptors and
+/// handles still use their value ABI; a place containing one is distinct
+/// from the storage or resource that descriptor or handle denotes.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum IrAddressed {
     Unit,
     Bool,
-    Integer { width: u8, signed: bool },
-    Float { width: u8 },
+    Integer {
+        width: u8,
+        signed: bool,
+    },
+    Float {
+        width: u8,
+    },
     Nominal(IrNominalId),
+    Buffer {
+        element: IrFlatElement,
+    },
+    Slice {
+        element: IrFlatElement,
+    },
+    /// One `FixedVector<T, n>` [BLK-1]. A frame-resident run is inline
+    /// storage in its owner, exactly as a struct is, so a borrow of one is
+    /// the address of that storage rather than a copy of the run.
+    FixedVector {
+        element: IrElement,
+        length: u64,
+    },
+    /// Inline legacy array storage reached by a checked mutation target.
+    Array {
+        element: IrFlatElement,
+        length: u64,
+    },
+    /// One `Vector<'s, T>` [BLK-1]. Its descriptor is storage in its owner's
+    /// frame, and a borrow of the run is the address of that descriptor, so
+    /// both runs are borrowed through one path.
+    Vector {
+        element: IrElement,
+        release: IrReleaseClass,
+    },
+    /// One provider value [PROV-1]. A provider is the one operand a [BLK-0]
+    /// acquiring row takes by `&uniq`, and a bump take advances its cursor
+    /// through that borrow, so its binding carries a stable address exactly
+    /// as a stored scalar's does.
+    Provider,
 }
 
 impl IrAddressed {
@@ -126,6 +262,12 @@ impl IrAddressed {
             Self::Integer { width, signed } => IrType::Integer { width, signed },
             Self::Float { width } => IrType::Float { width },
             Self::Nominal(id) => IrType::Nominal(id),
+            Self::Buffer { element } => IrType::Buffer { element },
+            Self::Slice { element } => IrType::Slice { element },
+            Self::FixedVector { element, length } => IrType::FixedVector { element, length },
+            Self::Array { element, length } => IrType::Array { element, length },
+            Self::Vector { element, release } => IrType::Vector { element, release },
+            Self::Provider => IrType::Provider,
         }
     }
 
@@ -136,28 +278,119 @@ impl IrAddressed {
             IrType::Integer { width, signed } => Self::Integer { width, signed },
             IrType::Float { width } => Self::Float { width },
             IrType::Nominal(id) => Self::Nominal(id),
-            IrType::Address(_)
-            | IrType::Array { .. }
-            | IrType::Buffer { .. }
-            | IrType::Slice { .. } => return None,
+            IrType::Buffer { element } => Self::Buffer { element },
+            IrType::Slice { element } => Self::Slice { element },
+            IrType::FixedVector { element, length } => Self::FixedVector { element, length },
+            IrType::Array { element, length } => Self::Array { element, length },
+            IrType::Vector { element, release } => Self::Vector { element, release },
+            IrType::Provider => Self::Provider,
+            IrType::Address(_) => return None,
         })
     }
+}
+
+/// [PROV-6, STOR-3] which release action a store-backed run's own reclamation
+/// is, carried into the IR because the region that decided it is erased there.
+///
+/// The checker fixes this from the store region's declaration alone
+/// [`crate::semantic::CheckedReleaseClass`]; nothing after that point
+/// rediscovers it, and no lowering may infer one action from a type shape.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum IrReleaseClass {
+    /// A free to the general store the run was taken from.
+    General,
+    /// Empty: the extent's reclamation is its region's own reset [BLK-2].
+    Extent,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum IrType {
     Unit,
     Bool,
-    Integer { width: u8, signed: bool },
-    Float { width: u8 },
+    Integer {
+        width: u8,
+        signed: bool,
+    },
+    Float {
+        width: u8,
+    },
     Nominal(IrNominalId),
     Address(IrAddressed),
-    Array { element: IrFlatElement, length: u64 },
-    Buffer { element: IrFlatElement },
-    Slice { element: IrFlatElement },
+    Array {
+        element: IrFlatElement,
+        length: u64,
+    },
+    Buffer {
+        element: IrFlatElement,
+    },
+    Slice {
+        element: IrFlatElement,
+    },
+    /// One `FixedVector<T, n>` [BLK-1]: `n` inline slots followed by the two
+    /// descriptor words `len` and `head`. The capacity is the type constant
+    /// and is stored nowhere.
+    FixedVector {
+        element: IrElement,
+        length: u64,
+    },
+    /// One `Vector<'s, T>` [BLK-1]: the descriptor `{ pointer, cap, len,
+    /// head }` over a run taken from the store `'s` names. The region is
+    /// erased here, and the release action it decided travels in its place.
+    Vector {
+        element: IrElement,
+        release: IrReleaseClass,
+    },
+    /// One provider value [PROV-1]. It is proof-only: the general store's
+    /// provider carries no runtime state at all, and the bump extent's
+    /// carries exactly its cursor.
+    Provider,
 }
 
-const fn lower_flat_element(value: CheckedFlatElement) -> Result<IrFlatElement, LoweringFailure> {
+pub(crate) const fn lower_release_class(
+    value: crate::semantic::CheckedReleaseClass,
+) -> IrReleaseClass {
+    match value {
+        crate::semantic::CheckedReleaseClass::General => IrReleaseClass::General,
+        crate::semantic::CheckedReleaseClass::Extent => IrReleaseClass::Extent,
+    }
+}
+
+/// One nominal's lowered identity, read through the region erasure
+/// [S20, PROV-1]: two instances of one declaration that differ only in their
+/// region arguments are two checked types and one IR nominal.
+fn erased_nominal(erasure: &[IrNominalId], id: crate::NominalId) -> IrNominalId {
+    erasure
+        .get(id.0 as usize)
+        .copied()
+        .unwrap_or(IrNominalId(id.0))
+}
+
+fn lower_element(
+    erasure: &[IrNominalId],
+    value: CheckedElement,
+) -> Result<IrElement, LoweringFailure> {
+    Ok(match value {
+        CheckedElement::Flat(element) => IrElement::Flat(lower_flat_element(erasure, element)?),
+        CheckedElement::FixedVector { element, length } => IrElement::FixedVector {
+            element: lower_flat_element(erasure, element)?,
+            length: match length.value() {
+                Some(value) => value,
+                None => return Err(LoweringFailure::InvalidCheckedProgram),
+            },
+        },
+        CheckedElement::Vector {
+            element, release, ..
+        } => IrElement::Vector {
+            element: lower_flat_element(erasure, element)?,
+            release: lower_release_class(release),
+        },
+    })
+}
+
+fn lower_flat_element(
+    erasure: &[IrNominalId],
+    value: CheckedFlatElement,
+) -> Result<IrFlatElement, LoweringFailure> {
     Ok(match value {
         CheckedFlatElement::Unit => IrFlatElement::Unit,
         CheckedFlatElement::Bool => IrFlatElement::Bool,
@@ -168,18 +401,115 @@ const fn lower_flat_element(value: CheckedFlatElement) -> Result<IrFlatElement, 
         CheckedFlatElement::Float(float) => IrFlatElement::Float {
             width: float.width(),
         },
-        CheckedFlatElement::GenericInt(_) => {
+        // [FN-2] a symbolic element belongs to the pre-IR pass alone: every
+        // lowered instance is concrete.
+        CheckedFlatElement::GenericInt(_) | CheckedFlatElement::Generic(_) => {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         CheckedFlatElement::GenericFloat(_) => {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        CheckedFlatElement::TagOnlyNominal(id) => IrFlatElement::TagOnlyNominal(IrNominalId(id.0)),
-        CheckedFlatElement::Nominal(id) => IrFlatElement::Nominal(IrNominalId(id.0)),
+        CheckedFlatElement::TagOnlyNominal(id) => {
+            IrFlatElement::TagOnlyNominal(erased_nominal(erasure, id))
+        }
+        CheckedFlatElement::Nominal(id) => IrFlatElement::Nominal(erased_nominal(erasure, id)),
     })
 }
 
-fn lower_type(value: CheckedType) -> Result<IrType, LoweringFailure> {
+/// Whether a value of this type derives any release work at all [STOR-3].
+///
+/// This is the single reading of "does dropping this value do something": the
+/// target stage asks it to decide whether a drop emits a cleanup, and the
+/// staged lowering asks it to decide whether a region's fallthrough drops are
+/// work a split body would lose. A `None` answer is a malformed nominal
+/// reference, which each caller reports in its own vocabulary; no caller may
+/// read it as "no release", because unknown must never be silently inert.
+pub(crate) fn type_derives_release(nominals: &[IrNominal], ty: IrType) -> Option<bool> {
+    let nominal_kind = |id: IrNominalId| nominals.get(id.index()).map(IrNominal::kind);
+    let mut pending = vec![ty];
+    let mut visited = std::collections::HashSet::new();
+    while let Some(current) = pending.pop() {
+        match current {
+            IrType::Buffer { .. } => return Some(true),
+            // A run's own backing action is its release class [PROV-6]: a
+            // general store's run spends that store's provider capability, and
+            // a bump extent's run is reclaimed by its own region reset, which
+            // is no action at all. A frame-resident run reclaims none of its
+            // own either. Every run still needs a walk when its window holds
+            // values that derive one, and [PROV-6] visits those elements
+            // before the backing is released [STOR-3, BLK-1].
+            IrType::Vector {
+                release: IrReleaseClass::General,
+                ..
+            } => return Some(true),
+            IrType::Vector { element, .. } | IrType::FixedVector { element, .. } => {
+                pending.push(element.ty());
+            }
+            IrType::Provider => {}
+            // S39 a cell needs a release exactly when its own storage or
+            // its referent does: a bump extent's cell whose referent derives
+            // nothing needs no walk at all.
+            IrType::Nominal(id)
+                if matches!(
+                    nominal_kind(id),
+                    Some(IrNominalKind::Box {
+                        release: IrReleaseClass::General,
+                        ..
+                    })
+                ) =>
+            {
+                return Some(true);
+            }
+            IrType::Nominal(id)
+                if matches!(nominal_kind(id), Some(IrNominalKind::Box { .. })) =>
+            {
+                let Some(IrNominalKind::Box { referent, .. }) = nominal_kind(id) else {
+                    return None;
+                };
+                pending.push(*referent);
+            }
+            IrType::Nominal(id) if visited.insert(id) => match nominal_kind(id)? {
+                IrNominalKind::Struct { fields } => {
+                    pending.extend(fields.iter().map(IrField::ty));
+                }
+                IrNominalKind::Enum { variants } => {
+                    pending.extend(
+                        variants
+                            .iter()
+                            .flat_map(IrVariant::fields)
+                            .map(IrField::ty),
+                    );
+                }
+                // Every [SYS-5] release action is an explicit release the
+                // target stage must emit, including a logical consume that
+                // emits nothing.
+                IrNominalKind::Box { .. }
+                | IrNominalKind::SystemResource(_)
+                // The allocation-list drop is the region's storage
+                // release [STOR-3]: walk and free.
+                | IrNominalKind::ArenaStorage => {
+                    return Some(true);
+                }
+                // An arena value's storage is released with its region,
+                // never by an owner-scope cleanup [STOR-3, STOR-4].
+                IrNominalKind::Arena { .. } => {}
+            },
+            IrType::Unit
+            | IrType::Bool
+            | IrType::Integer { .. }
+            | IrType::Float { .. }
+            | IrType::Array { .. }
+            // [VIEW-1, PROV-3] a view is loan-bearing: it owns no storage and
+            // no element, so nothing of it is ever released.
+            | IrType::Slice { .. }
+            | IrType::Address(_)
+            | IrType::Nominal(_) => {}
+        }
+    }
+    Some(false)
+}
+
+fn lower_type(erasure: &[IrNominalId], value: CheckedType) -> Result<IrType, LoweringFailure> {
     Ok(match value {
         CheckedType::Unit => IrType::Unit,
         CheckedType::Bool => IrType::Bool,
@@ -193,19 +523,32 @@ fn lower_type(value: CheckedType) -> Result<IrType, LoweringFailure> {
         CheckedType::Generic(_) | CheckedType::GenericInt(_) | CheckedType::GenericFloat(_) => {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        CheckedType::Nominal(id) => IrType::Nominal(IrNominalId(id.0)),
+        CheckedType::Nominal(id) => IrType::Nominal(erased_nominal(erasure, id)),
         CheckedType::Array { element, length } => IrType::Array {
-            element: lower_flat_element(element)?,
+            element: lower_flat_element(erasure, element)?,
             length: length
                 .value()
                 .ok_or(LoweringFailure::InvalidCheckedProgram)?,
         },
         CheckedType::Buffer { element } => IrType::Buffer {
-            element: lower_flat_element(element)?,
+            element: lower_flat_element(erasure, element)?,
         },
         CheckedType::Slice { element, .. } => IrType::Slice {
-            element: lower_flat_element(element)?,
+            element: lower_flat_element(erasure, element)?,
         },
+        CheckedType::FixedVector { element, length } => IrType::FixedVector {
+            element: lower_element(erasure, element)?,
+            length: length
+                .value()
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+        },
+        CheckedType::Vector {
+            element, release, ..
+        } => IrType::Vector {
+            release: lower_release_class(release),
+            element: lower_element(erasure, element)?,
+        },
+        CheckedType::Heap { .. } | CheckedType::Extent { .. } => IrType::Provider,
     })
 }
 
@@ -258,6 +601,11 @@ pub enum IrNominalKind {
     },
     Box {
         referent: IrType,
+        /// [PROV-6, S39] which release action this cell's own reclamation is.
+        /// The ambient-heap `box<T>` [STOR-2] and a `Box<'s, T>` at a general
+        /// store both free their cell; a `Box<'s, T>` at a bump extent is
+        /// reclaimed by its region's own reset and has no action of its own.
+        release: IrReleaseClass,
     },
     /// One `arena<'r, T>` instance: a pointer-shaped handle to region-owned
     /// heap content, released with its region rather than with an owner
@@ -330,12 +678,10 @@ pub enum IrEnumType {
     Nominal(IrNominalId),
 }
 
-impl From<CheckedEnumType> for IrEnumType {
-    fn from(value: CheckedEnumType) -> Self {
-        match value {
-            CheckedEnumType::Bool => Self::Bool,
-            CheckedEnumType::Nominal(id) => Self::Nominal(IrNominalId(id.0)),
-        }
+fn lower_enum_type(erasure: &[IrNominalId], value: CheckedEnumType) -> IrEnumType {
+    match value {
+        CheckedEnumType::Bool => IrEnumType::Bool,
+        CheckedEnumType::Nominal(id) => IrEnumType::Nominal(erased_nominal(erasure, id)),
     }
 }
 
@@ -699,6 +1045,55 @@ impl IrSystemOperation {
     }
 }
 
+/// The [MSR-1] measure one reader row loads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrMeasure {
+    Length,
+    Capacity,
+    Room,
+    Head,
+}
+
+/// Which of [BLK-3]'s four boundary operations one run operation is.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrBoundary {
+    PlaceBack,
+    PlaceFront,
+    TakeBack,
+    TakeFront,
+}
+
+impl IrBoundary {
+    /// Whether this row moves the front boundary, which is the one that can
+    /// leave `head` nonzero [MSR-1].
+    #[must_use]
+    pub const fn front(self) -> bool {
+        matches!(self, Self::PlaceFront | Self::TakeFront)
+    }
+
+    /// Whether this row places a value rather than removing one.
+    #[must_use]
+    pub const fn places(self) -> bool {
+        matches!(self, Self::PlaceBack | Self::PlaceFront)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IrPlaceProjection {
+    /// A field of directly stored nominal content.
+    Field { nominal: IrNominalId, field: u32 },
+    /// An initialized run element selected by its checked logical offset.
+    RunElement {
+        offset: IrValueId,
+        target_domain: IrTargetDomainObligation,
+    },
+    /// An initialized legacy array element, without run descriptor words.
+    ArrayElement {
+        offset: IrValueId,
+        target_domain: IrTargetDomainObligation,
+    },
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IrOperation {
     Constant(IrConstant),
@@ -755,11 +1150,6 @@ pub enum IrOperation {
         offset: IrValueId,
         target_domain: IrTargetDomainObligation,
     },
-    InsertArray {
-        aggregate: IrValueId,
-        index: IrValueId,
-        value: IrValueId,
-    },
     BufferFill {
         length: IrValueId,
         value: IrValueId,
@@ -778,8 +1168,61 @@ pub enum IrOperation {
         length: IrValueId,
         maximum_length: u64,
     },
-    BufferLength {
+    BufferMeasure {
         buffer: IrValueId,
+    },
+    /// [BLK-2] `fixed_vector`: one frame-resident run of the defined type's own
+    /// capacity, whose window is empty. Every slot is raw and the two
+    /// descriptor words are zero.
+    FixedVector,
+    /// [BLK-2] `arena_frame`: one bump extent reserved in the reserving
+    /// activation's own frame. The provider value is that reservation's base
+    /// address and its cursor, and the reservation establishes the extent's
+    /// initial state — the cursor at zero — at every activation of the region
+    /// block naming its store region.
+    ArenaFrame {
+        bytes: u64,
+        align: u64,
+    },
+    /// [BLK-2] one take from a store: the run of `count` slots the store
+    /// hands out, and the store's own advanced state.
+    ///
+    /// `store` is the address of the `&uniq` provider operand, so the take
+    /// reads the store's state and writes it back through the same borrow.
+    /// A `refusal` names the `Option` the row hands back when the store has
+    /// nothing to give; a row whose domain requirement is proved carries
+    /// none and always succeeds.
+    StoreTake(IrStoreTake),
+    /// S39 one cell formation over a store.
+    StoreBox(IrStoreBox),
+    /// [MSR-1] one measure of a run or a bump extent, read as its [OP-1]
+    /// reader row loads it. A cell the measure table fixes as a constant
+    /// never reaches here.
+    ContainerMeasure {
+        measure: IrMeasure,
+        container: IrValueId,
+    },
+    /// One discharged source subscript read of a run [OP-4, BLK-1]: the
+    /// offset is a logical one and the storage read is slot
+    /// `(head + i) mod cap`. See [`Self::ArrayIndex`] for the discharge.
+    RunIndex {
+        run: IrValueId,
+        offset: IrValueId,
+        target_domain: IrTargetDomainObligation,
+    },
+    /// [BLK-3] the run one boundary operation hands back: one store at the
+    /// boundary slot for a placement, and one boundary arithmetic for both.
+    RunBoundary {
+        row: IrBoundary,
+        run: IrValueId,
+        /// The placed element; a removal row has none.
+        value: Option<IrValueId>,
+    },
+    /// [BLK-3] the element a removal row hands back, read from the boundary
+    /// slot before the boundary moves.
+    RunTaken {
+        row: IrBoundary,
+        run: IrValueId,
     },
     /// One discharged source subscript read [OP-4]; see [`Self::ArrayIndex`].
     BufferIndex {
@@ -808,7 +1251,16 @@ pub enum IrOperation {
     SliceFromBuffer {
         buffer: IrValueId,
     },
-    SliceLength {
+    /// [VIEW-2] one view over a run's initialized window [BLK-1].
+    ///
+    /// The window is `len` slots beginning at `head`, and the row's own
+    /// requirement `head_of(vector) <= room_of(vector)` was discharged before
+    /// this operation exists, so the window is one contiguous range and the
+    /// descriptor is the slot at `head` together with `len`.
+    SliceFromRun {
+        run: IrValueId,
+    },
+    SliceMeasure {
         slice: IrValueId,
     },
     /// One discharged source subscript read [OP-4]; see [`Self::ArrayIndex`].
@@ -818,6 +1270,13 @@ pub enum IrOperation {
         target_domain: IrTargetDomainObligation,
     },
     BoxNew {
+        nominal: IrNominalId,
+        value: IrValueId,
+    },
+    /// S39 the destructuring consume of a cell: its referent is loaded out
+    /// and its own storage is released, which is a free on a general store
+    /// and nothing on a bump extent.
+    BoxTake {
         nominal: IrNominalId,
         value: IrValueId,
     },
@@ -873,6 +1332,12 @@ pub enum IrOperation {
         value: IrValueId,
         referent: IrAddressed,
     },
+    /// A typed child place of an already stable owner or borrow. This keeps
+    /// the same backing and lifetime; it does not read or copy its content.
+    ProjectAddress {
+        address: IrValueId,
+        projection: IrPlaceProjection,
+    },
     Load {
         address: IrValueId,
         referent: IrAddressed,
@@ -925,33 +1390,58 @@ pub enum IrInstruction {
         index: IrValueId,
         value: IrValueId,
     },
+    /// One element-position store through an exclusive view [SET-1,
+    /// VIEW-1]. The descriptor is unchanged; the storage written is the
+    /// origin's, reached through the view's own data pointer.
+    StoreSlice {
+        slice: IrValueId,
+        index: IrValueId,
+        value: IrValueId,
+    },
     Store {
         address: IrValueId,
         value: IrValueId,
         referent: IrAddressed,
     },
-    Drop(IrDrop),
+    /// Capture every cleanup subject before running this checked release
+    /// sequence. A release must not change a later subject's saved value.
+    Drops(Vec<IrDrop>),
+}
+
+/// A release consumes either an already captured value or the initialized
+/// content at an existing typed place. Naming a cleanup place does not read
+/// its entire content into another owned aggregate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrDropSubject {
+    Value(IrValueId),
+    Place(IrValueId),
 }
 
 /// One compiler-derived release, explicit on the normal control-flow edge
 /// that carries it [STOR-3].
 ///
 /// Every drop and every release is represented before lowering. The IR places
-/// these records on `Jump` and `Return` terminators and as `Drop` instructions
+/// these records on `Jump` and `Return` terminators and as `Drops` instructions
 /// in straight-line position. Their order inside one edge is the checked
 /// program's reverse declaration order, and their position relative to
 /// surrounding calls is the order [EFF-5] requires of every conforming
 /// lowering.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IrDrop {
-    value: IrValueId,
+    subject: IrDropSubject,
     ty: IrType,
     release: SystemRelease,
 }
 
 impl IrDrop {
-    pub const fn value(self) -> IrValueId {
-        self.value
+    pub const fn subject(self) -> IrDropSubject {
+        self.subject
+    }
+
+    pub const fn operand(self) -> IrValueId {
+        match self.subject {
+            IrDropSubject::Value(value) | IrDropSubject::Place(value) => value,
+        }
     }
 
     pub const fn ty(self) -> IrType {
@@ -1262,6 +1752,9 @@ pub struct IrCompletionPipeline {
     /// binds instead. This is the same per-slot storage a submitted
     /// operation's captured scalars take, named at the IR level because a
     /// compiler-derived release rides one of them.
+    /// Addressed bindings carry their addresses, not snapshots of content a
+    /// callee may still be writing. The issue stage's places have separate
+    /// backing per slot until that slot's remainder and releases complete.
     staged_carries: Vec<(IrValueId, IrValueId)>,
 }
 
@@ -1569,10 +2062,79 @@ pub enum IrSynthesis {
     Chunk,
 }
 
+/// A checked source signature's mode, independent of its lowered value type.
+///
+/// Descriptor and opaque-handle types can have the same representation in all
+/// three modes. This record does not carry a loan origin or its lifetime, and
+/// cannot by itself authorize aliasing an input and a result destination.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrSourceMode {
+    /// The source signature passes an owned value.
+    Own,
+    /// The source signature passes shared access to an existing value.
+    Shared,
+    /// The source signature passes exclusive access to an existing value.
+    Unique,
+}
+
+/// Checked source roles retained independently of representation and erased regions.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IrSourceSignature {
+    parameters: Vec<IrSourceMode>,
+    result: IrSourceMode,
+}
+
+/// One source argument's checked use, distinct from its formal passing mode.
+///
+/// Consuming a unique holder transfers that holder, not ownership of its
+/// referent. Combine this record with the callee's source signature; neither
+/// the representation type nor a consume flag alone supplies that distinction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrSourceArgument {
+    /// A direct binding occurrence; the flag is the owning checker's verdict.
+    Binding {
+        /// Whether this occurrence consumes the source binding.
+        consume_root: bool,
+    },
+    /// A checked field projection, including its enclosing-root consumption.
+    Projection {
+        /// Whether this projection consumes its enclosing source binding.
+        consume_root: bool,
+    },
+    /// A borrow or reborrow formed over existing storage.
+    Borrow,
+    /// Content selected through a place or dereference. This does not claim
+    /// that the enclosing owner is consumed or that affine content is copyable.
+    PlaceRead,
+    /// A literal or another computed value, with no binding-transfer claim.
+    Value,
+}
+
+/// Source-call use and direct borrow-result relations tied to one IR call.
+///
+/// The actual arguments and their typed address/projection operations remain
+/// on the call. A result's origin is the complete candidate argument; it need
+/// not be the exact subplace selected inside the callee. No source offset is
+/// reevaluated to produce this metadata, and it adds no executable read.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IrSourceCall {
+    result: IrValueId,
+    arguments: Vec<IrSourceArgument>,
+    /// A direct borrow result's checked candidate. Absence says nothing about
+    /// loans carried inside owned view results or other aggregates.
+    returned_borrow_argument: Option<usize>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrFunction {
     name: String,
     parameters: Vec<(IrValueId, IrType)>,
+    /// Checked source modes, or `None` for a compiler-synthesized function.
+    /// Internal transfer contracts must not be invented from representation.
+    source_signature: Option<IrSourceSignature>,
+    /// Only calls lowered from checked source; synthesized calls do not
+    /// acquire invented source use or provenance records.
+    source_calls: Vec<IrSourceCall>,
     result: IrType,
     values: Vec<IrType>,
     blocks: Vec<IrBlock>,

@@ -1,0 +1,26 @@
+struct Inner {
+  samples: FixedVector<u32, 4>;
+}
+
+struct Outer {
+  inner: Inner;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "MSR-3: the construct placement is per placement, not per depth. [MSR-1] admits a measure place formed with any number of field selections, so `inner` names one measured place at `inner.samples`; the second construct renames that place to `outer.inner.samples` and carries its measures with it, which is what discharges the subscript's [OP-4] obligation two levels down.";
+  let made = fixed_vector::<u32, 4>();
+  set made = place_back(vector: move made, value: 1_u32);
+  let inner = Inner(samples: move made);
+  let outer = Outer(inner: move inner);
+  let size = len_of(outer.inner.samples);
+  if size == 1_u64 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  let first = outer.inner.samples[0_u64];
+  if first == 1_u32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

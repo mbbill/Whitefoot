@@ -1,0 +1,19 @@
+fn first_of(table: &FixedVector<u32, 4>) -> value: own u32 reads(table) contract {
+  requires len_of(deref(table)) > 0_u64;
+} {
+  doc "A shared borrow of an inline run as a parameter. [BLK-4] refuses only the `&uniq` of a run, so this is the ordinary borrow and the window is read through it [OWN-5, TYPE-7].";
+  return deref(table)[0_u64];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let table = fixed_vector::<u32, 4>();
+  set table = place_back(vector: move table, value: 7_u32);
+  region {
+    let seen = first_of(table: &table);
+    if seen == 7_u32 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

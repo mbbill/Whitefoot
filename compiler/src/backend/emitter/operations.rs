@@ -1,10 +1,12 @@
 use super::*;
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
-    /// The entry-block slot that gives a borrowed binding its stable address.
+    /// The planned backing that gives a binding its stable address. An issue
+    /// stage selects its own pipeline slot before exposing any borrowed address.
     ///
-    /// Only directly stored content is addressed: a descriptor or opaque
-    /// handle is already its own borrow and never reaches this operation.
+    /// This is the address of stored content. Source borrows of descriptors
+    /// and handles keep their existing value ABI; they do not implicitly
+    /// expose a mutable descriptor slot.
     pub(super) fn emit_address_of(
         &mut self,
         result: IrValueId,
@@ -18,15 +20,28 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         {
             return Err(BackendFailure::InvalidIr);
         }
-        let referent_type = llvm_type(self.program, referent.ty())?;
-        let address = self.entry_slot(FunctionSlot::Address(result))?;
-        writeln!(
-            self.output,
-            "  store {referent_type} {}, ptr {}",
-            self.value_name(value),
-            address
-        )
-        .map_err(|_| BackendFailure::TextEmission)
+        let address = self.binding_place(result)?;
+        if self
+            .frame
+            .slots
+            .contains_key(&FunctionSlot::StagedAddress(result))
+        {
+            writeln!(
+                self.output,
+                "  {} = getelementptr i8, ptr {address}, i64 0",
+                value_name(result)
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+        }
+        if self
+            .storage
+            .slot(value)
+            .and_then(|slot| self.storage.destination(slot))
+            != Some(result)
+        {
+            self.store_value_at(value, &address)?;
+        }
+        Ok(())
     }
 
     pub(super) fn emit_load(
@@ -79,7 +94,18 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrAddressed::Unit
             | IrAddressed::Bool
             | IrAddressed::Integer { .. }
-            | IrAddressed::Float { .. } => true,
+            | IrAddressed::Float { .. }
+            | IrAddressed::Buffer { .. }
+            | IrAddressed::Slice { .. }
+            // A run's storage — inline slots, or the descriptor of a
+            // store-resident one — lives in its owner, so a borrow of either
+            // run addresses that storage [BLK-1].
+            | IrAddressed::FixedVector { .. }
+            | IrAddressed::Array { .. }
+            | IrAddressed::Vector { .. }
+            // A provider is stored content: its cursor is the state a bump
+            // take advances through the `&uniq` borrow [PROV-1, BLK-2].
+            | IrAddressed::Provider => true,
         })
     }
 
@@ -111,19 +137,39 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             .functions()
             .get(function as usize)
             .ok_or(BackendFailure::InvalidIr)?;
-        if target.result() != ty || target.parameters().len() != arguments.len() {
+        let abi = FunctionAbi::build(self.program, target)?;
+        if abi.result().ty() != ty || abi.parameters().len() != arguments.len() {
             return Err(BackendFailure::InvalidIr);
         }
         let mut rendered = Vec::with_capacity(arguments.len());
-        for (argument, (_, parameter_type)) in arguments.iter().zip(target.parameters()) {
-            if self.value_type(*argument) != Some(*parameter_type) {
+        let stored_result = abi.result().uses_destination();
+        if stored_result {
+            let destination = self.value_place(result)?;
+            rendered.push(format!("ptr {destination}"));
+        }
+        for (argument, parameter) in arguments.iter().zip(abi.parameters()) {
+            if self.value_type(*argument) != Some(parameter.ty()) {
                 return Err(BackendFailure::InvalidIr);
             }
-            rendered.push(format!(
-                "{} {}",
-                llvm_type(self.program, *parameter_type)?,
-                self.value_name(*argument)
-            ));
+            if parameter.is_indirect() {
+                let address = self.value_place(*argument)?;
+                rendered.push(format!("ptr {address}"));
+            } else {
+                rendered.push(format!(
+                    "{} {}",
+                    llvm_type(self.program, parameter.ty())?,
+                    self.value_name(*argument)
+                ));
+            }
+        }
+        if stored_result {
+            return writeln!(
+                self.output,
+                "  call void @{}({})",
+                self.callee_symbol(function, target.name()),
+                rendered.join(", ")
+            )
+            .map_err(|_| BackendFailure::TextEmission);
         }
         writeln!(
             self.output,

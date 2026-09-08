@@ -1,7 +1,7 @@
-const values: array<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
+const values: FixedVector<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
 
 command fn main() -> status: own ExitStatus pure {
-  doc "S11 proves each counted binder is below the captured upper endpoint, discharging the array subscript; the run also fixes half-open exhaustion, a zero-trip range, and a break naming the counted loop [ENT-3, OP-4, FN-1].";
+  doc "S11 proves each counted binder is below the captured upper endpoint, discharging the run subscript; the run also fixes half-open exhaustion, a zero-trip range, and a break naming the counted loop [ENT-3, OP-4, FN-1].";
   let total = 0_u8;
   for @full (i in 0_u64..4_u64) {
     let value = values[i];

@@ -1,0 +1,18 @@
+fn bump(count: own u64) -> total: own u64 pure contract {
+  requires count <= 99_u64;
+  ensures total == count + 1_u64;
+} {
+  doc "One more than its operand, related to it by a displaced equality.";
+  let next = count + 1_u64;
+  return next;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "MSR-5: a contract clause side is an affine expression, so a relation displaced by a written constant is one clause rather than an unwritable fact.";
+  let five = 5_u64;
+  let six = bump(count: five);
+  if six == 6_u64 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}

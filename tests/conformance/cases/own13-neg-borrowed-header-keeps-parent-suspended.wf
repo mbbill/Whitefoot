@@ -1,0 +1,21 @@
+enum Packet {
+  Data(value: u64);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let packet = Data(value: 3_u64);
+  region {
+    let holder = &uniq packet;
+    match deref(holder) {
+      Data(value: payload) => {
+        set deref(payload) = 7_u64;
+        match deref(holder) {
+          Data(value: second) => {
+            let observed = deref(second);
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

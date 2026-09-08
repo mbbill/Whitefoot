@@ -199,6 +199,22 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // static domain obligation before emission. No system operation, resource
 // representation, release row, result shape, entry form, or host ABI mapping
 // changes, so the v0.43 mapping carries forward complete.
+// v0.45 result-list review (2026-09-04): [GRAM-2] lets a `fn_decl` write an
+// ordered result list and [GRAM-4] adds the destructuring `let` binder list,
+// the `set` target list, and the multi-expression `return` that write to it.
+// This does move a result shape, and only that one: a declaration that writes
+// two or more results hands its caller one ordinary owned aggregate of the
+// compiler-owned result-list nominal, and the binder and target lists are the
+// ordinary struct projections of it. No new representation exists — the
+// aggregate is emitted, returned, and projected exactly as a source `struct`
+// value already is, with the same host ABI rule, and every ordinal is an
+// ordinary owned value under the ordinary transfer, drop, and release rules.
+// [CALL-4]'s result ordinal, its ordinal-named route, and the two added
+// [ENT-3.S12] destinations are front-end contract surface over erased clause
+// syntax and add no emitted operation. No system operation, resource
+// representation, release row, entry form, or host ABI mapping changes, and
+// the entry's own result shape is unchanged, so the v0.44 mapping carries
+// forward complete.
 // v0.45 product-interval review (2026-09-05): the one amendment is front-end
 // fact publication. [ENT-6]'s interval-product rule already proved the four
 // endpoint products it needs to admit a non-constant multiplication; [ENT-3]'s
@@ -322,7 +338,47 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // leaf normalizes a Winsock code onto the Win32 code that table already
 // carries for the same condition (`../windows_runtime.h`,
 // `wf__windows_error_from_socket`).
-const REVIEWED_FOR: &str = "v0.50";
+// v0.51 containers review (2026-09-06): this version merges the containers
+// batch into the v0.50 amendments, and it is the first containers version that
+// reaches emission. [BLK-0]'s kernel rows are the run, cell, view and provider
+// surface; a row's declaration record is read exactly as an [SYS-2] record is,
+// its emitted call is the ordinary call this mapping already qualifies, and
+// [BLK-1] and [OP-9] make a run's `len`, `cap`, `room` and `head` descriptor
+// words, which are ordinary owned u64 loads rather than a new representation.
+// [VIEW-1]'s two views are one descriptor at two loan strengths; only the
+// exclusive one is a write destination, and `set view[i] = e;` [SET-1] is one
+// added IR instruction and one added emitter that writes through the view's
+// own data pointer and leaves the descriptor unchanged. An exclusive view over
+// this compiler's non-addressable `array<T, n>` is an explicit unsupported
+// capability, not a silent snapshot write. [PROV-6]'s `dispose` is an early
+// release at a written point of a release this mapping already emits, with the
+// same release row and the same drop order; the linearity bounds decide only
+// which programs reach it. [S23] retires the `heap` atom to an IDENT and
+// `allocates` takes the ordinary formal-rooted `effect_path`, which moves no
+// release row: the ambient heap has no spelling, and [PROG-1]'s resource
+// closure is computed over the same fixed point it always was. Every remaining
+// amendment is front-end proof surface — [MSR-1..6]'s measure terms and their
+// compiler-owned affine atoms, const generics as affine atoms, and [ENT-5] and
+// [MSR-2]'s kill events — and [ENT-1] erases all of it before lowering. Every
+// emitted partial operation still passes its static domain obligation before
+// emission. No system operation, resource representation, release row, entry
+// form, or host ABI mapping changes, so the v0.50 mapping carries forward
+// complete over the operations named above.
+//
+// v0.51 merge note (2026-09-06): v0.51 is the containers amendments above
+// landing over v0.50's streams-and-TCP rows, and the two are disjoint at this
+// table. The containers batch adds no system row and respells none; the
+// streams-and-TCP batch adds no run, view, cell, or provider. Where they meet
+// is the range-bearing operand class [SYS-8], which now names the two views at
+// every one of the ten rows including the three v0.50 added — `read_next`,
+// `receive_next`, and `send_once`. That is a source-side operand class and not
+// a representation: a call still hands the target a base pointer and a
+// sanitized count, so every ordinal, ABI symbol, representation, release
+// action, and entry form v0.50 approved is unchanged. The one entry change is
+// [FN-7] ordinal 6, `command.heap`, which supplies the proof-only provider
+// value and opens no handle. The v0.50 mapping therefore carries forward
+// complete.
+const REVIEWED_FOR: &str = "v0.51";
 
 /// The number of [SYS-2] opaque resource types with a release row.
 ///

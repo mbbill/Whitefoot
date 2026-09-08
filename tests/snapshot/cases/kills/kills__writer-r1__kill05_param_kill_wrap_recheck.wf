@@ -1,4 +1,5 @@
-fn wrap_lookup(table: own array<u16, 10>, pos: own u64) -> result: own u16 pure contract {
+fn wrap_lookup(table: own FixedVector<u16, 10>, pos: own u64) -> result: own u16 reads(table) contract {
+  requires len_of(table) >= 10_u64;
   requires pos < 10_u64;
 } {
   doc "expect ACCEPT: set pos = pos +wrap 1 kills the requires-proved bound, so a fresh branch must re-establish the wrapped index's own bound before the second index.";
@@ -15,7 +16,17 @@ fn wrap_lookup(table: own array<u16, 10>, pos: own u64) -> result: own u16 pure 
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let table = array_new::<u16, 10>(3_u16);
+  let table = fixed_vector::<u16, 10>();
+  set table = place_back(vector: move table, value: 3_u16);
+  set table = place_back(vector: move table, value: 3_u16);
+  set table = place_back(vector: move table, value: 3_u16);
+  set table = place_back(vector: move table, value: 3_u16);
+  set table = place_back(vector: move table, value: 3_u16);
+  set table = place_back(vector: move table, value: 3_u16);
+  set table = place_back(vector: move table, value: 3_u16);
+  set table = place_back(vector: move table, value: 3_u16);
+  set table = place_back(vector: move table, value: 3_u16);
+  set table = place_back(vector: move table, value: 3_u16);
   let value = wrap_lookup(table: move table, pos: 9_u64);
   if value == 3_u16 {
   } else {

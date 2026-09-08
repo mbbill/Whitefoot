@@ -1,0 +1,27 @@
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "A reference holder over a store-resident run.";
+  region {
+    match heap_vector::<u8>(store: &uniq heap, count: 2_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let items = place_back(vector: move fresh, value: 5_u8);
+        region {
+          let holder = &items;
+          let size = len_of(deref(holder));
+          if 0_u64 < size {
+            let value = deref(holder)[0_u64];
+            if value == 5_u8 {
+            } else {
+              return exit_status(code: 1_u8);
+            }
+          } else {
+            return exit_status(code: 2_u8);
+          }
+        }
+        return exit_status(code: 0_u8);
+      }
+    }
+  }
+}

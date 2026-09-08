@@ -77,7 +77,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .iter()
                 .flat_map(|variant| variant.fields.iter().map(|field| field.ty))
                 .collect(),
-            CheckedNominalKind::Box { referent } => vec![*referent],
+            CheckedNominalKind::Box { referent, .. } => vec![*referent],
             // The region release walks the arena content exactly as an owner
             // drop walks a box referent, so a contained resource row still
             // reaches [EFF-2]'s release contribution.
@@ -101,13 +101,47 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// records are the complete release contribution of [EFF-2].
     pub(super) fn collect_release_sites(
         &self,
+        function: &super::FunctionSignature,
         statements: &[CheckedStatement],
         sites: &mut Vec<ReleaseSite>,
     ) -> Result<(), CheckStop> {
         for statement in statements {
             match statement {
-                CheckedStatement::Let { value, .. } => {
+                CheckedStatement::Let { value, .. }
+                | CheckedStatement::DestructuringLet { value, .. } => {
                     self.collect_expression_release_sites(value, sites)?;
+                }
+                // [PROV-6, EFF-2] `dispose p;` is a written statement, so the
+                // walk it runs contributes to the body-syntactic row where
+                // the checker formed it, not to the release contribution.
+                CheckedStatement::Dispose { value, .. } => {
+                    self.collect_expression_release_sites(value, sites)?;
+                }
+                CheckedStatement::SetList {
+                    targets, values, ..
+                } => {
+                    for target in targets {
+                        match target {
+                            CheckedSetTarget::Place(_) => {}
+                            CheckedSetTarget::ArrayIndex(target) => {
+                                self.collect_expression_release_sites(&target.offset, sites)?;
+                            }
+                            CheckedSetTarget::BufferIndex(target) => {
+                                self.collect_expression_release_sites(&target.offset, sites)?;
+                            }
+                            CheckedSetTarget::Storage(target) => {
+                                for offset in target.offsets() {
+                                    self.collect_expression_release_sites(offset, sites)?;
+                                }
+                            }
+                            CheckedSetTarget::SliceIndex(target) => {
+                                self.collect_expression_release_sites(&target.offset, sites)?;
+                            }
+                        }
+                    }
+                    for value in values.expressions() {
+                        self.collect_expression_release_sites(value, sites)?;
+                    }
                 }
                 CheckedStatement::PropagateLet {
                     scrutinee,
@@ -115,7 +149,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ..
                 } => {
                     self.collect_expression_release_sites(scrutinee, sites)?;
-                    self.collect_drop_release_sites(error_drops, sites)?;
+                    self.collect_drop_release_sites(function, error_drops, sites)?;
                 }
                 CheckedStatement::Set { target, value, .. }
                 | CheckedStatement::Replace { target, value, .. } => {
@@ -128,6 +162,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             self.collect_expression_release_sites(&target.offset, sites)?;
                         }
                         CheckedSetTarget::BufferIndex(target) => {
+                            self.collect_expression_release_sites(&target.offset, sites)?;
+                        }
+                        CheckedSetTarget::Storage(target) => {
+                            for offset in target.offsets() {
+                                self.collect_expression_release_sites(offset, sites)?;
+                            }
+                        }
+                        CheckedSetTarget::SliceIndex(target) => {
                             self.collect_expression_release_sites(&target.offset, sites)?;
                         }
                     }
@@ -153,7 +195,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::Proof(_) => {}
                 CheckedStatement::Return { value, drops, .. } => {
                     self.collect_expression_release_sites(value, sites)?;
-                    self.collect_drop_release_sites(drops, sites)?;
+                    self.collect_drop_release_sites(function, drops, sites)?;
                 }
                 CheckedStatement::Match {
                     scrutinee, arms, ..
@@ -163,21 +205,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 } => {
                     self.collect_expression_release_sites(scrutinee, sites)?;
                     for arm in arms {
-                        self.collect_release_sites(&arm.body, sites)?;
-                        self.collect_drop_release_sites(&arm.fallthrough_drops, sites)?;
+                        self.collect_release_sites(function, &arm.body, sites)?;
+                        self.collect_drop_release_sites(function, &arm.fallthrough_drops, sites)?;
                     }
                 }
                 CheckedStatement::Give { value, drops, .. } => {
                     self.collect_expression_release_sites(value, sites)?;
-                    self.collect_drop_release_sites(drops, sites)?;
+                    self.collect_drop_release_sites(function, drops, sites)?;
                 }
                 CheckedStatement::Loop {
                     body,
                     backedge_drops,
                     ..
                 } => {
-                    self.collect_release_sites(body, sites)?;
-                    self.collect_drop_release_sites(backedge_drops, sites)?;
+                    self.collect_release_sites(function, body, sites)?;
+                    self.collect_drop_release_sites(function, backedge_drops, sites)?;
                 }
                 CheckedStatement::CountedRange {
                     lower,
@@ -188,19 +230,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 } => {
                     self.collect_expression_release_sites(lower, sites)?;
                     self.collect_expression_release_sites(upper, sites)?;
-                    self.collect_release_sites(body, sites)?;
-                    self.collect_drop_release_sites(backedge_drops, sites)?;
+                    self.collect_release_sites(function, body, sites)?;
+                    self.collect_drop_release_sites(function, backedge_drops, sites)?;
                 }
                 CheckedStatement::Break { drops, .. } => {
-                    self.collect_drop_release_sites(drops, sites)?;
+                    self.collect_drop_release_sites(function, drops, sites)?;
                 }
                 CheckedStatement::Region {
                     body,
                     fallthrough_drops,
                     ..
                 } => {
-                    self.collect_release_sites(body, sites)?;
-                    self.collect_drop_release_sites(fallthrough_drops, sites)?;
+                    self.collect_release_sites(function, body, sites)?;
+                    self.collect_drop_release_sites(function, fallthrough_drops, sites)?;
                 }
             }
         }
@@ -209,13 +251,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     fn collect_drop_release_sites(
         &self,
+        function: &super::FunctionSignature,
         drops: &[CheckedDrop],
         sites: &mut Vec<ReleaseSite>,
     ) -> Result<(), CheckStop> {
         for drop in drops {
             // The drop record already carries its [SYS-5] row, so attribution
             // reads the checked program rather than rederiving it.
-            let effects = self.effects_of_row(drop.release.row, drop.state_origins.as_ref())?;
+            let mut effects = self.effects_of_row(drop.release.row, drop.state_origins.as_ref())?;
+            // [PROV-6, D3] a derived release of store-backed storage spends
+            // that store's provider capability, and the scope it runs in says
+            // so in its own row.
+            for path in self.resolved_provider_writes(function, drop.ty)? {
+                effects.add_write(path);
+            }
             if effects != EffectSet::NONE {
                 sites.push(ReleaseSite {
                     owner: ReleaseOwner::Binding(drop.binding),
@@ -250,6 +299,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedExpression::UserCall { arguments, .. }
             | CheckedExpression::SystemCall { arguments, .. }
+            | CheckedExpression::KernelCall { arguments, .. }
             | CheckedExpression::IntegerOperation { arguments, .. }
             | CheckedExpression::FloatOperation { arguments, .. }
             | CheckedExpression::BooleanOperation { arguments, .. }
@@ -274,6 +324,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::ProjectValue { value, .. } => {
                 self.collect_expression_release_sites(value, sites)?;
             }
+            CheckedExpression::ReadStorage { root, .. } => {
+                for offset in root.offsets() {
+                    self.collect_expression_release_sites(offset, sites)?;
+                }
+            }
             CheckedExpression::ArrayIndex { offset, .. }
             | CheckedExpression::BufferIndex { offset, .. }
             | CheckedExpression::SliceIndex { offset, .. } => {
@@ -290,10 +345,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::Binding { .. }
-            | CheckedExpression::ArrayLength { .. }
-            | CheckedExpression::BufferLength { .. }
+            | CheckedExpression::ArrayMeasure { .. }
+            | CheckedExpression::BufferMeasure { .. }
+            | CheckedExpression::ContainerMeasure { .. }
+            | CheckedExpression::PostconditionResultMeasure { .. }
             | CheckedExpression::SliceOf { .. }
-            | CheckedExpression::SliceLength { .. }
+            | CheckedExpression::SliceMeasure { .. }
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBox { .. }
@@ -309,7 +366,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// Releases carry target execution metadata, not source effect atoms. A
     /// state-writing release must carry the ordinary structural origins of
     /// every state leaf it releases.
-    fn effects_of_row(
+    pub(super) fn effects_of_row(
         &self,
         row: SystemReleaseRow,
         origins: Option<&super::super::model::CheckedStateOrigins>,
@@ -361,9 +418,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedType::GenericInt(_)
                 | CheckedType::GenericFloat(_)
                 | CheckedType::Generic(_) => {}
+                // A `Heap` is dropped with the empty row and an `Arena` is
+                // released with its own region, so neither derives an owner-
+                // scope drop [STOR-3, BLK-2].
+                CheckedType::Heap { .. } | CheckedType::Extent { .. } => {}
                 CheckedType::Array { .. }
                 | CheckedType::Slice { .. }
-                | CheckedType::Buffer { .. } => {
+                | CheckedType::Buffer { .. }
+                | CheckedType::FixedVector { .. }
+                | CheckedType::Vector { .. } => {
                     drops.push((path, current));
                 }
                 CheckedType::Nominal(id) => {
@@ -374,7 +437,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     match &nominal.kind {
                         CheckedNominalKind::Struct { fields } => {
                             pending.push((current, path.clone(), true));
-                            for (index, field) in fields.iter().enumerate() {
+                            // PROV-6 visits fields in declaration order; the
+                            // explicit work stack is last-in, first-out.
+                            for (index, field) in fields.iter().enumerate().rev() {
                                 if self.is_copy_type(field.ty)? {
                                     continue;
                                 }
@@ -432,6 +497,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedType::Array { .. }
                 | CheckedType::Slice { .. }
                 | CheckedType::Buffer { .. }
+                | CheckedType::FixedVector { .. }
+                | CheckedType::Vector { .. }
+                | CheckedType::Heap { .. }
+                | CheckedType::Extent { .. }
                     if selected =>
                 {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
@@ -443,9 +512,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedType::GenericInt(_)
                 | CheckedType::GenericFloat(_)
                 | CheckedType::Generic(_) => {}
+                // A `Heap` is dropped with the empty row and an `Arena` is
+                // released with its own region, so neither derives an owner-
+                // scope drop [STOR-3, BLK-2].
+                CheckedType::Heap { .. } | CheckedType::Extent { .. } => {}
                 CheckedType::Array { .. }
                 | CheckedType::Slice { .. }
-                | CheckedType::Buffer { .. } => {
+                | CheckedType::Buffer { .. }
+                | CheckedType::FixedVector { .. }
+                | CheckedType::Vector { .. } => {
                     drops.push((path, current));
                 }
                 CheckedType::Nominal(id) => {
@@ -484,7 +559,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             return Err(SemanticCompilerFailure::InvalidResolution.into());
                         }
                     }
-                    for (index, field) in fields.iter().enumerate() {
+                    for (index, field) in fields.iter().enumerate().rev() {
                         if self.is_copy_type(field.ty)? {
                             continue;
                         }

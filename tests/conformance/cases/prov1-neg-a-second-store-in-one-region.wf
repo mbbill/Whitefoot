@@ -1,0 +1,8 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "PROV-1: a region names at most one store, so a second reserving occurrence naming a region an earlier one already named is refused at its store argument.";
+  region 'a {
+    let first = arena_frame::<64, 8, 'a>();
+    let second = arena_frame::<64, 8, 'a>();
+  }
+  return exit_status(code: 0_u8);
+}

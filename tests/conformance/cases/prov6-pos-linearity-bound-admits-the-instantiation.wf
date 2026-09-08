@@ -1,0 +1,10 @@
+fn discard<T: affine>(value: own T) -> count: own u8 pure {
+  doc "A body written for the affine class: the value reaches this scope's exit and takes the compiler-derived release there.";
+  return 2_u8;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "PROV-6, S32: the bound names the linearity class the declaration is written for, and an instantiation whose type argument's class is that bound is admitted. A value the modifier does not mark, and whose reclamation spends no capability this scope lacks, is affine.";
+  let n = discard::<u64>(value: 4_u64);
+  return exit_status(code: n);
+}

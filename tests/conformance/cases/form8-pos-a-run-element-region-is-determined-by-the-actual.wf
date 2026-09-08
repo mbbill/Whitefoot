@@ -1,0 +1,44 @@
+fn width_of['s: affine](blocks: own FixedVector<Vector<'s, u8>, 4>) -> (rest: own FixedVector<Vector<'s, u8>, 4>, taken: own Option<Vector<'s, u8>>) reads(blocks), writes(blocks) contract {
+  ensures head_of(rest) == head_of(blocks);
+  ensures len_of(rest) <= len_of(blocks);
+} {
+  doc "Takes one store-backed block off the back of a run of runs, generic over the store.";
+  let held = len_of(blocks);
+  let any = held > 0_u64;
+  if any {
+    let (rest, one) = take_back(vector: move blocks);
+    return move rest, Some<Vector<'s, u8>>(value: move one);
+  }
+  return move blocks, None<Vector<'s, u8>>();
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "FORM-8: a formal region occupying a parameter position at any depth of its type is determined by the actual and is not written at the call. The lift puts a store region one level down, in a run's element type, and that position determines it exactly as a top-level one does, which is what lets a helper be generic over the store of the runs a run holds.";
+  region 'a {
+    let workspace = arena_frame::<1024, 16, 'a>();
+    region {
+      let blocks = fixed_vector::<Vector<'a, u8>, 4>();
+      let block = arena_vector_proved::<u8>(store: &uniq workspace, count: 16_u64);
+      let one = place_back(vector: move blocks, value: move block);
+      let (rest, taken) = width_of(blocks: move one);
+      match taken {
+        None() => {
+          return exit_status(code: 1_u8);
+        }
+        Some(value: got) => {
+          let width = cap_of(got);
+          if width == 16_u64 {
+          } else {
+            return exit_status(code: 2_u8);
+          }
+        }
+      }
+      let left = len_of(rest);
+      if left == 0_u64 {
+      } else {
+        return exit_status(code: 3_u8);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

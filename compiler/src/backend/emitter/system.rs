@@ -917,12 +917,14 @@ fn catalog_ir_type(
             width: 64,
             signed: false,
         },
-        crate::SystemTypeRef::BufferU8 => IrType::Buffer {
-            element: crate::IrFlatElement::Integer {
-                width: 8,
-                signed: false,
-            },
-        },
+        // [SYS-8] an operand class has no one IR type: a range-bearing
+        // operand is a `MutSlice<u8>` or a `Slice<u8>` descriptor, or, until
+        // the old surface retires, a `buffer<u8>` one. Each member renders as
+        // the same `{ ptr, i64 }` pair, which is what the approved
+        // implementation's ABI takes; membership is checked at the argument.
+        crate::SystemTypeRef::DestinationU8 | crate::SystemTypeRef::SourceU8 => {
+            return Err(BackendFailure::InvalidIr);
+        }
         crate::SystemTypeRef::Nominal(index) => system_nominal_ir_type(program, index)?,
         crate::SystemTypeRef::Result { ok, err } => {
             let ok = match ok {
@@ -951,6 +953,27 @@ fn catalog_ir_type(
                     && matches!(err_variant.fields(), [field] if field.ty() == error))
             })?
         }
+    })
+}
+
+/// Whether one emitted argument's IR type is a member of one [SYS-2] operand
+/// class [SYS-8]. A parameter naming an exact type is not a class and is
+/// judged by [`catalog_ir_type`] equality instead.
+fn system_operand_admits(
+    declared: crate::SystemTypeRef,
+    argument: IrType,
+) -> Result<bool, BackendFailure> {
+    let element = crate::IrFlatElement::Integer {
+        width: 8,
+        signed: false,
+    };
+    Ok(match declared {
+        crate::SystemTypeRef::DestinationU8 | crate::SystemTypeRef::SourceU8 => matches!(
+            argument,
+            IrType::Buffer { element: actual } | IrType::Slice { element: actual }
+                if actual == element
+        ),
+        _ => false,
     })
 }
 
@@ -1350,7 +1373,7 @@ fn emit_host_utf8_len(
 
 /// Starts one statically discharged half-open range operation. `sub nuw` is
 /// justified by SYS-8's exact `start <= end` call-site obligation; the other
-/// obligation proves `end <= len(buffer)`, so this wrapper has no check or
+/// obligation proves `end <= len_of(buffer)`, so this wrapper has no check or
 /// runtime-failure fallback.
 fn range_entry(prologue: &str) -> String {
     format!(
@@ -3871,9 +3894,14 @@ pub(super) fn emit_entry(
     let mut supplied = Vec::with_capacity(inputs.len());
     let mut opens_directory = false;
     for (ordinal, (_, ty)) in inputs.iter().zip(main.parameters()) {
-        let expected = expected_input(*ordinal)?;
-        if *ty != system_resource_ir_type(program, expected)? {
-            return Err(BackendFailure::InvalidIr);
+        // [S22] the general store's provider is the one standard input that
+        // is not a [SYS-2] resource: it is the proof-only provider value
+        // [PROV-1, STOR-1], so it is checked against `IrType::Provider` and
+        // supplied as the zero aggregate.
+        match expected_input(*ordinal)? {
+            Some(expected) if *ty == system_resource_ir_type(program, expected)? => {}
+            None if *ty == IrType::Provider => {}
+            _ => return Err(BackendFailure::InvalidIr),
         }
         match ordinal {
             0 => {
@@ -3921,6 +3949,7 @@ pub(super) fn emit_entry(
             5 => {
                 supplied.push("i32 0".to_owned());
             }
+            6 => supplied.push(format!("{} zeroinitializer", PROVIDER_REPRESENTATION)),
             _ => return Err(BackendFailure::InvalidIr),
         }
     }
@@ -4012,9 +4041,14 @@ fn emit_windows_entry(
     let mut supplied = Vec::with_capacity(inputs.len());
     let mut available = Vec::new();
     for (ordinal, (_, ty)) in inputs.iter().zip(main.parameters()) {
-        let expected = expected_input(*ordinal)?;
-        if *ty != system_resource_ir_type(program, expected)? {
-            return Err(BackendFailure::InvalidIr);
+        // [S22] the general store's provider is the one standard input that
+        // is not a [SYS-2] resource: it is the proof-only provider value
+        // [PROV-1, STOR-1], so it is checked against `IrType::Provider` and
+        // supplied as the zero aggregate.
+        match expected_input(*ordinal)? {
+            Some(expected) if *ty == system_resource_ir_type(program, expected)? => {}
+            None if *ty == IrType::Provider => {}
+            _ => return Err(BackendFailure::InvalidIr),
         }
         match ordinal {
             0 => {
@@ -4061,6 +4095,7 @@ fn emit_windows_entry(
                 supplied.push("i32 %stdin".to_owned());
                 available.push("%stdin.available");
             }
+            6 => supplied.push(format!("{} zeroinitializer", PROVIDER_REPRESENTATION)),
             _ => return Err(BackendFailure::InvalidIr),
         }
     }
@@ -4130,16 +4165,24 @@ fn emit_windows_entry(
 }
 
 /// The [FN-7] standard-input row one table ordinal selects.
-fn expected_input(ordinal: u8) -> Result<SystemResourceType, BackendFailure> {
+/// The [SYS-2] resource one standard input supplies, or `None` for the one
+/// row whose value is a provider rather than a system resource [S22].
+fn expected_input(ordinal: u8) -> Result<Option<SystemResourceType>, BackendFailure> {
     match ordinal {
-        0 => Ok(SystemResourceType::Args),
-        1 => Ok(SystemResourceType::DirectoryRead),
-        2 | 3 => Ok(SystemResourceType::OutputStream),
-        4 => Ok(SystemResourceType::HandleFactory),
-        5 => Ok(SystemResourceType::InputStream),
+        0 => Ok(Some(SystemResourceType::Args)),
+        1 => Ok(Some(SystemResourceType::DirectoryRead)),
+        2 | 3 => Ok(Some(SystemResourceType::OutputStream)),
+        4 => Ok(Some(SystemResourceType::HandleFactory)),
+        5 => Ok(Some(SystemResourceType::InputStream)),
+        6 => Ok(None),
         _ => Err(BackendFailure::InvalidIr),
     }
 }
+
+/// The LLVM representation of `IrType::Provider`, which the entry writes
+/// literally because the bootstrap holds no `IrProgram` type table position
+/// for it.
+const PROVIDER_REPRESENTATION: &str = "{ ptr, i64 }";
 
 fn system_resource_ir_type(
     program: &IrProgram<'_, '_, '_>,
@@ -4187,14 +4230,16 @@ impl FunctionEmitter<'_, '_> {
                 .function
                 .value_type(*argument)
                 .ok_or(BackendFailure::InvalidIr)?;
-            if argument_type != catalog_ir_type(self.program, parameter.ty)? {
+            if !system_operand_admits(parameter.ty, argument_type)?
+                && argument_type != catalog_ir_type(self.program, parameter.ty)?
+            {
                 return Err(BackendFailure::InvalidIr);
             }
             if proof_only_resource(self.program, argument_type)? {
                 continue;
             }
             let rendered_type = llvm_type(self.program, argument_type)?;
-            rendered.push(format!("{rendered_type} {}", value_name(*argument)));
+            rendered.push(format!("{rendered_type} {}", self.value_name(*argument)));
         }
         writeln!(
             self.output,

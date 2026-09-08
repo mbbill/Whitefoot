@@ -1,6 +1,6 @@
-//! Stable storage for checked borrows of directly stored content.
+//! Stable storage for checked reads, writes and borrows of owned content.
 //!
-//! `BorrowAddressed` is the semantic authority. Finding those explicit nodes
+//! Checked storage paths are the semantic authority. Finding those explicit nodes
 //! before CFG lowering lets an owner use one representation on every branch:
 //! its binding carries a stable address, while ordinary value uses load from
 //! that address. Lowering never infers a borrow from source shape or type alone.
@@ -23,21 +23,57 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
     for statement in statements {
         match statement {
             CheckedStatement::Let { value, .. }
+            | CheckedStatement::DestructuringLet { value, .. }
             | CheckedStatement::Evaluate(value)
+            | CheckedStatement::Dispose { value, .. }
             | CheckedStatement::DropExpression { value, .. }
             | CheckedStatement::Return { value, .. }
             | CheckedStatement::Give { value, .. } => collect_expression(value, bindings),
             CheckedStatement::PropagateLet { scrutinee, .. } => {
                 collect_expression(scrutinee, bindings);
             }
+            CheckedStatement::SetList {
+                targets, values, ..
+            } => {
+                for target in targets {
+                    match target {
+                        CheckedSetTarget::Place(_) => {}
+                        CheckedSetTarget::ArrayIndex(target) => {
+                            bindings.insert(target.binding);
+                            collect_expression(&target.offset, bindings);
+                        }
+                        CheckedSetTarget::BufferIndex(target) => {
+                            collect_expression(&target.offset, bindings);
+                        }
+                        CheckedSetTarget::Storage(root) => {
+                            bindings.insert(root.binding);
+                            collect_place(root, bindings);
+                        }
+                        CheckedSetTarget::SliceIndex(target) => {
+                            collect_expression(&target.offset, bindings);
+                        }
+                    }
+                }
+                for value in values.expressions() {
+                    collect_expression(value, bindings);
+                }
+            }
             CheckedStatement::Set { target, value, .. }
             | CheckedStatement::Replace { target, value, .. } => {
                 match target {
                     CheckedSetTarget::Place(_) => {}
                     CheckedSetTarget::ArrayIndex(target) => {
+                        bindings.insert(target.binding);
                         collect_expression(&target.offset, bindings);
                     }
                     CheckedSetTarget::BufferIndex(target) => {
+                        collect_expression(&target.offset, bindings);
+                    }
+                    CheckedSetTarget::Storage(root) => {
+                        bindings.insert(root.binding);
+                        collect_place(root, bindings);
+                    }
+                    CheckedSetTarget::SliceIndex(target) => {
                         collect_expression(&target.offset, bindings);
                     }
                 }
@@ -71,11 +107,22 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
 
 fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<BindingId>) {
     match expression {
-        CheckedExpression::BorrowAddressed { binding, .. } => {
-            bindings.insert(*binding);
+        CheckedExpression::BorrowAddressed { root, .. }
+        | CheckedExpression::ReadStorage { root, .. } => {
+            bindings.insert(root.binding);
+            collect_place(root, bindings);
         }
+        CheckedExpression::SliceOf {
+            source: crate::semantic::CheckedSliceSource::Run(root),
+            ..
+        } => {
+            bindings.insert(root.binding);
+            collect_place(root, bindings);
+        }
+        CheckedExpression::ContainerMeasure { root, .. } => collect_place(root, bindings),
         CheckedExpression::UserCall { arguments, .. }
         | CheckedExpression::SystemCall { arguments, .. }
+        | CheckedExpression::KernelCall { arguments, .. }
         | CheckedExpression::IntegerOperation { arguments, .. }
         | CheckedExpression::FloatOperation { arguments, .. }
         | CheckedExpression::BooleanOperation { arguments, .. }
@@ -110,10 +157,11 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         CheckedExpression::Constant(_)
         | CheckedExpression::NamedConstant { .. }
         | CheckedExpression::Binding { .. }
-        | CheckedExpression::ArrayLength { .. }
-        | CheckedExpression::BufferLength { .. }
+        | CheckedExpression::ArrayMeasure { .. }
+        | CheckedExpression::BufferMeasure { .. }
+        | CheckedExpression::PostconditionResultMeasure { .. }
         | CheckedExpression::SliceOf { .. }
-        | CheckedExpression::SliceLength { .. }
+        | CheckedExpression::SliceMeasure { .. }
         | CheckedExpression::BorrowBuffer { .. }
         | CheckedExpression::BorrowBox { .. }
         | CheckedExpression::BorrowSystemResource { .. }
@@ -123,7 +171,110 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
     }
 }
 
+fn collect_place(root: &crate::semantic::CheckedContainerRoot, bindings: &mut HashSet<BindingId>) {
+    for step in &root.path {
+        if let crate::semantic::CheckedPlaceStep::Subscript(subscript) = step {
+            collect_expression(&subscript.offset, bindings);
+        }
+    }
+}
+
 impl IrBuilder<'_> {
+    /// Resolve a mutation's complete address once, before its right-hand side.
+    pub(super) fn addressed_target(
+        &mut self,
+        target: &CheckedSetTarget,
+        storage: IrValueId,
+    ) -> Result<Option<IrValueId>, LoweringFailure> {
+        let address = match target {
+            CheckedSetTarget::Storage(root) => self.lower_place_address(root)?,
+            CheckedSetTarget::Place(place)
+                if matches!(self.value_type(storage)?, IrType::Address(_)) =>
+            {
+                let path: Vec<_> = place
+                    .fields
+                    .iter()
+                    .copied()
+                    .map(crate::semantic::CheckedPlaceStep::Field)
+                    .collect();
+                self.project_address_path(storage, &path)?
+            }
+            _ => return Ok(None),
+        };
+        Ok(Some(address))
+    }
+
+    pub(super) fn lower_place_address(
+        &mut self,
+        root: &crate::semantic::CheckedContainerRoot,
+    ) -> Result<IrValueId, LoweringFailure> {
+        let address = self
+            .bindings
+            .get(&root.binding)
+            .copied()
+            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        let address = self.project_address_path(address, &root.path)?;
+        let referent = IrAddressed::of(lower_type(self.erasure, root.ty)?)
+            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        if self.value_type(address)? != IrType::Address(referent) {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        Ok(address)
+    }
+
+    pub(super) fn project_address_path(
+        &mut self,
+        mut address: IrValueId,
+        path: &[crate::semantic::CheckedPlaceStep],
+    ) -> Result<IrValueId, LoweringFailure> {
+        for step in path {
+            let IrType::Address(base) = self.value_type(address)? else {
+                return Err(LoweringFailure::InvalidCheckedProgram);
+            };
+            let (projection, ty) = match step {
+                crate::semantic::CheckedPlaceStep::Field(field) => {
+                    let IrType::Nominal(nominal) = base.ty() else {
+                        return Err(LoweringFailure::InvalidCheckedProgram);
+                    };
+                    let IrNominalKind::Struct { fields } = &self.nominals[nominal.index()].kind
+                    else {
+                        return Err(LoweringFailure::InvalidCheckedProgram);
+                    };
+                    let ty = fields
+                        .get(*field as usize)
+                        .ok_or(LoweringFailure::InvalidCheckedProgram)?
+                        .ty;
+                    (
+                        IrPlaceProjection::Field {
+                            nominal,
+                            field: *field,
+                        },
+                        ty,
+                    )
+                }
+                crate::semantic::CheckedPlaceStep::Subscript(subscript) => {
+                    let offset = self.expression(&subscript.offset)?;
+                    (
+                        IrPlaceProjection::RunElement {
+                            offset,
+                            target_domain: subscript.target_domain.into(),
+                        },
+                        lower_type(self.erasure, subscript.element_type)?,
+                    )
+                }
+            };
+            let referent = IrAddressed::of(ty).ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            address = self.define(
+                IrType::Address(referent),
+                IrOperation::ProjectAddress {
+                    address,
+                    projection,
+                },
+            )?;
+        }
+        Ok(address)
+    }
+
     pub(super) fn promote_binding_if_needed(
         &mut self,
         binding: BindingId,
@@ -136,7 +287,14 @@ impl IrBuilder<'_> {
             .get(&binding)
             .copied()
             .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-        let referent = self.addressed_referent(self.value_type(value)?)?;
+        let ty = self.value_type(value)?;
+        // A borrowed parameter already names its caller's stable storage.
+        // Reading a checked child path must not introduce another owner or
+        // redirect mutations into a local copy of that referent.
+        if matches!(ty, IrType::Address(_)) {
+            return Ok(());
+        }
+        let referent = self.addressed_referent(ty)?;
         let address = self.define(
             IrType::Address(referent),
             IrOperation::AddressOf { value, referent },

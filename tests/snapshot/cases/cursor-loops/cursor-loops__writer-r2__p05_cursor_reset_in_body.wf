@@ -12,8 +12,8 @@ fn fill_ring(capacity: own u64, steps: own u64) -> last_cursor: own u64 pure {
       if wrapped {
         set cursor = 0_u64;
       }
-      let room = cursor < capacity;
-      if room {
+      let spare = cursor < capacity;
+      if spare {
         set cursor = cursor + 1_u64;
       }
       set taken = taken + 1_u64;

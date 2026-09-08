@@ -1,0 +1,21 @@
+fn change(value: &uniq u64) -> result: own u64 writes(value) {
+  set deref(value) = 9_u64;
+  return 7_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let empty = fixed_vector::<u64, 2>();
+  let prefix = place_back(vector: move empty, value: 3_u64);
+  let values = place_back(vector: move prefix, value: 5_u64);
+  region {
+    set values[0_u64] = change(value: &uniq values[1_u64]);
+    set values[1_u64] = values[1_u64] +wrap 1_u64;
+  }
+  if values[0_u64] != 7_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if values[1_u64] != 10_u64 {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

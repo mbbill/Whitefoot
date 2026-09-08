@@ -1,0 +1,520 @@
+//! Physical destinations for immutable aggregate IR values.
+//!
+//! Source ownership and initialization have already been checked. The storage
+//! plan can reuse dead value storage, but reads still produce value snapshots;
+//! only explicit address operations expose a mutable place. This module owns
+//! the bridge between those two representations and the internal call ABI.
+
+use super::*;
+
+pub(super) fn returned_storage_slot(
+    function: &IrFunction,
+    storage: &FunctionStoragePlan,
+) -> Option<usize> {
+    let mut returned = None;
+    for block in function.blocks() {
+        if let IrTerminator::Return { value, .. } = block.terminator() {
+            let slot = storage.slot(*value)?;
+            if returned.is_some_and(|previous| previous != slot) {
+                return None;
+            }
+            returned = Some(slot);
+        }
+    }
+    returned
+}
+
+impl<'program, 'state> FunctionEmitter<'program, 'state> {
+    pub(super) fn emit_place_definition(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        operation: &IrOperation,
+    ) -> Result<bool, BackendFailure> {
+        match operation {
+            IrOperation::AddressOf { value, referent } => {
+                self.emit_address_of(result, ty, *value, *referent)?;
+            }
+            IrOperation::Call {
+                function,
+                arguments,
+            } if !self.overlap_handed_out.contains(&result) => {
+                self.emit_call(result, ty, *function, arguments)?;
+            }
+            IrOperation::FixedVector => self.emit_fixed_vector(result, ty)?,
+            IrOperation::ArrayFill {
+                value,
+                target_domain,
+            } => {
+                self.emit_array_fill(result, ty, *value, *target_domain)?;
+            }
+            IrOperation::ArrayIndex {
+                root,
+                offset,
+                target_domain,
+            } => {
+                self.emit_array_index(result, ty, *root, *offset, *target_domain)?;
+            }
+            IrOperation::SliceFromArray { array } => {
+                self.emit_slice_from_array(result, ty, *array)?
+            }
+            IrOperation::RunIndex {
+                run,
+                offset,
+                target_domain,
+            } => {
+                self.emit_run_index(result, ty, *run, *offset, *target_domain)?;
+            }
+            IrOperation::RunTaken { row, run } => self.emit_run_taken(result, ty, *row, *run)?,
+            IrOperation::RunBoundary { row, run, value } => {
+                self.emit_run_boundary(result, ty, *row, *run, *value)?;
+            }
+            IrOperation::ContainerMeasure { measure, container } => {
+                self.emit_container_measure(result, ty, *measure, *container)?;
+            }
+            IrOperation::SliceFromRun { run } => self.emit_slice_from_run(result, ty, *run)?,
+            IrOperation::ProjectAddress {
+                address,
+                projection,
+            } => {
+                self.emit_project_address(result, ty, *address, projection)?;
+            }
+            IrOperation::Load { address, referent } if self.storage.slot(result).is_some() => {
+                if ty != referent.ty()
+                    || self.value_type(*address) != Some(IrType::Address(*referent))
+                {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                self.load_place_result(result, ty, &self.value_name(*address))?;
+            }
+            IrOperation::ConstructStruct { nominal, fields } => {
+                if ty != IrType::Nominal(*nominal) {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                let IrNominalKind::Struct { fields: declared } = self.nominal(*nominal)?.kind()
+                else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                if declared.len() != fields.len()
+                    || declared
+                        .iter()
+                        .zip(fields)
+                        .any(|(field, value)| self.value_type(*value) != Some(field.ty()))
+                {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                self.construct_at(
+                    result,
+                    ty,
+                    None,
+                    fields.iter().copied().enumerate().collect(),
+                )?;
+            }
+            IrOperation::ConstructEnum {
+                nominal,
+                variant,
+                fields,
+            } if self.storage.slot(result).is_some() => {
+                if ty != IrType::Nominal(*nominal) {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                let IrNominalKind::Enum { variants } = self.nominal(*nominal)?.kind() else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                let selected = variants
+                    .iter()
+                    .find(|candidate| candidate.tag() == *variant)
+                    .ok_or(BackendFailure::InvalidIr)?;
+                if selected.fields().len() != fields.len()
+                    || selected
+                        .fields()
+                        .iter()
+                        .zip(fields)
+                        .any(|(field, value)| self.value_type(*value) != Some(field.ty()))
+                {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                let base = variant_field_base(variants, *variant)?;
+                self.construct_at(
+                    result,
+                    ty,
+                    Some(*variant),
+                    fields
+                        .iter()
+                        .enumerate()
+                        .map(|(index, value)| (base + index, *value))
+                        .collect(),
+                )?;
+            }
+            IrOperation::ProjectStruct {
+                aggregate,
+                nominal,
+                field,
+                consume_root,
+            } => {
+                let IrNominalKind::Struct { fields } = self.nominal(*nominal)?.kind() else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                if self.value_type(*aggregate) != Some(IrType::Nominal(*nominal))
+                    || fields.get(*field as usize).map(|field| field.ty()) != Some(ty)
+                {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                let source = self.value_place(*aggregate)?;
+                let address = self.aggregate_field_pointer(
+                    IrType::Nominal(*nominal),
+                    &source,
+                    *field as usize,
+                )?;
+                self.load_place_result(result, ty, &address)?;
+                if *consume_root {
+                    writeln!(self.output, "  ; ownership-consuming projection")
+                        .map_err(|_| BackendFailure::TextEmission)?;
+                }
+            }
+            IrOperation::ProjectVariant {
+                aggregate,
+                nominal,
+                variant,
+                field,
+            } => {
+                let IrNominalKind::Enum { variants } = self.nominal(*nominal)?.kind() else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                let selected = variants
+                    .iter()
+                    .find(|candidate| candidate.tag() == *variant)
+                    .ok_or(BackendFailure::InvalidIr)?;
+                if self.value_type(*aggregate) != Some(IrType::Nominal(*nominal))
+                    || selected
+                        .fields()
+                        .get(*field as usize)
+                        .map(|field| field.ty())
+                        != Some(ty)
+                {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                let index = variant_field_base(variants, *variant)? + *field as usize;
+                let source = self.value_place(*aggregate)?;
+                let address =
+                    self.aggregate_field_pointer(IrType::Nominal(*nominal), &source, index)?;
+                self.load_place_result(result, ty, &address)?;
+            }
+            IrOperation::InsertStruct {
+                aggregate,
+                nominal,
+                field,
+                value,
+            } => {
+                let IrNominalKind::Struct { fields } = self.nominal(*nominal)?.kind() else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                if ty != IrType::Nominal(*nominal)
+                    || self.value_type(*aggregate) != Some(ty)
+                    || fields.get(*field as usize).map(|field| field.ty())
+                        != self.value_type(*value)
+                {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                // Read the replacement before a coalesced destination write.
+                let replacement = self.value_operand(*value)?;
+                let destination = self.value_place(result)?;
+                let source = self.value_place(*aggregate)?;
+                self.copy_storage(ty, &source, &destination)?;
+                let field_address =
+                    self.aggregate_field_pointer(ty, &destination, *field as usize)?;
+                let field_type = self.value_type(*value).ok_or(BackendFailure::InvalidIr)?;
+                writeln!(
+                    self.output,
+                    "  store {} {replacement}, ptr {field_address}",
+                    llvm_type(self.program, field_type)?
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+            }
+            _ => return Ok(false),
+        }
+        Ok(true)
+    }
+
+    fn construct_at(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        tag: Option<u32>,
+        fields: Vec<(usize, IrValueId)>,
+    ) -> Result<(), BackendFailure> {
+        let destination = self.value_place(result)?;
+        writeln!(
+            self.output,
+            "  store {} zeroinitializer, ptr {destination}",
+            llvm_type(self.program, ty)?
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        if let Some(tag) = tag {
+            let address = self.aggregate_field_pointer(ty, &destination, 0)?;
+            writeln!(self.output, "  store i32 {tag}, ptr {address}")
+                .map_err(|_| BackendFailure::TextEmission)?;
+        }
+        for (field, value) in fields {
+            let address = self.aggregate_field_pointer(ty, &destination, field)?;
+            self.store_value_at(value, &address)?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn emit_place_edge(
+        &mut self,
+        target: IrBlockId,
+        arguments: &[IrValueId],
+        drops: &[IrDrop],
+    ) -> Result<(), BackendFailure> {
+        let parameters = self.block(target)?.parameters().to_vec();
+        let mut transfers = Vec::new();
+        for ((parameter, ty), argument) in parameters.iter().zip(arguments) {
+            if self.storage.slot(*parameter).is_some()
+                && self.storage.slot(*parameter) != self.storage.slot(*argument)
+            {
+                let operand = self.value_operand(*argument)?;
+                transfers.push((*parameter, *ty, operand));
+            }
+        }
+        // Cleanup still reads predecessor snapshots. A phi destination may
+        // reuse their storage only after those final reads have completed.
+        self.emit_drops(drops)?;
+        for (parameter, ty, operand) in transfers {
+            let destination = self.value_place(parameter)?;
+            writeln!(
+                self.output,
+                "  store {} {operand}, ptr {destination}",
+                llvm_type(self.program, ty)?,
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn emit_project_address(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        address: IrValueId,
+        projection: &crate::IrPlaceProjection,
+    ) -> Result<(), BackendFailure> {
+        let Some(IrType::Address(base)) = self.value_type(address) else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        let IrType::Address(referent) = ty else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        let pointer = match projection {
+            crate::IrPlaceProjection::Field { nominal, field } => {
+                let IrNominalKind::Struct { fields } = self.nominal(*nominal)?.kind() else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                if base.ty() != IrType::Nominal(*nominal)
+                    || fields.get(*field as usize).map(|field| field.ty()) != Some(referent.ty())
+                {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                self.aggregate_field_pointer(base.ty(), &self.value_name(address), *field as usize)?
+            }
+            crate::IrPlaceProjection::RunElement {
+                offset,
+                target_domain,
+            } => self.run_element_place(address, *offset, referent.ty(), *target_domain)?,
+            crate::IrPlaceProjection::ArrayElement {
+                offset,
+                target_domain,
+            } => {
+                let IrType::Array { element, .. } = base.ty() else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                if element.ty() != referent.ty()
+                    || *target_domain != IrTargetDomainObligation::ElementAddress
+                    || self.value_type(*offset)
+                        != Some(IrType::Integer {
+                            width: 64,
+                            signed: false,
+                        })
+                {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                let pointer = self.next_temporary()?;
+                writeln!(
+                    self.output,
+                    "  %{pointer} = getelementptr inbounds {}, ptr {}, i64 0, i64 {}",
+                    llvm_type(self.program, base.ty())?,
+                    self.value_name(address),
+                    self.value_name(*offset)
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+                format!("%{pointer}")
+            }
+        };
+        writeln!(
+            self.output,
+            "  {} = getelementptr i8, ptr {pointer}, i64 0",
+            value_name(result)
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+
+    /// Resolve the selected backing at the point where its contents are used.
+    /// A staged address must be recomputed from this block's slot, rather than
+    /// reusing an issue-block SSA pointer in a later retirement block.
+    pub(super) fn binding_place(&mut self, value: IrValueId) -> Result<String, BackendFailure> {
+        if !self
+            .frame
+            .slots
+            .contains_key(&FunctionSlot::StagedAddress(value))
+        {
+            return self.entry_slot(FunctionSlot::Address(value));
+        }
+        let Some(IrType::Address(referent)) = self.value_type(value) else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        let pipeline = self.pipeline.ok_or(BackendFailure::InvalidIr)?;
+        let slot = self
+            .block_slot
+            .ok_or(BackendFailure::MisaddressedCompletionSlot)?;
+        let backing = self.entry_slot(FunctionSlot::StagedAddress(value))?;
+        let address = format!("%{}", self.next_temporary()?);
+        writeln!(
+            self.output,
+            "  {address} = getelementptr inbounds [{} x {}], ptr {backing}, i64 0, i64 {}",
+            pipeline.slots(),
+            llvm_type(self.program, referent.ty())?,
+            self.value_name(slot)
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        Ok(address)
+    }
+
+    pub(super) fn value_place(&mut self, value: IrValueId) -> Result<String, BackendFailure> {
+        let slot = self.storage.slot(value).ok_or(BackendFailure::InvalidIr)?;
+        if let Some(destination) = self.storage.destination(slot) {
+            self.binding_place(destination)
+        } else if Some(slot) == self.result_slot {
+            Ok("%wf.result".to_owned())
+        } else {
+            self.entry_slot(FunctionSlot::OwnedValue(slot))
+        }
+    }
+
+    pub(super) fn value_operand(&mut self, value: IrValueId) -> Result<String, BackendFailure> {
+        if self.storage.slot(value).is_none() {
+            return Ok(self.value_name(value));
+        }
+        let temporary = self.next_temporary()?;
+        let ty = self.value_type(value).ok_or(BackendFailure::InvalidIr)?;
+        let address = self.value_place(value)?;
+        writeln!(
+            self.output,
+            "  %{temporary} = load {}, ptr {address}",
+            llvm_type(self.program, ty)?,
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        Ok(format!("%{temporary}"))
+    }
+
+    pub(super) fn materialize_operands(
+        &mut self,
+        values: impl IntoIterator<Item = IrValueId>,
+    ) -> Result<(), BackendFailure> {
+        self.materialized.clear();
+        for value in values {
+            if self.storage.slot(value).is_some() && !self.materialized.contains_key(&value) {
+                let operand = self.value_operand(value)?;
+                self.materialized.insert(value, operand);
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn copy_storage(
+        &mut self,
+        ty: IrType,
+        source: &str,
+        destination: &str,
+    ) -> Result<(), BackendFailure> {
+        if source == destination {
+            return Ok(());
+        }
+        let llvm = llvm_type(self.program, ty)?;
+        let temporary = self.next_temporary()?;
+        writeln!(
+            self.output,
+            "  %{temporary} = load {llvm}, ptr {source}\n  store {llvm} %{temporary}, ptr {destination}"
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+
+    pub(super) fn store_value_at(
+        &mut self,
+        value: IrValueId,
+        destination: &str,
+    ) -> Result<(), BackendFailure> {
+        let ty = self.value_type(value).ok_or(BackendFailure::InvalidIr)?;
+        if self.storage.slot(value).is_some() {
+            let source = self.value_place(value)?;
+            return self.copy_storage(ty, &source, destination);
+        }
+        writeln!(
+            self.output,
+            "  store {} {}, ptr {destination}",
+            llvm_type(self.program, ty)?,
+            self.value_name(value),
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+
+    pub(super) fn save_value_result(&mut self, result: IrValueId) -> Result<(), BackendFailure> {
+        if self.storage.slot(result).is_none() {
+            return Ok(());
+        }
+        let ty = self.value_type(result).ok_or(BackendFailure::InvalidIr)?;
+        let destination = self.value_place(result)?;
+        writeln!(
+            self.output,
+            "  store {} {}, ptr {destination}",
+            llvm_type(self.program, ty)?,
+            value_name(result),
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+
+    pub(super) fn aggregate_field_pointer(
+        &mut self,
+        ty: IrType,
+        address: &str,
+        field: usize,
+    ) -> Result<String, BackendFailure> {
+        let pointer = self.next_temporary()?;
+        writeln!(
+            self.output,
+            "  %{pointer} = getelementptr inbounds {}, ptr {address}, i32 0, i32 {field}",
+            llvm_type(self.program, ty)?,
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        Ok(format!("%{pointer}"))
+    }
+
+    pub(super) fn load_place_result(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        address: &str,
+    ) -> Result<(), BackendFailure> {
+        if self.storage.slot(result).is_some() {
+            let destination = self.value_place(result)?;
+            return self.copy_storage(ty, address, &destination);
+        }
+        writeln!(
+            self.output,
+            "  {} = load {}, ptr {address}",
+            value_name(result),
+            llvm_type(self.program, ty)?,
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+}

@@ -79,7 +79,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   let cursor = at;
   let rest = value;
   loop @octets {
@@ -88,8 +88,8 @@ fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: 
     if done {
       break @octets;
     }
-    let room = len(deref(destination));
-    let writable = cursor < room;
+    let spare = len_of(deref(destination));
+    let writable = cursor < spare;
     if writable {
       let byte = low_byte(v: rest);
       set deref(destination)[cursor] = byte;
@@ -109,11 +109,14 @@ fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {
   return total;
 }
 
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let value = folded(lo: 0_u64, hi: 400000_u64);
   let report = buffer_new(8_u64, 0_u8);
   region {
-    let filled = spell(destination: &uniq report, at: 0_u64, value: value);
+    let window = mut_slice_of(&uniq report);
+    region {
+      let filled = spell(destination: &uniq window, at: 0_u64, value: value);
+    }
   }
   region 'o {
     region {
@@ -296,7 +299,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   let cursor = at;
   let rest = value;
   loop @octets {
@@ -305,8 +308,8 @@ fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: 
     if done {
       break @octets;
     }
-    let room = len(deref(destination));
-    let writable = cursor < room;
+    let spare = len_of(deref(destination));
+    let writable = cursor < spare;
     if writable {
       let byte = low_byte(v: rest);
       set deref(destination)[cursor] = byte;
@@ -328,11 +331,14 @@ fn folded(salt: own u64, rounds: own u64, stride: own u64) -> result: own u64 pu
   return total;
 }
 
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let value = folded(salt: 9876543210_u64, rounds: 24_u64, stride: 7_u64);
   let report = buffer_new(8_u64, 0_u8);
   region {
-    let filled = spell(destination: &uniq report, at: 0_u64, value: value);
+    let window = mut_slice_of(&uniq report);
+    region {
+      let filled = spell(destination: &uniq window, at: 0_u64, value: value);
+    }
   }
   region 'o {
     region {
@@ -382,7 +388,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn mapped() -> result: own buffer<u8> allocates(heap) {
+fn mapped() -> result: own buffer<u8> pure {
   let out = buffer_new(400000_u64, 0_u8);
   for @fill (i in 0_u64..400000_u64) {
     let copied = i;
@@ -394,9 +400,9 @@ fn mapped() -> result: own buffer<u8> allocates(heap) {
   return move out;
 }
 
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let report = mapped();
-  let size = len(report);
+  let size = len_of(report);
   region 'o {
     region {
       match write_once(output: &uniq 'o out, source: &report, start: 0_u64, end: size) {
@@ -444,8 +450,8 @@ fn borrowed_read_modify_map_source() -> Vec<u8> {
     let source = std::str::from_utf8(INDEPENDENT_MAP).expect("the fixture is UTF-8");
     source
         .replacen(
-            "fn mapped() -> result: own buffer<u8> allocates(heap) {\n  let out = buffer_new(400000_u64, 0_u8);\n",
-            "fn mapped(out: &uniq buffer<u8>) -> result: own unit reads(out), writes(out) contract {\n  define room = len(deref(out));\n  requires 400000_u64 <= room;\n} {\n",
+            "fn mapped() -> result: own buffer<u8> pure {\n  let out = buffer_new(400000_u64, 0_u8);\n",
+            "fn mapped(out: &uniq buffer<u8>) -> result: own unit reads(out), writes(out) contract {\n  define spare = len_of(deref(out));\n  requires 400000_u64 <= spare;\n} {\n",
             1,
         )
         .replacen(
@@ -1244,7 +1250,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   let cursor = at;
   let rest = value;
   loop @octets {
@@ -1253,8 +1259,8 @@ fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: 
     if done {
       break @octets;
     }
-    let room = len(deref(destination));
-    let writable = cursor < room;
+    let spare = len_of(deref(destination));
+    let writable = cursor < spare;
     if writable {
       let byte = low_byte(v: rest);
       set deref(destination)[cursor] = byte;
@@ -1304,15 +1310,18 @@ fn admitted_combine_source() -> Vec<u8> {
     let width = 8 * ADMITTED_COMBINES.len();
     source.push_str(&format!(
         "\ncommand fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus \
-         reads(out), writes(out), allocates(heap) {{\n  \
-         let report = buffer_new({width}_u64, 0_u8);\n  region {{\n"
+         reads(out), writes(out) {{\n  \
+         let report = buffer_new({width}_u64, 0_u8);\n  region {{\n    \
+         let window = mut_slice_of(&uniq report);\n"
     ));
     let mut at = "0_u64".to_owned();
     for (index, combine) in ADMITTED_COMBINES.iter().enumerate() {
         let name = combine.name;
         source.push_str(&format!(
             "    let v{index} = value_{name}(after: {at});\n    \
-             let a{index} = spell(destination: &uniq report, at: {at}, value: v{index});\n"
+             let a{index} = 0_u64;\n    region {{\n      \
+             set a{index} = spell(destination: &uniq window, at: {at}, value: v{index});\n    \
+             }}\n"
         ));
         at = format!("a{index}");
     }

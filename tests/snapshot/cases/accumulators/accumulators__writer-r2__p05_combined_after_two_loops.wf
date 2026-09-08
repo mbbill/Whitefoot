@@ -1,6 +1,6 @@
-const front_half: array<u8, 4> =[5_u8, 6_u8, 7_u8, 8_u8];
+const front_half: FixedVector<u8, 4> =[5_u8, 6_u8, 7_u8, 8_u8];
 
-const back_half: array<u8, 4> =[1_u8, 2_u8, 3_u8, 4_u8];
+const back_half: FixedVector<u8, 4> =[1_u8, 2_u8, 3_u8, 4_u8];
 
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: two separate loops each fill an independent accumulator, then a plain add combines them once both bounds are known.";

@@ -1,6 +1,6 @@
 //! Structural [OWN-5] place resolution and the [OWN-7] overlap relation.
 //!
-//! A resolved place is a declaration-anchored root plus a field path, reached
+//! A resolved place is a declaration-anchored root plus a field/subscript path, reached
 //! by reading `let`-bound borrows through to the storage they name. The
 //! prepass that builds the per-binding holder summaries is purely syntactic:
 //! it reads the checked statement tree and nothing else, so every consumer
@@ -12,6 +12,8 @@
 //! [`super::permission`] projects the same boundary and asks whether two
 //! sibling calls' footprints are disjoint. Neither may grow a private copy of
 //! the overlap relation.
+
+use crate::DeclarationId;
 
 use super::model::{
     BindingId, CheckedConstantId, CheckedExpression, CheckedFunction, CheckedMatchArm, CheckedMode,
@@ -27,11 +29,94 @@ pub(crate) enum PlaceRoot {
     Constant(CheckedConstantId),
 }
 
+/// One [OP-4] subscript offset occurring inside a tracked place [MSR-1].
+///
+/// [OWN-7] and [LIV-2] condition 2 decide two offsets by one relation: two
+/// written literals are provably distinct exactly when their values differ,
+/// and every other offset is opaque to it — provably distinct from nothing,
+/// itself included. A live `own` integer binding and an in-scope const
+/// generic are retained rather than collapsed to that opacity because they
+/// are places and terms in their own right: [ENT-5] takes the support of
+/// every offset occurring in P into the support of a measure over P, and a
+/// write to the binding an offset reads therefore kills at every level.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum PlaceOffset {
+    /// A written integer literal.
+    Literal(u64),
+    /// A live `own` integer binding read at the subscript.
+    Binding(BindingId),
+    /// An in-scope const generic [CONST-1], fixed at instantiation [FN-2].
+    Const(DeclarationId),
+    /// An offset no relation of this document decides: a computed value, or
+    /// a callee's projected element write, which names no offset at all.
+    Opaque,
+}
+
+impl PlaceOffset {
+    /// [OWN-7, LIV-2] whether the two offsets name two elements on every
+    /// execution.
+    pub(crate) const fn provably_distinct(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::Literal(left), Self::Literal(right)) => left != right,
+            _ => false,
+        }
+    }
+
+    /// [LIV-2] whether the two offsets name one element on every execution,
+    /// which is what a read-out of an element target needs.
+    pub(crate) const fn provably_same(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::Literal(left), Self::Literal(right)) => left == right,
+            _ => false,
+        }
+    }
+
+    /// The support one offset contributes to every measure term of the place
+    /// it occurs in [ENT-5]: the binding it reads, where it reads one.
+    pub(crate) const fn support(self) -> Option<BindingId> {
+        match self {
+            Self::Binding(binding) => Some(binding),
+            Self::Literal(_) | Self::Const(_) | Self::Opaque => None,
+        }
+    }
+}
+
+/// One step of a tracked place's path below its root: a field selection, or
+/// one subscript of an indexable base [OP-4].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum PlaceStep {
+    Field(u32),
+    Subscript(PlaceOffset),
+}
+
+impl PlaceStep {
+    /// [LIV-2] whether the two steps select one storage on every execution.
+    pub(crate) const fn provably_same(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::Subscript(left), Self::Subscript(right)) => left.provably_same(right),
+            (Self::Field(left), Self::Field(right)) => left == right,
+            _ => false,
+        }
+    }
+
+    /// Whether the two steps select two storages on every execution, which
+    /// for two subscripts is [OWN-7]'s own offset relation and for everything
+    /// else is inequality.
+    pub(crate) const fn provably_distinct(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::Subscript(left), Self::Subscript(right)) => left.provably_distinct(right),
+            (Self::Field(left), Self::Field(right)) => left != right,
+            _ => true,
+        }
+    }
+}
+
 /// One tracked place [ENT-2](a): a root, an optional `deref` reading through
 /// a borrow or box holder, and field selections — never an index segment.
 ///
 /// This compact form represents no deref or one leading deref followed by
-/// fields. Interleaved or repeated derefs use [`ProjectedPlaceTerm`].
+/// fields. Interleaved or repeated derefs, and every subscripted place, use
+/// [`ProjectedPlaceTerm`].
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct PlaceTerm {
     pub(crate) root: PlaceRoot,
@@ -47,6 +132,10 @@ pub(crate) struct PlaceTerm {
 pub(crate) enum PlaceProjection {
     Field(u32),
     Deref,
+    /// One subscript of the base reached so far [OP-4, MSR-1]. The offset is
+    /// a logical one; the storage it selects is `(head_of + i) mod cap_of`,
+    /// which no source rule mentions [BLK-1].
+    Subscript(PlaceOffset),
 }
 
 /// The exact source-order path of a tracked place with interleaved field and
@@ -62,23 +151,50 @@ pub(crate) struct ProjectedPlaceTerm {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ResolvedPlace {
     pub(crate) root: PlaceRoot,
-    pub(crate) fields: Vec<u32>,
+    pub(crate) path: Vec<PlaceStep>,
 }
 
 impl ResolvedPlace {
     /// [OWN-7]: places overlap when one's path is a prefix of the other's.
+    ///
+    /// Two subscripts of one base are one step of that prefix unless their
+    /// offsets are provably distinct, which is the sentence [OWN-7] states
+    /// for two subscripted places and [LIV-2]'s second condition reads at a
+    /// commit.
     pub(crate) fn overlaps(&self, other: &Self) -> bool {
-        self.root == other.root
-            && (self.fields.starts_with(&other.fields) || other.fields.starts_with(&self.fields))
+        self.root == other.root && !paths_diverge(&self.path, &other.path)
     }
 
-    /// The whole storage of one binding, with no field selection.
+    /// Whether one place's path reaches the other's storage: `prefix` selects
+    /// the same storage as, or a storage containing, `path`.
+    pub(crate) fn is_prefix_of(&self, other: &Self) -> bool {
+        self.root == other.root
+            && self.path.len() <= other.path.len()
+            && !paths_diverge(&self.path, &other.path)
+    }
+
+    /// The whole storage of one binding, with no selection below the root.
     pub(crate) fn binding(binding: BindingId) -> Self {
         Self {
             root: PlaceRoot::Binding(binding),
-            fields: Vec::new(),
+            path: Vec::new(),
         }
     }
+
+    /// The same place with one field selection appended, for a caller that
+    /// holds a plain field path.
+    pub(crate) fn extend_fields(&mut self, fields: &[u32]) {
+        self.path
+            .extend(fields.iter().copied().map(PlaceStep::Field));
+    }
+}
+
+/// Whether two paths select two disjoint storages: some step in their common
+/// prefix provably selects two different storages [OWN-7].
+pub(crate) fn paths_diverge(left: &[PlaceStep], right: &[PlaceStep]) -> bool {
+    left.iter()
+        .zip(right)
+        .any(|(left, right)| left.provably_distinct(*right))
 }
 
 /// What one binding reads through by `deref`, for place resolution.
@@ -87,7 +203,7 @@ pub(crate) enum HolderReferent {
     /// A borrow of a known local place.
     Place {
         binding: BindingId,
-        fields: Vec<u32>,
+        path: Vec<PlaceStep>,
     },
     /// A reborrow: reads through another holder.
     Holder(BindingId),
@@ -107,6 +223,20 @@ pub(crate) struct BindingSummary {
     pub(crate) implicit_deref: bool,
     /// Exact [GIVE-1] source class admitted as a bounded-delivery carrier.
     pub(crate) delivery_carrier: bool,
+    /// The storage a bound view value was formed over [VIEW-1, VIEW-2].
+    ///
+    /// A view is a value that reaches storage it does not own, and the loan it
+    /// holds is on the range of its **origin** place, not on the descriptor
+    /// word the binding occupies. Every judgment that asks what storage an
+    /// argument reaches therefore has to read through the binding to that
+    /// origin: `mut_slice_of(&uniq report)` bound to `window` and then handed
+    /// on as `&uniq window` reaches `report`, exactly as the inline formation
+    /// written at the call does.
+    ///
+    /// `None` means this binding is not a view, or is a view whose origin this
+    /// prepass does not resolve — a view parameter, or one a callee returned.
+    /// Every consumer reads that as unresolved and fails closed.
+    pub(crate) view_origin: Option<ResolvedPlace>,
 }
 
 /// Dense per-binding structural summaries for one checked function, and the
@@ -162,11 +292,25 @@ impl PlaceMap {
                         }
                         _ => (holder_from_value(value), value_has_implicit_deref(value)),
                     };
+                    // Resolved before the summary is taken, because resolving
+                    // the origin reads the summaries of the bindings the
+                    // formation names, and each of those was declared earlier.
+                    let view_origin = self.view_origin_of(value);
                     let summary = self.summary_mut(*binding);
                     summary.ty = Some(value.ty());
                     summary.holder = holder;
                     summary.implicit_deref = implicit_deref;
                     summary.delivery_carrier = summary.holder.is_none();
+                    summary.view_origin = view_origin;
+                }
+                // [CALL-4] every binder of a destructuring `let` is an
+                // ordinary fresh binding of its result ordinal's type.
+                CheckedStatement::DestructuringLet { bindings, .. } => {
+                    for (binding, ty) in bindings {
+                        let summary = self.summary_mut(*binding);
+                        summary.ty = Some(*ty);
+                        summary.delivery_carrier = true;
+                    }
                 }
                 CheckedStatement::PropagateLet {
                     binding, ok_type, ..
@@ -236,21 +380,55 @@ impl PlaceMap {
             .is_some_and(|summary| summary.holder.is_some())
     }
 
+    /// The storage one view binding was formed over [VIEW-1, VIEW-2], when
+    /// this prepass resolves it.
+    pub(crate) fn view_origin(&self, binding: BindingId) -> Option<ResolvedPlace> {
+        self.summary(binding)
+            .and_then(|summary| summary.view_origin.clone())
+    }
+
+    /// The origin a `let` right-hand side gives the view it binds.
+    ///
+    /// Exactly two right-hand sides carry one. A formation [VIEW-2] views the
+    /// storage its operand names, which is the place [`super::permission::
+    /// slice_source_place`] already resolves for an inline formation; and a
+    /// copy of a shared view is a second loan on the same range [VIEW-1], so
+    /// it carries its source's origin unchanged. Everything else — a view
+    /// parameter, a view a callee returned — leaves this `None`, and the
+    /// judgments that read it deny rather than guess.
+    fn view_origin_of(&self, value: &CheckedExpression) -> Option<ResolvedPlace> {
+        match value {
+            CheckedExpression::SliceOf { source, .. } => {
+                Some(super::permission::slice_source_place(self, source))
+            }
+            CheckedExpression::Binding {
+                binding,
+                ty: CheckedType::Slice { .. },
+                ..
+            } => self.view_origin(*binding),
+            _ => None,
+        }
+    }
+
     /// Resolves a spelled place to its [OWN-5] resolved place, reading
     /// through let-bound borrows; opaque holders anchor at themselves.
     pub(crate) fn resolve(&self, place: &PlaceTerm) -> ResolvedPlace {
         match place.root {
-            PlaceRoot::Constant(id) => ResolvedPlace {
-                root: PlaceRoot::Constant(id),
-                fields: place.fields.clone(),
-            },
+            PlaceRoot::Constant(id) => {
+                let mut resolved = ResolvedPlace {
+                    root: PlaceRoot::Constant(id),
+                    path: Vec::new(),
+                };
+                resolved.extend_fields(&place.fields);
+                resolved
+            }
             PlaceRoot::Binding(binding) => {
                 let mut resolved = if place.deref {
                     self.resolve_deref(binding, 0)
                 } else {
                     ResolvedPlace::binding(binding)
                 };
-                resolved.fields.extend_from_slice(&place.fields);
+                resolved.extend_fields(&place.fields);
                 resolved
             }
         }
@@ -263,13 +441,16 @@ impl PlaceMap {
     pub(crate) fn resolve_projected(&self, place: &ProjectedPlaceTerm) -> ResolvedPlace {
         let mut resolved = ResolvedPlace {
             root: place.root,
-            fields: Vec::new(),
+            path: Vec::new(),
         };
         for projection in &place.projections {
             match projection {
-                PlaceProjection::Field(field) => resolved.fields.push(*field),
+                PlaceProjection::Field(field) => resolved.path.push(PlaceStep::Field(*field)),
+                PlaceProjection::Subscript(offset) => {
+                    resolved.path.push(PlaceStep::Subscript(*offset));
+                }
                 PlaceProjection::Deref => {
-                    if resolved.fields.is_empty()
+                    if resolved.path.is_empty()
                         && let PlaceRoot::Binding(binding) = resolved.root
                     {
                         resolved = self.resolve_deref(binding, 0);
@@ -289,13 +470,13 @@ impl PlaceMap {
             .summary(holder)
             .and_then(|summary| summary.holder.as_ref())
         {
-            Some(HolderReferent::Place { binding, fields }) => {
+            Some(HolderReferent::Place { binding, path }) => {
                 let mut resolved = if self.is_holder(*binding) {
                     self.resolve_deref(*binding, depth + 1)
                 } else {
                     ResolvedPlace::binding(*binding)
                 };
-                resolved.fields.extend_from_slice(fields);
+                resolved.path.extend_from_slice(path);
                 resolved
             }
             Some(HolderReferent::Holder(next)) => self.resolve_deref(*next, depth + 1),
@@ -318,13 +499,13 @@ impl PlaceMap {
             .summary(holder)
             .and_then(|summary| summary.holder.as_ref())
         {
-            Some(HolderReferent::Place { binding, fields }) => {
+            Some(HolderReferent::Place { binding, path }) => {
                 let mut resolved = if self.is_holder(*binding) {
                     self.resolve_deref_with_holders(*binding, depth + 1, holders)
                 } else {
                     ResolvedPlace::binding(*binding)
                 };
-                resolved.fields.extend_from_slice(fields);
+                resolved.path.extend_from_slice(path);
                 resolved
             }
             Some(HolderReferent::Holder(next)) => {
@@ -334,17 +515,51 @@ impl PlaceMap {
         }
     }
 
+    /// The place a callee writes through one view actual [CALL-3, VIEW-4].
+    ///
+    /// A view is handed to a callee as itself, because the descriptor is what
+    /// a borrow of one carries, and [`Self::argument_referent`] leaves that
+    /// shape unresolved: the permission judgment fails closed on it. The kill
+    /// projection has an exact answer for it, though — [VIEW-4] forbids
+    /// replacing a view through such a borrow, so what the callee writes
+    /// reaches element storage only, and the kill is the element write over
+    /// the view's own place, exactly as a `set` through a view subscript is.
+    /// Every measure of the view survives it.
+    pub(crate) fn viewed_write_referent(
+        &self,
+        argument: &CheckedExpression,
+    ) -> Option<ResolvedPlace> {
+        let CheckedExpression::Binding {
+            binding,
+            ty: CheckedType::Slice { .. },
+            ..
+        } = argument
+        else {
+            return None;
+        };
+        Some(self.resolve(&PlaceTerm {
+            root: PlaceRoot::Binding(*binding),
+            deref: self.is_holder(*binding),
+            fields: Vec::new(),
+        }))
+    }
+
     /// The resolved place a borrow-shaped call argument reads through, and
-    /// whether a callee write through it is an element write.
+    /// whether that shape is a directly transferred holder.
     ///
     /// This is the [EFF-2] boundary projection's argument half: exactly the
     /// actual shapes through which a declared `reads`/`writes` region reaches
     /// caller storage. Every other shape is unresolved here, and each caller
     /// decides what an unresolved actual means for it.
+    ///
+    /// How far such a write *reaches* is not read from these shapes: [CALL-5]
+    /// selects the transport from the callee's declared parameter mode and
+    /// type, so that classification belongs to the callee's declaration and
+    /// never to the argument's spelling [CALL-1, CALL-2, CALL-3].
     pub(crate) fn argument_referent(
         &self,
         argument: &CheckedExpression,
-    ) -> Option<(ResolvedPlace, bool, bool)> {
+    ) -> Option<(ResolvedPlace, bool)> {
         match argument {
             CheckedExpression::BorrowBuffer { root, .. } => {
                 let place = PlaceTerm {
@@ -352,7 +567,7 @@ impl PlaceMap {
                     deref: self.is_holder(root.binding),
                     fields: root.fields.clone(),
                 };
-                Some((self.resolve(&place), true, false))
+                Some((self.resolve(&place), false))
             }
             // A borrowed system resource that is a struct field names that
             // field, so a write through it kills the facts on the field and
@@ -365,25 +580,31 @@ impl PlaceMap {
                     deref: self.is_holder(*binding),
                     fields: fields.clone(),
                 };
-                Some((self.resolve(&place), false, false))
+                Some((self.resolve(&place), false))
             }
-            CheckedExpression::BorrowAddressed { binding, .. }
-            | CheckedExpression::BorrowBox { binding, .. } => {
+            CheckedExpression::BorrowAddressed { root, .. } => {
+                let mut resolved = if self.is_holder(root.binding) {
+                    self.resolve_deref(root.binding, 0)
+                } else {
+                    ResolvedPlace::binding(root.binding)
+                };
+                resolved.path.extend(root.place_path());
+                Some((resolved, false))
+            }
+            CheckedExpression::BorrowBox { binding, .. } => {
                 let place = PlaceTerm {
                     root: PlaceRoot::Binding(*binding),
                     deref: self.is_holder(*binding),
                     fields: Vec::new(),
                 };
-                Some((self.resolve(&place), false, false))
+                Some((self.resolve(&place), false))
             }
             CheckedExpression::ReborrowAddressed { binding, .. } => {
-                Some((self.resolve_deref(*binding, 0), false, false))
+                Some((self.resolve_deref(*binding, 0), false))
             }
-            CheckedExpression::Binding { binding, ty, .. } if self.is_holder(*binding) => Some((
-                self.resolve_deref(*binding, 0),
-                matches!(ty, CheckedType::Buffer { .. } | CheckedType::Slice { .. }),
-                true,
-            )),
+            CheckedExpression::Binding { binding, .. } if self.is_holder(*binding) => {
+                Some((self.resolve_deref(*binding, 0), true))
+            }
             _ => None,
         }
     }
@@ -395,16 +616,19 @@ pub(crate) fn holder_from_value(value: &CheckedExpression) -> Option<HolderRefer
             binding, fields, ..
         } => Some(HolderReferent::Place {
             binding: *binding,
-            fields: fields.clone(),
+            path: fields.iter().copied().map(PlaceStep::Field).collect(),
         }),
-        CheckedExpression::BorrowAddressed { binding, .. }
-        | CheckedExpression::BorrowBox { binding, .. } => Some(HolderReferent::Place {
+        CheckedExpression::BorrowAddressed { root, .. } => Some(HolderReferent::Place {
+            binding: root.binding,
+            path: root.place_path(),
+        }),
+        CheckedExpression::BorrowBox { binding, .. } => Some(HolderReferent::Place {
             binding: *binding,
-            fields: Vec::new(),
+            path: Vec::new(),
         }),
         CheckedExpression::BorrowBuffer { root, .. } => Some(HolderReferent::Place {
             binding: root.binding,
-            fields: root.fields.clone(),
+            path: root.fields.iter().copied().map(PlaceStep::Field).collect(),
         }),
         CheckedExpression::ReborrowAddressed { binding, .. } => {
             Some(HolderReferent::Holder(*binding))
@@ -417,7 +641,7 @@ pub(crate) fn holder_from_value(value: &CheckedExpression) -> Option<HolderRefer
             ..
         } => Some(HolderReferent::Place {
             binding: result_borrow.binding,
-            fields: result_borrow.fields.clone(),
+            path: result_borrow.path.clone(),
         }),
         CheckedExpression::BoxNew { .. } | CheckedExpression::ArenaNew { .. } => {
             Some(HolderReferent::Opaque)

@@ -4,17 +4,20 @@ mod buffers;
 mod loops;
 mod probe;
 mod results;
+mod runs;
 mod slices;
 mod split;
 mod storage;
+mod targets;
 
 use crate::CheckedProgram;
 use crate::NodePath;
 use crate::semantic::CheckedSetTarget;
 use crate::semantic::{
-    BindingId, CheckedArrayRoot, CheckedConstructor, CheckedDrop, CheckedEntryForm,
-    CheckedExpression, CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedParameter,
-    CheckedProgramData, CheckedProjectedDrop, CheckedStatement, CheckedValue, FunctionPermissions,
+    BindingId, CheckedArrayRoot, CheckedCommitValues, CheckedConstructor, CheckedDrop,
+    CheckedEntryForm, CheckedExpression, CheckedMatchArm, CheckedMeasure, CheckedMode,
+    CheckedNominalKind, CheckedParameter, CheckedProgramData, CheckedProjectedDrop,
+    CheckedStatement, CheckedValue, FunctionPermissions, MeasureCell, MeasuredKind,
 };
 
 use super::*;
@@ -27,8 +30,18 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     overlap: OverlapLowering,
 ) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
     let entry = lower_entry(&checked.data.entry);
-    let nominals = lower_nominals(&checked.data)?;
-    let constants = lower_constants(&checked.data)?;
+    // [S20, PROV-1] the region erasure: where a nominal instance's region
+    // arguments leave the program. Two instances of one declaration that
+    // differ only in them are two checked types and one IR nominal.
+    let erasure = checked
+        .data
+        .nominal_lowering_alias
+        .iter()
+        .map(|alias| IrNominalId(alias.0))
+        .collect::<Vec<_>>();
+    let erasure = erasure.as_slice();
+    let nominals = lower_nominals(erasure, &checked.data)?;
+    let constants = lower_constants(erasure, &checked.data)?;
     // Each function's declared IR result carries its result *mode*: a borrow
     // of addressed content is an address. A call site must produce exactly
     // the callee's declared result type, so the declared results are computed
@@ -40,7 +53,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         .map(|function| {
             lower_borrow_mode_type(
                 function.result_mode,
-                lower_type(function.result)?,
+                lower_type(erasure, function.result)?,
                 &nominals,
             )
         })
@@ -71,6 +84,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         .map_err(|_| LoweringFailure::CounterOverflow)?;
     let synthesis = SynthesisCell::new(Synthesis::new(source_functions));
     let context = LoweringContext {
+        erasure,
         nominals: &nominals,
         constants: &constants,
         function_results: &function_results,
@@ -113,6 +127,9 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
 /// growing an argument list at every level.
 #[derive(Clone, Copy)]
 struct LoweringContext<'program> {
+    /// [S20, PROV-1] each nominal's lowered identity, with its region axis
+    /// erased.
+    erasure: &'program [IrNominalId],
     nominals: &'program [IrNominal],
     constants: &'program [IrGlobalConstant],
     /// Every source function's declared IR result, indexed by [`FunctionId`].
@@ -139,14 +156,15 @@ fn lower_scalar_constant(value: &CheckedValue) -> Result<IrConstant, LoweringFai
         CheckedValue::Unit => Ok(IrConstant::Unit),
         CheckedValue::Bool(value) => Ok(IrConstant::Bool(*value)),
         CheckedValue::Integer { ty, bits } => Ok(IrConstant::Integer {
-            ty: lower_type(crate::semantic::CheckedType::Integer(*ty))?,
+            ty: lower_type(&[], crate::semantic::CheckedType::Integer(*ty))?,
             bits: *bits,
         }),
         CheckedValue::Float { ty, bits } => Ok(IrConstant::Float {
-            ty: lower_type(crate::semantic::CheckedType::Float(*ty))?,
+            ty: lower_type(&[], crate::semantic::CheckedType::Float(*ty))?,
             bits: *bits,
         }),
-        CheckedValue::NumericIdentity { .. }
+        CheckedValue::ConstGeneric { .. }
+        | CheckedValue::NumericIdentity { .. }
         | CheckedValue::Array { .. }
         | CheckedValue::Struct { .. } => Err(LoweringFailure::InvalidCheckedProgram),
     }
@@ -170,7 +188,10 @@ fn lower_global_value(value: &CheckedValue) -> Result<IrGlobalValue, LoweringFai
     }
 }
 
-fn lower_constants(data: &CheckedProgramData) -> Result<Vec<IrGlobalConstant>, LoweringFailure> {
+fn lower_constants(
+    erasure: &[IrNominalId],
+    data: &CheckedProgramData,
+) -> Result<Vec<IrGlobalConstant>, LoweringFailure> {
     data.constants
         .iter()
         .enumerate()
@@ -181,14 +202,17 @@ fn lower_constants(data: &CheckedProgramData) -> Result<Vec<IrGlobalConstant>, L
             Ok(IrGlobalConstant {
                 id: IrConstantId(constant.id.0),
                 name: constant.name.clone(),
-                ty: lower_type(constant.ty)?,
+                ty: lower_type(erasure, constant.ty)?,
                 value: lower_global_value(&constant.value)?,
             })
         })
         .collect()
 }
 
-fn lower_nominals(data: &CheckedProgramData) -> Result<Vec<IrNominal>, LoweringFailure> {
+fn lower_nominals(
+    erasure: &[IrNominalId],
+    data: &CheckedProgramData,
+) -> Result<Vec<IrNominal>, LoweringFailure> {
     data.nominals
         .get(..data.executable_nominal_count)
         .ok_or(LoweringFailure::InvalidCheckedProgram)?
@@ -265,7 +289,7 @@ fn lower_nominals(data: &CheckedProgramData) -> Result<Vec<IrNominal>, LoweringF
                         .iter()
                         .map(|field| {
                             Ok(IrField {
-                                ty: lower_type(field.ty)?,
+                                ty: lower_type(erasure, field.ty)?,
                             })
                         })
                         .collect::<Result<Vec<_>, LoweringFailure>>()?,
@@ -281,7 +305,7 @@ fn lower_nominals(data: &CheckedProgramData) -> Result<Vec<IrNominal>, LoweringF
                                     .iter()
                                     .map(|field| {
                                         Ok(IrField {
-                                            ty: lower_type(field.ty)?,
+                                            ty: lower_type(erasure, field.ty)?,
                                         })
                                     })
                                     .collect::<Result<Vec<_>, LoweringFailure>>()?,
@@ -289,11 +313,14 @@ fn lower_nominals(data: &CheckedProgramData) -> Result<Vec<IrNominal>, LoweringF
                         })
                         .collect::<Result<Vec<_>, LoweringFailure>>()?,
                 },
-                CheckedNominalKind::Box { referent } => IrNominalKind::Box {
-                    referent: lower_type(*referent)?,
+                CheckedNominalKind::Box {
+                    referent, release, ..
+                } => IrNominalKind::Box {
+                    referent: lower_type(erasure, *referent)?,
+                    release: lower_release_class(*release),
                 },
                 CheckedNominalKind::Arena { content, .. } => IrNominalKind::Arena {
-                    content: lower_type(*content)?,
+                    content: lower_type(erasure, *content)?,
                 },
                 CheckedNominalKind::ArenaStorage => IrNominalKind::ArenaStorage,
                 // The opaque type's own [SYS-2] identity, [SYS-5] release
@@ -348,7 +375,7 @@ fn lower_function<'program>(
         &function.symbol,
     )?;
     for parameter in &function.parameters {
-        let ty = lower_parameter_type(parameter, context.nominals)?;
+        let ty = lower_parameter_type(context.erasure, parameter, context.nominals)?;
         let value = builder.new_parameter(ty)?;
         if builder.bindings.insert(parameter.binding, value).is_some() {
             return Err(LoweringFailure::InvalidCheckedProgram);
@@ -363,20 +390,62 @@ fn lower_function<'program>(
     builder.materialize_staged_driver_plan()?;
     let overlaps = builder.overlaps();
     let completion_steps = builder.completion_steps();
-    builder.finish(
+    let mut lowered = builder.finish(
         function.symbol.clone(),
         overlaps,
         completion_steps,
         None,
         function.target_action,
-    )
+    )?;
+    lowered.source_signature = Some(IrSourceSignature {
+        parameters: function
+            .parameters
+            .iter()
+            .map(|parameter| lower_source_mode(parameter.mode))
+            .collect(),
+        result: lower_source_mode(function.result_mode),
+    });
+    Ok(lowered)
+}
+
+const fn lower_source_mode(mode: CheckedMode) -> IrSourceMode {
+    match mode {
+        CheckedMode::Own => IrSourceMode::Own,
+        CheckedMode::Shared(_) => IrSourceMode::Shared,
+        CheckedMode::Unique(_) => IrSourceMode::Unique,
+    }
+}
+
+fn lower_source_argument(argument: &CheckedExpression) -> IrSourceArgument {
+    match argument {
+        CheckedExpression::Binding { consume_root, .. } => IrSourceArgument::Binding {
+            consume_root: *consume_root,
+        },
+        CheckedExpression::Project { consume_root, .. } => IrSourceArgument::Projection {
+            consume_root: *consume_root,
+        },
+        CheckedExpression::BorrowAddressed { .. }
+        | CheckedExpression::BorrowBuffer { .. }
+        | CheckedExpression::BorrowBox { .. }
+        | CheckedExpression::BorrowSystemResource { .. }
+        | CheckedExpression::ReborrowAddressed { .. } => IrSourceArgument::Borrow,
+        CheckedExpression::ReadStorage { .. }
+        | CheckedExpression::DerefAddressed { .. }
+        | CheckedExpression::ArrayIndex { .. }
+        | CheckedExpression::BufferIndex { .. }
+        | CheckedExpression::SliceIndex { .. }
+        | CheckedExpression::BoxDeref { .. }
+        | CheckedExpression::ArenaDeref { .. } => IrSourceArgument::PlaceRead,
+        _ => IrSourceArgument::Value,
+    }
 }
 
 fn lower_parameter_type(
+    erasure: &[IrNominalId],
     parameter: &CheckedParameter,
     nominals: &[IrNominal],
 ) -> Result<IrType, LoweringFailure> {
-    lower_borrow_mode_type(parameter.mode, lower_type(parameter.ty)?, nominals)
+    lower_borrow_mode_type(parameter.mode, lower_type(erasure, parameter.ty)?, nominals)
 }
 
 /// The representation a borrow-mode value carries.
@@ -389,7 +458,7 @@ fn lower_borrow_mode_type(
     ty: IrType,
     nominals: &[IrNominal],
 ) -> Result<IrType, LoweringFailure> {
-    if mode == CheckedMode::Own {
+    if mode == CheckedMode::Own || matches!(ty, IrType::Buffer { .. } | IrType::Slice { .. }) {
         return Ok(ty);
     }
     let Some(referent) = IrAddressed::of(ty) else {
@@ -426,10 +495,14 @@ fn block_successors(block: &BuildingBlock) -> Vec<IrBlockId> {
 }
 
 struct IrBuilder<'program> {
+    /// [S20, PROV-1] each nominal's lowered identity, with its region axis
+    /// erased.
+    erasure: &'program [IrNominalId],
     nominals: &'program [IrNominal],
     constants: &'program [IrGlobalConstant],
     bindings: HashMap<BindingId, IrValueId>,
     parameters: Vec<(IrValueId, IrType)>,
+    source_calls: Vec<IrSourceCall>,
     values: Vec<IrType>,
     blocks: Vec<BuildingBlock>,
     current: Option<IrBlockId>,
@@ -497,6 +570,7 @@ impl<'program> IrBuilder<'program> {
         function_name: &'program str,
     ) -> Result<Self, LoweringFailure> {
         let LoweringContext {
+            erasure,
             nominals,
             constants,
             function_results,
@@ -504,10 +578,12 @@ impl<'program> IrBuilder<'program> {
             synthesis,
         } = context;
         let mut builder = Self {
+            erasure,
             nominals,
             constants,
             bindings: HashMap::new(),
             parameters: Vec::new(),
+            source_calls: Vec::new(),
             values: Vec::new(),
             blocks: Vec::new(),
             current: None,
@@ -532,9 +608,19 @@ impl<'program> IrBuilder<'program> {
         Ok(builder)
     }
 
+    /// One nominal's lowered identity [S20, PROV-1]: the instance it lowers
+    /// as, with its region axis erased.
+    fn erased(&self, id: crate::NominalId) -> IrNominalId {
+        self.erasure
+            .get(id.0 as usize)
+            .copied()
+            .unwrap_or(IrNominalId(id.0))
+    }
+
     /// This builder's own shared half, for the builders it creates.
     const fn context(&self) -> LoweringContext<'program> {
         LoweringContext {
+            erasure: self.erasure,
             nominals: self.nominals,
             constants: self.constants,
             function_results: self.function_results,
@@ -565,6 +651,8 @@ impl<'program> IrBuilder<'program> {
         Ok(IrFunction {
             name,
             parameters: self.parameters,
+            source_signature: None,
+            source_calls: self.source_calls,
             result: self.result,
             values: self.values,
             blocks: self
@@ -763,6 +851,44 @@ impl<'program> IrBuilder<'program> {
         }
         self.current = None;
         Ok(())
+    }
+
+    /// One [MSR-1] measure whose table cell is a compile-time constant.
+    /// The reader still executes; it just has no load to perform.
+    fn lower_fixed_measure(&mut self, value: u64) -> Result<IrValueId, LoweringFailure> {
+        let ty = IrType::Integer {
+            width: 64,
+            signed: false,
+        };
+        self.define(
+            ty,
+            IrOperation::Constant(IrConstant::Integer { ty, bits: value }),
+        )
+    }
+
+    /// `cap_of - len_of`, the complement [MSR-2]'s standing identity fixes,
+    /// over a measured type whose capacity is its own type constant.
+    ///
+    /// The subtraction cannot go below zero: the identity holds at every
+    /// program point, so the loaded measure never exceeds the constant.
+    fn lower_measure_complement(
+        &mut self,
+        capacity: u64,
+        length: IrValueId,
+    ) -> Result<IrValueId, LoweringFailure> {
+        let ty = IrType::Integer {
+            width: 64,
+            signed: false,
+        };
+        let capacity = self.lower_fixed_measure(capacity)?;
+        self.define(
+            ty,
+            IrOperation::Integer {
+                operation: IrIntegerOperation::SubtractExact,
+                operand_type: ty,
+                arguments: vec![capacity, length],
+            },
+        )
     }
 
     fn define(&mut self, ty: IrType, operation: IrOperation) -> Result<IrValueId, LoweringFailure> {
@@ -1051,6 +1177,61 @@ impl<'program> IrBuilder<'program> {
                     error_drops,
                     context,
                 )?,
+                // [GRAM-4, CALL-4] one evaluation of the call, then one
+                // projection per result ordinal in written order. The
+                // callable hands back one value of its result-list nominal
+                // and the ordinals are its fields, so this is the ordinary
+                // struct projection every other field read uses.
+                CheckedStatement::DestructuringLet {
+                    bindings,
+                    nominal,
+                    value: expression,
+                    ..
+                } => {
+                    let aggregate = self.expression(expression)?;
+                    self.note_call_result(expression, aggregate)?;
+                    let erased = self.erased(*nominal);
+                    if self.value_type(aggregate)? != IrType::Nominal(erased) {
+                        return Err(LoweringFailure::InvalidCheckedProgram);
+                    }
+                    // S39 a cell's one binder is its referent, loaded out
+                    // while the cell's own storage is released.
+                    if let Some(IrNominalKind::Box { .. }) =
+                        self.nominals.get(erased.index()).map(IrNominal::kind)
+                    {
+                        let [(binding, ty)] = bindings.as_slice() else {
+                            return Err(LoweringFailure::InvalidCheckedProgram);
+                        };
+                        let referent = lower_type(self.erasure, *ty)?;
+                        let value = self.define(
+                            referent,
+                            IrOperation::BoxTake {
+                                nominal: erased,
+                                value: aggregate,
+                            },
+                        )?;
+                        if self.bindings.insert(*binding, value).is_some() {
+                            return Err(LoweringFailure::InvalidCheckedProgram);
+                        }
+                        self.promote_binding_if_needed(*binding)?;
+                        continue;
+                    }
+                    for (ordinal, (binding, ty)) in bindings.iter().enumerate() {
+                        let field = u32::try_from(ordinal)
+                            .map_err(|_| LoweringFailure::InvalidCheckedProgram)?;
+                        let value = self.project_struct_path(aggregate, &[field], true)?;
+                        if self.value_type(value)? != lower_type(self.erasure, *ty)? {
+                            return Err(LoweringFailure::InvalidCheckedProgram);
+                        }
+                        if self.bindings.insert(*binding, value).is_some() {
+                            return Err(LoweringFailure::InvalidCheckedProgram);
+                        }
+                        self.promote_binding_if_needed(*binding)?;
+                    }
+                }
+                CheckedStatement::SetList {
+                    targets, values, ..
+                } => self.set_list(targets, values)?,
                 CheckedStatement::Set { target, value, .. } => self.set(target, value)?,
                 CheckedStatement::Replace {
                     binding,
@@ -1061,6 +1242,26 @@ impl<'program> IrBuilder<'program> {
                 CheckedStatement::Evaluate(expression) => {
                     self.expression(expression)?;
                 }
+                // [PROV-6] `dispose p;` runs exactly the walk the scope exit
+                // would have run for this value, at the point it is written.
+                CheckedStatement::Dispose { value, drops, .. } => {
+                    // Reading a binding solely to release it does not need a
+                    // value snapshot. Computed/proper-part consumes still run
+                    // their checked expression, including residual releases.
+                    let root = if let CheckedExpression::Binding { binding, .. } = value {
+                        self.bindings
+                            .get(binding)
+                            .copied()
+                            .ok_or(LoweringFailure::InvalidCheckedProgram)?
+                    } else {
+                        self.expression(value)?
+                    };
+                    let mut lowered = Vec::with_capacity(drops.len());
+                    for drop in drops {
+                        lowered.push(self.lower_projected_drop(root, drop)?);
+                    }
+                    self.append_drops(lowered)?;
+                }
                 CheckedStatement::DropExpression {
                     value: expression,
                     release,
@@ -1068,13 +1269,11 @@ impl<'program> IrBuilder<'program> {
                 } => {
                     let value = self.expression(expression)?;
                     let drop = IrDrop {
-                        value,
+                        subject: IrDropSubject::Value(value),
                         ty: self.value_type(value)?,
                         release: *release,
                     };
-                    self.current_block_mut()?
-                        .instructions
-                        .push(IrInstruction::Drop(drop));
+                    self.append_drops(vec![drop])?;
                 }
                 // PRF-1 proof statements have already contributed their
                 // checked fact to semantic flow. They have no runtime value,
@@ -1171,11 +1370,7 @@ impl<'program> IrBuilder<'program> {
                     self.lower_statements(body, give_target.clone())?;
                     if self.current.is_some() {
                         let drops = self.lower_drops(fallthrough_drops)?;
-                        for drop in drops {
-                            self.current_block_mut()?
-                                .instructions
-                                .push(IrInstruction::Drop(drop));
-                        }
+                        self.append_drops(drops)?;
                     }
                 }
                 CheckedStatement::Match {
@@ -1205,7 +1400,7 @@ impl<'program> IrBuilder<'program> {
                         *enum_type,
                         arms,
                         *continues,
-                        Some((*binding, lower_type(*result_type)?)),
+                        Some((*binding, lower_type(self.erasure, *result_type)?)),
                         give_target.clone(),
                     )?;
                     if self.current.is_some() {
@@ -1348,7 +1543,7 @@ impl<'program> IrBuilder<'program> {
         }
         self.terminate(IrTerminator::Match {
             scrutinee,
-            enum_type: enum_type.into(),
+            enum_type: crate::lowering::lower_enum_type(self.erasure, enum_type),
             targets: arms
                 .iter()
                 .zip(&arm_blocks)
@@ -1366,10 +1561,10 @@ impl<'program> IrBuilder<'program> {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 };
                 let value = self.define(
-                    lower_type(binder.ty)?,
+                    lower_type(self.erasure, binder.ty)?,
                     IrOperation::ProjectVariant {
                         aggregate: scrutinee,
-                        nominal: IrNominalId(nominal.0),
+                        nominal: self.erased(nominal),
                         variant: arm.tag,
                         field: binder.field,
                     },
@@ -1440,7 +1635,7 @@ impl<'program> IrBuilder<'program> {
                     .get(binding)
                     .copied()
                     .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-                let expected = lower_type(*ty)?;
+                let expected = lower_type(self.erasure, *ty)?;
                 let actual = self.value_type(value)?;
                 let value = if self.addressed_bindings.contains(binding) {
                     self.load_storage_value(value)?
@@ -1458,20 +1653,22 @@ impl<'program> IrBuilder<'program> {
                 Ok(value)
             }
             CheckedExpression::Constant(value) => {
-                let ty = lower_type(value.ty())?;
+                let ty = lower_type(self.erasure, value.ty())?;
                 let constant = lower_scalar_constant(value)?;
                 self.define(ty, IrOperation::Constant(constant))
             }
             CheckedExpression::NamedConstant { value, .. } => {
-                let ty = lower_type(value.ty())?;
+                let ty = lower_type(self.erasure, value.ty())?;
                 let constant = lower_scalar_constant(value)?;
                 self.define(ty, IrOperation::Constant(constant))
             }
             CheckedExpression::UserCall {
                 function,
                 arguments,
+                result_borrow,
                 ..
             } => {
+                let source_arguments = arguments.iter().map(lower_source_argument).collect();
                 let arguments = arguments
                     .iter()
                     .map(|argument| self.expression(argument))
@@ -1483,13 +1680,19 @@ impl<'program> IrBuilder<'program> {
                     .function_results
                     .get(function.0 as usize)
                     .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-                self.define(
+                let result = self.define(
                     result,
                     IrOperation::Call {
                         function: function.0,
                         arguments,
                     },
-                )
+                )?;
+                self.source_calls.push(IrSourceCall {
+                    result,
+                    arguments: source_arguments,
+                    returned_borrow_argument: result_borrow.as_ref().map(|borrow| borrow.argument),
+                });
+                Ok(result)
             }
             // A system operation is identified by its target-independent
             // semantic identity [QUAL-1]; no source spelling reaches the IR.
@@ -1505,7 +1708,7 @@ impl<'program> IrBuilder<'program> {
                     .map(|argument| self.expression(argument))
                     .collect::<Result<Vec<_>, _>>()?;
                 self.define(
-                    lower_type(*result)?,
+                    lower_type(self.erasure, *result)?,
                     IrOperation::SystemCall {
                         operation: IrSystemOperation(*operation),
                         target_action: *target_action,
@@ -1531,7 +1734,7 @@ impl<'program> IrBuilder<'program> {
                 } else {
                     self.project_struct_path(root, fields, false)?
                 };
-                if self.value_type(value)? != IrType::Nominal(IrNominalId(nominal.0)) {
+                if self.value_type(value)? != IrType::Nominal(self.erased(*nominal)) {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 Ok(value)
@@ -1547,10 +1750,10 @@ impl<'program> IrBuilder<'program> {
                     .map(|argument| self.expression(argument))
                     .collect::<Result<Vec<_>, _>>()?;
                 self.define(
-                    lower_type(expression.ty())?,
+                    lower_type(self.erasure, expression.ty())?,
                     IrOperation::Integer {
                         operation: (*operation).into(),
-                        operand_type: lower_type(*operand_type)?,
+                        operand_type: lower_type(self.erasure, *operand_type)?,
                         arguments,
                     },
                 )
@@ -1566,10 +1769,10 @@ impl<'program> IrBuilder<'program> {
                     .map(|argument| self.expression(argument))
                     .collect::<Result<Vec<_>, _>>()?;
                 self.define(
-                    lower_type(expression.ty())?,
+                    lower_type(self.erasure, expression.ty())?,
                     IrOperation::Float {
                         operation: (*operation).into(),
-                        operand_type: lower_type(*operand_type)?,
+                        operand_type: lower_type(self.erasure, *operand_type)?,
                         arguments,
                     },
                 )
@@ -1582,7 +1785,7 @@ impl<'program> IrBuilder<'program> {
             } => {
                 let value = self.expression(value)?;
                 self.define(
-                    lower_type(expression.ty())?,
+                    lower_type(self.erasure, expression.ty())?,
                     IrOperation::NumericConversion {
                         source_type: lower_numeric_type(*source),
                         destination_type: lower_numeric_type(*destination),
@@ -1638,7 +1841,7 @@ impl<'program> IrBuilder<'program> {
                     IrType::Bool,
                     IrOperation::EnumEquality {
                         equal: *equal,
-                        operand_type: lower_type(*operand_type)?,
+                        operand_type: lower_type(self.erasure, *operand_type)?,
                         arguments: [left, right],
                     },
                 )
@@ -1649,7 +1852,7 @@ impl<'program> IrBuilder<'program> {
                 target_domain,
                 ..
             } => {
-                let IrType::Array { element, .. } = lower_type(*ty)? else {
+                let IrType::Array { element, .. } = lower_type(self.erasure, *ty)? else {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 };
                 let value = self.expression(value)?;
@@ -1657,14 +1860,21 @@ impl<'program> IrBuilder<'program> {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 self.define(
-                    lower_type(*ty)?,
+                    lower_type(self.erasure, *ty)?,
                     IrOperation::ArrayFill {
                         value,
                         target_domain: (*target_domain).into(),
                     },
                 )
             }
-            CheckedExpression::ArrayLength { root, length, .. } => {
+            CheckedExpression::ArrayMeasure {
+                measure,
+                root,
+                length,
+            } => {
+                if let Some(constant) = fixed_measure(*measure, MeasuredKind::Array) {
+                    return self.lower_fixed_measure(constant);
+                }
                 let (_, ty) = self.array_root(root)?;
                 let IrType::Array { length: actual, .. } = ty else {
                     return Err(LoweringFailure::InvalidCheckedProgram);
@@ -1708,7 +1918,7 @@ impl<'program> IrBuilder<'program> {
                 let length = length
                     .value()
                     .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-                if element.ty() != lower_type(*element_type)? || actual != length {
+                if element.ty() != lower_type(self.erasure, *element_type)? || actual != length {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 let offset = self.expression(offset)?;
@@ -1758,7 +1968,31 @@ impl<'program> IrBuilder<'program> {
                     },
                 )
             }
-            CheckedExpression::BufferLength { root, .. } => self.lower_buffer_length(root),
+            CheckedExpression::BufferMeasure { measure, root } => {
+                match fixed_measure(*measure, MeasuredKind::Buffer) {
+                    Some(constant) => self.lower_fixed_measure(constant),
+                    None => self.lower_buffer_length(root),
+                }
+            }
+            CheckedExpression::ContainerMeasure { measure, root } => {
+                self.lower_container_measure(*measure, root)
+            }
+            // [FN-9] a clause-only datum: the checker discards it with the
+            // clause's typing, so no checked program carries one here.
+            CheckedExpression::PostconditionResultMeasure { .. } => {
+                Err(LoweringFailure::InvalidCheckedProgram)
+            }
+            CheckedExpression::ReadStorage { root, .. } => {
+                let address = self.lower_place_address(root)?;
+                self.load_storage_value(address)
+            }
+            CheckedExpression::KernelCall {
+                row,
+                instance,
+                arguments,
+                result,
+                ..
+            } => self.lower_kernel_call(*row, instance, arguments, *result),
             CheckedExpression::BufferIndex {
                 root,
                 offset,
@@ -1768,7 +2002,12 @@ impl<'program> IrBuilder<'program> {
             CheckedExpression::SliceOf {
                 source, element, ..
             } => self.lower_slice_of(source, *element),
-            CheckedExpression::SliceLength { root, .. } => self.lower_slice_length(root),
+            CheckedExpression::SliceMeasure { measure, root } => {
+                match fixed_measure(*measure, MeasuredKind::Slice) {
+                    Some(constant) => self.lower_fixed_measure(constant),
+                    None => self.lower_slice_length(root),
+                }
+            }
             CheckedExpression::SliceIndex {
                 root,
                 offset,
@@ -1777,7 +2016,7 @@ impl<'program> IrBuilder<'program> {
             } => self.lower_slice_index(root, offset, *target_domain),
             CheckedExpression::BoxNew { nominal, value, .. } => {
                 let value = self.expression(value)?;
-                let nominal = IrNominalId(nominal.0);
+                let nominal = self.erased(*nominal);
                 self.define(
                     IrType::Nominal(nominal),
                     IrOperation::BoxNew { nominal, value },
@@ -1785,8 +2024,8 @@ impl<'program> IrBuilder<'program> {
             }
             CheckedExpression::BoxDeref { nominal, value, .. } => {
                 let value = self.expression(value)?;
-                let nominal = IrNominalId(nominal.0);
-                let IrNominalKind::Box { referent } = self
+                let nominal = self.erased(*nominal);
+                let IrNominalKind::Box { referent, .. } = self
                     .nominals
                     .get(nominal.index())
                     .ok_or(LoweringFailure::InvalidCheckedProgram)?
@@ -1803,7 +2042,7 @@ impl<'program> IrBuilder<'program> {
                 ..
             } => {
                 let value = self.expression(value)?;
-                let nominal = IrNominalId(nominal.0);
+                let nominal = self.erased(*nominal);
                 let IrNominalKind::Arena { content } = self
                     .nominals
                     .get(nominal.index())
@@ -1827,7 +2066,7 @@ impl<'program> IrBuilder<'program> {
             }
             CheckedExpression::ArenaDeref { nominal, value, .. } => {
                 let value = self.expression(value)?;
-                let nominal = IrNominalId(nominal.0);
+                let nominal = self.erased(*nominal);
                 if self.value_type(value)? != IrType::Nominal(nominal) {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
@@ -1846,18 +2085,18 @@ impl<'program> IrBuilder<'program> {
                 binding, nominal, ..
             } => {
                 let value = self.binding_value(*binding)?;
-                if self.value_type(value)? != IrType::Nominal(IrNominalId(nominal.0)) {
+                if self.value_type(value)? != IrType::Nominal(self.erased(*nominal)) {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 Ok(value)
             }
-            CheckedExpression::BorrowAddressed { binding, ty, .. }
-            | CheckedExpression::ReborrowAddressed { binding, ty, .. } => {
-                self.lower_addressed_borrow(*binding, lower_type(*ty)?)
+            CheckedExpression::BorrowAddressed { root, .. } => self.lower_place_address(root),
+            CheckedExpression::ReborrowAddressed { binding, ty, .. } => {
+                self.lower_addressed_borrow(*binding, lower_type(self.erasure, *ty)?)
             }
             CheckedExpression::DerefAddressed { binding, ty, .. } => {
                 let value = self.binding_value(*binding)?;
-                if self.value_type(value)? != lower_type(*ty)? {
+                if self.value_type(value)? != lower_type(self.erasure, *ty)? {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 Ok(value)
@@ -1869,7 +2108,7 @@ impl<'program> IrBuilder<'program> {
                     .iter()
                     .map(|field| self.expression(field))
                     .collect::<Result<Vec<_>, _>>()?;
-                let nominal = IrNominalId(nominal.0);
+                let nominal = self.erased(*nominal);
                 self.define(
                     IrType::Nominal(nominal),
                     IrOperation::ConstructStruct { nominal, fields },
@@ -1885,7 +2124,7 @@ impl<'program> IrBuilder<'program> {
                     .iter()
                     .map(|field| self.expression(field))
                     .collect::<Result<Vec<_>, _>>()?;
-                let nominal = IrNominalId(nominal.0);
+                let nominal = self.erased(*nominal);
                 self.define(
                     IrType::Nominal(nominal),
                     IrOperation::ConstructEnum {
@@ -1903,20 +2142,34 @@ impl<'program> IrBuilder<'program> {
                 residual_drops,
                 ..
             } => {
+                if self.bindings.get(binding).copied().is_some_and(|storage| {
+                    matches!(self.value_type(storage), Ok(IrType::Address(_)))
+                }) && !consume_root
+                    && residual_drops.is_empty()
+                {
+                    let path = fields
+                        .iter()
+                        .copied()
+                        .map(crate::semantic::CheckedPlaceStep::Field)
+                        .collect();
+                    let root = crate::semantic::CheckedContainerRoot {
+                        binding: *binding,
+                        path,
+                        ty: *ty,
+                    };
+                    let address = self.lower_place_address(&root)?;
+                    return self.load_storage_value(address);
+                }
                 let root = self.binding_value(*binding)?;
                 let mut lowered_drops = Vec::with_capacity(residual_drops.len());
                 for drop in residual_drops {
                     lowered_drops.push(self.lower_projected_drop(root, drop)?);
                 }
                 let value = self.project_struct_path(root, fields, *consume_root)?;
-                if self.value_type(value)? != lower_type(*ty)? {
+                if self.value_type(value)? != lower_type(self.erasure, *ty)? {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
-                for drop in lowered_drops {
-                    self.current_block_mut()?
-                        .instructions
-                        .push(IrInstruction::Drop(drop));
-                }
+                self.append_drops(lowered_drops)?;
                 Ok(value)
             }
             CheckedExpression::ProjectValue {
@@ -1927,9 +2180,9 @@ impl<'program> IrBuilder<'program> {
                 ..
             } => {
                 let aggregate = self.expression(value)?;
-                let nominal = IrNominalId(nominal.0);
+                let nominal = self.erased(*nominal);
                 self.define(
-                    lower_type(*ty)?,
+                    lower_type(self.erasure, *ty)?,
                     IrOperation::ProjectStruct {
                         aggregate,
                         nominal,
@@ -1975,135 +2228,83 @@ impl<'program> IrBuilder<'program> {
         }
     }
 
-    /// [SET-2]: read the previous value out of the target place into the
-    /// fresh binding, then perform exactly the [SET-1] store of the
-    /// replacement. The read-out precedes the store, so no program point
-    /// observes an empty place, and nothing is dropped.
+    /// [SET-2] capture the target, evaluate the RHS, then exchange the old
+    /// and new owners at one commit. The old value includes the RHS's effects.
     fn replace(
         &mut self,
         binding: BindingId,
         target: &CheckedSetTarget,
         value: &CheckedExpression,
     ) -> Result<(), LoweringFailure> {
-        let root_binding = target.binding();
-        let storage = self
-            .bindings
-            .get(&root_binding)
-            .copied()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-        let root = self.load_storage_value(storage)?;
-        let previous = match target {
-            CheckedSetTarget::Place(place) => {
-                if place.fields.is_empty() {
-                    root
-                } else {
-                    self.project_struct_path(root, &place.fields, false)?
-                }
-            }
-            // A buffer-element replacement [SET-2, TYPE-2] evaluates its
-            // target components exactly once: the projected buffer and the
-            // offset feed one element read (the previous owner) and one
-            // element write (the replacement), so the shared `set` path,
-            // which would re-lower the offset, is not reused here.
-            CheckedSetTarget::BufferIndex(target) => {
-                let previous = self.lower_buffer_replace(root, target, value)?;
-                if self.bindings.insert(binding, previous).is_some() {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                }
-                self.promote_binding_if_needed(binding)?;
-                return Ok(());
-            }
-            // An array element is copy [TYPE-2], so the checker never forms
-            // an element-position replace target over an array [SET-2].
-            CheckedSetTarget::ArrayIndex(_) => {
-                return Err(LoweringFailure::InvalidCheckedProgram);
-            }
-        };
-        if self.value_type(previous)? != lower_type(target.ty())? {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
+        let target = self.prepare_target(target)?;
+        let replacement = self.expression(value)?;
+        let previous = self.read_target(&target)?;
+        self.write_target(&target, replacement)?;
         if self.bindings.insert(binding, previous).is_some() {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        self.promote_binding_if_needed(binding)?;
-        self.set(target, value)
+        self.promote_binding_if_needed(binding)
     }
 
-    fn set(
+    /// [GRAM-4, SET-1, CALL-4] `set (x, y) = f(...);`.
+    ///
+    /// One evaluation of the call, then one projection per result ordinal in
+    /// written order, each committed to its checked target exactly as a
+    /// single-target `set` commits.
+    /// [LIV-2] one commit of a target list.
+    ///
+    /// The whole right-hand side is evaluated first — the one call, or every
+    /// written value in order — and only then is any target written, so a
+    /// statement whose targets and values name the same places, the swap
+    /// included, reads every previous value before the first commit.
+    fn set_list(
         &mut self,
-        target: &CheckedSetTarget,
-        value: &CheckedExpression,
+        targets: &[CheckedSetTarget],
+        values: &CheckedCommitValues,
     ) -> Result<(), LoweringFailure> {
-        let binding = target.binding();
-        let storage = self
-            .bindings
-            .get(&binding)
-            .copied()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-        let root = self.load_storage_value(storage)?;
-        let replacement = match target {
-            CheckedSetTarget::Place(target) => {
-                let value = self.expression(value)?;
-                if self.value_type(value)? != lower_type(target.ty)? {
+        let prepared = targets
+            .iter()
+            .map(|target| self.prepare_target(target))
+            .collect::<Result<Vec<_>, _>>()?;
+        let ordinals = match values {
+            CheckedCommitValues::ResultList { nominal, value } => {
+                let aggregate = self.expression(value)?;
+                self.note_call_result(value, aggregate)?;
+                if self.value_type(aggregate)? != IrType::Nominal(self.erased(*nominal)) {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
-                if target.fields.is_empty() {
-                    if self.value_type(root)? != self.value_type(value)? {
-                        return Err(LoweringFailure::InvalidCheckedProgram);
-                    }
-                    value
-                } else {
-                    self.replace_struct_path(root, &target.fields, value)?
+                let mut ordinals = Vec::with_capacity(targets.len());
+                for ordinal in 0..targets.len() {
+                    let field = u32::try_from(ordinal)
+                        .map_err(|_| LoweringFailure::InvalidCheckedProgram)?;
+                    ordinals.push(self.project_struct_path(aggregate, &[field], true)?);
                 }
+                ordinals
             }
-            CheckedSetTarget::ArrayIndex(target) => {
-                let array_type = lower_type(target.array_type)?;
-                let IrType::Array { element, length } = array_type else {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                };
-                let array = if target.fields.is_empty() {
-                    root
-                } else {
-                    self.project_struct_path(root, &target.fields, false)?
-                };
-                if self.value_type(array)? != array_type
-                    || element.ty() != lower_type(target.element_type)?
-                    || Some(length) != target.length.value()
-                {
+            CheckedCommitValues::Written(values) => {
+                if values.len() != targets.len() {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
-                // The subscript's bounds obligation is discharged at the
-                // source level [OP-4]; the offset is consumed directly with
-                // no runtime branch.
-                let index = self.expression(&target.offset)?;
-                if self.value_type(index)?
-                    != (IrType::Integer {
-                        width: 64,
-                        signed: false,
-                    })
-                {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                let mut ordinals = Vec::with_capacity(values.len());
+                for value in values {
+                    ordinals.push(self.expression(value)?);
                 }
-                let value = self.expression(value)?;
-                if self.value_type(value)? != element.ty() {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                }
-                let replacement = self.define(
-                    array_type,
-                    IrOperation::InsertArray {
-                        aggregate: array,
-                        index,
-                        value,
-                    },
-                )?;
-                if target.fields.is_empty() {
-                    replacement
-                } else {
-                    self.replace_struct_path(root, &target.fields, replacement)?
-                }
+                ordinals
             }
-            CheckedSetTarget::BufferIndex(target) => self.lower_buffer_set(root, target, value)?,
         };
+        for (target, value) in prepared.iter().zip(ordinals) {
+            self.write_target(target, value)?;
+        }
+        Ok(())
+    }
+
+    /// One target root's new value, written to the storage that holds it.
+    fn commit_root_storage(
+        &mut self,
+        binding: BindingId,
+        storage: IrValueId,
+        replacement: IrValueId,
+    ) -> Result<(), LoweringFailure> {
         let stored = match self.value_type(storage)? {
             IrType::Address(referent) => {
                 if self.value_type(replacement)? != referent.ty() {
@@ -2118,6 +2319,19 @@ impl<'program> IrBuilder<'program> {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         Ok(())
+    }
+
+    /// [SET-1, LIV-2] the one-target commit: the right-hand side is
+    /// evaluated once and completely, then the one target is written by the
+    /// same commit a target list uses.
+    fn set(
+        &mut self,
+        target: &CheckedSetTarget,
+        value: &CheckedExpression,
+    ) -> Result<(), LoweringFailure> {
+        let target = self.prepare_target(target)?;
+        let value = self.expression(value)?;
+        self.write_target(&target, value)
     }
 
     fn project_struct_path(
@@ -2230,20 +2444,64 @@ impl<'program> IrBuilder<'program> {
         )
     }
 
+    fn append_drops(&mut self, drops: Vec<IrDrop>) -> Result<(), LoweringFailure> {
+        if !drops.is_empty() {
+            self.current_block_mut()?
+                .instructions
+                .push(IrInstruction::Drops(drops));
+        }
+        Ok(())
+    }
+
     fn lower_projected_drop(
         &mut self,
         root: IrValueId,
         drop: &CheckedProjectedDrop,
     ) -> Result<IrDrop, LoweringFailure> {
-        let value = self.project_struct_path(root, &drop.fields, false)?;
-        let ty = lower_type(drop.ty)?;
-        if self.value_type(value)? != ty {
+        self.lower_drop_subject(
+            root,
+            &drop.fields,
+            lower_type(self.erasure, drop.ty)?,
+            drop.release,
+        )
+    }
+
+    fn lower_drop_subject(
+        &mut self,
+        root: IrValueId,
+        fields: &[u32],
+        ty: IrType,
+        release: SystemRelease,
+    ) -> Result<IrDrop, LoweringFailure> {
+        // [PROV-6] the empty path is the value's own release-graph node.
+        // A checked release of an addressed binding needs its place, not an
+        // immutable snapshot of the entire enclosing owner.
+        let (subject, actual) = if matches!(self.value_type(root)?, IrType::Address(_)) {
+            let path: Vec<_> = fields
+                .iter()
+                .copied()
+                .map(crate::semantic::CheckedPlaceStep::Field)
+                .collect();
+            let address = self.project_address_path(root, &path)?;
+            let IrType::Address(referent) = self.value_type(address)? else {
+                return Err(LoweringFailure::InvalidCheckedProgram);
+            };
+            (IrDropSubject::Place(address), referent.ty())
+        } else {
+            let value = if fields.is_empty() {
+                root
+            } else {
+                self.project_struct_path(root, fields, false)?
+            };
+            (IrDropSubject::Value(value), self.value_type(value)?)
+        };
+        if actual != ty {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         Ok(IrDrop {
-            value,
+            subject,
             ty,
-            release: drop.release,
+            release,
         })
     }
 
@@ -2269,25 +2527,31 @@ impl<'program> IrBuilder<'program> {
     fn lower_drops(&mut self, drops: &[CheckedDrop]) -> Result<Vec<IrDrop>, LoweringFailure> {
         let mut lowered = Vec::with_capacity(drops.len());
         for drop in drops {
-            let root = self.binding_value(drop.binding)?;
-            let value = if drop.fields.is_empty() {
-                root
-            } else {
-                self.project_struct_path(root, &drop.fields, false)?
-            };
-            let ty = lower_type(drop.ty)?;
-            if self.value_type(value)? != ty {
-                return Err(LoweringFailure::InvalidCheckedProgram);
-            }
+            let root = self
+                .bindings
+                .get(&drop.binding)
+                .copied()
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            let ty = lower_type(self.erasure, drop.ty)?;
             // The checked program already fixed what this release performs
             // [STOR-3]; lowering preserves the record and the edge's reverse
             // declaration order rather than rederiving either.
-            lowered.push(IrDrop {
-                value,
-                ty,
-                release: drop.release,
-            });
+            lowered.push(self.lower_drop_subject(root, &drop.fields, ty, drop.release)?);
         }
         Ok(lowered)
+    }
+}
+
+/// The compile-time value of one [MSR-1] measure cell, when the table fixes
+/// it. A cell the table gives the measured value's own extent is loaded at
+/// run time instead, which is the `None` case.
+const fn fixed_measure(measure: CheckedMeasure, measured: MeasuredKind) -> Option<u64> {
+    match measure.cell(measured) {
+        MeasureCell::ExactConstant(value) => Some(value),
+        MeasureCell::ExactExtent
+        | MeasureCell::ExactTypeConstant
+        | MeasureCell::ExactRuntime
+        | MeasureCell::Bounded
+        | MeasureCell::Absent => None,
     }
 }

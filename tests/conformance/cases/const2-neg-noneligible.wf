@@ -1,6 +1,6 @@
-const bad: box<i32> = 0_i32;
+const bad: Vector<i32> = 0_i32;
 
 command fn main() -> status: own ExitStatus pure {
-  doc "box<T> is not const-eligible: a const is static rodata, no allocation [CONST-2].";
+  doc "Vector<'s, T> is not const-eligible: a const is static rodata, no allocation and no region [CONST-2].";
   return exit_status(code: 0_u8);
 }

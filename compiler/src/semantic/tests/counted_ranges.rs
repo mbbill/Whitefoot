@@ -100,10 +100,23 @@ command fn main() -> status: own ExitStatus pure {
         },
     );
 
+    // The holder is a store cell [S39] rather than the retiring `box<T>`: the
+    // endpoint is still a value that holds a `u64` instead of being one, so
+    // [TYPE-7] cites the same missing `deref` at the same operand.
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
-  let start = box_new(0_u64);
-  for @items (i in start..1_u64) {
+        br#"command fn main() -> status: own ExitStatus pure {
+  region 'a {
+    let workspace = arena_frame::<64, 8, 'a>();
+    region {
+      match arena_box(store: &uniq workspace, value: 0_u64) {
+        Ok(value: start) => {
+          for @items (i in start..1_u64) {
+          }
+        }
+        Err(error: back) => {
+        }
+      }
+    }
   }
   return exit_status(code: 0_u8);
 }
@@ -115,12 +128,22 @@ command fn main() -> status: own ExitStatus pure {
     );
 
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
-  let start = box_new(0_u64);
-  loop @outer {
-    for @items (i in start..1_u64) {
+        br#"command fn main() -> status: own ExitStatus pure {
+  region 'a {
+    let workspace = arena_frame::<64, 8, 'a>();
+    region {
+      match arena_box(store: &uniq workspace, value: 0_u64) {
+        Ok(value: start) => {
+          loop @outer {
+            for @items (i in start..1_u64) {
+            }
+            break @outer;
+          }
+        }
+        Err(error: back) => {
+        }
+      }
     }
-    break @outer;
   }
   return exit_status(code: 0_u8);
 }
@@ -147,7 +170,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn counted_endpoints_require_a_preceding_term_or_constant() {
-    let subscript = br#"fn probe(bounds: own array<u64, 2>) -> result: own unit pure {
+    let subscript = br#"const bounds: FixedVector<u64, 2> =[0_u64, 0_u64];
+
+fn probe() -> result: own unit pure {
   for @items (i in bounds[0_u64]..bounds[1_u64]) {
   }
   return unit;
@@ -248,7 +273,10 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         SemanticRule::Own11,
         SemanticIssueKind::MoveOuterBindingInLoop {
-            mechanical_fix: "move the binding before the loop or declare and consume it inside the loop body",
+            binding: "token".to_owned(),
+            mechanical_fix: "one iteration must leave every outer binding in the status the next \
+                             one starts from: commit a value back into it before the backedge, or \
+                             declare and consume it inside the body",
         },
     );
 
@@ -292,9 +320,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn counted_cleanup_is_attached_only_to_taken_body_exits() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
-    let values = buffer_new(1_u64, 0_u8);
+    let values = fixed_vector::<u8, 1>();
     break @items;
   }
   return exit_status(code: 0_u8);
@@ -317,7 +345,7 @@ fn counted_cleanup_is_attached_only_to_taken_body_exits() {
             panic!("expected local counted break");
         };
         assert_eq!(drops.len(), 1);
-        assert!(matches!(drops[0].ty, CheckedType::Buffer { .. }));
+        assert!(matches!(drops[0].ty, CheckedType::FixedVector { .. }));
     });
 }
 
@@ -331,17 +359,17 @@ fn source() -> result: own Result<u64, Fail> pure {
   return Ok<u64, Fail>(value: 1_u64);
 }
 
-fn leave() -> result: own unit allocates(heap) {
+fn leave() -> result: own unit pure {
   for @items (i in 0_u64..1_u64) {
-    let values = buffer_new(1_u64, 0_u8);
+    let values = fixed_vector::<u8, 1>();
     return unit;
   }
   return unit;
 }
 
-fn forward() -> result: own Result<unit, Fail> allocates(heap) {
+fn forward() -> result: own Result<unit, Fail> pure {
   for @items (i in 0_u64..1_u64) {
-    let values = buffer_new(1_u64, 0_u8);
+    let values = fixed_vector::<u8, 1>();
     let value = propagate source();
   }
   return Ok<unit, Fail>(value: unit);
@@ -374,7 +402,7 @@ command fn main() -> status: own ExitStatus pure {
             panic!("leave must retain its return edge");
         };
         assert_eq!(drops.len(), 1);
-        assert!(matches!(drops[0].ty, CheckedType::Buffer { .. }));
+        assert!(matches!(drops[0].ty, CheckedType::FixedVector { .. }));
 
         let forward = checked
             .data
@@ -391,12 +419,15 @@ command fn main() -> status: own ExitStatus pure {
             panic!("forward must retain its counted range");
         };
         assert_eq!(backedge_drops.len(), 1);
-        assert!(matches!(backedge_drops[0].ty, CheckedType::Buffer { .. }));
+        assert!(matches!(
+            backedge_drops[0].ty,
+            CheckedType::FixedVector { .. }
+        ));
         let CheckedStatement::PropagateLet { error_drops, .. } = &body[1] else {
             panic!("forward must retain its propagation edge");
         };
         assert_eq!(error_drops.len(), 1);
-        assert!(matches!(error_drops[0].ty, CheckedType::Buffer { .. }));
+        assert!(matches!(error_drops[0].ty, CheckedType::FixedVector { .. }));
         assert_eq!(error_drops[0].binding, backedge_drops[0].binding);
     });
 }

@@ -1,0 +1,19 @@
+struct Pair {
+  low: u8;
+  high: u8;
+}
+
+fn two_bytes(bound: own u64) -> (small: own u8, large: own u8) pure {
+  doc "Two results from one call.";
+  return 4_u8, 9_u8;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "LIV-2's second condition admits two distinct fields of one root, which the version before it refused as a repeated target root, and its term-identity sentence makes a target that names a binding in scope a commit rather than a declaration: `total` names the outer binding and keeps it. The exit code reports the second field's ordinal.";
+  let pair = Pair(low: 0_u8, high: 0_u8);
+  set (pair.low, pair.high) = two_bytes(bound: 4_u64);
+  let total = 0_u8;
+  let spare = 0_u8;
+  set (total, spare) = two_bytes(bound: 4_u64);
+  return exit_status(code: pair.high);
+}

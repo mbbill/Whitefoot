@@ -13,9 +13,10 @@
 
 use super::super::super::goal::CheckedRequirement;
 use super::super::super::model::{
-    BindingId, CheckedArrayRoot, CheckedEnumType, CheckedExpression, CheckedIntegerArgumentSource,
-    CheckedIntegerOperation, CheckedMatchArm, CheckedNominalKind, CheckedSetTarget,
-    CheckedSliceSource, CheckedType, CheckedValue, IntegerType,
+    BindingId, CheckedArrayRoot, CheckedConst, CheckedEnumType, CheckedExpression,
+    CheckedIntegerArgumentSource, CheckedIntegerOperation, CheckedMatchArm, CheckedMeasure,
+    CheckedNominalKind, CheckedSetTarget, CheckedSliceSource, CheckedType, CheckedValue,
+    IntegerType, MeasuredKind,
 };
 use super::super::fragment_type;
 use super::super::state::{
@@ -23,15 +24,15 @@ use super::super::state::{
     OutcomeRelation, Relation, close,
 };
 use super::super::term::{
-    CountedCaptureSide, PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm, TermId,
-    TermKind, ZERO, integer_value, type_range,
+    CountedCaptureSide, MeasurePlacement, PlaceProjection, PlaceRoot, PlaceTerm,
+    ProjectedPlaceTerm, TermId, TermKind, ZERO, integer_value, type_range,
 };
 use super::super::{
     CountedAtomicDerivation, CountedBoundDerivation, CountedDerivationSet,
     CountedEqualityDerivation, CountedProofPoint, RemainderEndpoint, S7Derivation,
     S7DerivationKind, S7Subject, ShiftOneIdentity,
 };
-use super::{Analyzer, ArmFacts};
+use super::{Analyzer, ArmFacts, projected_place};
 use crate::SYSTEM_OPERATIONS;
 
 /// The [SYS-2] operations whose outcome carries an [ENT-3] S10 absolute
@@ -129,6 +130,7 @@ impl Analyzer<'_, '_> {
             &Relation::Equal {
                 left: lower_capture,
                 right: lower_source,
+                difference: 0,
             },
             &mut self.derivations,
             event,
@@ -137,6 +139,7 @@ impl Analyzer<'_, '_> {
             &Relation::Equal {
                 left: upper_capture,
                 right: upper_source,
+                difference: 0,
             },
             &mut self.derivations,
             event,
@@ -145,6 +148,7 @@ impl Analyzer<'_, '_> {
             &Relation::Equal {
                 left: binder,
                 right: lower_capture,
+                difference: 0,
             },
             &mut self.derivations,
             event,
@@ -177,7 +181,11 @@ impl Analyzer<'_, '_> {
                 bound: 0,
             };
             CountedEqualityDerivation {
-                relation: Relation::Equal { left, right },
+                relation: Relation::Equal {
+                    left,
+                    right,
+                    difference: 0,
+                },
                 forward: CountedAtomicDerivation {
                     relation: forward,
                     proof_point: CountedProofPoint::PreheaderSnapshot,
@@ -475,6 +483,7 @@ impl Analyzer<'_, '_> {
             &Relation::Equal {
                 left: destination,
                 right: source,
+                difference: 0,
             },
             &mut self.derivations,
             event,
@@ -483,7 +492,7 @@ impl Analyzer<'_, '_> {
 
     /// The place term a binding names directly, for length facts over an
     /// allocated or borrowed collection.
-    fn bound_place(&self, binding: BindingId) -> PlaceTerm {
+    pub(super) fn bound_place(&self, binding: BindingId) -> PlaceTerm {
         PlaceTerm {
             root: PlaceRoot::Binding(binding),
             deref: false,
@@ -495,6 +504,205 @@ impl Analyzer<'_, '_> {
     /// `let x: own T = p;` with p a term establishes x = p; and
     /// `let y: own Dst = cvt::<Src, Dst>(p);` over a total [OP-6] pair
     /// establishes y = p, the conversion being exactly value-preserving.
+    /// [MSR-3] the rebind placement, first half: at the pre-transfer point of
+    /// one `let` or one [LIV-2] `set` whose right-hand side is a measured
+    /// place, one immutable datum per [MSR-1] measure, established equal to
+    /// that measure.
+    ///
+    /// The datum contains no place, so the consume the same statement
+    /// performs cannot kill it. `let built = move spare;` is what needs it:
+    /// without the datum a fresh name for a measured value starts with no
+    /// measures at all, because the equality to the source dies with the
+    /// source.
+    pub(super) fn mint_rebind_datums(
+        &mut self,
+        node_path: &crate::NodePath,
+        ordinal: u32,
+        value: &CheckedExpression,
+        state: &mut FactState,
+    ) -> Option<MeasureCarry> {
+        let CheckedExpression::Binding { binding, ty, .. } = value else {
+            return None;
+        };
+        let source = projected_place(PlaceTerm {
+            root: PlaceRoot::Binding(*binding),
+            deref: self.is_holder(*binding),
+            fields: Vec::new(),
+        });
+        self.mint_measure_datums(
+            node_path,
+            ordinal,
+            MeasurePlacement::Rebind,
+            source,
+            *ty,
+            state,
+        )
+    }
+
+    /// [MSR-3] the first half of every placement below the entry and the
+    /// call: at the point before the statement's own kills, one immutable
+    /// datum per [MSR-1] measure of the source place, established equal to
+    /// that measure.
+    ///
+    /// The datum contains no place, so neither the consume the statement
+    /// performs nor the write it commits can kill it. That is the whole
+    /// content of a placement: without a term with empty support standing
+    /// between the two names, a measured value would arrive at its new name
+    /// with no measures at all, because the equality to the source dies with
+    /// the source.
+    ///
+    /// `ordinal` separates the placements one statement carries — a
+    /// construct's field, a destructuring's binder, a target list's target,
+    /// the displaced and the stored halves of one `replace`.
+    pub(super) fn mint_measure_datums(
+        &mut self,
+        node_path: &crate::NodePath,
+        ordinal: u32,
+        placement: MeasurePlacement,
+        source: ProjectedPlaceTerm,
+        ty: CheckedType,
+        state: &mut FactState,
+    ) -> Option<MeasureCarry> {
+        let mut carried = Vec::new();
+        for (path, measured_type) in self.measured_paths(ty) {
+            let Some(measured) = super::measured_kind(measured_type) else {
+                continue;
+            };
+            let constant = super::type_constant(measured_type);
+            let mut place = source.clone();
+            place
+                .projections
+                .extend(path.iter().map(|field| PlaceProjection::Field(*field)));
+            let event = self.proof_event(FlowEventKind::S5, Some(node_path));
+            let mut datums = Vec::with_capacity(4);
+            for measure in MEASURES {
+                let live = self.place_measure_term(measure, place.clone(), measured, constant);
+                let datum = self.terms.intern(TermKind::MeasureDatum {
+                    statement: node_path.components().to_vec(),
+                    ordinal,
+                    path: path.clone(),
+                    placement,
+                    measure,
+                });
+                self.adopt_measure_atom(datum, live);
+                state.establish(
+                    &Relation::Equal {
+                        left: datum,
+                        right: live,
+                        difference: 0,
+                    },
+                    &mut self.derivations,
+                    event,
+                );
+                datums.push(datum);
+            }
+            carried.push(CarriedMeasures {
+                path,
+                measured,
+                constant,
+                datums,
+            });
+        }
+        (!carried.is_empty()).then_some(MeasureCarry { carried })
+    }
+
+    /// [MSR-1, MSR-3] every measured place one placement's operand reaches by
+    /// field selection, as its field path from the operand and the type
+    /// selected there.
+    ///
+    /// A placement is per placement, not per depth. [MSR-1] admits a measure
+    /// place formed with any number of field-selection `psuffix`es, so a
+    /// struct operand one of whose fields is itself a struct holding a run
+    /// names a measured place two levels down; the naming event renames that
+    /// place along with the operand, and without a datum for it the run
+    /// arrives at its new path with no measures at all — which is exactly
+    /// what every placement exists to prevent.
+    ///
+    /// The walk descends through source `struct` fields only. A cell, a run
+    /// element and an enum payload are reached by a step this walk does not
+    /// take — a `deref`, a subscript, and a variant selection respectively —
+    /// so none of them is a field path from the operand.
+    fn measured_paths(&self, ty: CheckedType) -> Vec<(Vec<u32>, CheckedType)> {
+        if super::measured_kind(ty).is_some() {
+            return vec![(Vec::new(), ty)];
+        }
+        let CheckedType::Nominal(nominal) = ty else {
+            return Vec::new();
+        };
+        let Some(CheckedNominalKind::Struct { fields }) = self
+            .context
+            .nominals
+            .get(nominal.0 as usize)
+            .map(|record| &record.kind)
+        else {
+            return Vec::new();
+        };
+        let fields = fields.clone();
+        let mut found = Vec::new();
+        for (ordinal, field) in fields.iter().enumerate() {
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                continue;
+            };
+            for (mut path, selected) in self.measured_paths(field.ty) {
+                path.insert(0, ordinal);
+                found.push((path, selected));
+            }
+        }
+        found
+    }
+
+    /// [MSR-3] the rebind placement, second half: after the transfer, the
+    /// destination binding's own measures equal the datums minted before it.
+    pub(super) fn establish_rebind_datums(
+        &mut self,
+        node_path: &crate::NodePath,
+        binding: BindingId,
+        rebind: &MeasureCarry,
+        state: &mut FactState,
+    ) {
+        let target = projected_place(self.bound_place(binding));
+        self.establish_measure_datums(node_path, target, rebind, state);
+    }
+
+    /// [MSR-3] the second half of every placement: after the statement's own
+    /// kills, the destination place's measures equal the datums minted before
+    /// them.
+    pub(super) fn establish_measure_datums(
+        &mut self,
+        node_path: &crate::NodePath,
+        destination: ProjectedPlaceTerm,
+        carry: &MeasureCarry,
+        state: &mut FactState,
+    ) {
+        let event = self.proof_event(FlowEventKind::S5, Some(node_path));
+        for carried in &carry.carried {
+            let mut place = destination.clone();
+            place.projections.extend(
+                carried
+                    .path
+                    .iter()
+                    .map(|field| PlaceProjection::Field(*field)),
+            );
+            for (measure, datum) in MEASURES.into_iter().zip(&carried.datums) {
+                let left = self.place_measure_term(
+                    measure,
+                    place.clone(),
+                    carried.measured,
+                    carried.constant,
+                );
+                state.establish(
+                    &Relation::Equal {
+                        left,
+                        right: *datum,
+                        difference: 0,
+                    },
+                    &mut self.derivations,
+                    event,
+                );
+            }
+        }
+    }
+
     fn establish_copy_fact(
         &mut self,
         node_path: &crate::NodePath,
@@ -537,9 +745,9 @@ impl Analyzer<'_, '_> {
         self.establish_copy_equality(node_path, destination, commit, state, event);
     }
 
-    /// [ENT-3] S6: `buffer_new::<T>(n, v)` establishes len(b) = n;
-    /// `len::<T>(P)` for a tracked P establishes m = len(P); and
-    /// `slice_of…(&'r P)` for a tracked P establishes len(s) = len(P).
+    /// [ENT-3] S6: `buffer_new::<T>(n, v)` establishes len_of(b) = n;
+    /// `len::<T>(P)` for a tracked P establishes m = len_of(P); and
+    /// `slice_of…(&'r P)` for a tracked P establishes len_of(s) = len_of(P).
     ///
     /// An `array<T, N>` allocation needs no clause here: its length equality
     /// is the [ENT-2] implicit fact carried by every length term over an
@@ -566,12 +774,18 @@ impl Analyzer<'_, '_> {
                     return true;
                 };
                 let place = self.bound_place(binding);
-                let length_term = self.length_term(place, None);
+                let length_term = self.place_measure_term(
+                    CheckedMeasure::Length,
+                    projected_place(place),
+                    MeasuredKind::Buffer,
+                    None,
+                );
                 let event = self.binding_event(event, FlowEventKind::S6, node_path);
                 state.establish(
                     &Relation::Equal {
                         left: length_term,
                         right: allocated,
+                        difference: 0,
                     },
                     &mut self.derivations,
                     event,
@@ -582,7 +796,84 @@ impl Analyzer<'_, '_> {
                 let ValueImage::Binding(binding) = destination else {
                     return true;
                 };
+                // [BLK-0] the row's own published relation `len_of(result)
+                // == len_of(vector)`, established here over the viewed
+                // place. The row's other three relations are the constant
+                // cells [MSR-1] gives every view — `cap_of` equals `len_of`,
+                // and `room_of` and `head_of` are zero — which the term layer
+                // already answers from the measure table, so this is the one
+                // clause of the record that needs a source.
+                if let CheckedSliceSource::Run(root) = source {
+                    let Some(measured) = super::measured_kind(root.ty) else {
+                        return true;
+                    };
+                    let source_length = self.place_measure_term(
+                        CheckedMeasure::Length,
+                        self.container_root_path(root),
+                        measured,
+                        super::type_constant(root.ty),
+                    );
+                    let slice_place = self.bound_place(binding);
+                    let slice_length = self.place_measure_term(
+                        CheckedMeasure::Length,
+                        projected_place(slice_place),
+                        MeasuredKind::Slice,
+                        None,
+                    );
+                    let event = self.binding_event(event, FlowEventKind::S6, node_path);
+                    state.establish(
+                        &Relation::Equal {
+                            left: slice_length,
+                            right: source_length,
+                            difference: 0,
+                        },
+                        &mut self.derivations,
+                        event,
+                    );
+                    return true;
+                }
+                // [VIEW-2] the child carries the parent's range, so the one
+                // relation the formation publishes is the parent view's own
+                // length read through its holder.
+                if let CheckedSliceSource::ViewHolder {
+                    binding: parent, ..
+                } = source
+                {
+                    let source_length = self.place_measure_term(
+                        CheckedMeasure::Length,
+                        projected_place(PlaceTerm {
+                            root: PlaceRoot::Binding(*parent),
+                            deref: self.is_holder(*parent),
+                            fields: Vec::new(),
+                        }),
+                        MeasuredKind::Slice,
+                        None,
+                    );
+                    let slice_place = self.bound_place(binding);
+                    let slice_length = self.place_measure_term(
+                        CheckedMeasure::Length,
+                        projected_place(slice_place),
+                        MeasuredKind::Slice,
+                        None,
+                    );
+                    let event = self.binding_event(event, FlowEventKind::S6, node_path);
+                    state.establish(
+                        &Relation::Equal {
+                            left: slice_length,
+                            right: source_length,
+                            difference: 0,
+                        },
+                        &mut self.derivations,
+                        event,
+                    );
+                    return true;
+                }
                 let (place, array_length) = match source {
+                    // Answered above; a run's viewed place is a projection
+                    // path and not a field list.
+                    CheckedSliceSource::Run(_) | CheckedSliceSource::ViewHolder { .. } => {
+                        return true;
+                    }
                     CheckedSliceSource::Array { root, length } => {
                         (self.array_root_place(root), Some(*length))
                     }
@@ -610,21 +901,36 @@ impl Analyzer<'_, '_> {
                         Some(*length),
                     ),
                 };
-                let source_length = self.length_term(place, array_length);
+                let source_length = self.place_measure_term(
+                    CheckedMeasure::Length,
+                    projected_place(place),
+                    if array_length.is_some() {
+                        MeasuredKind::Array
+                    } else {
+                        MeasuredKind::Buffer
+                    },
+                    array_length,
+                );
                 let slice_place = self.bound_place(binding);
-                let slice_length = self.length_term(slice_place, None);
+                let slice_length = self.place_measure_term(
+                    CheckedMeasure::Length,
+                    projected_place(slice_place),
+                    MeasuredKind::Slice,
+                    None,
+                );
                 let event = self.binding_event(event, FlowEventKind::S6, node_path);
                 state.establish(
                     &Relation::Equal {
                         left: slice_length,
                         right: source_length,
+                        difference: 0,
                     },
                     &mut self.derivations,
                     event,
                 );
                 true
             }
-            _ => match self.length_operand(value) {
+            _ => match self.measure_operand(value) {
                 Some(source_length) => {
                     if let Some(bound) = self.bound_term(destination, value) {
                         let event = self.binding_event(event, FlowEventKind::S6, node_path);
@@ -632,6 +938,7 @@ impl Analyzer<'_, '_> {
                             &Relation::Equal {
                                 left: bound,
                                 right: source_length,
+                                difference: 0,
                             },
                             &mut self.derivations,
                             event,
@@ -644,32 +951,55 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    /// The length term one `len::<T>(P)` call reads, over the same place the
-    /// obligation judgment forms for P, so both name one term [ENT-2].
-    pub(super) fn length_operand(&mut self, value: &CheckedExpression) -> Option<TermId> {
-        let (place, array_length) = match value {
-            CheckedExpression::ArrayLength { root, length, .. } => {
-                (self.array_root_place(root), Some(*length))
-            }
-            CheckedExpression::BufferLength { root, .. } => (
+    /// The measure term one [MSR-1] measure former reads, over the same
+    /// place the obligation judgment forms for P, so both name one term
+    /// [ENT-2].
+    pub(super) fn measure_operand(&mut self, value: &CheckedExpression) -> Option<TermId> {
+        let (measure, place, measured, array_length) = match value {
+            CheckedExpression::ArrayMeasure {
+                measure,
+                root,
+                length,
+            } => (
+                *measure,
+                self.array_root_place(root),
+                MeasuredKind::Array,
+                Some(*length),
+            ),
+            CheckedExpression::BufferMeasure { measure, root } => (
+                *measure,
                 PlaceTerm {
                     root: PlaceRoot::Binding(root.binding),
                     deref: self.is_holder(root.binding),
                     fields: root.fields.clone(),
                 },
+                MeasuredKind::Buffer,
                 None,
             ),
-            CheckedExpression::SliceLength { root, .. } => (
+            CheckedExpression::SliceMeasure { measure, root } => (
+                *measure,
                 PlaceTerm {
                     root: PlaceRoot::Binding(root.binding),
                     deref: self.is_holder(root.binding),
                     fields: Vec::new(),
                 },
+                MeasuredKind::Slice,
                 None,
             ),
+            // [MSR-1] a run's or a bump extent's measure reader names the
+            // same [ENT-2] term the clause and the invariant name, so a `let`
+            // over one is the ordinary [ENT-3.S6] equality a buffer's is.
+            CheckedExpression::ContainerMeasure { measure, root } => {
+                return Some(self.place_measure_term(
+                    *measure,
+                    self.container_root_path(root),
+                    root.measured()?,
+                    root.type_constant(),
+                ));
+            }
             _ => return None,
         };
-        Some(self.length_term(place, array_length))
+        Some(self.place_measure_term(measure, projected_place(place), measured, array_length))
     }
 
     /// [ENT-3] S7 constant-offset arithmetic at a `let` binding.
@@ -981,7 +1311,11 @@ impl Analyzer<'_, '_> {
         } else {
             (ZERO, result)
         };
-        let relation = Relation::Distinct { left, right };
+        let relation = Relation::Distinct {
+            left,
+            right,
+            difference: 0,
+        };
         let parent =
             state.establish_distinct_with_proof(result, ZERO, &mut self.derivations, event);
         self.retain_s7_derivation(S7Derivation {
@@ -1417,34 +1751,75 @@ fn establish_shifted(
 
 /// The normalized relation of one comparison operation over two read
 /// operands, shared by the comparison-origin shape and S4's substitution.
+///
+/// `gap` is the displacement the two sides carry, `right`'s constant minus
+/// `left`'s: a clause side is an affine expression [MSR-5], and
+/// `at + 2_u64 <= len_of(run)` is the ordinary difference bound
+/// `at - len_of(run) <= -2`.
 pub(super) fn comparison_relation(
     operation: CheckedIntegerOperation,
     left: TermId,
     right: TermId,
+    gap: i128,
 ) -> Option<Relation> {
     Some(match operation {
-        CheckedIntegerOperation::Equal => Relation::Equal { left, right },
-        CheckedIntegerOperation::NotEqual => Relation::Distinct { left, right },
+        CheckedIntegerOperation::Equal => Relation::Equal {
+            left,
+            right,
+            difference: gap,
+        },
+        CheckedIntegerOperation::NotEqual => Relation::Distinct {
+            left,
+            right,
+            difference: gap,
+        },
         CheckedIntegerOperation::Less => Relation::Bound {
             left,
             right,
-            bound: -1,
+            bound: gap.checked_sub(1)?,
         },
         CheckedIntegerOperation::LessEqual => Relation::Bound {
             left,
             right,
-            bound: 0,
+            bound: gap,
         },
         CheckedIntegerOperation::Greater => Relation::Bound {
             left: right,
             right: left,
-            bound: -1,
+            bound: gap.checked_neg()?.checked_sub(1)?,
         },
         CheckedIntegerOperation::GreaterEqual => Relation::Bound {
             left: right,
             right: left,
-            bound: 0,
+            bound: gap.checked_neg()?,
         },
         _ => return None,
     })
+}
+
+/// The four [MSR-1] measures, in the order every former reads them.
+const MEASURES: [CheckedMeasure; 4] = [
+    CheckedMeasure::Length,
+    CheckedMeasure::Capacity,
+    CheckedMeasure::Room,
+    CheckedMeasure::Head,
+];
+
+/// [MSR-3] one placement's datums, held between the mint before the
+/// statement's kills and the establishment after them.
+///
+/// One placement carries one entry per measured place its operand reaches by
+/// field selection, so a struct operand carries the measures of every run
+/// beneath it and not only its own.
+pub(super) struct MeasureCarry {
+    carried: Vec<CarriedMeasures>,
+}
+
+/// The four datums of one measured place under one placement, with the field
+/// path that reaches it from the placement's source and destination.
+struct CarriedMeasures {
+    path: Vec<u32>,
+    measured: MeasuredKind,
+    constant: Option<CheckedConst>,
+    datums: Vec<TermId>,
 }

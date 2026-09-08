@@ -1,0 +1,16 @@
+fn wider['s: copy](left: &'s u64, right: &'s u64) -> larger: own u64 reads(left, right) {
+  doc "A region parameter's bound names the class of the store its region identifies, and no store is reclaimed by duplication.";
+  let a = deref(left);
+  let b = deref(right);
+  let ordered = a >= b;
+  if ordered {
+    return a;
+  } else {
+    return b;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "PROV-6, S37: a region parameter's bound is `affine` for a bump extent or `linear` for a general store; `copy` is one of the three classes a type parameter's bound may name and is not one a store has, so it is refused at the region_param itself rather than at any instantiation.";
+  return exit_status(code: 0_u8);
+}

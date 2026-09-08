@@ -1,8 +1,9 @@
 use crate::{DeclarationId, NodePath};
 
 use super::model::{
-    BindingId, CheckedBooleanOperation, CheckedConst, CheckedFlatElement, CheckedFloatOperation,
-    CheckedIntegerOperation, CheckedNumericType, CheckedType, CheckedValue, FunctionId,
+    BindingId, CheckedBooleanOperation, CheckedConst, CheckedElement, CheckedFlatElement,
+    CheckedFloatOperation, CheckedIntegerOperation, CheckedMeasure, CheckedNumericType,
+    CheckedType, CheckedValue, FunctionId, MeasuredKind,
 };
 
 /// One function requirement, split into predicate and occurrence identity.
@@ -181,6 +182,11 @@ pub(crate) enum EvaluatedValueOccurrence {
 pub(crate) enum GoalProjection {
     Deref,
     Field(u32),
+    /// One [OP-4] subscript of the base reached so far, which [MSR-1] admits
+    /// in a measure place so that `len_of(table[i])` is a term. The offset is
+    /// a logical one and the obligation it owes is discharged where the place
+    /// is formed [MSR-4].
+    Subscript(super::places::PlaceOffset),
 }
 
 /// One structural goal row and its exact selected type/domain identity.
@@ -213,7 +219,8 @@ pub(crate) enum GoalOperation {
         element: CheckedFlatElement,
         length: CheckedConst,
     },
-    ArrayLength {
+    ArrayMeasure {
+        measure: CheckedMeasure,
         element: CheckedFlatElement,
         length: CheckedConst,
     },
@@ -223,7 +230,8 @@ pub(crate) enum GoalOperation {
         element: CheckedFlatElement,
         length: CheckedConst,
     },
-    BufferLength {
+    BufferMeasure {
+        measure: CheckedMeasure,
         element: CheckedFlatElement,
     },
     /// One buffer element value whose own OP-4 obligation has already been
@@ -238,9 +246,30 @@ pub(crate) enum GoalOperation {
         element: CheckedType,
         maximum_length: u64,
     },
-    SliceLength {
+    SliceMeasure {
+        measure: CheckedMeasure,
         region: DeclarationId,
         element: CheckedFlatElement,
+    },
+    /// One [MSR-1] measure of a run [BLK-1] or a bump extent [PROV-1]. The
+    /// measured kind is part of the row identity because the measure table
+    /// gives each its own row, and the written constant is what a
+    /// `FixedVector`'s capacity and an `Arena`'s byte extent are [MSR-2].
+    ContainerMeasure {
+        measure: CheckedMeasure,
+        measured: MeasuredKind,
+        /// The element type of a run; a bump extent has none.
+        element: Option<CheckedElement>,
+        /// A `FixedVector`'s capacity or an `Arena`'s byte extent; a
+        /// `Vector`'s capacity is a descriptor word and has none.
+        constant: Option<CheckedConst>,
+    },
+    /// One run element value whose own [OP-4] obligation has already been
+    /// discharged before this expression is used as a proof operand.
+    RunIndex {
+        measured: MeasuredKind,
+        element: CheckedElement,
+        constant: Option<CheckedConst>,
     },
     /// One slice element value whose own OP-4 obligation has already been
     /// discharged before this expression is used as a proof operand.

@@ -1,0 +1,9 @@
+fn drop_it(run: own Vector<u8>) -> code: own u8 pure {
+  doc "PROV-6: the statement resolves the innermost live binding of this function whose type is the store's provider. This scope holds none, so the release it would run has no capability to spend and the refusal renders the parameter the scope is missing.";
+  dispose run;
+  return 0_u8;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

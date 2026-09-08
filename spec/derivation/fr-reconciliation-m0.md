@@ -13,9 +13,9 @@ rule-by-rule check against the paper text is the remaining OBLIGATION-0.
 | OWN-1 copy/affine + whole-binding kill | FR type-classed copy vs move; partial moves tracked per sub-path | STRICTER (we kill whole binding) | none — restriction preserves soundness |
 | OWN-2 own/&'r/&uniq 'r | FR box T / &(paths) / &mut(paths) | DIFFERENT-SOUND: FR types borrows by the SET of places they may reference; each Whitefoot borrow holder has one resolved place + named region, while a direct slice separately carries a finite static origin set | see T-A below |
 | OWN-3 lexical named regions, total outlives | FR block-scoped lifetimes l with nesting order | EQUIVALENT on lexical fragment; ours adds caller-region incomparability (fail-closed) | none |
-| OWN-4 store/return outlives direction | FR write-compatibility: assigned value's lifetime >= destination slot's | EQUIVALENT (direction verified — this is the rule our critique found inverted in v0; FR agrees with the fix) | none |
+| OWN-4 store/return outlives direction; bound-holder region lifetime | FR write-compatibility: assigned value's lifetime >= destination slot's | EQUIVALENT for stored and bound-holder borrows (direction verified — this is the rule our critique found inverted in v0; FR agrees with the fix); v0.51 delegates only unbound call-temporary endpoints to OWN-6 | none for the equivalent core; see the v0.51 qualification below |
 | OWN-5 resolved-place exclusivity | FR read/write-prohibited side conditions computed from borrow types in env | EQUIVALENT intent; ours eager per-place, FR per-judgment | OBL-1: model-check equivalence on shared fragment |
-| OWN-6 holder resolution; stmt-end temporaries | FR reborrowing via *w typing | EQUIVALENT mechanism (eager resolution vs type-level paths) | covered by OBL-1 |
+| OWN-6 holder resolution; statement temporaries and the completed non-escaping control-header endpoint | FR reborrowing via *w typing | EQUIVALENT mechanism for resolution; the v0.51 endpoint is a stricter lifetime subset for an unbound temporary after its complete use | the original OBL-1 generator did not exercise this combined call/control boundary; see the qualification below |
 | OWN-7 prefix overlap, conservative index | FR path disjointness on strict prefixes | STRICTER (we conservatively overlap non-constant indices) | none |
 | OWN-8 reject-when-unsure | FR is complete for its calculus | POSTURE DIFFERENCE: we may reject FR-typable programs | acceptable by design (D1a) |
 | OWN-10 borrow-storage duration | FR: borrows of block-local slots cannot outlive the block (env lifetimes) | EQUIVALENT; ours states it explicitly incl. own params vs caller regions | none |
@@ -170,6 +170,25 @@ closed-producer and set-wide proof above.
 **Status for the M0 ownership fragment: §5 core reconciled. All obligations
 OBL-0..3 discharged** (OBL-1 at fragment scope). Recommendation to owner:
 ratify the reconciled core.
+
+## v0.51 qualification: completed control-header temporaries
+
+The v0.51 OWN-4/OWN-6 amendment preserves the reconciliation above for stored borrows
+and bound holders. It shortens only an unbound call-scoped temporary created while
+evaluating an `own` enum match header or exact `own Bool` conditional header, after the
+header's value and every argument access are complete and before the selected arm or
+branch begins. STOR-5 prevents an owned enum result from storing a borrow or view after
+substitution, and `Bool` has no such payload. Bound holders, surviving views,
+borrowed-result candidates, borrowed matches, and ordinary statement temporaries keep
+their existing endpoints. A child's written local region remains its formation and
+type-validity ceiling.
+
+This is sound by subsetting the temporary loan's live interval: the parent resumes only
+after the non-escaping child no longer exists. It widens the accepted source set only by
+permitting that resumed parent to be reused in the selected arm or branch. The earlier
+generative OBL-1 run predates this combined call/control pattern, so it does not provide
+independent formal evidence for the new endpoint; implementation and conformance checks
+are separate evidence and are not claimed by this memo.
 
 ## v0.6 additive status note
 

@@ -1,0 +1,32 @@
+fn split(taken: own FixedVector<u8, 8>) -> (kept: own u64, spare: own u64) reads(taken) contract {
+  ensures kept == len_of(taken);
+  ensures spare == len_of(taken);
+} {
+  doc "Two results, each related to the measure of the run this call consumed.";
+  let measured = len_of(taken);
+  return measured, measured;
+}
+
+fn needs_eight(bound: own u64) -> ok: own unit pure contract {
+  requires 8_u64 <= bound;
+} {
+  doc "Needs a caller proof about its argument.";
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "S16, CALL-4: a two-result contract reaches both binders of a destructuring let, and each binder discharges a later requirement from its own ordinal's relation.";
+  let run = fixed_vector::<u8, 8>();
+  set run = place_back(vector: move run, value: 0_u8);
+  set run = place_back(vector: move run, value: 0_u8);
+  set run = place_back(vector: move run, value: 0_u8);
+  set run = place_back(vector: move run, value: 0_u8);
+  set run = place_back(vector: move run, value: 0_u8);
+  set run = place_back(vector: move run, value: 0_u8);
+  set run = place_back(vector: move run, value: 0_u8);
+  set run = place_back(vector: move run, value: 0_u8);
+  let (kept, spare) = split(taken: move run);
+  let first = needs_eight(bound: kept);
+  let second = needs_eight(bound: spare);
+  return exit_status(code: 0_u8);
+}

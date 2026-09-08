@@ -1,0 +1,1109 @@
+//! Storage for immutable aggregate IR values.
+//!
+//! Source ownership is already checked and is not inferred here. A value gets
+//! independent backing unless complete CFG liveness proves that a selected
+//! update or edge transfer can reuse backing whose old contents are dead.
+//! Projections and loads remain snapshots, never aliases. Exposed backing is
+//! not coalesced, and schedules whose reads can outlive an IR call keep every
+//! value separate until their actual retirement lifetimes are represented.
+
+use std::collections::BTreeSet;
+
+use crate::{
+    IrArrayRoot, IrFunction, IrInstruction, IrNominalKind, IrOperation, IrProgram, IrTerminator,
+    IrType, IrValueId,
+};
+
+use super::BackendFailure;
+
+/// These values contain their payload inline. Descriptors and opaque handles
+/// retain their ordinary SSA representation: their payload is elsewhere. This
+/// choice depends on representation, not source names or a size threshold.
+pub(super) fn is_stored_aggregate(
+    program: &IrProgram<'_, '_, '_>,
+    ty: IrType,
+) -> Result<bool, BackendFailure> {
+    Ok(match ty {
+        IrType::Array { .. } | IrType::FixedVector { .. } => true,
+        IrType::Nominal(nominal) => {
+            let nominal = program.nominal(nominal).ok_or(BackendFailure::InvalidIr)?;
+            match nominal.kind() {
+                IrNominalKind::Struct { .. } => true,
+                IrNominalKind::Enum { .. } => !nominal.is_tag_only_enum(),
+                IrNominalKind::Box { .. }
+                | IrNominalKind::Arena { .. }
+                | IrNominalKind::ArenaStorage
+                | IrNominalKind::SystemResource(_) => false,
+            }
+        }
+        IrType::Unit
+        | IrType::Bool
+        | IrType::Integer { .. }
+        | IrType::Float { .. }
+        | IrType::Buffer { .. }
+        | IrType::Vector { .. }
+        | IrType::Provider
+        | IrType::Slice { .. }
+        | IrType::Address(_) => false,
+    })
+}
+
+pub(super) struct FunctionStoragePlan {
+    values: Vec<Option<usize>>,
+    slots: Vec<IrType>,
+    /// A fresh binding can be the destination of its initializing value.
+    /// The frame plan supplies this address's static or per-iteration backing.
+    destinations: Vec<Option<IrValueId>>,
+}
+
+impl FunctionStoragePlan {
+    pub(super) fn build(
+        program: &IrProgram<'_, '_, '_>,
+        function: &IrFunction,
+        pipeline: Option<&crate::IrCompletionPipeline>,
+    ) -> Result<Self, BackendFailure> {
+        let types = function
+            .value_types()
+            .iter()
+            .map(|ty| is_stored_aggregate(program, *ty).map(|stored| stored.then_some(*ty)))
+            .collect::<Result<Vec<_>, _>>()?;
+        let graph = FlowGraph::from_function(function);
+        let mut plan = graph.plan(types)?;
+        plan.select_destinations(function, &graph, pipeline)?;
+        Ok(plan)
+    }
+
+    pub(super) fn slot(&self, value: IrValueId) -> Option<usize> {
+        self.values.get(value.ordinal() as usize).copied().flatten()
+    }
+
+    /// The slot number is the index in this slice. Ordering follows the first
+    /// value in each group and does not depend on hashing or traversal timing.
+    pub(super) fn slots(&self) -> &[IrType] {
+        &self.slots
+    }
+
+    pub(super) fn destination(&self, slot: usize) -> Option<IrValueId> {
+        self.destinations.get(slot).copied().flatten()
+    }
+
+    /// Redirect a value's construction into the fresh place that consumes it.
+    /// This changes physical placement, not source ownership or initialization:
+    /// no old content is overwritten, and calls still have separate inputs.
+    ///
+    /// The single-use condition preserves independent snapshots and exposed
+    /// views. Both definitions must execute in the same block, hence the same
+    /// dynamic iteration. A static destination must be in an acyclic block;
+    /// otherwise only the actualized pipeline's per-slot backing has a proved
+    /// retirement-before-reuse boundary. Single-use alone cannot exclude a
+    /// previous iteration's address alias during the producer's reads.
+    /// AddressOf already freezes the value's storage group;
+    /// no other definition can subsequently reuse it. Staged carries count as
+    /// reads even though their stores are schedule metadata rather than IR.
+    fn select_destinations(
+        &mut self,
+        function: &IrFunction,
+        graph: &FlowGraph,
+        pipeline: Option<&crate::IrCompletionPipeline>,
+    ) -> Result<(), BackendFailure> {
+        let mut uses = vec![0_u8; self.values.len()];
+        for block in &graph.blocks {
+            for value in block
+                .instructions
+                .iter()
+                .flat_map(|instruction| &instruction.operands)
+                .chain(&block.terminal_uses)
+            {
+                uses[*value] = uses[*value].saturating_add(1);
+            }
+        }
+        if let Some(pipeline) = function.completion_pipeline() {
+            for (origin, _) in pipeline.staged_carries() {
+                let count = uses
+                    .get_mut(index(*origin))
+                    .ok_or(BackendFailure::InvalidIr)?;
+                *count = count.saturating_add(1);
+            }
+        }
+        let mut members = vec![0_usize; self.slots.len()];
+        for slot in self.values.iter().flatten() {
+            members[*slot] += 1;
+        }
+        for (block_index, block) in function.blocks().iter().enumerate() {
+            let block_id = crate::IrBlockId::from_index(block_index)
+                .map_err(|_| BackendFailure::CounterOverflow)?;
+            let per_slot = pipeline.is_some_and(|pipeline| {
+                pipeline.slot_index(block_id).is_some() && !pipeline.drains(block_id)
+            });
+            if !per_slot && graph.reentered(block_index) {
+                continue;
+            }
+            let mut defined = BTreeSet::new();
+            for instruction in block.instructions() {
+                let IrInstruction::Define {
+                    result,
+                    ty,
+                    operation,
+                } = instruction
+                else {
+                    continue;
+                };
+                if let IrOperation::AddressOf { value, referent } = operation
+                    && let Some(slot) = self.slot(*value)
+                    && members[slot] == 1
+                    && uses[index(*value)] == 1
+                    && defined.contains(value)
+                {
+                    if *ty != IrType::Address(*referent) || self.slots[slot] != referent.ty() {
+                        return Err(BackendFailure::InvalidIr);
+                    }
+                    self.destinations[slot] = Some(*result);
+                }
+                defined.insert(*result);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The emitter must read all incoming edge values before writing any aggregate
+/// block parameter. Slot assignment does not turn parallel phi transfer into
+/// sequential assignment; in particular two loop carries may exchange slots.
+struct FlowGraph {
+    entry_parameters: Vec<usize>,
+    blocks: Vec<FlowBlock>,
+    coalesce: bool,
+}
+
+struct FlowBlock {
+    parameters: Vec<usize>,
+    instructions: Vec<FlowInstruction>,
+    terminal_uses: Vec<usize>,
+    successors: Vec<usize>,
+    transfers: Vec<(usize, usize)>,
+}
+
+struct FlowInstruction {
+    result: Option<usize>,
+    operands: Vec<usize>,
+    /// Only these operations permit their result to overwrite this one input
+    /// after every operand has been read. This is not an ownership annotation.
+    reuse: Option<usize>,
+    exposed: Option<usize>,
+}
+
+impl FlowGraph {
+    /// Whether a later CFG visit can overwrite this block's static backing.
+    /// No source ownership inference is needed for an acyclic initialization.
+    fn reentered(&self, block: usize) -> bool {
+        let mut pending = self.blocks[block].successors.clone();
+        let mut seen = BTreeSet::new();
+        while let Some(next) = pending.pop() {
+            if next == block {
+                return true;
+            }
+            if seen.insert(next) {
+                pending.extend(self.blocks[next].successors.iter().copied());
+            }
+        }
+        false
+    }
+
+    fn from_function(function: &IrFunction) -> Self {
+        let blocks = function
+            .blocks()
+            .iter()
+            .map(|block| {
+                let (successors, transfers) = match block.terminator() {
+                    IrTerminator::Jump {
+                        target, arguments, ..
+                    } => (
+                        vec![target.index()],
+                        function
+                            .blocks()
+                            .get(target.index())
+                            .map(|block| {
+                                block
+                                    .parameters()
+                                    .iter()
+                                    .zip(arguments)
+                                    .map(|((parameter, _), argument)| {
+                                        (index(*parameter), index(*argument))
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
+                    ),
+                    IrTerminator::Match { targets, .. } => (
+                        targets
+                            .iter()
+                            .map(|target| target.block().index())
+                            .collect(),
+                        Vec::new(),
+                    ),
+                    IrTerminator::Return { .. } | IrTerminator::Unreachable => {
+                        (Vec::new(), Vec::new())
+                    }
+                };
+                FlowBlock {
+                    parameters: block
+                        .parameters()
+                        .iter()
+                        .map(|(value, _)| index(*value))
+                        .collect(),
+                    instructions: block
+                        .instructions()
+                        .iter()
+                        .map(FlowInstruction::from_ir)
+                        .collect(),
+                    terminal_uses: terminator_operands(block.terminator())
+                        .into_iter()
+                        .map(index)
+                        .collect(),
+                    successors,
+                    transfers,
+                }
+            })
+            .collect();
+        Self {
+            entry_parameters: function
+                .parameters()
+                .iter()
+                .map(|(value, _)| index(*value))
+                .collect(),
+            blocks,
+            // A refused ordinary hand-out reads its arguments at join, and a
+            // staged definition can have several dynamic values in flight.
+            coalesce: function.overlaps().is_empty() && function.completion_pipeline().is_none(),
+        }
+    }
+
+    fn plan(&self, types: Vec<Option<IrType>>) -> Result<FunctionStoragePlan, BackendFailure> {
+        self.validate(types.len())?;
+        let mut groups: Vec<BTreeSet<usize>> = (0..types.len())
+            .map(|value| BTreeSet::from([value]))
+            .collect();
+        let mut representative: Vec<usize> = (0..types.len()).collect();
+        if self.coalesce {
+            let (interference, frozen) = self.interference(&types);
+            // Try only semantic update and CFG transfer neighbors. Unrelated
+            // dead values are deliberately not packed into the same backing.
+            let candidates = self.blocks.iter().flat_map(|block| {
+                block
+                    .instructions
+                    .iter()
+                    .filter_map(|instruction| Some((instruction.result?, instruction.reuse?)))
+                    .chain(block.transfers.iter().copied())
+            });
+            for (left, right) in candidates {
+                if types[left].is_none() || types[left] != types[right] {
+                    continue;
+                }
+                let a = representative[left];
+                let b = representative[right];
+                if a == b
+                    || groups[a]
+                        .iter()
+                        .chain(&groups[b])
+                        .any(|value| frozen.contains(value))
+                    || groups[a].iter().any(|left| {
+                        groups[b]
+                            .iter()
+                            .any(|right| interference[*left].contains(right))
+                    })
+                {
+                    continue;
+                }
+                let (keep, remove) = (a.min(b), a.max(b));
+                for member in std::mem::take(&mut groups[remove]) {
+                    representative[member] = keep;
+                    groups[keep].insert(member);
+                }
+            }
+        }
+        let mut values = vec![None; types.len()];
+        let mut slots = Vec::new();
+        let mut assigned = vec![None; types.len()];
+        for (value, ty) in types.into_iter().enumerate() {
+            if let Some(ty) = ty {
+                let slot = *assigned[representative[value]].get_or_insert_with(|| {
+                    slots.push(ty);
+                    slots.len() - 1
+                });
+                values[value] = Some(slot);
+            }
+        }
+        let destinations = vec![None; slots.len()];
+        Ok(FunctionStoragePlan {
+            values,
+            slots,
+            destinations,
+        })
+    }
+
+    fn validate(&self, values: usize) -> Result<(), BackendFailure> {
+        if self.blocks.is_empty()
+            || self.entry_parameters.iter().any(|value| *value >= values)
+            || self.blocks.iter().any(|block| {
+                block
+                    .parameters
+                    .iter()
+                    .chain(&block.terminal_uses)
+                    .any(|value| *value >= values)
+                    || block
+                        .successors
+                        .iter()
+                        .any(|target| *target >= self.blocks.len())
+                    || block
+                        .transfers
+                        .iter()
+                        .any(|(a, b)| *a >= values || *b >= values)
+                    || block.instructions.iter().any(|instruction| {
+                        instruction.result.is_some_and(|value| value >= values)
+                            || instruction.operands.iter().any(|value| *value >= values)
+                            || instruction.reuse.is_some_and(|value| value >= values)
+                            || instruction.exposed.is_some_and(|value| value >= values)
+                    })
+            })
+        {
+            return Err(BackendFailure::InvalidIr);
+        }
+        Ok(())
+    }
+
+    fn live_in(&self) -> Vec<BTreeSet<usize>> {
+        let mut entering = vec![BTreeSet::new(); self.blocks.len()];
+        loop {
+            let mut changed = false;
+            for (ordinal, block) in self.blocks.iter().enumerate().rev() {
+                let mut live = self.live_after(block, &entering);
+                for instruction in block.instructions.iter().rev() {
+                    if let Some(result) = instruction.result {
+                        live.remove(&result);
+                    }
+                    live.extend(instruction.operands.iter().copied());
+                }
+                for parameter in &block.parameters {
+                    live.remove(parameter);
+                }
+                // Function parameters are defined in the activation's
+                // prologue, not by executing block zero. Keep their uses in
+                // this fixed point: an edge back to block zero must preserve
+                // an original parameter across the previous iteration.
+                if entering[ordinal] != live {
+                    entering[ordinal] = live;
+                    changed = true;
+                }
+            }
+            if !changed {
+                return entering;
+            }
+        }
+    }
+
+    fn live_after(&self, block: &FlowBlock, entering: &[BTreeSet<usize>]) -> BTreeSet<usize> {
+        let mut live: BTreeSet<_> = block.terminal_uses.iter().copied().collect();
+        for successor in &block.successors {
+            live.extend(entering[*successor].iter().copied());
+        }
+        live
+    }
+
+    fn interference(&self, types: &[Option<IrType>]) -> (Vec<BTreeSet<usize>>, BTreeSet<usize>) {
+        let entering = self.live_in();
+        let mut conflicts = vec![BTreeSet::new(); types.len()];
+        let mut frozen = BTreeSet::new();
+        let mut conflict = |a: usize, b: usize| {
+            if a != b && types[a].is_some() && types[b].is_some() {
+                conflicts[a].insert(b);
+                conflicts[b].insert(a);
+            }
+        };
+        for (ordinal, block) in self.blocks.iter().enumerate() {
+            let mut live = self.live_after(block, &entering);
+            for instruction in block.instructions.iter().rev() {
+                if let Some(exposed) = instruction.exposed {
+                    frozen.insert(exposed);
+                }
+                if let Some(result) = instruction.result {
+                    // Even an unused definition writes its assigned backing.
+                    for other in &live {
+                        conflict(result, *other);
+                    }
+                    // An arbitrary result destination may be written before
+                    // a call/constructor has finished reading its operands.
+                    // Only a selected update has an explicit read-then-write
+                    // contract permitting its base operand's reuse.
+                    for operand in &instruction.operands {
+                        if Some(*operand) != instruction.reuse {
+                            conflict(result, *operand);
+                        }
+                    }
+                    live.remove(&result);
+                }
+                live.extend(instruction.operands.iter().copied());
+            }
+            let parameters: Vec<_> = block
+                .parameters
+                .iter()
+                .chain(self.entry_parameters.iter().filter(|_| ordinal == 0))
+                .copied()
+                .collect();
+            // Phi and function parameter stores happen even for unused
+            // parameters. Keep all destinations distinct, and protect every
+            // value live across those writes, including outer loop values.
+            for parameter in &parameters {
+                for other in live.iter().chain(&parameters) {
+                    conflict(*parameter, *other);
+                }
+            }
+        }
+        (conflicts, frozen)
+    }
+}
+
+impl FlowInstruction {
+    fn from_ir(instruction: &IrInstruction) -> Self {
+        let (result, reuse, exposed) = match instruction {
+            IrInstruction::Define {
+                result, operation, ..
+            } => {
+                let reuse = match operation {
+                    IrOperation::RunBoundary { run, .. } => Some(index(*run)),
+                    IrOperation::InsertStruct { aggregate, .. } => Some(index(*aggregate)),
+                    _ => None,
+                };
+                let exposed = match operation {
+                    IrOperation::AddressOf { value, .. } => Some(index(*value)),
+                    IrOperation::SliceFromRun { run } => Some(index(*run)),
+                    IrOperation::SliceFromArray {
+                        array: IrArrayRoot::Value(value),
+                    } => Some(index(*value)),
+                    _ => None,
+                };
+                (Some(index(*result)), reuse, exposed)
+            }
+            IrInstruction::StoreBuffer { .. }
+            | IrInstruction::StoreSlice { .. }
+            | IrInstruction::Store { .. }
+            | IrInstruction::Drops(_) => (None, None, None),
+        };
+        Self {
+            result,
+            operands: instruction_operands(instruction)
+                .into_iter()
+                .map(index)
+                .collect(),
+            reuse,
+            exposed,
+        }
+    }
+}
+
+fn index(value: IrValueId) -> usize {
+    value.ordinal() as usize
+}
+
+fn instruction_operands(instruction: &IrInstruction) -> Vec<IrValueId> {
+    match instruction {
+        IrInstruction::Define { operation, .. } => operation_operands(operation),
+        IrInstruction::StoreBuffer {
+            buffer,
+            index,
+            value,
+        } => vec![*buffer, *index, *value],
+        IrInstruction::StoreSlice {
+            slice,
+            index,
+            value,
+        } => vec![*slice, *index, *value],
+        IrInstruction::Store { address, value, .. } => vec![*address, *value],
+        IrInstruction::Drops(drops) => drops.iter().map(|drop| drop.operand()).collect(),
+    }
+}
+
+fn terminator_operands(terminator: &IrTerminator) -> Vec<IrValueId> {
+    match terminator {
+        IrTerminator::Unreachable => Vec::new(),
+        IrTerminator::Jump {
+            arguments, drops, ..
+        } => arguments
+            .iter()
+            .copied()
+            .chain(drops.iter().map(|drop| drop.operand()))
+            .collect(),
+        IrTerminator::Match { scrutinee, .. } => vec![*scrutinee],
+        IrTerminator::Return { value, drops } => std::iter::once(*value)
+            .chain(drops.iter().map(|drop| drop.operand()))
+            .collect(),
+    }
+}
+
+/// Every value read by an operation, including allocation providers, captures,
+/// and source aggregates. Exhaustive matching makes a new IR operation require
+/// a deliberate liveness decision before this module compiles.
+pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
+    match operation {
+        IrOperation::Constant(_)
+        | IrOperation::FixedVector
+        | IrOperation::ArenaFrame { .. }
+        | IrOperation::ArenaListNew => Vec::new(),
+        IrOperation::Call { arguments, .. }
+        | IrOperation::SystemCall { arguments, .. }
+        | IrOperation::Integer { arguments, .. }
+        | IrOperation::Float { arguments, .. }
+        | IrOperation::Boolean { arguments, .. } => arguments.clone(),
+        IrOperation::EnumEquality { arguments, .. } => arguments.to_vec(),
+        IrOperation::NumericConversion { value, .. }
+        | IrOperation::Reinterpret { value, .. }
+        | IrOperation::ArrayFill { value, .. }
+        | IrOperation::BoxNew { value, .. }
+        | IrOperation::BoxTake { value, .. }
+        | IrOperation::BoxDeref { value, .. }
+        | IrOperation::ArenaDeref { value, .. }
+        | IrOperation::AddressOf { value, .. } => vec![*value],
+        IrOperation::ArrayIndex { root, offset, .. } => array_root_operand(*root)
+            .into_iter()
+            .chain([*offset])
+            .collect(),
+        IrOperation::BufferFill { length, value, .. } => vec![*length, *value],
+        IrOperation::BufferVacant { length, .. } | IrOperation::BufferFits { length, .. } => {
+            vec![*length]
+        }
+        IrOperation::BufferMeasure { buffer } | IrOperation::SliceFromBuffer { buffer } => {
+            vec![*buffer]
+        }
+        IrOperation::StoreTake(take) => vec![take.store, take.count],
+        IrOperation::StoreBox(cell) => vec![cell.store, cell.value],
+        IrOperation::ContainerMeasure { container, .. } => vec![*container],
+        IrOperation::RunIndex { run, offset, .. } => vec![*run, *offset],
+        IrOperation::RunBoundary { run, value, .. } => {
+            std::iter::once(*run).chain(value.iter().copied()).collect()
+        }
+        IrOperation::RunTaken { run, .. } | IrOperation::SliceFromRun { run } => vec![*run],
+        IrOperation::BufferIndex { buffer, offset, .. } => vec![*buffer, *offset],
+        IrOperation::BufferProbeSkip {
+            buffer,
+            index,
+            limit,
+            needles,
+        } => [*buffer, *index, *limit]
+            .into_iter()
+            .chain(needles.iter().copied())
+            .collect(),
+        IrOperation::SliceFromArray { array } => array_root_operand(*array).into_iter().collect(),
+        IrOperation::SliceMeasure { slice } => vec![*slice],
+        IrOperation::SliceIndex { slice, offset, .. } => vec![*slice, *offset],
+        IrOperation::ArenaNew { list, value, .. } => vec![*list, *value],
+        IrOperation::ConstructStruct { fields, .. } | IrOperation::ConstructEnum { fields, .. } => {
+            fields.clone()
+        }
+        IrOperation::ProjectStruct { aggregate, .. }
+        | IrOperation::ProjectVariant { aggregate, .. } => vec![*aggregate],
+        IrOperation::InsertStruct {
+            aggregate, value, ..
+        } => vec![*aggregate, *value],
+        IrOperation::Load { address, .. } => vec![*address],
+        IrOperation::ProjectAddress {
+            address,
+            projection,
+        } => match projection {
+            crate::IrPlaceProjection::Field { .. } => vec![*address],
+            crate::IrPlaceProjection::RunElement { offset, .. }
+            | crate::IrPlaceProjection::ArrayElement { offset, .. } => vec![*address, *offset],
+        },
+        IrOperation::LoopSplit {
+            seed,
+            lower,
+            upper,
+            captures,
+            ..
+        } => [*seed, *lower, *upper]
+            .into_iter()
+            .chain(captures.iter().copied())
+            .collect(),
+    }
+}
+
+fn array_root_operand(root: IrArrayRoot) -> Option<IrValueId> {
+    match root {
+        IrArrayRoot::Value(value) => Some(value),
+        IrArrayRoot::Constant(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::panic)]
+
+    use super::*;
+
+    const ARRAY: IrType = IrType::Array {
+        element: crate::IrFlatElement::Integer {
+            width: 64,
+            signed: false,
+        },
+        length: 4,
+    };
+
+    fn define(result: usize, operands: &[usize], reuse: Option<usize>) -> FlowInstruction {
+        FlowInstruction {
+            result: Some(result),
+            operands: operands.to_vec(),
+            reuse,
+            exposed: None,
+        }
+    }
+
+    fn block(
+        parameters: &[usize],
+        instructions: Vec<FlowInstruction>,
+        uses: &[usize],
+    ) -> FlowBlock {
+        FlowBlock {
+            parameters: parameters.to_vec(),
+            instructions,
+            terminal_uses: uses.to_vec(),
+            successors: Vec::new(),
+            transfers: Vec::new(),
+        }
+    }
+
+    fn plan(graph: &FlowGraph, values: usize) -> FunctionStoragePlan {
+        let types = vec![Some(ARRAY); values];
+        let (conflicts, _) = graph.interference(&types);
+        let plan = graph.plan(types).expect("well-formed flow graph");
+        for (value, others) in conflicts.iter().enumerate() {
+            for other in others {
+                assert_ne!(
+                    plan.values[value], plan.values[*other],
+                    "interfering values {value} and {other}"
+                );
+            }
+        }
+        compare_execution(graph, &plan);
+        plan
+    }
+
+    /// A separate concrete oracle executes value snapshots and physical
+    /// slots together. It does not read liveness or interference. Definitions
+    /// write even when dead, every operand is checked, and loop transfers are
+    /// simultaneous. Eight trips exercise reuse across dynamic definitions;
+    /// this finite test trace is unrelated to source proof acceptance.
+    fn compare_execution(graph: &FlowGraph, plan: &FunctionStoragePlan) {
+        let mut values = vec![None; plan.values.len()];
+        let mut storage = vec![None; plan.slots.len()];
+        for parameter in &graph.entry_parameters {
+            let value = 100 + *parameter as u64;
+            values[*parameter] = Some(value);
+            storage[plan.values[*parameter].expect("aggregate parameter")] = Some(value);
+        }
+        let read = |value: usize, values: &[Option<u64>], storage: &[Option<u64>]| {
+            let expected = values[value].expect("read defined value");
+            let slot = plan.values[value].expect("aggregate operand");
+            assert_eq!(
+                storage[slot],
+                Some(expected),
+                "value {value} changed in slot {slot}"
+            );
+            expected
+        };
+        let mut at = 0;
+        let mut previous: Option<usize> = None;
+        for _ in 0..graph.blocks.len() * 8 {
+            let block = &graph.blocks[at];
+            if let Some(previous) = previous {
+                let transfers: Vec<_> = graph.blocks[previous]
+                    .transfers
+                    .iter()
+                    .map(|(destination, source)| (*destination, read(*source, &values, &storage)))
+                    .collect();
+                for (destination, value) in transfers {
+                    values[destination] = Some(value);
+                    storage[plan.values[destination].expect("aggregate phi")] = Some(value);
+                }
+            }
+            for instruction in &block.instructions {
+                let answer = instruction.operands.iter().fold(1_u64, |answer, operand| {
+                    answer
+                        .wrapping_mul(31)
+                        .wrapping_add(read(*operand, &values, &storage))
+                });
+                if let Some(result) = instruction.result {
+                    let answer = answer.wrapping_mul(17).wrapping_add(result as u64);
+                    values[result] = Some(answer);
+                    storage[plan.values[result].expect("aggregate definition")] = Some(answer);
+                }
+            }
+            for operand in &block.terminal_uses {
+                read(*operand, &values, &storage);
+            }
+            let Some(successor) = block.successors.first() else {
+                break;
+            };
+            previous = Some(at);
+            at = *successor;
+        }
+    }
+
+    #[test]
+    fn dense_loop_updates_and_edges_share_one_backing() {
+        // bb0: a = fixed_vector; jump bb1(a)
+        // bb1(p): next = run_boundary(p); jump bb1(next)
+        let mut entry = block(&[], vec![define(0, &[], None)], &[0]);
+        entry.successors.push(1);
+        entry.transfers.push((1, 0));
+        let mut body = block(&[1], vec![define(2, &[1], Some(1))], &[2]);
+        body.successors.push(1);
+        body.transfers.push((1, 2));
+        let plan = plan(
+            &FlowGraph {
+                entry_parameters: Vec::new(),
+                blocks: vec![entry, body],
+                coalesce: true,
+            },
+            3,
+        );
+        assert_eq!(plan.slots.len(), 1);
+    }
+
+    #[test]
+    fn an_old_snapshot_live_after_an_update_stays_separate() {
+        let graph = FlowGraph {
+            entry_parameters: vec![0],
+            blocks: vec![block(&[], vec![define(1, &[0], Some(0))], &[0, 1])],
+            coalesce: true,
+        };
+        assert_ne!(plan(&graph, 2).values[0], plan(&graph, 2).values[1]);
+    }
+
+    #[test]
+    fn a_backedge_to_entry_preserves_original_function_parameters() {
+        let mut body = block(&[], vec![define(1, &[0], Some(0))], &[1]);
+        body.successors.push(0);
+        let graph = FlowGraph {
+            entry_parameters: vec![0],
+            blocks: vec![body],
+            coalesce: true,
+        };
+        let plan = plan(&graph, 2);
+        assert_ne!(plan.values[0], plan.values[1]);
+    }
+
+    #[test]
+    fn an_unused_definition_still_cannot_clobber_a_live_value() {
+        let graph = FlowGraph {
+            entry_parameters: vec![0],
+            blocks: vec![block(&[], vec![define(1, &[0], Some(0))], &[0])],
+            coalesce: true,
+        };
+        let plan = plan(&graph, 2);
+        assert_ne!(plan.values[0], plan.values[1]);
+    }
+
+    #[test]
+    fn swapped_loop_parameters_require_distinct_destinations() {
+        // Both backedge sources must be snapshotted before either parameter
+        // slot is overwritten. Storage coalescing cannot turn this into two
+        // sequential copies, even though each transfer is individually legal.
+        let mut entry = block(&[], Vec::new(), &[0, 1]);
+        entry.successors.push(1);
+        entry.transfers.extend([(2, 0), (3, 1)]);
+        let mut body = block(&[2, 3], Vec::new(), &[3, 2]);
+        body.successors.push(1);
+        body.transfers.extend([(2, 3), (3, 2)]);
+        let graph = FlowGraph {
+            entry_parameters: vec![0, 1],
+            blocks: vec![entry, body],
+            coalesce: true,
+        };
+        let plan = plan(&graph, 4);
+        assert_ne!(plan.values[2], plan.values[3]);
+        assert_eq!(plan.values[0], plan.values[2]);
+        assert_eq!(plan.values[1], plan.values[3]);
+    }
+
+    #[test]
+    fn a_dead_phi_write_protects_an_outer_value() {
+        let mut entry = block(&[], vec![define(0, &[], None)], &[0]);
+        entry.successors.push(1);
+        entry.transfers.push((1, 0));
+        let body = block(&[1], Vec::new(), &[0]);
+        let graph = FlowGraph {
+            entry_parameters: Vec::new(),
+            blocks: vec![entry, body],
+            coalesce: true,
+        };
+        let plan = plan(&graph, 2);
+        assert_ne!(plan.values[0], plan.values[1]);
+    }
+
+    #[test]
+    fn a_phi_destination_may_reuse_an_owner_dropped_on_another_incoming_edge() {
+        // bb0(old): branch left or right
+        // left: jump joined(old)
+        // right: fresh = construct; jump joined(fresh), dropping old
+        // joined(answer): return answer
+        // Coalescing answer with old is valid, but the right edge must read
+        // old for cleanup before writing fresh to answer's backing. The
+        // terminal-use oracle executes the right edge with that ordering.
+        let mut entry = block(&[], Vec::new(), &[]);
+        entry.successors.extend([2, 1]);
+        let mut left = block(&[], Vec::new(), &[0]);
+        left.successors.push(3);
+        left.transfers.push((2, 0));
+        let mut right = block(&[], vec![define(1, &[], None)], &[0, 1]);
+        right.successors.push(3);
+        right.transfers.push((2, 1));
+        let joined = block(&[2], Vec::new(), &[2]);
+        let graph = FlowGraph {
+            entry_parameters: vec![0],
+            blocks: vec![entry, left, right, joined],
+            coalesce: true,
+        };
+        let plan = plan(&graph, 3);
+        assert_eq!(plan.values[0], plan.values[2]);
+        assert_ne!(plan.values[1], plan.values[2]);
+    }
+
+    #[test]
+    fn exposed_values_are_frozen_even_after_their_last_direct_use() {
+        let mut expose = define(1, &[0], None);
+        expose.exposed = Some(0);
+        let graph = FlowGraph {
+            entry_parameters: vec![0],
+            blocks: vec![block(&[], vec![expose, define(2, &[0], Some(0))], &[2])],
+            coalesce: true,
+        };
+        let plan = plan(&graph, 3);
+        assert_ne!(plan.values[0], plan.values[2]);
+    }
+
+    #[test]
+    fn a_call_cannot_alias_a_last_use_argument_via_transitive_edge_unions() {
+        let mut entry = block(&[], vec![define(0, &[], None)], &[0]);
+        entry.successors.push(1);
+        entry.transfers.push((1, 0));
+        let mut body = block(
+            &[1],
+            vec![define(2, &[1], Some(1)), define(3, &[2], None)],
+            &[3],
+        );
+        body.successors.push(1);
+        body.transfers.push((1, 3));
+        let graph = FlowGraph {
+            entry_parameters: Vec::new(),
+            blocks: vec![entry, body],
+            coalesce: true,
+        };
+        let plan = plan(&graph, 4);
+        assert_eq!(plan.values[1], plan.values[2]);
+        assert_ne!(plan.values[2], plan.values[3]);
+    }
+
+    #[test]
+    fn deferred_schedules_keep_distinct_backing() {
+        let graph = FlowGraph {
+            entry_parameters: vec![0],
+            blocks: vec![block(&[], vec![define(1, &[0], Some(0))], &[1])],
+            coalesce: false,
+        };
+        let plan = plan(&graph, 2);
+        assert_ne!(plan.values[0], plan.values[1]);
+    }
+
+    #[test]
+    fn projections_and_loads_keep_snapshot_storage() {
+        let graph = FlowGraph {
+            entry_parameters: vec![0],
+            blocks: vec![block(
+                &[],
+                vec![define(1, &[0], None), define(2, &[0], Some(0))],
+                &[1, 2],
+            )],
+            coalesce: true,
+        };
+        let plan = plan(&graph, 3);
+        assert_eq!(plan.values[0], plan.values[2]);
+        assert_ne!(plan.values[1], plan.values[2]);
+    }
+
+    fn with_program(source: &[u8], test: impl FnOnce(&IrProgram<'_, '_, '_>)) {
+        use crate::*;
+
+        let limits = CompilerLimits::default();
+        let inputs = [SourceInput::new("storage.wf", source)];
+        let bundle = SourceBundle::with_limits(&inputs, limits.source).expect("valid source");
+        let LexOutcome::Complete(lexed) = lex(&bundle, limits.lexer) else {
+            panic!("lex")
+        };
+        let TerminalOutcome::Complete(classified) =
+            classify_terminals(&lexed, ACTIVE_KERNEL_SPEC_HASH, limits.terminals)
+        else {
+            panic!("terminals")
+        };
+        let parsed = match parse(&classified, limits.parser) {
+            ParseOutcome::Complete(parsed) => parsed,
+            other => panic!("parse: {other:?}"),
+        };
+        let FinalizeOutcome::Complete(finalized) = finalize(parsed, limits.finalizer) else {
+            panic!("finalize")
+        };
+        let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, limits.canonical)
+        else {
+            panic!("canonical")
+        };
+        let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
+            panic!("resolve")
+        };
+        let checked = match check_semantics(resolved) {
+            SemanticOutcome::Complete(checked) => checked,
+            other => panic!("semantics: {other:?}"),
+        };
+        let program = lower_checked(*checked, OverlapLowering::Off).expect("lower");
+        test(&program);
+    }
+
+    #[test]
+    fn fresh_binding_destinations_keep_call_inputs_and_snapshots_separate() {
+        with_program(
+            br#"struct Row {
+  left: u64;
+  right: u64;
+}
+
+fn build(seed: own u64) -> result: own Row pure {
+  let next = seed +wrap 1_u64;
+  return Row(left: seed, right: next);
+}
+
+fn exchange(old: &uniq Row) -> result: own Row reads(old.left, old.right), writes(old.left, old.right) {
+  let fresh = build(seed: 37_u64);
+  let previous = replace deref(old) = move fresh;
+  set deref(old).left = 99_u64;
+  return move previous;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let first = build(seed: 11_u64);
+  region {
+    let previous = exchange(old: &uniq first);
+    set previous.right = 23_u64;
+    if first.left != 99_u64 {
+      return exit_status(code: 1_u8);
+    }
+    if previous.left != 11_u64 {
+      return exit_status(code: 2_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+            |program| {
+                let mut direct_calls = 0;
+                for function in program.functions() {
+                    let plan = FunctionStoragePlan::build(program, function, None).expect("plan");
+                    for block in function.blocks() {
+                        for instruction in block.instructions() {
+                            let IrInstruction::Define {
+                                result, operation, ..
+                            } = instruction
+                            else {
+                                continue;
+                            };
+                            let Some(slot) = plan.slot(*result) else {
+                                continue;
+                            };
+                            if let Some(address) = plan.destination(slot) {
+                                assert_eq!(
+                                    plan.values
+                                        .iter()
+                                        .filter(|member| **member == Some(slot))
+                                        .count(),
+                                    1
+                                );
+                                assert!(block.instructions().iter().any(|instruction| matches!(instruction,
+                                    IrInstruction::Define { result: target, operation: IrOperation::AddressOf { value, .. }, .. }
+                                    if *target == address && value == result
+                                )));
+                                if let IrOperation::Call { arguments, .. } = operation {
+                                    direct_calls += 1;
+                                    for argument in arguments {
+                                        assert_ne!(plan.slot(*argument), Some(slot));
+                                        assert_ne!(*argument, address);
+                                    }
+                                }
+                            }
+                            if let IrOperation::Load { address, .. } = operation {
+                                // Reading an existing place remains a snapshot,
+                                // even when a later fresh owner adopts that snapshot.
+                                assert_ne!(plan.destination(slot), Some(*address));
+                            }
+                        }
+                    }
+                }
+                assert_eq!(
+                    direct_calls, 1,
+                    "the borrowed owner receives its helper result directly"
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn repeated_storage_is_distinct_from_acyclic_entry_and_exit_storage() {
+        let mut entry = block(&[], Vec::new(), &[]);
+        entry.successors.push(1);
+        let mut header = block(&[], Vec::new(), &[]);
+        header.successors.extend([2, 3]);
+        let mut body = block(&[], Vec::new(), &[]);
+        body.successors.push(1);
+        let graph = FlowGraph {
+            entry_parameters: Vec::new(),
+            blocks: vec![entry, header, body, block(&[], Vec::new(), &[])],
+            coalesce: true,
+        };
+        assert!(!graph.reentered(0));
+        assert!(graph.reentered(1));
+        assert!(graph.reentered(2));
+        assert!(!graph.reentered(3));
+    }
+
+    #[test]
+    fn checked_dense_ir_coalesces_without_changing_ownership() {
+        with_program(
+            br#"command fn main() -> status: own ExitStatus pure {
+  let built = fixed_vector::<u64, 8>();
+  for @fill (
+    at in 0_u64..8_u64,
+    invariant grown: len_of(built) >= at,
+    invariant spare: room_of(built) + at >= 8_u64,
+    invariant flat: head_of(built) <= 0_u64
+  ) {
+    set built = place_back(vector: move built, value: 1_u64);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+            |program| {
+                let function = &program.functions()[program.main_ordinal() as usize];
+                let plan = FunctionStoragePlan::build(program, function, None).expect("plan");
+                let slots: BTreeSet<_> = function
+                    .blocks()
+                    .iter()
+                    .flat_map(|block| block.instructions())
+                    .filter_map(|instruction| match instruction {
+                        IrInstruction::Define {
+                            result,
+                            operation: IrOperation::FixedVector | IrOperation::RunBoundary { .. },
+                            ..
+                        } => plan.slot(*result),
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(slots.len(), 1, "construction and append use one backing");
+                assert_eq!(plan.slots().len(), 1);
+            },
+        );
+    }
+}

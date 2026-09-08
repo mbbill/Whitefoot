@@ -1,0 +1,14 @@
+fn twice<T: copy>(value: own T) -> (first: own T, second: own T) pure {
+  doc "A body written for the copy class: under that bound the value may be duplicated, used bare, and dropped.";
+  return value, value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "OWN-1, PROV-6, S37: a `copy`-bounded type parameter is copy at the symbolic instance its body is checked at, so the body uses its value bare and more than once, and no `move` is written anywhere in it.";
+  let (a, b) = twice::<u8>(value: 7_u8);
+  let sum = a +wrap b;
+  if sum == 14_u8 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}

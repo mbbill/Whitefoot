@@ -44,7 +44,7 @@ const fn prelude(
 
 /// Distinct OP-1 spellings in normative table order, with repeated `cvt`
 /// collapsed at its first occurrence as required by OP-1.
-pub(crate) const OPERATION_FAMILIES: [&str; 94] = [
+pub(crate) const OPERATION_FAMILIES: [&str; 98] = [
     "+wrap",
     "-wrap",
     "*wrap",
@@ -90,8 +90,12 @@ pub(crate) const OPERATION_FAMILIES: [&str; 94] = [
     "bxor",
     "bnot",
     "cvt",
-    "len",
+    "len_of",
+    "cap_of",
+    "room_of",
+    "head_of",
     "slice_of",
+    "mut_slice_of",
     "box_new",
     "arena_new",
     "array_new",
@@ -387,8 +391,21 @@ pub enum SystemTypeRef {
     U32,
     /// `u64`.
     U64,
-    /// `buffer<u8>`.
-    BufferU8,
+    /// [SYS-8] the **destination** operand class of a range-bearing
+    /// operation [SYS-8]: the storage that operation writes.
+    ///
+    /// It is a class rather than one type for the reason [VIEW-2]'s viewable
+    /// class is one — the class is wider than any one type. Its member is the
+    /// exclusive view `MutSlice<'r, u8>`, and, until S34 retires the old
+    /// container surface, `buffer<u8>` as well. Nothing in a row reads what
+    /// the storage is made of: the operation writes element storage through
+    /// the descriptor it is handed, and its two range obligations are stated
+    /// over `len_of` of whichever member the call supplied.
+    DestinationU8,
+    /// [SYS-8] the **source** operand class of a range-bearing operation
+    /// [SYS-8]: the storage that operation reads. Its member is the shared
+    /// view `Slice<'r, u8>` and, transitionally, `buffer<u8>`.
+    SourceU8,
     /// One system nominal type, by index into [`SYSTEM_NOMINALS`].
     Nominal(u8),
     /// One [PRE-1] `Result<T, E>` instantiation over table types.
@@ -901,7 +918,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 29] = [
             parameter(
                 "destination",
                 SystemParameterMode::UniqueBorrow(1),
-                SystemTypeRef::BufferU8,
+                SystemTypeRef::DestinationU8,
             ),
             parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
@@ -940,7 +957,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 29] = [
             parameter(
                 "destination",
                 SystemParameterMode::UniqueBorrow(1),
-                SystemTypeRef::BufferU8,
+                SystemTypeRef::DestinationU8,
             ),
             parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
@@ -1006,7 +1023,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 29] = [
             parameter(
                 "destination",
                 SystemParameterMode::UniqueBorrow(1),
-                SystemTypeRef::BufferU8,
+                SystemTypeRef::DestinationU8,
             ),
             parameter("file_offset", SystemParameterMode::Own, SystemTypeRef::U64),
             parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
@@ -1031,7 +1048,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 29] = [
             parameter(
                 "source",
                 SystemParameterMode::Borrow(1),
-                SystemTypeRef::BufferU8,
+                SystemTypeRef::SourceU8,
             ),
             parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
@@ -1076,7 +1093,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 29] = [
             parameter(
                 "name",
                 SystemParameterMode::Borrow(1),
-                SystemTypeRef::BufferU8,
+                SystemTypeRef::SourceU8,
             ),
             parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
@@ -1122,7 +1139,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 29] = [
             parameter(
                 "destination",
                 SystemParameterMode::UniqueBorrow(1),
-                SystemTypeRef::BufferU8,
+                SystemTypeRef::DestinationU8,
             ),
             parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
@@ -1154,7 +1171,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 29] = [
             parameter(
                 "name",
                 SystemParameterMode::Borrow(1),
-                SystemTypeRef::BufferU8,
+                SystemTypeRef::SourceU8,
             ),
             parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
@@ -1245,7 +1262,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 29] = [
             parameter(
                 "destination",
                 SystemParameterMode::UniqueBorrow(1),
-                SystemTypeRef::BufferU8,
+                SystemTypeRef::DestinationU8,
             ),
             parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
@@ -1381,7 +1398,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 29] = [
             parameter(
                 "destination",
                 SystemParameterMode::UniqueBorrow(1),
-                SystemTypeRef::BufferU8,
+                SystemTypeRef::DestinationU8,
             ),
             parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
@@ -1405,7 +1422,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 29] = [
             parameter(
                 "source",
                 SystemParameterMode::Borrow(1),
-                SystemTypeRef::BufferU8,
+                SystemTypeRef::SourceU8,
             ),
             parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
@@ -2528,7 +2545,8 @@ mod tests {
             SystemTypeRef::U16 => "u16".to_owned(),
             SystemTypeRef::U32 => "u32".to_owned(),
             SystemTypeRef::U64 => "u64".to_owned(),
-            SystemTypeRef::BufferU8 => "buffer<u8>".to_owned(),
+            SystemTypeRef::DestinationU8 => "MutSlice<u8>".to_owned(),
+            SystemTypeRef::SourceU8 => "Slice<u8>".to_owned(),
             SystemTypeRef::Nominal(index) => {
                 SYSTEM_NOMINALS[usize::from(index)].spelling.to_owned()
             }
@@ -2599,7 +2617,7 @@ mod tests {
     #[test]
     fn exact_catalogs_are_closed_and_unique_where_required() {
         assert_eq!(PRELUDE_DECLARATIONS.len(), 24);
-        assert_eq!(OPERATION_FAMILIES.len(), 94);
+        assert_eq!(OPERATION_FAMILIES.len(), 98);
         assert_eq!(
             OPERATION_FAMILIES
                 .iter()

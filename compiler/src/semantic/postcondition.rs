@@ -9,7 +9,9 @@
 use crate::{DeclarationId, NodePath, PreludeDeclarationId, SourceOrigin};
 
 use super::goal::GoalProjection;
-use super::model::{BindingId, CheckedIntegerOperation, CheckedType, CheckedValue, FunctionId};
+use super::model::{
+    BindingId, CheckedIntegerOperation, CheckedMeasure, CheckedType, CheckedValue, FunctionId,
+};
 
 /// One admitted concrete selector and its resolver-owned source identities.
 #[allow(dead_code)]
@@ -19,6 +21,10 @@ pub(crate) struct CheckedPostconditionSelector {
     pub(crate) block: NodePath,
     pub(crate) selector: NodePath,
     pub(crate) candidate: SourceOrigin,
+    /// The declared result ordinal this clause's result datum names
+    /// [CALL-4]. A declaration that writes one result has ordinal zero, the
+    /// route writes no ordinal binder, and every clause names it.
+    pub(crate) ordinal: u32,
     pub(crate) variant: Option<PreludeDeclarationId>,
     pub(crate) field: Option<PostconditionFieldIdentity>,
     pub(crate) result_type: CheckedType,
@@ -37,8 +43,40 @@ pub(crate) struct PostconditionFieldIdentity {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct RelationTemplate {
     pub(crate) operation: CheckedIntegerOperation,
-    pub(crate) operands: [RelationDatum; 2],
+    pub(crate) operands: [RelationTerm; 2],
     pub(crate) normalized: NormalizedRelation,
+}
+
+/// One operand of a declared relation: one datum displaced by a written
+/// constant [FN-9].
+///
+/// A clause side is an `affine_expr` [MSR-5], and the part of it that is not
+/// the datum reduces to one mathematical integer. That is exactly the shape
+/// [ENT-4]'s closure represents and the shape every declared relation of the
+/// kernel declaration domain writes [BLK-0], so `len_of(rest) + 1_u64 ==
+/// len_of(vector)` is one relation occurrence and not a second fact class.
+#[allow(dead_code)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct RelationTerm {
+    pub(crate) datum: RelationDatum,
+    pub(crate) displacement: i128,
+}
+
+impl RelationTerm {
+    pub(crate) const fn undisplaced(datum: RelationDatum) -> Self {
+        Self {
+            datum,
+            displacement: 0,
+        }
+    }
+
+    pub(crate) const fn ty(&self) -> CheckedType {
+        self.datum.ty()
+    }
+
+    pub(crate) const fn contains_result(&self) -> bool {
+        self.datum.contains_result()
+    }
 }
 
 /// Direction-normalized relation shape. Equality denotes its ordinary pair
@@ -61,6 +99,9 @@ pub(crate) enum NormalizedRelation {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum RelationDatum {
     Result {
+        /// The declared result ordinal this datum names [CALL-4]. A
+        /// declaration writing one result has ordinal zero.
+        ordinal: u32,
         ty: CheckedType,
     },
     Parameter {
@@ -77,20 +118,30 @@ pub(crate) enum RelationDatum {
         value: CheckedValue,
         origin: PostconditionConstantOrigin,
     },
-    Length(PostconditionPlace),
+    Measure(CheckedMeasure, PostconditionPlace),
 }
 
 impl RelationDatum {
     pub(crate) const fn ty(&self) -> CheckedType {
         match self {
-            Self::Result { ty } | Self::Parameter { ty, .. } | Self::NamedConst { ty, .. } => *ty,
+            Self::Result { ty, .. } | Self::Parameter { ty, .. } | Self::NamedConst { ty, .. } => {
+                *ty
+            }
             Self::Literal { value, .. } => value.ty(),
-            Self::Length(_) => CheckedType::Integer(super::model::IntegerType::U64),
+            Self::Measure(..) => CheckedType::Integer(super::model::IntegerType::U64),
         }
     }
 
+    /// Whether this datum names a declared result ordinal [CALL-4], as the
+    /// value itself or as a measure over that ordinal's place.
     pub(crate) const fn contains_result(&self) -> bool {
-        matches!(self, Self::Result { .. })
+        match self {
+            Self::Result { .. } => true,
+            Self::Measure(_, place) => {
+                matches!(place.root, PostconditionPlaceRoot::Result { .. })
+            }
+            Self::Parameter { .. } | Self::NamedConst { .. } | Self::Literal { .. } => false,
+        }
     }
 }
 
@@ -106,9 +157,11 @@ pub(crate) enum PostconditionConstantOrigin {
         type_parameter: DeclarationId,
         one: bool,
     },
+    /// One in-scope const generic named as a clause operand [MSR-6]. Its
+    /// value lives in the datum itself, concrete or symbolic; this origin
+    /// retains only the declaration the spelling resolved to.
     ConstGeneric {
         declaration: DeclarationId,
-        value: u64,
     },
 }
 
@@ -124,7 +177,15 @@ pub(crate) struct PostconditionPlace {
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PostconditionPlaceRoot {
-    Parameter { ordinal: u32 },
+    Parameter {
+        ordinal: u32,
+    },
+    /// One declared result ordinal [CALL-4]: a measure over an admitted
+    /// result place is an operand with no per-family admission, exactly as a
+    /// measure over an admitted formal place is.
+    Result {
+        ordinal: u32,
+    },
 }
 
 /// One selected explicit normal return, already classified by H1 so H2 need
@@ -133,7 +194,11 @@ pub(crate) enum PostconditionPlaceRoot {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SelectedPostconditionReturn {
     pub(crate) statement: NodePath,
-    pub(crate) value: PostconditionReturnDatum,
+    /// The datum each declared result ordinal evaluates to at this return, in
+    /// written order [CALL-4]. An ordinal the return leaves outside the
+    /// [ENT-2] term fragment has no datum; a clause naming it is not selected
+    /// at this return. A declaration writing one result has one entry.
+    pub(crate) values: Vec<Option<PostconditionReturnDatum>>,
 }
 
 /// Exact ENT-2-shaped datum evaluated at a selected return.
@@ -145,10 +210,10 @@ pub(crate) enum PostconditionReturnDatum {
         value: CheckedValue,
         origin: PostconditionConstantOrigin,
     },
-    Length(PostconditionReturnPlace),
+    Measure(CheckedMeasure, PostconditionReturnPlace),
 }
 
-/// Complete checked place identity for a selected result term or `len(P)`.
+/// Complete checked place identity for a selected result term or `len_of(P)`.
 /// Field and dereference projections remain ordered and the root retains its
 /// binding/constant class, so the proof pass never re-walks source syntax.
 #[allow(dead_code)]

@@ -1,0 +1,24 @@
+fn consume(run: own Vector<u8>, store: &uniq Heap) -> code: own u8 reads(run), writes(store) contract {
+  requires len_of(run) > 0_u64;
+} {
+  doc "D3, PROV-6: the same helper holding the store's provider is where the run is affine again. The release the scope exit runs is derived, and the row says so: writes(store) is the provider place that release spends [EFF-2].";
+  let byte = run[0_u64];
+  return byte;
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    match heap_vector::<u8>(store: &uniq heap, count: 2_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let filled = place_back(vector: move fresh, value: 0_u8);
+        region {
+          let code = consume(run: move filled, store: &uniq heap);
+          return exit_status(code: code);
+        }
+      }
+    }
+  }
+}

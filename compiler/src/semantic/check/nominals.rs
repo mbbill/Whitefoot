@@ -1,8 +1,8 @@
 use crate::{PreludeDeclarationId, SemanticCompilerFailure, UnsupportedSemanticFeature};
 
 use super::super::model::{
-    CheckedConstructor, CheckedField, CheckedFlatElement, CheckedNominal, CheckedNominalKind,
-    CheckedType, CheckedVariant, IntegerType, NominalId,
+    CheckedConstructor, CheckedField, CheckedNominal, CheckedNominalKind, CheckedType,
+    CheckedVariant, IntegerType, LoanStrength, NominalId,
 };
 use super::{CheckStop, Checker, PendingNominal, PreludeType};
 
@@ -112,10 +112,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedType::Float(_)
             | CheckedType::GenericInt(_)
             | CheckedType::GenericFloat(_) => true,
-            CheckedType::Generic(_)
-            | CheckedType::Array { .. }
-            | CheckedType::Slice { .. }
-            | CheckedType::Buffer { .. } => false,
+            // [S37] a type parameter standing for itself is copy exactly when
+            // its written bound is `copy`: that bound is what admits the bare
+            // use and the duplication its body writes [OWN-1, FN-2].
+            CheckedType::Generic(declaration) => {
+                self.generic_parameter_class(declaration)? == super::linearity::LinearityClass::Copy
+            }
+            // [VIEW-1, S27] the shared view is copy and the writable one is
+            // affine. Affinity on the shared view buys no safety — a second
+            // copy is a second *shared* loan, which [OWN-5] admits without
+            // limit, and a loan-bearing value owns nothing [PROV-3], so it
+            // has nothing to release twice. The exclusive view stays affine
+            // because [OWN-5] refuses two exclusive loans on one range.
+            CheckedType::Slice { strength, .. } => strength == LoanStrength::Shared,
+            CheckedType::Array { .. }
+            | CheckedType::Buffer { .. }
+            | CheckedType::FixedVector { .. }
+            | CheckedType::Vector { .. }
+            | CheckedType::Heap { .. }
+            | CheckedType::Extent { .. } => false,
         })
     }
 
@@ -140,6 +155,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Err(CheckStop::DeferredNominal)
     }
 
+    /// S39 the `Box<'s, T>` nominal for one (store region, referent), or
+    /// the deferral that interns it.
+    pub(super) fn store_box_nominal(
+        &self,
+        region: crate::DeclarationId,
+        referent: CheckedType,
+    ) -> Result<NominalId, CheckStop> {
+        if let Some(id) = self.store_box_nominals.get(&(region, referent)) {
+            return Ok(*id);
+        }
+        self.pending_nominals
+            .borrow_mut()
+            .push(PendingNominal::StoreBox(region, referent));
+        Err(CheckStop::DeferredNominal)
+    }
+
     pub(super) fn intern_box_nominal(
         &mut self,
         referent: CheckedType,
@@ -155,13 +186,158 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.nominals.push(CheckedNominal {
             id,
             name,
-            kind: CheckedNominalKind::Box { referent },
+            kind: CheckedNominalKind::Box {
+                referent,
+                region: None,
+                release: super::super::model::CheckedReleaseClass::General,
+            },
+            linear: false,
         });
         self.nominal_nodes.push(None);
         self.nominal_states.push(2);
         self.source_nominal_instances.push(None);
         self.prelude_types.push(None);
         if self.box_nominals.insert(referent, id).is_some() {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        Ok(id)
+    }
+
+    /// S39 one `Box<'s, T>` instance, interned per (store region, referent).
+    ///
+    /// The region is a component of the type's name exactly as a run's is
+    /// [PROV-1], so two stores give two nominals, and the release class the
+    /// walk selects is read off that region alone [PROV-6].
+    pub(super) fn intern_store_box_nominal(
+        &mut self,
+        region: crate::DeclarationId,
+        referent: CheckedType,
+    ) -> Result<NominalId, CheckStop> {
+        if let Some(id) = self.store_box_nominals.get(&(region, referent)) {
+            return Ok(*id);
+        }
+        let release = self.vector_release_class(region)?;
+        let id = NominalId(
+            u32::try_from(self.nominals.len())
+                .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+        );
+        let name = format!("Box<{}>", self.checked_type_name(referent)?);
+        self.nominals.push(CheckedNominal {
+            id,
+            name,
+            kind: CheckedNominalKind::Box {
+                referent,
+                region: Some(region),
+                release,
+            },
+            linear: false,
+        });
+        self.nominal_nodes.push(None);
+        self.nominal_states.push(2);
+        self.source_nominal_instances.push(None);
+        self.prelude_types.push(None);
+        if self
+            .store_box_nominals
+            .insert((region, referent), id)
+            .is_some()
+        {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        Ok(id)
+    }
+
+    /// The ordered `(binder spelling, type)` rows of a `fn_decl`'s result
+    /// list, or `None` when an ordinal's mode is one this compiler cannot
+    /// carry in a result list yet.
+    ///
+    /// The mode judgment itself belongs to `build_function_signature`, which
+    /// reports it at the offending `rtype`; this reader is the shared walk
+    /// both the nominal pre-scan and the signature build take over the same
+    /// ordinals [GRAM-2, CALL-4].
+    pub(super) fn result_list_fields(
+        &self,
+        function: crate::syntax::NodeId,
+        substitution: &super::generics::GenericSubstitution,
+    ) -> Result<Option<Vec<(String, CheckedType)>>, CheckStop> {
+        let mut rows = Vec::new();
+        for binding in self
+            .tree
+            .children_with(function, crate::Production::ResultBinding)?
+        {
+            let [name] = self.tree.direct_identifiers(binding)?[..] else {
+                return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+            };
+            let name = std::str::from_utf8(self.tree.token_bytes(name)?)
+                .map(str::to_owned)
+                .map_err(|_| SemanticCompilerFailure::InvalidSourceEncoding)?;
+            let rtype = self
+                .tree
+                .first_child_with(binding, crate::Production::Rtype)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            let (mode, ty) = self.parse_rtype_with(rtype, substitution)?;
+            if mode != super::super::model::CheckedMode::Own {
+                return Ok(None);
+            }
+            rows.push((name, ty));
+        }
+        Ok(Some(rows))
+    }
+
+    /// The compiler-owned nominal a `fn_decl`'s ordered result list denotes
+    /// [GRAM-2, CALL-4].
+    ///
+    /// A declaration that writes two or more results hands its caller one
+    /// value carrying them in written order, and every result ordinal is one
+    /// field of it. Nothing else in the language changes: the callable
+    /// boundary keeps exactly one result type, the ordinary transfer,
+    /// ownership, and lowering rules apply to it, and a destructuring binder
+    /// list is the projection that names the ordinals again at the caller.
+    /// The name is spelled with parentheses so no source TYPEID can collide
+    /// with it; nothing reads it but a diagnostic.
+    /// The already-interned result-list nominal of one ordered result list,
+    /// for the `&self` checking path that cannot intern one itself.
+    pub(super) fn result_list_nominal(
+        &self,
+        results: &[(String, CheckedType)],
+    ) -> Option<NominalId> {
+        self.result_list_nominals.get(results).copied()
+    }
+
+    pub(super) fn intern_result_list_nominal(
+        &mut self,
+        results: &[(String, CheckedType)],
+    ) -> Result<NominalId, CheckStop> {
+        if let Some(id) = self.result_list_nominals.get(results) {
+            return Ok(*id);
+        }
+        let id = NominalId(
+            u32::try_from(self.nominals.len())
+                .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+        );
+        let mut rendered = Vec::with_capacity(results.len());
+        let mut fields = Vec::with_capacity(results.len());
+        for (name, ty) in results {
+            rendered.push(format!("{name}: {}", self.checked_type_name(*ty)?));
+            fields.push(CheckedField {
+                name: name.clone(),
+                ty: *ty,
+            });
+        }
+        self.nominals.push(CheckedNominal {
+            id,
+            name: format!("({})", rendered.join(", ")),
+            kind: CheckedNominalKind::Struct { fields },
+            linear: false,
+        });
+        self.nominal_nodes.push(None);
+        self.nominal_states.push(2);
+        self.source_nominal_instances.push(None);
+        self.prelude_types.push(None);
+        if self
+            .result_list_nominals
+            .insert(results.to_vec(), id)
+            .is_some()
+        {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
         Ok(id)
@@ -194,6 +370,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             id,
             name,
             kind: CheckedNominalKind::Arena { region, content },
+            linear: false,
         });
         self.nominal_nodes.push(None);
         self.nominal_states.push(2);
@@ -229,6 +406,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             id,
             name: "arena-region-storage".to_owned(),
             kind: CheckedNominalKind::ArenaStorage,
+            linear: false,
         });
         self.nominal_nodes.push(None);
         self.nominal_states.push(2);
@@ -276,7 +454,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             for field in nominal.fields {
                 fields.push(CheckedField {
                     name: field.name.to_owned(),
-                    ty: self.ensure_system_type(field.ty)?,
+                    ty: self
+                        .ensure_system_type(field.ty)?
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?,
                 });
             }
             CheckedNominalKind::Struct { fields }
@@ -290,7 +470,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 for field in constructor.fields {
                     fields.push(CheckedField {
                         name: field.name.to_owned(),
-                        ty: self.ensure_system_type(field.ty)?,
+                        ty: self
+                            .ensure_system_type(field.ty)?
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)?,
                     });
                 }
                 let declaration = u8::try_from(constructor_index)
@@ -318,6 +500,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             id,
             name: nominal.spelling.to_owned(),
             kind,
+            linear: false,
         });
         self.nominal_nodes.push(None);
         self.nominal_states.push(2);
@@ -331,18 +514,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// Maps one written [SYS-2] table type to its checked type, interning
     /// every system nominal and prelude `Result` instantiation it needs.
+    /// `None` for an operand class [SYS-8]: a class is admitted by
+    /// membership rather than by type equality, so it has no one checked type
+    /// and interns nothing of its own.
     pub(super) fn ensure_system_type(
         &mut self,
         ty: crate::SystemTypeRef,
-    ) -> Result<CheckedType, CheckStop> {
-        Ok(match ty {
+    ) -> Result<Option<CheckedType>, CheckStop> {
+        Ok(Some(match ty {
             crate::SystemTypeRef::U8 => CheckedType::Integer(IntegerType::U8),
             crate::SystemTypeRef::U16 => CheckedType::Integer(IntegerType::U16),
             crate::SystemTypeRef::U32 => CheckedType::Integer(IntegerType::U32),
             crate::SystemTypeRef::U64 => CheckedType::Integer(IntegerType::U64),
-            crate::SystemTypeRef::BufferU8 => CheckedType::Buffer {
-                element: CheckedFlatElement::Integer(IntegerType::U8),
-            },
+            crate::SystemTypeRef::DestinationU8 | crate::SystemTypeRef::SourceU8 => {
+                return Ok(None);
+            }
             crate::SystemTypeRef::Nominal(index) => {
                 CheckedType::Nominal(self.intern_system_nominal(index)?)
             }
@@ -356,21 +542,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let error = CheckedType::Nominal(self.intern_system_nominal(err)?);
                 CheckedType::Nominal(self.intern_prelude_nominal(PreludeType::Result(ok, error))?)
             }
-        })
+        }))
     }
 
     /// Read-only variant of [`Self::ensure_system_type`] for use during
     /// function checking, after the mutable pre-pass interned every needed
     /// instance.
-    pub(super) fn system_type(&self, ty: crate::SystemTypeRef) -> Result<CheckedType, CheckStop> {
-        Ok(match ty {
+    /// `None` for an operand class [SYS-8], exactly as above.
+    pub(super) fn system_type(
+        &self,
+        ty: crate::SystemTypeRef,
+    ) -> Result<Option<CheckedType>, CheckStop> {
+        Ok(Some(match ty {
             crate::SystemTypeRef::U8 => CheckedType::Integer(IntegerType::U8),
             crate::SystemTypeRef::U16 => CheckedType::Integer(IntegerType::U16),
             crate::SystemTypeRef::U32 => CheckedType::Integer(IntegerType::U32),
             crate::SystemTypeRef::U64 => CheckedType::Integer(IntegerType::U64),
-            crate::SystemTypeRef::BufferU8 => CheckedType::Buffer {
-                element: CheckedFlatElement::Integer(IntegerType::U8),
-            },
+            crate::SystemTypeRef::DestinationU8 | crate::SystemTypeRef::SourceU8 => {
+                return Ok(None);
+            }
             crate::SystemTypeRef::Nominal(index) => {
                 CheckedType::Nominal(self.system_nominal(index)?)
             }
@@ -384,7 +574,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let error = CheckedType::Nominal(self.system_nominal(err)?);
                 CheckedType::Nominal(self.prelude_nominal(PreludeType::Result(ok, error))?)
             }
-        })
+        }))
     }
 
     pub(super) fn intern_prelude_nominal(
@@ -486,6 +676,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             id,
             name,
             kind: CheckedNominalKind::Enum { variants },
+            linear: false,
         });
         self.nominal_nodes.push(None);
         self.nominal_states.push(2);

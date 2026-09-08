@@ -29,7 +29,6 @@ mod state;
 mod term;
 
 pub(crate) use state::DerivationId;
-#[cfg(test)]
 pub(crate) use state::DerivationRootKind;
 #[cfg(test)]
 pub(crate) use state::GoalId;
@@ -46,7 +45,8 @@ pub(crate) use state::{
 };
 #[cfg(test)]
 pub(crate) use term::{
-    CountedCaptureSide, LengthBound, PlaceProjection, PlaceRoot, TermId, TermKind, ZERO, type_range,
+    CountedCaptureSide, MeasureBound, PlaceProjection, PlaceRoot, TermId, TermKind, ZERO,
+    type_range,
 };
 
 use std::collections::{BTreeSet, HashMap};
@@ -60,31 +60,142 @@ use super::model::{
 use super::postcondition::CheckedPostcondition;
 use crate::{DeclarationId, NodePath};
 
+/// The transport one call selects for one declared parameter [CALL-1,
+/// CALL-2, CALL-3, CALL-5].
+///
+/// [CALL-5] fixes the selector: the callee's declared parameter mode and
+/// type, and its declared contract, and nothing else. The argument
+/// expression's shape, the callee's name, and every summary derived from the
+/// callee's body are not selectors, so this value is computed once per
+/// declared parameter and is the same at every call site of it.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum CallTransport {
+    /// [CALL-1] A shared borrow. [OWN-5] admits no write through a shared
+    /// holder, so [EFF-2] can project no `writes` occurrence onto the
+    /// actual's place and the call is a kill event for no fact supported by
+    /// it.
+    SharedBorrow,
+    /// [CALL-2] A value delivered at an `own` parameter. An affine or linear
+    /// actual is a consuming use, which kills every fact whose support
+    /// contains that actual's root [ENT-5](c); a copy actual is a duplicate
+    /// and kills nothing. Either way the result carries exactly the callee's
+    /// declared relations.
+    Value,
+    /// [CALL-3] A parameter of loan-bearing type, own or behind a borrow: a
+    /// projected write reaches the viewed range's element storage, which for
+    /// an element type with descriptor storage of its own includes that
+    /// element's measures, and reaches no measure of the origin place itself
+    /// nor of the view.
+    ViewedRange,
+    /// [CALL-5] No transport is selected, so a projected write kills
+    /// conservatively: an ordinary descriptor-storage-overlapping [ENT-5]
+    /// event [MSR-2].
+    #[default]
+    Conservative,
+}
+
+impl CallTransport {
+    /// The transport a declared parameter selects, read from its declared
+    /// mode and type alone [CALL-5].
+    ///
+    /// The loan-bearing type is tested before the mode because [CALL-3]
+    /// classifies a view "own or behind a borrow": an owned view descriptor
+    /// is still a window onto storage the caller keeps.
+    pub(crate) const fn of_declaration(mode: CheckedMode, ty: CheckedType) -> Self {
+        match ty {
+            CheckedType::Slice { .. } => Self::ViewedRange,
+            _ => match mode {
+                CheckedMode::Shared(_) => Self::SharedBorrow,
+                CheckedMode::Own => Self::Value,
+                CheckedMode::Unique(_) => Self::Conservative,
+            },
+        }
+    }
+
+    /// The transport one declared system-operation parameter selects.
+    ///
+    /// A system operation has no body, so its [SYS-2] declaration record
+    /// together with the rules stating that record's behaviour is the whole
+    /// of its declared contract, and [CALL-5]'s selector reads that record
+    /// rather than any summary of a target. [SYS-8] declares that the
+    /// half-open `[start, end)` extent its range-bearing family names is the
+    /// complete extent such an operation may change and that the extent is
+    /// element storage; the operand class carrying that extent is the
+    /// declared type of that parameter, so the row itself selects [CALL-3]'s
+    /// transport. Every other parameter selects from its declared mode.
+    pub(crate) fn of_system_parameter(operation: &crate::SystemOperation, ordinal: usize) -> Self {
+        let Some(parameter) = operation.parameters.get(ordinal) else {
+            return Self::Conservative;
+        };
+        match parameter.ty {
+            crate::SystemTypeRef::DestinationU8 | crate::SystemTypeRef::SourceU8 => {
+                Self::ViewedRange
+            }
+            _ => match parameter.mode {
+                crate::SystemParameterMode::Borrow(_) => Self::SharedBorrow,
+                crate::SystemParameterMode::Own => Self::Value,
+                crate::SystemParameterMode::UniqueBorrow(_) => Self::Conservative,
+            },
+        }
+    }
+
+    /// The transport one declared kernel-domain parameter selects [BLK-0].
+    ///
+    /// A row has no body either, so the same reading applies: the declared
+    /// shape and mode are the whole selector [CALL-5]. A row that takes a
+    /// view takes it as a viewed range [CALL-3]; a row's `&uniq` state
+    /// operand is a run or a provider whose descriptor the row changes, so
+    /// it selects no transport and kills conservatively.
+    pub(crate) const fn of_kernel_parameter(parameter: &super::kernel::KernelParameter) -> Self {
+        match parameter.shape {
+            super::kernel::KernelShape::Slice | super::kernel::KernelShape::MutSlice => {
+                Self::ViewedRange
+            }
+            _ => match parameter.mode {
+                super::kernel::KernelMode::Shared => Self::SharedBorrow,
+                super::kernel::KernelMode::Own => Self::Value,
+                super::kernel::KernelMode::Unique => Self::Conservative,
+            },
+        }
+    }
+
+    /// Whether a write projected through this transport reaches element
+    /// storage only, so it kills the measures of the written elements and
+    /// none of the origin place's own [CALL-3, MSR-2].
+    pub(crate) const fn writes_element_storage(self) -> bool {
+        matches!(self, Self::ViewedRange)
+    }
+}
+
 /// Kill-relevant [EFF-2] projection of one callee signature: for each
 /// parameter, whether the callee's declared effect row writes the region that
 /// parameter carries, so a call kills exactly the facts whose support
-/// overlaps that actual's resolved place [ENT-5](b).
+/// overlaps that actual's resolved place [ENT-5](b), and which transport
+/// [CALL-5] selects for that parameter, which is what fixes how far such a
+/// write reaches [CALL-1, CALL-2, CALL-3].
 #[derive(Clone, Debug, Default)]
 pub(crate) struct EntailmentCallee {
     pub(crate) parameter_modes: Vec<CheckedMode>,
     pub(crate) parameter_writes: Vec<Vec<Vec<u32>>>,
+    pub(crate) parameter_transports: Vec<CallTransport>,
 }
 
 impl EntailmentCallee {
-    /// Derives the projection from one callee's parameter modes and declared
-    /// `writes` regions. A row with no `writes` kills nothing; a written
-    /// region reached only through a `&uniq` actual kills through exactly
-    /// that actual. Slice element writes have no [SET-1] target form in the
-    /// current compiler, so an owned slice parameter never projects a write.
+    /// Derives the projection from one callee's parameter modes, declared
+    /// types, and declared `writes` regions. A row with no `writes` kills
+    /// nothing; a written region reached only through a `&uniq` actual kills
+    /// through exactly that actual, and the transport that parameter's
+    /// declaration selects fixes whether such a write reaches the origin's
+    /// descriptor storage or only a viewed range's element storage.
     pub(crate) fn from_signature(
-        parameters: impl Iterator<Item = (crate::DeclarationId, CheckedMode)>,
+        parameters: impl Iterator<Item = (crate::DeclarationId, CheckedMode, CheckedType)>,
         writes: &[super::model::CheckedStatePath],
     ) -> Self {
         let parameters = parameters.collect::<Vec<_>>();
         Self {
             parameter_writes: parameters
                 .iter()
-                .map(|(declaration, _)| {
+                .map(|(declaration, _, _)| {
                     writes
                         .iter()
                         .filter(|path| path.root == *declaration)
@@ -92,7 +203,11 @@ impl EntailmentCallee {
                         .collect()
                 })
                 .collect(),
-            parameter_modes: parameters.into_iter().map(|(_, mode)| mode).collect(),
+            parameter_transports: parameters
+                .iter()
+                .map(|(_, mode, ty)| CallTransport::of_declaration(*mode, *ty))
+                .collect(),
+            parameter_modes: parameters.into_iter().map(|(_, mode, _)| mode).collect(),
         }
     }
 }
@@ -165,7 +280,7 @@ impl EntailmentContext<'_> {
 /// The [ENT-6] obligation family one outcome belongs to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ObligationFamily {
-    /// A subscript bounds obligation `i < len(P)` [OP-4].
+    /// A subscript bounds obligation `i < len_of(P)` [OP-4].
     Bounds,
     /// One canonical `.defined` goal for a proof-required exact integer
     /// operation [OP-2, ENT-6].
@@ -174,6 +289,10 @@ pub(crate) enum ObligationFamily {
     AllocationFit,
     /// One independent half-open system range goal [SYS-8].
     SystemRange,
+    /// One declared requirement of a [BLK-0] kernel-domain row, submitted at
+    /// a call to that row and judged under [MSR-4] exactly as every other
+    /// consumer's obligation is.
+    KernelRequirement,
 }
 
 /// One exact single-binder affine image retained at a discharged OP-4 site.
@@ -219,7 +338,7 @@ pub(crate) struct ObligationOutcome {
     /// The state at the node was contradictory, discharging everything.
     pub(crate) contradictory: bool,
     /// The exact residual rendering for an undischarged obligation: the
-    /// offset atom's canonical source bytes, ` < len(`, the base place's
+    /// offset atom's canonical source bytes, ` < len_of(`, the base place's
     /// canonical source bytes, `)`.
     pub(crate) residual: Option<String>,
     /// Exact ENT-4 derivation for an accepted obligation. Failed judgments
@@ -238,6 +357,11 @@ pub(crate) struct ObligationOutcome {
     /// discharged Bounds occurrence. Every other family, and every unproved
     /// bounds occurrence, retains an empty list.
     pub(crate) affine_index_maps: Vec<ProvedAffineIndexMap>,
+    /// For a `KernelRequirement` occurrence, the row's zero-based
+    /// `container_declaration_ordinal` [BLK-0]. A record has no source node,
+    /// so the row's own identity is what the diagnostic names. Every other
+    /// family retains `None`.
+    pub(crate) kernel_row: Option<u8>,
 }
 
 /// Exact normalized identity of one obligation query in the function-local
@@ -759,7 +883,8 @@ pub(crate) enum PostconditionDisposition {
 pub(crate) struct PostconditionEntryImage {
     pub(crate) parameter: u32,
     pub(crate) projections: Vec<super::goal::GoalProjection>,
-    pub(crate) length: bool,
+    /// Which [MSR-1] measure the datum denotes, when it denotes one.
+    pub(crate) measure: Option<super::model::CheckedMeasure>,
 }
 
 /// Source-value stability retained at one selected return. `None` is the
@@ -814,11 +939,42 @@ pub(crate) struct VerifiedPostconditionSummary {
     pub(crate) component: u32,
 }
 
+/// Where one published relation comes from [CALL-6].
+///
+/// [ENT-3.S13]'s population is every callee whose declared relation list is
+/// published data: a source `fn_decl` with a verified [FN-9] summary, and
+/// every kernel-domain row [BLK-0], whose relations are declaration data
+/// rather than a body's proved consequence. A record has no source node, so
+/// its provenance names the row and the relation's position in that row's own
+/// declared list, exactly as an [OP-1] diagnostic names its family.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum RelationProvenance {
+    Verified(VerifiedPostconditionSummary),
+    Kernel {
+        operation: u8,
+        relation_ordinal: u32,
+    },
+}
+
+impl RelationProvenance {
+    /// The stable identity pair this provenance contributes to a derivation
+    /// node's structural key.
+    pub(crate) const fn identity(&self) -> [u32; 2] {
+        match self {
+            Self::Verified(summary) => [summary.function.0, summary.component],
+            Self::Kernel {
+                operation,
+                relation_ordinal,
+            } => [*operation as u32, *relation_ordinal],
+        }
+    }
+}
+
 /// Caller-local reference to an earlier-component verified
 /// summary. It intentionally carries no callee-local [`DerivationId`].
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct VerifiedPostconditionSummaryRef {
-    pub(crate) summary: VerifiedPostconditionSummary,
+    pub(crate) summary: RelationProvenance,
 }
 
 /// One concrete ordinary-call SCC in deterministic callee-before-caller
@@ -1145,7 +1301,9 @@ pub(super) fn collect_statement_calls(
         match statement {
             CheckedStatement::Proof(_) => {}
             CheckedStatement::Let { value, .. }
+            | CheckedStatement::DestructuringLet { value, .. }
             | CheckedStatement::Evaluate(value)
+            | CheckedStatement::Dispose { value, .. }
             | CheckedStatement::DropExpression { value, .. }
             | CheckedStatement::Return { value, .. }
             | CheckedStatement::Give { value, .. } => {
@@ -1153,6 +1311,32 @@ pub(super) fn collect_statement_calls(
             }
             CheckedStatement::PropagateLet { scrutinee, .. } => {
                 collect_expression_calls(caller, scrutinee, calls);
+            }
+            CheckedStatement::SetList {
+                targets, values, ..
+            } => {
+                for target in targets {
+                    match target {
+                        CheckedSetTarget::Place(_) => {}
+                        CheckedSetTarget::ArrayIndex(target) => {
+                            collect_expression_calls(caller, &target.offset, calls);
+                        }
+                        CheckedSetTarget::BufferIndex(target) => {
+                            collect_expression_calls(caller, &target.offset, calls);
+                        }
+                        CheckedSetTarget::Storage(target) => {
+                            for offset in target.offsets() {
+                                collect_expression_calls(caller, offset, calls);
+                            }
+                        }
+                        CheckedSetTarget::SliceIndex(target) => {
+                            collect_expression_calls(caller, &target.offset, calls);
+                        }
+                    }
+                }
+                for value in values.expressions() {
+                    collect_expression_calls(caller, value, calls);
+                }
             }
             CheckedStatement::Set { target, value, .. }
             | CheckedStatement::Replace { target, value, .. } => {
@@ -1162,6 +1346,14 @@ pub(super) fn collect_statement_calls(
                         collect_expression_calls(caller, &target.offset, calls);
                     }
                     CheckedSetTarget::BufferIndex(target) => {
+                        collect_expression_calls(caller, &target.offset, calls);
+                    }
+                    CheckedSetTarget::Storage(target) => {
+                        for offset in target.offsets() {
+                            collect_expression_calls(caller, offset, calls);
+                        }
+                    }
+                    CheckedSetTarget::SliceIndex(target) => {
                         collect_expression_calls(caller, &target.offset, calls);
                     }
                 }

@@ -1,6 +1,11 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expect REJECT: after the guard loop, cursor equals limit=5, so data[cursor] reads data[5] (OOB)";
-  let data = array_new::<u8, 5>(0_u8);
+  let data = fixed_vector::<u8, 5>();
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
   set data[0_u64] = 1_u8;
   set data[1_u64] = 2_u8;
   set data[2_u64] = 3_u8;

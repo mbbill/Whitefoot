@@ -1,0 +1,28 @@
+struct Lease['s] {
+  run: Vector<'s, u8>;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "MSR-3: the construct and destructuring placements, with no branch on a measure anywhere. The field operand carries its measures into lease.run, the placement into the field survives the consume the construct performs, and the destructuring consume carries them back out to the binder that names the field.";
+  region 'a {
+    let workspace = arena_frame::<4096, 16, 'a>();
+    region {
+      let block = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
+      let ticket = Lease(run: move block);
+      set ticket.run = place_back(vector: move ticket.run, value: 6_u8);
+      let Lease(run: back) = move ticket;
+      let more = place_back(vector: move back, value: 7_u8);
+      let first = more[0_u64];
+      let second = more[1_u64];
+      if first == 6_u8 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      if second == 7_u8 {
+      } else {
+        return exit_status(code: 2_u8);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,10 +1,10 @@
-fn probe(table: own buffer<u8>, a: own u64) -> found: own u8 reads(table) contract {
-  define room = len(table);
-  requires a <= room;
+fn probe<const n: u64>(table: own FixedVector<u8, n>, a: own u64) -> found: own u8 reads(table) contract {
+  define spare = len_of(table);
+  requires a <= spare;
 } {
-  doc "expect REJECT: idx=a-wrap 1 is falsely certified idx < room from a <= room; at a=0, idx wraps to u64::MAX, far outside table";
+  doc "expect REJECT: idx=a-wrap 1 is falsely certified idx < spare from a <= spare; at a=0, idx wraps to u64::MAX, far outside table";
   let idx = a -wrap 1_u64;
-  let bound_room = len(table);
+  let bound_room = len_of(table);
   invariant bound: idx < bound_room {
     use (a <= bound_room);
   }
@@ -12,8 +12,12 @@ fn probe(table: own buffer<u8>, a: own u64) -> found: own u8 reads(table) contra
   return byte;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
-  let table = buffer_new(4_u64, 0_u8);
-  let found = probe(table: move table, a: 0_u64);
+command fn main() -> status: own ExitStatus pure {
+  let table = fixed_vector::<u8, 4>();
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  let found = probe::<4>(table: move table, a: 0_u64);
   return exit_status(code: found);
 }

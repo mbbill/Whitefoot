@@ -143,7 +143,7 @@ fn an_uncounted_loop_is_admitted_on_the_same_terms_as_a_counted_one() {
 /// grant from the other.
 #[test]
 fn an_exit_edge_written_in_the_prologue_is_admitted() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let done = index >= 2_u64;
@@ -202,7 +202,7 @@ fn a_loop_with_no_may_suspend_action_gets_no_staged_verdict() {
 /// spaces into one.
 #[test]
 fn each_loop_that_performs_io_is_judged_on_its_own() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let seen = 0_u64;
   for @outer (outer_index in 0_u64..2_u64) {
     let outer_name = buffer_new(16_u64, 97_u8);
@@ -270,7 +270,7 @@ fn each_loop_that_performs_io_is_judged_on_its_own() {
 /// dominator and post-dominator pair and not a statement index.
 #[test]
 fn a_submission_reached_on_only_some_paths_has_no_cut() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
@@ -312,7 +312,7 @@ fn a_submission_reached_on_only_some_paths_has_no_cut() {
 /// region is not the single-entry single-exit shape the condition asks for.
 #[test]
 fn a_submission_written_inside_a_loop_of_the_body_has_no_cut() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let inner = 0_u64;
@@ -379,7 +379,7 @@ fn a_return_after_the_submission_denies() {
 /// it is cited without a source node because a `break_stmt` carries none.
 #[test]
 fn a_break_after_the_submission_denies() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
@@ -442,7 +442,7 @@ fn a_break_after_the_submission_denies() {
 /// whole job.
 #[test]
 fn a_give_leaving_the_loop_denies_and_one_delivered_inside_it_does_not() {
-    let leaving = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let leaving = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let taken = 1_u64 == 1_u64;
   let outcome = if taken {
     for @scan (index in 0_u64..4_u64) {
@@ -479,7 +479,7 @@ fn a_give_leaving_the_loop_denies_and_one_delivered_inside_it_does_not() {
     };
     assert_eq!(edge, "a give");
 
-    let inside = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let inside = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
@@ -544,7 +544,7 @@ fn a_hoisted_destination_written_through_a_retained_borrow_denies() {
 /// advice.
 #[test]
 fn an_enclosing_enumeration_cursor_can_never_be_replicated() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let total = 0_u64;
   region {
     match reserve_handle(factory: &uniq files) {
@@ -622,7 +622,7 @@ fn a_pure_exclusive_borrow_of_enclosing_storage_in_the_remainder_denies() {
   return 1_u64;
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let cell = 0_u64;
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
@@ -667,7 +667,7 @@ fn the_same_exclusive_borrow_taken_in_the_prologue_is_serialized() {
   return 1_u64;
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let cell = 0_u64;
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
@@ -739,7 +739,7 @@ fn an_accumulator_written_only_in_the_remainder_is_serialized_there() {
   return scaled -wrap right;
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
@@ -801,7 +801,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
 /// judgment sees carries its element in its own type record.
 #[test]
 fn a_construction_whose_elements_are_affine_costs_the_loop_nothing() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
@@ -861,15 +861,15 @@ fn a_construction_whose_elements_are_affine_costs_the_loop_nothing() {
 /// fail in.
 #[test]
 fn a_body_bound_borrow_of_enclosing_storage_refuses_as_a_form() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let shared = buffer_new(8_u64, 0_u8);
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region {
       let holder = &uniq shared;
-      let room = len(deref(holder));
-      let fits = 0_u64 < room;
+      let spare = len_of(deref(holder));
+      let fits = 0_u64 < spare;
       if fits {
         set deref(holder)[0_u64] = 1_u8;
       }
@@ -915,15 +915,15 @@ fn a_body_bound_borrow_of_enclosing_storage_refuses_as_a_form() {
 /// instance, so it must not refuse.
 #[test]
 fn a_body_bound_borrow_of_iteration_own_storage_is_admitted() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     let scratch = buffer_new(8_u64, 0_u8);
     region {
       let holder = &uniq scratch;
-      let room = len(deref(holder));
-      let fits = 0_u64 < room;
+      let spare = len_of(deref(holder));
+      let fits = 0_u64 < spare;
       if fits {
         set deref(holder)[0_u64] = 1_u8;
       }
@@ -956,7 +956,12 @@ fn a_body_bound_borrow_of_iteration_own_storage_is_admitted() {
 /// Condition 7's other half, which the form refusal above does not reach: a
 /// footprint *element* whose caller place the judgment does not resolve.
 ///
-/// A slice reads through an origin this judgment holds no place for, so the
+/// A view is a claim on the storage it was formed over [VIEW-1], and this
+/// judgment reads a bound view through to that origin — the sibling case
+/// below is the witness. What it cannot read through is a view whose
+/// formation is not in this function's text at all: the helper here publishes
+/// the shared child of the destination it was handed [VIEW-6], so the caller
+/// binds a view naming storage no place of this function reaches. The
 /// projection produces an unresolved element rather than a place with a
 /// disposition. It must deny as [`StagedDenial::Unresolved`] rather than as
 /// [`StagedDenial::BodyForm`]: the two carry different writer advice and the
@@ -965,14 +970,108 @@ fn a_body_bound_borrow_of_iteration_own_storage_is_admitted() {
 /// storage the body never writes, so a resolving judgment would grant it.
 #[test]
 fn an_unresolved_footprint_element_denies_as_unresolved_rather_than_as_a_form() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"fn published['r](destination: &uniq MutSlice<'r, u8>) -> filled: own Slice<'r, u8> pure {
+  return slice_of(&'r deref(destination));
+}
+
+fn component() -> made: own FixedVector<u8, 16> pure contract {
+  ensures len_of(made) >= 16_u64;
+  ensures room_of(made) <= 0_u64;
+  ensures head_of(made) <= 0_u64;
+} {
+  let built = fixed_vector::<u8, 16>();
+  for @fill (
+    at in 0_u64..16_u64,
+    invariant grown: len_of(built) >= at,
+    invariant spare: room_of(built) + at >= 16_u64,
+    invariant flat: head_of(built) <= 0_u64
+  ) {
+    set built = place_back(vector: move built, value: 97_u8);
+  }
+  return move built;
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+  region 'a {
+    let workspace = arena_frame::<16, 1, 'a>();
+    region {
+      let table = arena_vector_proved::<u8>(store: &uniq workspace, count: 16_u64);
+      for @prime (
+        at in 0_u64..16_u64,
+        invariant grown: len_of(table) >= at,
+        invariant spare: room_of(table) + at >= 16_u64,
+        invariant flat: head_of(table) <= 0_u64
+      ) {
+        set table = place_back(vector: move table, value: 97_u8);
+      }
+      let name = component();
+      let total = 0_u64;
+      for @scan (index in 0_u64..4_u64) {
+        region {
+          let held = mut_slice_of(&uniq table);
+          region {
+            let view = published(destination: &uniq held);
+            let seen = len_of(view);
+            set total = total +wrap seen;
+          }
+        }
+        region 'f {
+          match reserve_handle(factory: &uniq files) {
+            Ok(value: permit) => {
+              region {
+                let window = slice_of(&name);
+                region {
+                  match open_file(permit: move permit, root: &'f cwd, name: &window, start: 0_u64, end: 4_u64) {
+                    FileOpened(value: handle) => {
+                    }
+                    FileOpenFailed(error: problem, permit: refused_2) => {
+                    }
+                  }
+                }
+              }
+            }
+            Err(error: spent) => {
+              return exit_status(code: 8_u8);
+            }
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let denial = denied(source, "main", 7);
+    let StagedDenial::Unresolved { .. } = denial else {
+        panic!("expected an unresolved-element denial: {denial:?}");
+    };
+    assert!(
+        denial.writer_form().contains("a callee handed back"),
+        "the advice must name the origin this judgment cannot reach: {}",
+        denial.writer_form()
+    );
+}
+
+/// The sibling of the case above, and the property this judgment gained when
+/// the view resolver landed: the same length read taken through a view *bound
+/// over storage this function names* resolves to that storage.
+///
+/// The two programs read a length through a `Slice` and differ only in where
+/// the view was formed. Here the formation is written in this function, so
+/// [VIEW-1]'s claim resolves to `table`, the body writes nothing of it, and
+/// condition 5's first alternative covers it. Before the resolver this loop
+/// was denied for condition 7, which was an over-denial the rule never asked
+/// for.
+#[test]
+fn a_length_read_through_a_view_of_named_storage_resolves_to_its_origin() {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let table = buffer_new(16_u64, 97_u8);
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region {
       let view = slice_of(&table);
-      let seen = len(view);
+      let seen = len_of(view);
       set total = total +wrap seen;
     }
     region 'f {
@@ -996,32 +1095,24 @@ fn an_unresolved_footprint_element_denies_as_unresolved_rather_than_as_a_form() 
   return exit_status(code: 0_u8);
 }
 "#;
-    let denial = denied(source, "main", 7);
-    let StagedDenial::Unresolved { .. } = denial else {
-        panic!("expected an unresolved-element denial: {denial:?}");
-    };
-    assert!(
-        denial.writer_form().contains("slice_of"),
-        "the advice must name the binding that stands in front of the storage: {}",
-        denial.writer_form()
-    );
+    permitted(source, "main");
 }
 
-/// The admitted direction of the same variant: the identical length read taken
-/// from the buffer itself resolves, so the loop is granted.
+/// The plainest admitted direction: the length read taken from the run itself,
+/// with no view standing anywhere between the read and the storage.
 ///
-/// The two programs read the same length of the same enclosing buffer and
-/// differ only in whether a slice stands between the read and the storage.
-/// That is what makes the denial above a resolution limit of this judgment and
-/// not a hazard of the program — and what makes it worth removing later.
+/// It was the control that showed the old slice denial to be a resolution
+/// limit rather than a hazard of the program. The limit is closed and the
+/// case is kept as what it always also was: the baseline this judgment's
+/// read-only disposition is measured against.
 #[test]
 fn the_same_length_read_taken_without_a_slice_resolves_and_is_admitted() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let table = buffer_new(16_u64, 97_u8);
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
-    let seen = len(table);
+    let seen = len_of(table);
     set total = total +wrap seen;
     region 'f {
       match reserve_handle(factory: &uniq files) {
@@ -1058,15 +1149,15 @@ fn the_same_length_read_taken_without_a_slice_resolves_and_is_admitted() {
 #[test]
 fn an_expression_statement_refuses_as_a_form_and_names_the_let_binding() {
     let source = br#"fn stamp(slot: &uniq buffer<u8>, index: own u64) -> result: own unit reads(slot), writes(slot) {
-  let room = len(deref(slot));
-  let wide = 0_u64 < room;
+  let spare = len_of(deref(slot));
+  let wide = 0_u64 < spare;
   if wide {
     set deref(slot)[0_u64] = 7_u8;
   }
   return unit;
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     let scratch = buffer_new(8_u64, 0_u8);
@@ -1119,7 +1210,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
 /// reads, it moves the release to the binding's own scope exit.
 #[test]
 fn a_discarded_owned_result_refuses_as_its_own_form() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     buffer_new(8_u64, 0_u8);
@@ -1172,7 +1263,7 @@ fn two_uniq_borrows_of_one_cell_with_reads_only_rows_still_deny() {
   return deref(cell);
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let cell = 7_u64;
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
@@ -1213,7 +1304,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
 /// also reads, and the disposition test sees both touches.
 #[test]
 fn a_statement_interposed_after_the_submission_is_judged_like_any_other() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let carried = 0_u64;
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
@@ -1254,10 +1345,10 @@ fn a_statement_interposed_after_the_submission_is_judged_like_any_other() {
 #[test]
 fn two_shared_borrows_of_one_enclosing_buffer_deny_nothing() {
     let source = br#"fn total(source: &buffer<u8>) -> result: own u64 reads(source) {
-  return len(deref(source));
+  return len_of(deref(source));
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let table = buffer_new(8_u64, 3_u8);
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
@@ -1362,7 +1453,7 @@ fn two_disjoint_fields_of_one_record_are_judged_independently() {
   b: u64;
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let pair = Pair(a: 1_u64, b: 0_u64);
   for @scan (index in 0_u64..4_u64) {
     let carried = pair.a;
@@ -1417,7 +1508,7 @@ fn the_mirror_of_the_field_recurrence_denies_as_well() {
   spare: u64;
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let carrier = Carrier(tag: 0_u64, spare: 0_u64);
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
@@ -1477,7 +1568,7 @@ fn a_borrow_into_storage_the_remainder_replaces_denies_by_the_retained_borrow() 
   seen: u64;
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let first = buffer_new(16_u64, 97_u8);
   let held = Holder(name: move first, seen: 0_u64);
   for @scan (index in 0_u64..4_u64) {
@@ -1552,7 +1643,7 @@ fn bump(holder: &uniq Holder) -> result: own unit reads(holder.seen), writes(hol
   return unit;
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let seed = buffer_new(16_u64, 97_u8);
   let held = Holder(name: move seed, seen: 0_u64);
   for @scan (index in 0_u64..4_u64) {
@@ -1617,7 +1708,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
 #[test]
 fn a_propagate_whose_right_hand_side_is_the_cut_leaves_from_the_remainder() {
     let source = br#"fn open_first(permit: own HandlePermit, root: &DirectoryRead, name: &buffer<u8>) -> result: own Result<ReadFile, IoError> reads(permit, root, name), writes(permit) {
-  let extent = len(deref(name));
+  let extent = len_of(deref(name));
   match open_file(permit: move permit, root: root, name: name, start: 0_u64, end: extent) {
     FileOpened(value: opened) => {
       return Ok<ReadFile, IoError>(value: move opened);
@@ -1628,7 +1719,7 @@ fn a_propagate_whose_right_hand_side_is_the_cut_leaves_from_the_remainder() {
   }
 }
 
-fn scan_all(cwd: &DirectoryRead, files: own HandleFactory) -> result: own Result<u64, IoError> reads(cwd, files), writes(files), allocates(heap) {
+fn scan_all(cwd: &DirectoryRead, files: own HandleFactory) -> result: own Result<u64, IoError> reads(cwd, files), writes(files) {
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
@@ -1649,7 +1740,7 @@ fn scan_all(cwd: &DirectoryRead, files: own HandleFactory) -> result: own Result
   return Ok<u64, IoError>(value: total);
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   region {
     match scan_all(cwd: &cwd, files: move files) {
       Ok(value: counted) => {
@@ -1699,7 +1790,7 @@ fn a_propagate_written_before_the_cut_leaves_from_the_prologue_and_is_admitted()
   return Ok<u64, IoError>(value: index);
 }
 
-fn scan_all(cwd: &DirectoryRead, files: own HandleFactory) -> result: own Result<u64, IoError> reads(cwd, files), writes(files), allocates(heap) {
+fn scan_all(cwd: &DirectoryRead, files: own HandleFactory) -> result: own Result<u64, IoError> reads(cwd, files), writes(files) {
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let kept = propagate classify(index: index);
@@ -1726,7 +1817,7 @@ fn scan_all(cwd: &DirectoryRead, files: own HandleFactory) -> result: own Result
   return Ok<u64, IoError>(value: total);
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   region {
     match scan_all(cwd: &cwd, files: move files) {
       Ok(value: counted) => {
@@ -1761,7 +1852,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
 /// may not.
 #[test]
 fn the_staged_verdict_is_the_same_under_every_route_to_the_same_fact() {
-    let constant = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let constant = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
@@ -1788,12 +1879,12 @@ fn the_staged_verdict_is_the_same_under_every_route_to_the_same_fact() {
   return exit_status(code: 0_u8);
 }
 "#;
-    let branched = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let branched = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
-    let room = len(name);
-    let fits = index < room;
+    let spare = len_of(name);
+    let fits = index < spare;
     if fits {
       set name[index] = 98_u8;
     }
@@ -1819,7 +1910,7 @@ fn the_staged_verdict_is_the_same_under_every_route_to_the_same_fact() {
   return exit_status(code: 0_u8);
 }
 "#;
-    let invariant_proved = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let invariant_proved = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let seen = 0_u64;
   for @scan (
     index in 0_u64..4_u64,
@@ -1876,7 +1967,7 @@ fn the_staged_verdict_is_the_same_under_every_route_to_the_same_fact() {
 /// place row and deny the loop instead of consulting how the subscript checked.
 #[test]
 fn an_invariant_proved_accumulator_index_keeps_its_cross_segment_dependency() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let seen = 0_u64;
   for @scan (
     index in 0_u64..4_u64,
@@ -1921,7 +2012,7 @@ const FIELD_RECURRENCE: &[u8] = br#"struct Work {
   code: u64;
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let work = Work(seen: 0_u64, code: 0_u64);
   for @scan (index in 0_u64..4_u64) {
     let carried = work.seen;
@@ -1951,7 +2042,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
 "#;
 
 /// The granted shape, named once because four tests read it.
-const ITERATION_OWN_SCRATCH: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+const ITERATION_OWN_SCRATCH: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
@@ -1991,7 +2082,7 @@ const ITERATION_OWN_SCRATCH: &[u8] = br#"command fn main(command.cwd as cwd: own
 }
 "#;
 
-const UNCOUNTED_LOOP: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+const UNCOUNTED_LOOP: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let opened = 0_u64;
   let index = 0_u64;
   loop @scan {
@@ -2024,7 +2115,7 @@ const UNCOUNTED_LOOP: &[u8] = br#"command fn main(command.cwd as cwd: own Direct
 }
 "#;
 
-const EXIT_IN_REMAINDER: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+const EXIT_IN_REMAINDER: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
@@ -2052,7 +2143,7 @@ const EXIT_IN_REMAINDER: &[u8] = br#"command fn main(command.cwd as cwd: own Dir
 }
 "#;
 
-const HOISTED_DESTINATION: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+const HOISTED_DESTINATION: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let name = buffer_new(16_u64, 97_u8);
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
@@ -2091,8 +2182,8 @@ const HOISTED_DESTINATION: &[u8] = br#"command fn main(command.cwd as cwd: own D
 "#;
 
 const BOTH_SIDES_OF_THE_CUT: &[u8] = br#"fn stamp(slot: &uniq buffer<u8>, index: own u64) -> result: own unit reads(slot), writes(slot) {
-  let room = len(deref(slot));
-  let sized = 0_u64 < room;
+  let spare = len_of(deref(slot));
+  let sized = 0_u64 < spare;
   if sized {
     let parity = index % 2_u64;
     let odd = parity == 1_u64;
@@ -2104,8 +2195,8 @@ const BOTH_SIDES_OF_THE_CUT: &[u8] = br#"fn stamp(slot: &uniq buffer<u8>, index:
 }
 
 fn first_byte(source: &buffer<u8>) -> result: own u64 reads(source) {
-  let room = len(deref(source));
-  let sized = 0_u64 < room;
+  let spare = len_of(deref(source));
+  let sized = 0_u64 < spare;
   if sized {
   } else {
     return 0_u64;
@@ -2114,7 +2205,7 @@ fn first_byte(source: &buffer<u8>) -> result: own u64 reads(source) {
   return cvt::<u8, u64>(byte);
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let scratch = buffer_new(1_u64, 0_u8);
   let name = buffer_new(16_u64, 97_u8);
   let total = 0_u64;

@@ -1,6 +1,10 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: labelled break from inner loop exits both loops when target 7 is found";
-  let data = array_new::<u8, 4>(0_u8);
+  let data = fixed_vector::<u8, 4>();
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
   set data[0_u64] = 1_u8;
   set data[1_u64] = 7_u8;
   set data[2_u64] = 3_u8;

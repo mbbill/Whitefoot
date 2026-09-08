@@ -1,0 +1,15 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "BLK-0: the other half of the same sentence. The store's pre-call measures die at the call and the row's own relations replace them, so the second take's requirement is discharged from what the first published rather than from a stale extent, and the room the writer reads back is the room the two takes left.";
+  region 'a {
+    let workspace = arena_frame::<8192, 16, 'a>();
+    region {
+      let first = arena_vector_proved::<u8>(store: &uniq workspace, count: 16_u64);
+      let second = arena_vector_proved::<u8>(store: &uniq workspace, count: 16_u64);
+      let left = room_of(workspace);
+      if left == 8160_u64 {
+        return exit_status(code: 0_u8);
+      }
+      return exit_status(code: 1_u8);
+    }
+  }
+}

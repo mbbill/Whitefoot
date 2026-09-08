@@ -1,0 +1,9 @@
+command fn main() -> status: own ExitStatus pure {
+  let run = wrapped();
+  region {
+    let bytes = slice_of(&run);
+    let seen = bytes[0_u64];
+    let result = seen -wrap 2_u8;
+    return exit_status(code: result);
+  }
+}

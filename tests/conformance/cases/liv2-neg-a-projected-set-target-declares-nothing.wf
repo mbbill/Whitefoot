@@ -1,0 +1,9 @@
+struct Frame {
+  count: u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "LIV-2: only a bare identifier target declares. A projected target selects one component of a value that must already exist, so an unresolved base there keeps its ordinary unresolved-use rejection.";
+  set absent.count = 4_u64;
+  return exit_status(code: 0_u8);
+}

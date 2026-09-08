@@ -1,0 +1,35 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "MSR-1: an admitted measure place is formed with subscripts as well as field selections, so `len_of(grid[0])` is a term over a run of runs. The subscript inside the place is an ordinary OP-4 occurrence and is discharged from the length the outer place_back published; the element read then reads the inner run's own descriptor out of the slot it occupies.";
+  region 'a {
+    let workspace = arena_frame::<8192, 16, 'a>();
+    region {
+      match arena_vector::<u8>(store: &uniq workspace, count: 8_u64) {
+        None() => {
+          return exit_status(code: 1_u8);
+        }
+        Some(value: first) => {
+          let spare = room_of(first);
+          if spare == 0_u64 {
+            return exit_status(code: 5_u8);
+          }
+          let filled = place_back(vector: move first, value: 5_u8);
+          let table = fixed_vector::<Vector<'a, u8>, 4>();
+          let grid = place_back(vector: move table, value: move filled);
+          let rows = len_of(grid);
+          if rows == 1_u64 {
+            let width = len_of(grid[0_u64]);
+            if width == 1_u64 {
+              let cell = grid[0_u64][0_u64];
+              if cell == 5_u8 {
+                return exit_status(code: 0_u8);
+              }
+              return exit_status(code: 4_u8);
+            }
+            return exit_status(code: 2_u8);
+          }
+          return exit_status(code: 3_u8);
+        }
+      }
+    }
+  }
+}
