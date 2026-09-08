@@ -1612,15 +1612,16 @@ than being mislabeled converged. A temporary image adding one to the computed
 result fails with `quadrature: binary64 result`.
 
 `check-quadrature`, called by the experiment's canonical `check`, runs the same
-WF object in ordinary and host/runtime/floor ASan-UBSan images, three forms and
-worker requests1/4: 12 processes/240 checked results. The instrumented image
+WF objects in ordinary and host/runtime/floor ASan-UBSan images, five forms and
+worker requests1/4: 20 processes/400 checked results. The instrumented image
 also uses the existing per-lane event counters. At every joined return it
 checks publication = local pop + successful steal = run begin = run end = join;
-for the four-worker parallel form it checks publication + slot refusal equals
-`3*nodes - leaves + 2`. That count includes two small sibling offers per node,
+for the original four-worker parallel form it checks publication + slot refusal
+equals `3*nodes - leaves + 2`. That count includes two small sibling offers per node,
 one recursive offer per internal node and two initial density offers. Startup
 must supply all four workers and the full qualification must observe a steal.
-Sequential forms must publish nothing. Generated LLVM remains unsanitized;
+The scalar-leaf control below instead checks `nodes - leaves`, retaining only
+recursive offers. Sequential forms must publish nothing. Generated LLVM remains unsanitized;
 runtime exhaustion/interleaving qualification stays in `check-runtime`.
 
 The ledger permits density/density, Simpson/Simpson and adaptive/adaptive
@@ -1633,9 +1634,10 @@ introduced by actualization; they do not by themselves isolate each offer's
 contribution to the ordinary elapsed-time loss.
 
 `quadrature-calibrate` runs the ordinary image sequentially across five passes,
-two worker requests and three forms (`native`, `wf-seq`, `wf-auto`). Each
+two worker requests and five forms (`native`, `wf-seq`, `wf-auto`, `wf-leaf-seq`,
+`wf-leaf`). Each
 process runs all ten cases, retaining one first and eight warm calls per case:
-30 processes/2,700 checked results. Form order reverses on alternate passes.
+50 processes/4,500 checked results. Form order reverses on alternate passes.
 The AWK reader binds mode, form, requested width and instrumentation to each
 invocation, requires the complete ordered input/call inventory and validates
 work metadata and event totals. Missing-row, wrong-form and missing-footer
@@ -1652,7 +1654,11 @@ algorithm, an initial kernel reference rather than a dynamic scheduler ceiling.
 parallel body, including at worker request1 where no pool is started; that
 one-worker control exposes unsuccessful offer/call overhead. It is **not**
 normal command-entry behavior, which chooses the sequential clone when the
-pool is inactive. No default, compiler policy or runtime interface changes.
+pool is inactive. `wf-leaf-seq` and `wf-leaf` select the sequential/parallel
+bodies compiled with the opt-in scalar-leaf control described below. Both
+modules share one timing executable, runtime and native kernel; the host chooses
+a common indirect generated-call adapter before timing. No default or runtime
+interface changes.
 Rayon/oneTBB/Parlay comparisons for this nested algorithm remain to be added;
 their existing flat callback adapters do not qualify that comparison.
 
@@ -1664,7 +1670,7 @@ make -C research/experiments/compute-runtime quadrature-calibrate \
   OUT=/tmp/wf-quadrature RESULTS=/tmp/wf-quadrature/calibration
 ```
 
-The September8 M1 screen (MacBookPro18,3, Clang21.0.0, unfixed placement and
+The initial three-form September8 M1 screen (MacBookPro18,3, Clang21.0.0, unfixed placement and
 frequency) retains ordinary SHA256
 `39bb2c2922018bbb083d9815b71638b891f81771276c05fd5a7613bd7eb1f0f7`
 and WF object SHA256
@@ -1687,7 +1693,7 @@ Every listed parallel comparison loses in all five passes. This exposes a
 larger issue than the small Mandelbrot representation differences: the scalar
 kernel is close to C in these cells, while recursive actualization adds many
 fine-grained task operations. Their causal share, a profitable granularity
-policy, larger compositions, additional native runtimes and Linux behavior
+policy, larger compositions and additional native runtimes
 are still unqualified. The new CI row retains the exact compiler, sources,
 LLVM, assembly, objects, flags, qualification logs and raw calibration.
 The forced parallel-body W1 control also loses all five on centered/left/right
@@ -1696,6 +1702,84 @@ against W1 sequential. No worker pool exists there. Thus unsuccessful offer
 checks and altered generated call/code layout warrant investigation alongside
 successful publication costs; a large task count alone is not a complete
 explanation of the W4 loss.
+
+The [original three-form Linux run at `60fccea3`](https://github.com/mbbill/Whitefoot/actions/runs/34229997227)
+retains artifact10057444924, ZIP SHA256
+`b3b4748074751220da1b3b0765f1809fb7ddbc4999834f7633772ed2b9c08a87`.
+Independent replay verifies30 processes/2,700 calls,12 qualifiers/240 results
+and20 retained hashes against that source revision. The host is EPYC9V74,
+two physical/four SMT CPUs under mask0–3, scalar Clang18.1.3/x86-64-v3,
+with individual placement/frequency and quota unqualified. Ordinary image
+SHA256 is `7b5331690134e1ea36a73cd7e9d1d89a819a9e499f8a1cf7ad1990bf888cb6db`.
+The original W4 parallel path loses all five paired passes against W1 sequential
+on centered/left/right peaks and the depth-cap case, medians
+2.587/2.634/2.721/2.545. Centered peak medians are34.372 us sequential and
+89.308 us parallel. This confirms a loss on a second host, not the scalar-leaf
+control's Linux benefit, which has not yet been measured.
+
+### Scalar leaf offer control
+
+`--par --par-scalar-leaf-limit 16` is an opt-in compiler experiment, not a new
+default or a language rule. After the normal checks and lowering, it identifies
+one-block returning functions with scalar parameters/results, no drops and only
+constants or scalar arithmetic/boolean/conversion/reinterpretation operations.
+Constants do not count toward the limit. A call, memory operation, control-flow
+edge, aggregate or loop excludes the function. This is an IR-operation screen,
+not an instruction-count bound, a target timing estimate or a proof budget.
+Unknown or more complex callees retain their existing offers.
+
+The pass removes only selected handed-out members from already-permitted
+groups, keeps the original source-last join site and drops singleton groups.
+Every source call remains at its original position; no worker/result lifetime
+or function ABI changes. Compiler tests cover mixed chains with omitted members
+at the start and middle, a small final join member, unchanged results, callee
+renaming, all-small groups recovering the exact sequential module and the
+numeric cutoff boundary. CLI tests require explicit `--par` and reject missing,
+repeated, malformed or overflowing limits. The permission judgment is unchanged;
+the actualization ledger separately reports omitted offers.
+
+For quadrature this removes the density/Simpson offers, preserving the recursive
+pair and its88-byte task frame. Original and filtered modules are compiled from
+the **same WF source** and linked into the same executable. The filtered
+instrumented centered-peak calls publish1,643 tasks versus8,219 in the original;
+the full per-node work and exact binary64 result remain the same. Local M1
+assembly allocates160 bytes for the filtered recursive activation versus144
+original and128 sequential: the improvement below cannot be explained merely
+by a smaller stack frame. Suppression also changes inlining/register allocation,
+so the paired benefit is not an isolated atomic/publication cost.
+
+The five-form M1 screen retains ordinary SHA256
+`c181ea855e5c0d4a6b71a0c56aaee9cb9fd119b9a776d338293e027707ae2e9f`,
+unchanged original WF object
+`99faabcaf9279d19e41e1423d8f71a8bb7e8e22e769b8dc61e51a8523e1d9bcc`
+and filtered object
+`1111aea3e8f58a940238204029a1f4b2bfb442bebcf115f75279278ddc187d7a`.
+The host, flags, first/warm boundaries and placement limitations match the M1
+screen above, but this is a separate cohort. Values below are microsecond
+medians over five process warm means, all with requested width4. Sequential
+forms execute one thread regardless of that request.
+
+| Input | WF sequential | Original parallel | Filtered parallel |
+| --- | ---: | ---: | ---: |
+| Center peak | 21.844 | 39.547 | 16.042 |
+| Left peak | 16.380 | 32.469 | 13.359 |
+| Right peak | 16.281 | 32.276 | 12.735 |
+| Outside peak | 3.375 | 10.792 | 4.875 |
+| Depth cap | 52.547 | 77.292 | 26.313 |
+
+Against W1 sequential, filtered W4 paired ratios for centered/left/right peaks
+and the depth-cap case are0.734 [0.705–0.750],0.819 [0.780–0.882],
+0.785 [0.750–0.811] and0.499 [0.485–0.558], each faster in all five pairs.
+Against original W4 they are0.400/0.411/0.382/0.332, also all five faster.
+All ten cases improve versus original W4 in all five pairs. However,
+smooth/outside/loose/reverse still lose to W1 sequential in all five;
+depth-zero/empty are mixed. No adverse or first-call sample is removed.
+
+The remaining small-call losses motivate recursive granularity work. A useful
+four-worker gain on some fixtures is not a top-tier parallel-reference result:
+strong native recursive libraries, larger inputs/compositions and a Linux
+control measurement remain required. No threshold has been selected as a
+default from this screen.
 
 ## Scalar scheduler comparison
 

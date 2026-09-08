@@ -1722,9 +1722,25 @@ fn a_module_that_hands_nothing_out_needs_no_runtime() {
 /// which the grant count below states rather than assumes.
 #[test]
 fn the_runtime_replaces_the_modules_weak_refusal() {
-    let module = emit_with_overlap(OVERLAPPING_FOLD);
+    let mut module = emit_with_overlap(OVERLAPPING_FOLD);
     let directory = test_directory();
-    let counted = CountedProgram::link(&module, &directory);
+    let observable = a_steal_is_observable(4);
+    let observer = if observable {
+        // Keep the first published task available until another thread claims
+        // it. A tiny fold can otherwise finish on its owner in every retry;
+        // that schedule is legal and says nothing about symbol replacement.
+        module = module.replace(
+            "call void @wf__par_publish(",
+            "call void @wf_test_hold_first_publish(",
+        );
+        module.push_str("\ndeclare void @wf_test_hold_first_publish(ptr, ptr)\n");
+        format!("#define _POSIX_C_SOURCE 200809L\n{GRANT_OBSERVER}\n{HOLD_FIRST_PUBLICATION}")
+    } else {
+        GRANT_OBSERVER.to_owned()
+    };
+    let counted = CountedProgram {
+        executable: link_counting_grants(&module, &directory, &observer),
+    };
 
     let (refused, sequential) = counted.run(Some("1"));
     assert_eq!(sequential.status.code(), Some(0));
@@ -1742,20 +1758,21 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
     // runtime's own, reported at process exit by the observer unit, so a
     // link that kept the weak refusal reports zero here and fails.
     let (granted, parallel) = counted.run(Some("4"));
-    assert_eq!(parallel.status.code(), Some(0));
+    assert_eq!(
+        parallel.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&parallel.stderr)
+    );
     assert_eq!(
         parallel.stdout, sequential.stdout,
         "granting lanes must not move one byte of the result"
     );
-    if a_steal_is_observable(4) {
-        let observed_grants = if granted == 0 {
-            counted.grants_over_runs(Some("4"), GRANT_OBSERVATION_RUNS)
-        } else {
-            granted
-        };
+    if observable {
         assert!(
-            observed_grants > 0,
-            "the runtime granted no lane, so nothing was overlapped"
+            granted > 0,
+            "the held publication was never stolen: {}",
+            String::from_utf8_lossy(&parallel.stderr)
         );
     }
 
@@ -1765,6 +1782,46 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
+
+/// Only the linkage test holds an offer. It calls the real publish function
+/// and waits for an atomic callback witness on another pthread. The ordinary
+/// runtime statistics are read only by the existing exit observer. The timeout
+/// diagnoses a stuck test, never source acceptance.
+const HOLD_FIRST_PUBLICATION: &str = r#"
+#include <stdatomic.h>
+#include <pthread.h>
+#include <time.h>
+extern void wf__par_publish(void *, void (*)(void *));
+static atomic_flag held_first = ATOMIC_FLAG_INIT;
+static atomic_int held_stolen;
+static pthread_t held_owner;
+static void (*held_run)(void *);
+static void wf_test_held_callback(void *frame) {
+    if (!pthread_equal(pthread_self(), held_owner))
+        atomic_store_explicit(&held_stolen, 1, memory_order_release);
+    held_run(frame);
+}
+void wf_test_hold_first_publish(void *frame, void (*run)(void *)) {
+    if (atomic_flag_test_and_set_explicit(&held_first, memory_order_relaxed)) {
+        wf__par_publish(frame, run);
+        return;
+    }
+    held_owner = pthread_self();
+    held_run = run;
+    wf__par_publish(frame, wf_test_held_callback);
+    struct timespec start, current;
+    if (clock_gettime(CLOCK_MONOTONIC, &start)) abort();
+    while (!atomic_load_explicit(&held_stolen, memory_order_acquire)) {
+        if (clock_gettime(CLOCK_MONOTONIC, &current)) abort();
+        if (current.tv_sec - start.tv_sec >= 30) {
+            fputs("held publication: no steal before watchdog\n", stderr);
+            exit(1);
+        }
+        const struct timespec pause = {0, 100000};
+        (void)nanosleep(&pause, NULL);
+    }
+}
+"#;
 
 /// The shipped default is a pool: a `--par` binary run with `WF_WORKERS`
 /// absent grants lanes, and only an explicit opt-out refuses them.
@@ -1804,8 +1861,8 @@ fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
     // workers was scheduled at all (`workers_started=2 parks=0 steals=0
     // inline_runs=63`), and that is the default doing exactly what it should
     // with the CPU it was given, not the path being off. That the default
-    // build CAN be granted lanes is the WF_WORKERS=4 case above, which makes
-    // that existential observation over [`GRANT_OBSERVATION_RUNS`] runs; this
+    // build CAN be granted lanes is the WF_WORKERS=4 case above, which holds
+    // its first publication until another thread enters the callback; this
     // case is about which world an absent setting selects, and the started
     // count states that directly. The opt-out runs below stay exact.
     let counted = CountedProgram::link(&module, &directory);
@@ -2095,12 +2152,11 @@ pub(super) fn identical(runs: &[(String, Vec<u8>)]) -> Result<(), String> {
 /// A steal is only observable if a worker reaches the offer before the
 /// offering thread has already finished the work itself, which needs a core
 /// that is not already carrying a lane. Measured in batch 0090 on GitHub's
-/// runners: the four-lane observations reach zero over their whole sample on
-/// the three-core macOS runner and are non-zero on every four-core host run,
-/// so a zero there is a fact about the host rather than about the lowering.
-/// Where the host has the cores, the observation is enforced exactly as it
-/// always was; where it does not, the case says so on standard error rather
-/// than reporting a lowering regression it cannot see.
+/// runners motivated the retained core-count eligibility check for sampling
+/// cases. It does not guarantee a steal: an eligible Linux host later also
+/// produced an all-zero sample. The linkage test holds its first publication
+/// instead of relying on that race; other sampling cases keep their existing
+/// eligibility condition. An ineligible host reports the limit explicitly.
 pub(super) fn a_steal_is_observable(lanes: usize) -> bool {
     let cores = std::thread::available_parallelism().map_or(0, std::num::NonZero::get);
     if cores < lanes {
@@ -2112,26 +2168,6 @@ pub(super) fn a_steal_is_observable(lanes: usize) -> bool {
     }
     true
 }
-
-/// The upper bound on the runs an existential grant observation makes before
-/// it reports that the runtime granted nothing.
-///
-/// A steal is a scheduling event, so one run samples the host's schedule
-/// rather than the lowering: the offering thread can finish the work itself
-/// before any pool thread reaches the offer, and on a busy machine it often
-/// does. Measured in batch 0090 on the three-core `macos-14` runner, where the
-/// default-pool observation totalled zero over five runs in one gate run and
-/// was granted on the first run of the next — five runs were sampling that
-/// host's luck. Thirty-two runs of a fixture that finishes in milliseconds
-/// cost one link and a fraction of a second, and a runtime that grants nothing
-/// still totals zero over all of them.
-///
-/// [`CountedProgram::grants_over_runs`] stops at the first granted lane, so
-/// this is what the *negative* direction pays and not what a healthy host
-/// pays: the property these runs support is existential — some run was granted a
-/// lane — and one grant settles it. A runtime that grants nothing still makes
-/// every one of the thirty-two runs and still totals zero.
-pub(super) const GRANT_OBSERVATION_RUNS: usize = 32;
 
 /// The observer linked beside a counted program: one destructor that reports
 /// the runtime's own grant count on standard error at process exit.
@@ -2167,7 +2203,7 @@ impl CountedProgram {
     /// done with the fixture.
     pub(super) fn link(module: &str, directory: &Path) -> Self {
         Self {
-            executable: link_counting_grants(module, directory),
+            executable: link_counting_grants(module, directory, GRANT_OBSERVER),
         }
     }
 
@@ -2220,7 +2256,11 @@ impl CountedProgram {
 /// Links one module against the runtime and the observer, and returns the
 /// executable. Linking is the expensive half, so a case that wants several runs
 /// of one module pays for it once.
-fn link_counting_grants(module: &str, directory: &Path) -> std::path::PathBuf {
+fn link_counting_grants(
+    module: &str,
+    directory: &Path,
+    observer_source: &str,
+) -> std::path::PathBuf {
     let assembly = directory.join("counted.ll");
     let floor = directory.join("counted_floor.c");
     let observer = directory.join("observer.c");
@@ -2230,7 +2270,7 @@ fn link_counting_grants(module: &str, directory: &Path) -> std::path::PathBuf {
     // stack when the core is linked, and a worker's per-thread arm lives in
     // it, so this harness links what a shipped program links.
     std::fs::write(&floor, super::FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
-    std::fs::write(&observer, GRANT_OBSERVER).expect("write the observer");
+    std::fs::write(&observer, observer_source).expect("write the observer");
     let mut command = Command::new("/usr/bin/clang");
     command
         .arg("-std=c11")
@@ -3128,3 +3168,121 @@ __attribute__((destructor)) static void report(void) {
         atomic_load(&allocations), atomic_load(&frees), atomic_load(&spares), pending, peak);
 }
 "#;
+
+/// Omitting cheap offers must preserve the last join site and the ordinary
+/// evaluation of every removed member, including members inside a mixed run.
+#[test]
+fn scalar_leaf_control_keeps_mixed_chain_results_and_join_boundary() {
+    let source = br#"fn increment(x: own u64) -> result: own u64 pure {
+  return x +wrap 1_u64;
+}
+
+fn counted(x: own u64) -> result: own u64 pure {
+  let value = x;
+  for (i in 0_u64..17_u64) {
+    set value = value +wrap i;
+  }
+  return value;
+}
+
+fn mixed(x: own u64) -> result: own u64 pure {
+  let a = increment(x: x);
+  let b = counted(x: x);
+  let c = increment(x: x);
+  let d = counted(x: x);
+  let e = increment(x: x);
+  let first = a +wrap b;
+  let second = c +wrap d;
+  let partial = first +wrap second;
+  return partial +wrap e;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let result = mixed(x: 3_u64);
+  if result == 290_u64 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}
+"#;
+    let all = super::emit_lowered(source, crate::OverlapLowering::On);
+    let filtered = super::emit_lowered(
+        source,
+        crate::OverlapLowering::OnWithoutSmallScalarLeaves {
+            maximum_operations: 1,
+        },
+    );
+    assert_eq!(
+        function_body(&all, "@wf_mixed")
+            .matches("call void @wf__par_publish(")
+            .count(),
+        4
+    );
+    assert_eq!(
+        function_body(&filtered, "@wf_mixed")
+            .matches("call void @wf__par_publish(")
+            .count(),
+        2
+    );
+    assert_eq!(
+        function_body(&filtered, "@wf_mixed")
+            .matches("call void @wf__par_join(")
+            .count(),
+        2
+    );
+    for module in [&all, &filtered] {
+        let output = compile_and_run(module);
+        assert!(output.status.success(), "{output:?}");
+    }
+    let renamed = String::from_utf8(source.to_vec())
+        .unwrap()
+        .replace("increment", "renamed_leaf");
+    let renamed = super::emit_lowered(
+        renamed.as_bytes(),
+        crate::OverlapLowering::OnWithoutSmallScalarLeaves {
+            maximum_operations: 1,
+        },
+    );
+    assert_eq!(
+        function_body(&renamed, "@wf_mixed")
+            .matches("call void @wf__par_publish(")
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn scalar_leaf_control_drops_all_small_offers_without_a_clone_or_runtime() {
+    let source = br#"fn twice(x: own u64) -> result: own u64 pure {
+  return x +wrap x;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let a = twice(x: 3_u64);
+  let b = twice(x: 4_u64);
+  let value = a +wrap b;
+  if value == 14_u64 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}
+"#;
+    let filtered = super::emit_lowered(
+        source,
+        crate::OverlapLowering::OnWithoutSmallScalarLeaves {
+            maximum_operations: 1,
+        },
+    );
+    let sequential = super::emit_lowered(source, crate::OverlapLowering::Off);
+    assert_eq!(
+        filtered, sequential,
+        "pruning every offer must recover the ordinary module"
+    );
+    let retained = super::emit_lowered(
+        source,
+        crate::OverlapLowering::OnWithoutSmallScalarLeaves {
+            maximum_operations: 0,
+        },
+    );
+    assert!(module_requires_parallel_runtime(&retained));
+}

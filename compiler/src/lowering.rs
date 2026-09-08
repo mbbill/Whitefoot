@@ -1541,6 +1541,13 @@ pub enum OverlapLowering {
     Completion,
     /// Actualize completion operations and eligible compute groups.
     On,
+    /// Research control: retain `On` except for offers of straight-line scalar
+    /// leaves with at most this many nonconstant IR operations. This is an
+    /// actualization heuristic, not an acceptance bound or machine-cost claim.
+    OnWithoutSmallScalarLeaves {
+        /// Maximum nonconstant operations in a scalar leaf whose offer is omitted.
+        maximum_operations: u32,
+    },
 }
 
 /// One group of pure sibling calls whose evaluations may be overlapped

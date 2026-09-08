@@ -17,6 +17,9 @@
 
 extern int wf__floor_run(int, char **);
 extern double wf_research_quadrature(double, double, double, double, double, uint64_t, bool);
+extern double wf_research_quadrature_leaf(double, double, double, double, double, uint64_t, bool);
+static double (*generated_run)(double,double,double,double,double,uint64_t,bool);
+static bool parallel_form, leaf_form;
 static void require(bool ok, const char *why) {
     if (!ok) { fprintf(stderr, "quadrature: %s\n", why); exit(1); }
 }
@@ -128,12 +131,16 @@ static Reference reference(const Input *p) {
 }
 static double run(const Input *p,const char *form) {
     if(!strcmp(form,"native"))return native(p);
-    return wf_research_quadrature(p->a,p->b,p->center,p->width,p->tolerance,p->depth,!strcmp(form,"wf-auto"));
+    return generated_run(p->a,p->b,p->center,p->width,p->tolerance,p->depth,parallel_form);
 }
 int wf__main_body(int argc,char **argv) {
-    require(argc==3,"usage: quadrature check|bench native|wf-seq|wf-auto");
+    require(argc==3,"usage: quadrature check|bench native|wf-seq|wf-auto|wf-leaf-seq|wf-leaf");
     bool bench=!strcmp(argv[1],"bench");require(bench || !strcmp(argv[1],"check"),"mode");
-    const char *form=argv[2];require(!strcmp(form,"native") || !strcmp(form,"wf-seq") || !strcmp(form,"wf-auto"),"form");
+    const char *form=argv[2];
+    leaf_form=!strcmp(form,"wf-leaf") || !strcmp(form,"wf-leaf-seq");
+    parallel_form=!strcmp(form,"wf-auto") || !strcmp(form,"wf-leaf");
+    require(!strcmp(form,"native") || !strcmp(form,"wf-seq") || parallel_form || leaf_form,"form");
+    generated_run=leaf_form?wf_research_quadrature_leaf:wf_research_quadrature;
     const char *workers=getenv("WF_WORKERS");
     require(workers && (!strcmp(workers,"1") || !strcmp(workers,"4")),"explicit worker count");
     unsigned requested=!strcmp(workers,"4")?4:1;
@@ -178,9 +185,10 @@ int wf__main_body(int argc,char **argv) {
             runs=events[WF_EVENT_RUN_END];joins=events[WF_EVENT_JOIN];refusals=events[WF_EVENT_SLOT_REFUSAL];
             require(publishes==pops+events[WF_EVENT_STEAL_SUCCESS] && publishes==runs &&
                     publishes==events[WF_EVENT_RUN_BEGIN] && publishes==joins,"joined task conservation");
-            if(!strcmp(form,"wf-auto") && requested==4) {
+            if(parallel_form && requested==4) {
                 require(wf_compute_worker_count()==4,"four-worker startup");
-                require(publishes+refusals==3*r.nodes-r.leaves+2,"recursive publication opportunities");
+                uint64_t opportunities=leaf_form?r.nodes-r.leaves:3*r.nodes-r.leaves+2;
+                require(publishes+refusals==opportunities,"recursive publication opportunities");
             } else require(publishes==0,"sequential publication exclusion");
 #endif
             printf("%s\t%s\t%u\t%s\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%ld\t%ld\t%lu\t%u\t%lu\t%lu\t%lu\t%lu\t%lu\n",
@@ -191,10 +199,10 @@ int wf__main_body(int argc,char **argv) {
         }
     }
 #if WF_COMPUTE_STATS
-    if(!strcmp(form,"wf-auto") && requested==4)require(total_steals>0,"parallel actualization");
-    if(strcmp(form,"wf-auto"))require(total_steals==0,"sequential task exclusion");
+    if(parallel_form && requested==4)require(total_steals>0,"parallel actualization");
+    if(!parallel_form)require(total_steals==0,"sequential task exclusion");
 #else
-    if(!strcmp(form,"wf-auto") && requested==4)require(wf_compute_worker_count()==4,"four-worker startup");
+    if(parallel_form && requested==4)require(wf_compute_worker_count()==4,"four-worker startup");
 #endif
     printf("# quadrature PASS: outputs=%" PRIu64 " stats=%d steals=%" PRIu64 "\n",outputs,WF_COMPUTE_STATS,total_steals);
     require(!fflush(stdout),"report flush");return 0;

@@ -77,23 +77,32 @@ quadrature-build: $(WFC)
 	cat quadrature_host.ll >> "$(OUT)/quadrature/host.ll"
 	$(CC) $(RECORD_FLAGS) -Wno-override-module -c "$(OUT)/quadrature/host.ll" -o "$(OUT)/quadrature/wf.o"
 	$(CC) $(RECORD_FLAGS) -Wno-override-module -S "$(OUT)/quadrature/host.ll" -o "$(OUT)/quadrature/wf.s"
+	"$(WFC)" --par --par-scalar-leaf-limit 16 --par-ledger --emit-llvm quadrature.wf -o "$(OUT)/quadrature/leaf-module.ll" > "$(OUT)/quadrature/leaf-ledger.txt"
+	grep -F 'scalar leaf limit 16: omitted 2 compute offers' "$(OUT)/quadrature/leaf-ledger.txt"
+	@test "$$(grep -c 'call void @wf__par_publish(' "$(OUT)/quadrature/leaf-module.ll")" = 1
+	sed -e 's/@main(/@wf_quadrature_leaf_command_main(/g' -e 's/@wf__main_body(/@wf_quadrature_leaf_command_body(/g' \
+		"$(OUT)/quadrature/leaf-module.ll" > "$(OUT)/quadrature/leaf-host.ll"
+	sed 's/@wf_research_quadrature(/@wf_research_quadrature_leaf(/g' quadrature_host.ll >> "$(OUT)/quadrature/leaf-host.ll"
+	$(CC) $(RECORD_FLAGS) -Wno-override-module -c "$(OUT)/quadrature/leaf-host.ll" -o "$(OUT)/quadrature/wf-leaf.o"
+	$(CC) $(RECORD_FLAGS) -Wno-override-module -S "$(OUT)/quadrature/leaf-host.ll" -o "$(OUT)/quadrature/wf-leaf.s"
 	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=0 -S quadrature.c -o "$(OUT)/quadrature/native.s"
-	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=0 quadrature.c runtime.c $(FLOOR) "$(OUT)/quadrature/wf.o" -lm -o "$(OUT)/quadrature/ordinary"
+	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=0 quadrature.c runtime.c $(FLOOR) "$(OUT)/quadrature/wf.o" "$(OUT)/quadrature/wf-leaf.o" -lm -o "$(OUT)/quadrature/ordinary"
 	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=1 -DWF_COMPUTE_EVENTS -fsanitize=$(SANITIZER) \
 		-fno-sanitize-recover=all -fno-omit-frame-pointer \
-		quadrature.c runtime.c $(FLOOR) "$(OUT)/quadrature/wf.o" -lm -o "$(OUT)/quadrature/sanitized"
+		quadrature.c runtime.c $(FLOOR) "$(OUT)/quadrature/wf.o" "$(OUT)/quadrature/wf-leaf.o" -lm -o "$(OUT)/quadrature/sanitized"
 	@nm "$(OUT)/quadrature/ordinary" > "$(OUT)/quadrature/ordinary.symbols"
 	$(call require-strong,$(OUT)/quadrature/ordinary,wf__par_acquire_lane)
 	$(call require-strong,$(OUT)/quadrature/ordinary,wf__floor_run)
 	@printf '%s\n' '$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=0' \
+		'WF original: --par; scalar-leaf control: --par --par-scalar-leaf-limit 16' \
 		'sanitized: -DWF_COMPUTE_STATS=1 -DWF_COMPUTE_EVENTS -fsanitize=$(SANITIZER) -fno-sanitize-recover=all -fno-omit-frame-pointer; host/runtime/floor only; generated WF object ordinary' > "$(OUT)/quadrature/flags.txt"
 	$(CC) --version >> "$(OUT)/quadrature/flags.txt"
 	cp "$(WFC)" "$(OUT)/quadrature/whitefootc"
 	git rev-parse HEAD > "$(OUT)/quadrature/revision.txt"
-	cd "$(OUT)/quadrature" && shasum -a 256 source/* module.ll host.ll wf.o wf.s native.s ordinary sanitized whitefootc flags.txt ledger.txt revision.txt > manifest.sha256
+	cd "$(OUT)/quadrature" && shasum -a 256 source/* module.ll host.ll wf.o wf.s native.s ordinary sanitized whitefootc flags.txt ledger.txt revision.txt leaf-module.ll leaf-host.ll wf-leaf.o wf-leaf.s leaf-ledger.txt > manifest.sha256
 
 check-quadrature: quadrature-build
-	@set -e; for image in ordinary sanitized; do for width in 1 4; do for form in native wf-seq wf-auto; do \
+	@set -e; for image in ordinary sanitized; do for width in 1 4; do for form in native wf-seq wf-auto wf-leaf-seq wf-leaf; do \
 		log="$(OUT)/quadrature/check-$$image-w$$width-$$form.tsv"; \
 		WF_WORKERS=$$width "$(OUT)/quadrature/$$image" check $$form > "$$log" 2>&1; \
 		stats=0; if test $$image = sanitized; then stats=1; fi; \
@@ -120,7 +129,7 @@ quadrature-calibrate:
 	if test "$$(uname -s)" = Linux; then lscpu >> "$(RESULTS)/host.txt"; taskset -pc $$$$ >> "$(RESULTS)/host.txt"; \
 	else sysctl hw.model hw.ncpu hw.physicalcpu >> "$(RESULTS)/host.txt"; fi; \
 	for pass in 1 2 3 4 5; do \
-		if test $$((pass % 2)) = 1; then forms='native wf-seq wf-auto'; else forms='wf-auto wf-seq native'; fi; \
+		if test $$((pass % 2)) = 1; then forms='native wf-seq wf-auto wf-leaf-seq wf-leaf'; else forms='wf-leaf wf-leaf-seq wf-auto wf-seq native'; fi; \
 		for width in 1 4; do for form in $$forms; do \
 			WF_WORKERS=$$width "$(OUT)/quadrature/ordinary" bench $$form > "$(RESULTS)/p$$pass-w$$width-$$form.tsv" 2>&1; \
 			awk -v mode=bench -v form=$$form -v width=$$width -v stats=0 -f quadrature.awk "$(RESULTS)/p$$pass-w$$width-$$form.tsv"; \

@@ -5,6 +5,7 @@ mod loops;
 mod probe;
 mod results;
 mod runs;
+mod scalar_grain;
 mod slices;
 mod split;
 mod storage;
@@ -29,6 +30,17 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     checked: CheckedProgram<'classified, 'lexed, 'source>,
     overlap: OverlapLowering,
 ) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
+    let scalar_leaf_limit = match overlap {
+        OverlapLowering::OnWithoutSmallScalarLeaves { maximum_operations } => {
+            Some(maximum_operations)
+        }
+        _ => None,
+    };
+    let overlap = if scalar_leaf_limit.is_some() {
+        OverlapLowering::On
+    } else {
+        overlap
+    };
     let entry = lower_entry(&checked.data.entry);
     // [S20, PROV-1] the region erasure: where a nominal instance's region
     // arguments leave the program. Two instances of one declaration that
@@ -74,7 +86,9 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     // compilation asked for overlap lowering, so the default emits the same
     // module a compiler with no such lowering emits.
     let permission = match overlap {
-        OverlapLowering::On | OverlapLowering::Completion => Some(&checked.data.permission),
+        OverlapLowering::On
+        | OverlapLowering::OnWithoutSmallScalarLeaves { .. }
+        | OverlapLowering::Completion => Some(&checked.data.permission),
         OverlapLowering::Off => None,
     };
     // Where a synthesized function's ordinal starts. A [PAR-2] split appends
@@ -104,9 +118,12 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let (synthesized, actualization) = synthesis.into_inner().finish()?;
+    let (synthesized, mut actualization) = synthesis.into_inner().finish()?;
     functions.extend(synthesized);
     split::assign_weights(&mut functions);
+    if let Some(limit) = scalar_leaf_limit {
+        scalar_grain::prune(&mut functions, limit, &mut actualization);
+    }
     Ok(IrProgram {
         main: checked.data.main.0,
         _checked: checked,

@@ -31,7 +31,7 @@ use whitefoot::{
     FLOOR_WINDOWS_RUNTIME_SOURCE, SCHED_PRIM_WINDOWS_SOURCE, WINDOWS_RUNTIME_SOURCE,
 };
 
-const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--no-overlap] [--par-ledger] \
+const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N] [--no-overlap] [--par-ledger] \
 [--stack-ledger] [-o OUTPUT] SOURCE...";
 
 // The compiler walks typed source and lowering trees recursively. Windows
@@ -572,6 +572,8 @@ struct Options {
     /// worker lanes or terminate when the pool is first required; it cannot
     /// silently select the sequential world.
     par: bool,
+    /// Opt-in scalar-leaf offer suppression for compute-grain measurements.
+    scalar_leaf_limit: Option<u32>,
     /// Emit the module a compiler with no overlap lowering at all emits.
     ///
     /// This is the sequential reference build, and it exists for one reason:
@@ -606,6 +608,7 @@ impl Options {
     fn parse(arguments: &[String]) -> Result<Self, String> {
         let mut emit_llvm = false;
         let mut par = false;
+        let mut scalar_leaf_limit = None;
         let mut no_overlap = false;
         let mut par_ledger = false;
         let mut stack_ledger = false;
@@ -616,6 +619,21 @@ impl Options {
             match arguments[cursor].as_str() {
                 "--emit-llvm" => emit_llvm = true,
                 "--par" => par = true,
+                "--par-scalar-leaf-limit" => {
+                    cursor += 1;
+                    let value = arguments.get(cursor).ok_or_else(|| {
+                        "--par-scalar-leaf-limit requires a nonnegative u32".to_owned()
+                    })?;
+                    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+                        return Err("--par-scalar-leaf-limit requires a nonnegative u32".to_owned());
+                    }
+                    let limit = value.parse::<u32>().map_err(|_| {
+                        "--par-scalar-leaf-limit requires a nonnegative u32".to_owned()
+                    })?;
+                    if scalar_leaf_limit.replace(limit).is_some() {
+                        return Err("--par-scalar-leaf-limit may be written only once".to_owned());
+                    }
+                }
                 "--no-overlap" => no_overlap = true,
                 "--par-ledger" => par_ledger = true,
                 "--stack-ledger" => stack_ledger = true,
@@ -662,9 +680,13 @@ impl Options {
         if par && no_overlap {
             return Err("--no-overlap and --par select opposite lowerings: write one".to_owned());
         }
+        if scalar_leaf_limit.is_some() && !par {
+            return Err("--par-scalar-leaf-limit requires --par".to_owned());
+        }
         Ok(Self {
             emit_llvm,
             par,
+            scalar_leaf_limit,
             no_overlap,
             par_ledger,
             stack_ledger,
@@ -682,7 +704,10 @@ impl Options {
         if self.no_overlap {
             OverlapLowering::Off
         } else if self.par {
-            OverlapLowering::On
+            self.scalar_leaf_limit
+                .map_or(OverlapLowering::On, |maximum_operations| {
+                    OverlapLowering::OnWithoutSmallScalarLeaves { maximum_operations }
+                })
         } else {
             OverlapLowering::Completion
         }
@@ -938,6 +963,34 @@ mod tests {
         assert!(options.par);
         assert!(!options.par_ledger, "lanes are not a ledger request");
         assert_eq!(options.sources.len(), 1);
+    }
+
+    #[test]
+    fn scalar_leaf_control_requires_an_explicit_compute_invocation() {
+        let options = parse(&["--par", "--par-scalar-leaf-limit", "16", "value.wf"])
+            .expect("the scalar control is available for compute experiments");
+        assert_eq!(
+            options.overlap(),
+            OverlapLowering::OnWithoutSmallScalarLeaves {
+                maximum_operations: 16
+            }
+        );
+        for arguments in [
+            vec!["--par-scalar-leaf-limit", "16", "value.wf"],
+            vec!["--par", "--par-scalar-leaf-limit"],
+            vec!["--par", "--par-scalar-leaf-limit", "-1", "value.wf"],
+            vec!["--par", "--par-scalar-leaf-limit", "4294967296", "value.wf"],
+            vec![
+                "--par",
+                "--par-scalar-leaf-limit",
+                "1",
+                "--par-scalar-leaf-limit",
+                "2",
+                "value.wf",
+            ],
+        ] {
+            assert!(parse(&arguments).is_err(), "{arguments:?}");
+        }
     }
 
     /// The sequential reference build is its own switch, off unless asked

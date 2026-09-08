@@ -11,7 +11,9 @@ BEGIN {
     split("59 3287 2473 2473 503 3 1 8191 1 183", nodes," ")
     split("0 0 0 0 0 0 1 4009 0 0", capped," ")
     split("5 14 14 14 10 1 0 12 0 7", depths," ")
-    if ((mode!="check" && mode!="bench") || (form!="native" && form!="wf-seq" && form!="wf-auto") ||
+    parallel=(form=="wf-auto" || form=="wf-leaf")
+    leaf=(form=="wf-leaf" || form=="wf-leaf-seq")
+    if ((mode!="check" && mode!="bench") || (form!="native" && form!="wf-seq" && !parallel && !leaf) ||
         (width!=1 && width!=4) || (stats!=0 && stats!=1)) bad("validator arguments")
     calls=(mode=="check"?2:9)
 }
@@ -38,19 +40,19 @@ NR==2 {
     if (footer || block!=count || seen!=calls || NF!=6) bad("footer position")
     if (field($4,"outputs=")!=count*calls || field($5,"stats=")!=stats ||
         field($6,"steals=")!=steals) bad("footer totals")
-    if (stats && form=="wf-auto" && width==4 && !steals) bad("no actual steal")
+    if (stats && parallel && width==4 && !steals) bad("no actual steal")
     footer=1;next
 }
 {
     if (footer || !block || seen>=calls || NF!=16 || $1!=names[block] || $2!=form ||
         $3!=seen || $4!=(seen?"warm":"first")) bad("call identity")
     for (i=5;i<=16;++i) if(!integer($i))bad("noninteger observation")
-    if ($11!=((form=="wf-auto" && width==4)?4:0))bad("actual pool width")
-    if (!stats || form!="wf-auto" || width==1) {
+    if ($11!=((parallel && width==4)?4:0))bad("actual pool width")
+    if (!stats || !parallel || width==1) {
         if($10 || $12 || $13 || $14 || $15 || $16)bad("disabled/serial events")
     } else {
-        if ($12!=$13+$10 || $12!=$14 || $12!=$15 ||
-            $12+$16!=3*nodes[block]-(nodes[block]+1)/2+2)bad("task conservation")
+        opportunities=(leaf?nodes[block]-(nodes[block]+1)/2:3*nodes[block]-(nodes[block]+1)/2+2)
+        if ($12!=$13+$10 || $12!=$14 || $12!=$15 || $12+$16!=opportunities)bad("task conservation")
     }
     steals+=$10;++seen;++rows
 }

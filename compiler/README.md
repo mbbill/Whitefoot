@@ -187,6 +187,18 @@ reductions. A denied permission leaves the program sequential; it does not
 change source acceptance. Proof-only statements introduce no runtime branch,
 lock, dependency, scheduling event, or task edge.
 
+The opt-in compute experiment `--par --par-scalar-leaf-limit N` omits offers
+of scalar leaves containing at most N nonconstant IR operations. Eligible
+leaves have one returning block, scalar arguments/results and only scalar
+constants, arithmetic, boolean operations, conversions or reinterpretations;
+calls, memory operations, branches, loops and drops exclude a function. The
+original calls remain, and a partially retained group keeps its original
+source-last join site. This narrows actualization after checking; permission,
+acceptance, ordinary function ABI and default `--par` behavior are unchanged.
+The count is a research heuristic, not a target instruction or time estimate.
+Its qualification and measurements live in the
+[quadrature experiment](../research/experiments/compute-runtime/README.md#scalar-leaf-offer-control).
+
 The first multi-operation loop path is deliberately specific: one
 source-derived fixed two-slot bounded batch for the direct staged counted-loop
 shape. On native POSIX completion targets the runtime window is bounded to

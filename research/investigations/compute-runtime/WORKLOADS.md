@@ -26,9 +26,11 @@ or irregular graph traversal, and does not replace the missing rows below.
 [Adaptive recursive quadrature](../../experiments/compute-runtime/README.md#adaptive-recursive-quadrature)
 adds data-dependent subdivision and nested ordinary sibling calls, with an
 explicit-stack binary64 oracle, analytic checks for converged fixtures and
-an initial scalar C/WF comparison. The M1 screen observes substantial
-parallel-body slowdown and many fine-grained offers; their causal share is
-not yet isolated. The ten-case screen does not yet qualify larger
+an initial scalar C/WF comparison. The original M1/Linux screens observe
+substantial parallel-body slowdown. An opt-in scalar-leaf offer control improves
+the heavier M1 cases, while smaller cases still lose to sequential execution;
+publication and generated-code contributions are not separately isolated.
+The ten-case screen does not yet qualify larger
 application composition or multiple native recursive schedulers, and does not
 replace the application rows below.
 Keep the inventory current as
