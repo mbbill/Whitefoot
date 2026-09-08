@@ -1,14 +1,14 @@
 # External container workload traces
 
 This evidence belongs to the container architecture experiment in this directory.
-Maintain it through the implementation selected in [REASSESSMENT.md](REASSESSMENT.md);
+Maintain it with the comparison in [FOUNDATION.md](FOUNDATION.md);
 merge or retire it when a replacement investigation supersedes these claims. It
 supplements the local compiler and Whitefoot fixtures. It does not define the
 language or establish workload prevalence.
 
 ## Selection and evidence boundary
 
-The sample covers three substantial application subsystems in three languages and
+The initial sample covers three substantial application subsystems in three languages and
 domains. They were selected to challenge different assumptions: contiguous search
 windows, columnar query execution, and indexed scheduling state. The six traces
 are deliberately related within each application; they are not six independent
@@ -26,6 +26,144 @@ for annotated tags. All code links below use those commits, and line numbers wer
 read from their raw source. These are reproducible snapshots, not claims about
 the latest release. No upstream build, benchmark, production profile, allocation
 trace, or Whitefoot translation was run for this study.
+
+The 2026-09-08 extension below adds Linux, Redis and SQLite as explicit tests of
+the systems-performance ceiling. Its source observations remain qualitative;
+the separately linked native cost controls are not upstream application timings.
+
+## Kernel, database and cache-server ceiling cases
+
+The owner selected performance before breadth and explicitly allowed intended
+runtime validation whose cost is acceptable. These cases ask whether Whitefoot
+can retain useful layouts and operation contracts, not whether it can reproduce
+C syntax or remove every branch. Sources were read at immutable commits:
+
+| System | Pin | Selected paths |
+| --- | --- | --- |
+| Linux | [`28924df2a08f440c73991b83028032c901de2ae4`](https://github.com/torvalds/linux/tree/28924df2a08f440c73991b83028032c901de2ae4) (master resolved during this audit) | Intrusive list/rbtree, inode membership, RCU deletion, XArray reservation |
+| Redis 7.2.4 | [`d2c8a4b91e8c0e6aefd1f5bc0bf582cddbe046b7`](https://github.com/redis/redis/tree/d2c8a4b91e8c0e6aefd1f5bc0bf582cddbe046b7) | Incremental dictionary rehash, listpack, SDS |
+| SQLite 3.45.1 | [`189e44dfecdc7868bb860dfb5d98eab371318c37`](https://github.com/sqlite/sqlite/tree/189e44dfecdc7868bb860dfb5d98eab371318c37) | Byte-page B-tree layout, validation, insertion-space allocation and compaction |
+
+No upstream program was run. Statements about a check occurring inside lookup
+or on resize follow control flow, not a measured frequency distribution. Source
+complexity, popularity and comments about expected performance are not profiles.
+
+### Linux: independent membership and delayed reclamation
+
+An inode contains several independent membership hooks, including an hlist hook
+and distinct list fields. List insertion rewrites four link relationships;
+unlinking a known hook is separate from destroying the containing object.
+This is a concrete need to separate membership from ownership, rather than to
+give several owning vectors the same element. It does not establish how often
+all hooks are linked simultaneously.
+[inode fields](https://github.com/torvalds/linux/blob/28924df2a08f440c73991b83028032c901de2ae4/include/linux/fs.h#L813-L837),
+[list insertion](https://github.com/torvalds/linux/blob/28924df2a08f440c73991b83028032c901de2ae4/include/linux/list.h#L158-L230).
+
+The rbtree documentation motivates embedding by avoiding an indirection and
+leaves locking to the caller. An ordinary owning boxed tree is a plausible WF
+ordered-map route, but does not reproduce external ownership and multiple stable
+memberships. Indices may preserve logical identity; their lookup and validation
+cost must be measured. Parent/color bit packing and container_of are C choices,
+not mandatory WF mechanisms.
+[rbtree representation](https://github.com/torvalds/linux/blob/28924df2a08f440c73991b83028032c901de2ae4/Documentation/core-api/rbtree.rst#L45-L76).
+
+RCU list deletion explicitly preserves traversal and forbids immediate free.
+XArray similarly separates sparse presence, reservation and reclamation:
+reservation can ensure later store avoids allocation while normal load sees
+absence; release does nothing if another actor has published a value meanwhile.
+An empty typed slot alone does not express either protocol. Current lexical
+loans and the specified staged runtime are not an RCU lifetime system.
+[RCU deletion](https://github.com/torvalds/linux/blob/28924df2a08f440c73991b83028032c901de2ae4/include/linux/rculist.h#L97-L180),
+[XArray reservation](https://github.com/torvalds/linux/blob/28924df2a08f440c73991b83028032c901de2ae4/Documentation/core-api/xarray.rst#L64-L115),
+[locking and retained access](https://github.com/torvalds/linux/blob/28924df2a08f440c73991b83028032c901de2ae4/Documentation/core-api/xarray.rst#L170-L249).
+
+Configured list hardening performs inline checks and routes corruption to a
+report helper marked cold outside its debug configuration. This is evidence
+that placement of validation is a design choice, not proof that its cost is
+negligible in a kernel workload.
+[hardening checks](https://github.com/torvalds/linux/blob/28924df2a08f440c73991b83028032c901de2ae4/include/linux/list.h#L57-L154).
+
+### Redis dictionary: migration changes the lookup contract
+
+The dictionary retains two tables during migration. Ordinary valued entries are
+relinked without reconstructing payloads; a rehash step moves a whole collision
+chain. Its empty-bucket scan limit is not a strict bound on entries moved or
+operation latency. Lookup itself may perform a migration step and search both
+tables. A semantically read-only query can therefore mutate internal topology.
+[rehash](https://github.com/redis/redis/blob/d2c8a4b91e8c0e6aefd1f5bc0bf582cddbe046b7/src/dict.c#L295-L380),
+[lookup](https://github.com/redis/redis/blob/d2c8a4b91e8c0e6aefd1f5bc0bf582cddbe046b7/src/dict.c#L668-L687).
+
+Two runs of optional boxed bucket heads and source-written migration are a WF
+candidate, not an executed port. Value-in/value-out mutation, a returned position
+followed by access, and a concrete hash implementation avoid some current source
+restrictions, but must be priced. Stored borrowed entries, generic behavior
+dispatch and mutation during iteration are separate gaps from initializedness.
+A flat table changes locality, migration work and payload-address guarantees;
+finishing migration eagerly changes latency policy. Neither is automatically a
+same-contract substitute.
+
+### Redis listpack and SDS: compact bytes do not require arbitrary typed holes
+
+Listpack stores variable-sized encoded entries, backward lengths and a compact
+header. Insertion saves an offset across relocation, grows when needed, shifts
+overlapping bytes, then writes the entry and metadata. Small Redis hashes use
+this linear representation and convert at thresholds. This demonstrates multiple
+representations for different size regimes; it supplies no optimal threshold
+for Whitefoot.
+[listpack insertion](https://github.com/redis/redis/blob/d2c8a4b91e8c0e6aefd1f5bc0bf582cddbe046b7/src/listpack.c#L780-L905),
+[hash conversion](https://github.com/redis/redis/blob/d2c8a4b91e8c0e6aefd1f5bc0bf582cddbe046b7/src/t_hash.c#L37-L97).
+
+Start with initialized byte storage, offsets and codecs. Its potential costs are
+overlap-move lowering, spare-byte initialization, resizing and validation reuse,
+not necessarily missing raw-T authority. A vector of allocated strings is a
+different layout with different density and allocation work. Listpack's own
+validator has shallow and full-walk modes; this audit did not trace their loading
+call frequency.
+[integrity validation](https://github.com/redis/redis/blob/d2c8a4b91e8c0e6aefd1f5bc0bf582cddbe046b7/src/listpack.c#L1292-L1387).
+
+SDS places size-class-dependent packed metadata before payload bytes, leaving a
+pointer-sized handle. Growth can use realloc when the header class is unchanged;
+otherwise it allocates, copies and frees. Current WF's byte Vector has four
+descriptor words and no realloc row. Proving head zero does not itself erase
+the descriptor fields. A dynamic header-plus-tail allocation and a smaller
+handle are distinct candidates from sparse initialization permissions.
+[SDS headers](https://github.com/redis/redis/blob/d2c8a4b91e8c0e6aefd1f5bc0bf582cddbe046b7/src/sds.h#L43-L90),
+[growth](https://github.com/redis/redis/blob/d2c8a4b91e8c0e6aefd1f5bc0bf582cddbe046b7/src/sds.c#L234-L290).
+SDS_NOINIT is an unchecked caller obligation in C; importing that state as a
+readable WF string would be invalid. A checked reserve/fill/publish route must
+account for initialized bytes before publication.
+
+### SQLite: packed pages, validation and localized movement
+
+A B-tree page separates its header, two-byte cell-offset array, variable-size
+cell bodies, freeblocks and fragments. Logical key order differs from physical
+cell order. This is a byte codec, not an array of uniform typed records.
+[page format](https://github.com/sqlite/sqlite/blob/189e44dfecdc7868bb860dfb5d98eab371318c37/src/btreeInt.h#L20-L170).
+
+Page initialization validates and caches derived information; lookup still
+contains corruption checks during decoding. Space allocation uses freeblocks
+or compaction. Compaction has both local movement and a temporary-page rebuild
+path. Therefore a whole-page temporary is not inherently a bad container design:
+its frequency, size and competing work decide its cost.
+[initialization](https://github.com/sqlite/sqlite/blob/189e44dfecdc7868bb860dfb5d98eab371318c37/src/btree.c#L2160-L2206),
+[lookup](https://github.com/sqlite/sqlite/blob/189e44dfecdc7868bb860dfb5d98eab371318c37/src/btree.c#L5710-L5779),
+[compaction](https://github.com/sqlite/sqlite/blob/189e44dfecdc7868bb860dfb5d98eab371318c37/src/btree.c#L1560-L1677).
+
+The WF starting point is a full byte page, explicit codecs, page IDs and checked
+offsets. A validated offset table costs metadata but may amortize repeated
+decoding. A decoded object graph adds different allocation and serialization
+costs. Current source does not package borrowed page views into a stored cursor;
+reacquiring by ID changes lookup/pin work. Page cache lifetime and rollback are
+separate from the local container layout. SQLite balancing explicitly relies
+on database rollback after some failures; a WF port must not silently require
+every helper to be failure-atomic.
+[balancing failure contract](https://github.com/sqlite/sqlite/blob/189e44dfecdc7868bb860dfb5d98eab371318c37/src/btree.c#L8031-L8069).
+
+These observations widen the necessary comparisons. Typed initialization is one
+candidate component; compact bytes, allocation policy, behavior dispatch,
+membership, cursor lifetime and reclamation remain independent dimensions.
+Memory-safety evidence need not prove all abstract map/tree semantics unless
+those semantics authorize a partial operation or an exported checked relation.
 
 An **observed** operation follows source and its local callers. A cost statement
 describes explicit work or an algorithmic consequence, unless marked as an

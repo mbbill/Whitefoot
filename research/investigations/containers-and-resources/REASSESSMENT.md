@@ -14,10 +14,11 @@ Keep this decision and its linked evidence current as implementation replaces th
 old container paths. `DESIGN.md` points here for the superseding container choice;
 its separate resource research is outside this selection.
 
-[FOUNDATION.md](FOUNDATION.md) continues from the merged owned-place implementation:
-it selects the next full-array, construction, and helper-contract experiment and
-records why additional public raw-storage authority is not assumed. Its proposals
-do not change the source behavior or the measured scope recorded here.
+[FOUNDATION.md](FOUNDATION.md) continues from the merged owned-place implementation
+with the performance-ceiling comparison. Its earlier pool-driven implementation
+selection is reopened: common containers and kernel/database/cache-server cases
+must establish expressibility and cost before a broader foundation is selected.
+That research does not change the merged source behavior or measured scope here.
 
 The implementation examined was `ea97222adc0aff481df320f4c39624eb6813e488`, rebased as
 `eff095c701b473a0108822a16cd1e1274c43f621` onto main

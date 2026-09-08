@@ -4,7 +4,7 @@ This bundle supplies executable evidence for the container architecture choice
 before production implementation or migration. The design question belongs to
 `research/investigations/containers-and-resources/`; this directory owns only the
 reproducible source probes, finite checker model, native controls, and measurements.
-Its four parts answer different questions:
+Its parts answer different questions:
 
 - `dense/`: executable Whitefoot construction/update probes, helper boundaries,
   and native controls for aggregate versus final-destination storage; source
@@ -19,6 +19,10 @@ Its four parts answer different questions:
   concrete construction/failure/retirement protocols, and a finite comparison of
   whole-result and field-destination construction. A current Whitefoot wide-result
   probe distinguishes these proposed mechanisms from implemented capability.
+- `costs/`: same-algorithm native hash lookup layout and extent-validation
+  controls, with a matched-query Rust standard-map comparator. It tests whether
+  a retained runtime check is material under its stated workload and boundary;
+  it is not a checked Whitefoot map implementation.
 
 These small programs test specific capabilities and costs. They are not a
 representative corpus of real applications and supply no workload-frequency data.

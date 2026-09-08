@@ -13,7 +13,9 @@ check: compiler
 	$(MAKE) -C foundation check
 	$(MAKE) -C lifecycle check WHITEFOOTC="$(WHITEFOOTC)"
 	$(MAKE) -C dense check WHITEFOOTC="$(WHITEFOOTC)"
+	$(MAKE) -C costs check
 
 measure: check
 	$(MAKE) -C foundation measure
 	$(MAKE) -C dense measure WHITEFOOTC="$(WHITEFOOTC)"
+	$(MAKE) -C costs measure

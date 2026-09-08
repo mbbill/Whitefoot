@@ -326,6 +326,28 @@
   [Construction boundary and limits](../../../research/investigations/containers-and-resources/FOUNDATION.md#construction-without-a-public-hole-in-t),
   [Executable controls](../../../research/experiments/container-representation/foundation/RESULTS.md). (sourced)
 
+- 2026-09-08 scope correction: the preceding pool-driven nominal-invariant
+  proposal did not establish the next container-wide foundation. Its fixed
+  backing, failure cleanup and full-owner conversion contract was a controlled
+  selection workload. Common maps, ordered structures, compact byte layouts and
+  system lifetime contracts require separate expression and cost evidence.
+  [Reopened comparison](../../../research/investigations/containers-and-resources/FOUNDATION.md). (sourced)
+- 2026-09-08 owner clarification: performance has priority over breadth, while
+  common containers and important kernel/database/cache-server structures test
+  the useful representation ceiling. A lower-level API has no independent
+  preference. Intended runtime validation can be acceptable, particularly off
+  the critical path; compare its actual work instead of requiring static
+  elimination of every check. [Selection ground](../../../research/investigations/containers-and-resources/FOUNDATION.md#ground-and-evidence). (sourced)
+- 2026-09-08 source evidence: the sampled Redis dictionary lookup can migrate
+  topology, so a semantically read-only query need not have a read-only internal
+  effect contract. [Pinned lookup and rehash](../../../research/investigations/containers-and-resources/EXTERNAL-WORKLOADS.md#redis-dictionary-migration-changes-the-lookup-contract). (sourced)
+- 2026-09-08 source evidence: the sampled packed byte pages need codecs and
+  movement without treating their variable-sized logical records as arbitrary
+  typed holes. [Pinned page representation](../../../research/investigations/containers-and-resources/EXTERNAL-WORKLOADS.md#sqlite-packed-pages-validation-and-localized-movement). (sourced)
+- 2026-09-08 source evidence: RCU deletion preserves prior readers' access after
+  logical unlink, so removal of membership alone does not authorize reclamation.
+  [Pinned deletion protocol](../../../research/investigations/containers-and-resources/EXTERNAL-WORKLOADS.md#linux-independent-membership-and-delayed-reclamation). (sourced)
+
 ## Moves
 
 - Selected general place/result-destination support as the first implementation,
