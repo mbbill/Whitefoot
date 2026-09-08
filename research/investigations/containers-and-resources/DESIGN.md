@@ -8242,8 +8242,9 @@ legacy conformance obligations. Active v0.51 still admits `array<T, N>`, `buffer
 and `arena<'r, T>`, so six cases over those forms remain in the corpus alongside the
 successor evidence: the array-length case, the measured-buffer call case, the whole-buffer
 replacement case, the FN-1 arena-origin case, and the two STOR-4 arena cases. The measured
-buffer call remains `xfail` until the adapter verifies the CALL-5 transport repair; its
-expected source verdict remains the OP-4 rejection.
+buffer call remains `xfail`: whole-referent replacement currently stops at the explicit
+`BorrowedBufferDescriptorMutation` capability. Its expected source verdict remains the
+later OP-4 rejection, to be verified when that capability is implemented.
 
 **Three defects the migration found, each recorded rather than papered over.**
 
@@ -8255,15 +8256,15 @@ expected source verdict remains the OP-4 rejection.
    arena spelling, so the case remains the direct conformance obligation. Whether a
    successor-only shape reaches the same refusal remains open.
 
-2. **The [PAR] footprint judgment does not resolve a view argument.** `argument_place`
-   resolves a direct `slice_of` expression and a borrow, and a **bound** view value
-   resolves to nothing, so every overlap pair and every staged loop whose call hands a
-   `MutSlice` on is denied for the unresolved-footprint condition rather than for its own
+2. **At this checkpoint the [PAR] footprint judgment did not resolve a bound view
+   argument.** `argument_place` resolved a direct `slice_of` expression and a borrow, but
+   a **bound** view value resolved to nothing, so an overlap pair or staged loop handing a
+   `MutSlice` on was denied for the unresolved-footprint condition rather than for its own
    reason. It cost `par_layout.wf` both of its eligible folds until the metric table was
    handed on as `&Vector<f64>` — a shared borrow of the run, which resolves — instead of
-   as a view, and it is why four `accept-par3-staged-*` cases now report condition 7 where
-   they reported 3 or 5. The fix is a declaration-to-binding map the footprint resolver
-   does not have; it is a compiler gap and not a rule. **Closed in 6.0x**, by exactly that
+   as a view, and made four `accept-par3-staged-*` cases report condition 7 where
+   they reported 3 or 5. The missing declaration-to-binding map was a compiler gap,
+   not a rule. **Closed in 6.0x**, by exactly that
    map: the four cases report 3, 3, 5 and permitted again.
 
 3. **3.L.5's growth policy is writable except for its contract.** `bs_new` and
@@ -8285,8 +8286,9 @@ half-migrated.
 **Verdicts.** The successor cases are additions. All six restored legacy cases remain
 obligations because their source forms remain in active v0.51; none is deleted by the
 migration. Five retain their expected runnable verdicts. The measured-buffer call case
-retains its expected OP-4 rejection and remains tracked as `xfail` only until the adapter
-verifies the CALL-5 repair, after which it can run without changing that expected verdict.
+retains its expected OP-4 rejection and remains tracked as `xfail` because whole-referent
+replacement reaches the explicit `BorrowedBufferDescriptorMutation` capability stop.
+It becomes runnable only when the ordinary compiler reaches its expected OP-4 rejection.
 The final corpus has 749 rows, 206 added and zero removed from the 543-row base; its
 manifest has one `xfail` and one skip. The earlier pass totals and deletion counts in this
 section described the abandoned removal and are not current corpus measurements.
