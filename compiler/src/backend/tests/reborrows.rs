@@ -201,3 +201,50 @@ command fn main() -> status: own ExitStatus pure {
     assert!(output.stdout.is_empty());
     assert!(output.stderr.is_empty());
 }
+
+/// A borrowed enum binder keeps the representation selected for its declared
+/// source mode. The enum itself is reached through an addressed struct field,
+/// while the legacy buffer payload remains its value descriptor rather than
+/// being passed as an address that its function ABI does not declare.
+#[test]
+fn a_projected_borrow_match_keeps_a_buffer_payloads_value_abi() {
+    let llvm = compile(
+        br#"enum Packet {
+  Data(bytes: buffer<u8>);
+  Empty();
+}
+
+struct Envelope {
+  packet: Packet;
+}
+
+fn inspect(envelope: &Envelope) -> result: own u64 reads(envelope.packet) {
+  match deref(envelope).packet {
+    Data(bytes: payload) => {
+      return len_of(deref(payload));
+    }
+    Empty() => {
+      return 0_u64;
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let bytes = buffer_new(3_u64, 7_u8);
+  let packet = Data(bytes: move bytes);
+  let envelope = Envelope(packet: move packet);
+  region {
+    let observed = inspect(envelope: &envelope);
+    if observed != 3_u64 {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+    );
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}

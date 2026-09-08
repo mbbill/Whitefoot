@@ -7,6 +7,121 @@ use super::super::model::{
 };
 use super::{assert_rule, assert_rule_kind, with_semantics};
 
+/// [TYPE-7, MSR-1] an explicit dereference of an own Box is a measured place,
+/// not the implicit read of a borrow holder. The checked path retains the Box
+/// step so lowering follows the allocation rather than measuring the pointer
+/// slot or a copied run value.
+#[test]
+fn an_owned_box_referent_is_an_admitted_measured_place() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
+  region 'a {
+    let store = arena_frame::<64, 8, 'a>();
+    region {
+      let empty = fixed_vector::<u8, 4>();
+      let one = place_back(vector: move empty, value: 1_u8);
+      match arena_box(store: &uniq store, value: move one) {
+        Err(error: back) => {
+          return exit_status(code: 1_u8);
+        }
+        Ok(value: block) => {
+          let capacity = cap_of(deref(block));
+          let length = len_of(deref(block));
+          return exit_status(code: 0_u8);
+        }
+      }
+    }
+  }
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("an own Box referent is a measure place: {outcome:?}");
+        };
+        let arm = &checked.data.functions[0].body[0];
+        let CheckedStatement::Region { body, .. } = arm else {
+            panic!("outer store region must remain checked");
+        };
+        let CheckedStatement::Region { body, .. } = &body[1] else {
+            panic!("inner borrow region must remain checked");
+        };
+        let CheckedStatement::Match { arms, .. } = &body[2] else {
+            panic!("arena_box result must remain a checked match");
+        };
+        let CheckedStatement::Let {
+            value: CheckedExpression::ContainerMeasure { root, .. },
+            ..
+        } = &arms[1].body[0]
+        else {
+            panic!("capacity must lower as a container measure");
+        };
+        assert!(matches!(
+            root.path.as_slice(),
+            [CheckedPlaceStep::BoxReferent(_)]
+        ));
+    });
+}
+
+#[test]
+fn a_bare_owned_box_still_requires_explicit_dereference_to_measure_its_referent() {
+    assert_rule_kind(
+        br#"command fn main() -> status: own ExitStatus pure {
+  let empty = fixed_vector::<u8, 4>();
+  let block = box_new(move empty);
+  let capacity = cap_of(block);
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Type7,
+        |kind| matches!(kind, SemanticIssueKind::MissingDereference { .. }),
+    );
+}
+
+/// A fact about the old referent must die when the whole Box owner is
+/// replaced. Otherwise its old nonempty length could authorize an element
+/// read from the new empty run.
+#[test]
+fn replacing_an_owned_box_kills_its_referents_old_measure() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
+  region 'a {
+    let store = arena_frame::<128, 8, 'a>();
+    region {
+      let old_empty = fixed_vector::<u8, 1>();
+      let old_run = place_back(vector: move old_empty, value: 7_u8);
+      match arena_box(store: &uniq store, value: move old_run) {
+        Err(error: back) => {
+          return exit_status(code: 1_u8);
+        }
+        Ok(value: block) => {
+          region {
+            let fresh_run = fixed_vector::<u8, 1>();
+            match arena_box(store: &uniq store, value: move fresh_run) {
+              Err(error: back) => {
+                return exit_status(code: 2_u8);
+              }
+              Ok(value: fresh) => {
+                let old_length = len_of(deref(block));
+                let in_old = 0_u64 < old_length;
+                if in_old {
+                  let previous = replace block = move fresh;
+                  let invalid = deref(block)[0_u64];
+                  return exit_status(code: invalid);
+                } else {
+                  return exit_status(code: 3_u8);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Op4, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { .. })
+    });
+}
+
 /// B7c4b moved this module off `array<T, n>` and `array_new`. The [S34] const
 /// run keeps the array place as its storage type — four exact constants over a
 /// run of `n` slots, materialized from the type — so a const's checked type is

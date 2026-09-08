@@ -681,7 +681,8 @@ impl<'check> Survey<'check, '_> {
             CheckedSetTarget::Storage(target) => {
                 let index = target.path.iter().rev().find_map(|step| match step {
                     super::model::CheckedPlaceStep::Subscript(index) => Some(index),
-                    super::model::CheckedPlaceStep::Field(_) => None,
+                    super::model::CheckedPlaceStep::Field(_)
+                    | super::model::CheckedPlaceStep::BoxReferent(_) => None,
                 })?;
                 (target.binding, &index.obligation)
             }
@@ -744,7 +745,8 @@ impl<'check> Survey<'check, '_> {
                 let place = rooted_container_place(self.places, root);
                 let index = root.path.iter().rev().find_map(|step| match step {
                     super::model::CheckedPlaceStep::Subscript(index) => Some(index),
-                    super::model::CheckedPlaceStep::Field(_) => None,
+                    super::model::CheckedPlaceStep::Field(_)
+                    | super::model::CheckedPlaceStep::BoxReferent(_) => None,
                 });
                 if let Some(index) = index
                     && let Some(map) = self.proven_affine_map_at(root.binding, &index.obligation)

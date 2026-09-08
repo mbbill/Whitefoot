@@ -46,17 +46,12 @@ $(BUILD)/growth-costs$(EXE): growth-costs.c $(BUILD)/growth.opt.ll
 check: $(BUILD)/priority-costs$(EXE) $(BUILD)/priority-boundary-costs$(EXE) $(BUILD)/growth-costs$(EXE)
 	rustfmt --edition 2024 --check abi.rs growth-abi.rs
 	@set -eu; \
-	  for source in hashmap ordered priority packed-page growth boxed-migration; do \
+	  for source in hashmap ordered priority packed-page growth boxed-migration ordered-runtime-gap boxed-helper-gap; do \
 	    for mode in default par no-overlap; do \
 	      case "$$mode" in default) flags= ;; par) flags=--par ;; no-overlap) flags=--no-overlap ;; esac; \
 	      "$(WHITEFOOTC)" $$flags "$$source.wf" -o "$(BUILD)/$$source-$$mode$(EXE)"; \
 	      "$(BUILD)/$$source-$$mode$(EXE)"; \
 	    done; \
-	  done
-	@set -eu; \
-	  for mode in default par no-overlap; do \
-	    case "$$mode" in default) flags= ;; par) flags=--par ;; no-overlap) flags=--no-overlap ;; esac; \
-	    "$(WHITEFOOTC)" $$flags ordered-runtime-gap.wf -o "$(BUILD)/ordered-runtime-gap-$$mode$(EXE)"; \
 	  done
 	@set -eu; \
 	  for case_name in rejected-wrapper rejected-shared-option-view; do \
@@ -79,8 +74,8 @@ measure: check
 reproduce-runtime-gap: check
 	$(BUILD)/ordered-runtime-gap-default$(EXE)
 
-reproduce-region-gap: | $(BUILD)
-	$(WHITEFOOTC) boxed-helper-gap.wf -o $(BUILD)/boxed-helper-gap$(EXE)
+reproduce-region-gap: check
+	$(BUILD)/boxed-helper-gap-default$(EXE)
 
 clean:
 	rm -rf $(BUILD)

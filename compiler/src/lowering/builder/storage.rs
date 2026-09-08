@@ -86,6 +86,13 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
                 scrutinee, arms, ..
             } => {
                 collect_expression(scrutinee, bindings);
+                if arms
+                    .iter()
+                    .flat_map(|arm| &arm.binders)
+                    .any(|binder| binder.mode != crate::semantic::CheckedMode::Own)
+                {
+                    collect_borrowed_place_expression(scrutinee, bindings);
+                }
                 for arm in arms {
                     collect_statements(&arm.body, bindings);
                 }
@@ -105,8 +112,42 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
     }
 }
 
+/// Finds the owner whose actual storage a borrowed match must retain.
+/// Ordinary expression collection deliberately does not promote mere reads;
+/// this walk is selected by checked binder mode and only for the place forms
+/// whose address lowering below preserves their source storage.
+fn collect_borrowed_place_expression(
+    expression: &CheckedExpression,
+    bindings: &mut HashSet<BindingId>,
+) {
+    match expression {
+        CheckedExpression::Binding { binding, .. }
+        | CheckedExpression::DerefAddressed { binding, .. }
+        | CheckedExpression::ReborrowAddressed { binding, .. }
+        | CheckedExpression::BorrowBox { binding, .. } => {
+            bindings.insert(*binding);
+        }
+        CheckedExpression::Project { binding, .. } => {
+            bindings.insert(*binding);
+        }
+        CheckedExpression::BorrowAddressed { root, .. }
+        | CheckedExpression::ReadStorage { root, .. } => {
+            bindings.insert(root.binding);
+            collect_place(root, bindings);
+        }
+        CheckedExpression::BoxDeref { value, .. }
+        | CheckedExpression::ProjectValue { value, .. } => {
+            collect_borrowed_place_expression(value, bindings);
+        }
+        _ => {}
+    }
+}
+
 fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<BindingId>) {
     match expression {
+        CheckedExpression::BorrowBox { binding, .. } => {
+            bindings.insert(*binding);
+        }
         CheckedExpression::BorrowAddressed { root, .. }
         | CheckedExpression::ReadStorage { root, .. } => {
             bindings.insert(root.binding);
@@ -163,7 +204,6 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         | CheckedExpression::SliceOf { .. }
         | CheckedExpression::SliceMeasure { .. }
         | CheckedExpression::BorrowBuffer { .. }
-        | CheckedExpression::BorrowBox { .. }
         | CheckedExpression::BorrowSystemResource { .. }
         | CheckedExpression::ReborrowAddressed { .. }
         | CheckedExpression::DerefAddressed { .. }
@@ -222,6 +262,105 @@ impl IrBuilder<'_> {
         Ok(address)
     }
 
+    /// Lowers the address carried by a checked borrowed-place expression.
+    ///
+    /// In particular, dereferencing a Box owner slot follows the stored Box
+    /// pointer to its allocation. It never takes the address of the value
+    /// snapshot which an ordinary read materializes from that allocation.
+    pub(super) fn lower_borrowed_place_address(
+        &mut self,
+        expression: &CheckedExpression,
+    ) -> Result<IrValueId, LoweringFailure> {
+        let checked_ty = expression.ty();
+        let ty = lower_type(self.erasure, checked_ty)?;
+        let address = match expression {
+            CheckedExpression::Binding { binding, .. }
+            | CheckedExpression::DerefAddressed { binding, .. }
+            | CheckedExpression::ReborrowAddressed { binding, .. } => {
+                self.lower_addressed_borrow(*binding, ty)?
+            }
+            CheckedExpression::BorrowAddressed { root, .. } => self.lower_place_address(root)?,
+            CheckedExpression::ReadStorage { root, .. } => self.lower_place_address(root)?,
+            CheckedExpression::BorrowBox {
+                binding, nominal, ..
+            } => self.lower_addressed_borrow(*binding, IrType::Nominal(self.erased(*nominal)))?,
+            CheckedExpression::BoxDeref {
+                nominal,
+                referent,
+                value,
+                ..
+            } => {
+                let owner = self.lower_borrowed_place_address(value)?;
+                let nominal = self.erased(*nominal);
+                let referent = lower_type(self.erasure, *referent)?;
+                self.define(
+                    IrType::Address(
+                        IrAddressed::of(referent).ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                    ),
+                    IrOperation::ProjectAddress {
+                        address: owner,
+                        projection: IrPlaceProjection::BoxReferent { nominal },
+                    },
+                )?
+            }
+            CheckedExpression::ProjectValue {
+                value,
+                nominal,
+                field,
+                ty,
+                ..
+            } => {
+                let owner = self.lower_borrowed_place_address(value)?;
+                let nominal = self.erased(*nominal);
+                let field_ty = lower_type(self.erasure, *ty)?;
+                self.define(
+                    IrType::Address(
+                        IrAddressed::of(field_ty).ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                    ),
+                    IrOperation::ProjectAddress {
+                        address: owner,
+                        projection: IrPlaceProjection::Field {
+                            nominal,
+                            field: *field,
+                        },
+                    },
+                )?
+            }
+            CheckedExpression::Project {
+                binding, fields, ..
+            } => {
+                let root = self
+                    .bindings
+                    .get(binding)
+                    .copied()
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                let path = fields
+                    .iter()
+                    .copied()
+                    .map(crate::semantic::CheckedPlaceStep::Field)
+                    .collect::<Vec<_>>();
+                self.project_address_path(root, &path)?
+            }
+            _ => {
+                let value = self.expression(expression)?;
+                if self.value_type(value)?
+                    != IrType::Address(
+                        IrAddressed::of(ty).ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                    )
+                {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                value
+            }
+        };
+        if self.value_type(address)?
+            != IrType::Address(IrAddressed::of(ty).ok_or(LoweringFailure::InvalidCheckedProgram)?)
+        {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        Ok(address)
+    }
+
     pub(super) fn project_address_path(
         &mut self,
         mut address: IrValueId,
@@ -251,6 +390,17 @@ impl IrBuilder<'_> {
                         },
                         ty,
                     )
+                }
+                crate::semantic::CheckedPlaceStep::BoxReferent(checked_nominal) => {
+                    let nominal = self.erased(*checked_nominal);
+                    if base.ty() != IrType::Nominal(nominal) {
+                        return Err(LoweringFailure::InvalidCheckedProgram);
+                    }
+                    let IrNominalKind::Box { referent, .. } = &self.nominals[nominal.index()].kind
+                    else {
+                        return Err(LoweringFailure::InvalidCheckedProgram);
+                    };
+                    (IrPlaceProjection::BoxReferent { nominal }, *referent)
                 }
                 crate::semantic::CheckedPlaceStep::Subscript(subscript) => {
                     let offset = self.expression(&subscript.offset)?;
@@ -307,8 +457,8 @@ impl IrBuilder<'_> {
 
     /// The referent an address may point at.
     ///
-    /// A borrow addresses directly stored content only; a descriptor or opaque
-    /// handle is already its own borrow and never reaches this path.
+    /// A Box borrow addresses its owner's pointer slot, just as aggregate
+    /// borrows address their owner's inline storage.
     fn addressed_referent(&self, ty: IrType) -> Result<IrAddressed, LoweringFailure> {
         let referent = IrAddressed::of(ty).ok_or(LoweringFailure::InvalidCheckedProgram)?;
         if let IrAddressed::Nominal(nominal) = referent
@@ -317,7 +467,9 @@ impl IrBuilder<'_> {
                     .get(nominal.index())
                     .ok_or(LoweringFailure::InvalidCheckedProgram)?
                     .kind,
-                IrNominalKind::Struct { .. } | IrNominalKind::Enum { .. }
+                IrNominalKind::Struct { .. }
+                    | IrNominalKind::Enum { .. }
+                    | IrNominalKind::Box { .. }
             )
         {
             return Err(LoweringFailure::InvalidCheckedProgram);

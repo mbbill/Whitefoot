@@ -31,8 +31,9 @@ programs. The [compiler guide](../../../compiler/README.md) owns implemented
 capability. [REASSESSMENT.md](REASSESSMENT.md) records the merged owned-place work.
 The [external study](EXTERNAL-WORKLOADS.md) owns pinned source observations, and
 [representation experiments](../../experiments/container-representation/README.md)
-own executable evidence. No source syntax, production compiler or runtime is
-changed by this research.
+own executable evidence. The implementation experiments below now include
+general compiler repairs and a bounded storage-reuse optimization. They introduce
+no new source syntax or runtime interface.
 
 ## Ground and evidence
 
@@ -100,9 +101,10 @@ deletion, overlapping movement and ordinary invalid-input/refusal outcomes.
 An additional boxed-entry component now executes runtime-indexed migration and
 collision probing, with earlier map operations prepared at selected positions.
 It does not establish a general map API or return/resume migration contract;
-the leaf component is not a complete ordered map. A separate valid-source boxed
-tree reproducer exposes descriptor-replacement lowering failure and is explicitly
-deferred executable correctness evidence, not a source-language rejection.
+the leaf component is not a complete ordered map. The boxed-tree replacement
+reproducer now uses a borrowed owner slot and executes in the ordinary native
+gate. It restores the owning-node correctness baseline; it is not a full tree
+implementation.
 
 The binary heap also has a same-algorithm native comparison and an independent
 sorting oracle. It exposes retained complete-run transfers at ordinary helper
@@ -444,6 +446,11 @@ container substrate. The current evidence supports this order:
    retirement. Re-measure
    the same operations after the change; the current ratio is not a promised
    speedup. This is a general lowering experiment, not a heap-specific ABI.
+   The [first bounded result](../../experiments/container-representation/families/RESULTS.md#consumed-input-and-result-destination-reuse)
+   removes the caller's complete-run transfer after a one-result push. Ordered
+   multi-results and callee snapshots still retain copies; the matched heap
+   remains about 2.8 times the C control at 16 rounds. This does not close the
+   general transfer or performance question.
 3. Prototype projected layout for ordinary slot enums against the native owning
    sparse control below. Keep construction, matching, transfer and cleanup on
    general valid-value operations. The target is one backing with compact control
@@ -452,10 +459,11 @@ container substrate. The current evidence supports this order:
    and migration outcomes. The resource-proof route remains a challenger with
    explicit symbolic checking and erasure obligations.
 
-No production code is changed by this research. These steps identify useful
-implementation experiments. The first two address executable compiler defects or
-measured lowering costs; the third tests whether a general layout mechanism can
-retain the native sparse representation advantage with WF authority.
+The first two steps now have bounded production compiler results, recorded in
+the family evidence; their remaining transfer and performance questions stay
+open. No source syntax or runtime interface has changed. The third step remains
+a proposed implementation experiment: it tests whether a general layout
+mechanism can retain the native sparse representation advantage with WF authority.
 
 ### Sparse experiment contract and decision boundary
 

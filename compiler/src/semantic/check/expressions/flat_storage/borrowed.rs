@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::syntax::NodeId;
-use crate::{DeclarationId, SemanticCompilerFailure, UnsupportedSemanticFeature};
+use crate::{BindingId, DeclarationId, SemanticCompilerFailure, UnsupportedSemanticFeature};
 
 use super::super::super::super::model::{
     CheckedBufferRoot, CheckedContainerRoot, CheckedPlaceStep, CheckedSliceRoot, CheckedType,
@@ -21,52 +21,67 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         base_suffixes: &[NodeId],
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<CheckedIndexedPlace, CheckStop> {
-        let (declaration, local, borrow) =
-            self.resolve_dereference_holder(node, pbase, bindings)?;
-        let (fields, ty) = self.resolve_struct_path(base_suffixes, local.ty)?;
+        let inner = self
+            .tree
+            .first_child_with(pbase, crate::Production::Place)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let inner = self.resolve_explicit_place(node, inner, bindings)?;
+        let mut place = self.resolve_explicit_dereference(node, pbase, inner)?;
+        if place.holder_pending {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        }
+        let (binding, mut path) = self.explicit_container_path(&place.expression, node)?;
+        let (suffix_fields, ty) = self.resolve_struct_path(base_suffixes, place.ty)?;
+        path.extend(suffix_fields.iter().copied().map(CheckedPlaceStep::Field));
+        place.resolved.extend_fields(&suffix_fields);
+        let fields = super::field_prefix(&path);
+        let holder = place.borrow.as_ref().map(|_| place.declaration);
         match ty {
             CheckedType::Buffer { element } => {
-                let mut resolved = borrow.place.clone();
-                resolved.extend_fields(&fields);
+                let Some(fields) = fields else {
+                    return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
+                };
                 Ok(CheckedIndexedPlace::Buffer(CheckedBufferPlace {
                     root: CheckedBufferRoot {
-                        binding: local.binding,
+                        binding,
                         fields,
                         element,
                     },
-                    declaration,
+                    declaration: place.declaration,
                     element_type: element.ty(),
-                    holder: Some(declaration),
-                    resolved,
-                    borrow_kind: Some(borrow.kind),
+                    holder,
+                    resolved: place.resolved,
+                    borrow_kind: place.borrow.as_ref().map(|borrow| borrow.kind),
                 }))
             }
             CheckedType::Slice {
                 region,
                 element,
                 strength,
-            } if fields.is_empty() => {
-                self.check_holder_not_suspended(&local, node)?;
-                self.check_loan_access(
-                    bindings,
-                    Some(declaration),
-                    &borrow.place,
-                    AccessKind::Read,
-                    node,
-                )?;
+            } if matches!(fields.as_deref(), Some([])) => {
+                let borrow = place
+                    .borrow
+                    .clone()
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let local = bindings
+                    .get(&place.declaration)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                self.check_holder_not_suspended(local, node)?;
+                self.check_loan_access(bindings, holder, &borrow.place, AccessKind::Read, node)?;
                 let slice = local
                     .slice
+                    .clone()
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 if slice.region != region {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
                 Ok(CheckedIndexedPlace::Slice(CheckedSlicePlace {
                     root: CheckedSliceRoot {
-                        binding: local.binding,
+                        binding,
                         element,
                         strength,
                     },
-                    declaration,
+                    declaration: place.declaration,
                     descriptor: Some(borrow),
                     slice,
                 }))
@@ -82,20 +97,39 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::FixedVector { .. }
             | CheckedType::Vector { .. }
             | CheckedType::Extent { .. } => {
-                let mut resolved = borrow.place.clone();
-                resolved.extend_fields(&fields);
                 Ok(CheckedIndexedPlace::Container(CheckedContainerPlace {
-                    root: CheckedContainerRoot {
-                        binding: local.binding,
-                        path: fields.into_iter().map(CheckedPlaceStep::Field).collect(),
-                        ty,
-                    },
-                    resolved,
+                    root: CheckedContainerRoot { binding, path, ty },
+                    resolved: place.resolved,
                     offsets: CarriedOperands::default(),
-                    holder: Some(declaration),
+                    holder,
                 }))
             }
             _ => self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, node),
+        }
+    }
+
+    fn explicit_container_path(
+        &self,
+        expression: &super::super::super::super::model::CheckedExpression,
+        node: NodeId,
+    ) -> Result<(BindingId, Vec<CheckedPlaceStep>), CheckStop> {
+        use super::super::super::super::model::CheckedExpression;
+
+        match expression {
+            CheckedExpression::Binding { binding, .. }
+            | CheckedExpression::DerefAddressed { binding, .. }
+            | CheckedExpression::ReborrowAddressed { binding, .. } => Ok((*binding, Vec::new())),
+            CheckedExpression::BoxDeref { nominal, value, .. } => {
+                let (binding, mut path) = self.explicit_container_path(value, node)?;
+                path.push(CheckedPlaceStep::BoxReferent(*nominal));
+                Ok((binding, path))
+            }
+            CheckedExpression::ProjectValue { value, field, .. } => {
+                let (binding, mut path) = self.explicit_container_path(value, node)?;
+                path.push(CheckedPlaceStep::Field(*field));
+                Ok((binding, path))
+            }
+            _ => self.unsupported(UnsupportedSemanticFeature::CompositeValues, node),
         }
     }
 }

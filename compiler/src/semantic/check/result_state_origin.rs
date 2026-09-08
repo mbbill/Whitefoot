@@ -529,7 +529,8 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                     .iter()
                     .map(|step| match step {
                         crate::semantic::model::CheckedPlaceStep::Field(field) => Some(*field),
-                        crate::semantic::model::CheckedPlaceStep::Subscript(_) => None,
+                        crate::semantic::model::CheckedPlaceStep::BoxReferent(_)
+                        | crate::semantic::model::CheckedPlaceStep::Subscript(_) => None,
                     })
                     .collect::<Option<Vec<_>>>();
                 fields.map_or(OriginSet::Unknown, |fields| {

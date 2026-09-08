@@ -169,12 +169,7 @@ impl CheckedIndexedPlace {
                 .root
                 .path
                 .iter()
-                .map(|step| match step {
-                    CheckedPlaceStep::Field(field) => PlaceStep::Field(*field),
-                    CheckedPlaceStep::Subscript(subscript) => {
-                        PlaceStep::Subscript(subscript.place_offset)
-                    }
-                })
+                .filter_map(CheckedPlaceStep::place_step)
                 .collect(),
         };
         path.push(PlaceStep::Subscript(offset));
@@ -806,7 +801,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         place
             .resolved
             .path
-            .extend(path.iter().map(CheckedPlaceStep::place_step));
+            .extend(path.iter().filter_map(CheckedPlaceStep::place_step));
         place.root.path.extend(path);
         place.root.ty = ty;
         place.offsets.effects = place.offsets.effects.union(offsets.effects);
@@ -1822,12 +1817,7 @@ view",
                 };
                 let resolved_path = path
                     .iter()
-                    .map(|step| match step {
-                        CheckedPlaceStep::Field(field) => PlaceStep::Field(*field),
-                        CheckedPlaceStep::Subscript(index) => {
-                            PlaceStep::Subscript(index.place_offset)
-                        }
-                    })
+                    .filter_map(CheckedPlaceStep::place_step)
                     .collect();
                 Ok(CheckedIndexedPlace::Container(CheckedContainerPlace {
                     root: CheckedContainerRoot { binding, path, ty },
@@ -1857,7 +1847,7 @@ fn field_prefix(path: &[CheckedPlaceStep]) -> Option<Vec<u32>> {
     path.iter()
         .map(|step| match step {
             CheckedPlaceStep::Field(field) => Some(*field),
-            CheckedPlaceStep::Subscript(_) => None,
+            CheckedPlaceStep::BoxReferent(_) | CheckedPlaceStep::Subscript(_) => None,
         })
         .collect()
 }

@@ -7634,6 +7634,9 @@ impl Analyzer<'_, '_> {
                 CheckedPlaceStep::Field(field) => {
                     projections.push(PlaceProjection::Field(*field));
                 }
+                CheckedPlaceStep::BoxReferent(_) => {
+                    projections.push(PlaceProjection::Deref);
+                }
                 CheckedPlaceStep::Subscript(subscript) => {
                     let Some(measured) = measured_kind(subscript.base_type) else {
                         return false;
@@ -7677,6 +7680,7 @@ impl Analyzer<'_, '_> {
         }
         projections.extend(root.path.iter().map(|step| match step {
             CheckedPlaceStep::Field(field) => PlaceProjection::Field(*field),
+            CheckedPlaceStep::BoxReferent(_) => PlaceProjection::Deref,
             CheckedPlaceStep::Subscript(subscript) => {
                 PlaceProjection::Subscript(subscript.place_offset)
             }

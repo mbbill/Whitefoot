@@ -450,9 +450,9 @@ fn lower_parameter_type(
 
 /// The representation a borrow-mode value carries.
 ///
-/// A borrow of directly stored content is the address of that storage; a
-/// descriptor or opaque handle is already its own borrow and keeps its value
-/// type [OWN-2, SYS-2].
+/// A borrow addresses the owner's storage, including a Box's pointer slot.
+/// Opaque system handles and the legacy buffer/view ABI retain their value
+/// representation [OWN-2, SYS-2].
 fn lower_borrow_mode_type(
     mode: CheckedMode,
     ty: IrType,
@@ -470,7 +470,7 @@ fn lower_borrow_mode_type(
                 .get(nominal.index())
                 .ok_or(LoweringFailure::InvalidCheckedProgram)?
                 .kind,
-            IrNominalKind::Struct { .. } | IrNominalKind::Enum { .. }
+            IrNominalKind::Struct { .. } | IrNominalKind::Enum { .. } | IrNominalKind::Box { .. }
         )
     {
         return Ok(ty);
@@ -1423,11 +1423,24 @@ impl<'program> IrBuilder<'program> {
         outer_give_target: Option<GiveTarget>,
     ) -> Result<(), LoweringFailure> {
         let scrutinee_expression = scrutinee;
-        let scrutinee = self.expression(scrutinee)?;
-        self.note_call_result(scrutinee_expression, scrutinee)?;
-        let one_slot_driver = self.begin_staged_match_drain(scrutinee)?;
+        let borrowed_payloads = arms
+            .iter()
+            .flat_map(|arm| &arm.binders)
+            .any(|binder| binder.mode != CheckedMode::Own);
+        let (scrutinee, borrowed_address, one_slot_driver) = if borrowed_payloads {
+            let address = self.lower_borrowed_place_address(scrutinee_expression)?;
+            self.note_call_result(scrutinee_expression, address)?;
+            let driver = self.begin_staged_match_drain(address)?;
+            (self.load_storage_value(address)?, Some(address), driver)
+        } else {
+            let value = self.expression(scrutinee_expression)?;
+            self.note_call_result(scrutinee_expression, value)?;
+            let driver = self.begin_staged_match_drain(value)?;
+            (value, None, driver)
+        };
         self.lower_match_from_value(
             scrutinee,
+            borrowed_address,
             enum_type,
             arms,
             continues,
@@ -1510,6 +1523,7 @@ impl<'program> IrBuilder<'program> {
     pub(super) fn lower_match_from_value(
         &mut self,
         scrutinee: IrValueId,
+        borrowed_address: Option<IrValueId>,
         enum_type: CheckedEnumType,
         arms: &[CheckedMatchArm],
         continues: bool,
@@ -1560,15 +1574,43 @@ impl<'program> IrBuilder<'program> {
                 let CheckedEnumType::Nominal(nominal) = enum_type else {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 };
-                let value = self.define(
-                    lower_type(self.erasure, binder.ty)?,
-                    IrOperation::ProjectVariant {
-                        aggregate: scrutinee,
-                        nominal: self.erased(nominal),
-                        variant: arm.tag,
-                        field: binder.field,
-                    },
-                )?;
+                let nominal = self.erased(nominal);
+                let binder_ty = lower_type(self.erasure, binder.ty)?;
+                let value = if binder.mode == CheckedMode::Own {
+                    self.define(
+                        binder_ty,
+                        IrOperation::ProjectVariant {
+                            aggregate: scrutinee,
+                            nominal,
+                            variant: arm.tag,
+                            field: binder.field,
+                        },
+                    )?
+                } else {
+                    let address = borrowed_address.ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                    let referent =
+                        IrAddressed::of(binder_ty).ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                    let address = self.define(
+                        IrType::Address(referent),
+                        IrOperation::ProjectAddress {
+                            address,
+                            projection: IrPlaceProjection::EnumVariant {
+                                nominal,
+                                variant: arm.tag,
+                                field: binder.field,
+                            },
+                        },
+                    )?;
+                    let representation =
+                        lower_borrow_mode_type(binder.mode, binder_ty, self.nominals)?;
+                    if representation == IrType::Address(referent) {
+                        address
+                    } else if representation == binder_ty {
+                        self.load_storage_value(address)?
+                    } else {
+                        return Err(LoweringFailure::InvalidCheckedProgram);
+                    }
+                };
                 if self.bindings.insert(binder.binding, value).is_some() {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
@@ -2083,13 +2125,7 @@ impl<'program> IrBuilder<'program> {
             CheckedExpression::BorrowBuffer { root, .. } => self.lower_buffer_borrow(root),
             CheckedExpression::BorrowBox {
                 binding, nominal, ..
-            } => {
-                let value = self.binding_value(*binding)?;
-                if self.value_type(value)? != IrType::Nominal(self.erased(*nominal)) {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                }
-                Ok(value)
-            }
+            } => self.lower_addressed_borrow(*binding, IrType::Nominal(self.erased(*nominal))),
             CheckedExpression::BorrowAddressed { root, .. } => self.lower_place_address(root),
             CheckedExpression::ReborrowAddressed { binding, ty, .. } => {
                 self.lower_addressed_borrow(*binding, lower_type(self.erasure, *ty)?)

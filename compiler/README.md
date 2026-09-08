@@ -338,8 +338,11 @@ one use, independent backing, and a matching dynamic lifetime. Ordinary static
 destinations must be acyclic; repeated staged construction uses the selected
 pipeline's per-slot backing through retirement. This removes the intermediate
 result-to-owner transfer for those cases without input/result aliasing.
-Other cases keep separate storage; general alias-directed placement is not
-implemented.
+An ordinary synchronous call's whole result may also reuse one consumed,
+same-typed aggregate input when the callee snapshots its inputs before writing,
+CFG liveness kills the prior content, and no borrow exposes that backing.
+Ambiguous inputs, ordered multi-results and overlap/completion schedules retain
+separate storage; general alias-directed placement remains incomplete.
 
 Checked cleanup names either a saved value or content at a typed place. Scope
 exit and whole-binding `dispose` project addressed owners without loading a
@@ -357,6 +360,24 @@ retire backing retained by a prepared target. Until descriptor-slot borrowing
 and captured-storage retention are implemented, neither path may emit code.
 Owned replacement and ordinary writes to borrowed element content remain
 supported. This is a compiler capability limit, not a source-language rejection.
+
+Borrowing a `Box` addresses the owner's pointer slot. Replacing through an
+exclusive borrow updates that slot, and ordinary field borrows, returned
+borrows, and child reborrows keep the same address. Explicit dereference chains
+first read the value behind the borrow before reading a box's referent. Owned
+boxes retain their pointer representation; the fix does not add a payload copy.
+Borrowed enum payloads project from the actual scrutinee storage as well.
+An owning Box's run or extent referent supports measures and indexed access
+through the same typed place path. Replacing its owner invalidates referent
+facts. Legacy Buffer roots reached through a Box still stop explicitly at
+`Unsupported(CompositeValues)`, and legacy Array roots have not been generalized
+through Box projections. These are implementation limits, not source rejections
+under TYPE-7 or MSR-1.
+Heap and extent Box cleanup identities remain distinct even when their pointer
+layouts agree. Unbounded store-polymorphic Box helper calls across these release
+classes still expose a typed call-boundary failure (`Backend InvalidIr`); their
+general lowering is unfinished. A shared physical pointer layout is not authority
+to select the wrong release action.
 
 **There are two views now, and the exclusive one writes.** [S35] capitalizes the
 view nominals, so v0.44's `slice<'r, T>` is spelled `Slice<'r, T>` and the

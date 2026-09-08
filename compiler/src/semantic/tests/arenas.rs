@@ -498,3 +498,57 @@ command fn main() -> status: own ExitStatus pure {
         );
     });
 }
+
+/// [S20, PROV-6] region erasure may merge two boxes only when their cleanup
+/// representations agree. Two affine stores both lower as extent-backed
+/// boxes, while an unbounded store's box must keep its general-store release.
+#[test]
+fn box_lowering_aliases_preserve_release_class() {
+    let source =
+        br#"fn first_extent['a: affine](cell: own Box<'a, u64>) -> back: own Box<'a, u64> pure {
+  return move cell;
+}
+
+fn second_extent['b: affine](cell: own Box<'b, u64>) -> back: own Box<'b, u64> pure {
+  return move cell;
+}
+
+fn general['g](cell: own Box<'g, u64>) -> back: own Box<'g, u64> pure {
+  return move cell;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the three box declarations must check: {outcome:?}");
+        };
+        let box_id = |name: &str| {
+            let function = checked
+                .data
+                .functions
+                .iter()
+                .find(|function| function.name == name)
+                .expect("each declaration is one checked function");
+            let crate::semantic::CheckedType::Nominal(id) = function.parameters[0].ty else {
+                panic!("{name} must take a box");
+            };
+            id
+        };
+        let first = box_id("first_extent");
+        let second = box_id("second_extent");
+        let general = box_id("general");
+        assert_eq!(
+            checked.data.nominal_lowering_alias[first.0 as usize],
+            checked.data.nominal_lowering_alias[second.0 as usize],
+            "two extent boxes differing only in region have one representation"
+        );
+        assert_ne!(
+            checked.data.nominal_lowering_alias[first.0 as usize],
+            checked.data.nominal_lowering_alias[general.0 as usize],
+            "extent and general boxes need different cleanup representations"
+        );
+    });
+}

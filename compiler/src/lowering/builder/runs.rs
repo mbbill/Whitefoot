@@ -117,6 +117,12 @@ impl IrBuilder<'_> {
                 CheckedPlaceStep::Field(field) => {
                     self.project_struct_path(value, &[*field], false)?
                 }
+                // Box-referent places are promoted by storage planning and
+                // lowered through their owner slot's address. Reaching this
+                // value-only path would take an address from a copied Box.
+                CheckedPlaceStep::BoxReferent(_) => {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
                 CheckedPlaceStep::Subscript(subscript) => {
                     let offset = self.expression(&subscript.offset)?;
                     self.define(

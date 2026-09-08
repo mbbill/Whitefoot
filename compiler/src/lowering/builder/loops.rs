@@ -670,7 +670,7 @@ impl IrBuilder<'_> {
             StagedTail::Dispatch {
                 enum_type, arms, ..
             } => {
-                self.lower_match_from_value(result, *enum_type, arms, true, None, None)?;
+                self.lower_match_from_value(result, None, *enum_type, arms, true, None, None)?;
             }
             StagedTail::Bound {
                 binding, remainder, ..
@@ -1400,23 +1400,30 @@ fn direct_staged_tail<'body>(
     else {
         return None;
     };
-    let CheckedExpression::SystemCall {
-        call,
-        target_action,
-        ..
-    } = scrutinee
-    else {
-        return None;
-    };
-    if call == cut && target_action.may_suspend() {
-        return Some(StagedTail::Dispatch {
-            scrutinee,
-            enum_type: *enum_type,
-            arms,
-        });
-    }
-    if target_action.may_suspend() {
-        return None;
+    match scrutinee {
+        CheckedExpression::SystemCall {
+            call,
+            target_action,
+            ..
+        } if target_action.may_suspend() => {
+            return (call == cut).then_some(StagedTail::Dispatch {
+                scrutinee,
+                enum_type: *enum_type,
+                arms,
+            });
+        }
+        CheckedExpression::SystemCall { .. } => {}
+        // [BLK-0] rows perform synchronous value/storage operations; unlike
+        // system calls they contribute no suspending action to [FN-1]'s
+        // target summary. Their [GRAM-11] argument atoms contain no calls.
+        // Gate payloads are owned values: a borrowed match would need the
+        // actual scrutinee address, not the value projections used below.
+        CheckedExpression::KernelCall { .. }
+            if arms
+                .iter()
+                .flat_map(|arm| &arm.binders)
+                .all(|binder| binder.mode == CheckedMode::Own) => {}
+        _ => return None,
     }
     // A gate: exactly one arm continues into the cut, and every other arm's
     // last statement leaves the loop, so no submission of this iteration has
@@ -1667,7 +1674,8 @@ fn set_target_uses_any(target: &CheckedSetTarget, bindings: &HashSet<BindingId>)
         CheckedSetTarget::ArrayIndex(target) => expression_uses_any(&target.offset, bindings),
         CheckedSetTarget::BufferIndex(target) => expression_uses_any(&target.offset, bindings),
         CheckedSetTarget::Storage(root) => root.path.iter().any(|step| match step {
-            crate::semantic::CheckedPlaceStep::Field(_) => false,
+            crate::semantic::CheckedPlaceStep::Field(_)
+            | crate::semantic::CheckedPlaceStep::BoxReferent(_) => false,
             crate::semantic::CheckedPlaceStep::Subscript(subscript) => {
                 expression_uses_any(&subscript.offset, bindings)
             }

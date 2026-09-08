@@ -1422,7 +1422,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 for step in &root.path {
                     match step {
                         super::super::model::CheckedPlaceStep::Field(field) => fields.push(*field),
-                        super::super::model::CheckedPlaceStep::Subscript(_) => return Ok(None),
+                        super::super::model::CheckedPlaceStep::BoxReferent(_)
+                        | super::super::model::CheckedPlaceStep::Subscript(_) => return Ok(None),
                     }
                 }
                 let Some(place) = self.postcondition_binding_place(

@@ -2884,6 +2884,198 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
 }
 
 #[test]
+fn staged_box_borrows_keep_each_owner_slot_until_retirement() {
+    let source = br#"fn probe['s](root: &DirectoryRead, permit: own HandlePermit, name: &buffer<u8>, cell: &uniq Box<'s, u64>, incoming: &uniq Box<'s, u64>) -> result: own u64 reads(root, permit, name, cell, incoming), writes(permit, cell, incoming) contract {
+  define named = len_of(deref(name));
+  requires 4_u64 <= named;
+} {
+  let previous = deref(deref(cell));
+  region {
+    match open_file(permit: move permit, root: root, name: name, start: 0_u64, end: 4_u64) {
+      FileOpened(value: handle) => {
+      }
+      FileOpenFailed(error: problem, permit: refused) => {
+      }
+    }
+  }
+  set (deref(cell), deref(incoming)) = move deref(incoming), move deref(cell);
+  return previous;
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(cwd, files, heap), writes(cwd, files, heap), allocates(heap) {
+  let name = buffer_new(4_u64, 97_u8);
+  let total = 0_u64;
+  let updated = 0_u64;
+  let displaced = 0_u64;
+  for @scan (index in 0_u64..4_u64) {
+    let replacement = index +wrap 100_u64;
+    region {
+      match heap_box(store: &uniq heap, value: index) {
+        Err(error: back) => {
+          return exit_status(code: 70_u8);
+        }
+        Ok(value: cell) => {
+          match heap_box(store: &uniq heap, value: replacement) {
+            Err(error: back) => {
+              return exit_status(code: 70_u8);
+            }
+            Ok(value: incoming) => {
+              region {
+                match reserve_handle(factory: &uniq files) {
+                  Ok(value: permit) => {
+                    let reported = probe(root: &cwd, permit: move permit, name: &name, cell: &uniq cell, incoming: &uniq incoming);
+                    set total = total +wrap reported;
+                    set updated = updated +wrap deref(cell);
+                    set displaced = displaced +wrap deref(incoming);
+                  }
+                  Err(error: spent) => {
+                    return exit_status(code: 9_u8);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  if total != 6_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if updated != 406_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if displaced != 6_u64 {
+    return exit_status(code: 3_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let module = emit_with_overlap(source);
+    let main = function_body(&module, "@wf_main");
+    assert!(main.contains("par.staged.offered."));
+    assert!(main.contains("call void @wf__par_publish(ptr "));
+    assert!(main.contains("call void @wf__par_join(ptr "));
+    // Deferred publication holds at least two iterations live before their
+    // actual worker hand-outs. Each borrowed pointer slot must retain its own
+    // owner until retirement; swapping payload values would not test that ABI.
+    run_owned_lane_cases(source, &module, 0, 4, 9, 0, 2);
+}
+
+#[test]
+fn staged_arena_box_borrows_keep_each_owner_slot_and_drain_before_refusal() {
+    let source = r#"fn probe['s](root: &DirectoryRead, permit: own HandlePermit, name: &buffer<u8>, cell: &uniq Box<'s, u64>, incoming: &uniq Box<'s, u64>) -> result: own u64 reads(root, permit, name, cell, incoming), writes(permit, cell, incoming) contract {
+  define named = len_of(deref(name));
+  requires 4_u64 <= named;
+} {
+  let previous = deref(deref(cell));
+  region {
+    match open_file(permit: move permit, root: root, name: name, start: 0_u64, end: 4_u64) {
+      FileOpened(value: handle) => {
+      }
+      FileOpenFailed(error: problem, permit: refused) => {
+      }
+    }
+  }
+  set (deref(cell), deref(incoming)) = move deref(incoming), move deref(cell);
+  return previous;
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+  region 'a {
+    let store = arena_frame::<64, 8, 'a>();
+    let name = buffer_new(4_u64, 97_u8);
+    let total = 0_u64;
+    let updated = 0_u64;
+    let displaced = 0_u64;
+    for @scan (index in 0_u64..4_u64) {
+      let replacement = index +wrap 100_u64;
+      region {
+        match arena_box(store: &uniq store, value: index) {
+          Err(error: back) => {
+            return exit_status(code: 70_u8);
+          }
+          Ok(value: cell) => {
+            match arena_box(store: &uniq store, value: replacement) {
+              Err(error: back) => {
+                return exit_status(code: 70_u8);
+              }
+              Ok(value: incoming) => {
+                region {
+                  match reserve_handle(factory: &uniq files) {
+                    Ok(value: permit) => {
+                      let reported = probe(root: &cwd, permit: move permit, name: &name, cell: &uniq cell, incoming: &uniq incoming);
+                      set total = total +wrap reported;
+                      set updated = updated +wrap deref(cell);
+                      set displaced = displaced +wrap deref(incoming);
+                    }
+                    Err(error: spent) => {
+                      return exit_status(code: 9_u8);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    if total != 6_u64 {
+      return exit_status(code: 1_u8);
+    }
+    if updated != 406_u64 {
+      return exit_status(code: 2_u8);
+    }
+    if displaced != 6_u64 {
+      return exit_status(code: 3_u8);
+    }
+    return exit_status(code: 0_u8);
+  }
+}
+"#;
+    // Each pair takes sixteen bytes. Forty-eight bytes refuses the first
+    // cell of iteration three; forty refuses the second cell of iteration
+    // two. Both failures must drain the preceding borrowed owners before
+    // returning out of the region that holds their arena backing.
+    for (bytes, expected_status, attempts) in [(64, 0, 4), (48, 70, 3), (40, 70, 2)] {
+        let source = source.replace(
+            "arena_frame::<64, 8, 'a>()",
+            &format!("arena_frame::<{bytes}, 8, 'a>()"),
+        );
+        let source = source.as_bytes();
+        let module = emit_with_overlap(source);
+        let main = function_body(&module, "@wf_main");
+        assert!(
+            main.contains("par.staged.offered."),
+            "{:?}",
+            super::compile_permission_ledger(source)
+        );
+        assert!(main.contains("call void @wf__par_publish(ptr "));
+        assert!(main.contains("call void @wf__par_join(ptr "));
+        assert!(main.contains("\npar.staged.inline."));
+        assert!(main.contains("\npar.staged.refused."));
+
+        let directory = test_directory();
+        let sequential = super::emit_lowered(source, crate::OverlapLowering::Off);
+        assert!(!function_body(&sequential, "@wf_main").contains("par.staged.offered."));
+        let output = Command::new(build_executable(&sequential, &directory))
+            .current_dir(&directory)
+            .env("WF_WORKERS", "1")
+            .output()
+            .expect("run arena Box exchange without overlap lowering");
+        assert_eq!(output.status.code(), Some(expected_status), "{output:?}");
+        assert!(output.stdout.is_empty() && output.stderr.is_empty());
+        std::fs::remove_dir_all(&directory).expect("remove the sequential arena artifacts");
+
+        // The helper also checks default completion lowering. Its observed
+        // overlap build forces refusal, real grants, and publication delayed
+        // until join with at least two iterations live. Only name allocates
+        // on the heap: every successful Box cell shares the enclosing arena.
+        run_owned_lane_cases(source, &module, expected_status, attempts, 1, 0, 2);
+    }
+}
+
+#[test]
 fn owned_match_headers_and_staged_results_observe_completed_scratch() {
     let source = std::str::from_utf8(STAGED_OWNED_RESULTS_AND_CLEANUP)
         .expect("the fixture is UTF-8")

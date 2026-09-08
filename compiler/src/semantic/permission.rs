@@ -2205,6 +2205,7 @@ pub(super) fn rooted_container_place(
         super::model::CheckedPlaceStep::Field(field) => {
             super::places::PlaceProjection::Field(*field)
         }
+        super::model::CheckedPlaceStep::BoxReferent(_) => super::places::PlaceProjection::Deref,
         super::model::CheckedPlaceStep::Subscript(subscript) => {
             super::places::PlaceProjection::Subscript(subscript.place_offset)
         }

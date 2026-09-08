@@ -1,9 +1,8 @@
 # Container lifecycle source probes
 
-The current compiler executes six complete positive traces and rejects nine
-nearby programs at the recorded boundaries. Eight rejections follow the
-specified source/proof rules; the boxed-capacity probe still exposes a compiler
-defect incorrectly reported as a source error. No explicit
+The current compiler executes seven complete positive traces and rejects eight
+nearby programs at the recorded boundaries. All eight rejections follow the
+specified source/proof rules. No explicit
 unsupported-capability diagnostic, compiler crash, or incorrect accept was
 observed. The important distinction is between missing language relationships
 and compiler bugs: the dynamic capacity, result-field, and empty-linear-owner
@@ -16,6 +15,10 @@ not timing measurements or evidence for a different target. The nested-region
 repair in `20247776` makes the unchanged `pool_boxed_helper` source compile and
 execute; its gate now requires native success instead of preserving the former
 compiler-rejection defect as an expected failure.
+The owned-Box place repair likewise makes the unchanged `pool_boxed_capacity`
+source compile and execute. Its expected outcome now requires native success.
+The content-measure expectation follows TYPE-7 and MSR-1; the helper's region
+substitution follows FN-2 and FORM-8. No language rule was relaxed.
 
 ## Reproduction and ownership
 
@@ -50,7 +53,7 @@ fully supersedes its design question; do not keep redundant parallel suites.
 | `pool_field_result` | `FN-9`, `InvalidPostconditionSelector` | The true identity helper cannot state a measure of its returned struct's field. |
 | `pool_false_conservation` | `FN-9`, `Refuted` | A helper that removes one block cannot claim the free count is unchanged. This is an invalid contract, not a missing capability. |
 | `pool_static_length` (generated) | `INV-1`, invariant `initialized` unproved | Changing the static-capacity invariant to initialized length 4 fails after the same checkout. Type-level capacity does not imply initialized length. |
-| `pool_boxed_capacity` | `TYPE-7`, `deref requires a borrow holder` | Direct measurement of the checked-out box's run is incorrectly routed to the borrow-only dereference checker. |
+| `pool_boxed_capacity` | Compiles, links, exits 0 | Measures and indexes the checked-out box's actual run, mutates four elements, returns the box, and checks their values after checkout again. |
 | `pool_boxed_helper` | Compiles, links, exits 0 | A user helper infers its input run's nested boxed-element store region, returns the same box, and preserves the free-count contract. |
 | `linear_failure_cleanup` | Compiles, links, exits 0 | Two actual `linear Ticket` values are consumed on success; the one acquired before a later error is consumed on failure. Both executions run. |
 | `linear_pop_empty` | `PROV-6`, `LinearValueNotConsumed`, binding `drained` | Both linear elements have been popped and consumed, and length zero proved; the empty run still cannot leave scope. |
@@ -134,18 +137,21 @@ The alternative `Box<'s, FixedVector<u8, 4>>` probes separate two concerns:
   now recognizes that position. The unchanged source executes its helper take
   and return; no explicit region argument or extra allocation is added.
 - `pool_boxed_capacity` uses direct kernel checkout/return to isolate storage
-  access from that helper defect. `cap_of(deref(block))` then reports that
-  `deref` requires a borrow holder. TYPE-7 admits owned cell content access by
+  access from that helper defect. TYPE-7 admits owned cell content access by
   `deref`, and MSR-1 admits measures of the resulting measured place. The
-  borrow-only resolver in
-  [borrows.rs](../../../../compiler/src/semantic/check/borrows.rs) is therefore
-  the wrong path for this source, not a reason to reject boxed fixed storage
-  as a language design. Later operations in this candidate remain untested.
+  [checked storage path](../../../../compiler/src/semantic/check/expressions/flat_storage/borrowed.rs)
+  now retains that Box dereference through measurement, indexing and mutation.
+  After modifying bytes 1, 2, 3, 4 to 2, 3, 4, 5, the original program returns
+  the box, checks it out again, and verifies their sum is 14. It passed native
+  execution in default, `--par` and `--no-overlap` modes; this suite maintains
+  the last mode. A compiler regression separately rejects an indexed read which
+  tries to reuse an old length after replacing the whole Box with an empty run.
 
-The successful helper probe retains its single acquired cell through checkout
-and return. Completing the remaining content-measure probe must preserve that
-identity as well. Neither trace measures layout or movement cost; those require
-a separate matched experiment.
+Both sources retain their single acquired cell through checkout and return;
+neither adds an allocation at transfer. The run/extent path does not yet extend
+legacy Buffer/Array root representations through a Box; those remaining stops
+are compiler capability limits. Neither trace measures layout or movement cost;
+those require a separate matched experiment.
 
 ### Empty ownership is distinct from element ownership
 

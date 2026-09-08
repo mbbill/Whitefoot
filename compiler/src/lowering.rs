@@ -1082,6 +1082,14 @@ impl IrBoundary {
 pub enum IrPlaceProjection {
     /// A field of directly stored nominal content.
     Field { nominal: IrNominalId, field: u32 },
+    /// The allocation payload reached through a stored Box owner slot.
+    BoxReferent { nominal: IrNominalId },
+    /// One payload field of an enum in directly addressed storage.
+    EnumVariant {
+        nominal: IrNominalId,
+        variant: u32,
+        field: u32,
+    },
     /// An initialized run element selected by its checked logical offset.
     RunElement {
         offset: IrValueId,
@@ -2084,6 +2092,16 @@ pub struct IrSourceSignature {
     result: IrSourceMode,
 }
 
+impl IrSourceSignature {
+    pub(crate) fn parameters(&self) -> &[IrSourceMode] {
+        &self.parameters
+    }
+
+    pub(crate) const fn result(&self) -> IrSourceMode {
+        self.result
+    }
+}
+
 /// One source argument's checked use, distinct from its formal passing mode.
 ///
 /// Consuming a unique holder transfers that holder, not ownership of its
@@ -2123,6 +2141,16 @@ pub struct IrSourceCall {
     /// A direct borrow result's checked candidate. Absence says nothing about
     /// loans carried inside owned view results or other aggregates.
     returned_borrow_argument: Option<usize>,
+}
+
+impl IrSourceCall {
+    pub(crate) const fn result(&self) -> IrValueId {
+        self.result
+    }
+
+    pub(crate) fn arguments(&self) -> &[IrSourceArgument] {
+        &self.arguments
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2170,6 +2198,14 @@ impl IrFunction {
 
     pub fn blocks(&self) -> &[IrBlock] {
         &self.blocks
+    }
+
+    pub(crate) const fn source_signature(&self) -> Option<&IrSourceSignature> {
+        self.source_signature.as_ref()
+    }
+
+    pub(crate) fn source_calls(&self) -> &[IrSourceCall] {
+        &self.source_calls
     }
 
     /// The permission-derived overlap groups of this function's body, in

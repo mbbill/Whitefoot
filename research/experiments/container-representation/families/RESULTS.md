@@ -5,7 +5,7 @@ operations. They are capability examples, not prevalence evidence or complete
 container implementations. `make check` compiles and runs each supported
 Whitefoot source in the default, `--par`, and `--no-overlap` modes, checks the
 two intentional source rejections, and checks the matched priority-queue and
-byte-growth C controls. The compiler implementation is revision
+byte-growth C controls. The original measurements used compiler revision
 `3cd7a8ebbc459b52989806442eff73538f131b96`; the added sources and retained samples
 are in this directory. Checks and measurements were run on 2026-09-08, arm64
 macOS 26.6.2, using Apple Clang 21.0.0 and Rust 1.98.1.
@@ -109,38 +109,42 @@ result of a child reborrow call and using it in a second statement. It is
 rejected with `InvalidChildReborrow`. The case is a near-neighbor source-shape
 boundary, not a map-wide rejection.
 
-`boxed-helper-gap.wf` is a deferred compile reproducer for nested result-region
-substitution. `compose` passes two boxes with the same declared store region to
-`build`, then passes its returned run and a value made from its returned box to
-`replace_one`. FN-2 substitutes the same region through those nested input/output
-positions. The current first diagnostic is TYPE-5 at the latter run argument,
-with identical printed expected/found types. The explicit shared region, not
-the diagnostic's spelling alone, identifies this as a compiler discrepancy.
-Later effect checking, body admission, lowering and runtime remain unvalidated
-because that first error stops compilation. `make reproduce-region-gap` currently
-fails at that error. This new deferred source is not a normative rejection or a
-maintained passing runtime test; no previous check is removed. After repair,
-validate the complete body and replace it with ordinary helper-composition
-coverage. The single-function migration witness avoids this particular boundary.
+`boxed-helper-gap.wf` now executes nested helper composition in the ordinary
+three-mode native loop. `compose` passes two boxes with the same declared store
+region to `build`, then passes its returned run and an entry made from its returned
+box to `replace_one`. FN-2 substitution now reaches the nominal element under
+`FixedVector<Option<Entry<'s>>, 1>` in call arguments, results and contract goals.
+The former TYPE-5 discrepancy with identically printed types is repaired through
+that structural substitution. FORM-8 therefore infers regions which occur in such
+nested input positions; the four migration-helper calls no longer explicitly
+write that inferable argument.
 
-`ordered-runtime-gap.wf` is valid source and compiles in all three modes, but
-its native binary currently exits nonzero after replacement lowering leaves a
-stale owning descriptor. The ordinary gate is compile-only for this file.
-`make reproduce-runtime-gap` runs it and therefore fails until the backend
-correctness defect is repaired; an abort is never counted as a passing result.
-The source expectation remains exit zero after successful allocations and exit
-70 on allocation refusal. This newly retained deferred reproducer replaces no
-maintained runtime test. Once lowering is repaired, move it into the ordinary
-native-success loop and remove its compile-only exception.
+The command now allocates payloads 11 and 22 and actually calls these helpers.
+The public `compose` postcondition supplies the length fact required to extract
+the updated entry. Execution checks the returned old payload is 11 and the new
+payload is 22, then ordinary cleanup releases the owners. It is not a generic
+map, and this family runner does not inject allocator refusal or count releases.
+`make reproduce-region-gap` invokes the same maintained runtime witness.
 
-The reduced failure is `replace deref(tree) = move replacement` with
-`tree: &uniq Box<RuntimeGapNode>`. Emitted LLVM passes the old box's pointee to
-the callee. On the successful replacement path it obtains the new pointer, drops
-and frees the old pointee, but does not store the replacement into a caller-owned
-descriptor slot. The caller still cleans up its old pointer afterward. Independent
-runs in all three modes observed nonzero native failure. Borrowed enum inspection
-does not itself drop its temporary image. The failure belongs to box replacement
-lowering/ABI, not ordered-map semantics; no particular signal is a required outcome.
+`ordered-runtime-gap.wf` now belongs to the ordinary native-success loop in all
+three modes. Its source expectation is unchanged: exit zero after successful
+allocations and exit 70 on allocation refusal. The former compile-only exception
+is removed; `make reproduce-runtime-gap` remains a direct invocation of the same
+runtime witness. The family runner does not inject allocation refusal here.
+
+The original defect was `replace deref(tree) = move replacement` through
+`tree: &uniq Box<RuntimeGapNode>`. The callee received the box's object pointer,
+freed the displaced object, and never updated the caller's owner. Box borrows
+now address the owner's pointer slot through the general typed-place path.
+Explicit nested dereferences also read that slot before reading the object.
+Compiler execution tests separately check replacement through root and field
+borrows, returned borrows and reborrows, with retained helper boundaries and an
+allocation observer requiring each cell to be released once. A borrowed match
+inside an owning tree cell also projects two Box payloads from the actual enum
+storage. Replacing the second payload of the second variant preserves the first
+payload, and the observer checks PROV-6's field-order cleanup after releasing the
+displaced child. A separate borrowed Buffer payload case retains that type's
+existing value ABI. No new tree operation or source-language rule is introduced.
 
 `make measure` writes new priority samples under `.build/`. The retained CSVs
 beside the sources are reviewed observations, not regenerated by `make check`.
@@ -190,15 +194,15 @@ not confidence intervals:
 | Retained C helper calls | 1 | 1,068.85 (953.13–1,280.52) | 392.58 (299.07–473.88) |
 | Retained C helper calls | 16 | 13,196.04 (13,008.79–13,297.12) | 4,328.61 (4,304.69–4,410.40) |
 
-The ordinary run shows roughly three times the native elapsed time at this size.
-Optimized Whitefoot IR retains push/pop calls and nine 16-byte load/store pairs
+The original ordinary run shows roughly three times the native elapsed time at
+this size. Its optimized Whitefoot IR retains push/pop calls and nine 16-byte load/store pairs
 after each call to move the returned 144-byte run back to its owner; callee
 argument/result transfers remain as well. The native control accesses the heap
 through its existing destination. The retained-call control shows that ordinary
 helper calls need not force those complete-run copies. It does not isolate all
 ABI, addressing, instruction selection and inlining effects, so the timing gap
 cannot be attributed exclusively to copies. No new layout or source primitive
-was needed to admit this program, and no production lowering is changed here.
+was needed to admit this program.
 
 Retained observations are `priority-measurements.csv` and
 `priority-boundary-measurements.csv`. Reproduce checks and generate fresh samples:
@@ -214,6 +218,43 @@ Inspect optimized Whitefoot storage from this directory:
 clang -O2 -Wno-override-module -x ir -S -emit-llvm .build/priority.ll -o .build/priority.opt.ll
 rg -n 'define.*wf_priority_trace|call.*wf_(push|pop)|load <2 x i64>' .build/priority.opt.ll
 ```
+
+### Consumed input and result destination reuse
+
+The storage planner now considers an ordinary call's whole result for reuse of
+one consumed, same-typed aggregate binding. This requires checked source-call
+ownership, one eligible input, dead prior content under complete CFG liveness,
+and no exposed backing. The current callee ABI snapshots its aggregate inputs
+before any body or result write. Source `own` by itself therefore does not grant
+aliasing permission; the lowering order and liveness jointly justify this case.
+May-suspend callees, overlap/completion schedules, ambiguous inputs and ordered
+multi-results retain separate storage.
+
+In the optimized heap trace, `wf_push` now receives the same address for input
+and result, removing the caller's 144-byte transfer after each push. `wf_pop`
+returns both the new heap and removed element, so its result remains separate
+and the caller transfer remains. Callee entry and result snapshots remain too.
+This is a bounded reduction of an observed compiler cost, not completion of
+aggregate transfer optimization or a new in-place source API.
+
+Both matched controls again pass the independent 320-input oracle. The two
+`priority-coalesced*-measurements.csv` files retain another 56 samples under the
+same harness, compiler flags and host conditions. A subsequent compiler rebuild
+including the Box borrow repair produced identical optimized heap instructions
+(only the diagnostic ModuleID path differed). Median nanoseconds per trace:
+
+| Control run | Rounds | Whitefoot median (range) | C median (range) |
+| --- | ---: | ---: | ---: |
+| Ordinary helpers | 1 | 767.09 (757.08–819.09) | 267.33 (260.99–283.20) |
+| Ordinary helpers | 16 | 12,442.14 (12,233.15–12,769.53) | 4,426.27 (4,334.47–13,920.17) |
+| Retained C helper calls | 1 | 798.10 (781.25–811.77) | 278.08 (269.29–290.28) |
+| Retained C helper calls | 16 | 12,180.66 (12,165.77–12,330.57) | 4,283.45 (4,273.44–4,423.34) |
+
+The 16-round Whitefoot medians are still about 2.8 times the matched C medians.
+The ordinary C run contains a large outlier, and neither old nor new sampling
+used exclusive host isolation. These timings cannot establish a small causal
+speedup over the earlier run. The removed caller copy is directly visible in IR;
+the substantial remaining performance gap stays open.
 
 ## Explicit byte-run growth and refusal
 

@@ -318,6 +318,49 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 }
                 self.aggregate_field_pointer(base.ty(), &self.value_name(address), *field as usize)?
             }
+            crate::IrPlaceProjection::BoxReferent { nominal } => {
+                let IrNominalKind::Box {
+                    referent: boxed, ..
+                } = self.nominal(*nominal)?.kind()
+                else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                if base.ty() != IrType::Nominal(*nominal) || *boxed != referent.ty() {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                let pointer = self.next_temporary()?;
+                writeln!(
+                    self.output,
+                    "  %{pointer} = load ptr, ptr {}",
+                    self.value_name(address)
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+                format!("%{pointer}")
+            }
+            crate::IrPlaceProjection::EnumVariant {
+                nominal,
+                variant,
+                field,
+            } => {
+                let IrNominalKind::Enum { variants } = self.nominal(*nominal)?.kind() else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                let selected = variants
+                    .iter()
+                    .find(|candidate| candidate.tag() == *variant)
+                    .ok_or(BackendFailure::InvalidIr)?;
+                if base.ty() != IrType::Nominal(*nominal)
+                    || selected
+                        .fields()
+                        .get(*field as usize)
+                        .map(|field| field.ty())
+                        != Some(referent.ty())
+                {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                let index = variant_field_base(variants, *variant)? + *field as usize;
+                self.aggregate_field_pointer(base.ty(), &self.value_name(address), index)?
+            }
             crate::IrPlaceProjection::RunElement {
                 offset,
                 target_domain,

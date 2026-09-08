@@ -12,14 +12,14 @@ use super::super::borrows::{AccessKind, BorrowInfo, ResolvedPlace};
 use super::super::{CheckStop, Checker, EffectSet, LocalBinding, PlaceAccess, TypedExpression};
 use super::{PlaceUseContext, PlaceUseOptions};
 
-struct ExplicitPlace {
-    declaration: DeclarationId,
-    ty: CheckedType,
-    mode: CheckedMode,
-    borrow: Option<BorrowInfo>,
-    holder_pending: bool,
-    expression: CheckedExpression,
-    resolved: ResolvedPlace,
+pub(super) struct ExplicitPlace {
+    pub(super) declaration: DeclarationId,
+    pub(super) ty: CheckedType,
+    pub(super) mode: CheckedMode,
+    pub(super) borrow: Option<BorrowInfo>,
+    pub(super) holder_pending: bool,
+    pub(super) expression: CheckedExpression,
+    pub(super) resolved: ResolvedPlace,
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
@@ -272,7 +272,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    fn resolve_explicit_place(
+    pub(super) fn resolve_explicit_place(
         &self,
         carrier: NodeId,
         node: NodeId,
@@ -287,51 +287,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .tree
                 .first_child_with(pbase, Production::Place)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            let mut inner = self.resolve_explicit_place(carrier, inner, bindings)?;
-            if inner.holder_pending {
-                inner.holder_pending = false;
-                inner
-            } else {
-                let CheckedType::Nominal(nominal) = inner.ty else {
-                    return self.issue_node(
-                        SemanticRule::Type7,
-                        pbase,
-                        SemanticIssueKind::MissingDereference {
-                            mechanical_fix: "deref requires a borrow, box, or arena place",
-                        },
-                    );
-                };
-                match self.nominal(nominal)?.kind {
-                    CheckedNominalKind::Box { referent, .. } => {
-                        inner.expression = CheckedExpression::BoxDeref {
-                            carrier: self.tree.path(carrier)?.clone(),
-                            nominal,
-                            referent,
-                            value: Box::new(inner.expression),
-                        };
-                        inner.ty = referent;
-                    }
-                    CheckedNominalKind::Arena { content, .. } => {
-                        inner.expression = CheckedExpression::ArenaDeref {
-                            carrier: self.tree.path(carrier)?.clone(),
-                            nominal,
-                            content,
-                            value: Box::new(inner.expression),
-                        };
-                        inner.ty = content;
-                    }
-                    _ => {
-                        return self.issue_node(
-                            SemanticRule::Type7,
-                            pbase,
-                            SemanticIssueKind::MissingDereference {
-                                mechanical_fix: "deref requires a borrow, box, or arena place",
-                            },
-                        );
-                    }
-                }
-                inner
-            }
+            let inner = self.resolve_explicit_place(carrier, inner, bindings)?;
+            self.resolve_explicit_dereference(carrier, pbase, inner)?
         } else {
             if !self.tree.children(pbase)?.is_empty() {
                 return self.unsupported(UnsupportedSemanticFeature::CompositeValues, pbase);
@@ -447,5 +404,70 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             place.resolved.extend_fields(&[field_index]);
         }
         Ok(place)
+    }
+
+    pub(super) fn resolve_explicit_dereference(
+        &self,
+        carrier: NodeId,
+        pbase: NodeId,
+        mut inner: ExplicitPlace,
+    ) -> Result<ExplicitPlace, CheckStop> {
+        if inner.holder_pending {
+            if self.borrow_addresses_storage(inner.ty)? {
+                let CheckedExpression::Binding { binding, .. } = inner.expression else {
+                    return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+                };
+                // Explicit dereference chains must first read the value
+                // stored behind the borrow. A later Box dereference reads
+                // that value's referent, not the owner's pointer slot.
+                inner.expression = CheckedExpression::DerefAddressed {
+                    carrier: self.tree.path(carrier)?.clone(),
+                    binding,
+                    ty: inner.ty,
+                };
+            }
+            inner.holder_pending = false;
+            return Ok(inner);
+        }
+
+        let CheckedType::Nominal(nominal) = inner.ty else {
+            return self.issue_node(
+                SemanticRule::Type7,
+                pbase,
+                SemanticIssueKind::MissingDereference {
+                    mechanical_fix: "deref requires a borrow, box, or arena place",
+                },
+            );
+        };
+        match self.nominal(nominal)?.kind {
+            CheckedNominalKind::Box { referent, .. } => {
+                inner.expression = CheckedExpression::BoxDeref {
+                    carrier: self.tree.path(carrier)?.clone(),
+                    nominal,
+                    referent,
+                    value: Box::new(inner.expression),
+                };
+                inner.ty = referent;
+            }
+            CheckedNominalKind::Arena { content, .. } => {
+                inner.expression = CheckedExpression::ArenaDeref {
+                    carrier: self.tree.path(carrier)?.clone(),
+                    nominal,
+                    content,
+                    value: Box::new(inner.expression),
+                };
+                inner.ty = content;
+            }
+            _ => {
+                return self.issue_node(
+                    SemanticRule::Type7,
+                    pbase,
+                    SemanticIssueKind::MissingDereference {
+                        mechanical_fix: "deref requires a borrow, box, or arena place",
+                    },
+                );
+            }
+        }
+        Ok(inner)
     }
 }

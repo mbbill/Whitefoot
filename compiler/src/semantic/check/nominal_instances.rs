@@ -1377,9 +1377,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// [STOR-2] — and the same lowered content: a region names a store for
     /// the proof, so two such nominals are two checked types and one IR
     /// nominal. The content comparison is what keeps a difference the run
-    /// time *can* see out of the relation — a run's release class is read off
-    /// its region's own declaration [PROV-6], so two instances whose classes
-    /// differ are two representations and are not related here.
+    /// time *can* see out of the relation — a run or box's release class is
+    /// read off its region's own declaration [PROV-6], so two instances whose
+    /// classes differ are two representations and are not related here.
     ///
     /// The relation reaches beyond a source instance because a call's region
     /// substitution does: a callee returning `own Option<BlockPool<'s>>`
@@ -1434,15 +1434,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<bool, CheckStop> {
         // [STOR-2] a box and an arena carry their whole content in the kind
         // rather than in fields, so the content comparison below has nothing
-        // to read for them.
+        // to read for them. A box also carries its release action [PROV-6];
+        // erasing that distinction would let an extent-backed box inherit a
+        // general store's `free` when the first equivalent nominal is lowered.
         match (&self.nominal(left)?.kind, &self.nominal(right)?.kind) {
             (
-                CheckedNominalKind::Box { referent: left, .. },
                 CheckedNominalKind::Box {
-                    referent: right, ..
+                    referent: left,
+                    release: left_release,
+                    ..
                 },
-            )
-            | (
+                CheckedNominalKind::Box {
+                    referent: right,
+                    release: right_release,
+                    ..
+                },
+            ) => {
+                return Ok(left_release == right_release
+                    && self.types_are_region_blind_equal(
+                        *left,
+                        *right,
+                        depth.saturating_add(1),
+                        assumed,
+                    )?);
+            }
+            (
                 CheckedNominalKind::Arena { content: left, .. },
                 CheckedNominalKind::Arena { content: right, .. },
             ) => {

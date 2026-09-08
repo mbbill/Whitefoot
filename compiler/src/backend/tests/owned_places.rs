@@ -33,6 +33,291 @@ fn assert_success(module: &str) {
 }
 
 #[test]
+fn general_and_extent_boxes_keep_distinct_cleanup_actions() {
+    let source = br#"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    match heap_box(store: &uniq heap, value: 11_u64) {
+      Err(error: back) => {
+        return exit_status(code: 70_u8);
+      }
+      Ok(value: general) => {
+        region 'a {
+          let store = arena_frame::<8, 8, 'a>();
+          region {
+            match arena_box(store: &uniq store, value: 22_u64) {
+              Err(error: back) => {
+                return exit_status(code: 70_u8);
+              }
+              Ok(value: extent) => {
+                if deref(general) != 11_u64 {
+                  return exit_status(code: 1_u8);
+                }
+                if deref(extent) != 22_u64 {
+                  return exit_status(code: 2_u8);
+                }
+                return exit_status(code: 0_u8);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        let observed = retain_calls(&module)
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        let host = allocation_observer(1, 0);
+        let output = compile_link_and_run(&observed, Some(&host), &[]);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        // The general cell is the sole host allocation. The extent cell is
+        // reclaimed by its enclosing arena reset and must never reach free.
+        assert_eq!(output.stdout, b"A1;F1;");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+}
+
+#[test]
+fn borrowed_box_replacement_updates_the_owner_and_releases_each_cell_once() {
+    let source = br#"fn exchange['s](slot: &uniq Box<'s, u64>, incoming: own Box<'s, u64>) -> previous: own Box<'s, u64> reads(slot), writes(slot) {
+  let displaced = replace deref(slot) = move incoming;
+  return move displaced;
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    match heap_box(store: &uniq heap, value: 11_u64) {
+      Err(error: back) => {
+        return exit_status(code: 70_u8);
+      }
+      Ok(value: cell) => {
+        match heap_box(store: &uniq heap, value: 22_u64) {
+          Err(error: back) => {
+            return exit_status(code: 70_u8);
+          }
+          Ok(value: incoming) => {
+            region {
+              let old = exchange(slot: &uniq cell, incoming: move incoming);
+              if deref(old) != 11_u64 {
+                return exit_status(code: 1_u8);
+              }
+            }
+            if deref(cell) != 22_u64 {
+              return exit_status(code: 2_u8);
+            }
+            return exit_status(code: 0_u8);
+          }
+        }
+      }
+    }
+  }
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        let observed = retain_calls(&module)
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        let host = allocation_observer(2, 0);
+        let output = compile_link_and_run(&observed, Some(&host), &[]);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(output.stdout, b"A1;A2;F1;F2;");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+}
+
+#[test]
+fn box_field_borrows_keep_the_owner_slot_across_reborrow_and_return() {
+    let source = br#"struct Holder['s] {
+  cell: Box<'s, u64>;
+}
+
+fn shared['r, 's](slot: &'r Box<'s, u64>) -> result: &'r Box<'s, u64> pure {
+  return slot;
+}
+
+fn exclusive['r, 's](slot: &uniq 'r Box<'s, u64>) -> result: &uniq 'r Box<'s, u64> pure {
+  return &uniq 'r deref(slot);
+}
+
+fn exchange['s](slot: &uniq Box<'s, u64>, incoming: own Box<'s, u64>) -> previous: own Box<'s, u64> reads(slot), writes(slot) {
+  let displaced = replace deref(slot) = move incoming;
+  return move displaced;
+}
+
+fn relay['s](slot: &uniq Box<'s, u64>, incoming: own Box<'s, u64>) -> previous: own Box<'s, u64> reads(slot), writes(slot) {
+  region {
+    return exchange(slot: &uniq deref(slot), incoming: move incoming);
+  }
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    match heap_box(store: &uniq heap, value: 11_u64) {
+      Err(error: back) => {
+        return exit_status(code: 70_u8);
+      }
+      Ok(value: cell) => {
+        let holder = Holder(cell: move cell);
+        match heap_box(store: &uniq heap, value: 22_u64) {
+          Err(error: back) => {
+            return exit_status(code: 70_u8);
+          }
+          Ok(value: incoming) => {
+            region {
+              let borrowed = exclusive(slot: &uniq holder.cell);
+              let old = relay(slot: move borrowed, incoming: move incoming);
+              if deref(old) != 11_u64 {
+                return exit_status(code: 1_u8);
+              }
+            }
+            region {
+              let borrowed = shared(slot: &holder.cell);
+              if deref(deref(borrowed)) != 22_u64 {
+                return exit_status(code: 2_u8);
+              }
+            }
+            return exit_status(code: 0_u8);
+          }
+        }
+      }
+    }
+  }
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        let observed = retain_calls(&module)
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        let host = allocation_observer(2, 0);
+        let output = compile_link_and_run(&observed, Some(&host), &[]);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(output.stdout, b"A1;A2;F1;F2;");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+}
+
+#[test]
+fn borrowed_enum_payload_replacement_updates_the_child_owner_in_its_box() {
+    let source = br#"enum Node['s] {
+  Marker(prefix: u64, suffix: u64);
+  HasChildren(left: Box<'s, u64>, right: Box<'s, u64>);
+}
+
+fn exchange_child['s](tree: &uniq Box<'s, Node<'s>>, incoming: own Box<'s, u64>) -> (previous: own Box<'s, u64>, kept: own u64) reads(tree), writes(tree) {
+  match deref(deref(tree)) {
+    Marker(prefix: marker_prefix, suffix: marker_suffix) => {
+      return move incoming, 0_u64;
+    }
+    HasChildren(left: left_slot, right: child_slot) => {
+      let previous = replace deref(child_slot) = move incoming;
+      let kept = deref(deref(left_slot));
+      return move previous, kept;
+    }
+  }
+}
+
+fn read_child['s](tree: &Box<'s, Node<'s>>) -> result: own u64 reads(tree) {
+  match deref(deref(tree)) {
+    Marker(prefix: marker_prefix, suffix: marker_suffix) => {
+      return 0_u64;
+    }
+    HasChildren(left: left_slot, right: child_slot) => {
+      if deref(deref(left_slot)) != 33_u64 {
+        return 0_u64;
+      }
+      return deref(deref(child_slot));
+    }
+  }
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    match heap_box(store: &uniq heap, value: 11_u64) {
+      Err(error: back) => {
+        return exit_status(code: 70_u8);
+      }
+      Ok(value: first) => {
+        match heap_box(store: &uniq heap, value: 22_u64) {
+          Err(error: back) => {
+            return exit_status(code: 70_u8);
+          }
+          Ok(value: incoming) => {
+            match heap_box(store: &uniq heap, value: 33_u64) {
+              Err(error: back) => {
+                return exit_status(code: 70_u8);
+              }
+              Ok(value: sibling) => {
+                let node = HasChildren(left: move sibling, right: move first);
+                match heap_box(store: &uniq heap, value: move node) {
+                  Err(error: back) => {
+                    return exit_status(code: 70_u8);
+                  }
+                  Ok(value: tree) => {
+                    region {
+                      let (old, kept) = exchange_child(tree: &uniq tree, incoming: move incoming);
+                      if deref(old) != 11_u64 {
+                        return exit_status(code: 1_u8);
+                      }
+                      if kept != 33_u64 {
+                        return exit_status(code: 3_u8);
+                      }
+                    }
+                    region {
+                      let observed = read_child(tree: &tree);
+                      if observed != 22_u64 {
+                        return exit_status(code: 2_u8);
+                      }
+                      return exit_status(code: 0_u8);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        let observed = retain_calls(&module)
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        let host = allocation_observer(4, 0);
+        let output = compile_link_and_run(&observed, Some(&host), &[]);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        // The displaced child is released before the caller rereads its tree.
+        // That tree must own the replacement child, not a copied enum's slot.
+        // PROV-6 then visits the sibling and replacement in field order.
+        assert_eq!(output.stdout, b"A1;A2;A3;A4;F1;F3;F2;F4;");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+}
+
+#[test]
 fn indexed_targets_are_captured_before_disjoint_rhs_effects() {
     let module = compile(
         br#"fn advance(offset: &uniq u64, trace: &uniq u64) -> result: own u64 reads(trace), writes(offset, trace) {

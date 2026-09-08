@@ -10,8 +10,8 @@
 use std::collections::BTreeSet;
 
 use crate::{
-    IrArrayRoot, IrFunction, IrInstruction, IrNominalKind, IrOperation, IrProgram, IrTerminator,
-    IrType, IrValueId,
+    IrArrayRoot, IrFunction, IrInstruction, IrNominalKind, IrOperation, IrProgram,
+    IrSourceArgument, IrSourceMode, IrTerminator, IrType, IrValueId,
 };
 
 use super::BackendFailure;
@@ -67,7 +67,7 @@ impl FunctionStoragePlan {
             .iter()
             .map(|ty| is_stored_aggregate(program, *ty).map(|stored| stored.then_some(*ty)))
             .collect::<Result<Vec<_>, _>>()?;
-        let graph = FlowGraph::from_function(function);
+        let graph = FlowGraph::from_function(program, function)?;
         let mut plan = graph.plan(types)?;
         plan.select_destinations(function, &graph, pipeline)?;
         Ok(plan)
@@ -89,7 +89,8 @@ impl FunctionStoragePlan {
 
     /// Redirect a value's construction into the fresh place that consumes it.
     /// This changes physical placement, not source ownership or initialization:
-    /// no old content is overwritten, and calls still have separate inputs.
+    /// no old content is overwritten. Input/result backing reuse is selected
+    /// separately by `call_reuse_operand` and checked CFG liveness.
     ///
     /// The single-use condition preserves independent snapshots and exposed
     /// views. Both definitions must execute in the same block, hence the same
@@ -209,7 +210,10 @@ impl FlowGraph {
         false
     }
 
-    fn from_function(function: &IrFunction) -> Self {
+    fn from_function(
+        program: &IrProgram<'_, '_, '_>,
+        function: &IrFunction,
+    ) -> Result<Self, BackendFailure> {
         let blocks = function
             .blocks()
             .iter()
@@ -245,7 +249,7 @@ impl FlowGraph {
                         (Vec::new(), Vec::new())
                     }
                 };
-                FlowBlock {
+                Ok(FlowBlock {
                     parameters: block
                         .parameters()
                         .iter()
@@ -254,18 +258,18 @@ impl FlowGraph {
                     instructions: block
                         .instructions()
                         .iter()
-                        .map(FlowInstruction::from_ir)
-                        .collect(),
+                        .map(|instruction| FlowInstruction::from_ir(program, function, instruction))
+                        .collect::<Result<Vec<_>, BackendFailure>>()?,
                     terminal_uses: terminator_operands(block.terminator())
                         .into_iter()
                         .map(index)
                         .collect(),
                     successors,
                     transfers,
-                }
+                })
             })
-            .collect();
-        Self {
+            .collect::<Result<Vec<_>, BackendFailure>>()?;
+        Ok(Self {
             entry_parameters: function
                 .parameters()
                 .iter()
@@ -275,7 +279,7 @@ impl FlowGraph {
             // A refused ordinary hand-out reads its arguments at join, and a
             // staged definition can have several dynamic values in flight.
             coalesce: function.overlaps().is_empty() && function.completion_pipeline().is_none(),
-        }
+        })
     }
 
     fn plan(&self, types: Vec<Option<IrType>>) -> Result<FunctionStoragePlan, BackendFailure> {
@@ -462,8 +466,80 @@ impl FlowGraph {
     }
 }
 
+/// Selects the one checked owned binding whose dead backing may receive this
+/// ordinary call's whole result. Stored parameters are snapshotted in the
+/// callee prologue before any body or result write, so making its result
+/// destination equal this one input address preserves argument evaluation.
+/// Calls which can leave the current synchronous extent keep distinct storage.
+fn call_reuse_operand(
+    program: &IrProgram<'_, '_, '_>,
+    caller: &IrFunction,
+    result: IrValueId,
+    operation: &IrOperation,
+) -> Result<Option<IrValueId>, BackendFailure> {
+    let IrOperation::Call {
+        function,
+        arguments,
+    } = operation
+    else {
+        return Err(BackendFailure::InvalidIr);
+    };
+    if !caller.overlaps().is_empty() || caller.completion_pipeline().is_some() {
+        return Ok(None);
+    }
+    let mut source_calls = caller
+        .source_calls()
+        .iter()
+        .filter(|call| call.result() == result);
+    let Some(source_call) = source_calls.next() else {
+        return Ok(None);
+    };
+    if source_calls.next().is_some() || source_call.arguments().len() != arguments.len() {
+        return Err(BackendFailure::InvalidIr);
+    }
+    let callee = program
+        .functions()
+        .get(*function as usize)
+        .ok_or(BackendFailure::InvalidIr)?;
+    let Some(signature) = callee.source_signature() else {
+        return Ok(None);
+    };
+    if callee.target_action().may_suspend()
+        || !callee.overlaps().is_empty()
+        || callee.completion_pipeline().is_some()
+        || signature.result() != IrSourceMode::Own
+        || signature.parameters().len() != arguments.len()
+        || callee.result() != caller.value_type(result).ok_or(BackendFailure::InvalidIr)?
+        || !is_stored_aggregate(program, callee.result())?
+    {
+        return Ok(None);
+    }
+    let mut candidate = None;
+    for ((argument, source), mode) in arguments
+        .iter()
+        .zip(source_call.arguments())
+        .zip(signature.parameters())
+    {
+        let consumes_owned_binding =
+            matches!(source, IrSourceArgument::Binding { consume_root: true })
+                && *mode == IrSourceMode::Own
+                && caller.value_type(*argument) == Some(callee.result());
+        if consumes_owned_binding {
+            if candidate.is_some() {
+                return Ok(None);
+            }
+            candidate = Some(*argument);
+        }
+    }
+    Ok(candidate)
+}
+
 impl FlowInstruction {
-    fn from_ir(instruction: &IrInstruction) -> Self {
+    fn from_ir(
+        program: &IrProgram<'_, '_, '_>,
+        function: &IrFunction,
+        instruction: &IrInstruction,
+    ) -> Result<Self, BackendFailure> {
         let (result, reuse, exposed) = match instruction {
             IrInstruction::Define {
                 result, operation, ..
@@ -471,6 +547,9 @@ impl FlowInstruction {
                 let reuse = match operation {
                     IrOperation::RunBoundary { run, .. } => Some(index(*run)),
                     IrOperation::InsertStruct { aggregate, .. } => Some(index(*aggregate)),
+                    IrOperation::Call { .. } => {
+                        call_reuse_operand(program, function, *result, operation)?.map(index)
+                    }
                     _ => None,
                 };
                 let exposed = match operation {
@@ -488,7 +567,7 @@ impl FlowInstruction {
             | IrInstruction::Store { .. }
             | IrInstruction::Drops(_) => (None, None, None),
         };
-        Self {
+        Ok(Self {
             result,
             operands: instruction_operands(instruction)
                 .into_iter()
@@ -496,7 +575,7 @@ impl FlowInstruction {
                 .collect(),
             reuse,
             exposed,
-        }
+        })
     }
 }
 
@@ -608,7 +687,9 @@ pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
             address,
             projection,
         } => match projection {
-            crate::IrPlaceProjection::Field { .. } => vec![*address],
+            crate::IrPlaceProjection::Field { .. }
+            | crate::IrPlaceProjection::BoxReferent { .. }
+            | crate::IrPlaceProjection::EnumVariant { .. } => vec![*address],
             crate::IrPlaceProjection::RunElement { offset, .. }
             | crate::IrPlaceProjection::ArrayElement { offset, .. } => vec![*address, *offset],
         },
@@ -1067,6 +1148,163 @@ command fn main() -> status: own ExitStatus pure {
         assert!(graph.reentered(1));
         assert!(graph.reentered(2));
         assert!(!graph.reentered(3));
+    }
+
+    #[test]
+    fn a_synchronous_whole_result_reuses_one_consumed_owned_binding() {
+        with_program(
+            br#"struct Row {
+  left: u64;
+  right: u64;
+}
+
+fn pass(value: own Row) -> result: own Row pure {
+  return move value;
+}
+
+fn relay(value: own Row) -> result: own Row pure {
+  return pass(value: move value);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let row = Row(left: 3_u64, right: 5_u64);
+  let kept = relay(value: move row);
+  if kept.left != 3_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+            |program| {
+                let relay = program
+                    .functions()
+                    .iter()
+                    .find(|function| function.name() == "relay")
+                    .expect("relay");
+                let plan = FunctionStoragePlan::build(program, relay, None).expect("plan");
+                let (result, argument) = relay
+                    .blocks()
+                    .iter()
+                    .flat_map(|block| block.instructions())
+                    .find_map(|instruction| match instruction {
+                        IrInstruction::Define {
+                            result,
+                            operation: IrOperation::Call { arguments, .. },
+                            ..
+                        } => Some((result.to_owned(), arguments[0])),
+                        _ => None,
+                    })
+                    .expect("call");
+                assert_eq!(plan.slot(result), plan.slot(argument));
+            },
+        );
+    }
+
+    #[test]
+    fn several_same_typed_owned_inputs_do_not_choose_an_alias_candidate() {
+        with_program(
+            br#"struct Row {
+  left: u64;
+  right: u64;
+}
+
+fn choose(left: own Row, right: own Row) -> result: own Row pure {
+  return move right;
+}
+
+fn relay(left: own Row, right: own Row) -> result: own Row pure {
+  return choose(left: move left, right: move right);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let left = Row(left: 1_u64, right: 2_u64);
+  let right = Row(left: 3_u64, right: 4_u64);
+  let kept = relay(left: move left, right: move right);
+  if kept.left != 3_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+            |program| {
+                let relay = program
+                    .functions()
+                    .iter()
+                    .find(|function| function.name() == "relay")
+                    .expect("relay");
+                let plan = FunctionStoragePlan::build(program, relay, None).expect("plan");
+                let (result, arguments) = relay
+                    .blocks()
+                    .iter()
+                    .flat_map(|block| block.instructions())
+                    .find_map(|instruction| match instruction {
+                        IrInstruction::Define {
+                            result,
+                            operation: IrOperation::Call { arguments, .. },
+                            ..
+                        } => Some((result.to_owned(), arguments.as_slice())),
+                        _ => None,
+                    })
+                    .expect("call");
+                assert!(
+                    arguments
+                        .iter()
+                        .all(|argument| plan.slot(*argument) != plan.slot(result))
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn an_ordered_multi_result_does_not_alias_one_field_with_an_input() {
+        with_program(
+            br#"struct Row {
+  left: u64;
+  right: u64;
+}
+
+fn split(value: own Row) -> (updated: own Row, observed: own u64) reads(value.left) {
+  let observed = value.left;
+  return move value, observed;
+}
+
+fn relay(value: own Row) -> result: own Row reads(value.left) {
+  let (updated, observed) = split(value: move value);
+  return move updated;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let row = Row(left: 3_u64, right: 5_u64);
+  let kept = relay(value: move row);
+  if kept.left != 3_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+            |program| {
+                let relay = program
+                    .functions()
+                    .iter()
+                    .find(|function| function.name() == "relay")
+                    .expect("relay");
+                let plan = FunctionStoragePlan::build(program, relay, None).expect("plan");
+                let (result, argument) = relay
+                    .blocks()
+                    .iter()
+                    .flat_map(|block| block.instructions())
+                    .find_map(|instruction| match instruction {
+                        IrInstruction::Define {
+                            result,
+                            operation: IrOperation::Call { arguments, .. },
+                            ..
+                        } => Some((result.to_owned(), arguments[0])),
+                        _ => None,
+                    })
+                    .expect("call");
+                assert_ne!(plan.slot(result), plan.slot(argument));
+            },
+        );
     }
 
     #[test]

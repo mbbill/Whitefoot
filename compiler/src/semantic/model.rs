@@ -1407,6 +1407,10 @@ pub(crate) struct CheckedContainerRoot {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedPlaceStep {
     Field(u32),
+    /// One explicit dereference of an owning Box. Borrow-holder dereferences
+    /// begin from an already-addressed binding and therefore need no step in
+    /// this lowering path.
+    BoxReferent(NominalId),
     Subscript(Box<CheckedPlaceSubscript>),
 }
 
@@ -1434,21 +1438,24 @@ pub(crate) struct CheckedPlaceSubscript {
 impl CheckedContainerRoot {
     /// The exact storage projection consumed by [OWN-7] and [ENT-5].
     pub(crate) fn place_path(&self) -> Vec<super::places::PlaceStep> {
-        self.path.iter().map(CheckedPlaceStep::place_step).collect()
+        self.path
+            .iter()
+            .filter_map(CheckedPlaceStep::place_step)
+            .collect()
     }
 
     /// Offset evaluations are children of the place, including when its
     /// terminal operation only takes an address or reads a measure.
     pub(crate) fn offsets(&self) -> impl Iterator<Item = &CheckedExpression> {
         self.path.iter().filter_map(|step| match step {
-            CheckedPlaceStep::Field(_) => None,
+            CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
             CheckedPlaceStep::Subscript(index) => Some(&index.offset),
         })
     }
 
     pub(crate) fn offsets_mut(&mut self) -> impl Iterator<Item = &mut CheckedExpression> {
         self.path.iter_mut().filter_map(|step| match step {
-            CheckedPlaceStep::Field(_) => None,
+            CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
             CheckedPlaceStep::Subscript(index) => Some(&mut index.offset),
         })
     }
@@ -1459,6 +1466,7 @@ impl CheckedContainerRoot {
             .iter()
             .map(|step| match step {
                 CheckedPlaceStep::Field(field) => super::goal::GoalProjection::Field(*field),
+                CheckedPlaceStep::BoxReferent(_) => super::goal::GoalProjection::Deref,
                 CheckedPlaceStep::Subscript(subscript) => {
                     super::goal::GoalProjection::Subscript(subscript.place_offset)
                 }
@@ -1499,10 +1507,13 @@ impl CheckedContainerRoot {
 }
 
 impl CheckedPlaceStep {
-    pub(crate) fn place_step(&self) -> super::places::PlaceStep {
+    pub(crate) fn place_step(&self) -> Option<super::places::PlaceStep> {
         match self {
-            Self::Field(field) => super::places::PlaceStep::Field(*field),
-            Self::Subscript(index) => super::places::PlaceStep::Subscript(index.place_offset),
+            Self::Field(field) => Some(super::places::PlaceStep::Field(*field)),
+            // The allocated referent remains within the owning Box root for
+            // overlap. Source-term identity retains this as Deref above.
+            Self::BoxReferent(_) => None,
+            Self::Subscript(index) => Some(super::places::PlaceStep::Subscript(index.place_offset)),
         }
     }
 }

@@ -900,15 +900,17 @@ absent when it writes none",
 
     /// Whether a borrow of this type is the address of the borrowed storage.
     ///
-    /// A `buffer` or `slice` value is already a descriptor, and a `box` or
-    /// system-resource value is already its own borrow, so only directly
-    /// stored content — scalars, structs, and enums — needs a stable address
-    /// for reads and writes through the holder [OWN-5, TYPE-7].
+    /// A Box borrow addresses the pointer slot in its owner, so reads and
+    /// replacement through the holder share that storage [OWN-5, TYPE-7].
+    /// Legacy buffer/view descriptors and opaque system resources retain
+    /// their value representation.
     pub(super) fn borrow_addresses_storage(&self, ty: CheckedType) -> Result<bool, CheckStop> {
         Ok(match ty {
             CheckedType::Nominal(nominal) => matches!(
                 self.nominal(nominal)?.kind,
-                CheckedNominalKind::Struct { .. } | CheckedNominalKind::Enum { .. }
+                CheckedNominalKind::Struct { .. }
+                    | CheckedNominalKind::Enum { .. }
+                    | CheckedNominalKind::Box { .. }
             ),
             CheckedType::Unit
             | CheckedType::Bool
@@ -1089,7 +1091,10 @@ inside the `region` block whose region it takes",
             self.resolve_storage_path(&suffixes, local.ty, bindings, function, loop_depth, true)?;
         let place = ResolvedPlace {
             root: declaration,
-            path: path.iter().map(CheckedPlaceStep::place_step).collect(),
+            path: path
+                .iter()
+                .filter_map(CheckedPlaceStep::place_step)
+                .collect(),
         };
         let fields = place.field_prefix();
         let only_fields = fields.len() == path.len();

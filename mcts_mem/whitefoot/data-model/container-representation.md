@@ -75,6 +75,12 @@
   binding directly in an acyclic activation or a selected pipeline's retired
   per-slot storage. Other cases retain separate storage; source consume modes
   grant no input/result aliasing permission.
+- An ordinary synchronous call's whole owned result may reuse one consumed,
+  same-typed aggregate binding when the callee snapshots inputs before any write,
+  complete CFG liveness kills the old contents, and the backing is not exposed.
+  Ambiguous inputs, ordered multi-results and overlap/completion schedules retain
+  separate storage. This bounded ABI argument supplements checked ownership;
+  it does not follow from an `own` mode alone.
 - Capture mutation targets before the RHS and revalidate their writability under
   the complete post-RHS loan state. Read the displaced old owner at the admitted
   replace commit. An address's storage must survive RHS effects;
@@ -367,6 +373,14 @@
   primitive separates uninitialized typed permission from deallocation authority.
   Neither provides WF's acceptance, allocation-refusal and linear-cleanup rules.
   [Sources and limitations](../../../research/investigations/containers-and-resources/EXTERNAL-WORKLOADS.md#permission-mechanisms-as-design-counterchecks). (sourced)
+
+- 2026-09-08 implementation evidence: the bounded synchronous-call reuse removes
+  the heap push caller's 144-byte transfer, while multi-result pop and callee
+  snapshots retain copies. Both 320-input sorting-oracle controls pass. Another
+  56 same-harness samples still put the 16-round Whitefoot trace about 2.8 times
+  the matched C medians; host drift and an outlier prevent attributing a small
+  difference from the earlier samples to this change alone.
+  [Conditions, optimized code and retained measurements](../../../research/experiments/container-representation/families/RESULTS.md#consumed-input-and-result-destination-reuse). (code)
 
 ## Moves
 
