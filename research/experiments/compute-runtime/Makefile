@@ -189,6 +189,7 @@ check-quadrature: quadrature-build
 	@if sh quadrature-memory.sh clean "$(OUT)/quadrature/negative-diagnostic.stderr" 0 native 0 > "$(OUT)/quadrature/negative-diagnostic.log" 2>&1; then \
 		echo 'quadrature accepted unexpected diagnostic' >&2; exit 1; \
 	fi
+	@grep -Fx 'unexpected diagnostic' "$(OUT)/quadrature/negative-diagnostic.log"
 	@set -e; if test "$$(uname -s)/$$(uname -m)/$(if $(findstring address,$(SANITIZER)),address,clean)" = Linux/x86_64/address; then \
 		good="$(OUT)/quadrature/check-sanitized-w1-rayon-d0.tsv.stderr"; \
 		for mutation in pool-identity allocation; do \
@@ -230,6 +231,18 @@ check-quadrature: quadrature-build
 		"$(OUT)/quadrature/negative-frontier-count.tsv" > "$(OUT)/quadrature/negative-frontier-count.tsv.log" 2>&1; then \
 		echo 'quadrature accepted full-depth frontier count' >&2; exit 1; \
 	fi
+	@set -e; good="$(OUT)/quadrature/check-ordinary-w1-rayon-d4.tsv"; \
+	for mutation in frontier-partition uniform-span; do \
+		bad="$(OUT)/quadrature/negative-$$mutation.tsv"; \
+		case $$mutation in \
+			frontier-partition) sed 's/frontier_nodes=[0-9][0-9]*/frontier_nodes=0/' "$$good" > "$$bad"; reason='frontier work metadata';; \
+			uniform-span) sed '/^# input=depth-cap /s/node_span=515/node_span=516/' "$$good" > "$$bad"; reason='uniform frontier span';; \
+		esac; \
+		if awk -v mode=check -v form=rayon -v spawn=4 -v width=1 -v stats=0 -f quadrature.awk "$$bad" > "$$bad.log" 2>&1; then \
+			echo "quadrature accepted wrong $$mutation" >&2; exit 1; \
+		fi; \
+		grep -Fx "quadrature report: $$reason" "$$bad.log"; \
+	done
 	OUT="$(OUT)" sh quadrature-batch.sh check
 
 quadrature-batch-calibrate:

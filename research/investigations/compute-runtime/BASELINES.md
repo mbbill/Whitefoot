@@ -36,8 +36,10 @@ directions must also be stated. Generated WF policy is unchanged.
 [Recursive Rayon](../../experiments/compute-runtime/README.md#recursive-rayon-reference)
 adds both fork directions and a Rust sequential kernel control. M1 correctness
 is qualified; replacing aggregate recursive arguments with scalars removes
-the initial large sequential-kernel gap. Linux lifecycle qualification,
-broader Rayon tuning, alternative TBB contexts/APIs, held-out tuning and
+the initial large sequential-kernel gap. The configured Linux compute matrix
+also passes, including its exact lifecycle reports; separate full-gate
+research failures still need underlying diagnostics. Broader Rayon tuning,
+alternative TBB contexts/APIs, held-out tuning and
 qualified native-host placement remain open; flat callbacks do not fill
 those gaps.
 The [record batch panel](../../experiments/compute-runtime/README.md#variable-length-utf-8-record-batches)

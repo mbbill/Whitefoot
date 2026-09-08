@@ -1671,7 +1671,8 @@ modules share one timing executable, runtime and native kernel; the host chooses
 a common indirect generated-call adapter before timing. No default or runtime
 interface changes. The oneTBB/Parlay and optional Rayon forms below execute the
 recursive algorithm directly, rather than reusing the flat callback adapters.
-Broader tuning and Linux qualification of the new Rayon form remain open.
+The configured Rayon matrix passes the Linux compute job; broader tuning and
+separate full-gate failures remain open, as recorded below.
 
 Run qualification first, then calibrate alone in a fresh result directory:
 
@@ -2748,8 +2749,8 @@ actual exit status. Address-instrumented Linux x86_64 runs use the existing
 exact pinned caller-worker lifecycle grammar with the quadrature initializer;
 other instrumentation profiles require clean status/stderr. No leak detector
 is disabled and no arbitrary allocation is tolerated. Old records grammar
-replays remain unchanged. The first actual Linux quadrature report is described
-below; configurations beyond that report still require CI qualification.
+replays remain unchanged. The observed Linux stack change and the subsequent
+successful configured-matrix replay are described below.
 
 Rust uses O3 with loop/SLP vectorization and LTO disabled; the Linux v3 panel
 also requests Rust x86-64-v3. Rust/Rayon are not ASan/UBSan-instrumented even
@@ -2876,6 +2877,99 @@ still pass. Wrong identities, allocations, owners, statuses and extra reports
 reject in replay; two maintained Linux address-profile negatives mutate the
 actual captured pool identity and allocation size. This is no Linux timing
 result and does not yet qualify unseen depths, widths or directions.
+
+The subsequent [813c6d44 Linux compute job](https://github.com/mbbill/Whitefoot/actions/runs/34267682585/job/102201077815)
+passes the full configured matrix and calibration. Artifact10072723575 has
+ZIP SHA256 `37b467cd7ac67ab3dd871d8b218476d9ba2f345ac926f85b529c971d400c9403`;
+ordinary image SHA256 is
+`5e19d89e2fb0a386ae26e8f4534fe1a3904ee9d02dc9a9866f2057a6765e05be`.
+All81 manifest paths and20 source snapshots match the exact revision. Its
+214 full and252 batch qualifiers pass;52 actual Rayon stderr reports match
+the exact1,904-byte/two-allocation grammar, including both directions, all
+five full-report depths and both widths. Other404 separate stderr files are
+empty. Required child statuses follow from successful strict caller execution,
+not separately retained status rows. This closes the observed lifecycle
+failure for this configured compute matrix.
+
+The run retains1,280 process reports (640 plain/640 perf),5,253,120 checked
+outputs and2,560 software-event rows. AMD EPYC7763 VM, two cores/four SMT
+CPUs, mask0-3, Clang18.1.3/Rust1.98.0, x86-64-v3, scalar/noFMA/noLTO;
+physical capacity and isolation remain unqualified.
+
+| Input | Plain WF/Rayon4 wall | Plain WF/Rayon8 wall | Plain WF/Rayon-left4 wall | Plain WF/Rayon-left8 wall |
+| --- | ---: | ---: | ---: | ---: |
+| Center peak |0.814|0.784|0.803|0.790|
+| Left peak |0.752|0.814|0.585|0.714|
+| Right peak |0.567|0.671|0.726|0.768|
+| Depth cap |0.967|0.896|0.968|0.908|
+
+Every table cell wins all five W4 wall pairs; perf-observer wall comparisons
+also win all five. CPU retains adverse pairs: plain WF/Rayon4 cap0.981 has
+four lower pairs, and perf WF/Rayon-left4 cap0.971 has four. Native WF8 is
+mixed, including plain left CPU1.004 with two lower pairs. Parlay-left4 right
+uses less CPU than WF in every pair (WF ratios plain1.208/perf1.184), despite
+worse wall time. Rust/C++ sequential plainW1 wall ratios
+1.003/1.016/0.997/0.999 retain near-parity kernel timing. Process/rusage
+median0.999941 does not resolve task-clock/process range0.728320-1.014730;
+six hardware counters remain unavailable. No observer or earlier cohort is
+pooled, and no strongest-reference or hardware-limit claim follows.
+
+The separate [full gate](https://github.com/mbbill/Whitefoot/actions/runs/34267682702)
+still fails both research jobs with child status1 during the instrumented
+four-worker Rayon checks. The successful preceding-report counts locate
+right-offer depth4 on macOS and left-offer depth4 on Linux, but their retained
+job logs contain only the wrapper status, not the underlying diagnostic.
+Two hundred local instrumented depth4 processes do not reproduce it. The
+wrapper now echoes rejected stderr while preserving rejection and exit status;
+the existing unexpected-diagnostic negative also checks that forwarding.
+The cause remains unverified pending a failing diagnostic; no check is relaxed
+and the successful compute job is not a full-gate success claim.
+
+### Recursive frontier work model
+
+The independent explicit-stack oracle now emits `frontier_blocks`,
+`frontier_nodes`, `largest_subtree` and `node_span` in each full-report input
+header, outside all timing intervals. For the report's `spawn_depth`, a block
+is a subtree rooted at the cut, or a leaf reached before it. Above-cut
+internal nodes plus block work partition the tree exactly:
+`forks + frontier_nodes = nodes` and `frontier_blocks = forks + 1`.
+Below the cut, span is the subtree node count; above it, span is one plus
+the larger child span. Each visited node has unit cost and result merges are
+free in this model. Runtime work, unequal node costs, cache effects and
+placement are omitted. `nodes / node_span` is model parallelism, not a
+hardware speedup or wall-time guarantee. The configured cut models the
+fixed-grain recursive controls; it does not reconstruct a runtime-dependent
+refusal tree or the additional offers in original generated WF forms.
+
+| Input | Nodes | Depth4 blocks | Depth4 largest subtree | Depth4 span | Depth8 blocks | Depth8 largest subtree | Depth8 span |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Center peak |3287|16|1051|1055|248|127|135|
+| Left peak |2473|16|1479|1483|177|127|135|
+| Right peak |2473|16|1479|1483|177|127|135|
+| Depth cap |8191|16|511|515|256|31|39|
+
+At depth4, skewed inputs have model parallelism1.668, below four workers;
+depth8 raises it to18.319. Balanced cap already has15.905 at depth4, so the
+finer cut cannot improve its four-worker work/span lower bound in this model,
+while increasing forks from15 to255. This supports the measured coarsening
+tradeoff. Center depth4 has model parallelism3.116. Reflection and reversing
+fork direction preserve these shape metrics; they cannot explain the observed
+direction-dependent timing. Runtime execution order, placement and frame costs
+remain candidates for that residual, not conclusions of this model.
+
+The diagnostic rebuild on base `813c6d44` has ordinary SHA256
+`156a90c76b0c291e01f50c258d4500adebf245fd22b281b3df10847a310b7fa0`.
+Its214 full qualifiers/4,280 outputs and252 batch qualifiers/2,772 outputs
+pass. A separate recursive binary64 reconstruction and cut/span pass match
+all50 input/cut combinations against2,140 input headers, including values,
+partitions and spans. The reader enforces partition conservation, zero/full
+cut boundaries and the uniform cap closed form; maintained negative reports
+reject a broken partition and an incorrect uniform span. Intermediate skew
+values are additionally established by the independent reconstruction, not
+solely by the reader's generic inequalities. An initial numeric-string
+comparison failure in that reader is retained; explicit numeric conversion
+after integer validation fixes it. Timing cohorts above use their original
+images and readers; no performance result is assigned to this rebuilt image.
 
 ## Scalar scheduler comparison
 

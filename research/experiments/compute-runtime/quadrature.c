@@ -96,8 +96,10 @@ static double oracle_simpson(double a,double b,double fa,double fm,double fb) {
     volatile double span=b-a,scale=span/6,weighted=4*fm,partial=fa+weighted,sum=partial+fb,value=scale*sum;
     return value;
 }
-typedef struct { double a,b,fa,fm,fb,whole,tol,m,fl,fr,left,right,result; unsigned depth,state; bool right_spine; } Node;
-typedef struct { double value; uint64_t nodes,leaves,capped,forks,refusal_forks; unsigned deepest; } Reference;
+typedef struct { double a,b,fa,fm,fb,whole,tol,m,fl,fr,left,right,result; unsigned depth,state;
+    bool right_spine; uint64_t subtree_nodes,node_span; } Node;
+typedef struct { double value; uint64_t nodes,leaves,capped,forks,refusal_forks;
+    uint64_t frontier_blocks,frontier_nodes,largest_subtree,node_span; unsigned deepest; } Reference;
 static Reference reference(const Input *p) {
     Node stack[25]={0}; unsigned top=0; Reference out={0};
     volatile double endpoints=p->a+p->b,m=endpoints*0.5;
@@ -107,6 +109,7 @@ static Reference reference(const Input *p) {
     for (;;) {
         Node *n=&stack[top];
         if (!n->state) {
+            n->subtree_nodes=1;n->node_span=1;
             ++out.nodes; if(top>out.deepest)out.deepest=top;
             volatile double sum=n->a+n->b,mid=sum*0.5,ls=n->a+mid,lm=ls*0.5,rs=mid+n->b,rm=rs*0.5;
             n->m=mid;n->fl=oracle_density(lm,p);n->fr=oracle_density(rm,p);
@@ -128,9 +131,21 @@ static Reference reference(const Input *p) {
             }
         }
         if(n->state==3) {
+            /* Unit-node work model, outside timing. Above the selected cut,
+             * children can overlap; below it every subtree is sequential.
+             * This ignores merge and runtime costs, not a wall-clock bound. */
+            if(top==spawn_depth || (top<spawn_depth && n->subtree_nodes==1)) {
+                ++out.frontier_blocks;out.frontier_nodes+=n->subtree_nodes;
+                if(n->subtree_nodes>out.largest_subtree)out.largest_subtree=n->subtree_nodes;
+            }
             double value=n->result;
-            if(!top){out.value=value;return out;}
+            if(!top){out.value=value;out.node_span=n->node_span;
+                require(out.frontier_blocks==out.forks+1 && out.frontier_nodes+out.forks==out.nodes,
+                    "oracle frontier partition");return out;}
+            uint64_t child_nodes=n->subtree_nodes,child_span=n->node_span;
             --top;Node *parent=&stack[top];
+            parent->subtree_nodes+=child_nodes;
+            if(child_span+1>parent->node_span)parent->node_span=child_span+1;
             if(parent->state==1) {
                 parent->result=value;parent->state=2;
                 volatile double tol=parent->tol*0.5;
@@ -140,6 +155,7 @@ static Reference reference(const Input *p) {
             } else {
                 require(parent->state==2,"oracle traversal");
                 volatile double sum=parent->result+value;parent->result=sum;parent->state=3;
+                if(top>=spawn_depth)parent->node_span=parent->subtree_nodes;
             }
         }
     }
@@ -281,7 +297,10 @@ int wf__main_body(int argc,char **argv) {
             require(r.capped==0,"unexpected depth exhaustion");
             require(fabsl((long double)r.value-exact)<=8*p->tolerance+0x1p-48L,"analytic integral");
         }
-        printf("# input=%s nodes=%" PRIu64 " leaves=%" PRIu64 " capped=%" PRIu64 " deepest=%u evaluations=%" PRIu64 " expected=%a forks=%" PRIu64 "\n",p->name,r.nodes,r.leaves,r.capped,r.deepest,3+2*r.nodes,r.value,r.forks);
+        printf("# input=%s nodes=%" PRIu64 " leaves=%" PRIu64 " capped=%" PRIu64 " deepest=%u evaluations=%" PRIu64 " expected=%a forks=%" PRIu64
+            " frontier_blocks=%" PRIu64 " frontier_nodes=%" PRIu64 " largest_subtree=%" PRIu64 " node_span=%" PRIu64 "\n",
+            p->name,r.nodes,r.leaves,r.capped,r.deepest,3+2*r.nodes,r.value,r.forks,
+            r.frontier_blocks,r.frontier_nodes,r.largest_subtree,r.node_span);
         for(unsigned call=0;call<calls;++call) {
             struct rusage before,after;require(!getrusage(RUSAGE_SELF,&before),"resources before");
 #if WF_COMPUTE_STATS

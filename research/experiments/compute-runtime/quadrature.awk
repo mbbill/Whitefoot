@@ -43,7 +43,7 @@ NR==2 {
 /^# input=/ {
     if (footer || (block && seen!=calls)) bad("missing calls")
     ++block;seen=0
-    if (block>count || NF!=9 || field($2,"input=")!=names[block]) bad("input order")
+    if (block>count || NF!=13 || field($2,"input=")!=names[block]) bad("input order")
     if (field($3,"nodes=")!=nodes[block] || field($4,"leaves=")!=(nodes[block]+1)/2 ||
         field($5,"capped=")!=capped[block] || field($6,"deepest=")!=depths[block] ||
         field($7,"evaluations=")!=3+2*nodes[block]) bad("work metadata")
@@ -53,6 +53,20 @@ NR==2 {
     forks+=0
     expected_forks=(spawn==0?0:spawn==2?forks2[block]:spawn==4?forks4[block]:spawn==8?forks8[block]:(nodes[block]-1)/2)
     if (forks!=expected_forks)bad("fork metadata")
+    frontier_blocks=field($10,"frontier_blocks=");frontier_nodes=field($11,"frontier_nodes=")
+    largest=field($12,"largest_subtree=");span=field($13,"node_span=")
+    if(!integer(frontier_blocks) || !integer(frontier_nodes) || !integer(largest) || !integer(span))
+        bad("noninteger frontier work")
+    frontier_blocks+=0;frontier_nodes+=0;largest+=0;span+=0
+    if(frontier_blocks!=forks+1 || frontier_nodes+forks!=nodes[block] || largest<1 ||
+        largest>frontier_nodes || largest*frontier_blocks<frontier_nodes ||
+        span<largest || span>nodes[block])bad("frontier work metadata")
+    if((spawn==0 && (largest!=nodes[block] || span!=nodes[block])) ||
+        (spawn>=depths[block] && (largest!=1 || span!=depths[block]+1)))bad("frontier work boundary")
+    if(names[block]=="depth-cap") {
+        cut=(spawn<12?spawn:12);subtree=2^(13-cut)-1
+        if(largest!=subtree || span!=cut+subtree)bad("uniform frontier span")
+    }
     next
 }
 /^# quadrature PASS:/ {
