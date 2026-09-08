@@ -30,13 +30,18 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     checked: CheckedProgram<'classified, 'lexed, 'source>,
     overlap: OverlapLowering,
 ) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
+    let sequential_compute_refusal =
+        matches!(overlap, OverlapLowering::OnWithSequentialRefusal { .. });
     let scalar_leaf_limit = match overlap {
         OverlapLowering::OnWithoutSmallScalarLeaves { maximum_operations } => {
             Some(maximum_operations)
         }
+        OverlapLowering::OnWithSequentialRefusal {
+            maximum_scalar_leaf_operations,
+        } => maximum_scalar_leaf_operations,
         _ => None,
     };
-    let overlap = if scalar_leaf_limit.is_some() {
+    let overlap = if scalar_leaf_limit.is_some() || sequential_compute_refusal {
         OverlapLowering::On
     } else {
         overlap
@@ -88,6 +93,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     let permission = match overlap {
         OverlapLowering::On
         | OverlapLowering::OnWithoutSmallScalarLeaves { .. }
+        | OverlapLowering::OnWithSequentialRefusal { .. }
         | OverlapLowering::Completion => Some(&checked.data.permission),
         OverlapLowering::Off => None,
     };
@@ -132,6 +138,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         functions,
         entry,
         actualization,
+        sequential_compute_refusal,
     })
 }
 

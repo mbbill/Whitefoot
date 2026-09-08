@@ -1612,9 +1612,10 @@ than being mislabeled converged. A temporary image adding one to the computed
 result fails with `quadrature: binary64 result`.
 
 `check-quadrature`, called by the experiment's canonical `check`, runs the same
-WF objects in ordinary and ASan-UBSan images, thirty-six forms/grain settings and
-worker requests1/4: 144 processes/2,880 checked results, plus six forced
-owner-slot exhaustion processes/120 results. Host/runtime/floor and
+WF objects in ordinary and ASan-UBSan images, thirty-eight forms/grain settings and
+worker requests1/4: 152 processes/3,040 checked results, plus eight forced
+owner-slot exhaustion processes/160 results, totaling160 processes/3,200 results.
+Host/runtime/floor and
 the native C++/Parlay header code are instrumented; generated WF objects and
 the shared oneTBB library remain ordinary. The instrumented image
 also uses the existing per-lane event counters. At every joined return it
@@ -1624,7 +1625,9 @@ equals `3*nodes - leaves + 2`. That count includes two small sibling offers per 
 one recursive offer per internal node and two initial density offers. Startup
 must supply all four workers and the full qualification must observe a steal.
 The scalar-leaf control below instead checks `nodes - leaves`, retaining only
-recursive offers. Sequential forms must publish nothing. Generated LLVM remains unsanitized;
+recursive offers. The [sequential-refusal control](#sequential-subtrees-after-refusal)
+checks bounded attempts, with exact counts when no calls are refused and under
+full owner-slot exhaustion. Sequential forms must publish nothing. Generated LLVM remains unsanitized;
 runtime exhaustion/interleaving qualification stays in `check-runtime`.
 
 The ledger permits density/density, Simpson/Simpson and adaptive/adaptive
@@ -1637,12 +1640,13 @@ introduced by actualization; they do not by themselves isolate each offer's
 contribution to the ordinary elapsed-time loss.
 
 `quadrature-calibrate` runs the ordinary image sequentially across five passes,
-two worker requests and thirty-six forms/grain settings: the original `native`,
-`wf-seq`, `wf-auto`, `wf-leaf-seq`, `wf-leaf`, plus `cpp-seq`, ten
+two worker requests and thirty-eight forms/grain settings: the original `native`,
+`wf-seq`, `wf-auto`, `wf-leaf-seq`, `wf-leaf`, the two generated refusal forms,
+plus `cpp-seq`, ten
 oneTBB/Parlay settings, ten native WF settings and ten reciprocal direction
 settings described below. Each
 process runs all ten cases, retaining one first and eight warm calls per case:
-360 processes/32,400 checked results. Form order reverses on alternate passes.
+380 processes/34,200 checked results. Form order reverses on alternate passes.
 The AWK reader binds mode, form, requested width and instrumentation to each
 invocation, requires the complete ordered input/call inventory and validates
 work metadata and event totals. Missing-row, wrong-form and missing-footer
@@ -2148,6 +2152,113 @@ The next useful distinction is between avoiding task machinery while continuing
 parallel recursive calls, and entering an ordinary sequential subtree; that
 requires separately justified compiler selection and broader work-distribution
 evidence before adopting a policy.
+
+### Sequential subtrees after refusal
+
+`--par-sequential-refusal` is an opt-in compiler experiment. At an ordinary
+compute hand-out's refused join edge, a non-suspending callee with an existing
+sequential clone calls that clone with the same arguments and `FunctionAbi`.
+Successful callbacks and the source-last inline call still use parallel code.
+The clone declines descendant compute permissions and returns on the same
+stack. No hidden parameter, runtime demand query, public signature effect,
+source acceptance rule or default policy changes. Callees without clones,
+may-suspend calls and staged completion retain their existing fallback. Retire
+the experimental switch when a qualified general actualization policy replaces
+it; it is not a standalone claim of an optimal grain policy.
+
+The backend's deterministic recursive fixture uses shared borrowed input and
+checks both scalar and destination-passed aggregate results. Its32 leaves each
+contribute2, producing64. The original all-refused lowering attempts31 tasks;
+the experimental form attempts5 down the inline right spine. Granting exactly
+one root task and delaying its callback until join produces31 versus9 attempts,
+with exactly one release and unchanged results. Eight executable schedules
+check these cases. A leaf without a clone and a staged may-suspend fixture also
+retain byte-identical modules. The38-test parallel backend module and the new
+CLI composition/invalid-option test pass.
+
+`wf-refusal` and `wf-refusal-seq` use a third generated module compiled with
+`--par --par-scalar-leaf-limit 16 --par-sequential-refusal`; they select its
+parallel entry and sequential clone respectively. The original and filtered
+modules remain byte-identical to the preceding direction-cohort modules.
+`check-quadrature` covers all38 settings at widths1/4 in ordinary/instrumented
+images, plus eight full-owner-slot exhaustion processes:160 processes and3,200
+checked results. The generated refusal form joins the existing native exhaustion
+controls. Independent explicit-stack oracle state identifies nodes on the
+all-right path. With all owner slots held, only those internal nodes attempt
+acquisition:5/7/6/13/10/1/0/12/0/6 across the ten inputs. Both host and AWK require
+those exact counts; a malformed right-spine count is the fifth negative report.
+
+Normal generated-refusal diagnostics permit the number of attempts to lie
+between that right-spine count and the full tree's internal-node count, since a
+refused subtree stops making attempts. Zero refusals still requires the full
+count. Every other form retains its previous exact opportunity equation, and
+all forms retain joined publication/pop/steal/run/join conservation and bitwise
+results. These bounds do not claim a dynamically observed WF computation-node
+count. An earlier unmeasured qualifier directory failed the old `wf-leaf`
+actual-steal witness during concurrent compiler tests; that failure is retained
+and excluded. The fresh qualification ran without concurrent compilation and
+passed, without removing the witness or retrying individual failed cells.
+
+The fresh M1 qualification image SHA256 is
+`82a47d20186c2cb0755de474faaf922999e70089760eeb3a44a770e016a39608`,
+the generated refusal object is
+`0334dfc3571d7ab23dfd1c609e3a8c33af5fbeaf63793b842fc656c54394cd37`,
+and the retained compiler is
+`8fe40280083a9bc28909a1b1dfdceb42f0c6bf3c7e63f27125b3e1d66fbb24c7`.
+
+A fresh admission screen repeats the preceding scratch queue rule with these
+objects. Each of three images contains both generated policies, their sequential
+controls, native WF value-depth8 and Parlay-left-depth8. The shared objects are
+identical across limits0/1/4; within each image the two compiler policies can be
+compared directly. Six forms ×two widths ×three limits ×five alternating-order
+passes give180 processes/16,200 calls, plus36 ordinary qualifiers/720 results.
+No native timing runs overlap builds or diagnostic execution. MacBookPro18,3,
+Clang21.0.0, scalar strict-FP/no-FMA/no-LTO, unfixed placement/frequency and the
+previous queue screen's separate-image/recipe-bound-limit caveats apply.
+The three ordinary image SHA256 identities in limit0/1/4 order are
+`f2ea69daa4cdbc5562531d4f26398907f1f350e2baa06459c49423b95098ccab`,
+`35ec3520c06414fa338c0c6395cb84132b1a421e8037de2cbd1b66c22708e9b4` and
+`9a9b99806b1856861b75e99716c43991430c27c8d6e2a66313b6539b3f719cf8`.
+No measured image is rebuilt. Microsecond medians of five process warm means
+at width4 follow; the last column is a median of within-pass paired ratios.
+
+| Input | Existing leaf, no limit | Refusal clone, no limit | Refusal clone, limit1 | Refusal clone, limit4 | Limit4 clone / existing no limit |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Center peak | 15.969 | 15.630 | 11.938 | 14.896 | 0.933 |
+| Left peak | 14.036 | 13.849 | 7.729 | 12.833 | 0.906 |
+| Right peak | 12.646 | 12.589 | 16.735 | 11.687 | 0.931 |
+| Depth cap | 25.734 | 25.276 | 27.505 | 21.542 | 0.835 |
+
+Without a queue limit, new/old compiler-policy ratios are1.023/0.981/1.037/0.990,
+with1/4/2/3 faster pairs; no stable no-refusal benefit is established.
+At the same limit1, new/old ratios are0.316/0.631/0.392/0.804, all five faster
+on these inputs. That recovers much of the failed admission-only performance,
+but comparing the combined limit1+clone candidate against the existing
+unlimited form gives0.777/0.558/1.317/1.077 with5/3/0/1 faster pairs. It still
+hurts right skew and depth cap. Combined limit4+clone against existing unlimited
+code gives the table's ratios with4/4/4/4 faster pairs. Every adverse pair and
+first call remains; no fixed queue limit is promoted to default.
+
+The new compiler form has not caught the tuned native grain. Within the limit4
+image, generated-refusal/Parlay-left-depth8 ratios are1.331/1.287/1.369/1.261;
+against native WF value-depth8 they are1.338/1.358/1.333/1.288. All five pairs
+lose on all four inputs. These are matched-left publication comparisons through
+the same runtime images, with different grain choices, not isolated compiler
+instruction costs or proof that either native library is the ceiling.
+
+A separate36-process/720-result ASan/UBSan diagnostic adds a distinct
+`queue_refusals` event as in the previous screen. In generated-refusal forms,
+slot plus queue refusals select the opportunity bounds; zero combined refusals
+still requires the full count. Original forms retain exact accounting with
+queue refusals added. One warm center call at limit1 reports112 publications
+and1,531 queue refusals for existing generated code, versus7 publications and32
+queue refusals with sequential subtree calls. At limit4 those observations are
+841+802 versus821+249. Actual slot refusals are zero. This distinguishes fewer
+published tasks from fewer acquisition attempts, but the instrumented executions
+are separate from timed calls and cannot assign an exact fraction of elapsed
+time to those counters. The result supports further compiler grain experiments;
+larger compositions, Linux replication and a useful general admission policy
+remain unqualified.
 
 ## Scalar scheduler comparison
 

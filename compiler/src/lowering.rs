@@ -1541,6 +1541,12 @@ pub enum OverlapLowering {
     Completion,
     /// Actualize completion operations and eligible compute groups.
     On,
+    /// Research control: an ungranted non-suspending compute call may enter
+    /// its existing ordinary-ABI sequential clone at the original join.
+    OnWithSequentialRefusal {
+        /// Optional suppression of small scalar leaf offers, as in the leaf control.
+        maximum_scalar_leaf_operations: Option<u32>,
+    },
     /// Research control: retain `On` except for offers of straight-line scalar
     /// leaves with at most this many nonconstant IR operations. This is an
     /// actualization heuristic, not an acceptance bound or machine-cost claim.
@@ -2237,9 +2243,15 @@ pub struct IrProgram<'classified, 'lexed, 'source> {
     main: u32,
     entry: IrEntry,
     actualization: Vec<String>,
+    sequential_compute_refusal: bool,
 }
 
 impl IrProgram<'_, '_, '_> {
+    /// Opt-in machine-code selection after a refused compute acquisition.
+    pub(crate) const fn sequential_compute_refusal(&self) -> bool {
+        self.sequential_compute_refusal
+    }
+
     pub fn nominals(&self) -> &[IrNominal] {
         &self.nominals
     }

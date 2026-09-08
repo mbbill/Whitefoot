@@ -199,6 +199,19 @@ The count is a research heuristic, not a target instruction or time estimate.
 Its qualification and measurements live in the
 [quadrature experiment](../research/experiments/compute-runtime/README.md#scalar-leaf-offer-control).
 
+The additional experiment `--par --par-sequential-refusal` selects an existing
+sequential clone for a refused ordinary compute hand-out when its callee cannot
+suspend and has a clone. It composes with `--par-scalar-leaf-limit N`. The call
+still runs at the original join with the same arguments and ordinary result
+ABI; successful tasks and source-last inline calls retain their parallel code.
+The clone declines descendant compute permissions and returns normally. Calls
+without a clone, may-suspend callees and staged completion keep their existing
+fallback. No new runtime query, hidden parameter or source signature effect is
+introduced. This is an opt-in code-selection experiment, not a default grain
+policy; acceptance and proof checking are unchanged. The
+[quadrature refusal control](../research/experiments/compute-runtime/README.md#sequential-subtrees-after-refusal)
+compares the generated forms and exercises full owner-slot exhaustion.
+
 The first multi-operation loop path is deliberately specific: one
 source-derived fixed two-slot bounded batch for the direct staged counted-loop
 shape. On native POSIX completion targets the runtime window is bounded to

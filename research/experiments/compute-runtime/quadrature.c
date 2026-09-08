@@ -19,8 +19,9 @@
 extern int wf__floor_run(int, char **);
 extern double wf_research_quadrature(double, double, double, double, double, uint64_t, bool);
 extern double wf_research_quadrature_leaf(double, double, double, double, double, uint64_t, bool);
+extern double wf_research_quadrature_refusal(double, double, double, double, double, uint64_t, bool);
 static double (*generated_run)(double,double,double,double,double,uint64_t,bool);
-static bool parallel_form, leaf_form;
+static bool parallel_form, leaf_form, refusal_form;
 static bool native_cpp;
 static bool native_wf;
 static unsigned native_kind, spawn_depth, requested;
@@ -87,14 +88,14 @@ static double oracle_simpson(double a,double b,double fa,double fm,double fb) {
     volatile double span=b-a,scale=span/6,weighted=4*fm,partial=fa+weighted,sum=partial+fb,value=scale*sum;
     return value;
 }
-typedef struct { double a,b,fa,fm,fb,whole,tol,m,fl,fr,left,right,result; unsigned depth,state; } Node;
-typedef struct { double value; uint64_t nodes,leaves,capped,forks; unsigned deepest; } Reference;
+typedef struct { double a,b,fa,fm,fb,whole,tol,m,fl,fr,left,right,result; unsigned depth,state; bool right_spine; } Node;
+typedef struct { double value; uint64_t nodes,leaves,capped,forks,refusal_forks; unsigned deepest; } Reference;
 static Reference reference(const Input *p) {
     Node stack[25]={0}; unsigned top=0; Reference out={0};
     volatile double endpoints=p->a+p->b,m=endpoints*0.5;
     double fa=oracle_density(p->a,p),fm=oracle_density(m,p),fb=oracle_density(p->b,p);
     stack[0]=(Node){.a=p->a,.b=p->b,.fa=fa,.fm=fm,.fb=fb,
-        .whole=oracle_simpson(p->a,p->b,fa,fm,fb),.tol=p->tolerance,.depth=p->depth};
+        .whole=oracle_simpson(p->a,p->b,fa,fm,fb),.tol=p->tolerance,.depth=p->depth,.right_spine=true};
     for (;;) {
         Node *n=&stack[top];
         if (!n->state) {
@@ -110,6 +111,7 @@ static Reference reference(const Input *p) {
                 if (!n->depth && fabs(delta)>threshold)++out.capped;
             } else {
                 if(top<spawn_depth)++out.forks;
+                if(n->right_spine)++out.refusal_forks;
                 n->state=1;require(top<24,"oracle stack domain");
                 volatile double tol=n->tol*0.5;
                 Node child={.a=n->a,.b=n->m,.fa=n->fa,.fm=n->fl,.fb=n->fm,
@@ -125,7 +127,7 @@ static Reference reference(const Input *p) {
                 parent->result=value;parent->state=2;
                 volatile double tol=parent->tol*0.5;
                 Node child={.a=parent->m,.b=parent->b,.fa=parent->fm,.fm=parent->fr,.fb=parent->fb,
-                    .whole=parent->right,.tol=tol,.depth=parent->depth-1};
+                    .whole=parent->right,.tol=tol,.depth=parent->depth-1,.right_spine=parent->right_spine};
                 stack[++top]=child;
             } else {
                 require(parent->state==2,"oracle traversal");
@@ -145,8 +147,9 @@ int wf__main_body(int argc,char **argv) {
     bool bench=!strcmp(argv[1],"bench"),exhaust=!strcmp(argv[1],"exhaust");
     require(bench || exhaust || !strcmp(argv[1],"check"),"mode");
     const char *form=argv[2];
-    leaf_form=!strcmp(form,"wf-leaf") || !strcmp(form,"wf-leaf-seq");
-    parallel_form=!strcmp(form,"wf-auto") || !strcmp(form,"wf-leaf");
+    refusal_form=!strcmp(form,"wf-refusal") || !strcmp(form,"wf-refusal-seq");
+    leaf_form=!strcmp(form,"wf-leaf") || !strcmp(form,"wf-leaf-seq") || refusal_form;
+    parallel_form=!strcmp(form,"wf-auto") || !strcmp(form,"wf-leaf") || !strcmp(form,"wf-refusal");
     native_wf=!strcmp(form,"wf-native") || !strcmp(form,"wf-value") || !strcmp(form,"wf-value-right");
     native_cpp=!strcmp(form,"cpp-seq") || !strcmp(form,"tbb") || !strcmp(form,"parlay") || !strcmp(form,"parlay-left") || native_wf;
     native_kind=!strcmp(form,"tbb")?1:!strcmp(form,"parlay")?2:!strcmp(form,"wf-native")?3:
@@ -157,13 +160,13 @@ int wf__main_body(int argc,char **argv) {
         char *end;errno=0;unsigned long parsed=strtoul(argv[3],&end,10);
         require(!errno && !*end && parsed<=24,"spawn depth domain");spawn_depth=(unsigned)parsed;
     } else require(argc==3,"spawn depth only for native schedulers");
-    generated_run=leaf_form?wf_research_quadrature_leaf:wf_research_quadrature;
+    generated_run=refusal_form?wf_research_quadrature_refusal:leaf_form?wf_research_quadrature_leaf:wf_research_quadrature;
     const char *workers=getenv("WF_WORKERS");
     require(workers && (!strcmp(workers,"1") || !strcmp(workers,"4")),"explicit worker count");
     requested=!strcmp(workers,"4")?4:1;
     void **held=NULL;unsigned reserved=0;
     if(exhaust) {
-        require(native_wf && requested==4 && spawn_depth==24,"exhaustion control arguments");
+        require(requested==4 && ((native_wf && spawn_depth==24) || (refusal_form && parallel_form)),"exhaustion control arguments");
         reserved=wf_compute_slot_capacity();held=calloc(reserved,sizeof(*held));
         require(held!=NULL && reserved>0,"exhaustion reservation array");
         for(unsigned i=0;i<reserved;++i) {
@@ -227,7 +230,19 @@ int wf__main_body(int argc,char **argv) {
             if((parallel_form || (native_wf && spawn_depth)) && requested==4) {
                 require(wf_compute_worker_count()==4,"four-worker startup");
                 uint64_t opportunities=native_wf?r.forks:leaf_form?r.nodes-r.leaves:3*r.nodes-r.leaves+2;
-                require(publishes+refusals==opportunities,"recursive publication opportunities");
+                if(refusal_form) {
+                    /* Descendants entered through a sequential clone attempt no
+                     * acquisition. Full refusal follows only the right spine,
+                     * counted independently by the explicit-stack oracle. */
+                    if(exhaust)opportunities=r.refusal_forks;
+                    else {
+                        require(publishes+refusals>=r.refusal_forks && publishes+refusals<=opportunities,
+                            "refusal subtree opportunity bounds");
+                        if(!refusals)require(publishes==opportunities,"unrefused subtree opportunities");
+                    }
+                }
+                if(!refusal_form || exhaust)
+                    require(publishes+refusals==opportunities,"recursive publication opportunities");
                 if(exhaust)require(!publishes && refusals==opportunities,"full owner-pool fallback");
             } else require(publishes==0,"sequential publication exclusion");
 #endif
@@ -239,7 +254,7 @@ int wf__main_body(int argc,char **argv) {
         }
     }
 #if WF_COMPUTE_STATS
-    if(parallel_form && requested==4)require(total_steals>0,"parallel actualization");
+    if(parallel_form && requested==4 && !exhaust)require(total_steals>0,"parallel actualization");
     if(!parallel_form && !native_wf)require(total_steals==0,"sequential task exclusion");
 #else
     if((parallel_form || (native_wf && spawn_depth)) && requested==4)require(wf_compute_worker_count()==4,"four-worker startup");

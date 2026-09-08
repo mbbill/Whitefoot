@@ -31,7 +31,7 @@ use whitefoot::{
     FLOOR_WINDOWS_RUNTIME_SOURCE, SCHED_PRIM_WINDOWS_SOURCE, WINDOWS_RUNTIME_SOURCE,
 };
 
-const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N] [--no-overlap] [--par-ledger] \
+const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N] [--par-sequential-refusal] [--no-overlap] [--par-ledger] \
 [--stack-ledger] [-o OUTPUT] SOURCE...";
 
 // The compiler walks typed source and lowering trees recursively. Windows
@@ -574,6 +574,8 @@ struct Options {
     par: bool,
     /// Opt-in scalar-leaf offer suppression for compute-grain measurements.
     scalar_leaf_limit: Option<u32>,
+    /// Opt-in ordinary-ABI sequential calls on refused compute offers.
+    sequential_refusal: bool,
     /// Emit the module a compiler with no overlap lowering at all emits.
     ///
     /// This is the sequential reference build, and it exists for one reason:
@@ -609,6 +611,7 @@ impl Options {
         let mut emit_llvm = false;
         let mut par = false;
         let mut scalar_leaf_limit = None;
+        let mut sequential_refusal = false;
         let mut no_overlap = false;
         let mut par_ledger = false;
         let mut stack_ledger = false;
@@ -633,6 +636,12 @@ impl Options {
                     if scalar_leaf_limit.replace(limit).is_some() {
                         return Err("--par-scalar-leaf-limit may be written only once".to_owned());
                     }
+                }
+                "--par-sequential-refusal" => {
+                    if sequential_refusal {
+                        return Err("--par-sequential-refusal may be written only once".to_owned());
+                    }
+                    sequential_refusal = true;
                 }
                 "--no-overlap" => no_overlap = true,
                 "--par-ledger" => par_ledger = true,
@@ -683,10 +692,14 @@ impl Options {
         if scalar_leaf_limit.is_some() && !par {
             return Err("--par-scalar-leaf-limit requires --par".to_owned());
         }
+        if sequential_refusal && !par {
+            return Err("--par-sequential-refusal requires --par".to_owned());
+        }
         Ok(Self {
             emit_llvm,
             par,
             scalar_leaf_limit,
+            sequential_refusal,
             no_overlap,
             par_ledger,
             stack_ledger,
@@ -703,6 +716,10 @@ impl Options {
     fn overlap(&self) -> OverlapLowering {
         if self.no_overlap {
             OverlapLowering::Off
+        } else if self.par && self.sequential_refusal {
+            OverlapLowering::OnWithSequentialRefusal {
+                maximum_scalar_leaf_operations: self.scalar_leaf_limit,
+            }
         } else if self.par {
             self.scalar_leaf_limit
                 .map_or(OverlapLowering::On, |maximum_operations| {
@@ -990,6 +1007,35 @@ mod tests {
             ],
         ] {
             assert!(parse(&arguments).is_err(), "{arguments:?}");
+        }
+    }
+
+    #[test]
+    fn sequential_refusal_requires_compute_and_composes_with_leaf_control() {
+        let options = parse(&[
+            "--par",
+            "--par-sequential-refusal",
+            "--par-scalar-leaf-limit",
+            "16",
+            "value.wf",
+        ])
+        .unwrap();
+        assert_eq!(
+            options.overlap(),
+            OverlapLowering::OnWithSequentialRefusal {
+                maximum_scalar_leaf_operations: Some(16)
+            }
+        );
+        for args in [
+            vec!["--par-sequential-refusal", "value.wf"],
+            vec![
+                "--par",
+                "--par-sequential-refusal",
+                "--par-sequential-refusal",
+                "value.wf",
+            ],
+        ] {
+            assert!(parse(&args).is_err());
         }
     }
 

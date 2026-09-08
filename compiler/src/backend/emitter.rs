@@ -147,6 +147,11 @@ fn emit_llvm_for(
     let mut intrinsics = BTreeSet::new();
     let mut thunks = ParallelThunks::default();
     let mut completion_used = false;
+    let refusal_clones = if program.sequential_compute_refusal() {
+        sequential_clone_set(program)
+    } else {
+        HashSet::new()
+    };
     let mut functions = String::new();
     for function in program.functions() {
         let emitter = FunctionEmitter::new(
@@ -159,6 +164,7 @@ fn emit_llvm_for(
                 parallel: &mut thunks,
                 completion_used: &mut completion_used,
                 sequential_clones: None,
+                refusal_clones: &refusal_clones,
             },
         )?;
         functions.push_str(&emitter.emit()?);
@@ -194,6 +200,7 @@ fn emit_llvm_for(
                         parallel: &mut thunks,
                         completion_used: &mut completion_used,
                         sequential_clones: Some(&clones),
+                        refusal_clones: &refusal_clones,
                     },
                 )?
                 .emit()?,
@@ -1227,8 +1234,11 @@ struct FunctionEmitter<'program, 'state> {
     /// build and the overlapped half of a `--par` build. `Some` renders the
     /// clone world: no group is actualized, and a call to a function that also
     /// has a clone names the clone, so the world a call lands in is the world
-    /// it was made from and neither ever reaches the other.
+    /// it was made from. The experimental refusal edge may enter a clone
+    /// from ordinary code without changing its parameters or result ABI.
     sequential_clones: Option<&'state HashSet<u32>>,
+    /// Existing clones callable from the opt-in refused-compute edge.
+    refusal_clones: &'state HashSet<u32>,
 }
 
 /// What one function's emission shares with the rest of its module, and the
@@ -1246,6 +1256,8 @@ struct ModuleState<'state> {
     completion_used: &'state mut bool,
     /// `None` emits the ordinary lowering; `Some` emits the sequential clone.
     sequential_clones: Option<&'state HashSet<u32>>,
+    /// Existing clones callable from the opt-in refused-compute edge.
+    refusal_clones: &'state HashSet<u32>,
 }
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
@@ -1261,6 +1273,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             parallel,
             completion_used,
             sequential_clones,
+            refusal_clones,
         } = module;
         // The staged call of a driven [PAR-3] loop, when that call is a
         // may-suspend user call. It has a hand-out form of its own — the lane
@@ -1440,6 +1453,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             block_drains: false,
             completion_used,
             sequential_clones,
+            refusal_clones,
         })
     }
 

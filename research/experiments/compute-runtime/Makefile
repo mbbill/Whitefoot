@@ -66,7 +66,7 @@ $(OUT)/probe $(OUT)/probe-no-stats $(OUT)/probe-events: runtime.c runtime.h runt
 check: check-runtime check-protocol-cost check-abi check-fir check-bench check-records-events check-scheduler-events check-mandelbrot check-quadrature
 
 .PHONY: quadrature-build check-quadrature quadrature-calibrate quadrature-deps
-QUADRATURE_FORMS := native wf-seq wf-auto wf-leaf-seq wf-leaf cpp-seq \
+QUADRATURE_FORMS := native wf-seq wf-auto wf-leaf-seq wf-leaf wf-refusal-seq wf-refusal cpp-seq \
 	tbb-d0 tbb-d2 tbb-d4 tbb-d8 tbb-d24 parlay-d0 parlay-d2 parlay-d4 parlay-d8 parlay-d24 \
 	wf-native-d0 wf-native-d2 wf-native-d4 wf-native-d8 wf-native-d24 \
 	wf-value-d0 wf-value-d2 wf-value-d4 wf-value-d8 wf-value-d24 \
@@ -98,6 +98,14 @@ quadrature-build: $(WFC) quadrature-deps
 	sed 's/@wf_research_quadrature(/@wf_research_quadrature_leaf(/g' quadrature_host.ll >> "$(OUT)/quadrature/leaf-host.ll"
 	$(CC) $(RECORD_FLAGS) -Wno-override-module -c "$(OUT)/quadrature/leaf-host.ll" -o "$(OUT)/quadrature/wf-leaf.o"
 	$(CC) $(RECORD_FLAGS) -Wno-override-module -S "$(OUT)/quadrature/leaf-host.ll" -o "$(OUT)/quadrature/wf-leaf.s"
+	"$(WFC)" --par --par-scalar-leaf-limit 16 --par-sequential-refusal --par-ledger --emit-llvm quadrature.wf -o "$(OUT)/quadrature/refusal-module.ll" > "$(OUT)/quadrature/refusal-ledger.txt"
+	grep -F 'call double @wf__par_seq_adaptive(' "$(OUT)/quadrature/refusal-module.ll"
+	@test "$$(grep -c 'call void @wf__par_publish(' "$(OUT)/quadrature/refusal-module.ll")" = 1
+	sed -e 's/@main(/@wf_quadrature_refusal_command_main(/g' -e 's/@wf__main_body(/@wf_quadrature_refusal_command_body(/g' \
+		"$(OUT)/quadrature/refusal-module.ll" > "$(OUT)/quadrature/refusal-host.ll"
+	sed 's/@wf_research_quadrature(/@wf_research_quadrature_refusal(/g' quadrature_host.ll >> "$(OUT)/quadrature/refusal-host.ll"
+	$(CC) $(RECORD_FLAGS) -Wno-override-module -c "$(OUT)/quadrature/refusal-host.ll" -o "$(OUT)/quadrature/wf-refusal.o"
+	$(CC) $(RECORD_FLAGS) -Wno-override-module -S "$(OUT)/quadrature/refusal-host.ll" -o "$(OUT)/quadrature/wf-refusal.s"
 	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=0 -S quadrature.c -o "$(OUT)/quadrature/native.s"
 	@set -e; for image in ordinary sanitized; do \
 		stats=0; flags=''; if test $$image = sanitized; then stats=1; flags='-DWF_COMPUTE_EVENTS -fsanitize=$(SANITIZER) -fno-sanitize-recover=all -fno-omit-frame-pointer'; fi; \
@@ -109,7 +117,7 @@ quadrature-build: $(WFC) quadrature-deps
 			-isystem "$(OUT)/scheduler-deps/include" -c quadrature_native.cpp -o "$(OUT)/quadrature/$$image-native.o"; \
 		$(CXX) -pthread -fno-lto $$flags "$(OUT)/quadrature/$$image-quadrature.o" "$(OUT)/quadrature/$$image-runtime.o" \
 			"$(OUT)/quadrature/$$image-floor.o" "$(OUT)/quadrature/$$image-native.o" \
-			"$(OUT)/quadrature/wf.o" "$(OUT)/quadrature/wf-leaf.o" \
+			"$(OUT)/quadrature/wf.o" "$(OUT)/quadrature/wf-leaf.o" "$(OUT)/quadrature/wf-refusal.o" \
 			-L"$(OUT)/quadrature/deps/lib" -Wl,-rpath,"$(OUT)/quadrature/deps/lib" -ltbb -lm -o "$(OUT)/quadrature/$$image"; \
 	done
 	$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -fno-fast-math -ffp-contract=off -DWF_COMPUTE_STATS=0 \
@@ -119,12 +127,12 @@ quadrature-build: $(WFC) quadrature-deps
 	$(call require-strong,$(OUT)/quadrature/ordinary,wf__floor_run)
 	@printf '%s\n' '$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=0' \
 		'$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -fno-fast-math -ffp-contract=off -DWF_COMPUTE_STATS=0' \
-		'WF original: --par; scalar-leaf control: --par --par-scalar-leaf-limit 16' \
+		'WF original: --par; scalar-leaf control: --par --par-scalar-leaf-limit 16; refusal control additionally --par-sequential-refusal' \
 		'sanitized: -DWF_COMPUTE_STATS=1 -DWF_COMPUTE_EVENTS -fsanitize=$(SANITIZER) -fno-sanitize-recover=all -fno-omit-frame-pointer; host/runtime/floor/native C++ and Parlay headers; generated WF and oneTBB library ordinary' > "$(OUT)/quadrature/flags.txt"
 	$(CC) --version >> "$(OUT)/quadrature/flags.txt"
 	cp "$(WFC)" "$(OUT)/quadrature/whitefootc"
 	git rev-parse HEAD > "$(OUT)/quadrature/revision.txt"
-	cd "$(OUT)/quadrature" && shasum -a 256 source/* module.ll host.ll *.o *.s ordinary sanitized whitefootc flags.txt ledger.txt revision.txt leaf-module.ll leaf-host.ll leaf-ledger.txt > manifest.sha256
+	cd "$(OUT)/quadrature" && shasum -a 256 source/* module.ll host.ll *.o *.s ordinary sanitized whitefootc flags.txt ledger.txt revision.txt leaf-module.ll leaf-host.ll leaf-ledger.txt refusal-module.ll refusal-host.ll refusal-ledger.txt > manifest.sha256
 	cd "$(OUT)/quadrature" && find deps -type f -exec shasum -a 256 {} + >> manifest.sha256
 
 check-quadrature: quadrature-build
@@ -136,11 +144,12 @@ check-quadrature: quadrature-build
 		awk -v mode=check -v form=$$form -v spawn=$$spawn -v width=$$width -v stats=$$stats -f quadrature.awk "$$log"; \
 		grep -E '^# quadrature PASS: outputs=20 stats=[01] steals=[0-9]+ migrated=[0-9]+$$' "$$log"; \
 	done; done; done
-	@set -e; for image in ordinary sanitized; do for form in wf-native wf-value wf-value-right; do \
+	@set -e; for image in ordinary sanitized; do for form in wf-native wf-value wf-value-right wf-refusal; do \
 		log="$(OUT)/quadrature/exhaust-$$image-$$form.tsv"; \
-		WF_WORKERS=4 "$(OUT)/quadrature/$$image" exhaust $$form 24 > "$$log" 2>&1; \
+		spawn=24; if test $$form = wf-refusal; then spawn=0; set -- $$form; else set -- $$form 24; fi; \
+		WF_WORKERS=4 "$(OUT)/quadrature/$$image" exhaust "$$@" > "$$log" 2>&1; \
 		stats=0; if test $$image = sanitized; then stats=1; fi; \
-		awk -v mode=exhaust -v form=$$form -v spawn=24 -v width=4 -v stats=$$stats -f quadrature.awk "$$log"; \
+		awk -v mode=exhaust -v form=$$form -v spawn=$$spawn -v width=4 -v stats=$$stats -f quadrature.awk "$$log"; \
 		grep -E '^# quadrature PASS: outputs=20 stats=[01] steals=0 migrated=0$$' "$$log"; \
 	done; done
 	@set -e; good="$(OUT)/quadrature/check-ordinary-w1-native.tsv"; \
@@ -159,6 +168,11 @@ check-quadrature: quadrature-build
 	@if awk -v mode=check -v form=tbb -v spawn=2 -v width=4 -v stats=0 -f quadrature.awk \
 		"$(OUT)/quadrature/negative-forks.tsv" > "$(OUT)/quadrature/negative-forks.tsv.log" 2>&1; then \
 		echo 'quadrature accepted wrong fork count' >&2; exit 1; \
+	fi
+	@awk 'NR==4 {$$16=4} {print}' "$(OUT)/quadrature/exhaust-sanitized-wf-refusal.tsv" > "$(OUT)/quadrature/negative-refusal-spine.tsv"
+	@if awk -v mode=exhaust -v form=wf-refusal -v width=4 -v stats=1 -f quadrature.awk \
+		"$(OUT)/quadrature/negative-refusal-spine.tsv" > "$(OUT)/quadrature/negative-refusal-spine.tsv.log" 2>&1; then \
+		echo 'quadrature accepted wrong refusal spine' >&2; exit 1; \
 	fi
 
 quadrature-calibrate:

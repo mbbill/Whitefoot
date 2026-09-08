@@ -37,7 +37,10 @@ exposes remaining WF losses; a matched-grain native WF extension exercises the
 same scalar kernel through pointer/by-value frames and forced slot exhaustion.
 Reciprocal native fork-direction controls expose mirrored left/right skew
 effects while preserving the ordered result and all oracle work counts.
-Recursive Rayon, compiler grain selection and held-out/native-host confirmation
+An opt-in generated sequential-refusal control now tests subtree selection on
+actual compiler output; fixed queue occupancy remains an unqualified admission
+policy, with input-dependent gains and losses. Recursive Rayon, general compiler
+grain selection and held-out/native-host confirmation
 remain missing. The ten-case screen does not
 yet qualify larger application composition and does not replace the application
 rows below.

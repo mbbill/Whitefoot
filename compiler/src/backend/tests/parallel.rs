@@ -3286,3 +3286,180 @@ command fn main() -> status: own ExitStatus pure {
     );
     assert!(module_requires_parallel_runtime(&retained));
 }
+
+/// Rejecting a task must compute every leaf, while entering the sequential
+/// clone removes descendant attempts. One deferred granted frame also checks
+/// that this selection is confined to refusal, with ordinary result storage.
+#[test]
+fn sequential_refusal_preserves_scalar_and_destination_results() {
+    for aggregate in [false, true] {
+        let result = if aggregate { "Answer" } else { "u64" };
+        let declaration = if aggregate {
+            "struct Answer {\n  value: u64;\n}\n\n"
+        } else {
+            ""
+        };
+        let leaf = if aggregate {
+            "Answer(value: value)"
+        } else {
+            "value"
+        };
+        let sum = if aggregate {
+            "l.value +wrap r.value"
+        } else {
+            "l +wrap r"
+        };
+        let merged = if aggregate {
+            "Answer(value: combined)"
+        } else {
+            "combined"
+        };
+        let read = if aggregate { "answer.value" } else { "answer" };
+        let source = format!(
+            r#"{declaration}fn fold(depth: own u64, seed: &u64) -> result: own {result} reads(seed) contract {{
+  requires depth <= 5_u64;
+}} {{
+  if depth == 0_u64 {{
+    let value = deref(seed);
+    return {leaf};
+  }}
+  let next = depth - 1_u64;
+  let l = fold(depth: next, seed: seed);
+  let r = fold(depth: next, seed: seed);
+  let combined = {sum};
+  return {merged};
+}}
+
+command fn main() -> status: own ExitStatus pure {{
+  let seed = 2_u64;
+  region {{
+    let answer = fold(depth: 5_u64, seed: &seed);
+    if {read} == 64_u64 {{
+      return exit_status(code: 0_u8);
+    }}
+    return exit_status(code: 1_u8);
+  }}
+}}
+"#
+        );
+        for sequential in [false, true] {
+            let policy = if sequential {
+                crate::OverlapLowering::OnWithSequentialRefusal {
+                    maximum_scalar_leaf_operations: Some(16),
+                }
+            } else {
+                crate::OverlapLowering::OnWithoutSmallScalarLeaves {
+                    maximum_operations: 16,
+                }
+            };
+            let module = super::emit_lowered(source.as_bytes(), policy);
+            let body = function_body(&module, "@wf_fold");
+            assert_eq!(body.contains("@wf__par_seq_fold("), sequential);
+            assert!(
+                !function_body(&module, "@wf__par_seq_fold").contains("@wf__par_acquire_lane(")
+            );
+            let mut observed = module
+                .replace(
+                    "call ptr @wf__par_acquire_lane(",
+                    "call ptr @wf_test_acquire(",
+                )
+                .replace("call void @wf__par_publish(", "call void @wf_test_publish(")
+                .replace("call void @wf__par_join(", "call void @wf_test_join(")
+                .replace("call void @wf__par_release(", "call void @wf_test_release(")
+                .replace(
+                    "call i32 @wf__par_pool_active()",
+                    "call i32 @wf_test_parallel_world()",
+                );
+            observed.push_str("\ndeclare ptr @wf_test_acquire(i64)\ndeclare void @wf_test_publish(ptr, ptr)\ndeclare void @wf_test_join(ptr)\ndeclare void @wf_test_release(ptr)\ndeclare i32 @wf_test_parallel_world()\n");
+            let directory = test_directory();
+            let executable = build_linked_executable(
+                &observed,
+                Some(SEQUENTIAL_REFUSAL_OBSERVER),
+                &[],
+                &directory,
+            );
+            for granted in [false, true] {
+                let output = Command::new(&executable)
+                    .env("WF_TEST_ONE_GRANT", if granted { "1" } else { "0" })
+                    .output()
+                    .expect("run deterministic refusal schedule");
+                assert!(output.status.success(), "{output:?}");
+                // Full binary tree: 31 internal calls. With no grants only
+                // the right spine tries: 5. A granted root also runs the
+                // left subtree's right spine: 5 + 4.
+                let attempts = if sequential {
+                    if granted { 9 } else { 5 }
+                } else {
+                    31
+                };
+                assert_eq!(
+                    String::from_utf8_lossy(&output.stderr),
+                    format!(
+                        "attempts={attempts} granted={} released={}\n",
+                        u8::from(granted),
+                        u8::from(granted)
+                    )
+                );
+            }
+            std::fs::remove_dir_all(directory).expect("remove refusal artifacts");
+        }
+    }
+}
+
+#[test]
+fn sequential_refusal_keeps_leaf_calls_and_staged_completion_unchanged() {
+    // No descendant compute permission means no clone is needed at the call.
+    let source = br#"fn leaf(x: own u64) -> result: own u64 pure {
+  return x +wrap 1_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let a = leaf(x: 1_u64);
+  let b = leaf(x: 2_u64);
+  let sum = a +wrap b;
+  if sum == 5_u64 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}
+"#;
+    let policy = crate::OverlapLowering::OnWithSequentialRefusal {
+        maximum_scalar_leaf_operations: None,
+    };
+    let module = super::emit_lowered(source, policy);
+    assert_eq!(module, emit_with_overlap(source));
+    assert!(compile_and_run(&module).status.success());
+    let staged = super::emit_lowered(STAGED_MAY_SUSPEND_CALL, policy);
+    assert_eq!(staged, emit_with_overlap(STAGED_MAY_SUSPEND_CALL));
+}
+
+const SEQUENTIAL_REFUSAL_OBSERVER: &str = r#"#include <stdio.h>
+#include <stdlib.h>
+#include <stdalign.h>
+static unsigned attempts, grants, releases;
+static alignas(16) unsigned char frame[512];
+static void (*callback)(void *);
+static int joined;
+static void require(int value) { if (!value) abort(); }
+static void report(void) {
+    require(grants == releases);
+    fprintf(stderr, "attempts=%u granted=%u released=%u\n", attempts, grants, releases);
+}
+int wf_test_parallel_world(void) { require(atexit(report) == 0); return 1; }
+void *wf_test_acquire(unsigned long bytes) {
+    require(bytes <= sizeof frame);
+    ++attempts;
+    const char *grant = getenv("WF_TEST_ONE_GRANT");
+    if (attempts == 1 && grant && grant[0] == '1') { ++grants; return frame; }
+    return NULL;
+}
+void wf_test_publish(void *p, void (*run)(void *)) {
+    require(p == frame && !callback); callback = run;
+}
+void wf_test_join(void *p) {
+    require(p == frame && callback && !joined); callback(p); joined = 1;
+}
+void wf_test_release(void *p) {
+    require(p == frame && joined && !releases); ++releases;
+}
+"#;
