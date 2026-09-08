@@ -16,6 +16,8 @@ DECLARE_ADAPTER(layout_wf_group16);
 DECLARE_ADAPTER(layout_static);
 DECLARE_ADAPTER(layout_tbb);
 DECLARE_ADAPTER(layout_parlay);
+void records_parlay_auto_run(unsigned, size_t, RecordChunk, void *);
+const char *records_parlay_auto_name(void);
 DECLARE_ADAPTER(layout_rayon_join);
 DECLARE_ADAPTER(layout_rayon_iter);
 
@@ -30,6 +32,7 @@ static const Adapter adapters[] = {
     ADAPTER("wf", layout_wf), ADAPTER("static", layout_static),
     ADAPTER("wf-group4", layout_wf_group4), ADAPTER("wf-group16", layout_wf_group16),
     ADAPTER("tbb", layout_tbb), ADAPTER("parlay", layout_parlay),
+    {"parlay-auto", records_parlay_auto_run, records_parlay_auto_name, layout_parlay_stop},
     ADAPTER("rayon-join", layout_rayon_join), ADAPTER("rayon-iter", layout_rayon_iter)
 };
 static const Adapter *selected;

@@ -66,7 +66,8 @@ static Work input(size_t n, uint64_t limit, const char *shape, uint32_t seed, si
     w.expected=malloc((n?n:1)*sizeof(uint64_t));
     require(w.x && w.y && w.held_x && w.held_y && w.expected,"input allocation");
     int kind=!strcmp(shape,"plane")?0:!strcmp(shape,"boundary")?1:!strcmp(shape,"clustered")?2:
-             !strcmp(shape,"interleaved")?3:!strcmp(shape,"interior")?4:!strcmp(shape,"exterior")?5:-1;
+             !strcmp(shape,"interleaved")?3:!strcmp(shape,"interior")?4:!strcmp(shape,"exterior")?5:
+             !strcmp(shape,"trailing")?6:-1;
     require(kind>=0,"input shape");
     for(size_t i=0;i<n;++i) {
         if(kind<2) {
@@ -75,7 +76,8 @@ static Work input(size_t n, uint64_t limit, const char *shape, uint32_t seed, si
             w.x[i]=kind==0 ? -2+3*a : -0.75+(a-0.5)/32;
             w.y[i]=kind==0 ? -1.5+3*b : 0.125+(b-0.5)/32;
         } else {
-            bool inside=kind==4 || (kind==2 && i<(n+3)/4) || (kind==3 && i%4==0);
+            bool inside=kind==4 || (kind==2 && i<(n+3)/4) || (kind==3 && i%4==0) ||
+                        (kind==6 && i>=n-(n+3)/4);
             w.x[i]=inside?0:3;w.y[i]=0;
         }
         w.expected[i]=reference(w.x[i],w.y[i],limit);w.iterations+=w.expected[i];
@@ -127,9 +129,9 @@ static int qualify(void) {
         uint64_t expected=reference(special[i],special[j],limits[k]);
         require(native(special[i],special[j],limits[k])==expected && wf_research_escape(special[i],special[j],limits[k])==expected,"special point");++leaves;
     }
-    const char *shapes[]={"plane","boundary","clustered","interleaved","interior","exterior"};
+    const char *shapes[]={"plane","boundary","clustered","interleaved","interior","exterior","trailing"};
     const size_t sizes[]={0,1,3,33,257,4097};
-    for(size_t s=0;s<6;++s)for(size_t n=0;n<6;++n)for(size_t k=0;k<6;++k) {
+    for(size_t s=0;s<7;++s)for(size_t n=0;n<6;++n)for(size_t k=0;k<6;++k) {
         Work w=input(sizes[n],limits[k],shapes[s],828219,16);
         w.poison=true;
         for(size_t i=0;i<w.n;++i) {

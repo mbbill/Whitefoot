@@ -226,7 +226,13 @@ mandelbrot-build: scheduler-layout-build $(WFC)
 	shasum -a 256 "$(WFC)" >> "$(OUT)/mandelbrot-flags.txt"
 
 check-mandelbrot: mandelbrot-build
+	@for width in 1 2 4; do \
+		log="$(OUT)/mandelbrot-parlay-auto-exactly-once-w$$width.log"; status=0; \
+		WF_WORKERS=$$width "$(OUT)/scheduler-layout" parlay-auto check $$width > "$$log" 2>&1 || status=$$?; \
+		sh records-scheduler-memory.sh validate-clean "$$log" $$status parlay-auto $$width qualify || { cat "$$log" >&2; exit 1; }; \
+	done
 	OUT="$(OUT)" sh mandelbrot-bench.sh check
+	OUT="$(OUT)" sh mandelbrot-bench.sh grain-check
 
 # Download is explicit, as with Cargo's offline research dependencies. The
 # build verifies pins and only installs the private library below OUT.

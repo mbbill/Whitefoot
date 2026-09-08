@@ -949,9 +949,12 @@ The C host checks every returned count against an explicitly rounded recurrence
 and verifies both input arrays after every call. Known fixed/escaping orbits,
 NaN/infinities, zero and maximum iteration limits, empty/odd/non-power-of-two
 batches and maximum repetition counts qualify the boundary. Each full
-qualifier checks 158,809 single points and 216 batches / 158,076 outputs.
-`check-mandelbrot` runs all seventeen configurations in ordinary and C-sanitized
-images, then sixty-eight timing smokes. The existing pinned Rayon Linux
+qualifier checks 185,155 single points and 252 batches / 184,422 outputs.
+`check-mandelbrot` runs all nineteen configurations in ordinary and C-sanitized
+images, then ninety-five timing smokes and 150 grain-panel smokes. The new
+Parlay automatic-grain entry also runs the existing atomic exactly-once,
+joined-tail and capacity qualifier at widths one, two and four using the same
+adapter object in the shared scheduler image. The existing pinned Rayon Linux
 caller-worker lifecycle report is checked with its exact allocation/stack
 grammar and actual exit status; other leaks or sanitizer failures reject.
 Sanitizers cover this C host, native kernel, WF runtime and floor; emitted WF
@@ -959,20 +962,26 @@ code and the reused native adapters/libraries are ordinary objects. Linux
 execution must qualify the new shared image's lifecycle report separately.
 
 After `make scheduler-fetch`, run `make check-mandelbrot` with an absolute
-`OUT`, then `OUT=... RESULTS=... sh mandelbrot-bench.sh calibrate`. Run these
+`OUT`, then `OUT=... RESULTS=... sh mandelbrot-bench.sh calibrate` and
+`OUT=... RESULTS=... sh mandelbrot-bench.sh grain-calibrate`. Run these
 commands from this experiment directory; `RESULTS` must not exist. Canonical
 `check` includes qualification, and the `mandelbrot-linux` compute CI job builds,
 checks and calibrates sequentially on one recorded CPU mask. The native
 adapters reuse the scheduler panel's pinned sources and scalar build path.
 
-Seventeen configurations share one executable:
+Nineteen configurations share one executable in the fixed-grain panel:
 
 - generated WF sequential at width one; generated WF automatic at width one
   and four, with cost/capacity/team policies at width four;
-- the same native C chunk callback under WF, static pthread, oneTBB, Parlay,
+- the same native C chunk callback under WF, static pthread, oneTBB, Parlay
+  with fixed or automatic scheduler grain,
   Rayon join and Rayon parallel iterator, each at widths one and four.
 
-Native callbacks process sixty-four points each. Generated maps report grain
+Native callbacks process sixty-four points each in this panel. Parlay's
+automatic scheduler grain groups these callbacks; it does not change how many
+points the shared callback receives. With more than one callback, its timed
+prefix runs per invocation, inside core time, and is not replayed. Empty and
+single-callback ranges bypass calibration. Generated maps report grain
 zero, meaning compiler/runtime splitting rather than that native chunk size.
 All native schedulers execute the same callback machine code; comparisons
 against generated WF also include code-generation and decomposition differences.
@@ -982,14 +991,30 @@ WF pool; it does not report native-library occupancy. The validator requires
 expected WF capacity, deriving cost's admission threshold from emitted weight
 and the runtime threshold instead of treating every width-four label as active.
 
-The calibration has 850 processes / 7,650 calls: five rotating/reflected passes
-and eight warm calls plus a separate first call. Six 4,097-point cells at limit
-256 cover a sampled plane, a boundary neighborhood, clustered/interleaved
-equal multisets of interior/exterior points, all-interior and all-exterior work.
+The fixed-grain calibration has 1,045 processes / 9,405 calls: five
+rotating/reflected passes and eight warm calls plus a separate first call.
+Seven 4,097-point cells at limit 256 cover a sampled plane, a boundary
+neighborhood, clustered/interleaved/trailing equal multisets of interior/exterior
+points, all-interior and all-exterior work. The trailing input places the same
+heavy quarter at the end, challenging an estimate made from a cheap prefix.
 Four 33-point cells at limit sixteen cover plane, boundary, interior and exterior.
 Seed 828219 fixes the coordinates. The raw total capped iteration count is
 bound across configurations/passes and checked analytically for the fixed-orbit
 families. It describes useful recurrence work, not scheduler tasks.
+
+The grain panel retains the five generated-WF controls and varies native
+callback size over 1, 16, 64, 256 and 1,024 points for each of seven native
+selectors at widths one and four: 75 configurations. Five 4,097-point inputs
+(plane, clustered, trailing, interior, exterior) and two 33-point inputs
+(plane, exterior) give 2,625 processes / 23,625 calls over five passes. Raw
+filenames include grain so no configuration overwrites another. Both panels
+retain independent order, manifest and summary files; do not pool their calls
+or interpret a lowest median selected from the grain screen as held-out
+confirmation. The native callback machine code is common at every grain;
+the number of callback invocations changes. With Parlay automatic grain,
+callbacks may be grouped further or consumed by the timed prefix, so callback
+count is not a runtime-task count. These controls add no timing probes or
+adaptive policy to generated WF.
 
 Core time includes output allocation and joined computation. Native output
 uses `malloc` because each callback writes its entire assigned range; native
@@ -1005,7 +1030,8 @@ same-owner native teardown follows the measured batch. Statistics and events
 are disabled. These are scalar end-to-end and common-kernel controls, not a
 claim of best Mandelbrot algorithms or a tuned native scheduling frontier.
 
-The September 8 M1 calibration uses ordinary image SHA256
+The initial September 8 M1 calibration, before the automatic-grain and trailing
+extensions, uses ordinary image SHA256
 `1a90946b58ca2c1122fcee199b69988b2eb3fccb44616ab4dd468731d045de36`.
 All 850 processes passed; independent replay checked 7,650 calls, 18,906,210
 output positions, 6,800 gaps, all summaries and 53 distinct manifest paths.
@@ -1120,16 +1146,84 @@ still includes startup, checks and printing. Native WF boundary is also slower
 than oneTBB in this screen. The data do not establish a universal winner.
 
 These two hosts reproduce admission and imbalance losses while disagreeing
-on important scheduling details. Before promoting a generic adaptive policy,
-the reference comparison needs grain sensitivity and normal automatic-grain
-forms as well as fixed callback work. In the pinned Parlay implementation,
+on important scheduling details. The later grain panel investigates native
+grain sensitivity and an automatic-grain form alongside fixed callback work.
+In the pinned Parlay implementation,
 automatic grain executes a growing prefix until one sampled block takes at
 least 1,000 ns (or the range ends), then partitions the remainder. The current
-adapter deliberately supplies grain one over host chunks, bypassing that
-calibration. It is a same-chunk scheduler control, not evidence against Parlay's
+fixed-grain adapter deliberately supplies grain one over host chunks, bypassing
+that calibration; the later `parlay-auto` selector retains it. The former is a
+same-chunk scheduler control, not evidence against Parlay's
 automatic-grain policy. Any WF sampling experiment must charge its probe,
 preserve exactly-once execution and include inputs whose expensive region
 appears after the sampled prefix.
+
+The subsequent M1 grain panel uses ordinary image SHA256
+`0fcf197c5953a4f68654a4dd620bfbb8f7ef2294d31a6a97ecbf17248b801bd0`.
+All 2,625 processes passed, with independent replay of 23,625 calls,
+69,359,625 output positions, 21,000 gaps and 52 distinct manifest paths.
+This is a fresh same-image cohort; its observations are not pooled with the
+earlier fixed-grain M1 or Linux runs. Statistics/events remain disabled,
+worker placement is unfixed and first calls remain separate.
+
+Each cell below selects that backend's lowest observed W4 core median from
+the five tested grains. Values are microseconds, with points per callback in
+parentheses; selection uses the same five process warm means being reported,
+so this is a grain screen rather than held-out confirmation.
+
+| Native selector | Plane / 4097 | Clustered / 4097 | Trailing / 4097 | Interior / 4097 | Exterior / 4097 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| WF | 175.620 (64) | 225.730 (256) | 227.162 (256) | 876.250 (16) | 3.942 (1024) |
+| Static | 175.854 (16) | 887.667 (256) | 643.266 (256) | 905.302 (16) | 3.438 (1024) |
+| oneTBB | 179.880 (64) | 230.417 (256) | 230.198 (64) | 875.073 (64) | 6.547 (1024) |
+| Parlay fixed | 191.922 (16) | 244.724 (64) | 248.474 (16) | 919.432 (16) | 5.422 (256) |
+| Parlay automatic | 197.214 (16) | 261.604 (1) | 502.625 (1) | 938.573 (1) | 5.380 (256) |
+| Rayon join | 179.214 (16) | 243.615 (1) | 245.469 (256) | 887.240 (16) | 7.042 (256) |
+| Rayon iterator | 187.380 (64) | 448.484 (16) | 248.927 (256) | 946.036 (64) | 11.792 (256) |
+
+Grain choice materially strengthens some references. On plane input, Rayon
+join grain 16 versus 64 changes the median from 197.213 to 179.214 us;
+the paired ratio is 0.909 [0.851–0.954], faster in all five pairs. On trailing
+input, Rayon iterator grain 256 versus 64 changes 334.812 to 248.927 us;
+the paired ratio is 0.774 [0.689–1.034], faster in four pairs. Chunk size also
+changes static partition boundaries, so its improvements need not represent
+lower dispatch overhead. No single grain wins across inputs or backends.
+
+Generated WF capacity core medians are 176.771 / 229.104 / 232.214 / 891.766 us
+for plane / clustered / trailing / interior. Comparisons against each cell's
+lowest selected native median have mixed pair directions for the first three;
+interior loses to oneTBB in all five pairs, ratio 1.018 [1.011–1.021]. Exterior
+capacity is 6.328 us versus selected static 3.438 us, ratio 1.838
+[1.579–2.427], slower in all five pairs. These generated/native comparisons
+include allocation, code generation and decomposition. At 33 points, grains
+of 64 or larger expose one native callback, so those rows measure serial-path
+overhead under a W4 budget, not four-way useful parallelism. No default WF
+policy improvement is claimed by this panel.
+
+Trailing input exposes a specific automatic-grain weakness. At native grain
+64, Parlay automatic takes 721.547 us versus fixed 257.734 us, paired ratio
+2.865 [2.773–3.071], slower in all five pairs. Automatic also loses all five
+pairs at grains 1, 16 and 256; grain 1024 is mixed. Even its selected grain one
+remains 502.625 us. The heavy-point count and total useful iterations are the
+same as clustered input; ordering changes the observed performance.
+
+A separate one-shot diagnostic copied the pinned Parlay include tree and
+inserted only an `fprintf(stderr, ...)` immediately before `start += done` in
+`fork_join_scheduler::parfor`, reporting initial range, completed prefix and
+selected grain. Only the Parlay adapter object was rebuilt; the other objects
+were reused from the ordinary image. Diagnostic image SHA256 is
+`94084bb72c3635500b8ba0e0a8883b5fb7ea474dd380bbaf33cdeae468e8cf08`.
+Thirty processes cover clustered/trailing/exterior, native grains 1/64, W4,
+4,097 points, limit 256, seed 828219 and five passes of nine calls. Every output
+is checked; diagnostic timing is not ranked against the ordinary image.
+For trailing/grain64, 34 of 45 calls consume 31 callbacks and select scheduler
+grain 31; clustered/grain64 selects grain one in all 45 calls. With the
+observed grain 31, the pinned split rule partitions the remaining callback
+ranges into [31,50) and [50,65). The latter contains 897 of the 1,025 heavy
+points. This demonstrates how a cheap prefix can select a coarse terminal
+chunk that concentrates most later work. It is consistent with the ordinary
+slowdown, but does not establish the ordinary image's per-call chosen grain:
+logging, image layout and measurement conditions can change the probe.
 
 ## Scalar scheduler comparison
 

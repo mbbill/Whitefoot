@@ -2,7 +2,7 @@
 set -eu
 cd "$(dirname "$0")"
 mode=${1:?mode required}
-case "$mode" in check|calibrate) ;; *) exit 1;; esac
+case "$mode" in check|calibrate|grain-check|grain-calibrate) ;; *) exit 1;; esac
 : "${OUT:?build output required}"
 rounds=${ROUNDS:-5}
 case "$rounds" in ''|*[!0-9]*) exit 1;; esac
@@ -29,7 +29,7 @@ printf '%s\n' "$results" > "$OUT/last-mandelbrot-$mode-path.txt"
     fi
     shasum -a 256 mandelbrot.wf mandelbrot_host.ll mandelbrot.c mandelbrot-bench.sh Makefile runtime.c runtime.h \
         records_scheduler.h records_selector.c records_runtime.c records_static.c records_tbb.cpp records_parlay.cpp records_rayon.c \
-        records-scheduler-deps.sh records-scheduler-memory.awk records-rayon/adapter.rs \
+        records-scheduler-deps.sh records-scheduler-memory.awk records-scheduler-memory.sh records-rayon/adapter.rs \
         records-rayon/Cargo.toml records-rayon/Cargo.lock ../../../compiler/src/backend/wf_floor.c
     shasum -a 256 "$OUT"/mandelbrot*.o "$OUT"/mandelbrot*.ll "$OUT"/scheduler-layout-*.o "$OUT/scheduler-floor.o" \
         "$OUT/scheduler-deps/rayon/release/libwf_records_rayon.a" "$OUT"/scheduler-deps/lib/libtbb.* \
@@ -43,9 +43,14 @@ wf-auto 4 cost 0
 wf-auto 4 capacity 0
 wf-auto 4 team 0
 CONFIG
-for backend in wf static tbb parlay rayon-join rayon-iter; do
-    printf '%s 1 cost 64\n%s 4 cost 64\n' "$backend" "$backend" >> "$results/configurations.txt"
+grains=64;configurations=19
+case "$mode" in grain-*) grains='1 16 64 256 1024';configurations=75;; esac
+for backend in wf static tbb parlay parlay-auto rayon-join rayon-iter; do
+    for grain in $grains; do
+        printf '%s 1 cost %s\n%s 4 cost %s\n' "$backend" "$grain" "$backend" "$grain" >> "$results/configurations.txt"
+    done
 done
+test "$(wc -l < "$results/configurations.txt")" -eq "$configurations"
 if test "$mode" = check; then
     for image in mandelbrot mandelbrot-sanitized; do
         while read -r backend width policy grain; do
@@ -63,14 +68,24 @@ if test "$mode" = check; then
             : > "$results/functional-prefix.txt"
             awk -v leak="$leak" -v extra=0 -v object_basename=mandelbrot-sanitized \
                 -v prefix="$results/functional-prefix.txt" -f records-scheduler-memory.awk "$log"
-            grep -Fxq '# Mandelbrot qualification PASS: leaves=158809 calls=216 outputs=158076' "$results/functional-prefix.txt"
+            grep -Fxq '# Mandelbrot qualification PASS: leaves=185155 calls=252 outputs=184422' "$results/functional-prefix.txt"
             test "$(wc -l < "$results/functional-prefix.txt")" -eq 1
         done < "$results/configurations.txt"
     done
+fi
+if test "$mode" = check; then
     rounds=1
-    printf '%s\n' 'plane 0 0' 'boundary 33 16' 'clustered 4097 256' 'exterior 33 16' > "$results/cells.txt"
+    printf '%s\n' 'plane 0 0' 'boundary 33 16' 'clustered 4097 256' 'trailing 4097 256' 'exterior 33 16' > "$results/cells.txt"
+elif test "$mode" = grain-check; then
+    rounds=1
+    printf '%s\n' 'trailing 4097 16' 'exterior 33 16' > "$results/cells.txt"
+elif test "$mode" = grain-calibrate; then
+    for shape in plane clustered trailing interior exterior; do
+        printf '%s 4097 256\n' "$shape"
+    done > "$results/cells.txt"
+    for shape in plane exterior; do printf '%s 33 16\n' "$shape"; done >> "$results/cells.txt"
 else
-    for shape in plane boundary clustered interleaved interior exterior; do
+    for shape in plane boundary clustered interleaved interior exterior trailing; do
         printf '%s 4097 256\n' "$shape"
     done > "$results/cells.txt"
     for shape in plane boundary interior exterior; do printf '%s 33 16\n' "$shape"; done >> "$results/cells.txt"
@@ -90,15 +105,14 @@ while read -r shape count limit; do
     case "$shape" in
         interior) expected_iterations=$((count*limit));;
         exterior) expected_iterations=$((count*escaped));;
-        clustered|interleaved) inside=$(((count+3)/4));expected_iterations=$((inside*limit+(count-inside)*escaped));;
+        clustered|interleaved|trailing) inside=$(((count+3)/4));expected_iterations=$((inside*limit+(count-inside)*escaped));;
     esac
     while test "$pass" -lt "$rounds"; do
         awk -v shift="$((cell+pass))" -v reverse="$((pass%2))" '{a[NR]=$0} END{for(j=0;j<NR;j++){i=(j+shift)%NR;if(reverse)i=NR-1-i;print a[i+1]}}' \
             "$results/configurations.txt" > "$results/order.txt"
         while read -r backend width policy grain; do
-            file="$results/$shape-n$count-l$limit-$backend-w$width-$policy-p$pass.tsv"
-            reps=8;if test "$mode" = check; then reps=2;fi
-            if test "$mode" = check && test "$shape" = exterior;then reps=256;fi
+            file="$results/$shape-n$count-l$limit-$backend-w$width-$policy-g$grain-p$pass.tsv"
+            reps=8;case "$mode" in *check) reps=2;if test "$shape" = exterior;then reps=256;fi;;esac
             expected_lanes=0
             if test "$width" -gt 1;then
                 if test "$backend" = wf && test "$count" -gt "$grain";then expected_lanes=$width;fi
@@ -151,7 +165,7 @@ while read -r shape count limit; do
         pass=$((pass+1))
     done
 done < "$results/cells.txt"
-test "$processes" -eq "$((cell*17*rounds))"
+test "$processes" -eq "$((cell*configurations*rounds))"
 test "$(wc -l < "$results/summary.tsv")" -eq "$((processes+1))"
 test "$(shasum -a 256 "$OUT/mandelbrot")" = "$image_hash"
 printf 'Mandelbrot %s PASS: processes=%s results=%s\n' "$mode" "$processes" "$results"

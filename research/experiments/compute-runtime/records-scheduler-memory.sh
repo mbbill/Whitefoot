@@ -22,6 +22,7 @@ case "$backend" in
     static|static-spin) backend=static-spin; shutdown=1;;
     tbb|oneTBB-v2023.1.0-auto-grain1) backend=oneTBB-v2023.1.0-auto-grain1; shutdown=0;;
     parlay|parlay-native-grain1) backend=parlay-native-grain1; shutdown=1;;
+    parlay-auto|parlay-native-auto-grain) backend=parlay-native-auto-grain; shutdown=1;;
     rayon-join|rayon-1.12.0-join) backend=rayon-1.12.0-join; binary=rayon-join; shutdown=0;;
     rayon-iter|rayon-1.12.0-par-iter) backend=rayon-1.12.0-par-iter; binary=rayon-iter; shutdown=0;;
     *) usage;;

@@ -34,8 +34,8 @@ bool stopped = false;
 // One external owner initializes/runs/stops this adapter; external invocations
 // must not overlap, and stop follows joined work. Same-width nested run calls
 // from its callbacks can reuse Parlay's native scheduler and join/help path.
-extern "C" void records_scheduler_run(unsigned width, size_t chunks,
-                                      RecordChunk chunk, void *context) {
+static void run(unsigned width, size_t chunks, RecordChunk chunk, void *context,
+                long granularity) {
     if (width != 1 && width != 2 && width != 4) fail("width must be 1, 2 or 4");
     if (chunks && !chunk) fail("missing chunk callback");
     if (stopped) fail("run after shutdown");
@@ -49,16 +49,29 @@ extern "C" void records_scheduler_run(unsigned width, size_t chunks,
             pool = new Scheduler(width);
         }
         if (Scheduler::get_current_scheduler() != pool) fail("caller is outside the native scheduler");
-        // The common host already partitions records into fixed chunks. Grain
-        // 1 avoids Parlay's timed grain calibration; its one-chunk inline path
-        // and ordinary non-conservative join/help path remain unchanged.
+        // Grain one fixes the host's callback units. Grain zero includes the
+        // upstream timed, exactly-once prefix and automatic subdivision.
         parlay::parallel_for(size_t{0}, chunks,
-                             [&](size_t i) { chunk(context, i); }, 1, false);
+                             [&](size_t i) { chunk(context, i); }, granularity, false);
     } catch (const std::exception &error) {
         fail(error.what());
     } catch (...) {
         fail("unexpected scheduler exception");
     }
+}
+
+extern "C" void records_scheduler_run(unsigned width, size_t chunks,
+                                      RecordChunk chunk, void *context) {
+    run(width, chunks, chunk, context, 1);
+}
+
+extern "C" void records_parlay_auto_run(unsigned width, size_t chunks,
+                                       RecordChunk chunk, void *context) {
+    run(width, chunks, chunk, context, 0);
+}
+
+extern "C" const char *records_parlay_auto_name(void) {
+    return "parlay-native-auto-grain";
 }
 
 extern "C" const char *records_scheduler_name(void) {

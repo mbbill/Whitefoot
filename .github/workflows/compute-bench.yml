@@ -78,6 +78,10 @@ jobs:
           test -n "$selected"
           taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/calibration" \
             sh research/experiments/compute-runtime/${{ matrix.driver }} calibrate
+          if test '${{ matrix.workload }}' = mandelbrot; then
+            taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/grain-calibration" \
+              sh research/experiments/compute-runtime/mandelbrot-bench.sh grain-calibrate
+          fi
           if test '${{ matrix.workload }}' = records; then
             taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/budget-calibration" \
               sh research/experiments/compute-runtime/records-bench.sh budget-calibrate
@@ -136,6 +140,7 @@ jobs:
             ${{ runner.temp }}/compute-${{ matrix.workload }}-build.log
             ${{ runner.temp }}/compute-${{ matrix.workload }}/compiler/gate/whitefootc
             ${{ runner.temp }}/compute-${{ matrix.workload }}/calibration/
+            ${{ runner.temp }}/compute-${{ matrix.workload }}/grain-calibration/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/budget-calibration/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/record-events-calibration/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/layout-calibration/
