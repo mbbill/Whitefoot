@@ -2444,8 +2444,33 @@ Process-clock/rusage CPU ratios have median0.999965196 and range
 performance ranking or a resolution of the Linux discrepancy. All140 batch
 qualifiers and five maintained negative probes pass. The build's collector
 snapshot predates only the Linux command-resolution/copy-path adjustment;
-the measured collector matches the final script. New Linux metadata capture
-and CPU-clock cross-validation remain unverified until that host executes v2.
+the measured collector matches the final script. The following Linux v2 cohort
+exercises the new metadata and CPU-clock paths.
+
+The Linux v2 cohort at `1ac92939` is retained in
+[run34252119791, quadrature job102148827444](https://github.com/mbbill/Whitefoot/actions/runs/34252119791/job/102148827444),
+artifact10066558270, ZIP SHA256
+`24d531ab520de55285064a5d31174016faa5820d0e020169b01c75ee597d1703`.
+Its720 reports check2,954,880 outputs and1,440 software-event rows;58 manifest
+paths and14 source snapshots match. Ordinary image SHA256 is
+`56fe2f43928d4ce25162ac604685623789d18f939b074f1eeabc8114163dcaa7`;
+the retained perf command is
+`5fb08c90293471b24086be829f4da4707ecc83101945868101964be48267ab71`.
+Perf6.17.13 build options and the verbose probe confirm inherited software
+TASK_CLOCK (type1/config1), a process target and CPU selector-1. These are
+probe attributes, not an attribute dump of each later controlled batch.
+
+Across all720 reports, process-clock/rusage CPU has median0.999944763 and
+range0.992985091-0.999996171. The minimum, a right-peak oneTBB perf observation,
+is retained. In the perf observer, Parlay-left depth4 width4
+center/left/right/depth-cap medians are
+0.999988/0.999990/0.999973/0.999992. Yet task-clock/process-clock medians for
+those same groups remain0.838991/0.733697/0.899252/0.987660. Thus the new API
+check reproduces the disagreement between perf and process CPU accounting;
+agreement of two APIs does not independently establish which is accurate.
+The cause remains unresolved. This cohort is separate from v1 and the M1
+frontier experiments; no accounting discrepancy is filtered out or used as a
+timing acceptance threshold.
 
 A separate M1 wait-policy screen keeps the pinned Parlay source and replaces
 only `steal_job`'s inter-round `sleep_for` with a compiler-only signal fence.
@@ -2477,6 +2502,90 @@ ratios0.980782-1.019537 and CPU ratios0.892159-1.042851. M1 placement/frequency
 and separate-image layout remain uncontrolled. The result implicates this
 wait policy in part of the depth4 anomaly, without pricing a context switch,
 separating idle from join waits, or supporting unconditional busy waiting.
+
+### Private generated recursion frontier
+
+A separate M1 stack-sampling screen compares generated leaf, native WF value
+depth8/24 and Parlay-left depth8 in the same v2 ordinary image
+`be35d93513de49523bc0e6dda855332c8eae5a6435a416dbca9ed951cbb663e0`.
+Three alternating passes cover center-peak/depth-cap with plain and sampled
+observers:48 processes,65,536 calls plus eight warmups each,3,146,112 checked
+outputs. macOS `sample` requests two seconds at1ms intervals. It samples wall
+stacks of every thread, including the floor parent waiting for computation,
+and has no handshake with the batch interval. It is not on-CPU profiling.
+The parent contributes about20% of the five-thread denominator. The24 reports
+contain105,014 thread snapshots; collapsed-top tables omit126 snapshots whose
+individual symbols have fewer than five observations. An omitted symbol is
+not a measured zero.
+
+Sampling raises paired median wall time by9.7-19.4%, and all24 sampled runs
+are slower than their plain pairs. In the plain observer, native WF depth8
+has generated-leaf-relative wall ratios0.666/0.659; native WF depth24 has
+1.061/1.091, all three wall pairs losing. Generated join and TLS lookup symbols
+are frequent in sampled stacks; depth8 native WF spends more snapshots in its
+sequential subtree kernel. These observations motivate testing the recursive
+frontier, without assigning a nanosecond cost or CPU percentage to a symbol.
+
+The subsequent private LLVM control starts from the actual emitted leaf-host
+module (SHA256
+`c58f15993dcb0281065a070d67c949674035b81290c9f99d9b768c752433f712`).
+It selects the sole self-recursive function containing a compute offer,
+then creates internal function/callback layers at limits4/8/12/24. Both direct
+recursive calls and the published callback enter the next layer. At the
+frontier they enter the existing same-signature sequential clone. Arithmetic,
+numerical depth/convergence tests, operands, result order,88-byte frame,
+null fallback, join and release are preserved. The limit bounds offered
+recursion, not numerical depth. Public shims and ordinary signatures are
+unchanged; there is no added runtime word, TLS depth or hidden parameter.
+This is a private emitted-code experiment, not a compiler option or a general
+transformation for mutual recursion, external calls or arbitrary effects.
+
+Exact reversal checks all48 function/callback layer pairs. The stock regenerated
+object and relinked ordinary/sanitized images match the qualified base exactly.
+All remaining host/runtime/floor/native objects are shared inputs. The control
+combines grain selection with static specialization, inlining and image layout.
+Stock/depth8/depth24 Mach-O `__text` sizes are33,156/37,228/46,508 bytes;
+these are whole-image instruction-section bytes, not stack or RSS observations.
+Depth24 retains every original offer opportunity for these fixtures, whose
+numerical depth is at most24, so its changes cannot be credited to fewer offers.
+
+Before timing,170 processes check2,500 outputs across five variants with
+ordinary/sanitizer images, widths1/4 and generated/native forms. Seventy full
+checks retain the existing oracle;
+100 generated sanitizer batches cover all ten inputs, including empty and
+depth-zero. Generated LLVM remains ordinary inside the sanitizer image.
+These checks do not establish exact transformed publication/refusal counts
+or newly forced owner-slot exhaustion. Original full-depth event assertions
+remain maintained and are not repurposed as frontier evidence.
+
+The timing screen retains400 processes,1,638,400 timed calls and3,200 warmups:
+five limits including stock, four heavy inputs, four forms and five alternating
+whole-cell orders at width4. Generated sequential, native WF value depth8 and
+Parlay-left depth8 remain controls in each image. Scalar strict FP/no SIMD,
+FMA or LTO; MacBookPro18,3/Clang21; unfixed placement/frequency; no overlapping
+native timing/builds. Limit identity comes from image paths, recorded commands
+and summaries, not a field in the original v2 raw report.
+
+| Input | Stock generated wall us | Frontier8 generated wall us | Frontier8/stock wall ratio | Frontier8/Parlay-left depth8 wall ratio | Faster than Parlay pairs /5 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Center peak |15.750|10.099|0.657|1.009|2|
+| Left peak |14.173|8.824|0.633|0.915|5|
+| Right peak |12.910|8.205|0.658|0.996|3|
+| Depth cap |26.379|16.613|0.640|0.945|4|
+
+Wall values are medians of process batch means; ratios are medians of matched
+pass ratios, not ratios of those displayed medians. Frontier8 beats stock in
+all five wall and CPU pairs on every input. Rusage CPU ratios versus stock
+are0.661/0.607/0.634/0.623. Versus same-image Parlay, CPU ratios are
+0.999/0.846/1.006/0.893, with3/4/2/5 lower pairs: wall parity is not a uniform
+CPU advantage. Frontier4 favors depth-cap (stock-relative wall0.604 and
+Parlay-relative0.907, all five wins), but loses all five Parlay pairs on both
+skewed inputs. Frontier12 loses all five Parlay pairs on every input.
+Frontier24/stock wall ratios0.951/0.919/0.979/0.928 retain specialization/layout
+effects despite unchanged offer opportunities; only depth-cap wins all five.
+No fixed depth is selected as a default. The generated-code gain is promising
+but still needs general compiler implementation, task/exhaustion qualification,
+Linux replication and held-out workloads before a scheduling policy is chosen.
 
 ## Scalar scheduler comparison
 

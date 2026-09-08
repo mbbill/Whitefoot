@@ -45,11 +45,19 @@ now measures joined repeated integrations and process CPU/context switches;
 the M1 comparison prioritizes excess parallel CPU work over a large scalar
 kernel deficit. Linux regional software counters are qualified, but its hosted
 VM exposes none of the requested hardware events. A task-clock/rusage
-disagreement on Parlay depth4 remains unresolved; process/caller CPU clocks
-now provide cross-validation. A separate M1 failed-steal wait-policy control
+disagreement on Parlay depth4 remains unresolved: the Linux v2 process clock
+closely matches rusage in those groups while the perf gap repeats. API agreement
+does not establish which is accurate. A separate M1 failed-steal wait-policy control
 improves some depth4 cases while increasing right-skew CPU cost and giving no
 consistent depth8 benefit. No waiting policy or universal best reference is
 selected from these screens.
+A [private generated recursion frontier](../../experiments/compute-runtime/README.md#private-generated-recursion-frontier)
+now narrows the M1 gap using layers of the actual generated function and its
+existing sequential clone. The depth8 control gives paired median wall
+reductions of34-37% against generated leaf on four heavy inputs, but still has
+mixed Parlay wins and combines grain with specialization/layout effects. General compiler integration,
+exact transformed task/exhaustion checks and Linux replication remain open;
+this is not a selected depth or a public ABI change.
 Recursive Rayon, general compiler
 grain selection and held-out/native-host confirmation
 remain missing. The ten-case screen does not
