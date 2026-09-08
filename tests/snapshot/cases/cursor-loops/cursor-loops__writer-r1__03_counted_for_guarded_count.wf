@@ -1,6 +1,12 @@
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: a counted for loop increments a match counter only when a per-element guard passes, keeping the header invariant that the counter never exceeds the loop index.";
-  let values = array_new::<u32, 6>(0_u32);
+  let values = fixed_vector::<u32, 6>();
+  set values = place_back(vector: move values, value: 0_u32);
+  set values = place_back(vector: move values, value: 0_u32);
+  set values = place_back(vector: move values, value: 0_u32);
+  set values = place_back(vector: move values, value: 0_u32);
+  set values = place_back(vector: move values, value: 0_u32);
+  set values = place_back(vector: move values, value: 0_u32);
   set values[0_u64] = 4_u32;
   set values[1_u64] = 9_u32;
   set values[2_u64] = 2_u32;

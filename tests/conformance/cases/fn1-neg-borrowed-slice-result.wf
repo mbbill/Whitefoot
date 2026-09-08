@@ -1,4 +1,4 @@
-fn borrowed_slice['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: &'descriptor slice<'data, u8> pure {
+fn borrowed_slice['descriptor, 'data](value: &'descriptor Slice<'data, u8>) -> result: &'descriptor Slice<'data, u8> pure {
   return value;
 }
 

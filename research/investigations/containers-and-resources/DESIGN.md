@@ -1,6 +1,12 @@
 # Containers and resources: the integrated design
 
-The single design for batch 0116: one set of laws, one set of rules, one vocabulary, one
+The container choices in this earlier integrated dossier are superseded by the
+[empirical architecture selection](REASSESSMENT.md), which states the decision,
+executable evidence, rejected defaults, and first implementation scope. Resource
+research below is retained outside that selection. Neither document overrides the
+active specification or adds an approval step.
+
+The following records the integrated design developed for batch 0116: one set of laws, one set of rules, one vocabulary, one
 amendment register. `RESOURCES.md` beside it keeps the writer's-eye resource migrations
 and `CONTAINERS.md` the longer library functions of 3.L; neither carries rule text, and a
 reader who reads only this file has the whole design.
@@ -13,7 +19,7 @@ in one shape, stated by two lenses in the same week. F1: **a fact computed at on
 and used at another, with the rule naming only the judgment and not the point.** F2: **a
 repair that relocates the defect to the key rather than removing it.** `[MSR-3]` keyed a
 declaration-domain operand's denotation on `writes` coverage instead of the parameter's
-mode, so `seq_place` published `len(P) = len(P) + 1` and every loop in the file proved
+mode, so `place_back` published `len_of(P) = len_of(P) + 1` and every loop in the file proved
 `false` from `[MSR-4]` step 1. `[CALL-6]` established a routed relation *at* the arm
 instead of restricting it *to* the arm, so a store's post-state outran its own kill.
 `[MSR-2]` drew an element-write consequence that `[MSR-1]`'s own subscripted measure
@@ -103,7 +109,7 @@ is proposed now.**
 > **`[S33]` `reserve_file -> own ReserveOutcome` is ADOPTED (owner-decided 2026-09-04)**
 > in place of `[S25]`'s `Result`. `Reserved(value: FilePermit)`, `Exhausted()`
 > and `Failed(error: IoError)` are three variants, so `[CALL-4]`'s existing route
-> publishes `room(factory) = 0` on the refusal arm and `[RES-6]`'s gap closes.
+> publishes `room_of(factory) = 0` on the refusal arm and `[RES-6]`'s gap closes.
 
 Tree read: `batch/0116-containers-and-resources` at `main` 30602914,
 `spec/kernel-spec.md` **v0.41 ACTIVE** at that tip, with **v0.42 merging**: v0.42 adds
@@ -239,7 +245,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 }
 ```
 
-`buffer_new(10_u64, ...)` establishes `len(line) = 10`. The callee replaces the whole
+`buffer_new(10_u64, ...)` establishes `len_of(line) = 10`. The callee replaces the whole
 referent with a two-byte allocation. The caller keeps the stale length and uses it to
 discharge offset 9 of what is now a two-byte object: an accepted out-of-bounds heap read,
 and (with `set line[9_u64] = 7_u8;` instead) an accepted out-of-bounds heap write.
@@ -447,7 +453,7 @@ program and the frame measured on another.
 ordinary fact.** *The judgment replays each execution assuming every covered acquire
 succeeds, and may never conclude that demand is small because a failed acquisition would
 have ended the program. It does read the store's own post-state relation on a refusal
-edge, because `room(store) = Z` is a fact about the store — where the store's refusal is
+edge, because `room_of(store) = Z` is a fact about the store — where the store's refusal is
 a **variant of the operation's own outcome**, and not a member of a portable class set no
 route can read.*
 The first half removes the circularity; the second is what makes a checked spelling worth
@@ -494,7 +500,7 @@ generic clause is round 7's, which compiled `&uniq Holder<T>` at `T = buffer<u8>
 `EVIDENCE-sweep-D1.md`, probes `q8`, `w3`, `x11`, all accepted today.
 
 **L12. The initialized region is a window, and the language says so.** *A run of slots is
-exactly the `len` slots beginning at `head` modulo `cap`, initialized, with the rest raw;
+exactly the `len_of` slots beginning at `head_of` modulo `cap_of`, initialized, with the rest raw;
 the boundary is checker-maintained typestate carried by the run's own value, and no
 per-slot tag, occupancy bitmap, or runtime discriminant is language state. The kernel
 admits exactly append and removal at each end; every other order is arithmetic a writer
@@ -535,12 +541,12 @@ a caller's runs through a shared view and one that does not.
 
 **L14 is retired.** It stated that an `AppendView` reaches only what it appended and
 never decreases its owner's length; the type is gone (footnote 3). Under R1 the guarantee
-it bought is an ordinary clause — `ensures len(rest) >= len(out)` — so nothing replaces
+it bought is an ordinary clause — `ensures len_of(rest) >= len_of(out)` — so nothing replaces
 it and nothing is lost.
 
 **L15. The descriptor's measures are values; the allocator's extent is not; and a measure
-a caller needs is published by whoever wrote it.** *`len(v)`, `cap(v)`, `room(v)` and
-`head(v)` are a run's own logical measures and are readable as ordinary `u64` values. No
+a caller needs is published by whoever wrote it.** *`len_of(v)`, `cap_of(v)`, `room_of(v)` and
+`head_of(v)` are a run's own logical measures and are readable as ordinary `u64` values. No
 operation observes the physical extent the allocator provided. Every operation that
 writes a measured place publishes, for each measure of that place, its exact new value
 where that measure is exact and a two-sided bound where it is not, including the measures
@@ -548,13 +554,13 @@ it did not change, on every exit including a refusal. **That obligation is on ev
 operation, and a function that hands a measured value back is an operation.** A row never
 leaves a measure to be reconstructed from the standing identity, and a clause both of
 whose sides follow from the standing identities alone does not discharge it.*
-The first draft forbade reading `cap` and `room` on a rationale that only forbids reading
+The first draft forbade reading `cap_of` and `room_of` on a rationale that only forbids reading
 the allocator's size: B3, Q9, probes `q24`, `v25`, `v26`. **The last clause is round
-7's**, which satisfied [CALL-7] with `ensures head(result) <= cap(result);` — a standing
+7's**, which satisfied [CALL-7] with `ensures head_of(result) <= cap_of(result);` — a standing
 fact — and left every view formation undischarged again.
 
 **L16. One measure algebra, one goal disposition, one denotation per position, and one
-establishment point per fact.** *`len`, `cap`, `room` and `head` are one-place terms of
+establishment point per fact.** *`len_of`, `cap_of`, `room_of` and `head_of` are one-place terms of
 the term language, defined once with their support, their kills and their standing
 identities, over every measured place. Every consumer of a numeric goal asks one
 question, whose complete admitted derivation is stated once; no rule grants a proof route
@@ -567,8 +573,8 @@ A language in which "can this inequality be derived?" depends on which construct
 asking has several provers and a writer can reason about none of them; probes `v25` and
 `v26` are the same proof asked twice with opposite verdicts. [ENT-1] 2648. **Keying the
 denotation on mode is round 7's**, which found the seventh draft keying a
-declaration-domain operand on `writes` coverage so that `seq_place`'s own relation read
-`len(P) = len(P) + 1`; the establishment sentence is round 7's second, where a relation
+declaration-domain operand on `writes` coverage so that `place_back`'s own relation read
+`len_of(P) = len_of(P) + 1`; the establishment sentence is round 7's second, where a relation
 instantiated at a call and established at a later arm outran the kill meant to bound it.
 
 **L17. Affine liveness agrees at every join, and a linear value never reaches a scope
@@ -754,17 +760,17 @@ Applied to every spelling in this file, the criterion and the text agree:
 ```text
 | occurrence                                                   | determined by an operand?      | spelling             |
 |--------------------------------------------------------------|--------------------------------|----------------------|
-| arena_frame<const bytes, const align>['s]()                  | no operands exist              | all three written    |
-| seq_fixed<T, const n>()                                      | no operands exist              | both written         |
-| seq_heap<T>['s](heap: &uniq Heap<'s>, count)                 | 's from heap; T from nothing   | seq_heap::<u8>(...)  |
-| seq_arena<T, const bytes, const align>['s](arena, count)     | 's, bytes, align from arena    | seq_arena::<u8>(...) |
-| seq_place(vector: own V, value: own T)                       | V and T from the operands      | seq_place(...)       |
+| arena_frame<const bytes, const align>['s]()                   | no operands exist              | all three written     |
+| fixed_vector<T, const n>()                                    | no operands exist              | both written          |
+| heap_vector<T>['s](store: &uniq Heap<'s>, count)              | 's from store; T from nothing  | heap_vector::<u8>(..) |
+| arena_vector<T, const bytes, const align>['s](store, count)   | 's, bytes, align from store    | arena_vector::<u8>(..)|
+| place_back(vector: own V, value: own T)                       | V and T from the operands      | place_back(...)       |
 | try_place<T, const n>(vector, value)  — a user generic       | always written [FN-2]          | try_place::<Task,32> |
 | a user fn's own region parameter list                        | supplied by the actuals        | elided at the call   |
 | render['s](block: move held, task: &task)                    | 's from the block operand      | render(...)          |
 | Some<Task>(value: move ready)                                | a construct: outside the rule  | T written            |
 | region 'a { ... arena_frame::<4096, 16, 'a>() ... }          | the block's own binder, named  | 'a written           |
-| region { let body = seq_slice(vector: &kept.v); ... }        | the block's binder, unnamed    | no name written      |
+| region { let body = slice_of(vector: &kept.v); ... }        | the block's binder, unnamed    | no name written      |
 | a borrow of an outer binding inside a loop body (D4)         | the implicit block's region    | bare                 |
 | struct BlockPool['s] { free: FixedVector<Lease<'s>, 8>; }    | a declaration mints its own    | 's written at both   |
 ```
@@ -828,40 +834,68 @@ and carries nothing else**.
 This family is first because everything else consumes it. It adds no statement form and
 no type; it is a specification amendment.
 
-**[MSR-1] Four measure terms, over one place, for every measured value.** `len(P)`,
-`cap(P)`, `room(P)` and `head(P)` **[S11]** are terms of the [ENT-2] term language, of
+**[MSR-1] Four measure terms, over one place, for every measured value.** `len_of(P)`,
+`cap_of(P)`, `room_of(P)` and `head_of(P)` **[S11]** are terms of the [ENT-2] term language, of
 fragment type `u64`, where `P` is an admitted place. Which measures a type has, and
 whether each is **exact** or **bounded**, is table data (A.1); the rule is that the table
 exists, gives every measured type a row, and gives every cell one of *exact*, *bounded*
 or *absent*. An **exact** measure is one every writing operation publishes a value for; a
 **bounded** one is one some writing operation can publish only a two-sided range for.
-**Exactly one measure is bounded anywhere**: a run's `head` after a front operation,
+**Exactly one measure is bounded anywhere**: a run's `head_of` after a front operation,
 whose new value is a modular expression the affine domain does not carry. An `Arena`'s
-`len` is exact, because [RES-5]'s alignment requirement makes the padding at a take zero.
+`len_of` is exact, because [RES-5]'s alignment requirement makes the padding at a take zero.
 
-**A measure is a logical quantity and `head` is the origin of the logical coordinate
+**A measure is a logical quantity and `head_of` is the origin of the logical coordinate
 system, stated once here because four rules read it.** A run's initialized set is the
-`len` slots beginning at `head` taken modulo `cap` [BLK-1], and a **logical offset** `i`
-names the slot at physical offset `(head + i) mod cap`. Every measure term, [OP-4]
+`len_of` slots beginning at `head_of` taken modulo `cap_of` [BLK-1], and a **logical offset** `i`
+names the slot at physical offset `(head_of + i) mod cap_of`. Every measure term, [OP-4]
 obligation, [PROV-3] range, [PAR-2] disjointness argument and [RUN-3] footprint is stated
 in logical coordinates, and one sentence carries a logical conclusion to a storage
 conclusion:
 
-> `i |-> (head + i) mod cap` is injective on `[Z, len)` because `len <= cap`, so two
+> `i |-> (head_of + i) mod cap_of` is injective on `[Z, len_of)` because `len_of <= cap_of`, so two
 > disjoint logical ranges of one run describe disjoint storage.
 
 An admitted place is a `place` [GRAM-5] formed with field selections, `deref` wrappings
 **and subscripts**, whose final selected type is measured. The subscript admission is the
-change — `len(table[i])` is a term, so a run of runs has provable operations — and it is
+change — `len_of(table[i])` is a term, so a run of runs has provable operations — and it is
 why [MSR-2]'s granularity and [CALL-3]'s classification are stated over **storage**
 rather than over the word *element*.
 
+> **Correction, decided 2026-09-05, from B7a6's implementation: the subscript admission is
+> still unexercised, and now for one reason and not two.** 6.0k recorded `len_of(P[i])` as
+> waiting on the representation of a run of runs. That representation landed [BLK-1], and
+> the term still does not: a measured place is a **binding plus field selections** in the
+> compiler — `CheckedContainerRoot` is a `BindingId` and a `Vec<u32>` — and the same shape
+> is what [MSR-2]'s support, [OWN-7]'s overlap and [ENT-5]'s kill are all keyed on, so
+> admitting a subscript there is a change to the place model of the proof engine and not to
+> the container half. `len_of(table[i])` is an explicit unsupported capability today, at the
+> measure former's own operand. **The two are independent** and this is the batch that
+> proved it: the lift made a run of runs representable, and every one of [MSR-1]'s
+> subscript admission, [MSR-2]'s element-position granularity at that depth, [LIV-2]
+> condition 2 over `grid[i][j]`, and B4's affine element read-out is the *other* change,
+> which is one change and not four.
+
+> **Correction, decided 2026-09-05, from B8b's implementation: it is landed, and one thing
+> the design did not say is now a rule.** A tracked place is a root plus **field selections
+> and subscripts** in written order, so `len_of(table[i])` is a term, `grid[i][j]` reads and
+> writes, [MSR-2]'s element-position kill is the overlap relation itself rather than a flag,
+> and [OWN-7] and [LIV-2] condition 2 read the complete path. What the design left unstated
+> is which offsets such a place admits: [OWN-7] decides two subscripted places by their
+> offsets and [ENT-5] takes each offset's own support into every measure term it occurs in,
+> so an offset neither relation can name would make two measures of two elements **one
+> term**. [MSR-1] therefore admits a written literal, a live `own` fragment-integer place,
+> and an in-scope const generic there, and every other offset in a measure place is a place
+> this version does not represent. One position is not reached: an [INV-1] affine factor is
+> checked without the enclosing concrete instance in hand, so a subscript inside a measure
+> place written in an `invariant` keeps its explicit unsupported report.
+
 *Judgment:* the [OP-4] admission above at every subscripted measure place; the
-injectivity sentence is a definition proved by `len <= cap`, which [MSR-2] publishes as a
+injectivity sentence is a definition proved by `len_of <= cap_of`, which [MSR-2] publishes as a
 standing fact. *Publishes:* the four terms, the logical coordinate system, the
 injectivity sentence [PROV-3] use 4 and [RUN-3] read, and the exact/bounded
 classification A.1 tabulates. *Amends:* [ENT-2] 2677-2728 clause (b), which today admits
-`len(P)` only for `array`, `slice` and `buffer` and only for subscript-free places;
+`len_of(P)` only for `array`, `slice` and `buffer` and only for subscript-free places;
 [OP-4] 914-924, whose obligation gains the erased-clause attach-site case. *Law:* L12,
 L15, L16. *History:* r7 F3-10; r6 F2-14, F1-4.
 
@@ -898,10 +932,10 @@ it is true in v0.41 only for a reason [MSR-1] deletes.
 At every point at which `P` is live these hold implicitly:
 
 ```text
-Z <= len(P)     Z <= room(P)     Z <= head(P)     len(P) <= cap(P)     head(P) <= cap(P)
+Z <= len_of(P)     Z <= room_of(P)     Z <= head_of(P)     len_of(P) <= cap_of(P)     head_of(P) <= cap_of(P)
 ```
 
-and `len(P) + room(P) = cap(P)` is appended, as two inequalities, to [ENT-6] 3007's
+and `len_of(P) + room_of(P) = cap_of(P)` is appended, as two inequalities, to [ENT-6] 3007's
 automatic affine-premise sequence with the empty support every standing fact has. **The
 identity is a convenience for the writer and never a route by which an operation's own
 post-state is derived**, and a contract clause both of whose sides follow from these
@@ -973,8 +1007,8 @@ borrow and not an own value.
 
 Two rows carry round 7's first BREAK and each has one reason. An `own` operand denotes
 the **call datum**, because an `own` parameter is a value the operation received and its
-post-state is not a thing; keyed on `writes` coverage instead, `seq_place`'s own relation
-read `len(P) = len(P) + 1` and [MSR-4] step 1 discharged every goal in every loop in this
+post-state is not a thing; keyed on `writes` coverage instead, `place_back`'s own relation
+read `len_of(P) = len_of(P) + 1` and [MSR-4] step 1 discharged every goal in every loop in this
 file from a contradiction. And a `&uniq` **state** parameter denotes the post-state in a
 **declaration-domain** relation and is **inadmissible in a source-declared `fn`'s
 `ensures`** — one mode, two callee classes, on [CALL-6]'s two-sided boundary: a
@@ -994,6 +1028,69 @@ nothing about that store's post-state* (Q17).
 > cannot name the caller's object at a point after its own writes, and only a measure the
 > callee's writes change is a claim about that point. A plain field read is a live term,
 > and the caller's own kill rules already govern it.
+
+> **Correction, decided 2026-09-04, from B7a3b's implementation: two more placements
+> landed, and the rebind is narrower than the list above.** The **entry** placement is
+> the one B7a2 measured missing, and it is what makes the ordinary shape of an operation
+> over an `own` parameter — `set vector = place_back(vector: move vector, ...)` [LIV-2] —
+> leave every clause naming that parameter meaning what it read as at entry. Before it,
+> `try_place`'s five `ensures` were all unproved and 3.L.4 was unwritable; after it they
+> discharge and the same datum is what the caller substitutes as that call's call datum.
+> The **rebind** placement landed at the `let` half only: a `let` binder whose right-hand
+> side is a bare use of a measured place mints one datum per measure before the
+> statement's own kills and reads it back after them, which is what carries `spare`'s
+> measures onto `built` in `let built = move spare;`. The [LIV-2] `set`-target half did
+> not land and is DEFERRED with the construct, payload and field placements; nothing in
+> 3.L needs it, because the two `set` forms 3.L writes are a call target and an n-ary
+> call target, both of which publish their own relations through [CALL-6].
+>
+> **The list above says `move P` and the implementation says a bare use.** They agree at
+> an affine `P`, where a bare use is refused [OWN-1] and `move P` is the only spelling;
+> they differ at a copy measured `P` — `array<T, N>` — where a bare use is the writer's
+> form and carries the same measures across the same rename. The narrower reading would
+> have made the placement depend on the element class rather than on the naming event,
+> which is what the closure sentence forbids, so the implementation keys on the event.
+
+> **Correction, decided 2026-09-05, from B8d's implementation: the placements are seven,
+> the `replace` displaced binding joins them, and two of them carry a boundary the place
+> representation fixes.** Every remaining placement of the list above landed —
+> **construct**, the [LIV-2] `set`-target half of **rebind**, **payload** and the
+> destructuring **field** — and one the list did not have landed with them.
+>
+> - **The seventh is the element placement**, and it is what the list was missing rather
+>   than a new kind of event: a measured value committed at an element position of a run
+>   keeps its measures as facts about `P[i]`, and the [SET-2] `replace` that displaces the
+>   value at that position gives the displaced value those facts. **The "two naming events
+>   outside the list" paragraph above is superseded for the first of the two.** [SET-2]
+>   528 is unchanged and is why this works: the commit still establishes no fact of its
+>   own, and the datum carries a fact the target place *already had*. A `replace` whose
+>   target's measures nothing established still hands back a value with none, which is
+>   3.L.2's `take_at` cost exactly as that section prices it; what changed is that the
+>   cost is now paid only where the measures were never there. The borrow-mode arm binder
+>   stays outside the list.
+> - **An element position is a place only at an offset a place relation can name**
+>   [MSR-1] — a written literal, a live `own` fragment-integer binding, an in-scope const
+>   generic — because [OWN-7] decides two element places by their offsets and an offset
+>   provably distinct from nothing would relate two elements of one run as one term. A
+>   commit at any other offset carries no measure and, being an element write of unknown
+>   position, kills every measure of every element of that run [MSR-2].
+> - **The boundary rows therefore still carry nothing through the slot they write, and
+>   this is the honest limit of the batch.** `place_back` stores its value at position
+>   `len_of(vector)` and `take_back` takes one from position `len_of(rest)`; a measure
+>   term is not an offset this version admits and cannot become one without an offset
+>   domain [OWN-7] can decide. A run put into a slot by a boundary row and taken back out
+>   by one arrives with no measures of its own, so 3.L.4's price stands and
+>   `tests/programs/block_pool.wf` and the case
+>   `blk1-pos-a-store-backed-run-is-a-run-element` keep the `room_of` branches B8c gave
+>   them.
+> - **The payload placement is stated over a single-payload-variant enum.** A tracked
+>   place's path is field selections, `deref` wrappings and subscripts [ENT-2], and none
+>   of those names a variant, so `Result`'s `Ok(value)` and `Err(error)` would be one
+>   place and a fact written at one would be read at the other. Where exactly one variant
+>   carries fields — the prelude `Option`, and every enum 3.L writes — the field path
+>   selects one storage on every execution and the payload is an ordinary [MSR-1] measure
+>   place. The remainder is [MSR-3]'s one DEFERRED clause and needs a place step that
+>   names the variant it selects.
 
 **One sentence fixes what an [INV-1] affine atom over a measured place is keyed by.**
 
@@ -1063,7 +1160,7 @@ term language, not an `atom` of [GRAM-5]; a `header_invariant`, an `invariant_st
 then. v0.41 does half the work: a clause's root is already one `compare_op` over two
 `expr`s and a `header_invariant` is already `affine_expr compare_op affine_expr`. What is
 left is the operand set — [GRAM-5] 258-280's `atom` has no `call` alternative, so
-`len(source) <= room(out)` derives nowhere and probe `q7` is that rejection:
+`len_of(source) <= room_of(out)` derives nowhere and probe `q7` is that rejection:
 
 ```text
 clause_expr    := (atom | call | construct)
@@ -1080,7 +1177,7 @@ non-consuming datum or an operation-table form pure and total over its selected 
 domain. A contract clause admits all six comparison symbols where [INV-1] 3105 admits
 four, which is what lets [CALL-7]'s clauses state an exact relation in one clause where a
 header invariant costs two (Q14). The measure formers are **table data** over the measured
-types, one row `len(P)` in v0.44 and `cap`, `room` and `head` when B7's types exist, each
+types, one row `len_of(P)` in v0.44 and `cap_of`, `room_of` and `head_of` when B7's types exist, each
 admitted for exactly the places [ENT-2] clause (b) admits a length term for. A clause
 operand that is neither an [ENT-2] term nor a constant stays an ordinary pure total
 operand and contributes no L0 projection; clause position makes nothing a term. `Z` has no
@@ -1090,6 +1187,74 @@ source spelling; wf source writes `0_u64`.
 a `proof_use` keep [INV-1] 3109-3113's atom admission, so a measure term is a clause
 operand and not yet an affine atom; [MSR-4] widens the affine domain in B2, which is where
 the affine index has to range over measure terms.
+
+> **Correction, decided 2026-09-04, from B7a2's execution of 3.L.** The amendment register
+> promised the written affine surface to B2 — "`affine_factor` GAINS terms at [MSR-4] in
+> B2" — and B2 widened the affine *domain* without widening the *production*, so a measure
+> term became an automatic premise and stayed unwritable. The consequence B7a2 measured is
+> that `invariant grown: len_of(built) >= at` is a GRAM-4 parse rejection at the former,
+> which retires every filling loop in 3.L: without the header relation, `place_back`'s
+> `room_of(vector) > 0_u64` has no backedge premise, and `vacant`, `filled`, `collect`,
+> `rebase` and `pool_new` do not parse at all. The paragraph above is therefore wrong as
+> written, and B7a3 lands the half it withheld: [GRAM-4]'s `affine_factor` admits a
+> `call`, and [INV-1] admits exactly the four measure formers there over an admitted
+> measure place. The affine domain is unchanged — it already carried an atom per live
+> measure term — so what the production adds is the writer's ability to *state* the
+> relation, never a new derivation. The atom is retargeted by exactly the [ENT-5] events
+> that kill the term, which is what keeps a header conclusion from surviving the write
+> that refutes it.
+>
+> **The clause half of the same correction did not land, and the form the ruling states
+> cannot land as written.** B7a2 also measured that a clause operand may not be an
+> arithmetic expression — `ensures len_of(rest) <= len_of(vector) + 1_u64;` is a GRAM-2
+> rejection at the `+` — and the 2026-09-04 ruling gives the repair as
+> `clause_expr := <a Bool-rooted operand: atom | call | construct> | affine_expr
+> compare_op affine_expr`. That is the eighth draft's production with one alternative
+> restored, and the correction above it in this same rule is the reason it was replaced:
+> it has no infix alternative, so it still drops `requires total /defined steps;`, the
+> corpus program that fixes an integer-domain predicate for [OP-2], whose recorded verdict
+> is **accept**. Restoring the infix alternative beside an affine side is not available
+> either: `+`, `-` and `*` are both `infix_op` alternatives and affine operators, so
+> `a + b` in clause position would derive two ways and [GRAM-1] refuses an ambiguous
+> grammar. The unambiguous union needs the clause tail's operator set to be `infix_op`
+> minus those three, which is a fourth production this batch did not have owner sanction
+> to add. The defect stands and the two alternatives are recorded for the owner in the
+> batch report.
+
+> **Correction, decided 2026-09-04, from B7a3b's implementation: the clause half landed,
+> and the fourth production is what the owner sanctioned.** The ruling of 2026-09-04
+> within [S17] gives one production and no new spelling, and it is what this batch wrote:
+>
+> ```text
+> clause_expr    := affine_expr (clause_op affine_expr)?
+> clause_op      := compare_op | "+defined" | "-defined" | "*defined"
+>                 | "/defined" | "%defined"
+> ```
+>
+> `clause_op` is the fourth production the correction above said the unambiguous union
+> needs, and the ruling names it: the clause tail's operator set is `compare_op` together
+> with the [OP-1] rows whose result is `Bool`, which over this version's table is exactly
+> the five `.defined` predicates. It is not `infix_op` minus three, so `a + b` in clause
+> position derives one way — inside the `affine_expr` — and [GRAM-1]'s ambiguity refusal
+> is satisfied without dropping `requires total /defined steps;`, whose recorded verdict
+> stays **accept**. A Bool-rooted clause with no tail — `requires ok;`,
+> `requires band(nonzero, not_neg1);`, `requires buffer_fits::<T>(length);` — is the
+> one-side form of the same production, its side being one `affine_factor`, so every
+> corpus clause keeps parsing with the same meaning. Both placements now share
+> `affine_expr`, and each rule states its own admitted factors: [INV-1] admits one bare
+> IDENT place or one integer literal as an atom, while a clause carries the wider factor
+> set [FN-8] and [FN-9] already judge. The arithmetic performs no [OP-1] operation and
+> creates no [OP-2] obligation; it is a relation over mathematical values.
+>
+> **What the clause side may carry is wider than what a declared relation may publish.**
+> [FN-9]'s relation is one difference bound between two operands displaced by a written
+> constant, which is what [ENT-4]'s closure represents and what every kernel row writes.
+> `requires at + 2_u64 <= len_of(vector);` is therefore admitted and 3.L.2's `take_at`
+> compiles, while 3.L.8's `ensures room_of(rebased) + len_of(vector) >= n;` — two datums on
+> one side — is refused at the declaration naming the fragment. That clause is also
+> derivable from [MSR-2]'s standing identity and `cap_of(rebased) = n`, so `rebase` is
+> written without it; the design text above states it because the seventh draft had no
+> standing identity to lean on.
 
 > **Correction, decided 2026-09-04, from B1's implementation.** The eighth draft wrote
 > `clause_expr := affine_expr compare_op affine_expr`. That production has a comparison at
@@ -1128,6 +1293,19 @@ a [TYPE-6] `DeclarationCollision` today.
 through `ent2_place`. *Depends:* [ENT-2] 2681 clause (c), which is why this rule adds a
 spelling and not a fact source. *Verified today:* probe `q10`. *Law:* L16, L18.
 *History:* r6 F1-14; r5 F4-1.
+
+> **Correction, decided 2026-09-05, from B7a4's implementation.** This rule named three
+> positions and 3.L needs a fourth: [INV-1]'s affine **atom**. B7a3b measured it —
+> `invariant spare: room_of(built) + at >= n` was refused, and the library bound `let
+> limit = n;` in three functions to state its bound over a local instead. The fourth
+> position is *not* one a named const already occupies, so it is not carried by this
+> rule's own sentence and is admitted on the const generic's own ground: [ENT-2] clause
+> (c) makes an in-scope const generic a **constant**, so it needs no liveness, no entry
+> state and no support and nothing kills it, while a named const is a *tracked place* of
+> clause (a) whose exclusion from the affine atom this version keeps. [MSR-6] and
+> [INV-1] state that, the three `let limit = n;` lines are gone, and the admission still
+> adds a spelling and no fact source: a concrete instance reads the mathematical value
+> and the one symbolic instance reads the symbolic constant term.
 
 #### 3.K.2 `[PROV]`: stores, brand, activation, and release
 
@@ -1365,10 +1543,32 @@ occurrence is a statement of that block and of no loop inside it.** The second h
 round 7's: one occurrence inside a loop whose `region_stmt` is outside it has one
 activation and executes on every trip, and three readings were equally consistent with
 the seventh draft — a fresh store each trip, breaking [PROV-1]; the same store each
-trip, making `arena_frame`'s published `len(result) = 0` false from trip two; or a
+trip, making `arena_frame`'s published `len_of(result) = 0` false from trip two; or a
 refusal no rule stated. It is now a hard error citing PROV-5 at the `targ`, with the
 restructuring `move the region block inside the loop, so the store is reserved and reset
 per iteration`, which is the idiom [RES-10] recommends.
+
+> **Correction, decided 2026-09-05, from B7a4's implementation.** The seventh draft gave
+> a frame-placed extent a release action carried on every edge leaving its region block:
+> the bump cursor reset to zero. The reservation is where that state belongs and the
+> only place that needs no machinery. The occurrence is a statement of the block and of
+> no loop inside it [PROV-5], so it runs exactly once per activation of the block and
+> sets the cursor to zero there; the storage is the activation's own frame; and nothing
+> of the extent is observable outside the block. A reset on the leaving edge is
+> therefore unobservable, and [BLK-2] and [STOR-3] state that an extent has no release
+> action instead of naming a row for one.
+
+> **Correction, decided 2026-09-05, from B7a4's implementation.** The provider operand of
+> each acquiring row was named after its store's own nominal — `arena` and `heap` — and
+> both are fixed grammar atoms, the `arena<'r, T>` type and `allocates(heap)`'s
+> allocation atom, which [FORM-3] excludes from IDENT. A kernel-domain call writes its
+> value arguments as a `fieldinit_list` whose IDENTs equal the declared parameter names
+> [BLK-0], so `arena_vector(arena: ...)` was a FORM-3 *parse* rejection and no call to any
+> of the three acquiring rows could be written at all. The operand is `store` in all
+> three, which is [3.K.10]'s one name per concept, and one machine test holds every
+> declared spelling of the inventory to [FORM-3]'s IDENT class. **Nothing had caught it
+> because no test had ever written such a call**: every positive test of B7a and B7a2
+> stopped at `ContainerRuntime` before an operand was read.
 
 The `frame` form lays the extent out in the reserving activation's frame, so it enters
 that context's `stack` item, and [STK-3] states that `frame(f)` includes the alignment
@@ -1496,20 +1696,44 @@ compiler-derived release and `dispose`, and one graph bounds it:
 > non-empty leaf's ordinary release action. A field whose release action is empty is
 > never visited.
 >
-> **A type whose release graph has a cycle is a hard error citing PROV-6 at its
-> `struct_decl` or `enum_decl`, in every program**, naming the cycle, with the
-> restructuring `hold the cells in a run and link by index`. Because the graph is
-> acyclic and finite, the walk's depth is a compile-time constant and it uses no
-> auxiliary storage.
+> **A type whose release graph has a cycle carries a recursive release**: one release
+> function per node type, calling itself where the graph closes, so the walk's depth is
+> the value's own depth rather than a compile-time constant.
 
 Round 7 broke both halves of the seventh draft's version — its refusal was stated over a
 sub-graph "reached **through leaves**", and nothing is reached through a terminal, and its
 walk and its refusal quantified different graphs — so an arena-recursive `Node` inside a
 heap-backed `Root` was accepted while its walk recursed to a runtime tree depth. One graph
-closes both: `Node`'s release action is empty, so the walk never enters it and the depth
-is one, while `tests/programs/recursive_tree.wf` over heap-backed runs is refused in every
-program, which is the honest consequence. **A container's elements are visited before its
-backing is released**, so a release on a full container needs no emptiness premise.
+closes both halves: `Node`'s release action is empty, so the walk never enters it and the
+depth is one. **A container's elements are visited before its backing is released**, so a
+release on a full container needs no emptiness premise.
+
+> **Correction, decided 2026-09-04, by the owner.** The refusal above is deleted, not
+> deferred. The owner's ground: a resource-closed program has no heap at all, and an
+> arena-resident recursive node's release action is empty, so a cycle in the release
+> graph only ever arises in a heap-allowed program, where determinism is already gone;
+> the release walk may recurse. `tests/programs/recursive_tree.wf` therefore stays an
+> accepted program, [PROV-6] carries no cycle clause and no DEFERRED entry for one, and
+> the derived release of a cyclic type is one release function per type calling itself —
+> which is also what the compiler now emits, in place of the explicit worklist that
+> existed only to keep that depth off the machine stack.
+
+> **Correction, decided 2026-09-05, from B7a6's implementation: the run half of the walk
+> is emitted, and the run's own backing action is where this sentence says it is.** Until
+> this batch a run whose element derived any release action was an internal
+> `InvalidIr` — the emitter checked for one and refused rather than walking. It walks now:
+> one helper per run type whose window can hold such an element, over the window and not
+> over the capacity (a slot outside the window is raw [BLK-1] and reading it would be an
+> uninitialized read), in ascending **logical** order at `(head_of + i) mod cap_of`, and
+> the run's own backing release is emitted **after** the loop, which is what this
+> sentence's ordering means at the instruction level. Both backings are empty in this
+> version — a frame-resident run reclaims none of its own storage and a bump extent's run
+> is reclaimed by the region reset — so `heap_vector`'s free lands in a place that already
+> exists rather than one a later batch has to find. The predicate that decides whether a
+> run needs a release at all is its **release class** and no longer the bare fact of being
+> store-resident: an extent-backed `Vector<'s, u8>` derives nothing, which is what lets
+> 3.L.4's pool hold eight of them in one frame-resident run and emit no release code at
+> all.
 
 **`dispose p;` is the early release, and it names no capability.** **[S12]** One added
 statement form, admitted exactly where the value is affine in this scope, running the
@@ -1559,7 +1783,7 @@ where the reason is:
 > leaves no residual leaf, so the refusal does not reach it; every other consume of a
 > sub-place does.
 
-That admits `set (kept.v, total) = collect(...)`, `set block.run = seq_place(...)` inside
+That admits `set (kept.v, total) = collect(...)`, `set block.run = place_back(...)` inside
 a `linear Lease`, and `bs_reserve`'s drain, and keeps the refusal where the residual
 really is abandoned.
 
@@ -1596,6 +1820,52 @@ heap-branded instantiation is refused at the call instead of the declaration bei
 at every one. **`propagate` is [LIV-1]'s judgment and
 this rule does not restate it**; the seventh draft's second, wider sentence here refused a
 `propagate` on account of a binding it had nothing to do with, and is deleted.
+
+> **Correction, decided 2026-09-05, by the owner (S37), and it corrects [PROV-6], [FN-2]
+> and [OWN-1] together.** [S32]'s bound above is superseded on three points.
+> **(a) The bound is a ceiling, not a partition.** The three classes form the strict chain
+> `copy < affine < linear`, ordered by what the body may do — duplicate, use bare and drop;
+> `move` at most once and drop; consume exactly once and never drop — and satisfaction is
+> that chain read left to right: an argument of class C instantiates a bound B iff
+> `C <= B`. S32's equal-class check refused `hold::<u64>` at `T: linear` for no reason a
+> writer can state, because *consume exactly once* is what a copy value satisfies
+> vacuously. **(b) A type parameter's bound is mandatory**, one per parameter, always
+> written, never inferred, with no default: `copy`, `affine`, `linear`, or a marker TYPEID
+> whose numeric row implies `copy`. The unwritten case was a fourth, unnamed class meaning
+> *fail closed*, which is exactly what [FN-2] 1124's always-written discipline exists to
+> prevent. A region parameter's bound stays optional, and unbounded there keeps its
+> meaning: any region, including a loan region, and a body that assumes no store.
+> **(c) The template is the spelling authority [FN-2, OWN-1].** The body is checked once
+> at the symbolic instance under its bound, and the concrete-instance recheck does not
+> re-judge the spellings [FORM-1] keys on a value's class — `move p` against a bare `p`
+> [OWN-1] and `replace` against `set` [SET-1, SET-2]. Without it no generic body serves a
+> copy type and an affine type: `fn pass<T: affine>(x: own T) -> r: own T { return move x; }`
+> was an [OWN-1] rejection at `u64`, and 3.L's `filled`, `take_at`, `try_place`, `try_take`
+> and `rebase` were instantiated only at affine types to dodge it. The exception reaches
+> both spellings or `take_at`'s own `replace short[at] = move endv;` does not compile at a
+> copy instance. Q8's copy/affine half closes here.
+> **The chain is the type axis and not the region axis.** A region bound names *which
+> kind of store* its region identifies, so satisfaction there stays the equality this rule
+> already stated: an extent does not stand in for a general store, and a region that names
+> no store satisfies neither bound. `linearity_bound` is one production with three
+> alternatives, so the grammar admits `'s: copy`; the class is refused at the
+> `region_param` itself, because no store is reclaimed by duplication.
+
+> **Landed 2026-09-04 (B5), with five halves not exercised and one clause deferred.**
+> [PROV-6] is in the active specification and in the compiler. The criterion, the release
+> graph and its walk, the modifier and its admission condition, the two routes, `dispose`
+> with its four refusals and its storage-origin write, the destructuring consume, the
+> partial-consume refusal with its [LIV-2] exception, and [S32]'s bound on a type and on a
+> region parameter are all landed; §6.0f lists the sixteen conformance cases. Five halves
+> have no instance in a version whose only store is the ambient heap, which is not a value
+> and which every scope therefore holds: the `heap`-parameter-removed rejection naming the
+> scope, `writes` of a resolved provider in a row, `DisposeHasNoProvider`, this rule's
+> refusal of a heap-branded instantiation at a bounded region parameter, and the
+> arena-backed sibling of probe `x6`. Each is recorded for **B7/B9**. The release graph's
+> **acyclicity refusal** is stated and DEFERRED with a zero delta: landing it retires
+> `tests/programs/recursive_tree.wf`, which this compiler accepts today, and which corpus
+> programs a language rule retires is the owner's disposition rather than a checker
+> capability. The walk itself visits each node once, so it terminates on a cyclic graph.
 
 *Judgment:* the linearity predicate, computed per scope from the criterion above, which
 is the judgment [LIV-1], [BLK-1], [STK-1] and [RES-10] read; the modifier's
@@ -1661,9 +1931,9 @@ every row satisfies the six sentences below, the first-parameter ordering includ
 no operand of that row determines it [FORM-8], and writes each **type or const** argument
 exactly when no operand of that row supplies it — [TYPE-5] 370-394's own
 retained-argument sentence applied to a fourth callee class, not [FORM-8]'s criterion. So
-`seq_heap::<u8>(heap: ..., count: ...)` writes `T` and elides `'s`;
-`seq_arena::<u8>(arena: ..., count: ...)` writes `T` and elides `'s`, `bytes` and
-`align`, all three of which the `arena` operand supplies; and `seq_place(vector: ...,
+`heap_vector::<u8>(store: ..., count: ...)` writes `T` and elides `'s`;
+`arena_vector::<u8>(store: ..., count: ...)` writes `T` and elides `'s`, `bytes` and
+`align`, all three of which the `store` operand supplies; and `place_back(vector: ...,
 value: ...)` writes nothing. **A user `fn` generic is the other class and always writes
 its type and const arguments** [FN-2] 1093-1100, probes `q4` and `q5`.
 
@@ -1678,30 +1948,30 @@ kernel-domain operation is a fourth class in all four sentences and in [TYPE-6] 
 `writes(P)` for a measured `P` publishes, for **each** measure of `P`, its exact new
 value where that measure is exact and a two-sided bound where it is bounded, including
 the measures it did not change and **on every exit including a refusal** (L15). The
-arithmetic it buys is why it exists: reconstructing `room` from `len` and `cap` costs two
+arithmetic it buys is why it exists: reconstructing `room_of` from `len_of` and `cap_of` costs two
 premises before the goal is reached, and the design's own `spare` invariant then needs
 three where [ENT-6] 3015 admits two (probes `g4`, `g3`).
 
 **A row's operands are terms, constants, and the compiler-owned formers A.1 defines.**
 `advance<T>(count)` is one term of fragment type `u64` with the support of `count`, whose
 value A.1 fixes; it is a symbolic constant when `count` is closed and an opaque term
-otherwise, so `room(arena) >= advance<T>(count)` is an ordinary difference bound between
+otherwise, so `room_of(arena) >= advance<T>(count)` is an ordinary difference bound between
 two terms that [ENT-4]'s L0 holds. Round 7 found the seventh draft writing `round_up`,
 `size_ceiling` and `align_ceiling` into rows as operands no rule admits, with a non-affine
 shape for a symbolic `count`. `fits::<T>(n)` is **not** a term: it names [OP-9] 974-1001's
 allocation-fit obligation, discharged by [OP-9]'s judgment.
 
 **Every acquiring row carries [OP-9]'s allocation-fit obligation** as
-`requires fits::<T>(count)` — probe `a4` is that judgment firing today — and `seq_fixed`
+`requires fits::<T>(count)` — probe `a4` is that judgment firing today — and `fixed_vector`
 carries none, because `n` is a type constant [STOR-6] 738-767 covers.
 
-**The readers are not in this domain.** `len`, `cap`, `room` and `head` are four [OP-1]
+**The readers are not in this domain.** `len_of`, `cap_of`, `room_of` and `head_of` are four [OP-1]
 table operations taking a bare non-consuming place operand, returning `own u64`, and
 **`pure`**: [EFF-2] attributes the operand's own read as for any other non-consuming
 table operand, so a **caller** reading a measure of a borrowed place exhibits `reads` of
 it (probes `r2_10`, `t10`). **A `let` binding one of them establishes an equality**:
 [ENT-3.S6] 2782-2786's row generalizes over [MSR-1]'s four measures, and without it no
-`cap`, `room` or `head` value is ever a fact.
+`cap_of`, `room_of` or `head_of` value is ever a fact.
 
 *Judgment:* row resolution by name, receiver type and written arguments; the per-row
 requirement discharge under [MSR-4], the allocation-fit obligation included; the
@@ -1713,7 +1983,7 @@ it and through [CALL-6]'s S13, which is the source and the destination. *Amends:
 2136-2162 (a fourth admitted declaration source), [SYS-3] 2309-2311, [TYPE-6] 396-473 (the
 domain's spellings and 401's `callee` admission), [DIAG-1] 1541-1883 (collision rank 5 and
 a `container_declaration_ordinal`), [ENT-3.S6] 2782-2786 (the equality row generalizes),
-[OP-1] 771-849 (`len` gains `cap`, `room` and `head` over runs, views and providers;
+[OP-1] 771-849 (`len_of` gains `cap_of`, `room_of` and `head_of` over runs, views and providers;
 `slice_of`, `buffer_new`, `buffer_vacant`, `box_new` and `arena_new` retire;
 `ReservedLowerNames` gains three; 838 gains the class), [OP-9] 974-1001, [TYPE-5] 370-394
 (the written-argument criterion covers a fourth callee class and becomes per-argument),
@@ -1734,12 +2004,12 @@ L15, L16. *History:* r7 F1-1, F3-I14, F3-9; r6 F2-6, F1-4.
 ```
 
 **Each is a run of slots whose initialized storage is a window** (L12, owner-decided):
-exactly the `len` slots beginning at `head` modulo `cap`, the rest raw. A run carries no
+exactly the `len_of` slots beginning at `head_of` modulo `cap_of`, the rest raw. A run carries no
 other state — no per-slot tag, no occupancy bitmap, no runtime discriminant. A subscript
 `v[i]` selects the element at **logical** offset `i` [MSR-1] and carries the ordinary
-[OP-4] obligation `i < len(v)`, against `len` and never against `cap` or `head`. A
+[OP-4] obligation `i < len_of(v)`, against `len_of` and never against `cap_of` or `head_of`. A
 `Vector<'s, T>` of capacity one is a single stored value, so the language needs no box
-nominal. `array<T, n>` **retires** [S34]: it was the `len = cap = n`, `head = Z` case, and a
+nominal. `array<T, n>` **retires** [S34]: it was the `len_of = cap_of = n`, `head_of = Z` case, and a
 `FixedVector<T, n>` whose four measures are standing facts is that case with no runtime
 descriptor word, so a `const` of `FixedVector<T, n>` type with exactly `n` literal
 entries is the const-eligible form [CONST-1], lowers to element storage only, and
@@ -1749,18 +2019,18 @@ materializes its descriptor from the standing facts at each use.
 false: a queue is not arithmetic over append and remove-at-the-end, and the price was a
 library ring over `Option<T>` measured at **2072 bytes against a hand-written 280** for a
 256-byte ring under [OP-9] 992's ceiling, with in-place slot mutation deleted. Its cost is
-five things and no sixth: one word per descriptor (A.1); one more measure term, `head`;
-one standing fact, `head(P) <= cap(P)`; one requirement on view formation,
-`head + len <= cap` [VIEW-2]; and **an O(len) drain to return a wrapped window to its
-origin**, because after a front operation `head` is known only as `Z <= head <= cap` and
+five things and no sixth: one word per descriptor (A.1); one more measure term, `head_of`;
+one standing fact, `head_of(P) <= cap_of(P)`; one requirement on view formation,
+`head_of + len_of <= cap_of` [VIEW-2]; and **an O(len) drain to return a wrapped window to its
+origin**, because after a front operation `head_of` is known only as `Z <= head_of <= cap_of` and
 no back operation re-establishes it. The seventh draft answered the fifth with a fifth
 kernel row; **round 7 wrote the replacement in wf**, so under L18 it is not a kernel row
 and 3.L.8 walks and prices it. Q18 is the owner's question if a driver's `E` cannot afford
 the second run.
 
 Lowering pays one add and one conditional subtract per subscript — a runtime cost and not
-a proof cost, and an optimizer that proves `head` identically zero emits the ordinary
-`base + i * stride`. In a ring `head` is genuinely nonzero, so a completion handler
+a proof cost, and an optimizer that proves `head_of` identically zero emits the ordinary
+`base + i * stride`. In a ring `head_of` is genuinely nonzero, so a completion handler
 touching six fields pays it six times; the repair is to borrow the element once, and probe
 `x10` shows that shape unsupported today.
 
@@ -1769,32 +2039,57 @@ window is what makes an affine element sound: an element enters and leaves only 
 operation that moves a boundary. A run over a `T` linear in some scope **owns** its
 elements, so it is linear there too and the release walk visits its window.
 
+> **Correction, decided 2026-09-05, from B7a5's implementation (S37).** This rule's
+> element-position admission said *one unbounded type parameter*, which named a class of
+> parameter [S37] deletes: a type parameter now carries exactly one bound and none is
+> unbounded. The admission is over the parameter, not over its bound — a run's element type
+> is any nameable type under any of the three bounds — and nothing else changes, because a
+> symbolic element is erased at every concrete instance [FN-2] and reaches no layout.
+
+> **Correction, decided 2026-09-05, from B7a6's implementation: a slot holding a run, at
+> one level.** The rule says *any nameable type* and 6.0k recorded that a run of runs was
+> the one such type the compiler could not represent. It can now, one level up: a slot may
+> hold a `FixedVector<T, n>` or a `Vector<'s, T>` whose own element is flat, which is
+> exactly the two shapes this design needs — `FixedVector<Vector<'s, u8>, 8>` for 3.L.4's
+> pool and `FixedVector<FixedVector<u8, 4>, 4>` for a fixed grid. Nothing about the rule
+> changes; what changes is that the element domain is a lift rather than the flat one, so
+> the slot carries the element run's **complete representation** — a `FixedVector`'s slots
+> and two descriptor words inline, a `Vector`'s four-word descriptor — and A.1's ceiling for
+> such a slot is that type's own. **The third level is not represented**: a run of runs of
+> runs is an explicit unsupported capability, because an arbitrarily deep element needs
+> either an interned element table travelling with the checked program or a boxed element
+> that costs every checked type its `Copy`, and no program this design writes asks for one.
+> One consequence is worth stating where a writer meets it: **an element that is a run is
+> affine**, so a bare `v[i]` read of one is [OWN-1]'s ordinary refusal and the element
+> leaves the window through a boundary row [BLK-3] or an element-position `replace`
+> [SET-2].
+
 *Judgment:* the ordinary nominal-resolution and construction judgments; a `construct`
 naming a container nominal is a hard error citing BLK-1; [OP-4] at every subscript against
-`len`, which is the judgment [PROV-3] use 4 and [RUN-3] read after [MSR-1]'s injectivity
+`len_of`, which is the judgment [PROV-3] use 4 and [RUN-3] read after [MSR-1]'s injectivity
 sentence. *Publishes:* the two types, their measure rows and their window typestate.
 *Amends:* [TYPE-2] 357-360, two added composite types and its flat-element restriction,
 which the runs do not inherit; [OP-4] 914-924, whose indexable bases extend to the two
-runs and the two views and whose obligation is against `len`. *Verified today:*
+runs and the two views and whose obligation is against `len_of`. *Verified today:*
 `array_new::<box<u64>, 4>` is [OP-1] `InvalidOperation` (probe `p9`). *Law:* L12, L13.
 *History:* r7 F3-7; r6 F2-15, F4-7.
 
 **[BLK-2] Formation, one row per placement and one per store.** Four rows, and no fifth:
 
 ```text
-seq_fixed<T, const n: u64>()                          -> own FixedVector<T, n>   pure  // [S7]
-seq_arena<T, const bytes: u64, const align: u64>['s](
-      arena: &uniq Arena<'s, bytes, align>, count: own u64)
+fixed_vector<T, const n: u64>()                          -> own FixedVector<T, n>   pure  // [S7]
+arena_vector<T, const bytes: u64, const align: u64>['s](
+      store: &uniq Arena<'s, bytes, align>, count: own u64)
                                                       -> own Option<Vector<'s, T>>
-seq_arena_proved<T, const bytes, const align>['s](arena: ..., count: own u64)
+arena_vector_proved<T, const bytes, const align>['s](store: ..., count: own u64)
                                                       -> own Vector<'s, T>
-seq_heap<T>['s](heap: &uniq Heap<'s>, count: own u64)  -> own Option<Vector<'s, T>>
+heap_vector<T>['s](store: &uniq Heap<'s>, count: own u64)  -> own Option<Vector<'s, T>>
 ```
 
 Each acquiring row carries [OP-9]'s allocation-fit obligation over `(T, count)`, and each
 arena row additionally requires `align >= align_ceiling(T)` as a compile-time comparison
 of two constants — which is what makes the cursor a multiple of `align`, the padding at a
-take zero, and `len(arena)` **exact** [MSR-1, RES-5].
+take zero, and `len_of(arena)` **exact** [MSR-1, RES-5].
 
 **Every failure is an `Option` and the kernel declares no failure nominal**, because no
 kernel acquisition takes an affine input: a count is copy and a provider is borrowed. The
@@ -1813,22 +2108,22 @@ L3, L4, L6, L8, L18. *History:* r7 F2-14, F2-20; r6 F2-6.
 type.
 
 ```text
-seq_place(vector: own V, value: own T)        -> own V   // [S8]  requires room(vector) > Z
-seq_place_front(vector: own V, value: own T)  -> own V           requires room(vector) > Z
-seq_take(vector: own V)                       -> (rest: own V, value: own T)
-                                                                 requires len(vector) > Z
-seq_take_front(vector: own V)                 -> (rest: own V, value: own T)
-                                                                 requires len(vector) > Z
+place_back(vector: own V, value: own T)        -> own V   // [S8]  requires room_of(vector) > Z
+place_front(vector: own V, value: own T)  -> own V           requires room_of(vector) > Z
+take_back(vector: own V)                       -> (rest: own V, value: own T)
+                                                                 requires len_of(vector) > Z
+take_front(vector: own V)                 -> (rest: own V, value: own T)
+                                                                 requires len_of(vector) > Z
 ```
 
 Element access is the ordinary v0.41 surface over the initialized window: `v[i]` reads,
 `set v[i] = e;` writes a copy element [LIV-2], and `let old = replace v[i] = e;` exchanges
 an affine one [SET-2] (probe `x7`). Each row takes the run **by value** and returns it,
 carries `reads(vector), writes(vector)`, and publishes its complete measure row on every
-exit. **Its `vector` operand is `own`, so every occurrence of `len(vector)` in its
+exit. **Its `vector` operand is `own`, so every occurrence of `len_of(vector)` in its
 published relation denotes that call's call datum** [MSR-3] — round 7's first BREAK stated
 where it bites: under the seventh draft's `writes`-keyed table
-`len(result) = len(vector) + 1` read `len(P) = len(P) + 1` and every loop in this file
+`len_of(result) = len_of(vector) + 1` read `len_of(P) = len_of(P) + 1` and every loop in this file
 proved `false`.
 
 **There is no `seq_rebase`, no swap and no exchange operation, anywhere.** Returning a
@@ -1838,14 +2133,14 @@ run is refused by [LIV-2]'s non-overlap condition and is three statements over t
 above:
 
 ```wf-design
-let (rest, endv) = seq_take(vector: move vector);
+let (rest, endv) = take_back(vector: move vector);
 let old = replace rest[at] = move endv;
-let back = seq_place(vector: move rest, value: move old);
+let back = place_back(vector: move rest, value: move old);
 ```
 
-**What it costs is stated correctly**: the three statements kill and re-establish `len`
-twice, and the middle statement's obligation is `at < len(rest)` where
-`len(rest) = len(vector) - 1`, so a caller must prove `at + 2_u64 <= len(vector)` and the
+**What it costs is stated correctly**: the three statements kill and re-establish `len_of`
+twice, and the middle statement's obligation is `at < len_of(rest)` where
+`len_of(rest) = len_of(vector) - 1`, so a caller must prove `at + 2_u64 <= len_of(vector)` and the
 last position needs a dominating branch. 3.L.2 walks it. There is **no removal from the
 middle, no clear, no truncate, no growth, no filled construction and no vacant
 construction** in the kernel.
@@ -1873,17 +2168,32 @@ no field, no enum payload, no run element, no generic type argument, and no resu
 [VIEW-6]'s ceiling. A **provider** type may occupy none of the same positions, for
 [PROV-2]'s reason. A store-branded run may occupy any of them.
 
-**And no container nominal, no loan-bearing type and no unbounded generic type parameter
+**And no container nominal and no unbounded generic type parameter
 may be the referent of a `&uniq` parameter of a source-declared `fn`.** This is R1 as a
 rule:
 
 > In the parameter list of a source-declared `fn`, a parameter of mode `&uniq` is a hard
 > error citing BLK-4 at the complete `param`, `UniqueParameterReachesContainer`, when its
-> referent type **is, or reaches at any depth, a container nominal, a loan-bearing type,
-> or a generic type parameter carrying no bound that excludes both**. Depth is the
+> referent type **is, or reaches at any depth, a container nominal, or a generic type
+> parameter carrying no bound that excludes one**. Depth is the
 > reachability closure [PROV-4] computes over fields, enum payloads, run elements and
 > written type arguments. The restructuring is `take the run by value and return it, or
 > take a view of it`.
+
+**Correction of 2026-09-06 (owner's delegate): a `&uniq` whose referent is a VIEW is
+admitted, and this clause never reached one.** The refusal exists for a measure a callee
+moves while its caller retains it, and a view has no measure to move: `[VIEW-4]` already
+forbids replacing a view through such a borrow, and what a callee writes *through* one is
+an element write of the viewed storage, which `[ENT-5]` kills at `[MSR-2]`'s own
+granularity. A `&uniq MutSlice<'r, T>` parameter therefore leaves every measure its caller
+retained standing, which is exactly §7 B8's fill-and-publish helper: a caller hands one
+destination to a helper that fills it. It is the same admission the `&uniq` destination of
+a range-bearing `[SYS-8]` row takes, and 3.K.4's `[VIEW-7]` note below said so of the rows
+while this clause still said the opposite of the source declaration. The clause's
+loan-bearing arm is withdrawn; its *position* clause above — no field, no enum payload, no
+run element, no written type argument, no result outside `[VIEW-6]`'s ceiling — is
+untouched, because those are the positions from which a loan could outlive its origin and
+a borrow parameter is not one of them.
 
 Three things about it are deliberate. **The closure closes the round-4 defeat**, where a
 one-field wrapper struct nullified [CNT-7]. **The type-parameter clause is round 7's**:
@@ -1901,7 +2211,7 @@ refused. **And the clause quantifies over a
 source-declared `fn`** and not over the compiler-owned domains, because a [BLK-0] or
 [SYS-2] row is a declaration record whose relations are complete over everything it writes
 and whose behaviour no body can vary — L11's second sentence — so
-`seq_mut_slice(vector: &uniq 'r v)` and `read_at(destination: &uniq MutSlice<u8>, ...)`
+`mut_slice_of(vector: &uniq 'r v)` and `read_at(destination: &uniq MutSlice<u8>, ...)`
 are unaffected.
 
 **A source nominal may declare region parameters** — `struct Chunk['s] { page:
@@ -1919,7 +2229,7 @@ position, or a confined type in a position whose owner does not name its region,
 error citing BLK-4 at the complete contained `type`; and a confined value bound to a
 destination some member of its region set does not outlive is a hard error at the binding,
 rendering every member. *Publishes:* the confinement set, and the fact that no
-source-declared `&uniq` parameter reaches a container nominal, a loan-bearing type or an
+source-declared `&uniq` parameter reaches a container nominal or an
 unbounded type parameter. *Amends:* [STOR-4] 721; [STOR-5] 723-736, whose position list is
 replaced by the intensional split and whose per-leaf-provenance deferral is **withdrawn as
 unnecessary**; [FN-2] 1093-1100, whose blanket rejection of a region-bearing generic
@@ -1949,7 +2259,7 @@ L13. *History:* r7 F1-8; r6 F1-1, F1-2.
 Rust's slice's, which is why nothing but the case changes. `MutSlice<'r, T>` **[S6, S35]** is the one added view, because
 [SET-1] 488-490 makes every slice-rooted target unwritable and probe `p7` is the refusal.
 Each is an `own` value carrying a region `'r`, each is loan-bearing [PROV-3], and its
-measures are [MSR-1]'s rows with `head` exact at `Z` because a view is formed only over an
+measures are [MSR-1]'s rows with `head_of` exact at `Z` because a view is formed only over an
 unwrapped window [VIEW-2].
 
 **The shared view is `copy` and the writable one is affine** (owner-decided, [S27]).
@@ -1967,6 +2277,25 @@ so `collect(out: move buf, source: line)` is the call spelling and a `move` is
 destructured. And an exclusive view and a shared read of one run cannot both be live,
 which is [OWN-5]'s ordinary conflict (probe `s6`) and which Q19 records as the cost it is.
 
+> **Correction, 2026-09-05, from B8e's implementation: what [S27] costs is a corpus
+> verdict, and the price is due before the rule is.** This entry prices the copy
+> classification at "a re-formation at every second use" and at [VIEW-4]'s added refusal.
+> Both are right and neither is what stopped it. Three `move`s of shared views stand in
+> one *accepted* conformance program — `fn1-pos-returned-slice-inputs-run` — and a `move`
+> of a copy value is [OWN-1]'s `MoveOfCopy`, so landing the classification moves that
+> program from accept to reject. The classification was therefore DEFERRED at B8e with a
+> stated delta, together with the loan's last-use end condition and [VIEW-4], and the
+> decision the owner actually faced is whether those three `move`s are rewritten.
+>
+> **Answered 2026-09-05 by the owner's delegate: the `move`s are respelled and the
+> classification lands (B8f).** All three are written bare,
+> `fn1-pos-returned-slice-inputs-run` keeps `run`, exit 0, and every other `move` of a
+> shared view in the corpus is respelled the same way; 6.0r records the boundary. Landing
+> it found a *third* price this entry did not name: [EFF-1] says that merely moving,
+> returning or repacking a view observes nothing of what it views, and this compiler was
+> attributing a read at every place use of a loan-bearing type — which only the `move`
+> spelling had hidden, because a consume exhibits no read.
+
 *Judgment:* the [OWN-1] classification of the two view types, which [PROV-3] use 1,
 [LIV-2] condition 1, [VIEW-4] and [CALL-3] read. *Publishes:* the two types, their loan
 strengths, their ownership classes, and the loan-bearing predicate. *Amends:* [TYPE-2]
@@ -1977,10 +2306,10 @@ to copy**, and [CONST-2] 546-559, [OP-7] 939-947 and [OP-1] 771-849's `slice_of`
 **[VIEW-2] Formation, the loan the view value holds, and the non-wrap premise.**
 
 ```text
-seq_slice['r, T](vector: &'r V)          -> own Slice<'r, T>      reads(vector)   // [S10]
-    requires head(vector) + len(vector) <= cap(vector)
-seq_mut_slice['r, T](vector: &uniq 'r V) -> own MutSlice<'r, T>  reads(vector)
-    requires head(vector) + len(vector) <= cap(vector)
+slice_of['r, T](vector: &'r V)          -> own Slice<'r, T>      reads(vector)   // [S10]
+    requires head_of(vector) + len_of(vector) <= cap_of(vector)
+mut_slice_of['r, T](vector: &uniq 'r V) -> own MutSlice<'r, T>  reads(vector)
+    requires head_of(vector) + len_of(vector) <= cap_of(vector)
 ```
 
 **The view value, not the argument borrow, holds the loan**, and its extent is
@@ -1990,13 +2319,36 @@ with an ordinary write between; it could not be the freeze.
 
 **The `requires` is the window's one visible cost**, stated over the property a
 contiguous view needs: a view is one contiguous range and a wrapped window is two. Three
-things then hold: every formation row publishes `head = Z` and every back operation
-preserves it; **an empty run satisfies it from the standing `head <= cap` alone**, so a
+things then hold: every formation row publishes `head_of = Z` and every back operation
+preserves it; **an empty run satisfies it from the standing `head_of <= cap_of` alone**, so a
 drained ring is viewable; and a wrapped run is returned to the premise by 3.L.8's drain.
 **And the premise crosses a contract**, which is [CALL-7]: the chain of exact equalities
 is exact inside one function and a loop backedge removes it ([ENT-5] 2942-2946), so a
-caller of `filled::<u8, 4096>()` knows `head(input)` only because `filled`'s contract
+caller of `filled::<u8, 4096>()` knows `head_of(input)` only because `filled`'s contract
 publishes it and 3.L.3's `flat` invariant establishes it.
+
+> **Correction, 2026-09-05, from B8e's implementation: the non-wrap premise is not a
+> difference bound as written, and it is one as restated.** `head_of(vector) + len_of(vector)
+> <= cap_of(vector)` has three measure operands, and [BLK-0]'s record notation and
+> [ENT-4]'s closure both carry a *difference* between two terms. Under [MSR-2]'s standing
+> identity `len_of + room_of = cap_of` the premise is exactly `head_of(vector) <=
+> room_of(vector)`, which is a difference bound, is discharged by the closure the caller
+> already runs, and is satisfied by an empty run from `head_of <= cap_of` alone as this
+> entry says it must be. The row should be written that way when it lands. B8e did not
+> land it: the viewed domain is still `array<T, N>` and `buffer<T>`, so no source states
+> the premise at all, and the two rows are still [OP-1] table rows. Retiring them into
+> [BLK-0] needs two things this entry does not mention — a *shared* borrow mode, which
+> the kernel record's mode enumeration does not have, and an operand *class* rather than
+> the single run parameter `V`, because the transitional domain is four types.
+>
+> **Landed 2026-09-05 in B8f, in the restated form.** The record notation gained a
+> viewable operand class and a shared-borrow operand mode, the premise is written as the
+> difference bound, and it is submitted at every formation and judged under [MSR-4]. It had
+> to be: widening the domain without it admitted a descriptor over storage the run does not
+> own, which 6.0r records as that batch's own soundness hole. What did **not** move is the
+> *spelling*: two domains may not claim one [TYPE-6], so `slice_of` and `mut_slice_of` stay
+> [OP-1] family entries until [S34] retires `array<T, N>` and `buffer<T>`, and the row data
+> alone lives in [BLK-0].
 
 *Judgment:* [OWN-5] at the formation borrow, [MSR-4] discharge of the non-wrap
 requirement, and the ordinary [BLK-0] relation establishment through [CALL-6].
@@ -2022,8 +2374,8 @@ statement's right-hand side**. Two forms are therefore refused:
 > is `bind a new view under a new let`.
 
 Round 7 built the program: `set big = pick(a: big, b: small);` over two same-region shared
-views inside one function, with `pick`'s [CALL-7]-mandated `len(chosen) <= len(b)` landing
-on the same term as a surviving `len(big) = 4096` — a contradiction, [MSR-4] step 1, every
+views inside one function, with `pick`'s [CALL-7]-mandated `len_of(chosen) <= len_of(b)` landing
+on the same term as a surviving `len_of(big) = 4096` — a contradiction, [MSR-4] step 1, every
 goal in the function provable. That is round 6's attack 1 with the `&uniq` parameter
 removed, and [BLK-4] does not reach it because there is no parameter. `replace` and `set`
 at a non-loan-bearing place are untouched.
@@ -2079,7 +2431,8 @@ the result's origin set, and the child loan's strength and range. *Amends:* [FN-
 reads; [PROV-3], which fixes the child loan's extent. *Law:* L10, L11. *History:* r7
 F4-5; r1 F4-7; the owner's [S31].
 
-**[VIEW-7] System operations over views.** **[S30], ADOPTED.** The seven range-bearing
+**[VIEW-7] System operations over views.** **[S30], ADOPTED; landed at B7c4a as row data
+rather than as a numbered rule.** The seven range-bearing
 operations [SYS-8] 2488-2527 take views instead of `buffer<u8>`, with fixed modes:
 
 ```text
@@ -2093,19 +2446,34 @@ nothing and are all elided. Both are borrows of the **descriptor**, so the view 
 the call and a destination can be filled by a loop of reads, which an `own` destination
 could not; both write element storage only, so [CALL-3] gives the caller its measures
 back. **The two range obligations keep their form and their order, each stated over the
-operation's own range-bearing parameter** — `len(deref(destination))` for `read_at` and
-its siblings, `len(deref(source))` for `write_once`, `host_copy_bytes` and
+operation's own range-bearing parameter** — `len_of(deref(destination))` for `read_at` and
+its siblings, `len_of(deref(source))` for `write_once`, `host_copy_bytes` and
 `host_copy_utf8` — which is round 7's correction of a sentence that named the destination
 for all seven.
 
-**[BLK-4]'s fourth clause does not reach these**, by the clause's own scope: a [SYS-2]
-declaration record's behaviour is fixed by its record and it has no body in which an
-unnamed point could exist. This is the change that lets a heap-free program do I/O. Its
+**[BLK-4]'s fourth clause does not reach these**, and after this file's 2026-09-06
+correction of that clause it reaches no view referent at all — not at a record, and not at
+a source declaration either. This is the change that lets a heap-free program do I/O. Its
 cost is that a destination must be **addressable** first, so it is built by 3.L.3's
 `filled` and the count the host produced is an ordinary `u64` beside the run; Q7 records
 the fix.
 
-*Judgment:* [SYS-8]'s two range obligations, restated over `len` of the borrowed
+**Correction of 2026-09-06: what landed at B7c4a is an operand *class*, and it is not a
+numbered rule.** The parameter is one class and not one type — `&uniq MutSlice<u8>` where
+the operation writes the storage and `&Slice<u8>` where it reads it — which is the device
+`[VIEW-2]`'s viewable operand already is and for the same reason: no row reads what the
+storage is made of, so the operand's own type decides only which measure-table row
+`[MSR-1]` the two range obligations are stated over. Each class **additionally admits
+`buffer<u8>` at the same position** for exactly as long as `buffer<T>` and its
+`buffer_new` row live, which is what let the migration move the corpus a case at a time
+instead of in one flip. Because the content is row data of `[SYS-8]` and of `[SYS-2]`'s
+declaration records, the specification carries it inside those rules and adds **no
+`[VIEW-7]` rule id**; the count stays 153 and `[META-5]` declares the change under system
+operations and declaration records. A view's own region at those positions is elided and
+related to nothing `[FORM-8]`, so no operation region parameter is added and no call
+writes one.
+
+*Judgment:* [SYS-8]'s two range obligations, restated over `len_of` of the borrowed
 range-bearing view. *Publishes:* the endpoint facts [ENT-3.S10] enumerates, now over a
 view. *Amends:* [SYS-8] 2488-2527, [SYS-2] 2164-2307's declaration records and normative
 counts, and the prose of [SYS-9] 2529-2552, [SYS-11] 2576-2585, [SYS-12] 2587-2603 and
@@ -2138,8 +2506,14 @@ the commit.
 checker already computes; no search. This is the judgment [PROV-6]'s scope-exit refusal,
 [STK-1]'s tail premise and [STK-4]'s unreachable-exit sentence read. *Publishes:* the
 unconditional release set of every edge. *Amends:* [OWN-1] 563-571 at 563 and 566-567, and
-[OWN-11] 646-648 at 646. *Depends:* [PROV-6]'s per-scope linear predicate. *Law:* L17.
-*History:* r7 F4-1, F5-9, F5-15; r6 F3-I9; r1 F1-1, F1-2.
+[OWN-11] 646-648 at 646. *Depends:* [PROV-6]'s per-scope linear predicate. *Verified
+today:* **landed in v0.45** as the join half, conformance cases
+`liv1-neg-branches-disagree-on-liveness`, `liv1-pos-loop-moves-and-restores-an-outer-binding`
+and `liv1-neg-loop-leaves-an-outer-binding-dead` (6.0e); probe `f3`'s program is the
+rejection and probe `f5`'s shape is accepted. The loop-head instance keeps [OWN-11]'s own
+citation and reads the **structural** backedge, and the linear half is [PROV-6]'s and
+lands with B5; 6.0e records both. *Law:* L17. *History:* r7 F4-1, F5-9, F5-15; r6 F3-I9;
+r1 F1-1, F1-2.
 
 **[LIV-2] One `set` commit rule.** **Owner-decided 2026-09-03 (D2).** One statement
 writes places, and it replaces three: [SET-1]'s copy overwrite, the sixth draft's
@@ -2149,7 +2523,7 @@ into this rule and its id is not reused.
 ```wf-design
 set p = e;
 set p = f(vector: move p, value: byte);
-set (p, taken) = seq_take(vector: move p);
+set (p, taken) = take_back(vector: move p);
 set (p, q) = move q, move p;
 set (a, b, c) = move c, move a, move b;
 ```
@@ -2219,6 +2593,32 @@ undefined at the two shapes its own repairs created:
 > **parameter**, not a target place. That is what makes [MSR-2]'s kill fire at a view
 > target, which is half of [VIEW-4]'s repair.
 
+> **Correction, decided 2026-09-05, from B7a5's implementation.** The declaring target
+> above landed and is no longer DEFERRED. It is not a checker change and B7a4 said so: the
+> target identifier is an *unresolved use* before the checker runs, so nothing downstream
+> can mint the binding. The declaration is minted in the resolver, by the ordinary lookup
+> it already performs — a bare identifier target of a `set_stmt` whose lookup finds no
+> visible binding becomes an ordinary `let` declaration owned by its own `pbase`, visible
+> after the complete statement, and the pass runs again until every use resolves. Only a
+> bare identifier declares: a projected, dereferenced or subscripted target selects one
+> component of a value that must already exist, so an unresolved base there keeps its
+> ordinary lookup rejection. Such a target reads no previous value out and overlaps
+> nothing, so conditions 1 and 2 are over the targets that name existing places and
+> condition 3 fixes the new binding's type. `rebase<T: affine, const n>` is what needed
+> it: at an affine element type, `let one = ...;` before the loop makes `one` a live
+> affine target the right-hand side does not read out, which is [STOR-1]'s refusal.
+
+> **Correction, decided 2026-09-05, from B7a6's implementation: condition 2's nested
+> subscript is still unexercised, and its blocker is the place model rather than the
+> container.** `grid[k]` against `grid[i][j]` is condition 2's own example and a run of
+> runs is now representable [BLK-1], so the example is spellable as a *type*. It is not
+> spellable as a *target*: a target place carrying a subscript below its first one, and the
+> [OWN-7] overlap that decides it, are the same subscripted-place model [MSR-1]'s
+> `len_of(P[i])` needs, and the compiler's resolved place is a binding plus field
+> selections. B4's affine element read-out — `move v[i]` in the right-hand side of a
+> statement whose target is `v[i]` — waits on the same thing at the same place. One change
+> lands all four, and it is a change to the proof engine's place representation.
+
 Deriving a field-precise footprint from a callee's row would be wrong, because the value
 written back is a whole new value of the target's type.
 
@@ -2243,7 +2643,13 @@ reinitialisation exception is the other side of the read-out sentence; [OWN-5] 5
 *Verified today:* probes `q9`, `x5`, `t8`, `x2` and `x3` are [STOR-1] `AffineSetTarget`,
 probe `g5` is the same at a field, probe `p10` is `AffineSetTarget` at a live target and
 probe `w6` is [OWN-1] `UseAfterMove` at a dead one, and probe `w8` accepts a `set` at a
-`match` arm binder. *Law:* L10, L16, L17, L18. *History:* r7 F1-9, F1-15, F3-3, F4-8; r6
+`match` arm binder. **Landed in v0.45**: probe `q9`'s statement compiles and runs at a
+bare binding, a field and a `deref`, the swap and its rotation compile and run, and six
+conformance cases carry the rule (6.0e). Three parts did not land and 6.0e says why: the
+affine read-out at a **subscript**, which no constructible element type in this version
+can be written; `grid[k]` against `grid[i][j]`, which waits on B7's runs; and the target
+identifier that introduces a binding, DEFERRED in the rule text with a stated zero delta.
+*Law:* L10, L16, L17, L18. *History:* r7 F1-9, F1-15, F3-3, F4-8; r6
 the owner's D2, F3-1, F3-3.
 
 #### 3.K.6 `[CALL]`: what survives a call
@@ -2266,14 +2672,25 @@ falsifying its conclusion unless the release is a write.
 *Judgment:* none; the absence of a kill, which is [MSR-2]'s judgment not firing.
 *Publishes:* the survival of every such fact. *Amends:* nothing. *Depends:* [OWN-5]
 585-611's shared-holder prohibition, the whole ground; [MSR-2]'s kill classification.
-*Verified today* for `&'a buffer<u8>`: probe `p6` keeps `len(line) = 10` across the call.
+*Verified today* for `&'a buffer<u8>`: probe `p6` keeps `len_of(line) = 10` across the call.
+*Landed at B3* (2026-09-06) as a specification rule, with
+`call1-pos-a-shared-borrow-keeps-every-fact` over a `&FixedVector<u8, n>` parameter.
 *Law:* L11. *History:* r6 F1-2.
 
 **[CALL-2] Through a value passed and returned, only the contract's facts exist on the
-result.** An `own` argument is a consuming use, so every fact whose support contains that
+result.**
+
+*Correction of 2026-09-06, found by B3's corpus migration:* the sentence below is true of
+an **affine or linear** actual and false of a **copy** one. A `Slice` handed at an `own`
+parameter is a duplicate, not a consume, so the caller's place and every fact supported by
+it survive and are available at the next call — which is what lets a view-taking helper be
+called twice, or in a loop. The rule as landed says so; this compiler already behaved that
+way, and `call2-pos-a-copy-actual-at-an-own-parameter-is-not-a-consume` pins it.
+
+An `own` argument is a consuming use, so every fact whose support contains that
 binding's root dies. The result is a fresh binding carrying exactly the callee's verified
 relations, and nothing else. Those relations may name the consumed parameter's measure,
-which denotes that call's **call datum** [MSR-3]: `len(rest) = len(out) + 1` means what it
+which denotes that call's **call datum** [MSR-3]: `len_of(rest) = len_of(out) + 1` means what it
 reads as, and it is establishable at the caller precisely because a datum has empty
 support and the consume the same statement performs cannot kill it.
 
@@ -2285,7 +2702,7 @@ with no `ensures` fail at the **second** link.
 
 *Judgment:* the ordinary [ENT-3.S12] establishment, subject to `M(c,q)` as [MSR-3] amends
 it. *Publishes:* the callee's declared relations on the result, established by [CALL-6]. *Amends:* nothing beyond
-[MSR-3]'s. *Verified today:* probe `p1` is **rejected** with residual `9_u64 < len(b)`;
+[MSR-3]'s. *Verified today:* probe `p1` is **rejected** with residual `9_u64 < len_of(b)`;
 the transport already behaves correctly and what was missing is the vocabulary to publish
 across it. *Law:* L11. *History:* r6 F4-3.1.
 
@@ -2307,8 +2724,8 @@ storage** and kills no measure term over that origin". When `T` is itself measur
 ownership closure newly makes affine and therefore passable by value — the viewed element
 storage **is** the descriptor storage of the origin's elements, so clause 1 killed exactly
 what clause 2 preserved, and a callee could replace and free a caller's inner run while the
-caller kept `len(origin[0])`. Stating it over storage makes `len(origin)` survive — all
-this rule was ever for — and `len(origin[i])` die, which is correct because an
+caller kept `len_of(origin[0])`. Stating it over storage makes `len_of(origin)` survive — all
+this rule was ever for — and `len_of(origin[i])` die, which is correct because an
 exclusive-strength view can replace an element descriptor. It is the same repair [MSR-2]
 makes one rule over: **the descriptor/element split is a property of the element type, not
 of the word "element".**
@@ -2322,6 +2739,15 @@ view carries exactly the callee's verified relations, so a helper returning the 
 two views tells its caller nothing. The danger was never a view a callee returns; it was
 one a callee **installs**, and [BLK-4] refuses the parameter while [VIEW-4] refuses the
 local statement.
+
+*Correction of 2026-09-06, at B3:* the measured-element half of this rule has no program
+on today's surface. A view's element domain is the flat one [TYPE-2] gives it, so
+`MutSlice<Vector<'s, u8>>` stops as `SemanticUnsupported { CompositeValues }` at the view's
+element position, and for a flat element no fact lives in element storage at all. The rule
+landed stated over storage exactly as written here, so a widened element domain exercises
+the other half without amendment; the surviving half — `len_of(origin)` and `len_of(view)`
+across a fill — is what `call3-pos-a-fill-through-an-exclusive-view-keeps-both-lengths`
+pins.
 
 *Judgment:* the kill classification per parameter type, which is [MSR-2]'s judgment
 parameterized by [PROV-3]'s access classification. *Publishes:* the surviving measures.
@@ -2339,11 +2765,11 @@ forbids (probe `q7`).
 fn collect['s](out: own Vector<'s, u8>, source: own Slice<u8>)
     -> (rest: own Vector<'s, u8>, written: own u64)
     reads(out, source), writes(out) contract {
-  requires len(source) <= room(out);
-  ensures len(rest) == len(out) + written;
-  ensures room(rest) + written == room(out);
-  ensures head(rest) <= 0_u64;
-  ensures written == len(source);
+  requires len_of(source) <= room_of(out);
+  ensures len_of(rest) == len_of(out) + written;
+  ensures room_of(rest) + written == room_of(out);
+  ensures head_of(rest) <= 0_u64;
+  ensures written == len_of(source);
 } { ... }
 ```
 
@@ -2351,7 +2777,7 @@ The ordered result list is [S16] and the clause operands are [S17]. **No clause 
 states of one term, and under R1 none needs to**: a parameter is an input with one state,
 a result is an output with one state, and a relation between them is single-state in both.
 There is no `old()`, no frame rule and no entry/exit convention. This is also where L14's
-retired guarantee comes back as `len(rest) >= len(out)`. **A function may declare an
+retired guarantee comes back as `len_of(rest) >= len_of(out)`. **A function may declare an
 ordered result tuple [S16]**, and each result binding is a datum of every clause.
 
 **A relation is published per enum variant and per result ordinal, and a result datum
@@ -2408,6 +2834,27 @@ L11, L16. *History:* r6 F1-9, F4-12; r5 F4-2, F3-3; B1 (three routes deferred).
 > rejection, which is the state the widening leaves it in. **[S16]'s ordered result list
 > did not land either** and goes to §7's B1b with the destinations that read it.
 
+> **Correction, decided 2026-09-04, from B1b's implementation.** [S16]'s ordered result
+> list, the destructuring `let` binder list, the `set` target list, the multi-expression
+> `return`, the result ordinal, the ordinal-named route `when b is V(f: r):`, its
+> omitted-binder condition and its ambiguity refusal **landed in v0.45**, and so did two
+> of this rule's three added destinations: **each binder of a destructuring `let`** and
+> **each target of a `set` target list**. The third, **the arm binder of an own-place
+> `match`**, did **not**, beyond the direct-scrutinee route [FN-9] already had, and it is
+> not reachable by a multi-result call in any case: a call that hands back two or more
+> ordinals is no `match` scrutinee, so reaching an arm binder needs the relation to
+> survive the destructuring binder that names the ordinal first. That is a pending
+> summary token across a naming event — [MSR-3]'s deferred rebind and binder placement —
+> rather than a destination of its own, and it goes with B7's measured result. The
+> specification records it as this rule's DEFERRED clause.
+>
+> Two implementation limits are compiler capability and not language: a **borrow-mode or
+> `slice` ordinal** of a result list is refused as an unimplemented capability, because
+> [FN-1]'s return-origin ceiling and borrow-result provenance are not derived per ordinal
+> yet; and a **subscript target in a `set` target list** is refused for the same reason,
+> because one statement's several indexed commits need [SET-1]'s offset-evaluation order
+> stated over a list. Neither is written into the language.
+
 **[CALL-6] Publication: how a declared relation becomes a fact, where it is computed,
 and where it is established.** This is the rule round 6 found missing and round 7 found
 computing at one point and establishing at another. Every `Publishes:` line in 3.K names
@@ -2451,10 +2898,10 @@ this rule or [FN-9]'s existing [ENT-3.S12] route, and nothing else publishes any
 **The establishment sentence is round 7's second BREAK.** The seventh draft deferred a
 routed relation's establishment *to* the arm and killed it from the establishment point,
 so every write between the call and the arm happened "before" it and killed nothing. Round
-7 wrote the program: two checked `seq_arena` takes from one frame arena, the second
-unmatched, then a `match` on the first whose `Some` arm re-establishes `len(scratch) <=
-256` after the second take advanced the cursor — and a `seq_arena_proved` on that arm
-discharges `room(scratch) >= 65008` and hands back a run running 64728 bytes past the
+7 wrote the program: two checked `arena_vector` takes from one frame arena, the second
+unmatched, then a `match` on the first whose `Some` arm re-establishes `len_of(scratch) <=
+256` after the second take advanced the cursor — and a `arena_vector_proved` on that arm
+discharges `room_of(scratch) >= 65008` and hands back a run running 64728 bytes past the
 extent, in a `pure`, heap-free, `resource_closed` program [RES-3] accepts. Instantiating
 at the call and **restricting** rather than **deferring** is the repair, and it is the
 mechanism [ENT-5] already has for a branch-conditioned fact.
@@ -2470,8 +2917,8 @@ the resolved place of a `&uniq` state actual, for a relation
   over that state parameter's measures                         this rule
 ```
 
-**The last destination is the one a provider needs.** A refused `seq_arena` publishes
-`room(arena) < advance<T>(count)` and a successful one publishes the cursor's new value;
+**The last destination is the one a provider needs.** A refused `arena_vector` publishes
+`room_of(arena) < advance<T>(count)` and a successful one publishes the cursor's new value;
 [RES-6] requires the first, L8's second half rests on it, [RES-10] reads the second, and
 none contains a result datum, so [FN-9] 1313 admits none and [ENT-3.S12]'s four
 destinations all key on a result.
@@ -2503,6 +2950,30 @@ instantiated relations are contradictory at the establishment point is a hard er
 CALL-6 at the row or the `fn_decl`, because [MSR-4] step 1 discharges every goal from a
 contradiction — which is how three of round 7's four memory BREAKS reached memory.
 
+> **Correction, decided 2026-09-05, from B8d's implementation: the sentence above is one
+> judgment over the unrouted half and a different thing over the routed half.** A row's
+> **unrouted** relations are a member of every exit's set, so they hold wherever the
+> call's continuation is reached at all and B8c's reading stands unchanged: a caller state
+> that turns contradictory across them turned so on the row's own relations. A caller
+> state that turns contradictory across a row's **routed** relations is admitted, and this
+> is not a weakening. A routed relation is available only on the arm its route names, so a
+> contradiction there is the ordinary [ENT-3] statement that this arm is not reached —
+> exactly what a written guard the caller can refute produces, and exactly as sound, since
+> the arm does not execute. `arena_vector::<u8>(store: &uniq workspace, count: 8192_u64)`
+> over a 4096-byte extent publishes `len_of(store) = len_of(store at the call) +
+> advance<T>(count)` on its `Some` arm against a `cap_of(store)` of 4096, and the arm it
+> makes underivable is the arm that never runs. The exits of one call partition its
+> outcomes, so at most one of them can be refuted this way and the caller reaches a
+> consistent state on the arm it takes.
+>
+> **What is asserted on every exit instead is the denotation itself.** Where a row names
+> one measure of one formal both `at the call` and in its post-state, the two are two
+> terms at every instantiation [MSR-3]. That is the position B8c's defect actually
+> occupied — reading one term for both gives the row's own relation the shape `t = t +
+> advance<T>(count)` — and stating it as [MSR-3] states it is a stronger check than
+> measuring its consequence in the caller's state, because it does not depend on what the
+> caller happened to know.
+
 *Judgment:* the S13 instantiation at the call, the establishment and restriction, the kill
 from the call, the admission test on a relation that omits the result datum, and the
 consistency check, each a hard error citing CALL-6 at the row or clause. This is the
@@ -2528,6 +2999,10 @@ satisfy it**: [RES-8]'s saturation fact is a **declared** clause, and [CALL-7]'s
 completeness obligation is a **declaration-site** check of a written contract against a
 body, exactly as [EFF-2] 1432 checks an effect row.
 
+*Landed at B3* (2026-09-06). [ENT-5]'s clause (b), [FN-9]'s entry-image sentence and
+[SYS-8] are amended in place, and the two `call5-neg-*` cases show that a bound borrow
+actual and an element-only body reach the same rejection the replacing body does.
+
 *Judgment:* the conservative default for every unselected parameter type. *Publishes:*
 the absence of a call-site-derived fact. *Amends:* [ENT-5] 2863-2967's clause (b) at 2876,
 whose projected-callee-write kill is now classified by [CALL-1..3] and by nothing else.
@@ -2545,15 +3020,15 @@ completeness sentence, over the population [BLK-0]'s cannot reach.
 > that result.
 >
 > **Three exclusions, each decidable from the declared type and none from the body.** A
-> measure that is a **standing fact of the result's own type** needs no clause: `cap` of a
+> measure that is a **standing fact of the result's own type** needs no clause: `cap_of` of a
 > `FixedVector<T, n>` is the type constant `n`, which [MSR-2] already makes an
 > empty-support fact the caller has too. A clause **both of whose sides follow from
 > [MSR-2]'s implicit facts alone** does not satisfy the obligation. And a result of
 > loan-bearing type is outside the population, because [VIEW-2] fixes its measures at
 > formation. **No exclusion reads the body** ([CALL-5]): a measure the body leaves at its
-> standing bound — a `head` after a front operation is the only one — has no non-vacuous
+> standing bound — a `head_of` after a front operation is the only one — has no non-vacuous
 > clause and therefore no admissible signature, so the function returns the drained run's
-> `len` and lets the run itself die rather than handing back a value no caller can use
+> `len_of` and lets the run itself die rather than handing back a value no caller can use
 > (3.L.8 is the worked case).
 >
 > A measure with no such clause is a hard error citing CALL-7 at the `fn_decl`,
@@ -2566,11 +3041,11 @@ those are one defect.** It required "the exact value or relation to the correspo
 input measure **where the body establishes one**, and a two-sided bound where it does not"
 — deciding which form is demanded is deciding whether the body establishes an exact value,
 which no test defines; and the only enforceable half was *mention every measure*, which
-`ensures head(result) <= cap(result);` satisfies with a standing fact, clearing the
+`ensures head_of(result) <= cap_of(result);` satisfies with a standing fact, clearing the
 diagnostic and leaving [VIEW-2]'s premise as undischarged as the sixth draft left it. The
 shape above is a syntactic condition plus one [MSR-4] query per stated clause: decidable
 by counting, refusing the standing-fact clause by name, admitting
-`ensures head(result) <= 0_u64;`.
+`ensures head_of(result) <= 0_u64;`.
 
 **The "merely forwarded from a callee" exemption is deleted.** It named a transport
 [CALL-2] and [CALL-5] forbid: `build`'s inner callee's relations are facts inside
@@ -2583,7 +3058,7 @@ the shape of D1's own flag. **Why the measure population and not every result.**
 is the one class of fact whose absence silently deletes a caller's ability to *use* the
 value it was handed. **What it costs, measured.** Round 7 counted contract clauses and the
 header invariants that establish them at about 120 of 190 library items across sixteen
-programs — a price worth paying rather than going back. The exclusions above remove `cap`
+programs — a price worth paying rather than going back. The exclusions above remove `cap_of`
 from every `FixedVector` result, which is `vacant` and `filled` from four clauses to three
 and `pool_new` from four to three. Inside a construction loop the remaining cost is one
 header invariant per exactly-published measure, because [INV-1] 3105 admits four ordered
@@ -2682,7 +3157,7 @@ every premise below is established from program text alone:
 compile-time constants, type-level constants and runtime-profile symbols** (L1). A
 per-domain figure that names a runtime value is not a bound, and premise 3 fails at the
 loop, the call **or the acquisition** that introduced it, `UnboundedStoreDemand`, with
-that value named: `seq_arena::<u8>(arena: &uniq scratch, count: wanted)` for a runtime
+that value named: `arena_vector::<u8>(store: &uniq scratch, count: wanted)` for a runtime
 `wanted` fails at that statement, in straight-line code. A marked program's runtime-sized
 take is written `requires count <= k` for a closed `k` and composed at `k` — and [RES-10]
 route (i) gives a loop's **trip count** the same `requires`-based route, which is round
@@ -2722,9 +3197,11 @@ changes two things. It makes the failure of [RES-3] stage one a hard error rathe
 reported property. And it selects which [SCOPE-3] 27-31 deferrals apply: for a marked
 program, **stack exhaustion and covered-store exhaustion are inside the model**, and for
 every other program they stay deferred. **One thing the marker does not select is whether
-a program may abort**: [PROV-6] refuses a type whose release graph has a cycle in every
-program, so L3's last clause is true rather than aspirational and the release walk has no
-worklist and no `wf_resource_abort` caller.
+a program may abort**: a cycle in a release graph can arise only where a heap is allowed,
+and a resource-closed program has none, so on a marked entry the walk is depth-one and
+L3's last clause is true rather than aspirational; the walk has no worklist and no
+`wf_resource_abort` caller. In a heap-allowed program the walk recurses, which is the
+owner's ruling of 2026-09-04.
 
 A program whose call graph reaches a `Heap<'s>` is not resource-closed, and a `main`
 selecting `command.heap` is by itself the rejection. A bounded general store is still a
@@ -2747,13 +3224,13 @@ runtime store. A store outside this list contributes no envelope item and denies
 ```text
 | algebra                    | state         | acquire            | release        | kind        |
 |----------------------------|---------------|--------------------|----------------|-------------|
-| uniform slots              | len, cap      | +1 record          | -1, on the     | reusable    |
+| uniform slots              | len_of, cap_of      | +1 record          | -1, on the     | reusable    |
 |  (lane, task, queue,       |               |                    | store's own    | capacity    |
 |   completion and handle    |               |                    | release event  |             |
 |   records of the runtime)  |               |                    | [RES-9]        |             |
-| bump extent                | len exact,    | + advance<T>       | nothing; the   | consumable  |
+| bump extent                | len_of exact,    | + advance<T>       | nothing; the   | consumable  |
 |  (Arena<'s, bytes, align>) |  in bytes,    |   (count)          | store resets   | budget      |
-|                            |  cap = bytes  |                    | with 's        |             |
+|                            |  cap_of = bytes  |                    | with 's        |             |
 | general heap (Heap<'s>)    | -             | -                  | per value, by  | undecidable |
 |                            |               |                    | the release    | from E      |
 | static and frame placement | fixed offsets | none at run time   | none           | compile-    |
@@ -2782,13 +3259,13 @@ it one.**
 > `align >= align_ceiling(T)` as a compile-time comparison of two constants.
 
 The cursor is then a multiple of `align` at every point, **the padding at a take is
-exactly zero**, and therefore `len(arena)` is **exact** — which [MSR-1] and A.1 now say,
+exactly zero**, and therefore `len_of(arena)` is **exact** — which [MSR-1] and A.1 now say,
 and which is what makes [RES-10]'s reset cancel. Round 7 found A.1 and this rule
 disagreeing, with the recommended per-iteration idiom refused in both spellings as the
 consequence. Whether the **operand** is closed is [RES-3]'s question.
 
 *Judgment:* the composition of [RES-10] per domain, over the kind column this rule fixes.
-*Publishes:* per program point, per domain, the store's `len` bound; and each domain's
+*Publishes:* per program point, per domain, the store's `len_of` bound; and each domain's
 acquire quantity and kind, which [RES-10]'s transfers and routes read. *Amends:* [OP-9]
 974-1001, whose allocation-fit predicate gains [BLK-0]'s acquiring rows as callers, whose
 ceiling table gains A.1's derived rows, whose region-bearing exclusion is lifted, and which
@@ -2804,14 +3281,14 @@ may refuse declares its own nominal (3.L.5's `Grown`).
 Each covered-store acquisition with a measure comes in exactly two spellings, on the model
 of `+` and `+checked`: a proved form admitted only when [MSR-4] discharges its goal, and a
 checked form that is total. **The `Heap` has no proved form** (L6). A store with measures
-publishes more: a refused `seq_arena` establishes `room(arena) < advance<T>(count)`, which
+publishes more: a refused `arena_vector` establishes `room_of(arena) < advance<T>(count)`, which
 is L8's second half and which is a fact only because [CALL-6] gives a provider relation a
 source, an establishment point and a destination.
 
 **A library release should be the proved spelling wherever its caller can discharge it.**
 A checked release hands its refusal back as an `Option`, and a value inside one can be
 legally destructured and discarded — must-consume behaving correctly [PROV-6], and not
-must-return. A **proved** release under `requires room(pool.free) > 0_u64` has no refusal
+must-return. A **proved** release under `requires room_of(pool.free) > 0_u64` has no refusal
 arm, so on every path the value goes back; 4.1 is written on it.
 
 **The runtime's handle table is a covered store, and its refusal is a variant.**
@@ -2823,18 +3300,18 @@ variants, and the relation each publishes:
 
 ```text
 reserve_file(factory: &uniq FileFactory) -> outcome: own ReserveOutcome
-  Reserved(value: FilePermit):  len(factory) = <call datum> + 1
-  Exhausted():                  room(factory) = 0, len(factory) = <call datum>
-  Failed(error: IoError):       len(factory) = <call datum>
+  Reserved(value: FilePermit):  len_of(factory) = <call datum> + 1
+  Exhausted():                  room_of(factory) = 0, len_of(factory) = <call datum>
+  Failed(error: IoError):       len_of(factory) = <call datum>
 ```
 
 **The refusal relation is published on the `Exhausted` arm and there only**, by
 [CALL-4]'s existing per-variant route through [CALL-6]'s S13, so a marked program that
-matches that arm derives `room(factory) = 0` and [RES-10]'s reusable-capacity route reads
-it beside `saturating` and `cap(store)`. [SYS-7] 2473-2486's closed class set is
+matches that arm derives `room_of(factory) = 0` and [RES-10]'s reusable-capacity route reads
+it beside `saturating` and `cap_of(store)`. [SYS-7] 2473-2486's closed class set is
 **unchanged** and the `Failed` arm carries it, so a portable class set stays payload
 vocabulary and never becomes proof vocabulary. Round 7's finding is what forced the
-partition: the seventh draft claimed the edge establishes `room(factory) == Z` *"when the
+partition: the seventh draft claimed the edge establishes `room_of(factory) == Z` *"when the
 class is `ResourceExhausted`"*, and under S25's `Result` that was false twice over, because
 a class is a member of the payload's class set and not a variant, no route in [CALL-4] is
 conditioned on one, and publishing the relation unconditionally over `Err` is false for a
@@ -2846,7 +3323,8 @@ a third arm at eleven call sites across five corpus programs, against a total
 No covered-resource failure is a trap, an abort, a process exit, a retry, or a promotion
 to a larger store. The batch-0079 floor's `wf_resource_abort` site loses its
 allocation-refusal caller once allocation returns a value, and its release-walk callers
-once [PROV-6]'s release graph refuses a cycle outright.
+with the worklist itself, the release of a cyclic type being an ordinary recursive walk
+[PROV-6].
 
 *Judgment:* the ordinary [ERR-3]/[OWN-13] handling of a `Result`, an `Option` or a system
 outcome nominal, plus [MSR-4] discharge at the proved spelling. *Publishes:* the returned
@@ -2983,7 +3461,7 @@ a composition with no site. **Every quantity tested below is a compile-time inte
 closed expression** (L1), and **the backedge delta is computed by this composition from
 the rows' declared deltas — never proved by [MSR-4]**. Every covered resource has one of
 [RES-5]'s five kinds and [RES-5]'s kind column assigns it: *reusable capacity* is bounded
-by peak `len`, *consumable budget* by net consumed, *external effect flow* is not in `E`,
+by peak `len_of`, *consumable budget* by net consumed, *external effect flow* is not in `E`,
 and the other two contribute no run-time acquisition.
 
 **A statement's summary is one map from label to `(peak, delta)`, and the label set has
@@ -3049,11 +3527,11 @@ loop       let d be the backedge delta COMPUTED by this composition from the dec
                          trip count from its endpoints and this function's verified [FN-8]
                          requirements:
                          peak(loop) = p + (T - 1) * max(d);  delta(loop) = T * d
-                 (ii)  the domain's kind is REUSABLE CAPACITY, its store's cap is a standing
+                 (ii)  the domain's kind is REUSABLE CAPACITY, its store's cap_of is a standing
                          fact [MSR-2], and every acquisition on the loop's paths is
                          saturating, read from the row and from each callee's declared
                          saturating(d) [RES-8]:
-                         peak(loop) = cap(store);  delta(loop) = 0
+                         peak(loop) = cap_of(store);  delta(loop) = 0
                Otherwise there is no finite E and premise 3 fails here.
            a loop with no fallthrough carries no fallthrough entry and its retained entry is
              p composed with d discharged by the same routes
@@ -3079,8 +3557,8 @@ own map — not an [ENT-2] term — while the only thing an [INV-1] header invar
 is a **level**, the vacuous shape round 6 killed; the trip-count route absorbs the
 writer-controlled half. **The reset is a definition, not an arithmetic accident**: the
 take and the reset are the same quantity, and summing them as two independent intervals
-always widens, so under a bounded arena `len` the recommended per-iteration idiom composed
-to `[-256, 256]` and was refused in both spellings; [RES-5] makes `len(arena)` exact and
+always widens, so under a bounded arena `len_of` the recommended per-iteration idiom composed
+to `[-256, 256]` and was refused in both spellings; [RES-5] makes `len_of(arena)` exact and
 the reset cancels per label. **The scope composition is new and it is what the reset
 needs**: without it a `break`, a `give`, a `propagate` or a `return` out of a region block
 carried the block's positive delta with the reset charged nowhere. **The overlap
@@ -3097,7 +3575,7 @@ and `retained` included; and the per-domain figure of `E` through the extraction
 *Amends:* nothing in v0.41; this is new machinery over [FN-1]'s existing graph.
 *Depends:* [FN-1] 1076 as [STK-4] corrects it, where the label set comes from; [RES-5]'s
 kind column and acquire quantity; [RES-8]'s declared saturation fact and its designator;
-[CALL-6], without which route (ii)'s `cap(store)` is not a fact; [RUN-1]'s published
+[CALL-6], without which route (ii)'s `cap_of(store)` is not a fact; [RUN-1]'s published
 outstanding-work bound, the overlap rule's `k`. *Law:* L1, L8, L9. *History:* r7 F2-1,
 F2-2, F2-4, F2-9, F2-10, F2-11; r6 F2-1, F2-7, F2-11, F2-18.
 
@@ -3416,29 +3894,31 @@ records each decision with the alternatives weighed). Nothing in it is proposed.
 | a run of slots, store-      | Vector<'s, T>         | one type at two regions; its capacity is a measure      |
 |   resident [S1]            |   (brand elided)      | because a growth policy must change it                   |
 | a run that is always full  | FixedVector<T, n>,    | array<T, n> retires [S34]: a full FixedVector with four  |
-|   [S34]                    |   len = cap = n       | standing-fact measures is that case, rodata as a const   |
+|   [S34]                    |   len_of = cap_of = n       | standing-fact measures is that case, rodata as a const   |
 | the store's handle [S3, S4]| Heap<'s>, Arena<..>   | a value you must hold to allocate — and, under D3, to    |
 |                            |                       | get the derived release                                  |
 | the brand's spelling       | written iff the       | 3.K.0's determination principle, over regions only;      |
 |                            | operands do not       | type and const arguments are always written [FN-2]       |
 |                            | determine it          |                                                          |
-| build an empty run [S7]    | seq_fixed, seq_arena, | the placement is in the name, because it decides which   |
-|                            | seq_arena_proved,     | item of E the run becomes (L6)                           |
-|                            | seq_heap              |                                                          |
+| build an empty run [S7,     | fixed_vector,         | the placement is in the name, because it decides which   |
+|   S38]                     |   arena_vector,       | item of E the run becomes (L6); the built type's own     |
+|                            |   arena_vector_proved,| spelling is the object [S38]                             |
+|                            |   heap_vector         |                                                          |
 | reserve a bump store [S9]  | arena_frame,          | as above; nothing else reserves                          |
 |                            | arena_extent          |                                                          |
-| append at either end [S8]  | seq_place,            | one name per end, whatever the backing                   |
-|                            | seq_place_front       |                                                          |
-| remove at either end [S8]  | seq_take,             | the window is two-sided, so L12's last clause is true    |
-|                            | seq_take_front        |                                                          |
+| append at either end [S8,   | place_back,           | one name per end, whatever the backing; no container     |
+|   S38]                     | place_front           | word, because the operand supplies it [S38]              |
+| remove at either end [S8,   | take_back,            | the window is two-sided, so L12's last clause is true    |
+|   S38]                     | take_front            |                                                          |
 | return a wrapped window    | a library drain,      | writable in wf, so L18 keeps it out of the kernel;       |
 |   to its origin            |   3.L.8               | [S29] is withdrawn and Q18 is the owner's question       |
-| read a measure [S11]       | len, cap, room, head  | one quantity, one name, term and reader alike            |
+| read a measure [S11, S36]  | len_of, cap_of,       | one quantity, one name, term and reader alike; the       |
+|                            |   room_of, head_of    | derivation half of S38's scheme                          |
 | a read-only view [S35]     | Slice<'r, T>          | copy [S27]; capitalized like every compiler-owned nominal |
 | a writable view [S35]      | MutSlice<'r, T>       | element writes only; affine, because [OWN-5] refuses two |
 |                            |                       | exclusive loans on one range                             |
-| form a view [S10]          | seq_slice,            | the two formers follow the two type names                |
-|                            | seq_mut_slice         |                                                          |
+| form a view [S10, S38]     | slice_of,             | the two formers follow the two type names; a view is a   |
+|                            |   mut_slice_of        | derivation, so it is `X_of` [S38]                        |
 | re-view a writable view    | no operation; the     | [S31]: a shared child reborrow of the exclusive loan,    |
 |                            |   ordinary child      | [OWN-6]'s own machinery with a view as the parent, so a  |
 |                            |   reborrow [OWN-6]    | fill-and-publish helper is writable [VIEW-6]             |
@@ -3466,7 +3946,9 @@ records each decision with the alternatives weighed). Nothing in it is proposed.
 `HeapBox`, `ArenaBox`, `PoolSlot`, `heap_take`, `arena_take`, `pool_take` as a kernel row,
 `on_propagate`, `Full<T>`, `TooSmall`, `OutOfMemory`, `PoolExhausted`, `NeedCapacity` and
 `NoRecord` are **not** in the kernel vocabulary. The first four are library names for
-kernel types (3.L.1); `update` and every swap spelling are [LIV-2]; `seq_frame`,
+kernel types (3.L.1) — `HeapVector` and `ArenaVector` are the *nominals* a writer calls a
+`Vector<'s, T>` at two regions, and are not the S38 operations `heap_vector` and
+`arena_vector`, which build one; `update` and every swap spelling are [LIV-2]; `seq_frame`,
 `seq_exchange` and `seq_rebase` are the fifth, sixth and seventh drafts' removals and
 `seq_reslice` is the eighth draft's, because forming a shared view over a writable one is
 [OWN-6]'s child reborrow [VIEW-6]; `Span` and `MutSpan` are the sixth draft's names;
@@ -3529,7 +4011,7 @@ row that also records a surviving depended sentence marks it **bold** (condition
 | [GRAM-3]        | 204-215   | box/arena/buffer productions retire; runs are ordinary TYPEIDs   | [PROV-1]                    |
 |                 |           | with targs; slice is joined by mut_slice                         |                             |
 | [GRAM-4]        | 217-256   | destructuring let and consume; set target list and value list;   | [CALL-4], [LIV-2], [MSR-4], |
-|                 |           | affine_factor GAINS terms at [MSR-4] in B2, not at [MSR-5];      | [PROV-6]                    |
+|                 |           | affine_factor GAINS the four measure formers as factors in B7a3 | [PROV-6], [INV-1]           |
 |                 |           | stmt gains dispose                                               |                             |
 | [GRAM-5]        | 258-280   | +clause_expr; atom and atom_list untouched. LANDED in v0.44      | [MSR-5]                     |
 | [GRAM-9]        | 328-332   | unchanged; named because [MSR-5] moves the amendment away        | [MSR-5]                     |
@@ -3594,13 +4076,13 @@ row that also records a surviving depended sentence marks it **bold** (condition
 | [STOR-6]        | 738-767   | E-materialization joins the target-stage obligations; the frame  | [RES-3], [STK-3]            |
 |                 |           | sentences gain the per-context envelope and the frame-placed     |                             |
 |                 |           | arena's alignment slack                                          |                             |
-| [OP-1]          | 771-849   | +cap, +room, +head, pure, over runs, views and providers; five   | [PROV-2], [BLK-0], [BLK-2], |
+| [OP-1]          | 771-849   | +cap_of, +room_of, +head_of, pure, over runs, views and providers; five   | [PROV-2], [BLK-0], [BLK-2], |
 |                 |           | constructors retire; ReservedLowerNames +3; 838 gains the class  | [VIEW-1]                    |
 | [OP-4]          | 914-924   | indexable bases extend to the runs and views; the obligation is  | [BLK-1], [MSR-1]            |
-|                 |           | against len, in logical coordinates; a subscripted measure place |                             |
+|                 |           | against len_of, in logical coordinates; a subscripted measure place |                             |
 |                 |           | in an erased clause discharges at its own attach site            |                             |
 | [OP-5]          | 926-931   | "and contract predicate" narrows to a source condition           | [MSR-5]                     |
-| [OP-7]          | 939-947   | slice_of and array_new retire; cap, room and head join the       | [VIEW-1]                    |
+| [OP-7]          | 939-947   | slice_of and array_new retire; cap_of, room_of and head_of join the       | [VIEW-1]                    |
 |                 |           | operations                                                       |                             |
 | [OP-9]          | 974-1001  | the ceiling table gains A.1's derived rows, the region-bearing   | [RES-5], [BLK-0]            |
 |                 |           | exclusion is lifted, advance<T> is fixed, and the predicate      |                             |
@@ -3697,7 +4179,7 @@ row that also records a surviving depended sentence marks it **bold** (condition
 |                 |           | establishment order survives and [CALL-6] reuses it; 2942-2946   |                             |
 |                 |           | survives and [MSR-2] and [MSR-3] depend on it**                  |                             |
 | [ENT-6]         | 2969-3100 | one goal disposition; measures carry images; 3007 gains          | [MSR-3], [MSR-4], [MSR-2]   |
-|                 |           | len + room = cap as two members; the four per-family route       |                             |
+|                 |           | len_of + room_of = cap_of as two members; the four per-family route       |                             |
 |                 |           | grants keep their normalization and lose their route grant.      |                             |
 |                 |           | **3015's two-premise family and 3024's determinability sentence  |                             |
 |                 |           | survive UNWIDENED, which is why [BLK-0] and [CALL-7] and not     |                             |
@@ -3734,7 +4216,7 @@ on its changed row above and is not repeated here (condition 4).
 | ENT-1      | 2661 | a retained witness changes diagnostic parent choice only, never the        |
 |            |      | derivable set or acceptance: [RES-8], which is why saturation is declared  |
 | ENT-4      | 2860 | L0's uniqueness and finiteness rests on the difference-bound shape:        |
-|            |      | [MSR-2], which is why len + room = cap is an affine premise; and [BLK-0],  |
+|            |      | [MSR-2], which is why len_of + room_of = cap_of is an affine premise; and [BLK-0],  |
 |            |      | which is why advance<T>(count) is one term rather than an expression       |
 ```
 
@@ -3750,8 +4232,8 @@ both a production and an effect entry, and retires once), plus 5 for `resource_c
 `contract_block`, `effect`, `affine_factor`, with `requires_clause`/`ensures_clause`
 counted once as a pair. **Statement forms** — a different count from productions — plus
 1, `dispose_stmt`; the destructuring consume is a `let_stmt` alternative and the set
-target list is a changed `set_stmt`. `ReservedLowerNames`: plus 3, `cap`, `room` and
-`head`; [RES-9]'s six store designators are a closed set resolved inside a `saturating`
+target list is a changed `set_stmt`. `ReservedLowerNames`: plus 3, `cap_of`, `room_of` and
+`head_of`; [RES-9]'s six store designators are a closed set resolved inside a `saturating`
 clause and enter no general lexical domain. Nominal types: plus 5, being 2 providers, 2
 runs and `MutSlice`; `Slice` is unchanged. Declaration domains: plus 1, with one
 `container_declaration_ordinal`. Entry input rows: plus 1. Compound punctuation tokens:
@@ -3764,8 +4246,8 @@ here.
 its three atoms; its `Pool` store, `PoolSlot`, `PoolVector`, `seq_lease`, `pool_frame`,
 `pool_extent`, `pool_take`, `pool_release` and the pool seam; its `FixedRing` and four
 ring rows; its `HeapBox` and `ArenaBox`; its three failure structs and its `NoRecord`;
-its `seq_filled`, `seq_vacant`, `seq_take_at`, `seq_clear`, `seq_truncate`,
-`seq_reserve_heap`, `seq_reserve_arena`, `seq_shrink`, `seq_heap_filled`, `seq_push`,
+its `seq_filled`, `seq_vacant`, `take_back_at`, `seq_clear`, `seq_truncate`,
+`seq_reserve_heap`, `seq_reserve_arena`, `seq_shrink`, `heap_vector_filled`, `seq_push`,
 `seq_try_push`, `seq_pop` and every `try` row; the `&uniq buffer<T>` and
 `&uniq Container` prohibition **[CNT-7], whose effect [BLK-4]'s fourth clause restores
 as a rule**; the effect-row atoms `heap` and `arena`; `slice_of`, `box_new` and
@@ -3809,8 +4291,8 @@ proposed**.
 on a generic parameter [S32] and `ReserveOutcome` [S33] until 2026-09-04, and each is
 recorded below with the disposition the owner gave it.
 
-**The decided list.** Seven entries changed status this round and are marked, the last
-three of them on 2026-09-04.
+**The decided list.** Twelve entries changed status across these rounds and are marked: four
+on 2026-09-04, and S37 and the three S38 supersedes on 2026-09-05.
 
 ```text
 | id  | spelling                                    | kind                    | status    |
@@ -3821,13 +4303,13 @@ three of them on 2026-09-04.
 | S4  | Arena<'s, bytes, align>                     | compiler-owned nominal  | ADOPTED   |
 | S5  | slice<'r, T> keeps its v0.41 name           | naming decision         | see S35   |
 | S6  | mut_slice<'r, T>                            | compiler-owned nominal  | see S35   |
-| S7  | seq_fixed, seq_arena, seq_arena_proved,     | operation names         | ADOPTED   |
-|     |   seq_heap                                  |                         |           |
-| S8  | seq_place, seq_place_front, seq_take,       | operation names         | ADOPTED   |
-|     |   seq_take_front                            |                         |           |
+| S7  | fixed_vector, arena_vector,                 | operation names         | see S38   |
+|     |   arena_vector_proved, heap_vector          |                         |           |
+| S8  | place_back, place_front, take_back,         | operation names         | see S38   |
+|     |   take_front                                |                         |           |
 | S9  | arena_frame, arena_extent                   | operation names         | ADOPTED   |
-| S10 | seq_slice, seq_mut_slice                    | operation names         | ADOPTED   |
-| S11 | cap, room, head                             | operation names         | ADOPTED   |
+| S10 | slice_of, mut_slice_of                      | operation names         | see S38   |
+| S11 | cap, room, head                             | operation names         | see S36   |
 | S12 | dispose p;                                  | statement form          | ADOPTED   |
 | S13 | let N(f1: b1, ..., fk: bk) = move v;        | let alternative         | ADOPTED   |
 | S14 | (retired into D2)                           | -                       | DECIDED   |
@@ -3856,13 +4338,47 @@ three of them on 2026-09-04.
 |     |   take mut_slice and slice                  |                         |           |
 | S31 | seq_reslice                                 | operation row           | REJECTED  |
 |     |   (the reborrow is [OWN-6]'s, [VIEW-6])     |                         |           |
-| S32 | a linearity bound on a generic parameter    | generics surface        | ADOPTED   |
+| S32 | a linearity bound on a generic parameter    | generics surface        | see S37   |
 | S33 | reserve_file -> own ReserveOutcome          | system-row change       | ADOPTED   |
 | S34 | array<T, n> retires; FixedVector<T, n> is   | type retirement         | ADOPTED   |
 |     |   the one fixed run, const-eligible full    |                         |           |
 | S35 | Slice<'r, T>, MutSlice<'r, T>               | naming decision         | ADOPTED   |
 |     |   (supersede S5 and S6's spellings)         |                         |           |
+| S36 | len_of, cap_of, room_of, head_of            | naming decision         | ADOPTED   |
+|     |   (supersede S11's spellings and the        |                         |           |
+|     |    v0.44 len row)                           |                         |           |
+| S37 | T: copy | affine | linear, one mandatory    | generics surface        | ADOPTED   |
+|     |   bound per type parameter                  |   (supersedes S32)      |           |
+| S38 | X_of(v) for a derivation, verb_object for   | naming decision         | ADOPTED   |
+|     |   a transformation; the operation names     |   (supersedes S7, S8    |           |
+|     |   follow the type names                     |    and S10's spellings) |           |
+| S39 | Box<'s, T>; heap_box / arena_box            | type + two formation    | ADOPTED   |
+|     |                                             |   rows                  |           |
 ```
+
+**One entry decided 2026-09-06, after B7b measured what `box<T>`'s replacement
+costs.** **S39**: `Box<'s, T>` is a fifth compiler-owned nominal — one value of `T`
+resident in the store `'s` names, store-branded on exactly `[PROV-1]`'s terms and
+carrying **no measure at all**, and `heap_box` and `arena_box` are its two
+`[BLK-0]` formation rows. The owner's ground, recorded: the one-element
+`Vector<'s, T>` this file had been treating as the replacement costs three
+descriptor words where a cell needs one pointer, and — the part that is not a
+size argument — it owes `0 < len_of(v)` at **every read**, for a container the
+language knows is never empty. A proof obligation a rule can always discharge is
+a proof obligation a writer still has to write, and `[MSR-1]`'s table would have
+to carry a row whose every cell is a constant. The cell has no row instead.
+Its ownership class is D3's unchanged: affine where a `Heap<'s>` binding is live,
+linear where none is, and its release class read off its region — a free at a
+general store, nothing at a bump extent. It joins `[PROV-6]`'s walk with its
+referent visited before its own storage, which is what admits
+`enum Tree['s] { Leaf(); Branch(left: Box<'s, Tree<'s>>, right: Box<'s, Tree<'s>>); }`
+and makes its release the recursive walk the owner allowed on 2026-09-04.
+**The two rows hand back `Result<Box<'s, T>, T>` and not `Option`**, which is the
+one place the cell's inventory differs from the runs': every run formation takes a
+count and a borrowed provider, so a refusal has nothing to hand back and `[L3]`
+is satisfied by an `Option`; a cell formation **consumes** the value it is given,
+so a refusal that dropped it would destroy it. The `Err` arm carries the value
+itself.
 
 **Two entries decided 2026-09-04, after B1 landed, when the owner asked why
 `array<T, n>` had survived the redesign.** The seven falsifier rounds asked whether the
@@ -3871,18 +4387,36 @@ surface was completely replaced, and 1.4's partition test asks what must enter t
 not what must leave it. `buffer`, `box` and `arena` retired because their semantics
 blocked a rule; `array` blocked nothing and was kept in one sentence of [BLK-1] with no
 ground. **S34**: `array<T, n>` retires with its `array_new` row. It was exactly the
-`len = cap = n`, `head = Z` case of a run, which A.1 already tabulated as four exact
+`len_of = cap_of = n`, `head_of = Z` case of a run, which A.1 already tabulated as four exact
 constants, so a `FixedVector<T, n>` whose four measures are standing facts is that case
 with no runtime descriptor word: a `const` of `FixedVector<T, n>` type with exactly `n`
 literal entries is the const-eligible form [CONST-1], lowers to element storage only, and
-materializes its descriptor from the standing facts at each use; a subscript's `i < len`
-discharges from `len = n`. One fixed run, one spelling. **S35**: every compiler-owned
+materializes its descriptor from the standing facts at each use; a subscript's `i < len_of`
+discharges from `len_of = n`. One fixed run, one spelling. **S35**: every compiler-owned
 container, store and view nominal is capitalized — `Vector`, `FixedVector`, `Heap`,
 `Arena`, `Slice`, `MutSlice` — and only the primitive types stay lowercase. This
 supersedes S5's name (kept on 2026-09-03 because only semantics earn a rename) and S6's
-spelling; the operation names `seq_slice` and `seq_mut_slice` [S10] are unchanged. Every
+spelling; the operation names `slice_of` and `mut_slice_of` [S10] are unchanged. Every
 normative section of this file now writes `Slice` and `MutSlice`; section 6 quotes
 probes as they were run, in the old spelling.
+
+**One entry decided 2026-09-04, after B7a2 landed, when the owner read the four measure
+readers back in the library's own programs.** **S36**: the measure readers are spelled
+`len_of`, `cap_of`, `room_of` and `head_of`. The owner's ground, recorded verbatim:
+`len`, `cap`, `room` and `head` are words writers want for their own bindings; a reader
+is a call-shaped operation and its name should mark that it is a measure *of* its
+operand, not a method of a sequence (so not `seq_len`), and should apply to runs, views
+and the `Arena` alike. The four old spellings leave `ReservedLowerNames` and become
+ordinary identifiers again. The measure terms of [ENT-2] and [MSR-1] take the same four
+spellings — `len_of(P)`, `cap_of(P)`, `room_of(P)`, `head_of(P)` — so one quantity keeps
+one name as term and as reader, and a clause reads
+`requires len_of(source) <= room_of(out);`. This supersedes S11's three spellings and the
+v0.44 `len` row; 3.L, section 4 and A.2 are respelled, and B2's earlier corpus rename
+(`room` to `spare`, `head` to `front`, `cap` to `limit`) stays as it is, because the
+words it moved away from are exactly the ones S36 hands back. The rename is a flat-name
+workaround: a dotless operation name is a reserved word for the whole unit, and a
+namespace mechanism would retire it, which is why `docs/roadmap.md` carries a namespaces
+candidate whose first motivation is this decision.
 
 **The decided entries, one ground each.** **S1-S2**: `array<T, n>` requires `n` live
 values, which for affine `T` is exactly what a writer building a run does not have, and
@@ -3907,7 +4441,7 @@ transforming operation return the value it was handed plus what it computed; **i
 status is recorded honestly** — a two-field struct per operation is writable in wf, so
 this half of [CALL-4] is admitted on cost and not on expressibility, while the
 per-variant route and the S12 destination clause are what no wf program has. **S17**:
-[GRAM-5]'s `atom` has no `call` alternative, so `len(source) <= room(out)` derives
+[GRAM-5]'s `atom` has no `call` alternative, so `len_of(source) <= room_of(out)` derives
 nowhere (probe `q7`), and a `define` is erased by alpha-expansion so it cannot name a
 **result**'s measure (probe `x2`). **S18**: the capability criterion sees storage
 obligations and not logical ones; 3.L.7 states what the modifier buys, and its admission
@@ -3916,6 +4450,22 @@ condition — an affine nominal, never a tag-only enum (probe `q11`) — is [PRO
 for every other, and a compiler flag would make acceptance a function of the invocation.
 **S20**: a store's identity is in the type [PROV-1] and a nominal holding a store-backed
 value must name that store; probes `r2_6` and `m05` are the parse errors today.
+
+> **Correction, decided 2026-09-05, from B8a's implementation: what "on a nominal" means
+> for a *use*.** Declaring `region_params` was the whole of S20 as adopted, and B7a6 found
+> that nothing instantiated them. The rule that closes it needs no further surface: a
+> nominal's region arguments are components of its type name [TYPE-2] and are written
+> where the two runs and the two providers already write theirs — as the **leading members
+> of the same `targs` list**, at every `type` position and at every `construct`. A
+> `construct` writes them on exactly [TYPE-5]'s own ground for a construct's type
+> arguments, which is that construction consults no expected nominal type; a *parameter*
+> type naming a nominal with one region argument determines it from the actual and the
+> caller writes nothing, which is [FORM-8] unchanged. Two instances of one declaration at
+> two regions are two types, and a store region is **invariant** at a call: the first
+> position that names a formal fixes it, and a second position naming a second store is
+> the ordinary [TYPE-5] mismatch. That last sentence was [PROV-1]'s all along and was not
+> being enforced — a formal region occupying two container positions took the *least*
+> actual, so two runs of two extents satisfied one `'s`.
 **S21**: every capacity-parametric function reads its bound as a value, a loop endpoint
 or a clause operand (probe `q10`). **S22**: the heap must enter as a value and [FN-7]'s
 entry table is closed; **`main` declares no region parameter**, and [PROV-1]'s brand
@@ -3941,8 +4491,8 @@ with a finite capacity [RES-9] and L3 requires its refusal to be a value; a tota
 per loop at eleven corpus call sites. **What round 7 found, recorded here rather than in
 a report:** with `Result<FilePermit, IoError>` the store's *exhaustion* is a **class** of
 the error payload, not a variant, and no route in [CALL-4] is conditioned on a class — so
-the `Err` edge publishes only `len(factory) = <call datum>` and no marked program can
-derive `room(factory)` after a refusal. **S33 repairs that and is adopted**, so what
+the `Err` edge publishes only `len_of(factory) = <call datum>` and no marked program can
+derive `room_of(factory)` after a refusal. **S33 repairs that and is adopted**, so what
 [SYS-2] 2261 declares is the outcome nominal and not the `Result`; S25 stands as the
 decision that made the operation fallible at all, and [RES-6] states the relation each arm
 publishes.
@@ -3975,11 +4525,11 @@ derived release runs on the `propagate` edge [STOR-3] 690. What remains of Q10 i
 smaller question of whether `propagate` should reach a multi-result call at all.
 
 **S29, `seq_rebase`. WITHDRAWN to the library.** It proposed one added [BLK-3] row
-publishing `head(result) = 0_u64` with `len`, `cap` and `room` unchanged. *Why it is
+publishing `head_of(result) = 0_u64` with `len_of`, `cap_of` and `room_of` unchanged. *Why it is
 withdrawn:* L18 asks whether a writer can express the effect, and **round 7 wrote the
-program** — drain the wrapped run front-to-back into a fresh `seq_fixed::<T, n>()` under
+program** — drain the wrapped run front-to-back into a fresh `fixed_vector::<T, n>()` under
 the `flat` invariant every construction loop already carries, and the result has
-`head = 0` with `len` and `cap` preserved. The seventh draft's own alternative (c),
+`head_of = 0` with `len_of` and `cap_of` preserved. The seventh draft's own alternative (c),
 "keep the permanent staging run", *is* that program, so the entry priced its own
 alternative and then denied the alternative exists. 3.L.8 writes it and prices it: one
 extra run of the same capacity for the life of the rebase, and the same O(len) copy the
@@ -4008,7 +4558,7 @@ and **[S31] closes it without a row**.
 one (owner-decided 2026-09-04).** The proposal was one added [VIEW] row,
 `seq_reslice['r, T](window: &MutSlice<'r, T>) -> own Slice<'r, T>`. *The gap it was for*
 is real: a helper handed `&uniq MutSlice<u8>` can fill its destination and, under S30
-alone, could not publish it, because `write_once` wants a `&slice`, A.2's `seq_slice`
+alone, could not publish it, because `write_once` wants a `&slice`, A.2's `slice_of`
 forms a view from a **run** borrow and not from a view, and forming a second loan on the
 run itself is [OWN-5]'s ordinary conflict (probe `s6`). *The owner's ruling:* forming a
 shared `Slice<'r, T>` from a `MutSlice<'r, T>` is the **ordinary shared child reborrow of
@@ -4025,7 +4575,8 @@ call site stays where it is instead of moving back inside `search_file` and `wal
 A.2 keeps twelve rows. *What it does not settle:* Q19's alternation cost, because a shared
 child still forbids a write of the parent while it lives.
 
-**S32, a linearity bound on a generic parameter. ADOPTED (owner-decided 2026-09-04).**
+**S32, a linearity bound on a generic parameter. ADOPTED (owner-decided 2026-09-04), and
+superseded on three points by S37 on 2026-09-05.**
 `fn f<T: affine>(...)`, `fn f<T: linear>(...)` and `fn f['s: affine](...)`, read at the
 declaration and checked at the instantiation. *Needed because* a value's release
 disposition depends on its type and region arguments, and the language has no position at
@@ -4061,14 +4612,14 @@ place of S25's `Result`. A three-way system outcome:
 
 ```text
 reserve_file(factory: &uniq FileFactory) -> outcome: own ReserveOutcome
-  Reserved(value: FilePermit):  len(factory) = <call datum> + 1
-  Exhausted():                  room(factory) = 0, len(factory) = <call datum>
-  Failed(error: IoError):       len(factory) = <call datum>
+  Reserved(value: FilePermit):  len_of(factory) = <call datum> + 1
+  Exhausted():                  room_of(factory) = 0, len_of(factory) = <call datum>
+  Failed(error: IoError):       len_of(factory) = <call datum>
 ```
 
 *Needed because* the handle table is a covered store whose refusal L8's second half
 reads, and under S25 that refusal is an `IoError` **class** rather than a variant: no
-route in [CALL-4] is conditioned on a class, publishing `room(factory) == Z`
+route in [CALL-4] is conditioned on a class, publishing `room_of(factory) == Z`
 unconditionally over `Err` is false for a `PermissionDenied` at a table that is not full,
 and there is no `when Err(error: e) is ResourceExhausted:` form anywhere. *Why no wf
 program has it:* it changes a [SYS-2] declaration record. *Alternatives:* (a) do not
@@ -4080,9 +4631,135 @@ a portable class set into proof vocabulary, which [SYS-7] 2473-2486 exists to pr
 gaining a third arm. *Decided:* adopted; it is the same partition this design draws
 everywhere else — a failure the environment can produce is a typed value, and a failure of
 a store we account for is a variant with a published post-state. **What it settles:**
-[RES-6] publishes `room(factory) = 0` on the `Exhausted` arm through [CALL-4]'s existing
+[RES-6] publishes `room_of(factory) = 0` on the `Exhausted` arm through [CALL-4]'s existing
 per-variant route, L8's second half is readable for that store, and Q20 keeps only the
 general question of writing the partition once as a rule about covered stores.
+
+**S37, generic parameter bounds as one feature. ADOPTED (owner-decided 2026-09-05), and it
+supersedes S32.** The owner's ruling, recorded verbatim:
+
+> 1. **A bound is a closed class** the argument must fall into, derived from the language's
+>    existing classifications ([OWN-1]'s copy class, [PROV-6]'s linearity classes, [OP-1]'s
+>    numeric rows), never a user trait; it selects no behavior.
+> 2. **Type parameters carry exactly one bound, always written, never inferred, no
+>    default**: one of `copy`, `affine`, `linear`, `Int`, `Float` (`Int`/`Float` are the
+>    existing prelude markers and imply `copy`). `gparam := TYPEID ":" (TYPEID | "copy" |
+>    "affine" | "linear") | "const" IDENT ":" type`; the optional bound becomes mandatory
+>    for a type parameter of a function or a nominal. New spelling: `copy` (a fixed
+>    lowercase atom).
+> 3. **The three classes form a strict chain `copy < affine < linear`, ordered by what the
+>    body may do**: under `copy` the body may duplicate, use bare, and drop the value;
+>    under `affine` it may `move` it at most once and may drop it; under `linear` it must
+>    consume it exactly once and may never drop it. **Satisfaction is the chain read left
+>    to right**: an argument of class C instantiates a bound B iff C <= B — bound `copy`
+>    accepts copy arguments only; `affine` accepts copy and affine; `linear` accepts copy,
+>    affine and linear. The reverse direction is a hard error citing PROV-6 at the
+>    instantiation, naming the parameter, the bound, and the argument's class. This
+>    corrects S32's "class must equal the bound" to the chain.
+> 4. **The template is the spelling authority.** The body is checked once at the symbolic
+>    instance under its bound: `affine`/`linear` bodies write `move`, `copy` bodies write
+>    bare use, per [OWN-1]/[FORM-1]. The concrete-instance recheck under [FN-2] does NOT
+>    re-judge the [OWN-1]/[FORM-1] spelling: `move` of a template-affine value at a copy
+>    instance denotes a copy. State this as an explicit exception in [FN-2] and [OWN-1].
+> 5. **Region parameters keep an optional bound**: `['s]` unbounded means any region
+>    including a loan region, and the body assumes no store; `'s: affine` (a bump store,
+>    `Arena`) / `'s: linear` (a general store, `Heap`) declares a store region. A region
+>    argument that names no store satisfies neither bound.
+> 6. `T: <source contract>` stays as today (prelude markers only; source contracts rejected
+>    by [FN-3]); behavior abstraction is out of scope. Const parameters carry no bound.
+>    Nominal generics use the same `gparam`.
+
+*What it settles that S32 did not.* S32 left three things open and each cost a program.
+The **equal-class** check made a bound a partition rather than a ceiling, so `T: linear`
+refused a `u64` argument for no reason a writer can state — the body's obligation is
+*consume exactly once*, which a copy value satisfies vacuously. The **optional** bound made
+the unwritten case a fourth, unnamed class whose meaning was "fail closed", which
+[FN-2] 1124's always-written discipline exists to prevent. And the **instance recheck**
+re-judged the spelling, so `fn pass<T: affine>(x: own T) -> r: own T { return move x; }` was an
+[OWN-1] rejection at `u64`: no generic body could serve a copy type and an affine type, and
+3.L dodged it by instantiating `filled`, `take_at`, `try_place`, `try_take` and `rebase`
+only at affine types. Q8's copy/affine half is what that was, and S37 closes it.
+
+*The one thing that grew.* The exception in (4) is stated over the spellings [FORM-1] keys
+on a value's class, and there are two, not one: `move p` against a bare `p` [OWN-1] and
+`replace` against `set` [SET-1, SET-2]. `take_at` writes `replace short[at] = move endv;`,
+which at a copy instance is [SET-2]'s copy-target refusal for exactly the reason the `move`
+was [OWN-1]'s, so the exception reaches both or the ruling's own example does not compile.
+[SET-2] carries the same sentence [FN-2] does, as a cross-reference rather than a second
+statement of the fact.
+
+*Cost:* one fixed lowercase atom (`copy`, which [FORM-3] therefore excludes from IDENT),
+one changed production, one changed instantiation check, one exception sentence in three
+rules, and a mechanical respell of every unbounded generic declaration in the corpus.
+*Decided:* adopted.
+
+**S38, one naming scheme for the whole kernel vocabulary. ADOPTED (owner-decided
+2026-09-05), and it supersedes S7's, S8's and S10's spellings.** The owner's ground,
+recorded verbatim:
+
+> A non-consuming derivation from a value is spelled `X_of(v)` — that is the readers and
+> the view formers. A consuming transformation that hands a new value back is spelled
+> `verb_object`. Operation names follow the TYPE names I chose (`Vector` [S1],
+> `FixedVector` [S2]); the word *run* stays design-internal and never appears in a
+> spelling. The provider operand is spelled `store`.
+
+```text
+readers      len_of  cap_of  room_of  head_of                          unchanged
+views (B8)   seq_slice -> slice_of      seq_mut_slice -> mut_slice_of
+formation    seq_fixed -> fixed_vector<T, n>()
+             seq_arena -> arena_vector(store, count)
+             seq_arena_proved -> arena_vector_proved(store, count)
+             seq_heap -> heap_vector(store, count)
+reservation  arena_frame, arena_extent                                unchanged
+boundary     seq_place -> place_back      seq_place_front -> place_front
+             seq_take  -> take_back       seq_take_front  -> take_front
+```
+
+*What it settles that S7, S8, S10 and S36 did not.* S36 gave the four readers one rule —
+a measure is a quantity *of* its operand, so a reader is `X_of` and never `seq_len` — and
+stopped there, so the file carried **two** schemes at once: `len_of(v)` beside
+`seq_place(vector: v, ...)`, one keyed on the quantity and one on a `seq_` prefix naming
+a concept, *run*, that no writer can spell and no type is called. S38 states the single
+rule those two are halves of. **The derivation half** — `X_of` — is what the four readers
+already are and what `seq_slice` and `seq_mut_slice` should have been: forming a
+`Slice<'r, T>` over a run derives a value from it without consuming it, exactly as reading
+its `len_of` does, so the formers are `slice_of` and `mut_slice_of` and each follows its
+own type name [S35]. **The transformation half** — `verb_object` — is what the nine kernel
+rows are: each takes its operand by value and hands a new one back [BLK-3], and the object
+is the type it produces or the boundary it moves. `fixed_vector`, `arena_vector`,
+`arena_vector_proved` and `heap_vector` therefore read as *what is built* plus *where it is
+built from*, in the type's own spelling; `place_back`, `place_front`, `take_back` and
+`take_front` read as *what is done* plus *which end*, with no container word at all,
+because the operand supplies the container.
+
+*What the scheme deletes.* The `seq_` prefix, and with it the last place the design's
+internal word *run* reached the surface. 3.K.10's row for `seq_frame`, `seq_exchange`,
+`seq_rebase` and `seq_reslice` — four operations rejected or withdrawn in earlier drafts —
+is the register of that prefix's cost: every one of them had to be argued out of a
+vocabulary that made a new `seq_` row look like the cheap move. `arena_frame` and
+`arena_extent` [S9] are unchanged, because they already were `verb_object` read the other
+way round: the object is the `Arena` and the verb says where it is laid out.
+
+*Cost:* ten spellings, of which nine are declaration records [BLK-0] and one is A.2's
+second view row; no production, no atom, no rule, and no verdict. **And one thing the
+scheme decides that B8 must now act on.** `slice_of` is already a live [OP-1] table row —
+the v0.44 view former over `array<T, N>` and `buffer<T>` — and therefore already a member
+of `ReservedLowerNames`, while A.2 lists `seq_slice` as a *kernel* row of [BLK-0]'s IDENT
+domain. Renaming the kernel row to `slice_of` makes two domains claim one spelling, which
+is exactly the [TYPE-6] collision [BLK-0]'s own disjointness sentence forbids. The scheme
+does not choose between the two repairs and B8 must: either the run becomes a third
+admitted source of the existing [OP-1] `slice_of` family, which is what a family is for and
+costs A.2 its Views block, or the [OP-1] row retires with `array` and `buffer` [S34] and
+the spelling passes to the kernel domain. **This was an open item and is now decided
+(owner's delegate, 2026-09-05): both, in that order.** B8f took the first repair for the
+*spelling* — one `slice_of` family whose viewable operand class contains the runs — and
+moved the *row data* into [BLK-0] at the same time, so the requirement and the four
+published relations are the record's own. The spelling's move into the kernel IDENT domain
+lands with [S34]'s retirement, because until then two domains would claim one. Taking both
+steps at once was measured and declined: [BLK-0]'s named-argument form would respell about
+a hundred and twenty live call sites and make fourteen recorded conformance cases MODIFIED
+for no test §7's B8 states. **What it does not settle:** nothing
+about the readers, which S36 decided and this scheme confirms rather than moves.
 
 ### 3.L The library, written in wf
 
@@ -4145,24 +4822,24 @@ a worked program may not call a function this file does not declare.
 | a ring, a queue, a deque      | a run used from both ends [BLK-1]   | nothing to write; no Option, no tag |
 | return a wrapped window to    | a drain into a fresh run, 3.L.8     | seven invariants; two runs live     |
 |   its origin                  |                                     | across the drain; [S29] withdrawn   |
-| vacant<T, const n>            | a counted loop of seq_place over    | three header invariants; the exit   |
+| vacant<T, const n>            | a counted loop of place_back over    | three header invariants; the exit   |
 |                               | None<T>(), 3.L.3 below              | ordering, not an equality; x1c, x1d |
 | filled<T, const n>            | the same, reusing one copy value    | as above; per element class (Q8)    |
-| the transposition of one      | seq_take, one element replace,      | three statements; below, and its    |
-|   element with the last       | seq_place                           | requires is at + 2 <= len           |
-| take_at                       | the transposition, then seq_take,   | the requires plus a dominating      |
+| the transposition of one      | take_back, one element replace,      | three statements; below, and its    |
+|   element with the last       | place_back                           | requires is at + 2 <= len_of           |
+| take_at                       | the transposition, then take_back,   | the requires plus a dominating      |
 |                               | with a branch for the last position | branch; NON-MEASURED T only         |
 | clear, truncate               | a counted drain, two invariants     | two bounded generics, T: affine and |
 |                               |                                     | T: linear [S32]; Q8's copy wall     |
-| growth policy, HeapVector     | seq_heap, drain from the front,     | seven invariants; the window is what|
+| growth policy, HeapVector     | heap_vector, drain from the front,     | seven invariants; the window is what|
 |                               | append at the back, construct       | makes order preservation free; 3.L.5|
-| block pool with a lease       | linear struct Lease['s] plus a      | a branch on len and on room, which  |
+| block pool with a lease       | linear struct Lease['s] plus a      | a branch on len_of and on room_of, which  |
 |                               | FixedVector<Vector<'s,u8>, m> free  | needs [ENT-3.S6] over four measures;|
 |                               | list, and a PROVED release          | 3.L.4 below                         |
 | collect and the appenders     | a counted loop, value in and value  | five invariants and a complete      |
 |                               | out, 3.L.3 below                    | hand-back contract [CALL-7]         |
 | keyed families                | vacant plus element replace         | [OP-4] from the requires; x7        |
-| try_place, try_take           | a branch on room or len and two     | [ENT-3.S6] again; 3.L.4 below       |
+| try_place, try_take           | a branch on room_of or len_of and two     | [ENT-3.S6] again; 3.L.4 below       |
 |                               | returns                             |                                     |
 | update p by op(...)           | set p = op(vector: move p, ...)     | [LIV-2]                             |
 | update p by op(...) into x    | set (p, x) = op(vector: move p,...) | [LIV-2], the n-ary case             |
@@ -4174,74 +4851,74 @@ a worked program may not call a function this file does not declare.
 **The transposition, written out, because it is the fifth draft's removal.**
 
 ```wf-design
-fn take_at<T, const n: u64>(vector: own FixedVector<T, n>, at: own u64)
+fn take_at<T: affine, const n: u64>(vector: own FixedVector<T, n>, at: own u64)
     -> (rest: own FixedVector<T, n>, taken: own T)
     reads(vector), writes(vector) contract {
-  requires at + 2_u64 <= len(vector);
-  ensures len(rest) + 1_u64 == len(vector);
-  ensures room(rest) == room(vector) + 1_u64;
-  ensures head(rest) == head(vector);
+  requires at + 2_u64 <= len_of(vector);
+  ensures len_of(rest) + 1_u64 == len_of(vector);
+  ensures room_of(rest) == room_of(vector) + 1_u64;
+  ensures head_of(rest) == head_of(vector);
 } {
   doc "Removes the element at at, moving the last element into its place.";
-  let (short, endv) = seq_take(vector: move vector);
+  let (short, endv) = take_back(vector: move vector);
   let old = replace short[at] = move endv;
   return move short, move old;
 }
 ```
 
 **What it costs, priced against a program that compiles.** The `replace` at `short[at]`
-carries [OP-4]'s `at < len(short)`, and `seq_take` published
-`len(short) = len(vector) - 1`, so the caller must prove `at + 2_u64 <= len(vector)` —
-**not** `at + 1_u64 <= len(vector)`, which over `u64` is the same proposition as
-`at < len(vector)`. The consequence is real: this form cannot address the **last**
+carries [OP-4]'s `at < len_of(short)`, and `take_back` published
+`len_of(short) = len_of(vector) - 1`, so the caller must prove `at + 2_u64 <= len_of(vector)` —
+**not** `at + 1_u64 <= len_of(vector)`, which over `u64` is the same proposition as
+`at < len_of(vector)`. The consequence is real: this form cannot address the **last**
 position, where the transposition is the identity, so a caller that may remove the last
-element writes a dominating branch and a plain `seq_take` on the other arm. **And it is
+element writes a dominating branch and a plain `take_back` on the other arm. **And it is
 declarable only for a non-measured `T`**: `old` comes out of a `replace`, which publishes
 nothing, so at a measured `T` the `taken` result has no measures, no clause [CALL-7]
-admits exists for it, and the function is refused at its `fn_decl`. `cap` needs no clause
+admits exists for it, and the function is refused at its `fn_decl`. `cap_of` needs no clause
 because it is the type constant [CALL-7] excludes.
 
 #### 3.L.3 Construction and appending, written out
 
 ```wf-design
-fn vacant<T, const n: u64>() -> result: own FixedVector<Option<T>, n> pure contract {
-  ensures len(result) >= n;
-  ensures room(result) <= 0_u64;
-  ensures head(result) <= 0_u64;
+fn vacant<T: affine, const n: u64>() -> result: own FixedVector<Option<T>, n> pure contract {
+  ensures len_of(result) >= n;
+  ensures room_of(result) <= 0_u64;
+  ensures head_of(result) <= 0_u64;
 } {
   doc "Builds a run of n slots, every one holding None.";
-  let built = seq_fixed::<Option<T>, n>();
+  let built = fixed_vector::<Option<T>, n>();
   for @fill (
     at in 0_u64..n,
-    invariant grown: len(built) >= at,
-    invariant spare: room(built) + at >= n,
-    invariant flat: head(built) <= 0_u64
+    invariant grown: len_of(built) >= at,
+    invariant spare: room_of(built) + at >= n,
+    invariant flat: head_of(built) <= 0_u64
   ) {
     let empty = None<T>();
-    set built = seq_place(vector: move built, value: move empty);
+    set built = place_back(vector: move built, value: move empty);
   }
   return move built;
 }
 ```
 
-**Proof route.** `seq_fixed` publishes `len(built) = 0`, `cap(built) = n`,
-`room(built) = n` and `head(built) = 0` — all four exactly, which is [BLK-0]'s
-completeness sentence — and each denotes what it reads as, because `seq_fixed` has no
+**Proof route.** `fixed_vector` publishes `len_of(built) = 0`, `cap_of(built) = n`,
+`room_of(built) = n` and `head_of(built) = 0` — all four exactly, which is [BLK-0]'s
+completeness sentence — and each denotes what it reads as, because `fixed_vector` has no
 operands and every relation is over its result [MSR-3]. `grown`'s base is `0 >= 0`;
-`spare`'s is `n + 0 >= n`; `flat`'s is `0 <= 0`. `seq_place`'s own requirement
-`room(built) > 0` discharges from `spare` and the counted loop's `at < n` ([ENT-3.S11])
-by [MSR-4] step 5. On the backedge `seq_place` declares `len(result) = len(vector) + 1`,
-`room(result) = room(vector) - 1` and `head(result) = head(vector)`, **each over that
+`spare`'s is `n + 0 >= n`; `flat`'s is `0 <= 0`. `place_back`'s own requirement
+`room_of(built) > 0` discharges from `spare` and the counted loop's `at < n` ([ENT-3.S11])
+by [MSR-4] step 5. On the backedge `place_back` declares `len_of(result) = len_of(vector) + 1`,
+`room_of(result) = room_of(vector) - 1` and `head_of(result) = head_of(vector)`, **each over that
 call's own call datum because `vector` is an `own` parameter** [MSR-3], reaching `built`
 through [CALL-6]'s S13 and [CALL-4]'s `set`-target destination; each invariant is
 preserved by **one** published premise, which is what puts the derivation inside
 [ENT-6] 3015's two-premise budget (probes `g4`, `g3`). The `set` target names a binding in
-scope, so it keeps its term [LIV-2]. At the exit `at = n`, so `len(built) >= n`;
-`room <= 0` follows from `len >= n`, `cap = n` and [MSR-2]'s identity; and `flat` exports
-`head(built) <= 0`. **`cap` needs no clause**, being the type constant [CALL-7] excludes.
+scope, so it keeps its term [LIV-2]. At the exit `at = n`, so `len_of(built) >= n`;
+`room_of <= 0` follows from `len_of >= n`, `cap_of = n` and [MSR-2]'s identity; and `flat` exports
+`head_of(built) <= 0`. **`cap_of` needs no clause**, being the type constant [CALL-7] excludes.
 
 **`flat` is what makes anything built by a loop viewable.** [ENT-5] 2942-2946 removes
-every fact whose support the body writes at the backedge, so the `head = 0` chain is
+every fact whose support the body writes at the backedge, so the `head_of = 0` chain is
 exact inside straight-line code and gone across a loop; one invariant, one clause, base
 and backedge each one published premise. A run that is never viewed omits both.
 
@@ -4250,20 +4927,20 @@ and backedge each one published premise. A run that is never viewed omits both.
 iteration. `filled` is not, because it reuses one `value`:
 
 ```wf-design
-fn filled<T, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
-  ensures len(result) >= n;
-  ensures room(result) <= 0_u64;
-  ensures head(result) <= 0_u64;
+fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
+  ensures len_of(result) >= n;
+  ensures room_of(result) <= 0_u64;
+  ensures head_of(result) <= 0_u64;
 } {
   doc "Builds a run of n slots, every one holding a copy of value.";
-  let built = seq_fixed::<T, n>();
+  let built = fixed_vector::<T, n>();
   for @fill (
     at in 0_u64..n,
-    invariant grown: len(built) >= at,
-    invariant spare: room(built) + at >= n,
-    invariant flat: head(built) <= 0_u64
+    invariant grown: len_of(built) >= at,
+    invariant spare: room_of(built) + at >= n,
+    invariant flat: head_of(built) <= 0_u64
   ) {
-    set built = seq_place(vector: move built, value: value);
+    set built = place_back(vector: move built, value: value);
   }
   return move built;
 }
@@ -4282,27 +4959,27 @@ destination.
 fn collect['s](out: own Vector<'s, u8>, source: own Slice<u8>)
     -> (rest: own Vector<'s, u8>, written: own u64)
     reads(out, source), writes(out) contract {
-  requires len(source) <= room(out);
-  ensures written == len(source);
-  ensures len(rest) == len(out) + written;
-  ensures room(rest) + written == room(out);
-  ensures cap(rest) == cap(out);
-  ensures head(rest) <= 0_u64;
+  requires len_of(source) <= room_of(out);
+  ensures written == len_of(source);
+  ensures len_of(rest) == len_of(out) + written;
+  ensures room_of(rest) + written == room_of(out);
+  ensures cap_of(rest) == cap_of(out);
+  ensures head_of(rest) <= 0_u64;
 } {
   doc "Appends every byte of source into the destination's spare room.";
-  let count = len(source);
-  let before = len(out);
-  let before_room = room(out);
+  let count = len_of(source);
+  let before = len_of(out);
+  let before_room = room_of(out);
   for @copy (
     at in 0_u64..count,
-    invariant grown_lo: len(out) >= before + at,
-    invariant grown_hi: len(out) <= before + at,
-    invariant spare_lo: room(out) + at >= before_room,
-    invariant spare_hi: room(out) + at <= before_room,
-    invariant flat: head(out) <= 0_u64
+    invariant grown_lo: len_of(out) >= before + at,
+    invariant grown_hi: len_of(out) <= before + at,
+    invariant spare_lo: room_of(out) + at >= before_room,
+    invariant spare_hi: room_of(out) + at <= before_room,
+    invariant flat: head_of(out) <= 0_u64
   ) {
     let byte = source[at];
-    set out = seq_place(vector: move out, value: byte);
+    set out = place_back(vector: move out, value: byte);
   }
   return move out, count;
 }
@@ -4316,12 +4993,12 @@ identifier per hand-back helper is R1's whole spelling cost.
 **Proof route, and what [CALL-7] costs here.** The three `let`s are [ENT-3.S6]
 equalities over the live terms generalized to the four measures [BLK-0], and at that
 point each live term equals its entry datum [MSR-3], so the `requires` transports into
-the loop's base: `spare_lo` at `at = 0` is `room(out) >= before_room`, the equality.
-`seq_place`'s `room > 0` discharges from `spare_lo`, `before_room >= count` and
+the loop's base: `spare_lo` at `at = 0` is `room_of(out) >= before_room`, the equality.
+`place_back`'s `room_of > 0` discharges from `spare_lo`, `before_room >= count` and
 `at < count` by [MSR-4] step 5 (probes `k21`, `k21b`). Each of the five invariants is
 preserved by exactly one published relation. At the exit `at = count` and the four
-two-sided invariants give the two exact `ensures`; `cap(rest) == cap(out)` follows from
-[MSR-2]'s identity and needs no invariant, but it does need a clause, because `cap` of a
+two-sided invariants give the two exact `ensures`; `cap_of(rest) == cap_of(out)` follows from
+[MSR-2]'s identity and needs no invariant, but it does need a clause, because `cap_of` of a
 `Vector<'s, T>` is a measure and not a type constant. **`collect`'s `'s` is
 unconstrained and it hands `out` back as `rest`, so [PROV-6]'s declaration obligation is
 discharged by the first of its four routes** and the function is declarable at a heap
@@ -4342,25 +5019,25 @@ struct BlockPool['s] {
 
 fn pool_new['s](arena: &uniq Arena<'s, 65536, 16>) -> made: own Option<BlockPool<'s>>
     reads(arena), writes(arena), allocates(arena) contract {
-  ensures when Some(value: pool): len(pool.free) >= 8_u64;
-  ensures when Some(value: pool): room(pool.free) <= 0_u64;
-  ensures when Some(value: pool): head(pool.free) <= 0_u64;
+  ensures when Some(value: pool): len_of(pool.free) >= 8_u64;
+  ensures when Some(value: pool): room_of(pool.free) <= 0_u64;
+  ensures when Some(value: pool): head_of(pool.free) <= 0_u64;
 } {
   doc "Carves eight 256-byte runs out of the arena and holds them as a free list.";
-  let free = seq_fixed::<Vector<'s, u8>, 8>();
+  let free = fixed_vector::<Vector<'s, u8>, 8>();
   for @carve (
     at in 0_u64..8_u64,
-    invariant grown: len(free) >= at,
-    invariant spare: room(free) + at >= 8_u64,
-    invariant flat: head(free) <= 0_u64
+    invariant grown: len_of(free) >= at,
+    invariant spare: room_of(free) + at >= 8_u64,
+    invariant flat: head_of(free) <= 0_u64
   ) {
-    let taken = seq_arena::<u8>(arena: &uniq deref(arena), count: 256_u64);
+    let taken = arena_vector::<u8>(store: &uniq deref(arena), count: 256_u64);
     match taken {
       None() => {
         return None<BlockPool<'s>>();
       }
       Some(value: run) => {
-        set free = seq_place(vector: move free, value: move run);
+        set free = place_back(vector: move free, value: move run);
       }
     }
   }
@@ -4380,17 +5057,17 @@ compiler-derived release on that edge.
 fn pool_take['s](pool: own BlockPool<'s>)
     -> (rest: own BlockPool<'s>, leased: own Option<Lease<'s>>)
     reads(pool.free), writes(pool.free) contract {
-  ensures head(rest.free) == head(pool.free);
-  ensures len(rest.free) <= len(pool.free);
-  ensures room(rest.free) <= room(pool.free) + 1_u64;
-  ensures when leased is Some(value: got): room(rest.free) >= 1_u64;
-  ensures when leased is None(): len(rest.free) <= 0_u64;
+  ensures head_of(rest.free) == head_of(pool.free);
+  ensures len_of(rest.free) <= len_of(pool.free);
+  ensures room_of(rest.free) <= room_of(pool.free) + 1_u64;
+  ensures when leased is Some(value: got): room_of(rest.free) >= 1_u64;
+  ensures when leased is None(): len_of(rest.free) <= 0_u64;
 } {
   doc "Leases one run, or reports that the free list is empty.";
-  let spare = len(pool.free);
+  let spare = len_of(pool.free);
   let any = spare > 0_u64;
   if any {
-    set (pool.free, one) = seq_take(vector: move pool.free);
+    set (pool.free, one) = take_back(vector: move pool.free);
     let ticket = Lease<'s>(run: move one);
     return move pool, Some<Lease<'s>>(value: move ticket);
   }
@@ -4400,14 +5077,14 @@ fn pool_take['s](pool: own BlockPool<'s>)
 fn pool_release['s](pool: own BlockPool<'s>, lease: own Lease<'s>)
     -> rest: own BlockPool<'s>
     reads(pool.free), writes(pool.free) contract {
-  requires room(pool.free) > 0_u64;
-  ensures head(rest.free) == head(pool.free);
-  ensures len(rest.free) == len(pool.free) + 1_u64;
-  ensures room(rest.free) + 1_u64 == room(pool.free);
+  requires room_of(pool.free) > 0_u64;
+  ensures head_of(rest.free) == head_of(pool.free);
+  ensures len_of(rest.free) == len_of(pool.free) + 1_u64;
+  ensures room_of(rest.free) + 1_u64 == room_of(pool.free);
 } {
   doc "Returns one lease to the free list; the caller has proved there is room.";
   let Lease(run: back) = move lease;
-  set pool.free = seq_place(vector: move pool.free, value: move back);
+  set pool.free = place_back(vector: move pool.free, value: move back);
   return move pool;
 }
 ```
@@ -4417,12 +5094,12 @@ unavoidable.** A checked one — `-> (rest, unreturned: own Option<Lease<'s>>)` 
 mandatory refusal arm, and the only thing a writer can do on it is
 `let Lease(run: orphan) = move lost;`, a legal destructuring consume that throws the
 block away: that is `linear` behaving correctly and it is not must-return. The proved
-spelling's `requires room(pool.free) > 0_u64` is discharged at the call site from
-`pool_take`'s own `when leased is Some(value: got): room(rest.free) >= 1_u64` — one
+spelling's `requires room_of(pool.free) > 0_u64` is discharged at the call site from
+`pool_take`'s own `when leased is Some(value: got): room_of(rest.free) >= 1_u64` — one
 published premise — so **there is no refusal arm and the lease has exactly one route on
-every path**. `cap(rest.free)` needs no clause; it is the type constant.
+every path**. `cap_of(rest.free)` needs no clause; it is the type constant.
 
-`pool_take` cannot state `room(got.run) >= 256_u64`, because a `Vector<'s, u8>` carries
+`pool_take` cannot state `room_of(got.run) >= 256_u64`, because a `Vector<'s, u8>` carries
 its capacity as a measure and not in its type, so putting one into a `FixedVector`
 element and taking it out loses the figure `pool_new` established. `got.run` is therefore
 outside [CALL-7]'s population — neither constructed by this function nor received as an
@@ -4430,40 +5107,160 @@ outside [CALL-7]'s population — neither constructed by this function nor recei
 per lease. That is the honest price of the pool being library data, and 4.1 pays it in
 the open.
 
+> **Correction, decided 2026-09-05, from B7a6's implementation: the pool's mechanism runs,
+> and its two nominals are what wait.** `tests/programs/block_pool.wf` is this section
+> executing over the one-level lift [BLK-1] — eight arena-backed runs carved into one
+> `FixedVector<Vector<'s, u8>, 8>`, a block leased off the back boundary, a block returned
+> to a free list `pool_release` proved had room, and both pool operations generic over the
+> store — with two differences that are not the containers half.
+>
+> **`BlockPool['s]` and `Lease['s]` are not declarable at a caller's store.** [S20] gave a
+> nominal `region_params` and nothing ever instantiated them: a nominal instance is keyed
+> on its type and const arguments alone, so a nominal's region parameter is a fixed formal
+> region and `Chunk(page: move page)` at an actual region `'a` is a [TYPE-5] mismatch
+> against the formal `'s`. The landed program therefore threads the bare
+> `FixedVector<Vector<'s, u8>, 8>` the struct would have held, and the `linear` wrapper —
+> which is the whole of 3.L.7's must-return argument — waits with the struct. **This is a
+> nominal-generics gap and not a container one**, and it is the same region axis B7a5
+> landed for a function's parameter types.
+>
+> **The proved requirement is discharged by a branch and not by the routed relation.** The
+> paragraph above discharges `requires room_of(pool.free) > 0_u64` from `pool_take`'s
+> `when leased is Some(value: got): room_of(rest.free) >= 1_u64`. That route is [CALL-4]'s
+> DEFERRED per-variant form over a returned enum, so the landed program reads `room_of` and
+> branches at the call site instead — the same dominating branch this paragraph already
+> prices for the block's *capacity*, paid once more for its room. The argument that the
+> proved spelling makes the return unavoidable is unchanged; what is deferred is the
+> premise that makes the branch unnecessary.
+
+> **Correction, decided 2026-09-05, from B8a's implementation: the two nominals land, and
+> four spellings in the block above move.** `tests/programs/block_pool.wf` is now this
+> section entire — `linear struct Lease['s]`, `struct BlockPool['s]`, `pool_new`,
+> `pool_take` and `pool_release`, all three generic over the store — and the `linear`
+> modifier does exactly what 3.L.7 says it does: the one path that does not return the
+> lease has to take it apart, and dropping it is refused. The superseded correction above
+> stands as the record of what B7a6 reached. What moved:
+>
+> - **`pool_new`'s store parameter is `store`, not `arena`.** `arena` is a fixed grammar
+>   atom [FORM-3] excludes from IDENT, so no parameter, field or callee can be spelled
+>   with it. This is the same reading S38 already applied to the kernel rows' one provider
+>   operand; the block above was written before it and is corrected here.
+> - **`pool_new`'s loop body is one statement.** `let taken = arena_vector(...);` followed
+>   by `match taken { ... }` is two statements, and the `&uniq deref(store)` in the first
+>   is a child reborrow whose region is the loop body's own — a region whose block extends
+>   beyond that statement, which [OWN-6] refuses. The body is therefore
+>   `match arena_vector::<u8>(store: &uniq deref(store), count: 256_u64) { ... }`: one
+>   statement, whose region is exactly it. **This is a real bound on the shape and not a
+>   spelling preference** — a loop that allocates from a `&uniq` store parameter has one
+>   statement per iteration or it has none, because the intermediate binding a second
+>   statement would need cannot outlive the region the borrow demands.
+> - **Every clause naming a *result's* field measure is dropped.** `ensures when
+>   Some(value: pool): len_of(pool.free) >= 8_u64` and `ensures head_of(rest.free) ==
+>   head_of(pool.free)` name a measure over a result place formed with a field-selection
+>   `psuffix`, which is [CALL-4]'s own first DEFERRED admission. The landed program states
+>   none of them and `main` reads `len_of(pool.free)` and `room_of(rest.free)` and
+>   branches, which is the price this section already names twice. `pool_release`'s
+>   `requires room_of(pool.free) > 0_u64` is *not* affected: a measure over a **parameter**'s
+>   field is an ordinary [MSR-1] place and it is what the call site discharges.
+> - **A construct writes its nominal's region argument.** `BlockPool<'s>(free: move free)`
+>   and `Lease<'s>(run: move one)` are the canonical spellings, on exactly the ground
+>   [TYPE-5] gives a construct's type arguments: construction consults no expected nominal
+>   type, so the written arguments are the only supply there is. The block above already
+>   writes them.
+
+> **Correction, decided 2026-09-05, from the owner's [FORM-8] ruling: a construct elides
+> the region arguments its own field operands determine, and the bullet above is
+> superseded.** [FORM-8] is language-wide and decidable from the code alone — a region is
+> written exactly where the surrounding text does not determine it — and a `construct`'s
+> field operands are surrounding text. A field determines a region parameter exactly when
+> its declared type names it, which is the *same* relation a parameter position bears at a
+> call, so `BlockPool`'s `free: FixedVector<Vector<'s, u8>, 8>` and `Lease`'s `run:
+> Vector<'s, u8>` each fix `'s` from their operand and the canonical spellings are
+> `BlockPool(free: move free)` and `Lease(run: move one)`. Writing the argument anyway is a
+> hard [FORM-8] error whose mechanical fix is `drop the region argument`. A construct
+> writes a region parameter no field's declared type mentions — `struct Ticket['s] { count:
+> u64; }` is built `Ticket<'a>(count: 7_u64)` — and one whose complete type application is
+> then empty writes no `targs` list at all.
+>
+> **[TYPE-5]'s ground is unchanged and is the reason this works.** Construction consults
+> no expected nominal type: it is the field operands and the written members, never a
+> destination, that fix the instance. What the sentence "nothing fixes a nominal's region
+> argument at a `type` or a `construct`" got wrong was only the construct half — a `type`
+> position still writes every one of them. The implementation reads this off the
+> declaration's own symbolic instance, whose region arguments *are* its region parameters,
+> checks every field operand before the instance exists, and forms the instance from the
+> regions they determined and the ones the position wrote; a second field naming an
+> already-determined parameter is then the ordinary exact [TYPE-5] equality and never a
+> second binding [PROV-1]. `tests/programs/block_pool.wf` and the three B8a conformance
+> cases are respelled to match.
+
+> **Correction, decided 2026-09-05, from B8d's implementation: the pool's two `room_of`
+> branches stay, and the reason is now exactly one sentence rather than two.** This
+> section prices the branch twice — once for a leased block's capacity and once, in B7a6's
+> superseded correction above, for its room — and attributes it to two different gaps.
+> After B8d only one of the two is still open, and it is not [CALL-4]'s.
+>
+> **[MSR-3]'s element placements landed and do not reach this shape.** A measured value
+> committed at a *written* element position keeps its measures there and a `replace`
+> hands them back to the displaced value, so a run that passes through `free[at]` keeps
+> its figure. `pool_take` does not pass its block through a written element position: it
+> calls `take_back`, whose value ordinal comes from position `len_of(rest)`, and a measure
+> term is not an offset [OWN-7] can decide. `pool_new`'s `place_back` is the same
+> position on the way in. The sentence "putting one into a `FixedVector` element and
+> taking it out loses the figure `pool_new` established" is therefore still true of the
+> *boundary* rows and no longer true of the language, and what would retire it is an
+> offset domain that admits a measure term rather than a further placement.
+>
+> **`pool_release`'s requirement is still discharged by a branch and still for
+> [CALL-4]'s reason.** `pool_take`'s `when leased is Some(value: got): room_of(rest.free)
+> >= 1_u64` names a measure over a *result* place formed with a field selection, which is
+> [CALL-4]'s own first DEFERRED admission, and a route over `Some` rather than `Ok`, which
+> is its second. Neither moved here. What did move is the arm binder itself: [MSR-3]'s
+> payload placement carries a measured payload's own measures to the binder that names it,
+> so a routed clause over the payload binder will reach `got` the day [CALL-4]'s two
+> admissions land, with no third gap between them.
+>
+> **What `pool_new` gains instead is its own loop body.** `arena_vector`'s routed row now
+> publishes on the arm its route names, so on the `Some(value: run)` arm the caller holds
+> `len_of(run) = 0`, `cap_of(run) = 256`, `room_of(run) = 256` and `head_of(run) = 0` —
+> the four measures the block above always meant and no caller could read. The body's
+> `place_back` discharges its own requirement from the loop invariant as before; what is
+> new is that a writer may now state and prove anything about the carved block itself.
+
 ```wf-design
-fn try_place<T, const n: u64>(vector: own FixedVector<T, n>, value: own T)
+fn try_place<T: affine, const n: u64>(vector: own FixedVector<T, n>, value: own T)
     -> (rest: own FixedVector<T, n>, unplaced: own Option<T>)
     reads(vector), writes(vector) contract {
-  ensures head(rest) == head(vector);
-  ensures len(rest) <= len(vector) + 1_u64;
-  ensures len(rest) >= len(vector);
-  ensures room(rest) <= room(vector);
-  ensures room(rest) + 1_u64 >= room(vector);
+  ensures head_of(rest) == head_of(vector);
+  ensures len_of(rest) <= len_of(vector) + 1_u64;
+  ensures len_of(rest) >= len_of(vector);
+  ensures room_of(rest) <= room_of(vector);
+  ensures room_of(rest) + 1_u64 >= room_of(vector);
 } {
   doc "Appends one value, handing it back when the run is full.";
-  let spare = room(vector);
+  let spare = room_of(vector);
   let fits = spare > 0_u64;
   if fits {
-    set vector = seq_place(vector: move vector, value: move value);
+    set vector = place_back(vector: move vector, value: move value);
     return move vector, None<T>();
   }
   return move vector, Some<T>(value: move value);
 }
 
-fn try_take<T, const n: u64>(vector: own FixedVector<T, n>)
+fn try_take<T: affine, const n: u64>(vector: own FixedVector<T, n>)
     -> (rest: own FixedVector<T, n>, taken: own Option<T>)
     reads(vector), writes(vector) contract {
-  ensures head(rest) == head(vector);
-  ensures len(rest) <= len(vector);
-  ensures len(rest) + 1_u64 >= len(vector);
-  ensures room(rest) >= room(vector);
-  ensures room(rest) <= room(vector) + 1_u64;
+  ensures head_of(rest) == head_of(vector);
+  ensures len_of(rest) <= len_of(vector);
+  ensures len_of(rest) + 1_u64 >= len_of(vector);
+  ensures room_of(rest) >= room_of(vector);
+  ensures room_of(rest) <= room_of(vector) + 1_u64;
 } {
   doc "Removes one value from the end, or reports that the run is empty.";
-  let held = len(vector);
+  let held = len_of(vector);
   let any = held > 0_u64;
   if any {
-    set (vector, one) = seq_take(vector: move vector);
+    set (vector, one) = take_back(vector: move vector);
     return move vector, Some<T>(value: move one);
   }
   return move vector, None<T>();
@@ -4471,9 +5268,10 @@ fn try_take<T, const n: u64>(vector: own FixedVector<T, n>)
 ```
 
 Both rest on [ENT-3.S6]'s generalization over the four measures [BLK-0], and both are
-written per element class where the body moves a `T` (probes `x14`, `x15`; [S32] is
-adopted and relieves the linearity axis, and Q8 keeps the copy/affine half). **Their
-`len` and `room` bounds are two-sided**, which is round 7's addition:
+written once, under the bound their bodies need (probes `x14`, `x15`; [S32] relieved the
+linearity axis and [S37] closes Q8's copy/affine half, so one `affine`-bounded body serves
+a copy element type and an affine one). **Their
+`len_of` and `room_of` bounds are two-sided**, which is round 7's addition:
 the seventh draft published one side of each, which satisfies no caller and, under
 [CALL-7] as stated, no longer satisfies the rule either.
 
@@ -4491,13 +5289,13 @@ enum Grown {
 
 fn bs_new(heap: &uniq Heap) -> made: own Option<Bytes>
     reads(heap), writes(heap), allocates(heap) contract {
-  ensures when Some(value: fresh): len(fresh.v) <= 0_u64;
-  ensures when Some(value: fresh): cap(fresh.v) <= 0_u64;
-  ensures when Some(value: fresh): room(fresh.v) <= 0_u64;
-  ensures when Some(value: fresh): head(fresh.v) <= 0_u64;
+  ensures when Some(value: fresh): len_of(fresh.v) <= 0_u64;
+  ensures when Some(value: fresh): cap_of(fresh.v) <= 0_u64;
+  ensures when Some(value: fresh): room_of(fresh.v) <= 0_u64;
+  ensures when Some(value: fresh): head_of(fresh.v) <= 0_u64;
 } {
   doc "Builds one empty byte string over a zero-length backing run.";
-  let taken = seq_heap::<u8>(heap: &uniq deref(heap), count: 0_u64);
+  let taken = heap_vector::<u8>(store: &uniq deref(heap), count: 0_u64);
   match taken {
     None() => {
       return None<Bytes>();
@@ -4511,19 +5309,19 @@ fn bs_new(heap: &uniq Heap) -> made: own Option<Bytes>
 
 fn bs_reserve(s: own Bytes, heap: &uniq Heap, total: own u64) -> grown: own Grown
     reads(s.v, heap), writes(s.v, heap), allocates(heap) contract {
-  requires total >= len(s.v);
-  ensures when Grew(value: ready): cap(ready.v) == total;
-  ensures when Grew(value: ready): len(ready.v) == len(s.v);
-  ensures when Grew(value: ready): room(ready.v) + len(ready.v) == total;
-  ensures when Grew(value: ready): head(ready.v) <= 0_u64;
-  ensures when Refused(value: back): len(back.v) == len(s.v);
-  ensures when Refused(value: back): cap(back.v) == cap(s.v);
-  ensures when Refused(value: back): room(back.v) == room(s.v);
-  ensures when Refused(value: back): head(back.v) == head(s.v);
+  requires total >= len_of(s.v);
+  ensures when Grew(value: ready): cap_of(ready.v) == total;
+  ensures when Grew(value: ready): len_of(ready.v) == len_of(s.v);
+  ensures when Grew(value: ready): room_of(ready.v) + len_of(ready.v) == total;
+  ensures when Grew(value: ready): head_of(ready.v) <= 0_u64;
+  ensures when Refused(value: back): len_of(back.v) == len_of(s.v);
+  ensures when Refused(value: back): cap_of(back.v) == cap_of(s.v);
+  ensures when Refused(value: back): room_of(back.v) == room_of(s.v);
+  ensures when Refused(value: back): head_of(back.v) == head_of(s.v);
 } {
   doc "Grows the backing run to total slots, preserving element order, or reports that the store refused.";
-  let count = len(s.v);
-  let taken = seq_heap::<u8>(heap: &uniq deref(heap), count: total);
+  let count = len_of(s.v);
+  let taken = heap_vector::<u8>(store: &uniq deref(heap), count: total);
   match taken {
     None() => {
       return Refused(value: move s);
@@ -4532,16 +5330,16 @@ fn bs_reserve(s: own Bytes, heap: &uniq Heap, total: own u64) -> grown: own Grow
       let built = move fresh;
       for @move (
         at in 0_u64..count,
-        invariant left: len(s.v) + at >= count,
-        invariant gone: len(s.v) + at <= count,
-        invariant made_lo: len(built) >= at,
-        invariant made_hi: len(built) <= at,
-        invariant spare_lo: room(built) + at >= total,
-        invariant spare_hi: room(built) + at <= total,
-        invariant flat: head(built) <= 0_u64
+        invariant left: len_of(s.v) + at >= count,
+        invariant gone: len_of(s.v) + at <= count,
+        invariant made_lo: len_of(built) >= at,
+        invariant made_hi: len_of(built) <= at,
+        invariant spare_lo: room_of(built) + at >= total,
+        invariant spare_hi: room_of(built) + at <= total,
+        invariant flat: head_of(built) <= 0_u64
       ) {
-        set (s.v, byte) = seq_take_front(vector: move s.v);
-        set built = seq_place(vector: move built, value: byte);
+        set (s.v, byte) = take_front(vector: move s.v);
+        set built = place_back(vector: move built, value: byte);
       }
       let Bytes(v: old) = move s;
       dispose old;
@@ -4552,20 +5350,20 @@ fn bs_reserve(s: own Bytes, heap: &uniq Heap, total: own u64) -> grown: own Grow
 }
 ```
 
-**Proof route.** `seq_heap` publishes all four measures of `built` on its `Some` arm
+**Proof route.** `heap_vector` publishes all four measures of `built` on its `Some` arm
 [BLK-0], and they reach `built` through [CALL-6]'s S13 at the arm binder [CALL-4].
 `left` and `gone` bound the source, `made_*` and `spare_*` the destination, `flat` the
-head; each is preserved by exactly one published relation of `seq_take_front` or
-`seq_place`, whose `vector` operand is `own` and therefore denotes that call's call datum
-[MSR-3]. At the exit `at = count`, so `len(built) = count = len(s.v)` at entry,
-`room(built) = total - count`, and `cap` falls out of [MSR-2]'s identity at `total`.
+head_of; each is preserved by exactly one published relation of `take_front` or
+`place_back`, whose `vector` operand is `own` and therefore denotes that call's call datum
+[MSR-3]. At the exit `at = count`, so `len_of(built) = count = len_of(s.v)` at entry,
+`room_of(built) = total - count`, and `cap_of` falls out of [MSR-2]'s identity at `total`.
 **The tail constructs rather than replaces**, which routes `built`'s measures into the
 result through [MSR-3]'s construct placement; a `replace` would publish nothing. **The
 `Refused` arm's four clauses are round 7's addition**: `back` is `s`, received as an
 `own` parameter and returned, which is [CALL-7]'s population verbatim, and all four are
 `== ...(s.v)` because nothing on that arm was written.
 
-**`set (s.v, byte) = seq_take_front(vector: move s.v);` is a consume of a proper
+**`set (s.v, byte) = take_front(vector: move s.v);` is a consume of a proper
 sub-place of `s`**, and it is legal for two reasons stated at their rules: under D3
 `Bytes` is **affine** in this scope, because `bs_reserve` holds `heap: &uniq Heap`; and
 even for a value linear in its scope, [PROV-6]'s partial-consume refusal excepts a
@@ -4580,7 +5378,7 @@ provider type is `Heap`, and the innermost live binding of that type is the `hea
 parameter reached through its borrow — which is why `bs_reserve`'s row carries
 `writes(heap)`.
 
-`bs_shrink` is the same function with `total < count` and `requires total <= len(s.v)`,
+`bs_shrink` is the same function with `total < count` and `requires total <= len_of(s.v)`,
 with the drain bounded by `total`. Its `dispose old;` then releases a run still holding
 `count - total` elements, and that is **correct**: [PROV-6]'s walk visits a container's
 elements before its backing.
@@ -4611,7 +5409,7 @@ is new capability rather than a compiler defect.
 |   | [LIV-2]                              |                                   | AffineSetTarget       |
 | 2 | its n-ary form and the ordered        | pool_take, bs_reserve's drain,    | new grammar; q6       |
 |   | result list [S16]                    | clear, collect's caller           | REJECTED [GRAM-2]     |
-| 3 | [ENT-3.S6] over the four measures    | every try_ form, pool_take,       | S6 covers len alone   |
+| 3 | [ENT-3.S6] over the four measures    | every try_ form, pool_take,       | S6 covers len_of alone   |
 |   | [BLK-0]                              | pool_release — every branch on a  |                       |
 |   |                                      | capacity                          |                       |
 | 4 | the construct placement of the       | Bytes, BlockPool, bs_reserve's    | construct kills the   |
@@ -4706,63 +5504,63 @@ This is the item [S29] proposed as a kernel row and round 7 wrote in wf, and it 
 L18's addition clause is discharged.
 
 ```wf-design
-fn rebase<T, const n: u64>(vector: own FixedVector<T, n>, spare: own FixedVector<T, n>)
+fn rebase<T: affine, const n: u64>(vector: own FixedVector<T, n>, spare: own FixedVector<T, n>)
     -> rebased: own FixedVector<T, n>
     reads(vector, spare), writes(vector, spare) contract {
-  requires len(spare) <= 0_u64;
-  requires head(spare) <= 0_u64;
-  ensures len(rebased) >= len(vector);
-  ensures len(rebased) <= len(vector);
-  ensures room(rebased) + len(vector) >= n;
-  ensures room(rebased) + len(vector) <= n;
-  ensures head(rebased) <= 0_u64;
+  requires len_of(spare) <= 0_u64;
+  requires head_of(spare) <= 0_u64;
+  ensures len_of(rebased) >= len_of(vector);
+  ensures len_of(rebased) <= len_of(vector);
+  ensures room_of(rebased) + len_of(vector) >= n;
+  ensures room_of(rebased) + len_of(vector) <= n;
+  ensures head_of(rebased) <= 0_u64;
 } {
   doc "Moves every element of a wrapped run into a fresh run, in order, so the result does not wrap.";
-  let count = len(vector);
+  let count = len_of(vector);
   let built = move spare;
   for @rot (
     at in 0_u64..count,
-    invariant left: len(vector) + at >= count,
-    invariant gone: len(vector) + at <= count,
-    invariant made_lo: len(built) >= at,
-    invariant made_hi: len(built) <= at,
-    invariant spare_lo: room(built) + at >= n,
-    invariant spare_hi: room(built) + at <= n,
-    invariant flat: head(built) <= 0_u64
+    invariant left: len_of(vector) + at >= count,
+    invariant gone: len_of(vector) + at <= count,
+    invariant made_lo: len_of(built) >= at,
+    invariant made_hi: len_of(built) <= at,
+    invariant spare_lo: room_of(built) + at >= n,
+    invariant spare_hi: room_of(built) + at <= n,
+    invariant flat: head_of(built) <= 0_u64
   ) {
-    set (vector, one) = seq_take_front(vector: move vector);
-    set built = seq_place(vector: move built, value: move one);
+    set (vector, one) = take_front(vector: move vector);
+    set built = place_back(vector: move built, value: move one);
   }
   return move built;
 }
 ```
 
-**Proof route.** The caller's `spare` comes from `seq_fixed::<T, n>()`, which publishes
-`len = 0`, `cap = n`, `room = n` and `head = 0` exactly, so both `requires` discharge at
+**Proof route.** The caller's `spare` comes from `fixed_vector::<T, n>()`, which publishes
+`len_of = 0`, `cap_of = n`, `room_of = n` and `head_of = 0` exactly, so both `requires` discharge at
 the call. `left` and `gone` bound the source, `made_*` and `spare_*` the destination,
-`flat` the head; each is preserved by one published relation of `seq_take_front` or
-`seq_place`. `seq_take_front`'s `len(vector) > 0` discharges from `left` and `at <
-count`; `seq_place`'s `room(built) > 0` from `spare_lo` and `count <= n`, the standing
-`len <= cap` at entry. At the exit `at = count`, giving the two exact `len` clauses and
-the two exact `room` clauses, and `flat` exports the head. **`cap` needs no clause**
+`flat` the head_of; each is preserved by one published relation of `take_front` or
+`place_back`. `take_front`'s `len_of(vector) > 0` discharges from `left` and `at <
+count`; `place_back`'s `room_of(built) > 0` from `spare_lo` and `count <= n`, the standing
+`len_of <= cap_of` at entry. At the exit `at = count`, giving the two exact `len_of` clauses and
+the two exact `room_of` clauses, and `flat` exports the head. **`cap_of` needs no clause**
 [CALL-7]. **The drained `vector` is not handed back**, because after front removals its
-`head` is known only as the standing bound and no non-vacuous clause about it exists — so
+`head_of` is known only as the standing bound and no non-vacuous clause about it exists — so
 it dies at the return edge by its ordinary derived release, and a caller that wants to
-rebase again allocates a fresh `spare` with `seq_fixed`.
+rebase again allocates a fresh `spare` with `fixed_vector`.
 
 **What it costs, walked against a program (L18).** A ring driver that flushes a 256-byte
 `FixedVector<u8, 256>` writes
-`let fresh = seq_fixed::<u8, 256>(); set rx = rebase::<u8, 256>(vector: move rx, spare: move fresh);`
-before each `seq_slice`, and pays three things. **Memory**: two runs of `n` slots are live
+`let fresh = fixed_vector::<u8, 256>(); set rx = rebase::<u8, 256>(vector: move rx, spare: move fresh);`
+before each `slice_of`, and pays three things. **Memory**: two runs of `n` slots are live
 across the drain, so `E`'s `stack` item for that context carries `2n` where a kernel
 rotate would have carried `n` — 256 bytes for a driver with one ring, and for a
 `Vector<'s, u8>` version a second take the store's capacity must cover. **Time**: the same
 O(len) element copy the rotate would have performed, plus the fresh run's formation.
 **Proof**: seven header invariants at the library, once, and two `requires` at each call
-site, both discharged from `seq_fixed`'s own published relations.
+site, both discharged from `fixed_vector`'s own published relations.
 
 **And two things a writer should know that no arithmetic shows.** A rebase must be paid
-before **every** view of a run that has had a front removal, not once — `head` is
+before **every** view of a run that has had a front removal, not once — `head_of` is
 absorbing, and [VIEW-2]'s premise is what needs it. And a real ring driver does not rotate
 at all: it hands the host two `iovec`s over the two halves of the wrapped window, and this
 language has no spelling for a view of two ranges. That is the cost [S29] was proposed to
@@ -4820,12 +5618,12 @@ fn advance(task: own Task) -> next: own Option<Task> reads(task.state, task.arg)
 fn render['s](block: own Lease<'s>, task: &Task)
     -> (rest: own Lease<'s>, written: own u64)
     reads(block.run, task.state), writes(block.run) contract {
-  requires room(block.run) >= 8_u64;
+  requires room_of(block.run) >= 8_u64;
   ensures written == 8_u64;
-  ensures len(rest.run) == len(block.run) + 8_u64;
-  ensures room(rest.run) + 8_u64 == room(block.run);
-  ensures cap(rest.run) == cap(block.run);
-  ensures head(rest.run) <= 0_u64;
+  ensures len_of(rest.run) == len_of(block.run) + 8_u64;
+  ensures room_of(rest.run) + 8_u64 == room_of(block.run);
+  ensures cap_of(rest.run) == cap_of(block.run);
+  ensures head_of(rest.run) <= 0_u64;
 } {
   doc "Writes one eight-byte record for a task into the leased block.";
   let narrowed = cvt::<u32, u8>(deref(task).state);
@@ -4837,17 +5635,17 @@ fn render['s](block: own Lease<'s>, task: &Task)
     Err(error: narrowing) => {
     }
   }
-  let before = len(block.run);
-  let before_room = room(block.run);
+  let before = len_of(block.run);
+  let before_room = room_of(block.run);
   for @fill (
     at in 0_u64..8_u64,
-    invariant grown_lo: len(block.run) >= before + at,
-    invariant grown_hi: len(block.run) <= before + at,
-    invariant spare_lo: room(block.run) + at >= before_room,
-    invariant spare_hi: room(block.run) + at <= before_room,
-    invariant flat: head(block.run) <= 0_u64
+    invariant grown_lo: len_of(block.run) >= before + at,
+    invariant grown_hi: len_of(block.run) <= before + at,
+    invariant spare_lo: room_of(block.run) + at >= before_room,
+    invariant spare_hi: room_of(block.run) + at <= before_room,
+    invariant flat: head_of(block.run) <= 0_u64
   ) {
-    set block.run = seq_place(vector: move block.run, value: mark);
+    set block.run = place_back(vector: move block.run, value: mark);
   }
   return move block, 8_u64;
 }
@@ -4855,27 +5653,27 @@ fn render['s](block: own Lease<'s>, task: &Task)
 fn drain['s](ring: own FixedVector<u8, 256>, block: &Lease<'s>, count: own u64)
     -> (rest: own FixedVector<u8, 256>, sent: own u64)
     reads(ring, block.run), writes(ring) contract {
-  requires count <= len(deref(block).run);
+  requires count <= len_of(deref(block).run);
   ensures sent <= count;
-  ensures len(rest) == len(ring) + sent;
-  ensures room(rest) + sent == room(ring);
-  ensures head(rest) <= 0_u64;
+  ensures len_of(rest) == len_of(ring) + sent;
+  ensures room_of(rest) + sent == room_of(ring);
+  ensures head_of(rest) <= 0_u64;
 } {
   doc "Copies one prefix of the leased block into the ring when the ring has room, and reports what it sent.";
-  let before = len(ring);
-  let before_room = room(ring);
+  let before = len_of(ring);
+  let before_room = room_of(ring);
   let fits = count <= before_room;
   if fits {
     for @copy (
       at in 0_u64..count,
-      invariant grown_lo: len(ring) >= before + at,
-      invariant grown_hi: len(ring) <= before + at,
-      invariant spare_lo: room(ring) + at >= before_room,
-      invariant spare_hi: room(ring) + at <= before_room,
-      invariant flat: head(ring) <= 0_u64
+      invariant grown_lo: len_of(ring) >= before + at,
+      invariant grown_hi: len_of(ring) <= before + at,
+      invariant spare_lo: room_of(ring) + at >= before_room,
+      invariant spare_hi: room_of(ring) + at <= before_room,
+      invariant flat: head_of(ring) <= 0_u64
     ) {
       let byte = deref(block).run[at];
-      set ring = seq_place(vector: move ring, value: byte);
+      set ring = place_back(vector: move ring, value: byte);
     }
     return move ring, count;
   }
@@ -4884,8 +5682,8 @@ fn drain['s](ring: own FixedVector<u8, 256>, block: &Lease<'s>, count: own u64)
 
 resource_closed command fn main() -> status: own ExitStatus pure {
   doc "Runs a cooperative queue of state machines over a pooled block store and a transmit ring.";
-  let ring = seq_fixed::<u8, 256>();
-  let pending = seq_fixed::<Task, 32>();
+  let ring = fixed_vector::<u8, 256>();
+  let pending = fixed_vector::<Task, 32>();
   let first = Task(state: 0_u32, arg: 65_u64);
   set (pending, unplaced) = try_place::<Task, 32>(vector: move pending, value: move first);
   match unplaced {
@@ -4916,7 +5714,7 @@ resource_closed command fn main() -> status: own ExitStatus pure {
                 None() => {
                 }
                 Some(value: held) => {
-                  let spare = room(held.run);
+                  let spare = room_of(held.run);
                   let big = spare >= 8_u64;
                   if big {
                     set (held, written) = render(block: move held, task: &task);
@@ -5001,7 +5799,7 @@ its member size and alignment so a deployment can commit it [L6, RES-2].
 | the free list         | a FixedVector in a frame; frame placement's [RES-5] algebra has no acquire   |
 |                       | and no release, so it is not a domain and premise 3 says nothing about it.   |
 |                       | What keeps it full is the PROVED pool_release, whose requires the caller     |
-|                       | discharges from pool_take's own published room — not the envelope, and not   |
+|                       | discharges from pool_take's own published room_of — not the envelope, and not   |
 |                       | the modifier by itself                                                       |
 | queue and ring        | FixedVector<Task, 32> and FixedVector<u8, 256> are frame placement           |
 | release walk          | every type reachable from main has an acyclic release graph — in fact an     |
@@ -5029,7 +5827,7 @@ three drafts could not write. Under the fourth `render` took a `&uniq` container
 which round 5 turned back into D1; under the sixth it published only an upper bound on
 the wrong side. Here [CALL-7] requires the contract to be complete over every measure
 of what it hands back **on the one route it has**, so the caller receives
-`written == 8_u64`, `len(rest.run) == len(block.run) + 8_u64` and the other three, and
+`written == 8_u64`, `len_of(rest.run) == len_of(block.run) + 8_u64` and the other three, and
 every later obligation reads one of them. The `set` is [LIV-2] at an arm binder (probe
 `w8` accepts that shape today); both targets name bindings in scope, so both are commits
 and neither redeclares anything.
@@ -5049,41 +5847,41 @@ arguments**, because [FN-2] 1124 makes them always explicit for a user generic. 
 `q5` is the written form accepted, so this is what the landed amendment actually says —
 the seventh draft wrote them elided under a criterion that covered regions only.
 
-**`requires room(block.run) >= 8_u64;` is discharged by a dominating branch**, and that
+**`requires room_of(block.run) >= 8_u64;` is discharged by a dominating branch**, and that
 branch is the honest price of the pool being library data. A `Vector<'s, u8>` carries
 its capacity as a measure and not in its type [BLK-1], so putting one into a
 `FixedVector` element and taking it out again loses the figure `pool_new` established.
-`let spare = room(held.run); let big = spare >= 8_u64; if big { ... }` is one runtime
+`let spare = room_of(held.run); let big = spare >= 8_u64; if big { ... }` is one runtime
 branch per lease, and its first statement is a fact only because [ENT-3.S6] generalizes
 over the four measures [BLK-0]. Q6 records that a container whose element capacity is in
 its type is the next candidate and has to justify itself against this branch.
 
 **There is no header invariant on the queue loop**, and `drain` is the **checked**
-spelling: it takes no `room` requirement, branches on the ring's own room, copies when
+spelling: it takes no `room_of` requirement, branches on the ring's own room_of, copies when
 it fits, and reports `sent`. A full ring then stops being written instead of being
 asserted not to fill, which is L3's and L9's discipline. `drain`'s one remaining
-requirement, `count <= len(deref(block).run)`, discharges from `render`'s
-`len(rest.run) == len(block.run) + 8_u64` with `written == 8_u64` and the standing
-`Z <= len` — one published premise and one standing fact.
+requirement, `count <= len_of(deref(block).run)`, discharges from `render`'s
+`len_of(rest.run) == len_of(block.run) + 8_u64` with `written == 8_u64` and the standing
+`Z <= len_of` — one published premise and one standing fact.
 
 **Inside `render`, the backedge is the derivation the whole container surface rests
 on.** The `set` is [LIV-2] at a **field of a value that is linear by the modifier**, and
 it is admitted because [PROV-6]'s partial-consume refusal excepts a sub-place the same
 statement's commit reinitialises — which is round 7's reconciliation of two rules that
 otherwise refuse the design's own central statement. Its target names a binding in
-scope, so the root's [ENT-2] term survives [MSR-3]; the facts over `len`, `room` and
-`head` of `block.run` die by [MSR-2] because the commit writes that descriptor storage;
-and `seq_place`'s declared relations re-establish them on the same term through
+scope, so the root's [ENT-2] term survives [MSR-3]; the facts over `len_of`, `room_of` and
+`head_of` of `block.run` die by [MSR-2] because the commit writes that descriptor storage;
+and `place_back`'s declared relations re-establish them on the same term through
 [CALL-6]'s S13 and [CALL-4]'s `set`-target destination. **Each of those relations reads
-`len(vector)` as that call's call datum, because `vector` is an `own` parameter**
+`len_of(vector)` as that call's call datum, because `vector` is an `own` parameter**
 [MSR-3] — under the seventh draft's `writes`-keyed table it read the post-state,
-`len(P) = len(P) + 1` was in the state, and every goal in this function was provable
+`len_of(P) = len_of(P) + 1` was in the state, and every goal in this function was provable
 from [MSR-4] step 1. Each invariant is preserved by exactly one published premise, which
 is what puts the derivation inside [ENT-6] 3015's two-premise budget.
 
 **`set pool = pool_release(pool: move pool, lease: move held);`** is the proved
-release. `requires room(pool.free) > 0_u64` is discharged from `pool_take`'s
-`when leased is Some(value: got): room(rest.free) >= 1_u64` — one published premise,
+release. `requires room_of(pool.free) > 0_u64` is discharged from `pool_take`'s
+`when leased is Some(value: got): room_of(rest.free) >= 1_u64` — one published premise,
 surviving the intervening `render` and `drain` because neither writes `pool`'s
 descriptor storage [MSR-2]. There is no refusal arm, so on every path the lease goes
 back. `held` is `Lease<'a>`, **linear by the modifier in every scope** (D3 changes
@@ -5125,11 +5923,11 @@ command fn main(command.stdout as sink: own Output, command.heap as heap: own He
         Grew(value: ready) => {
           let kept = move ready;
           region {
-            let line = seq_slice(vector: &input);
+            let line = slice_of(vector: &input);
             set (kept.v, total) = collect(out: move kept.v, source: line);
           }
           region {
-            let body = seq_slice(vector: &kept.v);
+            let body = slice_of(vector: &kept.v);
             let outcome = write_once(output: &uniq sink, source: &body, start: 0_u64, end: total);
             match outcome {
               Ok(value: next) => {
@@ -5153,7 +5951,7 @@ command fn main(command.stdout as sink: own Output, command.heap as heap: own He
 #### The writer's-eye walkthrough
 
 **`filled::<u8, 4096>(value: 65_u8)` writes both arguments** [FN-2], and its
-`ensures head(result) <= 0_u64;` is what makes the next statement possible.
+`ensures head_of(result) <= 0_u64;` is what makes the next statement possible.
 
 **`set (kept.v, total) = collect(out: move kept.v, source: line);`** is R1's central
 statement, at a **field** place, and three rules have to agree about it. D2 decides the
@@ -5168,15 +5966,15 @@ for a value that *is* linear in its scope. Both targets are dead at the commit �
 non-overlapping. The relations reach both targets through [CALL-6]'s S13 and [CALL-4]'s
 `set`-target destination.
 
-`collect`'s `requires len(source) <= room(out)` discharges from `bs_reserve`'s
-`room(ready.v) + len(ready.v) == 4096_u64` and `len(ready.v) == len(holder.v)` with
-`bs_new`'s `len(fresh.v) <= 0_u64`, giving `room(kept.v) >= 4096`, against
-`seq_slice`'s published `len(result) = <call datum of len(input)>` and `filled`'s
-`len(result) >= 4096`. All four links are published clauses of functions 3.L declares.
+`collect`'s `requires len_of(source) <= room_of(out)` discharges from `bs_reserve`'s
+`room_of(ready.v) + len_of(ready.v) == 4096_u64` and `len_of(ready.v) == len_of(holder.v)` with
+`bs_new`'s `len_of(fresh.v) <= 0_u64`, giving `room_of(kept.v) >= 4096`, against
+`slice_of`'s published `len_of(result) = <call datum of len_of(input)>` and `filled`'s
+`len_of(result) >= 4096`. All four links are published clauses of functions 3.L declares.
 
-**`let line = seq_slice(vector: &input);`** discharges [VIEW-2]'s
-`head(input) + len(input) <= cap(input)` from `filled`'s `head(result) <= 0_u64` and the
-standing `len <= cap` — one clause and one standing fact, in the unordered-pair family.
+**`let line = slice_of(vector: &input);`** discharges [VIEW-2]'s
+`head_of(input) + len_of(input) <= cap_of(input)` from `filled`'s `head_of(result) <= 0_u64` and the
+standing `len_of <= cap_of` — one clause and one standing fact, in the unordered-pair family.
 `line` is a `Slice` and is therefore **copy** [S27], so it is passed without `move`; its
 loan begins at the formation and ends at its **last use** [PROV-3], which is the
 `collect` call. That end condition is round 7's: under the seventh draft a copy view's
@@ -5191,11 +5989,11 @@ borrows elide theirs. D4 replaces such a block only where the loop body already 
 
 **`write_once(output: &uniq sink, source: &body, start: 0_u64, end: total)`** is
 [VIEW-7] over a view, and it is the statement that makes goal A's container half real.
-Its obligations are `0_u64 <= total`, implicit, and `total <= len(deref(source))` —
+Its obligations are `0_u64 <= total`, implicit, and `total <= len_of(deref(source))` —
 stated over `source`, which is `write_once`'s own range-bearing parameter, and not over
 a destination it does not have. It discharges from [VIEW-2]'s
-`len(body) = <call datum of len(kept.v)>` and `collect`'s
-`len(rest) == len(out) + written` with `written == len(source)`. Its three regions all
+`len_of(body) = <call datum of len_of(kept.v)>` and `collect`'s
+`len_of(rest) == len_of(out) + written` with `written == len_of(source)`. Its three regions all
 relate nothing and are all elided.
 
 **There is no `dispose` in this program, and that is D3.** `Bytes` owns a
@@ -5222,10 +6020,10 @@ back, which is the difference between a peak of `count + total` slots and a peak
 note: queue.wf is source-resource-closed; envelope written to queue.E
 note: collector.wf is not source-resource-closed
   [RES-4] main selects command.heap
-    heap-reaching path:  main -> bs_new -> seq_heap
+    heap-reaching path:  main -> bs_new -> heap_vector
   a general store cannot appear in an envelope [L6], so no envelope is computed
   still true of this program:
-    no covered-resource failure is a trap [RES-6]; seq_heap returns a value
+    no covered-resource failure is a trap [RES-6]; heap_vector returns a value
     the heap is reachable only through the parameter above [PROV-4]
     every release of heap-owned storage runs in a scope whose effect row names the
       heap [PROV-6, D3]
@@ -5238,10 +6036,10 @@ Six of the diagnostics the design owes a writer, each citing a rule that states 
 
 ```text
 Semantics/Source [BLK-0]: UndischargedOperationDomain
-  operation: seq_place
-  residual:  "0_u64 < room(block.run)"
-  mechanical_fix: state a header invariant over room(block.run) [INV-1, MSR-5],
-    dominate the place with a branch on room(block.run), take a larger run
+  operation: place_back
+  residual:  "0_u64 < room_of(block.run)"
+  mechanical_fix: state a header invariant over room_of(block.run) [INV-1, MSR-5],
+    dominate the place with a branch on room_of(block.run), take a larger run
     before the loop, or use the library's try_place
 
 Semantics/Source [BLK-4]: UniqueParameterReachesContainer
@@ -5275,12 +6073,12 @@ Semantics/Source [PROV-6]: LinearValuePartiallyConsumed
 
 Semantics/Source [CALL-7]: IncompleteHandBackContract
   "filled" returns result: own FixedVector<T, n>, which it constructed, and its
-    contract states no admissible clause for head(result)
-  "ensures head(result) <= cap(result);" is not one: both sides follow from [MSR-2]'s
+    contract states no admissible clause for head_of(result)
+  "ensures head_of(result) <= cap_of(result);" is not one: both sides follow from [MSR-2]'s
     standing facts, so it publishes nothing a caller did not already have
   a caller that forms a view of this run needs it [VIEW-2]
-  mechanical_fix: carry invariant flat: head(built) <= 0_u64 on the construction
-    loop and publish ensures head(result) <= 0_u64;
+  mechanical_fix: carry invariant flat: head_of(built) <= 0_u64 on the construction
+    loop and publish ensures head_of(result) <= 0_u64;
 ```
 
 The third and the sixth are new in this draft: the third is D3's own diagnostic, which
@@ -5334,7 +6132,7 @@ whose element capacity is in its type would remove.
 
 **Q7. Should a system operation be able to append?** **Yes, in the batch that lands
 [CALL-4]'s widened result vocabulary and [CALL-6]'s S13 in the [SYS-2] declaration
-domain, and not here.** Then the bytes the host wrote become the run's own `len` and the
+domain, and not here.** Then the bytes the host wrote become the run's own `len_of` and the
 caller reads it from the operation's published relation, instead of [VIEW-7]'s
 addressable destination and a `u64` beside the run.
 
@@ -5389,7 +6187,7 @@ meets it the moment they put a lease, a ticket or a transaction into a `FixedVec
 This design avoids the shape by putting the obligation on the value that is handed out
 and not on the container of spares (3.L.4), which is the right modelling and is not a
 rule. **The principled fix is a fourth route: a run whose element type is linear is
-discharged when it is proved empty — `len(v) <= 0_u64` at the scope exit — and a drain
+discharged when it is proved empty — `len_of(v) <= 0_u64` at the scope exit — and a drain
 loop's [INV-1] exact-exhaustion conclusion is what proves it.** That is one sentence and
 it reuses machinery 3.L already writes; it is not proposed here because it needs a
 falsifier pass of its own.
@@ -5432,7 +6230,7 @@ rather than needing a written one.
 **Q17 is a cost this design pays rather than a question it avoids.** [MSR-3]'s
 denotation table makes a `&uniq` parameter's measure **inadmissible in an `ensures`**.
 The consequence is that **a user `fn` that lends a provider onward can publish nothing
-about that store's post-state**: a caller's `room(scratch)` fact dies at the call and
+about that store's post-state**: a caller's `room_of(scratch)` fact dies at the call and
 every subsequent proved acquisition in that caller is undischargeable, so an
 arena-lending helper forces its caller to the checked spelling. The alternative —
 admitting such a clause for a user `fn` — is exactly the caller-side claim L11's second
@@ -5447,11 +6245,11 @@ no current experiment needs.*
 all?** [S29] is **withdrawn** because round 7 wrote the replacement, and 3.L.8 walks and
 prices it: two runs of `n` slots live across the drain, the same O(len) copy a rotate
 would have performed, seven header invariants once at the library, and a fresh spare per
-rebase because the drained run's `head` has no non-vacuous clause. **The memory half is
+rebase because the drained run's `head_of` has no non-vacuous clause. **The memory half is
 the one that can be unaffordable**: a driver with three viewed rings carries `2n` in
 `E`'s `stack` item for each, where a kernel `seq_rebase` would carry `n`. If the owner
 judges that too high for the marked-driver shape goal A exists for, the row comes back
-as one [BLK-3] operation with `head(result) = 0` and `len`, `cap`, `room` unchanged — and
+as one [BLK-3] operation with `head_of(result) = 0` and `len_of`, `cap_of`, `room_of` unchanged — and
 L18's addition clause then requires this exact walk beside it, which is what this draft
 has now written. **Recommend the library form until a real driver's `E` is computed.**
 
@@ -5470,10 +6268,10 @@ it still forbids a write of the parent for exactly as long as the child lives.
 
 **Q20 is new, and half of it is answered.** [S33] is **adopted** for `reserve_file`
 (2026-09-04), so the handle table's exhaustion is a variant and [RES-6] publishes
-`room(factory) = 0` on that arm. The general form of the question stays open: **every
+`room_of(factory) = 0` on that arm. The general form of the question stays open: **every
 covered store whose refusal a route must read needs its refusal to be a variant of the
 operation's own outcome, not a class of an error payload.** The arena has that shape
-already, because a refused `seq_arena` returns `None` and publishes over it, and the
+already, because a refused `arena_vector` returns `None` and publishes over it, and the
 handle table now has it. What remains is that the partition should be written **once as a
 rule about covered stores** rather than once per operation, and that rule is not drafted
 here.
@@ -5511,7 +6309,7 @@ corrections above record. Six conformance cases carry them:
 **The corpus consequence is the one this design argued for.** `tests/programs/wfgrep.wf`
 and `tests/programs/raw_deflate_boundary.wf` both carried an `append_slice` that published
 a bound through a **measure of a `&uniq` parameter**. Both now take `capacity: own u64`
-and state `requires capacity == len(deref(destination));` instead, so the bound is a fact
+and state `requires capacity == len_of(deref(destination));` instead, so the bound is a fact
 about a value the caller supplied and the callee names no post-state it cannot reach
 (L11). That is [MSR-3]'s refusal taken as the writer's repair, and it is the first corpus
 evidence that the refusal is affordable rather than merely correct.
@@ -5520,6 +6318,2300 @@ evidence that the refusal is affordable rather than merely correct.
 result, its measure over a result place and its route over any variant of any returned
 enum go to B7; [S16]'s ordered result list and the destinations that read it go to
 §7's B1b; and [MSR-5]'s affine widening stays [MSR-4]'s in B2.
+
+### 6.0b B1b landed (v0.45)
+
+**[S16] and the result ordinal are no longer paper.** The ordered result list, the
+destructuring `let` binder list, the `set` target list, and the multi-expression `return`
+are written into [GRAM-2] and [GRAM-4]; [FN-1] states the result ordinal and reads every
+result judgment per ordinal; [TYPE-5] derives binder i and target i from ordinal i;
+[SET-1] commits a target list in written order; [CALL-4] takes the ordinal-named route,
+its omitted-binder condition and its ambiguity refusal, and adds two of the three
+destinations. No rule id was added: `is` is the one added grammar atom. Five conformance
+cases carry it:
+
+```text
+| case                                              | expected verdict |
+|---------------------------------------------------|------------------|
+| s16-pos-result-list-reaches-both-let-binders      | run, exit 0      |
+| s16-pos-result-list-reaches-both-set-targets      | run, exit 0      |
+| call4-pos-route-names-a-result-ordinal            | run, exit 0      |
+| call4-pos-omitted-route-binder-with-one-enum-ordinal | run, exit 0   |
+| call4-neg-ambiguous-route-over-two-enum-ordinals  | reject, CALL-4   |
+```
+
+**A declaration that writes a list hands its ordinals back as one owned aggregate**, and
+the two binder forms are its projections; that is a result shape and the qualification
+review says so. It is the whole implementation cost of R1's transforming-operation shape:
+no new representation, no new transport, and every ordinal an ordinary owned value under
+the ordinary transfer, drop and release rules.
+
+**What did not land is recorded at [CALL-4] and re-batched below**: the third destination,
+the arm binder of an own-place `match` whose scrutinee is not the call itself, needs a
+relation to survive a naming event between the call and its destination, which is
+[MSR-3]'s deferred binder placement rather than a destination of its own. It goes with
+B7's measured result. A **borrow-mode or `slice` ordinal** of a result list is an explicit
+compiler-capability refusal rather than a language restriction: [FN-1] states that each
+ordinal receives the ceiling and provenance judgments independently, and deriving them per
+ordinal is the work that has not been done.
+
+### 6.0c B2 landed (v0.45)
+
+**The proof surface is no longer paper.** [MSR-1], [MSR-2], [MSR-4] and [MSR-6] are written
+into the active specification as four added rules, and [OP-1], [OP-4], [OP-7], [TYPE-6],
+[ENT-2], [ENT-5], [ENT-6], [INV-1] and [MSR-5] are amended in place to read them. The
+compiler carries all four: the four measure terms and their [OP-1] readers, descriptor
+storage as the support of a measure, one numeric goal disposition with a
+compiler-owned affine atom per live measure term, and the const generic as a value.
+Eight conformance cases carry it:
+
+```text
+| case                                                        | expected verdict |
+|-------------------------------------------------------------|------------------|
+| msr1-pos-the-four-measure-readers                           | run, exit 0      |
+| msr1-pos-subscript-obligation-against-len                   | run, exit 0      |
+| msr2-pos-sibling-field-write-keeps-the-measure              | run, exit 0      |
+| msr2-pos-element-write-keeps-the-measure                    | run, exit 0      |
+| msr2-neg-descriptor-write-kills-the-measure                 | reject, OP-4     |
+| msr4-pos-capacity-requirement-discharges-a-length-obligation| run, exit 0      |
+| msr6-pos-const-generic-as-a-value                           | run, exit 0      |
+| msr6-pos-const-generic-in-a-clause-and-an-endpoint          | run, exit 0      |
+```
+
+**Probe `r2_4` is accepted, and that is the batch's own measured result.** The program
+this section recorded as root-granular — a `struct` with a `flags: u64` beside a
+`tail: buffer<u8>`, `let size = len_of(frame.tail);`, then `set frame.flags = 1_u64;`, then
+`frame.tail[3_u64]` — was an `[OP-4] UndischargedBoundsObligation` with the residual
+`3_u64 < len_of(frame.tail)` at this branch's tip and compiles now. Descriptor storage is
+the whole repair: the support of the measure is the resolved place of `frame.tail`, not
+of `frame`, so the sibling write overlaps nothing. `docs/patterns.md` P16 carries the
+correction, because the pattern said *root binding* where [MSR-2] says descriptor
+storage.
+
+**Probe `q10` is accepted.** `fn capacity_of<const n: u64>(...) { return n; }` compiles,
+and the same parameter is a `for_stmt` endpoint and a clause operand in the same
+program. That is [S21] in all three positions.
+
+> **Correction, decided 2026-09-04, from B2's implementation.** [MSR-1] said a measure
+> former over an unmeasured type "is an [OP-1] rejection at the `call`". The compiler's
+> pre-existing and correct judgment is the ordinary [TYPE-5] operand rejection at the
+> place, carrying the measured types the table has a row for; [OP-1] owns the arity and
+> written-type-argument failures, which is what [MSR-5] already said. The rule text now
+> says [TYPE-5], and no compiler behaviour changed.
+
+> **Correction, decided 2026-09-04, from B2's implementation.** [S11] priced the three
+> reader names as "a readability choice", on the ground that no rule reads a name. One
+> rule does: [OP-1]'s `ReservedLowerNames` is exactly the dotless IDENT-shaped operation
+> spellings union the mode words, and no source declaration may use a member of it. Adding
+> `cap_of`, `room_of` and `head_of` as reader rows therefore takes all three spellings away from
+> every writer declaration, and `let room = len_of(line);` — the exact line P16 of
+> `docs/patterns.md` recommended — is now a [FORM-3] `ReservedName` rejection. Measured on
+> this branch before the repair: **28 of 525 conformance cases and 72 of 491 snapshot
+> cases stopped reaching their recorded verdict, every one of them that rejection and none
+> of them a semantic change**; `room_of` accounted for 63 of the 72, `head_of` for 6 and `cap_of`
+> for 3. The repair is the writer's own: the corpus renames its bindings (`room_of` to
+> `spare`, `head_of` to `front`, `cap_of` to `limit`) and every verdict returns, with no
+> expectation and no snapshot row edited. **The cost is real and it is the owner's to keep
+> or spend differently** — the alternative is a reader name no writer wants for a local,
+> which is a change to [S11] and not one this batch may make.
+
+**What did not land, and why it could not.** Four of §7's B2 tests name a *run of runs* or
+a *wrapped run*, and neither exists in v0.45's type system. [TYPE-2] admits only a **flat
+element type** — an integer, a float, `Bool`, `unit`, or a struct or enum of those — so no
+measured type is an admitted element type: `buffer<buffer<u8>>` is
+`Semantics/Unsupported: CompositeValues` at the parameter, `array<buffer<u8>, 4>` is a
+[TYPE-2] rejection, and `array<array<u8, 4>, 4>` is the same. Consequently:
+
+- **`len_of(P[i])` is stated and unexercised.** [MSR-1]'s subscript admission is written into
+  [ENT-2] clause (b) and the compiler forms a measure term over any admitted measure
+  place, but no program can reach a subscripted one. This is not a compiler-capability
+  refusal — there is nothing to refuse — and it needs the container types.
+- **The `set` at an element position of a run of runs is not expressible**, for the same
+  reason. What is expressible is the half [MSR-2] states over storage: an element write of
+  a **scalar** kills nothing, because the killed set is empty rather than excepted, and
+  `msr2-pos-element-write-keeps-the-measure` pins it.
+- **An element-position `replace` is not expressible at all.** [SET-2] requires the
+  target's final selected type to be affine, and every flat element type is copy, so
+  `replace p[i] = e;` is a [SET-2] hard error before any measure question arises. Both
+  halves of §7's `replace` test — the descriptor's measures dying, the scalar's nothing —
+  wait on an affine element type, which is B7's.
+- **The wrapped run is B7's.** Every row of this version's measure table gives `head_of` the
+  exact value zero, so the injectivity sentence is exercised only at the identity map.
+  `msr1-pos-subscript-obligation-against-len` runs two disjoint ranges over one run at
+  `head_of = 0`; the two-disjoint-ranges-over-a-**wrapped**-run test needs a row whose `head_of`
+  can be nonzero.
+
+**The compiler still classifies a projected callee write from the actual's shape.** A
+write through a `&uniq buffer<T>` actual is read as an element write regardless of what
+the callee does, which is why `ent5-neg-callee-uniq-buffer-replace-kills-length` remains
+`xfail` and did not turn XPASS here. [MSR-2] restated the *granularity* over storage; the
+*classification* of what a callee write touches is [CALL-3]'s, and B3 is where that case
+flips. Nothing in B2 was allowed to flip it early.
+
+**One surface question the design does not settle, left to the owner.** `clause_expr`
+admits one operand, or two operands around one `infix_op` or `compare_op` [MSR-5], so a
+clause cannot write `len_of(run) + room_of(run) == cap_of(run)` or any other three-operand relation
+over measures. The capacity identity is therefore reachable by the checker as an automatic
+premise and unwritable by the writer as a clause. That is the production B1 landed and
+this batch did not touch it.
+
+### 6.0e B4 landed (v0.45)
+
+**Liveness is a program-point property in the compiler, and the commit rule is written.**
+`[LIV-1]` and `[LIV-2]` are two added rules in the active specification, and `[OWN-1]`,
+`[OWN-11]`, `[SET-1]`, `[STOR-1]`, `[STOR-3]` and `[TYPE-5]` are amended in place to read
+them; `set_stmt` takes a value list after its target list, which is D2's own form. Nine
+conformance cases carry it:
+
+```text
+| case                                                     | expected verdict |
+|----------------------------------------------------------|------------------|
+| liv1-neg-branches-disagree-on-liveness                   | reject, LIV-1    |
+| liv1-pos-loop-moves-and-restores-an-outer-binding        | run, exit 0      |
+| liv1-neg-loop-leaves-an-outer-binding-dead               | reject, OWN-11   |
+| liv2-pos-read-out-at-a-binding-a-field-and-a-deref       | run, exit 0      |
+| liv2-pos-read-out-keeps-the-root-and-its-other-fields    | run, exit 3      |
+| liv2-pos-swap-and-rotation                               | run, exit 5      |
+| liv2-neg-two-subscripts-of-one-run                       | reject, LIV-2    |
+| liv2-pos-two-fields-of-one-root                          | run, exit 9      |
+| liv2-pos-subscript-targets-commit-their-own-ordinals     | run, exit 2      |
+```
+
+**Probe `q9` is accepted, and so is the same statement at a field and at a `deref`.**
+`set c = bump(cell: move c);` compiles and runs; so do `set holder.run = grow(old: move
+holder.run);` and, inside a callee holding `out: &uniq buffer<u8>`, `set deref(out) =
+grow(old: move deref(out));`. The read-out sentence is what admits all three, and the
+`deref` case is admitted on exactly `[SET-2]`'s exchange ground. **Probe `f3`'s program is
+a `[LIV-1]` rejection naming the binding and both predecessors** where it was
+`Semantics/Unsupported: OwnershipJoin` at this branch's tip. **A loop that moves an outer
+binding and commits a value back into it before the backedge is accepted**, which is where
+probe `f5` was `[OWN-11]`. The swap `set (p, q) = move q, move p;` and its three-target
+rotation compile and run, and the copy pair reports the exchange in its exit code.
+
+**`[SET-1]`'s two B1b placeholders are gone.** The pairwise-distinct-target-roots refusal
+becomes `[LIV-2]`'s disjointness condition, so `set (pair.low, pair.high) = split(...);`
+is admitted and `set (v[i], v[j]) = ...;` is refused at the second target with both
+spellings named; and the compiler's `ResultListSubscriptTarget` stop is deleted, so a
+subscript is an ordinary target of a target list with its offset evaluated before the
+commit.
+
+> **Correction, decided 2026-09-04, from B4's implementation.** `[LIV-1]` said `[OWN-11]`
+> 646's prohibition is *replaced* by the join agreement. It is replaced, but the loop-head
+> instance keeps `[OWN-11]`'s own citation rather than becoming a `LIV-1` diagnostic: the
+> rule that states a per-iteration obligation owns its violation, exactly as `[SET-1]`
+> owns the residue of its writability relation. The conformance case
+> `own11-neg-move-outer-in-loop` therefore keeps its recorded `reject OWN-11` verdict, and
+> no corpus verdict moved in this batch.
+
+> **Correction, decided 2026-09-04, from B4's implementation.** The backedge `[OWN-11]`
+> reads is the **structural** one `[FN-1]`, not a reachability-filtered one. A body that
+> consumes an outer binding and then leaves by `break` or `return` is judged on the state
+> it reached, so `loop @l { match s { … } break @l; }` over an affine `s` stays the
+> `[OWN-11]` rejection it has always been. Reading reachability there would have admitted
+> a one-iteration consume that this clause always refused — a language change B4 has no
+> ground to make, and the one that would have moved a recorded conformance verdict.
+
+> **Correction, decided 2026-09-04, from B4's implementation.** The read-out paragraph
+> said each target "is dead for the remainder of" the right-hand side's evaluation and did
+> not say what a second `move` of the same place is. The first implementation matched every
+> such `move` as a read-out and compiled `set c = pair(left: move c, right: move c);`,
+> which frees one run twice — the same class of hole round 7 found in the sixth draft's own
+> paragraph, one step further in. **One target is read out at most once**, and a later use
+> of what that read-out consumed is `[OWN-1]`'s ordinary rejection at that use; the rule
+> text now says so and three shapes are pinned against it.
+
+> **Correction, decided 2026-09-04, from B4's implementation.** `[LIV-2]` condition 2 said
+> "two subscripts of one run" are refused flatly. The rule as written refuses them on
+> `[OWN-7]`'s own terms — two subscripted places of one resolved base overlap unless their
+> offsets are both literals with unequal values — because that relation is already stated
+> and the ground the design gives ("the commit order would decide the result") is false for
+> two distinct literal offsets.
+
+**What did not land, and why.**
+
+- **`grid[k]` against `grid[i][j]`.** A run of runs has no admitted element type in this
+  version: `buffer<buffer<u8>>` is `CompositeValues` unsupported and `array<array<u8,4>,4>`
+  is a `[TYPE-2]` rejection, which 6.0c already recorded. Condition 2 is stated over
+  subscripted targets generally and is exercised over one run; **the nested case waits on
+  B7's runs**.
+- **The affine read-out at a subscript.** Every constructible element type in this version
+  is copy — `array_new` and `buffer_new` take a copy fill — so no `move v[i]` of an affine
+  element can be written at all. The compiler therefore matches a read-out at a bare
+  binding, a field and a `deref` and never at a subscript, where the two readings coincide
+  for every writable program. **B7's measured element types are where that changes.**
+- **A `set` target that resolves to no binding.** `[LIV-2]` says such an identifier
+  introduces one exactly as a `let` does. That is a declaration event in a `set` statement
+  and needs the resolver to mint a declaration for an unresolved target base; it is
+  **DEFERRED in the rule text with a stated zero delta** and is not implemented. Probe
+  `r4`'s repair does not need it: a target that names a live binding is a commit, which is
+  what the batch's `liv2-pos-two-fields-of-one-root` case exercises.
+- **`[LIV-1]`'s linear half.** The rule states the unconditional release over
+  `[STOR-3]`'s compiler-derived actions, which is the whole of what this version has. The
+  linear-in-this-scope obligation is `[PROV-6]`'s and lands in B5.
+- **A loop whose entering and committed values carry different ownership attributions**
+  still stops at `Semantics/Unsupported: OwnershipJoin`, because the loop-carried join of
+  `[EFF-2]` state origins is exact equality in this compiler and a union there needs a
+  fixed point no rule of this version states. `set c = consume(cell: move c);` inside a
+  `for` body is the measured shape: it compiles when the entering value comes from the
+  same call and stops when it comes from `buffer_new`. Liveness is judged before that
+  limit, so the limit can never stand in front of a `[LIV-1]` rejection.
+
+**One retired diagnostic.** `[STOR-1]`'s second restructuring — "the right-hand side
+consumes the target root, so replace cannot commit into it: bind the result under a new
+let, and combine it with the old value field by field", added after the 2026-08-28
+blind-writer trial — is deleted. The program it was written for is now accepted, and at a
+projected target whose root the right-hand side really did consume the rejection is
+`[OWN-1]`'s dead root, which offers the fresh `let` in its own sentence. `docs/patterns.md`
+P17 is rewritten around the admitted commit for the same reason.
+
+### 6.0f B5 landed (v0.45)
+
+**Linearity, the release graph, the early release and the two destructuring forms are in
+the compiler.** `[PROV-6]` is one added rule in the active specification, and `[FORM-2]`,
+`[TYPE-2]`, `[TYPE-3]`, `[OWN-1]`, `[LIV-1]`, `[STOR-3]`, `[FN-2]` and `[EFF-2]` are
+amended in place to read it. Three grammar productions are added — `dispose_stmt`,
+`region_param` and `linearity_bound` — and three lowercase atoms with them: `dispose`,
+`linear` and `affine`, which `[FORM-3]` therefore excludes from IDENT, so no source
+declaration, contract member or callee may be spelled any of the three any more. `[S12]`,
+`[S13]`, `[S18]` and `[S32]` are the whole of the added surface, each as the owner adopted
+it, and `dispose p;` takes no `using` list. Sixteen conformance cases carry it:
+
+```text
+| case                                                     | expected verdict |
+|----------------------------------------------------------|------------------|
+| prov6-pos-dispose-runs-the-release-walk-early            | run, exit 0      |
+| prov6-pos-dispose-writes-the-operands-storage-origin     | run, exit 9      |
+| prov6-neg-dispose-without-the-declared-write             | reject, EFF-2    |
+| prov6-neg-linear-value-not-consumed                      | reject, PROV-6   |
+| prov6-pos-linear-value-moved-out-whole                   | run, exit 3      |
+| prov6-pos-destructuring-consume-discharges-the-obligation| run, exit 7      |
+| prov6-neg-linear-value-partially-consumed                | reject, PROV-6   |
+| prov6-pos-commit-reinitialises-the-consumed-sub-place    | run, exit 5      |
+| prov6-neg-dispose-through-a-shared-borrow                | reject, OWN-1    |
+| prov6-neg-dispose-of-a-view                              | reject, PROV-6   |
+| prov6-neg-dispose-of-a-modifier-linear-node              | reject, PROV-6   |
+| prov6-neg-dispose-without-a-capability-leaf              | reject, PROV-6   |
+| prov6-neg-linear-modifier-on-a-tag-only-enum             | reject, PROV-6   |
+| prov6-pos-linearity-bound-on-a-region-parameter          | run, exit 0      |
+| prov6-pos-linearity-bound-admits-the-instantiation       | run, exit 2      |
+| prov6-neg-linearity-bound-refuses-the-instantiation      | reject, PROV-6   |
+```
+
+**D3's own visibility claim is measured rather than asserted.** A function whose body is
+`dispose cell; return 4_u8;` over `cell: own buffer<u8>` must declare `writes(cell)`, and
+the same function without the statement declares `pure` and releases the same run at its
+scope exit under no effect at all. That pair is one conformance case and its negative
+control is the second: the early release is exactly as visible as D3 says, and the derived
+release is exactly as invisible as probe `r2_5` showed. What is **not** measured is the
+`writes` of a **provider**, because no provider is a value yet.
+
+**What the version does not reach, and why, item by item.** The capability criterion has
+no instance here: the ambient heap is the only store whose reclamation is a release, it is
+not a value, no `effect_path` can be rooted at it, and therefore every scope holds it. So
+`LinearValueNotConsumed` fires for the modifier and never for an absent capability; the
+`heap`-parameter-removed rejection naming the scope is **not exercised**. `writes(heap)`
+in a row is **not exercised**, because the walk resolves no provider place and the
+memory-reclamation actions keep the empty row `[EFF-2]` already fixed. `DisposeHasNoProvider`
+is **not exercised**, because no binding is resolved to spend. `[S32]`'s region axis is read
+at the declaration and checked at no instantiation, so a **heap-branded instantiation
+refused at the call** is **not exercised**; its type axis is, in both directions. The
+arena-backed sibling of probe `x6` is **not exercised**, because the refusal it contrasts
+with is deferred (below). Each of the five is recorded for **B7/B9**, the batches that make
+a store's provider a written value.
+
+**One clause is stated and deferred, and the reason is a corpus disposition rather than a
+capability.** `[PROV-6]`'s release graph is written and walked; its acyclicity refusal is
+DEFERRED with a stated zero delta. Refusing a type whose release graph has a cycle retires
+`tests/programs/recursive_tree.wf`, a heap-backed recursive enum this compiler accepts and
+three live tests compile — which is the honest consequence this design already records,
+and which programs a language rule retires is the owner's decision, not a checker's. Until
+it lands the walk visits each node of a cyclic graph once, which terminates. Probe `x6`'s
+self-referential heap type therefore still **compiles**, and the verdict pair the owner is
+asked to move is: `tests/programs/recursive_tree.wf`, **accept** today and **reject** under
+the refusal.
+
+> **Resolved 2026-09-04, by the owner.** The refusal is deleted rather than adopted, so
+> the verdict pair does not move: `recursive_tree.wf` stays accepted and [PROV-6] carries
+> no cycle clause. The correction under [PROV-6] records the ground.
+
+**Two corpus repairs the added atoms forced.** `tests/conformance/cases/reject-syseff-pure-member-binds-release.wf`
+spelled a contract member `dispose`, and `compiler/src/semantic/tests/generics.rs` spelled
+a generic function `affine`; both are renamed with no change of expectation, rule citation
+or status, because `[FORM-3]` now excludes those spellings from IDENT. The conformance
+change is recorded in `governance/APPROVALS.md`.
+
+### 6.0g B7a landed (v0.45)
+
+**The brand, the two runs and the kernel declaration domain are in the specification, and
+the front half of them is in the compiler.** `[PROV-1]`, `[BLK-0]`, `[BLK-1]`, `[BLK-2]`
+and `[BLK-3]` are five added rules, and `[TYPE-2]`, `[TYPE-3]`, `[TYPE-5]`, `[TYPE-6]`,
+`[CONST-1]`, `[OWN-1]`, `[FN-2]`, `[FN-7]`, `[OP-1]`, `[OP-4]`, `[OP-9]`, `[MSR-1]`,
+`[MSR-2]`, `[MSR-3]`, `[ENT-3.S13]`, `[STOR-1]`, `[STOR-3]`, `[STOR-5]`, `[PROV-6]`,
+`[PROG-1]`, `[SYS-3]` and `[DIAG-1]` are amended in place. `struct_decl` and `enum_decl`
+each gain an optional `region_params` [S20]; no production and no atom is added.
+`Vector`, `FixedVector`, `Heap` and `Arena` [S1-S4] are four compiler-owned nominals of
+the nominal-type TYPEID domain, and the nine operations [S7-S9] are one fourth admitted
+declaration source beside the prelude and the system domain. Eleven conformance cases
+carry it:
+
+```text
+| case                                                     | expected verdict |
+|----------------------------------------------------------|------------------|
+| prov1-pos-a-store-branded-run-in-a-field                 | accept           |
+| prov1-pos-a-nominal-declares-a-store-region              | accept           |
+| prov1-neg-a-provider-in-a-stored-position                | reject, STOR-5   |
+| prov1-neg-an-extent-elides-its-store-region              | reject, FORM-8   |
+| prov1-neg-a-source-nominal-collides-with-a-container     | reject, TYPE-6   |
+| blk0-neg-a-source-function-collides-with-a-kernel-row    | reject, TYPE-6   |
+| blk1-neg-a-construct-names-a-run                         | reject, BLK-1    |
+| blk1-neg-a-construct-names-a-provider                    | reject, BLK-1    |
+| blk1-pos-both-runs-are-nameable-types                    | accept           |
+| blk2-pos-a-formation-row-builds-an-empty-run             | accept, pending  |
+| blk3-pos-a-boundary-row-moves-the-back-boundary          | accept, pending  |
+```
+
+**Probes `r2_6` and `m05` are accepted.** `struct Chunk['s] { page: Vector<'s, u8>; }`
+compiles where both are parse errors at this branch's tip, and `struct Bytes { v:
+Vector<u8>; }` compiles with no written region at all, which is [PROV-1]'s brand
+resolution under test in both of its clauses at once. A provider in the same position is
+`[STOR-5]`, which is the half of the intensional split this version enforces.
+
+**What did not land, and why, item by item.** This batch is the front half of B7 and the
+back half is not deferred by choice of scope alone; three of the four reasons are
+measured and are recorded here rather than in a report.
+
+- **A call to a kernel-domain row is an explicit unsupported capability.** The domain's
+  records, spellings, argument names, result lists and collisions are resolved and
+  judged, and the call stops at `Semantics/Unsupported: ContainerRuntime` rather than at
+  any source rule. What is missing is two things at once: the window lowering `[BLK-1]`
+  fixes — a subscript in logical coordinates, a descriptor of `len_of` and `head_of` beside the
+  slots, and the four boundary operations over them — and the relation publication
+  `[CALL-6]` carries for a *record* rather than for a verified `fn` summary. The second
+  is the larger: this compiler's publication path is keyed to a source `fn_decl`'s
+  `FunctionSignature`, its `[FN-8]` requirement templates and its `[FN-9]` relation
+  templates, all of which are anchored at a source node for diagnostics, and a
+  compiler-owned record has no such node. Synthesizing one would put a fabricated
+  `NodePath` into every diagnostic the row can raise, which is the defect `[DIAG-1]`
+  exists to prevent. The honest shape is a second publication source keyed on the row,
+  and it is one piece of work with the lowering.
+- **A value of one of the four types is the same unsupported capability at execution.**
+  A signature that carries one, and a measure former or a subscript over one, are checked
+  as source — the type is nameable, branded, confined, laid out and measured — and stop
+  before lowering, exactly as an `arena<'r, T>` value has stopped since v0.31. Every
+  positive test of this batch is therefore a declaration rather than an execution.
+- **`command.heap` cannot be spelled.** *(Superseded by 6.0s: [S23] retired the atom and the row is written, so the general store has a source route from B7b onward.)* [S22]'s row is `command.heap as heap: own Heap`,
+  and `heap` is the atom [EFF-1] fixes for `allocates(heap)`, which [FORM-3] therefore
+  excludes from IDENT: the label tail and the binder are both unwritable, and no
+  compiler change repairs that. The row is recorded in [FN-7] as DEFERRED with its delta
+  and lands with [PROV-4]'s `allocates(path)`, which retires the atom. **This is a
+  collision between two adopted surface decisions, [S22] and the [EFF-1] atom [S23]
+  replaces, and it is the reason the general store has no source route in this version.**
+  [PROV-1] is written so that the entry heap's store region exists in every unit whether
+  or not the entry holds the provider, so brand resolution is unaffected; what is absent
+  is the provider *value*.
+- **`array<T, n>` does not retire.** *(Still true after 6.0s, and for the same reason measured over the whole surface rather than `array` alone.)* [S34] retires it together with `array_new`, and the
+  corpus holds **ninety-nine `array_new` occurrences across sixty-five `.wf` sources and
+  a hundred and fifteen more inside the compiler's own embedded test sources**. Each has
+  exactly one replacement, 3.L.3's `filled`, which is a source generic over a formation
+  row and three loop invariants — so the respell cannot be done before the formation row
+  compiles, and doing it after is a per-program proof obligation rather than a rename.
+  Retiring the spelling now would leave the specification and the compiler disagreeing
+  about a hundred accepted programs, which is the defect the branch rule forbids. The
+  retirement is recorded as DEFERRED with its delta and goes with the rows.
+- **`arena_extent` is not a row of this version.** Its per-activation refusal quantifies
+  over call-graph components, execution contexts and `[PAR]` windows that this version's
+  resource judgment does not state, and a reservation whose per-activation identity is
+  unchecked publishes `len_of(result) == 0_u64` falsely from the second activation. The
+  frame form carries the region-locality and loop-free conditions and is stated;
+  `arena_extent` is DEFERRED with a records delta of one.
+- **Confinement is `[BLK-4]`'s and is B7b's.** *(Superseded by 6.0s: [BLK-4] landed there.)* `[STOR-5]` states the half `[PROV-1]`
+  needs — a provider is region-bearing and a store-branded run is not — and defers the
+  position closure and the `&uniq` parameter refusal with a delta of one numbered rule.
+  `[FN-2]`'s blanket region-bearing-argument rejection narrows to loan-bearing and
+  provider arguments in the same change, which is what makes `Option<Vector<'s, T>>`
+  well-formed.
+- **A run of runs is not expressible.** A run's element domain in this version is the
+  flat-element domain buffer formation already has, so `FixedVector<Vector<'s, u8>, 8>` —
+  3.L.4's pool — is `CompositeValues` unsupported, and `[MSR-1]`'s subscripted measure
+  place stays stated and unexercised. The same restriction is why a run whose element
+  type derives a release action of its own is refused rather than lowered.
+- **A use of a region-parametric nominal writes no region argument yet.** `struct
+  Chunk['s]` is declarable and its fields may name `'s`, and `Chunk<'a>` at a use is a
+  `[TYPE-5]` rejection, because a nominal instance's identity in this compiler is its
+  type-and-const substitution and region arguments are not part of it. The consequence
+  is that the two-instances-at-two-regions test §7 asks for is not written: it needs the
+  region axis in `GenericSubstitution`, which is the same change that gives a nominal's
+  region parameters their instantiation check.
+- **`[CALL-4]`'s three v0.44 admissions stay deferred.** A measured result, a measure
+  over a result place, and a route over a non-prelude variant were re-batched here
+  because this is where a measured result first exists — and it does not exist yet, since
+  no row hands a run back. The route half is separately blocked on the same shape: a
+  clause's retained route identity is a PRE-1 declaration ordinal, and generalizing it is
+  one change with the measured-result widening rather than two.
+  `call4-neg-measured-result-not-admitted` therefore keeps its recorded `reject FN-9`
+  verdict, and the flip §7 anticipated does not happen in this batch.
+- **Nothing of 3.L landed under `tests/programs/`.** Every one of `vacant`, `filled`,
+  `collect`, the pool, `try_place`, `try_take`, `bs_new`, `bs_reserve`, `rebase` and
+  `take_at` calls a kernel-domain row, so each is the unsupported capability above. The
+  two smallest of them are written as the two `pending` conformance cases instead, which
+  is where the corpus schema puts a program the toolchain cannot yet reach.
+
+> **Correction, decided 2026-09-04, from B7a's implementation.** [PROV-1]'s brand
+> resolution said an elided store region at a parameter or result position denotes "an
+> implicit region parameter, one per occurrence" whenever it is not the entry heap's. The
+> only position that reading reaches is an `Arena`, whose store region is one the caller
+> must choose — and [FORM-8] already writes exactly such a region at every position. The
+> clause is therefore stated as [FORM-8]'s own judgment: an elided store region never
+> denotes an extent, and eliding one is that rule's canonical-spelling rejection. No
+> second region-minting mechanism is needed and none is added.
+
+> **Correction, decided 2026-09-04, from B7a's implementation.** [BLK-4]'s
+> `ConfinedTypeWithoutStore` refusal is written in this file over "an entry selecting no
+> `command.heap`". Since the entry heap's store region is minted before `main` in every
+> unit and only the provider *value* depends on the entry row, the refusal is about
+> reachability of a provider rather than existence of a region, and it belongs with the
+> rest of the confinement judgment. [PROV-1] therefore states that the region always
+> exists, and [STOR-5] carries the refusal in its DEFERRED clause.
+
+**B7a2 landed, 2026-09-04: the frame-resident run executes.** The stop `ContainerRuntime`
+that B7a left on every call to a kernel-domain row is gone for the rows over
+`FixedVector<T, n>`, and the whole path behind it is real: `seq_fixed` forms a run,
+`seq_place`, `seq_place_front`, `seq_take` and `seq_take_front` move its boundaries, the
+four readers load its measures, a subscript reads the window at `(head_of + i) mod cap_of`, and
+LLVM comes out and runs.
+
+- **A record is a callee.** `compiler/src/semantic/kernel.rs` is the twelve rows' signature
+  data in the shape [BLK-0] states: generic parameters with the per-argument
+  `supplied` judgment, named value parameters with modes, an ordered result list, one
+  effect row, one requirement list and one relation list, every relation an ordinary
+  difference bound between two operands displaced by a constant. Two machine checks over
+  that table hold it to the rule: every row's parameter and result spellings equal the
+  resolver's, and every row is complete over every measure it writes on every exit.
+- **The publication path is keyed on the row, and no `NodePath` is fabricated.**
+  `PreparedCall` now carries a callee that is either a source `FunctionId` or a row's
+  `container_declaration_ordinal`; `RelationProvenance` is the same split inside a
+  derivation record. A row's relations are instantiated at the call and established at
+  exactly [CALL-4]'s destinations — a `let` binding, a destructuring binder list, a `set`
+  target — and its call datums are minted at [ENT-3.S13]'s point. An undischarged row
+  requirement is one obligation of a new family, cites BLK-0, and names the operation and
+  the position of the requirement in that row's own list, which is what a record has
+  instead of a clause node.
+- **[CALL-4]'s first two admissions land.** A declared result may be of measured type and
+  a measure over its bare result place is a clause operand, instantiated at that ordinal's
+  own destination. The projected result place and the route over a non-prelude variant
+  stay DEFERRED. `call4-neg-measured-result-not-admitted` keeps its recorded `reject FN-9`
+  verdict: with the admission lifted, the same program is refused by the proof instead,
+  because its parameter arrives with no known length.
+- **One ordering defect was found and fixed by that work.** [FN-9] queries a relation
+  "immediately before return transfer and edge cleanup", and this compiler was applying
+  the returned value's own consume kill first. For a fragment result that kill does not
+  exist, so the defect was invisible; for a measured result it deleted every fact about
+  the value being returned, and `ensures len_of(result) >= 2` was unprovable at a body that
+  had just built exactly that. The fix is the order the rule states.
+
+**Four defects in 3.L, each measured against the compiler.** None of §3.L's loop programs
+compiles, and the cause is not the kernel:
+
+- **A measure former has no written affine spelling, so no loop invariant can carry one.**
+  `invariant grown: len_of(built) >= at` is a `GRAM-4` parse rejection at `len_of`, because
+  [MSR-5] states in terms that [INV-1]'s `affine_factor` is deliberately *not* widened.
+  Every one of `vacant`, `filled`, `collect`, `rebase` and the pool's `pool_new` is written
+  with such invariants, and every one of them therefore fails to parse. Without them
+  `seq_place`'s `room_of(vector) > 0` is `Unproved` at the backedge, which is the diagnostic
+  the same programs give with the invariants deleted. **This is the single largest gap
+  between 3.L and the specification, and it is a `[MSR-5]`/`[INV-1]` question rather than
+  a `[BLK]` one.**
+- **A clause operand may not be an arithmetic expression.** `ensures len_of(rest) <= len_of(vector) + 1_u64;`
+  is a `GRAM-2` parse rejection at the `+`: [FN-9] admits two datums and no computed
+  operand. `try_place`, `try_take`, `take_at`, `pool_release` and `rebase` all write
+  such clauses. The kernel's own rows write the same shape and are unaffected, because a
+  record is not a source `contract_block` — but a writer cannot state a `+ 1` relation at
+  all, so no source helper can republish what a boundary row publishes.
+- **A parameter reassigned in the body loses its entry image, so `try_place`'s contract is
+  unprovable.** `set vector = seq_place(vector: move vector, ...)` kills the entry image of
+  `vector`, and [FN-9] then makes every clause naming it unproved — including
+  `ensures head_of(rest) == head_of(vector)`, which the compiler reports as `head_of(vector) = head_of(vector)`
+  Unproved. The repair is to bind a fresh name rather than write the parameter back.
+- **`take_at` needs an element-position `replace` into a run**, which is an explicit
+  unsupported capability in this compiler and is the one item of 3.L.2's table that the
+  boundary rows do not already reach.
+
+**What B7a2 did not reach, and why.**
+
+- **The store is not lowered.** `arena_frame`, `seq_arena`, `seq_arena_proved` and
+  `seq_heap` resolve, check, and judge their written arguments and requirements, and a call
+  to one stops at `Semantics/Unsupported: ContainerRuntime`. What is missing is the bump
+  take itself — the extent's frame reservation, the cursor advance, the `Option<Vector>`
+  refusal arm, and the routed half of publication that the `Some`/`None` arms need. The
+  publication machinery this batch built is what those rows will use; the routed
+  restriction and `advance<T>(count)` as a term are the two pieces it does not yet have.
+- **`Vector<'s, T>` therefore has no value.** Its type is nameable, branded, confined, laid
+  out and measured, its layout and its release action are in the backend, and the four
+  boundary rows are already generic over it — but no row that can produce one is lowered,
+  so no program can hold one.
+- **An element-position window store is unsupported.** `set v[i] = e;` and
+  `replace v[i] = e;` over a run stop as `ContainerRuntime`; the read path is complete.
+- **A run of runs is still `CompositeValues`.** A run's element domain in this compiler is
+  the flat-element domain, so `FixedVector<Vector<'s, u8>, 8>` — 3.L.4's pool — is
+  unsupported, and so is a generic run element at an unbounded `T`: `filled<T, const n>`
+  is refused at its symbolic instance for that reason and not for its loop.
+- **`[BLK-0]`'s completeness sentence and `seq_arena` disagree on one cell.** The `Some`
+  arm publishes `len_of`, `cap_of` and `head_of` of the new run and `len_of` and `cap_of` of the arena,
+  but not `room_of` of either; the compiler's completeness test reads the sentence with
+  [MSR-2]'s standing identity, so a row that publishes `len_of` and `cap_of` counts as having
+  published `room_of`. Either the rows gain the two clauses or the sentence says what the
+  test says; the boundary rows publish `room_of` explicitly and the formation rows do not, so
+  the inventory is inconsistent with itself either way.
+
+### 6.0h B7a3 landed (v0.45)
+
+**Two owner rulings of 2026-09-04, one defect of the six, and the completeness sentence.**
+
+- **[S36]: the readers are `len_of`, `cap_of`, `room_of` and `head_of`.** The owner's
+  ground is recorded verbatim in 3.S. `len`, `cap`, `room` and `head` leave
+  `ReservedLowerNames` and are ordinary identifiers again; the [ENT-2] and [MSR-1] terms
+  take the same four spellings, so one quantity keeps one name as term and as reader. The
+  respell covers 386 `.wf` sources, the compiler's embedded test sources and diagnostics,
+  the conformance manifest, the snapshot index and the live documentation, and no recorded
+  verdict moves. `docs/roadmap.md` gains `outline:FLOOR-6`, a namespaces candidate whose
+  first motivation is that this rename is a workaround for a flat name domain.
+- **[PROV-6]'s release-graph cycle refusal is deleted, not deferred.** The owner's ground
+  is the correction printed under [PROV-6] above. The compiler half went with it: the
+  derived release of a cyclic type is one release action per node type calling itself, and
+  the explicit heap worklist that kept that depth off the machine stack is gone — it
+  bought its bound with a `realloc` on the release path and an abort when the host refused
+  it, which is an allocation and a trap on a path [STOR-3] gives the empty effect row.
+  Three backend properties are restated in place and one is retired; the batch report
+  names each. `tests/programs/recursive_tree.wf` stays accepted and runs.
+- **[BLK-0]'s completeness sentence now says what its own test said.** Completeness is read
+  with [MSR-2]'s standing identity, so a row publishing `len_of` and `cap_of` of a place
+  has published its `room_of`, and `seq_arena`'s `Some` arm is complete as written. A.2's
+  note states the same sentence, and the inventory is consistent with itself: the boundary
+  rows publish `room_of` because their callers read it, the formation rows do not, and both
+  classes are complete.
+- **A loop invariant carries a measure term.** `affine_factor` admits a `call` and [INV-1]
+  admits exactly the four measure formers there, over an admitted measure place, resolving
+  in the same context that rule gives an IDENT. This is the promise the amendment register
+  made for B2 and B2 did not keep; the correction is printed under [MSR-5] above. The
+  affine domain is unchanged, so nothing is derived that was not derivable — what the
+  writer gains is the ability to *state* the relation. The atom is retargeted by exactly
+  the [ENT-5] events that kill the term, which is what stops a header conclusion from
+  outliving the write that refutes it. Three conformance cases carry it:
+
+```text
+| case                                                     | expected verdict |
+|----------------------------------------------------------|------------------|
+| inv1-pos-a-measure-former-is-an-affine-factor            | run, exit 0      |
+| inv1-neg-a-measure-invariant-is-unproved                 | reject, INV-1    |
+| inv1-neg-an-affine-factor-is-not-a-measure-former        | reject, INV-1    |
+```
+
+**What B7a3 did not reach, and why.** Five of B7a2's six defects stand, and one of them
+cannot be repaired in the form the ruling gives.
+
+- **A clause operand still may not be arithmetic.** The correction under [MSR-5] above
+  states the finding in full: the ruling's production is the eighth draft's, whose own
+  correction in this file records why it was replaced — it drops
+  `requires total /defined steps;`, an accepted corpus program — and the union that keeps
+  the infix alternative is ambiguous, because `+`, `-` and `*` are both `infix_op`
+  alternatives and affine operators. The unambiguous union needs a fourth production for
+  the clause tail's operator set, which is surface this batch had no sanction to add.
+- **[MSR-3]'s rebind and payload placements are not landed**, so a parameter written back
+  in the body still loses its entry image and `try_place`'s contract is still unprovable.
+- **An element-position window store is still `ContainerRuntime`**, so 3.L.2's `take_at`
+  still has no route.
+- **A run's element domain is still the flat-element domain**, so a run at an unbounded
+  generic `T`, a run of affine elements and a run of runs are all still refused.
+- **Nothing of 3.L landed under `tests/programs/`.** `vacant` and `filled` need the
+  element domain, `take_at` needs the element store, and `try_place`, `try_take` and
+  `rebase` need both the arithmetic clause operand and the rebind placement. Each is
+  blocked on an item above rather than on the programs themselves.
+
+### 6.0i B7a3b landed (v0.45)
+
+**The five items B7a3 did not reach, and the four things that are still not writable.**
+
+- **A clause side is an affine expression [S17, MSR-5].** One production and no new
+  spelling, plus the `clause_op` production the ruling names, which is what makes the
+  union unambiguous where B7a3 could not: `clause_op` is `compare_op` together with the
+  [OP-1] rows whose result is `Bool`, not `infix_op` minus three, so `a + b` in clause
+  position derives one way and `requires total /defined steps;` keeps its **accept**. The
+  correction under [MSR-5] above states it in full. Every corpus clause parses with the
+  same meaning and no recorded verdict moved. Two consequences are worth naming. A
+  requirement side carries the whole affine expression [FN-8], while a *published*
+  relation stays [FN-9]'s difference bound between two operands displaced by a written
+  constant, so `requires at + 2_u64 <= len_of(vector);` is admitted and
+  `ensures room_of(rebased) + len_of(vector) >= n;` is refused at the declaration naming
+  the fragment. And one probe's diagnostic moved: `define` after `requires` used to reach
+  [GRAM-2] and now reaches [FORM-3], because the clause tail no longer decides at that
+  token; the pinned GRAM-2 sentence is reached by a `requires` after an `ensures`
+  instead, and `compiler/src/driver/pinned_sentences.rs` records the change.
+- **[MSR-3]'s entry placement landed, and the rebind placement landed at its `let`
+  half.** The correction under [MSR-3] above states both. Together they are what make
+  `try_place`'s five `ensures` provable and `let built = move spare;` carry `spare`'s
+  measures onto `built`. The [LIV-2] `set`-target, construct, payload and field
+  placements stay DEFERRED, and nothing in 3.L needs them.
+- **An element-position store into a run executes.** `set v[i] = e;` and
+  `replace v[i] = e;` commit at the window's logical offset `(head_of + i) mod cap_of`
+  over both runs, under [OP-4]'s ordinary obligation judged at the target place exactly as
+  in read position and [MSR-2]'s storage-granular kill. [BLK-1] and [SET-1]/[SET-2] say so
+  in the spec; the compiler now does it, checker to LLVM, and a wrapped window is the case
+  under test.
+- **A run's element domain is [BLK-1]'s.** Every copy element, one region-free affine
+  nominal stored by value, and — in a run's element position alone — one unbounded type
+  parameter, which [FN-2] resolves at every concrete instance. **A run of runs is the one
+  part that needed more than the lift and did not land**: it is still an explicit
+  `CompositeValues` stop, because a run element carries a descriptor and the flat-element
+  representation this compiler stores in a run has no place to put one. 3.L.4's
+  `BlockPool` is the program that wants it and is not attempted here.
+- **The fixed-run library proves and runs.** `tests/programs/fixed_run_library.wf`
+  carries all six of 3.L's fixed-run functions in the design's spelling and
+  `the_fixed_run_library_proves_and_runs` executes it, checking the order the drain
+  preserves, the element the transposition moved and the head the drain leaves at zero.
+  **Four deviations from the design text were forced, and each is a finding rather than a
+  repair.**
+
+```text
+| written as                        | had to be written                  | why                              |
+|-----------------------------------|------------------------------------|----------------------------------|
+| invariant spare: ... >= n         | let limit = n; ... >= limit        | [MSR-6] reached [ENT-2]'s        |
+|                                   |                                    | endpoint and [MSR-5]'s clause    |
+|                                   |                                    | and not [INV-1]'s atom role      |
+| fn filled<T, const n: u64>        | fn filled<const n: u64>, at u8     | the bare copy use of `value` is  |
+|                                   |                                    | [OWN-1] at an unbounded T: Q8    |
+| rebase's two `requires`           | four, `room_of(spare)` two-sided   | room = cap - len at a symbolic n |
+|                                   |                                    | is two premises, not automatic   |
+| rebase<T, const n: u64>           | rebase<const n: u64>, at u8        | the loop's front take needs a    |
+|                                   |                                    | [LIV-2] target introduction      |
+```
+
+The last row is the one that costs a capability rather than a line. 3.L.8's loop body is
+`set (vector, one) = seq_take_front(vector: move vector);`, and `one` is not in scope, so
+that target introduction is [LIV-2]'s DEFERRED clause; the workaround is to declare `one`
+first, which needs a value of the element type and therefore a copy element type. The
+other route — `let (shorter, one) = ...; set vector = move shorter;` — stops at
+`Semantics/Unsupported: OwnershipJoin` inside a loop. **`collect`, the `BlockPool` and the
+`bs_*` family are the next batch's** and none was attempted.
+### 6.0j B7a4 landed (v0.45)
+
+**The bump extent executes, a const generic is an affine atom, and the general store is
+still unreachable.** Four items of this batch's brief landed; two did not, and both are
+blocked on things this file records rather than on the rows themselves.
+
+- **The three bump rows execute [BLK-2].** `arena_frame::<bytes, align, 's>()` reserves
+  one extent in the reserving activation's own frame, at that extent's own written
+  alignment; `seq_arena_proved` and `seq_arena` take a run of `count` slots from it; the
+  `Vector<'s, T>` descriptor they hand back is the one the four boundary rows and the
+  window subscript already worked over, so a run taken from a store is a run in every
+  other respect. `tests/programs/arena_workspace.wf` reserves an extent, reads the
+  store's own cursor before and after each take, fills a taken run through `seq_place`
+  and reads the window back, and observes that a refused take leaves the cursor exactly
+  where it was. **The take is branch-free**: the refusal is a value, so both arms are
+  computed and the outcome selects between them.
+- **`arena_frame`'s placement and `[PROV-1]`'s one-store-per-region refusal are
+  judged.** The written store region must be one an enclosing `region_stmt` of the
+  reserving function introduced, and the occurrence must be a statement of that block and
+  of no loop inside it. [BLK-2] and [PROV-1] are cited rules of the compiler's own rule
+  enum for the first time and take their definition ranks there.
+- **A const generic is an [INV-1] affine atom [MSR-6].** `invariant spare:
+  room_of(built) + at >= n` is what a capacity-parametric loop wants to state, and B7a3b
+  measured that it could not. The three `let limit = n;` lines in
+  `tests/programs/fixed_run_library.wf` are gone. The admission is on the const
+  generic's own ground: [ENT-2] clause (c) makes it a *constant* with no liveness, no
+  entry state and no support, while a named const is a term of clause (a) whose
+  exclusion from the affine atom this version keeps.
+- **The extent has no release action.** The seventh draft gave it a reset carried on
+  every edge leaving its region block. The reservation is the better place and the only
+  one that needs no machinery: it establishes the cursor at zero at every activation of
+  the block, the storage is the activation's own frame, and nothing of the extent is
+  observable outside the block, so no leaving edge has work to do. [BLK-2] and [STOR-3]
+  say that now, and [STOR-3]'s table loses a row rather than gaining a mechanism.
+
+**Three defects were measured rather than reasoned, and each is worth naming.**
+
+```text
+| what was wrong                       | how it showed                      | repair                        |
+|--------------------------------------|------------------------------------|-------------------------------|
+| the provider operand was named       | `seq_arena(arena: ...)` is a       | the operand is `store` in all |
+| `arena` / `heap`                     | FORM-3 parse rejection: both are   | three acquiring rows, and one |
+|                                      | fixed grammar atoms, so no call    | machine test holds the whole  |
+|                                      | to any of the three rows could be  | table to FORM-3's IDENT class |
+|                                      | written at all                     |                               |
+| `advance<T>(count)` was the size     | a run's slots are stride-spaced,   | it is the stride, in [BLK-0]  |
+|                                      | so a take of `size * count` hands  | and in the compiler's one     |
+|                                      | out a run whose last slots lie     | reader of the quantity        |
+|                                      | outside what the store gave it     |                               |
+| a requirement dropped its written    | `room_of(store) >= advance(count)` | the requirement carries it,   |
+| displacement                         | was submitted as `>= 0` and every  | one machine test holds the    |
+|                                      | store discharged it                | record data to the one shape  |
+|                                      |                                    | a goal can express            |
+```
+
+The first is the one to learn from. Nothing had caught it because **no test had ever
+written a call to one of those rows**: B7a2 resolved and checked them, B7a2's own record
+said so, and every one of its positive tests stopped at `ContainerRuntime` before an
+operand was read. A record whose spelling no program can write is not a record.
+
+**What this batch did not reach, and why.**
+
+- **[S22] is still unwritable and the general store still has no value.** *(Superseded by 6.0s: the first of the three routes out — retiring the atom in favour of [PROV-4]'s `allocates(path)` — is the one that was taken, and no current program needed a respell because the ambient heap's allocation simply writes no entry.)* The row is
+  `command.heap as heap: own Heap`, and `heap` is the atom [EFF-1] fixes for
+  `allocates(heap)`, which [FORM-3] therefore excludes from IDENT — the label tail and
+  the binder are both IDENT positions. B7a's record already said this and it is still
+  true. **The three routes out are: retire the atom in favour of [PROV-4]'s
+  `allocates(path)` [S23], which no current program survives because the ambient heap is
+  not a value and no path can be rooted at it; respell the atom, which is one mechanical
+  respell of 415 `.wf` occurrences and 441 more inside the compiler's embedded tests,
+  with every verdict unchanged, on the S36 precedent; or change [S22]'s own label tail.
+  Each is an owner surface decision and none was taken here.**
+- **`seq_heap` keeps its `ContainerRuntime` stop, and D3's capability half keeps its
+  accept cases.** *(Superseded by 6.0s: the stop is gone, `heap_vector` allocates and frees, and D3's refusal half is what found an accepted program releasing without a capability.)* Beyond the missing provider value there is a second blocker with its
+  own cost: a heap-backed run's release action is a free, an arena-backed one's is
+  empty, and this compiler's `IrType::Vector` erases the region, so the lowering cannot
+  select between them. The class *is* decidable from the region declaration alone —
+  entry heap and an unbounded or `linear`-bounded region parameter are general,
+  `affine`-bounded and `region_stmt` regions are extents — so the repair is one field on
+  `CheckedType::Vector` and one on `IrType::Vector`, not a new judgment. D3's refusal
+  half is reachable without it and its accept half is not.
+- **No source function can be generic over a store.** `fn take['s](store: &uniq
+  Arena<'s, bytes, align>, ...)` declares and its body checks, but at a call the region
+  argument is not substituted into the parameter's container type: `Arena<'s, ...>` stays
+  `'s` and the actual is `Arena<'a, ...>`, which is a [TYPE-5] mismatch. This is the
+  region axis in `GenericSubstitution` that 6.0g already recorded as absent; what is new
+  is that it now blocks the natural writer form for the arena, so every take must be
+  written where the extent is reserved.
+- **A take needs a nested region block.** `&uniq workspace` inside `'a`'s own block is
+  [OWN-10]'s ordinary refusal — the borrow's elided region is `'a`, which is introduced
+  outside the binding it borrows — so the corpus idiom `region { call(&uniq local) }`
+  applies, and the run's uses go inside that inner block with it. This is a pre-existing
+  property of [FORM-8]'s elision and [OWN-10], not of the rows, but it is what the arena
+  programs of this batch are shaped by.
+- **A proved take at an open count is an explicit unsupported capability.** `advance<T>
+  (count)` at a count that is not a closed expression is an opaque term with no source
+  spelling, so a caller can state nothing about it and `seq_arena_proved`'s third
+  requirement has no difference-bound form. Skipping the requirement would admit an
+  unproved partial operation, so the call stops instead. The refusing row is the one for
+  that position and it carries no such requirement.
+- **[LIV-2]'s declaring `set` target is not landed.** It is not a checker change: a
+  target identifier that resolves to no binding is an unresolved use before the checker
+  sees it, so the declaration has to be minted in the resolver's own scope walk.
+  `rebase<T, const n>` therefore stays at a copy element type.
+
+### 6.0k B7a5 landed (v0.45)
+
+**A generic parameter's bound is one closed class, the template is the spelling authority,
+and a `set` target can declare its own binding.** Three of the batch's items landed whole,
+one landed in the half that is not blocked, and the largest did not land at all; the last
+is recorded here with what it actually costs.
+
+- **[S37] is in the specification and in the compiler.** The bound is a closed class and
+  never a user trait, a type parameter carries exactly one and always writes it, and the
+  three classes form the chain `copy < affine < linear` whose satisfaction is the chain
+  read left to right. `copy` is the batch's one added atom, and [FORM-3] therefore
+  excludes it from IDENT: two corpus bindings were spelled `copy` and are respelled.
+  The `gparam` production loses its optional bound; `linearity_bound` gains `copy`.
+  [PROV-6], [FN-2], [OWN-1], [SET-2] and [BLK-1] are amended.
+- **The template is the spelling authority, and it reaches two spellings and not one.**
+  A generic body is checked once at the symbolic instance under its written bound, and the
+  concrete-instance recheck no longer re-judges the spellings [FORM-1] keys on a value's
+  class. The ruling names `move p` against a bare `p`; `take_at` measured the other one on
+  its first copy instance — `replace short[at] = move endv;` is [SET-2]'s copy-target
+  refusal for exactly the reason the `move` was [OWN-1]'s — so the exception is stated over
+  both. **`tests/programs/fixed_run_library.wf` is the evidence**: all six functions are
+  generic again and each affine-bounded one runs at `u8` and at `Option<u8>` in one
+  program.
+- **[LIV-2]'s declaring `set` target landed, in the resolver.** B7a4's reading was right:
+  the target identifier is an unresolved use before the checker runs. The promotion is one
+  pass of the resolver's own lookup, repeated until every use resolves, so a declared
+  target is judged by the rules a `let` binder is judged by and the checker sees an
+  ordinary dead binding that this commit revives. `rebase<T: affine, const n>` is what
+  needed it.
+- **A run's release class is on its type.** `CheckedType::Vector` and `IrType::Vector`
+  carry it, read off the store region's declaration alone: an `affine`-bounded region
+  parameter and a `region_stmt` region are extents, and the entry heap, an unbounded
+  region parameter and a `linear`-bounded one are general stores. No heap value exists
+  yet, so nothing releases through a free in this version; a unit test pins the four
+  classifications so the version that first spends one inherits a decision rather than
+  making it.
+- **The region axis reaches a call's container types.** A parameter type naming a formal
+  region — `Vector<'s, T>`, `Arena<'s, b, a>`, `Heap<'s>` beside the `Slice<'r, T>` that
+  already worked — determines that region from its actual and is substituted with it, so
+  `fn carve['s: affine](store: &uniq Arena<'s, 256, 16>) -> made: own Option<Vector<'s,
+  u64>>` declares, checks, lowers and runs. That is what 6.0j recorded as the missing
+  axis, and it is also what makes the region-axis bound check reachable.
+
+**The one intended verdict flip.** `prov6-pos-linearity-bound-on-a-region-parameter` was a
+branch-new case whose whole content was that a declaration writing `'s: affine` is
+accepted; the region axis had no instantiation check, so nothing looked at what `'s` was
+bound to. With the axis landed, its own caller passes a plain `region { }` region — a
+region no reserving occurrence names, so a region that names no store — to `'s: affine`,
+which satisfies neither bound. The case is now
+`prov6-neg-a-region-argument-that-names-no-store`, expecting `reject PROV-6`, and its
+doc says what it now demonstrates. No other corpus verdict moved.
+
+**What this batch did not reach, and what it costs.**
+
+- **Runs of runs did not land, and the block pool depends on them.** *(Superseded by
+  6.0l: the one-level lift this entry priced is what B7a6 landed, and it carried the
+  pool's mechanism; the pool's two nominals turned out to wait on the nominal-generics
+  region axis instead.)* A run whose element
+  type is itself a run is still `CompositeValues`. The obstacle is representation and not
+  judgment: `CheckedFlatElement` is a non-recursive `Copy` element domain embedded in
+  `CheckedType`, so an element that carries a full type — a descriptor included — needs
+  either an interned element table travelling with the checked program or a boxed element
+  that costs `CheckedType` its `Copy`, and then the same lift in `IrType`, in A.1's layout
+  and ceilings, in the run-element read and write of the lowering, and in the release
+  walk. **A one-level lift is the cheaper shape** — an element that is a run of a *flat*
+  element, which is exactly `FixedVector<FixedVector<u8, 4>, 4>` and
+  `FixedVector<Vector<'s, u8>, 8>` — and it is what a later batch should price first.
+  Because 3.L.4's `BlockPool['s]` holds `FixedVector<Vector<'s, u8>, 8>`, the pool, its
+  `Lease`, and its three operations wait on that lift; so do [MSR-1]'s `len_of(P[i])` over
+  a run of runs, [MSR-2]'s element-position kill at that granularity, [LIV-2] condition
+  2's `grid[k]` against `grid[i][j]`, and B4's affine element read-out.
+- **`filled` is exercised at two copy types and not at an affine one.** Its bound is
+  `copy`, so an affine instance is what the bound refuses; `u8` and `u64` are what it has.
+- **[S22] and `seq_heap` are unchanged.** Both keep the two blockers 6.0j named, and the
+  release class this batch landed removes the second of them for the version that retires
+  the `heap` atom. *(Superseded by 6.0s: B7b retired the atom, spelled the row, and spent the release class on the free.)*
+
+### 6.0l B7a6 landed (v0.45)
+
+**One naming scheme, one level of lift, and the block pool without its two nominals.**
+This batch had two halves that share no code: the owner's S38 rename, which moves ten
+spellings and nothing else, and the representation lift 6.0k priced, which makes a slot
+able to hold a run.
+
+- **[S38] is in the design, the specification, the compiler and both corpora.** A
+  non-consuming derivation is `X_of(v)` and a consuming transformation is `verb_object`,
+  named after the type it produces or the boundary it moves. `fixed_vector`,
+  `arena_vector`, `arena_vector_proved`, `heap_vector`, `place_back`, `place_front`,
+  `take_back`, `take_front`, and A.2's two view rows `slice_of` and `mut_slice_of` are the
+  new spellings; `arena_frame`, `arena_extent` and the four readers do not move. The nine
+  kernel spellings are declaration records rather than [OP-1] rows, so none enters
+  `ReservedLowerNames` and **no corpus declaration collided with a new one** — the repair
+  B2 and B7a3 each had to make was not needed here. Twenty-five corpus files are respelled
+  and every verdict is unchanged. **One thing the scheme decides that B8 must act on** is
+  recorded in 3.S: `slice_of` is already a live [OP-1] row, so the view half puts two
+  [TYPE-6] domains on one spelling and B8 chooses which keeps it.
+
+- **The one-level lift landed, and it is real through the whole path.** `CheckedElement`
+  and `IrElement` are the element domain: a flat element, or one run of flat elements with
+  its descriptor in the slot. `CheckedType::FixedVector`, `CheckedType::Vector` and both
+  `IrType` twins carry it; A.1's ceiling for such a slot is the element type's own layout,
+  so a `FixedVector<Vector<'s, u8>, 8>` is eight four-word descriptors followed by its own
+  two; the element read and the element store move the whole aggregate; and the release
+  walk is emitted rather than refused. **A third level is not represented** and is an
+  explicit unsupported capability: an arbitrarily deep element needs an interned element
+  table or a boxed element that costs `CheckedType` its `Copy`, and no program in this
+  design asks for one.
+
+- **[PROV-6]'s release walk is emitted, in the order the rule states.** One helper per run
+  type whose window can hold a value deriving a release action, over the window and not the
+  capacity, in ascending logical order at `(head_of + i) mod cap_of`, with the run's own
+  backing released after the loop. Both backings are empty in this version, so
+  `heap_vector`'s free lands in a place that already exists. The predicate that decides
+  whether a run derives anything is now its **release class**: an extent-backed run of flat
+  elements derives nothing, which is what lets the pool hold eight of them and emit no
+  release code at all. `prov6-pos-a-run-visits-its-window-before-its-backing` is the case
+  that runs the walk, over a wrapped window whose origin a front removal moved.
+
+- **A formal region one level down is determined by its actual.** [FORM-8] already said
+  *at any depth of its `type`*; the compiler read only the top level, so a parameter of type
+  `FixedVector<Vector<'s, u8>, 8>` determined nothing and its caller was told to write a
+  region [FORM-8] forbids writing. It reads the element position too now, which is what
+  makes `pool_take` and `pool_release` generic over the store. Where **both** levels name a
+  region — `Vector<'s, Vector<'t, u8>>` — the outer one alone is substituted and the
+  position is the ordinary [TYPE-5] mismatch: fail-closed, and stated as a gap.
+
+- **Two resolver defects the design's own pool exposed.** A nominal's `region_params` [S20]
+  reached no owning declaration, so every nominal in a unit shared one region scope and
+  `Lease['s]` beside `BlockPool['s]` — 3.L.4's own two nominals — was refused twice over,
+  once as an [OWN-3] repeated region and once as a [TYPE-6] redeclaration. A nominal is its
+  own region scope, exactly as a function is; [OWN-3] now says so in one sentence and
+  `own3-pos-two-nominals-name-one-region` holds it.
+
+**The block pool runs, and what it is missing is not the lift.**
+`tests/programs/block_pool.wf` carves eight 256-byte arena-backed runs into one
+`FixedVector<Vector<'a, u8>, 8>`, leases one off the back boundary, and returns it to a
+free list `pool_release` **proved** had room, with both operations generic over the store.
+That is 3.L.4's mechanism entire. What it is missing is 3.L.4's two nominals, and the
+reason is not the containers half at all:
+
+- **A source nominal is not generic over its store.** `struct BlockPool['s]` declares, and
+  its region parameter is a fixed formal region that no call instantiates: a nominal
+  instance is keyed on type and const arguments alone, so `Chunk(page: move page)` at an
+  actual region `'a` is a [TYPE-5] mismatch against the formal `'s`. `linear struct
+  Lease['s]` waits with it. This is the nominal-generics region axis, and it is the same
+  shape B7a5 landed for a function's parameter types; **S20 declared it and nothing ever
+  instantiated it**, which no earlier batch could notice because no program used such a
+  nominal as a type.
+- **The proved release cannot discharge from the checked take.** 3.L.4 discharges
+  `pool_release`'s `requires room_of(pool.free) > 0` from `pool_take`'s own
+  `when leased is Some(value: got): room_of(rest.free) >= 1_u64`. That route is
+  [CALL-4]'s DEFERRED per-variant form over a returned enum, so the program branches on
+  `room_of` at the call site instead — one dominating branch per lease, which is the price
+  the design already names for the block's capacity and now pays for its room as well.
+
+**What did not land, and it is one change and not four.** [MSR-1]'s `len_of(P[i])`,
+[MSR-2]'s element-position kill at that granularity, [LIV-2] condition 2's `grid[k]`
+against `grid[i][j]`, and B4's affine element read-out all wait on the *same* thing, and
+this batch is what proved they are one item rather than four: a measured or targeted place
+is a binding plus field selections in this compiler — and the same shape is what [MSR-2]'s
+support, [OWN-7]'s overlap and [ENT-5]'s kill are keyed on — so admitting a subscript there
+is a change to the proof engine's place representation. The lift removed the container
+half of the blocker and left that one standing, visible on its own.
+
+**Verdicts.** The adapter moves from Pass=605 over 607 cases to Pass=610 over 612, with
+the one xfail and the one skip unchanged, and the snapshot corpus stays at Pass=491,
+Flip=0. No corpus verdict moved in either half of the batch.
+
+### 6.0m B8a landed (v0.45)
+
+**A nominal is generic over its store, and the block pool is 3.L.4 entire.** B7a6 left two
+items standing where 6.0k had listed four; this batch closes the first of them and one
+piece of the second, and says exactly what the rest costs.
+
+- **[S20]'s region axis is instantiated.** A nominal's `region_params` are components of
+  its type name [TYPE-2], so an instance is keyed on its region arguments beside its type
+  and const arguments; two instances of one declaration at two regions are two types under
+  the exact identity [TYPE-5] and [OWN-12] already perform; a `type` and a `construct`
+  write those arguments as the **leading members of the same `targs` list** the two runs
+  and the two providers already use; and a parameter position naming a nominal with one
+  region argument determines it from the actual, so [FORM-8] writes nothing at the call.
+  A `construct` writes them on exactly [TYPE-5]'s own ground for a construct's type
+  arguments — construction consults no expected nominal type — which is also why no
+  elision rule was added for that position.
+
+- **A store region is invariant at a call, and was not.** [PROV-1] has said since B7 that
+  two values have the same store exactly when their types name the same region, decided by
+  exact identity. The call path bound a formal region occupying a *container* position by
+  the ordinary least-region observation, so `fn wider['s](one: own Vector<'s, u8>, two:
+  own Vector<'s, u8>)` accepted two runs of two different extents whenever one region
+  outlived the other. The first store position now fixes the formal and every later one is
+  substituted with it, which makes a second store the ordinary [TYPE-5] argument mismatch.
+  `prov1-neg-two-runs-of-two-stores-at-one-formal-region` is that case, and it is a
+  soundness repair rather than a new rule.
+
+- **Where the region leaves the program is the lowering.** A region names a store for the
+  proof and nothing at run time, exactly as `IrType::Vector` has always erased one. Two
+  instances of one declaration that differ only in their region arguments — and in nothing
+  a run time can see — are therefore **one IR nominal**, which is what lets a callee's own
+  formal-region instance and a caller's actual-region instance meet at the boundary
+  between them without monomorphizing every function over its regions. The predicate is
+  content-checked and not assumed: a run's release class is read off its region's
+  declaration [PROV-6], so two instances whose classes differ are two representations, are
+  not erased together, and are not substituted for one another either.
+
+- **Two defects the pool exposed, both older than this batch.** A destructuring consume
+  written inside a `match` arm — `let Lease(run: back) = move lease;` — classified its
+  binder as an arm binder rather than a `let` binder, because the resolver asked whether an
+  `arm` was anywhere above it instead of which construct owned its `fieldbind` list; the
+  program stopped as an internal failure. And a caller's contract instantiation did not
+  substitute a nominal's region arguments, so `pool_release`'s own `requires` could not be
+  read at a call whose actual named a different region.
+
+- **`tests/programs/block_pool.wf` is 3.L.4 with its two nominals**, and the `linear`
+  modifier does what 3.L.7 says: the one path that does not return the lease has to take
+  it apart, and dropping it is refused. Four spellings in 3.L.4 moved and are corrected
+  there — `store` rather than `arena` for the parameter name [FORM-3], a one-statement
+  loop body, no clause naming a *result*'s field measure, and a written region argument at
+  each construct — and the first two are real bounds on the shape rather than preferences.
+
+- **B4's affine element read-out landed, and it is the only part of the subscripted place
+  that did.** `set (v[i], v[j]) = move v[j], move v[i];` exchanges two elements in one
+  commit: each `move` is the read-out of the target whose offset it provably names, and
+  the offsets [LIV-2] can decide are written literals, which is the same relation its
+  second condition already stated. It landed without the place model changing because a
+  `set` target already carries its own offset — the read-out is matched between two things
+  the statement holds, not between two resolved places. [TYPE-2], [LIV-2] and [BLK-3] are
+  amended for it: the direct swap replaces that rule's `take_back`/`replace`/`place_back`
+  route.
+
+**What did not land, and what it costs.** [MSR-1]'s `len_of(P[i])`, [MSR-2]'s
+element-position kill at that granularity and [LIV-2] condition 2's `grid[k]` against
+`grid[i][j]` are still one item and still the same one: a measured or targeted place is a
+`BindingId` plus a `Vec<u32>` of field selections, and every consumer of that vector —
+[MSR-2]'s support, [OWN-7]'s overlap, [ENT-5]'s kill, the checked container root, the
+element read and the release walk — is keyed on its shape. Admitting a subscript there is
+a change to that vector's element type and to `resolve_struct_path`, which is the one
+function that turns a written suffix chain into it, and it carries an [OP-4] obligation per
+subscript into a place that has no room for one today. The read-out above is the piece of
+that list which did **not** need it.
+
+**[CALL-4]'s per-variant route is not a small step.** 6.0l left the question of whether the
+routed relation over a non-prelude variant is now reachable, since the mechanism exists for
+`Ok`. It is not: the admitted route is `Ok` by prelude declaration identity, over a result
+whose type is `Result<T, E>` with `T` a fragment integer, with the payload field spelled
+`value` and the checked selector carrying a `PreludeDeclarationId` as its variant. Widening
+it to any variant of any returned enum moves the variant identity to the general
+constructor domain, widens the admission classification to a payload of any type, and
+changes what [CALL-6] restricts to an arm — four places, not one. **And it would not help
+the pool even so:** 3.L.4 discharges `pool_release`'s requirement from
+`when leased is Some(value: got): room_of(rest.free) >= 1_u64`, whose left side is a
+measure over a *result*'s field, which is [CALL-4]'s **first** DEFERRED admission and a
+different clause. The DEFERRED clause therefore stands and META-5's count does not move.
+
+**Verdicts.** The adapter moves from Pass=610 over 612 cases to Pass=618 over 620, with the
+one xfail and the one skip unchanged, and the snapshot corpus stays at Pass=491, Flip=0. No
+corpus verdict moved.
+
+### 6.0n B8b landed (v0.45)
+
+**The subscripted place, and the two soundness holes the batch found on the way
+to it.** 6.0l and 6.0m both said the same thing about the item that was left:
+[MSR-1]'s `len_of(table[i])`, [MSR-2]'s element-position kill at that
+granularity and [LIV-2] condition 2's `grid[k]` against `grid[i][j]` are one
+change to the proof engine's place representation. This batch is that change,
+and two repairs it uncovered.
+
+- **A result's region is the actual's.** 6.0m recorded that a nominal result
+  keeps the declaration's own instance and that "the caller's next transfer
+  substitutes it from the actual it holds". That is a hole, not a design: two
+  calls of `fn f['s: affine](store: &uniq Arena<'s, ...>) -> made: own
+  BlockPool<'s>` at two extents produced results of **one** type, so a run taken
+  from arena A could be typed later as a run of arena B. [FORM-8] already said a
+  call's undetermined region parameters are fixed by its own actuals and that a
+  related result region reaches as far as its inputs allow; what was missing was
+  the sentence carrying that into the result *type* and the substitution to
+  match. The substitution is now structural over the whole checked type domain —
+  under `Option` and `Result`, into a source instance's own region arguments and
+  its type arguments, into a run's element position, into a `box` referent and an
+  `arena`'s content, and into every ordinal of the compiler-owned result-list
+  nominal — and a run's release class is re-read from the substituted region
+  rather than carried across. A parameter position one level down takes it too:
+  every region a call has already fixed is substituted into the whole of each
+  later parameter type, which is what makes `absorb(store: &uniq Arena<'s, ...>,
+  spare: own Option<Vector<'s, u8>>)` type. **The erasure had to widen with it:**
+  B8a related two source instances of one declaration, and a substituted result
+  is as often a prelude instance or a result-list nominal, so the relation now
+  reads a name shape — one declaration at two regions, one prelude shape, one
+  result list with the same ordinal names, one `box` or one `arena` — and then
+  the same region-blind content comparison.
+
+- **A run's element read owed nothing.** [OP-4] says in one sentence that a
+  target's discharge judgment is *identical* to a read's. B7a3b landed the
+  element-position store with that judgment and the element read without it: the
+  entailment had an arm for `ArrayIndex`, one for `BufferIndex`, one for
+  `SliceIndex` and none for `RunIndex`, so every source read of a run element
+  fell to the walk-the-children default and submitted nothing.
+  `let run = fixed_vector::<u8, 4>(); let seen = run[0_u64];` compiled, linked
+  and ran, reading a raw slot outside an empty run's window. One program of the
+  executable corpus was standing on it — `run_queue.wf` read `grown[2_u64]`
+  where `append` published nothing about its result's length — and it now
+  publishes the relation its own `place_back` establishes.
+
+- **The place gains a step, and the step gains an offset.** A tracked place's
+  path is field selections and subscripts in written order, and a subscript
+  carries the offset the relations read: a written literal, a live `own`
+  fragment-integer binding, or an in-scope const generic. That restriction is
+  not a convenience — [OWN-7] decides two subscripted places by their offsets
+  and [ENT-5] takes each offset's own support into every measure term it occurs
+  in, so an offset neither relation can name would intern two measures of two
+  elements as one term. The domain reaches `ProjectedPlaceTerm`,
+  `GoalProjection`, `CallDatumProjection`, the checked container root and the
+  publication table's operand key; B8a's `CommitOffset` is superseded in place
+  by the offset the places now carry.
+
+- **[MSR-2]'s granularity is the overlap relation, not a flag.** Every element
+  write carries the element's own place — `P[i]`, with the offset a run target
+  wrote and the opaque offset a callee's projected write names — and a measure
+  dies exactly when the written place reaches its support. A measure of `P[i]`
+  dies at that write, a measure of `P` does not, and a whole-value write of `P`
+  kills both. The old "an element write kills no measure at all" clause is gone;
+  it was only ever true of a table with no measured element type.
+
+- **[OWN-7] over the complete path.** Two places fail to overlap exactly when
+  some step of their common prefix provably selects two different storages, so
+  `grid[k]` and `grid[i][j]` are decided at `k` against `i` and never at their
+  last offsets. [LIV-2]'s second condition and its element read-out both read
+  that path, which is what makes
+  `set (grid[0][1], grid[1][1]) = 9_u8, 8_u8;` two targets and the same pair at
+  one offset one. The lowering projects a measured place step by step and writes
+  an element store back the same way, so a descriptor is read through the slot
+  address that holds it and `grid[i][j]` reads and writes.
+
+**What this batch did not reach.** An [INV-1] affine factor is checked without
+the enclosing concrete instance in hand — the affine reader threads a
+`GenericSubstitution` and not a signature — so a subscript inside a measure
+place written in an `invariant` keeps its explicit unsupported report. That is
+the one position of the change, and it is a threading question rather than a
+representation one.
+
+**A third soundness hole, found and left where it lies.** It is older than this
+batch and outside it: a function that calls `arena_vector_proved` discharges
+*every* [OP-4] obligation it contains, whatever the base and whatever the
+offset. `region 'a { let workspace = arena_frame::<8192, 16, 'a>(); let table =
+array_new::<u8, 4>(0_u8); region { let first =
+arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64); let seen =
+table[9_u64]; ... } }` compiles, links and runs at the batch's own base commit,
+reading nine slots into a four-slot array. The row's published relations are
+therefore making the fact state universally discharging — which [MSR-4] says is
+a contradiction to be *stated first and once*, not a proof — and the repair
+belongs with that row and its own conformance evidence rather than here.
+
+**Verdicts.** The adapter moves from Pass=618 over 620 cases to Pass=627 over
+629, with the one xfail and the one skip unchanged, and the snapshot corpus
+stays at Pass=491, Flip=0. No corpus verdict moved.
+
+### 6.0o B8c landed (v0.45)
+
+**The contradiction a kernel row was publishing, the region a construct no longer writes,
+and the subscript an invariant may now name.** 6.0n found the first of these and left it
+where it lay, saying the repair belonged with the row; this batch is that repair, together
+with the owner's [FORM-8] ruling at a `construct` and the one position B8b did not reach.
+
+- **A row was making its caller's fact state universally discharging.** The reproducer is
+  6.0n's: `region 'a { let workspace = arena_frame::<8192, 16, 'a>(); let table =
+  array_new::<u8, 4>(0_u8); region { let first = arena_vector_proved::<u8>(store: &uniq
+  workspace, count: 8_u64); let seen = table[9_u64]; ... } }` compiled, linked and ran,
+  reading slot nine of a four-slot array; remove the acquisition and `table[9_u64]` is
+  refused at [OP-4] as it should be. Two defects made it, and they compose. **The first is
+  the denotation.** A.2 says every operand denotes what [MSR-3]'s table gives its
+  parameter's mode, and the compiler read *this call's call datum* for both of them,
+  because [ENT-2] clause (h) keys a call datum on the call, the ordinal, the projections
+  and the measure — and on nothing that separates a post-state occurrence of a measure
+  from the `at the call` occurrence of the same one. The row's own `len_of(store) =
+  len_of(store at the call) + advance<T>(count)` therefore instantiated as `t = t +
+  advance<T>(count)` over **one** term, which is the bound pair `advance<T>(count) <= 0`
+  and `advance<T>(count) >= 0`, and at a written count of eight `u8`s that is `8 <= 0`.
+  **The second is the kill.** A row's declared effect row is a callee effect like any
+  other and nothing collected it, so the store's pre-call measure facts —
+  `len_of(workspace) = 0` among them, established by `arena_frame`'s own row — survived
+  beside the row's post-state relations, and `0 = 0 + 8` is the same contradiction one
+  statement later. Both are landed: the operand *position* decides the denotation before
+  the datum table is consulted, and the place a row's `writes` names is written by the
+  call, so every fact whose support that place reaches dies at the boundary [ENT-5].
+
+- **[BLK-0] gains the sentence that makes this checkable, and the compiler checks it two
+  ways.** A row's published set is subject to [CALL-6]'s consistency judgment exactly as a
+  source declaration's is. That is not a restatement of "one fact was wrong": at a
+  contradictory point [ENT-4]'s least closure derives every relation and both signs of
+  every goal, so a caller discharges *every* obligation it submits after the call, the
+  subscript bounds and the integer domains among them — which is why one wrong
+  instantiation on one row bought a nine-slot read of a four-slot array in a function that
+  never mentioned the store again. Because a row's set is fixed by the specification and
+  not by a program, a row that fails the judgment is a defect in the specification or in
+  its implementation and is never a source rejection, so it is caught where defects are
+  caught: a unit test closes each row's own requirement and relation lists per declared
+  exit under the same difference-bound closure [CALL-6] uses, at three resolutions of the
+  one non-constant displacement `advance<T>(count)`, and the establishment path asserts at
+  **every** call of **every** row that the caller's fact state did not turn contradictory
+  across it. The instantiation defect above lives in the second check and not the first,
+  which is exactly why both are here.
+
+- **A `construct` elides the region arguments its own fields determine.** 6.0m recorded
+  that a construct writes its nominal's region arguments on [TYPE-5]'s ground —
+  construction consults no expected nominal type, so the written arguments are the only
+  supply there is. The owner's ruling is that this reads [FORM-8] one clause too narrowly:
+  a region is written exactly where the surrounding text does not determine it, and a
+  construct's **field operands are surrounding text**. A field determines a region
+  parameter exactly when its declared type names it, which is the same relation a
+  parameter position bears at a call, so `BlockPool(free: move free)` and `Lease(run: move
+  one)` are the canonical spellings and writing the argument is a [FORM-8] rejection whose
+  fix is `drop the region argument`. What does not move is [TYPE-5]'s ground: it is the
+  operands and the written members, never a destination, that fix the instance. The
+  implementation is what that ordering costs — the instance is formed **after** the
+  operands are checked, so the `&mut` pre-scan tolerates an elided list and interns
+  nothing, the shape a construct needs beforehand is read once off the declaration's own
+  symbolic instance (whose region arguments *are* its region parameters, which is what
+  makes a field type naming one visibly that parameter), and the formed instance is
+  reached through the deferred-nominal route no written text could have interned. A
+  nominal none of whose fields names its region — `struct Ticket['s] { count: u64; }` —
+  still writes it, and a construct whose complete type application is then empty writes no
+  `targs` list at all.
+
+- **An [INV-1] affine factor's measure place takes subscripts.** 6.0n named this the one
+  position its change did not reach, and called it a threading question rather than a
+  representation one; it was. The affine reader threaded a `GenericSubstitution` where the
+  place former needs a `FunctionSignature` and a loop depth, across five signatures. With
+  those in hand the place is formed under the enclosing concrete instance at the enclosing
+  depth — the same premise set the same place has anywhere else — and the subscript inside
+  it owes [OP-4]'s own bound, judged where the relation is *written*: at a loop header in
+  its entering ProofContext, at an `invariant_stmt` at that statement. An invariant
+  evaluates nothing and reads no storage, but a measure over a place whose subscripts are
+  not all discharged is no term there either, so the relation names a slot the run has or
+  it names nothing.
+
+**Verdicts, and the two cases the batch had to move.** The adapter moves from Pass=627
+over 629 cases to Pass=634 over 636, with the one xfail and the one skip unchanged, and
+the snapshot corpus stays at Pass=491, Flip=0. Three B8a conformance cases and
+`tests/programs/block_pool.wf` are respelled for [FORM-8] and keep the verdicts they
+recorded. Two more moved and both are named here because neither is a respelling.
+`type5-neg-a-construct-elides-its-nominal-region-argument` is **deleted**: its source is
+byte-for-byte the added `form8-pos-a-construct-elides-the-region-its-field-determines`
+apart from its `doc`, and it pinned exactly the sentence the ruling above retires, so the
+same program is now the positive case of the rule that replaced it rather than a verdict
+edited in place. And `blk1-pos-a-store-backed-run-is-a-run-element` **was standing on the
+contradiction**: it takes an arena-backed run out of a slot and appends one byte, and a
+run put into a slot and taken back out carries no measure of its own, because [MSR-3]'s
+element placements are DEFERRED — so its `place_back` was discharging `room_of(last) >
+0_u64` from the row's own contradiction and from nothing else. It now reads `room_of` and
+branches. That is the second cost of this repair being real rather than cosmetic, and it
+is the price the design already names: a measured value that passes through a slot loses
+its figure until [MSR-3]'s element placements land.
+
+### 6.0p B8d landed (v0.45)
+
+**The routed half of every row's publication, five more places a measured value keeps its
+figure, and a fourth soundness hole the second of those found.** 6.0o closed the
+contradiction a row was publishing and left the routed half of the same publication where
+it was; this batch is that half, together with the placements every later batch leans on.
+
+- **A routed row publishes on the arm its route selects.** [CALL-6] states publication
+  once for every callee — instantiated at the call, established on its continuation, a
+  routed relation restricted to the arm its route names — and `establish_kernel_relations`
+  skipped every relation carrying a route. `arena_vector`'s two arms therefore published
+  **nothing**: a caller that matched the `Option` learned neither the four measures of the
+  run the `Some` arm binds nor the two the `None` arm states about the store, and the
+  row's own `cap_of(store) = cap_of(store at the call)`, a member of both arms' sets,
+  reached neither. That is an omission and not an unsoundness — the caller derived less
+  than the row published, never more — and it is what made every caller of a refusing
+  formation row read `room_of` and branch. The destination list and the match arm are now
+  one path over one filter, `KernelPlace::Payload` denoting the arm's own payload binder,
+  and the `&uniq` state operand keeping the denotation [MSR-3] gives its position on both
+  arms. `pool_new`'s `Some(value: run)` arm now holds `len_of(run) = 0`, `cap_of(run) =
+  256`, `room_of(run) = 256` and `head_of(run) = 0`.
+
+- **B8c's per-call consistency assert splits with the set it judges, and [BLK-0] says
+  why.** A row's unrouted relations hold wherever the call's continuation is reached at
+  all, so the assert over them is unchanged and now runs on every exit rather than only on
+  a destination list. A contradiction across the *routed* half is admitted, because a
+  routed relation is available only on its own arm and a contradiction there is the
+  ordinary [ENT-3] statement that the arm is not reached — the same thing a written guard
+  the caller can refute produces, and the exits of one call partition its outcomes so at
+  most one can be refuted this way. What replaces the assert on every exit is the
+  denotation itself: a measure named both `at the call` and in a post-state is two terms
+  at every instantiation, which is where B8c's defect actually lived.
+
+- **[MSR-3] states one placement table, and five more of its rows land.** A **placement
+  datum** is the entry and call placements' own former at every naming event inside a body
+  at which a measured value crosses from one place to another: minted before the
+  statement's kills, read after them, empty support, formed and never proved. The
+  [LIV-2] `set`-target rebind, the **construct** (`Lease(run: move block)` gives
+  `lease.run` what `block` had), the **destructuring** (`let Lease(run: back) = move
+  lease;` gives `back` what `lease.run` had), the **payload** and a new **element**
+  placement all landed. The design's "two naming events outside the list" paragraph is
+  superseded for the first of its two: a `replace`'s displaced binding now carries what
+  the target place had, and [SET-2] 528 is unchanged — the commit still establishes no
+  fact, and the datum carries a fact the place already had.
+
+- **Two of the placements carry a boundary the place representation fixes, and both are
+  stated in the rule.** An element position is a place only at an offset a place relation
+  can name [MSR-1], because [OWN-7] decides two element places by their offsets; and a
+  tracked place's path is field selections, `deref` wrappings and subscripts [ENT-2], none
+  of which names a variant, so the payload placement is stated over a nominal enum exactly
+  one of whose variants carries fields — the prelude `Option` is one and the prelude
+  `Result` is not. The first of the two is why **the boundary rows still carry nothing
+  through the slot they write**: `place_back` stores at `len_of(vector)` and `take_back`
+  takes from `len_of(rest)`, and a measure term is not an offset this version admits. The
+  price 3.L.4 names is therefore still paid, and `tests/programs/block_pool.wf` and
+  `blk1-pos-a-store-backed-run-is-a-run-element` keep the `room_of` branches B8c gave
+  them.
+
+- **A fourth soundness hole, found by the element placement and closed here.** [ENT-5]'s
+  element-position carve-out is removed rather than narrowed in v0.45 and B8b landed that
+  removal for an L0 measure term; the **goal** path kept the old clause verbatim, so an
+  element write killed no measure goal, whatever place either named. A signed goal over
+  `len_of(P[i])` survived the write that replaced `P[i]`. Nothing stood on it while no
+  source re-established that measure — the residual was unproved and the program refused —
+  but the element placement establishes it, and the two together are a contradiction the
+  caller never wrote: `let width = len_of(grid[0_u64]); if width == 1_u64 { let old =
+  replace grid[0_u64] = move fresh; let seen = probe[9_u64]; ... }` compiles, links and
+  runs, reading slot nine of a four-slot array. `msr2-neg-an-element-store-kills-the-
+  element-s-own-length` is the corpus witness and it flipped to that accept. The repair is
+  the sentence [ENT-5] already states and the L0 path already reads: an element write
+  kills a measure goal over a place the written place is a prefix of, and no other. No
+  rule is amended, because the specification already said this.
+
+**What this batch did not reach.** The payload placement over an enum more than one of
+whose variants carries fields is [MSR-3]'s one remaining DEFERRED clause and needs a place
+step that names the variant it selects. The boundary rows' slot positions need an offset
+domain [OWN-7] can decide and are named as such rather than deferred. And `heap_vector`'s
+routed row instantiates on exactly the path `arena_vector`'s does — the publication is
+generic over the record — but no program can reach it: [FN-7]'s `command.heap` row is
+DEFERRED, so the row is reachable at a checked declaration and stops at lowering with an
+explicit unsupported report. Its declared set is judged by the row-data unit test with
+every other row's, and there is no conformance case to write for it until B7b.
+
+**Verdicts.** The adapter moves from Pass=634 over 636 cases to Pass=647 over 649, with
+the one xfail and the one skip unchanged, and the snapshot corpus stays at Pass=491,
+Flip=0. No corpus verdict moved and no program of the executable corpus changed.
+
+### 6.0q B8e landed in part (v0.45)
+
+**Two views, the element write, and the three parts of this rule set the corpus would
+not let land.** B8's rules are [VIEW-1], [VIEW-2], [VIEW-4], [VIEW-6] and [PROV-3]; two of
+them landed, and what stopped the rest is recorded here in the form the deferral takes
+rather than as a plan.
+
+- **[S35] renamed the type and the rename is the whole grammar change.** `slice<'r, T>` is
+  `Slice<'r, T>`, and because the type was a fixed atom of the `type` production and not an
+  entry of the nominal-type TYPEID domain, the capitalization is a *lexical* change: an
+  upper word is now read as its fixed terminal where the grammar has one and as a TYPEID
+  otherwise, which is the two-way reading a lower word already had. The lowercase word
+  `slice` is an ordinary identifier again. **Making the two views TYPEID entries beside
+  `Vector` was tried and declined**, and the reason is one this file should carry: an
+  elided view region is an *implicit region parameter* [FORM-8], minted by the role pass,
+  which runs before resolution; that pass can tell `Slice<u8>` from `Vector<u8>` by a fixed
+  atom or by a name comparison at a layer that holds no declarations, and the second is a
+  worse dependency than the atom.
+
+- **`MutSlice<'r, T>` is real, and `set view[i] = e;` through it runs.** The two views are
+  one checked shape at two loan strengths, the strength being a component of the type
+  name, so [TYPE-5]'s exact identity separates them with no clause of its own. [SET-1]
+  admits a target path through a view exactly at the exclusive strength; the write reaches
+  the origin through the view's own data pointer and leaves the descriptor unchanged, which
+  is one added IR instruction and one added emitter. Probe `p7`'s refusal is lifted, and
+  the same statement through a `Slice` is still refused, naming the shared view.
+  **The storage has to be addressable, and this compiler's `array<T, N>` is not.** An
+  array is a value here — an element commit rebuilds it and writes it back to its binding —
+  so the descriptor a view of one carries points at a snapshot, and the first version of
+  this batch's own positive case wrote 9 through the view and read 7 back out of the array.
+  An exclusive view over an array now stops as an explicit unsupported capability, the
+  positive cases are over `buffer<T>`, and `view2-pos-an-exclusive-view-over-an-array`
+  carries the specification's own accept at status pending with the stop as its reason. The
+  shared view over an array is unaffected: a live shared loan refuses every write to its
+  origin, so the snapshot and the array agree wherever the view is readable. That is the
+  design's addressability cost [VIEW-7] names for a destination, met one batch early and by
+  a different route.
+
+- **Exclusivity is not a clause.** [VIEW-2] makes the formation's own access the access its
+  strength names, so a second `mut_slice_of` over one place takes a unique borrow the first
+  view's loan already refuses: two exclusive views of one range are [OWN-5]'s ordinary
+  conflict at the *second formation*, and two shared views are admitted for the reason a
+  second shared borrow is. That is the design's own sentence, implemented without a second
+  overlap notion. **One sentence had to be added to it, and the reason is a hole the
+  element write opened.** With the write reachable, a shared view formed over a place a
+  live `MutSlice` views reads storage that view may change — `mut_slice_of(&uniq table)`,
+  `slice_of(&table)`, `set writer[0] = 9;`, `reader[0]` compiled, linked and read `7`.
+  That pair is [S31]'s child reborrow, which this version does not implement, so an
+  exclusive loan refuses a second view of its range at either strength and the pair is
+  refused at the second formation. When the child reborrow lands, that refusal is where
+  its admission goes.
+
+**[S27] is the one decision this batch had to hand back, and the corpus is why.** Making
+`Slice<'r, T>` copy would move a recorded verdict:
+`fn1-pos-returned-slice-inputs-run` writes `move pass_source`, `move left_source` and
+`move right_source` over shared views and is an accepted program, and a `move` of a copy
+value is [OWN-1]'s `MoveOfCopy`. The batch's instruction on a verdict flip is to stop and
+report, so the classification, the loan's last-use end condition and [VIEW-4]'s commit
+refusal are DEFERRED together with a stated delta. **This is not a cost the design
+overlooked** — 3.S already prices S27 at "a re-formation at every second use" — but it is
+the first place the price is paid by programs that already exist, and the owner's decision
+is whether those three `move`s are rewritten or the classification is dropped.
+
+**What else did not land, and what each costs.** The viewed domain is still `array<T, N>`
+and `buffer<T>`: neither run is viewable, so the non-wrap premise has no program to state
+it over and the two formation rows are still [OP-1] table rows rather than [BLK-0] records.
+Retiring them into the kernel domain is a larger change than its one-line description
+suggests, and the two obstacles are worth naming. The row's `vector` operand is a *shared*
+borrow, which [BLK-0]'s mode enumeration does not have; and the row's operand domain is
+four types rather than the one run parameter `V`, so the shape language needs a viewable
+class. Neither is deep, and both are outside a batch that had already changed the lexer.
+[VIEW-6]'s two-same-region-result refusal and [S31]'s child reborrow of an exclusive view
+are not implemented and are not stated as rules.
+
+**Verdicts.** The adapter moves from Pass=647 over 649 cases to Pass=654 over 657, the one xfail
+unchanged and the skip count moving from one to two — the second is this batch's own pending
+case, over the storage form the write cannot reach — with coverage complete at 150/150 and the
+snapshot corpus at Pass=491, Flip=0. No corpus verdict moved. The respell touched 12 conformance case
+sources, 3 snapshot case sources, 4 `tests/programs` sources, the compiler's embedded test
+sources, the conformance manifest's own prose and `docs/patterns.md`, and every one of them
+keeps the verdict it recorded.
+
+### 6.0r B8f landed (v0.45)
+
+**The rest of §7's B8, and the one decision the corpus had handed back.** [S27], [PROV-3]'s
+extent, [VIEW-4], [S31]'s child reborrow, [VIEW-6]'s same-region result refusal and the
+viewable run all landed; the fill-and-publish helper did not, and its delta is stated below.
+
+- **[S27] landed, and the three `move`s were respelled rather than the classification
+  dropped** (owner's delegate, 2026-09-05). `Slice<'r, T>` is copy and `MutSlice<'r, T>`
+  stays affine, which is one arm of the checker's ownership classification keyed on the
+  loan strength the type name carries. `fn1-pos-returned-slice-inputs-run` keeps its
+  recorded verdict — `run`, exit 0 — with `move pass_source`, `move left_source`, `move
+  right_source` and its two helpers' `return move` respelled away, and the same respell
+  reached six further conformance cases, three snapshot cases, four `tests/programs`
+  sources and the compiler's embedded test sources. **Every verdict of both corpora is
+  unchanged.** 6.0q's own sentence — that the decision the owner faces is whether those
+  three `move`s are rewritten — is now answered, and this entry supersedes it.
+
+- **A compiler defect the classification uncovered, and it is [EFF-1]'s own sentence.**
+  With the shared view used bare, `fn pass_slice(value: own Slice<'r, u8>) -> result: own
+  Slice<'r, u8>` began exhibiting `reads(value)` and its accepted `pure` row became an
+  [EFF-2] mismatch. [EFF-1] states the answer: a view parameter's effect path names the
+  viewed backing state and not the descriptor, and *merely moving, returning, or
+  structurally repacking that value does not observe it*. The checker attributed a read at
+  every place use of a loan-bearing type, which a consume had hidden because a consume
+  exhibits no read; a read *through* the view is the subscript's own attribution and is
+  untouched. Three place-use paths were narrowed by the predicate rather than by a name.
+
+- **[PROV-3]'s extent is the loan's holder set, and the last use is decided on document
+  order.** A loan now records the bindings that hold it — every binding whose value's
+  origin set names its place, which is the four events the rule enumerates (formation,
+  copy, pass, return) judged once over the set — and a *shared* loan is live at an access
+  exactly while one holder is live and still used at or after that point. Document order is
+  the canonical tree's own path order, so a use in a later statement or a later branch
+  compares greater; the one place document order is not execution order is a loop body, and
+  a use inside the innermost loop body containing the access keeps the loan live. Two
+  conservative arms are stated rather than hidden: a loan **no binding took** keeps
+  [OWN-4]'s region extent, because this checker has no program point between two operands
+  of one statement, and an **exclusive** loan keeps it too, which is the conservative
+  reading of the consume an affine view ends at.
+
+- **[VIEW-4] landed for `set` and is subsumed for `replace`.** A commit at a loan-bearing
+  place is refused unless the same statement's right-hand side consumes the displaced
+  value. The `replace` form is refused by [SET-2]'s region-free target class first, and
+  [DIAG-1] gives the citation to the lower-ranked rule, so `set2-neg-region-bearing-target`
+  keeps its recorded SET-2 verdict and no second case is written for a program that already
+  exists. Retiring that [SET-2] clause into [VIEW-4] would move a recorded verdict and is
+  not done here.
+
+- **The viewable run is where the batch found its soundness hole.** Widening the operand
+  class to the two runs [BLK-1] made the non-wrap premise reachable, and without it the
+  descriptor is one range over a window that is two: `place_back` four times, `take_front`,
+  `place_back`, `slice_of(&run)`, `view[3_u64]` compiled, linked and read a byte the run
+  does not own. The premise is now a declared requirement of the row, written as the
+  difference bound `head_of(vector) <= room_of(vector)` exactly as this file's 2026-09-05
+  correction says it must be, submitted at the formation and judged under [MSR-4]; the
+  wrapped run is refused citing [BLK-0] with the row, the requirement's position in its own
+  list and the instantiated goal, and the same run drained to empty is accepted from the
+  standing `head_of <= cap_of` alone. `blk0-neg-a-view-over-a-wrapped-run` is the witness.
+
+- **The rows are [BLK-0] records and their spelling is not.** §3.S's open item — whether the
+  run joins the existing [OP-1] `slice_of` family or the spelling passes to the kernel
+  domain — is decided as **one family now, the kernel domain at B7b** (owner's delegate,
+  2026-09-05). The record data moved: `KernelShape::Viewable` is the operand class,
+  `KernelMode::Shared` is the borrow mode [BLK-0]'s enumeration lacked, and each row carries
+  the requirement and the four relations a view publishes, judged by the record table's own
+  completeness and consistency tests. The *spelling* stayed, because [BLK-0]'s named
+  argument form would respell about a hundred and twenty live call sites and make fourteen
+  recorded conformance cases MODIFIED for no test of this batch; two domains may not claim
+  one spelling [TYPE-6], so the move lands with [S34]'s retirement of `array` and `buffer`.
+  That is a stated delta in [META-5], not an omission.
+
+- **[S31] landed for the child formed over the viewed place, and B8e's refusal is where its
+  admission went.** An exclusive loan now refuses the unique borrow a second *exclusive*
+  view would take and admits a second *shared* one; the parent is frozen against element
+  writes while the child lives, and resumes at the child's last use, which is [PROV-3]'s
+  extent doing the work. `view2-neg-a-shared-view-of-a-place-an-exclusive-view-holds` is
+  **deleted** and replaced by the positive case and the write refusal, which is the
+  disposition 6.0q predicted in its own words. What did **not** land is the child formed
+  through a *view holder* — `slice_of(&'r deref(destination))` from a `&uniq MutSlice<'r,
+  u8>` parameter — so **the fill-and-publish helper is still unwritable** and [VIEW-6]'s
+  ceiling half has no positive case. Its cost is exactly what 3.S.[S30] records: a helper
+  handed a destination can fill it and cannot publish it, so [VIEW-7]'s `write_once` still
+  takes its source from the function that owns the run. It needs a checked source for a
+  reborrowed descriptor, its lowering, and the call-boundary loan the returned child carries
+  at the caller; none of those is deep, and none of them is one line.
+
+**Verdicts.** The adapter moves from Pass=654 over 657 cases to Pass=663 over 667, the one
+xfail unchanged and the skip count moving from two to three — the third is this batch's own
+pending case, over the second storage form the element write cannot reach — with coverage
+complete at 152/152 and the snapshot corpus at Pass=491, Flip=0. One case is deleted and
+eleven are added; ten case sources are respelled
+and every one keeps the verdict it recorded. `tests/programs/run_views.wf` is the executable
+witness: a view over a run, the copy view used twice bare, an append after that view's last
+use inside the same region, a drained run viewed, and an exclusive view whose shared child
+reads what the parent wrote.
+
+### 6.0s B7b landed (v0.45)
+
+**The general store is a value, its allocation names a path, its run allocates and
+frees, and confinement is a numbered rule.** Everything §7's B7 lists under the brand,
+the window and the declaration domain landed except the retirements; those did not, and
+what they cost is measured below rather than argued.
+
+- **[S23] landed and it is what unblocked [S22].** `allocates` takes the same
+  formal-rooted `effect_path` `reads` and `writes` take, so the lowercase `heap` atom
+  retires to IDENT and `command.heap as heap: own Heap` becomes writable — label tail and
+  binder both. A `main` whose binder is spelled `heap` writes `allocates(heap)`, the same
+  bytes as the retired atom and now a path rooted at that parameter, so no transitional
+  atom and no respell were needed. The `arena REGIONID` alternative of the entry **stays**,
+  with its own stated retirement delta: an allocation into a *caller-supplied* region is a
+  write of the caller's storage that `[PAR-1]`'s overlap footprint reads, and dropping it
+  would leave a callee's arena allocation invisible at a call. That is the one place this
+  batch read the two adopted decisions as narrower than §7 wrote them, and the reason is a
+  soundness one rather than a scope one.
+- **The ambient heap writes no row at all, and that is the reading the two decisions
+  force.** `[PROV-6]` already says the ambient heap is not a value, that no writable type
+  names it and that no `effect_path` can be rooted at it. Under `allocates(path)` it
+  follows that a `buffer_new` or `box_new` allocation contributes nothing writable to a
+  row: the entry is not narrowed, it has no spelling. Its reachability is still exact and
+  is still closed over the call graph — the closure moved from the declared row to the
+  compiler's own retained record, computed in the same fixed point that derives every
+  target action — so `[PROG-1]`'s resource closure reads what it always read. The corpus
+  consequence is one mechanical respell across **343 gate sources**, every verdict
+  unchanged.
+- **`heap_vector` executes.** The take was already emitted as a `malloc`; what was
+  missing was the other half of the pair, and B7a5's release class on `IrType::Vector` is
+  where it went: a run whose class is `General` frees its backing after the window walk,
+  and a module holding one declares the two allocator symbols without writing a resource
+  record, because a refused take is the row's own `None` arm and never an abort.
+  `tests/programs/heap_run.wf` is the evidence — one `malloc`, one `free`, exit 12.
+- **D3's capability half is reachable for the first time, and it found the hole it was
+  written for.** Before this batch, `fn peek(run: own Vector<u8>) -> code: own u8` was
+  **accepted**: it holds no provider, its run reaches the return edge, and the release
+  that edge would run has no capability to spend. It is now refused naming the binding, the
+  edge and the absent capability, and the same helper taking `&uniq Heap` is accepted with
+  `writes(store)` in its row — which is D3's own sentence about the free being more visible
+  than forty scattered statements, now true in the compiler.
+- **[BLK-4] landed as one numbered rule** and both `[STOR-5]`'s deferred clause and
+  `[PROV-1]`'s `ConfinedTypeWithoutStore` sentence are withdrawn into it. Its container
+  clause is **the two runs and no other**, and the ground is stated rather than
+  convenient: the refusal exists for a measure a callee moves while its caller retains it
+  `[MSR-3]`, and exactly the four boundary operations `[BLK-3]` move one. `array<T, N>`
+  and `buffer<T>` each carry one measure fixed at formation that nothing moves, so neither
+  is a container nominal here and the clause retires with them. That reading is what keeps
+  **94 `&uniq buffer<...>` parameters** in the corpus compiling while `&uniq Vector<u8>`,
+  `&uniq Env` over a `FixedVector`, and probe `gen3`'s `&uniq Holder<T>` are all refused.
+  `[FN-2]`'s narrowing was already landed by B7a and needed no change.
+
+**[S39] landed with the batch, and its own three defects are named below.** The cell is
+`Box<'s, T>`, its two formation rows are `heap_box` and `arena_box`, and the program that
+proves it is `tests/programs/recursive_tree.wf` — the one §7's B7 could not keep and
+6.0j's own record said would have to move. It keeps its exit code.
+
+**Five compiler defects were measured rather than reasoned, and all five are fixed here.**
+
+```text
+| what was wrong                      | how it showed                       | repair                         |
+|-------------------------------------|-------------------------------------|--------------------------------|
+| a call whose parameter type named   | every call taking a `Heap` — the     | a position naming the entry    |
+| the entry heap's store region asked | first ones any program could write   | heap observes nothing and is   |
+| for that region's position in the   | — stopped at `Semantics/Compiler:    | skipped: the region is minted  |
+| callee's formal region list         | InvalidResolution`                   | before `main` and is no        |
+|                                     |                                     | declaration's formal           |
+| a store-backed run reached a scope   | `fn peek(run: own Vector<u8>)`       | D3's capability half, judged   |
+| exit in a scope holding no provider  | compiled, and its exit edge emitted  | over the bindings live at that |
+|                                     | a free the scope had no capability   | edge                           |
+|                                     | to spend                             |                                |
+| a cell field did not determine its   | `Branch(left: ..., right: ...)`      | a cell's store region is a     |
+| nominal's own region                 | demanded a written region argument   | component of its type, so the  |
+|                                     | its own operands fixed               | field determines it            |
+| a cell's region was not substituted  | every `Box` parameter mismatched its | the substitution reads the     |
+| at a call                            | actual                               | actual's own cell, as a source |
+|                                     |                                     | instance's already did         |
+| the region-blind nominal comparison  | two instances of a cyclic type       | the walk assumes the pair it   |
+| recursed forever on a cyclic type    | differing only in region compared    | is already deciding, which is  |
+| and answered at its depth cap        | unequal                              | what terminates it             |
+```
+
+**One assertion moved stage rather than rule, and it is worth naming.** `pure, writes(f)`
+is not derivable by the `effects` production, and regenerating the tables for the
+`allocates` entry's two alternatives tightened the decision that used to admit the bytes
+and leave the refusal to the checker. The conformance corpus keeps its recorded
+`reject EFF-1` verdict for the same program either way; only the compiler's own embedded
+assertion moved, and it moved to the parse stage through a helper added for it.
+
+**What this batch did not reach, and what it costs.**
+
+- **The retirements did not land: `buffer<T>`, `box<T>`, `arena<'r, T>` and `array<T, n>`
+  all survive.** The reason is measured. A `buffer<T>`'s replacement is a `Vector<'s, T>`
+  formed **empty** at a capacity and filled by a loop carrying 3.L.3's three invariants,
+  plus the provider threaded to every scope that lets one reach an exit — which is a
+  per-program proof obligation and a signature change, not a rename. `buffer_new` alone
+  stands in **113 conformance cases, 20 corpus programs, about 137 snapshot cases and
+  about 446 places inside the compiler's own embedded test sources**; `array_new` in 24
+  cases and 117 embedded places; `box_new` in 5 and 76; `arena_new` in 4 and 55. Retiring
+  the spellings without migrating all of them would leave the specification and the
+  compiler disagreeing about several hundred accepted programs, which is exactly the
+  defect the branch rule forbids. **This is the same obstacle 6.0j priced for `array`
+  alone, now measured over the whole surface**, and it is one migration rather than four:
+  the four types share the corpus and the ambient heap.
+- **The `slice_of` / `mut_slice_of` spelling move is still blocked on that**, for
+  `[TYPE-6]`'s reason and no other: the viewable class still contains `array<T, N>` and
+  `buffer<T>`, and two domains may not claim one spelling. 6.0r's own sentence said the
+  move lands with `[S34]`'s retirement, and the retirement is what did not happen.
+- **`[CALL-4]`'s remaining admissions stay DEFERRED**, no migrated program having needed
+  one.
+- **`box<T>`'s replacement was a gap and the owner closed it: [S39] is `Box<'s, T>`.**
+  The gap this batch found is recorded because the answer follows from it: the nearest
+  form the design had was a one-element `Vector<'s, T>` — `heap_vector` at count 1 plus
+  one `place_back` — which costs three descriptor words where a cell needs one pointer
+  and, worse, owes `0 < len_of(v)` at **every read** of a container the language knows is
+  never empty. The owner's ruling of 2026-09-06 adds the cell instead: no measure at all,
+  the same brand and the same release class a run has, `heap_box` and `arena_box` as its
+  two formation rows, and `deref` plus the existing destructuring consume as its reader
+  and its taker. `tests/programs/recursive_tree.wf` runs on it, with the region parameter
+  on the enum §7 asked for and the recursive release walk `[PROV-6]` admits.
+  **What the cell's inventory did not inherit is the `Option`**: every run formation takes
+  a count and a borrowed provider, so its refusal has nothing to hand back, while a cell
+  formation consumes the value it is given, so its refusal is a `Result<Box<'s, T>, T>`
+  whose `Err` arm carries that value. That is `[L3]` deciding a signature.
+- **The cell's own migration stopped at one program.** `recursive_tree.wf` moved;
+  `prefix_expression.wf`, `par_layout.wf` and `option_slots.wf`, and the twelve
+  conformance cases that name `box<T>` or `box_new`, did not. The reason is the one above:
+  `box<T>` and `box_new` do **not** retire in this batch, so those sources are the live
+  coverage of a live surface, and migrating them would delete that coverage while risking
+  the exit codes the corpus pins — `prefix_expression` in particular threads an
+  infallible `box_new` through a `Result`-returning parser, and the cell's refusal is a
+  second failure the parser's own error enum would have to carry. They migrate when the
+  ambient heap does.
+- **`ConfinedTypeWithoutStore` landed and moved two corpus sources.** The refusal is
+  taken at the field's own `type`, over the whole-program fact that the entry selects no
+  `command.heap` row, so the two positive cases that declared a `Vector<u8>` field in a
+  unit with no heap — `prov1-pos-a-store-branded-run-in-a-field` and
+  `blk1-pos-both-runs-are-nameable-types` — take the row in their entries. Both keep their
+  recorded `accept` verdicts; the repair is the one the rule's own restructuring names.
+
+### 6.0t B7c4a landed (v0.45)
+
+**The range-bearing operations take views, a shared borrow of a run is an ordinary
+borrow, and the acquiring rows' allocation-fit obligation is enforced.** Round 8's limit
+probes were the input: ten `L*` programs and six `repro-*` programs, each one a shape the
+specification admits and this compiler refused or, worse, accepted. Eight of them compile
+now, one is a specification refusal it was always meant to be, and the two that remain are
+named with their cost.
+
+- **[VIEW-7] landed as row data and not as a rule, and that is the correction this batch
+  owes 3.K.4.** The seven range-bearing operations [SYS-8] take one **operand class** at
+  their own range-bearing parameter: `&uniq MutSlice<u8>` where the operation writes the
+  storage, `&Slice<u8>` where it reads it, and — transitionally, for exactly as long as
+  `buffer<T>` and its `buffer_new` row live — `buffer<u8>` at the same position. That
+  transitional arm is what let a corpus of thirty-one blocked cases move a case at a time
+  rather than in one flip. Nothing in the specification gains a `[VIEW-7]` id: the content
+  is `[SYS-8]`'s and `[SYS-2]`'s own row data, the rule count stays 153, and `[META-5]`
+  declares the change under system operations and declaration records. Two dangling
+  references the pass left — `[CALL-3]` and `[VIEW-7]`, neither a rule of this version —
+  were caught by `make check`'s own `spec` stage and repaired to cite the rules that state
+  the content.
+- **[BLK-4] does not refuse a `&uniq` view referent, and the correction is in place
+  above.** A view carries no measure a callee can move; `[VIEW-4]` forbids replacing one
+  through such a borrow and `[ENT-5]` kills what a callee writes through one at `[MSR-2]`'s
+  storage granularity. §7 B8's fill-and-publish helper is therefore admitted at a source
+  declaration on exactly the ground an `[SYS-8]` row's `&uniq` destination is admitted.
+- **A shared borrow of a run is one gap, not three.** `&FixedVector<T, n>` as a parameter,
+  `let holder = &items;` over a run, and `deref(c).buf[i]` through `c: &Cursor` all stopped
+  as `SemanticUnsupported { RegionsAndBorrows }`, and `[BLK-4]` refuses only the `&uniq` of
+  a run. A run's storage lives in its owner — inline slots for the frame-resident run, the
+  descriptor for the store-resident one — so a borrow of either is the address of that
+  storage exactly as a borrow of a struct is, and both runs now reach it through that one
+  path. The holder's `deref` resolves to the same measured place the deref-free path forms,
+  so every measure and subscript over a borrowed run is the ordinary one. **A run holder
+  written where the run is required is `[TYPE-7]`'s missing dereference**, as a `buffer`
+  holder already was; `L5` therefore compiles as `deref(holder)[0_u64]` and not as written,
+  which is the one probe whose answer is a refusal rather than an acceptance.
+- **The acquiring rows' `fits::<T>(count)` was not enforced at all**, which is a soundness
+  hole and the batch's first commit. `[BLK-0]` says the spelling is the record notation of
+  `[OP-9]`'s allocation-fit obligation and `[OP-9]` says the predicate is the same object
+  `buffer_fits::<T>(n)` is; nothing submitted it, so `heap_vector::<i32>(store, count: n)`
+  at an unconstrained `n` compiled while `buffer_new(n, 0_i32)` was refused. It now goes to
+  the same judgment through the same path at every call of a row that carries it. Three
+  rows carry it — `heap_vector`, `arena_vector`, `arena_vector_proved` — `fixed_vector`
+  carries none because its count is a type constant, and the two cell rows carry none
+  because they take no count. `v033-neg-allocation-fit-unproved` keeps its recorded
+  `reject OP-9` over `buffer_new`; the `heap_vector` spelling of the same program cites
+  `OP-9` too, which is `op9-neg-kernel-acquisition-without-a-fit-proof`.
+- **An elided view region at a parameter position is a region of its own, and reading it as
+  anything else made recursion impossible.** `input: own Slice<u8>` beside `store: &uniq
+  Heap<'s>` made every recursive call an `[OWN-12] BorrowConflict`, because a view argument
+  whose origin was the enclosing declaration's own view parameter claimed an origin that
+  overlapped *every* other argument whatever place that argument resolved to. That reads an
+  unknown as everything. `[FORM-8]` gives the position one region of its own and `[OWN-3]`
+  makes distinct formal regions incomparable inside the callee, so what such an argument
+  claims is the place that one parameter binding reaches — which is what the effect
+  projection already attributed to it. `L2` compiles; `L2b`, which writes the region, stays
+  the `[FORM-8]` refusal it should be.
+- **Const parameters and region parameters are two axes, and generic recursion is finite
+  where `[FN-6]` permits it.** A source `fn` carrying any generic parameter beside written
+  `region_params` stopped outright, and so did every call cycle among generic functions.
+  An instance is keyed on its type and const arguments while a region parameter is
+  substituted positionally from the call's own actuals `[FORM-8, FN-2]`; and `[FN-6]` has
+  already refused every cycle whose call writes anything but the caller's own type
+  parameters, so a surviving cycle that repeats the caller's whole parameter list is the
+  caller's own instance and mints nothing. `L9`'s shape, `repro-recursive-generic` and
+  `repro-recursive-const-generic` all compile and run.
+- **`[MSR-3]`'s placements are per placement, not per depth.** A construct over a struct
+  whose own field is a run carried nothing, so the run arrived at `outer.inner.samples`
+  with no measures at all while the one-level form worked. `[MSR-1]` admits a measure place
+  formed with any number of field selections, so a struct operand names one measured place
+  per run beneath it; each placement now carries them all to the destination's matching
+  path. The walk descends through source `struct` fields only — a cell, a run element and
+  an enum payload are each reached by a step a field path does not take — so
+  `msr3-neg-a-rebind-carries-the-run-and-not-its-elements` keeps its recorded rejection.
+
+**Four further compiler defects the corpus found, each fixed against the rule that states
+the answer.**
+
+```text
+| what was wrong                       | how it showed                        | repair                          |
+|--------------------------------------|--------------------------------------|---------------------------------|
+| [MSR-4]'s interval step named an     | `requires index < cap_of(run);       | the step names a measure atom   |
+| atom's term through the binding      | requires room_of(run) <= 0;` left    | through its own measure term,   |
+| whose image it is, and a measure     | the subscript's `index < len_of(run)`| which is the candidate set the  |
+| has no binding                       | unproved                             | affine/L0 index already builds  |
+| [FN-9]'s return-position judgment    | `return len_of(taken);` under any    | a run's measure is the same     |
+| knew the array, buffer and slice     | `ensures` was                        | [CALL-4] return datum and is    |
+| measures and not the run's           | InvalidPostconditionReturn for a     | admitted on the same terms      |
+|                                      | `FixedVector<T, n>`                  |                                 |
+| a container nominal at a `const`     | `const bad: Box<i32> = ...;` stopped | the question is decided on the  |
+| item type reached no interning pass  | as an internal InvalidResolution     | resolved declaration class,     |
+|                                      |                                      | before the type's arguments are |
+|                                      |                                      | parsed: it is [CONST-2]         |
+| a substituted const parameter kept   | an instance's header invariants      | both value positions read the   |
+| the *callee's* declaration identity  | compared a run's capacity against a  | parameter the substitution      |
+| at every position reading it as a    | constant nothing outside the callee  | supplies                        |
+| value                                | can name                             |                                 |
+```
+
+**One performance defect was measured rather than argued, and only its local half is
+fixed.** A body of chained `set v = place_back(vector: move v, value: x);` commits takes
+0.22 s at 10 commits, 0.82 s at 20, 7.0 s at 40 and 32.8 s at 60, at 97 MB, 97 MB, 348 MB
+and 1150 MB peak; the counted `filled` loop that fills 100 slots with the same row takes
+0.21 s and 97 MB, which is one compiler invocation's floor. The
+cause is exact and instrumented. Each commit adds four terms and two kill events; every
+kill materializes the `[ENT-4]` closure; and the closure over these terms is **complete** —
+after k commits every measure of the run has a known constant value, so all `V^2` ordered
+pairs carry an exact difference bound. At 60 commits that is `V = 242` and 120
+materializations of 58564 bounds each: `O(n^4)` time and, because each materialization
+interned one derivation node per bound, `O(n^3)` retained memory. The memory half is a
+defect and is fixed: a bound whose materialization the previous snapshot already interned
+at the same value is that same fact, so the existing node is reused and 60 commits peak at
+652 MB rather than 1150. **The time half is not local and is not attempted**: reducing
+`2n` full `O(V^3)` fixed points needs an incremental closure, or a sound elimination of the
+killed middles alone, and both restructure `[ENT-4]`'s closure together with its derivation
+identities. `close`'s own doc names the obstacle — a killed middle can participate through
+an implicit type edge or through disequality strengthening, neither of which an
+explicit-edge projection reproduces soundly. It is a batch of its own.
+
+**What this batch did not reach, and what it costs.**
+
+- **Four `accept-par3-staged-*` destinations keep `buffer<u8>`.** The intended destination
+  is a `filled` inline run viewed by `mut_slice_of`, which this compiler still stops as
+  `ExclusiveViewOverInlineRun`, and the only alternative — a store-resident run —
+  introduces a general-store loan that changes exactly the `[PAR-3]` property those cases
+  are evidence for. The two `view2-pos-an-exclusive-view-*` cases keep their `pending`
+  status for the same reason; the `reason` of the one still named `-over-an-array` is
+  brought current and now names the stop its migrated source actually reaches. Its id is
+  not: renaming a conformance case is conformance evidence and this batch had no test that
+  needed it.
+- **A generic cycle that varies a *const* argument stays an explicit unsupported
+  capability, and that is a defect of this document.** `[FN-6]`'s syntactic criterion is
+  written over *type* parameters, and `[MSR-6]`'s const generics arrived after it. A call
+  writing `grow::<n + 1>` on a cycle is not polymorphic recursion by that wording, yet its
+  instance set is unbounded. The smallest reading this batch implemented keeps the
+  criterion exactly as written and reports the capability; the rule should say
+  *generic parameters* where it says *type parameters*, which is a one-word amendment with
+  a stated delta of numbered rules +0.
+- **`L7` and `L8` are refusals and stay refusals.** `L7` hands an `own Slice<u8>` where a
+  shared borrow is required — `[TYPE-5]` — and `L8` is `[BLK-4]`'s own container clause,
+  which this batch narrowed for views and not for runs.
+
+**Verdicts.** The adapter moves from Pass=676 over 680 cases to Pass=689 over 693, the one
+xfail and the three skips unchanged in id, expectation and status, and coverage complete at
+153/153. Thirteen cases are added, none deleted, none renamed, and thirty-three case
+sources are modified with every recorded expectation unchanged. The recorded-verdict
+snapshot corpus reports Pass=491, Flip=0 before and after, over three modified sources.
+Three executable-corpus programs take the view forms and keep their exit codes.
+
+### 6.0u B3 landed (v0.45)
+
+**A call's kill classification is read from the callee's declaration, and D1 is closed.**
+[CALL-1], [CALL-2], [CALL-3] and [CALL-5] are four added rules, 157 remain, and no
+grammar, spelling or record count moves. The defect they close is exactly the one the
+sweep of 2026-09-03 recorded: the compiler derived the element flag of a projected callee
+write from the *actual's* syntactic shape, so a callee that replaced the whole referent of
+its `&uniq buffer<u8>` parameter left its caller holding the length the buffer had before
+and indexed freed storage with it. `ent5-neg-callee-uniq-buffer-replace-kills-length`
+turns XPASS with the residual `9_u64 < len_of(line)` and moves from `xfail` to `runnable`.
+
+- **The selector is one value per declared parameter, computed once.** A `CallTransport` is
+  read from the declared mode and type — a `&'r` of any type is [CALL-1]'s shared borrow, a
+  loan-bearing type own or behind a borrow is [CALL-3]'s viewed range, an `own` is
+  [CALL-2]'s value, and every other `&uniq` selects none and kills conservatively. A system
+  operation and a kernel row have no body, so their declaration records are read the same
+  way: [SYS-8]'s range-bearing operand class is a viewed range at either member, which is
+  why no I/O program moved, and a row's `&uniq` state operand is a run or a provider whose
+  descriptor the row changes.
+- **[CALL-2]'s copy half is a correction this batch owes the entry above.** The 6.0
+  drafting said an `own` argument is a consuming use; the migration found that a `Slice`
+  handed at an `own` parameter twice must leave the caller's length standing between the
+  two calls, which is what lets a view-taking helper be called in a loop. [OWN-1] already
+  classifies the view as copy and this compiler already behaved correctly; the rule now
+  says so, and `call2-pos-a-copy-actual-at-an-own-parameter-is-not-a-consume` pins it.
+- **[CALL-3]'s measured-element half has no program on this surface, and that is a
+  capability and not a rule defect.** The design's §7 B3 asks for a callee writing through
+  `&uniq MutSlice<'r, Vector<'s, u8>>` to kill `len_of(origin[0])` while keeping
+  `len_of(origin)`. A view's element domain is the flat one [TYPE-2] gives it, so
+  `MutSlice<Vector<'s, u8>>` stops as `SemanticUnsupported { CompositeValues }` at the
+  view's element position — the smallest reproducer is that type written at one parameter.
+  For a flat element no fact of this document lives in element storage at all: a copy read
+  out of an element is an L0 fact about its own binding, and an element re-read carries no
+  fact either way, so the surviving half is the whole observable effect here. The rule
+  stays stated over storage so that a widened element domain exercises the other half
+  without amendment, and the compiler's classification is stated the same way.
+- **Two limits the corpus migration found, and neither weakens a rule.** First, **a helper
+  handed `&uniq MutSlice<'r, T>` cannot pass its destination on.** [OWN-6] admits the child
+  reborrow `&uniq deref(destination)`; this compiler refuses it in the semantic pass
+  (`borrow_addresses_storage` excludes a view referent) and, with that refusal lifted,
+  refuses it again in lowering, where an addressed reborrow of a descriptor has no
+  representation. The raw DEFLATE decoder's `out` chain is three helpers deep — `inflate`,
+  `decode_fixed`/`decode_dynamic`, `emit_byte`/`copy_distance` — so it keeps its
+  `&uniq buffer<u8>` spelling and `raw_deflate_vectors.wf` reads its destination's length
+  again after the call. Second, **a helper handed a view cannot form the shared child a
+  `write_once` source needs**, because [VIEW-2]'s viewable operand class is the storage and
+  not a view; `wfgrep`'s `report_failure` and the boundary driver's `publish_reason`
+  therefore became `assemble_failure` and `assemble_reason`, handing their length back for
+  the caller to publish. Both are the same missing form and belong with B8's already
+  DEFERRED view-holder reborrow; the hand-back is the shape [CALL-2] prescribes and it cost
+  those two programs one result each.
+- **A third, smaller finding.** A relation published on a call result reaches a `let`
+  binder and not a `set` target: `set assembled = helper(...)` lost `result <= capacity`
+  where `let assembled = helper(...)` keeps it. The migrated callers bind rather than
+  assign. [ENT-3.S12]'s destination list names both, so this is a compiler gap.
+
+**What the corpus paid.** Seventeen sources lost a caller's measure at a call. Ten
+executable programs were migrated to the view — `dir_walk`, `grayscale_pixels`,
+`par_layout`, `percent_decode`, `raw_deflate_boundary`, `raw_deflate_dynamic_decode`,
+`raw_deflate_vectors`, `telemetry_packet`, `utf8parse` and `wfgrep` — each keeping its
+exit code, and three conformance case sources followed with their expectations unchanged.
+Eight snapshot rows moved from `accept` to `reject`: they hand a `&uniq buffer<u8>` to a
+helper, which is the shape [CALL-5] makes conservative, and the sweep programs themselves
+are unchanged as that corpus's model requires.
+
+**Verdicts.** The adapter moves from Pass=689 over 693 cases to Pass=697 over 700, no
+xfail remaining and the three skips unchanged in id, expectation and status, with coverage
+complete at 157/157. Seven cases are added, one status changes, three case sources are
+modified with every recorded expectation unchanged, and none is deleted or renamed. The
+recorded-verdict snapshot corpus reports Pass=491, Flip=0 before and after, over eight
+moved verdicts and no modified source.
+
+### 6.0v B7c4b-1 landed (v0.45)
+
+**The last three call-shaped capabilities, the [S34] const run, and most of the corpus
+off the retiring surface.** Numbered rules +0 and grammar productions +0: every one of the
+four is a sentence inside a rule this version already adds or amends. One [META-5]
+DEFERRED clause is discharged — the child reborrow of a view formed through a *view
+holder* — leaving five.
+
+- **A helper re-lends the destination it was handed, and the fix is one arm.** `&uniq
+  deref(destination)` at a `&uniq MutSlice<'r, u8>` parameter is [OWN-6]'s ordinary child
+  reborrow; the checker refused it because `borrow_addresses_storage` excludes a view
+  referent and lowering had no representation for an addressed reborrow of a descriptor.
+  Both disappear once the child is *not* an addressed reborrow: a view value **is** a
+  descriptor, so the child is that descriptor read once more, exactly as a
+  system-resource holder's child is. The child carries the parent's origin set, [OWN-6]
+  suspends the holder for the statement, and [CALL-3] classifies the inner callee's write.
+  `own6-pos-a-helper-re-lends-its-view-destination` is the witness. 6.0u's first limit is
+  closed.
+
+- **[VIEW-2]'s viewable operand class gains the view holder, and the fill-and-publish
+  helper is writable.** `slice_of(&'r deref(destination))` forms the shared child of the
+  view a helper was handed, on this rule's own sentence: a view is a view of storage and
+  nothing in the rule reads what that storage is made of. Three things had to be true
+  together, and each is stated where it belongs. The child's loan region is the one the
+  operand borrow writes, and the parent's own region must outlive it [OWN-10]. The parent
+  is frozen against element writes while the child lives — inside the callee that is a
+  shared loan standing at the holder's own place, which is exactly what an element write
+  through that holder resolves its origin to. And **the freeze has to reach the caller**:
+  the returned child is a shared loan on the caller's storage, so a shared loan is
+  registered at the caller for every origin place that already carries an exclusive one.
+  [VIEW-6]'s ceiling gains the half that makes the result legal: a *shared* view result
+  additionally has the formal-view origin of every borrow-mode view parameter at the same
+  region and element type, at either parent strength. `view6-pos-a-helper-publishes-the-
+  child-of-its-destination` runs and `own5-neg-a-published-child-freezes-its-parent-view`
+  refuses the write. 6.0u's second limit is closed and 6.0r's DEFERRED clause with it.
+
+- **A `set` target is the [ENT-3.S12] destination a `let` binder is.** The compiler had
+  two routes for a `set`: a kernel row published from its own relation list, and a source
+  callee kept [FN-9]'s narrow receiver route, which requires the target to *also* be an
+  argument. The repair is to send both through the destination route a destructuring
+  `let` and a `set` target list already take, with the target's own kills as the events
+  every substitution must survive. `set x = helper(...)` now carries `result <= capacity`
+  where it dropped it. 6.0u's third finding is closed.
+
+- **[CONST-2] gains the [S34] const form, and it costs no new representation.** A
+  `FixedVector<T, n>` of const-eligible flat `T` with exactly `n` literal entries is
+  const-eligible; its four measures are the standing facts `len_of = cap_of = n` and
+  `room_of = head_of = Z` rather than stored words, so it **lowers to element storage
+  only** and every use materializes the descriptor from the type. That is exactly what the
+  checker's array place already is — four exact constants over a run of `n` slots — so the
+  const's storage type *is* that place and every read [CONST-2] admits reads it with no
+  new plumbing: the subscript discharges from `len_of = n`, all four readers answer from
+  the type, `slice_of` gives the `immutable-const` origin, and `mut_slice_of` and a `set`
+  are the same two [CONST-2] refusals they were. The recorded delta is one wart: a
+  diagnostic about such a const still names `array<T, N>`, because that is the internal
+  spelling of the const run until [S34]'s retirement renames it.
+
+**What the corpus paid, and what it found.** The migration moved the positive programs
+to the successor run and extent surfaces, including restructuring
+`x-buffer-borrowed-columns-run` and `x-borrowed-pool-tree-run` to lend views and a
+scalar borrow rather than a `&uniq` of a struct holding runs. It did not retire the
+legacy conformance obligations. Active v0.51 still admits `array<T, N>`, `buffer<T>`,
+and `arena<'r, T>`, so six cases over those forms remain in the corpus alongside the
+successor evidence: the array-length case, the measured-buffer call case, the whole-buffer
+replacement case, the FN-1 arena-origin case, and the two STOR-4 arena cases. The measured
+buffer call remains `xfail`: whole-referent replacement currently stops at the explicit
+`BorrowedBufferDescriptorMutation` capability. Its expected source verdict remains the
+later OP-4 rejection, to be verified when that capability is implemented.
+
+**Three defects the migration found, each recorded rather than papered over.**
+
+1. **[FN-1]'s ceiling containment refusal is still pinned on the legacy arena
+   surface.** The attempted successor shapes — a view over a parameter run, over a
+   borrowed run, or over cell content — are refused earlier by [OWN-10], which forbids a
+   borrow of storage the callee reaches at a caller-supplied region. That observation
+   does not remove `fn1-neg-returned-slice-arena-origin`: active v0.51 still admits its
+   arena spelling, so the case remains the direct conformance obligation. Whether a
+   successor-only shape reaches the same refusal remains open.
+
+2. **At this checkpoint the [PAR] footprint judgment did not resolve a bound view
+   argument.** `argument_place` resolved a direct `slice_of` expression and a borrow, but
+   a **bound** view value resolved to nothing, so an overlap pair or staged loop handing a
+   `MutSlice` on was denied for the unresolved-footprint condition rather than for its own
+   reason. It cost `par_layout.wf` both of its eligible folds until the metric table was
+   handed on as `&Vector<f64>` — a shared borrow of the run, which resolves — instead of
+   as a view, and made four `accept-par3-staged-*` cases report condition 7 where
+   they reported 3 or 5. The missing declaration-to-binding map was a compiler gap,
+   not a rule. **Closed in 6.0x**, by exactly that
+   map: the four cases report 3, 3, 5 and permitted again.
+
+3. **3.L.5's growth policy is writable except for its contract.** `bs_new` and
+   `bs_reserve` compile verbatim — the drain-front/append-back walk, its eight invariants,
+   the destructuring consume and the one early `dispose` — but every
+   `ensures when Grew(value: ready): cap_of(ready) == total;` is refused: a variant-routed
+   measure clause is [CALL-4]'s own DEFERRED route. `growable_vec.wf` therefore reads the
+   four measures back at the caller and branches on them, which is what a writer must do
+   until that route lands.
+
+**What did not land.** Eight `tests/programs` sources still name `buffer<T>`:
+`byte_string.wf`, `dir_walk.wf`, `wfgrep.wf` and the five-file `raw_deflate*` chain. Each
+is built on a `ByteString`-shaped struct lent `&uniq`, which [BLK-4] refuses once the
+field is a run, so each needs the same hand-back-by-value restructure `growable_vec.wf`
+took, applied across a program of four hundred to fourteen hundred lines with its own
+proof obligations at every call. They are stated here as the remaining work rather than
+half-migrated.
+
+**Verdicts.** The successor cases are additions. All six restored legacy cases remain
+obligations because their source forms remain in active v0.51; none is deleted by the
+migration. Five retain their expected runnable verdicts. The measured-buffer call case
+retains its expected OP-4 rejection and remains tracked as `xfail` because whole-referent
+replacement reaches the explicit `BorrowedBufferDescriptorMutation` capability stop.
+It becomes runnable only when the ordinary compiler reaches its expected OP-4 rejection.
+The final corpus has 749 rows, 206 added and zero removed from the 543-row base; its
+manifest has one `xfail` and one skip. The earlier pass totals and deletion counts in this
+section described the abandoned removal and are not current corpus measurements.
+
+### 6.0w B7c4b-2 landed in part (v0.45)
+
+**The flagship's cost shape re-derived, the read-only array places moved to the
+const run, and the retirement itself not landed.** Numbered rules +0, grammar
+productions +0, atoms +0, writer operation spellings +0: this batch changes no
+rule of the specification, and the retirement of `buffer<T>`, `box<T>`,
+`arena<'r, T>` and `array<T, n>` is still owed. What it does is pay two of that
+retirement's preconditions and record two findings that change its shape.
+
+- **The three §9.1 cost-shape rows the eight-program merge left red are
+  re-derived from the migrated `wfgrep`, not loosened.** The declared-function
+  list is re-derived off the source and gains five names, two of them the store
+  surface's own `zeroed_bytes` and `zeroed_words`; without them the census read
+  neither an allocation nor a call target, because `zeroed_bytes` is the first
+  `wfgrep` helper the host inliner leaves out of line. The release-close count
+  moves from nine to seventeen, and the whole of the growth is `main`'s: a take
+  from the store is a `match` on an `Option` plus the window-viewability test
+  the source writes before forming a view, and four of them are eight new edges
+  leaving `main`, each carrying the release of the `command.cwd` `DirectoryRead`
+  the entry holds for the run [STOR-3]. The resource abort keeps its `noreturn`
+  property and loses its reachability: a refused take is an arm `wfgrep`
+  answers with exit 70, so the program has no call site into the abort at all,
+  and the census exemption is now asserted vacuous. The eleven allocations stay
+  eleven and change shape — the take is `malloc` because a store hands out raw
+  slots, and the zero fill is the source's own loop — so eight expanded
+  `@malloc`s plus three calls into the helper are asserted with their sum.
+
+- **A run's length is not a fact of its type, and that is what an array
+  migration costs.** `array<T, N>` gave a standing `len_of = N` at every place
+  of that type. `FixedVector<T, n>` gives a standing `cap_of = n` and carries
+  `len_of`, `room_of` and `head_of` as descriptor words [BLK-1, OP-9]; only the
+  [S34] const form has all four standing. So a read-only array place migrates
+  by a rename of its declaration into a `const` item and nothing else — which is
+  what the compiler's own unit tests did, with every migrated source compiling
+  to the same diagnostic or the same acceptance before and after — while a
+  *mutable* or *parameter* array place does not migrate at all without a
+  declared `requires len_of(v) == n;` or a caller that publishes it, and its
+  subscript exhibits `reads` where an array subscript was `pure`. Three
+  entailment assertions were re-derived for exactly this, and the recorded
+  measure census over a run is now one constant where an array place fixed
+  four.
+
+- **A `FixedVector` const of a tag-only enum is not const-eligible.**
+  `const flags: FixedVector<Bool, 1> = [False()];` is a [CONST-2]
+  `InvalidConstValue` because enums are excluded and `Bool` is one, so an
+  `array<Bool, N>` place has no const-run migration and keeps a value form.
+  Whether the exclusion should hold for a tag-only enum is [CONST-2]'s own
+  DEFERRED question and is not reopened here.
+
+- **A view over a run crossing a may-suspend call takes the stackless ABI where
+  the same view over an array did not.** This is the finding that blocks the
+  `array` retirement rather than merely pricing it.
+  `a_stack_backed_slice_crossing_the_suspend_point_keeps_the_synchronous_abi`
+  compiles one program in which `slice_of(&local)` is live across a
+  `write_once`; with `local` an `array<u8, 1>` the module names no
+  `wf__stackless` symbol, and with `local` the same-sized run built by
+  `fixed_vector` and one `place_back` it names seven. It was isolated: a run
+  built by `place_back` that is not viewed across the suspend point keeps the
+  synchronous ABI, so the trigger is the loan of run storage and not the run.
+  No rule of this design states that difference, the test's own subject is a
+  *stack-backed* slice so the const run is not an available migration, and the
+  retirement of `array<T, N>` cannot land until the stack judgment's treatment
+  of a loan of run storage is either derived or repaired.
+
+- **The const-run diagnostic wart 6.0v recorded is closed**, and it was two
+  warts rather than one: the message named `index` and `len`, neither of which
+  is a current spelling — a subscript is `p[i]`, and `len` was superseded at
+  [S36]. It now names the run, the subscript, the four readers and the shared
+  view, which is exactly [CONST-2]'s read set.
+
+**What did not land, and why it is one piece.** The retirement cannot be
+partial: the moment `buffer<T>`'s production leaves [GRAM-3], every remaining
+`buffer`, `box` and `arena` occurrence in the compiler's embedded test sources
+stops parsing, and about eleven hundred of them remain. Every sentence of
+6.0q-6.0v and of §7's B7 that calls a spelling transitional therefore still
+holds and is left standing.
+
+**Verdicts.** Unchanged in every corpus: the adapter at Pass=702 Skip=3 over
+705 with coverage 157/157, and the recorded-verdict snapshot corpus at
+Pass=484 Flip=0. No conformance case is added, modified, deleted or renamed.
+
+### 6.0x B7c4b-4a landed (v0.51)
+
+**The two compiler capabilities the retirement's remaining judgments needed, and
+the last conformance and writer material off the retiring surface.** Numbered
+rules +0, grammar productions +0, records +0: nothing here changes the
+specification. Both items are the existing rules read over the container
+surface, and both were measured as compiler gaps in 6.0v rather than as
+questions about the language.
+
+- **A view argument is a footprint on the storage it was formed over, and 6.0v's
+  second defect is closed.** [VIEW-1] makes a view a claim on its origin range
+  and [VIEW-2] puts the loan there rather than on the descriptor, so the fix is
+  a per-binding origin the place prepass records at the formation and every
+  consumer reads through: `argument_place` for a bound view handed on directly
+  or borrowed, `collect_operand_reads` for a view subscript and a view measure,
+  and the `set` target of a view element write, which had been resolving to the
+  descriptor's own place and was therefore the fail-**open** direction. A view
+  parameter and a view a callee handed back stay unresolved and still deny,
+  which is what the condition-7 advice now names. `par_layout.wf` needed no
+  change: it had already been restructured to hand its metric table on as
+  `&Vector<f64>`, and both folds stayed eligible throughout. Five
+  `accept-par3-staged-*` cases reported condition 7 and none does now:
+  `denied-hoisted-scratch` and `denied-read-before-write` report 3,
+  `denied-carried-scratch-byte` reports 5, and `iteration-own-scratch` and
+  `loop-with-prologue-break` are **permitted**, which is what the first one's
+  own doc always said its shape was for. The fifth case was not in 6.0v's
+  list; its doc stated no condition, so nothing there had to be corrected.
+
+- **A run the iteration takes from a store is iteration-own storage, and the
+  provider borrow the take holds is the serialized provider access.** [PAR-3]
+  states no member-form enumeration — that is [PAR-1]'s window — so a kernel
+  row is projected by its own record: its parameter modes give the loans, and
+  `reads(store)`, `writes(store)` and `allocates(store)` each project onto the
+  store operand's place. An extent reserved outside the loop is therefore
+  serialized-P and the run it hands out is replicated, which is exactly the
+  table `par3-pos-a-per-iteration-run-from-the-store-is-iteration-own` reports
+  and runs on.
+
+- **The give-back the general store is owed is modelled, and it is what
+  separates the two stores.** A `Vector<'s, T>` at a general store is released
+  to that store when its scope exits [PROV-6, STOR-1], and that release is not
+  a statement, so a walk over the body reaches it nowhere. Recorded in the
+  remainder — every scope of the body exits on the iteration's own edge — a
+  per-iteration `heap_vector` take puts its store on both sides of the cut and
+  condition 5 denies it, while a bump extent, whose release is empty [BLK-2],
+  keeps its take in the prologue alone. Without this the resolver above would
+  have been fail-open for the general store: two overlapped iterations giving
+  storage back to one allocator at once, reported permitted.
+
+- **The store's two rows are validated against the selected target, and the
+  README defect is confined rather than repaired.** `StoreTake` and `StoreBox`
+  reached no arm of `backend::target` at all, so `heap_vector`, `arena_vector`,
+  `arena_vector_proved`, `heap_box` and `arena_box` were size- and
+  alignment-unchecked. They now carry the element's actual layout against
+  [OP-9]'s ceilings, its alignment against what the storage can promise — the
+  allocator's guarantee for a general store, the extent's own constant for a
+  bump one — and the non-overflow of [OP-9]'s retained count bound times the
+  actual stride, which is the joint fact [STOR-6] says neither the source proof
+  nor the qualification establishes alone. What they deliberately do **not**
+  carry is the retiring rows' byte ceiling against the allocator-parameter
+  domain, and that omission is the finding: a take the store cannot satisfy
+  hands back `None`, which is an arm of the source program, so an unproved
+  runtime count is an ordinary program on the store surface where it is a
+  ruleless `TargetLayout(Unrepresentable(RuntimeSizedAllocation))` stop on the
+  buffer's. `op9-neg-kernel-acquisition-without-a-fit-proof` is the rejection
+  that still stands, at the source, with the rule and a residual. The README
+  paragraph is therefore narrowed to `buffer_new` and `buffer_vacant` and kept
+  until they go, not deleted.
+
+**Three defects the work found.**
+
+1. **The handed-out completion transfer refused a view destination.** The
+   moment the resolver made `completion_read_boundary.wf`'s two `read_at` calls
+   a permitted pair, the program stopped with `Backend: InvalidIr`: the
+   handed-out submit asserted its destination's IR type was `IrType::Buffer`
+   exactly, while the direct wrapper it replaced had only ever named the
+   *rendered* type, which a view and a buffer share. Both are one contiguous
+   `{ ptr, i64 }` range, and [VIEW-1]'s measure row is what says so, so the
+   assertion is now over the element type and admits either descriptor. The
+   program's own subject — two independent positioned reads in flight — was
+   dead for as long as the resolver denied the pair.
+
+2. **The staged judgment modelled no compiler-derived release.** Recorded above
+   as the give-back; it is listed again here because it was found by asking
+   what a `heap_vector` inside a staged loop would be reported as, not by a
+   failing test, and because the same hole may exist for other derived actions
+   the judgment's statement walk cannot see.
+
+3. **The staged *lowering* refuses a region that carries a drop record, and
+   that is what keeps `tcp_fanout.wf` on `buffer_new`.** The permission was
+   never the obstacle: with the scratch an extent reserved inside the loop body
+   and the destination a view of the run it hands out, the ledger prints the
+   same verdict and the same four dispositions the buffer form prints, with
+   only the replicated row's citation moved. What does not follow is the
+   hand-out. `direct_staged_tail` walks into the last statement of the body
+   only through a `region` whose `fallthrough_drops` are **empty**, and a
+   region binding a store-backed run carries the run's release, while a region
+   binding a view of one carries the view's — a record for a value that owns
+   nothing and whose release is empty [VIEW-1, PROV-6]. Hoisting the view out
+   of the region is not available either: [OWN-10] refuses a borrow of local
+   storage whose region is the loop body's own, so a view over iteration-own
+   storage needs a `region_stmt` and therefore a drop record. Measured on the
+   flagship: with the migration applied the loop is still permitted and
+   `@wf__par_publish` disappears from the module, which is
+   `four_peers_are_served_at_once_under_par_on_both_routes` failing on the
+   fourth peer. `tcp_fanout.wf` is therefore left exactly as it was, and the
+   migration is stated here as remaining work rather than half-landed; the
+   repair is to place a region's fallthrough drops in the staged drain, or to
+   record no drop for a value whose release action is empty.
+
+4. **The wide probe is a `buffer<T>` lowering at both ends.** The recognizer
+   matches a `CheckedExpression::BufferIndex` byte walk and the emitter refuses
+   any operand whose IR type is not `IrType::Buffer`, so a run walk is not
+   recognized at all. `wide_scan.rs` therefore cannot be migrated: its subject
+   is three wide loads, and a migrated oracle would assert three and find none.
+   Extending the probe is not a rename — a buffer is one contiguous range whose
+   descriptor's second word is its length, and a run is a window whose base is
+   `head_of` modulo `cap_of` [BLK-1], so the window guard needs three measure
+   words and `base + index` is right only where `head_of` is proved zero. It is
+   a precondition of the `buffer<T>` retirement with its own cases.
+
+**What did not land.** `tests/programs/tcp_fanout.wf` keeps its `buffer_new`
+scratch and its `&uniq buffer<u8>` destination, for the lowering reason above;
+it is the last `tests/programs` source on the retiring surface that a judgment
+rather than a program shape holds back. The retiring surface's own test suites
+stay:
+`compiler/src/semantic/tests/buffers.rs` (50 hits) and `arenas.rs` (35), each
+now carrying a module note saying which judgments have no run twin and why;
+`compiler/src/backend/tests/exhaustion.rs` (45), whose allocation-refusal
+fixtures pin an abort edge the refusing rows do not have and whose cycle
+fixtures do have a twin but are calibrated to the retiring layout at every
+depth, frame size and symbol count; and `compiler/tests/programs/wide_scan.rs`
+(10), for the probe above. In `backend/tests/buffers.rs` the two target-domain
+cases marked "no twin" in 6.0v are re-answered: the alignment half now has one
+and is migrated to `heap_vector` and `heap_box`, and the byte-ceiling half has
+none for the reason the finding above states rather than for a missing arm.
+
+**Verdicts.** The adapter moves from Pass=727 Skip=3 over 730 to **Pass=730
+Skip=3 over 733**, the three skips unchanged in id, expectation and status, with
+coverage complete at 161/161. Three cases are added and none deleted;
+`fn8-pos-requires-affine-row` is modified in source, doc and rule list with its
+`run` exit-0 expectation unchanged, and four `accept-par3-staged-*` docs are
+corrected in the manifest and in their own sources where they had been rewritten
+to describe condition 7. No case flips a verdict. The recorded-verdict snapshot
+corpus is **Pass=484 Flip=0**, unchanged: no row moves, silently or otherwise.
+
+### 6.0y B7c4b-4b landed in part (v0.51)
+
+**The last writer program off the retiring surface, one lowering defect closed,
+and the retirement itself not landed — stopped on evidence.** Numbered rules
++0, grammar productions +0, atoms +0, writer operation spellings +0: this batch
+changes no rule of the specification. What it does is take the flagship's
+scratch off `buffer_new`, close the first half of 6.0x's third defect, and
+report two findings that change what the retirement costs. The retirement's
+own specification text and its first compiler cut were written, measured, and
+reverted in the same branch; the two commits are `a15613e7` and its inverse,
+kept so the next batch starts from the text rather than from the brief.
+
+- **`tests/programs/tcp_fanout.wf` leaves the retiring surface, and its scratch
+  moves into the callee.** `serve_one` reserves its own 256-byte bump extent,
+  takes a run from it, opens the run's capacity through a `zero_fill` helper,
+  and writes it through the exclusive view the run hands back; the caller's
+  fixed-trip loop keeps its staged hand-out, the ledger still reports it
+  permitted, `@wf__par_publish` is still in the `--par` module, and
+  `four_peers_are_served_at_once_under_par_on_both_routes` still passes on both
+  routes. The program names no retiring type or row, so `tests/programs` is
+  complete on the new surface.
+
+- **The staged walk stopped counting a release that performs nothing.**
+  `direct_staged_tail` walked into a `region` only when its `fallthrough_drops`
+  were empty, which counted a record for a value that releases nothing — a
+  view owns no storage [VIEW-1, PROV-3] and a bump extent's run is reclaimed by
+  its own region reset [BLK-2] — as work a split body would lose. It now asks
+  whether each record performs anything, through one reading of that question
+  shared with the target stage: `type_derives_release` moved into `lowering.rs`
+  and `type_requires_cleanup` delegates to it. This is the first half of 6.0x's
+  defect 3 and it is real, but it is **not** what was holding `tcp_fanout.wf`
+  back; the finding below is.
+
+**Two findings, and they are why the batch stopped.**
+
+1. **A staged loop can carry no iteration-own storage at all once `buffer<T>`
+   retires, and the flagship's fourth disposition goes with it.** The staged
+   lowering refuses a prologue-declared binding whose address is taken, because
+   an addressed binding is one frame slot and four in-flight iterations cannot
+   share it. A borrow of either run **is** the address of the run's own storage
+   [OWN-2, and the compiler's own `borrow_addresses_storage`], while a borrow of
+   a `buffer<T>` was a descriptor by value — so `mut_slice_of(&uniq scratch)`
+   over an iteration-own run disqualifies the hand-out where
+   `&uniq scratch` over an iteration-own buffer did not. Handing the run to the
+   callee **by value** avoids the borrow and was tried: it fails on [FORM-8],
+   because a region name may be written only where two or more positions of one
+   declaration mean it, so an owned `Vector<'s, T>` parameter occurring once can
+   carry no region name and therefore no `'s: affine` bound, its store region is
+   the fail-closed general one, and the value is linear in a callee that holds
+   no `Heap<'s>` [PROV-6]. Returning it in a result or a region-bearing struct
+   closes the [FORM-8] hole and reopens the first one, because the returned run
+   is then a remainder binding with a backedge drop the drain refuses.
+   Three shapes, three different rules, no route. `tcp_fanout.wf` therefore
+   loses its `replicated` place: the ledger classifies three places where it
+   classified four, and the assertion that pinned the fourth is retired at
+   `the_fanout_loop_states_its_permission_verdict` with this reason written out.
+   The classification itself stays covered by
+   `par3-pos-a-per-iteration-run-from-the-store-is-iteration-own`, which is a
+   permission case and takes no hand-out. **`STAGED_MAY_SUSPEND_CALL` in
+   `backend/tests/parallel.rs` has the same subject and will lose the same
+   half**, and `compiler/tests/programs/wide_scan.rs` is still 6.0x's defect 4.
+   Whether the language wants a run whose borrow is not an address, or a staged
+   lowering that gives each in-flight iteration its own slot, is an owner
+   question and not a batch's to settle.
+
+2. **An extent reserved outside a loop and taken from per trip is provable, and
+   that is the shape a staged loop's iteration-own run has to take.** The
+   obligation `arena_vector_proved` submits is `room_of(store) >= advance<T>(n)`
+   at every trip, and the entailment carries it from the header invariant
+   `len_of(workspace) <= served * 256_u64` — a linear invariant over the store's
+   own `len_of`, not its `room_of`, because [BLK-2]'s rows publish the post-take
+   `len_of` and leave `room_of` to [MSR-2]'s standing identity. The `room_of`
+   spelling of the same invariant does not discharge. Recorded because it is the
+   writer form the retirement's migrations need and it is not obvious.
+
+**What did not land, measured rather than estimated.** Every rule the
+retirement touches, its grammar productions, its generated syntax data, the
+operation-family table and the `CheckedType` variants were changed, built, and
+reverted; 54 compiler build errors remained at the stop, before the checked
+expression variants, the IR operations, the emitters and the target arms were
+touched at all. Across `compiler/src` **923 occurrences** of the four retiring
+type spellings and their seven formation rows remain, of which about six
+hundred are embedded test sources in 41 modules. Each such source needs a
+migration decision rather than a rename, because the replacement of a
+`buffer_new` is a store, a take, a fill loop with three invariants and a
+re-derived verdict — the two worked examples are `tcp_fanout.wf`'s `zero_fill`
+and finding 2's header invariant. `tests/codegen/cases/bounds/**` (94 fixtures,
+no runner) is untouched and is with the owner.
+
+**Verdicts.** Unchanged: the adapter at Pass=730 Skip=3 over 733 with coverage
+161/161, and the recorded-verdict corpus at Pass=484 Flip=0. No conformance
+case is added, modified, deleted or renamed by this batch.
 
 ### 6.1 What the compiler did in this session
 
@@ -5535,14 +8627,14 @@ enum go to B7; [S16]'s ordered result list and the destinations that read it go 
 |       |                                                            | expected "1 written type argument"    |
 | q5    | the same call written `count::<u64>(...)`                  | ACCEPTED, exit 0                      |
 | q6    | `fn split(v: own u64) -> (low: own u64, high: own u64)`    | REJECTED [GRAM-2], expected IDENT     |
-| q7    | `ensures len(kept) >= 1_u64;` on a run result              | REJECTED [GRAM-5] at the comparison   |
+| q7    | `ensures len_of(kept) >= 1_u64;` on a run result              | REJECTED [GRAM-5] at the comparison   |
 | q8    | D1 verbatim, fully elided regions                          | **ACCEPTED, exit 0**                  |
 | q9    | `set c = bump(cell: move c);` at a live affine local       | REJECTED [STOR-1] AffineSetTarget     |
 | q10   | a const generic read as a value                            | REJECTED [TYPE-5] UnresolvedUse,      |
 |       |                                                            | available: [ConstGeneric]             |
 | q11   | tag-only `enum Ticket { Open(); Closed(); }` used twice    | ACCEPTED, exit 0 — it is copy         |
 | q12   | `let b = move a;` then `b[3_u64]`                          | REJECTED [OP-4], residual             |
-|       |                                                            | "3_u64 < len(b)"                      |
+|       |                                                            | "3_u64 < len_of(b)"                      |
 | q13   | the control: the same subscript with no rebind             | ACCEPTED, exit 0                      |
 | q14   | element writes in a loop, then a subscript of the same run | ACCEPTED, exit 0                      |
 | q15   | three counters advanced on a flat three-arm `match`, six   | REJECTED [INV-1] `a_hi`, Backedge,    |
@@ -5605,7 +8697,7 @@ view value, not its argument borrow, holds the loan. `f2b_tail`, `f8_tailframe`,
 `n3_propagate_loop` are `FunctionFallthrough`. `r2_6` and `m05` are the nominal
 region-parameter parse errors; `r2_4`, `r2_4b`, `r2_4c` show the measure kill is
 root-granular today; `q3`, `q7`, `x4`, `g7`, `p6_partial` show a partial move kills the
-root and its residual is freed; `n14`, `n15`, `n19` show no loop publishes `len = N` as
+root and its residual is freed; `n14`, `n15`, `n19` show no loop publishes `len_of = N` as
 an equality; `c8` shows a by-value transformation is not `pure`; `r1_relend`,
 `r1_relend_affine`, `m19` are [PROV-7]'s reason; `k21`, `k21b`, `k08`, `k31`, `x1c`,
 `x1d`, `g4` accept the fill loop's arithmetic and `g3` rejects it without the published
@@ -5739,7 +8831,7 @@ right column says. The reports are superseded and the audit trail is in git.
 | r1 F1-1,2 [OWN-11] refuses value-in/value-out; reinit set makes | [LIV-1] join agreement                     |
 |   liveness path-dependent                                       |                                            |
 | r1 F1-3,11-14,16 terms killed by their own operation; no        | [MSR-1] subscripted places; [BLK-1]'s      |
-|   subscripted len; no FIFO, no exchange, no runtime target      | window; [BLK-3]; 3.L.2's transposition     |
+|   subscripted len_of; no FIFO, no exchange, no runtime target      | window; [BLK-3]; 3.L.2's transposition     |
 | r1 F1-4..7 views have no loan strength; [BLD] cannot release    | [VIEW-2] the view value holds the loan;    |
 |                                                                 | [BLD] deleted                              |
 | r1 F1-8,9,10 a heap free exhibits nothing; the Heap may die     | [PROV-6] the release is a write; [LIV-1];  |
@@ -5748,7 +8840,7 @@ right column says. The reports are superseded and the audit trail is in git.
 |   static providers; E's stack; composition not a function       | [RUN-1], [STK-3], [STK-4]                  |
 | r1 F3-R1..R7, 2.2, 4.1-4.17, D1-D6 unregistered rules; clause   | 3.K.11's eight conditions; [MSR-5];        |
 |   operands; the publishes column has no source                  | [CALL-6]                                   |
-| r1 F4-1..9 room has no reader; no filled construction; per-     | [BLK-0]'s readers; 3.L.3; [MSR-4];         |
+| r1 F4-1..9 room_of has no reader; no filled construction; per-     | [BLK-0]'s readers; 3.L.3; [MSR-4];         |
 |   family proof routes; same-region view results alias           | [MSR-5]; [VIEW-6]                          |
 | r2 F1-a1..a16 a move equality names a dead root; D1 on &uniq    | [MSR-3]'s datum; [PROV-3] uses 2 and 3;    |
 |   MutSpan; a view at table[k]; release target not a function    | [PROV-6]; [PROV-7]; [RUN-3]                |
@@ -5764,7 +8856,7 @@ right column says. The reports are superseded and the audit trail is in git.
 |   [CNT-5] and [PROV-6] disagree; one store per activation; a    | [PROV-5]; [PROV-6]; [MSR-2]; [MSR-3];      |
 |   datum no producer mints; the kill fires on every element      | [PROV-3]                                   |
 | r3 F2-NA1..NA13 a move plus a reinit set hands a lease to the   | [PROV-1]; [RES-5]; [RES-7]; [STK-1];       |
-|   wrong store; an arena's cap dies; no ceiling data             | [PROV-5]; [RUN-1]; [RES-10]                |
+|   wrong store; an arena's cap_of dies; no ceiling data             | [PROV-5]; [RUN-1]; [RES-10]                |
 | r3 F3-1..14, I1..I19 the datum has one producer and five        | [MSR-3]; [CALL-4]; [MSR-5]; [MSR-2];       |
 |   consumers; a user multi-return publishes nothing              | [PROV-4]; the register; §7                 |
 | r3 F4-1..12 a linear container has no disposal; no preservation | [PROV-6]; [PROV-1]'s closure argument;     |
@@ -5796,7 +8888,7 @@ right column says. The reports are superseded and the audit trail is in git.
 | r6 F3-1..12, I1..I17 [BLK-0] names S13; a provider relation is  | [CALL-6]; D2; 3.L.5; [VIEW-2]; [CALL-4];   |
 |   inadmissible; the chain is broken at three links              | [RES-10]; the register; 3.S                |
 | r6 F4-1..13 the completeness quantifier; three placements; a    | [CALL-7]; [MSR-3]; D2; Q14-Q17; A.1        |
-|   multi-target set; no bulk-move row; A.1 charges cap           |                                            |
+|   multi-target set; no bulk-move row; A.1 charges cap_of           |                                            |
 ```
 
 Where a round-6 disposition was **false about its own draft**, round 7 found it and 6.11
@@ -5814,7 +8906,7 @@ reports are superseded.
 | F1 (memory and fact soundness)                                | disposition                                 |
 |---------------------------------------------------------------|---------------------------------------------|
 | 1 BREAKS [MSR-3] keys a declaration-domain operand on `writes` | **[MSR-3]** keys every denotation on the    |
-|   coverage, so seq_place publishes len(P) = len(P) + 1         | parameter's MODE: `own` = that call's CALL  |
+|   coverage, so seq_place publishes len_of(P) = len_of(P) + 1         | parameter's MODE: `own` = that call's CALL  |
 |                                                                | datum, shared borrow = the live term,       |
 |                                                                | `&uniq` = post-state in a declaration row   |
 |                                                                | and inadmissible in a wf `ensures`.         |
@@ -5826,7 +8918,7 @@ reports are superseded.
 |                                                                | any write of the place at or after the      |
 |                                                                | call. Deferring the point was the defect    |
 | 3 BREAKS [MSR-2]'s element-write consequence is false once     | **[MSR-2]** states the granularity once,    |
-|   len(table[i]) is a term                                      | over storage: an element-position write     |
+|   len_of(table[i]) is a term                                      | over storage: an element-position write     |
 |                                                                | kills every measure of P[i] and none of P,  |
 |                                                                | for commit, replace and scalar write alike  |
 | 4 BREAKS [CALL-3]'s two clauses contradict for a view whose    | **[CALL-3]** is stated over the viewed      |
@@ -5878,7 +8970,7 @@ reports are superseded.
 |   sequence, and the no-`par` obligation names an object that   | peaks, k*p for a staged permission);        |
 |   does not exist                                               | **[RUN-1]** states the obligation over the  |
 |                                                                | PERMISSION JUDGMENT, which is auditable     |
-| F7-2, F7-14 BREAKS/DEFECT the arena's delta is an interval so  | **[RES-5]** makes len(arena) EXACT (the     |
+| F7-2, F7-14 BREAKS/DEFECT the arena's delta is an interval so  | **[RES-5]** makes len_of(arena) EXACT (the     |
 |   the reset never cancels; A.1 and [RES-5] disagree            | alignment requirement makes padding zero);  |
 |                                                                | **[RES-10]**'s reset is a PAIRED transfer   |
 |                                                                | cancelling the block's own delta per label; |
@@ -5897,7 +8989,7 @@ reports are superseded.
 |                                                                | the expanded program                        |
 | F7-6 BREAKS the handle table's refusal is keyed on an IoError  | **[S33]** is ADOPTED: the refusal is the    |
 |   CLASS and no route publishes one                             | Exhausted VARIANT, and **[RES-6]** publishes|
-|                                                                | room(factory) = 0 on that arm through       |
+|                                                                | room_of(factory) = 0 on that arm through       |
 |                                                                | [CALL-4]'s existing route                   |
 | F7-8 GAP a reserving occurrence inside a loop whose region     | **[PROV-5]**: the occurrence must be a      |
 |   block is outside it has no stated meaning                    | statement of its block and of no loop in it |
@@ -5961,7 +9053,7 @@ reports are superseded.
 |                                                                | Amends names the [FN-9] sentence            |
 | 9 DEFECT [BLK-0]'s Amends carries the "arm route"; §2.1       | [BLK-0] DEPENDS on [CALL-6] and amends      |
 |   attributes S13 to [CALL-7]                                   | [ENT-3.S6] only; §2.1 names [CALL-6]        |
-| 10 DEFECT A.1 marks four cells bounded, the prose says two    | A.1 has ONE bounded cell, a run's head;     |
+| 10 DEFECT A.1 marks four cells bounded, the prose says two    | A.1 has ONE bounded cell, a run's head_of;     |
 |                                                                | [MSR-1] says so and [RES-5] is why          |
 | I1-I17 register conditions 1, 3, 5, 6; five unstated          | the register is re-derived; every Publishes |
 |   diagnostic names; [VIEW-2]'s lowercase v; seq_arena's free  | line names [CALL-6]; ConfinedTypeWithout-   |
@@ -6063,10 +9155,10 @@ and because nothing downstream is a fact without it.** Three things had to be pi
 before anything read them: *where a declared operand's denotation comes from* ([MSR-3]'s
 mode-keyed table), *where a declared relation is instantiated and where it is established*
 ([CALL-6]'s S13), and *what a contract may be written over* ([MSR-5] and [CALL-4]).
-**Probe `q7` is why this was a batch and not a preamble**: `ensures len(kept) >= 1_u64;`
+**Probe `q7` is why this was a batch and not a preamble**: `ensures len_of(kept) >= 1_u64;`
 on a run result was a `[GRAM-5]` **parse** error, so the contract surface of this design
 was new capability and no later batch's test could be written until it existed. Tests, all
-six landed as conformance cases (6.0): a two-`len` clause accepted where `q7` is a parse
+six landed as conformance cases (6.0): a two-`len_of` clause accepted where `q7` is a parse
 failure; a callee's relation over an `own` operand establishing at a caller **as the call
 datum**, with the negative case pinned, a contract whose relations instantiate to a
 contradiction refused at the `fn_decl` [CALL-6]; a routed relation instantiated at the
@@ -6076,7 +9168,7 @@ refused at [FN-9] rather than at the grammar, which pins the widening's boundary
 
 **What B1 could not reach, and where it went** (decided 2026-09-04). Three of the eighth
 draft's B1 tests assumed machinery this batch does not build. *A measured result and*
-`len(result)` need the result binder to be a place-like datum and not a fragment integer,
+`len_of(result)` need the result binder to be a place-like datum and not a fragment integer,
 and *a per-variant route over any enum* needs resolver identity for variants beyond the
 prelude `Ok`/`value`: both are [CALL-4] admissions and **land in B7** with the runs and
 the measured types. *A two-result contract reaching both binders of a destructuring `let`,
@@ -6096,26 +9188,36 @@ declaration whose two results are the same enum type refused when the route is a
 [CALL-4].
 
 **B2. The proof surface.** Rules: [MSR-1], [MSR-2], [MSR-4], [MSR-6]. Tests: probe
-`q10` accepted after [MSR-6]; a goal discharged from `len + room = cap` as an affine
+`q10` accepted after [MSR-6]; a goal discharged from `len_of + room_of = cap_of` as an affine
 premise; an element-position `replace` of a **descriptor** killing its measures and of a
 **scalar** killing nothing, which is the carve-out's removal under test; **probe
 `r2_4`'s program accepted**, because [MSR-2]'s descriptor-precise support repairs a live
-over-kill; a subscript in logical coordinates whose [OP-4] obligation is against `len`,
+over-kill; a subscript in logical coordinates whose [OP-4] obligation is against `len_of`,
 with [MSR-1]'s injectivity sentence exercised by two disjoint ranges over one wrapped
-run; and a `set` at an element position of a run of runs killing `len(P[i])` and not
-`len(P)`.
+run; and a `set` at an element position of a run of runs killing `len_of(P[i])` and not
+`len_of(P)`.
 
 **B3. Type-derived call transports.** Rules: [CALL-1], [CALL-2], [CALL-3], [CALL-5].
 Second in the live-defect order and needing none of the new types: today's
 `&uniq buffer<T>` keeps its spelling and gets [CALL-5]'s type-derived classification.
 Test: **`ent5-neg-callee-uniq-buffer-replace-kills-length.wf` turns XPASS**, rejecting
-at [OP-4] with residual `9_u64 < len(line)`; plus probe `q8`'s program, whose accept
+at [OP-4] with residual `9_u64 < len_of(line)`; plus probe `q8`'s program, whose accept
 becomes the same rejection; plus one positive case pinning [CALL-1]; plus a callee
-writing through a `MutSlice<'r, Vector<u8>>` killing `len(origin[0])` and keeping
-`len(origin)`, which is [CALL-3]'s storage restatement. `docs/patterns.md` P16 is
+writing through a `MutSlice<'r, Vector<u8>>` killing `len_of(origin[0])` and keeping
+`len_of(origin)`, which is [CALL-3]'s storage restatement. `docs/patterns.md` P16 is
 corrected in the same change. **This batch flips a conformance case from `xfail`, which
 is conformance evidence; the disposition is recorded in `governance/APPROVALS.md` with
 the merge**, as B7's supersession is.
+
+*Corrections of 2026-09-06, at the landing.* The `MutSlice<'r, Vector<u8>>` test is not
+writable on this surface — a view's element domain is flat, so that type stops as an
+explicit unsupported capability — and 6.0u records it as a capability finding rather than
+a weakened rule. The migration added two tests this entry did not ask for: a `Slice` handed
+twice at an `own` parameter, which is [CALL-2]'s copy half, and the fill-and-publish helper
+of B8, which is [CALL-3]'s positive. Probe `q8`'s program is the same program as the
+conformance case and is not added a second time. The claim that this batch "needs none of
+the new types" is **false as stated and true as landed**: the seventeen corpus sources that
+lose a caller's measure need the writable view B8 landed, which is why B3 runs after it.
 
 **B4. Liveness and one commit rule.** Rules: [LIV-1], [LIV-2]. Tests: **probe `q9`'s
 program accepted**, and the same at a `deref`, a field and a subscript; a `set` whose two
@@ -6143,17 +9245,17 @@ once the parameter is added, with the resolved binding appearing in the effect r
 **`fn checksum['s: affine](v: own Vector<'s, u8>) -> sum: own u64` accepted where the
 unbounded declaration is refused, and a heap-branded instantiation of it rejected at the
 call**, which is [S32]'s region axis under test; and **probe `x6`'s
-self-referential heap type rejected at its declaration** in a program with no marker,
-naming the cycle, **while its arena-backed sibling still compiles** — the release graph
-under test.
+self-referential heap type accepted with a recursive derived release, beside its
+arena-backed sibling whose release action is empty** — the release graph under test, after
+the owner deleted the cycle refusal on 2026-09-04.
 
 **B6. Hand-back completeness.** Rules: [CALL-7]. Separated from B1 because it is a
 declaration-site check over the vocabulary B1 lands. Tests: **a helper that hands a run
-back without a clause for `head` rejected with `IncompleteHandBackContract`**; the same
-helper with `ensures head(result) <= cap(result);` **still rejected**, because both sides
+back without a clause for `head_of` rejected with `IncompleteHandBackContract`**; the same
+helper with `ensures head_of(result) <= cap_of(result);` **still rejected**, because both sides
 follow from [MSR-2]'s standing facts — which is the vacuity test and the half round 7
-showed missing; the same helper with `ensures head(result) <= 0_u64;` accepted; a
-`FixedVector<T, n>` result with no `cap` clause **accepted**, which is the type-decidable
+showed missing; the same helper with `ensures head_of(result) <= 0_u64;` accepted; a
+`FixedVector<T, n>` result with no `cap_of` clause **accepted**, which is the type-decidable
 exclusion; a routed contract missing a measure on one arm rejected naming that arm; and
 3.L's nine added clauses compiled as a corpus.
 
@@ -6162,7 +9264,7 @@ Rules: [PROV-1], [BLK-0], [BLK-1], [BLK-2], [BLK-3], [BLK-4]. Retires `buffer<T>
 `box<T>` and `arena<'r, T>` from the writer surface, and carries monomorphization for a
 compiler-owned generic domain. Tests: a `FixedVector<Handle, 64>` with affine elements
 filled by 3.L.3's `vacant`, accepted, where probe `p9` is [OP-1] today; a queue built
-from `seq_place` and `seq_take_front` with no `Option` anywhere; **a `seq_slice` over a
+from `place_back` and `take_front` with no `Option` anywhere; **a `slice_of` over a
 run that has had a front removal rejected, and accepted over the same run drained to
 empty**, which is the non-wrap premise; **`bs_reserve` declared and compiling**, which is
 [PROV-1]'s brand resolution under test, and the same function with `Bytes` given a
@@ -6175,7 +9277,7 @@ bound that excludes a container nominal and a loan-bearing argument; and two res
 occurrences naming one region rejected at the second. **B1's three deferred [CALL-4]
 admissions land here** (decided 2026-09-04), because this batch is where a result of
 measured type first exists: a result of **measured** type carrying `ensures
-len(result) >= 1_u64;` accepted where `call4-neg-measured-result-not-admitted` refuses it
+len_of(result) >= 1_u64;` accepted where `call4-neg-measured-result-not-admitted` refuses it
 at [FN-9] today; a measure over a result place formed with a field projection; a route
 over a variant of a returned enum that is not the prelude `Ok`; and S13's population
 **extended** to [BLK-0] rows, with a row's declared relation establishing at a caller
@@ -6218,8 +9320,8 @@ no `allocates` entry anywhere on its call graph — the first program that demon
 goal A's container half end to end; **a marked `main` that opens one file in a loop,
 reads it into a `filled` destination over a `MutSlice`, and publishes a demand of one
 on the named store `handles`**; an open that fails on every attempt whose handle records
-all come back; **a `match` over `reserve_file`'s three arms deriving `room(handles) = 0`
-on `Exhausted` and deriving nothing about `room` on `Failed`**, which is [S33] and
+all come back; **a `match` over `reserve_file`'s three arms deriving `room_of(handles) = 0`
+on `Exhausted` and deriving nothing about `room_of` on `Failed`**, which is [S33] and
 [RES-6] under test; **a `ReadFile` close counted as a may-suspend acquisition**; and
 `write_once`'s range obligation stated over `source` and not over a destination it does
 not have.
@@ -6290,18 +9392,18 @@ Derived from [BLK-1]'s storage column rather than written per nominal. **Every c
 one of `exact`, `bounded` or `absent`**, which is what [MSR-1] requires.
 
 ```text
-| measured type            | len                | cap             | room      | head       |
+| measured type            | len_of                | cap_of             | room_of      | head_of       |
 |--------------------------|--------------------|-----------------|-----------|------------|
-| FixedVector<T, n>        | initialized slots, | n, exact        | cap - len,| window     |
+| FixedVector<T, n>        | initialized slots, | n, exact        | cap_of - len_of,| window     |
 |                          |   exact            |                 |   exact   |   origin,  |
 |                          |                    |                 |           |   bounded  |
-| Vector<'s, T>            | initialized slots, | slots taken,    | cap - len,| as above   |
+| Vector<'s, T>            | initialized slots, | slots taken,    | cap_of - len_of,| as above   |
 |                          |   exact            |   exact         |   exact   |            |
-| slice, mut_slice         | viewed elements,   | len, exact      | 0, exact  | 0, exact   |
+| slice, mut_slice         | viewed elements,   | len_of, exact      | 0, exact  | 0, exact   |
 |                          |   exact            |                 |           |            |
-| Arena<'s, bytes, align>  | cursor bytes,      | bytes, exact    | cap - len,| absent     |
+| Arena<'s, bytes, align>  | cursor bytes,      | bytes, exact    | cap_of - len_of,| absent     |
 |                          |   exact            |                 |   exact   |            |
-| FileFactory              | live handle        | the profile's   | cap - len,| absent     |
+| FileFactory              | live handle        | the profile's   | cap_of - len_of,| absent     |
 |                          |   records, exact   |   `handles`     |   exact   |            |
 |                          |                    |   capacity,exact|           |            |
 | Heap<'s>                 | absent             | absent          | absent    | absent     |
@@ -6309,35 +9411,46 @@ one of `exact`, `bounded` or `absent`**, which is what [MSR-1] requires.
 
 `Heap<'s>` has no measure because L6 says a general store has no measure that means
 anything; that is the absence of table data, not an exception clause. **Exactly one
-measure is bounded anywhere — a run's `head` — and it is the one cell the two run rows
-share.** An `Arena`'s `len` was the second in the seventh draft and it is **exact**:
+measure is bounded anywhere — a run's `head_of` — and it is the one cell the two run rows
+share.** An `Arena`'s `len_of` was the second in the seventh draft and it is **exact**:
 [RES-5] requires `align >= align_ceiling(T)` at every take, so the cursor is a multiple
 of `align` at every program point and the padding at a take is zero. Round 7 found the
 two statements disagreeing and the recommended per-iteration idiom refused as a
-consequence. Every formation row publishes `head = 0_u64` exactly, every back operation
-publishes `head(result) = head(vector)` exactly, and only `seq_place_front` and
-`seq_take_front` publish the two-sided `0_u64 <= head(result)`,
-`head(result) <= cap(result)`.
+consequence. Every formation row publishes `head_of = 0_u64` exactly, every back operation
+publishes `head_of(result) = head_of(vector)` exactly, and only `place_front` and
+`take_front` publish the two-sided `0_u64 <= head_of(result)`,
+`head_of(result) <= cap_of(result)`.
 
 ```text
 | nominal                     | (size_ceiling, align_ceiling)                          |
 |-----------------------------|--------------------------------------------------------|
 | Heap<'s>, Arena<..>         | (32, 16)   proof-only representation, one word         |
-| Vector<'s, T>               | (32, 16)   a descriptor: pointer, cap, len, head       |
-| FixedVector<T, n>           | T's pair repeated n times, plus (16, 8) for len and    |
-|                             |   head, with aggregate alignment max(align(T), 8)      |
+| Vector<'s, T>               | (32, 16)   a descriptor: pointer, cap_of, len_of, head_of       |
+| FixedVector<T, n>           | T's pair repeated n times, plus (16, 8) for len_of and    |
+|                             |   head_of, with aggregate alignment max(align(T), 8)      |
 | Slice<'r,T>, MutSlice<'r,T>| (32, 16)                                               |
 ```
 
-A `const` of `FixedVector<T, n>` type is element storage only [S34], because its `len`
-and `head` are standing facts; the descriptor is materialized at each use.
+A `const` of `FixedVector<T, n>` type is element storage only [S34], because its `len_of`
+and `head_of` are standing facts; the descriptor is materialized at each use.
 
-**A `FixedVector`'s descriptor carries `len` and `head` and not `cap`**: `n` is the type
+**`T`'s pair is read from this same table when `T` is itself a run** [BLK-1], which is
+what the one-level lift means for layout and needs no row of its own: a slot holding a
+`Vector<'s, u8>` is that type's `(32, 16)`, so `FixedVector<Vector<'s, u8>, 8>` is eight
+descriptors followed by its own two words, and a slot holding a `FixedVector<u8, 4>` is
+that type's own pair. The recursion is one level deep by construction, so the table stays
+finite without a termination argument.
+
+**A `FixedVector`'s descriptor carries `len_of` and `head_of` and not `cap_of`**: `n` is the type
 constant and [MSR-2] already makes it a standing fact with empty support.
 
 **`advance<T>(count)`**, the bump domain's acquire quantity and the one compiler-owned
-term former A.2's rows name, is `round_up(size_ceiling(T) * count, align)`, where
-`align` is the store's own type constant. It is one [ENT-2] term of fragment type `u64`
+term former A.2's rows name, is `round_up(stride_ceiling(T) * count, align)`, where
+`align` is the store's own type constant. It is the **stride** and not the size because
+a run's slots are stride-spaced: `count` of them occupy `stride_ceiling(T) * count`
+bytes, and a take of `size_ceiling(T) * count` would hand out a run whose last slots lie
+outside what the store gave it. The seventh draft wrote the size; B7a4 measured the
+difference and [BLK-0] now writes the stride. It is one [ENT-2] term of fragment type `u64`
 with the support of `count`: a symbolic constant when `count` is a closed expression,
 and an opaque term otherwise, so a relation over it is an ordinary difference bound
 between two terms. Whether `count` is closed is [RES-3]'s question and is answered at the
@@ -6346,8 +9459,17 @@ acquisition.
 ### A.2 The kernel operation inventory
 
 **Twelve rows**, plus the four readers, which are [OP-1] table rows and not this
-domain. `V` is either run type. Every row is complete over **every** measure it writes,
-on every exit, as [BLK-0] requires; every effect row is written in [EFF-1] 1369's
+domain. **Every spelling here is S38's**, decided 2026-09-05: the nine `seq_*` names of
+S7 and S8 and the two view formers of S10 are respelled, and nothing else about any row
+moves — not a parameter, a result, an effect row, a requirement, or a published relation.
+`V` is either run type. Every row is complete over **every** measure it writes,
+on every exit, as [BLK-0] requires — **read with [MSR-2]'s standing identity**: `room_of`
+is the complement `len_of + room_of = cap_of` already determines with empty support, so a
+row that publishes `len_of` and `cap_of` of a place has published its `room_of`, and
+`arena_vector`'s `Some` arm is complete as it stands. The boundary rows publish `room_of`
+explicitly because a caller of `place_back` reads that measure directly and the extra
+clause costs nothing; the formation rows do not, and both are complete under the same
+sentence. Every effect row is written in [EFF-1] 1369's
 canonical order; every relation is established by [CALL-6]'s S13; and **every operand
 denotes what [MSR-3]'s table gives its parameter's mode** — an `own` operand is that
 call's call datum and a `&uniq` state operand is the post-state — so the seventh draft's
@@ -6355,82 +9477,82 @@ call's call datum and a `&uniq` state operand is the post-state — so the seven
 and absent on ten.
 
 ```text
-Formation                                                                          [S7]
-  seq_fixed<T, const n: u64>()                       -> own FixedVector<T, n>       pure
-      len(result) = 0, cap(result) = n, room(result) = n, head(result) = 0
-  seq_arena<T, const bytes: u64, const align: u64>['s](
-        arena: &uniq Arena<'s, bytes, align>, count: own u64)
-      -> own Option<Vector<'s, T>>       reads(arena), writes(arena), allocates(arena)
+Formation                                                                     [S7, S38]
+  fixed_vector<T, const n: u64>()               -> own FixedVector<T, n>       pure
+      len_of(result) = 0, cap_of(result) = n, room_of(result) = n, head_of(result) = 0
+  arena_vector<T, const bytes: u64, const align: u64>['s](
+        store: &uniq Arena<'s, bytes, align>, count: own u64)
+      -> own Option<Vector<'s, T>>       reads(store), writes(store), allocates(arena)
       requires align >= align_ceiling(T)
       requires fits::<T>(count)
-      Some(value: r): len(r) = 0, cap(r) = count, room(r) = count, head(r) = 0,
-                      len(arena) = len(arena at the call) + advance<T>(count)
-      None:           len(arena) = len(arena at the call),
-                      room(arena) < advance<T>(count)
-      both:           cap(arena) = cap(arena at the call)
-  seq_arena_proved<T, const bytes: u64, const align: u64>['s](
-        arena: &uniq Arena<'s, bytes, align>, count: own u64)
-      -> own Vector<'s, T>               reads(arena), writes(arena), allocates(arena)
+      Some(value: r): len_of(r) = 0, cap_of(r) = count, room_of(r) = count, head_of(r) = 0,
+                      len_of(store) = len_of(store at the call) + advance<T>(count)
+      None:           len_of(store) = len_of(store at the call),
+                      room_of(store) < advance<T>(count)
+      both:           cap_of(store) = cap_of(store at the call)
+  arena_vector_proved<T, const bytes: u64, const align: u64>['s](
+        store: &uniq Arena<'s, bytes, align>, count: own u64)
+      -> own Vector<'s, T>               reads(store), writes(store), allocates(arena)
       requires align >= align_ceiling(T)
       requires fits::<T>(count)
-      requires room(arena) >= advance<T>(count)
+      requires room_of(store) >= advance<T>(count)
       as the Some row above
-  seq_heap<T>['s](heap: &uniq Heap<'s>, count: own u64)
-      -> own Option<Vector<'s, T>>       reads(heap), writes(heap), allocates(heap)
+  heap_vector<T>['s](store: &uniq Heap<'s>, count: own u64)
+      -> own Option<Vector<'s, T>>       reads(store), writes(store), allocates(heap)
       requires fits::<T>(count)
-      Some(value: r): len(r) = 0, cap(r) = count, room(r) = count, head(r) = 0
+      Some(value: r): len_of(r) = 0, cap_of(r) = count, room_of(r) = count, head_of(r) = 0
       None:           nothing; a general store publishes no measure (L6)
 
 Reservation                                                                        [S9]
   arena_frame<const bytes: u64, const align: u64>['s]()
       -> own Arena<'s, bytes, align>                                                pure
-      len(result) = 0, cap(result) = bytes, room(result) = bytes
+      len_of(result) = 0, cap_of(result) = bytes, room_of(result) = bytes
                           its contribution to stack(context, ...) [PROV-5, STK-3]
   arena_extent<const bytes: u64, const align: u64>['s]()
       -> own Arena<'s, bytes, align>                                                pure
-      len(result) = 0, cap(result) = bytes, room(result) = bytes
+      len_of(result) = 0, cap_of(result) = bytes, room_of(result) = bytes
                           its own region item, named by (instance, NodePath) [PROV-5]
 
-Per slot                                                                           [S8]
-  seq_place(vector: own V, value: own T)  -> own V     reads(vector), writes(vector)
-      requires room(vector) > 0
-      len(result) = len(vector) + 1, room(result) = room(vector) - 1,
-      cap(result) = cap(vector),     head(result) = head(vector)
-  seq_place_front(vector: own V, value: own T)
+Per slot                                                                      [S8, S38]
+  place_back(vector: own V, value: own T) -> own V      reads(vector), writes(vector)
+      requires room_of(vector) > 0
+      len_of(result) = len_of(vector) + 1, room_of(result) = room_of(vector) - 1,
+      cap_of(result) = cap_of(vector),     head_of(result) = head_of(vector)
+  place_front(vector: own V, value: own T)
                                           -> own V     reads(vector), writes(vector)
-      requires room(vector) > 0
-      len(result) = len(vector) + 1, room(result) = room(vector) - 1,
-      cap(result) = cap(vector),     0 <= head(result), head(result) <= cap(result)
-  seq_take(vector: own V)   -> (rest: own V, value: own T)
+      requires room_of(vector) > 0
+      len_of(result) = len_of(vector) + 1, room_of(result) = room_of(vector) - 1,
+      cap_of(result) = cap_of(vector),     0 <= head_of(result), head_of(result) <= cap_of(result)
+  take_back(vector: own V)  -> (rest: own V, value: own T)
                                                        reads(vector), writes(vector)
-      requires len(vector) > 0
-      len(rest) = len(vector) - 1,   room(rest) = room(vector) + 1,
-      cap(rest) = cap(vector),       head(rest) = head(vector)
-  seq_take_front(vector: own V) -> (rest: own V, value: own T)
+      requires len_of(vector) > 0
+      len_of(rest) = len_of(vector) - 1,   room_of(rest) = room_of(vector) + 1,
+      cap_of(rest) = cap_of(vector),       head_of(rest) = head_of(vector)
+  take_front(vector: own V) -> (rest: own V, value: own T)
                                                        reads(vector), writes(vector)
-      requires len(vector) > 0
-      len(rest) = len(vector) - 1,   room(rest) = room(vector) + 1,
-      cap(rest) = cap(vector),       0 <= head(rest), head(rest) <= cap(rest)
+      requires len_of(vector) > 0
+      len_of(rest) = len_of(vector) - 1,   room_of(rest) = room_of(vector) + 1,
+      cap_of(rest) = cap_of(vector),       0 <= head_of(rest), head_of(rest) <= cap_of(rest)
 
-Readers                       ([OP-1] table rows, not this domain)                 [S11]
-  len(p) / cap(p) / room(p) / head(p)                -> own u64                     pure
+Readers                       ([OP-1] table rows, not this domain)            [S11, S36]
+  len_of(p) / cap_of(p) / room_of(p) / head_of(p)                -> own u64                     pure
 
-Views                                                                             [S10]
-  seq_slice['r, T](vector: &'r V)          -> own Slice<'r, T>        reads(vector)
-      requires head(vector) + len(vector) <= cap(vector)
-      len(result) = len(vector), cap(result) = len(vector),
-      room(result) = 0,          head(result) = 0
-  seq_mut_slice['r, T](vector: &uniq 'r V) -> own MutSlice<'r, T>    reads(vector)
-      requires head(vector) + len(vector) <= cap(vector)
+Views                                                                        [S10, S38]
+  slice_of['r, T](vector: &'r V)          -> own Slice<'r, T>       reads(vector)
+      requires head_of(vector) + len_of(vector) <= cap_of(vector)
+      len_of(result) = len_of(vector), cap_of(result) = len_of(vector),
+      room_of(result) = 0,          head_of(result) = 0
+  mut_slice_of['r, T](vector: &uniq 'r V) -> own MutSlice<'r, T>    reads(vector)
+      requires head_of(vector) + len_of(vector) <= cap_of(vector)
       as the row above
 ```
 
 Two statements are not rows and are stated in [PROV-6]: `dispose p;` [S12] and the
 destructuring consume `let N(f1: b1, ...) = move v;` [S13].
 
-Notes on the inventory. **`seq_place` is the operation the whole design exists for**:
+Notes on the inventory. **`place_back` is the operation the whole design exists for**:
 total under its requirement, allocation-free on every backing, one store plus one length
-increment — and its `vector` operand is `own`, so every occurrence of `len(vector)` in
+increment — and its `vector` operand is `own`, so every occurrence of `len_of(vector)` in
 its relation is the length it was handed [MSR-3]. **The four per-slot rows are two-sided
 because L12 is**, and the front pair is what makes a queue a run rather than a run of
 `Option`. **There is no fifth boundary row**: returning a wrapped window to its origin is
@@ -6442,3 +9564,45 @@ twelve.
 L9's published displacement. **Nothing here removes from the middle, clears, truncates,
 grows, exchanges, swaps, rebases, or constructs a filled or vacant run** — each is 3.L,
 and 3.L.6 records that none needed a row the four boundary operations do not have.
+
+> **Correction, decided 2026-09-05, from B8c's implementation: `len_of(store)` and
+> `len_of(store at the call)` are two terms, and the row's own `writes` is what leaves
+> room for the second.** The paragraph above is right that every operand denotes what
+> [MSR-3]'s table gives its parameter's mode. What the compiler did was read *this call's
+> call datum* for **both** denotations, because [ENT-2] clause (h) keys a call datum on
+> the call, the ordinal, the projections and the measure and on nothing that separates a
+> post-state occurrence of a measure from the `at the call` occurrence of the same one.
+> `arena_vector_proved`'s own `len_of(store) = len_of(store at the call) +
+> advance<T>(count)` therefore instantiated as `t = t + advance<T>(count)` over one term,
+> which is the pair of bounds `advance<T>(count) <= 0` and `advance<T>(count) >= 0`, and
+> at a written `count` of 8 `u8`s that is `8 <= 0`. **The row introduced a contradiction
+> into every caller's fact state**, and [ENT-4]'s least closure derives every relation
+> and both signs of every goal from a contradictory point, so a function that called this
+> row discharged *every* [OP-4] obligation it contained: `region 'a { let workspace =
+> arena_frame::<8192, 16, 'a>(); let table = array_new::<u8, 4>(0_u8); region { let first
+> = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64); let seen =
+> table[9_u64]; ... } }` compiled, linked and ran, reading slot nine of a four-slot array.
+> 6.0n found it at B8b's base commit and left it here; this is the repair.
+>
+> Two things were missing and both land. **The operand position decides the denotation
+> before the datum table is consulted**, so an `own` operand and an `at the call` form
+> mint or read this call's datum and the plain occurrence of a `&uniq` state operand is
+> the live term after the call's own kills. And **a row's declared effect row is a callee
+> effect like any other** [ENT-5]: the place its `writes` names is written by the call, so
+> every fact whose support that place reaches dies at the call boundary and what a caller
+> holds about the store afterwards is exactly what the row published. Without the second
+> the first is not enough — the post-state occurrence is the caller's own live term, which
+> the pre-call `len_of(workspace) = 0` still pins, and `0 = 0 + 8` is the same
+> contradiction one statement later.
+>
+> **[BLK-0] gains the sentence that makes this a judgment rather than an accident.** A
+> row's published set is subject to [CALL-6]'s consistency judgment exactly as a source
+> declaration's is: the relations one row carries on one declared exit, together with its
+> own requirements, are not contradictory, and establishing them at a call never makes the
+> caller's state contradictory where it was not already. Because a row's set is fixed by
+> the specification rather than by a program, a row that fails the judgment is a defect in
+> the specification or in its implementation and is never a source rejection — so the
+> compiler carries it two ways: a unit test closes each row's own requirement and relation
+> lists per declared exit under the same difference-bound closure [CALL-6] uses, at three
+> resolutions of `advance<T>(count)`, and the establishment path asserts at **every** call
+> of every row that the caller's state did not turn contradictory across it.

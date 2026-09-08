@@ -105,7 +105,8 @@
 use super::loop_permission::LoopPermission;
 use super::model::{
     BindingId, CheckedArrayRoot, CheckedExpression, CheckedFunction, CheckedMode, CheckedSetTarget,
-    CheckedSliceSource, CheckedStatePath, CheckedStatement, FunctionId, expression_children,
+    CheckedSliceSource, CheckedStatePath, CheckedStatement, CheckedType, FunctionId,
+    expression_children,
 };
 use super::places::{PlaceMap, PlaceRoot, PlaceTerm, ResolvedPlace};
 use super::staged_permission::StagedPermission;
@@ -597,6 +598,178 @@ pub(super) fn call_projection(value: &CheckedExpression) -> Option<CallProjectio
     }
 }
 
+/// One [BLK-0] kernel-domain call, reduced to what the boundary projection
+/// reads.
+///
+/// A kernel row is not an admitted member of a [PAR-1] window — that rule's
+/// members are one call of a declared function [FN-1] or one system operation
+/// [SYS-2] — so this is deliberately not a [`CallProjection`] and the window
+/// judgment keeps refusing the form. The staged permission [PAR-3] states no
+/// such enumeration: it asks of every statement of the body only that its
+/// footprint and its loans resolve, and a row's declared effect row and
+/// parameter modes are exactly what that projection needs.
+pub(super) struct KernelProjection<'check> {
+    pub(super) row: crate::KernelRow,
+    pub(super) call: &'check NodePath,
+    pub(super) arguments: &'check [CheckedExpression],
+    pub(super) argument_nodes: &'check [NodePath],
+}
+
+/// The kernel-domain call one expression is, or `None` for every other form.
+pub(super) fn kernel_projection(value: &CheckedExpression) -> Option<KernelProjection<'_>> {
+    match value {
+        CheckedExpression::KernelCall {
+            row,
+            call,
+            arguments,
+            argument_nodes,
+            ..
+        } => Some(KernelProjection {
+            row: *row,
+            call,
+            arguments,
+            argument_nodes,
+        }),
+        _ => None,
+    }
+}
+
+/// The written and read footprints of one [BLK-0] row, by the same [EFF-2]
+/// boundary projection [`Program::footprint`] applies to a declared callee.
+///
+/// The record supplies both halves. Its parameter modes give the loans — an
+/// acquiring row takes its store's provider by `&uniq` [BLK-2], so the take
+/// holds one exclusive loan on that store for the duration of the call,
+/// exactly as a `&uniq` factory argument does. Its declared effect row gives
+/// the accesses: `reads(store)`, `writes(store)` and `allocates(store)` each
+/// name a value parameter, and each projects onto that parameter's actual
+/// place, so two takes from one store conflict and two from distinct stores do
+/// not. The run or cell the row hands back is a fresh value the caller binds;
+/// it is storage the statement introduces and no footprint element of the
+/// caller's.
+pub(super) fn kernel_footprint(places: &PlaceMap, candidate: &KernelProjection<'_>) -> Footprint {
+    let mut footprint = Footprint::default();
+    let signature = super::kernel::kernel_signature(candidate.row);
+    if signature.parameters.len() != candidate.arguments.len()
+        || candidate.arguments.len() != candidate.argument_nodes.len()
+    {
+        footprint.unresolved = Some(candidate.call.clone());
+        return footprint;
+    }
+    for (index, parameter) in signature.parameters.iter().enumerate() {
+        let argument = &candidate.arguments[index];
+        let node = &candidate.argument_nodes[index];
+        let strength = match parameter.mode {
+            super::kernel::KernelMode::Own => None,
+            super::kernel::KernelMode::Shared => Some(LoanStrength::Shared),
+            super::kernel::KernelMode::Unique => Some(LoanStrength::Exclusive),
+        };
+        if let Some(strength) = strength {
+            match argument_place(places, argument) {
+                Some(place) => footprint.loans.push(Loan {
+                    strength,
+                    place,
+                    argument: node.clone(),
+                }),
+                None => footprint.unresolved = Some(node.clone()),
+            }
+        }
+        // A consumed `own` actual transfers caller storage into the row, and
+        // the boundary rows [BLK-3] take their run exactly that way.
+        if matches!(parameter.mode, super::kernel::KernelMode::Own)
+            && let Some(place) = consumed_place(places, argument)
+        {
+            footprint.writes.push(Access::Place {
+                place,
+                argument: node.clone(),
+            });
+        }
+    }
+    // `allocates(P)` names the same operand its `writes(P)` does on every row
+    // of this domain, so the two are one access rather than two.
+    for (written, ordinal) in [
+        (false, signature.effects.reads),
+        (true, signature.effects.writes),
+        (true, signature.effects.allocates),
+    ] {
+        let Some(ordinal) = ordinal else { continue };
+        let (Some(argument), Some(node)) = (
+            candidate.arguments.get(ordinal as usize),
+            candidate.argument_nodes.get(ordinal as usize),
+        ) else {
+            footprint.unresolved = Some(candidate.call.clone());
+            continue;
+        };
+        match argument_place(places, argument).or_else(|| consumed_place(places, argument)) {
+            Some(place) => {
+                let access = Access::Place {
+                    place,
+                    argument: node.clone(),
+                };
+                if written {
+                    footprint.writes.push(access);
+                } else {
+                    footprint.reads.push(access);
+                }
+            }
+            None => footprint.unresolved = Some(node.clone()),
+        }
+    }
+    for (argument, node) in candidate.arguments.iter().zip(candidate.argument_nodes) {
+        collect_operand_reads(places, argument, node, &mut footprint);
+    }
+    footprint
+}
+
+/// The store a [BLK-2] acquisition's own release returns its storage to, when
+/// that release spends the store's provider capability.
+///
+/// A `Vector<'s, T>` and a `Box<'s, T>` are store-owned [STOR-1]: the value's
+/// scope exit runs one compiler-derived release back to the store `'s` names,
+/// which for a **general** store spends that store's capability [PROV-6] and
+/// therefore writes the same place the take wrote. For a **bump extent** the
+/// release is empty, the extent's reclamation being its own region reset
+/// [BLK-2], so those rows return `None` and cost their store nothing.
+///
+/// The release is not a statement, so no walk over the body reaches it. A
+/// judgment that reads a body's statements alone would attribute the take and
+/// miss the give-back, which is the one direction it must never fail in.
+pub(super) fn kernel_release_footprint(
+    places: &PlaceMap,
+    candidate: &KernelProjection<'_>,
+) -> Option<Footprint> {
+    match candidate.row {
+        crate::KernelRow::HeapVector | crate::KernelRow::HeapBox => {}
+        crate::KernelRow::FixedVector
+        | crate::KernelRow::ArenaVector
+        | crate::KernelRow::ArenaVectorProved
+        | crate::KernelRow::ArenaBox
+        | crate::KernelRow::ArenaFrame
+        | crate::KernelRow::PlaceBack
+        | crate::KernelRow::PlaceFront
+        | crate::KernelRow::TakeBack
+        | crate::KernelRow::TakeFront
+        | crate::KernelRow::SliceOf
+        | crate::KernelRow::MutSliceOf => return None,
+    }
+    let mut footprint = Footprint::default();
+    let (Some(argument), Some(node)) = (
+        candidate.arguments.first(),
+        candidate.argument_nodes.first(),
+    ) else {
+        footprint.unresolved = Some(candidate.call.clone());
+        return Some(footprint);
+    };
+    match argument_place(places, argument) {
+        Some(place) => footprint.writes.push(Access::Place {
+            place,
+            argument: node.clone(),
+        }),
+        None => footprint.unresolved = Some(node.clone()),
+    }
+    Some(footprint)
+}
+
 /// One statement written between the two judged calls, reduced to what the
 /// window rule asks of it.
 struct Interposed {
@@ -1043,6 +1216,13 @@ impl<'check> Program<'check> {
                     footprint: value_footprint(places, value, node_path),
                 })
             }
+            // [CALL-4] a binder or target list defines more than one place in
+            // one statement, and this window admits exactly one definition
+            // per statement. Refusal is the fail-closed direction: nothing
+            // here widens a permission it cannot describe.
+            CheckedStatement::DestructuringLet { .. } | CheckedStatement::SetList { .. } => Err(
+                InterposedRefusal::Form("a statement that binds an ordered result list"),
+            ),
             CheckedStatement::Set {
                 node_path,
                 target,
@@ -1109,6 +1289,10 @@ impl<'check> Program<'check> {
             CheckedStatement::DropExpression { .. } => {
                 Err(InterposedRefusal::Form("a discarded expression statement"))
             }
+            // [PROV-6] `dispose p;` runs a release walk of its own, which is
+            // the same classification an interposed drop needs and does not
+            // have yet.
+            CheckedStatement::Dispose { .. } => Err(InterposedRefusal::Form("a dispose statement")),
             // Forms carrying their own control flow and their own drops. The
             // lowering already refuses them by splitting the block, so the
             // checker refusing them keeps the two in agreement.
@@ -1229,7 +1413,7 @@ impl<'check> Program<'check> {
                 match argument_place(places, argument).or_else(|| consumed_place(places, argument))
                 {
                     Some(mut place) => {
-                        place.fields.extend_from_slice(&path.fields);
+                        place.extend_fields(&path.fields);
                         let access = Access::Place {
                             place,
                             argument: node.clone(),
@@ -1628,6 +1812,25 @@ pub(super) fn set_target_place(
             collect_operand_reads(places, &target.offset, node, footprint);
             rooted_place(places, target.root.binding, &target.root.fields)
         }
+        CheckedSetTarget::Storage(target) => {
+            for offset in target.offsets() {
+                collect_operand_reads(places, offset, node, footprint);
+            }
+            rooted_container_place(places, target)
+        }
+        // [PAR-2] a view element store writes the origin, and [VIEW-1] says
+        // which storage that is: the range the view was formed over. A
+        // resolved place carries no index segment, so one element write
+        // conflicts with any access to that origin. Where this prepass does
+        // not resolve the origin the descriptor's own place stands for it, as
+        // it did before, because a view whose origin is a caller's storage
+        // anchors at the binding exactly as an opaque holder does [OWN-6].
+        CheckedSetTarget::SliceIndex(target) => {
+            collect_operand_reads(places, &target.offset, node, footprint);
+            places
+                .view_origin(target.root.binding)
+                .unwrap_or_else(|| rooted_place(places, target.root.binding, &[]))
+        }
     };
     if reads_target {
         footprint.reads.push(Access::Place {
@@ -1653,6 +1856,12 @@ fn collect_set_target_bindings(target: &CheckedSetTarget, out: &mut Vec<BindingI
         CheckedSetTarget::Place(_) => {}
         CheckedSetTarget::ArrayIndex(target) => collect_used_bindings(&target.offset, out),
         CheckedSetTarget::BufferIndex(target) => collect_used_bindings(&target.offset, out),
+        CheckedSetTarget::Storage(target) => {
+            for offset in target.offsets() {
+                collect_used_bindings(offset, out);
+            }
+        }
+        CheckedSetTarget::SliceIndex(target) => collect_used_bindings(&target.offset, out),
     }
 }
 
@@ -1741,10 +1950,13 @@ fn push_nested_blocks<'check>(
         | CheckedStatement::Region { body, .. }
         | CheckedStatement::CountedRange { body, .. } => blocks.push(body.as_slice()),
         CheckedStatement::Let { .. }
+        | CheckedStatement::DestructuringLet { .. }
         | CheckedStatement::PropagateLet { .. }
         | CheckedStatement::Set { .. }
+        | CheckedStatement::SetList { .. }
         | CheckedStatement::Replace { .. }
         | CheckedStatement::Proof(_)
+        | CheckedStatement::Dispose { .. }
         | CheckedStatement::DropExpression { .. }
         | CheckedStatement::Evaluate(_)
         | CheckedStatement::Return { .. }
@@ -1776,18 +1988,19 @@ pub(crate) fn visit_read_bindings(
     match expression {
         CheckedExpression::Binding { binding, .. }
         | CheckedExpression::Project { binding, .. }
-        | CheckedExpression::BorrowAddressed { binding, .. }
         | CheckedExpression::BorrowBox { binding, .. }
         | CheckedExpression::BorrowSystemResource { binding, .. }
         | CheckedExpression::ReborrowAddressed { binding, .. }
         | CheckedExpression::DerefAddressed { binding, .. } => note(*binding),
+        CheckedExpression::BorrowAddressed { root, .. }
+        | CheckedExpression::ContainerMeasure { root, .. }
+        | CheckedExpression::ReadStorage { root, .. } => note(root.binding),
         CheckedExpression::BorrowBuffer { root, .. }
-        | CheckedExpression::BufferLength { root }
+        | CheckedExpression::BufferMeasure { root, .. }
         | CheckedExpression::BufferIndex { root, .. } => note(root.binding),
-        CheckedExpression::SliceLength { root } | CheckedExpression::SliceIndex { root, .. } => {
-            note(root.binding)
-        }
-        CheckedExpression::ArrayLength { root, .. }
+        CheckedExpression::SliceMeasure { root, .. }
+        | CheckedExpression::SliceIndex { root, .. } => note(root.binding),
+        CheckedExpression::ArrayMeasure { root, .. }
         | CheckedExpression::ArrayIndex { root, .. } => {
             if let CheckedArrayRoot::Binding { binding, .. } = root {
                 note(*binding);
@@ -1801,6 +2014,8 @@ pub(crate) fn visit_read_bindings(
             }
             CheckedSliceSource::Buffer(root) => note(root.binding),
             CheckedSliceSource::ArenaContent { binding, .. } => note(*binding),
+            CheckedSliceSource::Run(root) => note(root.binding),
+            CheckedSliceSource::ViewHolder { binding, .. } => note(*binding),
         },
         _ => {}
     }
@@ -1872,14 +2087,19 @@ pub(super) fn collect_operand_reads(
         CheckedExpression::DerefAddressed { binding, .. } => {
             read(footprint, node, places.resolve_deref(*binding, 0));
         }
-        CheckedExpression::BufferLength { root } | CheckedExpression::BufferIndex { root, .. } => {
+        CheckedExpression::BufferMeasure { root, .. }
+        | CheckedExpression::BufferIndex { root, .. } => {
             read(
                 footprint,
                 node,
                 rooted_place(places, root.binding, &root.fields),
             );
         }
-        CheckedExpression::ArrayLength { root, .. }
+        CheckedExpression::ContainerMeasure { root, .. }
+        | CheckedExpression::ReadStorage { root, .. } => {
+            read(footprint, node, rooted_container_place(places, root));
+        }
+        CheckedExpression::ArrayMeasure { root, .. }
         | CheckedExpression::ArrayIndex { root, .. } => match root {
             CheckedArrayRoot::Binding { binding, fields } => {
                 read(footprint, node, rooted_place(places, *binding, fields));
@@ -1889,23 +2109,32 @@ pub(super) fn collect_operand_reads(
                 node,
                 ResolvedPlace {
                     root: PlaceRoot::Constant(*id),
-                    fields: Vec::new(),
+                    path: Vec::new(),
                 },
             ),
         },
         CheckedExpression::SliceOf { source, .. } => {
             read(footprint, node, slice_source_place(places, source));
         }
-        // A slice descriptor names storage this analysis does not resolve, so
-        // reading through one fails closed.
-        CheckedExpression::SliceLength { .. } | CheckedExpression::SliceIndex { .. } => {
-            footprint.operand_unresolved = Some(node.clone());
-        }
+        // A read through a view is a read of the storage the view was formed
+        // over [VIEW-1]: the element the subscript selects is a byte of that
+        // origin, and a measure read is a read of the same claim. Where this
+        // prepass does not resolve the origin — a view parameter, or one a
+        // callee returned — the read fails closed exactly as it did before.
+        CheckedExpression::SliceMeasure { root, .. }
+        | CheckedExpression::SliceIndex { root, .. } => match places.view_origin(root.binding) {
+            Some(place) => read(footprint, node, place),
+            None => footprint.operand_unresolved = Some(node.clone()),
+        },
         // [GRAM-9] forbids a call in argument position; if one ever reaches
         // here its whole footprint is unaccounted for.
-        CheckedExpression::UserCall { .. } | CheckedExpression::SystemCall { .. } => {
+        CheckedExpression::UserCall { .. }
+        | CheckedExpression::SystemCall { .. }
+        | CheckedExpression::KernelCall { .. } => {
             footprint.operand_unresolved = Some(node.clone());
         }
+        // One clause-only datum; no executable statement carries one.
+        CheckedExpression::PostconditionResultMeasure { .. } => {}
     }
     for child in expression_children(expression) {
         collect_operand_reads(places, child, node, footprint);
@@ -1915,11 +2144,24 @@ pub(super) fn collect_operand_reads(
 /// The caller place one actual reaches, for a parameter whose row projects an
 /// access through it.
 fn argument_place(places: &PlaceMap, argument: &CheckedExpression) -> Option<ResolvedPlace> {
-    if let Some((place, _element, _entry_image)) = places.argument_referent(argument) {
+    if let Some((place, _entry_image)) = places.argument_referent(argument) {
         return Some(place);
     }
     match argument {
         CheckedExpression::SliceOf { source, .. } => Some(slice_source_place(places, source)),
+        // [VIEW-1] a view is a claim on the storage it was formed over, and
+        // [VIEW-2] puts the loan on that origin range rather than on the
+        // descriptor the value occupies. A view written at the call and a
+        // view bound by a `let` and handed on are therefore one footprint on
+        // one place, and this arm is what makes the second read as the first.
+        // A borrow of a view is the descriptor read once more [VIEW-2, OWN-6]
+        // and reaches this same arm, because that is the shape the checked
+        // tree gives `&uniq window`.
+        CheckedExpression::Binding {
+            binding,
+            ty: CheckedType::Slice { .. },
+            ..
+        } => places.view_origin(*binding),
         _ => None,
     }
 }
@@ -1931,14 +2173,46 @@ pub(super) fn slice_source_place(places: &PlaceMap, source: &CheckedSliceSource)
             CheckedArrayRoot::Binding { binding, fields } => rooted_place(places, *binding, fields),
             CheckedArrayRoot::Constant(id) => ResolvedPlace {
                 root: PlaceRoot::Constant(*id),
-                fields: Vec::new(),
+                path: Vec::new(),
             },
         },
         CheckedSliceSource::Buffer(root) => rooted_place(places, root.binding, &root.fields),
         CheckedSliceSource::ArenaContent {
             binding, fields, ..
         } => rooted_place(places, *binding, fields),
+        // A run's path may carry subscripts of its own, so its viewed place
+        // is the one the measured-root resolver builds [MSR-1].
+        CheckedSliceSource::Run(root) => rooted_container_place(places, root),
+        // The child views exactly what its parent views, and the parent is
+        // reached through its holder [OWN-6].
+        CheckedSliceSource::ViewHolder { binding, .. } => rooted_place(places, *binding, &[]),
     }
+}
+
+/// The [OWN-5] place one measured or subscripted root names [MSR-1, MSR-2].
+///
+/// A run's path may carry subscripts of its own, so it is resolved from the
+/// same source-order path the proof engine reads and never from a field list.
+pub(super) fn rooted_container_place(
+    places: &PlaceMap,
+    root: &super::model::CheckedContainerRoot,
+) -> ResolvedPlace {
+    let mut projections = Vec::new();
+    if places.is_holder(root.binding) {
+        projections.push(super::places::PlaceProjection::Deref);
+    }
+    projections.extend(root.path.iter().map(|step| match step {
+        super::model::CheckedPlaceStep::Field(field) => {
+            super::places::PlaceProjection::Field(*field)
+        }
+        super::model::CheckedPlaceStep::Subscript(subscript) => {
+            super::places::PlaceProjection::Subscript(subscript.place_offset)
+        }
+    }));
+    places.resolve_projected(&super::places::ProjectedPlaceTerm {
+        root: PlaceRoot::Binding(root.binding),
+        projections,
+    })
 }
 
 pub(super) fn rooted_place(places: &PlaceMap, binding: BindingId, fields: &[u32]) -> ResolvedPlace {

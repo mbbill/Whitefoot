@@ -56,6 +56,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::Expr)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let header_loan_base = self.statement_loans.borrow().len();
         let scrutinee =
             self.check_match_expression(function, expression_node, bindings, scope.loops.len())?;
         // [OWN-13] matches an enum value or a place reached through a borrow.
@@ -77,6 +78,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         let descriptor = self.match_descriptor(scrutinee.expression.ty(), expression_node)?;
+        // [OWN-6] an owned enum cannot carry an argument borrow through its
+        // payloads [STOR-5]. Its completed header ends only the temporaries
+        // created there; bound loans and enclosing evaluation loans survive.
+        if scrutinee.mode == CheckedMode::Own {
+            self.statement_loans.borrow_mut().truncate(header_loan_base);
+        }
         let base_bindings = bindings.clone();
         let base_keys = base_bindings.keys().copied().collect::<Vec<_>>();
         let base_key_set = base_keys.iter().copied().collect::<HashSet<_>>();
@@ -119,7 +126,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
         let mut arms = Vec::with_capacity(arm_nodes.len());
         let mut normal_states = Vec::new();
+        // [LIV-1] one label per predecessor state, in the order the states are
+        // collected, so a liveness disagreement can name the two edges the
+        // writer wrote rather than two indices.
+        let mut normal_labels: Vec<String> = Vec::new();
         let mut give_states = Vec::new();
+        let mut give_labels: Vec<String> = Vec::new();
         let mut break_states = Vec::new();
         let mut effects = scrutinee.effects.clone();
         let mut all_paths_deliver = true;
@@ -142,15 +154,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 arm_scope,
             )?;
             let fallthrough_drops = if checked.can_continue {
-                self.live_affine_drops(&arm_bindings, &base_key_set)?
+                self.live_affine_drops(&arm_bindings, &base_key_set, arm_node)?
             } else {
                 Vec::new()
             };
+            let label = format!("the `{}` arm", variant.name);
             if checked.can_continue {
                 normal_states.push(arm_bindings);
+                normal_labels.push(label.clone());
             }
             all_paths_deliver &= !checked.can_continue && checked.all_paths_deliver;
             effects = effects.union(checked.effects);
+            give_labels.extend(std::iter::repeat_n(
+                format!("a delivering edge of {label}"),
+                checked.give_states.len(),
+            ));
             give_states.extend(checked.give_states);
             break_states.extend(checked.break_states);
             arms.push(CheckedMatchArm {
@@ -168,9 +186,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 node,
                 local_give_context.as_ref().and_then(GiveContext::delivered),
             )?;
-            self.join_states(&base_keys, &give_states, node, bindings)?;
+            self.join_states(&base_keys, &give_states, &give_labels, node, bindings)?;
         } else {
-            self.join_states(&base_keys, &normal_states, node, bindings)?;
+            self.join_states(&base_keys, &normal_states, &normal_labels, node, bindings)?;
         }
         Ok(MatchResult {
             scrutinee: scrutinee.expression,
@@ -233,6 +251,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::Expr)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let header_loan_base = self.statement_loans.borrow().len();
         let condition =
             self.check_match_expression(function, expression_node, bindings, scope.loops.len())?;
         // [TYPE-7] exclusivity, which [GRAM-6] keeps: a condition reached
@@ -263,6 +282,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
+        // The exact owned Bool judgment gives the same non-escaping header
+        // boundary as an owned enum match [OWN-6, GRAM-6].
+        self.statement_loans.borrow_mut().truncate(header_loan_base);
         let blocks = self.tree.conditional_blocks(node)?;
         self.reject_unspellable_else(node, &blocks.alternative, value_if)?;
 
@@ -328,7 +350,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
         let mut arms = Vec::with_capacity(2);
         let mut normal_states = Vec::new();
+        let mut normal_labels: Vec<String> = Vec::new();
         let mut give_states = Vec::new();
+        let mut give_labels: Vec<String> = Vec::new();
         let mut break_states = Vec::new();
         let mut effects = condition.effects.clone();
         let mut all_paths_deliver = true;
@@ -343,15 +367,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .zip([(then_checked, then_bindings), (else_checked, else_bindings)])
         {
             let fallthrough_drops = if checked.can_continue {
-                self.live_affine_drops(&branch_bindings, &base_key_set)?
+                self.live_affine_drops(&branch_bindings, &base_key_set, node)?
             } else {
                 Vec::new()
             };
+            let label = if variant.tag == 1 {
+                "the `if` branch".to_owned()
+            } else {
+                "the `else` branch".to_owned()
+            };
             if checked.can_continue {
                 normal_states.push(branch_bindings);
+                normal_labels.push(label.clone());
             }
             all_paths_deliver &= !checked.can_continue && checked.all_paths_deliver;
             effects = effects.union(checked.effects);
+            give_labels.extend(std::iter::repeat_n(
+                format!("a delivering edge of {label}"),
+                checked.give_states.len(),
+            ));
             give_states.extend(checked.give_states);
             break_states.extend(checked.break_states);
             arms.push(CheckedMatchArm {
@@ -369,9 +403,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 node,
                 local_give_context.as_ref().and_then(GiveContext::delivered),
             )?;
-            self.join_states(&base_keys, &give_states, node, bindings)?;
+            self.join_states(&base_keys, &give_states, &give_labels, node, bindings)?;
         } else {
-            self.join_states(&base_keys, &normal_states, node, bindings)?;
+            self.join_states(&base_keys, &normal_states, &normal_labels, node, bindings)?;
         }
         Ok(MatchResult {
             scrutinee: condition.expression,
@@ -606,9 +640,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .cloned()
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 let mut place = parent.place;
-                place.fields.push(
-                    u32::try_from(index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
-                );
+                place
+                    .extend_fields(&[u32::try_from(index)
+                        .map_err(|_| SemanticCompilerFailure::CounterOverflow)?]);
                 Some(BorrowInfo { place, ..parent })
             };
             let field_ordinal =
@@ -710,13 +744,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
+    /// [LIV-1] the join of every predecessor's ownership state.
+    ///
+    /// Liveness is judged first and is a source rejection: every predecessor
+    /// must agree on the live-or-dead status of every binding in scope, and a
+    /// disagreement names the binding and the two predecessors. Only then does
+    /// the checker's own capability limit on joining the remaining state
+    /// apply, so a disagreeing predecessor pair can never be answered with a
+    /// stop instead of a rejection.
     pub(super) fn join_states(
         &self,
         base_keys: &[DeclarationId],
         states: &[HashMap<DeclarationId, LocalBinding>],
+        labels: &[String],
         node: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
     ) -> Result<(), CheckStop> {
+        if states.len() != labels.len() {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
         let Some(first) = states.first() else {
             return Ok(());
         };
@@ -725,12 +771,39 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .get(key)
                 .cloned()
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            for state in states.iter().skip(1) {
+            let mut live_predecessor = labels
+                .first()
+                .cloned()
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            for (state, label) in states.iter().zip(labels).skip(1) {
                 let candidate = state
                     .get(key)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                if candidate.live != joined.live {
+                    let (live, dead) = if joined.live {
+                        (live_predecessor.clone(), label.clone())
+                    } else {
+                        (label.clone(), live_predecessor.clone())
+                    };
+                    return self.issue_node(
+                        SemanticRule::Liv1,
+                        node,
+                        SemanticIssueKind::LivenessJoinDisagreement {
+                            binding: self.declaration_spelling(*key)?,
+                            live_predecessor: live,
+                            dead_predecessor: dead,
+                            mechanical_fix: "every predecessor of a join agrees on a binding's \
+                                             live-or-dead status: consume it on every predecessor, \
+                                             on none, or commit a value back into it before the \
+                                             predecessor that consumed it reaches the join",
+                        },
+                    );
+                }
                 if !joined.same_except_region_loans(candidate) {
                     return self.unsupported(UnsupportedSemanticFeature::OwnershipJoin, node);
+                }
+                if joined.live {
+                    live_predecessor.clone_from(label);
                 }
                 joined.merge_region_loans_from(candidate);
             }

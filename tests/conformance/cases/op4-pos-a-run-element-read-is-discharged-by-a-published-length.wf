@@ -1,0 +1,19 @@
+fn two() -> made: own FixedVector<u8, 4> pure contract {
+  ensures len_of(made) >= 2_u64;
+} {
+  doc "Builds a run of two values and publishes what its window then holds.";
+  let empty = fixed_vector::<u8, 4>();
+  let one = place_back(vector: move empty, value: 7_u8);
+  let filled = place_back(vector: move one, value: 9_u8);
+  return move filled;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "OP-4: the same obligation a target owes, discharged at a read. The callee's verified relation puts two elements in the window, so `1 < len_of(built)` holds at the subscript and the read executes with no runtime check.";
+  let built = two();
+  let second = built[1_u64];
+  if second == 9_u8 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}

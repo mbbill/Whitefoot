@@ -239,7 +239,10 @@ fn classify_node(
                 _ => return Err(ResolutionCompilerFailure::InvalidRoleShape),
             }
         }
-        Production::RegionParams => add_all(
+        // [PROV-6] one `region_param` owns one REGIONID and, when written,
+        // its linearity bound; the bound is a fixed atom and satisfies no
+        // name predicate, so the name list here is still exactly the region.
+        Production::RegionParam => add_all(
             classified,
             owner,
             &names,
@@ -321,23 +324,46 @@ fn classify_node(
                 _ => return Err(ResolutionCompilerFailure::InvalidRoleShape),
             }
         }
+        // [GRAM-4, MSR-5] `affine_factor` carries an `atom`, so an affine
+        // relation's own IDENT is one `pbase` below it and takes its role in
+        // the `pbase` arm; nothing is named directly here.
         Production::AffineFactor if !names.is_empty() => {
-            let role = if ancestor_with_production(topology, owner, Production::ProofUse).is_some()
-            {
-                LexicalUseRole::ProofValue
-            } else {
-                LexicalUseRole::InvariantValue
+            return Err(ResolutionCompilerFailure::InvalidRoleShape);
+        }
+        // [PROV-6, GRAM-4] a destructuring consume writes the nominal it takes
+        // apart where every other `let` writes its binders; the TYPEID is a use
+        // of that nominal and the binders belong to the `fieldbind` list below.
+        Production::LetStmt
+            if names
+                .first()
+                .copied()
+                .and_then(|first| name_predicate(classified, first))
+                == Some(TerminalPredicate::TypeIdentifier) =>
+        {
+            let [nominal] = names.as_slice() else {
+                return Err(ResolutionCompilerFailure::InvalidRoleShape);
             };
-            add_all(
+            add_complete(
                 classified,
                 owner,
-                &names,
-                RawRoleKind::LexicalUse(role),
+                *nominal,
+                RawRoleKind::LexicalUse(LexicalUseRole::Construct),
                 roles,
                 complete_counts,
             )?;
         }
-        Production::LetStmt | Production::ContractDefine => add_single(
+        // [GRAM-4] a `let` writes one binder or a parenthesized list of two or
+        // more, and every binder of either form is one ordinary `let`
+        // declaration in the statement's own scope [S16, CALL-4].
+        Production::LetStmt => add_all(
+            classified,
+            owner,
+            &names,
+            RawRoleKind::Declaration(DeclarationRole::Let),
+            roles,
+            complete_counts,
+        )?,
+        Production::ContractDefine => add_single(
             classified,
             owner,
             &names,
@@ -444,18 +470,57 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        Production::ResultRoute => add_single(
-            classified,
-            owner,
-            &names,
-            RawRoleKind::LexicalUse(LexicalUseRole::EnsuresVariant),
-            roles,
-            complete_counts,
-        )?,
+        // [GRAM-2, CALL-4] a route is `when V(f: r):` or `when b is V(f: r):`,
+        // where `b` names the result ordinal the route applies to. The ordinal
+        // binder names a declared result and declares nothing, so it carries a
+        // selector spelling exactly as a route's field name does.
+        Production::ResultRoute => match names.as_slice() {
+            [variant] => add_complete(
+                classified,
+                owner,
+                *variant,
+                RawRoleKind::LexicalUse(LexicalUseRole::EnsuresVariant),
+                roles,
+                complete_counts,
+            )?,
+            [ordinal, variant] => {
+                if name_predicate(classified, *ordinal) != Some(TerminalPredicate::Identifier) {
+                    return Err(ResolutionCompilerFailure::InvalidRoleShape);
+                }
+                add_complete(
+                    classified,
+                    owner,
+                    *ordinal,
+                    RawRoleKind::Selector(SelectorRole::ResultOrdinal),
+                    roles,
+                    complete_counts,
+                )?;
+                add_complete(
+                    classified,
+                    owner,
+                    *variant,
+                    RawRoleKind::LexicalUse(LexicalUseRole::EnsuresVariant),
+                    roles,
+                    complete_counts,
+                )?;
+            }
+            _ => return Err(ResolutionCompilerFailure::InvalidRoleShape),
+        },
         Production::Fieldbind => {
             if let [field, binder] = names.as_slice() {
                 let selector_field =
                     ancestor_with_production(topology, owner, Production::ResultRoute).is_some();
+                // [PROV-6, GRAM-4] a destructuring consume's binders are
+                // ordinary `let` bindings of the enclosing block, exactly as
+                // [CALL-4]'s binder list's are; only a `match` arm's binder is
+                // arm-scoped and judged by [GRAM-10]'s freshness rule.
+                //
+                // Which of the two a `fieldbind` is, is decided by the
+                // construct that owns its list and not by whether an arm is
+                // anywhere above it: a destructuring consume written inside a
+                // `match` arm has an `arm` ancestor and is still a `let`.
+                let destructuring_binder = !selector_field
+                    && nearest_binder_owner(topology, owner) == Some(Production::LetStmt);
                 add_complete(
                     classified,
                     owner,
@@ -474,6 +539,8 @@ fn classify_node(
                     *binder,
                     if selector_field {
                         RawRoleKind::Selector(SelectorRole::VariantCandidate)
+                    } else if destructuring_binder {
+                        RawRoleKind::Declaration(DeclarationRole::Let)
                     } else {
                         RawRoleKind::Declaration(DeclarationRole::MatchBinder)
                     },
@@ -484,10 +551,12 @@ fn classify_node(
                 return Err(ResolutionCompilerFailure::InvalidRoleShape);
             }
         }
-        // [FORM-8] `slice<T>` / `arena<T>`: the view still carries one region.
+        // [FORM-8] `Slice<T>`, `MutSlice<T>` / `arena<T>`: a view still
+        // carries one region [VIEW-1].
         Production::Type
             if !direct.is_empty()
                 && (has_fixed_terminal(classified, direct, FixedTerminal::Slice)
+                    || has_fixed_terminal(classified, direct, FixedTerminal::MutSlice)
                     || has_fixed_terminal(classified, direct, FixedTerminal::Arena))
                 && !names.iter().any(|index| {
                     name_predicate(classified, *index) == Some(TerminalPredicate::RegionIdentifier)
@@ -495,6 +564,8 @@ fn classify_node(
         {
             let anchor = if has_fixed_terminal(classified, direct, FixedTerminal::Slice) {
                 FixedTerminal::Slice
+            } else if has_fixed_terminal(classified, direct, FixedTerminal::MutSlice) {
+                FixedTerminal::MutSlice
             } else {
                 FixedTerminal::Arena
             };
@@ -687,7 +758,7 @@ fn classify_node(
                     classified,
                     owner,
                     &names,
-                    RawRoleKind::LexicalUse(LexicalUseRole::PlaceBase),
+                    RawRoleKind::LexicalUse(affine_atom_role(topology, owner)),
                     roles,
                     complete_counts,
                 )?;
@@ -788,6 +859,61 @@ fn classify_node(
         }
     }
     Ok(())
+}
+
+/// The role one `pbase` IDENT takes [GRAM-4, GRAM-5].
+///
+/// A `pbase` directly below an `affine_factor` — through the factor's `atom`
+/// and that atom's `place` — is one affine relation's own value atom and
+/// resolves in [INV-1]'s or [PRF-1]'s narrower universe. Every other `pbase`
+/// is an ordinary place base, including the operand of a measure former
+/// written as an `affine_factor` `call`, whose IDENT is a place and not an
+/// affine atom.
+fn affine_atom_role(topology: &FinalizedTopology, pbase: NodeId) -> LexicalUseRole {
+    let direct = topology
+        .node(pbase)
+        .and_then(|record| record.parent)
+        .filter(|parent| {
+            topology
+                .node(*parent)
+                .is_some_and(|record| record.production == Production::Place)
+        })
+        .and_then(|place| topology.node(place).and_then(|record| record.parent))
+        .filter(|parent| {
+            topology
+                .node(*parent)
+                .is_some_and(|record| record.production == Production::Atom)
+        })
+        .and_then(|atom| topology.node(atom).and_then(|record| record.parent))
+        .is_some_and(|parent| {
+            topology
+                .node(parent)
+                .is_some_and(|record| record.production == Production::AffineFactor)
+        });
+    if !direct {
+        return LexicalUseRole::PlaceBase;
+    }
+    if ancestor_with_production(topology, pbase, Production::ProofUse).is_some() {
+        return LexicalUseRole::ProofValue;
+    }
+    if ancestor_with_production(topology, pbase, Production::HeaderInvariant).is_some()
+        || ancestor_with_production(topology, pbase, Production::InvariantStmt).is_some()
+    {
+        return LexicalUseRole::InvariantValue;
+    }
+    LexicalUseRole::PlaceBase
+}
+
+/// Which construct owns the `fieldbind` at `node`: the `let_stmt` of a
+/// destructuring consume, or the `arm` of a `match` [GRAM-4, PROV-6].
+fn nearest_binder_owner(topology: &FinalizedTopology, mut node: NodeId) -> Option<Production> {
+    loop {
+        let record = topology.node(node)?;
+        if matches!(record.production, Production::LetStmt | Production::Arm) {
+            return Some(record.production);
+        }
+        node = record.parent?;
+    }
 }
 
 fn ancestor_with_production(

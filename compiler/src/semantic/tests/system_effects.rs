@@ -195,14 +195,14 @@ fn a_pure_contract_member_cannot_bind_a_release_effectful_function() {
     // by presence: a `pure` member cannot bind a function that exhibits a
     // category only through release.
     assert_rule(
-        b"contract Disposer {\n  fn dispose(file: own ReadFile) -> result: own unit pure;\n}\n\nconform u64: Disposer {\n  dispose = release_read_file;\n}\n\nfn release_read_file(file: own ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"contract Disposer {\n  fn release(file: own ReadFile) -> result: own unit pure;\n}\n\nconform u64: Disposer {\n  release = release_read_file;\n}\n\nfn release_read_file(file: own ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn3,
         SemanticIssueKind::IncompatibleConformanceFunction,
     );
     // The same member row binds the same function when both declare the two
     // categories, so the presence comparison admits as well as rejects.
     assert_complete(
-        b"contract Disposer {\n  fn dispose(item: own ReadFile) -> result: own unit writes(item);\n}\n\nconform u64: Disposer {\n  dispose = release_read_file;\n}\n\nfn release_read_file(file: own ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"contract Disposer {\n  fn release(item: own ReadFile) -> result: own unit writes(item);\n}\n\nconform u64: Disposer {\n  release = release_read_file;\n}\n\nfn release_read_file(file: own ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
 }
 
@@ -216,7 +216,7 @@ fn memory_reclamation_contributes_no_release_row() {
         b"fn consume(data: own buffer<u8>) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
     assert_complete(
-        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let boxed = box_new(0_u64);\n  let stored = buffer_new(4_u64, 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let boxed = box_new(0_u64);\n  let stored = buffer_new(4_u64, 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
     );
 }
 
@@ -227,7 +227,7 @@ fn release_attribution_is_transitive_over_owned_content() {
     // boxed `ReadFile` with its fixed state-release row, so the row is
     // exhibited through the indirection.
     assert_complete(
-        b"fn stash(file: own ReadFile) -> result: own unit writes(file), allocates(heap) {\n  let boxed = box_new(move file);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn stash(file: own ReadFile) -> result: own unit writes(file) {\n  let boxed = box_new(move file);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
 }
 
@@ -235,10 +235,17 @@ fn release_attribution_is_transitive_over_owned_content() {
 fn live_effect_categories_keep_eff1_canonical_order_and_multiplicity() {
     // The replacement keeps the same canonical-order and multiplicity
     // coverage over the live categories: reads, writes, and allocates.
-    assert_rule_kind(
-        b"fn probe(file: own ReadFile) -> result: own unit allocates(heap), writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
-        SemanticRule::Eff1,
-        |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
+    //
+    // `pure` combined with a second category is refused at the same rule but
+    // at the earlier stage: `effects := "pure" | effect ("," effect)*` cannot
+    // derive it, and regenerating the tables for [S23]'s `allocates` entry
+    // tightened the decision that used to admit the bytes and leave the
+    // refusal to the checker. The conformance corpus keeps its recorded
+    // `reject EFF-1` verdict for the same program either way; what moved is
+    // the stage, so this assertion moves with it.
+    super::assert_parse_rule(
+        b"fn probe(file: own ReadFile) -> result: own unit pure, writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        crate::SyntaxRule::Eff1,
     );
     assert_rule_kind(
         b"fn probe(file: own ReadFile) -> result: own unit writes(file), writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
@@ -281,9 +288,9 @@ fn pass_output_program(effects: &str) -> Vec<u8> {
 
 #[test]
 fn a_user_result_cannot_wash_an_output_formal_origin() {
-    let accepted = pass_output_program("reads(out), writes(out), allocates(heap)");
+    let accepted = pass_output_program("reads(out), writes(out)");
     assert_complete(&accepted);
-    let washed = pass_output_program("allocates(heap)");
+    let washed = pass_output_program("pure");
     assert_rule_kind(&washed, SemanticRule::Eff2, |kind| {
         matches!(kind, SemanticIssueKind::EffectMismatch { .. })
     });
@@ -367,10 +374,9 @@ fn forward_choice(left: own OutputStream, right: own OutputStream, take_left: ow
 
 #[test]
 fn a_control_flow_result_projects_to_every_possible_formal() {
-    let accepted =
-        choose_output_program("reads(out, err), writes(out, err), allocates(heap)", false);
+    let accepted = choose_output_program("reads(out, err), writes(out, err)", false);
     assert_complete(&accepted);
-    let narrowed = choose_output_program("reads(out), writes(out), allocates(heap)", false);
+    let narrowed = choose_output_program("reads(out), writes(out)", false);
     assert_rule_kind(&narrowed, SemanticRule::Eff2, |kind| {
         matches!(kind, SemanticIssueKind::EffectMismatch { .. })
     });
@@ -402,7 +408,7 @@ fn delivered_wrapper(output: own OutputStream, first: own Bool) -> result: own O
   return delivered(output: move output, first: first);
 }
 
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let flag = True();
   let selected = delivered_wrapper(output: move out, first: flag);
   let bytes = buffer_new(1_u64, 65_u8);
@@ -427,7 +433,7 @@ fn a_recursive_pass_through_reaches_the_formal_fixed_point() {
   }
 }
 
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let flag = True();
   let selected = recursive_pass(output: move out, stop: flag);
   let bytes = buffer_new(1_u64, 65_u8);
@@ -456,7 +462,7 @@ fn mutual_b(output: own OutputStream, stop: own Bool) -> result: own OutputStrea
   return mutual_a(output: move output, stop: stop);
 }
 
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let flag = True();
   let selected = mutual_b(output: move out, stop: flag);
   let bytes = buffer_new(1_u64, 65_u8);
@@ -523,7 +529,7 @@ fn pass_pair(pair: own Pair) -> result: own Pair pure {
   return move pair;
 }
 
-fn dispose(pair: own Pair) -> result: own unit writes(pair.first, pair.second) {
+fn release_pair(pair: own Pair) -> result: own unit writes(pair.first, pair.second) {
   let same = pass_pair(pair: move pair);
   return unit;
 }
@@ -687,7 +693,7 @@ fn direct_aggregate_construction_releases_every_input_leaf() {
   second: ReadFile;
 }
 
-fn dispose(first: own ReadFile, second: own ReadFile) -> result: own unit writes(first, second) {
+fn release_both(first: own ReadFile, second: own ReadFile) -> result: own unit writes(first, second) {
   let pair = Pair(first: move first, second: move second);
   return unit;
 }
@@ -702,7 +708,7 @@ command fn main() -> status: own ExitStatus pure {
   second: ReadFile;
 }
 
-fn dispose(first: own ReadFile, second: own ReadFile) -> result: own unit writes(first) {
+fn release_both(first: own ReadFile, second: own ReadFile) -> result: own unit writes(first) {
   let pair = Pair(first: move first, second: move second);
   return unit;
 }
@@ -779,7 +785,7 @@ fn an_unrelated_loop_does_not_destroy_a_formal_origin() {
   return move output;
 }
 
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let selected = through_loop(output: move out);
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
@@ -876,7 +882,7 @@ fn an_optional_result_projects_its_present_formal_and_keeps_its_absent_route() {
   }
 }
 
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let flag = True();
   match maybe_output(output: move out, present: flag) {
     Ok(value: selected) => {
@@ -936,7 +942,7 @@ fn borrowing_one_owned_struct_field_projects_only_that_field_effect() {
 }
 
 fn length(value: &buffer<u8>) -> result: own u64 reads(value) {
-  return len(deref(value));
+  return len_of(deref(value));
 }
 
 fn read_second(pair: own Pair) -> result: own unit reads(pair.second) {

@@ -7,7 +7,7 @@ use whitefoot::{
     ACTIVE_KERNEL_SPEC_VERSION, computed_active_spec_hash,
 };
 
-const DERIVATION_LEDGER: &str = include_str!("../../../spec/derivation/derivation-ledger.md");
+const RULE_GROUNDS: &str = include_str!("../../../spec/derivation/derivation-ledger.md");
 
 fn is_rule_id(text: &str) -> bool {
     let Some((family, number)) = text.split_once('-') else {
@@ -227,14 +227,87 @@ fn counts_json(text: &str) -> Result<String, String> {
     ))
 }
 
-fn ledger_rule_ids(text: &str) -> BTreeSet<&str> {
-    text.lines()
-        .filter_map(|line| {
-            let rest = line.strip_prefix("| ")?;
-            let (candidate, _) = rest.split_once(" |")?;
-            is_rule_id(candidate).then_some(candidate)
-        })
-        .collect()
+/// Only the current index participates in coverage. A retired rule or a
+/// historical derivation cannot silently stand in for a missing current row.
+/// Basis labels classify the cited claims; they do not validate their truth.
+fn ground_index_rules(text: &str) -> Result<BTreeSet<&str>, Vec<String>> {
+    const HEADING: &str = "## Current index";
+    if text.lines().filter(|line| *line == HEADING).count() != 1 {
+        return Err(vec![
+            "grounds need exactly one Current index section".to_owned(),
+        ]);
+    }
+    let mut errors = Vec::new();
+    let mut rules = BTreeSet::new();
+    let rows = text
+        .lines()
+        .enumerate()
+        .skip_while(|(_, line)| *line != HEADING)
+        .skip(1)
+        .take_while(|(_, line)| !line.starts_with("## "));
+    for (line_number, line) in rows {
+        if line.trim().is_empty()
+            || line == "| Rule | Basis | Review | Grounds and scope |"
+            || line == "|---|---|---|---|"
+        {
+            continue;
+        }
+        let Some(row) = line.strip_prefix('|').and_then(|row| row.strip_suffix('|')) else {
+            errors.push(format!(
+                "grounds line {} is not an index row",
+                line_number + 1
+            ));
+            continue;
+        };
+        let fields: Vec<&str> = row.split('|').map(str::trim).collect();
+        if fields.len() != 4 || !is_rule_id(fields[0]) {
+            errors.push(format!(
+                "grounds line {} needs four fields and a rule ID",
+                line_number + 1
+            ));
+            continue;
+        }
+        let [rule, basis, state, source] = fields[..] else {
+            unreachable!("four fields checked above");
+        };
+        if !rules.insert(rule) {
+            errors.push(format!("duplicate current ground for [{rule}]"));
+        }
+        let kinds: Vec<&str> = basis.split('+').collect();
+        let unique: BTreeSet<&str> = kinds.iter().copied().collect();
+        if unique.len() != kinds.len()
+            || kinds.iter().any(|kind| {
+                !matches!(
+                    *kind,
+                    "deduction" | "empirical" | "provisional" | "unassessed"
+                )
+            })
+            || (unique.contains("unassessed") && (kinds.len() != 1 || state != "revisit"))
+        {
+            errors.push(format!("invalid ground basis for [{rule}]: {basis}"));
+        }
+        if !matches!(state, "current" | "revisit") {
+            errors.push(format!("invalid ground review state for [{rule}]: {state}"));
+        }
+        let has_source = source.split('[').skip(1).any(|link| {
+            link.split_once("](").is_some_and(|(label, tail)| {
+                !label.trim().is_empty()
+                    && tail
+                        .split_once(')')
+                        .is_some_and(|(target, _)| !target.trim().is_empty())
+            })
+        });
+        if !has_source {
+            errors.push(format!(
+                "current ground for [{rule}] needs a source reference"
+            ));
+        }
+    }
+    if errors.is_empty() {
+        Ok(rules)
+    } else {
+        Err(errors)
+    }
 }
 
 /// The version named by the specification's own title line.
@@ -297,7 +370,7 @@ fn validate_spec_identity(spec: &str, version: &str) -> Result<(), Vec<String>> 
     }
 }
 
-fn validate_spec_integrity(spec: &str, ledger: &str) -> Result<usize, Vec<String>> {
+fn validate_spec_integrity(spec: &str, grounds: &str) -> Result<usize, Vec<String>> {
     let mut errors = Vec::new();
     let rules = match rule_definitions(spec) {
         Ok(rules) => rules,
@@ -311,9 +384,18 @@ fn validate_spec_integrity(spec: &str, ledger: &str) -> Result<usize, Vec<String
         errors.push(format!("unknown rule reference [{reference}]"));
     }
 
-    let ledger_rules = ledger_rule_ids(ledger);
-    for rule in rules.difference(&ledger_rules) {
-        errors.push(format!("derivation ledger has no row for [{rule}]"));
+    let indexed_rules = match ground_index_rules(grounds) {
+        Ok(indexed) => indexed,
+        Err(index_errors) => {
+            errors.extend(index_errors);
+            return Err(errors);
+        }
+    };
+    for rule in rules.difference(&indexed_rules) {
+        errors.push(format!("current ground index has no row for [{rule}]"));
+    }
+    for rule in indexed_rules.difference(&rules) {
+        errors.push(format!("current ground index names inactive rule [{rule}]"));
     }
 
     // META-5 places the delta and selection ground in the change's pull
@@ -363,7 +445,7 @@ fn run_gate() {
         }
         std::process::exit(1);
     }
-    let rule_count = match validate_spec_integrity(ACTIVE_KERNEL_SPEC_TEXT, DERIVATION_LEDGER) {
+    let rule_count = match validate_spec_integrity(ACTIVE_KERNEL_SPEC_TEXT, RULE_GROUNDS) {
         Ok(rule_count) => rule_count,
         Err(errors) => {
             for error in errors {
@@ -379,8 +461,8 @@ fn run_gate() {
 #[cfg(test)]
 mod tests {
     use super::{
-        ACTIVE_KERNEL_SPEC_TEXT, ACTIVE_KERNEL_SPEC_VERSION, DERIVATION_LEDGER, counts_json,
-        index_json, is_rule_id, rule_definitions, validate_spec_identity, validate_spec_integrity,
+        ACTIVE_KERNEL_SPEC_TEXT, ACTIVE_KERNEL_SPEC_VERSION, RULE_GROUNDS, counts_json, index_json,
+        is_rule_id, rule_definitions, validate_spec_identity, validate_spec_integrity,
     };
 
     /// One parsed `--index` entry.
@@ -617,7 +699,7 @@ mod tests {
     /// both sides scan the same embedded specification bytes, so this is a
     /// consistency check between artifacts — the committed generated module
     /// against this validator's scan — not an independent count. Green means
-    /// the integrity checks (resolvable references, ledger rows, status
+    /// the integrity checks (resolvable references, current ground rows, status
     /// markers) pass and the committed module is fresh; it replaced a
     /// hand-bumped `Ok(132)→Ok(133)` literal that witnessed one hand
     /// transcription, nothing more. Green does NOT establish that the count is
@@ -629,16 +711,93 @@ mod tests {
     fn active_spec_has_complete_internal_integrity() {
         let scanned = rule_definitions(ACTIVE_KERNEL_SPEC_TEXT).expect("the spec scans");
         assert_eq!(
-            validate_spec_integrity(ACTIVE_KERNEL_SPEC_TEXT, DERIVATION_LEDGER),
+            validate_spec_integrity(ACTIVE_KERNEL_SPEC_TEXT, RULE_GROUNDS),
             Ok(scanned.len())
         );
     }
 
     #[test]
-    fn unknown_references_and_missing_ledger_rows_fail() {
+    fn unknown_references_and_missing_ground_rows_fail() {
         let spec = "[X-1] See [X-2].\n";
-        let errors = validate_spec_integrity(spec, "").expect_err("invalid spec must fail");
+        let errors =
+            validate_spec_integrity(spec, &grounds("")).expect_err("invalid spec must fail");
         assert!(errors.iter().any(|error| error.contains("[X-2]")));
         assert!(errors.iter().any(|error| error.contains("[X-1]")));
+    }
+
+    fn grounds(rows: &str) -> String {
+        format!(
+            "## Current index\n\n| Rule | Basis | Review | Grounds and scope |\n|---|---|---|---|\n{rows}\n## Historical evidence\n| X-2 | derived | Old constitutional chain |\n"
+        )
+    }
+
+    #[test]
+    fn historical_rows_cannot_supply_current_coverage() {
+        let rows = grounds("| X-1 | provisional | current | [Reason](#choice) |");
+        let errors = validate_spec_integrity("[X-1] A.\n[X-2] B.\n", &rows).unwrap_err();
+        assert_eq!(errors, ["current ground index has no row for [X-2]"]);
+    }
+
+    #[test]
+    fn duplicate_and_retired_current_rows_fail() {
+        let rows = grounds(
+            "| X-1 | provisional | current | [Reason](#choice) |\n| X-1 | empirical | current | [Probe](#probe) |",
+        );
+        assert!(
+            validate_spec_integrity("[X-1] A.\n", &rows)
+                .unwrap_err()
+                .iter()
+                .any(|e| e.contains("duplicate current ground for [X-1]"))
+        );
+        let rows = grounds("| X-2 | provisional | current | [Reason](#choice) |");
+        assert!(
+            validate_spec_integrity("[X-1] A.\n", &rows)
+                .unwrap_err()
+                .iter()
+                .any(|e| e.contains("inactive rule [X-2]"))
+        );
+    }
+
+    #[test]
+    fn malformed_ground_claims_and_missing_sources_fail() {
+        for row in [
+            "| X-1 | derived | current | [Reason](#choice) |",
+            "| X-1 | deduction+deduction | current | [Reason](#choice) |",
+            "| X-1 | unassessed | current | [Reason](#choice) |",
+            "| X-1 | unassessed+provisional | revisit | [Reason](#choice) |",
+            "| X-1 | provisional | approved | [Reason](#choice) |",
+            "| X-1 | provisional | current | No source |",
+            "| X-1 | provisional | current | Missing opening bracket](#choice) |",
+            "| X-1 | provisional | current | [Missing]() |",
+            "| X-1 | provisional | current |",
+        ] {
+            assert!(
+                validate_spec_integrity("[X-1] A.\n", &grounds(row)).is_err(),
+                "accepted bad row: {row}"
+            );
+        }
+    }
+
+    #[test]
+    fn mixed_support_and_explicit_migration_uncertainty_are_admitted() {
+        for (basis, state) in [
+            ("deduction+empirical+provisional", "current"),
+            ("empirical", "revisit"),
+            ("unassessed", "revisit"),
+        ] {
+            let row = format!("| X-1 | {basis} | {state} | [Scoped reason](#reason) |");
+            assert_eq!(validate_spec_integrity("[X-1] A.\n", &grounds(&row)), Ok(1));
+        }
+    }
+
+    #[test]
+    fn duplicate_current_sections_are_not_ambiguous_authorities() {
+        let rows = grounds("| X-1 | provisional | current | [Reason](#choice) |");
+        assert!(
+            validate_spec_integrity("[X-1] A.\n", &format!("{rows}\n{rows}"))
+                .unwrap_err()
+                .iter()
+                .any(|e| e.contains("exactly one Current index"))
+        );
     }
 }

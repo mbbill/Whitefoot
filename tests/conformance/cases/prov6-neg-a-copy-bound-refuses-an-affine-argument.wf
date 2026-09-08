@@ -1,0 +1,11 @@
+fn twice<T: copy>(value: own T) -> (first: own T, second: own T) pure {
+  doc "A body written for the copy class: it uses its value bare, twice.";
+  return value, value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "PROV-6, S37: the chain copy < affine < linear is read left to right, so a `copy` bound accepts copy arguments only. An affine argument is a hard error at the instantiation, naming the parameter, the bound and the argument; the reverse direction, a copy argument at an affine bound, is admitted.";
+  let payload = Some<u8>(value: 3_u8);
+  let (a, b) = twice::<Option<u8>>(value: move payload);
+  return exit_status(code: 0_u8);
+}

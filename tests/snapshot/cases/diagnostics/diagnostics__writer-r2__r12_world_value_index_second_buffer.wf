@@ -1,13 +1,21 @@
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   doc "EXPECT REJECT under Op4: the write position comes from args_count, a genuinely external world value the compiler cannot bound at compile time, so an invariant could never honestly be written here; the correct repair is a real dominating branch testing the position against the buffer length.";
   region {
     let position = args_count(args: &args);
-    let bytes = buffer_new(8_u64, 0_u8);
-    let room = len(bytes);
-    let head = bytes[0_u64];
+    let bytes = fixed_vector::<u8, 8>();
+    set bytes = place_back(vector: move bytes, value: 0_u8);
+    set bytes = place_back(vector: move bytes, value: 0_u8);
+    set bytes = place_back(vector: move bytes, value: 0_u8);
+    set bytes = place_back(vector: move bytes, value: 0_u8);
+    set bytes = place_back(vector: move bytes, value: 0_u8);
+    set bytes = place_back(vector: move bytes, value: 0_u8);
+    set bytes = place_back(vector: move bytes, value: 0_u8);
+    set bytes = place_back(vector: move bytes, value: 0_u8);
+    let spare = len_of(bytes);
+    let front = bytes[0_u64];
     let second = bytes[1_u64];
     let tail = bytes[7_u64];
-    let partial = head +wrap second;
+    let partial = front +wrap second;
     let checksum = partial +wrap tail;
     let sample = bytes[position];
     return exit_status(code: sample);

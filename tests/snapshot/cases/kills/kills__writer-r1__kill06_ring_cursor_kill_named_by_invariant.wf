@@ -1,11 +1,15 @@
 struct Ring {
-  slots: array<u32, 4>;
+  slots: FixedVector<u32, 4>;
   cursor: u64;
 }
 
 command fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: every pass writes both the local pos and the struct field ring.cursor it mirrors, killing the prior iteration's bound; a fresh real branch re-establishes pos's bound before the next iteration's index, per P12.";
-  let slots = array_new::<u32, 4>(0_u32);
+  let slots = fixed_vector::<u32, 4>();
+  set slots = place_back(vector: move slots, value: 0_u32);
+  set slots = place_back(vector: move slots, value: 0_u32);
+  set slots = place_back(vector: move slots, value: 0_u32);
+  set slots = place_back(vector: move slots, value: 0_u32);
   let ring = Ring(slots: move slots, cursor: 0_u64);
   let pos = 0_u64;
   for (step in 0_u64..9_u64) {

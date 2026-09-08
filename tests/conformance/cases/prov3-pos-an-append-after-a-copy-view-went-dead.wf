@@ -1,0 +1,20 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "A copy view is consumed by nothing, so its loan ends at its last use rather than at the end of its region: the run is appended to after the view of it went dead, inside the region block the view was formed in. The program reads the run's length back afterwards, so an append the checker admitted but the lowering placed wrongly is visible.";
+  let empty = fixed_vector::<u8, 4>();
+  let one = place_back(vector: move empty, value: 7_u8);
+  region {
+    let window = slice_of(&one);
+    let seen = window[0_u64];
+    if seen == 7_u8 {
+    } else {
+      return exit_status(code: 21_u8);
+    }
+    let two = place_back(vector: move one, value: 9_u8);
+    let width = len_of(two);
+    if width == 2_u64 {
+    } else {
+      return exit_status(code: 22_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

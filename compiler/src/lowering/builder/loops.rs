@@ -163,9 +163,11 @@ impl IrBuilder<'_> {
     /// Lowers the complete multi-slot staged schedule of one counted loop.
     ///
     /// The admitted IR topology is deliberately narrow: a straight-line
-    /// prologue ending at the staged call, and a remainder that does not read
-    /// the counted binder or a prologue-local value. Those are implementation
-    /// limits, not source-language rejections. A loop outside this subset
+    /// prologue ending at the staged call. The submitted-system form still
+    /// requires a remainder that does not read the counted binder or a
+    /// prologue-local value; the user-call form carries those values or places
+    /// per iteration. These are implementation limits, not source-language
+    /// rejections. A loop outside this subset
     /// continues through the ordinary graph and the complete one-slot driver
     /// below.
     ///
@@ -196,7 +198,15 @@ impl IrBuilder<'_> {
         let Some(cut) = self.unique_staged_cut(id) else {
             return Ok(false);
         };
-        let Some(direct) = direct_staged_match(body, &cut, id) else {
+        let Some(direct) = direct_staged_match(
+            body,
+            &cut,
+            id,
+            StagedScope {
+                erasure: self.erasure,
+                nominals: self.nominals,
+            },
+        ) else {
             return Ok(false);
         };
         // Which form this is is decided by the cut's own kind and never by how
@@ -267,20 +277,34 @@ impl IrBuilder<'_> {
                 .iter()
                 .any(|statement| statement_uses_any(statement, &unavailable_in_remainder)),
         };
-        if unavailable_in_remainder
-            .iter()
-            .any(|binding| self.addressed_bindings.contains(binding))
-            || remainder_reads_the_issue_stage
+        if !lane
+            && (unavailable_in_remainder
+                .iter()
+                .any(|binding| self.addressed_bindings.contains(binding))
+                || remainder_reads_the_issue_stage)
         {
             return Ok(false);
         }
-        // The one thing the drain does read out of the issue stage: the
-        // compiler-derived release of the iteration's own storage. Each such
-        // binding becomes a ring element, so the release runs in the drain on
-        // the value that iteration allocated. A release that performs a system
-        // action is refused here rather than reordered, on the same rule an
-        // exiting arm's own binders take.
+        // The lane drain carries each issue-local binding its remainder reads,
+        // including the counted value. Keep source order deterministic; these
+        // identities are not permission to snapshot borrowed mutable content.
         let mut carried_bindings_in_drain = Vec::new();
+        if let StagedTail::Bound { remainder, .. } = &direct.tail {
+            let mut candidates: Vec<_> = unavailable_in_remainder.iter().copied().collect();
+            candidates.sort_by_key(|binding| binding.0);
+            for binding in candidates {
+                let selected = HashSet::from([binding]);
+                if remainder
+                    .iter()
+                    .any(|statement| statement_uses_any(statement, &selected))
+                {
+                    carried_bindings_in_drain.push(binding);
+                }
+            }
+        }
+        // Cleanup may be the only remaining use. Its checked order is still
+        // the backedge's order, independent of the carry layout. A release
+        // performing a system action keeps the existing early-exit restriction.
         for drop in backedge_drops {
             if !unavailable_in_remainder.contains(&drop.binding)
                 || !release_emits_nothing(&drop.release)
@@ -537,7 +561,15 @@ impl IrBuilder<'_> {
         // stage's own definitions are exactly the values live here.
         let mut staged_carries = Vec::with_capacity(carried_bindings_in_drain.len());
         for binding in &carried_bindings_in_drain {
-            let origin = self.binding_value(*binding)?;
+            // An addressed owner carries its place, not a read of its content
+            // while the callee may still be mutating it. Each issue-stage
+            // address has backing for its pipeline slot; the drain reloads the
+            // same address and performs subsequent reads after joining.
+            let origin = self
+                .bindings
+                .get(binding)
+                .copied()
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
             let reload = self.new_value(self.value_type(origin)?)?;
             staged_carries.push((*binding, origin, reload));
         }
@@ -663,11 +695,7 @@ impl IrBuilder<'_> {
                 // iteration ends: after the join, on the ring element that
                 // iteration owns, once per retired slot.
                 let drops = self.lower_drops(backedge_drops)?;
-                for drop in drops {
-                    self.current_block_mut()?
-                        .instructions
-                        .push(crate::IrInstruction::Drop(drop));
-                }
+                self.append_drops(drops)?;
             }
         }
         if self.current.is_none() {
@@ -1258,6 +1286,37 @@ struct DirectStagedMatch<'body> {
     tail: StagedTail<'body>,
 }
 
+/// What the staged walk needs from the program to read a drop record: the
+/// nominal erasure that lowers a checked type and the lowered nominal table
+/// the release question is asked against.
+#[derive(Clone, Copy)]
+struct StagedScope<'program> {
+    erasure: &'program [crate::IrNominalId],
+    nominals: &'program [crate::IrNominal],
+}
+
+impl StagedScope<'_> {
+    /// Whether every one of these compiler-derived releases performs nothing.
+    ///
+    /// The staged form splits one body across the issue stage and the drain,
+    /// so a region the walk enters no longer has an edge of its own to run its
+    /// fallthrough releases on. That is a loss exactly when a release does
+    /// something: a view owns no storage and a bump extent's run is reclaimed
+    /// by its own region reset, so neither has an action to lose [VIEW-1,
+    /// PROV-3, BLK-2, STOR-3], while a general store's run and any value
+    /// holding a system resource do and keep the loop out of the staged form.
+    /// A type the table cannot answer for counts as releasing something, so an
+    /// unknown never silently stages.
+    fn drops_release_nothing(self, drops: &[CheckedDrop]) -> bool {
+        drops.iter().all(|drop| {
+            lower_type(self.erasure, drop.ty).is_ok_and(|ty| {
+                drop.release == SystemRelease::NONE
+                    && crate::lowering::type_derives_release(self.nominals, ty) == Some(false)
+            })
+        })
+    }
+}
+
 /// Recognizes the target-independent topology the bounded-batch driver owns:
 /// a prologue of straight-line statements and exiting gates, followed by the
 /// selected staged call and its remainder. This is an optimization eligibility
@@ -1267,9 +1326,10 @@ fn direct_staged_match<'body>(
     body: &'body [CheckedStatement],
     cut: &NodePath,
     loop_id: CheckedLoopId,
+    scope: StagedScope<'_>,
 ) -> Option<DirectStagedMatch<'body>> {
     let mut prologue = Vec::new();
-    let tail = direct_staged_tail(body, cut, loop_id, &mut prologue)?;
+    let tail = direct_staged_tail(body, cut, loop_id, scope, &mut prologue)?;
     Some(DirectStagedMatch { prologue, tail })
 }
 
@@ -1301,6 +1361,7 @@ fn direct_staged_tail<'body>(
     body: &'body [CheckedStatement],
     cut: &NodePath,
     loop_id: CheckedLoopId,
+    scope: StagedScope<'_>,
     prologue: &mut Vec<PrologueItem<'body>>,
 ) -> Option<StagedTail<'body>> {
     // The bound form first, because the cut is then in the middle of this
@@ -1326,9 +1387,9 @@ fn direct_staged_tail<'body>(
         body,
         fallthrough_drops,
     } = last
-        && fallthrough_drops.is_empty()
+        && scope.drops_release_nothing(fallthrough_drops)
     {
-        return direct_staged_tail(body, cut, loop_id, prologue);
+        return direct_staged_tail(body, cut, loop_id, scope, prologue);
     }
     let CheckedStatement::Match {
         scrutinee,
@@ -1363,8 +1424,8 @@ fn direct_staged_tail<'body>(
     let mut continuing = None;
     for (index, arm) in arms.iter().enumerate() {
         let mut inner = Vec::new();
-        if let Some(tail) = direct_staged_tail(&arm.body, cut, loop_id, &mut inner) {
-            if continuing.is_some() || !arm.fallthrough_drops.is_empty() {
+        if let Some(tail) = direct_staged_tail(&arm.body, cut, loop_id, scope, &mut inner) {
+            if continuing.is_some() || !scope.drops_release_nothing(&arm.fallthrough_drops) {
                 return None;
             }
             continuing = Some((index, inner, tail));
@@ -1410,7 +1471,7 @@ impl IrBuilder<'_> {
         let base_bindings = self.bindings.clone();
         self.terminate(IrTerminator::Match {
             scrutinee,
-            enum_type: gate.enum_type.into(),
+            enum_type: crate::lowering::lower_enum_type(self.erasure, gate.enum_type),
             targets: gate
                 .arms
                 .iter()
@@ -1427,10 +1488,10 @@ impl IrBuilder<'_> {
             self.bindings = base_bindings.clone();
             for binder in &arm.binders {
                 let value = self.define(
-                    lower_type(binder.ty)?,
+                    lower_type(self.erasure, binder.ty)?,
                     IrOperation::ProjectVariant {
                         aggregate: scrutinee,
-                        nominal: crate::lowering::IrNominalId(nominal.0),
+                        nominal: self.erased(nominal),
                         variant: arm.tag,
                         field: binder.field,
                     },
@@ -1605,6 +1666,13 @@ fn set_target_uses_any(target: &CheckedSetTarget, bindings: &HashSet<BindingId>)
         CheckedSetTarget::Place(_) => false,
         CheckedSetTarget::ArrayIndex(target) => expression_uses_any(&target.offset, bindings),
         CheckedSetTarget::BufferIndex(target) => expression_uses_any(&target.offset, bindings),
+        CheckedSetTarget::Storage(root) => root.path.iter().any(|step| match step {
+            crate::semantic::CheckedPlaceStep::Field(_) => false,
+            crate::semantic::CheckedPlaceStep::Subscript(subscript) => {
+                expression_uses_any(&subscript.offset, bindings)
+            }
+        }),
+        CheckedSetTarget::SliceIndex(target) => expression_uses_any(&target.offset, bindings),
     }
 }
 
@@ -1615,7 +1683,9 @@ fn drops_use_any(drops: &[CheckedDrop], bindings: &HashSet<BindingId>) -> bool {
 fn statement_uses_any(statement: &CheckedStatement, bindings: &HashSet<BindingId>) -> bool {
     match statement {
         CheckedStatement::Let { value, .. }
+        | CheckedStatement::DestructuringLet { value, .. }
         | CheckedStatement::Evaluate(value)
+        | CheckedStatement::Dispose { value, .. }
         | CheckedStatement::DropExpression { value, .. } => expression_uses_any(value, bindings),
         CheckedStatement::PropagateLet {
             scrutinee,
@@ -1625,6 +1695,17 @@ fn statement_uses_any(statement: &CheckedStatement, bindings: &HashSet<BindingId
         CheckedStatement::Set { target, value, .. }
         | CheckedStatement::Replace { target, value, .. } => {
             set_target_uses_any(target, bindings) || expression_uses_any(value, bindings)
+        }
+        CheckedStatement::SetList {
+            targets, values, ..
+        } => {
+            targets
+                .iter()
+                .any(|target| set_target_uses_any(target, bindings))
+                || values
+                    .expressions()
+                    .iter()
+                    .any(|value| expression_uses_any(value, bindings))
         }
         CheckedStatement::Proof(_) => false,
         CheckedStatement::Return { value, drops, .. }

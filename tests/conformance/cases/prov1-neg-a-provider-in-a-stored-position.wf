@@ -1,0 +1,8 @@
+struct Holder {
+  store: Heap;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "Stores a provider in a field.";
+  return exit_status(code: 0_u8);
+}

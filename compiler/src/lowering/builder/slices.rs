@@ -11,7 +11,7 @@ impl IrBuilder<'_> {
         source: &CheckedSliceSource,
         expected_element: CheckedFlatElement,
     ) -> Result<IrValueId, LoweringFailure> {
-        let element = lower_flat_element(expected_element)?;
+        let element = lower_flat_element(self.erasure, expected_element)?;
         let operation = match source {
             CheckedSliceSource::Array { root, length } => {
                 let (array, ty) = self.array_root(root)?;
@@ -33,6 +33,22 @@ impl IrBuilder<'_> {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 IrOperation::SliceFromBuffer { buffer }
+            }
+            // [VIEW-2, OWN-6] the shared child of a view reached through its
+            // holder. A view value is already a descriptor and the child
+            // carries the parent's range, so the child *is* the parent's
+            // descriptor value: nothing is computed and nothing is narrowed.
+            CheckedSliceSource::ViewHolder { binding, .. } => {
+                let parent = self.binding_value(*binding)?;
+                if self.value_type(parent)? != (IrType::Slice { element }) {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                return Ok(parent);
+            }
+            // [VIEW-2] a run's window: its own slots, from `head` onward.
+            CheckedSliceSource::Run(root) => {
+                let run = self.lower_place_address(root)?;
+                IrOperation::SliceFromRun { run }
             }
             // The arena runtime lowering is not implemented. Two semantic
             // capability stops together keep this source out of every
@@ -57,7 +73,7 @@ impl IrBuilder<'_> {
                 width: 64,
                 signed: false,
             },
-            IrOperation::SliceLength { slice },
+            IrOperation::SliceMeasure { slice },
         )
     }
 
@@ -68,7 +84,7 @@ impl IrBuilder<'_> {
         target_domain: CheckedTargetDomainObligation,
     ) -> Result<IrValueId, LoweringFailure> {
         let slice = self.slice_root(root)?;
-        let element = lower_flat_element(root.element)?;
+        let element = lower_flat_element(self.erasure, root.element)?;
         let offset = self.expression(offset)?;
         if self.value_type(offset)?
             != (IrType::Integer {
@@ -88,11 +104,14 @@ impl IrBuilder<'_> {
         )
     }
 
-    fn slice_root(&mut self, root: &CheckedSliceRoot) -> Result<IrValueId, LoweringFailure> {
+    pub(super) fn slice_root(
+        &mut self,
+        root: &CheckedSliceRoot,
+    ) -> Result<IrValueId, LoweringFailure> {
         let slice = self.binding_value(root.binding)?;
         if self.value_type(slice)?
             != (IrType::Slice {
-                element: lower_flat_element(root.element)?,
+                element: lower_flat_element(self.erasure, root.element)?,
             })
         {
             return Err(LoweringFailure::InvalidCheckedProgram);

@@ -6,8 +6,8 @@ fn last_slot(capacity: own u64, attempts: own u64) -> slot: own u64 pure {
     if at_end {
       set slot = 0_u64;
     }
-    let room = slot < capacity;
-    if room {
+    let spare = slot < capacity;
+    if spare {
       set slot = slot + 1_u64;
     }
   }

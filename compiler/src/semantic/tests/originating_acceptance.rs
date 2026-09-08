@@ -21,7 +21,9 @@ fn accepts(source: &[u8]) {
 
 #[test]
 fn an_unproved_array_bound_rejects_under_op4() {
-    let source = br#"fn read(values: own array<i32, 4>, input: own u64) -> result: own i32 pure {
+    let source = br#"const values: FixedVector<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
+
+fn read(input: own u64) -> result: own i32 pure {
   let bounded = imin(input, 3_u64);
   return values[bounded];
 }
@@ -106,7 +108,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_unproved_loop_header_fact_rejects_under_inv1() {
-    let source = br#"fn read(values: own array<i32, 4>, input: own u64) -> result: own unit pure {
+    let source = br#"const values: FixedVector<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
+
+fn read(input: own u64) -> result: own unit pure {
   let bounded = imin(input, 3_u64);
   for (
     i in 0_u64..1_u64,
@@ -128,8 +132,19 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_unproved_allocation_ceiling_rejects_under_op9() {
-    let source = br#"fn allocate(count: own u64) -> result: own unit allocates(heap) {
-  let values = buffer_new(count, 0_u16);
+    // The acquiring row is `heap_vector`, which carries the same [OP-9]
+    // allocation-fit obligation on its count that `buffer_new` did; the
+    // fallible outcome is matched so the refusal reached here is the static
+    // ceiling and not the runtime one.
+    let source = br#"fn allocate(count: own u64, store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+  region {
+    match heap_vector::<u16>(store: &uniq deref(store), count: count) {
+      Some(value: values) => {
+      }
+      None() => {
+      }
+    }
+  }
   return unit;
 }
 
@@ -147,9 +162,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn unproved_system_endpoints_reject_under_sys8() {
-    let source = br#"fn publish(output: &uniq OutputStream, source: &buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) {
+    let source = br#"fn publish(output: &uniq OutputStream, source: own Slice<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) {
   region {
-    match write_once(output: &uniq deref(output), source: source, start: start, end: end) {
+    match write_once(output: &uniq deref(output), source: &source, start: start, end: end) {
       Ok(value: next) => {
       }
       Err(error: problem) => {
@@ -173,10 +188,11 @@ command fn main(command.stdout as output: own OutputStream) -> status: own ExitS
 
 #[test]
 fn an_external_index_needs_a_real_control_flow_fact() {
-    let direct = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
+    let direct = br#"const bytes: FixedVector<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
+
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region {
     let index = args_count(args: &args);
-    let bytes = buffer_new(4_u64, 0_u8);
     let value = bytes[index];
     return exit_status(code: value);
   }
@@ -186,12 +202,13 @@ fn an_external_index_needs_a_real_control_flow_fact() {
         matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { .. })
     });
 
-    let guarded = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
+    let guarded = br#"const bytes: FixedVector<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
+
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region {
     let index = args_count(args: &args);
-    let bytes = buffer_new(4_u64, 0_u8);
-    let room = len(bytes);
-    if index < room {
+    let spare = len_of(bytes);
+    if index < spare {
       let value = bytes[index];
       return exit_status(code: value);
     } else {
@@ -205,23 +222,23 @@ fn an_external_index_needs_a_real_control_flow_fact() {
 
 #[test]
 fn an_external_call_actual_needs_a_real_control_flow_fact() {
-    let function = r#"fn read_at_index(bytes: own buffer<u8>, index: own u64) -> result: own u8 reads(bytes) contract {
-  define room = len(bytes);
-  requires index < room;
+    let function = r#"fn read_at_index(bytes: own FixedVector<u8, 4>, index: own u64) -> result: own u8 reads(bytes) contract {
+  define spare = len_of(bytes);
+  requires index < spare;
 } {
   return bytes[index];
 }
 
 "#;
     let direct = format!(
-        "{function}command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {{\n  region {{\n    let index = args_count(args: &args);\n    let bytes = buffer_new(4_u64, 0_u8);\n    let value = read_at_index(bytes: move bytes, index: index);\n    return exit_status(code: value);\n  }}\n}}\n"
+        "{function}command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {{\n  region {{\n    let index = args_count(args: &args);\n    let empty = fixed_vector::<u8, 4>();\n    let bytes = place_back(vector: move empty, value: 0_u8);\n    let value = read_at_index(bytes: move bytes, index: index);\n    return exit_status(code: value);\n  }}\n}}\n"
     );
     rejects_as(direct.as_bytes(), SemanticRule::Fn8, |kind| {
         matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
     });
 
     let guarded = format!(
-        "{function}command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {{\n  region {{\n    let index = args_count(args: &args);\n    let bytes = buffer_new(4_u64, 0_u8);\n    let room = len(bytes);\n    if index < room {{\n      let value = read_at_index(bytes: move bytes, index: index);\n      return exit_status(code: value);\n    }} else {{\n      return exit_status(code: 0_u8);\n    }}\n  }}\n}}\n"
+        "{function}command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {{\n  region {{\n    let index = args_count(args: &args);\n    let empty = fixed_vector::<u8, 4>();\n    let bytes = place_back(vector: move empty, value: 0_u8);\n    let spare = len_of(bytes);\n    if index < spare {{\n      let value = read_at_index(bytes: move bytes, index: index);\n      return exit_status(code: value);\n    }} else {{\n      return exit_status(code: 0_u8);\n    }}\n  }}\n}}\n"
     );
     accepts(guarded.as_bytes());
 }

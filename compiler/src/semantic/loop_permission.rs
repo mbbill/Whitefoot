@@ -111,7 +111,8 @@ use super::model::{
 };
 use super::permission::{
     Access, Footprint, LoanStrength, Program, call_projection, collect_consumed_places,
-    rooted_place, set_target_place, slice_source_place, visit_read_bindings,
+    rooted_container_place, rooted_place, set_target_place, slice_source_place,
+    visit_read_bindings,
 };
 use super::places::{PlaceMap, PlaceRoot, ResolvedPlace};
 use crate::NodePath;
@@ -511,6 +512,20 @@ impl<'check> Survey<'check, '_> {
                 self.moved_places(value, node_path);
                 self.expression(value);
             }
+            // [CALL-4] a binder or target list writes more than one place in
+            // one statement. The iteration footprint below describes one
+            // written target per statement, so this form is refused rather
+            // than given a footprint that does not describe it.
+            CheckedStatement::DestructuringLet { .. } | CheckedStatement::SetList { .. } => {
+                self.refuse_form("a statement that binds an ordered result list");
+            }
+            // [PROV-6] the iteration footprint describes one written target
+            // per statement, and a release walk writes every capability-
+            // released leaf the value reaches, so this form is refused rather
+            // than given a footprint that does not describe it.
+            CheckedStatement::Dispose { .. } => {
+                self.refuse_form("a statement that runs a release walk");
+            }
             CheckedStatement::Set {
                 node_path,
                 target,
@@ -646,6 +661,12 @@ impl<'check> Survey<'check, '_> {
             CheckedSetTarget::Place(_) => {}
             CheckedSetTarget::ArrayIndex(target) => self.expression(&target.offset),
             CheckedSetTarget::BufferIndex(target) => self.expression(&target.offset),
+            CheckedSetTarget::Storage(target) => {
+                for offset in target.offsets() {
+                    self.expression(offset);
+                }
+            }
+            CheckedSetTarget::SliceIndex(target) => self.expression(&target.offset),
         }
     }
 
@@ -657,6 +678,14 @@ impl<'check> Survey<'check, '_> {
         let (root, obligation) = match target {
             CheckedSetTarget::ArrayIndex(target) => (target.binding, &target.obligation),
             CheckedSetTarget::BufferIndex(target) => (target.root.binding, &target.obligation),
+            CheckedSetTarget::Storage(target) => {
+                let index = target.path.iter().rev().find_map(|step| match step {
+                    super::model::CheckedPlaceStep::Subscript(index) => Some(index),
+                    super::model::CheckedPlaceStep::Field(_) => None,
+                })?;
+                (target.binding, &index.obligation)
+            }
+            CheckedSetTarget::SliceIndex(target) => (target.root.binding, &target.obligation),
             CheckedSetTarget::Place(_) => return None,
         };
         self.proven_affine_map_at(root, obligation)
@@ -691,7 +720,6 @@ impl<'check> Survey<'check, '_> {
     fn record_reads(&mut self, expression: &CheckedExpression) {
         let occurrence = match expression {
             CheckedExpression::Binding { binding, .. }
-            | CheckedExpression::BorrowAddressed { binding, .. }
             | CheckedExpression::BorrowBox { binding, .. }
             | CheckedExpression::BorrowSystemResource { binding, .. }
             | CheckedExpression::ReborrowAddressed { binding, .. }
@@ -702,10 +730,33 @@ impl<'check> Survey<'check, '_> {
                 binding, fields, ..
             } => Some((*binding, rooted_place(self.places, *binding, fields))),
             CheckedExpression::BorrowBuffer { root, .. }
-            | CheckedExpression::BufferLength { root } => Some((
+            | CheckedExpression::BufferMeasure { root, .. } => Some((
                 root.binding,
                 rooted_place(self.places, root.binding, &root.fields),
             )),
+            // A run's or a bump extent's descriptor storage is the resolved
+            // place of the measured value itself [MSR-2].
+            CheckedExpression::ContainerMeasure { root, .. }
+            | CheckedExpression::BorrowAddressed { root, .. } => {
+                Some((root.binding, rooted_container_place(self.places, root)))
+            }
+            CheckedExpression::ReadStorage { root, .. } => {
+                let place = rooted_container_place(self.places, root);
+                let index = root.path.iter().rev().find_map(|step| match step {
+                    super::model::CheckedPlaceStep::Subscript(index) => Some(index),
+                    super::model::CheckedPlaceStep::Field(_) => None,
+                });
+                if let Some(index) = index
+                    && let Some(map) = self.proven_affine_map_at(root.binding, &index.obligation)
+                {
+                    self.element_reads.push(ProvenElementRead {
+                        binding: root.binding,
+                        place: place.clone(),
+                        map,
+                    });
+                }
+                Some((root.binding, place))
+            }
             CheckedExpression::BufferIndex {
                 root, obligation, ..
             } => {
@@ -719,11 +770,11 @@ impl<'check> Survey<'check, '_> {
                 }
                 Some((root.binding, place))
             }
-            CheckedExpression::SliceLength { root }
+            CheckedExpression::SliceMeasure { root, .. }
             | CheckedExpression::SliceIndex { root, .. } => {
                 Some((root.binding, rooted_place(self.places, root.binding, &[])))
             }
-            CheckedExpression::ArrayLength {
+            CheckedExpression::ArrayMeasure {
                 root: CheckedArrayRoot::Binding { binding, fields },
                 ..
             } => Some((*binding, rooted_place(self.places, *binding, fields))),
@@ -742,7 +793,7 @@ impl<'check> Survey<'check, '_> {
                 }
                 Some((*binding, place))
             }
-            CheckedExpression::ArrayLength {
+            CheckedExpression::ArrayMeasure {
                 root: CheckedArrayRoot::Constant(_),
                 ..
             }
@@ -761,6 +812,12 @@ impl<'check> Survey<'check, '_> {
                 CheckedSliceSource::ArenaContent { binding, .. } => {
                     Some((*binding, slice_source_place(self.places, source)))
                 }
+                CheckedSliceSource::Run(root) => {
+                    Some((root.binding, slice_source_place(self.places, source)))
+                }
+                CheckedSliceSource::ViewHolder { binding, .. } => {
+                    Some((*binding, slice_source_place(self.places, source)))
+                }
                 CheckedSliceSource::Array {
                     root: CheckedArrayRoot::Constant(_),
                     ..
@@ -770,6 +827,8 @@ impl<'check> Survey<'check, '_> {
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::UserCall { .. }
             | CheckedExpression::SystemCall { .. }
+            | CheckedExpression::KernelCall { .. }
+            | CheckedExpression::PostconditionResultMeasure { .. }
             | CheckedExpression::IntegerOperation { .. }
             | CheckedExpression::FloatOperation { .. }
             | CheckedExpression::NumericConversion { .. }
@@ -893,6 +952,13 @@ impl<'check> Survey<'check, '_> {
                     self.record_writes(&footprint);
                 }
                 self.may_suspend |= target_action.may_suspend();
+            }
+            // A [BLK-0] row's effect row is declaration data this analysis
+            // does not project, so a loop body that calls one has no computed
+            // footprint and is refused rather than permitted on an
+            // incomplete one.
+            CheckedExpression::KernelCall { .. } => {
+                self.refuse_form("a statement that calls a kernel-domain row");
             }
             _ => {}
         }
@@ -1249,7 +1315,7 @@ pub(super) fn borrows_only_iteration_own(
     );
     if is_borrow_form {
         match places.argument_referent(expression) {
-            Some((place, _, _)) if is_iteration_own(&place) => {}
+            Some((place, _)) if is_iteration_own(&place) => {}
             _ => return false,
         }
     }

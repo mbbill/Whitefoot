@@ -12,10 +12,10 @@ use std::mem::size_of;
 
 use super::super::goal::{GoalExpression, GoalOperation, GoalProjection};
 use super::super::model::{
-    BindingId, CheckedBooleanOperation, CheckedLoopId, CheckedValue, IntegerType,
+    BindingId, CheckedBooleanOperation, CheckedLoopId, CheckedMeasure, CheckedValue, IntegerType,
 };
 use super::VerifiedPostconditionSummaryRef;
-use super::term::{LengthBound, TermId, TermKind, TermTable, ZERO, type_range};
+use super::term::{MeasureBound, TermId, TermKind, TermTable, ZERO, type_range};
 use crate::{NodePath, PreludeDeclarationId};
 
 /// One normalized source relation over interned terms.
@@ -27,10 +27,28 @@ pub(crate) enum Relation {
         right: TermId,
         bound: i128,
     },
-    /// `left = right`, the bound pair in both directions.
-    Equal { left: TermId, right: TermId },
-    /// `left != right`, one disequality.
-    Distinct { left: TermId, right: TermId },
+    /// `left - right = difference`, the bound pair in both directions.
+    ///
+    /// The displacement is the one a clause side writes [FN-9] and a kernel
+    /// row declares [BLK-0]: `len_of(rest) + 1_u64 == len_of(vector)` is
+    /// `len_of(rest) - len_of(vector) = -1`, which [ENT-4] holds as the two
+    /// ordinary bounds `<= -1` and `>= -1` rather than as a new fact class.
+    Equal {
+        left: TermId,
+        right: TermId,
+        difference: i128,
+    },
+    /// `left - right != difference`, one disequality.
+    ///
+    /// [ENT-4] stores a disequality as an unordered pair, which represents a
+    /// zero displacement exactly. A displaced disequality is therefore
+    /// provable from a strict bound but establishes no stored fact, which
+    /// only under-derives [ENT-1].
+    Distinct {
+        left: TermId,
+        right: TermId,
+        difference: i128,
+    },
 }
 
 /// Dense identity of one finite typed expression in a concrete function's
@@ -195,6 +213,9 @@ pub(crate) enum FlowEventKind {
     S11,
     /// [ENT-3.S13] one declared relation instantiated at its call.
     S13,
+    /// [MSR-3] one entry datum minted at body entry, per parameter measure a
+    /// declared relation names.
+    Entry,
     /// [ENT-3.S14] the interval the fixed interval-product rule proved for one
     /// admitted non-constant multiplication, published on the value it bound.
     S14,
@@ -231,7 +252,7 @@ pub(crate) struct RetainedGoal {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct DerivationInventory {
     pub(crate) terms: Vec<TermKind>,
-    pub(crate) length_bounds: Vec<Option<LengthBound>>,
+    pub(crate) measure_bounds: Vec<Option<MeasureBound>>,
     pub(crate) goals: Vec<RetainedGoal>,
 }
 
@@ -242,7 +263,12 @@ pub(crate) enum ImplicitBoundKind {
     Constant,
     TypeMinimum,
     TypeMaximum,
-    ArrayLength,
+    /// One [MSR-2] standing fact: a measure whose table cell fixes its
+    /// value, or a measure the table equates to another measure of the
+    /// same place. It has empty support and no event kills it.
+    StandingMeasure,
+    /// [MSR-2]'s standing ordering between two measures of one place.
+    MeasureOrdering,
 }
 
 /// One reaching predecessor named by a join derivation.
@@ -956,6 +982,33 @@ impl DerivationLedger {
         id
     }
 
+    /// Whether one proof is already the materialization of exactly this bound.
+    ///
+    /// A snapshot re-materializes every bound the state carries, and most of
+    /// them are the bounds the previous snapshot materialized, unchanged. A
+    /// second wrapper over such a proof records nothing the first does not:
+    /// it is the same fact, with the same value, made independently live at
+    /// an earlier point, and the earlier point is the honest one. Reusing it
+    /// is what keeps a body of many measured commits from interning one node
+    /// per bound per kill.
+    pub(crate) fn materializes_bound(
+        &self,
+        proof: DerivationId,
+        left: TermId,
+        right: TermId,
+        bound: i128,
+    ) -> bool {
+        matches!(
+            self.nodes.get(proof.0 as usize),
+            Some(DerivationNode::MaterializedBound {
+                left: recorded_left,
+                right: recorded_right,
+                bound: recorded_bound,
+                ..
+            }) if *recorded_left == left && *recorded_right == right && *recorded_bound == bound
+        )
+    }
+
     pub(crate) fn intern(&mut self, node: DerivationNode) -> DerivationId {
         let key = match self.probe_intern(&node) {
             Ok(id) => return id,
@@ -1388,7 +1441,8 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
             ImplicitBoundKind::Constant => 1,
             ImplicitBoundKind::TypeMinimum => 2,
             ImplicitBoundKind::TypeMaximum => 3,
-            ImplicitBoundKind::ArrayLength => 4,
+            ImplicitBoundKind::StandingMeasure => 4,
+            ImplicitBoundKind::MeasureOrdering => 5,
         }),
         DerivationNode::TransitiveBound { first, second, .. } => {
             [first.0, second.0].get(index).copied()
@@ -1519,7 +1573,7 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
                 transfer_events,
                 ..
             } = detail.as_ref();
-            let fixed = [summary.summary.function.0, summary.summary.component];
+            let fixed = summary.summary.identity();
             fixed
                 .get(index)
                 .copied()
@@ -1743,12 +1797,16 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
 }
 
 /// One place read by a complete goal. `length` records ENT-5's fixed-length
-/// boundary: an element write does not invalidate a `len(P)` observation.
+/// boundary: an element write does not invalidate a `len_of(P)` observation.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct GoalSupport {
     pub(crate) root: BindingId,
     pub(crate) projections: Vec<GoalProjection>,
-    pub(crate) length: bool,
+    /// Which [MSR-1] measure of the place this support belongs to, when the
+    /// node is a measure node; `None` is the ordinary place node. Every
+    /// measure of one place has the same support, P's descriptor storage
+    /// [MSR-2], so this selects the node class rather than the storage.
+    pub(crate) measure: Option<CheckedMeasure>,
 }
 
 /// Derived data attached to one exact typed expression.
@@ -1851,13 +1909,23 @@ impl Relation {
                 right: *left,
                 bound: -bound - 1,
             },
-            Self::Equal { left, right } => Self::Distinct {
+            Self::Equal {
+                left,
+                right,
+                difference,
+            } => Self::Distinct {
                 left: *left,
                 right: *right,
+                difference: *difference,
             },
-            Self::Distinct { left, right } => Self::Equal {
+            Self::Distinct {
+                left,
+                right,
+                difference,
+            } => Self::Equal {
                 left: *left,
                 right: *right,
+                difference: *difference,
             },
         }
     }
@@ -1866,8 +1934,8 @@ impl Relation {
     pub(crate) fn terms(&self) -> [TermId; 2] {
         match self {
             Self::Bound { left, right, .. }
-            | Self::Equal { left, right }
-            | Self::Distinct { left, right } => [*left, *right],
+            | Self::Equal { left, right, .. }
+            | Self::Distinct { left, right, .. } => [*left, *right],
         }
     }
 }
@@ -2040,27 +2108,39 @@ impl FactState {
             Relation::Bound { left, right, bound } => {
                 self.establish_bound_with_proof(*left, *right, *bound, ledger, event);
             }
-            Relation::Equal { left, right } => {
+            Relation::Equal {
+                left,
+                right,
+                difference,
+            } => {
                 let forward = ledger.intern(DerivationNode::SourceBound {
                     relation: relation.clone(),
                     left: *left,
                     right: *right,
-                    bound: 0,
+                    bound: *difference,
                     event,
                 });
-                self.add_bound(*left, *right, 0, forward, ledger);
+                self.add_bound(*left, *right, *difference, forward, ledger);
                 let reverse = ledger.intern(DerivationNode::SourceBound {
                     relation: relation.clone(),
                     left: *right,
                     right: *left,
-                    bound: 0,
+                    bound: -*difference,
                     event,
                 });
-                self.add_bound(*right, *left, 0, reverse, ledger);
+                self.add_bound(*right, *left, -*difference, reverse, ledger);
             }
-            Relation::Distinct { left, right } => {
+            // [ENT-4] stores a disequality as an unordered pair, which is
+            // exactly a zero displacement; a displaced one establishes
+            // nothing and only under-derives.
+            Relation::Distinct {
+                left,
+                right,
+                difference: 0,
+            } => {
                 self.establish_distinct_with_proof(*left, *right, ledger, event);
             }
+            Relation::Distinct { .. } => {}
         }
     }
 
@@ -2081,14 +2161,23 @@ impl FactState {
             Relation::Bound { left, right, bound } => {
                 self.add_bound(*left, *right, *bound, proof, ledger);
             }
-            Relation::Equal { left, right } => {
-                self.add_bound(*left, *right, 0, proof, ledger);
-                self.add_bound(*right, *left, 0, proof, ledger);
+            Relation::Equal {
+                left,
+                right,
+                difference,
+            } => {
+                self.add_bound(*left, *right, *difference, proof, ledger);
+                self.add_bound(*right, *left, -*difference, proof, ledger);
             }
-            Relation::Distinct { left, right } => {
+            Relation::Distinct {
+                left,
+                right,
+                difference: 0,
+            } => {
                 let pair = ordered(*left, *right);
                 self.add_distinct_candidate(pair, proof, ledger);
             }
+            Relation::Distinct { .. } => {}
         }
     }
 
@@ -2117,7 +2206,11 @@ impl FactState {
         distinct.sort_unstable();
         relations.extend(distinct.into_iter().map(|(left, right)| {
             (
-                Relation::Distinct { left, right },
+                Relation::Distinct {
+                    left,
+                    right,
+                    difference: 0,
+                },
                 self.distinct_proofs[&(left, right)],
             )
         }));
@@ -2462,14 +2555,22 @@ impl ClosedState {
             .collect::<Vec<_>>();
         relations.sort_by_key(|(relation, _)| match relation {
             Relation::Bound { left, right, bound } => (0, left.0, right.0, *bound),
-            Relation::Distinct { left, right } => (1, left.0, right.0, 0),
+            Relation::Distinct {
+                left,
+                right,
+                difference,
+            } => (1, left.0, right.0, *difference),
             Relation::Equal { .. } => unreachable!("closed delivery inventory is normalized"),
         });
         let mut distinct = self.distinct.iter().copied().collect::<Vec<_>>();
         distinct.sort_unstable();
         relations.extend(distinct.into_iter().map(|(left, right)| {
             (
-                Relation::Distinct { left, right },
+                Relation::Distinct {
+                    left,
+                    right,
+                    difference: 0,
+                },
                 self.distinct_proofs[&(left, right)],
             )
         }));
@@ -2485,13 +2586,26 @@ impl ClosedState {
         }
         match relation {
             Relation::Bound { left, right, bound } => self.derives_bound(*left, *right, *bound),
-            Relation::Equal { left, right } => {
-                self.derives_bound(*left, *right, 0) && self.derives_bound(*right, *left, 0)
+            Relation::Equal {
+                left,
+                right,
+                difference,
+            } => {
+                self.derives_bound(*left, *right, *difference)
+                    && self.derives_bound(*right, *left, -*difference)
             }
-            Relation::Distinct { left, right } => {
-                self.distinct.contains(&ordered(*left, *right))
-                    || self.derives_bound(*left, *right, -1)
-                    || self.derives_bound(*right, *left, -1)
+            Relation::Distinct {
+                left,
+                right,
+                difference,
+            } => {
+                (*difference == 0 && self.distinct.contains(&ordered(*left, *right)))
+                    || self.derives_bound(*left, *right, difference.saturating_sub(1))
+                    || self.derives_bound(
+                        *right,
+                        *left,
+                        difference.saturating_neg().saturating_sub(1),
+                    )
             }
         }
     }
@@ -2648,9 +2762,13 @@ impl ClosedState {
             Relation::Bound { left, right, bound } => {
                 self.bound_proof(*left, *right, *bound, ledger)
             }
-            Relation::Equal { left, right } => {
-                let forward = self.bound_proof(*left, *right, 0, ledger)?;
-                let reverse = self.bound_proof(*right, *left, 0, ledger)?;
+            Relation::Equal {
+                left,
+                right,
+                difference,
+            } => {
+                let forward = self.bound_proof(*left, *right, *difference, ledger)?;
+                let reverse = self.bound_proof(*right, *left, -*difference, ledger)?;
                 Some(ledger.intern(DerivationNode::Equality {
                     left: *left,
                     right: *right,
@@ -2658,11 +2776,20 @@ impl ClosedState {
                     reverse,
                 }))
             }
-            Relation::Distinct { left, right } => {
+            Relation::Distinct {
+                left,
+                right,
+                difference,
+            } => {
                 let pair = ordered(*left, *right);
-                let mut best = self.distinct_proofs.get(&pair).copied();
-                for (from, to) in [(*left, *right), (*right, *left)] {
-                    if let Some(parent) = self.bound_proof(from, to, -1, ledger) {
+                let mut best = (*difference == 0)
+                    .then(|| self.distinct_proofs.get(&pair).copied())
+                    .flatten();
+                for (from, to, gap) in [
+                    (*left, *right, difference.saturating_sub(1)),
+                    (*right, *left, difference.saturating_neg().saturating_sub(1)),
+                ] {
+                    if let Some(parent) = self.bound_proof(from, to, gap, ledger) {
                         let candidate = ledger.intern(DerivationNode::DisequalityFromStrictBound {
                             left: pair.0,
                             right: pair.1,
@@ -2881,7 +3008,7 @@ pub(crate) fn close(
 
 /// Emits every [ENT-2] implicit bound carried by one term: the reflexive
 /// bound, the fragment-type range, the constant fold through Z, and the
-/// `len(P) = N` equality of an `array<T, N>` place.
+/// `len_of(P) = N` equality of an `array<T, N>` place.
 ///
 /// Implicit facts are a function of the term table and the place's type
 /// alone. They hold at every program point, so this is the single rule table
@@ -2904,20 +3031,43 @@ fn for_each_implicit_bound(
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
             emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
         }
-        TermKind::Length(_) | TermKind::ProjectedLength(_) => {
+        // [MSR-2] every measure term carries the standing facts of its
+        // place. The `u64` range already gives `Z <= m`; what the measure
+        // table adds is the value a fixed cell has and the ordering between
+        // two measures of one place. Each has empty support and no event
+        // kills it, which is exactly what an implicit bound is.
+        // [MSR-3] an entry datum is one measure's value at body entry, of
+        // fragment type u64 and with empty support. Its standing orderings
+        // reach it through the equality this datum is established with at
+        // entry; what it carries of its own is the type range.
+        TermKind::EntryDatum { .. } | TermKind::MeasureDatum { .. } => {
             let (minimum, maximum) = type_range(IntegerType::U64);
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
             emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
-            match terms.length_bound(id) {
-                Some(LengthBound::Constant(length)) => {
-                    emit(id, ZERO, length, ImplicitBoundKind::ArrayLength);
-                    emit(ZERO, id, -length, ImplicitBoundKind::ArrayLength);
+        }
+        TermKind::Measure(measure, _) | TermKind::ProjectedMeasure(measure, _) => {
+            let (minimum, maximum) = type_range(IntegerType::U64);
+            emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
+            emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
+            match terms.measure_bound(id) {
+                Some(MeasureBound::Constant(value)) => {
+                    emit(id, ZERO, value, ImplicitBoundKind::StandingMeasure);
+                    emit(ZERO, id, -value, ImplicitBoundKind::StandingMeasure);
                 }
-                Some(LengthBound::Equal(parameter)) => {
-                    emit(id, parameter, 0, ImplicitBoundKind::ArrayLength);
-                    emit(parameter, id, 0, ImplicitBoundKind::ArrayLength);
+                Some(MeasureBound::Equal(other)) => {
+                    emit(id, other, 0, ImplicitBoundKind::StandingMeasure);
+                    emit(other, id, 0, ImplicitBoundKind::StandingMeasure);
                 }
                 None => {}
+            }
+            // `len_of(P) <= cap_of(P)` and `head_of(P) <= cap_of(P)`, emitted from the
+            // capacity term so each ordering is emitted exactly once.
+            if *measure == CheckedMeasure::Capacity {
+                for bounded in [CheckedMeasure::Length, CheckedMeasure::Head] {
+                    if let Some(other) = terms.sibling_measure(id, bounded) {
+                        emit(other, id, 0, ImplicitBoundKind::MeasureOrdering);
+                    }
+                }
             }
         }
         TermKind::CountedCapture { .. } => {
@@ -3485,7 +3635,7 @@ fn closure_middle_terms(
     // parameter, and two lengths equal to that parameter become equal to one
     // another. `available` keeps an excluded receiver out of this universe.
     for id in ids {
-        let Some(LengthBound::Equal(parameter)) = terms.length_bound(*id) else {
+        let Some(MeasureBound::Equal(parameter)) = terms.measure_bound(*id) else {
             continue;
         };
         active.0[id.0 as usize] = true;
@@ -3683,6 +3833,35 @@ pub(crate) fn materialize_closure_before_kill(
     *state = materialize_closure_at(state, terms, goals, ledger, event);
 }
 
+/// The proof one snapshot files for one closed bound.
+///
+/// A bound whose closure proof is already the materialization of that same
+/// bound was made independently live at an earlier snapshot and has not moved
+/// since; wrapping it again would mint one node per bound per snapshot, which
+/// over a body of many measured commits is quadratic in the term count and
+/// linear in the number of kills. The earlier node is the same fact with the
+/// same value and an earlier — that is, more honest — point of independence,
+/// so it is reused.
+fn materialized_bound_proof(
+    ledger: &mut DerivationLedger,
+    left: TermId,
+    right: TermId,
+    bound: i128,
+    event: FlowEventId,
+    parent: DerivationId,
+) -> DerivationId {
+    if ledger.materializes_bound(parent, left, right, bound) {
+        return parent;
+    }
+    ledger.intern(DerivationNode::MaterializedBound {
+        left,
+        right,
+        bound,
+        event,
+        parent,
+    })
+}
+
 /// Materializes the [ENT-4] least closure as a live flow state.
 ///
 /// Ordinary queries can keep closure as an ephemeral view. S11 instead fixes
@@ -3713,13 +3892,8 @@ pub(crate) fn materialize_closure_at(
     bound_keys.sort_unstable();
     for (left, right) in bound_keys {
         let bound = closed.bounds[&(left, right)];
-        let proof = ledger.intern(DerivationNode::MaterializedBound {
-            left,
-            right,
-            bound,
-            event,
-            parent: closed.bound_proofs[&(left, right)],
-        });
+        let parent = closed.bound_proofs[&(left, right)];
+        let proof = materialized_bound_proof(ledger, left, right, bound, event, parent);
         bound_proofs.insert((left, right), proof);
     }
     let mut distinct_proofs = HashMap::new();
@@ -3791,13 +3965,8 @@ pub(crate) fn materialize_closure_at(
         keys.sort_unstable();
         for (left, right) in keys {
             let bound = ordinary_closed.bounds[&(left, right)];
-            let proof = ledger.intern(DerivationNode::MaterializedBound {
-                left,
-                right,
-                bound,
-                event,
-                parent: ordinary_closed.bound_proofs[&(left, right)],
-            });
+            let parent = ordinary_closed.bound_proofs[&(left, right)];
+            let proof = materialized_bound_proof(ledger, left, right, bound, event, parent);
             materialized.add_bound(left, right, bound, proof, ledger);
         }
         let mut keys = ordinary_closed.distinct.iter().copied().collect::<Vec<_>>();
@@ -4086,12 +4255,15 @@ mod tests {
             DeclarationId::from_index(0).expect("zero declaration identity exists"),
         ));
         let length = |terms: &mut TermTable, binding| {
-            let term = terms.intern(TermKind::Length(super::super::term::PlaceTerm {
-                root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
-                deref: false,
-                fields: Vec::new(),
-            }));
-            terms.set_length_bound(term, LengthBound::Equal(parameter));
+            let term = terms.intern(TermKind::Measure(
+                CheckedMeasure::Length,
+                super::super::term::PlaceTerm {
+                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
+                    deref: false,
+                    fields: Vec::new(),
+                },
+            ));
+            terms.set_measure_bound(term, MeasureBound::Equal(parameter));
             term
         };
         let first = length(&mut terms, 0);
@@ -4217,6 +4389,61 @@ mod tests {
         );
     }
 
+    /// A snapshot re-materializes every bound the state carries, and a body
+    /// of many measured commits takes one snapshot per kill over a fact state
+    /// whose bounds are quadratic in its terms. Wrapping an unchanged bound's
+    /// existing materialization in a second one at every snapshot is one
+    /// derivation node per bound per kill and nothing else, so the existing
+    /// node is reused and the ledger stops growing with the number of kills.
+    #[test]
+    fn a_later_snapshot_reuses_the_materialization_of_an_unchanged_bound() {
+        let mut terms = TermTable::new();
+        let mut place = |binding| {
+            terms.intern(TermKind::Place(
+                super::super::term::PlaceTerm {
+                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
+                    deref: false,
+                    fields: Vec::new(),
+                },
+                IntegerType::U8,
+            ))
+        };
+        let left = place(0);
+        let right = place(1);
+        let mut ledger = DerivationLedger::default();
+        let event = ledger.event(FlowEventKind::S1, None);
+        let mut state = FactState::new();
+        state.establish(
+            &Relation::Bound {
+                left,
+                right,
+                bound: 0,
+            },
+            &mut ledger,
+            event,
+        );
+
+        let goals = GoalTable::default();
+        let first = ledger.event(FlowEventKind::Snapshot, None);
+        let once = materialize_closure_at(&state, &terms, &goals, &mut ledger, first);
+        let after_one = ledger.nodes.len();
+        let second = ledger.event(FlowEventKind::Snapshot, None);
+        let twice = materialize_closure_at(&once, &terms, &goals, &mut ledger, second);
+
+        assert_eq!(once.bounds[&(left, right)], 0);
+        assert_eq!(twice.bounds[&(left, right)], 0);
+        assert_eq!(
+            once.bound_proofs[&(left, right)],
+            twice.bound_proofs[&(left, right)],
+            "an unchanged bound keeps the materialization it already had"
+        );
+        assert_eq!(
+            ledger.nodes.len(),
+            after_one,
+            "a second snapshot over an unchanged state interns no further bound node"
+        );
+    }
+
     #[test]
     fn pre_kill_closure_never_preserves_a_killed_conclusion_endpoint() {
         let mut terms = TermTable::new();
@@ -4289,6 +4516,7 @@ mod tests {
             Relation::Distinct {
                 left: x,
                 right: middle,
+                difference: 0,
             },
             Relation::Bound {
                 left: middle,
@@ -4358,14 +4586,16 @@ mod tests {
                 },
                 relation: s12.clone(),
                 summary: VerifiedPostconditionSummaryRef {
-                    summary: VerifiedPostconditionSummary {
-                        function: FunctionId(0),
-                        block: NodePath {
-                            components: vec![0, 0],
+                    summary: crate::semantic::entailment::RelationProvenance::Verified(
+                        VerifiedPostconditionSummary {
+                            function: FunctionId(0),
+                            block: NodePath {
+                                components: vec![0, 0],
+                            },
+                            relation_ordinal: 0,
+                            component: 0,
                         },
-                        relation_ordinal: 0,
-                        component: 0,
-                    },
+                    ),
                 },
                 substitutions: Vec::new(),
                 transfer_events: Vec::new(),

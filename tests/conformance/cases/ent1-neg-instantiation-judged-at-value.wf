@@ -1,10 +1,14 @@
-fn element<const n: u64>(values: own array<u8, n>) -> result: own u8 pure {
-  doc "The identical generic body rejects at the instantiation whose value leaves the obligation underivable [ENT-1, OP-4]: at n = 2 the constant offset 2 is not below the array's implicit length, and the judgment is made at the instantiated value rather than symbolically over n.";
+fn element<const n: u64>(values: own FixedVector<u8, n>) -> result: own u8 reads(values) contract {
+  requires n <= len_of(values);
+} {
+  doc "The identical generic body rejects at the instantiation whose value leaves the obligation underivable [ENT-1, OP-4]: at n = 2 the constant offset 2 is not below the window the requirement guarantees, and the judgment is made at the instantiated value rather than symbolically over n.";
   return values[2_u64];
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let narrow = array_new::<u8, 2>(7_u8);
+  let empty = fixed_vector::<u8, 2>();
+  let one = place_back(vector: move empty, value: 7_u8);
+  let narrow = place_back(vector: move one, value: 7_u8);
   let value = element::<2>(values: move narrow);
   return exit_status(code: 0_u8);
 }

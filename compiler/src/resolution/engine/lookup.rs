@@ -8,23 +8,7 @@ use super::super::{
     ResolvedTarget, ScopeId, SystemDeclarationRecord,
 };
 use super::inventory::conflict_key;
-use super::{BuildStop, DeclarationIndex, DeclarationMeta, UseMeta, is_visible};
-
-pub(super) fn resolve_uses(
-    scopes: &ScopeBuild,
-    declarations: &[DeclarationRecord],
-    metas: &[DeclarationMeta],
-    index: &DeclarationIndex,
-    uses: &[UseMeta],
-    system: &[SystemDeclarationRecord],
-) -> Result<Vec<LexicalUseRecord>, BuildStop> {
-    let (resolved, issue) =
-        resolve_uses_deferred(scopes, declarations, metas, index, uses, system)?;
-    match issue {
-        Some(issue) => Err(BuildStop::Issue(Box::new(issue))),
-        None => Ok(resolved),
-    }
-}
+use super::{DeclarationIndex, DeclarationMeta, UseMeta, is_visible};
 
 pub(super) fn resolve_uses_deferred(
     scopes: &ScopeBuild,
@@ -106,6 +90,45 @@ pub(super) fn resolve_uses_deferred(
                 available.insert(class);
                 if admissible.contains(&class) && system_admissible(use_record.role) {
                     candidates.push(ResolvedTarget::System(record.id()));
+                }
+            }
+        }
+        // The fourth admitted declaration source [BLK-0], plus the [TYPE-2]
+        // container and provider nominals. Both enter every unit on [SYS-3]'s
+        // terms, and both are admitted at exactly the roles a system entry
+        // is: a `type` TYPEID for a nominal and a `callee` IDENT for an
+        // operation.
+        for (ordinal, nominal) in crate::CONTAINER_NOMINALS.iter().enumerate() {
+            if nominal.spelling != use_record.spelling {
+                continue;
+            }
+            for class in crate::CONTAINER_NOMINAL_CLASSES {
+                if !universe.contains(&class) {
+                    continue;
+                }
+                available.insert(class);
+                if admissible.contains(&class)
+                    && system_admissible(use_record.role)
+                    && let Ok(ordinal) = u8::try_from(ordinal)
+                {
+                    candidates.push(ResolvedTarget::Container(crate::ContainerNominalId::new(
+                        ordinal,
+                    )));
+                }
+            }
+        }
+        for (ordinal, operation) in crate::KERNEL_OPERATIONS.iter().enumerate() {
+            if operation.spelling == use_record.spelling
+                && universe.contains(&crate::KERNEL_OPERATION_CLASS)
+            {
+                available.insert(crate::KERNEL_OPERATION_CLASS);
+                if admissible.contains(&crate::KERNEL_OPERATION_CLASS)
+                    && system_admissible(use_record.role)
+                    && let Ok(ordinal) = u8::try_from(ordinal)
+                {
+                    candidates.push(ResolvedTarget::Kernel(crate::KernelOperationId::new(
+                        ordinal,
+                    )));
                 }
             }
         }
@@ -246,7 +269,15 @@ fn admissible_classes(role: LexicalUseRole, spelling: &str) -> Vec<DeclarationCl
         }
         LexicalUseRole::ConstValue => vec![DeclarationClass::NamedConst],
         LexicalUseRole::PlaceBase => {
-            vec![DeclarationClass::NamedConst, DeclarationClass::Value]
+            // [MSR-6] a `pbase` admits an in-scope const generic beside a
+            // named const: a const generic is a monomorphization-time
+            // constant and already an [ENT-2] symbolic constant term, so
+            // this admission adds a spelling and no fact source.
+            vec![
+                DeclarationClass::NamedConst,
+                DeclarationClass::ConstGeneric,
+                DeclarationClass::Value,
+            ]
         }
         LexicalUseRole::IdentifierCallee => {
             if operation_id(spelling).is_some() {
@@ -258,12 +289,21 @@ fn admissible_classes(role: LexicalUseRole, spelling: &str) -> Vec<DeclarationCl
         LexicalUseRole::OperationCallee => vec![DeclarationClass::OperationFamily],
         LexicalUseRole::FunctionBinding => vec![DeclarationClass::Function],
         LexicalUseRole::GenericNumericSuffix => vec![DeclarationClass::GenericType],
+        // [MSR-6, INV-1] an affine atom is one bare place whose `pbase` is an
+        // IDENT, and an in-scope const generic is a value in exactly that
+        // position: it is a constant of [ENT-2] clause (c) rather than a
+        // tracked place, so it reaches the affine domain as an immutable atom
+        // nothing kills.
         LexicalUseRole::InvariantValue | LexicalUseRole::ProofValue => {
             // A named integer const is already an [ENT-2] constant term, so it
             // denotes the same value in a proof relation that it denotes
             // everywhere else; excluding it here forced the digits to be
             // rewritten inline in every invariant that names the same limit.
-            vec![DeclarationClass::Value, DeclarationClass::NamedConst]
+            vec![
+                DeclarationClass::Value,
+                DeclarationClass::ConstGeneric,
+                DeclarationClass::NamedConst,
+            ]
         }
         LexicalUseRole::InvariantFact => vec![DeclarationClass::Invariant],
     }
@@ -312,7 +352,11 @@ fn universe_classes(role: LexicalUseRole) -> Vec<DeclarationClass> {
             // denotes the same value in a proof relation that it denotes
             // everywhere else; excluding it here forced the digits to be
             // rewritten inline in every invariant that names the same limit.
-            vec![DeclarationClass::Value, DeclarationClass::NamedConst]
+            vec![
+                DeclarationClass::Value,
+                DeclarationClass::ConstGeneric,
+                DeclarationClass::NamedConst,
+            ]
         }
         LexicalUseRole::InvariantFact => vec![DeclarationClass::Invariant],
     }

@@ -1,6 +1,6 @@
 # The snapshot corpus
 
-This corpus records what the current compiler does with 491 programs — a
+This corpus records what the current compiler does with 484 programs — a
 snapshot of today's verdicts, nothing more. It is **not specification
 evidence** and it lives **outside the conformance boundary**: no row here
 states what the language requires, no row may be cited as a rule, and the
@@ -16,8 +16,9 @@ the survivors on every gate run and notice when one of them changes verdict.
 Only sweep programs whose author stated an expectation are here; a program with
 no stated expectation records a verdict nobody predicted, which is not worth a
 gate row. That excludes the sweep's known unsound accept, which is tracked
-where a language claim belongs — the conformance xfail case
-`ent5-neg-callee-uniq-buffer-replace-kills-length`.
+where a language claim belongs — the conformance case
+`ent5-neg-callee-uniq-buffer-replace-kills-length`, which v0.45's [CALL-5]
+closed and which now runs.
 
 ## What is here
 
@@ -50,13 +51,18 @@ rejection cites is a diagnostic choice, and pinning it here would turn every
 diagnostic improvement into a corpus failure. If you want a cited rule pinned,
 that is a conformance case, not a snapshot row.
 
-Thirteen rows carry `agreement = no`: the author expected an accept and this
+Twenty-one rows carry `agreement = no`: the author expected an accept and this
 compiler rejects. Each row's `doc` gives the rule that decides it and the
-mechanism behind it — twelve are expectation errors, and the thirteenth
+mechanism behind it — twelve are expectation errors; one
 (`kills__writer-r2__06_chain_middle_replace`) is a program whose stated
 expectation the compiler now meets in the part it was written to exercise, yet
-which still rejects for an unrelated unproved product. They are kept because a
-wrong expectation is still a fixed verdict worth watching.
+which still rejects for an unrelated unproved product; and eight are programs
+whose expectation the language itself moved under. Those eight hand a
+`&uniq buffer<u8>` to a helper, and v0.45's [CALL-5] selects no transport for
+such a parameter, so the call kills the caller's length whatever the callee
+does — the shape that keeps a caller's measures is the exclusive view
+[CALL-3]. They are kept because a wrong or superseded expectation is still a
+fixed verdict worth watching.
 
 ## When a verdict flips
 
@@ -71,6 +77,48 @@ case, the recorded verdict, the reached verdict, and the first diagnostic line.
   survive.
 
 Never delete a case or edit a verdict merely to get a green run.
+
+## What B7c4b-1 moved
+
+The retiring `buffer<T>` surface left this corpus in three ways.
+
+**Fifty-two rows kept their source's meaning and their verdict.** A read-only
+`buffer<T>` parameter became a `Slice<T>`, a written one became a
+`&uniq MutSlice<T>`, and a `buffer_new` at a literal count became a run taken
+from one bump extent reserved in the entry's own frame and viewed where the
+program wrote through it.
+
+**Seven rows moved from `reject` to `accept`, and the move is [CALL-3]
+working.** `contracts__writer-r1__10_append_within_capacity`,
+`indexing__writer-r1__subslice_copy`,
+`indexing__writer-r2__01_offset_length_window_copy`,
+`indexing__writer-r2__07_bucket_index_from_hash`,
+`indexing__writer-r2__11_ring_buffer_wrap_read`,
+`joins__writer-r1__r12_writes_join_common_bound_accept` and
+`kills__writer-r1__kill03_buffer_write_loop_invariant` each recorded a
+rejection whose cause was a caller's measure dying at a call through a
+`&uniq buffer<T>`. A write through a view reaches the viewed range's element
+storage and no measure of the origin place, so the measure now stands and the
+program is accepted. Each row's `doc` says so. One further row,
+`contracts__writer-r1__02_buffer_capacity_copy`, keeps its `reject` and moves
+the rule it cites from `OP-4` to `FN-8` for the same reason: the missing
+premise is now the caller's own capacity bound at the call rather than the
+subscript.
+
+**Seven rows were retired**, because their program cannot be written on the run
+surface without changing what the row records:
+`indexing__writer-r1__chunk_reader`,
+`indexing__writer-r2__02_ring_buffer_slot_write`,
+`kills__adversary-r1__k10_loop_buffer_write_kills_length_fact`,
+`kills__writer-r1__kill12_replace_buffer_field_kill`,
+`kills__writer-r2__08_callee_write_kills_caller_fact`,
+`diagnostics__writer-r1__r03_allocation_fit_unproved` and
+`diagnostics__writer-r2__r05_world_value_allocation_no_branch`. The first five
+lend a run, or a struct holding one, through a `&uniq` parameter, which
+[BLK-4] refuses; the hand-back or view restructure changes the kill each row
+was written to record. The last two allocate at a runtime count in an entry
+with no store, and their successor's entry row carries `command.heap`, which is
+a different program. Their sources are deleted with their rows.
 
 ## The case sources
 

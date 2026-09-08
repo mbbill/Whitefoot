@@ -5,7 +5,7 @@ deny_claims command fn main() -> own ExitStatus traps requires {
   doc "A marked program entry whose body carries a bounds obligation discharged only by a claim [PROG-3, CLM-3].";
   let values = array_new<u8, 4>(7_u8);
   let index = 0_u64;
-  let room = len(values);
+  let room = len_of(values);
   claim inside: ilt(index, room) because "the entry index is inside the array";
   let selected = values[index];
   return exit_status(code: 0_u8);

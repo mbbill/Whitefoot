@@ -506,8 +506,8 @@ unsigned wf_enum_parked_count(void) {
  * the data each stub delivered -- and replays them, so that the guarantee the
  * design's header and §13 state is checked rather than asserted. Completion
  * order is a kernel event and therefore an input, and what must follow from
- * identical inputs is an identical internal execution; that is how
- * constitution T3's sequential world is realized for a program that overlaps.
+ * identical inputs is an identical internal execution, including when the
+ * program overlaps operations, as required by the scheduler design.
  *
  * A recording is one walk of a schedule. Its inputs are, per step, the
  * process that stepped and -- at a device step -- which submitted record

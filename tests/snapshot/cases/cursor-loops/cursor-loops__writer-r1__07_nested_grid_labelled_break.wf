@@ -1,6 +1,14 @@
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: an outer labelled loop over grid rows and an inner labelled loop over columns search a small grid for a target value, and the inner loop breaks the outer label directly once it is found.";
-  let grid = array_new::<u32, 9>(0_u32);
+  let grid = fixed_vector::<u32, 9>();
+  for (
+    at_grid in 0_u64..9_u64,
+    invariant grown_grid: len_of(grid) >= at_grid,
+    invariant spare_grid: room_of(grid) + at_grid >= 9_u64,
+    invariant flat_grid: head_of(grid) <= 0_u64
+  ) {
+    set grid = place_back(vector: move grid, value: 0_u32);
+  }
   set grid[0_u64] = 1_u32;
   set grid[1_u64] = 2_u32;
   set grid[2_u64] = 3_u32;

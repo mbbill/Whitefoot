@@ -1,3 +1,20 @@
+//! The retiring `arena<'r, T>` value form, and the run judgments that
+//! outlive it.
+//!
+//! Every case here whose fixture still names `arena<'r, T>` or `arena_new` is
+//! a case whose **subject is that type**: [STOR-4]'s result refusal,
+//! [OWN-10]'s region rejections over arena content, the ordinary-borrow
+//! classification of an arena `deref`, the delivery refusal at a region
+//! block's edge, the written-content-type check on `arena_new`'s operand, and
+//! the explicit runtime gate every arena program still stops at. None has a
+//! run twin, because the run surface has no value of that shape at all: a
+//! bump extent is a *store* [BLK-2, PROV-1], its takes are `Vector<'s, T>`
+//! and `Box<'s, T>`, and the judgments those carry are tested next door. They
+//! retire with the type rather than migrating onto it.
+//!
+//! What does not retire with it is the last case, which reads a run's release
+//! class off its store region's declaration; it is on the run surface already.
+
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
 
 use super::{assert_rule, assert_rule_kind, assert_unsupported, with_semantics};
@@ -6,12 +23,19 @@ use super::{assert_rule, assert_rule_kind, assert_unsupported, with_semantics};
 /// type naming an arena is rejected at the callable boundary — and the
 /// rejection is reported even though the unit also lacks `main`, because a
 /// declaration's own established violation is ordered before the FN-7
-/// whole-unit rejection [DIAG-1]. This is the stor4-neg-arena-escape
-/// conformance case byte for byte.
+/// whole-unit rejection [DIAG-1]. It was the stor4-neg-arena-escape
+/// conformance case byte for byte until B7c4b-1 took that corpus off
+/// `arena<'r, T>`; the rule and the type are untouched by that batch, so the
+/// program is kept here rather than lost with the case.
 #[test]
 fn arena_results_reject_citing_stor4_before_missing_main() {
     assert_rule(
-        include_bytes!("../../../../tests/conformance/cases/stor4-neg-arena-escape.wf"),
+        br#"fn make['r]() -> function_result: own arena<'r, i32> allocates(arena 'r) {
+  doc "A value of type arena<'r,T> may not be returned outside 'r's block [STOR-4]; returning it escapes the region.";
+  let a = arena_new::<'r, i32>(3_i32);
+  return a;
+}
+"#,
         SemanticRule::Stor4,
         SemanticIssueKind::ArenaEscape {
             mechanical_fix: "keep the arena value inside its region's block; \
@@ -63,7 +87,7 @@ fn missing_main_still_rejects_when_nothing_else_does() {
 #[test]
 fn missing_main_wins_over_an_unsupported_capability() {
     with_semantics(
-        b"fn quiet(storage: own arena<i32>) -> result: own unit pure {\n  return unit;\n}\n",
+        b"fn quiet(storage: own FixedVector<Slice<u8>, 1>) -> result: own unit pure {\n  return unit;\n}\n",
         |outcome| {
             let SemanticOutcome::SourceIssue { issue } = outcome else {
                 panic!("a main-less unit must reject: {outcome:?}");
@@ -76,14 +100,25 @@ fn missing_main_wins_over_an_unsupported_capability() {
 
 /// [FN-1] an `arena<'r, U>` parameter is not an input-slice supplier: a view
 /// formed over its content has a resolved source-place origin outside the
-/// return-origin ceiling, rejected at the `return_stmt`. This is the
-/// fn1-neg-returned-slice-arena-origin conformance case byte for byte.
+/// return-origin ceiling, rejected at the `return_stmt`. The independent
+/// fn1-neg-returned-slice-arena-origin conformance case preserves this same
+/// obligation while the legacy arena type remains in the language.
+///
+/// Its content type stays `array<u8, 2>` for the same reason: an arena of a
+/// run is a composite value the checker stops on before [FN-1] is reached, so
+/// the migrated program would record a different verdict.
 #[test]
 fn arena_content_views_stay_outside_the_slice_return_ceiling() {
     assert_rule(
-        include_bytes!(
-            "../../../../tests/conformance/cases/fn1-neg-returned-slice-arena-origin.wf"
-        ),
+        br#"fn arena_view['r](storage: own arena<'r, array<u8, 2>>) -> result: own Slice<'r, u8> pure {
+  let view = slice_of(&'r deref(storage));
+  return view;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
         SemanticRule::Fn1,
         SemanticIssueKind::InvalidSliceReturnOrigin {
             mechanical_fix: "accept an exact direct input slice in the result region or keep \
@@ -98,9 +133,9 @@ fn arena_content_views_stay_outside_the_slice_return_ceiling() {
 #[test]
 fn arena_content_borrows_obey_own10_with_the_arena_region() {
     assert_rule_kind(
-        br#"fn views['s](storage: own arena<array<u8, 2>>) -> result: own slice<'s, u8> pure {
+        br#"fn views['s](storage: own arena<FixedVector<u8, 2>>) -> result: own Slice<'s, u8> pure {
   let view = slice_of(&'s deref(storage));
-  return move view;
+  return view;
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -116,6 +151,10 @@ command fn main() -> status: own ExitStatus pure {
 /// the explicit temporary arena-runtime capability gate rather than lowering
 /// wrong code, and the manifest keeps such positives pending until the
 /// region-tied release lowering lands.
+///
+/// The content type stays `array<u8, 2>`: an arena of a run stops earlier as
+/// a composite value, which is a different verdict, so this program keeps the
+/// one it records and retires with `arena<'r, T>`.
 #[test]
 fn checked_arena_parameters_stop_at_the_explicit_runtime_gate() {
     assert_unsupported(
@@ -142,9 +181,9 @@ command fn main() -> status: own ExitStatus pure {
 fn local_arena_content_views_stop_at_the_explicit_runtime_gate() {
     assert_unsupported(
         br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 2>(7_u8);
+  let values = fixed_vector::<u8, 2>();
   region 'r {
-    let a = arena_new::<'r, array<u8, 2>>(move values);
+    let a = arena_new::<'r, FixedVector<u8, 2>>(move values);
     let view = slice_of(&deref(a));
   }
   return exit_status(code: 0_u8);
@@ -376,14 +415,86 @@ command fn main() -> status: own ExitStatus pure {
         UnsupportedSemanticFeature::ArenaRuntime,
     );
     assert_unsupported(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
-  let boxed = box_new(9_i32);
+        br#"command fn main() -> status: own ExitStatus pure {
+  let run = fixed_vector::<u8, 1>();
   region 'r {
-    let a = arena_new::<'r, box<i32>>(move boxed);
+    let a = arena_new::<'r, FixedVector<u8, 1>>(move run);
   }
   return exit_status(code: 0_u8);
 }
 "#,
         UnsupportedSemanticFeature::ArenaRuntime,
     );
+}
+
+/// [PROV-6, STOR-1, STOR-3] a store-backed run's release class is decided from
+/// its store region's declaration alone and travels in its type.
+///
+/// No heap value exists in this version, so nothing releases through a free
+/// yet and no program can observe the difference at run time. The
+/// classification is what a heap-backed run's lowering will select between, so
+/// it is pinned here rather than left to the version that first spends it: an
+/// `affine`-bounded region parameter and a `region_stmt` region are bump
+/// extents whose reclamation is the region's own reset, and the entry heap, an
+/// unbounded region parameter and a `linear`-bounded one are general stores.
+#[test]
+fn a_runs_release_class_is_read_off_its_store_regions_declaration() {
+    let source = br#"fn from_extent['s: affine](run: own Vector<'s, u64>) -> back: own Vector<'s, u64> pure {
+  doc "An affine-bounded region parameter is a bump extent.";
+  return move run;
+}
+
+fn from_general['s: linear](run: own Vector<'s, u64>) -> back: own Vector<'s, u64> pure {
+  doc "A linear-bounded region parameter is a general store.";
+  return move run;
+}
+
+fn from_unconstrained['s](run: own Vector<'s, u64>) -> back: own Vector<'s, u64> pure {
+  doc "An unbounded region parameter is a general store, fail-closed.";
+  return move run;
+}
+
+fn from_entry_heap(run: own Vector<u64>) -> back: own Vector<u64> pure {
+  doc "An elided store brand at a parameter position is the entry heap's store region.";
+  return move run;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "The four declarations are checked; none is called, because no program can produce a general store's run yet.";
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the four run declarations must check: {outcome:?}");
+        };
+        let class = |name: &str| {
+            let function = checked
+                .data
+                .functions
+                .iter()
+                .find(|function| function.name == name)
+                .expect("each declaration is one checked function");
+            match function.result {
+                crate::semantic::CheckedType::Vector { release, .. } => release,
+                other => panic!("{name} must return a run, got {other:?}"),
+            }
+        };
+        assert_eq!(
+            class("from_extent"),
+            crate::semantic::CheckedReleaseClass::Extent
+        );
+        assert_eq!(
+            class("from_general"),
+            crate::semantic::CheckedReleaseClass::General
+        );
+        assert_eq!(
+            class("from_unconstrained"),
+            crate::semantic::CheckedReleaseClass::General
+        );
+        assert_eq!(
+            class("from_entry_heap"),
+            crate::semantic::CheckedReleaseClass::General
+        );
+    });
 }

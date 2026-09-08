@@ -1,8 +1,8 @@
-mod calls;
-mod flat_storage;
+pub(in crate::semantic::check) mod calls;
+pub(in crate::semantic::check) mod flat_storage;
 mod places;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::syntax::NodeId;
 use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
@@ -38,19 +38,61 @@ struct PlaceUseOptions {
 ///
 /// [SET-1] and [SET-2] share the whole writability relation and differ only in
 /// the final selected type's required [OWN-1] class, so one judgment serves
-/// both and this says which side of it applies. The `set` side carries the
-/// [STOR-1] restructuring its own right-hand side admits: `replace` is the
-/// right answer only when the right-hand side leaves the target root alive, so
-/// the statement that knows the right-hand side chooses the sentence.
+/// both and this says which side of it applies. `replace` demands a
+/// region-free affine type at formation, while a commit's affine admission is
+/// [LIV-2]'s first condition and is judged at the commit, where the read-out
+/// is known; only the region-free demand, which no commit reinitializes
+/// either, is decidable from the type alone.
 #[derive(Clone, Copy)]
 pub(super) enum MutationForm {
-    /// `set p = e`, with the [STOR-1] restructuring `e` admits.
-    Set {
-        /// The fix [STOR-1] offers for an affine target of this statement.
-        affine_fix: &'static str,
-    },
+    /// `set p = e`, whose affine admission [LIV-2] judges at the commit.
+    Set,
     /// `replace p = e`.
     Replace,
+}
+
+/// One formed and judged mutation target [SET-1, SET-2, LIV-2].
+///
+/// The resolved place is what the commit writes and what every judgment
+/// stated over places reads: [LIV-2]'s pairwise disjointness, its read-out
+/// matching, and [OWN-5]'s loan state. It is not the written spelling: a
+/// `deref` target resolves through its holder to the borrowed place, so two
+/// targets that overlap are refused however they are spelled.
+pub(in crate::semantic::check) struct MutationTarget {
+    /// The source declaration the written place is rooted at: the value
+    /// binding for a bare, field or subscript target, the holder for a
+    /// `deref` target.
+    pub(in crate::semantic::check) declaration: DeclarationId,
+    /// The resolved place this target writes [OWN-6].
+    pub(in crate::semantic::check) place: ResolvedPlace,
+    /// The access captured during target formation, rechecked after the RHS
+    /// without evaluating its source offsets again [SET-1, OWN-5].
+    pub(in crate::semantic::check) access: MutationAccess,
+    /// Whether the write selects one element of `place` rather than `place`
+    /// itself, which is the granularity [MSR-2] states over storage.
+    pub(in crate::semantic::check) element: bool,
+    pub(in crate::semantic::check) target: CheckedSetTarget,
+    pub(in crate::semantic::check) effects: EffectSet,
+    /// A capability this compiler does not implement at this target, carried
+    /// rather than raised so that [DIAG-1]'s order holds: every source
+    /// rejection of the statement, [LIV-2]'s commit conditions included, is
+    /// judged before the stop, and no capability limit stands in front of a
+    /// rejection.
+    pub(in crate::semantic::check) unsupported: Option<UnsupportedSemanticFeature>,
+}
+
+pub(in crate::semantic::check) enum MutationAccess {
+    Place {
+        holder: Option<DeclarationId>,
+        place: ResolvedPlace,
+    },
+    /// A view's own origin loan permits this write; later loans must still
+    /// leave both its descriptor and its origins usable [PROV-3].
+    View {
+        descriptor: DeclarationId,
+        place: ResolvedPlace,
+        origins: Vec<ResolvedPlace>,
+    },
 }
 
 impl MutationForm {
@@ -60,21 +102,69 @@ impl MutationForm {
     }
 }
 
-/// [STOR-1]'s ordinary restructuring: `replace` names the previous owner.
-pub(super) const STOR1_REPLACE: &str =
-    "use replace: let old = replace p = e; binds the previous owner";
+impl Checker<'_, '_, '_, '_> {
+    /// Re-establish writability at commit under the complete post-RHS loan
+    /// state. All paths here were captured before evaluating that RHS.
+    pub(super) fn revalidate_mutation_access(
+        &self,
+        access: &MutationAccess,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        node: NodeId,
+    ) -> Result<(), CheckStop> {
+        match access {
+            MutationAccess::Place { holder, place } => {
+                if let Some(holder) = holder {
+                    let local = bindings
+                        .get(holder)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    self.check_holder_not_suspended(local, node)?;
+                }
+                self.check_loan_access(bindings, *holder, place, AccessKind::Write, node)
+            }
+            MutationAccess::View {
+                descriptor,
+                place,
+                origins,
+            } => {
+                let local = bindings
+                    .get(descriptor)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                self.check_holder_not_suspended(local, node)?;
+                self.check_loan_access(
+                    bindings,
+                    Some(*descriptor),
+                    place,
+                    AccessKind::Write,
+                    node,
+                )?;
+                self.check_child_reborrow_freeze(bindings, origins, node)?;
+                for origin in origins {
+                    self.check_temporary_loan_access(
+                        bindings,
+                        Some(*descriptor),
+                        origin,
+                        AccessKind::Write,
+                        node,
+                    )?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
 
-/// [STOR-1]'s restructuring when the right-hand side consumes the target root.
+/// [STOR-1]'s restructuring, which [LIV-2] leaves as the rule's only one:
+/// `replace` names the previous owner.
 ///
-/// `replace` cannot help there: it commits the value into the very root the
-/// right-hand side moved out of, so applying it produces the next rule's
-/// rejection instead of an accepted program. The blind-writer trial of
-/// 2026-08-28 recorded a writer spending two of six compile attempts on
-/// exactly that pair -- `[STOR-1]` offering `replace`, then `[OWN-1]`
-/// rejecting the result as a use after move -- so this offers the fresh `let`
-/// that `[OWN-1]` accepts.
-pub(super) const STOR1_FRESH_LET: &str = "the right-hand side consumes the target root, so replace cannot commit into it: \
-     bind the result under a new let, and combine it with the old value field by field";
+/// The second sentence this constant had beside it — the fresh `let` offered
+/// when the right-hand side consumed the target root — is retired with
+/// [LIV-2]. That shape is no longer a rejection at a complete binding: the
+/// consuming `move` is the target's read-out and the statement is accepted.
+/// At a projected target the root is genuinely dead at the commit, so the
+/// rejection there is [OWN-1]'s dead root, which offers the same fresh `let`
+/// in its own sentence.
+pub(in crate::semantic::check) const STOR1_REPLACE: &str =
+    "use replace: let old = replace p = e; binds the previous owner";
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     /// [SET-2] target formation: exactly [SET-1]'s relation with the
@@ -85,7 +175,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
-    ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
+    ) -> Result<MutationTarget, CheckStop> {
         self.check_mutation_target(function, node, bindings, loop_depth, MutationForm::Replace)
     }
 
@@ -95,61 +185,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
-        affine_fix: &'static str,
-    ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
-        self.check_mutation_target(
-            function,
-            node,
-            bindings,
-            loop_depth,
-            MutationForm::Set { affine_fix },
-        )
-    }
-
-    /// Which [STOR-1] restructuring this `set` statement's right-hand side
-    /// admits.
-    ///
-    /// `replace` writes the new value into the target's own root and binds the
-    /// previous owner out of it. That works whenever the root is still alive at
-    /// the commit. It cannot work when the right-hand side moved the root away
-    /// to compute the value, because there is then no live owner to bind and
-    /// [OWN-1] rejects the reuse -- so a mechanical fix that offered `replace`
-    /// there spent an attempt and left the writer where they started. The
-    /// discriminator is exactly the written `move` of the target's root
-    /// somewhere in the value expression.
-    ///
-    /// This reads syntax, not the checked value: it runs before the target is
-    /// formed, so nothing here accepts or rejects anything. Only which of two
-    /// sentences a rejection prints depends on it.
-    pub(super) fn set_affine_restructuring(
-        &self,
-        target: NodeId,
-        value: NodeId,
-    ) -> Result<&'static str, CheckStop> {
-        let Some(root) = self.place_root_declaration(target)? else {
-            return Ok(STOR1_REPLACE);
-        };
-        for atom in self.tree.descendants_with(value, Production::Atom)? {
-            if !self.has_fixed(atom, FixedTerminal::Move)? {
-                continue;
-            }
-            let Some(place) = self.tree.first_child_with(atom, Production::Place)? else {
-                continue;
-            };
-            if self.place_root_declaration(place)? == Some(root) {
-                return Ok(STOR1_FRESH_LET);
-            }
-        }
-        Ok(STOR1_REPLACE)
+    ) -> Result<MutationTarget, CheckStop> {
+        self.check_mutation_target(function, node, bindings, loop_depth, MutationForm::Set)
     }
 
     /// The source declaration a written place is rooted at, when its base is a
     /// bare name.
     ///
     /// A `deref` base is rooted in a holder rather than in the storage the
-    /// place selects, and the question above is about the storage, so it
-    /// answers `None` and the ordinary restructuring stands.
-    fn place_root_declaration(&self, place: NodeId) -> Result<Option<DeclarationId>, CheckStop> {
+    /// place selects, so it answers `None`: the storage that place selects is
+    /// the referent's, not the holder's. [LIV-2] reads this to decide the one
+    /// target shape it reinitializes from dead, the complete binding.
+    pub(in crate::semantic::check) fn complete_binding_target(
+        &self,
+        place: NodeId,
+    ) -> Result<Option<DeclarationId>, CheckStop> {
         let Some(pbase) = self.tree.first_child_with(place, Production::Pbase)? else {
             return Ok(None);
         };
@@ -176,7 +226,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
         form: MutationForm,
-    ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
+    ) -> Result<MutationTarget, CheckStop> {
         let pbase = self
             .tree
             .first_child_with(node, Production::Pbase)?
@@ -241,7 +291,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .get(&declaration)
             .cloned()
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        if !local.live {
+        // [LIV-2] a commit whose target is a complete binding reinitializes
+        // that binding, so a dead one is the one root this formation admits;
+        // every projected, dereferenced or subscripted target of a dead root
+        // stays [OWN-1]'s rejection, because reinitializing one component of a
+        // dead root would leave the rest uninitialized.
+        let reinitializes = matches!(form, MutationForm::Set) && suffixes.is_empty();
+        if !local.live && !reinitializes {
             return self.issue_node(
                 SemanticRule::Own1,
                 node,
@@ -267,10 +323,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        let resolved = ResolvedPlace {
-            root: declaration,
-            fields: fields.clone(),
-        };
+        let resolved = ResolvedPlace::fields(declaration, fields.clone());
         self.check_loan_access(bindings, None, &resolved, AccessKind::Write, node)?;
 
         self.check_mutation_target_class(node, ty, form)?;
@@ -282,15 +335,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
 
-        Ok((
+        Ok(MutationTarget {
             declaration,
-            CheckedSetTarget::Place(CheckedWritablePlace {
+            access: MutationAccess::Place {
+                holder: None,
+                place: resolved.clone(),
+            },
+            place: resolved,
+            element: false,
+            target: CheckedSetTarget::Place(CheckedWritablePlace {
                 binding: local.binding,
                 fields,
                 ty,
+                declares: false,
             }),
             effects,
-        ))
+            unsupported: None,
+        })
     }
 
     /// The final selected type's [OWN-1] class judgment shared by the
@@ -302,8 +363,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ty: CheckedType,
         form: MutationForm,
     ) -> Result<(), CheckStop> {
-        let MutationForm::Set { affine_fix } = form else {
-            if self.is_copy_type(ty)? {
+        let MutationForm::Set = form else {
+            // [SET-2, VIEW-4] a loan-bearing target is judged as the
+            // region-bearing target it is, before the copy class is read:
+            // [S27] made the shared view copy, and "use set for a copy place"
+            // is exactly the repair [VIEW-4] refuses at this same place.
+            if !Self::checked_type_is_loan_bearing(ty)
+                && self.is_copy_type(ty)?
+                && self.judges_class_spelling()
+            {
                 return self.issue_node(
                     SemanticRule::Set2,
                     node,
@@ -331,13 +399,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             return Ok(());
         };
-        if !self.is_copy_type(ty)? {
+        // [LIV-2] an affine target's admission is judged at the commit, where
+        // the read-out is known; only the region-free demand [SET-2] states of
+        // a replacement target is decidable from the type alone, and a commit
+        // reinitializes no origin set or arena confinement either.
+        if !self.is_copy_type(ty)? && self.checked_type_is_region_bearing(ty)? {
             return self.issue_node(
-                SemanticRule::Stor1,
+                SemanticRule::Liv2,
                 node,
-                SemanticIssueKind::AffineSetTarget {
+                SemanticIssueKind::RegionBearingCommitTarget {
                     target_type: self.checked_type_name(ty)?,
-                    mechanical_fix: affine_fix,
+                    mechanical_fix: "a slice's static origin set and an arena's confinement \
+                                     are fixed at initialization; bind a new slice or arena \
+                                     under a new let",
                 },
             );
         }
@@ -392,6 +466,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// which is exactly how the source spells it, and every caller that
     /// splices a region into a longer form drops the separator with it.
     pub(in crate::semantic::check) fn region_spelling(&self, region: DeclarationId) -> String {
+        // [PROV-1] the entry heap's store region has no written spelling at
+        // all: `main` declares no region parameter, so every position that
+        // names it names it by elision, and rendering the identity the
+        // compiler holds it under would name a region the writer cannot
+        // write.
+        if region.is_entry_heap_region() {
+            return String::new();
+        }
         let spelling = self
             .declaration_spelling(region)
             .unwrap_or_else(|_| format!("'region#{}", region.index()));
@@ -430,20 +512,75 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::GenericFloat(declaration) => {
                 format!("<Float-parameter:{}>", declaration.index())
             }
-            CheckedType::Nominal(id) => self.nominal(id)?.name.clone(),
+            // [S20] a nominal's region arguments are components of its type
+            // name [TYPE-2], so a diagnostic that reports two instances of one
+            // declaration has to spell them: the two sides of a [TYPE-5]
+            // mismatch between `BlockPool<'a>` and `BlockPool<'b>` are
+            // otherwise the same word twice.
+            CheckedType::Nominal(id) => {
+                let name = self.nominal(id)?.name.clone();
+                match self.nominal_region_axis(id)? {
+                    Some(axis) if !axis.is_empty() => {
+                        let arguments = axis
+                            .iter()
+                            .map(|(_, actual)| self.region_spelling(*actual))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        format!("{name}<{arguments}>")
+                    }
+                    _ => name,
+                }
+            }
             CheckedType::Array { element, length } => {
                 let length = self.checked_const_name(length)?;
                 format!("array<{}, {length}>", self.checked_type_name(element.ty())?)
             }
-            CheckedType::Slice { region, element } => {
+            CheckedType::Slice {
+                region,
+                element,
+                strength,
+            } => {
                 let element = self.checked_type_name(element.ty())?;
+                let view = strength.spelling();
                 match self.region_spelling(region).as_str() {
-                    "" => format!("slice<{element}>"),
-                    region => format!("slice<{region}, {element}>"),
+                    "" => format!("{view}<{element}>"),
+                    region => format!("{view}<{region}, {element}>"),
                 }
             }
             CheckedType::Buffer { element } => {
                 format!("buffer<{}>", self.checked_type_name(element.ty())?)
+            }
+            CheckedType::FixedVector { element, length } => {
+                let length = self.checked_const_name(length)?;
+                format!(
+                    "FixedVector<{}, {length}>",
+                    self.checked_type_name(element.ty())?
+                )
+            }
+            CheckedType::Vector {
+                region, element, ..
+            } => {
+                let element = self.checked_type_name(element.ty())?;
+                match self.region_spelling(region).as_str() {
+                    "" => format!("Vector<{element}>"),
+                    region => format!("Vector<{region}, {element}>"),
+                }
+            }
+            CheckedType::Heap { region } => match self.region_spelling(region).as_str() {
+                "" => "Heap".to_owned(),
+                region => format!("Heap<{region}>"),
+            },
+            CheckedType::Extent {
+                region,
+                bytes,
+                align,
+            } => {
+                let bytes = self.checked_const_name(bytes)?;
+                let align = self.checked_const_name(align)?;
+                match self.region_spelling(region).as_str() {
+                    "" => format!("Arena<{bytes}, {align}>"),
+                    region => format!("Arena<{region}, {bytes}, {align}>"),
+                }
             }
         })
     }
@@ -484,7 +621,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticRule::Own1,
                 use_node,
                 SemanticIssueKind::BareAffineUse {
-                    mechanical_fix: "read a const array through `index` or `len`",
+                    mechanical_fix: "read a const FixedVector<T, n> through a subscript, one of `len_of`, `cap_of`, `room_of` and `head_of`, or a shared `slice_of` view",
                 },
             ),
             scalar => Ok(TypedExpression::owned(
@@ -637,8 +774,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.check_written_operand(function, child, bindings, loop_depth, place_context)
     }
 
-    /// [GRAM-5] one `clause_expr`, whose operands may be a `call` and which
-    /// therefore admits a measure term on either side of its operator
+    /// [GRAM-5] one `clause_expr`: one `affine_expr`, or two around one
+    /// `clause_op`. Each side is [GRAM-4]'s own affine expression, whose
+    /// factors may be a `call` and which therefore admits a measure term
+    /// displaced by an affine expression on either side of the operator
     /// [MSR-5].
     fn check_clause_expression(
         &self,
@@ -649,24 +788,183 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         place_context: PlaceUseContext,
     ) -> Result<TypedExpression, CheckStop> {
         match self.tree.children(node)? {
-            [operand] => {
-                let operand = *operand;
-                self.check_written_operand(function, operand, bindings, loop_depth, place_context)
+            [side] => {
+                let side = *side;
+                self.check_clause_affine(function, side, None, bindings, loop_depth, place_context)
             }
             [left, operator, right] => {
                 let (left, operator, right) = (*left, *operator, *right);
-                let operation = self.infix_operation(operator)?;
-                self.check_integer_operation_row(
-                    node,
-                    operation,
-                    &[left, right],
-                    function,
-                    bindings,
-                    loop_depth,
-                )
+                let operation = self.infix_operation(self.clause_operator_node(operator)?)?;
+                let left = (
+                    left,
+                    self.check_clause_affine(
+                        function,
+                        left,
+                        None,
+                        bindings,
+                        loop_depth,
+                        PlaceUseContext::Ordinary,
+                    )?,
+                );
+                let right = (
+                    right,
+                    self.check_clause_affine(
+                        function,
+                        right,
+                        None,
+                        bindings,
+                        loop_depth,
+                        PlaceUseContext::Ordinary,
+                    )?,
+                );
+                self.check_integer_operation_operands(node, operation, vec![left, right])
             }
             _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
         }
+    }
+
+    /// The operator token's owning node inside one `clause_op` [GRAM-5]: the
+    /// `compare_op` node it selected, or the `clause_op` itself when the
+    /// operator is one of the five infix `defined` domain queries.
+    pub(super) fn clause_operator_node(&self, operator: NodeId) -> Result<NodeId, CheckStop> {
+        Ok(self
+            .tree
+            .first_child_with(operator, Production::CompareOp)?
+            .unwrap_or(operator))
+    }
+
+    /// One `affine_expr`, `affine_term`, or `affine_factor` of a contract
+    /// clause [MSR-5].
+    ///
+    /// `terms` bounds an `affine_expr`'s left-associative fold to its first
+    /// `terms` `affine_term` children, so `a + b - c` is `(a + b) - c` with
+    /// no rewriting of the source tree. Its `+`, `-`, and `*` denote the
+    /// mathematical integer expression [INV-1] fixes; the [OP-1] rows named
+    /// here are the exact ones, which carry no domain obligation of their own
+    /// because a clause is never evaluated.
+    fn check_clause_affine(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        terms: Option<usize>,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+        place_context: PlaceUseContext,
+    ) -> Result<TypedExpression, CheckStop> {
+        match self.tree.production(node)? {
+            Production::AffineExpr => {
+                let children = self.tree.children(node)?.to_vec();
+                let count = terms.unwrap_or_else(|| children.len().div_ceil(2));
+                let last = count
+                    .checked_mul(2)
+                    .and_then(|doubled| doubled.checked_sub(2))
+                    .and_then(|index| children.get(index).copied())
+                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                if count == 1 {
+                    return self.check_clause_affine(
+                        function,
+                        last,
+                        None,
+                        bindings,
+                        loop_depth,
+                        place_context,
+                    );
+                }
+                let operator = children
+                    .get(
+                        count
+                            .checked_mul(2)
+                            .and_then(|doubled| doubled.checked_sub(3))
+                            .ok_or(SemanticCompilerFailure::CounterOverflow)?,
+                    )
+                    .copied()
+                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                let operation = self.affine_add_operation(operator)?;
+                let left = (
+                    node,
+                    self.check_clause_affine(
+                        function,
+                        node,
+                        Some(count - 1),
+                        bindings,
+                        loop_depth,
+                        PlaceUseContext::Ordinary,
+                    )?,
+                );
+                let right = (
+                    last,
+                    self.check_clause_affine(
+                        function,
+                        last,
+                        None,
+                        bindings,
+                        loop_depth,
+                        PlaceUseContext::Ordinary,
+                    )?,
+                );
+                self.check_integer_operation_operands(node, operation, vec![left, right])
+            }
+            Production::AffineTerm => {
+                let factors = self.tree.children_with(node, Production::AffineFactor)?;
+                match factors.as_slice() {
+                    [factor] => self.check_clause_affine(
+                        function,
+                        *factor,
+                        None,
+                        bindings,
+                        loop_depth,
+                        place_context,
+                    ),
+                    [left_node, right_node] => {
+                        let left = (
+                            *left_node,
+                            self.check_clause_affine(
+                                function,
+                                *left_node,
+                                None,
+                                bindings,
+                                loop_depth,
+                                PlaceUseContext::Ordinary,
+                            )?,
+                        );
+                        let right = (
+                            *right_node,
+                            self.check_clause_affine(
+                                function,
+                                *right_node,
+                                None,
+                                bindings,
+                                loop_depth,
+                                PlaceUseContext::Ordinary,
+                            )?,
+                        );
+                        self.check_integer_operation_operands(
+                            node,
+                            CheckedIntegerOperation::MultiplyExact,
+                            vec![left, right],
+                        )
+                    }
+                    _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
+                }
+            }
+            Production::AffineFactor => {
+                let child = self.tree.only_child(node)?;
+                self.check_clause_affine(function, child, None, bindings, loop_depth, place_context)
+            }
+            _ => self.check_written_operand(function, node, bindings, loop_depth, place_context),
+        }
+    }
+
+    /// The [OP-1] row one `affine_add_op` names [GRAM-4].
+    fn affine_add_operation(&self, operator: NodeId) -> Result<CheckedIntegerOperation, CheckStop> {
+        let [terminal] = self.tree.direct_token_indices(operator)? else {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        };
+        Ok(match self.tree.token_bytes(*terminal)? {
+            b"+" => CheckedIntegerOperation::AddExact,
+            b"-" => CheckedIntegerOperation::SubtractExact,
+            _ => return Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
+        })
     }
 
     /// One written operand of an `expr` or a `clause_expr` [GRAM-5]: the
@@ -1041,6 +1339,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     // spelling judgments above are defined first and cite
                     // first at this node [DIAG-1].
                     self.check_holder_not_suspended(&local, use_node)?;
+                    // A pure callee still receives the holder's authority.
+                    // Its empty effect row cannot bypass a live child loan.
+                    if let Some(borrow) = &local.borrow {
+                        self.check_temporary_loan_access(
+                            bindings,
+                            Some(declaration),
+                            &borrow.place,
+                            if copy {
+                                AccessKind::Read
+                            } else {
+                                AccessKind::Move
+                            },
+                            use_node,
+                        )?;
+                    }
                     if !copy {
                         bindings
                             .get_mut(&declaration)
@@ -1074,7 +1387,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
                 let copy = self.is_copy_type(ty)?;
-                if options.explicit_move && copy {
+                if options.explicit_move && copy && self.judges_class_spelling() {
                     return self.issue_node(
                         SemanticRule::Own1,
                         use_node,
@@ -1095,20 +1408,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 }
-                if !copy && local.loop_depth < options.loop_depth {
-                    return self.issue_node(
-                        SemanticRule::Own11,
-                        use_node,
-                        SemanticIssueKind::MoveOuterBindingInLoop {
-                            mechanical_fix: "move the binding before the loop or declare and consume it inside the loop body",
-                        },
-                    );
-                }
+                // [LIV-2] a `move` of a target place of this statement's
+                // commit, or of a place reached through one, is that target's
+                // read-out: the previous value leaves, the root stays live,
+                // and the same statement reinitializes the target. It is not
+                // [OWN-1]'s root-killing consume and derives no residual
+                // cleanup of the root's unselected content.
+                self.check_commit_place_live(
+                    &ResolvedPlace::fields(declaration, fields.clone()),
+                    use_node,
+                    false,
+                )?;
+                let read_out = !copy
+                    && options.explicit_move
+                    && self
+                        .take_commit_read_out(&ResolvedPlace::fields(declaration, fields.clone()));
                 // OWN-1 makes an affine projection consume its whole root.
                 // Its residual cleanup destroys every unselected resource
                 // field, so the loan access is the root rather than only the
-                // selected projection.
-                let access_fields = if copy { fields.clone() } else { Vec::new() };
+                // selected projection. A read-out consumes exactly its own
+                // place, so its access is that place.
+                let access_fields = if copy || read_out {
+                    fields.clone()
+                } else {
+                    Vec::new()
+                };
                 let access_kind = if copy {
                     AccessKind::Read
                 } else {
@@ -1117,14 +1441,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.check_loan_access(
                     bindings,
                     None,
-                    &ResolvedPlace {
-                        root: declaration,
-                        fields: access_fields.clone(),
-                    },
+                    &ResolvedPlace::fields(declaration, access_fields.clone()),
                     access_kind,
                     use_node,
                 )?;
-                let residual_drops = if copy || fields.is_empty() {
+                // [PROV-6] a consume of a proper sub-place of a value linear
+                // in this scope, with no commit reinitialising that sub-place,
+                // is a partial consume: the residual leaf is abandoned in a
+                // scope that has no derived release to reclaim it.
+                if !copy && !read_out && !fields.is_empty() {
+                    self.reject_partial_consume(local.ty, &fields, use_node)?;
+                }
+                let residual_drops = if copy || read_out || fields.is_empty() {
                     Vec::new()
                 } else {
                     let paths = self.residual_drop_paths(local.ty, &fields)?;
@@ -1141,18 +1469,35 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         })
                         .collect()
                 };
-                if !copy {
+                // [LIV-2] after its read-out the target is dead for the
+                // remainder of the right-hand side, and the commit reinitializes
+                // it. At a complete binding that is exactly this binding's own
+                // liveness, so the ordinary kill stands and the commit revives
+                // it; at a projection the root keeps its other content and only
+                // the target place is spent, which the commit's own read-out
+                // record carries.
+                if !copy && (!read_out || fields.is_empty()) {
                     bindings
                         .get_mut(&declaration)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?
                         .live = false;
                 }
-                let access = ResolvedPlace {
-                    root: declaration,
-                    fields: access_fields,
-                };
+                let access = ResolvedPlace::fields(declaration, access_fields);
                 let mut effects = EffectSet::NONE;
-                if matches!(access_kind, AccessKind::Read) {
+                // [LIV-2, EFF-2] a read-out reads the target's own storage,
+                // exactly as [SET-2]'s exchange does, and the commit writes it.
+                //
+                // [EFF-1] a loan-bearing value's effect path names the viewed
+                // backing state and not the descriptor, and merely moving,
+                // returning or structurally repacking that value observes
+                // none of it: a read *through* the view is the subscript's own
+                // attribution. Before [S27] made the shared view copy this
+                // guard was invisible, because a consume exhibited no read at
+                // all; the copy spelling is what would otherwise have made
+                // `return value;` declare a read of storage it never touches.
+                if (matches!(access_kind, AccessKind::Read) || read_out)
+                    && !Self::checked_type_is_loan_bearing(ty)
+                {
                     for path in self.effect_paths_for_place(&access, bindings)? {
                         effects.add_read(path);
                     }
@@ -1192,7 +1537,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 .map(|origins| origins.projected(&fields)),
                             fields,
                             ty,
-                            consume_root: !copy,
+                            consume_root: !copy && !read_out,
                             residual_drops,
                         },
                         effects,
@@ -1200,6 +1545,52 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         access_kind,
                     ))
                 }
+            }
+            // [MSR-6] an in-scope const generic is a value wherever a named
+            // const is. It is one `pbase` with no suffix and no `deref`, its
+            // exact type is the `gparam`'s written integer type, and reading
+            // it performs no operation and has the empty effect row.
+            DeclarationClass::ConstGeneric => {
+                if options.explicit_move {
+                    return self.issue_node(
+                        SemanticRule::Own1,
+                        use_node,
+                        SemanticIssueKind::MoveOfCopy {
+                            mechanical_fix: "use the copy place without `move`",
+                        },
+                    );
+                }
+                if !suffixes.is_empty() {
+                    return self.issue_node(
+                        SemanticRule::Type5,
+                        use_node,
+                        SemanticIssueKind::type_mismatch(
+                            "a const generic read with no suffix",
+                            "a suffix chain on an integer const generic",
+                        ),
+                    );
+                }
+                let ty = self.const_generic_type(declaration)?;
+                let value = match function.substitution.const_argument(declaration) {
+                    Some(CheckedConst::Value(value)) => CheckedValue::Integer { ty, bits: value },
+                    // [FN-2, MSR-6] a const parameter this instance's caller
+                    // supplied from a const parameter of its own is that
+                    // caller's parameter here. Keeping this declaration would
+                    // anchor the constant to a parameter nothing outside this
+                    // instance can name, and every relation published over it
+                    // would be dropped at the call.
+                    Some(CheckedConst::Parameter(supplied)) => CheckedValue::ConstGeneric {
+                        declaration: supplied,
+                        ty,
+                    },
+                    // The one source-canonical symbolic instance keeps the
+                    // declaration-anchored constant [ENT-2] clause (c) fixes.
+                    _ => CheckedValue::ConstGeneric { declaration, ty },
+                };
+                Ok(TypedExpression::owned(
+                    CheckedExpression::Constant(value),
+                    EffectSet::NONE,
+                ))
             }
             DeclarationClass::NamedConst => {
                 if options.explicit_move {
@@ -1238,7 +1629,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         SemanticRule::Own1,
                         use_node,
                         SemanticIssueKind::BareAffineUse {
-                            mechanical_fix: "read a const array through `index` or `len`",
+                            mechanical_fix: "read a const FixedVector<T, n> through a subscript, one of `len_of`, `cap_of`, `room_of` and `head_of`, or a shared `slice_of` view",
                         },
                     );
                 }
@@ -1283,7 +1674,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &HashMap<DeclarationId, LocalBinding>,
         form: MutationForm,
         root: (LocalBinding, OwnedContent),
-    ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
+    ) -> Result<MutationTarget, CheckStop> {
         let (local, content) = root;
         if !local.live {
             return self.issue_node(
@@ -1305,24 +1696,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.check_loan_access(
             bindings,
             None,
-            &ResolvedPlace {
-                root: local.declaration,
-                fields,
-            },
+            &ResolvedPlace::fields(local.declaration, fields.clone()),
             AccessKind::Write,
             node,
         )?;
         self.check_mutation_target_class(node, ty, form)?;
-        // TEMPORARY capability stop, judged after every [OWN-1], [OWN-5], and
-        // [STOR-1] source rejection above.
-        match content {
-            OwnedContent::Arena { .. } => {
-                self.unsupported(UnsupportedSemanticFeature::ArenaRuntime, node)
-            }
-            OwnedContent::Boxed(_) => {
-                self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, node)
-            }
-        }
+        // TEMPORARY capability stop, carried rather than raised: [LIV-2]'s
+        // commit conditions are source rejections and are judged first, so a
+        // live affine content target still reports [STOR-1] and only a form
+        // this compiler cannot lower reaches the stop.
+        let unsupported = Some(match content {
+            OwnedContent::Arena { .. } => UnsupportedSemanticFeature::ArenaRuntime,
+            OwnedContent::Boxed(_) => UnsupportedSemanticFeature::RegionsAndBorrows,
+        });
+        Ok(MutationTarget {
+            declaration: local.declaration,
+            access: MutationAccess::Place {
+                holder: None,
+                place: ResolvedPlace::fields(local.declaration, fields.clone()),
+            },
+            place: ResolvedPlace::fields(local.declaration, fields.clone()),
+            element: false,
+            target: CheckedSetTarget::Place(CheckedWritablePlace {
+                binding: local.binding,
+                fields,
+                ty,
+                declares: false,
+            }),
+            effects: EffectSet::NONE,
+            unsupported,
+        })
     }
 
     fn check_dereferenced_set_target(
@@ -1331,7 +1734,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         pbase: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         form: MutationForm,
-    ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
+    ) -> Result<MutationTarget, CheckStop> {
         // [SET-1] makes a `deref` target writable through either of two roots:
         // an explicit `deref` of a live usable `&uniq` holder, or a live
         // own-mode binding whose storage the `deref` reaches [STOR-1]. Only
@@ -1356,7 +1759,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let suffixes = self.tree.children_with(node, Production::Psuffix)?;
         let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
         let mut resolved = borrow.place;
-        resolved.fields.extend_from_slice(&fields);
+        resolved.extend_fields(&fields);
         self.check_loan_access(
             bindings,
             Some(declaration),
@@ -1374,15 +1777,68 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 effects.add_read(path);
             }
         }
-        Ok((
+        Ok(MutationTarget {
             declaration,
-            CheckedSetTarget::Place(CheckedWritablePlace {
+            access: MutationAccess::Place {
+                holder: Some(declaration),
+                place: resolved.clone(),
+            },
+            place: resolved,
+            element: false,
+            target: CheckedSetTarget::Place(CheckedWritablePlace {
                 binding: local.binding,
                 fields,
                 ty,
+                declares: false,
             }),
             effects,
-        ))
+            unsupported: self.borrowed_descriptor_mutation_capability(ty)?,
+        })
+    }
+
+    /// A borrowed descriptor replacement needs both writable descriptor-slot
+    /// lowering and retention of any descendant backing an enclosing target
+    /// already captured. The retiring buffer surface implements neither
+    /// completely. This is a capability stop after the source judgments, not
+    /// a writability rule. Inspect the selected value, so writes of its scalar
+    /// contents remain admitted even when an ancestor owns a buffer.
+    fn borrowed_descriptor_mutation_capability(
+        &self,
+        ty: CheckedType,
+    ) -> Result<Option<UnsupportedSemanticFeature>, CheckStop> {
+        let mut pending = vec![ty];
+        let mut visited = HashSet::new();
+        while let Some(current) = pending.pop() {
+            match current {
+                CheckedType::Buffer { .. } => {
+                    return Ok(Some(
+                        UnsupportedSemanticFeature::BorrowedBufferDescriptorMutation,
+                    ));
+                }
+                CheckedType::Array { element, .. } => pending.push(element.ty()),
+                CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
+                    pending.push(element.ty())
+                }
+                CheckedType::Nominal(id) if visited.insert(id) => match &self.nominal(id)?.kind {
+                    CheckedNominalKind::Struct { fields } => {
+                        pending.extend(fields.iter().map(|field| field.ty));
+                    }
+                    CheckedNominalKind::Enum { variants } => {
+                        pending.extend(
+                            variants
+                                .iter()
+                                .flat_map(|variant| variant.fields.iter().map(|field| field.ty)),
+                        );
+                    }
+                    CheckedNominalKind::Box { referent, .. } => pending.push(*referent),
+                    CheckedNominalKind::Arena { content, .. } => pending.push(*content),
+                    CheckedNominalKind::ArenaStorage
+                    | CheckedNominalKind::SystemResource { .. } => {}
+                },
+                _ => {}
+            }
+        }
+        Ok(None)
     }
 
     pub(super) fn check_match_expression(
@@ -1393,6 +1849,235 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         loop_depth: usize,
     ) -> Result<TypedExpression, CheckStop> {
         self.check_consuming_expression(function, node, bindings, loop_depth)
+    }
+
+    /// [PROV-6] the operand of a `dispose` statement or of a destructuring
+    /// consume: an ordinary consuming place use, judged by [OWN-1] exactly as
+    /// every other consuming position is.
+    pub(super) fn check_consumed_place(
+        &self,
+        function: &FunctionSignature,
+        use_node: NodeId,
+        place: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+        explicit_move: bool,
+    ) -> Result<TypedExpression, CheckStop> {
+        self.check_place_use(
+            function,
+            use_node,
+            place,
+            bindings,
+            PlaceUseOptions {
+                explicit_move,
+                context: PlaceUseContext::Consuming,
+                loop_depth,
+            },
+        )
+    }
+
+    /// One `construct` of a nominal carrying `region_params` [FORM-8].
+    ///
+    /// Every other construct forms its instance from the written argument
+    /// list and then checks its operands against that instance's fields.
+    /// Here the operands come first, because they are what determines the
+    /// instance: a field whose declared type names one of the declaration's
+    /// region parameters supplies that region from its own actual, exactly as
+    /// a parameter position supplies a callee's formal region at a call, and
+    /// the position writes only the region parameters no field's declared
+    /// type mentions. [TYPE-5]'s ground is untouched — construction still
+    /// consults no expected nominal type, and it is the operands and the
+    /// written list, never a destination, that fix the instance.
+    ///
+    /// The instance is formed once the regions are known and every operand is
+    /// then compared against *its* declared field types by the ordinary exact
+    /// [TYPE-5] equality, so a second operand naming a second store is a
+    /// mismatch and not a second binding [PROV-1].
+    fn check_regional_construct(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+        site: &super::ConstructorSite,
+        constructor_name: String,
+    ) -> Result<TypedExpression, CheckStop> {
+        let written_fields = match self
+            .tree
+            .first_child_with(node, Production::FieldinitList)?
+        {
+            Some(list) => self.tree.children_with(list, Production::Fieldinit)?,
+            None => Vec::new(),
+        };
+        if written_fields.len() != site.shape.fields.len() {
+            return self.issue_node(
+                SemanticRule::Gram8,
+                node,
+                SemanticIssueKind::InvalidConstructionFields {
+                    constructor: constructor_name,
+                    declared_fields: site.shape.fields.clone(),
+                },
+            );
+        }
+        // [FORM-8] a written region argument this construct's own operands
+        // determine carries no fact a reader can check, and the diagnostic
+        // names the one repair rather than an argument count.
+        self.reject_determined_region_arguments(node, site)?;
+        let mut atoms = Vec::with_capacity(written_fields.len());
+        let mut operands = Vec::with_capacity(written_fields.len());
+        let mut effects = EffectSet::NONE;
+        for (written, declared) in written_fields.into_iter().zip(&site.shape.fields) {
+            if self
+                .deferred_use_at(written, DeferredUseRole::FieldInitializer)?
+                .spelling()
+                != *declared
+            {
+                return self.issue_node(
+                    SemanticRule::Gram8,
+                    written,
+                    SemanticIssueKind::InvalidConstructionFields {
+                        constructor: constructor_name,
+                        declared_fields: site.shape.fields.clone(),
+                    },
+                );
+            }
+            let atom = self
+                .tree
+                .first_child_with(written, Production::Atom)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            let value = self.check_atom(function, atom, bindings, loop_depth)?;
+            effects = effects.union(value.effects.clone());
+            atoms.push(atom);
+            operands.push(value);
+        }
+        let mut determined = Vec::with_capacity(site.region_parameters.len());
+        for (slot, formal) in site.region_parameters.iter().enumerate() {
+            let Some(field) = site.shape.determining_field.get(slot).copied().flatten() else {
+                continue;
+            };
+            let operand = operands
+                .get(field)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let atom = *atoms
+                .get(field)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let ty = operand.expression.ty();
+            let Some(actual) = self.written_type_region(ty)? else {
+                return self.issue_node(
+                    SemanticRule::Type5,
+                    atom,
+                    SemanticIssueKind::type_mismatch(
+                        "a value whose type names the store this field's declared type brands"
+                            .to_owned(),
+                        self.checked_type_name(ty)?,
+                    ),
+                );
+            };
+            determined.push((*formal, actual));
+        }
+        let nominal = self.constructed_nominal(node, site, &determined, &function.substitution)?;
+        let declared_fields = match (&self.nominal(nominal)?.kind, site.variant) {
+            (CheckedNominalKind::Struct { fields }, None) => fields.clone(),
+            (CheckedNominalKind::Enum { variants }, Some(variant)) => variants
+                .get(variant as usize)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                .fields
+                .clone(),
+            _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+        };
+        let mut fields = Vec::with_capacity(operands.len());
+        for ((value, atom), declared) in operands.into_iter().zip(atoms).zip(&declared_fields) {
+            if value.expression.ty() != declared.ty {
+                return self.issue_node(
+                    SemanticRule::Type5,
+                    atom,
+                    SemanticIssueKind::type_mismatch(
+                        self.checked_type_name(declared.ty)?,
+                        self.checked_type_name(value.expression.ty())?,
+                    ),
+                );
+            }
+            if value.mode != CheckedMode::Own {
+                return self.issue_node(
+                    SemanticRule::Type7,
+                    atom,
+                    SemanticIssueKind::MissingDereference {
+                        mechanical_fix: "write `deref(holder)`",
+                    },
+                );
+            }
+            fields.push(value.expression);
+        }
+        let carrier = self.tree.path(node)?.clone();
+        let expression = match site.variant {
+            None => CheckedExpression::ConstructStruct {
+                carrier,
+                nominal,
+                fields,
+            },
+            Some(variant) => CheckedExpression::ConstructEnum {
+                carrier,
+                nominal,
+                variant,
+                fields,
+            },
+        };
+        Ok(TypedExpression::owned(expression, effects))
+    }
+
+    /// [FORM-8] a construct that writes a region argument its own field
+    /// operands determine.
+    ///
+    /// The old spelling wrote every region parameter, so the shape this
+    /// refuses is the complete list where a shorter one is legal, and the
+    /// repair is to delete the members the operands supply. A list that is
+    /// wrong in some other way stays the ordinary [TYPE-5] argument fault.
+    fn reject_determined_region_arguments(
+        &self,
+        node: NodeId,
+        site: &super::ConstructorSite,
+    ) -> Result<(), CheckStop> {
+        let determined = site
+            .shape
+            .determining_field
+            .iter()
+            .filter(|field| field.is_some())
+            .count();
+        if determined == 0 {
+            return Ok(());
+        }
+        let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
+            return Ok(());
+        };
+        let arguments = self.tree.children_with(targs, Production::Targ)?;
+        let expected = site
+            .generic_parameters
+            .len()
+            .saturating_add(site.region_parameters.len())
+            .saturating_sub(determined);
+        if arguments.len() <= expected {
+            return Ok(());
+        }
+        for argument in arguments.iter().take(site.region_parameters.len()) {
+            if self
+                .tree
+                .first_child_with(*argument, Production::Type)?
+                .is_some()
+                || self
+                    .tree
+                    .first_child_with(*argument, Production::Const)?
+                    .is_some()
+            {
+                return Ok(());
+            }
+        }
+        self.issue_node(
+            SemanticRule::Form8,
+            node,
+            SemanticIssueKind::RegionSpelling {
+                mechanical_fix: "drop the region argument",
+            },
+        )
     }
 
     pub(super) fn check_construct(
@@ -1431,8 +2116,45 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 EffectSet::NONE,
             ));
         }
+        // [BLK-1] the four compiler-owned nominals contribute a constructor
+        // entry that exists to be refused: no `construct` produces a run, a
+        // provider, or a store.
+        if let ResolvedTarget::Container(id) = usage.target() {
+            let nominal =
+                crate::container_nominal(id).ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let restructuring = match nominal.shape {
+                crate::ContainerShape::Vector | crate::ContainerShape::FixedVector => {
+                    "form the run with a formation operation"
+                }
+                crate::ContainerShape::Heap | crate::ContainerShape::Arena => {
+                    "receive the provider as a parameter"
+                }
+                crate::ContainerShape::Box => "form the cell with heap_box or arena_box",
+            };
+            return self.issue_node(
+                SemanticRule::Blk1,
+                node,
+                SemanticIssueKind::ContainerConstruction {
+                    nominal: constructor_name,
+                    mechanical_fix: restructuring,
+                },
+            );
+        }
         let constructor = match usage.target() {
             ResolvedTarget::Source { declaration, .. } => {
+                // [FORM-8] a nominal carrying `region_params` has its region
+                // arguments determined by its field operands, so its
+                // instance is formed after they are checked and not before.
+                if let Some(site) = self.constructor_shape(declaration)? {
+                    return self.check_regional_construct(
+                        function,
+                        node,
+                        bindings,
+                        loop_depth,
+                        &site,
+                        constructor_name,
+                    );
+                }
                 self.source_constructor(node, declaration, &function.substitution)?
             }
             ResolvedTarget::Prelude(id) => match id.ordinal() {

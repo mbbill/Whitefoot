@@ -1,7 +1,19 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "expected ACCEPT: an accumulated sum drives a table lookup only after a real branch proves it in range.";
-  let data = buffer_new(4_u64, 1_u8);
-  let table = buffer_new(8_u64, 0_u8);
+  let data = fixed_vector::<u8, 4>();
+  set data = place_back(vector: move data, value: 1_u8);
+  set data = place_back(vector: move data, value: 1_u8);
+  set data = place_back(vector: move data, value: 1_u8);
+  set data = place_back(vector: move data, value: 1_u8);
+  let table = fixed_vector::<u8, 8>();
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
   set table[4_u64] = 42_u8;
   let sum = 0_u64;
   for (
@@ -12,8 +24,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     let wide = cvt::<u8, u64>(byte);
     set sum = sum + wide;
   }
-  let room = len(table);
-  let lookup_ok = sum < room;
+  let spare = len_of(table);
+  let lookup_ok = sum < spare;
   if lookup_ok {
     let value = table[sum];
     if value == 42_u8 {

@@ -1,0 +1,32 @@
+command fn main() -> status: own ExitStatus pure {
+  region 'a {
+    let store = arena_frame::<64, 8, 'a>();
+    region {
+      let first = arena_vector_proved::<u8>(store: &uniq store, count: 4_u64);
+      let second = arena_vector_proved::<u8>(store: &uniq store, count: 4_u64);
+      let replacement = arena_vector_proved::<u8>(store: &uniq store, count: 4_u64);
+      let free = fixed_vector::<Vector<'a, u8>, 2>();
+      let one = place_back(vector: move free, value: move first);
+      let spare = replace one[0_u64] = move second;
+      let known = replace one[0_u64] = move replacement;
+      let passed = pass_bytes(bytes: move known);
+      let record = Block(bytes: move passed);
+      let Block(bytes: bytes) = move record;
+      let outcome = Some<Vector<'a, u8>>(value: move bytes);
+      match outcome {
+        None() => {
+          return exit_status(code: 1_u8);
+        }
+        Some(value: returned) => {
+          invariant capacity_min: cap_of(returned) >= 4_u64;
+          invariant capacity_max: cap_of(returned) <= 4_u64;
+          invariant empty: len_of(returned) <= 0_u64;
+          let written = place_back(vector: move returned, value: 23_u8);
+          let seen = written[0_u64];
+          let result = seen -wrap 23_u8;
+          return exit_status(code: result);
+        }
+      }
+    }
+  }
+}

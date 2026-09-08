@@ -1,0 +1,22 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "BLK-0, CALL-6: the same publication read the other way. advance<T>(count) rounds a take up to the store's own alignment, so a 4080-byte take out of a 4096-byte extent leaves 16 and a proved take of 17 needs 32. The requirement is undischarged on the arm the acquisition succeeded on, which is the only arm on which the store's new length is known at all.";
+  region 'a {
+    let workspace = arena_frame::<4096, 16, 'a>();
+    region {
+      match arena_vector::<u8>(store: &uniq workspace, count: 4080_u64) {
+        None() => {
+          return exit_status(code: 1_u8);
+        }
+        Some(value: bulk) => {
+          let rest = arena_vector_proved::<u8>(store: &uniq workspace, count: 17_u64);
+          let held = cap_of(rest);
+          if held == 17_u64 {
+          } else {
+            return exit_status(code: 2_u8);
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

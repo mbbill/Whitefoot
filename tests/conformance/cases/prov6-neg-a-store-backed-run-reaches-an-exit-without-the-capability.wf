@@ -1,0 +1,11 @@
+fn peek(run: own Vector<u8>) -> code: own u8 reads(run) contract {
+  requires len_of(run) > 0_u64;
+} {
+  doc "D3, PROV-6: the run is branded to a general store, so its release spends that store's provider capability. This scope holds no binding of that provider, so the value is linear here and has no derived release to carry it off the return edge.";
+  let byte = run[0_u64];
+  return byte;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

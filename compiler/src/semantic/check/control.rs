@@ -1,6 +1,7 @@
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
+mod commit;
 mod loops;
 mod matches;
 mod proofs;
@@ -14,11 +15,13 @@ use crate::{
 };
 
 use super::super::model::{
-    BindingId, CheckedDrop, CheckedExpression, CheckedLoopId, CheckedMode, CheckedSetTarget,
-    CheckedStatement, CheckedType, ValueInitializerKind,
+    BindingId, CheckedDrop, CheckedExpression, CheckedLoopId, CheckedMode, CheckedProjectedDrop,
+    CheckedSetTarget, CheckedStatement, CheckedType, ValueInitializerKind,
 };
 use super::borrows::ReborrowPosition;
+use super::expressions::MutationTarget;
 use super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
+pub(super) use commit::CommitReadOut;
 use loops::{BreakState, LoopContext};
 
 pub(super) struct BlockResult {
@@ -143,6 +146,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         counters: &mut ControlCounters<'_>,
         scope: ControlScope<'_>,
     ) -> Result<StatementResult, CheckStop> {
+        let loan_base = self.statement_loans.borrow().len();
+        let result = self.check_statement_body(function, node, bindings, counters, scope);
+        self.statement_loans.borrow_mut().truncate(loan_base);
+        result
+    }
+
+    fn check_statement_body(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        counters: &mut ControlCounters<'_>,
+        scope: ControlScope<'_>,
+    ) -> Result<StatementResult, CheckStop> {
         match self.tree.production(node)? {
             Production::LetStmt | Production::ContractDefine => {
                 self.check_let(function, node, bindings, counters, scope)
@@ -171,7 +188,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 };
                 Ok(Self::continuing_statement(statement, value.effects))
             }
-            Production::InvariantStmt => self.check_local_invariant(node, bindings),
+            Production::InvariantStmt => {
+                self.check_local_invariant(node, bindings, function, scope.loops.len())
+            }
+            // [FN-1, GRAM-4] a `return` writes exactly as many expressions as
+            // the enclosing declaration writes results, and expression i
+            // produces result ordinal i. A count mismatch is the ordinary
+            // FN-1 return-shape rejection at the `return_stmt`.
+            Production::ReturnStmt
+                if self.tree.children_with(node, Production::Expr)?.len()
+                    != function.results.len() =>
+            {
+                self.issue_node(SemanticRule::Fn1, node, SemanticIssueKind::ReturnMismatch)
+            }
+            Production::ReturnStmt if function.results.len() > 1 => {
+                self.check_result_list_return(function, node, bindings, scope)
+            }
             Production::ReturnStmt => {
                 let expression_node = self
                     .tree
@@ -258,7 +290,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     statement: CheckedStatement::Return {
                         node_path: self.tree.path(node)?.clone(),
                         value: value.expression,
-                        drops: self.live_affine_drops(bindings, &HashSet::new())?,
+                        drops: self.live_affine_drops(bindings, &HashSet::new(), node)?,
                     },
                     can_continue: false,
                     effects: value.effects,
@@ -341,7 +373,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     statement: CheckedStatement::Give {
                         node_path: self.tree.path(node)?.clone(),
                         value: value.expression,
-                        drops: self.live_affine_drops(bindings, &context.preserved)?,
+                        drops: self.live_affine_drops(bindings, &context.preserved, node)?,
                     },
                     can_continue: false,
                     effects: value.effects,
@@ -351,72 +383,95 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     break_states: Vec::new(),
                 })
             }
-            Production::SetStmt => {
-                let target_node = self
-                    .tree
-                    .first_child_with(node, Production::Place)?
-                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-                let expression_node = self
-                    .tree
-                    .first_child_with(node, Production::Expr)?
-                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-
-                // SET-1 fixes this order: form and check the target first, then
-                // evaluate the RHS, then re-establish target writability. The
-                // right-hand side is read once before that, for its shape
-                // alone: [STOR-1]'s restructuring depends on whether the value
-                // being committed consumes the root it is committed into, and
-                // only this statement holds both nodes.
-                let affine_fix = self.set_affine_restructuring(target_node, expression_node)?;
-                let (declaration, target, target_effects) = self.check_set_target(
-                    function,
-                    target_node,
-                    bindings,
-                    scope.loops.len(),
-                    affine_fix,
-                )?;
-                let value =
-                    self.check_expression(function, expression_node, bindings, scope.loops.len())?;
-                if value.expression.ty() != target.ty() {
-                    return self.issue_node(
-                        SemanticRule::Type5,
-                        expression_node,
-                        SemanticIssueKind::type_mismatch(
-                            self.checked_type_name(target.ty())?,
-                            self.checked_type_name(value.expression.ty())?,
-                        ),
-                    );
-                }
-                if !bindings
-                    .get(&declaration)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                    .live
-                {
-                    return self.issue_node(
-                        SemanticRule::Own1,
-                        target_node,
-                        SemanticIssueKind::UseAfterMove {
-                            mechanical_fix: "introduce a new `let` binding before reuse",
-                        },
-                    );
-                }
-                Ok(Self::continuing_statement(
-                    CheckedStatement::Set {
-                        node_path: self.tree.path(node)?.clone(),
-                        target,
-                        value: value.expression,
-                    },
-                    value.effects.union(target_effects),
-                ))
-            }
+            // [GRAM-4, SET-1, LIV-2] every written `set` is one commit: the
+            // targets are resolved and judged first, then the whole
+            // right-hand side, then the three admission conditions.
+            Production::SetStmt => self.check_commit(function, node, bindings, counters, scope),
             Production::LoopStmt => self.check_loop(function, node, bindings, counters, scope),
             Production::ForStmt => {
                 self.check_counted_range(function, node, bindings, counters, scope)
             }
             Production::BreakStmt => self.check_break(node, bindings, scope),
+            // [PROV-6, GRAM-4] `dispose p;` runs at this point exactly the
+            // release walk the scope exit would have run for `p`.
+            Production::DisposeStmt => self.check_dispose(function, node, bindings, scope),
             Production::RegionStmt => self.check_region(function, node, bindings, counters, scope),
             _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
         }
+    }
+
+    /// [PROV-6, GRAM-4] `dispose p;`.
+    ///
+    /// The admission is judged over `p`'s release graph before the operand's
+    /// own ownership consume, so a value the walk could never reclaim is
+    /// refused at the statement rather than after it has killed a binding.
+    fn check_dispose(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        scope: ControlScope<'_>,
+    ) -> Result<StatementResult, CheckStop> {
+        let place = self
+            .tree
+            .first_child_with(node, Production::Place)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        // The statement is one consuming use of `p`'s root [OWN-1], and every
+        // ownership rejection here — a shared-borrow root, a dead root, a live
+        // loan, a partial consume of a linear value — is that judgment's,
+        // asked first because [OWN-1] is defined before [PROV-6] [DIAG-1].
+        let value =
+            self.check_consumed_place(function, node, place, bindings, scope.loops.len(), false)?;
+        if value.mode != CheckedMode::Own {
+            return self.issue_node(
+                SemanticRule::Own1,
+                node,
+                SemanticIssueKind::BareAffineUse {
+                    mechanical_fix: "dispose an own-mode value; a borrow owns nothing to release",
+                },
+            );
+        }
+        let ty = value.expression.ty();
+        self.dispose_admission(ty, node)?;
+        self.reject_dispose_without_provider(function, ty, node)?;
+        let whole_origins = self.state_origins_of_value(&value, bindings)?;
+        let paths = self.drop_paths(ty, Vec::new())?;
+        // [PROV-6, EFF-2] the statement writes `p`'s ultimate storage origin
+        // exactly as a commit writes its target's, and each release the walk
+        // runs contributes its own [SYS-5] row here rather than through the
+        // release contribution, because `dispose` is a written statement.
+        let mut effects = value.effects;
+        for access in &value.accesses {
+            for path in self.effect_paths_for_place(&access.place, bindings)? {
+                effects.add_write(path);
+            }
+        }
+        // [PROV-6] the statement spends each resolved store's provider, so
+        // its row carries a write of that provider place.
+        for path in self.resolved_provider_writes(function, ty)? {
+            effects.add_write(path);
+        }
+        let mut drops = Vec::new();
+        for (fields, ty, release) in self.released_paths(paths)? {
+            let state_origins = whole_origins
+                .clone()
+                .map(|origins| origins.projected(&fields));
+            effects = effects.union(self.effects_of_row(release.row, state_origins.as_ref())?);
+            drops.push(CheckedProjectedDrop {
+                state_origins,
+                fields,
+                ty,
+                release,
+            });
+        }
+        Ok(Self::continuing_statement(
+            CheckedStatement::Dispose {
+                node_path: self.tree.path(node)?.clone(),
+                value: value.expression,
+                drops,
+            },
+            effects,
+        ))
     }
 
     fn check_let(
@@ -427,6 +482,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         counters: &mut ControlCounters<'_>,
         scope: ControlScope<'_>,
     ) -> Result<StatementResult, CheckStop> {
+        // [PROV-6, GRAM-4] the destructuring consume is the one `let`
+        // alternative whose operand place is a direct child of the statement.
+        if let Some(place) = self.tree.first_child_with(node, Production::Place)? {
+            return self
+                .check_destructuring_consume(function, node, place, bindings, counters, scope);
+        }
+        // [GRAM-4, CALL-4] a binder list takes its right-hand side's result
+        // ordinals; a `call` directly under the `let_stmt` is that form and
+        // no other selects it.
+        if let Some(call) = self.tree.first_child_with(node, Production::Call)? {
+            return self.check_destructuring_let(function, node, call, bindings, counters, scope);
+        }
         // [TYPE-5] a `let` binder's mode and type are derived, never written:
         // exactly what its selected right-hand side produces. Each arm below
         // therefore checks that right-hand side first and reads the binding's
@@ -614,6 +681,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let borrow = self.borrow_for_destination(mode, &value, node)?;
         let state_origins = self.state_origins_of_value(&value, bindings)?;
+        // [PROV-3] a loan's extent is its holding value's own liveness, and
+        // this `let` is where that value becomes a binding with uses. Every
+        // origin place this value reaches — formed here, copied, passed
+        // through a call, or returned — names the loans this binding now
+        // holds.
+        Self::hold_slice_loans_of(declaration_id, value.slice.as_ref(), bindings);
+        Self::hold_published_child_loan(declaration_id, expected, value.slice.as_ref(), bindings);
         if bindings
             .insert(
                 declaration_id,
@@ -671,8 +745,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // [SET-2] fixes SET-1's order: form and check the target first
         // (its affine, region-free class judged inside), then evaluate the
         // right-hand side, then re-establish target-root liveness.
-        let (target_declaration, target, target_effects) =
-            self.check_replace_target(function, target_node, bindings, scope.loops.len())?;
+        let MutationTarget {
+            declaration: target_declaration,
+            target,
+            effects: target_effects,
+            unsupported: target_unsupported,
+            access,
+            ..
+        } = self.check_replace_target(function, target_node, bindings, scope.loops.len())?;
         let value =
             self.check_expression(function, expression_node, bindings, scope.loops.len())?;
         // [TYPE-5]: the right-hand side must produce exactly `own T`.
@@ -699,13 +779,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
+        self.revalidate_mutation_access(&access, bindings, target_node)?;
+        // Every source rejection of this statement is judged above; a target
+        // this compiler cannot lower stops here and nowhere earlier [DIAG-1].
+        if let Some(feature) = target_unsupported {
+            return self.unsupported(feature, target_node);
+        }
         let replacement_origins = self.state_origins_of_value(&value, bindings)?;
         let previous_whole_origins = bindings
             .get(&target_declaration)
             .and_then(|binding| binding.state_origins.clone());
         let target_fields = match &target {
             CheckedSetTarget::Place(place) => Some(place.fields.as_slice()),
-            CheckedSetTarget::ArrayIndex(_) | CheckedSetTarget::BufferIndex(_) => None,
+            CheckedSetTarget::ArrayIndex(_)
+            | CheckedSetTarget::BufferIndex(_)
+            | CheckedSetTarget::Storage(_)
+            | CheckedSetTarget::SliceIndex(_) => None,
         };
         let previous_origins = match (previous_whole_origins.clone(), target_fields) {
             (Some(origins), Some(fields)) => Some(origins.projected(fields)),
@@ -846,7 +935,7 @@ so the block is written `region { ... }`",
         let statements = self.tree.children_with(node, Production::Stmt)?;
         let mut checked = self.check_block(function, &statements, bindings, counters, scope)?;
         let fallthrough_drops = if checked.can_continue {
-            self.live_affine_drops(bindings, &base_keys)?
+            self.live_affine_drops(bindings, &base_keys, node)?
         } else {
             Vec::new()
         };
@@ -934,10 +1023,14 @@ so the block is written `region { ... }`",
         Ok(false)
     }
 
+    /// The compiler-derived releases one edge leaving a scope carries
+    /// [STOR-3, LIV-1], and the [PROV-6] refusal of a value that is linear in
+    /// this scope and has no derived release to carry it there.
     fn live_affine_drops(
         &self,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         preserved: &HashSet<DeclarationId>,
+        edge: NodeId,
     ) -> Result<Vec<CheckedDrop>, CheckStop> {
         let mut live = bindings
             .iter()
@@ -948,6 +1041,20 @@ so the block is written `region { ... }`",
             .collect::<Vec<_>>();
         live.sort_by_key(|entry| std::cmp::Reverse(entry.1.binding.0));
         let mut drops = Vec::new();
+        for (_, local) in &live {
+            let name = self
+                .resolved
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.id() == local.declaration)
+                .map_or_else(String::new, |declaration| declaration.spelling().to_owned());
+            self.reject_linear_value_not_consumed(local.ty, &name, edge)?;
+            // [D3] the capability half, read against this scope: a run
+            // branded to a general store is linear wherever no binding of
+            // that store's provider is live, and there is then no derived
+            // release to carry it off the edge.
+            self.reject_release_without_capability(local.ty, &name, bindings, edge)?;
+        }
         for (_, local) in live {
             if !self.is_copy_type(local.ty)? {
                 let paths = self.drop_paths(local.ty, Vec::new())?;

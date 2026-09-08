@@ -26,11 +26,15 @@ use super::support::{
 };
 use whitefoot::Inventory;
 
-/// The reusable input buffer length in `tests/programs/wfgrep.wf`.
+/// The reusable input run length in `tests/programs/wfgrep.wf`.
 ///
-/// The corpus needs it to build a file that is exactly one buffer long and a
-/// match that straddles a read boundary; nothing in the program's contract
-/// exposes it.
+/// The corpus needs it to build a file that is exactly one read window long
+/// and a match that straddles a read boundary; nothing in the program's
+/// contract exposes it.
+///
+/// B7c4b: the window is a `Vector<u8>` at the general store rather than a
+/// `buffer<u8>`, and the length is unchanged, so every boundary case here
+/// still lands where it did.
 const BUFFER_LENGTH: usize = 4096;
 
 /// One emitted module shared by every case in this module.
@@ -233,7 +237,7 @@ fn wfgrep_agrees_with_grep_on_the_empty_and_the_total_hit_set() {
 /// That refusal is arithmetic on the *display* path, so the level it lands at
 /// depends on the root name's length, which is why quoting a level without the
 /// root is not reproducible: for this fixture's four-byte root `tree`,
-/// `4 + 2n + len("/bottom.txt") <= 1000` gives n <= 492, and 493 is the first
+/// `4 + 2n + len_of("/bottom.txt") <= 1000` gives n <= 492, and 493 is the first
 /// level that fails — measured, and measured again at 493 completing with a
 /// three-byte root. Neither program bound is the stack: on this test target,
 /// the stack ledger prices one `wf_walk` activation at 1744 bytes and the

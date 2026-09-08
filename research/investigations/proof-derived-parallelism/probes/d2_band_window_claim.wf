@@ -1,7 +1,7 @@
 fn window(input: &buffer<u8>, at: own u64) -> result: own u8 reads(input), traps {
   doc "The same two adjacent reads admitted by a written `claim` instead of a branch. The claim site is a trap site, so a caller's sibling pair over it is permitted but never actualizable.";
   let nxt = at +wrap 1_u64;
-  let room = len(deref(input));
+  let room = len_of(deref(input));
   let a_ok = ilt(at, room);
   let b_ok = ilt(nxt, room);
   let both = band(a_ok, b_ok);

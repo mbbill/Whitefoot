@@ -5,8 +5,8 @@ mod arithmetic_obligations;
 mod arrays;
 mod boolean_composition;
 mod borrows;
-mod boxes;
 mod buffers;
+mod cells;
 mod checked_division;
 mod conditionals;
 mod const_eval;
@@ -30,6 +30,7 @@ mod loop_permission;
 mod operation_table;
 mod options;
 mod originating_acceptance;
+mod owned_places;
 mod permission;
 mod postconditions;
 mod reinterpret;
@@ -70,19 +71,27 @@ const LEX_LIMITS: LexLimits = LexLimits {
     max_lexemes: 262_144,
 };
 
+// These are the harness's own resource ceilings, well below the driver's
+// [`crate::driver`], and they bound how large a semantic-test source may be
+// rather than what the language admits. [GRAM-4]'s `affine_factor` now reaches
+// its IDENT through an `atom` and a `place` [MSR-5], which is three derivation
+// elements per affine atom where it was one, and the certificate-capacity
+// fixture writes four thousand `use` steps over two atoms each. The parse and
+// finalize ceilings rise so that fixture still reaches the checker; no
+// judgment and no language rule changes with them.
 const PARSE_LIMITS: ParseLimits = ParseLimits {
-    max_work: 8_000_000,
-    max_tasks: 131_072,
+    max_work: 32_000_000,
+    max_tasks: 524_288,
     max_frames: 8_192,
-    max_elements: 262_144,
+    max_elements: 524_288,
 };
 
 const FINALIZE_LIMITS: FinalizeLimits = FinalizeLimits {
-    max_work: 8_000_000,
-    max_roots: 131_072,
-    max_shape_tasks: 131_072,
-    max_nodes: 131_072,
-    max_child_edges: 131_072,
+    max_work: 32_000_000,
+    max_roots: 262_144,
+    max_shape_tasks: 262_144,
+    max_nodes: 262_144,
+    max_child_edges: 262_144,
     max_terminals: 131_072,
     max_sources: 4,
 };
@@ -154,6 +163,36 @@ fn with_semantics_inputs<ResultValue>(
 
 /// [`with_semantics_inputs`] against one named [SYS-2] inventory state.
 ///
+/// Asserts that one source is refused at the parse stage citing one rule.
+///
+/// A grammar the tables cannot derive is refused before the checker sees it,
+/// and [DIAG-1] cites the production's own rule there. This is the assertion
+/// for a source whose defect the grammar itself decides.
+fn assert_parse_rule(source: &[u8], rule: crate::SyntaxRule) {
+    let Ok(bundle) =
+        SourceBundle::with_limits(&[SourceInput::new("parse.wf", source)], SOURCE_LIMITS)
+    else {
+        panic!("parse test bundle must be valid");
+    };
+    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
+        panic!("parse test source must lex");
+    };
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits {
+            max_tokens: LEX_LIMITS.max_tokens,
+        },
+    ) else {
+        panic!("parse test source must classify");
+    };
+    let outcome = parse(&classified, PARSE_LIMITS);
+    let ParseOutcome::SourceIssue(issue) = outcome else {
+        panic!("parse test source must be refused at the parse stage");
+    };
+    assert_eq!(issue.rule(), rule);
+}
+
 /// A frozen real source may name the inventory that first declared an
 /// operation; every other caller takes the active one.
 fn with_semantics_inputs_for<ResultValue>(
@@ -368,8 +407,10 @@ fn assert_unsupported(source: &[u8], feature: UnsupportedSemanticFeature) {
 
 #[test]
 fn a_branch_fact_discharges_the_protected_array_read() {
-    let source = br#"fn read(values: own array<i32, 8>, i: own u64) -> result: own i32 pure {
-  let length = len(values);
+    let source = br#"const values: FixedVector<i32, 8> =[0_i32, 0_i32, 0_i32, 0_i32, 0_i32, 0_i32, 0_i32, 0_i32];
+
+fn read(i: own u64) -> result: own i32 pure {
+  let length = len_of(values);
   if i < length {
     return values[i];
   } else {
@@ -495,13 +536,15 @@ fn semantic_rule_owners_remain_distinct() {
         SemanticRule::Inv1,
         |kind| matches!(kind, SemanticIssueKind::InvalidInvariant { .. }),
     );
+    // [S23] both EFF-2 arms name a provider path: the first declares less
+    // than the body exhibits, the second more.
     assert_rule_kind(
-        b"fn helper() -> result: own unit pure {\n  let values = buffer_new(1_u64, 0_u8);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn helper(heap: &uniq Heap) -> result: own unit reads(heap), writes(heap) {\n  region {\n    match heap_vector::<u8>(store: &uniq deref(heap), count: 1_u64) {\n      None() => {\n        return unit;\n      }\n      Some(value: run) => {\n        return unit;\n      }\n    }\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
     assert_rule_kind(
-        b"fn helper() -> result: own unit allocates(heap) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn helper(heap: &uniq Heap) -> result: own unit allocates(heap) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
@@ -531,13 +574,57 @@ fn function_control_and_main_contract_are_checked_before_lowering() {
     );
 }
 
+/// [OWN-11] the per-iteration judgment, which is [LIV-1]'s liveness agreement
+/// read at a loop head.
+///
+/// A body that leaves an outer binding dead on the backedge is the rejection;
+/// a body that moves one and commits a value back into it before the backedge
+/// agrees with the entering edge and is accepted.
 #[test]
 fn loops_enforce_own11_for_outer_affine_moves() {
     assert_rule(
-        include_bytes!("../../../tests/conformance/cases/own11-neg-move-outer-in-loop.wf"),
+        br#"fn measure(cell: own FixedVector<u8, 4>) -> size: own u64 reads(cell) {
+  let n = len_of(cell);
+  return n;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let c = fixed_vector::<u8, 4>();
+  for (i in 0_u64..2_u64) {
+    let taken = measure(cell: move c);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
         SemanticRule::Own11,
         SemanticIssueKind::MoveOuterBindingInLoop {
-            mechanical_fix: "move the binding before the loop or declare and consume it inside the loop body",
+            binding: "c".to_owned(),
+            mechanical_fix: "one iteration must leave every outer binding in the status the next \
+                             one starts from: commit a value back into it before the backedge, or \
+                             declare and consume it inside the body",
+        },
+    );
+    with_semantics(
+        br#"fn measure(cell: own FixedVector<u8, 4>) -> size: own u64 reads(cell) {
+  let n = len_of(cell);
+  return n;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let c = fixed_vector::<u8, 4>();
+  for (i in 0_u64..2_u64) {
+    let taken = measure(cell: move c);
+    set c = fixed_vector::<u8, 4>();
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!(
+                    "a body that reinitializes the outer binding agrees at the backedge: {outcome:?}"
+                );
+            };
         },
     );
     with_semantics(
@@ -666,7 +753,7 @@ fn operation_call_shapes_keep_their_exact_rule_owners() {
 fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
     // Missing the arguments the callee's class mandates.
     assert_rule_kind(
-        b"struct Held {\n  v: i32;\n}\n\nfn pick<T>(value: own T) -> result: own T pure {\n  return move value;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Held {\n  v: i32;\n}\n\nfn pick<T: affine>(value: own T) -> result: own T pure {\n  return move value;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn2,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -678,7 +765,7 @@ fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
 
     // A wrong-count argument list, the same failure on both classes.
     assert_rule_kind(
-        b"struct Held {\n  v: i32;\n}\n\nfn pick<T>(value: own T) -> result: own T pure {\n  return move value;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick::<Held, Held>(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Held {\n  v: i32;\n}\n\nfn pick<T: affine>(value: own T) -> result: own T pure {\n  return move value;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick::<Held, Held>(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn2,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -693,7 +780,7 @@ fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
     // user-generic call, so it is the control that the rule is not simply
     // keyed on that reader.
     assert_rule_kind(
-        b"struct Pair<T> {\n  v: T;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let p = Pair(v: 1_i32);\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Pair<T: affine> {\n  v: T;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let p = Pair(v: 1_i32);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -701,7 +788,7 @@ fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
 
 #[test]
 fn effect_mismatch_is_located_at_the_written_effect_row() {
-    let source = b"command fn main() -> status: own ExitStatus pure {\n  let values = buffer_new(1_u64, 0_u8);\n  return exit_status(code: 0_u8);\n}\n";
+    let source = b"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus pure {\n  region {\n    match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {\n      None() => {\n        return exit_status(code: 1_u8);\n      }\n      Some(value: run) => {\n        return exit_status(code: 0_u8);\n      }\n    }\n  }\n}\n";
     with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("expected EFF-2 mismatch, got {outcome:?}");
@@ -719,7 +806,7 @@ fn effect_mismatch_is_located_at_the_written_effect_row() {
 #[test]
 fn invalid_generic_main_is_fn7_not_an_unsupported_generic() {
     assert_rule(
-        b"fn main<T>() -> result: own unit pure {\n  return unit;\n}\n",
+        b"fn main<T: affine>() -> result: own unit pure {\n  return unit;\n}\n",
         SemanticRule::Fn7,
         SemanticIssueKind::InvalidMain,
     );
@@ -826,8 +913,24 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
         b"enum Flag {\n  A();\n  B();\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let flag = A();\n  match flag {\n    A() => {\n    }\n    A() => {\n    }\n    B() => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
         UnsupportedSemanticFeature::DuplicateMatchArm,
     );
+    // [LIV-1] a liveness disagreement at a join is a source rejection now, so
+    // the capability limit this control pins is the state a join still cannot
+    // merge: the loop's entering value carries a fresh owner's attribution and
+    // its committed value carries the callee's, which no rule of this version
+    // joins.
     assert_unsupported(
-        b"struct Cell {\n  value: i32;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let cell = Cell(value: 1_i32);\n  let flag = True();\n  if flag {\n    let consumed = move cell;\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        br#"fn consume(cell: own FixedVector<u8, 4>) -> out: own FixedVector<u8, 4> pure {
+  return move cell;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let c = fixed_vector::<u8, 4>();
+  for (i in 0_u64..2_u64) {
+    set c = consume(cell: move c);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
         UnsupportedSemanticFeature::OwnershipJoin,
     );
 }
@@ -866,16 +969,16 @@ fn checked_system_programs_complete_semantic_checking() {
 }
 
 #[test]
-fn propagate_of_a_box_holder_is_a_type7_missing_dereference() {
+fn propagate_of_a_cell_holder_is_a_type7_missing_dereference() {
     // ERR-3: a borrow or box holder used without `deref` retains its TYPE-7
     // judgment; the propagate path previously fell through to ERR-3
-    // invalid-propagation for a box<Result<..>> operand (task 0019, bucket 4).
+    // invalid-propagation for a Box<Result<..>> operand (task 0019, bucket 4).
     assert_rule(
         br#"enum StepError {
   Failed();
 }
 
-fn unwrap(holder: own box<Result<i32, StepError>>) -> result: own Result<i32, StepError> pure {
+fn unwrap(holder: own Box<Result<i32, StepError>>) -> result: own Result<i32, StepError> pure {
   let accepted = propagate holder;
   return Ok<i32, StepError>(value: accepted);
 }
@@ -892,9 +995,9 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn match_and_index_of_a_box_holder_are_type7_missing_dereferences() {
+fn match_and_index_of_a_cell_holder_are_type7_missing_dereferences() {
     // TYPE-7 owns the implicit-read case exclusively at every position that
-    // states the exclusivity, so a box holder written where its referent enum
+    // states the exclusivity, so a cell holder written where its referent enum
     // or its referent indexable would be required cites TYPE-7 and the
     // position's own wrong-type judgment forms no rejection.
     assert_rule(
@@ -902,7 +1005,7 @@ fn match_and_index_of_a_box_holder_are_type7_missing_dereferences() {
   Ready();
 }
 
-fn inspect(holder: own box<State>) -> result: own unit pure {
+fn inspect(holder: own Box<State>) -> result: own unit pure {
   match holder {
     Ready() => {
     }
@@ -920,7 +1023,7 @@ command fn main() -> status: own ExitStatus pure {
         },
     );
     assert_rule(
-        br#"fn read(holder: own box<buffer<u8>>) -> result: own u8 pure {
+        br#"fn read(holder: own Box<FixedVector<u8, 4>>) -> result: own u8 pure {
   return holder[0_u64];
 }
 
@@ -1112,17 +1215,18 @@ fn set_rejections_keep_their_exact_rule_owners() {
     );
 }
 
-/// [STOR-1] offers the restructuring its own right-hand side admits.
+/// [LIV-2] an affine `set` target is admitted exactly when it is dead at the
+/// commit.
 ///
-/// `replace` binds the previous owner out of the target's root, so it is the
-/// answer only while that root is still alive at the commit. When the value
-/// being committed consumed the root to compute itself, `replace` produces
-/// `[OWN-1] UseAfterMove` instead of an accepted program: a mechanical fix the
-/// next rule rejects is worse than no fix, because it spends an attempt. The
-/// third case here is the offered form, checked, so the pair cannot drift
-/// apart.
+/// The two halves of the rule's first condition are checked side by side: a
+/// live affine target whose previous value the right-hand side does not read
+/// out keeps [STOR-1]'s rejection and its one restructuring, and the same
+/// statement whose right-hand side consumes that value is the read-out and is
+/// accepted. The second program is probe `q9`'s shape, which [STOR-1] refused
+/// before this rule and which offered a fresh-`let` restructuring that the
+/// rule makes unnecessary.
 #[test]
-fn an_affine_set_offers_the_restructuring_its_right_hand_side_admits() {
+fn an_affine_set_is_admitted_exactly_when_its_target_is_dead_at_the_commit() {
     assert_rule(
         b"struct Cell {\n  value: i32;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let left = Cell(value: 1_i32);\n  let right = Cell(value: 2_i32);\n  set left = move right;\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Stor1,
@@ -1131,7 +1235,7 @@ fn an_affine_set_offers_the_restructuring_its_right_hand_side_admits() {
             mechanical_fix: "use replace: let old = replace p = e; binds the previous owner",
         },
     );
-    assert_rule(
+    with_semantics(
         br#"struct Counts {
   lines: u64;
   bytes: u64;
@@ -1144,17 +1248,18 @@ fn walk(running: own Counts) -> result: own Counts pure {
 command fn main() -> status: own ExitStatus pure {
   let totals = Counts(lines: 0_u64, bytes: 0_u64);
   set totals = walk(running: move totals);
+  let lines = totals.lines;
   return exit_status(code: 0_u8);
 }
 "#,
-        SemanticRule::Stor1,
-        SemanticIssueKind::AffineSetTarget {
-            target_type: "Counts".to_owned(),
-            mechanical_fix: "the right-hand side consumes the target root, so replace cannot \
-                             commit into it: bind the result under a new let, and combine it \
-                             with the old value field by field",
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("the read-out and its commit must check: {outcome:?}");
+            };
         },
     );
+    // The two-statement form stays accepted: [LIV-2] adds a spelling and
+    // removes none.
     with_semantics(
         br#"struct Counts {
   lines: u64;
@@ -1180,9 +1285,77 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
-                panic!("the offered restructuring must check: {outcome:?}");
+                panic!("the two-statement form must check: {outcome:?}");
             };
         },
+    );
+}
+
+/// [LIV-2] after its read-out the target is dead for the remainder of the
+/// right-hand side.
+///
+/// Every shape that would consume one target's value twice is a rejection: the
+/// same place moved twice, the same field moved twice, and a field read out
+/// beside a move of the whole root. Without the sentence the first of these
+/// compiled and freed one run twice.
+#[test]
+fn a_read_out_target_is_dead_for_the_rest_of_the_right_hand_side() {
+    let expected = SemanticIssueKind::UseAfterMove {
+        mechanical_fix: "introduce a new `let` binding before reuse",
+    };
+    assert_rule(
+        br#"fn pair(left: own FixedVector<u8, 4>, right: own FixedVector<u8, 4>) -> out: own FixedVector<u8, 4> pure {
+  return move left;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let c = fixed_vector::<u8, 4>();
+  set c = pair(left: move c, right: move c);
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Own1,
+        expected.clone(),
+    );
+    assert_rule(
+        br#"struct Holder {
+  run: FixedVector<u8, 4>;
+}
+
+fn pair(left: own FixedVector<u8, 4>, right: own FixedVector<u8, 4>) -> out: own FixedVector<u8, 4> pure {
+  return move left;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let first = fixed_vector::<u8, 4>();
+  let holder = Holder(run: move first);
+  set holder.run = pair(left: move holder.run, right: move holder.run);
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Own1,
+        expected.clone(),
+    );
+    assert_rule(
+        br#"struct Holder {
+  run: FixedVector<u8, 4>;
+  spare: FixedVector<u8, 4>;
+}
+
+fn take(left: own FixedVector<u8, 4>, right: own Holder) -> out: own FixedVector<u8, 4> pure {
+  return move left;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let first = fixed_vector::<u8, 4>();
+  let second = fixed_vector::<u8, 4>();
+  let holder = Holder(run: move first, spare: move second);
+  set holder.run = take(left: move holder.run, right: move holder);
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Own1,
+        expected,
     );
 }
 
@@ -1367,8 +1540,10 @@ command fn main() -> status: own ExitStatus pure {
             panic!("affine field move must consume its root");
         };
         assert_eq!(residual_drops.len(), 2);
-        assert_eq!(residual_drops[0].fields, vec![1]);
-        assert_eq!(residual_drops[1].fields, vec![0, 1]);
+        // The partial consume excludes its selected field; the remaining
+        // release graph is still visited in PROV-6 declaration order.
+        assert_eq!(residual_drops[0].fields, vec![0, 1]);
+        assert_eq!(residual_drops[1].fields, vec![1]);
         let CheckedStatement::Return { drops, .. } = &projection.body[6] else {
             panic!("consume_projection must end in return");
         };

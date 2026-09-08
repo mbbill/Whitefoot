@@ -1,4 +1,4 @@
-fn f(x: &i32) -> result: own i32 allocates(heap), reads(x) {
+fn f(heap: &uniq Heap, x: &i32) -> result: own i32 allocates(heap), reads(x) {
   doc "Row order violates EFF-1 canonical order: reads must precede allocates.";
   return deref(x);
 }

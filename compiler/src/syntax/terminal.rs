@@ -13,7 +13,8 @@ pub const TERMINAL_CONTRACT_SPEC_HASH: SpecHash = ACTIVE_KERNEL_SPEC_HASH;
 /// and the three v0.25 counted-range spellings, plus v0.28's `ensures`,
 /// v0.33's contract, command, and integer-domain spellings, the v0.40 proof
 /// spellings, and v0.41's four compound comparisons and call-site `::`
-/// delimiter. Retired source atoms are removed from this current-grammar
+/// delimiter, plus v0.45's route-ordinal `is` and its capitalized view atom
+/// `MutSlice`. Retired source atoms are removed from this current-grammar
 /// inventory; the dense indices are compiler-local and are never serialized.
 /// First grammar-occurrence order is carried by
 /// [`ALL_FIXED_TERMINALS`] and is stable language data, not parser priority.
@@ -88,7 +89,7 @@ pub enum FixedTerminal {
     Unit,
     /// `array`.
     Array,
-    /// `slice`.
+    /// `Slice`, S35's capitalized view spelling.
     Slice,
     /// `box`.
     Box,
@@ -142,8 +143,6 @@ pub enum FixedTerminal {
     Writes,
     /// `allocates`.
     Allocates,
-    /// `heap`.
-    Heap,
     /// `as`.
     As,
     /// `if`.
@@ -216,12 +215,25 @@ pub enum FixedTerminal {
     GreaterEqual,
     /// `::`.
     ColonColon,
+    /// `is`.
+    Is,
+    /// `linear`.
+    Linear,
+    /// `affine`.
+    Affine,
+    /// `copy`.
+    Copy,
+    /// `dispose`.
+    Dispose,
+    /// `MutSlice`, the second view S6 and S35 name.
+    MutSlice,
     /// `times`, the multiplicity of one cited proof premise [PRF-1].
     Times,
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 99] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 104] = [
+    FixedTerminal::Linear,
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
     FixedTerminal::RightBrace,
@@ -240,6 +252,7 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 99] = [
     FixedTerminal::Requires,
     FixedTerminal::Ensures,
     FixedTerminal::When,
+    FixedTerminal::Is,
     FixedTerminal::Law,
     FixedTerminal::Conform,
     FixedTerminal::Const,
@@ -248,6 +261,8 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 99] = [
     FixedTerminal::RightAngle,
     FixedTerminal::LeftBracket,
     FixedTerminal::RightBracket,
+    FixedTerminal::Copy,
+    FixedTerminal::Affine,
     FixedTerminal::Dot,
     FixedTerminal::As,
     FixedTerminal::I8,
@@ -263,6 +278,7 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 99] = [
     FixedTerminal::Unit,
     FixedTerminal::Array,
     FixedTerminal::Slice,
+    FixedTerminal::MutSlice,
     FixedTerminal::Box,
     FixedTerminal::Arena,
     FixedTerminal::Buffer,
@@ -270,6 +286,7 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 99] = [
     FixedTerminal::Ampersand,
     FixedTerminal::Uniq,
     FixedTerminal::Let,
+    FixedTerminal::Move,
     FixedTerminal::If,
     FixedTerminal::Else,
     FixedTerminal::Propagate,
@@ -289,6 +306,7 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 99] = [
     FixedTerminal::Break,
     FixedTerminal::Region,
     FixedTerminal::Give,
+    FixedTerminal::Dispose,
     FixedTerminal::Match,
     FixedTerminal::FatArrow,
     FixedTerminal::PlusWrap,
@@ -313,14 +331,12 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 99] = [
     FixedTerminal::BangEqual,
     FixedTerminal::LessEqual,
     FixedTerminal::GreaterEqual,
-    FixedTerminal::Move,
     FixedTerminal::ColonColon,
     FixedTerminal::Deref,
     FixedTerminal::Pure,
     FixedTerminal::Reads,
     FixedTerminal::Writes,
     FixedTerminal::Allocates,
-    FixedTerminal::Heap,
 ];
 
 impl FixedTerminal {
@@ -367,7 +383,8 @@ impl FixedTerminal {
             Self::F64 => "f64",
             Self::Unit => "unit",
             Self::Array => "array",
-            Self::Slice => "slice",
+            Self::Slice => "Slice",
+            Self::MutSlice => "MutSlice",
             Self::Box => "box",
             Self::Arena => "arena",
             Self::Buffer => "buffer",
@@ -384,6 +401,7 @@ impl FixedTerminal {
             Self::Define => "define",
             Self::Else => "else",
             Self::When => "when",
+            Self::Is => "is",
             Self::Give => "give",
             Self::Match => "match",
             Self::FatArrow => "=>",
@@ -394,7 +412,6 @@ impl FixedTerminal {
             Self::Reads => "reads",
             Self::Writes => "writes",
             Self::Allocates => "allocates",
-            Self::Heap => "heap",
             Self::As => "as",
             Self::If => "if",
             Self::Plus => "+",
@@ -432,6 +449,10 @@ impl FixedTerminal {
             Self::LessEqual => "<=",
             Self::GreaterEqual => ">=",
             Self::ColonColon => "::",
+            Self::Linear => "linear",
+            Self::Affine => "affine",
+            Self::Copy => "copy",
+            Self::Dispose => "dispose",
         }
     }
 
@@ -661,11 +682,19 @@ pub fn is_identifier(spelling: &[u8]) -> bool {
     lower_word(spelling) && FixedTerminal::from_spelling(spelling).is_none()
 }
 
-/// Tests active specification `TYPEID` membership.
+/// Tests active specification `TYPEID` membership, excluding the fixed
+/// capitalized spellings.
+///
+/// S35 capitalizes the view nominals, so `Slice` is a fixed atom of the
+/// `type` production [GRAM-3] exactly as `array` and `buffer` are, and the
+/// same exclusion `is_identifier` makes for a fixed lowercase word is made
+/// here: a fixed spelling is its atom and never also a TYPEID, so no token
+/// carries two predicates one `type` decision would have to choose between.
 #[must_use]
 pub fn is_type_identifier(spelling: &[u8]) -> bool {
     spelling.first().is_some_and(u8::is_ascii_uppercase)
         && spelling[1..].iter().all(u8::is_ascii_alphanumeric)
+        && FixedTerminal::from_spelling(spelling).is_none()
 }
 
 /// Tests active specification `REGIONID` membership.
@@ -817,17 +846,30 @@ mod tests {
                 Some(terminal)
             );
         }
-        assert_eq!(FixedTerminal::PercentChecked as u8, 79);
-        assert_eq!(FixedTerminal::For as u8, 80);
-        assert_eq!(FixedTerminal::In as u8, 81);
-        assert_eq!(FixedTerminal::DotDot as u8, 82);
-        assert_eq!(FixedTerminal::Ensures as u8, 83);
-        assert_eq!(FixedTerminal::Replace as u8, 84);
-        assert_eq!(FixedTerminal::Invariant as u8, 91);
-        assert_eq!(FixedTerminal::Use as u8, 92);
-        assert_eq!(FixedTerminal::Times as u8, 98);
-        assert_eq!(TerminalPredicate::Identifier.index(), 99);
-        assert_eq!(TerminalPredicate::Digits.index(), 106);
+        assert_eq!(FixedTerminal::PercentChecked as u8, 78);
+        assert_eq!(FixedTerminal::For as u8, 79);
+        assert_eq!(FixedTerminal::In as u8, 80);
+        assert_eq!(FixedTerminal::DotDot as u8, 81);
+        assert_eq!(FixedTerminal::Ensures as u8, 82);
+        assert_eq!(FixedTerminal::Replace as u8, 83);
+        assert_eq!(FixedTerminal::Invariant as u8, 90);
+        assert_eq!(FixedTerminal::Use as u8, 91);
+        assert_eq!(FixedTerminal::Is as u8, 97);
+        // [PROV-6, S37] the four linearity atoms take four consecutive
+        // discriminants after `is`. [S23] the retired `heap` allocation atom
+        // stood before all of them, so every discriminant after it moved one
+        // place down.
+        assert_eq!(FixedTerminal::Linear as u8, 98);
+        assert_eq!(FixedTerminal::Affine as u8, 99);
+        assert_eq!(FixedTerminal::Copy as u8, 100);
+        assert_eq!(FixedTerminal::Dispose as u8, 101);
+        // [S6, S35] `MutSlice` is the atom v0.45 appends and [PRF-1] `times`
+        // the atom v0.48 appends, so they take the enum's last two
+        // discriminants and the external predicates start after them.
+        assert_eq!(FixedTerminal::MutSlice as u8, 102);
+        assert_eq!(FixedTerminal::Times as u8, 103);
+        assert_eq!(TerminalPredicate::Identifier.index(), 104);
+        assert_eq!(TerminalPredicate::Digits.index(), 111);
     }
 
     /// The inventory holds every predicate, once.

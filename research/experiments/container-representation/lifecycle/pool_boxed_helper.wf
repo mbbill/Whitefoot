@@ -1,0 +1,28 @@
+fn take_static['s: affine](free: own FixedVector<Box<'s, FixedVector<u8, 4>>, 2>) -> (rest: own FixedVector<Box<'s, FixedVector<u8, 4>>, 2>, block: own Box<'s, FixedVector<u8, 4>>) reads(free), writes(free) contract {
+  requires len_of(free) > 0_u64;
+  ensures len_of(rest) + 1_u64 == len_of(free);
+} {
+  let (rest, block) = take_back(vector: move free);
+  return move rest, move block;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  region 'a {
+    let store = arena_frame::<64, 8, 'a>();
+    region {
+      let payload = fixed_vector::<u8, 4>();
+      match arena_box(store: &uniq store, value: move payload) {
+        Err(error: back) => {
+          return exit_status(code: 1_u8);
+        }
+        Ok(value: cell) => {
+          let free = fixed_vector::<Box<'a, FixedVector<u8, 4>>, 2>();
+          let full = place_back(vector: move free, value: move cell);
+          let (rest, block) = take_static(free: move full);
+          let returned = place_back(vector: move rest, value: move block);
+          return exit_status(code: 0_u8);
+        }
+      }
+    }
+  }
+}

@@ -989,11 +989,22 @@ mod tests {
     /// staged judgment denies it on `&uniq 'say out`, which is storage
     /// carrying one position, and the denial is the same under every lowering
     /// because the judgment is pure.
-    const DENIED_OUTPUT_LOOP: &[u8] = br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+    const DENIED_OUTPUT_LOOP: &[u8] = br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   doc "Writes one line per iteration to standard output.";
-  let page = buffer_new(8_u64, 0_u8);
-  for @scan (index in 0_u64..4_u64) {
-    let written = write_once(output: &uniq out, source: &page, start: 0_u64, end: 8_u64);
+  let page = fixed_vector::<u8, 8>();
+  for @fill (
+    at in 0_u64..8_u64,
+    invariant grown: len_of(page) >= at,
+    invariant spare: room_of(page) + at >= 8_u64,
+    invariant flat: head_of(page) <= 0_u64
+  ) {
+    set page = place_back(vector: move page, value: 0_u8);
+  }
+  region {
+    let window = slice_of(&page);
+    for @scan (index in 0_u64..4_u64) {
+      let written = write_once(output: &uniq out, source: &window, start: 0_u64, end: 8_u64);
+    }
   }
   return exit_status(code: 0_u8);
 }

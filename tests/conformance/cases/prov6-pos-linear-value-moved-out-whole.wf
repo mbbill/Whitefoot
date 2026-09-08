@@ -1,0 +1,16 @@
+linear struct Lease {
+  slot: u8;
+}
+
+fn hand_back(lease: own Lease) -> returned: own Lease pure {
+  doc "The proved return: the value has exactly one route on every path.";
+  return move lease;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "PROV-6: the first of the two routes out of a scope for a value linear in it. The lease is moved out whole into the callee and the callee moves it out whole again, so no edge of either scope carries a derived release of it.";
+  let lease = Lease(slot: 3_u8);
+  let back = hand_back(lease: move lease);
+  let Lease(slot: slot) = move back;
+  return exit_status(code: slot);
+}

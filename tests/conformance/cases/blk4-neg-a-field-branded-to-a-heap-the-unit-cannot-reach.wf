@@ -1,0 +1,8 @@
+struct Bytes {
+  v: Vector<u8>;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "BLK-4: the entry heap's store region is minted before `main` in every unit, but this entry selects no `command.heap` row, so the unit carries the whole-program fact `heap-unreachable` and can form no value of this nominal at all. The declaration is refused where it is written.";
+  return exit_status(code: 0_u8);
+}

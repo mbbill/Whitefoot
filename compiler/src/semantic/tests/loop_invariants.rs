@@ -801,7 +801,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn source_invariant_discharges_the_weigh_addition_domain() {
     let source = br#"fn weigh(weights: &buffer<u8>, count: own u64) -> total: own u32 reads(weights) contract {
-  define capacity = len(deref(weights));
+  define capacity = len_of(deref(weights));
   requires count <= capacity;
   requires count <= 1000_u64;
   ensures total <= 255000_u32;
@@ -819,7 +819,7 @@ fn source_invariant_discharges_the_weigh_addition_domain() {
 }
 
 fn add_one(weights: &buffer<u8>, count: own u64) -> result: own u32 reads(weights) contract {
-  define capacity = len(deref(weights));
+  define capacity = len_of(deref(weights));
   requires count <= capacity;
   requires count <= 1000_u64;
 } {
@@ -936,7 +936,11 @@ command fn main() -> status: own ExitStatus pure {
             reaches_weigh_summary |= matches!(
                 retained,
                 DerivationNode::PostconditionCall { detail }
-                    if detail.summary.summary.function == weigh.id
+                    if matches!(
+                        &detail.summary.summary,
+                        crate::semantic::entailment::RelationProvenance::Verified(summary)
+                            if summary.function == weigh.id
+                    )
             );
             stack.extend(retained.parent_ids());
         }
@@ -1223,8 +1227,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn active_invariant_proves_a_real_array_index_obligation() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 4>(0_u8);
+    let source = br#"const values: FixedVector<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
+
+command fn main() -> status: own ExitStatus pure {
   let at = 0_u64;
   for (
     i in 0_u64..4_u64,
@@ -1428,7 +1433,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn active_invariant_proves_a_dynamic_buffer_index_obligation() {
     let source = br#"fn read_prefix(values: &buffer<u8>, count: own u64) -> result: own unit reads(values) contract {
-  define capacity = len(deref(values));
+  define capacity = len_of(deref(values));
   requires count <= capacity;
 } {
   let index = 0_u64;
@@ -1496,8 +1501,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn exhaustion_fact_proves_filled_and_vacant_buffer_allocation_fit() {
-    let source =
-        br#"fn allocate_prefix(count: own u64) -> result: own unit allocates(heap) contract {
+    let source = br#"fn allocate_prefix(count: own u64) -> result: own unit pure contract {
   requires count <= 1000_u64;
 } {
   let length = 0_u64;
@@ -1577,7 +1581,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn exhaustion_facts_prove_both_system_range_components() {
     let source = br#"fn publish_prefix(output: &uniq OutputStream, source: &buffer<u8>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
-  define capacity = len(deref(source));
+  define capacity = len_of(deref(source));
   requires limit <= capacity;
 } {
   let start = 0_u64;
@@ -1974,7 +1978,11 @@ command fn main() -> status: own ExitStatus pure {
             used_count_cells_summary |= matches!(
                 retained,
                 DerivationNode::PostconditionCall { detail }
-                    if detail.summary.summary.function == count_cells.id
+                    if matches!(
+                        &detail.summary.summary,
+                        crate::semantic::entailment::RelationProvenance::Verified(summary)
+                            if summary.function == count_cells.id
+                    )
             );
             stack.extend(retained.parent_ids());
         }
@@ -2614,26 +2622,27 @@ command fn main() -> status: own ExitStatus pure {
 /// which is how a writer concludes that the join does establish the relation.
 #[test]
 fn a_failing_body_probe_is_reported_before_the_header_backedge() {
-    let source = br#"fn narrow(room: own u64, cand: own u64, flag: own Bool) -> out: own u64 pure {
-  let hi = room;
+    let source =
+        br#"fn narrow(spare: own u64, cand: own u64, flag: own Bool) -> out: own u64 pure {
+  let hi = spare;
   loop (
-    invariant bounds: hi <= room
+    invariant bounds: hi <= spare
   ) {
-    if cand <= room {
+    if cand <= spare {
     } else {
       return 0_u64;
     }
     if flag {
       set hi = cand;
     }
-    invariant reprove: hi <= room;
+    invariant reprove: hi <= spare;
   }
   return hi;
 }
 
 command fn main() -> status: own ExitStatus pure {
   let t = True();
-  let v = narrow(room: 8_u64, cand: 3_u64, flag: t);
+  let v = narrow(spare: 8_u64, cand: 3_u64, flag: t);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2656,8 +2665,75 @@ command fn main() -> status: own ExitStatus pure {
         let end = usize::try_from(coordinate.end().value()).expect("source offset fits usize");
         assert_eq!(
             std::str::from_utf8(&source[start..end]).expect("cited bytes are text"),
-            "invariant reprove: hi <= room;",
+            "invariant reprove: hi <= spare;",
             "the rejection lands on the body probe, not on the loop header",
         );
+    });
+}
+
+/// [INV-1, MSR-1] a measure former is an affine factor.
+///
+/// The relation a contract clause already states is statable at the other
+/// placement of the same rule, in the same spelling, and the checker proves it
+/// at the base and at every backedge. Before v0.45 widened `affine_factor` the
+/// same header was a GRAM-4 parse rejection at the former, which is what made
+/// every filling loop of the container library unwritable.
+#[test]
+fn a_measure_former_is_an_affine_factor_of_a_header_invariant() {
+    let source = br#"fn headroom(run: own buffer<u8>) -> total: own u64 reads(run) contract {
+  requires 8_u64 <= len_of(run);
+} {
+  doc "A header invariant over a measure of the run it scans.";
+  let seen = 0_u64;
+  for (
+    at in 0_u64..4_u64,
+    invariant reserved: seen + 4_u64 <= len_of(run)
+  ) {
+    let byte = run[at];
+  }
+  return seen;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let run = buffer_new(8_u64, 0_u8);
+  let total = headroom(run: move run);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "a measure factor is an ordinary affine factor: {outcome:?}"
+        );
+    });
+}
+
+/// [INV-1, MSR-2] a write that kills a measure retargets its affine image.
+///
+/// The image a measure factor reads is the one this program point holds, and
+/// the events that kill the [ENT-2] term retarget it, exactly as a write to a
+/// local retargets that local's image. Without that, the header conclusion
+/// would be a fact about a value the body replaced, and the subscript below
+/// would discharge from a length the run no longer has.
+#[test]
+fn a_write_that_kills_a_measure_retargets_the_invariant_image() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
+  doc "The measure the header names is replaced inside the body.";
+  let data = buffer_new(4_u64, 0_u8);
+  for (
+    i in 0_u64..1_u64,
+    invariant wide: 4_u64 <= len_of(data)
+  ) {
+    let old = replace data = buffer_new(1_u64, 0_u8);
+    let byte = data[3_u64];
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the replaced run's subscript must be refused: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op4);
     });
 }

@@ -9,10 +9,10 @@ use crate::{
 };
 
 use super::super::model::{
-    CheckedConst, CheckedConstant, CheckedConstantId, CheckedExpression, CheckedFlatElement,
-    CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedResultStateOrigin,
+    CheckedConst, CheckedConstant, CheckedConstantId, CheckedElement, CheckedExpression,
+    CheckedFlatElement, CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedResultStateOrigin,
     CheckedStateOrigins, CheckedStatePath, CheckedStatement, CheckedType, CheckedValue,
-    ConstOperation, FloatType, IntegerType, evaluate_const_operation,
+    ConstOperation, FloatType, IntegerType, LoanStrength, evaluate_const_operation,
 };
 use super::floats::parse_float_literal;
 use super::generics::GenericSubstitution;
@@ -105,6 +105,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .first_child_with(node, Production::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let ty = self.parse_type_with(ty_node, substitution)?;
+            // [BLK-4] the `&uniq` parameter refusal is a source rejection and
+            // is asked before the capability stop below, because an
+            // unsupported compiler capability may never mask one [DIAG-1].
+            // It quantifies over a source-declared `fn` and not over a
+            // contract member's `fn_sig`.
+            if self.tree.production(function)? == Production::FnDecl {
+                self.check_unique_parameter_confinement(mode, ty, declaration.spelling(), node)?;
+            }
             if mode != CheckedMode::Own && !self.borrowable_type(ty)? {
                 return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, node);
             }
@@ -214,16 +222,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             self.reject_region_bearing_storage_type(content_node, substitution)?;
             let content = self.parse_type_with(content_node, substitution)?;
-            let region = self.type_region(node)?;
+            let region = self.substituted_type_region(node, substitution)?;
             return self
                 .arena_nominals
                 .get(&(region, content))
                 .copied()
                 .map(CheckedType::Nominal)
-                .ok_or(SemanticCompilerFailure::InvalidResolution.into());
+                .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
         }
-        if self.has_fixed(node, FixedTerminal::Slice)? {
-            let region = self.type_region(node)?;
+        // [VIEW-1] the two views are one type shape at two loan strengths,
+        // and the atom the writer wrote is which strength this is.
+        if let Some(strength) = self.written_loan_strength(node)? {
+            let region = self.substituted_type_region(node, substitution)?;
             let element_node = self
                 .tree
                 .first_child_with(node, Production::Type)?
@@ -232,7 +242,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let Some(element) = self.flat_element(element_type)? else {
                 return self.unsupported(UnsupportedSemanticFeature::CompositeValues, element_node);
             };
-            return Ok(CheckedType::Slice { region, element });
+            return Ok(CheckedType::Slice {
+                region,
+                element,
+                strength,
+            });
         }
         if self.has_fixed(node, FixedTerminal::Box)? {
             let referent_node = self
@@ -246,7 +260,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .get(&referent)
                 .copied()
                 .map(CheckedType::Nominal)
-                .ok_or(SemanticCompilerFailure::InvalidResolution.into());
+                .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
         }
         if self
             .tree
@@ -275,7 +289,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .get(&PreludeType::Option(value))
                         .copied()
                         .map(CheckedType::Nominal)
-                        .ok_or(SemanticCompilerFailure::InvalidResolution.into());
+                        .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
                 }
                 ResolvedTarget::Prelude(id) if id == PreludeDeclarationId::new(8) => {
                     let (ok, error) = self.result_type_arguments_with(node, substitution)?;
@@ -284,7 +298,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .get(&PreludeType::Result(ok, error))
                         .copied()
                         .map(CheckedType::Nominal)
-                        .ok_or(SemanticCompilerFailure::InvalidResolution.into());
+                        .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
                 }
                 ResolvedTarget::Prelude(id) if matches!(id.ordinal(), 15 | 17 | 20) => {
                     if targs.is_some() {
@@ -324,12 +338,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     let instance = self.nominal_generic_substitution(
                         node,
                         &template.generic_parameters,
+                        &template.region_parameters,
                         substitution,
                     )?;
                     return self
                         .source_nominal_instance(declaration, &instance)
                         .map(CheckedType::Nominal)
-                        .ok_or(SemanticCompilerFailure::InvalidResolution.into());
+                        .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
                 }
                 ResolvedTarget::Source {
                     declaration,
@@ -349,6 +364,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         return self.unsupported(UnsupportedSemanticFeature::Generics, node);
                     };
                     return Ok(ty);
+                }
+                ResolvedTarget::Container(id) => {
+                    return self.parse_container_type(node, id, substitution);
                 }
                 ResolvedTarget::System(id) => {
                     let index = crate::system_nominal_index(id, self.inventory())
@@ -400,7 +418,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ty,
                 SemanticIssueKind::RegionBearingStorage {
                     mechanical_fix:
-                        "keep the slice or arena as a direct local, parameter, or result; do not store it inside another value",
+                        "keep the slice, arena, or provider as a direct local, parameter, or result; do not store it inside another value",
                 },
             );
         }
@@ -409,13 +427,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// [STOR-5]'s region-bearing relation over a checked type: a type is
     /// region-bearing when its complete type after generic substitution
-    /// contains `slice<'r, T>` or `arena<'r, T>` at any depth.
+    /// contains `Slice<'r, T>` or `arena<'r, T>` at any depth.
     ///
     /// The judgment is structural, so it holds for every region-bearing type
     /// constructor rather than an enumerated list of spellings: a slice, an
     /// arena instance, and any array, buffer, box, struct field, or enum
     /// payload that reaches one. The `visited` set keeps the walk finite
     /// because box content may close a nominal cycle [STOR-2].
+    /// [PROV-3] the loan-bearing predicate: a value of one of the two view
+    /// types carries a finite set of origins and a loan on each, and no
+    /// other type does.
+    ///
+    /// It is the type itself and never a component of one, because [STOR-5]
+    /// keeps a view out of every stored position: a view is never a field, a
+    /// payload, a slot, or a generic argument, so a loan-bearing type is
+    /// reached at the top or not at all.
+    pub(in crate::semantic::check) const fn checked_type_is_loan_bearing(ty: CheckedType) -> bool {
+        matches!(ty, CheckedType::Slice { .. })
+    }
+
     pub(in crate::semantic::check) fn checked_type_is_region_bearing(
         &self,
         ty: CheckedType,
@@ -427,13 +457,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 continue;
             }
             match ty {
-                CheckedType::Slice { .. } => return Ok(true),
+                // [STOR-5]: a provider is region-bearing because a move would
+                // strand its own store, exactly as a loan is because storage
+                // would hide its provenance. A store-branded run is not: the
+                // store's identity travels in the type [PROV-1], so the
+                // position it occupies is itself confined to that store.
+                CheckedType::Slice { .. }
+                | CheckedType::Heap { .. }
+                | CheckedType::Extent { .. } => return Ok(true),
                 CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
+                    pending.push(element.ty());
+                }
+                CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
                     pending.push(element.ty());
                 }
                 CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
                     CheckedNominalKind::Arena { .. } => return Ok(true),
-                    CheckedNominalKind::Box { referent } => pending.push(*referent),
+                    CheckedNominalKind::Box { referent, .. } => pending.push(*referent),
                     CheckedNominalKind::Struct { fields } => {
                         pending.extend(fields.iter().map(|field| field.ty));
                     }
@@ -460,12 +500,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(false)
     }
 
+    /// The loan strength one written `type` node names, where that node is a
+    /// view [VIEW-1].
+    ///
+    /// The two views are two atoms of the `type` production [GRAM-3] and one
+    /// checked shape, so every rule that asks "is this written type a view"
+    /// asks this one question and reads the strength back where it needs it.
+    pub(in crate::semantic::check) fn written_loan_strength(
+        &self,
+        node: NodeId,
+    ) -> Result<Option<LoanStrength>, CheckStop> {
+        if self.has_fixed(node, FixedTerminal::Slice)? {
+            return Ok(Some(LoanStrength::Shared));
+        }
+        if self.has_fixed(node, FixedTerminal::MutSlice)? {
+            return Ok(Some(LoanStrength::Exclusive));
+        }
+        Ok(None)
+    }
+
     fn type_node_is_region_bearing_with(
         &self,
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<bool, CheckStop> {
-        if self.has_fixed(node, FixedTerminal::Slice)?
+        if self.written_loan_strength(node)?.is_some()
             || self.has_fixed(node, FixedTerminal::Arena)?
         {
             return Ok(true);
@@ -476,6 +535,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .is_some()
         {
             let usage = self.use_at(node, LexicalUseRole::Type)?;
+            // [STOR-5]: a provider a move would strand is region-bearing; a
+            // store-branded run is not, because its brand confines the
+            // position rather than hiding a provenance [PROV-1].
+            if let ResolvedTarget::Container(id) = usage.target()
+                && crate::container_nominal(id).is_some_and(|nominal| {
+                    matches!(
+                        nominal.shape,
+                        crate::ContainerShape::Heap | crate::ContainerShape::Arena
+                    )
+                })
+            {
+                return Ok(true);
+            }
             if let ResolvedTarget::Source {
                 declaration,
                 class: DeclarationClass::GenericType,
@@ -545,6 +617,288 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let ok = self.parse_type_with(ok, substitution)?;
         let error = self.parse_type_with(error, substitution)?;
         Ok((ok, error))
+    }
+
+    /// One written `Vector`, `FixedVector`, `Heap`, or `Arena` type
+    /// [TYPE-2, BLK-1, PROV-1].
+    ///
+    /// Each is a TYPEID with `targs` [GRAM-3], so the argument list is read
+    /// positionally against the nominal's own parameter list, and a store
+    /// region left unwritten resolves by [PROV-1]'s brand rule: the enclosing
+    /// nominal's sole region parameter at a stored position, and the entry
+    /// heap's store region otherwise. A bump extent's region is one the
+    /// caller must choose and is therefore written at every position
+    /// [FORM-8].
+    /// S39 the store region and referent of one written `Box<'s, T>`, read
+    /// the way [`Self::parse_container_type`] reads them.
+    pub(super) fn store_box_arguments(
+        &self,
+        node: NodeId,
+        substitution: &GenericSubstitution,
+    ) -> Result<(crate::DeclarationId, CheckedType), CheckStop> {
+        let arguments = match self.tree.first_child_with(node, Production::Targs)? {
+            Some(targs) => self.tree.children_with(targs, Production::Targ)?,
+            None => Vec::new(),
+        };
+        let mut written_region = None;
+        let mut rest = arguments.as_slice();
+        if let Some(first) = arguments.first()
+            && self
+                .tree
+                .first_child_with(*first, Production::Type)?
+                .is_none()
+            && self
+                .tree
+                .first_child_with(*first, Production::Const)?
+                .is_none()
+        {
+            let usage = self.use_at(*first, LexicalUseRole::TypeArgumentRegion)?;
+            let ResolvedTarget::Source {
+                declaration,
+                class: DeclarationClass::Region,
+            } = usage.target()
+            else {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            };
+            written_region = Some(
+                substitution
+                    .region_argument(declaration)
+                    .unwrap_or(declaration),
+            );
+            rest = &arguments[1..];
+        }
+        let [referent] = rest else {
+            return self.issue_node(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    "Box<'s, T> with one referent type",
+                    "a Box type-argument list of a different length",
+                ),
+            );
+        };
+        let Some(referent_node) = self.tree.first_child_with(*referent, Production::Type)? else {
+            return self.issue_node(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    "Box<'s, T> with one referent type",
+                    "a const argument in the Box referent position",
+                ),
+            );
+        };
+        let referent = self.parse_type_with(referent_node, substitution)?;
+        Ok((
+            written_region.unwrap_or_else(|| self.elided_store_region()),
+            referent,
+        ))
+    }
+
+    fn parse_container_type(
+        &self,
+        node: NodeId,
+        id: crate::ContainerNominalId,
+        substitution: &GenericSubstitution,
+    ) -> Result<CheckedType, CheckStop> {
+        let shape = crate::container_nominal(id)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            .shape;
+        let arguments = match self.tree.first_child_with(node, Production::Targs)? {
+            Some(targs) => self.tree.children_with(targs, Production::Targ)?,
+            None => Vec::new(),
+        };
+        let mut written_region = None;
+        let mut rest = arguments.as_slice();
+        if let Some(first) = arguments.first()
+            && self
+                .tree
+                .first_child_with(*first, Production::Type)?
+                .is_none()
+            && self
+                .tree
+                .first_child_with(*first, Production::Const)?
+                .is_none()
+        {
+            let usage = self.use_at(*first, LexicalUseRole::TypeArgumentRegion)?;
+            let ResolvedTarget::Source {
+                declaration,
+                class: DeclarationClass::Region,
+            } = usage.target()
+            else {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            };
+            written_region = Some(
+                substitution
+                    .region_argument(declaration)
+                    .unwrap_or(declaration),
+            );
+            rest = &arguments[1..];
+        }
+        let expected = match shape {
+            crate::ContainerShape::Vector => "Vector<'s, T> with one element type",
+            crate::ContainerShape::FixedVector => {
+                "FixedVector<T, n> with one element type and one capacity"
+            }
+            crate::ContainerShape::Heap => "Heap with no further argument",
+            crate::ContainerShape::Arena => "Arena<'s, bytes, align> with two constants",
+            crate::ContainerShape::Box => "Box<'s, T> with one referent type",
+        };
+        let mismatch = |found: &str| -> Result<CheckedType, CheckStop> {
+            self.issue_node(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::type_mismatch(expected, found),
+            )
+        };
+        // [BLK-1] what a slot may hold: every copy element, one region-free
+        // affine nominal stored by value, one type parameter under any of its
+        // three bounds — which [FN-2] resolves at every concrete instance —
+        // and one element that is itself a run, descriptor included. The lift
+        // is one level: the element run's own element is flat, so a third
+        // level is an explicit unsupported capability rather than a source
+        // rejection.
+        let element_of = |argument: NodeId| -> Result<CheckedElement, CheckStop> {
+            let element_node = self
+                .tree
+                .first_child_with(argument, Production::Type)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            let element_type = self.parse_type_with(element_node, substitution)?;
+            if let CheckedType::Generic(declaration) = element_type {
+                return Ok(CheckedElement::Flat(CheckedFlatElement::Generic(
+                    declaration,
+                )));
+            }
+            if let Some(lifted) = Self::run_element(element_type) {
+                return Ok(lifted);
+            }
+            match self.buffer_element(element_type)? {
+                Some(element) => Ok(CheckedElement::Flat(element)),
+                None => self
+                    .unsupported(UnsupportedSemanticFeature::CompositeValues, element_node)
+                    .map(|()| CheckedElement::Flat(CheckedFlatElement::Unit)),
+            }
+        };
+        match shape {
+            crate::ContainerShape::Vector => {
+                let [element] = rest else {
+                    return mismatch("a Vector type-argument list of a different length");
+                };
+                if self
+                    .tree
+                    .first_child_with(*element, Production::Type)?
+                    .is_none()
+                {
+                    return mismatch("a const argument in the Vector element position");
+                }
+                let element = element_of(*element)?;
+                let region = written_region.unwrap_or_else(|| self.elided_store_region());
+                Ok(CheckedType::Vector {
+                    region,
+                    element,
+                    release: self.vector_release_class(region)?,
+                })
+            }
+            crate::ContainerShape::FixedVector => {
+                if written_region.is_some() {
+                    return mismatch("a region argument on a FixedVector, which has no store");
+                }
+                let [element, length] = rest else {
+                    return mismatch("a FixedVector type-argument list of a different length");
+                };
+                if self
+                    .tree
+                    .first_child_with(*element, Production::Type)?
+                    .is_none()
+                {
+                    return mismatch("a const argument in the FixedVector element position");
+                }
+                let Some(length_node) = self.tree.first_child_with(*length, Production::Const)?
+                else {
+                    return mismatch("a type argument in the FixedVector capacity position");
+                };
+                let element = element_of(*element)?;
+                Ok(CheckedType::FixedVector {
+                    element,
+                    length: self.parse_const_expression_with(length_node, substitution)?,
+                })
+            }
+            crate::ContainerShape::Heap => {
+                if !rest.is_empty() {
+                    return mismatch("a Heap type-argument list with a further argument");
+                }
+                Ok(CheckedType::Heap {
+                    region: written_region.unwrap_or(crate::DeclarationId::ENTRY_HEAP_REGION),
+                })
+            }
+            // S39 one store-resident cell. Its referent is any nameable
+            // type — the element domain's flat restriction is [BLK-1]'s and
+            // belongs to a run's slots, not to a cell — and its region is the
+            // store brand [PROV-1] resolves exactly as a run's.
+            crate::ContainerShape::Box => {
+                let [referent] = rest else {
+                    return mismatch("a Box type-argument list of a different length");
+                };
+                let Some(referent_node) =
+                    self.tree.first_child_with(*referent, Production::Type)?
+                else {
+                    return mismatch("a const argument in the Box referent position");
+                };
+                self.reject_region_bearing_storage_type(referent_node, substitution)?;
+                let referent = self.parse_type_with(referent_node, substitution)?;
+                let region = written_region.unwrap_or_else(|| self.elided_store_region());
+                self.store_box_nominal(region, referent)
+                    .map(CheckedType::Nominal)
+            }
+            crate::ContainerShape::Arena => {
+                let [bytes, align] = rest else {
+                    return mismatch("an Arena type-argument list of a different length");
+                };
+                let (Some(bytes_node), Some(align_node)) = (
+                    self.tree.first_child_with(*bytes, Production::Const)?,
+                    self.tree.first_child_with(*align, Production::Const)?,
+                ) else {
+                    return mismatch("a type argument in an Arena constant position");
+                };
+                // A bump extent's store region is one the caller must choose,
+                // so [FORM-8] writes it at every position and an elided one
+                // names no extent [PROV-1].
+                let Some(region) = written_region else {
+                    return self.issue_node(
+                        SemanticRule::Form8,
+                        node,
+                        SemanticIssueKind::RegionSpelling {
+                            mechanical_fix: "write the store region this extent names: a bump \
+extent's region is one the caller must choose, so it is written at every position",
+                        },
+                    );
+                };
+                Ok(CheckedType::Extent {
+                    region,
+                    bytes: self.parse_const_expression_with(bytes_node, substitution)?,
+                    align: self.parse_const_expression_with(align_node, substitution)?,
+                })
+            }
+        }
+    }
+
+    /// [PROV-1]'s brand resolution for an elided store region: the enclosing
+    /// nominal's sole region parameter at a stored position, and the entry
+    /// heap's store region everywhere else.
+    /// The region one `slice` or `arena` type carries, read through the
+    /// enclosing nominal instance's region axis [S20, PROV-1].
+    fn substituted_type_region(
+        &self,
+        node: NodeId,
+        substitution: &GenericSubstitution,
+    ) -> Result<crate::DeclarationId, CheckStop> {
+        let region = self.type_region(node)?;
+        Ok(substitution.region_argument(region).unwrap_or(region))
+    }
+
+    pub(in crate::semantic::check) fn elided_store_region(&self) -> crate::DeclarationId {
+        self.elided_store_brand
+            .get()
+            .unwrap_or(crate::DeclarationId::ENTRY_HEAP_REGION)
     }
 
     pub(super) fn option_type_argument_with(
@@ -644,10 +998,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 1
             } else if self.has_fixed(effect, FixedTerminal::Allocates)? {
-                for terminal in self.tree.direct_token_indices(effect)? {
-                    if self.tree.token_bytes(*terminal)? == b"heap" {
-                        declared.allocates_heap = true;
-                    }
+                // [S23] the entry takes the same formal-rooted paths `reads`
+                // and `writes` take; the `arena REGIONID` alternative is the
+                // transitional half [EFF-1] keeps while `arena<'r, T>` lives.
+                for path in self.effect_paths(effect, parameters)? {
+                    declared.add_allocation(path);
                 }
                 for region in self.effect_allocation_regions(effect)? {
                     declared.add_arena_allocation(region);
@@ -814,7 +1169,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             bindings
                 .get(&borrow.place.root)
                 .and_then(|binding| binding.state_origins.clone())
-                .map(|origins| origins.projected(&borrow.place.fields))
+                .map(|origins| origins.projected(&borrow.place.field_prefix()))
         } else if let Some(holder) = value.holder {
             bindings
                 .get(&holder)
@@ -824,7 +1179,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             bindings
                 .get(&access.place.root)
                 .and_then(|binding| binding.state_origins.clone())
-                .map(|origins| origins.projected(&access.place.fields))
+                .map(|origins| origins.projected(&access.place.field_prefix()))
         } else {
             None
         };
@@ -875,14 +1230,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 // A nested value initializer owns its own give set.
                 CheckedStatement::ValueMatchLet { .. } => {}
+                CheckedStatement::Dispose { .. } => {}
                 CheckedStatement::Loop { body, .. }
                 | CheckedStatement::CountedRange { body, .. }
                 | CheckedStatement::Region { body, .. } => {
                     self.collect_give_state_origins(body, origins, fallback);
                 }
                 CheckedStatement::Let { .. }
+                | CheckedStatement::DestructuringLet { .. }
                 | CheckedStatement::PropagateLet { .. }
                 | CheckedStatement::Set { .. }
+                | CheckedStatement::SetList { .. }
                 | CheckedStatement::Replace { .. }
                 | CheckedStatement::Evaluate(_)
                 | CheckedStatement::DropExpression { .. }
@@ -1077,6 +1435,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::Array { .. }
             | CheckedType::Slice { .. }
             | CheckedType::Buffer { .. }
+            | CheckedType::FixedVector { .. }
+            | CheckedType::Vector { .. }
+            | CheckedType::Heap { .. }
+            | CheckedType::Extent { .. }
             | CheckedType::Generic(_) => vec![Vec::new()],
             CheckedType::Unit
             | CheckedType::Bool
@@ -1446,7 +1808,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     pub(super) fn constant(&self, id: CheckedConstantId) -> Result<&CheckedConstant, CheckStop> {
         self.checked_constants
             .get(id.0 as usize)
-            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     pub(super) fn parse_const_type(&self, node: NodeId) -> Result<CheckedType, CheckStop> {
@@ -1455,7 +1817,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .tree
                 .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
                 .is_some())
-            || self.has_fixed(node, FixedTerminal::Slice)?
+            || self.written_loan_strength(node)?.is_some()
             || self.has_fixed(node, FixedTerminal::Box)?
             || self.has_fixed(node, FixedTerminal::Arena)?
             || self.has_fixed(node, FixedTerminal::Buffer)?;
@@ -1466,7 +1828,57 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticIssueKind::InvalidConstValue,
             );
         }
+        // [CONST-2] none of the compiler-owned container nominals is
+        // const-eligible: a const is pure static rodata, and each of the five
+        // names storage, a store region, or a release action. The question is
+        // decided here, on the resolved declaration class and before the
+        // type's own arguments are parsed, because a cell type is interned
+        // per (store region, referent) and a `const` item is not one of the
+        // positions the interning pass visits — parsing one there reported an
+        // internal deferred-nominal failure instead of this rejection.
+        if self
+            .tree
+            .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
+            .is_some()
+            && matches!(
+                self.use_at(node, LexicalUseRole::Type)?.target(),
+                ResolvedTarget::Container(_)
+            )
+            && !self.written_type_is_fixed_vector(node)?
+        {
+            return self.issue_node(
+                SemanticRule::Const2,
+                node,
+                SemanticIssueKind::InvalidConstValue,
+            );
+        }
         let ty = self.parse_type(node)?;
+        // [CONST-1, CONST-2, S34] the one const-eligible container form: a
+        // `FixedVector<T, n>` of const-eligible flat `T` with exactly `n`
+        // literal entries. It lowers to **element storage only** — its four
+        // measures are the standing facts `len_of = cap_of = n` and
+        // `room_of = head_of = 0`, materialized from the type at each use
+        // rather than stored — so the const's storage type is the run of `n`
+        // slots itself, which is the place every read of it resolves to and
+        // the measure row every one of its four measures already reads.
+        if let CheckedType::FixedVector { element, length } = ty {
+            let CheckedElement::Flat(element) = element else {
+                return self.issue_node(
+                    SemanticRule::Const2,
+                    node,
+                    SemanticIssueKind::InvalidConstValue,
+                );
+            };
+            let storage = CheckedType::Array { element, length };
+            if self.const_eligible_type(storage)? && length.value().is_some() {
+                return Ok(storage);
+            }
+            return self.issue_node(
+                SemanticRule::Const2,
+                node,
+                SemanticIssueKind::InvalidConstValue,
+            );
+        }
         if self.const_eligible_type(ty)? {
             Ok(ty)
         } else {
@@ -1476,6 +1888,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticIssueKind::InvalidConstValue,
             )
         }
+    }
+
+    /// Whether one written `type` node spells the compiler-owned inline run
+    /// [BLK-1], which is the one container nominal a `const` item may write
+    /// [CONST-2, S34].
+    fn written_type_is_fixed_vector(&self, node: NodeId) -> Result<bool, CheckStop> {
+        let Some(token) = self
+            .tree
+            .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
+        else {
+            return Ok(false);
+        };
+        Ok(self.tree.token_bytes(token)? == b"FixedVector")
     }
 
     /// The CONST-2 const-eligibility relation: a primitive, an array of
@@ -1513,7 +1938,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedType::GenericInt(_)
             | CheckedType::GenericFloat(_)
             | CheckedType::Nominal(_) => false,
-            CheckedType::Slice { .. } | CheckedType::Buffer { .. } => false,
+            // The `FixedVector` const form is [S34]'s and lands with
+            // `array`'s retirement; a run, a heap, and an extent are not
+            // static rodata in this version.
+            CheckedType::Slice { .. }
+            | CheckedType::Buffer { .. }
+            | CheckedType::FixedVector { .. }
+            | CheckedType::Vector { .. }
+            | CheckedType::Heap { .. }
+            | CheckedType::Extent { .. } => false,
         })
     }
 
@@ -1529,6 +1962,32 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 node,
                 SemanticIssueKind::type_mismatch(TYPE2_FLAT_ELEMENT, self.checked_type_name(ty)?),
             ),
+        }
+    }
+
+    /// The one-level lift of [BLK-1]'s element domain: a run whose own
+    /// element is flat is itself an element, its descriptor included.
+    ///
+    /// It is `None` for every other type, including a run whose element is
+    /// already lifted — that is the second level, which this version does not
+    /// represent — so a caller falls through to the flat domain and, failing
+    /// that, to the unsupported capability.
+    pub(super) const fn run_element(ty: CheckedType) -> Option<CheckedElement> {
+        match ty {
+            CheckedType::FixedVector {
+                element: CheckedElement::Flat(element),
+                length,
+            } => Some(CheckedElement::FixedVector { element, length }),
+            CheckedType::Vector {
+                region,
+                element: CheckedElement::Flat(element),
+                release,
+            } => Some(CheckedElement::Vector {
+                region,
+                element,
+                release,
+            }),
+            _ => None,
         }
     }
 
@@ -1576,7 +2035,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedType::Nominal(_)
             | CheckedType::Array { .. }
             | CheckedType::Slice { .. }
-            | CheckedType::Buffer { .. } => None,
+            | CheckedType::Buffer { .. }
+            | CheckedType::FixedVector { .. }
+            | CheckedType::Vector { .. }
+            | CheckedType::Heap { .. }
+            | CheckedType::Extent { .. } => None,
         })
     }
 

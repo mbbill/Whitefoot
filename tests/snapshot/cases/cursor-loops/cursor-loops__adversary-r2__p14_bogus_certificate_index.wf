@@ -1,6 +1,9 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expect REJECT: the local invariant claims cursor < 3_u64 backed only by cursor <= limit with limit=9, a certificate that does not entail the claim, then uses it to index a 3-slot array; must not be accepted as a proof";
-  let data = array_new::<u8, 3>(0_u8);
+  let data = fixed_vector::<u8, 3>();
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
   set data[0_u64] = 7_u8;
   set data[1_u64] = 8_u8;
   set data[2_u64] = 9_u8;

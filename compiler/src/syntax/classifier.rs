@@ -60,11 +60,20 @@ fn membership(token: Token<'_>) -> Option<TerminalSet> {
             }
         }
         TokenKind::UpperWordForm => {
-            let valid = is_type_identifier(spelling);
-            if valid {
-                set.insert(TerminalPredicate::TypeIdentifier);
+            // [S35] the view nominals are capitalized fixed atoms of the
+            // `type` production, so an upper word is read as its fixed
+            // terminal where the grammar has one and as a TYPEID otherwise —
+            // the same two-way reading `LowerWordForm` already makes.
+            if let Some(terminal) = FixedTerminal::from_spelling(spelling) {
+                set.insert(TerminalPredicate::Fixed(terminal));
+                true
+            } else {
+                let valid = is_type_identifier(spelling);
+                if valid {
+                    set.insert(TerminalPredicate::TypeIdentifier);
+                }
+                valid
             }
-            valid
         }
         TokenKind::RegionForm => {
             let valid = is_region_identifier(spelling);

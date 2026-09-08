@@ -22,14 +22,104 @@ compiler changes remain general and project-independent. Performance work is
 most useful when the loss is attributed with a same-source causal comparison
 and a falsifier.
 
-`mcts_mem/` can preserve durable design choices and rejected alternatives. It
-does not authorize work or add a workflow step.
+## Decision work
 
-Maintain the memory with the `mcts-mem-use` skill named in AGENTS.md. Walk from
-the root through the relevant subsystem and its rejected alternatives before
-changing a decision. The skill defines how to maintain nodes and evidence;
-the [completion checklist](review-checklist.md#m-decision-memory--changed-decisions-or-memory-nodes)
-collects the review checks, including lint and replacement endpoints.
+Use four occasions: start, choose, update, finish. A material choice changes
+accepted behavior, a safety or trust condition, a shared interface or
+representation, a significant performance commitment, or a standing project
+rule. Restoring already specified behavior or editing prose without changing
+its meaning is normally routine. If the work reveals a new design question,
+use the choice step then; task size and file count do not determine this.
+Scale the reasoning to uncertainty, impact, error cost, and reversibility.
+
+| Occasion | Action | Observable result / completion check |
+|---|---|---|
+| Start or resume | Read the requested outcome and scope, then the affected current owner: the specification for language behavior, compiler guide and code for implementation, or document role for prose. Newly found issues do not expand the task's scope. For a material choice, read the relevant constitutional clauses and follow the rule index to its reasons; walk the relevant memory branch and alternatives with the skill. On resumption, verify the actual working tree and PR state. | The work follows the relevant requirements and accounts for prior objections. No reading log or task document. A1, D3, R1. |
+| Choose | State required properties, facts, assumptions, actual alternatives, the selection reason, and what could change it. Use deduction only for conclusions the stated premises entail; otherwise state the empirical or provisional ground. Before an experiment intended to select a design, record what result would distinguish the candidates; keep later exploration identifiable. | A concise reason in the existing investigation, or the PR for a small choice; experimental criteria and results at their source. R1, R2. |
+| Update | When a choice is settled or its grounds change, update the standing owner and memory; update index rows for affected language rules. Follow references and material dependencies into consumers, reconsidering each affected choice. Continue if its conclusion or grounds change; stop at an unaffected dependency. Keep unresolved grounds explicit, with a concrete question and affected rows marked `revisit`. Do this when the conclusion is reached, including during long tasks. | Current guidance, recorded reasons, and the index agree. State the affected set and any unresolved reason in the existing explanation. R3, R4, M1–M3. |
+| Finish | Run applicable mechanical checks, give another agent the task constraints, full diff and actual results, and use the completion checklist. Fix findings and recheck affected items, then publish the reviewed changes and compact report to the existing PR. | Check results, findings and limitations at the review surface. No separate review file or additional approval stage. V1–V4. |
+
+For a choice without an existing rule or memory node, use the nearest relevant
+owner and memory branch; do not require an index entry merely to begin.
+A recorded reason names its material premises and dependent rules or interfaces
+where known. Follow these links and search changed rule IDs or concepts to
+find consumers; a search supplements reading and cannot prove completeness.
+Choose where to write using the [document roles](review-checklist.md#document-roles).
+The skill determines whether a memory node is warranted; the index covers
+language rules, not every task or engineering choice.
+
+The constitution supplies purpose, objectives, tradeoffs, and conditional
+principles. It does not supply a unique solution. The active specification
+defines the chosen language. MCTS-Mem owns concrete decisions and their
+reasons, evidence, and replacement history. The
+[rule-to-ground index](../spec/derivation/derivation-ledger.md#current-index)
+connects active rules to those reasons and their direct technical sources.
+This method governs their use; the checklist checks the resulting work.
+
+**Compare against useful alternatives.** Assess major design directions
+against effective existing approaches, including Rust where relevant. State
+the task, baseline, expected benefit, and uncertainty. Compare performance,
+resistance to unchecked shortcuts, and ordinary implementation quality where
+they bear on the question. A local win does not establish an ecosystem-wide
+advantage, and each reused construct need not separately outperform Rust.
+
+**Distinguish the grounds.** A conditional deduction names its premises
+and the conclusion they actually entail. Empirical support names what was
+observed and under which conditions. A provisional choice names its reason,
+uncertainty, and reopening condition. One decision can use all three. Explain
+which claim each supports; a measured instance or a constitutional citation
+does not prove a uniquely necessary mechanism or checker soundness.
+
+Keep an unresolved question unresolved. When using an assumption to proceed,
+name it as an assumption and state how it will be checked. Do not record or
+cite a discussion proposal or an agent's default as a settled project decision.
+When grounds change, reconsider the dependent choice; keep it only on stated
+grounds that still hold, which may differ from its original reason.
+
+### Maintaining the rule index
+
+Keep one row per active rule in the existing ledger's current index. Its
+four columns are the rule ID, basis kinds, review state, and source links with
+their scope. Several rules can link to one shared decision. The linked reason
+owns the detailed argument, relevant constitutional aims, assumptions,
+alternatives, and reopening condition; the index is not a second decision
+record. Use `deduction`, `empirical`, or `provisional`, joined with `+` when
+needed. `current` means the ground has been assessed for the present question,
+not that the design is proved optimal or implemented correctly.
+
+During migration, use `unassessed` with `revisit` for legacy grounds that have
+not been reassessed. Preserve their actual source and open conditions; never
+translate `derived` or `derived_existence_only` mechanically into a claim of
+logical or empirical support. On the next material change to that rule or its
+reason, read the linked evidence, classify the supported claims, and replace
+the marker with an assessed ground or an explicit unresolved question. New
+rules need stated grounds; `unassessed` is not a shortcut for documenting a
+new choice. An ordinary implementation fix need not clear unrelated legacy
+markers.
+
+When a rule is added, amended, or retired, add, update, or remove its current
+row. Retain useful dated evidence and skill-managed history. When a reason
+changes or moves, check rows that cite it and the directly affected standing
+guidance; changing an index row alone cannot repair a false source. Follow
+actual premise dependencies rather than treating every related link as an
+implication. Explain the affected set in the existing PR or investigation,
+including any unresolved `revisit` entries. There is no calendar sweep or
+requirement to load every rule for every task.
+
+Run `make -C compiler spec` after index changes. It checks unique active-rule
+coverage, recognized basis/state fields, and a source reference in each row.
+It does not assess the truth or sufficiency of the reason. Check reference
+targets and meaning in the affected set at completion. After memory edits,
+follow the current `mcts-mem-use` skill's verification, provenance, and history
+instructions. Checker setup and invocation belong to the skill.
+Do not use an index status as a source acceptance rule or an extra approval
+condition; an unresolved safety objection still requires substantive resolution.
+
+Reconsider the method itself when a task exposes a missed dependency,
+unsupported conclusion, repeated owner correction, or upkeep that displaces
+useful compiler work. Repair the specific trigger, owner, or check that failed
+and record a changed decision in the workflow memory. This is also a material
+choice; adding more process without a demonstrated use is not the remedy.
 
 ## Documentation and local context
 
@@ -48,6 +138,14 @@ At task completion, use the [review checklist](review-checklist.md) to check
 content placement, references, examples and consistency in this affected set.
 Mechanical checks establish paths and executable behavior, not consistency
 of the prose or suitability for its reader.
+
+Invalid legacy memory formatting needs a documented repair, not a lint waiver.
+Identify the original Git revision and account for each changed entry; preserve
+its claims, dates, experimental limits, and actual alternatives. Correct only
+supported metadata or classification errors; append substantive corrections.
+Review the repair against that original revision before committing it, then run
+lint on the committed tree. Its HEAD-based append-only check is not evidence
+that the historical repair preserved meaning.
 
 Historical essays and experimental records keep their original conditions;
 do not append a second implementation inventory to keep an old essay
@@ -102,6 +200,53 @@ mandatory project workflow.
 A soundness defect is a correctness issue regardless of planning status.
 
 ## Evidence guidance
+
+Use the constitution to identify objectives and candidate directions, then
+use technical arguments and experiments to decide between them. Keep four
+things distinct: the desired property, the assumptions behind a deduction,
+the chosen mechanism, and the observations supporting it. More than one
+mechanism may meet the objective. A minimality choice can remain provisional
+without an invented experiment or a claim of unique necessity.
+
+Before real projects use Whitefoot, exclude the migration cost of existing
+language designs from language-selection arguments. Updating the implementation,
+tests, examples, or design documents is not evidence against a broad language
+change. Internal test and example counts or spelling distributions do not
+establish adoption, familiarity, or frequency in real use. Tests check the
+specification and implementation; when a language rule changes, update its
+tests to preserve their verification purpose under the amended rule.
+
+Choose a probe that could distinguish the live alternatives. Keep behavior,
+contracts, workloads, and comparison conditions fixed where they define the
+question. If an agent makes the task easier by weakening a requirement, the
+new green result does not answer the original question. A representative
+writer trial can expose that failure and test a possible constraint or
+diagnostic; it cannot establish that the language knows unstated requirements.
+
+When evaluating implementation delegated to agents, distinguish at least these
+observations:
+
+- whether the required implementation and proof can be expressed;
+- whether the tested agent can produce them with the supplied interfaces,
+  context, tools, and repair assistance;
+- whether separately implemented components meet independent behavior
+  expectations when composed; and
+- whether the resulting program meets its runtime cost goal, and why.
+
+A failed trial can reveal inadequate contracts, missing proof vocabulary,
+poor feedback, model limitations, or a bad architecture. Attribute the cause
+before selecting a language change. Model identity and assistance are
+experimental conditions, not permanent language ceilings. A restriction can
+still be worthwhile when it increases writing effort; measure the benefit
+and cost rather than treating brevity as success.
+
+Keep conclusions conditional. Record what would make a rejected alternative
+worth reopening and preserve the failure it must address. Improved agents can
+change an authoring-cost result; they do not invalidate a counterexample to
+soundness. A result on a retired compiler or a different workload remains
+evidence about those conditions until reproduced on the new ones. The
+relevant [decision memory](../mcts_mem/) records choices and their reasons;
+the experiment or design remains the source of the technical evidence.
 
 - State exact commands, inputs, outputs, counts, and exit codes. Read an exit
   code directly, not through a pipe.

@@ -1,0 +1,26 @@
+fn assemble(cap: own u64) -> made: own u64 pure contract {
+  ensures made <= cap;
+} {
+  doc "Publishes a bound on its own result.";
+  return 0_u64;
+}
+
+fn consume(bound: own u64) -> echoed: own u64 pure contract {
+  requires bound <= 4_u64;
+} {
+  doc "Requires its argument to be inside the published bound.";
+  return bound;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "[ENT-3.S12] a `set` target is a destination of the published relation. The relation is established after the call's own transfer, consumes and effect kills and after the target's commit and kills, over the committed place, so the caller carries `carried <= capacity` past the assignment and discharges the later callee requirement from it. Its control is ent3-pos-s12-a-published-relation-reaches-a-let-binder, the same callee and the same requirement at the other destination.";
+  let capacity = 4_u64;
+  let carried = 9_u64;
+  set carried = assemble(cap: capacity);
+  let echoed = consume(bound: carried);
+  if echoed == 0_u64 {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  return exit_status(code: 0_u8);
+}

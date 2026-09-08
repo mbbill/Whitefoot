@@ -1,0 +1,24 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "MSR-3, ENT-2: a tracked place's path is field selections, deref wrappings and subscripts, and none of those names a variant. Result's Ok(value) and Err(error) are two storages one field path cannot separate, so the payload placement is not stated over it and the arm binder carries no measure of its own; the placement into it is undischarged.";
+  region 'a {
+    let workspace = arena_frame::<4096, 16, 'a>();
+    region {
+      let block = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
+      let slot = Ok<Vector<'a, u8>, u8>(value: move block);
+      match slot {
+        Err(error: code) => {
+          return exit_status(code: 1_u8);
+        }
+        Ok(value: back) => {
+          let filled = place_back(vector: move back, value: 2_u8);
+          let seen = filled[0_u64];
+          if seen == 2_u8 {
+          } else {
+            return exit_status(code: 2_u8);
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

@@ -74,7 +74,7 @@ fn denial(pair: &PermissionPair, condition: u8) -> &Denial {
 /// overlap is decided solely from the concrete actual places.
 #[test]
 fn independent_direct_output_operations_are_permitted() {
-    let source = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err) {
   let bytes = buffer_new(2_u64, 65_u8);
   region 'out {
     region 'err {
@@ -100,7 +100,7 @@ fn independent_direct_output_operations_are_permitted() {
 /// same named region therefore fail before overlap permission is considered.
 #[test]
 fn direct_output_operations_on_one_state_cannot_hold_two_unique_loans() {
-    let source = br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let bytes = buffer_new(2_u64, 65_u8);
   region 'out {
     region {
@@ -122,7 +122,7 @@ fn direct_output_operations_on_one_state_cannot_hold_two_unique_loans() {
 
 #[test]
 fn completion_waits_for_the_exact_nonadjacent_unique_loan() {
-    let source = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err) {
   let bytes = buffer_new(3_u64, 65_u8);
   region 'out {
     region 'err {
@@ -194,7 +194,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
 /// file loans coexist, while the two destination loans remain disjoint.
 #[test]
 fn positioned_reads_on_one_file_with_disjoint_destinations_are_permitted() {
-    let source = br#"fn probe(file: own ReadFile) -> result: own unit reads(file), writes(file), allocates(heap) {
+    let source = br#"fn probe(file: own ReadFile) -> result: own unit reads(file), writes(file) {
   let left = buffer_new(1_u64, 0_u8);
   let right = buffer_new(1_u64, 0_u8);
   region 'file {
@@ -246,12 +246,12 @@ fn two_child_unique_sibling_calls_are_permitted_and_eligible() {
   Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
 }
 
-fn boxed_leaf(w: own u64) -> result: own box<BoxNode> allocates(heap) {
+fn boxed_leaf(w: own u64) -> result: own box<BoxNode> pure {
   let leaf = Leaf(w: w);
   return box_new(move leaf);
 }
 
-fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own box<BoxNode> allocates(heap) {
+fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own box<BoxNode> pure {
   let branch = Branch(left: move left, right: move right, w: 0_u64);
   return box_new(move branch);
 }
@@ -271,7 +271,7 @@ fn fold(node: &uniq box<BoxNode>) -> result: own u64 reads(node), writes(node) {
   }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
@@ -363,10 +363,10 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn reads_only_siblings_over_one_place_form_one_eligible_chain() {
     let source = br#"fn width(data: &buffer<u64>) -> result: own u64 reads(data) {
-  return len(deref(data));
+  return len_of(deref(data));
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let buf = buffer_new(8_u64, 1_u64);
   region {
     let lo = width(data: &buf);
@@ -563,15 +563,22 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 /// The same hazard through a subscript rather than a whole binding: the
-/// element read is rooted at the buffer the first call writes through.
+/// element read is rooted at the storage the first call writes through.
+///
+/// The read is the earlier of the two statements. It used to be the later one,
+/// and under [CALL-5] a `&uniq buffer<u64>` destination selects no transport,
+/// so the write costs the caller the length the read's own [OP-4] bound needs —
+/// a question about the fact state, not about the permission judgment this
+/// fixture is evidence for. Ordering the read first keeps the footprints and
+/// the condition and puts that question outside the fixture.
 #[test]
 fn an_operand_element_read_of_a_written_buffer_is_denied_by_condition_two() {
     let source =
         br#"fn fill(dst: &uniq buffer<u64>, mark: own u64) -> result: own u64 reads(dst), writes(dst) {
-  let room = len(deref(dst));
+  let spare = len_of(deref(dst));
   let k = 0_u64;
   loop @go {
-    let done = k >= room;
+    let done = k >= spare;
     if done {
       break @go;
     }
@@ -585,11 +592,11 @@ fn take(v: own u64) -> result: own u64 pure {
   return v;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let buf = buffer_new(4_u64, 1_u64);
   region {
-    let a = fill(dst: &uniq buf, mark: 9_u64);
     let b = take(v: buf[0_u64]);
+    let a = fill(dst: &uniq buf, mark: 9_u64);
     let total = imax(a, b);
   }
   return exit_status(code: 0_u8);
@@ -603,8 +610,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     assert_eq!(
         *kind,
         ConflictKind {
-            earlier: FootprintHalf::ExclusiveLoan,
-            later: FootprintHalf::OperandRead
+            earlier: FootprintHalf::OperandRead,
+            later: FootprintHalf::ExclusiveLoan
         }
     );
 }
@@ -763,12 +770,12 @@ fn a_recursive_closure_requires_source_proof_and_then_is_eligible() {
   Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
 }
 
-fn boxed_leaf(w: own u64) -> result: own box<BoxNode> allocates(heap) {
+fn boxed_leaf(w: own u64) -> result: own box<BoxNode> pure {
   let leaf = Leaf(w: w);
   return box_new(move leaf);
 }
 
-fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own box<BoxNode> allocates(heap) {
+fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own box<BoxNode> pure {
   let branch = Branch(left: move left, right: move right, w: 0_u64);
   return box_new(move branch);
 }
@@ -795,7 +802,7 @@ fn bubble(node: &uniq box<BoxNode>) -> result: own u64 reads(node), writes(node)
   }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
@@ -821,18 +828,18 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
 }
 
-fn boxed_leaf(w: own u64) -> result: own box<BoxNode> allocates(heap) {
+fn boxed_leaf(w: own u64) -> result: own box<BoxNode> pure {
   let leaf = Leaf(w: w);
   return box_new(move leaf);
 }
 
-fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own box<BoxNode> allocates(heap) {
+fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own box<BoxNode> pure {
   let branch = Branch(left: move left, right: move right, w: 0_u64);
   return box_new(move branch);
 }
 
 fn scaled(values: own array<u8, 8>, index: own u64) -> result: own u8 pure {
-  let size = len(values);
+  let size = len_of(values);
   if index < size {
     return values[index];
   }
@@ -857,7 +864,7 @@ fn bubble(node: &uniq box<BoxNode>) -> result: own u64 reads(node), writes(node)
   }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
@@ -1446,7 +1453,7 @@ fn eat_box(node: own box<u64>) -> result: own u64 pure {
   return 9_u64;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let node = box_new(41_u64);
   region {
     let a = ignore_box(node: &node);
@@ -1508,31 +1515,40 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(*form, "a statement that forms a borrow");
 }
 
-/// A borrow-moded actual whose place the judgment cannot resolve: a `&uniq`
-/// of an own slice binding anchors nowhere `argument_place` reaches, and the
-/// loans half fails closed on it even though both rows are `pure` and project
+/// A borrow-moded actual whose place the judgment cannot resolve: a borrow of
+/// a view *parameter* anchors nowhere `argument_place` reaches, and the loans
+/// half fails closed on it even though both rows are `pure` and project
 /// nothing.
 #[test]
 fn an_unresolvable_loan_actual_denies_rather_than_dropping_the_loan() {
-    let source = br#"fn touch_uniqslice(v: &uniq slice<u8>) -> result: own u64 pure {
+    // [BLK-4] refuses the `&uniq Slice<u8>` parameter this fixture first
+    // took, so the loan actual is a shared borrow of a view binding. The view
+    // is the *parameter* rather than a local formed over named storage: a
+    // view is a claim on the storage it was formed over [VIEW-1], and the
+    // judgment now reads a local formation through to that origin, so a view
+    // this function received is the shape whose place stays unresolvable.
+    let source = br#"fn touch_slice(v: &Slice<u8>) -> result: own u64 pure {
   return 3_u64;
 }
 
-fn a_pure_uniqslice() -> result: own u64 allocates(heap) {
-  let buf = buffer_new(8_u64, 1_u8);
+fn a_pure_uniqslice(handed: own Slice<u8>) -> result: own u64 pure {
   region {
-    let v = slice_of(&buf);
-    region {
-      let a = touch_uniqslice(v: &uniq v);
-      let b = touch_uniqslice(v: &uniq v);
-      let s = a +wrap b;
-      return s;
-    }
+    let a = touch_slice(v: &handed);
+    let b = touch_slice(v: &handed);
+    let s = a +wrap b;
+    return s;
   }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
-  let p = a_pure_uniqslice();
+command fn main() -> status: own ExitStatus pure {
+  let backing = fixed_vector::<u8, 8>();
+  let p = 0_u64;
+  region {
+    let v = slice_of(&backing);
+    region {
+      set p = a_pure_uniqslice(handed: v);
+    }
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1601,7 +1617,7 @@ command fn main() -> status: own ExitStatus pure {
 /// all about a program that plainly performs two independent operations.
 #[test]
 fn a_call_in_scrutinee_position_is_judged_as_the_bound_form_is() {
-    let source = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err) {
   let bytes = buffer_new(2_u64, 65_u8);
   region 'out {
     region 'err {
@@ -1649,7 +1665,7 @@ fn a_call_in_scrutinee_position_is_judged_as_the_bound_form_is() {
 /// match written *between* two bound calls already gets.
 #[test]
 fn a_scrutinee_call_denies_against_a_later_call_it_is_read_before() {
-    let source = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err) {
   let bytes = buffer_new(2_u64, 65_u8);
   region 'out {
     region 'err {

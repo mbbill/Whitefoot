@@ -1,0 +1,21 @@
+fn wider['s: affine](left: &'s u64, right: &'s u64) -> larger: own u64 reads(left, right) {
+  doc "A region parameter written `'s: affine` declares a store region: the bound is a claim about the store `'s` names, and a bump extent is the store whose reclamation is its own region reset.";
+  let a = deref(left);
+  let b = deref(right);
+  let ordered = a >= b;
+  if ordered {
+    return a;
+  } else {
+    return b;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "PROV-6, S37: a region argument that names no store - a loan region, or a region a `region_stmt` introduced that no reserving occurrence names - has no store class and satisfies neither bound. This call passes a plain `region { }` region to `'s: affine` and is refused at the instantiation.";
+  let a = 1_u64;
+  let b = 2_u64;
+  region {
+    let top = wider(left: &a, right: &b);
+  }
+  return exit_status(code: 0_u8);
+}

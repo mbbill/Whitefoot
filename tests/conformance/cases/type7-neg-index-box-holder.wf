@@ -1,5 +1,5 @@
-fn read(holder: own box<buffer<u8>>) -> function_result: own u8 pure {
-  doc "TYPE-7: a subscript cannot implicitly read through a box holder; write deref(holder)[offset].";
+fn read(holder: own Box<FixedVector<u8, 4>>) -> function_result: own u8 pure {
+  doc "TYPE-7: a subscript cannot implicitly read through a cell holder; write deref(holder)[offset].";
   return holder[0_u64];
 }
 

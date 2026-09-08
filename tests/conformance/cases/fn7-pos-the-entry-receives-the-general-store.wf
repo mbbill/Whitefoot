@@ -1,0 +1,18 @@
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "S22, FN-7: the entry's sixth standard-input row supplies the one general store as a value. The take names that provider in all three effect categories, the run is filled and read at a logical offset, and its release frees exactly what the store handed out on the return edge.";
+  region {
+    match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let one = place_back(vector: move fresh, value: 7_u8);
+        let two = place_back(vector: move one, value: 9_u8);
+        let first = two[0_u64];
+        let second = two[1_u64];
+        let total = first +wrap second;
+        return exit_status(code: total);
+      }
+    }
+  }
+}

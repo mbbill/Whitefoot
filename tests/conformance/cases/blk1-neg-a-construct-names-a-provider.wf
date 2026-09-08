@@ -1,0 +1,5 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "Constructs a provider by naming its nominal.";
+  let made = Heap(cursor: 0_u64);
+  return exit_status(code: 0_u8);
+}

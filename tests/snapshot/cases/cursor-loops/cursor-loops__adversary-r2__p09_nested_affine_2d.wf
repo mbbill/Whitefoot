@@ -1,6 +1,14 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: nested counted loops over a 3x4 flat array with affine index row*4+col stay in bounds";
-  let grid = array_new::<u64, 12>(0_u64);
+  let grid = fixed_vector::<u64, 12>();
+  for (
+    at_grid in 0_u64..12_u64,
+    invariant grown_grid: len_of(grid) >= at_grid,
+    invariant spare_grid: room_of(grid) + at_grid >= 12_u64,
+    invariant flat_grid: head_of(grid) <= 0_u64
+  ) {
+    set grid = place_back(vector: move grid, value: 0_u64);
+  }
   let total = 0_u64;
   for (
     row in 0_u64..3_u64,

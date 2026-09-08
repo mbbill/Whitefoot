@@ -22,8 +22,8 @@ fn consume(owner: own Owner) -> result: own u8 pure {
       return 0_u8;
     }
     Full(value: pair) => {
-      let room = len(pair.left);
-      let ok = 0_u64 < room;
+      let spare = len_of(pair.left);
+      let ok = 0_u64 < spare;
       let byte = if ok {
         give pair.left[0_u64];
       } else {
@@ -34,7 +34,7 @@ fn consume(owner: own Owner) -> result: own u8 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let abandoned_left = buffer_new(1_u64, 7_u8);
   let abandoned_right = buffer_new(1_u64, 9_u8);
   let abandoned_pair = PairBuffers(left: move abandoned_left, right: move abandoned_right);
@@ -86,32 +86,54 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     assert!(output.stderr.is_empty());
 }
 
+/// The same transfer, error and abandonment program over an inline run.
+///
+/// The case was migrated from `Result<buffer<u8>, DecodeError>` to
+/// `Result<FixedVector<u8, n>, DecodeError>`, and the payload's storage moved
+/// with it: an inline run lives in its owner, so the enum owns no
+/// heap resource, needs no drop helper, and abandoning one on any arm frees
+/// nothing. That is the fact under test here, and it is checked directly
+/// rather than through a helper that no longer exists;
+/// `source_enum_cleanup_switches_on_the_active_variant` above keeps the drop-helper
+/// coverage for a payload that does own storage. `transform` is a const
+/// generic over the run's length, so the three call sites reach the backend
+/// as three monomorphized instances.
 #[test]
-fn result_buffer_transfer_error_and_abandonment_execute() {
+fn result_run_transfer_error_and_abandonment_execute() {
     let llvm = compile(include_bytes!(
         "../../../../tests/conformance/cases/x-result-buffer-transform-run.wf"
     ));
-    let helper_start = llvm
-        .find("define private void @wf.drop.")
-        .expect("Result<buffer<u8>, DecodeError> must have a drop helper");
-    let helper_end = llvm[helper_start..]
-        .find("\n}\n\n")
-        .map(|offset| helper_start + offset + 3)
-        .expect("drop helper must close");
-    let helper = &llvm[helper_start..helper_end];
-    assert_eq!(llvm.matches("define private void @wf.drop.").count(), 1);
-    assert!(helper.contains("switch i32 %tag"));
-    assert_eq!(helper.matches("call void @free").count(), 1);
-
-    let abandon = emitted_function(&llvm, "abandon");
-    assert_eq!(abandon.matches("call void @wf.drop.").count(), 1);
-    let transform = emitted_function(&llvm, "transform");
-    assert_eq!(transform.matches("call void @free").count(), 3);
+    assert!(
+        !llvm.contains("define private void @wf.drop."),
+        "a Result over an inline run owns no storage and needs no drop helper"
+    );
+    assert!(!llvm.contains("call ptr @malloc"));
+    assert!(!llvm.contains("call void @free"));
+    let transforms: Vec<_> = llvm
+        .lines()
+        .filter(|line| {
+            line.starts_with("define internal ") && line.contains("@wf_transform$instance$")
+        })
+        .collect();
+    assert_eq!(
+        transforms.len(),
+        3,
+        "one transform instance per written run length"
+    );
+    assert!(
+        transforms.iter().all(|header| {
+            header.starts_with("define internal void ")
+                && header.contains("(ptr %wf.result, ptr %wf.arg.")
+        }),
+        "each transform takes inline input storage and a caller-owned outcome destination"
+    );
+    let abandon = emitted_function(&llvm, "abandon$instance$5");
+    assert!(!abandon.contains("call void @wf.drop."));
 
     let output = compile_and_run(&llvm);
     assert!(
         output.status.success(),
-        "Result buffer program failed: {}",
+        "Result run program failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(output.stdout.is_empty());
@@ -130,8 +152,8 @@ fn consume(value: own Option<buffer<u8>>) -> result: own u8 reads(value) {
       return 0_u8;
     }
     Some(value: bytes) => {
-      let room = len(bytes);
-      let ok = 0_u64 < room;
+      let spare = len_of(bytes);
+      let ok = 0_u64 < spare;
       let byte = if ok {
         give bytes[0_u64];
       } else {
@@ -142,7 +164,7 @@ fn consume(value: own Option<buffer<u8>>) -> result: own u8 reads(value) {
   }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let abandoned_bytes = buffer_new(1_u64, 5_u8);
   let abandoned_some = Some<buffer<u8>>(value: move abandoned_bytes);
   abandon(value: move abandoned_some);

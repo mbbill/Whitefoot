@@ -49,7 +49,7 @@ struct NormalizedStatePath {
 struct NormalizedEffects {
     reads: Vec<NormalizedStatePath>,
     writes: Vec<NormalizedStatePath>,
-    allocates_heap: bool,
+    allocates: Vec<NormalizedStatePath>,
     allocates_arenas: Vec<usize>,
 }
 
@@ -542,6 +542,7 @@ fn checked_effects(effects: &EffectSet) -> CheckedEffects {
     CheckedEffects {
         reads: effects.reads.clone(),
         writes: effects.writes.clone(),
+        allocates: effects.allocates.clone(),
         allocates_heap: effects.allocates_heap,
         allocates_arenas: effects.allocates_arenas.clone(),
     }
@@ -613,12 +614,15 @@ fn alpha_equivalent_type(
             CheckedType::Slice {
                 region: left_region,
                 element: left_element,
+                strength: left_strength,
             },
             CheckedType::Slice {
                 region: right_region,
                 element: right_element,
+                strength: right_strength,
             },
         ) => Ok(left_element == right_element
+            && left_strength == right_strength
             && region_ordinal(left_region, left_regions)?
                 == region_ordinal(right_region, right_regions)?),
         _ => Ok(left == right),
@@ -659,7 +663,9 @@ fn normalize_effects(
     Ok(NormalizedEffects {
         reads: normalize_state_paths(&effects.reads, parameters)?,
         writes: normalize_state_paths(&effects.writes, parameters)?,
-        allocates_heap: effects.allocates_heap,
+        // The ambient heap has no `effect_path` and therefore no written
+        // entry, so it is not part of a row's identity [EFF-1, S23].
+        allocates: normalize_state_paths(&effects.allocates, parameters)?,
         allocates_arenas: normalize_regions(&effects.allocates_arenas, regions)?,
     })
 }
@@ -735,7 +741,7 @@ fn discharge_domain(
         || second_parameter.ty != subject
         || function.result_mode != CheckedMode::Own
         || function.result != subject
-        || function.declared_allocates_heap
+        || function.reaches_ambient_heap
         || !function.requirements.is_empty()
     {
         return None;

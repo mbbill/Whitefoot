@@ -1,0 +1,55 @@
+struct Holder['s] {
+  run: Vector<'s, u8>;
+}
+
+fn grow['s](old: own Vector<'s, u8>) -> bigger: own Vector<'s, u8> reads(old) {
+  doc "Consumes the run it is handed and hands one back.";
+  let seen = len_of(old);
+  return move old;
+}
+
+fn bump(cell: own Box<u64>) -> back: own Box<u64> pure {
+  doc "Consumes the cell it is handed and hands one back.";
+  return move cell;
+}
+
+fn refill(out: &uniq Box<u64>) -> done: own unit reads(out), writes(out) {
+  doc "The commit at a deref: the read-out is admitted on [SET-2]'s exchange ground.";
+  set deref(out) = bump(cell: move deref(out));
+  return unit;
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "LIV-2: probe q9's statement at each of the three place shapes a commit reinitializes. The right-hand side reads the target's previous value out, so the target is dead at the commit and every one of the three is admitted where [STOR-1] refused all three before.";
+  region {
+    match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh_bare) => {
+        let bare = move fresh_bare;
+        set bare = grow(old: move bare);
+        match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
+          None() => {
+            return exit_status(code: 70_u8);
+          }
+          Some(value: run) => {
+            let holder = Holder(run: move run);
+            set holder.run = grow(old: move holder.run);
+            match heap_box(store: &uniq heap, value: 5_u64) {
+              Err(error: refused) => {
+                return exit_status(code: 71_u8);
+              }
+              Ok(value: target) => {
+                region {
+                  let done = refill(out: &uniq target);
+                }
+                return exit_status(code: 0_u8);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

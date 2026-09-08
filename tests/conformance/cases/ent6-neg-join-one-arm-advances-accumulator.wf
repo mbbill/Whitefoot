@@ -1,4 +1,4 @@
-const values: array<u8, 4> =[1_u8, 2_u8, 3_u8, 4_u8];
+const values: FixedVector<u8, 4> =[1_u8, 2_u8, 3_u8, 4_u8];
 
 command fn main() -> status: own ExitStatus pure {
   doc "One arm of the body join advances the accumulator and the other leaves it, so the two incoming value images are sum_h + wide and sum_h and share no nonconstant coefficient vector. [ENT-6] therefore gives sum one fresh full-type atom at the join, [ENT-5]'s all-predecessor intersection keeps no bound the guarded arm alone established, and [INV-1] cannot re-establish the header target over that atom. The rejection is mandatory even though the relation is true on every execution.";

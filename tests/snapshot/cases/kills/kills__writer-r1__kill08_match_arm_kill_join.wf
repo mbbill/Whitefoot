@@ -3,7 +3,9 @@ enum Mode {
   Slow();
 }
 
-fn step_size(mode: own Mode, table: own array<u16, 4>) -> result: own u16 pure {
+fn step_size(mode: own Mode, table: own FixedVector<u16, 4>) -> result: own u16 reads(table) contract {
+  requires len_of(table) >= 4_u64;
+} {
   doc "expect ACCEPT: pos is set to a different value in each arm, killing whatever fact reached the match from before it; each arm independently re-establishes pos's own bound before the join reads table[pos].";
   let pos = 0_u64;
   match mode {
@@ -23,7 +25,11 @@ fn step_size(mode: own Mode, table: own array<u16, 4>) -> result: own u16 pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let first_table = array_new::<u16, 4>(0_u16);
+  let first_table = fixed_vector::<u16, 4>();
+  set first_table = place_back(vector: move first_table, value: 0_u16);
+  set first_table = place_back(vector: move first_table, value: 0_u16);
+  set first_table = place_back(vector: move first_table, value: 0_u16);
+  set first_table = place_back(vector: move first_table, value: 0_u16);
   set first_table[1_u64] = 5_u16;
   set first_table[3_u64] = 9_u16;
   let fast = Fast();
@@ -32,7 +38,11 @@ command fn main() -> status: own ExitStatus pure {
   } else {
     return exit_status(code: 1_u8);
   }
-  let second_table = array_new::<u16, 4>(0_u16);
+  let second_table = fixed_vector::<u16, 4>();
+  set second_table = place_back(vector: move second_table, value: 0_u16);
+  set second_table = place_back(vector: move second_table, value: 0_u16);
+  set second_table = place_back(vector: move second_table, value: 0_u16);
+  set second_table = place_back(vector: move second_table, value: 0_u16);
   set second_table[1_u64] = 5_u16;
   set second_table[3_u64] = 9_u16;
   let slow = Slow();

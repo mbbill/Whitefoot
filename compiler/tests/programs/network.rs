@@ -122,9 +122,13 @@ fn ipv4_checksum_uses_one_slice_consumer_for_static_and_runtime_storage() {
     assert!(checksum.contains("getelementptr inbounds i8"));
     assert!(!checksum.contains("call void @free"));
     assert_eq!(main.matches("call i16 @wf_ipv4_checksum").count(), 2);
-    // Each explicit validation-failure return owns its ordinary cleanup path;
-    // no caller-side copied fact can bypass that cleanup.
-    assert!(main.matches("call void @free").count() >= 1);
+    // B7c4b-1: the runtime copy of the header is a run taken from one bump
+    // extent reserved in this activation's frame, so the program reaches the
+    // host allocator on no path at all and every validation-failure return
+    // leaves the extent with the frame. The free this assertion used to count
+    // was the heap buffer's, and there is no heap buffer any more.
+    assert!(!main.contains("call void @free"));
+    assert!(!llvm.contains("call ptr @malloc"));
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());
@@ -300,10 +304,25 @@ fn the_fanout_loop_states_its_permission_verdict() {
     // status it accumulates is written by no associative operation; the staged
     // permission admits it, because every edge that leaves the loop is in the
     // prologue, the factory is touched by the prologue alone, the listener is
-    // only ever borrowed shared, the status is written by the remainder alone,
-    // and the scratch is the iteration's own [PAR-3]. The disposition table is
-    // pinned here because those four dispositions are what a server loop's
-    // shape has to satisfy, and the ledger is where a writer reads them.
+    // only ever borrowed shared, and the status is written by the remainder
+    // alone [PAR-3]. The disposition table is pinned here because those
+    // dispositions are what a server loop's shape has to satisfy, and the
+    // ledger is where a writer reads them.
+    //
+    // A fourth disposition stood here until the container retirement: the
+    // per-connection scratch was an iteration-own `buffer_new` run, classified
+    // `replicated`, handed to `serve_one` as `&uniq`. No run replaces it in
+    // this position. A borrow of a run is the address of the run's own storage
+    // [OWN-2], and an address the loop body hands out pins that storage to one
+    // frame slot, which the staged lowering refuses because four in-flight
+    // iterations cannot share it; and an owned run parameter occurring at one
+    // position of a declaration may carry no region name, therefore no affine
+    // bound [FORM-8], so its store region is the fail-closed general one and
+    // the callee may not release it [PROV-6]. `serve_one` therefore reserves
+    // its own extent, and what the ledger reports here is the three
+    // dispositions that remain. The `replicated` classification itself is
+    // still covered, over a run taken from a store, by the conformance case
+    // `par3-pos-a-per-iteration-run-from-the-store-is-iteration-own`.
     //
     // What the permission grants, the lowering takes: the staged point is a
     // may-suspend user call, `serve_one`, and in a `--par` build the backend
@@ -330,14 +349,13 @@ fn the_fanout_loop_states_its_permission_verdict() {
         .find(|line| line.starts_with("PAR stage") && line.contains("serve_one(listener: &bound"))
         .expect("the fixed-trip accept loop states a staging verdict");
     assert!(
-        staging.contains("permitted") && staging.contains("4 places classified"),
+        staging.contains("permitted") && staging.contains("3 places classified"),
         "the accept loop must be staged at its accept, got {staging}"
     );
     for (disposition, place) in [
         ("serialized-P", "&uniq handles"),
         ("read-only", "&bound"),
         ("serialized-E", "set outcome = reported;"),
-        ("replicated", "let scratch = buffer_new(256_u64, 0_u8);"),
     ] {
         assert!(
             ledger.iter().any(|line| {

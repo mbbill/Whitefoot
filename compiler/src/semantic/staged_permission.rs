@@ -172,7 +172,8 @@ use super::model::{
 };
 use super::permission::{
     Access, Footprint, LoanStrength, Program, call_projection, collect_consumed_places,
-    collect_operand_reads, set_target_place,
+    collect_operand_reads, kernel_footprint, kernel_projection, kernel_release_footprint,
+    set_target_place,
 };
 use super::places::{PlaceMap, PlaceRoot, ResolvedPlace};
 use crate::NodePath;
@@ -442,12 +443,13 @@ impl StagedDenial {
                 "give the per-iteration storage an element type whose copy class this judgment resolves: a primitive, a tag-only enum, or a buffer or array of either"
             }
             Self::BodyForm { admits, .. } => admits,
-            // The fail-closed resolution limit, not a hazard: the sibling test
-            // proves the same length read taken from the buffer itself is
-            // granted, so the admitted form is to name the storage rather than
-            // a binding standing in front of it.
+            // The fail-closed resolution limit, not a hazard. A view is a
+            // claim on the storage it was formed over [VIEW-1], and this
+            // judgment reads a bound view through to that origin wherever the
+            // formation names a place it can resolve; what it cannot resolve
+            // is a view whose origin is nowhere in this function's text.
             Self::Unresolved { .. } => {
-                "name the storage the call reaches directly rather than through a binding whose extent this judgment does not resolve: `len(&'v table)` resolves where the same length taken through a `slice_of` binding does not"
+                "form the view over storage this function names and hand that binding on: `slice_of(&table)` bound to a local reaches `table` at every use of it, while a view a callee handed back and a view this function received as a parameter each name storage with no place here"
             }
         }
     }
@@ -599,13 +601,16 @@ fn first_may_suspend_call(
 fn statement_expressions(statement: &CheckedStatement) -> Vec<&CheckedExpression> {
     match statement {
         CheckedStatement::Let { value, .. }
+        | CheckedStatement::DestructuringLet { value, .. }
         | CheckedStatement::Evaluate(value)
+        | CheckedStatement::Dispose { value, .. }
         | CheckedStatement::DropExpression { value, .. }
         | CheckedStatement::Return { value, .. }
         | CheckedStatement::Give { value, .. } => vec![value],
         CheckedStatement::Set { value, .. } | CheckedStatement::Replace { value, .. } => {
             vec![value]
         }
+        CheckedStatement::SetList { values, .. } => values.expressions().iter().collect(),
         CheckedStatement::PropagateLet { scrutinee, .. }
         | CheckedStatement::Match { scrutinee, .. }
         | CheckedStatement::ValueMatchLet { scrutinee, .. } => vec![scrutinee],
@@ -821,9 +826,12 @@ impl<'check> FlowBuilder<'check> {
             }
             CheckedStatement::Proof(_)
             | CheckedStatement::Let { .. }
+            | CheckedStatement::DestructuringLet { .. }
             | CheckedStatement::Set { .. }
+            | CheckedStatement::SetList { .. }
             | CheckedStatement::Replace { .. }
             | CheckedStatement::Evaluate(_)
+            | CheckedStatement::Dispose { .. }
             | CheckedStatement::DropExpression { .. } => {
                 let node = self.new_node(statement);
                 self.set(node, vec![next], None);
@@ -1125,11 +1133,34 @@ impl<'check> StagedSurvey<'check, '_> {
                 let mut footprint = Footprint::default();
                 set_target_place(self.places, target, &citation, &mut footprint, false);
                 self.record(&footprint, segment, false);
+                self.construction(value, &citation);
                 self.value(value, &citation, segment);
             }
+            // [CALL-4] a binder or target list defines more than one place in
+            // one statement; the staged window describes one, so both forms
+            // deny here exactly as an expression statement does.
+            CheckedStatement::DestructuringLet { .. } => self.refuse_form(
+                "a destructuring `let`",
+                "bind the call's result ordinals in separate statements, so each footprint is read through a value initializer this judgment resolves",
+            ),
+            CheckedStatement::SetList { .. } => self.refuse_form(
+                "a `set` target list",
+                "commit the call's result ordinals in separate statements, so each footprint is read through a target this judgment resolves",
+            ),
+            // [PROV-6] a release walk writes every capability-released leaf
+            // its value reaches, which the staged window does not describe.
+            CheckedStatement::Dispose { .. } => self.refuse_form(
+                "a `dispose` statement",
+                "release the value at its scope exit, so no written statement performs a walk this judgment must describe",
+            ),
+            // A construction is a construction wherever the body writes it:
+            // a refusing acquisition [BLK-2] is matched rather than bound, so
+            // a judgment that read only `let` initializers would print no row
+            // for the very rows whose refusal is a value.
             CheckedStatement::PropagateLet { scrutinee, .. }
             | CheckedStatement::Match { scrutinee, .. }
             | CheckedStatement::ValueMatchLet { scrutinee, .. } => {
+                self.construction(scrutinee, &citation);
                 self.value(scrutinee, &citation, segment);
             }
             CheckedStatement::Return { value, .. } | CheckedStatement::Give { value, .. } => {
@@ -1169,7 +1200,10 @@ impl<'check> StagedSurvey<'check, '_> {
         // where no loan is needed: a written borrow's shared-or-uniq mode is
         // erased from the checked tree, so the [OWN-5] loan it would hold
         // cannot be stated, and admitting one unstated would widen permission.
-        if call_projection(value).is_none() {
+        // A [BLK-0] row's arguments are atoms of the same shape [GRAM-11],
+        // and its own record states the loans its `&uniq` provider operand
+        // holds, so a kernel call hides no bare borrow either.
+        if call_projection(value).is_none() && kernel_projection(value).is_none() {
             let introduced = &self.introduced;
             let admitted =
                 borrows_only_iteration_own(self.places, value, &|place: &ResolvedPlace| {
@@ -1209,6 +1243,28 @@ impl<'check> StagedSurvey<'check, '_> {
         {
             let footprint = self.program.footprint(self.places, &projection);
             self.record(&footprint, segment, may_suspend);
+        }
+        // [BLK-0] a kernel row never suspends: no row of the inventory
+        // declares a `may-suspend` action, and the take an implementation
+        // performs is not one.
+        if let Some(projection) = kernel_projection(expression) {
+            let footprint = kernel_footprint(self.places, &projection);
+            self.record(&footprint, segment, false);
+            // The give-back, which is not a statement and which no walk over
+            // the body reaches. A run or a cell the iteration took from a
+            // **general** store is released to that store when the value's
+            // scope exits [PROV-6, STOR-1], and every scope of the body exits
+            // on the iteration's own edge, which is after the cut. So the
+            // release is recorded in the remainder whatever segment the take
+            // is in: a take in the prologue then puts its store on both sides
+            // and condition 5 denies, which is the honest answer, because two
+            // overlapped iterations would give storage back to one store at
+            // once. A bump extent's release is empty [BLK-2] and records
+            // nothing, which is what leaves the extent's own take serialized
+            // in the prologue alone.
+            if let Some(release) = kernel_release_footprint(self.places, &projection) {
+                self.record(&release, Segment::Remainder, false);
+            }
         }
         for child in super::model::expression_children(expression) {
             self.calls(child, segment);
@@ -1311,7 +1367,7 @@ impl<'check> StagedSurvey<'check, '_> {
     /// the fail-closed answer for an unresolved type is that it cannot be
     /// replicated.
     fn is_replicable_shape(&self, place: &ResolvedPlace) -> bool {
-        if !place.fields.is_empty() {
+        if !place.path.is_empty() {
             return false;
         }
         let PlaceRoot::Binding(binding) = place.root else {
@@ -1328,11 +1384,18 @@ impl<'check> StagedSurvey<'check, '_> {
             CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
                 is_copy_element(element)
             }
+            // A run carries a window descriptor whose replication this
+            // judgment does not model, and a provider is one store; both are
+            // fail-closed here [BLK-1, PROV-1].
             CheckedType::Generic(_)
             | CheckedType::GenericInt(_)
             | CheckedType::GenericFloat(_)
             | CheckedType::Nominal(_)
-            | CheckedType::Slice { .. } => false,
+            | CheckedType::Slice { .. }
+            | CheckedType::FixedVector { .. }
+            | CheckedType::Vector { .. }
+            | CheckedType::Heap { .. }
+            | CheckedType::Extent { .. } => false,
         }
     }
 
@@ -1365,6 +1428,32 @@ impl<'check> StagedSurvey<'check, '_> {
             CheckedExpression::BufferVacant { element, .. } => {
                 Some(is_copy_element(CheckedFlatElement::Nominal(*element)))
             }
+            // [BLK-2] a run or a cell the iteration acquires from a store is
+            // iteration-own storage exactly as a filled buffer was: the row
+            // hands back a fresh value the statement binds, and what an
+            // implementation may reuse across iterations is decided by that
+            // storage's element type and by nothing else. The store the run
+            // came from is a different place, and the `&uniq` provider operand
+            // this same call takes is what puts it in the table.
+            CheckedExpression::KernelCall { row, instance, .. } => match row {
+                crate::KernelRow::FixedVector
+                | crate::KernelRow::ArenaVector
+                | crate::KernelRow::ArenaVectorProved
+                | crate::KernelRow::HeapVector
+                | crate::KernelRow::ArenaBox
+                | crate::KernelRow::HeapBox => Some(is_copy_type(instance.element)),
+                // A boundary row transforms a run it was handed and forms no
+                // storage [BLK-3]; a reservation is a provider and carries no
+                // element type at all [BLK-2]; the two view rows form a
+                // descriptor over storage they do not own [VIEW-1].
+                crate::KernelRow::ArenaFrame
+                | crate::KernelRow::PlaceBack
+                | crate::KernelRow::PlaceFront
+                | crate::KernelRow::TakeBack
+                | crate::KernelRow::TakeFront
+                | crate::KernelRow::SliceOf
+                | crate::KernelRow::MutSliceOf => return,
+            },
             _ => return,
         };
         self.replicated.push(Replicated {
@@ -1634,6 +1723,25 @@ fn is_iteration_own(introduced: &[BindingId], place: &ResolvedPlace) -> bool {
     }
 }
 
+/// [OWN-1]'s copy classification over one complete element type.
+///
+/// The flat classification below is the same judgment over the flat domain;
+/// this one answers for a run's or a cell's element, which [BLK-1] admits at
+/// any nameable type. A nominal, a run, a view, a provider and an unbounded
+/// type parameter each read as not copy, which is the conservative half: it
+/// costs a construction the reuse freedom and costs the loop nothing.
+const fn is_copy_type(ty: CheckedType) -> bool {
+    matches!(
+        ty,
+        CheckedType::Unit
+            | CheckedType::Bool
+            | CheckedType::Integer(_)
+            | CheckedType::Float(_)
+            | CheckedType::GenericInt(_)
+            | CheckedType::GenericFloat(_)
+    )
+}
+
 /// [OWN-1]'s copy classification over one flat element domain: primitives and
 /// tag-only enums copy; an affine aggregate element does not.
 const fn is_copy_element(element: CheckedFlatElement) -> bool {
@@ -1645,7 +1753,10 @@ const fn is_copy_element(element: CheckedFlatElement) -> bool {
         | CheckedFlatElement::GenericInt(_)
         | CheckedFlatElement::GenericFloat(_)
         | CheckedFlatElement::TagOnlyNominal(_) => true,
-        CheckedFlatElement::Nominal(_) => false,
+        // An unbounded type parameter has no copy classification of its own;
+        // the concrete instance [FN-2] expands has one, and this arm is the
+        // conservative reading the symbolic pass takes.
+        CheckedFlatElement::Nominal(_) | CheckedFlatElement::Generic(_) => false,
     }
 }
 
@@ -1656,8 +1767,10 @@ const fn is_copy_element(element: CheckedFlatElement) -> bool {
 fn statement_citation(statement: &CheckedStatement) -> Option<NodePath> {
     match statement {
         CheckedStatement::Let { node_path, .. }
+        | CheckedStatement::DestructuringLet { node_path, .. }
         | CheckedStatement::PropagateLet { node_path, .. }
         | CheckedStatement::Set { node_path, .. }
+        | CheckedStatement::SetList { node_path, .. }
         | CheckedStatement::Replace { node_path, .. }
         | CheckedStatement::Return { node_path, .. }
         | CheckedStatement::Give { node_path, .. }
@@ -1665,6 +1778,7 @@ fn statement_citation(statement: &CheckedStatement) -> Option<NodePath> {
         | CheckedStatement::CountedRange { node_path, .. } => Some(node_path.clone()),
         CheckedStatement::Proof(proof) => Some(proof.node_path.clone()),
         CheckedStatement::Match { scrutinee, .. } => expression_citation(scrutinee),
+        CheckedStatement::Dispose { node_path, .. } => Some(node_path.clone()),
         CheckedStatement::Evaluate(value) | CheckedStatement::DropExpression { value, .. } => {
             expression_citation(value)
         }
@@ -1677,9 +1791,9 @@ fn statement_citation(statement: &CheckedStatement) -> Option<NodePath> {
 /// The first source node one expression tree carries, in evaluation order.
 fn expression_citation(expression: &CheckedExpression) -> Option<NodePath> {
     let own = match expression {
-        CheckedExpression::UserCall { call, .. } | CheckedExpression::SystemCall { call, .. } => {
-            Some(call.clone())
-        }
+        CheckedExpression::UserCall { call, .. }
+        | CheckedExpression::SystemCall { call, .. }
+        | CheckedExpression::KernelCall { call, .. } => Some(call.clone()),
         CheckedExpression::Binding { carrier, .. }
         | CheckedExpression::Project { carrier, .. }
         | CheckedExpression::IntegerOperation { carrier, .. }

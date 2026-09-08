@@ -124,11 +124,19 @@ command fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     // [GRAM-2] and [GRAM-9]: the two repairs a grammar position fixes.
     // -------------------------------------------------------------------
+    // The section-order repair is pinned by a requirement written after a
+    // postcondition rather than by a definition written after a requirement.
+    // Both are the same [GRAM-2] mistake and the sentence names both, but the
+    // frontier a `define` leaves after the [MSR-5] clause production is one
+    // whose expectation list carries IDENT, and [FORM-3]'s reserved-word row
+    // owns it before [GRAM-2]'s production repair is reached. That selection
+    // is recorded for the owner in the batch report; the sentence itself
+    // stays pinned here.
     Probe {
-        name: "define-written-after-requires.wf",
+        name: "requires-written-after-ensures.wf",
         source: br#"fn count(end: own u64) -> lines: own u64 pure contract {
+  ensures lines <= 8_u64;
   requires end <= 8_u64;
-  define room = 8_u64;
 } {
   return 0_u64;
 }
@@ -165,7 +173,7 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "forbidden-atom-in-a-contract-block.wf",
         source: br#"fn count(data: &buffer<u8>, start: own u64, end: own u64) -> lines: own u64 reads(data) contract {
-  requires buffer_fits::<u8>(len(deref(data)));
+  requires buffer_fits::<u8>(len_of(deref(data)));
 } {
   return 0_u64;
 }
@@ -185,7 +193,7 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "uniq-state-measure-in-an-ensures.wf",
         source: br#"fn record(destination: &uniq buffer<u8>, value: own u8) -> written: own u64 reads(destination), writes(destination) contract {
-  ensures written <= len(deref(destination));
+  ensures written <= len_of(deref(destination));
 } {
   return 0_u64;
 }
@@ -203,8 +211,8 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "contradictory-published-relations.wf",
         source: br#"fn measure(taken: own buffer<u8>) -> measured: own u64 reads(taken) contract {
-  ensures measured <= len(taken);
-  ensures len(taken) < measured;
+  ensures measured <= len_of(taken);
+  ensures len_of(taken) < measured;
 } {
   return 0_u64;
 }
@@ -296,10 +304,10 @@ command fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "system-range-residual.wf",
-        source: br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+        source: br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let header = buffer_new(4_u64, 65_u8);
   let payload = buffer_new(9_u64, 66_u8);
-  let wide = len(payload);
+  let wide = len_of(payload);
   region {
     let sent = write_once(output: &uniq out, source: &header, start: 0_u64, end: wide);
   }
@@ -307,27 +315,27 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         rule: "SYS-8",
-        sentences: &[r#"residual: "wide <= len(header)""#],
+        sentences: &[r#"residual: "wide <= len_of(header)""#],
     },
     Probe {
         name: "bounds-residual.wf",
-        source: br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        source: br#"command fn main() -> status: own ExitStatus pure {
   let table = buffer_new(4_u64, 0_u8);
   let other = buffer_new(9_u64, 0_u8);
-  let pick = len(other);
+  let pick = len_of(other);
   let one = table[pick];
   return exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-4",
-        sentences: &[r#"residual: "pick < len(table)""#],
+        sentences: &[r#"residual: "pick < len_of(table)""#],
     },
     // -------------------------------------------------------------------
     // [SYS-2] and [FN-2]: written type and region arguments.
     // -------------------------------------------------------------------
     Probe {
         name: "system-argument-does-not-name-a-region.wf",
-        source: br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+        source: br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let payload = buffer_new(4_u64, 65_u8);
   region {
     let sent = write_once::<ExitStatus>(output: &uniq out, source: &payload, start: 0_u64, end: 4_u64);
@@ -367,7 +375,7 @@ command fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "construct-without-its-type-arguments.wf",
-        source: br#"struct Pair<T> {
+        source: br#"struct Pair<T: affine> {
   left: T;
   right: T;
 }
@@ -384,7 +392,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "construct-with-too-many-type-arguments.wf",
-        source: br#"struct Pair<T> {
+        source: br#"struct Pair<T: affine> {
   left: T;
   right: T;
 }
@@ -401,7 +409,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "const-written-in-a-type-parameter-position.wf",
-        source: br#"struct Pair<T> {
+        source: br#"struct Pair<T: affine> {
   left: T;
   right: T;
 }
@@ -609,7 +617,7 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "writes-through-a-shared-borrow.wf",
         source: br#"fn touch(data: &buffer<u8>) -> out: own u64 writes(data) {
-  return len(deref(data));
+  return len_of(deref(data));
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -674,7 +682,7 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "declared-row-is-narrower-than-the-body.wf",
         source: br#"fn touch(data: &buffer<u8>) -> out: own u64 pure {
-  return len(deref(data));
+  return len_of(deref(data));
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -691,7 +699,7 @@ command fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "buffer-length-is-not-a-u64.wf",
-        source: br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        source: br#"command fn main() -> status: own ExitStatus pure {
   let flag = 1_u64 > 0_u64;
   let store = buffer_new(flag, 0_u8);
   return exit_status(code: 0_u8);
@@ -701,8 +709,10 @@ command fn main() -> status: own ExitStatus pure {
         sentences: &[r#"TypeMismatch { expected: "own u64", found: "own Bool" }"#],
     },
     Probe {
-        name: "subscript-is-not-the-last-suffix.wf",
-        source: br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        // Field suffixes after indices are supported; this scalar element
+        // still has no fields. Pin that type rule, not the retired path limit.
+        name: "scalar-buffer-element-has-no-fields.wf",
+        source: br#"command fn main() -> status: own ExitStatus pure {
   let store = buffer_new(4_u64, 0_u8);
   let one = store[0_u64].value;
   return exit_status(code: 0_u8);
@@ -710,14 +720,14 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            r#"TypeMismatch { expected: "a subscript as the last suffix of the place", found: "a subscript followed by another suffix" }"#,
+            r#"TypeMismatch { expected: "a source struct, whose declared field this suffix selects", found: "u8" }"#,
         ],
     },
     Probe {
         name: "indexed-operand-is-a-move.wf",
-        source: br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        source: br#"command fn main() -> status: own ExitStatus pure {
   let store = buffer_new(4_u64, 0_u8);
-  let n = len(move store);
+  let n = len_of(move store);
   return exit_status(code: 0_u8);
 }
 "#,
@@ -729,7 +739,7 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "indexed-operand-is-not-a-place.wf",
         source: br#"command fn main() -> status: own ExitStatus pure {
-  let n = len(1_u64);
+  let n = len_of(1_u64);
   return exit_status(code: 0_u8);
 }
 "#,
@@ -742,7 +752,7 @@ command fn main() -> status: own ExitStatus pure {
         name: "indexed-place-is-a-scalar.wf",
         source: br#"command fn main() -> status: own ExitStatus pure {
   let value = 1_u64;
-  let n = len(value);
+  let n = len_of(value);
   return exit_status(code: 0_u8);
 }
 "#,
@@ -767,7 +777,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "slice-of-a-unique-borrow.wf",
-        source: br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        source: br#"command fn main() -> status: own ExitStatus pure {
   let store = buffer_new(4_u64, 0_u8);
   region {
     let view = slice_of(&uniq store);
@@ -802,10 +812,10 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "borrow-of-local-storage-under-a-parameter-region.wf",
         source: br#"fn sum(data: &buffer<u8>) -> out: own u64 reads(data) {
-  return len(deref(data));
+  return len_of(deref(data));
 }
 
-fn caller['r](anchor: &'r buffer<u8>) -> out: &'r buffer<u8> allocates(heap) {
+fn caller['r](anchor: &'r buffer<u8>) -> out: &'r buffer<u8> pure {
   let local = buffer_new(4_u64, 0_u8);
   let counted = sum(data: &'r local);
   return anchor;
@@ -880,10 +890,10 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "borrow-kind-does-not-match-the-destination.wf",
         source: br#"fn measure(data: &buffer<u8>) -> out: own u64 reads(data) {
-  return len(deref(data));
+  return len_of(deref(data));
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let store = buffer_new(4_u64, 0_u8);
   region {
     let n = measure(data: &uniq store);
@@ -896,7 +906,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     },
     Probe {
         name: "shared-borrow-where-a-unique-one-is-required.wf",
-        source: br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+        source: br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let payload = buffer_new(4_u64, 65_u8);
   region {
     let sent = write_once(output: &out, source: &payload, start: 0_u64, end: 4_u64);
@@ -918,13 +928,13 @@ fn measure(view: own u64) -> out: own u64 pure {
 command fn main() -> status: own ExitStatus pure {
   region {
     let view = slice_of(&digits);
-    let n = measure(view: move view);
+    let n = measure(view: view);
   }
   return exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
-        sentences: &[r#"TypeMismatch { expected: "u64", found: "slice<u8>" }"#],
+        sentences: &[r#"TypeMismatch { expected: "u64", found: "Slice<u8>" }"#],
     },
     // -------------------------------------------------------------------
     // [TYPE-5] and [FORM-5]: projections, replacement, and operands.
@@ -1007,7 +1017,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "generic-numeric-identity-of-a-non-numeric-type.wf",
-        source: br#"fn zeroed<T>(sample: own T) -> out: own T pure {
+        source: br#"fn zeroed<T: affine>(sample: own T) -> out: own T pure {
   return 0_T;
 }
 
@@ -1052,7 +1062,7 @@ command fn main() -> status: own ExitStatus pure {
   return x;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let bytes = buffer_new(1_u64, 3_u8);
   let raw = bytes[0_u64];
   let s = cvt::<u8, u32>(raw);
@@ -1111,7 +1121,7 @@ command fn main() -> status: own ExitStatus pure {
   return x;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let data = buffer_new(4_u64, 0_u8);
   let r = need(x: data[0_u64]);
   return exit_status(code: 0_u8);
@@ -1123,8 +1133,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     Probe {
         name: "goal-over-a-dereferenced-holder.wf",
         source: br#"fn need(names: &buffer<u8>, pos: own u64) -> out: own u64 pure contract {
-  define room = len(deref(names));
-  requires pos <= room;
+  define spare = len_of(deref(names));
+  requires pos <= spare;
 } {
   return pos;
 }
@@ -1139,7 +1149,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         rule: "FN-8",
-        sentences: &[r#"instantiated_goal: "9_u64 <= len(deref(names))""#],
+        sentences: &[r#"instantiated_goal: "9_u64 <= len_of(deref(names))""#],
     },
     // [FORM-8] one canonical region spelling: each position a region can
     // occupy, written exactly where the surrounding text does not fix it.
@@ -1288,6 +1298,185 @@ command fn main() -> status: own ExitStatus pure {
         rule: "FORM-8",
         sentences: &[
             "drop the region arguments: every system operation's region occurs at one parameter position, so this call's own arguments determine it",
+        ],
+    },
+    // -------------------------------------------------------------------
+    // [LIV-1] and [LIV-2]: join-checked liveness and the one commit.
+    // -------------------------------------------------------------------
+    Probe {
+        name: "branches-disagree-about-a-binding.wf",
+        source: br#"fn measure(cell: own buffer<u8>) -> size: own u64 reads(cell) {
+  let n = len_of(cell);
+  return n;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let c = buffer_new(4_u64, 0_u8);
+  let flag = 1_u64;
+  let taken = 0_u64;
+  if flag == 1_u64 {
+    set taken = measure(cell: move c);
+  } else {
+    set taken = 7_u64;
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "LIV-1",
+        sentences: &[
+            r#"binding: "c""#,
+            r#"live_predecessor: "the `else` branch""#,
+            r#"dead_predecessor: "the `if` branch""#,
+            "every predecessor of a join agrees on a binding\'s live-or-dead status: consume it on every predecessor, on none, or commit a value back into it before the predecessor that consumed it reaches the join",
+        ],
+    },
+    Probe {
+        name: "one-iteration-leaves-an-outer-binding-dead.wf",
+        source: br#"fn measure(cell: own buffer<u8>) -> size: own u64 reads(cell) {
+  let n = len_of(cell);
+  return n;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let c = buffer_new(4_u64, 0_u8);
+  for (i in 0_u64..2_u64) {
+    let taken = measure(cell: move c);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "OWN-11",
+        sentences: &[
+            r#"binding: "c""#,
+            "one iteration must leave every outer binding in the status the next one starts from: commit a value back into it before the backedge, or declare and consume it inside the body",
+        ],
+    },
+    Probe {
+        name: "two-targets-of-one-commit-overlap.wf",
+        source: br#"fn two_bytes(bound: own u64) -> (low: own u8, high: own u8) pure {
+  return 1_u8, 2_u8;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let v = buffer_new(4_u64, 0_u8);
+  let i = 0_u64;
+  let j = 1_u64;
+  set (v[i], v[j]) = two_bytes(bound: 4_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "LIV-2",
+        sentences: &[
+            r#"first: "v[i]""#,
+            r#"second: "v[j]""#,
+            "one commit writes pairwise non-overlapping places; write the overlapping target in a statement of its own",
+        ],
+    },
+    Probe {
+        name: "a-commit-target-carrying-a-region.wf",
+        source: br#"command fn main() -> status: own ExitStatus pure {
+  let data = buffer_new(4_u64, 0_u8);
+  let spare = buffer_new(4_u64, 0_u8);
+  region {
+    let view = mut_slice_of(&uniq data);
+    let other = mut_slice_of(&uniq spare);
+    set view = move other;
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "LIV-2",
+        sentences: &[
+            r#"target_type: "MutSlice<u8>""#,
+            "a slice\'s static origin set and an arena\'s confinement are fixed at initialization; bind a new slice or arena under a new let",
+        ],
+    },
+    // [VIEW-4]: the same commit at a *copy* view, whose target [LIV-2]'s own
+    // condition would admit with nothing consumed.
+    Probe {
+        name: "a-commit-displacing-a-live-loan.wf",
+        source: br#"command fn main() -> status: own ExitStatus pure {
+  let data = buffer_new(4_u64, 0_u8);
+  let spare = buffer_new(4_u64, 0_u8);
+  region {
+    let view = slice_of(&data);
+    let other = slice_of(&spare);
+    set view = other;
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "VIEW-4",
+        sentences: &[
+            r#"target_type: "Slice<u8>""#,
+            "bind a new view under a new `let` rather than committing at this one",
+        ],
+    },
+    // -------------------------------------------------------------------
+    // [BLK-1] and [PROV-1]: the container nominals a construct may not name
+    // and the store region an extent always writes.
+    // -------------------------------------------------------------------
+    Probe {
+        name: "a-construct-naming-a-run.wf",
+        source: br#"command fn main() -> status: own ExitStatus pure {
+  let made = FixedVector(len: 0_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "BLK-1",
+        sentences: &[
+            r#"nominal: "FixedVector""#,
+            "form the run with a formation operation",
+        ],
+    },
+    Probe {
+        name: "a-construct-naming-a-provider.wf",
+        source: br#"command fn main() -> status: own ExitStatus pure {
+  let made = Heap(cursor: 0_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "BLK-1",
+        sentences: &[
+            r#"nominal: "Heap""#,
+            "receive the provider as a parameter",
+        ],
+    },
+    Probe {
+        name: "an-extent-eliding-its-store-region.wf",
+        source: br#"fn carve(extent: own Arena<4096, 16>) -> made: own u64 pure {
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "FORM-8",
+        sentences: &[
+            "write the store region this extent names: a bump extent's region is one the caller must choose, so it is written at every position",
+        ],
+    },
+    // -------------------------------------------------------------------
+    // [INV-1]: the one `call` an affine factor admits is a measure former.
+    // -------------------------------------------------------------------
+    Probe {
+        name: "an-affine-factor-that-is-not-a-measure.wf",
+        source: br#"command fn main() -> status: own ExitStatus pure {
+  let limit = 4_u64;
+  let seen = 0_u64;
+  for (
+    at in 0_u64..4_u64,
+    invariant bounded: seen <= imin(limit, limit)
+  ) {
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "INV-1",
+        sentences: &[
+            "an affine factor calls something other than a measure former",
+            "write len_of(P), cap_of(P), room_of(P) or head_of(P) over a measured place",
         ],
     },
 ];

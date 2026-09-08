@@ -1,0 +1,16 @@
+linear struct Ticket {
+  number: u8;
+}
+
+fn consume(ticket: own Ticket) -> number: own u8 pure {
+  let Ticket(number: number) = move ticket;
+  return number;
+}
+
+fn acquire(fail: own Bool) -> result: own Result<Ticket, u8> pure {
+  if fail {
+    return Err<Ticket, u8>(error: 7_u8);
+  }
+  let ticket = Ticket(number: 2_u8);
+  return Ok<Ticket, u8>(value: move ticket);
+}
