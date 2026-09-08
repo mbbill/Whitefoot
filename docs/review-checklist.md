@@ -49,7 +49,7 @@ or self-description merely to satisfy this table.
 | Document | Content that serves its reader | Content that does not belong |
 |---|---|---|
 | Root README | Project introduction, getting started, navigation | Detailed compiler inventory, a second specification, task history |
-| `docs/constitution.md` | Purpose, chosen objectives, tradeoffs, and conditional principles with their meaning and rationale | Who requested an edit and when, agent conversations, implementation progress, maintenance instructions, a selected mechanism asserted as an inevitable consequence of the purpose |
+| `docs/constitution.md` | Complete statements of purpose, chosen objectives, obligations, prohibitions, tradeoffs, and applicable conditions that can guide a choice and test its grounds | Who requested an edit and when, agent conversations, implementation progress, maintenance instructions, abbreviated labels in place of clauses, per-clause usage checklists, a selected mechanism asserted as an inevitable consequence of the purpose |
 | `spec/kernel-spec.md` | Normative syntax, semantics, judgments, boundaries and relevant examples | Compiler convenience presented as law, task status, editing history |
 | `compiler/README.md` | Running and checking the compiler, implementation map, supported surface and known limitations | New language rules, task diaries, duplicated investigation reports |
 | `docs/patterns.md` | Writer problems, usable forms, examples, applicability and costs | Additional acceptance rules, unsupported universal performance claims, project administration |
@@ -109,7 +109,10 @@ Source: [repository hygiene](../AGENTS.md#repository-structure-and-hygiene).
 
 - [ ] **D1 — Purpose.** Each added or changed passage serves the containing
   document or code's reader. Check against the role table, including editorial
-  history and process instructions inserted into substantive documents.
+  history and process instructions inserted into substantive documents. For
+  constitutional changes, check that complete clauses state the relevant
+  obligations and conditions; a chosen prohibition is not merely a report of
+  current implementation behavior.
 - [ ] **D2 — References.** Changed references resolve to the intended file,
   heading or symbol, obey the citation boundaries, and support their claim.
   A correct relative path does not make an inappropriate citation acceptable.
@@ -189,7 +192,10 @@ inapplicable.
   objections are addressed. Distinguish deductions, observations, and
   provisional choices; a constitutional citation alone does not select a
   particular mechanism. Flag a substantive question for the implementing
-  agent rather than inventing a rationale.
+  agent rather than inventing a rationale. Unresolved proposals and assumptions
+  have not become settled decisions through wording alone. Before real project
+  adoption, internal adaptation costs have not been used to reject a language
+  change, and test/example frequency has not been passed off as real usage.
 - [ ] **R2 — Discriminating evidence.** An experiment used to select a design
   states what comparison could distinguish it, the conditions and protected
   requirements, and the actual outcome. A claim of a prediction made before

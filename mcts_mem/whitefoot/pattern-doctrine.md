@@ -1,5 +1,6 @@
-- Patterns teach usable implementations under the language's constraints; the active specification alone determines acceptance. The current W1 objective is in docs/constitution.md.
+- Patterns teach usable implementations under the language's constraints; the active specification alone determines acceptance. Performance and agent-authorship objectives are in docs/constitution.md.
 - A restriction needs an accessible alternative and evidence about its authoring and runtime costs. A gap is a finding to investigate, not authority to invent a rejection rule or force an unrelated architecture.
+- Guidance restrictions are revisable when they exclude a better-performing implementation meeting safety and development-feasibility requirements.
 - Measure representative coverage, repair effort, and scoped performance. A closed teaching catalog does not prove universal expressibility or global optimality.
 - Additional source and proof effort can be an acceptable cost of a useful restriction. Writer-trial results describe the tested model and assistance; they do not impose a permanent authoring-cost or context ceiling on the language.
 - Patterns, reusable checked components, and actionable diagnostics serve different parts of the authoring problem. Their further design and multi-agent evaluation remain research questions.

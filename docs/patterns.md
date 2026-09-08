@@ -3,14 +3,16 @@
 This is non-normative writer guidance. The active
 [specification](../spec/kernel-spec.md) defines accepted source, the
 [compiler README](../compiler/README.md) owns implementation status, and the
-[constitution](constitution.md) defines W1's performance and authoring goals.
+[constitution](constitution.md) defines performance and authoring objectives.
 
 Patterns teach usable paths through the language's restrictions. The catalog
 is not itself an acceptance rule and does not establish that every task is
 covered or every accepted program is optimal. A missing path or a slow ordinary
 implementation is a finding: identify the unmet need, the relevant compiler
 rule, and the observed cost before choosing a language, library, diagnostic,
-or teaching change. Pattern text alone cannot enforce an architecture.
+or teaching change. If a guidance restriction excludes a better-performing
+implementation that meets the safety and development-feasibility requirements,
+reconsider the restriction. Pattern text alone cannot enforce an architecture.
 
 Entries distinguish current source guidance from measurements made with older
 compilers. Read each measurement with its stated program, target, and scope;

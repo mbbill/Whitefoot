@@ -28,8 +28,9 @@ Use this method when choosing or reconsidering language behavior, a trust
 boundary, an interface or representation, an important performance claim,
 or a standing project rule. A routine fix under unchanged requirements and
 design normally needs the owning rule and a distinguishing case, without a
-new investigation or memory entry. Scale the reasoning to uncertainty and
-the cost of a wrong choice; these actions add no approval stage.
+new investigation or memory entry. Scale the reasoning to uncertainty, impact,
+the cost of a wrong choice, and reversibility; these actions add no approval
+stage.
 
 | Trigger | Action by the implementing agent | Observable result | Completion check |
 |---|---|---|---|
@@ -48,19 +49,25 @@ reasons, evidence, and replacement history. The
 connects active rules to those reasons and their direct technical sources.
 This method governs their use; the checklist checks the resulting work.
 
-**R0 — Compare against useful alternatives.** Assess major design directions
+**Compare against useful alternatives.** Assess major design directions
 against effective existing approaches, including Rust where relevant. State
 the task, baseline, expected benefit, and uncertainty. Compare performance,
 resistance to unchecked shortcuts, and ordinary implementation quality where
 they bear on the question. A local win does not establish an ecosystem-wide
 advantage, and each reused construct need not separately outperform Rust.
 
-**R7 — Distinguish the grounds.** A conditional deduction names its premises
+**Distinguish the grounds.** A conditional deduction names its premises
 and the conclusion they actually entail. Empirical support names what was
 observed and under which conditions. A provisional choice names its reason,
 uncertainty, and reopening condition. One decision can use all three. Explain
 which claim each supports; a measured instance or a constitutional citation
 does not prove a uniquely necessary mechanism or checker soundness.
+
+Keep an unresolved question unresolved. When using an assumption to proceed,
+name it as an assumption and state how it will be checked. Do not record or
+cite a discussion proposal or an agent's default as a settled project decision.
+When grounds change, reconsider the dependent choice; keep it only on stated
+grounds that still hold, which may differ from its original reason.
 
 ### Maintaining the rule index
 
@@ -184,6 +191,14 @@ things distinct: the desired property, the assumptions behind a deduction,
 the chosen mechanism, and the observations supporting it. More than one
 mechanism may meet the objective. A minimality choice can remain provisional
 without an invented experiment or a claim of unique necessity.
+
+Before real projects use Whitefoot, exclude the migration cost of existing
+language designs from language-selection arguments. Updating the implementation,
+tests, examples, or design documents is not evidence against a broad language
+change. Internal test and example counts or spelling distributions do not
+establish adoption, familiarity, or frequency in real use. Tests check the
+specification and implementation; when a language rule changes, update its
+tests to preserve their verification purpose under the amended rule.
 
 Choose a probe that could distinguish the live alternatives. Keep behavior,
 contracts, workloads, and comparison conditions fixed where they define the

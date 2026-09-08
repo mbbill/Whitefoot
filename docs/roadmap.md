@@ -146,7 +146,7 @@ Which gap matters next is selected by a project, never by checklist length.
 
 ## Proof and optimizer facts
 
-Serves Constitution P0, W3, T1, and T2: useful facts must improve code without
+Serves the constitution's performance and safety objectives: useful facts must improve code without
 creating writer trust or weakening the checked safety envelope.
 
 ### outline:PROOF-1 — Relational bounds proofs and static discharge
@@ -241,20 +241,21 @@ creating writer trust or weakening the checked safety envelope.
   rejection boundary before implementation.
 - **Facts:** v0.17 `EFF-3` · [totality design decision](../mcts_mem/whitefoot/effects/derived-totality.md).
 
-### outline:PROOF-6 — Proof-gated representation authority (D17)
+### outline:PROOF-6 — Proof-gated representation authority (historically D17)
 
-`[current: project law]` `[research-only]` `[parked]`
+`[historical: constitutional direction]` `[research-only]` `[parked]`
 
 - **Goal:** grant one narrow representation privilege only when a deterministic
   checker verifies the exact implementation invariants and obligations that
   make it safe, with no writer-accessible trust escape.
-- **Current:** the Constitution selects this long-term lane. v0.17 has no proof
-  language, privilege vocabulary, partial-initialization path, or production
-  checker.
+- **Ground:** earlier constitutions selected this long-term lane; its selection
+  now requires its own safety and performance argument. The v0.17 baseline had
+  no proof language, privilege vocabulary, partial-initialization path, or
+  production checker.
 - **Missing / next:** a real project must first expose a representation blocker
   that ordinary checked mechanisms cannot solve; then select one minimal
   privilege/invariant pair rather than a general proof system.
-- **Facts:** [Constitution D17](constitution.md) ·
+- **Facts:** [Safety objectives](constitution.md#safety) ·
   [archive-promotion placement](../research/archive-promotion-audit.md#1-d17-placement-completed).
 
 ### outline:PROOF-7 — Verified strategy-selecting lowering
@@ -620,7 +621,7 @@ creating writer trust or weakening the checked safety envelope.
 
 ## Verification and compiler trust
 
-Serves W3, T1, and T2: source proof and every fact consumer must survive
+Serves the safety objectives: source proof and every fact consumer must survive
 independent source variation and differential evidence rather than trust in the
 writer.
 
@@ -689,8 +690,11 @@ writer.
 
 ## Performance floor and writer shape
 
-Serves P0 and W1: ordinary accepted source should be forced toward a fast shape,
-and every slower-but-accepted divergence becomes a measured finding.
+Serves the performance objectives: constraints and guidance should support
+efficient implementations, and slower ordinary implementations invite
+investigation. Guidance restrictions must yield when they exclude a
+better-performing implementation meeting safety and development-feasibility
+requirements.
 
 ### outline:PERF-1 — Ordinary lowering and baseline code quality
 
@@ -804,7 +808,7 @@ and every slower-but-accepted divergence becomes a measured finding.
 
 ## Storage, ownership, and representation
 
-Serves P0, W1, W3, T1, and T2: useful data structures must retain safety and
+Serves performance and safety: useful data structures must retain safety and
 optimizer facts without a writer-accessible escape or hidden pathological cost.
 
 ### outline:STORE-1 — Borrow and provenance completeness
@@ -870,7 +874,7 @@ optimizer facts without a writer-accessible escape or hidden pathological cost.
 
 ## Parallelism and concurrency
 
-Serves P0, T1, and T2: concurrency is useful only when checked non-interference
+Serves performance and safety: concurrency is useful only when checked non-interference
 and failure semantics survive the runtime implementation.
 
 ### outline:PAR-1 — Proof-derived permission, writer-declared surface
@@ -1014,7 +1018,7 @@ carries is counted-loop reduction permission, not intra-object disjointness.
 
 ## Boundaries, targets, and deployment
 
-Serves P0, W3, T1, T2, and R6: external usefulness and target reach may not
+Serves safe systems development: external usefulness and target reach may not
 become alternate unchecked semantics or prematurely bind the whole toolchain.
 
 ### outline:BOUND-1 — Unified state and host integration

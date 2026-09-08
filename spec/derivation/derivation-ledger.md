@@ -23,6 +23,12 @@ workflow rows below have narrower, explicit grounds. Other rows retain their
 open obligations for reassessment when their rule or material reason changes.
 No historical status is automatically promoted into a new basis kind.
 
+The reassessment also records the retirement of the constitution's old letter
+classes and the later interview's performance, safety, and compatibility
+criteria. Historical references to those labels do not name current clauses.
+The five assessed rows retain the scoped provisional reasons linked below;
+the remaining open grounds are not repaired by substituting new clause names.
+
 [Decision practice](../../docs/practice.md#maintaining-the-rule-index) owns
 update triggers and the procedure. [Completion review](../../docs/review-checklist.md#r-decisions--changed-choices-premises-or-relevant-evidence)
 checks the affected set. The native specification gate checks only this
@@ -36,13 +42,13 @@ of source references. Historical rows cannot satisfy that check.
 | SCOPE-1 | unassessed | revisit | [Retained record](#ledger) |
 | SCOPE-2 | unassessed | revisit | [Retained record](#v021-amendment--obligation-discharge-batch-1-2026-08-07-candidate-stage) |
 | SCOPE-3 | unassessed | revisit | [Retained record](#v035-candidate-amendment--permitted-execution-overlap-2026-08-23) |
-| FORM-1 | provisional | current | [Surface and definition conventions](../../research/investigations/decision-workflow/DESIGN.md#surface-and-definition-conventions); regularity is a reason to try the convention, not evidence of a unique or optimal form. |
-| FORM-2 | provisional | current | [Surface and definition conventions](../../research/investigations/decision-workflow/DESIGN.md#surface-and-definition-conventions); regularity is a reason to try the convention, not evidence of a unique or optimal form.; [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
+| FORM-1 | provisional | current | [Surface and definition conventions](../../research/investigations/decision-workflow/DESIGN.md#surface-and-definition-conventions); predictable editing is an unmeasured hypothesis, not a constitutional requirement or a benefit established by corpus frequency or migration cost. |
+| FORM-2 | provisional | current | [Surface and definition conventions](../../research/investigations/decision-workflow/DESIGN.md#surface-and-definition-conventions); predictable editing is an unmeasured hypothesis, not a constitutional requirement or a benefit established by corpus frequency or migration cost; [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04). |
 | FORM-3 | unassessed | revisit | [Retained record](#ledger) |
-| FORM-4 | provisional | current | [Surface and definition conventions](../../research/investigations/decision-workflow/DESIGN.md#surface-and-definition-conventions); regularity is a reason to try the convention, not evidence of a unique or optimal form. |
+| FORM-4 | provisional | current | [Surface and definition conventions](../../research/investigations/decision-workflow/DESIGN.md#surface-and-definition-conventions); predictable editing is an unmeasured hypothesis, not a constitutional requirement or a benefit established by corpus frequency or migration cost. |
 | FORM-5 | unassessed | revisit | [Retained record](#ledger) |
-| FORM-6 | unassessed | revisit | [Retained record](#ledger) |
-| FORM-7 | unassessed | revisit | [Retained record](#ledger) |
+| FORM-6 | unassessed | revisit | [Retained record](#ledger); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification. |
+| FORM-7 | unassessed | revisit | [Retained record](#ledger); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification. |
 | FORM-8 | unassessed | revisit | [Retained record](#v042-amendment--form-8-canonical-region-spelling-activated-2026-09-03); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
 | LEX-1 | unassessed | revisit | [Retained record](#ledger) |
 | GRAM-1 | unassessed | revisit | [Retained record](#v023-amendment--floor-5-spelling-relief-activated-2026-08-09) |
@@ -56,7 +62,7 @@ of source references. Historical rows cannot satisfy that check.
 | GRAM-8 | unassessed | revisit | [Retained record](#ledger) |
 | GRAM-9 | unassessed | revisit | [Retained record](#ledger) |
 | GRAM-10 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
-| GRAM-11 | unassessed | revisit | [Retained record](#ledger) |
+| GRAM-11 | unassessed | revisit | [Retained record](#ledger); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification. |
 | TYPE-1 | unassessed | revisit | [Retained record](#ledger) |
 | TYPE-2 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
 | TYPE-3 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
@@ -68,7 +74,7 @@ of source references. Historical rows cannot satisfy that check.
 | SET-1 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
 | SET-2 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
 | CONST-1 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| CONST-2 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
+| CONST-2 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification. |
 | OWN-1 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
 | OWN-2 | unassessed | revisit | [Retained record](#ledger) |
 | OWN-3 | unassessed | revisit | [Retained record](#v043-amendment--loop-body-regions-and-the-ent-6-join-repair-activated-2026-09-04); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
@@ -81,7 +87,7 @@ of source references. Historical rows cannot satisfy that check.
 | OWN-10 | unassessed | revisit | [Retained record](#ledger) |
 | OWN-11 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
 | OWN-12 | unassessed | revisit | [Retained record](#ledger) |
-| OWN-13 | unassessed | revisit | [Retained record](#ledger) |
+| OWN-13 | unassessed | revisit | [Retained record](#ledger); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification. |
 | OWN-14 | unassessed | revisit | [Retained record](#ledger) |
 | LIV-1 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
 | LIV-2 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
@@ -102,14 +108,14 @@ of source references. Historical rows cannot satisfy that check.
 | STOR-4 | unassessed | revisit | [Retained record](#ledger) |
 | STOR-5 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
 | STOR-6 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| OP-1 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
+| OP-1 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification. |
 | OP-2 | unassessed | revisit | [Retained record](#v049-amendment--fold-by-the-declaration-not-by-the-expansion-activated-2026-09-05) |
 | OP-3 | unassessed | revisit | [Retained record](#ledger) |
 | OP-4 | unassessed | revisit | [Retained record](#v029-amendment--opt-in-strict-no-claim-partition-activated-2026-08-15); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
 | OP-5 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
 | OP-6 | unassessed | revisit | [Retained record](#ledger) |
-| OP-7 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| OP-8 | unassessed | revisit | [Retained record](#ledger) |
+| OP-7 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification. |
+| OP-8 | unassessed | revisit | [Retained record](#ledger); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification. |
 | OP-9 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
 | FN-1 | unassessed | revisit | [Retained record](#v029-amendment--opt-in-strict-no-claim-partition-activated-2026-08-15); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
 | FN-2 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
@@ -117,7 +123,7 @@ of source references. Historical rows cannot satisfy that check.
 | FN-4 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
 | FN-5 | unassessed | revisit | [Retained record](#ledger) |
 | FN-6 | unassessed | revisit | [Retained record](#ledger) |
-| FN-7 | unassessed | revisit | [Retained record](#v029-amendment--opt-in-strict-no-claim-partition-activated-2026-08-15); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
+| FN-7 | unassessed | revisit | [Retained record](#v029-amendment--opt-in-strict-no-claim-partition-activated-2026-08-15); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification. |
 | FN-8 | unassessed | revisit | [Retained record](#v046-amendment--a-stated-relation-and-the-atom-that-discharges-it-activated-2026-09-05); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
 | FN-9 | unassessed | revisit | [Retained record](#v029-amendment--opt-in-strict-no-claim-partition-activated-2026-08-15); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
 | MSR-5 | unassessed | revisit | [Retained record](#v044-amendment--the-fact-machinery-activated-2026-09-04); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
@@ -129,7 +135,7 @@ of source references. Historical rows cannot satisfy that check.
 | EFF-5 | unassessed | revisit | [Retained record](#ledger) |
 | ERR-1 | unassessed | revisit | [Retained record](#ledger) |
 | ERR-2 | unassessed | revisit | [Retained record](#ledger) |
-| ERR-3 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
+| ERR-3 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification. |
 | ERR-4 | unassessed | revisit | [Retained record](#ledger) |
 | PROG-1 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
 | PROG-2 | unassessed | revisit | [Retained record](#v09-amendment--canonical-frontend-entrance-closure-2026-07-21) |

@@ -1,6 +1,7 @@
 # A decision workflow for sustained language research
 
-Design study and initial migration, 2026-09-07. The question is how Whitefoot's owner and agents
+Design study and initial migration, 2026-09-07; constitutional reassessment
+revised after the 2026-09-08 owner interview. The question is how Whitefoot's owner and agents
 can make grounded choices, revise them when conditions change, and keep the
 compiler moving without accumulating an unused process. This study does
 not define standing workflow rules or language semantics. The selected trial
@@ -166,45 +167,76 @@ records that replacement; this comparison is its design source.
 
 The founding purpose changes the intended author. It supports investigating
 different tradeoffs; it does not prove which values to choose or which
-mechanism meets them. The following audit covers every clause in the preceding
-constitutional draft. The revised constitution states the resulting principles;
-this comparison retains the placement argument and uncertainty.
+mechanism meets them. The owner interview separated constitutional obligations
+from mechanisms and from instructions for applying them. The following audit
+covers the preceding draft's clauses; its old labels identify that draft only.
+The constitution now uses complete clauses without the inherited letter classes
+or per-clause usage tables. This comparison retains the placement argument.
 
 | Clause | Ground and disposition | Boundary or open question |
 |---|---|---|
 | Founding purpose | Retain the language designed as a harness for AI agents as the starting premise. | It does not commit to a future OS, full software stack, or a single solution to every design question. |
-| P1 | Retain effective authorship as an objective necessary for the purpose to be useful. | Future feasibility needs investigation; present model scores do not set permanent language ceilings. |
-| P0 | Retain performance as an explicitly chosen systems-language objective. | AI authorship alone does not logically rank runtime speed above every other value. Attribution and baseline measurement belong in practice. |
-| T1, T2 | Retain chosen safety and defined-behavior guarantees, conditional on the explicit trust boundary. | Ownership and exact proof rules are mechanisms; a constitutional promise is not a compiler-correctness proof. T1 now names silent overflow and unproved partial operations explicitly. |
-| Balance, R5 | Retain the tradeoff against human writing comfort while preserving feasibility, safety, requirements review, and trust-boundary audit. | These responsibilities remain even when agents write all source. More effort is acceptable; inability to complete the intended work is not. |
-| Compatibility | Retain a conditional tradeoff: cheaper migration weakens the case for compatibility. | Source rewriting and semantic preservation have different evidence obligations. |
-| W1 | Retain a performance-guidance principle under the intended workloads. | Whether constraints improve ordinary implementations is an empirical question; no global optimum or complete catalog follows. |
-| W2, W4 | Retain information availability and independent component work as conditional ways to serve P1 at scale. | Adequate interfaces and actual collaboration need evidence. They select neither today's contract vocabulary nor one strong/weak-agent organization. |
-| W3 | Retain the writer's inability to waive required guarantees. | Verified contracts, system-fact sources, typed outcomes, and exact proof admission live in the specification. Omitted requirements remain possible. |
-| R1, R2 | Retain justified mechanisms and capability-preserving simplification. R1 now refers to all chosen objectives, including safety. | A useful inherited mechanism need not be novel; a simpler checker cannot be justified by silently weakening the task. |
-| R3 | Retain regularity as a conditional principle; remove the constitutional mandate for one exact form. | Exact canonical bytes and reject-versus-normalize remain selected language rules. Their alternative comparison remains open. |
-| R4 | Retain useful early feedback and the distinction between prohibited states and expected failure. | Exact diagnostic forms and proof judgments are language choices, not consequences of a preferred feedback timing alone. |
-| T3 | Retain the performance principle of using established facts without preserving observables outside the guarantee. | Erasure and exact overlap permissions are defined in SCOPE-2, DIAG-2, EFF, and PAR; their soundness requires separate argument. |
-| T4 | Retain consequential resource relations at relevant interfaces; remove the specific capacity/release/scheduler protocol from the constitution. | SYS and PAR define the current choices. Alternative resource representations can meet the same principle; their grounds remain to reassess. |
-| D17 | Retain the relationship between a claimed invariant and representation privilege. | The deterministic checker, proof vocabulary, partial-initialization representation, and trusted primitive boundary need separate selection and soundness grounds. |
-| R6 | Retain openness of the surrounding architecture. | Self-hosting and compiler proof are distinct research activities, not required constitutional stages. |
-| R0, R7 | Move comparison practice and classification of grounds to the engineering method, retaining their labels there. | They describe how a choice is investigated and explained, rather than adding another language objective. |
+| P1 | Merge effective agent authorship into the opening objective, with large-system development as the primary scope and small embedded systems as secondary coverage. | Present model results and forecasts about future capability are conditional evidence, not permanent limits. |
+| P0 | Retain runtime performance as a chosen objective; derive specific metrics and tradeoffs from projects and use cases. | No universal throughput, latency, or memory ranking and no single runtime organization is selected. |
+| T1, T2 | State full safety obligations and prohibit runtime traps as a language feature. State execution-model dependencies separately, without a blanket escape condition. | A constitutional requirement is not proof of the compiler's correctness; an implementation defect does not weaken the requirement. |
+| Balance, R5 | Preserve safety and practical development feasibility while allowing human writing comfort and compilation speed to yield to runtime performance. Remove predetermined human responsibilities. | The owner left necessary human judgments undecided. Exponential checking growth and practically unusable compilation at target-project scale are excluded; termination alone is inadequate. |
+| Compatibility | Exclude migration costs of existing language designs from selection grounds before real project adoption; consider actual impact and migration capability when real projects have compatibility needs. | Internal test/example adaptation costs and syntax frequencies do not establish adoption or common usage. |
+| W1 | Make guidance restrictions revisable when they exclude a better-performing implementation meeting safety and feasibility requirements. | Constraints and patterns are means to investigate, not an end that justifies sacrificing the better implementation. |
+| W2, W4 | Remove standalone constitutional commitments to specific information and collaboration arrangements. | These remain design questions under effective agent development; neither their value nor their failure follows solely from removing the clauses. |
+| W3 | Merge the prohibition on writer waivers and unchecked assertions into the safety requirements. | Verified contracts and exact proof admission remain specified mechanisms. Omitted or incorrect requirements remain possible. |
+| R1, R2 | Keep selection arguments and comparisons in decision practice, scaled to impact, error cost, uncertainty, and reversibility. | They are actions used to choose mechanisms, not additional constitutional objectives. |
+| R3 | Remove regularity as a standalone constitutional principle. | Exact canonical bytes and reject-versus-normalize remain provisional language choices with their own hypotheses and open comparisons. |
+| R4 | Merge pre-acceptance machine verification and defined expected failures into safety. Keep diagnostic guidance in engineering practice. | Feedback quality is evaluated for its intended consumer rather than promoted into a particular diagnostic form. |
+| T3 | Remove the separate optimization commitment from the constitution. | SCOPE-2, DIAG-2, EFF, and PAR still define the selected erasure and overlap rules; the constitutional rewrite does not amend them. |
+| T4 | State the resource-bound objective under explicit budgets and applicable conditions. Remove the prescribed interface approach from constitutional status. | Resource representations, release protocols, and scheduling policies need their own safety and performance arguments. |
+| D17 | Remove special constitutional status for a particular representation-privilege direction. | Its history remains evidence and the direction remains available for investigation. Existing specified mechanisms retain their own obligations. |
+| R6 | Fold openness into revisable objectives and choices. | No future operating-system shape, runtime arrangement, or fixed human/agent division follows from the founding purpose. |
+| R0, R7 | Keep comparison and evidence methods in practice with descriptive names, removing the inherited labels. | The completion checklist retains its own unrelated check IDs. |
+
+### Legacy inline rationales
+
+Twelve passages in the [preceding specification](https://github.com/mbbill/Whitefoot/blob/7f096b94bb7e1ab6519094a171adf00dc1f36616/spec/kernel-spec.md)
+still cited retired constitutional labels. Their normative syntax, rejection
+conditions, and execution rules remain in the specification. The references
+and two inline selection arguments are removed as part of the same v0.52
+amendment; this does not select replacement language mechanisms.
+
+| Rule | Retained rule and reason requiring assessment |
+|---|---|
+| FORM-6 | The unit token retains its type/value roles and FORM-1 convention. The old R3 label did not establish that this spelling was uniquely necessary. |
+| FORM-7 | Literal range and canonicality checks retain their stated rejection behavior; the R4 parenthetical supplied no additional judgment. |
+| GRAM-11 | Named arguments retain the declaration-order check. The anti-transposition rationale is an intended benefit, not a measurement supplied by the old R4 label. |
+| CONST-2 | Constant initializers still completely define their values. The retired T1 citation adds no initialization condition. |
+| OWN-13 | The taken value-producing arm still moves its owned result exactly once; that local ownership requirement stands independently of the retired T1 label. |
+| OP-1 | Array and buffer construction still initializes every element, and vacant-buffer construction still duplicates no source value. Removing three T1 citations changes none of these operation contracts. |
+| OP-7 | Domain prefixes and their exceptions remain specified. The old W1-predictable label did not establish authoring or runtime benefit. |
+| OP-8 | The operation table retains its totality edges and lowerings. Their correctness depends on those technical rules, not the old T2/W3 citation. |
+| FN-7 | The prohibition on global state and static regions remains, with the existing immutable-constant exception. The preceding argument claimed mutable globals would erode parameter-derived noalias facts, hide channels from signatures, and pre-seed shared concurrency state. Those claims require assessment against concrete alternative designs and execution requirements; old P0/W3/T1 labels do not make them necessary conclusions. |
+| ERR-3 | Result propagation, consumption, return behavior, and context attachment remain specified. The preceding argument appealed to earlier error discovery, avoiding context loss from manual rematching, one mechanical pattern, and preventing dropped errors. These are separate intended benefits to assess, not conclusions established by R4/W1/W3. |
+
+All ten current-index rows remain unassessed with their historical records
+and this scoped explanation. Removing the citations does not establish their
+mechanisms' optimality, sufficiency, or failure. Reassess the actual reasons
+when the rule or relevant evidence is materially changed.
 
 ### Surface and definition conventions
 
 FORM-1, FORM-2, and FORM-4 remain provisional selections. The retained
 [surface-form record](../../../mcts_mem/whitefoot/surface-form.md) identifies
 the byte-format and no-comment choices as minimality selections awaiting
-comparison. Their current rationale is regularity and predictable editing
-under P1/W2/R3, not necessity from the intended author, a measured advantage,
-or a fixed context limit. Canonicalization rather than rejection, and explicit
+comparison. Their present selection rests on the hypothesis that reducing
+surface variation makes agent edit instructions and tool output more predictable.
+This is a provisional reason to investigate the forms, not a constitutional
+deduction, measured advantage, or fixed context limit. Neither their frequency
+in the internal corpus nor the cost of rewriting that corpus supports their
+selection. Canonicalization rather than rejection, and explicit
 comments rather than declaration-only documentation, remain live comparison
 questions. A representative writer/repair comparison or a repeated inability
 to preserve useful information would reopen the respective choice. The active
 rules remain unchanged while their grounds are provisional.
 
-META-4 retains a single definition site to make references and updates
-locatable under W2. Its old claim that this prevents logical contradictions
+META-4 retains a single definition site as a provisional way to make references
+and updates locatable. Its old claim that this prevents logical contradictions
 is rejected: two different facts can contradict one another. This is a
 provisional maintainability choice; an observed inconsistency that survives
 the ownership rule or a clearer representation of shared constraints should
@@ -216,8 +248,8 @@ validate them or findings that other conventions fail.
 
 ### Decision index
 
-META-6 now serves recoverable reasoning under the founding purpose and W2,
-with the separation of claims expressed by decision practice. The previous
+META-6 serves the need to recover and reconsider concrete choices, with the
+separation of claims expressed by decision practice. The previous
 gate accepted any historical row carrying the ID; it could not distinguish
 an old constitutional chain from a present selection ground. The workflow
 memory also records a broader-source comparison that met an old provisional
