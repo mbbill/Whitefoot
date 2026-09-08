@@ -699,7 +699,42 @@ The shared executable SHA-256 is
 object SHA-256 is
 `766c426f8e02d8bdfc624eed8d9ce8f4cf4ee7f2a6407c27a7750bbae2983543`.
 This exposes a cost-selection problem, not a reason to make capacity the
-default. Linux budget-policy performance remains to be qualified.
+default.
+
+The [Linux records run at `8a6e5c53`](https://github.com/mbbill/Whitefoot/actions/runs/34206401837)
+qualifies the same policy tradeoff on an EPYC 7763 VM with two physical cores,
+four SMT logical CPUs and process mask 0--3. CPU quota and individual worker
+placement remain unqualified. Its 390 processes / 3,510 calls / 5,894,370 output
+positions, policy/capacity reports, summaries and execution order were independently
+checked. Eighteen source/artifact hashes match; the manifest records the compiler
+hash, but its executable is not retained in this artifact. All four full
+ordinary/C-sanitized policy qualification reports pass.
+
+| Input, requested width four | Cost policy | Capacity policy | Paired capacity/cost ratio [range] |
+| --- | ---: | ---: | ---: |
+| 256 Unicode records, maximum length 65,536 | 8.222 ms | 4.917 ms | 0.599 [0.588--0.652] |
+| 256 early-invalid records, maximum length 65,536 | 1.026 us | 14.212 us | 13.354 [10.852--16.234] |
+| 256 skewed records, maximum length 65,536 | 28.034 us | 55.848 us | 1.978 [1.086--2.595] |
+
+Every pair improves for long Unicode and regresses for the other two rows.
+Long Unicode again starts zero lanes under cost and two/four under capacity.
+Capacity's paired speedups over its own width-zero control are 1.625x at two
+and 1.664x at four; these four logical CPUs are not four physical cores.
+The long-input width-zero capacity/cost ratio is 1.001 [0.997--1.004]. Several
+short-input width-zero controls vary substantially despite both policies taking
+the same serial path: for early-invalid256 the range is 0.665--1.713. Preserve
+the repeated regression direction without treating its exact magnitude as an
+isolated scheduler cost. Input verification between calls also scans the full
+input; this panel measures that call cadence, not uninterrupted dispatch.
+
+Artifact `10047998009` (`compute-records-linux`) has ZIP SHA-256
+`3859730b68752c7f2ecb4edd455423e9c033ec6e08732b61f2e4b9998fb5ff33`.
+The shared policy executable SHA-256 is
+`dd7348dcdbf19ce48c332b18ec335cf2c3274e9a2d872428c0066eab856b0ee0`; its WF
+object SHA-256 is
+`dd562214489105670e7d38dfe89be1ef16cd47d472196b35c88b9ad55e907043`.
+This Linux cohort and the M1 cohort are separate host measurements, not a
+revision comparison or evidence for a universal replacement policy.
 
 ## Scalar scheduler comparison
 
