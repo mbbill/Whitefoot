@@ -30,7 +30,7 @@ jobs:
             driver: records-bench.sh
           - workload: scheduler
             arch: -march=x86-64-v3
-            checks: check-scheduler-layout
+            checks: check-scheduler-trace
             driver: records-scheduler-bench.sh
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -77,6 +77,8 @@ jobs:
           if test '${{ matrix.workload }}' = scheduler; then
             taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/layout-calibration" \
               sh research/experiments/compute-runtime/records-scheduler-bench.sh layout
+            taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/trace-calibration" \
+              sh research/experiments/compute-runtime/records-scheduler-trace.sh calibrate
           fi
       - name: Publish calibration location and scope
         if: always()
@@ -94,6 +96,10 @@ jobs:
               echo "Shared-image layout process rows: $(awk 'END {print NR-1}' "$OUT/layout-calibration/summary.tsv")"
               echo 'This control shares leaf/callback addresses and adds common indirect dispatch plus loaded libraries.'
             fi
+            if test -f "$OUT/trace-calibration/summary.tsv"; then
+              echo "Callback diagnostic process rows: $(awk 'END {print NR-1}' "$OUT/trace-calibration/summary.tsv")"
+              echo 'Plain/identity/timeline compare observation perturbation; callback wall intervals are not CPU utilization or runtime job counts.'
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
@@ -106,6 +112,7 @@ jobs:
             ${{ runner.temp }}/compute-${{ matrix.workload }}-build.log
             ${{ runner.temp }}/compute-${{ matrix.workload }}/calibration/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/layout-calibration/
+            ${{ runner.temp }}/compute-${{ matrix.workload }}/trace-calibration/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/*check-*/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/bench-*
             ${{ runner.temp }}/compute-${{ matrix.workload }}/fir*

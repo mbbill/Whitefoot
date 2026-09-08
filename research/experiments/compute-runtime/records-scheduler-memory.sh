@@ -29,6 +29,7 @@ esac
 case "$width" in 1|2|4) ;; *) usage;; esac
 case "$test_case" in
     qualify) ;;
+    trace-plain|trace-identity|trace-timeline) ;;
     checked|dense|sleep-100us|sleep-1ms) test "$width" = 2 || usage;;
     *) usage;;
 esac
@@ -50,7 +51,12 @@ trap 'rm -rf "$scratch"' EXIT HUP INT TERM
 # prefix to scratch; the original combined stdout/stderr remains untouched.
 awk -v leak="$leak" -v extra="$extra" -v binary="${binary:-}" \
     -v prefix="$scratch/prefix" -f "$directory/records-scheduler-memory.awk" "$log"
-if test "$test_case" = qualify; then
+if test "${test_case#trace-}" != "$test_case"; then
+    awk -F '\t' -v backend="$backend" -v width="$width" -v shape=unicode -v count=33 \
+        -v limit=17 -v grain=16 -v chunks=3 -v seed=828219 -v pass=0 -v reps=2 \
+        -v shutdown="$shutdown" -v level="${test_case#trace-}" -v expected_bytes=329 \
+        -f "$directory/records-scheduler-trace.awk" "$scratch/prefix" > /dev/null
+elif test "$test_case" = qualify; then
     awk -v backend="$backend" -v width="$width" -v shutdown="$shutdown" '
         { if (NR!=1 || $8 !~ /^capacity_waves=[1-3]$/ ||
             $0 != "record scheduler qualification PASS: backend=" backend " width=" width " actual=" width " " $8 \

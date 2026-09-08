@@ -15,6 +15,12 @@
 #include <sys/resource.h>
 #include <time.h>
 #include <unistd.h>
+#if defined(RECORD_SCHEDULER_TRACE)
+#include <pthread.h>
+#if defined(__linux__)
+#include <sys/syscall.h>
+#endif
+#endif
 
 extern "C" int wf__floor_run(int, char **);
 static void require(bool ok, const char *why) {
@@ -167,6 +173,142 @@ struct Sample {
     long voluntary, involuntary;
     uint64_t gap;
 };
+#if defined(RECORD_SCHEDULER_TRACE)
+static uint64_t native_thread_id() {
+    // Register once per thread. A helper's first lookup is charged to the
+    // observed dispatch, but excluded from the common-work timestamp interval.
+    thread_local uint64_t cached = [] {
+        uint64_t id = 0;
+#if defined(__APPLE__)
+        require(pthread_threadid_np(nullptr, &id) == 0, "native thread identity");
+#elif defined(__linux__)
+        long value = syscall(SYS_gettid);
+        require(value > 0, "native thread identity");
+        id = uint64_t(value);
+#else
+#error "record trace native thread identity is unqualified on this platform"
+#endif
+        require(id != 0, "zero thread identity");
+        return id;
+    }();
+    return cached;
+}
+struct alignas(128) TraceCell {
+    // A separate claim per callback detects duplicate execution before any
+    // non-atomic trace writes. No shared global counter or event allocation.
+    std::atomic<unsigned> claimed{0};
+    uint64_t tid = 0, begin = 0, end = 0;
+};
+struct TraceWork {
+    RecordWork work;
+    TraceCell *cells;
+    size_t chunks;
+};
+template<bool Timeline> static void traced_chunk(void *opaque, size_t chunk) {
+    auto &work = *static_cast<TraceWork *>(opaque);
+    require(chunk < work.chunks, "trace chunk range");
+    auto &cell = work.cells[chunk];
+    require(cell.claimed.fetch_add(1, std::memory_order_relaxed) == 0, "trace duplicate chunk");
+    uint64_t tid = native_thread_id();
+    uint64_t begin = Timeline ? now() : 0;
+    records_scheduler_chunk(&work.work, chunk);
+    uint64_t end = Timeline ? now() : 0;
+    cell.tid = tid; cell.begin = begin; cell.end = end;
+}
+static int trace(int argc, char **argv) {
+    require(argc == 11, "usage: scheduler trace WIDTH RECORDS MAX_LENGTH SHAPE GRAIN REPS SEED PASS LEVEL");
+    uint64_t width64 = number(argv[2]), count64 = number(argv[3]), limit64 = number(argv[4]);
+    uint64_t grain64 = number(argv[6]), reps64 = number(argv[7]), seed64 = number(argv[8]), pass = number(argv[9]);
+    const char *level = argv[10];
+    bool plain = !std::strcmp(level, "plain"), timeline = !std::strcmp(level, "timeline");
+    require(plain || timeline || !std::strcmp(level, "identity"), "trace level");
+    require((width64 == 1 || width64 == 2 || width64 == 4) && count64 <= 1048576 && limit64 <= 1048576 &&
+            grain64 >= 1 && grain64 <= 1048576 && reps64 >= 1 && reps64 <= 32 && seed64 <= UINT32_MAX, "trace domain");
+    unsigned width = unsigned(width64);
+    size_t count = size_t(count64), limit = size_t(limit64), grain = size_t(grain64), reps = size_t(reps64);
+    size_t chunks = (count + grain - 1) / grain;
+    require(!count || reps + 1 <= 8388608 / count, "trace output domain");
+    require(!chunks || reps + 1 <= 65536 / chunks, "trace event domain");
+    Input input(count, limit, argv[5], uint32_t(seed64));
+    // Plain/identity/timeline processes have the same preallocated footprint.
+    // Every call retains separate output and event storage until verification.
+    std::vector<std::vector<uint64_t>> outputs(reps + 1, std::vector<uint64_t>(count, UINT64_MAX - 1));
+    std::unique_ptr<TraceCell[]> cells(new TraceCell[(reps + 1) * chunks]);
+    struct Call { uint64_t begin, end; Sample resources; };
+    std::vector<Call> calls(reps + 1);
+    uint64_t caller = native_thread_id(), floor = UINT64_MAX;
+    for (unsigned i = 0; i < 1000; ++i) { uint64_t start = now(); floor = std::min(floor, now() - start); }
+    RecordChunk callback = timeline ? traced_chunk<true> : traced_chunk<false>;
+    alarm(90);
+    rusage batch_before, batch_after;
+    require(getrusage(RUSAGE_SELF, &batch_before) == 0, "initial trace batch resources");
+    uint64_t batch_start = now();
+    for (size_t call = 0; call <= reps; ++call) {
+        TraceWork work{input.work(grain), cells.get() + call * chunks, chunks};
+        work.work.output = outputs[call].data();
+        rusage before, after;
+        require(getrusage(RUSAGE_SELF, &before) == 0, "initial trace resources");
+        uint64_t begin = now();
+        if (plain) records_scheduler_run(width, chunks, records_scheduler_chunk, &work.work);
+        else records_scheduler_run(width, chunks, callback, &work);
+        uint64_t end = now();
+        require(getrusage(RUSAGE_SELF, &after) == 0, "final trace resources");
+        uint64_t rss = uint64_t(after.ru_maxrss);
+#ifndef __APPLE__
+        rss *= 1024;
+#endif
+        calls[call] = {begin, end, {end - begin, cpu_us(after.ru_utime) - cpu_us(before.ru_utime),
+            cpu_us(after.ru_stime) - cpu_us(before.ru_stime), rss,
+            after.ru_nvcsw - before.ru_nvcsw, after.ru_nivcsw - before.ru_nivcsw, 0}};
+    }
+    uint64_t batch_end = now();
+    require(getrusage(RUSAGE_SELF, &batch_after) == 0, "final trace batch resources");
+    uint64_t batch_rss = uint64_t(batch_after.ru_maxrss);
+#ifndef __APPLE__
+    batch_rss *= 1024;
+#endif
+    for (size_t call = 0; call <= reps; ++call) {
+        input.output.swap(outputs[call]); input.check(); input.output.swap(outputs[call]);
+        std::set<uint64_t> participants;
+        for (size_t i = 0; i < chunks; ++i) {
+            auto &cell = cells[call * chunks + i];
+            require(cell.claimed.load(std::memory_order_relaxed) == unsigned(!plain), "trace callback inventory");
+            if (plain) continue;
+            require(cell.tid != 0, "trace missing callback tail");
+            participants.insert(cell.tid);
+            require(timeline ? calls[call].begin <= cell.begin && cell.begin <= cell.end && cell.end <= calls[call].end :
+                               cell.begin == 0 && cell.end == 0, "trace callback interval");
+        }
+        require(participants.size() <= width, "trace excess workers");
+    }
+    // Capacity and its possible lazy startup stay outside all traced calls.
+    unsigned capacity_waves = capacity_check(width);
+    uint64_t stop_start = now();
+    int shutdown = records_scheduler_stop();
+    uint64_t stop_ns = now() - stop_start;
+    std::printf("# trace backend=%s width=%u shape=%s records=%zu bytes=%" PRIu64 " max_length=%zu grain=%zu chunks=%zu seed=%" PRIu64 " pass=%" PRIu64 " reps=%zu level=%s caller_tid=%" PRIu64 " clock_pair_min_ns=%" PRIu64 "\n",
+        records_scheduler_name(), width, argv[5], count, input.offsets.back(), limit, grain, chunks, seed64, pass, reps, level, caller, floor);
+    for (size_t call = 0; call <= reps; ++call) {
+        auto c = calls[call]; auto s = c.resources;
+        std::printf("call\t%zu\t%s\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%ld\t%ld\n",
+            call, call ? "warm" : "first", c.begin, c.end, s.user, s.system, s.rss, s.voluntary, s.involuntary);
+        if (plain) continue;
+        for (size_t i = 0; i < chunks; ++i) {
+            auto &cell = cells[call * chunks + i];
+            size_t first = i * grain, length = std::min(grain, count - first);
+            std::printf("chunk\t%zu\t%zu\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%zu\t%zu\t%" PRIu64 "\n",
+                call, i, cell.tid, cell.begin, cell.end, first, length, input.offsets[first + length] - input.offsets[first]);
+        }
+    }
+    std::printf("# batch start_ns=%" PRIu64 " end_ns=%" PRIu64 " user_us=%" PRIu64 " system_us=%" PRIu64 " maxrss_bytes=%" PRIu64 " voluntary_switches=%ld involuntary_switches=%ld\n",
+        batch_start, batch_end, cpu_us(batch_after.ru_utime) - cpu_us(batch_before.ru_utime),
+        cpu_us(batch_after.ru_stime) - cpu_us(batch_before.ru_stime), batch_rss,
+        batch_after.ru_nvcsw - batch_before.ru_nvcsw, batch_after.ru_nivcsw - batch_before.ru_nivcsw);
+    std::printf("# post_timing_capacity=%u includes_caller=1 capacity_waves=%u explicit_shutdown=%d stop_ns=%" PRIu64 "\n", width, capacity_waves, shutdown, stop_ns);
+    std::printf("record scheduler trace PASS: calls=%zu outputs=%zu traced_chunks=%zu\n", reps + 1, (reps + 1) * count, plain ? 0 : (reps + 1) * chunks);
+    alarm(0); return 0;
+}
+#endif
 static int benchmark(int argc, char **argv) {
     require(argc == 10, "usage: scheduler WIDTH RECORDS MAX_LENGTH SHAPE GRAIN REPS SEED PASS CADENCE");
     uint64_t width64 = number(argv[1]), count64 = number(argv[2]), limit64 = number(argv[3]);
@@ -270,6 +412,10 @@ extern "C" __attribute__((noinline)) void records_scheduler_leak_probe(void) {
 #endif
 extern "C" int wf__main_body(int argc, char **argv) {
     int status;
+#if defined(RECORD_SCHEDULER_TRACE)
+    if (argc > 1 && !std::strcmp(argv[1], "trace")) status = trace(argc, argv);
+    else
+#endif
     if (argc == 3 && !std::strcmp(argv[1], "check")) {
         uint64_t width = number(argv[2]);
         require(width == 1 || width == 2 || width == 4, "qualification width");

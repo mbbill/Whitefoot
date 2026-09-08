@@ -48,7 +48,7 @@ endef
 	wf-objects check-wf-objects build-bench check-bench bench-calibrate compiler force \
 	records-build check-records records-calibrate scheduler-fetch scheduler-build \
 	check-scheduler check-scheduler-memory scheduler-calibrate scheduler-layout-build \
-	check-scheduler-layout scheduler-layout-calibrate
+	check-scheduler-layout scheduler-layout-calibrate scheduler-trace-build check-scheduler-trace
 
 force:
 
@@ -60,7 +60,7 @@ $(OUT)/probe $(OUT)/probe-no-stats: runtime.c runtime.h probe.c $(FLOOR) force
 		-DWF_COMPUTE_STATS=$(if $(filter $(OUT)/probe-no-stats,$@),0,1) \
 		runtime.c probe.c $(FLOOR) -o "$@"
 
-check: check-runtime check-abi check-fir check-bench check-records check-scheduler-layout
+check: check-runtime check-abi check-fir check-bench check-records check-scheduler-trace
 
 check-runtime: build
 	@set -e; for probe in probe probe-no-stats; do \
@@ -389,6 +389,54 @@ check-scheduler-layout: check-scheduler scheduler-layout-build
 
 scheduler-layout-calibrate: check-scheduler-layout
 	OUT="$(OUT)" sh records-scheduler-bench.sh layout
+
+# A separate observer image retains the ordinary shared leaf and adapters.
+# Its plain/identity/timeline levels compare observation perturbation; the
+# original timing image contains no trace code or event storage.
+scheduler-trace-build: scheduler-layout-build
+	$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -DRECORD_SCHEDULER_SELECT -DRECORD_SCHEDULER_TRACE \
+		-c records_scheduler.cpp -o "$(OUT)/scheduler-trace-host.o"
+	@set -- "$(OUT)/scheduler-trace-host.o" "$(OUT)/scheduler-layout-selector.o"; \
+	for unit in native oracle work floor runtime; do set -- "$$@" "$(OUT)/scheduler-$$unit.o"; done; \
+	for mode in $(LAYOUT_SCHEDULERS); do set -- "$$@" "$(OUT)/scheduler-layout-$$mode.o"; done; \
+	$(CXX) -pthread -fno-lto "$$@" -L"$(OUT)/scheduler-deps/lib" -Wl,-rpath,"$(OUT)/scheduler-deps/lib" \
+		-ltbb "$(RAYON_LIB)" $(RAYON_SYSTEM_LIBS) -o "$(OUT)/scheduler-trace"
+	@nm -n "$(OUT)/scheduler-trace" > "$(OUT)/scheduler-trace.symbols"
+	$(call require-strong,$(OUT)/scheduler-trace,records_state)
+	$(call require-strong,$(OUT)/scheduler-trace,records_scheduler_chunk)
+	@if grep -E 'wf_compute_steal_count|wf__par_grants' "$(OUT)/scheduler-trace.symbols"; then exit 1; fi
+	@printf '%s\n' 'image=scheduler-trace levels=plain,identity,timeline' \
+		'events=common-callback; runtime-jobs-and-OS-switch-events=unobserved' \
+		'identity=per-cell-relaxed-claim,cached-native-TID; timeline=identity-plus-two-clocks' \
+		'interval=common-callback-wall; includes-preemption; not-CPU-occupancy' \
+		'$(SCHEDULER_FLAGS)' > "$(OUT)/scheduler-trace-flags.txt"
+
+check-scheduler-trace: check-scheduler-layout scheduler-trace-build
+	$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -DRECORD_SCHEDULER_SELECT -DRECORD_SCHEDULER_TRACE \
+		-fsanitize=$(SANITIZER) -fno-sanitize-recover=all -fno-omit-frame-pointer \
+		-c records_scheduler.cpp -o "$(OUT)/scheduler-trace-memory-host.o"
+	@set -- "$(OUT)/scheduler-trace-memory-host.o" "$(OUT)/scheduler-layout-memory-selector.o"; \
+	for unit in records_native records_oracle records_work floor runtime; do \
+		set -- "$$@" "$(OUT)/scheduler-memory-$$unit.o"; \
+	done; \
+	for mode in $(LAYOUT_SCHEDULERS); do set -- "$$@" "$(OUT)/scheduler-layout-$$mode.o"; done; \
+	$(CXX) -pthread -fno-lto -fsanitize=$(SANITIZER) -fno-sanitize-recover=all "$$@" \
+		-L"$(OUT)/scheduler-deps/lib" -Wl,-rpath,"$(OUT)/scheduler-deps/lib" \
+		-ltbb "$(RAYON_LIB)" $(RAYON_SYSTEM_LIBS) -o "$(OUT)/scheduler-trace-memory-image"
+	@mkdir -p "$(OUT)/scheduler-trace-memory"; \
+	for mode in $(LAYOUT_SCHEDULERS); do \
+		image="$(OUT)/scheduler-trace-memory/scheduler-memory-$$mode"; \
+		ln -f "$(OUT)/scheduler-trace-memory-image" "$$image" || exit $$?; \
+		for width in 1 2 4; do for level in plain identity timeline; do \
+			log="$(OUT)/scheduler-trace-memory-$$mode-w$$width-$$level.log"; status=0; \
+			env $(SCHEDULER_MEMORY_ENV) WF_WORKERS=$$width "$$image" $$mode trace $$width 33 17 unicode 16 2 828219 0 $$level \
+				> "$$log" 2>&1 || status=$$?; \
+			sh records-scheduler-memory.sh $(SCHEDULER_MEMORY_MODE) "$$log" $$status $$mode $$width trace-$$level \
+				|| { cat "$$log" >&2; exit 1; }; \
+			printf 'scheduler trace memory accepted: backend=%s width=%s level=%s child_status=%s\n' $$mode $$width $$level $$status; \
+		done; done; \
+	done
+	OUT="$(OUT)" sh records-scheduler-trace.sh check
 
 # Refresh the default compiler after source changes. A supplied compiler is
 # an explicit caller-owned dependency and must already be built for this tree.

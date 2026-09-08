@@ -924,6 +924,92 @@ addresses. Neither candidate established a repeatable gain across these four
 inputs; both remain unpromoted. Reduced release instruction counts alone did
 not justify a runtime change.
 
+### Common callback diagnostics
+
+`scheduler-trace` is a separate observer image containing the same eight
+selectors, ordinary scalar computation/callback objects and runtime adapters.
+The original timing image is built without the trace code. This first observer
+measures common callback execution, not internal runtime jobs, steals, actual
+bytes examined, hardware instructions or operating-system switch events.
+
+Each process selects one of three levels before executing any work:
+
+- `plain` calls the ordinary common callback directly.
+- `identity` additionally records native thread identity and claims one
+  preallocated cell per callback with a relaxed atomic operation. This detects
+  duplicate execution before non-atomic event writes. There is no global event
+  counter; cells are aligned to 128 bytes to separate adjacent writers.
+- `timeline` adds two `CLOCK_MONOTONIC_RAW` timestamps around the common
+  callback. Identity lookup, the claim and event stores lie outside that
+  interval but inside the observed scheduler dispatch.
+
+All levels allocate the same event/output footprint before the batch and retain
+separate storage for every invocation. The first native-ID lookup on each
+helper is charged to dispatch; later lookups use thread-local storage. Callbacks
+do not allocate or print events. After all measured calls join, the host checks
+every output, input preservation and complete event inventory, then performs
+the existing capacity probe and reports data. Lazy pool startup remains charged
+to the first call that triggers it. Empty inputs need no observed participants.
+
+Raw records contain call boundaries and CPU/switch/peak-RSS resources, followed
+by per-callback index, native TID, begin/end, record range and offered input
+bytes. Offered bytes are not bytes actually examined by early-exit validation.
+Callback intervals include preemption: their union, overlap and per-thread sums
+describe observed wall time, not CPU utilization. Time outside that union may
+include runtime work, waiting, preemption or unobserved callback bookkeeping;
+it is not directly scheduler CPU cost. Zero-duration clock observations are
+allowed and do not prove zero work. Nested runtime-job durations would need
+separate accounting to avoid double counting.
+
+The strict AWK collector validates every row, identity, range, byte total,
+call/batch resource enclosure and final count before publishing a summary.
+Decimal-string arithmetic preserves large timestamps and thread IDs exactly.
+Native thread identity is implemented for Linux and macOS only. The canonical
+`check-scheduler-trace` retains all prior scheduler checks and adds 72 observer
+sanitizer cases (eight selectors, three widths, three levels), 288 ordinary
+smoke processes / 864 calls and missing/duplicate/trailing-report negatives.
+The new sanitizer image instruments the host, common C computation and runtime;
+adapters and external libraries retain their separately qualified ordinary
+objects. Existing exact Linux Rayon lifecycle parsing remains required.
+
+The observer calibration deliberately covers only early-invalid and long
+Unicode inputs, each 256 records / maximum 65,536 bytes, grain16, seed828219.
+Eight selectors, three observation levels, five rotating/reversed passes and
+nine calls per process yield 240 processes / 2,160 calls / 23,040 callback
+events. Width is four including the caller. Full raw files, source/object
+hashes, flags and host metadata are retained in `trace-calibration`; the CI
+job runs this after the two existing timing panels on the same CPU mask:
+
+```sh
+make -C research/experiments/compute-runtime check-scheduler-trace OUT=/tmp/wf-scheduler
+OUT=/tmp/wf-scheduler RESULTS=/tmp/wf-scheduler/trace-calibration \
+  sh research/experiments/compute-runtime/records-scheduler-trace.sh calibrate
+```
+
+A local M1 implementation screen checked all 240 processes, 552,960 outputs
+and 23,040 events independently, including per-chunk source-derived input
+bytes and sorted, nonoverlapping intervals for each native thread. Every one
+of the forty warm long-Unicode timeline calls per selector observed four TIDs
+and overlapping intervals from four callbacks, except group16, which observed
+only the caller in all forty. This does not establish simultaneous CPU execution.
+For early-invalid timeline calls, Rayon join was caller-only in 32/40 calls and
+oneTBB in 29/40; original WF observed four TIDs in 32 calls and two in eight.
+These are observations under instrumentation, not recovered plain-run histories.
+
+The short caller-only group16 control exposes observation cost: medians of five
+process warm means were 0.818 / 0.854 / 1.114 microseconds for plain / identity /
+timeline. All five paired timeline processes were slower than plain, with
+paired median time ratio 1.354. Long-Unicode WF plain/timeline medians were
+1.985 / 2.006 milliseconds, but their paired median ratio was 1.0004 with range
+0.934--1.058. Other short cells vary substantially and can reverse ordering
+between levels. Do not subtract a constant timer cost or promote observer
+timings into ordinary performance rankings. Local raw files are exploratory,
+not a retained CI artifact; the collection preceded the final parser's added
+329-byte sanitizer-fixture binding. The measured observer executable and
+computation are unchanged by that parser refinement. Linux observer results
+and hardware-event availability remain unqualified until its CI evidence is
+inspected.
+
 ### First complete Linux scalar panel and attribution limit
 
 The [`f8766994` run](https://github.com/mbbill/Whitefoot/actions/runs/34186817212)
