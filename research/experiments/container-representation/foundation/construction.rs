@@ -1142,45 +1142,50 @@ fn run_suite(print: bool) -> Result<(), String> {
     {
         return Err("mixed fresh path did not release its unused input once".to_owned());
     }
-    for (index, expected) in [
-        (0, Cost::default()),
-        (1, Cost::default()),
-        (6, Cost::default()),
-        (6, Cost::default()),
-        (
-            4,
-            Cost {
-                record_sized_whole_slots: 0,
-                whole_record_transfers: 1,
-            },
-        ),
-        (
-            5,
-            Cost {
-                record_sized_whole_slots: 1,
-                whole_record_transfers: 1,
-            },
-        ),
-    ] {
-        let actual = run(Strategy::ResultTree, &all[index], &sinks)
-            .map_err(|e| format!("{e:?}"))?
-            .cost;
-        if actual != expected {
-            return Err(format!(
-                "{}: expected {expected:?}, got {actual:?}",
-                all[index].label
-            ));
+    let whole = |transfers| Cost {
+        record_sized_whole_slots: 1,
+        whole_record_transfers: transfers,
+    };
+    let tree_transfer = Cost {
+        record_sized_whole_slots: 0,
+        whole_record_transfers: 1,
+    };
+    let expected_costs = [
+        (whole(1), Cost::default()),
+        (whole(1), Cost::default()),
+        (whole(0), Cost::default()),
+        (whole(0), Cost::default()),
+        (whole(2), tree_transfer),
+        (whole(1), whole(1)),
+        (whole(1), Cost::default()),
+    ];
+    if expected_costs.len() != all.len() {
+        return Err(format!(
+            "cost matrix has {} rows for {} positive cases",
+            expected_costs.len(),
+            all.len()
+        ));
+    }
+    for (index, (expected_whole, expected_tree)) in expected_costs.into_iter().enumerate() {
+        for (strategy, expected) in [
+            (Strategy::WholeResult, expected_whole),
+            (Strategy::ResultTree, expected_tree),
+        ] {
+            let actual = run(strategy, &all[index], &sinks)
+                .map_err(|error| format!("cost check: {error:?}"))?
+                .cost;
+            if actual != expected {
+                return Err(format!(
+                    "{} {strategy:?}: expected {expected:?}, got {actual:?}",
+                    all[index].label
+                ));
+            }
         }
     }
     let mut renamed = all[0].clone();
     renamed.label = "same-producer-different-name";
     if run(Strategy::ResultTree, &renamed, &sinks) != run(Strategy::ResultTree, &all[0], &sinks) {
         return Err("call-site name selected behavior".to_owned());
-    }
-    let mixed_fresh = run(Strategy::ResultTree, &all[6], &sinks)
-        .map_err(|error| format!("mixed fresh: {error:?}"))?;
-    if mixed_fresh.semantics.releases != vec![Token(901), Token(900)] {
-        return Err("mixed fresh path did not release its unused input in order".to_owned());
     }
     check_mutations(&all[0], &all[6], &sinks)?;
     check_invalid_source_paths()?;
