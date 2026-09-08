@@ -24,6 +24,8 @@ test -s "$OUT/scheduler-trace-flags.txt"
 image_hash=$(shasum -a 256 "$OUT/scheduler-trace")
 if test "$events" -eq 1; then
     test -x "$OUT/scheduler-events"
+    grep -Fxq 'WF=wf-2,24 counters; Rayon=rayon-join-1,13 counters; schemas are not interchangeable' \
+        "$OUT/scheduler-events-flags.txt"
     events_hash=$(shasum -a 256 "$OUT/scheduler-events")
 fi
 mkdir -p "$results"
@@ -117,7 +119,7 @@ while read -r shape count limit grain seed; do
             schema=''
             if test "$events" -eq 1; then file="$results/$shape-n$count-$selector-w$width-$level-$variant-p$pass.tsv"; fi
             if test "$variant" = events; then
-                case "$selector" in wf) schema=wf-1;; rayon-join) schema=rayon-join-1;; *) exit 1;; esac
+                case "$selector" in wf) schema=wf-2;; rayon-join) schema=rayon-join-1;; *) exit 1;; esac
             fi
             WF_WORKERS="$width" "$OUT/scheduler-$variant" "$selector" trace "$width" "$count" "$limit" "$shape" \
                 "$grain" "$reps" "$seed" "$pass" "$level" > "$file" 2>&1 || { cat "$file" >&2; exit 1; }
@@ -164,18 +166,19 @@ if test "$mode" = check && test "$events" -eq 0; then
 fi
 if test "$mode" = check && test "$events" -eq 1; then
     original="$results/unicode-n33-wf-w4-timeline-events-p0.tsv"
-    for fault in missing duplicate completion schema trailing; do
+    for fault in missing duplicate completion origin schema trailing; do
         awk -F '\t' -v OFS='\t' -v fault="$fault" '
             /^# runtime_events / && fault=="schema" {next}
             /^runtime\t/ && !changed {
                 changed=1; if(fault=="missing")next; if(fault=="duplicate")print
                 if(fault=="completion")$11=$11+1
+                if(fault=="origin")$26=$26+1
             }
             {print} END {if(fault=="trailing")print "unexpected trailing diagnostic"}
         ' "$original" > "$results/negative-$fault.tsv"
         if awk -F '\t' -v backend=wf-runtime -v width=4 -v shape=unicode -v count=33 \
             -v limit=17 -v grain=16 -v chunks=3 -v seed=828219 -v pass=0 -v reps=2 \
-            -v level=timeline -v shutdown=0 -v runtime_schema=wf-1 \
+            -v level=timeline -v shutdown=0 -v runtime_schema=wf-2 \
             -f records-scheduler-trace.awk "$results/negative-$fault.tsv" \
             > "$results/negative-$fault-summary.tsv" 2> "$results/negative-$fault.log"; then
             echo "event validator accepted $fault report" >&2; exit 1

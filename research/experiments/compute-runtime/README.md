@@ -1075,8 +1075,11 @@ macros absent, for the runtime, ordinary host and callback trace host.
 
 After the usual trace header, an event report names its schema, bank count and
 event count. Each call row is followed by one `runtime` TSV row per bank:
-call index, bank index and event deltas in schema order. `wf-1` uses the twenty
-entries in [runtime_events.h](runtime_events.h). `rayon-join-1` uses the thirteen
+call index, bank index and event deltas in schema order. `wf-2` uses the 24
+entries in [runtime_events.h](runtime_events.h). Its final four entries count
+join-search attempts, idle-loop search attempts, join-search successes and
+idle-loop search successes. The parser also accepts historical `wf-1` reports
+containing only the original twenty entries. `rayon-join-1` uses the thirteen
 entries listed in the private dependency's retained `metadata.txt`, implemented
 by [records-rayon-events.patch](records-rayon-events.patch). Banks are worker
 indices, not OS thread IDs; Rayon bank four separately observes unregistered
@@ -1112,13 +1115,26 @@ actual OS park, wake or context switch. `SLOT_REFUSAL` counts free-list
 exhaustion only. This bounded join cohort requires zero such refusals; the
 separate runtime protocol retains its exhaustion/fallback qualification.
 
+Search origins name the immediate call site: helping inside a join, or the
+worker's outer loop including its final search after publishing its idle bit.
+An idle-acquired task's nested join therefore contributes to join-origin work;
+the tag does not describe the OS thread state. Each origin attempt increments
+before trying one victim, and each origin success increments before executing
+the acquired job. The two success counts sum exactly to total successful
+steals after all jobs have joined, checked by host and parser. Attempt deltas
+are not constrained to sum exactly to aggregate attempts or to exceed success
+deltas: snapshot reads are separate, and an attempt may begin before a call
+and succeed after that call publishes work. The ordinary macro-off runtime
+keeps the same execution and waiting policy.
+
 The canonical check retains existing runtime/scheduler tests and adds an event
-runtime protocol variant with a deterministic held-thief owner-inline count,
+runtime protocol variant with deterministic held-thief owner-inline and
+idle-origin success counts,
 18 C sanitizer event cases and 144 interleaved ordinary smoke processes / 432
 calls. The sanitizer event image instruments host/common C computation/runtime;
 Rayon and its patched safe counter code retain ordinary Rust objects. Linux's
 exact retained-allocation contract remains required. Missing/duplicate bank,
-wrong completion count, absent schema and trailing-report negatives check the
+wrong completion/origin count, absent schema and trailing-report negatives check the
 collector. Calibration interleaves 180 processes / 1,620 calls: original WF and
 Rayon join, three callback levels, two images, five rotating/reversed passes,
 the two 256-record trace inputs and a 4,097-record early-invalid input with
@@ -1200,6 +1216,29 @@ Linux `plain` event/control paired median time ratios [ranges] are 0.989
 For the 4,097-record short input they are 1.180 [0.760--1.388] and 1.071
 [0.909--1.212]. Keep observer-image timing separate from ordinary performance;
 these comparisons neither isolate counter cost nor establish a fastest runtime.
+
+A subsequent M1 `wf-2` screen checked 180 processes / 1,620 calls and 1,281
+manifest hash entries. All 405 WF event calls conserved the origin successes,
+including 1,620 per-bank partitions. At width four / grain16, the long Unicode
+`plain` event image records median process means of 28,180.625 join-origin
+attempts and 18,573 idle-origin attempts. Those separate medians must not be
+added to reconstruct the median total. Per-process join / (join + idle) shares
+have median 59.92%, range 55.88--71.12%; the caller contributes a median 40.99%
+of join attempts, range 35.65--58.57%. Nested joins on other workers therefore
+contribute substantially. This rules out interpreting the aggregate search
+count as exclusively idle-loop work; it does not measure either origin's CPU
+cost or establish which replacement policy would be faster.
+
+In that same screen, counter-free `plain` long-input medians [ranges] of five
+process warm means were WF 1.914 [1.873--1.948] ms and Rayon 1.870
+[1.852--2.171] ms. WF's corresponding event/control paired ratio is 0.979
+[0.973--1.023]. First calls remain separate, each warm mean contains eight
+calls, and these unfixed-placement local results do not establish a speedup.
+The counter-free/event image SHA-256 identities are respectively
+`79093eb45285b4a95dfd43e6591f4881db58fafe2a4f7457cdd02276152a9dd1` and
+`af5c17d4144d1b3a020ae111bd68c5aafd4f1042741fb9fe871f6caf3177ff8c`.
+Linux `wf-2` execution remains unqualified; the retained Linux panel above
+uses `wf-1` and cannot supply origin counts.
 
 ### First complete Linux scalar panel and attribution limit
 

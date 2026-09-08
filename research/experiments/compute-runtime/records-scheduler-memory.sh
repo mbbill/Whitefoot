@@ -31,7 +31,7 @@ schema=''
 case "$test_case" in
     events-plain|events-identity|events-timeline)
         case "$backend" in
-            wf-runtime) schema=wf-1;;
+            wf-runtime) schema=wf-2;;
             rayon-1.12.0-join) schema=rayon-join-1;;
             *) usage;;
         esac

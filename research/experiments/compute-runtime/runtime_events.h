@@ -1,6 +1,6 @@
 #ifndef WF_COMPUTE_EVENTS_H
 #define WF_COMPUTE_EVENTS_H
-/* Observer schema wf-1. Retire with the compute scheduler diagnostic.
+/* Observer schema wf-2. Retire with the compute scheduler diagnostic.
  * Only published/popped/stolen/completed jobs are stable after their joins.
  * Wait and signal events count API calls, not OS context switches or wakes. */
 enum {
@@ -24,6 +24,10 @@ enum {
   WF_EVENT_SIGNAL,
   WF_EVENT_IDLE_CLAIM,
   WF_EVENT_SLOT_REFUSAL,
+  WF_EVENT_JOIN_STEAL_ATTEMPT,
+  WF_EVENT_IDLE_STEAL_ATTEMPT,
+  WF_EVENT_JOIN_STEAL_SUCCESS,
+  WF_EVENT_IDLE_STEAL_SUCCESS,
   WF_EVENT_COUNT
 };
 #ifdef __cplusplus

@@ -466,7 +466,7 @@ scheduler-events-build: scheduler-trace-build
 		"$(RAYON_EVENTS_LIB)" $(RAYON_SYSTEM_LIBS) -o "$(OUT)/scheduler-events"
 	@nm -n "$(OUT)/scheduler-events" > "$(OUT)/scheduler-events.symbols"
 	@printf '%s\n' 'image=scheduler-events; trace levels unchanged; internal events always enabled' \
-		'WF=wf-1,20 counters; Rayon=rayon-join-1,13 counters; schemas are not interchangeable' \
+		'WF=wf-2,24 counters; Rayon=rayon-join-1,13 counters; schemas are not interchangeable' \
 		'per-call cumulative snapshots outside call clocks, inside batch; per-bank deltas follow call rows' \
 		'ordinary scheduler-trace is the counter-free control; separate image layout contributes perturbation' \
 		'$(SCHEDULER_FLAGS)' > "$(OUT)/scheduler-events-flags.txt"

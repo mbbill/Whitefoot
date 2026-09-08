@@ -209,10 +209,11 @@ static struct wf__par_slot *wf__par_steal(struct wf__par_lane *victim) {
     return slot;
 }
 
-static struct wf__par_slot *wf__par_find(struct wf__par_lane *lane) {
+static struct wf__par_slot *wf__par_find(struct wf__par_lane *lane, int joining) {
     int count = __atomic_load_n(&wf__par_lane_count, __ATOMIC_RELAXED);
     int offset;
     int step;
+    (void)joining;
     if (count < 2) {
         return NULL;
     }
@@ -229,8 +230,14 @@ static struct wf__par_slot *wf__par_find(struct wf__par_lane *lane) {
         if (victim == lane) {
             continue;
         }
+#if defined(WF_COMPUTE_EVENTS)
+        wf_event(lane, joining ? WF_EVENT_JOIN_STEAL_ATTEMPT : WF_EVENT_IDLE_STEAL_ATTEMPT);
+#endif
         slot = wf__par_steal(victim);
         if (slot != NULL) {
+#if defined(WF_COMPUTE_EVENTS)
+            wf_event(lane, joining ? WF_EVENT_JOIN_STEAL_SUCCESS : WF_EVENT_IDLE_STEAL_SUCCESS);
+#endif
             return slot;
         }
     }
@@ -269,7 +276,7 @@ static void wf__par_wait(struct wf__par_lane *lane, struct wf__par_slot *target)
 
         slot = wf__par_pop(lane);
         if (slot == NULL) {
-            slot = wf__par_find(lane);
+            slot = wf__par_find(lane, 1);
         }
         if (slot != NULL) {
             wf__par_execute(slot);
@@ -316,7 +323,7 @@ static void *wf__par_worker_main(void *opaque) {
     pthread_mutex_unlock(&wf__par_ready_lock);
 
     for (;;) {
-        struct wf__par_slot *slot = wf__par_find(lane);
+        struct wf__par_slot *slot = wf__par_find(lane, 0);
         if (slot != NULL) {
             wf__par_execute(slot);
             rounds = 0;
@@ -334,7 +341,7 @@ static void *wf__par_worker_main(void *opaque) {
         }
 
         __atomic_fetch_or(&wf__par_idle, 1ull << (lane - wf__par_lanes), __ATOMIC_SEQ_CST);
-        slot = wf__par_find(lane);
+        slot = wf__par_find(lane, 0);
         if (slot != NULL) {
             __atomic_fetch_and(&wf__par_idle, ~(1ull << (lane - wf__par_lanes)),
                                __ATOMIC_ACQ_REL);

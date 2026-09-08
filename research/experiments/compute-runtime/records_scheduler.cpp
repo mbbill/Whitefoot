@@ -24,7 +24,7 @@
 #if defined(RECORD_SCHEDULER_EVENTS)
 #include "runtime_events.h"
 #include "events-binding.h"
-static_assert(WF_EVENT_COUNT == 20 && RAYON_EVENT_COUNT == 13 && RAYON_EVENT_BANKS == 5,
+static_assert(WF_EVENT_COUNT == 24 && RAYON_EVENT_COUNT == 13 && RAYON_EVENT_BANKS == 5,
               "runtime event schema changed");
 extern "C" uint64_t rayon_event(unsigned, unsigned) __asm__(RAYON_EVENT_SYMBOL);
 #endif
@@ -231,7 +231,7 @@ struct RuntimeEvents {
         banks(wf ? width : 5), events(wf ? unsigned(WF_EVENT_COUNT) : 13) {
         require(wf || !std::strcmp(records_scheduler_name(), "rayon-1.12.0-join"), "runtime events require WF or Rayon join");
     }
-    const char *schema() const { return wf ? "wf-1" : "rayon-join-1"; }
+    const char *schema() const { return wf ? "wf-2" : "rayon-join-1"; }
     RuntimeSnapshot read() const {
         RuntimeSnapshot result;
         for (unsigned bank = 0; bank < banks; ++bank)
@@ -262,6 +262,10 @@ struct RuntimeEvents {
                     totals[WF_EVENT_JOIN] == jobs, "WF completion conservation");
             require(totals[WF_EVENT_INLINE_RUN] <= totals[WF_EVENT_LOCAL_POP] &&
                     totals[WF_EVENT_SLOT_REFUSAL] == 0, "WF inline or slot inventory");
+            require(totals[WF_EVENT_JOIN_STEAL_SUCCESS] <= jobs &&
+                    totals[WF_EVENT_IDLE_STEAL_SUCCESS] <= jobs &&
+                    totals[WF_EVENT_JOIN_STEAL_SUCCESS] + totals[WF_EVENT_IDLE_STEAL_SUCCESS] ==
+                        totals[WF_EVENT_STEAL_SUCCESS], "WF steal origin conservation");
         } else {
             require(totals[1] <= jobs && totals[2] <= jobs && totals[1] + totals[2] == jobs &&
                     totals[3] == jobs && totals[4] <= jobs && totals[5] <= jobs &&

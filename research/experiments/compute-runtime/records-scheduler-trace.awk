@@ -1,7 +1,7 @@
 # Strict callback trace contract, used by the compute-runtime trace collector.
 # Retire with that diagnostic. Parameters: backend,width,shape,count,limit,
 # grain,chunks,seed,pass,reps,level,shutdown; optional expected_bytes and
-# runtime_schema (wf-1 or rayon-join-1 for the separate event image). No output
+# runtime_schema (wf-1, wf-2 or rayon-join-1 for the separate event image). No output
 # precedes full validation.
 # Successful output is one headerless TSV row:
 # backend width shape records bytes max_length grain chunks seed pass reps level
@@ -59,11 +59,13 @@ function complete_call() {
         (level != "plain" && cmp(offered, bytes)))) fail()
     if (!call_seen || !length(runtime_schema)) return
     if (runtime_seen != runtime_banks || cmp(runtime_sums[0], jobs)) fail()
-    if (runtime_schema == "wf-1") {
+    if (runtime_schema == "wf-1" || runtime_schema == "wf-2") {
         if (cmp(add(runtime_sums[1], runtime_sums[5]), jobs) ||
             cmp(runtime_sums[6], jobs) || cmp(runtime_sums[7], jobs) ||
             cmp(runtime_sums[9], jobs) || cmp(runtime_sums[8], runtime_sums[1]) > 0 ||
             cmp(runtime_sums[19], "0")) fail()
+        if (runtime_schema == "wf-2" &&
+            cmp(add(runtime_sums[22], runtime_sums[23]), runtime_sums[5])) fail()
     } else {
         if (cmp(add(runtime_sums[1], runtime_sums[2]), jobs) ||
             cmp(runtime_sums[3], jobs) || cmp(add(runtime_sums[4], runtime_sums[5]), jobs)) fail()
@@ -83,12 +85,12 @@ BEGIN {
     user_sum = system_sum = voluntary_sum = involuntary_sum = peak_rss = "0"
     if (length(runtime_schema)) {
         if (width != 1 && width != 2 && width != 4) fail()
-        if (runtime_schema == "wf-1" && backend == "wf-runtime") {
-            runtime_banks = width; runtime_events = 20
+        if ((runtime_schema == "wf-1" || runtime_schema == "wf-2") && backend == "wf-runtime") {
+            runtime_banks = width; runtime_events = runtime_schema == "wf-1" ? 20 : 24
         } else if (runtime_schema == "rayon-join-1" && backend == "rayon-1.12.0-join") {
             runtime_banks = 5; runtime_events = 13
         } else fail()
-        jobs = sprintf("%.0f", chunks && (runtime_schema != "wf-1" || width != 1) ? chunks - 1 : 0)
+        jobs = sprintf("%.0f", chunks && (backend != "wf-runtime" || width != 1) ? chunks - 1 : 0)
     }
 }
 NR == 1 {

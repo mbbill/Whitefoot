@@ -207,6 +207,13 @@ static void protocol(void) {
     /* Every thief is held, so these are genuine owner-pop and nested calls. */
     owner_only = 1;
 #if defined(WF_COMPUTE_EVENTS)
+    unsigned long idle_success = 0;
+    for (unsigned lane = 0; lane < workers; ++lane) {
+        idle_success += wf_compute_event(lane, WF_EVENT_IDLE_STEAL_SUCCESS);
+        assert(wf_compute_event(lane, WF_EVENT_JOIN_STEAL_SUCCESS) == 0);
+    }
+    /* Every helper entered its held callback from the idle search loop. */
+    assert(idle_success == workers - 1);
     unsigned long inline_before = wf_compute_event(0, WF_EVENT_INLINE_RUN);
     unsigned long end_before = wf_compute_event(0, WF_EVENT_RUN_END);
 #endif
