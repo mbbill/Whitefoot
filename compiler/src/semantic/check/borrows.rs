@@ -672,19 +672,17 @@ region block that most closely encloses it, and a loop body is one",
             inputs = self.written_regions_below(parameters)?;
         }
         let mut outputs = Vec::new();
-        for production in [Production::ResultBinding, Production::Effects] {
-            if let Some(child) = self.tree.first_child_with(node, production)? {
-                outputs.extend(self.written_regions_below(child)?);
-            }
+        for result in self.tree.children_with(node, Production::ResultBinding)? {
+            outputs.extend(self.written_regions_below(result)?);
+        }
+        if let Some(effects) = self.tree.first_child_with(node, Production::Effects)? {
+            outputs.extend(self.written_regions_below(effects)?);
         }
         // [FORM-8] every output position writes its region: either the same
         // region is meant at an input position, or no input determines it and
         // the caller chooses it. An elided output region names nothing either
         // way.
-        if let Some(result) = self
-            .tree
-            .first_child_with(node, Production::ResultBinding)?
-        {
+        for result in self.tree.children_with(node, Production::ResultBinding)? {
             let mut stack = vec![result];
             while let Some(current) = stack.pop() {
                 let carries_region = match self.tree.production(current)? {

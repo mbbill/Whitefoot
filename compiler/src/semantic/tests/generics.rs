@@ -642,6 +642,54 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// [FORM-8] reads every result ordinal as an output position. Each region in
+/// this swapped pair occurs first at an input and again at the opposite result
+/// ordinal; in particular, `'left` receives its required second occurrence
+/// only from ordinal one.
+#[test]
+fn multi_result_region_spelling_reads_every_ordinal() {
+    let source = br#"struct Holder['s] {
+  cell: Box<'s, u64>;
+}
+
+fn reverse['left, 'right](left: own Holder<'left>, right: own Holder<'right>) -> (first: own Holder<'right>, second: own Holder<'left>) pure {
+  return move right, move left;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(_) = outcome else {
+            panic!("every result ordinal must participate in FORM-8: {outcome:?}");
+        };
+    });
+}
+
+/// The same declaration still writes its region-parameter list in first-use
+/// order. Swapping the list is a FORM-8 rejection even though the result
+/// ordinals themselves intentionally reverse the value flow.
+#[test]
+fn multi_result_region_spelling_keeps_first_occurrence_order() {
+    assert_rule_kind(
+        br#"struct Holder['s] {
+  cell: Box<'s, u64>;
+}
+
+fn reverse['right, 'left](left: own Holder<'left>, right: own Holder<'right>) -> (first: own Holder<'right>, second: own Holder<'left>) pure {
+  return move right, move left;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Form8,
+        |kind| matches!(kind, SemanticIssueKind::RegionSpelling { .. }),
+    );
+}
+
 /// The same recursive position is an input position for [FORM-8], so its
 /// region is inferred from the argument and writing it at the call is the
 /// ordinary canonical-spelling rejection.
