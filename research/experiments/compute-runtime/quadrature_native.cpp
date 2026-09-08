@@ -1,5 +1,9 @@
 // Recursive scalar controls for quadrature; retire with the owning experiment.
 #include "quadrature_native.h"
+#include "quadrature-rayon-binding.h"
+extern "C" double quadrature_rayon(unsigned, unsigned, unsigned,
+    double, double, double, double, double, unsigned,
+    void (*)(uint64_t, uint64_t, uint64_t)) __asm__(QUADRATURE_RAYON_SYMBOL);
 extern "C" {
 #include "runtime.h"
 }
@@ -35,6 +39,9 @@ struct Result {
 #endif
 };
 QuadratureObservation observation{};
+void observe_rayon(uint64_t nodes, uint64_t forks, uint64_t migrated) {
+    observation={nodes,forks,migrated};
+}
 using Pool = parlay::internal::scheduler_type;
 Pool *parlay_pool = nullptr;
 unsigned selected_width = 0;
@@ -162,13 +169,15 @@ struct TbbPool {
 }
 extern "C" double quadrature_native_run(unsigned kind,unsigned workers,unsigned budget,
     double a,double b,double c,double w,double tolerance,unsigned depth) {
-    if (kind>6 || (workers!=1 && workers!=4) || budget>24 || depth>24) fail("arguments");
+    if (kind>9 || (workers!=1 && workers!=4) || budget>24 || depth>24) fail("arguments");
     if (selected_width && selected_width!=workers) fail("worker width changed");
     if (!selected_width && (kind==3 || kind==4 || kind==6)) {
         const char *configured=std::getenv("WF_WORKERS");
         if (!configured || std::strcmp(configured,workers==1?"1":"4")) fail("WF worker budget");
     }
     selected_width=workers;
+    if (kind>=7) return quadrature_rayon(kind==9?0:kind-6,workers,budget,
+        a,b,c,w,tolerance,depth,observe_rayon);
     Result result{};
     try {
         if (!kind) result=integrate<Kind::Serial>(a,b,c,w,tolerance,depth,0);

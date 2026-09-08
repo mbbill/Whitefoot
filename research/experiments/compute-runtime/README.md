@@ -1612,9 +1612,9 @@ than being mislabeled converged. A temporary image adding one to the computed
 result fails with `quadrature: binary64 result`.
 
 `check-quadrature`, called by the experiment's canonical `check`, runs the same
-WF objects in ordinary and ASan-UBSan images, forty forms/grain settings and
-worker requests1/4: 160 processes/3,200 checked results, plus ten forced
-owner-slot exhaustion processes/200 results, totaling170 processes/3,400 results.
+WF objects in ordinary and ASan-UBSan images, fifty-one forms/grain settings and
+worker requests1/4: 204 processes/4,080 checked results, plus ten forced
+owner-slot exhaustion processes/200 results, totaling214 processes/4,280 results.
 Host/runtime/floor and
 the native C++/Parlay header code are instrumented; generated WF objects and
 the shared oneTBB library remain ordinary. The instrumented image
@@ -1640,14 +1640,15 @@ introduced by actualization; they do not by themselves isolate each offer's
 contribution to the ordinary elapsed-time loss.
 
 `quadrature-calibrate` runs the ordinary image sequentially across five passes,
-two worker requests and forty forms/grain settings: the original `native`,
+two worker requests and fifty-one forms/grain settings: the original `native`,
 `wf-seq`, `wf-auto`, `wf-leaf-seq`, `wf-leaf`, the two generated refusal forms,
 the two compiler-generated frontier forms,
 plus `cpp-seq`, ten
 oneTBB/Parlay settings, ten native WF settings and ten reciprocal direction
-settings described below. Each
+settings described below, plus Rust sequential and ten reciprocal Rayon
+settings. Each
 process runs all ten cases, retaining one first and eight warm calls per case:
-400 processes/36,000 checked results. Form order reverses on alternate passes.
+510 processes/45,900 checked results. Form order reverses on alternate passes.
 The AWK reader binds mode, form, requested width and instrumentation to each
 invocation, requires the complete ordered input/call inventory and validates
 work metadata and event totals. Missing-row, wrong-form and missing-footer
@@ -1668,9 +1669,9 @@ pool is inactive. `wf-leaf-seq` and `wf-leaf` select the sequential/parallel
 bodies compiled with the opt-in scalar-leaf control described below. Both
 modules share one timing executable, runtime and native kernel; the host chooses
 a common indirect generated-call adapter before timing. No default or runtime
-interface changes. The oneTBB/Parlay forms below execute the recursive algorithm
-directly, rather than reusing the flat callback adapters. A recursive Rayon
-control and broader tuning remain missing.
+interface changes. The oneTBB/Parlay and optional Rayon forms below execute the
+recursive algorithm directly, rather than reusing the flat callback adapters.
+Broader tuning and Linux qualification of the new Rayon form remain open.
 
 Run qualification first, then calibrate alone in a fresh result directory:
 
@@ -2319,18 +2320,19 @@ verbose task-clock attribute probe before timing. A command may be a wrapper;
 the CI job selects the installed tool directly. The Linux compute job records its attempt
 to permit process counters on the ephemeral hosted runner. It runs this panel
 after the original short-call calibration on the same recorded CPU mask.
-Five alternating whole-cell orders cover eleven forms, worker requests1/4 and
-four heavy inputs:440 plain processes, plus440 perf processes if at least one
+Five alternating whole-cell orders cover fourteen forms, worker requests1/4 and
+four heavy inputs:560 plain processes, plus560 perf processes if at least one
 event is available. Each uses4,096 repetitions by default; `ROUNDS` and
 `REPEATS` can select an explicitly recorded different panel. The forms are C
 native, generated WF sequential/leaf/refusal and frontier/its sequential clone,
 C++ sequential, native WF value
-depth8, Parlay-left depth4/8 and oneTBB depth8. This is not a general grain
+depth8, Parlay-left depth4/8, oneTBB depth8, Rust sequential and both Rayon
+directions at depth8. This is not a general grain
 search. There is no added queue-occupancy cap here; the preceding queue-limit4
 candidate is a different experiment. Normal owner-slot capacity still applies.
 
-`check-quadrature` additionally invokes `quadrature-batch.sh check`. Its172
-successful batch executions check1,892 outputs:160 ordinary/sanitized cells,
+`check-quadrature` additionally invokes `quadrature-batch.sh check`. Its220
+successful batch executions check2,420 outputs:208 ordinary/sanitized cells,
 ten input-selector cells and two FIFO protocol encodings. It checks the
 documented acknowledgement line and perf versions that append a NUL. Five
 negative probes cover wrong repeat identity, unpaired control descriptors,
@@ -2663,8 +2665,165 @@ pool; their paired wall ratios are1.002/1.006/1.013/1.000, only two lower pairs
 each. The depth-cap control retains an adverse maximum1.155. Neither control
 is normalized away or treated as proof of code-layout neutrality.
 Specialization/layout, fixed-grain selection and M1 placement remain material
-limits. Linux replication and held-out application coverage remain open;
-neither this cohort nor the private screen establishes a universal ceiling.
+limits. The Linux replication below tests another platform; held-out
+application coverage remains open and no universal ceiling is established.
+
+### Linux compiler-frontier replication
+
+The [5bc311f4 Linux quadrature job](https://github.com/mbbill/Whitefoot/actions/runs/34261295877/job/102179613155)
+qualifies the normal compiler frontier before the Rayon extension below.
+It retains170 full and172 batch qualifiers, then880 measured processes
+(440 plain/440 perf),3,611,520 checked outputs and1,760 software-event rows.
+All63 manifest paths and14 harness source snapshots match the exact revision.
+Artifact10070215810 has ZIP SHA256
+`d3041a3db5faf92995bca07c11855febd7c98843b78e670a13b2dd0fd8cc49ef`;
+the ordinary executable is
+`8f57b1ea19a952cdcfc784ca25fdfbf72a3652d65ee01a96426e458e21fc31e8`.
+Center-peak again has247 frontier publications, or0 publications/247 refusals
+with all owner slots held. Original full-depth checks remain intact.
+
+AMD EPYC7763 hosted VM, two cores/four SMT CPUs, mask0-3;
+Clang18.1.3/x86-64-v3, strict scalar FP, no SIMD/FMA/LTO. `cpu.max` is
+unavailable; full physical capacity/isolation is not qualified. These are
+five paired process batch means per input, not latency tails. No M1 or prior
+Linux cohort is pooled into the following ratios.
+
+| Input | Plain frontier/leaf wall | Plain frontier/leaf CPU | Plain frontier/Parlay-left8 wall | Plain frontier/Parlay-left8 CPU |
+| --- | ---: | ---: | ---: | ---: |
+| Center peak |0.659|0.637|0.866|0.891|
+| Left peak |0.683|0.646|0.828|0.873|
+| Right peak |0.681|0.631|0.887|0.897|
+| Depth cap |0.655|0.637|0.938|0.950|
+
+Every table cell improves in all five pairs. Plain wall reductions against
+generated leaf are31.7-34.5%. Perf-observer frontier/leaf wall ratios are
+0.667/0.670/0.667/0.660 and frontier/Parlay-left8 ratios are
+0.875/0.835/0.888/0.937, also five wins each; observers remain separate.
+Native WF value8 is still a stronger near-parity comparison: plain right
+wall1.006 has only two lower pairs, and depth-cap0.995 has three. Perf center
+wall1.001 also has two lower pairs. Against Parlay-left4 on right skew,
+frontier consumes more rusage CPU in all five pairs despite lower wall time:
+plain1.247/perf1.219. Parlay-left8 has lower observed wall time than depth4 on
+every input in this panel. There is no uniform CPU/strongest-reference win.
+
+Plain W4 frontier-sequential/leaf-sequential wall ratios are
+1.004/1.007/0.998/1.004 with2/2/3/2 lower pairs; the perf right control retains
+an adverse maximum1.127. Neither sequential form starts a WF pool.
+Across880 processes, process-clock/rusage median is0.999940 with range
+0.990955-0.999996. Perf task-clock/process-clock ranges0.725724-1.015149;
+Parlay-left4 medians remain0.833/0.737/0.904/0.990. Agreement between CPU APIs
+may share kernel accounting and does not prove which counter is accurate.
+All four software events report100% running; six requested hardware events
+are unavailable, so IPC/cache/stall attribution remains absent. The retained
+verbose probe qualifies the software event setup, not every timed region.
+
+### Recursive Rayon reference
+
+`rayon` and `rayon-left` add reciprocal `rayon::join` recursion at depths
+0/2/4/8/24; `rust-seq` uses the same Rust scalar kernel without a pool.
+The [pinned Rayon join interface](https://docs.rs/rayon/1.12.0/rayon/fn.join.html)
+executes its first closure locally and makes its second available to steal.
+Thus `rayon` offers the right branch, while `rayon-left` offers the left and
+matches generated WF's direction. Both still sum left plus right. Below the
+frontier they call a sequential specialization, matching the native C++
+controls' grain rule. Rust preserves the explicit binary64 operation order;
+the independent C stack oracle checks all numerical results and work counts.
+No per-node C callback substitutes for native Rust recursion.
+
+The existing locked Rayon1.12.0 crate owns this optional `quadrature` module;
+its `quadrature-stats` feature adds subtree node/fork/migrated-branch counts.
+Default records/event builds do not compile the module. Ordinary timing
+has no counters or diagnostic callback calls. The one root C ABI call returns
+the value; the instrumented root additionally reports counters through a C
+callback. The generated Rust C symbol is resolved from that exact build's IR,
+without unsafe Rust or export attributes. All branches join before reporting.
+These are application fork/migration counts, not internal Rayon job counts
+or OS context switches. Instrumented W4 qualification must observe migration;
+an all-zero migration report is a maintained negative case.
+
+The pool includes the caller as worker zero, with three helpers at width4.
+It is process-lived, as in the earlier records control. Full and batch
+qualification retain stdout and diagnostic stderr separately and validate the
+actual exit status. Address-instrumented Linux x86_64 runs use the existing
+exact pinned caller-worker lifecycle grammar with the quadrature initializer;
+other instrumentation profiles require clean status/stderr. No leak detector
+is disabled and no arbitrary allocation is tolerated. Old records grammar
+replays remain unchanged. The new Linux quadrature stack shape is pending
+actual CI evidence; a mismatch must fail, not expand an allowance silently.
+
+Rust uses O3 with loop/SLP vectorization and LTO disabled; the Linux v3 panel
+also requests Rust x86-64-v3. Rust/Rayon are not ASan/UBSan-instrumented even
+in the diagnostic image; C/C++ host/runtime/floor and Parlay headers retain
+their existing sanitizer coverage. Rust kernel, closures, result aggregates,
+compiler and one root FFI boundary differ from C++ and generated WF, so this
+is an end-to-end reference. Rust sequential results must be considered before
+attributing a timing difference solely to scheduling.
+
+The initial M1 implementation passed214 full qualifiers/4,280 outputs and
+220 batch qualifiers/2,420 outputs, then measured560 plain processes with
+2,298,240 checked outputs. Its ordinary image SHA256 is
+`4671fd3f5a6e71309f69db32759761f4e22f25996b029501b75d0e7cde5974a3`;
+all80 build-manifest paths and20 source snapshots, including nested Rust,
+were independently verified. This cohort used an80-byte by-value Rust `Node`
+argument, lowered to a memory pointer by Rust1.98.1/LLVM22.1.8. C++ used
+scalar arguments with Clang21. Both disabled vectorization and LTO.
+
+That initial reference fails kernel-quality qualification: Rust-sequential /
+C++-sequential paired wall medians at requested width1 are
+2.863/2.995/2.737/2.769 for center/left/right/cap; requested width4 gives
+2.787/3.042/2.725/2.814. Every pair is slower, including rusage CPU. These
+sequential forms start no pool. WF-frontier/Rayon8 W4 wall ratios
+0.407/0.402/0.392/0.313 and reciprocal Rayon-left8 ratios
+0.386/0.345/0.442/0.280 therefore do not establish a scheduling advantage.
+No sequential normalization is used to hide the kernel difference. The
+current Rust implementation passes the recursive scalar arguments directly;
+the operation sequence, fork directions and oracle remain unchanged.
+
+Within that same initial cohort, WF-frontier/Parlay-left8 wall ratios are
+0.944/0.911/0.955/0.932, with5/5/4/5 lower pairs. Adverse controls remain:
+native WF8 right has frontier wall1.029/CPU1.019 with only two lower pairs,
+and Parlay-left4 cap has frontier wall1.016 with two lower pairs. Requested
+width4 frontier-sequential/leaf-sequential cap wall1.026/CPU1.023 is slower
+in all five pairs. These are process-batch means on an unpinned M1, not
+latency tails or evidence of a universal library winner.
+
+The scalar-argument rebuild repeats the same full/batch qualification and
+560-process timing protocol, with ordinary SHA256
+`602c2dc9909a404d89337a0eb7416cbcf2c678720678ce3aafccbd248b083012`.
+All80 manifest paths,20 source snapshots and2,298,240 outputs pass independent
+replay. Rust sequential recursion now has scalar LLVM parameters and a128-byte
+M1 stack frame instead of192 bytes. The previous large sequential mismatch
+is absent: Rust/C++ paired wall medians at width1 are
+0.999/0.995/0.999/1.003; requested width4 gives0.986/0.995/0.994/1.017.
+This is evidence for changing the argument representation, not a measured
+cost assigned to an individual copy or stack instruction. Code layout and
+instruction scheduling also change; no PMU attribution is available.
+
+| Input | WF frontier8 wall us | Rayon8 wall us | Rayon-left8 wall us | Paired WF/Rayon8 wall | Paired WF/Rayon-left8 wall |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Center peak |10.090|12.575|12.377|0.810|0.821|
+| Left peak |8.890|10.483|14.945|0.848|0.580|
+| Right peak |7.854|15.727|10.164|0.496|0.773|
+| Depth cap |16.467|19.385|19.224|0.875|0.862|
+
+Wall columns are medians of per-process means; ratio columns are medians of
+same-pass ratios, not ratios of those medians. WF/Rayon8 wins all five wall
+pairs per input; WF/Rayon-left8 wins are5/5/4/5, retaining the right adverse
+maximum1.051. Rusage CPU ratios are0.767/0.818/0.574/0.810 against Rayon8
+and0.768/0.625/0.744/0.826 against Rayon-left8, all five lower pairs.
+The direction-dependent skew response remains visible after fixing the
+sequential kernel. This panel fixes grain at8; broader Rayon grain/policy
+tuning and held-out confirmation remain open.
+
+The same cohort retains stronger adverse references: WF/Parlay-left4 cap
+wall1.028 wins only one pair, with maximum1.112. WF/native-WF8 wall ratios
+0.987/0.954/0.930/0.980 win only3/3/4/4 pairs. WF/Parlay-left8 wall ratios
+0.924/0.933/0.947/0.932 win3/5/4/5 pairs. Sequential-clone controls remain
+mixed, including requested-width4 right wall1.004 with two lower pairs.
+Earlier cohorts are not pooled. Kernel timing parity removes the previous
+large confound but does not isolate scheduler cost or qualify a globally
+strongest reference; closure representation, recursion, pool entry and runtime
+policy all remain in the measured end-to-end time.
 
 ## Scalar scheduler comparison
 

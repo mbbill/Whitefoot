@@ -1,5 +1,8 @@
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "quadrature")]
+pub mod quadrature;
+
 use rayon::prelude::*;
 use std::ffi::c_void;
 use std::sync::OnceLock;

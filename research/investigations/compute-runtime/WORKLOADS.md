@@ -59,10 +59,11 @@ mixed Parlay wins and combines grain with specialization/layout effects.
 The subsequent [compiler control](../../experiments/compute-runtime/README.md#compiler-generated-recursion-frontier)
 now passes exact task and full owner-slot exhaustion checks on this workload.
 Its normal compiler output reproduces34.8-37.0% paired median wall reductions
-against generated leaf on M1; strongest-reference wins remain mixed. Linux
-replication and held-out coverage remain open; this is not a selected depth or
-a public ABI change.
-Recursive Rayon, general compiler
+against generated leaf on M1 and31.7-34.5% in the subsequent Linux VM panel;
+strongest-reference wins remain mixed. This is not a selected depth or
+a public ABI change. Reciprocal recursive Rayon and its Rust sequential
+kernel now extend the qualified M1 reference matrix; Linux Rayon lifecycle
+qualification remains pending. General compiler
 grain selection and held-out/native-host confirmation
 remain missing. The ten-case screen does not
 yet qualify larger application composition and does not replace the application

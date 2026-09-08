@@ -12,10 +12,10 @@ BEGIN {
     frontier=(form=="wf-frontier" || form=="wf-frontier-seq")
     parallel=(form=="wf-auto" || form=="wf-leaf" || form=="wf-refusal" || form=="wf-frontier")
     native_wf=(form=="wf-native" || form=="wf-value" || form=="wf-value-right")
-    native=(native_wf || form=="tbb" || form=="parlay" || form=="parlay-left")
+    native=(native_wf || form=="tbb" || form=="parlay" || form=="parlay-left" || form=="rayon" || form=="rayon-left")
     if(!expected_nodes || (width!=1 && width!=4) || !integer(repeats) || repeats<1 || repeats>65536 ||
         (stats!=0 && stats!=1) || (control!=0 && control!=1) || !integer(spawn) || spawn>24 ||
-        (!native && !frontier && spawn!=0) || (frontier && spawn!=8) || (!native && !parallel && form!="native" && form!="cpp-seq" &&
+        (!native && !frontier && spawn!=0) || (frontier && spawn!=8) || (!native && !parallel && form!="native" && form!="cpp-seq" && form!="rust-seq" &&
          !frontier && form!="wf-seq" && form!="wf-leaf-seq" && form!="wf-refusal-seq"))bad("validator arguments")
 }
 NR==1 {

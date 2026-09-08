@@ -20,10 +20,11 @@ BEGIN {
     parallel=(form=="wf-auto" || form=="wf-leaf" || form=="wf-refusal" || form=="wf-frontier")
     leaf=(form=="wf-leaf" || form=="wf-leaf-seq" || refusal || frontier)
     native_wf=(form=="wf-native" || form=="wf-value" || form=="wf-value-right")
-    native=(form=="cpp-seq" || form=="tbb" || form=="parlay" || form=="parlay-left" || native_wf)
+    rayon=(form=="rayon" || form=="rayon-left")
+    native=(form=="cpp-seq" || form=="tbb" || form=="parlay" || form=="parlay-left" || native_wf || rayon || form=="rust-seq")
     if (spawn=="")spawn=0
     if (!integer(spawn) || (spawn!=0 && spawn!=2 && spawn!=4 && spawn!=8 && spawn!=24) ||
-        ((form!="tbb" && form!="parlay" && form!="parlay-left" && !native_wf && !frontier) && spawn) || (frontier && spawn!=8))bad("spawn depth")
+        ((form!="tbb" && form!="parlay" && form!="parlay-left" && !native_wf && !frontier && !rayon) && spawn) || (frontier && spawn!=8))bad("spawn depth")
     wf_pool=(parallel || (native_wf && spawn>0))
     if ((mode!="check" && mode!="bench" && mode!="exhaust") || (form!="native" && form!="wf-seq" && !parallel && !leaf && !native) ||
         (width!=1 && width!=4) || (stats!=0 && stats!=1)) bad("validator arguments")
@@ -59,6 +60,7 @@ NR==2 {
     if (field($4,"outputs=")!=count*calls || field($5,"stats=")!=stats ||
         field($6,"steals=")!=steals || field($7,"migrated=")!=migrated) bad("footer totals")
     if (stats && parallel && width==4 && mode!="exhaust" && !steals) bad("no actual steal")
+    if (stats && rayon && width==4 && spawn && !migrated) bad("no Rayon migration")
     footer=1;next
 }
 {

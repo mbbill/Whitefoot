@@ -72,12 +72,18 @@ QUADRATURE_FORMS := native wf-seq wf-auto wf-leaf-seq wf-leaf wf-refusal-seq wf-
 	wf-value-d0 wf-value-d2 wf-value-d4 wf-value-d8 wf-value-d24 \
 	parlay-left-d0 parlay-left-d2 parlay-left-d4 parlay-left-d8 parlay-left-d24 \
 	wf-value-right-d0 wf-value-right-d2 wf-value-right-d4 wf-value-right-d8 wf-value-right-d24
+QUADRATURE_FORMS += rust-seq rayon-d0 rayon-d2 rayon-d4 rayon-d8 rayon-d24 \
+	rayon-left-d0 rayon-left-d2 rayon-left-d4 rayon-left-d8 rayon-left-d24
+QUADRATURE_RUST_FLAGS := -C no-vectorize-loops -C no-vectorize-slp -C lto=off -C symbol-mangling-version=v0 \
+	$(if $(filter -march=x86-64-v3,$(BENCH_ARCH)),-C target-cpu=x86-64-v3,)
 quadrature-deps:
 	OUT="$(OUT)" CC="$(CC)" CXX="$(CXX)" sh records-scheduler-deps.sh build
 
 quadrature-build: $(WFC) quadrature-deps
 	mkdir -p "$(OUT)/quadrature/source"
-	cp quadrature.wf quadrature_host.ll quadrature.c quadrature.awk quadrature-batch.sh quadrature-batch.awk quadrature_native.cpp quadrature_native.h records-scheduler-deps.sh runtime.c runtime.h runtime_events.h $(FLOOR) Makefile "$(OUT)/quadrature/source/"
+	cp quadrature.wf quadrature_host.ll quadrature.c quadrature.awk quadrature-batch.sh quadrature-batch.awk quadrature-memory.sh quadrature_native.cpp quadrature_native.h records-scheduler-deps.sh records-scheduler-memory.awk runtime.c runtime.h runtime_events.h $(FLOOR) Makefile "$(OUT)/quadrature/source/"
+	mkdir -p "$(OUT)/quadrature/source/records-rayon"
+	cp records-rayon/Cargo.toml records-rayon/Cargo.lock records-rayon/adapter.rs records-rayon/quadrature.rs "$(OUT)/quadrature/source/records-rayon/"
 	mkdir -p "$(OUT)/quadrature/deps"
 	cp -R "$(OUT)/scheduler-deps/lib" "$(OUT)/quadrature/deps/"
 	cp "$(OUT)/scheduler-deps/metadata.txt" "$(OUT)/scheduler-deps/build/compile_commands.json" "$(OUT)/quadrature/deps/"
@@ -117,19 +123,28 @@ quadrature-build: $(WFC) quadrature-deps
 	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=0 -S quadrature.c -o "$(OUT)/quadrature/native.s"
 	@set -e; for image in ordinary sanitized; do \
 		stats=0; flags=''; if test $$image = sanitized; then stats=1; flags='-DWF_COMPUTE_EVENTS -fsanitize=$(SANITIZER) -fno-sanitize-recover=all -fno-omit-frame-pointer'; fi; \
+		features='--features quadrature'; if test $$stats = 1; then features='--features quadrature-stats'; fi; \
+		cargo clean --manifest-path records-rayon/Cargo.toml --target-dir "$(OUT)/quadrature/rayon-$$image" --release --package wf-records-rayon; \
+		RUSTFLAGS='$(QUADRATURE_RUST_FLAGS)' cargo rustc --locked --offline --release \
+			--manifest-path records-rayon/Cargo.toml --target-dir "$(OUT)/quadrature/rayon-$$image" $$features -- --emit=llvm-ir,asm,link; \
+		binding=$$(awk '/^define .* @_RNv[^ (]*10quadrature\(/ {split($$0,a,"@");s=a[2];sub(/\(.*/,"",s);++n} END {if(n!=1)exit 1;print s}' \
+			"$(OUT)/quadrature/rayon-$$image"/release/deps/wf_records_rayon-*.ll); \
+		prefix=''; if test "$$(uname -s)" = Darwin; then prefix=_; fi; \
+		printf '#define QUADRATURE_RAYON_SYMBOL "%s%s"\n' "$$prefix" "$$binding" > "$(OUT)/quadrature/rayon-$$image/quadrature-rayon-binding.h"; \
 		for unit in quadrature runtime; do \
 			$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=$$stats $$flags -c $$unit.c -o "$(OUT)/quadrature/$$image-$$unit.o"; \
 		done; \
 		$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=$$stats $$flags -c $(FLOOR) -o "$(OUT)/quadrature/$$image-floor.o"; \
 		$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -fno-fast-math -ffp-contract=off -DWF_COMPUTE_STATS=$$stats $$flags \
-			-isystem "$(OUT)/scheduler-deps/include" -c quadrature_native.cpp -o "$(OUT)/quadrature/$$image-native.o"; \
+			-isystem "$(OUT)/scheduler-deps/include" -I"$(OUT)/quadrature/rayon-$$image" -c quadrature_native.cpp -o "$(OUT)/quadrature/$$image-native.o"; \
 		$(CXX) -pthread -fno-lto $$flags "$(OUT)/quadrature/$$image-quadrature.o" "$(OUT)/quadrature/$$image-runtime.o" \
 			"$(OUT)/quadrature/$$image-floor.o" "$(OUT)/quadrature/$$image-native.o" \
 			"$(OUT)/quadrature/wf.o" "$(OUT)/quadrature/wf-leaf.o" "$(OUT)/quadrature/wf-refusal.o" "$(OUT)/quadrature/wf-frontier.o" \
+			"$(OUT)/quadrature/rayon-$$image/release/libwf_records_rayon.a" $(RAYON_SYSTEM_LIBS) \
 			-L"$(OUT)/quadrature/deps/lib" -Wl,-rpath,"$(OUT)/quadrature/deps/lib" -ltbb -lm -o "$(OUT)/quadrature/$$image"; \
 	done
 	$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -fno-fast-math -ffp-contract=off -DWF_COMPUTE_STATS=0 \
-		-isystem "$(OUT)/scheduler-deps/include" -S quadrature_native.cpp -o "$(OUT)/quadrature/native-cpp.s"
+		-isystem "$(OUT)/scheduler-deps/include" -I"$(OUT)/quadrature/rayon-ordinary" -S quadrature_native.cpp -o "$(OUT)/quadrature/native-cpp.s"
 	@nm "$(OUT)/quadrature/ordinary" > "$(OUT)/quadrature/ordinary.symbols"
 	$(call require-strong,$(OUT)/quadrature/ordinary,wf__par_acquire_lane)
 	$(call require-strong,$(OUT)/quadrature/ordinary,wf__floor_run)
@@ -138,17 +153,22 @@ quadrature-build: $(WFC) quadrature-deps
 		'WF original: --par; scalar-leaf control: --par --par-scalar-leaf-limit 16; refusal control additionally --par-sequential-refusal; frontier control instead --par-recursive-frontier 8' \
 		'sanitized: -DWF_COMPUTE_STATS=1 -DWF_COMPUTE_EVENTS -fsanitize=$(SANITIZER) -fno-sanitize-recover=all -fno-omit-frame-pointer; host/runtime/floor/native C++ and Parlay headers; generated WF and oneTBB library ordinary' > "$(OUT)/quadrature/flags.txt"
 	$(CC) --version >> "$(OUT)/quadrature/flags.txt"
+	@printf 'Rayon kernel/scheduler RUSTFLAGS=%s\nRust diagnostics use quadrature-stats; Rust/Rayon are not sanitizer-instrumented.\n' '$(QUADRATURE_RUST_FLAGS)' >> "$(OUT)/quadrature/flags.txt"
+	rustc -vV >> "$(OUT)/quadrature/flags.txt"
+	@printf '%s\n' '$(if $(findstring address,$(SANITIZER)),address,clean)' > "$(OUT)/quadrature/memory-profile.txt"
 	cp "$(WFC)" "$(OUT)/quadrature/whitefootc"
 	git rev-parse HEAD > "$(OUT)/quadrature/revision.txt"
-	cd "$(OUT)/quadrature" && shasum -a 256 source/* module.ll host.ll *.o *.s ordinary sanitized whitefootc flags.txt ledger.txt revision.txt leaf-module.ll leaf-host.ll leaf-ledger.txt refusal-module.ll refusal-host.ll refusal-ledger.txt frontier-module.ll frontier-host.ll frontier-ledger.txt > manifest.sha256
+	cd "$(OUT)/quadrature" && shasum -a 256 module.ll host.ll *.o *.s ordinary sanitized whitefootc flags.txt ledger.txt revision.txt memory-profile.txt leaf-module.ll leaf-host.ll leaf-ledger.txt refusal-module.ll refusal-host.ll refusal-ledger.txt frontier-module.ll frontier-host.ll frontier-ledger.txt rayon-*/quadrature-rayon-binding.h rayon-*/release/libwf_records_rayon.a rayon-*/release/deps/wf_records_rayon-*.ll rayon-*/release/deps/wf_records_rayon-*.s > manifest.sha256
+	cd "$(OUT)/quadrature" && find source -type f -exec shasum -a 256 {} + >> manifest.sha256
 	cd "$(OUT)/quadrature" && find deps -type f -exec shasum -a 256 {} + >> manifest.sha256
 
 check-quadrature: quadrature-build
 	@set -e; for image in ordinary sanitized; do for width in 1 4; do for variant in $(QUADRATURE_FORMS); do \
 		form=$${variant%-d*}; spawn=0; set -- $$form; case $$variant in *-d*) spawn=$${variant##*-d}; set -- $$form $$spawn;; esac; \
 		log="$(OUT)/quadrature/check-$$image-w$$width-$$variant.tsv"; \
-		WF_WORKERS=$$width "$(OUT)/quadrature/$$image" check "$$@" > "$$log" 2>&1; \
 		stats=0; if test $$image = sanitized; then stats=1; fi; \
+		status=0; LSAN_OPTIONS=exitcode=23 WF_WORKERS=$$width "$(OUT)/quadrature/$$image" check "$$@" > "$$log" 2> "$$log.stderr" || status=$$?; \
+		sh quadrature-memory.sh '$(if $(findstring address,$(SANITIZER)),address,clean)' "$$log.stderr" $$status $$form $$stats; \
 		awk -v mode=check -v form=$$form -v spawn=$$spawn -v width=$$width -v stats=$$stats -f quadrature.awk "$$log"; \
 		grep -E '^# quadrature PASS: outputs=20 stats=[01] steals=[0-9]+ migrated=[0-9]+$$' "$$log"; \
 	done; done; done
@@ -160,6 +180,15 @@ check-quadrature: quadrature-build
 		awk -v mode=exhaust -v form=$$form -v spawn=$$spawn -v width=4 -v stats=$$stats -f quadrature.awk "$$log"; \
 		grep -E '^# quadrature PASS: outputs=20 stats=[01] steals=0 migrated=0$$' "$$log"; \
 	done; done
+	@awk '!/^#/ {$$19=0} /^# quadrature PASS:/ {$$7="migrated=0"} {print}' "$(OUT)/quadrature/check-sanitized-w4-rayon-d8.tsv" > "$(OUT)/quadrature/negative-rayon-migration.tsv"
+	@if awk -v mode=check -v form=rayon -v spawn=8 -v width=4 -v stats=1 -f quadrature.awk \
+		"$(OUT)/quadrature/negative-rayon-migration.tsv" > "$(OUT)/quadrature/negative-rayon-migration.tsv.log" 2>&1; then \
+		echo 'quadrature accepted absent Rayon migration' >&2; exit 1; \
+	fi
+	@printf 'unexpected diagnostic\n' > "$(OUT)/quadrature/negative-diagnostic.stderr"
+	@if sh quadrature-memory.sh clean "$(OUT)/quadrature/negative-diagnostic.stderr" 0 native 0 > "$(OUT)/quadrature/negative-diagnostic.log" 2>&1; then \
+		echo 'quadrature accepted unexpected diagnostic' >&2; exit 1; \
+	fi
 	@set -e; good="$(OUT)/quadrature/check-ordinary-w1-native.tsv"; \
 	for mutation in missing-row wrong-form missing-footer; do \
 		bad="$(OUT)/quadrature/negative-$$mutation.tsv"; \

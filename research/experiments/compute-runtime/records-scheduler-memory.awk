@@ -62,7 +62,10 @@ BEGIN {
     if (object_basename=="") object_basename="scheduler-memory-" binary;
     if (object_basename !~ /^[A-Za-z0-9_-]+$/) fail("binary identity parameter");
     init="<std::sync::once_lock::OnceLock<rayon_core::thread_pool::ThreadPool>>::initialize";
-    get="<std::sync::once_lock::OnceLock<rayon_core::thread_pool::ThreadPool>>::get_or_init<wf_records_rayon::run::{closure#0}>::{closure#0}, !>";
+    if (pool_owner=="") pool_owner="records";
+    if (pool_owner!="records" && pool_owner!="quadrature") fail("pool owner parameter");
+    owner=(pool_owner=="records"?"run":"quadrature::quadrature");
+    get="<std::sync::once_lock::OnceLock<rayon_core::thread_pool::ThreadPool>>::get_or_init<wf_records_rayon::" owner "::{closure#0}>::{closure#0}, !>";
     force="<std::sync::once::Once>::call_once_force::<" init "<" get "::{closure#0}>::{closure#0}";
     initialize=init "::<" get;
 }

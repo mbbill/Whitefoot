@@ -15,8 +15,11 @@ export LC_ALL=C
 validator=$PWD/quadrature-batch.awk
 image=$OUT/quadrature/ordinary
 test -x "$image"
-cp quadrature-batch.sh quadrature-batch.awk "$results/"
-shasum -a 256 "$image" "$OUT/quadrature/sanitized" quadrature-batch.sh quadrature-batch.awk > "$results/manifest.sha256"
+cp quadrature-batch.sh quadrature-batch.awk quadrature-memory.sh records-scheduler-memory.awk "$results/"
+memory_profile=$(cat "$OUT/quadrature/memory-profile.txt")
+case "$memory_profile" in address|clean) ;; *) exit 1;; esac
+shasum -a 256 "$image" "$OUT/quadrature/sanitized" "$OUT/quadrature/memory-profile.txt" \
+    quadrature-batch.sh quadrature-batch.awk quadrature-memory.sh records-scheduler-memory.awk > "$results/manifest.sha256"
 validate() {
     awk -v input="$input" -v form="$form" -v spawn="$spawn" -v width="$width" \
         -v repeats="$repeats" -v stats="$stats" -v control="$control" -f "$validator" "$log"
@@ -25,8 +28,15 @@ invoke() {
     if test "$spawn" = 0 && test "$form" != tbb && test "$form" != parlay-left && test "$form" != wf-value; then
         set -- "$form"
     else set -- "$form" "$spawn"; fi
-    WF_WORKERS=$width WF_QUADRATURE_INPUT=$input WF_QUADRATURE_REPEATS=$repeats \
-        "$image" batch "$@" > "$log" 2>&1
+    if test "$mode" = check; then
+        status=0
+        LSAN_OPTIONS=exitcode=23 WF_WORKERS=$width WF_QUADRATURE_INPUT=$input WF_QUADRATURE_REPEATS=$repeats \
+            "$image" batch "$@" > "$log" 2> "$log.stderr" || status=$?
+        sh quadrature-memory.sh "$memory_profile" "$log.stderr" "$status" "$form" "$stats"
+    else
+        WF_WORKERS=$width WF_QUADRATURE_INPUT=$input WF_QUADRATURE_REPEATS=$repeats \
+            "$image" batch "$@" > "$log" 2>&1
+    fi
 }
 decode() {
     form=${variant%-d*};spawn=0
@@ -51,7 +61,7 @@ if test "$mode" = check; then
     for kind in ordinary sanitized; do
         image=$OUT/quadrature/$kind;stats=0;test "$kind" = ordinary || stats=1
         for width in 1 4; do
-            for variant in native wf-leaf-seq wf-leaf wf-refusal wf-frontier-seq-d8 wf-frontier-d8 cpp-seq wf-value-d8 parlay-left-d8 tbb-d8; do
+            for variant in native wf-leaf-seq wf-leaf wf-refusal wf-frontier-seq-d8 wf-frontier-d8 cpp-seq rust-seq rayon-d8 rayon-left-d8 wf-value-d8 parlay-left-d8 tbb-d8; do
                 decode
                 for input in center-peak right-peak empty depth-zero; do
                     log=$results/$kind-w$width-$variant-$input.tsv
@@ -88,7 +98,7 @@ if test "$mode" = check; then
     grep -Fx 'quadrature batch report: batch identity' "$results/wrong-repeats.log"
     log=$results/unpaired.log
     if (WF_PERF_CONTROL_FD=3 invoke); then exit 1;fi
-    grep -Fx 'quadrature: paired perf descriptors' "$log"
+    grep -Fx 'quadrature: paired perf descriptors' "$log.stderr"
     events=cycles,instructions;perf_log=$results/perf-good.csv
     printf '100;;cycles;1000000;100.00;\n200;;instructions;1000000;100.00;\n' > "$perf_log"
     validate_perf
@@ -102,7 +112,7 @@ if test "$mode" = check; then
         if validate_perf > "$perf_log.log" 2>&1;then exit 1;fi
         grep -Fx "quadrature perf report: $reason" "$perf_log.log"
     done
-    printf '%s\n' 'quadrature batch qualification PASS: processes=172 outputs=1892 protocol=2 negative=5'
+    printf '%s\n' 'quadrature batch qualification PASS: processes=220 outputs=2420 protocol=2 negative=5'
     exit 0
 fi
 rounds=${ROUNDS:-5};repeats=${REPEATS:-4096}
@@ -149,7 +159,7 @@ printf '%s\n' "$events" > "$results/events.txt"
 printf 'pass\tobserver\tinput\tform\tworkers\tspawn_depth\trepeats\twarmup\tperf_control\tstats\tnodes_per_call\twall_ns\tuser_us\tsystem_us\tvoluntary\tinvoluntary\tminor_faults\tmajor_faults\twf_lanes\tprocess_cpu_ns\tcaller_cpu_ns\n' > "$results/summary.tsv"
 for width in 1 4; do
     for input in center-peak left-peak right-peak depth-cap; do
-        for variant in native wf-leaf-seq wf-leaf wf-refusal wf-frontier-seq-d8 wf-frontier-d8 cpp-seq wf-value-d8 parlay-left-d4 parlay-left-d8 tbb-d8; do
+        for variant in native wf-leaf-seq wf-leaf wf-refusal wf-frontier-seq-d8 wf-frontier-d8 cpp-seq rust-seq rayon-d8 rayon-left-d8 wf-value-d8 parlay-left-d4 parlay-left-d8 tbb-d8; do
             for observer in $observers; do printf '%s %s %s %s\n' "$width" "$input" "$variant" "$observer";done
         done
     done

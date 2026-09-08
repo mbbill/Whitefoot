@@ -33,8 +33,13 @@ screen narrows the gap at useful grains but does not establish a uniform winner.
 now qualify left/right publication for both Parlay and native WF. The M1 skew
 response shows why matched grain alone does not isolate runtime cost; compared
 directions must also be stated. Generated WF policy is unchanged.
-Recursive Rayon, alternative TBB contexts/APIs, held-out tuning and qualified
-native-host placement remain missing; flat callbacks do not fill those gaps.
+[Recursive Rayon](../../experiments/compute-runtime/README.md#recursive-rayon-reference)
+adds both fork directions and a Rust sequential kernel control. M1 correctness
+is qualified; replacing aggregate recursive arguments with scalars removes
+the initial large sequential-kernel gap. Linux lifecycle qualification,
+broader Rayon tuning, alternative TBB contexts/APIs, held-out tuning and
+qualified native-host placement remain open; flat callbacks do not fill
+those gaps.
 The [record batch panel](../../experiments/compute-runtime/README.md#variable-length-utf-8-record-batches)
 also qualifies a native state machine and bounded ASCII-word candidate.
 For its validation-plus-scalar-count contract, simdutf **v9.1.1**, commit

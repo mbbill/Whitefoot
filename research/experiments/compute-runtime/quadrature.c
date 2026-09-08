@@ -25,7 +25,7 @@ extern double wf_research_quadrature_refusal(double, double, double, double, dou
 extern double wf_research_quadrature_frontier(double, double, double, double, double, uint64_t, bool);
 static double (*generated_run)(double,double,double,double,double,uint64_t,bool);
 static bool parallel_form, leaf_form, refusal_form, frontier_form;
-static bool native_cpp;
+static bool native_control;
 static bool native_wf;
 static unsigned native_kind, spawn_depth, requested;
 static void require(bool ok, const char *why) {
@@ -146,7 +146,7 @@ static Reference reference(const Input *p) {
 }
 static double run(const Input *p,const char *form) {
     if(!strcmp(form,"native"))return native(p);
-    if(native_cpp)return quadrature_native_run(native_kind,requested,spawn_depth,
+    if(native_control)return quadrature_native_run(native_kind,requested,spawn_depth,
         p->a,p->b,p->center,p->width,p->tolerance,p->depth);
     return generated_run(p->a,p->b,p->center,p->width,p->tolerance,p->depth,parallel_form);
 }
@@ -237,11 +237,11 @@ int wf__main_body(int argc,char **argv) {
     leaf_form=!strcmp(form,"wf-leaf") || !strcmp(form,"wf-leaf-seq") || refusal_form || frontier_form;
     parallel_form=!strcmp(form,"wf-auto") || !strcmp(form,"wf-leaf") || !strcmp(form,"wf-refusal") || !strcmp(form,"wf-frontier");
     native_wf=!strcmp(form,"wf-native") || !strcmp(form,"wf-value") || !strcmp(form,"wf-value-right");
-    native_cpp=!strcmp(form,"cpp-seq") || !strcmp(form,"tbb") || !strcmp(form,"parlay") || !strcmp(form,"parlay-left") || native_wf;
+    native_control=!strcmp(form,"cpp-seq") || !strcmp(form,"tbb") || !strcmp(form,"parlay") || !strcmp(form,"parlay-left") || native_wf || !strcmp(form,"rayon") || !strcmp(form,"rayon-left") || !strcmp(form,"rust-seq");
     native_kind=!strcmp(form,"tbb")?1:!strcmp(form,"parlay")?2:!strcmp(form,"wf-native")?3:
-        !strcmp(form,"wf-value")?4:!strcmp(form,"parlay-left")?5:!strcmp(form,"wf-value-right")?6:0;
-    require(!strcmp(form,"native") || !strcmp(form,"wf-seq") || parallel_form || leaf_form || native_cpp,"form");
-    if(native_kind || frontier_form) {
+        !strcmp(form,"wf-value")?4:!strcmp(form,"parlay-left")?5:!strcmp(form,"wf-value-right")?6:!strcmp(form,"rayon")?7:!strcmp(form,"rayon-left")?8:!strcmp(form,"rust-seq")?9:0;
+    require(!strcmp(form,"native") || !strcmp(form,"wf-seq") || parallel_form || leaf_form || native_control,"form");
+    if((native_kind && native_kind!=9) || frontier_form) {
         require(argc==4 && argv[3][0]>='0' && argv[3][0]<='9',"explicit spawn depth");
         char *end;errno=0;unsigned long parsed=strtoul(argv[3],&end,10);
         require(!errno && !*end && parsed<=24,"spawn depth domain");spawn_depth=(unsigned)parsed;
@@ -301,7 +301,7 @@ int wf__main_body(int argc,char **argv) {
             require(bits(value)==bits(r.value),"binary64 result");++outputs;
             QuadratureObservation observed=quadrature_native_observation();
 #if WF_COMPUTE_STATS
-            if(native_cpp) {
+            if(native_control) {
                 require(observed.nodes==r.nodes && observed.forks==r.forks,"native work conservation");
                 require(observed.migrated<=2*observed.forks,"native branch count");
                 if(native_wf)require(observed.migrated==steals,"native WF steal witness");
@@ -346,6 +346,8 @@ int wf__main_body(int argc,char **argv) {
     }
 #if WF_COMPUTE_STATS
     if(parallel_form && requested==4 && !exhaust)require(total_steals>0,"parallel actualization");
+    if((native_kind==7 || native_kind==8) && requested==4 && spawn_depth)
+        require(total_migrated>0,"Rayon branch migration witness");
     if(!parallel_form && !native_wf)require(total_steals==0,"sequential task exclusion");
 #else
     if((parallel_form || (native_wf && spawn_depth)) && requested==4)require(wf_compute_worker_count()==4,"four-worker startup");
