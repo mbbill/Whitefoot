@@ -610,6 +610,26 @@ smoke matrix. At 4,097 records the current budget admits only two chunks, even
 when the pool has four lanes. Pool capacity alone is not useful parallel width.
 The scheduler panel's manually partitioned C adapter bypasses this estimate,
 so it cannot establish that the compiled WF program exploits the same work.
+The [`d6bf6c08` Linux record run](https://github.com/mbbill/Whitefoot/actions/runs/34189375566)
+confirms this gap across the expanded scalar cohort: 750 processes / 21,750
+calls and 52,748,250 checked output positions, plus 30 smoke processes. On its
+EPYC 7763 VM (two physical cores, four SMT logical CPUs, mask 0-3), long Unicode
+256-record warm core medians were 7,869.056 / 7,910.887 / 7,931.259 microseconds
+for recovered WF at requested zero/two/four lanes. Every two/four-lane sample
+in that cell reported no started pool and no steals. Native state/word anchors
+were 7,205.072 / 5,230.540 microseconds, including their output allocation.
+These are end-to-end record-core boundaries, not identical-kernel scheduler
+costs. At 4,097 short Unicode records the recovered two/four-lane medians were
+330.640 / 330.294 microseconds; the zero-lane process means ranged from 294.563
+to 621.010, so its 427.756 median is not a stable serial speedup denominator.
+This record runner is separate from the scheduler runner below; do not pool
+their timings. Artifact `compute-records-linux`, ID `10041686914`, ZIP SHA-256
+`fd3b85ea1aadc4b3b1565cda8c9652cdb434153fe1cb2982f12c69b8062a4f91`, retains
+all rows. Independent auditing matched every summary, input byte count, eleven
+source hashes and five retained object/executable hashes. Compiler executable
+bytes are recorded by hash but unretained. Actual leaf disassembly is scalar;
+ABI frame copies may use vector registers. Quota and per-thread placement
+remain unqualified, and batch resources include checks and output reporting.
 The two native kernels are initial scalar anchors. This end-to-end panel does
 not establish a native frontier or full application throughput. SIMD work is
 parked. The separate scheduler comparison below supplies matched static/dynamic
@@ -845,9 +865,9 @@ and post-timing capacity requirements are unchanged. Build and run it with:
 make -C research/experiments/compute-runtime scheduler-layout-calibrate OUT=/tmp/wf-scheduler
 ```
 
-Dependencies must first be fetched as shown above. Linux execution of the new
-shared-image control remains pending; the dated standalone result below does
-not qualify it.
+Dependencies must first be fetched as shown above. The Linux qualification
+and shared-image results below cover the `d6bf6c08` image; they do not turn the
+earlier standalone result into a scheduler-only comparison.
 
 ### First complete Linux scalar panel and attribution limit
 
@@ -896,6 +916,59 @@ with batch CPU/wall ratios near three on this two-core VM; they do not establish
 a general WF advantage or a measured syscall cause. Idle CPU and wakeup latency
 must be considered together. The 20 or 75 warm observations per cell support
 descriptive samples, not production tail estimates or a universal ranking.
+
+### Linux shared-image result
+
+The [`d6bf6c08` scheduler run](https://github.com/mbbill/Whitefoot/actions/runs/34189375566)
+completed both panels on one EPYC 7763 VM with two physical cores, four logical
+SMT CPUs and mask 0-3. Artifact `compute-scheduler-linux`, ID `10041761880`, ZIP
+SHA-256 `3ea155d8dfe4606936e5cdda2494652069f49df5983e530a60dbcab153fccfd0`,
+retains 7,325 verified ZIP paths. Auditing reconstructed all 5,940 standalone
+and 360 shared-image process summaries, covering 58,860 and 3,780 calls
+respectively. All 528 standalone and 531 shared manifest entries match,
+including hidden dependency fingerprints. The original 42 sanitizer cases,
+extra-allocation negative test and all eighteen added host/selector sanitizer
+qualifiers passed on Linux. The six new Rayon cases had actual exit 23 and
+exactly the retained caller-registration allocations; other new cases exited
+zero. All sanitizer aliases have identical executable bytes.
+
+The shared leaf is at image address `0x1e0c0`, aligned to 64 bytes. Its 258
+instruction bytes and the 107-byte callback match all six standalone images.
+Standalone long Unicode width-one medians still separate into WF/TBB at
+10.684 / 10.756 ms and the other four at 7.264–7.306 ms. In the shared image,
+all six width-one medians lie at **7.261–7.300 ms**. The large difference
+disappears in this cohort. Shared linking also changes the dispatcher, loaded
+libraries and run period; this does not isolate instruction alignment as the
+hardware cause.
+
+Shared-image width-four results follow, in microseconds: median of five
+process warm means, grain 16, dense cadence. The long cells have four warm
+calls per process; short cells have fifteen. This remains the C runtime adapter,
+not the real WF record program.
+
+| Input (records / maximum bytes per record) | WF runtime C adapter | Static spin | oneTBB | Parlay | Rayon join | Rayon iterator |
+|---|---:|---:|---:|---:|---:|---:|
+| Unicode 256 / 65,536 | 4,148.285 | 3,971.289 | 4,291.637 | 4,261.278 | 4,105.678 | 4,179.324 |
+| Unicode 4,097 / 128 | 199.610 | 1,955.663 | 204.300 | 217.349 | 213.116 | 207.709 |
+| Early invalid 256 / 65,536 | 1.846 | 4,751.730 | 4.095 | 2.465 | 10.600 | 2.635 |
+| Early invalid 4,097 / 128 | 36.605 | 2,670.381 | 18.044 | 17.485 | 27.022 | 24.045 |
+
+Long Unicode WF is about 1.0% slower than Rayon join and 4.5% slower than
+static partition in this screen, rather than the earlier apparent 50% loss.
+Its process means range from 4.024 to 4.549 ms, overlapping Rayon's
+4.030–4.198 ms. Median warm CPU sums are 14.864 / 14.810 ms respectively.
+This supports competitive current-stack execution for this cell, not a stable
+1% ordering or general optimality.
+
+The adverse short result remains: early-invalid 4,097-record WF process means
+range from 15.085 to 42.574 microseconds, with median 36.605 versus Parlay's
+17.485. The standalone WF median on this same host was 15.424 microseconds at
+grain 16 and 12.500 at grain 64. Neither the adverse shared row nor this
+cross-panel variation is discarded. Call counts are small, pool capacity is
+not useful parallel width, and these finite bursts do not establish steady
+state. Kernel scheduling, idle policy, decomposition and code placement still
+need separate attribution; short-call rankings and production tails remain
+unqualified.
 
 The scheduler header, common callback/host, adapters, locked Rayon crate, shell
 drivers and shared report validators
