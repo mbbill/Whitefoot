@@ -37,6 +37,11 @@ static uint64_t now(void) {
 }
 static uint64_t bits(double x) { uint64_t v; memcpy(&v, &x, sizeof(v)); return v; }
 static uint64_t cpu_us(struct timeval t) { return (uint64_t)t.tv_sec*1000000+(uint64_t)t.tv_usec; }
+static uint64_t cpu_clock_ns(clockid_t clock) {
+    struct timespec t;
+    require(!clock_gettime(clock,&t),"batch CPU clock");
+    return (uint64_t)t.tv_sec*UINT64_C(1000000000)+(uint64_t)t.tv_nsec;
+}
 #if defined(WF_COMPUTE_EVENTS)
 static unsigned long event_sum(unsigned event) {
     unsigned long count=0;
@@ -200,21 +205,25 @@ static void run_batch(const char *form) {
     struct rusage before,after;
     perf_command(control,acknowledgement,"enable\n");
     require(!getrusage(RUSAGE_SELF,&before),"batch resources before");
+    uint64_t process_start=cpu_clock_ns(CLOCK_PROCESS_CPUTIME_ID);
+    uint64_t caller_start=cpu_clock_ns(CLOCK_THREAD_CPUTIME_ID);
     uint64_t start=now();
     for(unsigned i=0;i<repeats;++i)mismatch|=bits(execute(p,form))^expected;
     uint64_t elapsed=now()-start;
+    uint64_t caller_cpu=cpu_clock_ns(CLOCK_THREAD_CPUTIME_ID)-caller_start;
+    uint64_t process_cpu=cpu_clock_ns(CLOCK_PROCESS_CPUTIME_ID)-process_start;
     require(!getrusage(RUSAGE_SELF,&after),"batch resources after");
     perf_command(control,acknowledgement,"disable\n");
     require(!mismatch,"batch binary64 result");
     unsigned lanes=wf_compute_worker_count();
     bool offers=(parallel_form && (!leaf_form || r.nodes>1)) || (native_wf && r.forks);
     require(lanes==((offers && requested==4)?4:0),"batch WF pool width");
-    puts("# quadrature batch v1: input form workers spawn_depth repeats warmup perf_control stats nodes_per_call wall_ns user_us system_us voluntary involuntary minor_faults major_faults wf_lanes");
-    printf("%s\t%s\t%u\t%u\t%u\t%u\t%d\t%d\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%ld\t%ld\t%ld\t%ld\t%u\n",
+    puts("# quadrature batch v2: input form workers spawn_depth repeats warmup perf_control stats nodes_per_call wall_ns user_us system_us voluntary involuntary minor_faults major_faults wf_lanes process_cpu_ns caller_cpu_ns");
+    printf("%s\t%s\t%u\t%u\t%u\t%u\t%d\t%d\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%ld\t%ld\t%ld\t%ld\t%u\t%" PRIu64 "\t%" PRIu64 "\n",
         p->name,form,requested,spawn_depth,repeats,warmup,control>=0,WF_COMPUTE_STATS,r.nodes,elapsed,
         cpu_us(after.ru_utime)-cpu_us(before.ru_utime),cpu_us(after.ru_stime)-cpu_us(before.ru_stime),
         after.ru_nvcsw-before.ru_nvcsw,after.ru_nivcsw-before.ru_nivcsw,
-        after.ru_minflt-before.ru_minflt,after.ru_majflt-before.ru_majflt,lanes);
+        after.ru_minflt-before.ru_minflt,after.ru_majflt-before.ru_majflt,lanes,process_cpu,caller_cpu);
     printf("# quadrature batch PASS: outputs=%u expected=%a mismatch=0\n",repeats+warmup,r.value);
 }
 int wf__main_body(int argc,char **argv) {

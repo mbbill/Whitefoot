@@ -112,7 +112,8 @@ test "$repeats" -ge 1 && test "$repeats" -le 65536
 {
     printf 'mode=sustained repeats=%s warmup=8 rounds=%s\n' "$repeats" "$rounds"
     printf '%s\n' 'interval=joined repeated calls and bitwise checks; no per-call clock, output, or oracle' \
-        'CPU=getrusage enclosing two clocks; perf additionally includes enable-ack/disable-command boundary' \
+        'CPU=getrusage encloses process/caller CPU clocks; process encloses caller; caller encloses wall clocks' \
+        'perf additionally includes enable-ack/disable-command boundary; API differences are observations, not acceptance limits' \
         'perf=inherited process counters, not system-wide; idle/spinning workers included' \
         'perf event runtime/percentage retained; multiplexed events are not exact simultaneous costs'
     uname -a
@@ -125,6 +126,16 @@ test "$repeats" -ge 1 && test "$repeats" -le 65536
 } > "$results/host.txt"
 perf=${PERF:-perf};events='';observers=plain
 if test "$(uname -s)" = Linux && "$perf" version > "$results/perf-version.txt" 2>&1; then
+    perf_path=$(command -v "$perf")
+    cp "$perf_path" "$results/perf-command"
+    shasum -a 256 "$results/perf-command" >> "$results/manifest.sha256"
+    printf 'perf_command=%s\n' "$perf_path" >> "$results/host.txt"
+    "$perf" version --build-options > "$results/perf-build-options.txt" 2>&1
+    # Preserve actual event attributes for diagnosing counter disagreements;
+    # a failed probe is evidence of unavailability, not a measurement of zero.
+    if "$perf" stat -vv -e task-clock -- sleep 0.01 > "$results/perf-task-clock-attributes.txt" 2>&1;then
+        printf '%s\n' 'probe_exit=0' >> "$results/perf-task-clock-attributes.txt"
+    else printf '%s\n' 'probe_exit=nonzero' >> "$results/perf-task-clock-attributes.txt";fi
     for event in task-clock context-switches cpu-migrations page-faults cycles instructions branches branch-misses cache-references cache-misses; do
         if "$perf" stat -x ';' -o "$results/probe-$event.csv" -e "$event" -- sleep 0.01 > "$results/probe-$event.log" 2>&1 &&
             awk -F ';' -v event="$event" '$3==event && $1 ~ /^[0-9]+(\.[0-9]+)?$/ {ok=1} END {exit !ok}' "$results/probe-$event.csv"; then
@@ -135,7 +146,7 @@ if test "$(uname -s)" = Linux && "$perf" version > "$results/perf-version.txt" 2
     if test -n "$events"; then observers='plain perf';fi
 else printf '%s\n' 'perf unavailable on this host' > "$results/availability.tsv";fi
 printf '%s\n' "$events" > "$results/events.txt"
-printf 'pass\tobserver\tinput\tform\tworkers\tspawn_depth\trepeats\twarmup\tperf_control\tstats\tnodes_per_call\twall_ns\tuser_us\tsystem_us\tvoluntary\tinvoluntary\tminor_faults\tmajor_faults\twf_lanes\n' > "$results/summary.tsv"
+printf 'pass\tobserver\tinput\tform\tworkers\tspawn_depth\trepeats\twarmup\tperf_control\tstats\tnodes_per_call\twall_ns\tuser_us\tsystem_us\tvoluntary\tinvoluntary\tminor_faults\tmajor_faults\twf_lanes\tprocess_cpu_ns\tcaller_cpu_ns\n' > "$results/summary.tsv"
 for width in 1 4; do
     for input in center-peak left-peak right-peak depth-cap; do
         for variant in native wf-leaf-seq wf-leaf wf-refusal cpp-seq wf-value-d8 parlay-left-d4 parlay-left-d8 tbb-d8; do

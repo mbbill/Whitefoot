@@ -18,13 +18,13 @@ BEGIN {
         form!="wf-seq" && form!="wf-leaf-seq" && form!="wf-refusal-seq"))bad("validator arguments")
 }
 NR==1 {
-    if($0!="# quadrature batch v1: input form workers spawn_depth repeats warmup perf_control stats nodes_per_call wall_ns user_us system_us voluntary involuntary minor_faults major_faults wf_lanes")bad("columns")
+    if($0!="# quadrature batch v2: input form workers spawn_depth repeats warmup perf_control stats nodes_per_call wall_ns user_us system_us voluntary involuntary minor_faults major_faults wf_lanes process_cpu_ns caller_cpu_ns")bad("columns")
     next
 }
 NR==2 {
-    if(NF!=17 || $1!=input || $2!=form || $3!=width || $4!=spawn || $5!=repeats ||
+    if(NF!=19 || $1!=input || $2!=form || $3!=width || $4!=spawn || $5!=repeats ||
         $6!=8 || $7!=control || $8!=stats || $9!=expected_nodes)bad("batch identity")
-    for(i=3;i<=17;++i)if(!integer($i))bad("noninteger observation")
+    for(i=3;i<=19;++i)if(!integer($i))bad("noninteger observation")
     offers=(parallel && (form=="wf-auto" || expected_nodes>1)) || (native_wf && spawn && expected_nodes>1)
     if($17!=((offers && width==4)?4:0))bad("WF pool width")
     next

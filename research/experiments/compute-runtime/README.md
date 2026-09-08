@@ -2282,8 +2282,14 @@ clock, printing or oracle construction in this interval. All calls join before
 the next call begins; this does not model overlapping requests or nested
 application composition.
 
-`getrusage(RUSAGE_SELF)` encloses the two batch clocks and records process-wide
-user/system CPU, voluntary/involuntary context switches and minor/major faults.
+`getrusage(RUSAGE_SELF)` records process-wide user/system CPU,
+voluntary/involuntary context switches and minor/major faults. Batch format v2
+also records `CLOCK_PROCESS_CPUTIME_ID` and `CLOCK_THREAD_CPUTIME_ID` deltas in
+nanoseconds. The resource interval encloses the process CPU clocks, which
+enclose the caller CPU clocks, which enclose the wall clocks. The caller
+measurement excludes helper CPU; none of these clocks separates useful work
+from spinning. API disagreements are observations, not acceptance thresholds.
+Frozen v1 cohorts retain their original host and reader without the new fields.
 CPU divided by wall is average process CPU concurrency, including spinning
 helpers, not useful-work occupancy. Zero-resolution wall observations remain
 valid raw records but cannot supply a ratio denominator. Pool width follows
@@ -2307,7 +2313,9 @@ selected events fail report qualification. Multiplexed counts are not exact
 simultaneous instruction/cycle attribution. Event availability alone does not
 qualify PMU accuracy or cache-event semantics on a particular CPU.
 
-The Linux compute job installs a recorded perf binary and records its attempt
+The collector retains the selected perf command, its hash, build options and a
+verbose task-clock attribute probe before timing. A command may be a wrapper;
+the CI job selects the installed tool directly. The Linux compute job records its attempt
 to permit process counters on the ephemeral hosted runner. It runs this panel
 after the original short-call calibration on the same recorded CPU mask.
 Five alternating whole-cell orders cover nine forms, worker requests1/4 and
@@ -2363,8 +2371,8 @@ integration. CPU is the sum of user and system time over all process threads.
 
 Generated-leaf/Parlay-depth8 paired wall ratios are1.515/1.448/1.488/1.438;
 the corresponding CPU ratios are1.489/1.306/1.433/1.417. All five pairs lose
-in wall and CPU on every input. Native WF depth8 also wins both quantities in
-all five pairs. Generated-leaf CPU/wall medians are3.882/3.842/3.775/3.863;
+in wall and CPU on every input. Native WF depth8 also beats generated leaf in
+both quantities in all five pairs. Generated-leaf CPU/wall medians are3.882/3.842/3.775/3.863;
 Parlay depth8 is3.951/3.928/3.941/3.922. Generated WF's sequential clone versus
 C++ sequential has paired wall ratios1.001/1.010/1.011/1.008 at worker request4.
 This prioritizes excess parallel CPU work, including possible spinning, and
@@ -2378,8 +2386,97 @@ left and right inputs have median11,500/27,062/8,395 involuntary switches per
 involuntary switches. Left-peak wall medians are26.414 versus9.374 microseconds,
 but depth-cap favors depth4 at16.860 versus17.745. These counters do not price
 each switch or prove which wait/yield/preemption mechanism caused the loss.
-No default grain is selected. Actual Linux regional hardware data and broader
-composition remain pending; this M1 cohort has no perf counter measurements.
+No default grain is selected; this M1 cohort has no perf counter measurements.
+
+The Linux v1 cohort at `4fc495d5` is retained in
+[run34248179457, quadrature job102135485972](https://github.com/mbbill/Whitefoot/actions/runs/34248179457/job/102135485972),
+artifact10065042253 (ZIP SHA256
+`9f1fd01d4fc0ad9f5a403db857feb5ec3b71a271e846c33a40b03c5e91609612`).
+Its720 processes check2,949,120 timed calls and5,760 warmups, with360 processes
+per observer and1,440 software-event rows. All selected events have positive
+runtime and100.00% running. Fifty-seven manifest paths and fourteen source
+snapshots match; the ordinary image is
+`b30304c0b748510840072b1bf5f5ba4062ba3ed44f182806d9daf67a039c355a`.
+The EPYC7763 VM provides two physical cores/four SMT threads, mask0-3,
+Linux6.17.0-1022-azure and perf6.17.13. Scalar strict FP/no SIMD/FMA/LTO apply.
+Quota and physical isolation are unqualified. Lowering perf permissions from4
+to-1 enables software observations but supplies no supported cycles,
+instructions, branches, branch-misses, cache-references or cache-misses events.
+No IPC, cache or stall attribution follows.
+
+Linux plain-observer width4 medians, microseconds per integration:
+
+| Input | Generated leaf wall / CPU | Native WF depth8 wall / CPU | Parlay-left depth8 wall / CPU |
+| --- | ---: | ---: | ---: |
+| Center peak |30.175 /109.962|20.381 /71.357|23.306 /78.231|
+| Left peak |23.981 /85.728|16.552 /55.308|19.394 /62.523|
+| Right peak |23.558 /83.925|15.645 /52.624|18.271 /59.217|
+| Depth cap |64.278 /246.099|42.312 /159.443|45.319 /166.393|
+
+Generated-leaf/Parlay-depth8 paired wall ratios are1.290/1.246/1.296/1.431,
+with CPU ratios1.408/1.373/1.418/1.483: all five pairs lose on each input.
+Native-WF-depth8/Parlay-depth8 wall ratios are0.876/0.860/0.874/0.935 and
+CPU ratios0.911/0.881/0.881/0.958, all five pairs winning on each input.
+This does not erase the M1 native comparison's mixed center/right wall pairs.
+The separate Linux perf observer preserves these directions. Grain and code
+generation differ between generated and native paths; this does not identify
+a single cost or establish a runtime ceiling.
+
+The Linux task-clock CSV has blank units and integer counts, treated as raw
+nanoseconds for this cohort rather than conventional millisecond display.
+Task-clock/rusage CPU has median1.000377 across360 processes, but a minimum
+of0.727509. Seventeen rows are below0.99, all width4 Parlay-left depth4:
+center/left/right/depth-cap median ratios are0.831634/0.731605/0.903807/0.990541.
+For example, one left-peak batch reports278,631,449 task-clock ns against
+382,994 rusage CPU us and428,631,177 wall ns. Wider positive boundary overhead
+alone cannot explain this deficit. The actual packaged perf command and event
+attribute dump were not retained in v1; v2 adds them and the two CPU clocks
+to investigate the disagreement. The cause remains unresolved. Event runtime
+is not batch wall, and perf's printed CPUs-utilized metric uses a different
+elapsed interval. Neither that metric nor API agreement is substituted for
+the host observations. Hardware counters and broader composition remain open.
+
+The v2 M1 cross-check retains72 processes,294,912 timed calls and576 warmups,
+ordinary image
+`be35d93513de49523bc0e6dda855332c8eae5a6435a416dbca9ed951cbb663e0`.
+Process-clock/rusage CPU ratios have median0.999965196 and range
+0.999880355-0.999995302. This one-pass schema/accounting check is not a new
+performance ranking or a resolution of the Linux discrepancy. All140 batch
+qualifiers and five maintained negative probes pass. The build's collector
+snapshot predates only the Linux command-resolution/copy-path adjustment;
+the measured collector matches the final script. New Linux metadata capture
+and CPU-clock cross-validation remain unverified until that host executes v2.
+
+A separate M1 wait-policy screen keeps the pinned Parlay source and replaces
+only `steal_job`'s inter-round `sleep_for` with a compiler-only signal fence.
+At width4 the source allows801 failed attempts before requesting400ns sleep;
+the requested duration is not its measured cost. The site serves both idle
+search and join helping. Deques, completion synchronization and the10ms elastic
+timeout remain unchanged, but scan density and timeout overshoot can change.
+No policy change is adopted. Two separately linked images share the WF host,
+runtime, floor and generated objects; recompiled C++ controls have identical
+source, not assumed identical machine code. Ordinary sleep/spin image hashes:
+`40658e805937b569b2ec8e12f576d5805fc218d125587d14cef78bc2e46d6078` /
+`42b38cfa13dbad4c0f602ba9c7d4bf85fee474ba3e26989504aa842eb0a3c9dc`.
+Policy identity is bound by build commands and filenames, not the v1 header.
+The scratch screen qualifies80 processes/1,600 results before400 timed
+processes with1,638,400 calls and3,200 warmups. Five alternating whole-cell orders
+cover five forms, widths1/4 and four heavy inputs with both images.
+
+| Parlay-left width4 input | Depth4 spin/sleep wall ratio | Depth4 CPU ratio | Involuntary switches per batch, sleep to spin | Depth8 wall ratio |
+| --- | ---: | ---: | ---: | ---: |
+| Center peak |0.673250|0.879117|11,506 to44|1.008827|
+| Left peak |0.501516|0.687761|27,411 to15|0.973143|
+| Right peak |0.976582|1.154839|9,671 to14|0.998156|
+| Depth cap |0.992640|0.961308|654 to66|1.000321|
+
+Ratios are medians of five matched pairs. Center/left/right depth4 wall wins
+all five; right depth4 CPU loses all five. Every depth8 wall comparison has
+mixed directions. Unchanged-source width4 controls have paired median wall
+ratios0.980782-1.019537 and CPU ratios0.892159-1.042851. M1 placement/frequency
+and separate-image layout remain uncontrolled. The result implicates this
+wait policy in part of the depth4 anomaly, without pricing a context switch,
+separating idle from join waits, or supporting unconditional busy waiting.
 
 ## Scalar scheduler comparison
 

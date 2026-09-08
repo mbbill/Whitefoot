@@ -43,7 +43,13 @@ policy, with input-dependent gains and losses. A separate
 [sustained batch panel](../../experiments/compute-runtime/README.md#sustained-batches-and-regional-counters)
 now measures joined repeated integrations and process CPU/context switches;
 the M1 comparison prioritizes excess parallel CPU work over a large scalar
-kernel deficit. Linux regional PMU collection is wired but not yet qualified.
+kernel deficit. Linux regional software counters are qualified, but its hosted
+VM exposes none of the requested hardware events. A task-clock/rusage
+disagreement on Parlay depth4 remains unresolved; process/caller CPU clocks
+now provide cross-validation. A separate M1 failed-steal wait-policy control
+improves some depth4 cases while increasing right-skew CPU cost and giving no
+consistent depth8 benefit. No waiting policy or universal best reference is
+selected from these screens.
 Recursive Rayon, general compiler
 grain selection and held-out/native-host confirmation
 remain missing. The ten-case screen does not
