@@ -147,9 +147,10 @@ int wf__main_body(int argc,char **argv) {
     const char *form=argv[2];
     leaf_form=!strcmp(form,"wf-leaf") || !strcmp(form,"wf-leaf-seq");
     parallel_form=!strcmp(form,"wf-auto") || !strcmp(form,"wf-leaf");
-    native_wf=!strcmp(form,"wf-native") || !strcmp(form,"wf-value");
-    native_cpp=!strcmp(form,"cpp-seq") || !strcmp(form,"tbb") || !strcmp(form,"parlay") || native_wf;
-    native_kind=!strcmp(form,"tbb")?1:!strcmp(form,"parlay")?2:!strcmp(form,"wf-native")?3:!strcmp(form,"wf-value")?4:0;
+    native_wf=!strcmp(form,"wf-native") || !strcmp(form,"wf-value") || !strcmp(form,"wf-value-right");
+    native_cpp=!strcmp(form,"cpp-seq") || !strcmp(form,"tbb") || !strcmp(form,"parlay") || !strcmp(form,"parlay-left") || native_wf;
+    native_kind=!strcmp(form,"tbb")?1:!strcmp(form,"parlay")?2:!strcmp(form,"wf-native")?3:
+        !strcmp(form,"wf-value")?4:!strcmp(form,"parlay-left")?5:!strcmp(form,"wf-value-right")?6:0;
     require(!strcmp(form,"native") || !strcmp(form,"wf-seq") || parallel_form || leaf_form || native_cpp,"form");
     if(native_kind) {
         require(argc==4 && argv[3][0]>='0' && argv[3][0]<='9',"explicit spawn depth");

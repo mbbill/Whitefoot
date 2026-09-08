@@ -16,11 +16,11 @@ BEGIN {
     split("29 247 176 176 184 1 0 255 0 91", forks8," ")
     parallel=(form=="wf-auto" || form=="wf-leaf")
     leaf=(form=="wf-leaf" || form=="wf-leaf-seq")
-    native_wf=(form=="wf-native" || form=="wf-value")
-    native=(form=="cpp-seq" || form=="tbb" || form=="parlay" || native_wf)
+    native_wf=(form=="wf-native" || form=="wf-value" || form=="wf-value-right")
+    native=(form=="cpp-seq" || form=="tbb" || form=="parlay" || form=="parlay-left" || native_wf)
     if (spawn=="")spawn=0
     if (!integer(spawn) || (spawn!=0 && spawn!=2 && spawn!=4 && spawn!=8 && spawn!=24) ||
-        ((form!="tbb" && form!="parlay" && !native_wf) && spawn))bad("spawn depth")
+        ((form!="tbb" && form!="parlay" && form!="parlay-left" && !native_wf) && spawn))bad("spawn depth")
     wf_pool=(parallel || (native_wf && spawn>0))
     if ((mode!="check" && mode!="bench" && mode!="exhaust") || (form!="native" && form!="wf-seq" && !parallel && !leaf && !native) ||
         (width!=1 && width!=4) || (stats!=0 && stats!=1)) bad("validator arguments")

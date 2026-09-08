@@ -29,6 +29,10 @@ losses. [Matched-grain native WF](../../experiments/compute-runtime/README.md#wf
 now compares pointer and by-value frames through the unchanged runtime, with
 exact fork/steal conservation and forced owner-slot exhaustion checks. The M1
 screen narrows the gap at useful grains but does not establish a uniform winner.
+[Reciprocal direction controls](../../experiments/compute-runtime/README.md#reciprocal-fork-direction)
+now qualify left/right publication for both Parlay and native WF. The M1 skew
+response shows why matched grain alone does not isolate runtime cost; compared
+directions must also be stated. Generated WF policy is unchanged.
 Recursive Rayon, alternative TBB contexts/APIs, held-out tuning and qualified
 native-host placement remain missing; flat callbacks do not fill those gaps.
 The [record batch panel](../../experiments/compute-runtime/README.md#variable-length-utf-8-record-batches)

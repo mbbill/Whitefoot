@@ -47,7 +47,7 @@ double density(double x, double c, double w) {
 double simpson(double a,double b,double fa,double fm,double fb) {
     return ((b-a)/6)*((fa+4*fm)+fb);
 }
-enum class Kind { Serial, Tbb, Parlay, WfBorrow, WfValue };
+enum class Kind { Serial, Tbb, Parlay, WfBorrow, WfValue, ParlayLeft, WfValueRight };
 struct ValueFrame {
     double a,b,c,w,fa,fm,fb,whole,tolerance;
     unsigned depth,budget;
@@ -91,6 +91,7 @@ Result adaptive(double a,double b,double c,double w,double fa,double fm,double f
 #endif
         if constexpr (kind == Kind::Tbb) oneapi::tbb::parallel_invoke(l_task,r_task);
         else if constexpr (kind == Kind::Parlay) parlay::par_do(l_task,r_task);
+        else if constexpr (kind == Kind::ParlayLeft) parlay::par_do(r_task,l_task);
         else if constexpr (kind == Kind::WfBorrow) {
             // The parent's closure and result outlive the joined task. Only a
             // pointer crosses the runtime frame; this is a native control, not
@@ -111,7 +112,10 @@ Result adaptive(double a,double b,double c,double w,double fa,double fm,double f
             // no C++ object lifetime is assumed in the C-owned storage.
             void *task=wf__par_acquire_lane(sizeof(ValueFrame));
             if (task) {
-                ValueFrame frame{a,m,c,w,fa,fl,fm,left,tolerance*0.5,depth-1,budget-1,{}
+                constexpr bool send_right=kind==Kind::WfValueRight;
+                ValueFrame frame{send_right?m:a,send_right?b:m,c,w,
+                    send_right?fm:fa,send_right?fr:fl,send_right?fb:fm,
+                    send_right?right:left,tolerance*0.5,depth-1,budget-1,{}
 #if WF_COMPUTE_STATS
                     ,owner
 #endif
@@ -120,15 +124,16 @@ Result adaptive(double a,double b,double c,double w,double fa,double fm,double f
                 wf__par_publish(task,[](void *opaque) {
                     ValueFrame copy;
                     std::memcpy(&copy,opaque,sizeof(copy));
-                    Result value=adaptive<Kind::WfValue>(copy.a,copy.b,copy.c,copy.w,
+                    Result value=adaptive<kind>(copy.a,copy.b,copy.c,copy.w,
                         copy.fa,copy.fm,copy.fb,copy.whole,copy.tolerance,copy.depth,copy.budget);
 #if WF_COMPUTE_STATS
                     value.migrated+=std::this_thread::get_id()!=copy.owner;
 #endif
                     std::memcpy(static_cast<unsigned char *>(opaque)+offsetof(ValueFrame,result),&value,sizeof(value));
                 });
-                r_task(); wf__par_join(task);
-                std::memcpy(&l,static_cast<unsigned char *>(task)+offsetof(ValueFrame,result),sizeof(l));
+                if constexpr (send_right) l_task(); else r_task();
+                wf__par_join(task);
+                std::memcpy(send_right?&r:&l,static_cast<unsigned char *>(task)+offsetof(ValueFrame,result),sizeof(l));
                 wf__par_release(task);
             } else { l_task(); r_task(); }
         }
@@ -157,9 +162,9 @@ struct TbbPool {
 }
 extern "C" double quadrature_native_run(unsigned kind,unsigned workers,unsigned budget,
     double a,double b,double c,double w,double tolerance,unsigned depth) {
-    if (kind>4 || (workers!=1 && workers!=4) || budget>24 || depth>24) fail("arguments");
+    if (kind>6 || (workers!=1 && workers!=4) || budget>24 || depth>24) fail("arguments");
     if (selected_width && selected_width!=workers) fail("worker width changed");
-    if (!selected_width && kind>=3) {
+    if (!selected_width && (kind==3 || kind==4 || kind==6)) {
         const char *configured=std::getenv("WF_WORKERS");
         if (!configured || std::strcmp(configured,workers==1?"1":"4")) fail("WF worker budget");
     }
@@ -170,16 +175,18 @@ extern "C" double quadrature_native_run(unsigned kind,unsigned workers,unsigned 
         else if (kind==1) {
             static TbbPool pool(workers);
             result=pool.arena.execute([&] { return integrate<Kind::Tbb>(a,b,c,w,tolerance,depth,budget); });
-        } else if (kind==2) {
+        } else if (kind==2 || kind==5) {
             if (!parlay_pool) {
                 if (Pool::get_current_scheduler()) fail("existing Parlay scheduler");
                 parlay_pool=new Pool(workers);
             }
             if (Pool::get_current_scheduler()!=parlay_pool) fail("Parlay owner changed");
-            result=integrate<Kind::Parlay>(a,b,c,w,tolerance,depth,budget);
+            if (kind==2) result=integrate<Kind::Parlay>(a,b,c,w,tolerance,depth,budget);
+            else result=integrate<Kind::ParlayLeft>(a,b,c,w,tolerance,depth,budget);
         } else {
             if (kind==3) result=integrate<Kind::WfBorrow>(a,b,c,w,tolerance,depth,budget);
-            else result=integrate<Kind::WfValue>(a,b,c,w,tolerance,depth,budget);
+            else if (kind==4) result=integrate<Kind::WfValue>(a,b,c,w,tolerance,depth,budget);
+            else result=integrate<Kind::WfValueRight>(a,b,c,w,tolerance,depth,budget);
         }
     } catch (...) { fail("scheduler exception"); }
 #if WF_COMPUTE_STATS

@@ -1612,9 +1612,9 @@ than being mislabeled converged. A temporary image adding one to the computed
 result fails with `quadrature: binary64 result`.
 
 `check-quadrature`, called by the experiment's canonical `check`, runs the same
-WF objects in ordinary and ASan-UBSan images, twenty-six forms/grain settings and
-worker requests1/4: 104 processes/2,080 checked results, plus four forced
-owner-slot exhaustion processes/80 results. Host/runtime/floor and
+WF objects in ordinary and ASan-UBSan images, thirty-six forms/grain settings and
+worker requests1/4: 144 processes/2,880 checked results, plus six forced
+owner-slot exhaustion processes/120 results. Host/runtime/floor and
 the native C++/Parlay header code are instrumented; generated WF objects and
 the shared oneTBB library remain ordinary. The instrumented image
 also uses the existing per-lane event counters. At every joined return it
@@ -1637,11 +1637,12 @@ introduced by actualization; they do not by themselves isolate each offer's
 contribution to the ordinary elapsed-time loss.
 
 `quadrature-calibrate` runs the ordinary image sequentially across five passes,
-two worker requests and twenty-six forms/grain settings: the original `native`,
-`wf-seq`, `wf-auto`, `wf-leaf-seq`, `wf-leaf`, plus `cpp-seq` and the ten
-oneTBB/Parlay settings and ten native WF settings described below. Each
+two worker requests and thirty-six forms/grain settings: the original `native`,
+`wf-seq`, `wf-auto`, `wf-leaf-seq`, `wf-leaf`, plus `cpp-seq`, ten
+oneTBB/Parlay settings, ten native WF settings and ten reciprocal direction
+settings described below. Each
 process runs all ten cases, retaining one first and eight warm calls per case:
-260 processes/23,400 checked results. Form order reverses on alternate passes.
+360 processes/32,400 checked results. Form order reverses on alternate passes.
 The AWK reader binds mode, form, requested width and instrumentation to each
 invocation, requires the complete ordered input/call inventory and validates
 work metadata and event totals. Missing-row, wrong-form and missing-footer
@@ -1940,9 +1941,9 @@ Paired value-depth8/Parlay-depth8 medians for center/left/right/depth-cap are
 0.931 [0.740–0.989]. Native WF wins2/0/5/5 of five pairs, not uniformly.
 The pinned Parlay `fork_join_scheduler::pardo` publishes its right callback
 and executes left locally; these WF adapters publish left and execute right.
-Thus matched grain does not yet match fork direction. This is a candidate
-explanation for left/right asymmetry, not a demonstrated cause; a direction
-control is needed before assigning that difference to scheduler overhead.
+Thus that matched-grain cohort does not match fork direction. The reciprocal
+controls below test this candidate explanation before assigning left/right
+differences to scheduler overhead.
 Against generated WF leaf, value-depth8 ratios are0.696/0.705/0.650/0.650,
 all five pairs faster. However, full-depth native value ratios against generated
 WF are1.043/1.059/1.053/1.074, with only1/0/0/1 faster pairs. These full-depth
@@ -1960,6 +1961,67 @@ cost is inferred. Other inputs favor another grain (outside peak value-depth4
 is2.657 us versus depth8's4.318 us). No fixed depth becomes a compiler default.
 Larger compositions, topology-qualified hosts and an input-adaptive policy
 still need evidence.
+
+### Reciprocal fork direction
+
+`parlay-left` calls pinned Parlay `par_do` with the callbacks exchanged, making
+it publish the left subtree and execute right locally. `wf-value-right` sends
+the right subtree's arguments through the existing88-byte native WF frame,
+executes left locally and copies the joined result into the right result slot.
+Both preserve their direction in nested granted forks. The return remains
+`left.value + right.value`; arithmetic and stopping conditions are unchanged.
+Budget-zero sequential execution and refused-acquisition left-then-right
+fallback are unchanged. The new WF direction participates in ordinary and
+instrumented full-owner-slot exhaustion checks. No generated WF, runtime or
+ABI policy changes.
+
+The September8 M1 direction cohort uses the same host/toolchain/scalar flags
+and placement/frequency limitations as the matched-grain screen. Its retained
+ordinary SHA256 is
+`cde6119402712f53a3fa10b04428880a87192f98cfcf7e0c5d85cb51cdb47658`,
+native C++ object `d71396fdc3702783f0867156aa7fc70c1cfbad6935481e2d1070c1fb11dccb36`,
+and generated leaf object remains
+`1111aea3e8f58a940238204029a1f4b2bfb442bebcf115f75279278ddc187d7a`.
+All360 processes/32,400 calls and150 qualifiers/3,000 results are retained;
+the prior26 forms/grain settings remain among36. All four maintained malformed
+reports reject. This is a new same-image cohort, not a re-use of earlier timings.
+Below are microsecond medians of five process warm means at width4 and depth4.
+Column directions identify the subtree offered to another worker, not a
+guarantee that it was stolen on every call.
+The columns use `wf-value`, `wf-value-right`, `parlay-left` and `parlay`,
+respectively; the WF columns both use by-value frames.
+
+| Input | WF sends left | WF sends right | Parlay sends left | Parlay sends right |
+| --- | ---: | ---: | ---: | ---: |
+| Center peak | 10.911 | 10.755 | 13.828 | 18.151 |
+| Left peak | 13.104 | 10.787 | 24.724 | 11.141 |
+| Right peak | 10.760 | 12.818 | 10.901 | 23.010 |
+| Depth cap | 15.703 | 15.682 | 18.245 | 17.151 |
+
+For left/right peaks at depth4, paired WF-right/WF-left medians are
+0.823 [0.811–0.843] and1.200 [1.187–1.266]: left improves in all five pairs,
+right loses in all five. Parlay-left/Parlay-right ratios are
+2.138 [1.958–2.458] and0.470 [0.382–0.630], with the reciprocal all-five
+loss/gain. At depth8 these effects are smaller: WF direction ratios are
+0.896/1.082 (4/1 faster pairs), Parlay ratios1.155/0.862 (0/5 faster pairs).
+Center and depth-cap direction changes remain mixed. The reciprocal skew
+response supports fork direction as a material factor in this experiment;
+different template code generation and process timing still prevent assigning
+the entire change to a single queue operation.
+
+At matched left-publication depth8, WF/Parlay ratios for center/left/right/cap
+are1.075 [1.035–1.165],0.982 [0.972–1.034],0.996 [0.895–1.056] and
+0.989 [0.961–1.068], with0/4/3/4 faster pairs. The previous opposite-direction
+left/right all-five loss/win is not an established cross-runtime gap. Center
+still favors Parlay in all five pairs. Matching right-publication likewise
+gives left/right medians1.016/0.888 with2/4 faster pairs. These observations
+neither establish equivalence nor select a universally faster scheduler.
+
+Do not choose a default source-call order from two mirrored peaks. The caller
+does not know the subtree work in advance; direction and useful grain need
+input-adaptive evidence. The next optimization should reduce generated
+fine-grained offers without changing ordinary function ABI, then measure its
+actual work, refusals and scaling on larger compositions and qualified hosts.
 
 ## Scalar scheduler comparison
 

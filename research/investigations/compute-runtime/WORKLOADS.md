@@ -35,6 +35,8 @@ oneTBB/Parlay controls now vary spawn depth against a common scalar C++ kernel,
 with the same oracle and subtree-local diagnostic counts. The M1 grain screen
 exposes remaining WF losses; a matched-grain native WF extension exercises the
 same scalar kernel through pointer/by-value frames and forced slot exhaustion.
+Reciprocal native fork-direction controls expose mirrored left/right skew
+effects while preserving the ordered result and all oracle work counts.
 Recursive Rayon, compiler grain selection and held-out/native-host confirmation
 remain missing. The ten-case screen does not
 yet qualify larger application composition and does not replace the application
