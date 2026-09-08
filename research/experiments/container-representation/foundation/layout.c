@@ -8,6 +8,10 @@
  * of the same state.
  */
 
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include <errno.h>
 #include <inttypes.h>
 #include <stddef.h>
@@ -15,14 +19,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
 #include <time.h>
+#endif
 
 #define CAPACITY 4096u
 #define BIT_WORDS ((CAPACITY + 63u) / 64u)
 #define DEFAULT_ITERATIONS 1200u
 #define DEFAULT_SAMPLES 9u
+#define WARMUP_ITERATIONS 4096u
 
-#if defined(__clang__) || defined(__GNUC__)
+#if defined(_MSC_VER)
+#define NOINLINE __declspec(noinline)
+#elif defined(__clang__) || defined(__GNUC__)
 #define NOINLINE __attribute__((noinline))
 #else
 #define NOINLINE
@@ -109,11 +122,10 @@ static Payload payload_at(size_t logical_index) {
 }
 
 static uint64_t include_payload(uint64_t checksum, const Payload *payload) {
-    for (size_t word = 0; word < 4; ++word) {
-        checksum ^= payload->word[word] + UINT64_C(0x9e3779b97f4a7c15) +
-                    (checksum << 6) + (checksum >> 2);
-    }
-    return checksum;
+    /* One word keeps every completed copy observable without turning the
+     * benchmark into a dependent four-word hash. Byte equality is checked
+     * independently before timing. */
+    return checksum + payload->word[0];
 }
 
 static CopyResult empty_result(void) {
@@ -158,12 +170,20 @@ static NOINLINE CopyResult copy_ring(
         fail("invalid ring state");
     }
     CopyResult result = empty_result();
-    for (size_t logical = 0; logical < source->len; ++logical) {
-        size_t physical = source->head + logical;
-        if (physical >= source->cap) {
-            physical -= source->cap;
-        }
-        destination[result.count] = source->slot[physical];
+    if (source->len == 0) {
+        return result;
+    }
+    size_t first = source->len;
+    if (first > source->cap - source->head) {
+        first = source->cap - source->head;
+    }
+    for (size_t logical = 0; logical < first; ++logical) {
+        destination[result.count] = source->slot[source->head + logical];
+        result.checksum = include_payload(result.checksum, &destination[result.count]);
+        ++result.count;
+    }
+    for (size_t logical = 0; logical < source->len - first; ++logical) {
+        destination[result.count] = source->slot[logical];
         result.checksum = include_payload(result.checksum, &destination[result.count]);
         ++result.count;
     }
@@ -398,9 +418,22 @@ static void verify_nullable_cases(void) {
     free(separate);
 }
 
-static double elapsed_ns(struct timespec start, struct timespec stop) {
-    return (double)(stop.tv_sec - start.tv_sec) * 1e9 +
-           (double)(stop.tv_nsec - start.tv_nsec);
+static double monotonic_ns(void) {
+#if defined(_WIN32)
+    LARGE_INTEGER counter;
+    LARGE_INTEGER frequency;
+    if (!QueryPerformanceFrequency(&frequency) ||
+        !QueryPerformanceCounter(&counter) || frequency.QuadPart <= 0) {
+        fail("QueryPerformanceCounter failed");
+    }
+    return (double)counter.QuadPart * 1e9 / (double)frequency.QuadPart;
+#else
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+        fail("clock_gettime failed");
+    }
+    return (double)now.tv_sec * 1e9 + (double)now.tv_nsec;
+#endif
 }
 
 typedef CopyResult (*CopyFunction)(const void *, Payload *);
@@ -437,26 +470,20 @@ static double time_copies(
     size_t iterations,
     uint64_t salt
 ) {
-    struct timespec start;
-    struct timespec stop;
     uint64_t witness = salt;
-    if (clock_gettime(CLOCK_MONOTONIC, &start) != 0) {
-        fail("clock_gettime start failed");
-    }
+    double start = monotonic_ns();
     for (size_t iteration = 0; iteration < iterations; ++iteration) {
         CopyResult result = function(source, destination);
         witness ^= result.checksum + (uint64_t)result.count + (uint64_t)iteration;
     }
-    if (clock_gettime(CLOCK_MONOTONIC, &stop) != 0) {
-        fail("clock_gettime stop failed");
-    }
+    double stop = monotonic_ns();
     published_checksum ^= witness;
-    return elapsed_ns(start, stop);
+    return stop - start;
 }
 
 static void warm_copies(CopyFunction function, const void *source, Payload *destination) {
     uint64_t witness = 0;
-    for (size_t iteration = 0; iteration < 16; ++iteration) {
+    for (size_t iteration = 0; iteration < WARMUP_ITERATIONS; ++iteration) {
         CopyResult result = function(source, destination);
         witness ^= result.checksum + (uint64_t)result.count + (uint64_t)iteration;
     }
@@ -485,25 +512,25 @@ static void print_layouts(void) {
 }
 
 static void print_structural_cases(void) {
-    printf("case,full,live=%u,initialized_payload_bytes=%zu,validity_initialization_bytes=0,payload_bytes_copied=%zu\n",
+    printf("case,full,live=%u,initialized_payload_bytes=%zu,validity_state_bytes_defined=0,payload_bytes_copied=%zu\n",
            CAPACITY, CAPACITY * sizeof(Payload), CAPACITY * sizeof(Payload));
-    printf("case,prefix_full,live=%u,initialized_payload_bytes=%zu,metadata_initialization_bytes=%zu,payload_bytes_copied=%zu\n",
+    printf("case,prefix_full,live=%u,initialized_payload_bytes=%zu,metadata_state_bytes_defined=%zu,payload_bytes_copied=%zu\n",
            CAPACITY, CAPACITY * sizeof(Payload), offsetof(PrefixStorage, slot),
            CAPACITY * sizeof(Payload));
-    printf("case,prefix_quarter,live=%u,initialized_payload_bytes=%zu,metadata_initialization_bytes=%zu,payload_bytes_copied=%zu\n",
+    printf("case,prefix_quarter,live=%u,initialized_payload_bytes=%zu,metadata_state_bytes_defined=%zu,payload_bytes_copied=%zu\n",
            CAPACITY / 4u, (CAPACITY / 4u) * sizeof(Payload),
            offsetof(PrefixStorage, slot), (CAPACITY / 4u) * sizeof(Payload));
-    printf("case,ring_full_wrapped,live=%u,initialized_payload_bytes=%zu,metadata_initialization_bytes=%zu,payload_bytes_copied=%zu\n",
+    printf("case,ring_full_wrapped,live=%u,initialized_payload_bytes=%zu,metadata_state_bytes_defined=%zu,payload_bytes_copied=%zu\n",
            CAPACITY, CAPACITY * sizeof(Payload), offsetof(RingStorage, slot),
            CAPACITY * sizeof(Payload));
-    printf("case,ring_wrapped_17,live=17,initialized_payload_bytes=%zu,metadata_initialization_bytes=%zu,payload_bytes_copied=%zu\n",
+    printf("case,ring_wrapped_17,live=17,initialized_payload_bytes=%zu,metadata_state_bytes_defined=%zu,payload_bytes_copied=%zu\n",
            17u * sizeof(Payload), offsetof(RingStorage, slot), 17u * sizeof(Payload));
     for (Pattern pattern = PATTERN_DENSE; pattern <= PATTERN_CLUSTERED; ++pattern) {
         size_t present = 0;
         for (size_t index = 0; index < CAPACITY; ++index) {
             present += (size_t)pattern_contains(pattern, index);
         }
-        printf("case,nullable_%s,live=%zu,initialized_payload_bytes=%zu,separate_validity_initialization_bytes=%zu,c_tagged_validity_initialization_bytes=%u,payload_bytes_copied=%zu\n",
+        printf("case,nullable_%s,live=%zu,initialized_payload_bytes=%zu,separate_validity_state_bytes_defined=%zu,c_tagged_validity_state_bytes_defined=%u,payload_bytes_copied=%zu\n",
                pattern_name(pattern), present, present * sizeof(Payload),
                sizeof(((SeparateNullable *)0)->valid), CAPACITY,
                present * sizeof(Payload));

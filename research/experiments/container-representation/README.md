@@ -15,9 +15,10 @@ Its four parts answer different questions:
 - `authority/`: finite concrete range certificates compared with an independent
   per-slot oracle; this is neither a language extension nor evidence that a
   symbolic library implementation already passes the compiler.
-- `foundation/`: matched native layouts and concrete construction, failure,
-  relocation, and retirement protocols for the next foundation decision. Native
-  timings, model invariants, and implemented Whitefoot capability stay separate.
+- `foundation/`: matched native layouts, a safe Rust boxed-array baseline,
+  concrete construction/failure/retirement protocols, and a finite comparison of
+  whole-result and field-destination construction. A current Whitefoot wide-result
+  probe distinguishes these proposed mechanisms from implemented capability.
 
 These small programs test specific capabilities and costs. They are not a
 representative corpus of real applications and supply no workload-frequency data.
@@ -32,8 +33,9 @@ make -C research/experiments/container-representation measure
 ```
 
 `check` is maintained by the root `research-tests` target. It builds the current
-compiler, checks the finite model, validates the expected current source outcomes,
-and verifies the dense native comparisons. `measure` also records timing samples;
+compiler, checks the finite models, validates the expected current source outcomes,
+and verifies native comparisons. `measure` also records timing samples and retains
+the foundation probe's producer boundary for generated-storage inspection;
 timing is descriptive evidence, not a host-speed-dependent acceptance threshold.
 Each subdirectory's `RESULTS.md` states its measured revision, interpretation, and
 limits. Results from different evidence levels must not be substituted for one

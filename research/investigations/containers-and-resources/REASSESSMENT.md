@@ -14,6 +14,11 @@ Keep this decision and its linked evidence current as implementation replaces th
 old container paths. `DESIGN.md` points here for the superseding container choice;
 its separate resource research is outside this selection.
 
+[FOUNDATION.md](FOUNDATION.md) continues from the merged owned-place implementation:
+it selects the next full-array, construction, and helper-contract experiment and
+records why additional public raw-storage authority is not assumed. Its proposals
+do not change the source behavior or the measured scope recorded here.
+
 The implementation examined was `ea97222adc0aff481df320f4c39624eb6813e488`, rebased as
 `eff095c701b473a0108822a16cd1e1274c43f621` onto main
 `8a5ad14b1d9093117dff1bd437d4de9d7aa564c4`. The rebase adds exactly main's intervening
@@ -488,6 +493,9 @@ at a stable allocation should retain its full-state type when the owning referen
 moves through a free list. At the examined baseline, the boxed source probes
 were blocked by incorrect region inference and owned-cell measure resolution;
 those compiler defects do not refute that representation.
+An empty-backing pool has an additional contract: failed partial construction must
+return the same empty storage. The next [foundation selection](FOUNDATION.md#empty-backing-across-library-and-pool-boundaries)
+addresses that state separately; a full-array type alone does not express it.
 
 The proposed full-state construction proceeds through a checked partial state.
 This is a follow-on source capability, distinct from constructing an already

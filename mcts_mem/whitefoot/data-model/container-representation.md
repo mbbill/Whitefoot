@@ -296,6 +296,36 @@
   [Selected boundary and alternatives](../../../research/investigations/containers-and-resources/REASSESSMENT.md#selected-control-header-temporary-loan-boundary),
   [ownership decision](../ownership/no-reborrow/control-header-temporary-loans.md). (sourced)
 
+- 2026-09-08 pitfall: a full fixed-array type preserves the successful owner's
+  extent and initialization, but does not describe empty backing returned after
+  partial construction fails. Current boundary-element measure transport loses
+  the empty length and dynamic capacity of a nested run. A fixed-capacity field
+  solves only the capacity part; result-field projection alone cannot recover
+  facts which were not retained by the stored value's type.
+  [Pool capacity and initialization controls](../../../research/experiments/container-representation/lifecycle/RESULTS.md#fixed-capacity-already-has-a-type-level-route),
+  [Empty backing contract](../../../research/investigations/containers-and-resources/FOUNDATION.md#empty-backing-across-library-and-pool-boundaries). (sourced)
+
+- 2026-09-08 rationale: the next wide-block experiment selects finite nominal
+  invariants over already-valid fields, closed at whole construction and opened
+  only by consuming the owner, before a dedicated empty-slot nominal. This
+  proposal addresses reusable contract transport without granting raw payload
+  authority. It preserves the four-word run descriptor; a proposed one-word
+  specialized slot remains a meaningful rival for small blocks. Neither checked
+  invariant formation nor its representation optimization is implemented by the
+  finite construction model.
+  [Selected boundary, mutation restrictions, and descriptor comparison](../../../research/investigations/containers-and-resources/FOUNDATION.md#specialized-slot-versus-a-checked-source-wrapper). (sourced)
+
+- 2026-09-08 rationale: fresh fallible construction can route complete field
+  results into separate success/error destinations without exposing an invalid
+  source value. Returning an existing owner and observing a whole result are
+  distinct materialization cases; an all-path placement qualification must also
+  account for consumed inputs and failure cleanup. The experiment selects a
+  general internal result tree, not a public initialization permission or a
+  demonstrated production ABI. Safe Rust's vector-to-boxed-array path is a
+  required comparator, not an unsafe-only capability.
+  [Construction boundary and limits](../../../research/investigations/containers-and-resources/FOUNDATION.md#construction-without-a-public-hole-in-t),
+  [Executable controls](../../../research/experiments/container-representation/foundation/RESULTS.md). (sourced)
+
 ## Moves
 
 - Selected general place/result-destination support as the first implementation,

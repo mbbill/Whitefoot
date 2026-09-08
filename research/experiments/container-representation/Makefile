@@ -15,4 +15,5 @@ check: compiler
 	$(MAKE) -C dense check WHITEFOOTC="$(WHITEFOOTC)"
 
 measure: check
+	$(MAKE) -C foundation measure
 	$(MAKE) -C dense measure WHITEFOOTC="$(WHITEFOOTC)"
