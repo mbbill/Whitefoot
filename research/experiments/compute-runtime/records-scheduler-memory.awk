@@ -13,7 +13,7 @@ function frame(line, ordinal, text) {
 function object_frame(text, name, rest) {
     if (substr(text,1,length(name)+1)!=name " ") fail("object stack identity");
     rest=substr(text,length(name)+2);
-    if (rest !~ ("^\\(/[^()]+/scheduler-memory-" binary "(\\+0x[0-9a-f]+)\\) \\(BuildId: [0-9a-f]+\\)$"))
+    if (rest !~ ("^\\(/[^()]+/" object_basename "(\\+0x[0-9a-f]+)\\) \\(BuildId: [0-9a-f]+\\)$"))
         fail("object stack location");
 }
 function rust_frame(text, name, source, rest) {
@@ -57,6 +57,10 @@ function allocation(    i,text) {
     n=0; kind=""
 }
 BEGIN {
+    # A shared workload image can retain this exact pinned lifecycle grammar.
+    # Existing callers keep their original per-adapter binary identity.
+    if (object_basename=="") object_basename="scheduler-memory-" binary;
+    if (object_basename !~ /^[A-Za-z0-9_-]+$/) fail("binary identity parameter");
     init="<std::sync::once_lock::OnceLock<rayon_core::thread_pool::ThreadPool>>::initialize";
     get="<std::sync::once_lock::OnceLock<rayon_core::thread_pool::ThreadPool>>::get_or_init<wf_records_rayon::run::{closure#0}>::{closure#0}, !>";
     force="<std::sync::once::Once>::call_once_force::<" init "<" get "::{closure#0}>::{closure#0}";

@@ -32,6 +32,10 @@ jobs:
             arch: -march=x86-64-v3
             checks: check-scheduler-events
             driver: records-scheduler-bench.sh
+          - workload: mandelbrot
+            arch: -march=x86-64-v3
+            checks: check-mandelbrot
+            driver: mandelbrot-bench.sh
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -44,7 +48,7 @@ jobs:
           cargo fetch --locked --manifest-path compiler/Cargo.toml
           /usr/bin/clang --version
       - name: Fetch pinned native schedulers
-        if: matrix.workload == 'scheduler'
+        if: matrix.workload == 'scheduler' || matrix.workload == 'mandelbrot'
         env:
           OUT: ${{ runner.temp }}/compute-${{ matrix.workload }}
         run: make -C research/experiments/compute-runtime scheduler-fetch OUT="$OUT"
@@ -141,3 +145,4 @@ jobs:
             ${{ runner.temp }}/compute-${{ matrix.workload }}/fir*
             ${{ runner.temp }}/compute-${{ matrix.workload }}/records*
             ${{ runner.temp }}/compute-${{ matrix.workload }}/scheduler-*
+            ${{ runner.temp }}/compute-${{ matrix.workload }}/mandelbrot*

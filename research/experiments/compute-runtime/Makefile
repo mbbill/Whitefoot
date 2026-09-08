@@ -63,7 +63,7 @@ $(OUT)/probe $(OUT)/probe-no-stats $(OUT)/probe-events: runtime.c runtime.h runt
 		$(if $(filter $(OUT)/probe-events,$@),-DWF_COMPUTE_EVENTS,) \
 		runtime.c probe.c $(FLOOR) -o "$@"
 
-check: check-runtime check-abi check-fir check-bench check-records-events check-scheduler-events
+check: check-runtime check-abi check-fir check-bench check-records-events check-scheduler-events check-mandelbrot
 
 check-runtime: build
 	@set -e; for probe in probe probe-no-stats probe-events; do \
@@ -184,6 +184,49 @@ records-events-build: records-budget-build
 check-records-events: check-records-budget records-events-build
 	$(call qualify-record-controls,events events-sanitized)
 	OUT="$(OUT)" sh records-bench.sh events-check
+
+.PHONY: mandelbrot-build check-mandelbrot
+mandelbrot-build: scheduler-layout-build $(WFC)
+	"$(WFC)" --par --par-ledger --emit-llvm mandelbrot.wf -o "$(OUT)/mandelbrot.ll" > "$(OUT)/mandelbrot.ledger"
+	grep -F 'split independent map' "$(OUT)/mandelbrot.ledger"
+	sed -e 's/@main(/@wf_mandelbrot_command_main(/g' -e 's/@wf__main_body(/@wf_mandelbrot_command_body(/g' \
+		"$(OUT)/mandelbrot.ll" > "$(OUT)/mandelbrot-host.ll"
+	cat mandelbrot_host.ll >> "$(OUT)/mandelbrot-host.ll"
+	$(CC) $(RECORD_FLAGS) -Wno-override-module -c "$(OUT)/mandelbrot-host.ll" -o "$(OUT)/mandelbrot-wf.o"
+	$(CC) $(RECORD_FLAGS) -Wno-override-module -S "$(OUT)/mandelbrot-host.ll" -o "$(OUT)/mandelbrot-wf.s"
+	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=0 -DWF_COMPUTE_BUDGET_CONTROL \
+		-c runtime.c -o "$(OUT)/mandelbrot-runtime.o"
+	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=0 -DWF_COMPUTE_BUDGET_CONTROL \
+		-c mandelbrot.c -o "$(OUT)/mandelbrot-host.o"
+	$(CC) $(RECORD_FLAGS) -S mandelbrot.c -DWF_COMPUTE_STATS=0 -DWF_COMPUTE_BUDGET_CONTROL -o "$(OUT)/mandelbrot-host.s"
+	@for mode in ordinary sanitized; do \
+		host="$(OUT)/mandelbrot-host.o"; runtime="$(OUT)/mandelbrot-runtime.o"; floor="$(OUT)/scheduler-floor.o"; flags=; \
+		image="$(OUT)/mandelbrot"; \
+		if test $$mode = sanitized; then \
+			flags='-fsanitize=$(SANITIZER) -fno-sanitize-recover=all -fno-omit-frame-pointer'; \
+			for source in mandelbrot runtime; do \
+				$(CC) $(RECORD_FLAGS) $$flags -DWF_COMPUTE_STATS=0 -DWF_COMPUTE_BUDGET_CONTROL \
+					-c $$source.c -o "$(OUT)/mandelbrot-sanitized-$$source.o" || exit $$?; \
+			done; \
+			$(CC) $(RECORD_FLAGS) $$flags -c $(FLOOR) -o "$(OUT)/mandelbrot-sanitized-floor.o" || exit $$?; \
+			host="$(OUT)/mandelbrot-sanitized-mandelbrot.o"; runtime="$(OUT)/mandelbrot-sanitized-runtime.o"; \
+			floor="$(OUT)/mandelbrot-sanitized-floor.o"; image="$(OUT)/mandelbrot-sanitized"; \
+		fi; \
+		set -- "$$host" "$$runtime" "$$floor" "$(OUT)/mandelbrot-wf.o" "$(OUT)/scheduler-layout-selector.o"; \
+		for adapter in $(LAYOUT_SCHEDULERS); do set -- "$$@" "$(OUT)/scheduler-layout-$$adapter.o"; done; \
+		$(CXX) -pthread -fno-lto $$flags "$$@" -L"$(OUT)/scheduler-deps/lib" -Wl,-rpath,"$(OUT)/scheduler-deps/lib" \
+			-ltbb "$(RAYON_LIB)" $(RAYON_SYSTEM_LIBS) -o "$$image" || exit $$?; \
+	done
+	@nm "$(OUT)/mandelbrot" > "$(OUT)/mandelbrot.symbols"
+	$(call require-strong,$(OUT)/mandelbrot,wf__par_acquire_lane)
+	$(call require-strong,$(OUT)/mandelbrot,wf__floor_run)
+	@printf '%s\n' '$(RECORD_FLAGS)' 'sanitizer=$(SANITIZER)' 'stats=0 events=0; generated map and all native schedulers in one image' \
+		'sanitizers=host,native-kernel,runtime,floor; WF object and scheduler adapters ordinary' > "$(OUT)/mandelbrot-flags.txt"
+	$(CC) --version >> "$(OUT)/mandelbrot-flags.txt"
+	shasum -a 256 "$(WFC)" >> "$(OUT)/mandelbrot-flags.txt"
+
+check-mandelbrot: mandelbrot-build
+	OUT="$(OUT)" sh mandelbrot-bench.sh check
 
 # Download is explicit, as with Cargo's offline research dependencies. The
 # build verifies pins and only installs the private library below OUT.

@@ -15,9 +15,10 @@ results below retain their original conditions and do not rank these schedulers.
 The [investigation](../../investigations/compute-runtime/README.md) owns the
 architecture question, [WF workload coverage](../../investigations/compute-runtime/WORKLOADS.md)
 and [native references](../../investigations/compute-runtime/BASELINES.md).
-`abi.wf` is only a small ABI diagnostic. The variable-input FIR program below
-is the first substantive computation; the broader application suite remains to
-build. Keep this control while it distinguishes recovery
+`abi.wf` is only a small ABI diagnostic. FIR, UTF-8 record batches and
+[Mandelbrot point rendering](#mandelbrot-point-rendering) provide distinct
+computations; nested composition and broader application coverage remain open.
+Keep this control while it distinguishes recovery
 from the shared runtime; consolidate it into the compiler runtime and its tests,
 or remove it, when a qualified replacement makes the duplicate unnecessary.
 
@@ -932,6 +933,135 @@ image SHA256 is
 `a97bd86631bb2e9d27715993c11ca3e14a9be60ee5a500f41c2af9a5f3855869`;
 the event image is
 `571f8aaf2e82e5dbfcad38805c2a0236c6d700849063dc903c454b2caeb558b8`.
+
+## Mandelbrot point rendering
+
+`mandelbrot.wf` adds irregular floating-point work to the WF suite. A dependent
+complex recurrence remains sequential within each point, while the ordinary
+outer loop becomes an independent output map. The result is the first iteration
+whose squared magnitude exceeds four, capped by the supplied limit; iteration
+zero tests zero. All arithmetic uses separate strict binary64 operations.
+Coordinates and iteration limits are runtime inputs. This finite rounded
+recurrence is the comparison contract: analytic interior shortcuts, different
+rounding, FMA contraction and SIMD are outside this scalar scheduler panel.
+
+The C host checks every returned count against an explicitly rounded recurrence
+and verifies both input arrays after every call. Known fixed/escaping orbits,
+NaN/infinities, zero and maximum iteration limits, empty/odd/non-power-of-two
+batches and maximum repetition counts qualify the boundary. Each full
+qualifier checks 158,809 single points and 216 batches / 158,076 outputs.
+`check-mandelbrot` runs all seventeen configurations in ordinary and C-sanitized
+images, then sixty-eight timing smokes. The existing pinned Rayon Linux
+caller-worker lifecycle report is checked with its exact allocation/stack
+grammar and actual exit status; other leaks or sanitizer failures reject.
+Sanitizers cover this C host, native kernel, WF runtime and floor; emitted WF
+code and the reused native adapters/libraries are ordinary objects. Linux
+execution must qualify the new shared image's lifecycle report separately.
+
+After `make scheduler-fetch`, run `make check-mandelbrot` with an absolute
+`OUT`, then `OUT=... RESULTS=... sh mandelbrot-bench.sh calibrate`. Run these
+commands from this experiment directory; `RESULTS` must not exist. Canonical
+`check` includes qualification, and the `mandelbrot-linux` compute CI job builds,
+checks and calibrates sequentially on one recorded CPU mask. The native
+adapters reuse the scheduler panel's pinned sources and scalar build path.
+
+Seventeen configurations share one executable:
+
+- generated WF sequential at width one; generated WF automatic at width one
+  and four, with cost/capacity/team policies at width four;
+- the same native C chunk callback under WF, static pthread, oneTBB, Parlay,
+  Rayon join and Rayon parallel iterator, each at widths one and four.
+
+Native callbacks process sixty-four points each. Generated maps report grain
+zero, meaning compiler/runtime splitting rather than that native chunk size.
+All native schedulers execute the same callback machine code; comparisons
+against generated WF also include code-generation and decomposition differences.
+All widths include the caller. Width is a requested budget, not evidence that
+each worker did useful work. The raw `wf_pool_lanes` field observes only the
+WF pool; it does not report native-library occupancy. The validator requires
+expected WF capacity, deriving cost's admission threshold from emitted weight
+and the runtime threshold instead of treating every width-four label as active.
+
+The calibration has 850 processes / 7,650 calls: five rotating/reflected passes
+and eight warm calls plus a separate first call. Six 4,097-point cells at limit
+256 cover a sampled plane, a boundary neighborhood, clustered/interleaved
+equal multisets of interior/exterior points, all-interior and all-exterior work.
+Four 33-point cells at limit sixteen cover plane, boundary, interior and exterior.
+Seed 828219 fixes the coordinates. The raw total capped iteration count is
+bound across configurations/passes and checked analytically for the fixed-orbit
+families. It describes useful recurrence work, not scheduler tasks.
+
+Core time includes output allocation and joined computation. Native output
+uses `malloc` because each callback writes its entire assigned range; native
+qualification poisons every output first to detect omitted writes. Generated
+WF retains whatever initialization its normal `buffer_new` lowering requires.
+Cycle time additionally copies the complete output and releases its original
+allocation. Input construction and reference computation precede the batch;
+full output/input checks and printing occur between calls. Inter-cycle gaps
+are retained and emitted after batch resource sampling. Batch wall/user/system
+CPU and OS switches therefore include first calls, checks and printing; peak
+RSS is process-wide. Pool startup is charged to the first computation;
+same-owner native teardown follows the measured batch. Statistics and events
+are disabled. These are scalar end-to-end and common-kernel controls, not a
+claim of best Mandelbrot algorithms or a tuned native scheduling frontier.
+
+The September 8 M1 calibration uses ordinary image SHA256
+`1a90946b58ca2c1122fcee199b69988b2eb3fccb44616ab4dd468731d045de36`.
+All 850 processes passed; independent replay checked 7,650 calls, 18,906,210
+output positions, 6,800 gaps, all summaries and 53 distinct manifest paths.
+Worker placement and thermal state are uncontrolled. Tables below give core
+microseconds, taking the median of five process means of eight warm calls;
+first calls remain separate and no outliers are removed.
+
+| Input / points | WF sequential W1 | WF cost W4 | WF capacity W4 | WF team W4 |
+| --- | ---: | ---: | ---: | ---: |
+| Plane / 4097 | 656.937 | 658.974 | 177.636 | 186.370 |
+| Boundary / 4097 | 1275.547 | 1328.641 | 353.901 | 359.636 |
+| Clustered / 4097 | 849.750 | 848.167 | 230.104 | 899.495 |
+| Interleaved / 4097 | 874.323 | 882.297 | 228.953 | 228.323 |
+| Interior / 4097 | 3462.084 | 3375.911 | 897.865 | 927.667 |
+| Exterior / 4097 | 5.193 | 5.573 | 5.526 | 5.120 |
+| Plane / 33 | 0.307 | 0.307 | 4.417 | 1.406 |
+| Boundary / 33 | 0.787 | 0.813 | 4.058 | 1.776 |
+| Interior / 33 | 0.771 | 0.786 | 4.187 | 1.964 |
+| Exterior / 33 | 0.089 | 0.094 | 3.833 | 1.411 |
+
+The emitted weight is 219, giving a cost-admission cutoff of 10,960 points
+under the current 1,200,000 work threshold. Every generated-WF cost cell has zero
+WF pool lanes despite its requested W4 budget. Capacity/cost paired median
+ratios are 0.263–0.271 for the five heavy 4,097-point families, faster in every
+pair. This is an admission-policy control, not a newly improved default.
+Every 33-point capacity comparison is slower in every pair; unconditional
+subdivision is not selected either.
+
+Clustered and interleaved inputs have identical long/short point multisets and
+265,472 total capped iterations. Changing their placement changes team/capacity
+from 3.927 [3.845–3.987], slower in all five pairs, to 0.997 [0.978–1.031],
+mixed. This supports investigating subdivision and load imbalance: fixed
+team-sized terminal chunks can strand work. It does not measure worker
+utilization or actual task counts, which this uninstrumented image does not
+record.
+
+The common C callback controls at W4 / grain 64 give:
+
+| Input / 4097 points | WF adapter | Static | oneTBB | Parlay | Rayon join | Rayon iterator |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Plane | 176.031 | 176.834 | 180.849 | 200.099 | 200.927 | 198.615 |
+| Boundary | 354.120 | 363.703 | 348.823 | 358.724 | 369.042 | 392.625 |
+| Clustered | 226.854 | 888.729 | 235.094 | 247.672 | 274.359 | 452.891 |
+| Interleaved | 225.563 | 239.787 | 235.250 | 249.193 | 248.000 | 242.239 |
+| Interior | 892.209 | 942.271 | 893.219 | 920.224 | 989.875 | 991.896 |
+| Exterior | 5.365 | 3.672 | 7.870 | 6.229 | 8.099 | 12.000 |
+
+Generated WF capacity versus each heavy cell's lowest observed native median
+has paired median ratios 1.006–1.012, with mixed pair directions. These close
+results do not establish a winner. The cheap exterior cell loses to static
+in all five pairs, ratio 1.436 [1.325–2.559]. WF sequential versus native
+static W1 has heavy-cell paired median ratios 0.986–1.013; that comparison
+also includes generated kernel and allocation/representation differences.
+At 33 points the native grain creates only one callback, so nominal W4 is
+not a four-way parallel control. Native grain tuning, held-out confirmation,
+dedicated-core scaling, nested workloads and Linux qualification remain open.
 
 ## Scalar scheduler comparison
 

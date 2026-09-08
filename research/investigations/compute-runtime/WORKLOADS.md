@@ -17,7 +17,13 @@ result contract. This remains one workload family, with broader coverage still
 required below. The [UTF-8 record batch](../../experiments/compute-runtime/README.md#variable-length-utf-8-record-batches)
 adds a second computation with variable record boundaries, per-record results
 and an actualized flat output map; its native frontier and held-out measurement
-remain unqualified. Keep the inventory current as
+remain unqualified. [Mandelbrot point rendering](../../experiments/compute-runtime/README.md#mandelbrot-point-rendering)
+adds a third computation: strict floating-point recurrence with runtime iteration
+limits, data-dependent early exit and clustered/interleaved imbalance. Its
+ordinary WF outer map is actualized and compared with six native schedulers
+sharing one C callback. This is independent-point work, not nested composition
+or irregular graph traversal, and does not replace the missing rows below.
+Keep the inventory current as
 programs become executable; consolidate it when the suite's implemented coverage
 supersedes this selection.
 
