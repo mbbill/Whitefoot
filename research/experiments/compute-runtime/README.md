@@ -2914,16 +2914,20 @@ median0.999941 does not resolve task-clock/process range0.728320-1.014730;
 six hardware counters remain unavailable. No observer or earlier cohort is
 pooled, and no strongest-reference or hardware-limit claim follows.
 
-The separate [full gate](https://github.com/mbbill/Whitefoot/actions/runs/34267682702)
-still fails both research jobs with child status1 during the instrumented
+The separate [813c6d44 full gate](https://github.com/mbbill/Whitefoot/actions/runs/34267682702)
+failed both research jobs with child status1 during the instrumented
 four-worker Rayon checks. The successful preceding-report counts locate
 right-offer depth4 on macOS and left-offer depth4 on Linux, but their retained
 job logs contain only the wrapper status, not the underlying diagnostic.
 Two hundred local instrumented depth4 processes do not reproduce it. The
 wrapper now echoes rejected stderr while preserving rejection and exit status;
 the existing unexpected-diagnostic negative also checks that forwarding.
-The cause remains unverified pending a failing diagnostic; no check is relaxed
-and the successful compute job is not a full-gate success claim.
+The subsequent exact `a62b98f2` [full gate](https://github.com/mbbill/Whitefoot/actions/runs/34269691183)
+passed all12 jobs, and its [compute workflow](https://github.com/mbbill/Whitefoot/actions/runs/34269691191)
+passed all five jobs. The previous failure did not recur there. Its cause
+remains unverified; forwarding is a diagnostic improvement, not an established
+fix for the intermittent failure. No check is relaxed. The timing cohort above
+remains bound to `813c6d44`, not silently replaced by the newer successful run.
 
 ### Recursive frontier work model
 
@@ -2970,6 +2974,80 @@ solely by the reader's generic inequalities. An initial numeric-string
 comparison failure in that reader is retained; explicit numeric conversion
 after integer validation fixes it. Timing cohorts above use their original
 images and readers; no performance result is assigned to this rebuilt image.
+
+### Rayon worker work attribution
+
+The separate `quadrature-stats` build attributes visited computation nodes to
+Rayon worker indices0--3, with the benchmark caller at0. It credits each
+above-cut node to its executing worker and credits an entire sequential
+subtree once at its boundary. Serial subtrees contain no joins and remain on
+one worker. Four128-byte-aligned atomic counters use owner-only relaxed
+load/store additions; the single benchmark caller resets them before a root
+and reads them after all joins. There is no per-node callback, shared atomic
+increment or new task payload. The ordinary timing build excludes these
+counters and accesses. Only the private native benchmark observer signature
+changes; WF lowering, runtime interfaces and public language ABI do not.
+
+Full diagnostic reports attach a `# worker_nodes` row to every Rust/Rayon
+call. The reader requires exact call identity, all four integer counts, sum
+equal to the independent oracle's node count, zero work on inactive workers,
+and agreement between helper participation and application branch migration.
+Single-worker and zero-cut forms credit only worker0. A maintained Rust
+broadcast test credits four distinct amounts on four workers, verifies their
+index identities and reset, independently of the recursive aggregate count.
+Maintained negative reports reject incorrect totals, inactive-worker work,
+missing rows and wrong call identities. Existing migration checks remain.
+
+These are computation-node counts, not equally expensive instructions, task
+durations, upstream internal jobs or OS context switches. The added worker
+lookup and counters can change diagnostic scheduling; these reports do not
+measure the uninstrumented run's distribution or justify subtracting a fixed
+observer overhead. Ordinary sustained timing remains a separate measurement.
+This attribution covers the Rust/Rayon controls; generated WF and other native
+runtimes do not yet emit equivalent per-worker computation-node counts.
+
+After `check-quadrature`, run `make quadrature-worker-profile OUT="$OUT"
+RESULTS="$OUT/quadrature/worker-profile"` from this experiment directory.
+The compute CI runs it under the same selected CPU mask before ordinary
+calibration, retaining20 diagnostic processes and1,800 checked calls/worker
+rows across both directions, depths4/8 and five alternating passes. The first
+call for each input is separate from its eight subsequent calls. Per-call
+printing and clock/resource observations introduce gaps, so even subsequent
+calls are not the uninterrupted sustained-batch protocol. The profile retains
+the exact image hash, reader/driver copies, host metadata, raw stdout/stderr
+and a manifest. Linux uses the same strict lifecycle diagnostic validator as
+qualification, without suppressing unexpected status or stderr.
+
+The maintained target's first M1 profile uses diagnostic image SHA256
+`60c83b733d2097c84b12c380197c5578ea2564a0eaec4ade0de9939ee6f6cc17`,
+Apple Clang21.0.0 and Rust1.98.1, with scalar flags and no CPU affinity or
+frequency control. All20 processes/1,800 calls pass, with3,091,320 credited
+computation nodes. Independent replay checks the46 profile manifest entries,
+73 build entries, the separate image binding and20 source snapshots. The rebuilt image also passes214
+full qualifications/4,280 outputs,252 batch qualifications/2,772 outputs and
+the exact one-test worker-index/reset check. Ordinary Rust IR excludes the
+counter bank; the diagnostic IR retains the128-byte-aligned bank.
+
+For each call, largest share is `max(worker_nodes) / nodes`. Each process
+averages its eight subsequent calls for an input; the following cells are
+median[min,max] across the five process means. The200 first-input calls are
+retained separately, and no earlier profile or timing cohort is pooled.
+
+| Form | Left-peak largest share | Right-peak largest share |
+| --- | ---: | ---: |
+| Rayon depth4 |0.628[0.623,0.653]|0.700[0.661,0.866]|
+| Rayon-left depth4 |0.732[0.716,0.828]|0.628[0.600,0.675]|
+| Rayon depth8 |0.540[0.469,0.619]|0.374[0.288,0.399]|
+| Rayon-left depth8 |0.432[0.381,0.474]|0.503[0.362,0.570]|
+
+The coarse skew block alone requires at least1479/2473=0.598 of all nodes
+on one worker. Finer splitting removes that specific limit, but the observed
+depth8 distribution remains direction-dependent despite equal shape metrics.
+This establishes imbalance in the instrumented execution, not its share of
+ordinary elapsed time. Task handoff delay and worker startup/wakeup remain
+unmeasured explanations to separate from local recursive execution cost;
+balanced work alone does not imply low scheduling overhead or prove a causal
+explanation for the earlier sustained timing differences.
 
 ## Scalar scheduler comparison
 

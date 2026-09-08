@@ -361,6 +361,19 @@ int wf__main_body(int argc,char **argv) {
                 cpu_us(after.ru_utime)-cpu_us(before.ru_utime),cpu_us(after.ru_stime)-cpu_us(before.ru_stime),
                 after.ru_nvcsw-before.ru_nvcsw,after.ru_nivcsw-before.ru_nivcsw,steals,wf_compute_worker_count(),
                 publishes,pops,runs,joins,refusals,observed.nodes,observed.forks,observed.migrated);
+#if WF_COMPUTE_STATS
+            if(native_kind>=7) {
+                uint64_t sum=0;
+                for(unsigned worker=0;worker<4;++worker) {
+                    sum+=observed.worker_nodes[worker];
+                    if(worker>=requested || ((native_kind==9 || !spawn_depth) && worker))
+                        require(!observed.worker_nodes[worker],"inactive Rayon worker work");
+                }
+                require(sum==r.nodes,"Rayon worker work conservation");
+                printf("# worker_nodes input=%s call=%u w0=%" PRIu64 " w1=%" PRIu64 " w2=%" PRIu64 " w3=%" PRIu64 "\n",
+                    p->name,call,observed.worker_nodes[0],observed.worker_nodes[1],observed.worker_nodes[2],observed.worker_nodes[3]);
+            }
+#endif
         }
     }
 #if WF_COMPUTE_STATS

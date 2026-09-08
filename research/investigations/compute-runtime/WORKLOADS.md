@@ -62,10 +62,14 @@ Its normal compiler output reproduces34.8-37.0% paired median wall reductions
 against generated leaf on M1 and31.7-34.5% in the subsequent Linux VM panel;
 strongest-reference wins remain mixed. This is not a selected depth or
 a public ABI change. Reciprocal recursive Rayon and its Rust sequential
-kernel now extend the qualified M1 and Linux compute matrices. Separate
-full-gate research failures remain under investigation. The independent
+kernel now extend the qualified M1 and Linux compute matrices. A subsequent
+full gate passes; earlier intermittent research failures remain unexplained.
+The independent
 [frontier work model](../../experiments/compute-runtime/README.md#recursive-frontier-work-model)
 exposes coarse-grain skew limits but does not explain fork-direction asymmetry.
+[Worker-node attribution](../../experiments/compute-runtime/README.md#rayon-worker-work-attribution)
+adds actual Rust/Rayon work distribution under a separate diagnostic observer;
+it does not attribute ordinary timing or count generated WF nodes by worker.
 General compiler
 grain selection and held-out/native-host confirmation
 remain missing. The ten-case screen does not

@@ -65,7 +65,7 @@ $(OUT)/probe $(OUT)/probe-no-stats $(OUT)/probe-events: runtime.c runtime.h runt
 
 check: check-runtime check-protocol-cost check-abi check-fir check-bench check-records-events check-scheduler-events check-mandelbrot check-quadrature
 
-.PHONY: quadrature-build check-quadrature quadrature-calibrate quadrature-deps quadrature-batch-calibrate
+.PHONY: quadrature-build check-quadrature quadrature-calibrate quadrature-deps quadrature-batch-calibrate quadrature-worker-profile
 QUADRATURE_FORMS := native wf-seq wf-auto wf-leaf-seq wf-leaf wf-refusal-seq wf-refusal wf-frontier-seq-d8 wf-frontier-d8 cpp-seq \
 	tbb-d0 tbb-d2 tbb-d4 tbb-d8 tbb-d24 parlay-d0 parlay-d2 parlay-d4 parlay-d8 parlay-d24 \
 	wf-native-d0 wf-native-d2 wf-native-d4 wf-native-d8 wf-native-d24 \
@@ -163,6 +163,9 @@ quadrature-build: $(WFC) quadrature-deps
 	cd "$(OUT)/quadrature" && find deps -type f -exec shasum -a 256 {} + >> manifest.sha256
 
 check-quadrature: quadrature-build
+	RUSTFLAGS='$(QUADRATURE_RUST_FLAGS)' cargo test --locked --offline --release \
+		--manifest-path records-rayon/Cargo.toml --target-dir "$(OUT)/quadrature/rayon-sanitized" \
+		--features quadrature-stats quadrature::work::worker_counter_identity_and_reset -- --exact
 	@set -e; for image in ordinary sanitized; do for width in 1 4; do for variant in $(QUADRATURE_FORMS); do \
 		form=$${variant%-d*}; spawn=0; set -- $$form; case $$variant in *-d*) spawn=$${variant##*-d}; set -- $$form $$spawn;; esac; \
 		log="$(OUT)/quadrature/check-$$image-w$$width-$$variant.tsv"; \
@@ -186,6 +189,20 @@ check-quadrature: quadrature-build
 		echo 'quadrature accepted absent Rayon migration' >&2; exit 1; \
 	fi
 	@printf 'unexpected diagnostic\n' > "$(OUT)/quadrature/negative-diagnostic.stderr"
+	@set -e; good="$(OUT)/quadrature/check-sanitized-w1-rayon-d4.tsv"; \
+	for mutation in worker-total worker-width worker-missing worker-identity; do \
+		bad="$(OUT)/quadrature/negative-$$mutation.tsv"; \
+		case $$mutation in \
+			worker-total) sed '/^# worker_nodes /s/w0=[0-9][0-9]*/w0=0/' "$$good" > "$$bad"; reason='worker work conservation';; \
+			worker-width) sed '/^# worker_nodes /s/w1=0/w1=1/' "$$good" > "$$bad"; reason='inactive worker work';; \
+			worker-missing) sed '/^# worker_nodes /d' "$$good" > "$$bad"; reason='missing worker work';; \
+			worker-identity) sed '/^# worker_nodes /s/call=0/call=9/' "$$good" > "$$bad"; reason='worker work identity';; \
+		esac; \
+		if awk -v mode=check -v form=rayon -v spawn=4 -v width=1 -v stats=1 -f quadrature.awk "$$bad" > "$$bad.log" 2>&1; then \
+			echo "quadrature accepted wrong $$mutation" >&2; exit 1; \
+		fi; \
+		grep -Fx "quadrature report: $$reason" "$$bad.log"; \
+	done
 	@if sh quadrature-memory.sh clean "$(OUT)/quadrature/negative-diagnostic.stderr" 0 native 0 > "$(OUT)/quadrature/negative-diagnostic.log" 2>&1; then \
 		echo 'quadrature accepted unexpected diagnostic' >&2; exit 1; \
 	fi
@@ -247,6 +264,28 @@ check-quadrature: quadrature-build
 
 quadrature-batch-calibrate:
 	OUT="$(OUT)" RESULTS="$(RESULTS)" sh quadrature-batch.sh calibrate
+
+# Diagnostic distribution only; never use this image to rank ordinary timing.
+quadrature-worker-profile:
+	@test -n "$(RESULTS)" && test -x "$(OUT)/quadrature/sanitized"
+	mkdir "$(RESULTS)"
+	@set -e; uname -a > "$(RESULTS)/host.txt"; \
+	if test "$$(uname -s)" = Linux; then lscpu >> "$(RESULTS)/host.txt"; taskset -pc $$$$ >> "$(RESULTS)/host.txt"; \
+	else sysctl hw.model hw.ncpu hw.physicalcpu >> "$(RESULTS)/host.txt"; fi; \
+	cp Makefile quadrature.awk quadrature-memory.sh records-scheduler-memory.awk "$(RESULTS)/"; \
+	shasum -a 256 "$(OUT)/quadrature/sanitized" > "$(RESULTS)/image.sha256"; \
+	for pass in 1 2 3 4 5; do \
+		forms='rayon-d4 rayon-left-d4 rayon-d8 rayon-left-d8'; \
+		if test $$((pass % 2)) = 0; then forms='rayon-left-d8 rayon-d8 rayon-left-d4 rayon-d4'; fi; \
+		for variant in $$forms; do \
+			form=$${variant%-d*}; spawn=$${variant##*-d}; log="$(RESULTS)/p$$pass-w4-$$variant.tsv"; status=0; \
+			LSAN_OPTIONS=exitcode=23 WF_WORKERS=4 "$(OUT)/quadrature/sanitized" bench $$form $$spawn > "$$log" 2> "$$log.stderr" || status=$$?; \
+			sh quadrature-memory.sh "$$(cat "$(OUT)/quadrature/memory-profile.txt")" "$$log.stderr" $$status $$form 1; \
+			awk -v mode=bench -v form=$$form -v spawn=$$spawn -v width=4 -v stats=1 -f quadrature.awk "$$log"; \
+		done; \
+	done
+	cd "$(RESULTS)" && shasum -a 256 *.tsv *.stderr *.awk *.sh Makefile host.txt image.sha256 > manifest.sha256
+	@echo 'quadrature worker profile PASS: processes=20 outputs=1800 worker_rows=1800'
 
 quadrature-calibrate:
 	@test -n "$(RESULTS)" && test -x "$(OUT)/quadrature/ordinary"

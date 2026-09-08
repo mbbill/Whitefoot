@@ -99,6 +99,8 @@ jobs:
           }')
           test -n "$selected"
           if test '${{ matrix.workload }}' = quadrature; then
+            taskset -c "$selected" make -C research/experiments/compute-runtime quadrature-worker-profile \
+              OUT="$OUT" RESULTS="$OUT/quadrature/worker-profile"
             taskset -c "$selected" make -C research/experiments/compute-runtime quadrature-calibrate \
               OUT="$OUT" RESULTS="$OUT/calibration"
             taskset -c "$selected" make -C research/experiments/compute-runtime quadrature-batch-calibrate \

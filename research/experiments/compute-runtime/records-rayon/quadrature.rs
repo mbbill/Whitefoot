@@ -3,6 +3,50 @@
 
 use std::sync::OnceLock;
 
+#[cfg(feature = "quadrature-stats")]
+mod work {
+    use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+
+    // Each worker writes only its own cache-separated counter. The single
+    // benchmark caller resets/reads them between fully joined root calls.
+    #[repr(align(128))]
+    struct Counter(AtomicU64);
+    static NODES: [Counter; 4] = [const { Counter(AtomicU64::new(0)) }; 4];
+
+    pub fn reset() {
+        for counter in &NODES {
+            counter.0.store(0, Relaxed);
+        }
+    }
+
+    pub fn credit(nodes: u64) {
+        let counter = &NODES[rayon::current_thread_index().unwrap_or(0)].0;
+        counter.store(counter.load(Relaxed) + nodes, Relaxed);
+    }
+
+    pub fn snapshot() -> [u64; 4] {
+        std::array::from_fn(|i| NODES[i].0.load(Relaxed))
+    }
+
+    #[test]
+    fn worker_counter_identity_and_reset() {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .unwrap();
+        reset();
+        // Broadcast visits each worker once; distinct credits catch swapped
+        // labels and lost additions independently of recursive tree totals.
+        pool.broadcast(|context| {
+            credit(1 << context.index());
+            credit(3 << context.index());
+        });
+        assert_eq!(snapshot(), [4, 8, 16, 32]);
+        reset();
+        assert_eq!(snapshot(), [0; 4]);
+    }
+}
+
 struct Result {
     value: f64,
     #[cfg(feature = "quadrature-stats")]
@@ -67,9 +111,17 @@ fn adaptive<const PARALLEL: bool, const LEFT_OFFER: bool>(
     budget: u32,
 ) -> Result {
     if PARALLEL && budget == 0 {
-        return adaptive::<false, false>(
-            a, b, center, width, fa, fm, fb, whole, tolerance, depth, 0,
-        );
+        let result =
+            adaptive::<false, false>(a, b, center, width, fa, fm, fb, whole, tolerance, depth, 0);
+        // A serial subtree never joins or changes executing worker. Attribute
+        // its entire node count once, without a counter access at every leaf.
+        #[cfg(feature = "quadrature-stats")]
+        work::credit(result.nodes);
+        return result;
+    }
+    #[cfg(feature = "quadrature-stats")]
+    if PARALLEL {
+        work::credit(1);
     }
     let middle = (a + b) * 0.5;
     let fl = density((a + middle) * 0.5, center, width);
@@ -152,7 +204,7 @@ pub extern "C" fn quadrature(
     width: f64,
     tolerance: f64,
     depth: u32,
-    observe: Option<extern "C" fn(u64, u64, u64)>,
+    observe: Option<extern "C" fn(u64, u64, u64, u64, u64, u64, u64)>,
 ) -> f64 {
     assert!(mode <= 2 && matches!(workers, 1 | 4) && budget <= 24 && depth <= 24);
     if mode != 0 {
@@ -167,6 +219,8 @@ pub extern "C" fn quadrature(
         assert_eq!(pool.current_num_threads(), workers as usize);
         assert_eq!(pool.current_thread_index(), Some(0));
     }
+    #[cfg(feature = "quadrature-stats")]
+    work::reset();
     let fa = density(a, center, width);
     let fm = density((a + b) * 0.5, center, width);
     let fb = density(b, center, width);
@@ -181,7 +235,22 @@ pub extern "C" fn quadrature(
         ),
     };
     #[cfg(feature = "quadrature-stats")]
-    observe.expect("quadrature diagnostic observer")(result.nodes, result.forks, result.migrated);
+    {
+        if mode == 0 {
+            work::credit(result.nodes);
+        }
+        let nodes = work::snapshot();
+        assert_eq!(nodes.iter().sum::<u64>(), result.nodes);
+        observe.expect("quadrature diagnostic observer")(
+            result.nodes,
+            result.forks,
+            result.migrated,
+            nodes[0],
+            nodes[1],
+            nodes[2],
+            nodes[3],
+        );
+    }
     #[cfg(not(feature = "quadrature-stats"))]
     let _ = observe;
     result.value

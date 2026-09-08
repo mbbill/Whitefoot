@@ -3,7 +3,7 @@
 #include "quadrature-rayon-binding.h"
 extern "C" double quadrature_rayon(unsigned, unsigned, unsigned,
     double, double, double, double, double, unsigned,
-    void (*)(uint64_t, uint64_t, uint64_t)) __asm__(QUADRATURE_RAYON_SYMBOL);
+    void (*)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)) __asm__(QUADRATURE_RAYON_SYMBOL);
 extern "C" {
 #include "runtime.h"
 }
@@ -39,8 +39,9 @@ struct Result {
 #endif
 };
 QuadratureObservation observation{};
-void observe_rayon(uint64_t nodes, uint64_t forks, uint64_t migrated) {
-    observation={nodes,forks,migrated};
+void observe_rayon(uint64_t nodes, uint64_t forks, uint64_t migrated,
+    uint64_t w0, uint64_t w1, uint64_t w2, uint64_t w3) {
+    observation={nodes,forks,migrated,{w0,w1,w2,w3}};
 }
 using Pool = parlay::internal::scheduler_type;
 Pool *parlay_pool = nullptr;
@@ -199,7 +200,7 @@ extern "C" double quadrature_native_run(unsigned kind,unsigned workers,unsigned 
         }
     } catch (...) { fail("scheduler exception"); }
 #if WF_COMPUTE_STATS
-    observation={result.nodes,result.forks,result.migrated};
+    observation={result.nodes,result.forks,result.migrated,{}};
 #endif
     return result.value;
 }

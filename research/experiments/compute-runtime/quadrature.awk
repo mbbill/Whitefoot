@@ -41,6 +41,7 @@ NR==2 {
     next
 }
 /^# input=/ {
+    if (worker_pending)bad("missing worker work")
     if (footer || (block && seen!=calls)) bad("missing calls")
     ++block;seen=0
     if (block>count || NF!=13 || field($2,"input=")!=names[block]) bad("input order")
@@ -70,6 +71,7 @@ NR==2 {
     next
 }
 /^# quadrature PASS:/ {
+    if (worker_pending)bad("missing worker work")
     if (footer || block!=count || seen!=calls || NF!=7) bad("footer position")
     if (field($4,"outputs=")!=count*calls || field($5,"stats=")!=stats ||
         field($6,"steals=")!=steals || field($7,"migrated=")!=migrated) bad("footer totals")
@@ -77,7 +79,22 @@ NR==2 {
     if (stats && rayon && width==4 && spawn && !migrated) bad("no Rayon migration")
     footer=1;next
 }
+/^# worker_nodes / {
+    if (!worker_pending || footer || NF!=8 || field($3,"input=")!=names[block] ||
+        field($4,"call=")!=seen-1)bad("worker work identity")
+    sum=0;helpers=0
+    for(i=0;i<4;++i) {
+        work=field($(5+i),"w" i "=")
+        if(!integer(work))bad("noninteger worker work")
+        work+=0;sum+=work;if(i)helpers+=work
+        if((i>=width || ((!rayon || spawn==0) && i)) && work)bad("inactive worker work")
+    }
+    if(sum!=nodes[block])bad("worker work conservation")
+    if((!call_migrated && helpers) || (call_migrated && !helpers))bad("worker migration witness")
+    worker_pending=0;next
+}
 {
+    if(worker_pending)bad("missing worker work")
     if (footer || !block || seen>=calls || NF!=19 || $1!=names[block] || $2!=form ||
         $3!=seen || $4!=(seen?"warm":"first")) bad("call identity")
     for (i=5;i<=19;++i) if(!integer($i))bad("noninteger observation")
@@ -99,9 +116,10 @@ NR==2 {
         if(native_wf && $19!=$10)bad("native WF steal witness")
     } else if($17 || $18 || $19)bad("disabled native observations")
     migrated+=$19
+    call_migrated=$19;worker_pending=(stats && (rayon || form=="rust-seq"))
     steals+=$10;++seen;++rows
 }
 END {
-    if (!failed && (!footer || rows!=count*calls))bad("incomplete report")
+    if (!failed && (!footer || rows!=count*calls || worker_pending))bad("incomplete report")
     if(failed)exit 1
 }
