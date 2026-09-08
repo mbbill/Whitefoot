@@ -98,6 +98,10 @@ jobs:
             if test -f "$OUT/calibration/summary.tsv"; then
               echo "Retained process rows: $(awk 'END {print NR-1}' "$OUT/calibration/summary.tsv")"
             fi
+            if test -f "$OUT/budget-calibration/summary.tsv"; then
+              echo "Cost, chunk cap and input-check cadence rows: $(awk 'END {print NR-1}' "$OUT/budget-calibration/summary.tsv")"
+              echo 'Same-image policies retain full per-call output checks; input-check cadence changes memory traffic and worker opportunity together.'
+            fi
             if test -f "$OUT/layout-calibration/summary.tsv"; then
               echo "Shared-image layout process rows: $(awk 'END {print NR-1}' "$OUT/layout-calibration/summary.tsv")"
               echo 'This control shares leaf/callback addresses and adds common indirect dispatch plus loaded libraries.'

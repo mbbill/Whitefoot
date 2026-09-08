@@ -143,18 +143,26 @@ records-budget-build: records-build
 		-fsanitize=$(SANITIZER) -fno-sanitize-recover=all -fno-omit-frame-pointer \
 		records.c records_oracle.c runtime.c $(FLOOR) "$(OUT)/records-wf.o" "$(OUT)/records-native-sanitized.o" \
 		-o "$(OUT)/records-budget-sanitized"
-	@printf '%s\n' 'budget=cost,capacity; same executable and emitted WF object; policy selected before floor entry' \
+	@printf '%s\n' 'budget=cost,capacity,team; cadence=call,batch; same executable and emitted WF object; controls selected before floor entry' \
 		'capacity bypasses estimated affordability only; span, lane limit, queue backpressure and fallback remain' \
+		'team additionally caps requested terminal chunks at lanes; neither policy guarantees one job per worker' \
+		'full outputs checked every call; full inputs checked every call or at batch end; both modes check inputs at batch end' \
 		'statistics enabled; emitted WF object is not frontend-sanitizer-instrumented' > "$(OUT)/records-budget-flags.txt"
 
 check-records-budget: check-records records-budget-build
-	@set -e; for image in budget budget-sanitized; do for policy in cost capacity; do \
-		log="$(OUT)/records-$$image-$$policy-check.log"; \
-		WF_WORKERS=4 WF_BUDGET_CONTROL="$$policy" "$(OUT)/records-$$image" check > "$$log"; \
+	@set -e; for image in budget budget-sanitized; do for policy in cost capacity team; do for cadence in call batch; do \
+		log="$(OUT)/records-$$image-$$policy-$$cadence-check.log"; \
+		WF_WORKERS=4 WF_BUDGET_CONTROL="$$policy" WF_RECORD_CHECK_CADENCE="$$cadence" "$(OUT)/records-$$image" check > "$$log"; \
 		grep -Fxq "# budget_policy=$$policy" "$$log"; \
+		grep -Fxq "# input_check_cadence=$$cadence" "$$log"; \
 		grep -Fxq 'UTF8 leaf qualification PASS: calls=4595603 all-codepoints all-truncations two-byte-pairs' "$$log"; \
 		grep -Fxq 'UTF8 batch qualification PASS: world=parallel calls=342 results=1821070' "$$log"; \
-	done; done
+		log="$(OUT)/records-$$image-$$policy-$$cadence-boundary.log"; \
+		WF_WORKERS=4 WF_BUDGET_CONTROL="$$policy" WF_RECORD_CHECK_CADENCE="$$cadence" \
+			"$(OUT)/records-$$image" wf 33 64 error-first 256 123 0 > "$$log"; \
+		grep -Fxq '# UTF8 records PASS: calls=257 results=8481' "$$log"; \
+		test "$$(grep -c '^# call_gap ' "$$log")" -eq 256; \
+	done; done; done
 	OUT="$(OUT)" sh records-bench.sh budget-check
 
 # Download is explicit, as with Cargo's offline research dependencies. The

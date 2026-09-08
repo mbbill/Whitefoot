@@ -623,6 +623,7 @@ unsigned long wf__par_split_budget(unsigned long span, unsigned long weight) {
 
 #if defined(WF_COMPUTE_BUDGET_CONTROL)
     if (wf_compute_capacity_budget) {
+        if (wf_compute_capacity_budget == 2) want = (unsigned long)lanes;
         affordable = span;
     } else
 #endif

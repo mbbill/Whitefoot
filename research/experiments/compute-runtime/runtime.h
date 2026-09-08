@@ -26,7 +26,8 @@ unsigned wf_compute_worker_count(void);
 unsigned wf_compute_slot_capacity(void);
 
 #if defined(WF_COMPUTE_BUDGET_CONTROL)
-/* Research host sets this once before entering the floor or creating workers. */
+/* Research host sets this once before entering the floor or creating workers:
+ * 0 preserves cost, 1 bypasses cost, 2 also caps requested chunks at lanes. */
 extern int wf_compute_capacity_budget;
 #endif
 

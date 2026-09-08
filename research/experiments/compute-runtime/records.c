@@ -163,6 +163,9 @@ static int check_batches(int argc, char **argv) {
 #ifndef RECORD_RUNTIME
 #define RECORD_RUNTIME "weak"
 #endif
+#if defined(WF_COMPUTE_BUDGET_CONTROL)
+static int check_input_each_call;
+#endif
 static uint64_t entry_start;
 static uint64_t entry_duration;
 static void require(int condition, const char *message) {
@@ -230,10 +233,17 @@ static int benchmark(int argc,char **argv) {
     puts("runtime\tkernel\tworkers\tshape\trecords\tbytes\tmax_length\tseed\tpass\tcall\tphase\tcore_ns\tcycle_ns");
     struct rusage before,after;
     require(getrusage(RUSAGE_SELF,&before)==0,"initial resource read");
+#if defined(WF_COMPUTE_BUDGET_CONTROL)
+    /* The benchmark domain admits at most 256 repetitions plus the first call. */
+    uint64_t gaps[257]={0}, previous_end=0;
+#endif
     uint64_t begin=now();
     for (uint64_t call=0;call<=reps;++call) {
         uint64_t output_count=count, *output=NULL;
         uint64_t start=now();
+#if defined(WF_COMPUTE_BUDGET_CONTROL)
+        if(call) gaps[call]=start-previous_end;
+#endif
         if (native) {
             output=malloc((count?count:1)*sizeof(uint64_t));
             require(output!=NULL,"native output allocation");
@@ -245,11 +255,20 @@ static int benchmark(int argc,char **argv) {
         if(native) free(output);
         else require(wf_research_records_release(output,output_count)==0,"timed release");
         uint64_t end=now();
+#if defined(WF_COMPUTE_BUDGET_CONTROL)
+        previous_end=end;
+#endif
         require(memcmp(sink,expected,count*sizeof(uint64_t))==0,"timed full results");
+#if defined(WF_COMPUTE_BUDGET_CONTROL)
+        if(check_input_each_call)
+#endif
         require(!memcmp(data,copy,n) && !memcmp(offsets,saved,(count+1)*sizeof(uint64_t)),"timed input immutability");
         printf("%s\t%s\t%u\t%s\t%zu\t%zu\t%zu\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%s\t%" PRIu64 "\t%" PRIu64 "\n",
                RECORD_RUNTIME,kernel,workers,shape,count,n,limit,seed,pass,call,call?"warm":"first",core_end-start,end-start);
     }
+#if defined(WF_COMPUTE_BUDGET_CONTROL)
+    require(!memcmp(data,copy,n) && !memcmp(offsets,saved,(count+1)*sizeof(uint64_t)),"final input immutability");
+#endif
     uint64_t duration=now()-begin;
     require(getrusage(RUSAGE_SELF,&after)==0,"final resource read");
     uint64_t rss=(uint64_t)after.ru_maxrss;
@@ -263,6 +282,10 @@ static int benchmark(int argc,char **argv) {
     unsigned actual=wf_compute_worker_count();
     printf("# actual_lanes=%u steals=%lu\n",actual,wf__par_grants());
     require(actual==0 || (!native && workers>=2 && actual==workers),"partial worker capacity");
+#endif
+#if defined(WF_COMPUTE_BUDGET_CONTROL)
+    for(uint64_t call=1;call<=reps;++call)
+        printf("# call_gap call=%" PRIu64 " ns=%" PRIu64 "\n",call,gaps[call]);
 #endif
     printf("# UTF8 records PASS: calls=%" PRIu64 " results=%" PRIu64 "\n",reps+1,(reps+1)*count);
     free(data);free(copy);free(offsets);free(saved);free(expected);free(sink);
@@ -279,9 +302,14 @@ int wf__main_body(int argc,char **argv) {
 int main(int argc,char **argv) {
 #if defined(WF_COMPUTE_BUDGET_CONTROL)
     const char *policy=getenv("WF_BUDGET_CONTROL");
-    require(policy && (!strcmp(policy,"cost") || !strcmp(policy,"capacity")),"budget control policy");
-    wf_compute_capacity_budget=!strcmp(policy,"capacity");
+    require(policy && (!strcmp(policy,"cost") || !strcmp(policy,"capacity") || !strcmp(policy,"team")),"budget control policy");
+    wf_compute_capacity_budget=!strcmp(policy,"team") ? 2 : !strcmp(policy,"capacity");
     printf("# budget_policy=%s\n",policy);
+    const char *cadence=getenv("WF_RECORD_CHECK_CADENCE");
+    if(!cadence) cadence="call";
+    require(!strcmp(cadence,"call") || !strcmp(cadence,"batch"),"input check cadence");
+    check_input_each_call=!strcmp(cadence,"call");
+    printf("# input_check_cadence=%s\n",cadence);
 #endif
     entry_start=now();
     return wf__floor_run(argc,argv);

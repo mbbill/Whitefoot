@@ -637,20 +637,37 @@ controls; held-out inputs and dedicated-core measurements remain open.
 
 ### Isolating the static cost budget
 
-`records-budget` compares two runtime budget policies in one executable with
+`records-budget` compares three runtime budget policies in one executable with
 the same emitted WF object. The research host selects `WF_BUDGET_CONTROL=cost`
-or `capacity` before floor entry and before any worker can read the flag.
+or `capacity` or `team` before floor entry and before any worker can read the flag.
 `cost` preserves estimated affordability; `capacity` bypasses only that test.
-Both retain the requested lane limit, span cap, queue backpressure, binary
+`team` also caps requested terminal chunks at the requested lane count.
+All three retain the requested lane limit, span cap, queue backpressure, binary
 budget-depth descent and acquire-failure fallback. At width four the capacity
 policy allows at most 64 terminal chunks; it does not create one job per record.
 The ordinary runtime and record hosts do not contain this control unless built
 with `WF_COMPUTE_BUDGET_CONTROL`. No compiler rule, source signature or default
 scheduling policy changes.
 
-`check-records-budget` retains `check-records`, then runs both policies through
-the full leaf/batch qualifier in ordinary and C-sanitized images and thirty
-policy/width/input smoke processes. It is included in the experiment's canonical
+`WF_RECORD_CHECK_CADENCE=call` (the default) checks input immutability after
+every call; `batch` checks it at batch end. Both modes check every output after
+every call and perform a final input check. This control changes memory traffic,
+cache state and worker opportunity together; it does not isolate wakeup cost.
+The ordinary qualifiers retain their per-call input checks under both settings.
+Batch-only input checks cannot detect transient mutations restored before the
+final check and do not replace the ordinary qualifiers.
+
+The budget host records each interval from the previous completed cycle to
+the next core start, then prints the gaps after the batch resource snapshot.
+Output copying/checking and per-call report printing remain in both modes, so
+`batch` is not uninterrupted dispatch. The final input scan is inside batch
+wall/CPU accounting and outside the recorded inter-call gaps. Gap bookkeeping
+is common to both controls; the budget image is separate from ordinary hosts.
+
+`check-records-budget` retains `check-records`, then runs every policy/cadence
+combination through the full leaf/batch qualifier in ordinary and C-sanitized
+images: twelve full qualifiers, twelve maximum-repetition boundary smokes, and
+ninety policy/cadence/width/input smoke processes. It is included in the experiment's canonical
 `check` and in the Linux records CI job. Statistics remain enabled, and the
 emitted WF object remains ordinary LLVM rather than frontend-sanitizer code.
 
@@ -660,11 +677,16 @@ OUT=/tmp/wf-records RESULTS=/tmp/wf-records/budget-calibration \
   sh research/experiments/compute-runtime/records-bench.sh budget-calibrate
 ```
 
-The calibration interleaves both policies at requested widths zero/two/four
+The calibration interleaves all three policies and both input-check cadences
+at requested widths zero/two/four
 over thirteen cells: five input shapes at 256 long and 4,097 shorter records,
 two tiny 33-record inputs and an empty input. Five rotating/reversed passes
-with eight warm calls plus a separate first call produce 390 processes / 3,510
-calls. Policy is part of each raw report, filename, configuration and summary;
+with eight warm calls plus a separate first call produce 1,170 processes / 10,530
+calls and 9,360 gaps. Policy and cadence are part of each raw report, filename,
+configuration and summary. The budget summary has 21 fields: the original
+sixteen timing fields, policy, cadence, then mean/minimum/maximum gap in ns.
+The driver checks gap order/count, unique metadata, actual worker capacity,
+and that total cycles plus gaps fit within batch wall time;
 the same executable hash is checked before and after the panel. Width zero
 is the neutral control, not a competing parallel runtime. Keep early-invalid
 and skewed inputs beside expensive inputs when evaluating the cost of removing
@@ -673,7 +695,37 @@ cycle also copies and releases the result. Batch CPU includes checks and
 printing and is not a per-call scheduling-cost measurement. A budget-policy
 speedup over WF's own serial execution does not establish a native frontier.
 
-An unfixed-placement M1 screen independently checked all 390 processes / 3,510
+The maintained M1 cadence screen independently verified 1,170 processes /
+10,530 calls / 17,683,110 output positions / 9,360 gaps, all 21-field summaries,
+execution order and nineteen manifest hashes. The twelve full qualifiers and
+twelve maximum-repetition reports pass. Placement is unfixed; statistics remain
+enabled. This cohort is separate from the earlier scratch controls and the
+two-policy screens below. The following requested-width-four core times are
+medians of five process warm means, with eight warm calls per process:
+
+| Input and policy | Per-call input check | Batch-end input check | Paired batch/call ratio [range] |
+| --- | ---: | ---: | ---: |
+| Early-invalid256, max length 65,536, team | 12.776 us | 2.687 us | 0.210 [0.171--0.348] |
+| Early-invalid256, max length 65,536, cost | 5.406 us | 1.917 us | 0.405 [0.154--0.604] |
+| Early-invalid4097, max length 128, team | 6.812 us | 11.187 us | 2.190 [1.520--2.748] |
+| Skew4097, max length 128, team | 4.885 us | 10.130 us | 2.246 [1.873--3.235] |
+
+Every pair improves in the first two rows and regresses in the other two.
+The first row's median process-mean gap falls from 301.792 to 0.640 us.
+The second row has zero actual lanes under both cadences, so these changes
+cannot be attributed wholly to worker wakeups. Team's long Unicode256 core
+is slower than capacity in every pair under both cadences. With batch-end
+checks, capacity takes 1.886 ms and team 2.006 ms; their paired team/capacity
+ratio is 1.064 [1.032--1.116]. Neither cadence nor chunk cap is a uniform winner.
+This is evidence about benchmark conditions and split policy, not a speedup
+in the ordinary runtime. Linux execution of the cadence extension remains
+pending. The shared executable SHA-256 is
+`ee4cd44ecc9d8fa94b8d0498b4c270b3a580f3dfb40ac6b78022eec820b66982`; the WF
+object SHA-256 is
+`766c426f8e02d8bdfc624eed8d9ce8f4cf4ee7f2a6407c27a7750bbae2983543`.
+
+The earlier two-policy M1 screen, before the cadence extension, independently
+checked all 390 processes / 3,510
 calls, 5,894,370 output positions and nineteen manifest hash entries. Selected
 requested-width-four core timings below are medians of five process warm means;
 the paired ratios compare matching passes and need not equal the ratio of the
@@ -701,8 +753,8 @@ object SHA-256 is
 This exposes a cost-selection problem, not a reason to make capacity the
 default.
 
-The [Linux records run at `8a6e5c53`](https://github.com/mbbill/Whitefoot/actions/runs/34206401837)
-qualifies the same policy tradeoff on an EPYC 7763 VM with two physical cores,
+The [two-policy Linux records run at `8a6e5c53`](https://github.com/mbbill/Whitefoot/actions/runs/34206401837)
+qualifies that earlier policy tradeoff on an EPYC 7763 VM with two physical cores,
 four SMT logical CPUs and process mask 0--3. CPU quota and individual worker
 placement remain unqualified. Its 390 processes / 3,510 calls / 5,894,370 output
 positions, policy/capacity reports, summaries and execution order were independently
