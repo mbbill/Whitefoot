@@ -3,10 +3,13 @@ set -eu
 cd "$(dirname "$0")"
 requested=${1:?mode required}
 budget=0
+events=0
 case "$requested" in
     check|calibrate) mode=$requested;;
     budget-check) mode=check; budget=1;;
     budget-calibrate) mode=calibrate; budget=1;;
+    events-check) mode=check; budget=1; events=1;;
+    events-calibrate) mode=calibrate; budget=1; events=1;;
     *) echo 'unknown records mode' >&2; exit 1;;
 esac
 : "${OUT:?build output required}"
@@ -22,7 +25,12 @@ results=${RESULTS:-$OUT/records-$requested-$$}
 test ! -e "$results"
 if test "$budget" = 1; then
     grep -Fxq 'budget=cost,capacity,team; cadence=call,batch; same executable and emitted WF object; controls selected before floor entry' "$OUT/records-budget-flags.txt"
-    budget_hash=$(shasum -a 256 "$OUT/records-budget")
+    image=budget
+    if test "$events" = 1; then
+        image=events
+        grep -Fxq 'events=wf-2; banks=4; counters=24; before/after core snapshots; diagnostic image only' "$OUT/records-events-flags.txt"
+    fi
+    image_hash=$(shasum -a 256 "$OUT/records-$image")
     # This fixture has one map split. Derive its first affordable span from
     # the emitted weight, so a changed estimator does not inherit a stale
     # numeric threshold. The first call has no pending owner work.
@@ -55,25 +63,26 @@ printf '%s\n' "$results" > "$OUT/last-records-$requested-path.txt"
         sysctl hw.model hw.ncpu hw.physicalcpu hw.logicalcpu hw.memsize
     fi
     shasum -a 256 records.wf records_host.ll records.c records_oracle.c records_native.c records_native.h records-bench.sh Makefile \
-        runtime.c runtime.h ../../../compiler/src/backend/wf_floor.c
+        runtime.c runtime.h runtime_events.h ../../../compiler/src/backend/wf_floor.c
     shasum -a 256 "$OUT/records-host.ll" "$OUT/records-wf.o" "$OUT/records-native.o" \
         "$OUT/records-weak" "$OUT/records-recovered"
     if test "$budget" = 1; then
         cat "$OUT/records-budget-flags.txt"
         printf 'cost_first_parallel_span=%s\n' "$cost_minimum"
-        printf '%s\n' "$budget_hash"
-        shasum -a 256 "$OUT/records-budget-sanitized"
+        if test "$events" = 1; then cat "$OUT/records-events-flags.txt"; fi
+        printf '%s\n' "$image_hash"
+        shasum -a 256 "$OUT/records-$image-sanitized"
     fi
 } > "$results/manifest.txt"
 git diff --binary HEAD > "$results/source.patch"
 for form in weak recovered sanitized; do cp "$OUT/records-$form-check.log" "$results/"; done
 if test "$budget" = 1; then
-    for image in budget budget-sanitized; do for policy in cost capacity team; do for cadence in call batch; do
-        cp "$OUT/records-$image-$policy-$cadence-check.log" "$results/"
-        cp "$OUT/records-$image-$policy-$cadence-boundary.log" "$results/"
+    for form in "$image" "$image-sanitized"; do for policy in cost capacity team; do for cadence in call batch; do
+        cp "$OUT/records-$form-$policy-$cadence-check.log" "$results/"
+        cp "$OUT/records-$form-$policy-$cadence-boundary.log" "$results/"
     done; done; done
     for policy in cost capacity team; do for workers in 0 2 4; do for cadence in call batch; do
-        printf 'budget wf %s %s %s\n' "$workers" "$policy" "$cadence"
+        printf '%s wf %s %s %s\n' "$image" "$workers" "$policy" "$cadence"
     done; done; done > "$results/configurations.txt"
 else
 cat > "$results/configurations.txt" <<'CONFIG'
@@ -142,7 +151,8 @@ while read -r shape count limit; do
             world=sequential
             if test "$kernel" = wf && test "$workers" -ge 2; then world=parallel; fi
             grep -Eq "^# runtime=$runtime kernel=$kernel workers=$workers world=$world shape=$shape records=$count bytes=[0-9]+ max_length=$limit seed=$seed pass=$pass reps=$reps entry_ns=[0-9]+ clock_pair_min_ns=[0-9]+$" "$file"
-            if test "$runtime" = recovered || test "$runtime" = budget; then
+            actual=0
+            if test "$runtime" = recovered || test "$budget" = 1; then
                 actual=0; if test "$workers" -ge 2; then actual="(0|$workers)"; fi
                 if test "$budget" = 1; then
                     minimum=$cost_minimum; if test "$policy" != cost; then minimum=2; fi
@@ -155,7 +165,7 @@ while read -r shape count limit; do
             fi
             awk -F '\t' -v runtime="$runtime" -v kernel="$kernel" -v workers="$workers" \
                 -v shape="$shape" -v count="$count" -v limit="$limit" -v seed="$seed" -v pass="$pass" -v reps="$reps" \
-                -v budget="$budget" -v policy="$policy" -v cadence="$cadence" '
+                -v budget="$budget" -v policy="$policy" -v cadence="$cadence" -v events="$events" -v actual="$actual" '
                 function fail() { bad=1; exit 1 }
                 /^# budget_policy=/ {
                     if(budget!=1 || (policy!="cost" && policy!="capacity" && policy!="team") || policy_seen++ ||
@@ -165,6 +175,10 @@ while read -r shape count limit; do
                     if(budget!=1 || (cadence!="call" && cadence!="batch") || cadence_seen++ ||
                        $0!="# input_check_cadence=" cadence || NR!=2) fail(); next
                 }
+                /^# record_events / {
+                    if(events!=1 || event_header++ || NR!=3 ||
+                       $0!="# record_events schema=wf-2 banks=4 counters=24") fail(); next
+                }
                 /^# runtime=/ { split($0,parts," "); split(parts[8],pair,"="); declared_bytes=pair[2]; next }
                 /^# batch_includes_checks=/ {
                     if(resource_seen++ || seen!=reps+1) fail();
@@ -172,7 +186,7 @@ while read -r shape count limit; do
                 }
                 /^# actual_lanes=/ { if(actual_seen++ || !resource_seen) fail(); next }
                 /^# call_gap / {
-                    if(budget!=1 || !resource_seen || !actual_seen || passed ||
+                    if(budget!=1 || !resource_seen || !actual_seen || passed || event_rows ||
                        $0!~/^# call_gap call=[0-9]+ ns=[0-9]+$/) fail();
                     split($0,parts," "); split(parts[3],pair,"=");
                     if(pair[2]+0!=++gap_count || gap_count>reps) fail();
@@ -181,7 +195,26 @@ while read -r shape count limit; do
                     if(gap_count==1 || gap>gap_max)gap_max=gap;
                     next
                 }
-                /^# UTF8 records PASS:/ { if(passed++ || (budget && gap_count!=reps)) fail(); next }
+                /^# record_event / {
+                    if(events!=1 || event_header!=1 || gap_count!=reps || !actual_seen || passed || NF!=25 ||
+                       $1!="# record_event call=" int(event_rows/4) " lane=" event_rows%4) fail();
+                    for(i=2;i<=25;i++) {
+                        if($i!~/^[0-9]+$/ || ((event_rows%4)>=actual && $i+0!=0)) fail();
+                        event_total[i-2]+=$i;
+                    }
+                    if($24+0+$25+0!=$7+0) fail();
+                    event_rows++;
+                    if(event_rows%4==0) {
+                        jobs=event_total[0];
+                        if(jobs!=event_total[1]+event_total[5] || jobs!=event_total[6] ||
+                           jobs!=event_total[7] || jobs!=event_total[9] || (actual>0 && jobs==0)) fail();
+                        for(i=0;i<24;i++) event_total[i]=0;
+                    }
+                    next
+                }
+                /^# UTF8 records PASS:/ {
+                    if(passed++ || (budget && gap_count!=reps) || event_rows!=events*4*(reps+1)) fail(); next
+                }
                 /^#/ { fail() }
                 /^runtime\t/ {
                     if($0!="runtime\tkernel\tworkers\tshape\trecords\tbytes\tmax_length\tseed\tpass\tcall\tphase\tcore_ns\tcycle_ns" || header++) fail();
@@ -198,7 +231,7 @@ while read -r shape count limit; do
                 END {
                     if(bad || header!=1 || seen!=reps+1 || resource_seen!=1 || passed!=1 ||
                        batch_ns+0<total_cycle+gap_sum || policy_seen!=budget || cadence_seen!=budget ||
-                       gap_count!=budget*reps) exit 1;
+                       gap_count!=budget*reps || event_header!=events || event_rows!=events*4*(reps+1)) exit 1;
                     printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d",runtime,kernel,workers,shape,count,bytes,limit,seed,pass,reps;
                     for(i=12;i<=13;i++) printf "\t%.3f\t%.0f\t%.0f",sum[i]/reps,min[i],max[i];
                     if(budget) printf "\t%s\t%s\t%.3f\t%.0f\t%.0f",policy,cadence,gap_sum/reps,gap_min,gap_max;
@@ -216,5 +249,5 @@ configurations=6; if test "$budget" = 1; then configurations=18; fi
 expected=$((cell*configurations*rounds))
 test "$processes" -eq "$expected"
 test "$(wc -l < "$results/summary.tsv")" -eq "$((expected+1))"
-if test "$budget" = 1; then test "$(shasum -a 256 "$OUT/records-budget")" = "$budget_hash"; fi
+if test "$budget" = 1; then test "$(shasum -a 256 "$OUT/records-$image")" = "$image_hash"; fi
 printf 'UTF8 records %s PASS: processes=%s results=%s\n' "$requested" "$processes" "$results"

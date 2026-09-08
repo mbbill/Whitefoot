@@ -11,6 +11,16 @@
 #ifdef WF_COMPUTE_CONTROL
 #include "runtime.h"
 #endif
+#if defined(WF_COMPUTE_EVENTS)
+#include "runtime_events.h"
+_Static_assert(WF_EVENT_COUNT==24,"record event reports require wf-2");
+#define RECORD_EVENT_BANKS 4
+static void record_event_snapshot(unsigned long *values) {
+    for(unsigned lane=0;lane<RECORD_EVENT_BANKS;++lane)
+        for(unsigned event=0;event<WF_EVENT_COUNT;++event)
+            values[lane*WF_EVENT_COUNT+event]=wf_compute_event(lane,event);
+}
+#endif
 extern uint64_t wf_research_record_summary(const uint8_t *, uint64_t, uint64_t, uint64_t);
 extern int wf__floor_run(int, char **);
 static uint64_t calls;
@@ -232,6 +242,11 @@ static int benchmark(int argc,char **argv) {
            RECORD_RUNTIME,kernel,workers,parallel?"parallel":"sequential",shape,count,n,limit,seed,pass,reps,entry_duration,floor);
     puts("runtime\tkernel\tworkers\tshape\trecords\tbytes\tmax_length\tseed\tpass\tcall\tphase\tcore_ns\tcycle_ns");
     struct rusage before,after;
+#if defined(WF_COMPUTE_EVENTS)
+    unsigned long event_before[RECORD_EVENT_BANKS*WF_EVENT_COUNT];
+    unsigned long *event_records=calloc((reps+1)*RECORD_EVENT_BANKS*WF_EVENT_COUNT,sizeof(unsigned long));
+    require(event_records!=NULL,"event snapshot allocation");
+#endif
     require(getrusage(RUSAGE_SELF,&before)==0,"initial resource read");
 #if defined(WF_COMPUTE_BUDGET_CONTROL)
     /* The benchmark domain admits at most 256 repetitions plus the first call. */
@@ -240,6 +255,9 @@ static int benchmark(int argc,char **argv) {
     uint64_t begin=now();
     for (uint64_t call=0;call<=reps;++call) {
         uint64_t output_count=count, *output=NULL;
+#if defined(WF_COMPUTE_EVENTS)
+        record_event_snapshot(event_before);
+#endif
         uint64_t start=now();
 #if defined(WF_COMPUTE_BUDGET_CONTROL)
         if(call) gaps[call]=start-previous_end;
@@ -250,6 +268,14 @@ static int benchmark(int argc,char **argv) {
             for(size_t j=0;j<count;++j) output[j]=native(data+offsets[j],offsets[j+1]-offsets[j]);
         } else batch(data,n,offsets,count+1,0,count,&output,&output_count);
         uint64_t core_end=now();
+#if defined(WF_COMPUTE_EVENTS)
+        unsigned long *delta=event_records+call*RECORD_EVENT_BANKS*WF_EVENT_COUNT;
+        record_event_snapshot(delta);
+        for(unsigned i=0;i<RECORD_EVENT_BANKS*WF_EVENT_COUNT;++i) {
+            require(delta[i]>=event_before[i],"event counter monotonicity");
+            delta[i]-=event_before[i];
+        }
+#endif
         require((output || !count) && output_count==count,"timed result shape");
         if (count) memcpy(sink,output,count*sizeof(uint64_t));
         if(native) free(output);
@@ -287,6 +313,26 @@ static int benchmark(int argc,char **argv) {
     for(uint64_t call=1;call<=reps;++call)
         printf("# call_gap call=%" PRIu64 " ns=%" PRIu64 "\n",call,gaps[call]);
 #endif
+#if defined(WF_COMPUTE_EVENTS)
+    for(uint64_t call=0;call<=reps;++call) {
+        unsigned long totals[WF_EVENT_COUNT]={0};
+        for(unsigned lane=0;lane<RECORD_EVENT_BANKS;++lane) {
+            const unsigned long *delta=event_records+(call*RECORD_EVENT_BANKS+lane)*WF_EVENT_COUNT;
+            require(delta[WF_EVENT_JOIN_STEAL_SUCCESS]+delta[WF_EVENT_IDLE_STEAL_SUCCESS]==delta[WF_EVENT_STEAL_SUCCESS],"event steal origins");
+            printf("# record_event call=%" PRIu64 " lane=%u",call,lane);
+            for(unsigned event=0;event<WF_EVENT_COUNT;++event) {
+                totals[event]+=delta[event];
+                printf("\t%lu",delta[event]);
+            }
+            putchar('\n');
+        }
+        unsigned long jobs=totals[WF_EVENT_PUBLISH];
+        require(jobs==totals[WF_EVENT_LOCAL_POP]+totals[WF_EVENT_STEAL_SUCCESS] &&
+                jobs==totals[WF_EVENT_RUN_BEGIN] && jobs==totals[WF_EVENT_RUN_END] &&
+                jobs==totals[WF_EVENT_JOIN],"event job conservation");
+    }
+    free(event_records);
+#endif
     printf("# UTF8 records PASS: calls=%" PRIu64 " results=%" PRIu64 "\n",reps+1,(reps+1)*count);
     free(data);free(copy);free(offsets);free(saved);free(expected);free(sink);
     return 0;
@@ -310,6 +356,10 @@ int main(int argc,char **argv) {
     require(!strcmp(cadence,"call") || !strcmp(cadence,"batch"),"input check cadence");
     check_input_each_call=!strcmp(cadence,"call");
     printf("# input_check_cadence=%s\n",cadence);
+#endif
+#if defined(WF_COMPUTE_EVENTS)
+    require(getenv("WF_WORKERS") && number(getenv("WF_WORKERS"))<=RECORD_EVENT_BANKS,"event collection requires explicit width at most four");
+    puts("# record_events schema=wf-2 banks=4 counters=24");
 #endif
     entry_start=now();
     return wf__floor_run(argc,argv);

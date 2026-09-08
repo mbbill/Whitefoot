@@ -26,7 +26,7 @@ jobs:
             driver: fir-bench.sh
           - workload: records
             arch: -march=native
-            checks: check-records-budget
+            checks: check-records-events
             driver: records-bench.sh
           - workload: scheduler
             arch: -march=x86-64-v3
@@ -77,6 +77,8 @@ jobs:
           if test '${{ matrix.workload }}' = records; then
             taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/budget-calibration" \
               sh research/experiments/compute-runtime/records-bench.sh budget-calibrate
+            taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/record-events-calibration" \
+              sh research/experiments/compute-runtime/records-bench.sh events-calibrate
           fi
           if test '${{ matrix.workload }}' = scheduler; then
             taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/layout-calibration" \
@@ -102,6 +104,10 @@ jobs:
               echo "Cost, chunk cap and input-check cadence rows: $(awk 'END {print NR-1}' "$OUT/budget-calibration/summary.tsv")"
               echo 'Same-image policies retain full per-call output checks; input-check cadence changes memory traffic and worker opportunity together.'
             fi
+            if test -f "$OUT/record-events-calibration/summary.tsv"; then
+              echo "Real WF event diagnostic rows: $(awk 'END {print NR-1}' "$OUT/record-events-calibration/summary.tsv")"
+              echo 'Four lane banks per call qualify published-job conservation; search and wake counters are asynchronous snapshots, not CPU costs.'
+            fi
             if test -f "$OUT/layout-calibration/summary.tsv"; then
               echo "Shared-image layout process rows: $(awk 'END {print NR-1}' "$OUT/layout-calibration/summary.tsv")"
               echo 'This control shares leaf/callback addresses and adds common indirect dispatch plus loaded libraries.'
@@ -126,6 +132,7 @@ jobs:
             ${{ runner.temp }}/compute-${{ matrix.workload }}-build.log
             ${{ runner.temp }}/compute-${{ matrix.workload }}/calibration/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/budget-calibration/
+            ${{ runner.temp }}/compute-${{ matrix.workload }}/record-events-calibration/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/layout-calibration/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/trace-calibration/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/events-calibration/

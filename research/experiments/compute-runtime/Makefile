@@ -63,7 +63,7 @@ $(OUT)/probe $(OUT)/probe-no-stats $(OUT)/probe-events: runtime.c runtime.h runt
 		$(if $(filter $(OUT)/probe-events,$@),-DWF_COMPUTE_EVENTS,) \
 		runtime.c probe.c $(FLOOR) -o "$@"
 
-check: check-runtime check-abi check-fir check-bench check-records-budget check-scheduler-events
+check: check-runtime check-abi check-fir check-bench check-records-events check-scheduler-events
 
 check-runtime: build
 	@set -e; for probe in probe probe-no-stats probe-events; do \
@@ -149,8 +149,8 @@ records-budget-build: records-build
 		'full outputs checked every call; full inputs checked every call or at batch end; both modes check inputs at batch end' \
 		'statistics enabled; emitted WF object is not frontend-sanitizer-instrumented' > "$(OUT)/records-budget-flags.txt"
 
-check-records-budget: check-records records-budget-build
-	@set -e; for image in budget budget-sanitized; do for policy in cost capacity team; do for cadence in call batch; do \
+define qualify-record-controls
+	@set -e; for image in $(1); do for policy in cost capacity team; do for cadence in call batch; do \
 		log="$(OUT)/records-$$image-$$policy-$$cadence-check.log"; \
 		WF_WORKERS=4 WF_BUDGET_CONTROL="$$policy" WF_RECORD_CHECK_CADENCE="$$cadence" "$(OUT)/records-$$image" check > "$$log"; \
 		grep -Fxq "# budget_policy=$$policy" "$$log"; \
@@ -163,7 +163,27 @@ check-records-budget: check-records records-budget-build
 		grep -Fxq '# UTF8 records PASS: calls=257 results=8481' "$$log"; \
 		test "$$(grep -c '^# call_gap ' "$$log")" -eq 256; \
 	done; done; done
+endef
+
+check-records-budget: check-records records-budget-build
+	$(call qualify-record-controls,budget budget-sanitized)
 	OUT="$(OUT)" sh records-bench.sh budget-check
+
+.PHONY: records-events-build check-records-events
+records-events-build: records-budget-build
+	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_CONTROL -DWF_COMPUTE_BUDGET_CONTROL -DWF_COMPUTE_EVENTS -DRECORD_RUNTIME='"events"' \
+		records.c records_oracle.c runtime.c $(FLOOR) "$(OUT)/records-wf.o" "$(OUT)/records-native.o" -o "$(OUT)/records-events"
+	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_CONTROL -DWF_COMPUTE_BUDGET_CONTROL -DWF_COMPUTE_EVENTS -DRECORD_RUNTIME='"events"' \
+		-fsanitize=$(SANITIZER) -fno-sanitize-recover=all -fno-omit-frame-pointer \
+		records.c records_oracle.c runtime.c $(FLOOR) "$(OUT)/records-wf.o" "$(OUT)/records-native-sanitized.o" \
+		-o "$(OUT)/records-events-sanitized"
+	@printf '%s\n' 'events=wf-2; banks=4; counters=24; before/after core snapshots; diagnostic image only' \
+		'stable jobs and successful steals settle at join; search, signal and idle events remain asynchronous' \
+		'snapshots and instrumentation change timing; event timings are not production performance' > "$(OUT)/records-events-flags.txt"
+
+check-records-events: check-records-budget records-events-build
+	$(call qualify-record-controls,events events-sanitized)
+	OUT="$(OUT)" sh records-bench.sh events-check
 
 # Download is explicit, as with Cargo's offline research dependencies. The
 # build verifies pins and only installs the private library below OUT.

@@ -718,11 +718,35 @@ is slower than capacity in every pair under both cadences. With batch-end
 checks, capacity takes 1.886 ms and team 2.006 ms; their paired team/capacity
 ratio is 1.064 [1.032--1.116]. Neither cadence nor chunk cap is a uniform winner.
 This is evidence about benchmark conditions and split policy, not a speedup
-in the ordinary runtime. Linux execution of the cadence extension remains
-pending. The shared executable SHA-256 is
+in the ordinary runtime. The shared executable SHA-256 is
 `ee4cd44ecc9d8fa94b8d0498b4c270b3a580f3dfb40ac6b78022eec820b66982`; the WF
 object SHA-256 is
 `766c426f8e02d8bdfc624eed8d9ce8f4cf4ee7f2a6407c27a7750bbae2983543`.
+
+The [Linux cadence run at `32883518`](https://github.com/mbbill/Whitefoot/actions/runs/34210144231)
+independently verifies the same 1,170-process / 10,530-call / 9,360-gap inventory,
+all outputs, summaries, order, capacities and twelve qualifier/boundary pairs.
+Eighteen source/artifact hashes match the exact revision; the compiler hash is
+recorded, but its executable is absent. This EPYC 7763 VM has two physical cores
+and four SMT logical CPUs, mask 0--3; CPU quota and per-worker placement remain
+unqualified. Requested-width-four team timings differ from M1:
+
+| Input | Per-call input check | Batch-end input check | Paired batch/call ratio [range] |
+| --- | ---: | ---: | ---: |
+| Early-invalid256, maximum length 65,536 | 11.027 us | 1.297 us | 0.118 [0.081--0.131] |
+| Early-invalid4097, maximum length 128 | 15.161 us | 12.357 us | 0.818 [0.528--0.956] |
+| Skew4097, maximum length 128 | 10.307 us | 9.006 us | 0.906 [0.452--0.989] |
+
+All five pairs improve in each row. The latter two regress on M1, so that
+regression does not generalize to this Linux host. Cost-policy early-invalid256
+also improves while reporting zero actual lanes (1.785 to 0.665 us); wakeup
+alone still cannot explain the cadence effect. Small width-zero controls vary
+substantially even though they take the same serial path: early-invalid4097
+capacity/cost spans 0.548--1.649 with per-call checks. Long Unicode width-zero
+controls are near neutral. These are separate host cohorts, not a revision
+speedup or an operating-system-only causal comparison. Artifact `10049530617`
+has ZIP SHA-256
+`c25bca1e3202c9b87c805f7ff0b0a76862cd5c561e4be9c2ec598a523dc22eef`.
 
 The earlier two-policy M1 screen, before the cadence extension, independently
 checked all 390 processes / 3,510
@@ -787,6 +811,69 @@ object SHA-256 is
 `dd562214489105670e7d38dfe89be1ef16cd47d472196b35c88b9ad55e907043`.
 This Linux cohort and the M1 cohort are separate host measurements, not a
 revision comparison or evidence for a universal replacement policy.
+
+### Events from compiled WF record calls
+
+`records-events` links the same emitted WF object to the existing `wf-2`
+instrumented runtime and the budget/cadence host. `check-records-events` retains
+all record and budget checks, then adds twelve ordinary/C-sanitized event-image
+qualifiers, twelve maximum-repetition boundary smokes and ninety event smoke
+processes. The experiment's canonical `check` and Linux records job call it.
+Use `records-bench.sh events-calibrate` with the same `OUT` and a fresh `RESULTS`
+directory after that check to collect the same 1,170-process policy/cadence
+matrix. This is a separate diagnostic cohort, not production timing.
+
+Event collection requires an explicit `WF_WORKERS` value at most four, including
+for standalone host invocations. Four fixed lane banks are sampled before core
+start and after core end; the sequential snapshot reads enclose a wider interval
+than the core clock. Post-snapshot reads and storage are inside the cycle clock.
+Snapshot allocation occurs before batch accounting, and rendering occurs after
+the resource snapshot. Instrumentation changes execution even though getter
+reads are outside the core clock. Do not price counter overhead or rank runtimes
+using this image's elapsed times.
+
+The raw header `# record_events schema=wf-2 banks=4 counters=24` precedes the
+ordinary report. After the gap rows, each call has four ordered
+`# record_event call=N lane=L` rows with 24 tab-separated values in the order
+declared by `runtime_events.h`. Values are per-call differences of cumulative
+atomic counters; the banks are not sampled simultaneously. The timing summary
+retains 21 columns, with runtime `events` distinguishing it from `budget`.
+
+After every fully joined call, aggregate published jobs must equal local pops
+plus successful steals, run starts, run ends and joins. Successful steal origins
+partition successful steals per bank. An active parallel cell must publish at
+least one job, and inactive banks must remain zero. These are published frame
+jobs, not record counts or every sequential terminal chunk: the caller's right
+branch is unqueued, and acquire-failure fallback may recurse without publishing.
+Search attempts, completion-tail signals and idle events can continue around
+the snapshot boundaries. Their deltas are retained without attempt-partition
+or park/resume equality requirements and are not OS context-switch counts or
+CPU-time shares. The ordinary runtime, emitted WF code and public ABI are
+unchanged by this diagnostic.
+
+The maintained M1 diagnostic panel over `32883518` contains 1,170 processes,
+10,530 calls, 42,120 bank rows and 1,010,880 counter deltas; all stable job
+equalities and twenty manifest hashes passed independent reconstruction.
+Its event image SHA256 is
+`83dedcb97b50137f99879969085c65ff152a9237331ab30740694112bdaa5701`.
+Placement is unfixed; this cohort is separate from the cadence timings without
+event instrumentation above. At requested width four and 4,097 records, cost publishes one
+job per call, team three and capacity sixty-three. At 256 records, cost
+publishes zero while team and capacity retain three and sixty-three. Every
+observed slot-refusal delta is zero; affordability refusals are not counted
+by that event.
+
+For early-invalid4,097 under team, every warm call steals all three published
+jobs under both cadences. Yet batch-end input checking increases idle-origin
+steal attempts in all five paired passes: median batch/call ratio 3.493
+[3.082, 4.182]. Skew4,097/team also increases in all five pairs, ratio 2.812
+[1.622, 4.503]. For early-invalid4,097/capacity, the median of five process
+warm means is 55.25 local pops and 7.75 successful steals under either
+cadence, despite sixty-three published jobs. Extra queue jobs therefore do
+not imply proportionally more work transferred to other workers. These
+counts identify search traffic and local execution as measurable distinctions;
+they do not establish their CPU cost or explain the opposite M1/Linux timing
+directions. No production performance improvement follows from event timings.
 
 ## Scalar scheduler comparison
 
