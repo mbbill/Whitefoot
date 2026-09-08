@@ -23,6 +23,14 @@ limits, data-dependent early exit and clustered/interleaved imbalance. Its
 ordinary WF outer map is actualized and compared with six native schedulers
 sharing one C callback. This is independent-point work, not nested composition
 or irregular graph traversal, and does not replace the missing rows below.
+[Adaptive recursive quadrature](../../experiments/compute-runtime/README.md#adaptive-recursive-quadrature)
+adds data-dependent subdivision and nested ordinary sibling calls, with an
+explicit-stack binary64 oracle, analytic checks for converged fixtures and
+an initial scalar C/WF comparison. The M1 screen observes substantial
+parallel-body slowdown and many fine-grained offers; their causal share is
+not yet isolated. The ten-case screen does not yet qualify larger
+application composition or multiple native recursive schedulers, and does not
+replace the application rows below.
 Keep the inventory current as
 programs become executable; consolidate it when the suite's implemented coverage
 supersedes this selection.

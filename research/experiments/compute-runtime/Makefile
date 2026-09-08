@@ -63,7 +63,70 @@ $(OUT)/probe $(OUT)/probe-no-stats $(OUT)/probe-events: runtime.c runtime.h runt
 		$(if $(filter $(OUT)/probe-events,$@),-DWF_COMPUTE_EVENTS,) \
 		runtime.c probe.c $(FLOOR) -o "$@"
 
-check: check-runtime check-protocol-cost check-abi check-fir check-bench check-records-events check-scheduler-events check-mandelbrot
+check: check-runtime check-protocol-cost check-abi check-fir check-bench check-records-events check-scheduler-events check-mandelbrot check-quadrature
+
+.PHONY: quadrature-build check-quadrature quadrature-calibrate
+quadrature-build: $(WFC)
+	mkdir -p "$(OUT)/quadrature/source"
+	cp quadrature.wf quadrature_host.ll quadrature.c quadrature.awk runtime.c runtime.h runtime_events.h $(FLOOR) Makefile "$(OUT)/quadrature/source/"
+	"$(WFC)" --par --par-ledger --emit-llvm quadrature.wf -o "$(OUT)/quadrature/module.ll" > "$(OUT)/quadrature/ledger.txt"
+	grep -F 'pair(adaptive, adaptive)' "$(OUT)/quadrature/ledger.txt"
+	grep -F 'call void @wf__par_publish(' "$(OUT)/quadrature/module.ll"
+	sed -e 's/@main(/@wf_quadrature_command_main(/g' -e 's/@wf__main_body(/@wf_quadrature_command_body(/g' \
+		"$(OUT)/quadrature/module.ll" > "$(OUT)/quadrature/host.ll"
+	cat quadrature_host.ll >> "$(OUT)/quadrature/host.ll"
+	$(CC) $(RECORD_FLAGS) -Wno-override-module -c "$(OUT)/quadrature/host.ll" -o "$(OUT)/quadrature/wf.o"
+	$(CC) $(RECORD_FLAGS) -Wno-override-module -S "$(OUT)/quadrature/host.ll" -o "$(OUT)/quadrature/wf.s"
+	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=0 -S quadrature.c -o "$(OUT)/quadrature/native.s"
+	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=0 quadrature.c runtime.c $(FLOOR) "$(OUT)/quadrature/wf.o" -lm -o "$(OUT)/quadrature/ordinary"
+	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=1 -DWF_COMPUTE_EVENTS -fsanitize=$(SANITIZER) \
+		-fno-sanitize-recover=all -fno-omit-frame-pointer \
+		quadrature.c runtime.c $(FLOOR) "$(OUT)/quadrature/wf.o" -lm -o "$(OUT)/quadrature/sanitized"
+	@nm "$(OUT)/quadrature/ordinary" > "$(OUT)/quadrature/ordinary.symbols"
+	$(call require-strong,$(OUT)/quadrature/ordinary,wf__par_acquire_lane)
+	$(call require-strong,$(OUT)/quadrature/ordinary,wf__floor_run)
+	@printf '%s\n' '$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=0' \
+		'sanitized: -DWF_COMPUTE_STATS=1 -DWF_COMPUTE_EVENTS -fsanitize=$(SANITIZER) -fno-sanitize-recover=all -fno-omit-frame-pointer; host/runtime/floor only; generated WF object ordinary' > "$(OUT)/quadrature/flags.txt"
+	$(CC) --version >> "$(OUT)/quadrature/flags.txt"
+	cp "$(WFC)" "$(OUT)/quadrature/whitefootc"
+	git rev-parse HEAD > "$(OUT)/quadrature/revision.txt"
+	cd "$(OUT)/quadrature" && shasum -a 256 source/* module.ll host.ll wf.o wf.s native.s ordinary sanitized whitefootc flags.txt ledger.txt revision.txt > manifest.sha256
+
+check-quadrature: quadrature-build
+	@set -e; for image in ordinary sanitized; do for width in 1 4; do for form in native wf-seq wf-auto; do \
+		log="$(OUT)/quadrature/check-$$image-w$$width-$$form.tsv"; \
+		WF_WORKERS=$$width "$(OUT)/quadrature/$$image" check $$form > "$$log" 2>&1; \
+		stats=0; if test $$image = sanitized; then stats=1; fi; \
+		awk -v mode=check -v form=$$form -v width=$$width -v stats=$$stats -f quadrature.awk "$$log"; \
+		grep -E '^# quadrature PASS: outputs=20 stats=[01] steals=[0-9]+$$' "$$log"; \
+	done; done; done
+	@set -e; good="$(OUT)/quadrature/check-ordinary-w1-native.tsv"; \
+	for mutation in missing-row wrong-form missing-footer; do \
+		bad="$(OUT)/quadrature/negative-$$mutation.tsv"; \
+		case $$mutation in \
+			missing-row) sed '5d' "$$good" > "$$bad" ;; \
+			wrong-form) sed '1s/form=native/form=wf-seq/' "$$good" > "$$bad" ;; \
+			missing-footer) sed '$$d' "$$good" > "$$bad" ;; \
+		esac; \
+		if awk -v mode=check -v form=native -v width=1 -v stats=0 -f quadrature.awk "$$bad" > "$$bad.log" 2>&1; then \
+			echo "quadrature accepted $$mutation" >&2; exit 1; \
+		fi; \
+	done
+
+quadrature-calibrate:
+	@test -n "$(RESULTS)" && test -x "$(OUT)/quadrature/ordinary"
+	mkdir "$(RESULTS)"
+	@set -e; uname -a > "$(RESULTS)/host.txt"; \
+	if test "$$(uname -s)" = Linux; then lscpu >> "$(RESULTS)/host.txt"; taskset -pc $$$$ >> "$(RESULTS)/host.txt"; \
+	else sysctl hw.model hw.ncpu hw.physicalcpu >> "$(RESULTS)/host.txt"; fi; \
+	for pass in 1 2 3 4 5; do \
+		if test $$((pass % 2)) = 1; then forms='native wf-seq wf-auto'; else forms='wf-auto wf-seq native'; fi; \
+		for width in 1 4; do for form in $$forms; do \
+			WF_WORKERS=$$width "$(OUT)/quadrature/ordinary" bench $$form > "$(RESULTS)/p$$pass-w$$width-$$form.tsv" 2>&1; \
+			awk -v mode=bench -v form=$$form -v width=$$width -v stats=0 -f quadrature.awk "$(RESULTS)/p$$pass-w$$width-$$form.tsv"; \
+			grep -E '^# quadrature PASS: outputs=90 stats=0 steals=0$$' "$(RESULTS)/p$$pass-w$$width-$$form.tsv"; \
+		done; done; \
+	done
 
 .PHONY: protocol-cost-build check-protocol-cost protocol-cost-calibrate
 protocol-cost-build: runtime.c runtime.h runtime_events.h protocol_cost.c protocol_cost.awk $(FLOOR)

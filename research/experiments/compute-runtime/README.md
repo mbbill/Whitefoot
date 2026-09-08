@@ -1551,7 +1551,151 @@ large excursions are retained:
 trailing chunks16 reaches a process mean of 1,503.146 us and a ratio of 6.649
 against its matched native-zero control. These observations do not support
 an additive universal zeroing cost or assign the remaining loss to a specific
-compiler or runtime mechanism. Linux must qualify this new image separately.
+compiler or runtime mechanism.
+
+The [Linux allocation panel at `5ca2e679`](https://github.com/mbbill/Whitefoot/actions/runs/34227268097)
+retains artifact `10056367199`, ZIP SHA256
+`8d94eb4e6105bd5852af310d07863ef59daecab8e6e04c5365a580c2f8c8a523`.
+Independent replay verifies all 575 processes/5,175 calls/16,991,595 outputs,
+4,600 gaps and 52 manifest paths, with 76 full qualifiers and 370 smokes.
+Seven qualifiers retain the exact permitted Rayon lifecycle report; 69 are
+clean. Ordinary image SHA256 is
+`a62c1a74b98d04bd96b4ec82b7e44e5090252d884285080a768f25b64db01bc5`.
+This host is **EPYC 9V74**, not the preceding 7763 host: two physical/four SMT
+CPUs under mask0–3, Clang18.1.3 scalar x86-64-v3, with individual placement
+and quota unqualified. Treat it as a separate cohort.
+
+Of 45 native zero/cost groups, 39 have mixed signs, six regress in all five
+pairs and none improves in all five. All three plane4096 generated/native-WF-zero
+comparisons are mixed; the M1 all-five plane losses do not repeat. Interior4096
+chunks16/native-zero grain256 improves in all five, paired ratio
+0.973 [0.961–0.995]; exterior4096 chunks256/native-zero grain16 regresses in
+all five, 1.030 [1.004–1.354]. All 33-point generated/native-zero comparisons
+lose all five, but their terminal geometry differs. Broad ranges remain:
+TBB trailing4096/grain256 batch involuntary switches span3–813 without
+clearing and131–812 with clearing. Those batch counters do not isolate a
+scheduler cause. Neither host selects a default or establishes a universal
+additive output-initialization cost.
+
+## Adaptive recursive quadrature
+
+`quadrature.wf` integrates the Lorentz profile
+`1 / (1 + ((x - center) / width)^2)` over caller-supplied endpoints using
+adaptive Simpson subdivision. Each node evaluates two new points, compares
+the refined estimate with its parent estimate, and either returns the
+Richardson-corrected estimate or calls its two children and adds their results
+in left-plus-right order. Tolerance halves at each child. The explicit depth
+argument is an algorithmic subdivision limit: reaching it returns the current
+estimate without an accuracy guarantee. It is not compiler proof fuel or a
+runtime change. Strict binary64 order is retained; no SIMD, FMA, LTO or
+fast-math participates.
+
+This adds data-dependent nested calls and unequal recursive subtrees to the
+independent-point workloads. Inputs include broad and narrow centered peaks,
+left/right peaks, a peak outside the interval, loose tolerance, reversed/empty
+intervals, zero depth and depth-limited subdivision. The ten retained cases
+visit1–8,191 nodes and reach depths0–14. This is an initial recursive workload
+screen, not coverage of arbitrary integral families, large application batches
+or the other missing [application rows](../../investigations/compute-runtime/WORKLOADS.md).
+The program, host adapter and C driver belong to this experiment and retire
+with it; the adapter qualifies this module's lowering, not a public WF ABI.
+
+The oracle uses an explicit postorder stack with volatile binary64 arithmetic,
+independent of the recursive implementations. Every returned value must match
+it bitwise. The analytic antiderivative
+`width * atan((x - center) / width)` separately checks the non-capped fixtures
+using long double with a stated fixture bound of `8*tolerance + 2^-48`.
+This fixture check is not a theorem about arbitrary adaptive-estimator error.
+The oracle records nodes, leaves, evaluations, deepest level and capped leaves
+outside timing. The depth-limited cases keep their actual estimates rather
+than being mislabeled converged. A temporary image adding one to the computed
+result fails with `quadrature: binary64 result`.
+
+`check-quadrature`, called by the experiment's canonical `check`, runs the same
+WF object in ordinary and host/runtime/floor ASan-UBSan images, three forms and
+worker requests1/4: 12 processes/240 checked results. The instrumented image
+also uses the existing per-lane event counters. At every joined return it
+checks publication = local pop + successful steal = run begin = run end = join;
+for the four-worker parallel form it checks publication + slot refusal equals
+`3*nodes - leaves + 2`. That count includes two small sibling offers per node,
+one recursive offer per internal node and two initial density offers. Startup
+must supply all four workers and the full qualification must observe a steal.
+Sequential forms must publish nothing. Generated LLVM remains unsanitized;
+runtime exhaustion/interleaving qualification stays in `check-runtime`.
+
+The ledger permits density/density, Simpson/Simpson and adaptive/adaptive
+siblings. Emitted frames occupy32,48 and88 bytes respectively. On the M1
+instrumented centered-peak calls,3,287 nodes produce **8,219 publications**
+per call;6,576 of these are small density/Simpson offers including initialization.
+The instrumented cohort observes successful steals but does not turn its
+sanitized elapsed time into a production cost. These counts identify work
+introduced by actualization; they do not by themselves isolate each offer's
+contribution to the ordinary elapsed-time loss.
+
+`quadrature-calibrate` runs the ordinary image sequentially across five passes,
+two worker requests and three forms (`native`, `wf-seq`, `wf-auto`). Each
+process runs all ten cases, retaining one first and eight warm calls per case:
+30 processes/2,700 checked results. Form order reverses on alternate passes.
+The AWK reader binds mode, form, requested width and instrumentation to each
+invocation, requires the complete ordered input/call inventory and validates
+work metadata and event totals. Missing-row, wrong-form and missing-footer
+reports are rejected by maintained negative checks; stderr is retained.
+The first call of a later case is not cold process startup. Each timer encloses
+one complete integration; output checking and printing follow it. Per-call
+process CPU and context switches enclose the clocks as well and can include
+worker activity; ordinary event fields are zero because instrumentation is
+disabled. Tiny calls approach clock resolution and are diagnostic only.
+
+`native` is optimized C recursion for the same arithmetic and subdivision
+algorithm, an initial kernel reference rather than a dynamic scheduler ceiling.
+`wf-seq` calls the emitted sequential clone. `wf-auto` deliberately calls the
+parallel body, including at worker request1 where no pool is started; that
+one-worker control exposes unsuccessful offer/call overhead. It is **not**
+normal command-entry behavior, which chooses the sequential clone when the
+pool is inactive. No default, compiler policy or runtime interface changes.
+Rayon/oneTBB/Parlay comparisons for this nested algorithm remain to be added;
+their existing flat callback adapters do not qualify that comparison.
+
+Run qualification first, then calibrate alone in a fresh result directory:
+
+```sh
+make -C research/experiments/compute-runtime check-quadrature OUT=/tmp/wf-quadrature
+make -C research/experiments/compute-runtime quadrature-calibrate \
+  OUT=/tmp/wf-quadrature RESULTS=/tmp/wf-quadrature/calibration
+```
+
+The September8 M1 screen (MacBookPro18,3, Clang21.0.0, unfixed placement and
+frequency) retains ordinary SHA256
+`39bb2c2922018bbb083d9815b71638b891f81771276c05fd5a7613bd7eb1f0f7`
+and WF object SHA256
+`99faabcaf9279d19e41e1423d8f71a8bb7e8e22e769b8dc61e51a8523e1d9bcc`.
+Below are microsecond medians of five process warm means. Ratios divide
+within each pass before taking the median/range; they need not equal a ratio
+of the displayed medians. Native and sequential columns request one worker;
+the parallel column requests four on the same host and executes identical
+input/arithmetic, not four times the input.
+
+| Input | Native serial | WF sequential | WF parallel W4 | Parallel/sequential paired ratio [min–max] |
+| --- | ---: | ---: | ---: | ---: |
+| Center peak | 22.203 | 22.432 | 41.609 | 1.833 [1.726–1.981] |
+| Left peak | 16.693 | 17.104 | 32.495 | 1.938 [1.820–2.061] |
+| Right peak | 16.703 | 17.526 | 31.781 | 1.818 [1.699–2.083] |
+| Outside peak | 3.354 | 3.511 | 10.677 | 3.039 [2.964–3.477] |
+| Depth cap | 52.839 | 53.286 | 77.114 | 1.468 [1.424–1.504] |
+
+Every listed parallel comparison loses in all five passes. This exposes a
+larger issue than the small Mandelbrot representation differences: the scalar
+kernel is close to C in these cells, while recursive actualization adds many
+fine-grained task operations. Their causal share, a profitable granularity
+policy, larger compositions, additional native runtimes and Linux behavior
+are still unqualified. The new CI row retains the exact compiler, sources,
+LLVM, assembly, objects, flags, qualification logs and raw calibration.
+The forced parallel-body W1 control also loses all five on centered/left/right
+peaks and the depth-cap case, with paired medians1.783/1.809/1.718/1.576
+against W1 sequential. No worker pool exists there. Thus unsuccessful offer
+checks and altered generated call/code layout warrant investigation alongside
+successful publication costs; a large task count alone is not a complete
+explanation of the W4 loss.
 
 ## Scalar scheduler comparison
 

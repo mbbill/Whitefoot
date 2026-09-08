@@ -36,6 +36,9 @@ jobs:
             arch: -march=x86-64-v3
             checks: check-mandelbrot
             driver: mandelbrot-bench.sh
+          - workload: quadrature
+            arch: -march=x86-64-v3
+            checks: check-quadrature
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -76,8 +79,13 @@ jobs:
             }
           }')
           test -n "$selected"
-          taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/calibration" \
-            sh research/experiments/compute-runtime/${{ matrix.driver }} calibrate
+          if test '${{ matrix.workload }}' = quadrature; then
+            taskset -c "$selected" make -C research/experiments/compute-runtime quadrature-calibrate \
+              OUT="$OUT" RESULTS="$OUT/calibration"
+          else
+            taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/calibration" \
+              sh research/experiments/compute-runtime/${{ matrix.driver }} calibrate
+          fi
           if test '${{ matrix.workload }}' = mandelbrot; then
             taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/grain-calibration" \
               sh research/experiments/compute-runtime/mandelbrot-bench.sh grain-calibrate
@@ -155,6 +163,7 @@ jobs:
             ${{ runner.temp }}/compute-${{ matrix.workload }}/trace-calibration/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/events-calibration/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/protocol-cost/
+            ${{ runner.temp }}/compute-${{ matrix.workload }}/quadrature/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/*check-*/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/bench-*
             ${{ runner.temp }}/compute-${{ matrix.workload }}/fir*
