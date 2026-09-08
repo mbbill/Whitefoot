@@ -1,0 +1,79 @@
+enum RuntimeGapNode['s] {
+  Empty();
+  Entry(left: Box<'s, RuntimeGapNode<'s>>, right: Box<'s, RuntimeGapNode<'s>>);
+}
+
+fn boxed_empty['s](store: &uniq Heap<'s>) -> made: own Option<Box<'s, RuntimeGapNode<'s>>> reads(store), writes(store), allocates(store) {
+  let empty = Empty<'s>();
+  region {
+    match heap_box(store: &uniq deref(store), value: move empty) {
+      Ok(value: cell) => {
+        return Some<Box<'s, RuntimeGapNode<'s>>>(value: move cell);
+      }
+      Err(error: back) => {
+        return None<Box<'s, RuntimeGapNode<'s>>>();
+      }
+    }
+  }
+}
+
+fn insert_once['s](store: &uniq Heap<'s>, tree: &uniq Box<'s, RuntimeGapNode<'s>>) -> inserted: own Bool reads(store, tree), writes(store, tree), allocates(store) {
+  doc "Minimal valid-source trigger: allocate a replacement recursive node, replace the caller's Box descriptor, and let ordinary cleanup release the displaced Empty cell and resulting tree.";
+  match deref(deref(tree)) {
+    Empty() => {
+      region {
+        match boxed_empty(store: &uniq deref(store)) {
+          None() => {
+            return False();
+          }
+          Some(value: left_child) => {
+            region {
+              match boxed_empty(store: &uniq deref(store)) {
+                None() => {
+                  return False();
+                }
+                Some(value: right_child) => {
+                  let entry = Entry(left: move left_child, right: move right_child);
+                  region {
+                    match heap_box(store: &uniq deref(store), value: move entry) {
+                      Err(error: back) => {
+                        return False();
+                      }
+                      Ok(value: replacement) => {
+                        let displaced = replace deref(tree) = move replacement;
+                        return True();
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    Entry(left: existing_left, right: existing_right) => {
+      return True();
+    }
+  }
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "Expected success is exit 0; allocator refusal is exit 70.";
+  region {
+    match boxed_empty(store: &uniq heap) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: root) => {
+        region {
+          let inserted = insert_once(store: &uniq heap, tree: &uniq root);
+          if inserted {
+            return exit_status(code: 0_u8);
+          }
+          return exit_status(code: 70_u8);
+        }
+      }
+    }
+  }
+}

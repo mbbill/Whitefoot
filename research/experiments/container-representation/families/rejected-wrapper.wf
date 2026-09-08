@@ -1,0 +1,15 @@
+struct Table {
+  slots: FixedVector<u64, 8>;
+}
+
+fn empty_table() -> table: own Table pure contract {
+  ensures len_of(table.slots) == 0_u64;
+} {
+  let slots = fixed_vector::<u64, 8>();
+  return Table(slots: move slots);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let table = empty_table();
+  return exit_status(code: 0_u8);
+}

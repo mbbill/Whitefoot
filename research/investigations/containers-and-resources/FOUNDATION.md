@@ -86,6 +86,20 @@ a matched executable comparison before it can support a performance conclusion.
 | Intrusive kernel structures | Link an externally owned object into multiple relations, unlink | Owning containers or IDs are possible different contracts | Stored membership references, stable placement and reclamation are independent needs |
 | Shared/concurrent containers | Publish, observe, mutate, retire, reclaim | Existing staged lexical access covers only its stated scope | RCU/epoch/shared lifetime is not supplied by a sequential slot API |
 
+The first [current-language family witnesses](../../experiments/container-representation/families/RESULTS.md)
+now execute a bounded optional-entry hash table, a dense binary heap, and a
+B+ tree leaf-split component. The hash trace does not yet cover growth or rehash;
+the leaf component is not a complete ordered map. A separate valid-source boxed
+tree reproducer exposes descriptor-replacement lowering failure and is explicitly
+deferred executable correctness evidence, not a source-language rejection.
+
+The binary heap also has a same-algorithm native comparison and an independent
+sorting oracle. It exposes retained complete-run transfers at ordinary helper
+boundaries despite the earlier fresh-destination improvements. That is a measured
+implementation cost to investigate before attributing dense-heap performance to
+the absence of a lower-level storage language. The helpers explicitly preserve
+the contiguous head-zero property through verified contracts.
+
 The Linux, Redis and SQLite observations in the external study make the last rows
 concrete. They do not impose pointer tagging, GC, C callbacks or any upstream
 threshold as a Whitefoot requirement. A byte-page codec does not need arbitrary
@@ -112,6 +126,69 @@ test behavior independently.
 These strategies can supply different components of one eventual design. No
 hybrid is selected merely because it sounds flexible. Every component needs an
 operation and cost that justify it; do not build all four infrastructures.
+
+### A narrower competitor to arbitrary storage permissions
+
+A general projected layout for ordinary slot enums deserves a direct comparison
+with library-selected resource proofs. Conceptually, a slot has `Empty`,
+`Deleted`, or `Occupied(key, value, hash)` state. Its authoritative discriminant
+can be stored separately from payloads while each logical slot remains one valid
+enum. Normal construction, matching, replacement and destruction could preserve
+the safety relation. Replacing an occupied slot with a tombstone transfers the
+old payload exactly once. Read-only control projection could support probing;
+writing a byte alone must not create an occupied generic payload.
+
+This is a hypothetical layout facility, not existing source syntax or a selected
+implementation. It could obtain sparse typed storage without requiring writers
+to prove an arbitrary ownership-set predicate. It has concrete limits:
+
+- A tag plus an arbitrary byte fingerprint and extra empty/deleted states do not
+  fit one byte. A compact control encoding needs a checked finite range/variant
+  layout or pays extra metadata. A second occupancy bitmap is not presumed free.
+- Projection does not imply safe simultaneous mutable access to arbitrary slots.
+  The borrowing rules must admit the actual operation and conserve exclusivity.
+- Ordinary insertion receives a complete value. Eliminating a fallible producer's
+  large temporary still needs result-destination routing or checked construction.
+- A fixed enum layout does not cover arbitrary mixed-type overlays, compact
+  variable-tail objects, stored memberships or deferred reclamation.
+
+For the broader resource-proof candidate, the decisive missing mechanism is
+symbolic focus and framing: open the permission for a runtime-selected slot while
+retaining responsibility for every other live slot. A finite list of concrete
+tokens or enumerated examples is insufficient for arbitrary runtime capacities.
+Allocation identity must distinguish two allocations in the same store region;
+splitting evidence cannot duplicate it. Explicit finite proof terms with a fixed
+resource grammar and checked induction are a candidate, but this is new proof
+machinery rather than a widening of numeric `ensures` clauses. Its checking and
+erasure have not been implemented or validated by the current finite model.
+
+### Runtime-checked identity and retained membership
+
+A stable slab with two indexes has two meaningfully different contracts. Under
+weak identity, deleting an object may leave an index entry whose later lookup
+returns `Expired`. Bounds, owner identity, generation and state checks can make
+that access safe; removing stale index entries remains application correctness.
+A finite generation must retire/refuse on exhaustion or justify safe reuse, not
+wrap and silently revive an old identity. A generation alone does not prevent a
+handle being applied to the wrong store.
+
+Under retained membership, an object must remain the same accessible object while
+the membership exists. Returning `Expired` after deleting it changes the
+contract. Deletion must be statically prevented, delayed, or return an intended
+`Busy` outcome through an authoritative lifetime protocol. Neither projected enum
+validity nor a live-slot permission alone supplies that retained lifetime. A
+runtime check also cannot preserve memory after it returns a borrow unless the
+access protocol keeps the backing alive. These candidate identities are not a
+claim that the arena-index ownership pattern rejected in STOR-1 has been admitted.
+
+The next comparison should use the same non-copy payload in a deleting/rehashing
+map and a slab with two indexes, testing weak identity and retained membership
+separately. Price current complete-value storage, projected enum layout, and
+resource evidence against the same operations, including intended runtime
+checks. If a narrower representation matches the broader candidate's costs on
+both contracts, generality alone does not justify a new resource logic. Conversely,
+duplicate metadata, forced payload copies or an unrepresentable retained
+lifetime can supply a concrete reason to widen the foundation.
 
 ### What a lower-level candidate must actually expose
 

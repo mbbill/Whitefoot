@@ -23,6 +23,11 @@ Its parts answer different questions:
   controls, with a matched-query Rust standard-map comparator. It tests whether
   a retained runtime check is material under its stated workload and boundary;
   it is not a checked Whitefoot map implementation.
+- `families/`: current-language hash-table operations, a binary heap with a
+  native cost control, and an ordered-node component. Exact rejected forms and
+  a deferred boxed-tree runtime defect distinguish specification limits from
+  implementation gaps; the latter is compiled, but not certified as executing
+  correctly, by the ordinary check.
 
 These small programs test specific capabilities and costs. They are not a
 representative corpus of real applications and supply no workload-frequency data.
