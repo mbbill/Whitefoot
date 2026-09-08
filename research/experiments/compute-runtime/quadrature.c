@@ -22,6 +22,7 @@ extern double wf_research_quadrature_leaf(double, double, double, double, double
 static double (*generated_run)(double,double,double,double,double,uint64_t,bool);
 static bool parallel_form, leaf_form;
 static bool native_cpp;
+static bool native_wf;
 static unsigned native_kind, spawn_depth, requested;
 static void require(bool ok, const char *why) {
     if (!ok) { fprintf(stderr, "quadrature: %s\n", why); exit(1); }
@@ -140,13 +141,15 @@ static double run(const Input *p,const char *form) {
     return generated_run(p->a,p->b,p->center,p->width,p->tolerance,p->depth,parallel_form);
 }
 int wf__main_body(int argc,char **argv) {
-    require(argc==3 || argc==4,"usage: quadrature check|bench form [spawn-depth]");
-    bool bench=!strcmp(argv[1],"bench");require(bench || !strcmp(argv[1],"check"),"mode");
+    require(argc==3 || argc==4,"usage: quadrature check|bench|exhaust form [spawn-depth]");
+    bool bench=!strcmp(argv[1],"bench"),exhaust=!strcmp(argv[1],"exhaust");
+    require(bench || exhaust || !strcmp(argv[1],"check"),"mode");
     const char *form=argv[2];
     leaf_form=!strcmp(form,"wf-leaf") || !strcmp(form,"wf-leaf-seq");
     parallel_form=!strcmp(form,"wf-auto") || !strcmp(form,"wf-leaf");
-    native_cpp=!strcmp(form,"cpp-seq") || !strcmp(form,"tbb") || !strcmp(form,"parlay");
-    native_kind=!strcmp(form,"tbb")?1:!strcmp(form,"parlay")?2:0;
+    native_wf=!strcmp(form,"wf-native") || !strcmp(form,"wf-value");
+    native_cpp=!strcmp(form,"cpp-seq") || !strcmp(form,"tbb") || !strcmp(form,"parlay") || native_wf;
+    native_kind=!strcmp(form,"tbb")?1:!strcmp(form,"parlay")?2:!strcmp(form,"wf-native")?3:!strcmp(form,"wf-value")?4:0;
     require(!strcmp(form,"native") || !strcmp(form,"wf-seq") || parallel_form || leaf_form || native_cpp,"form");
     if(native_kind) {
         require(argc==4 && argv[3][0]>='0' && argv[3][0]<='9',"explicit spawn depth");
@@ -157,6 +160,15 @@ int wf__main_body(int argc,char **argv) {
     const char *workers=getenv("WF_WORKERS");
     require(workers && (!strcmp(workers,"1") || !strcmp(workers,"4")),"explicit worker count");
     requested=!strcmp(workers,"4")?4:1;
+    void **held=NULL;unsigned reserved=0;
+    if(exhaust) {
+        require(native_wf && requested==4 && spawn_depth==24,"exhaustion control arguments");
+        reserved=wf_compute_slot_capacity();held=calloc(reserved,sizeof(*held));
+        require(held!=NULL && reserved>0,"exhaustion reservation array");
+        for(unsigned i=0;i<reserved;++i) {
+            held[i]=wf__par_acquire_lane(8);require(held[i]!=NULL,"exhaustion slot reservation");
+        }
+    }
     unsigned calls=bench?9:2;uint64_t outputs=0,total_steals=0,total_migrated=0;
     printf("# quadrature mode=%s form=%s workers=%u stats=%d events=%d spawn_depth=%u\n",argv[1],form,requested,WF_COMPUTE_STATS,
 #if defined(WF_COMPUTE_EVENTS)
@@ -197,6 +209,7 @@ int wf__main_body(int argc,char **argv) {
             if(native_cpp) {
                 require(observed.nodes==r.nodes && observed.forks==r.forks,"native work conservation");
                 require(observed.migrated<=2*observed.forks,"native branch count");
+                if(native_wf)require(observed.migrated==steals,"native WF steal witness");
                 if(requested==1)require(!observed.migrated,"native single-worker exclusion");
             } else require(!observed.nodes && !observed.forks && !observed.migrated,"native exclusion");
 #else
@@ -210,10 +223,11 @@ int wf__main_body(int argc,char **argv) {
             runs=events[WF_EVENT_RUN_END];joins=events[WF_EVENT_JOIN];refusals=events[WF_EVENT_SLOT_REFUSAL];
             require(publishes==pops+events[WF_EVENT_STEAL_SUCCESS] && publishes==runs &&
                     publishes==events[WF_EVENT_RUN_BEGIN] && publishes==joins,"joined task conservation");
-            if(parallel_form && requested==4) {
+            if((parallel_form || (native_wf && spawn_depth)) && requested==4) {
                 require(wf_compute_worker_count()==4,"four-worker startup");
-                uint64_t opportunities=leaf_form?r.nodes-r.leaves:3*r.nodes-r.leaves+2;
+                uint64_t opportunities=native_wf?r.forks:leaf_form?r.nodes-r.leaves:3*r.nodes-r.leaves+2;
                 require(publishes+refusals==opportunities,"recursive publication opportunities");
+                if(exhaust)require(!publishes && refusals==opportunities,"full owner-pool fallback");
             } else require(publishes==0,"sequential publication exclusion");
 #endif
             printf("%s\t%s\t%u\t%s\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%ld\t%ld\t%lu\t%u\t%lu\t%lu\t%lu\t%lu\t%lu\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\n",
@@ -225,11 +239,13 @@ int wf__main_body(int argc,char **argv) {
     }
 #if WF_COMPUTE_STATS
     if(parallel_form && requested==4)require(total_steals>0,"parallel actualization");
-    if(!parallel_form)require(total_steals==0,"sequential task exclusion");
+    if(!parallel_form && !native_wf)require(total_steals==0,"sequential task exclusion");
 #else
-    if(parallel_form && requested==4)require(wf_compute_worker_count()==4,"four-worker startup");
+    if((parallel_form || (native_wf && spawn_depth)) && requested==4)require(wf_compute_worker_count()==4,"four-worker startup");
 #endif
     printf("# quadrature PASS: outputs=%" PRIu64 " stats=%d steals=%" PRIu64 " migrated=%" PRIu64 "\n",outputs,WF_COMPUTE_STATS,total_steals,total_migrated);
+    for(unsigned i=0;i<reserved;++i)wf__par_release(held[i]);
+    free(held);
     quadrature_native_stop();
     require(!fflush(stdout),"report flush");return 0;
 }

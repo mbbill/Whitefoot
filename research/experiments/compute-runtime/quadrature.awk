@@ -16,13 +16,16 @@ BEGIN {
     split("29 247 176 176 184 1 0 255 0 91", forks8," ")
     parallel=(form=="wf-auto" || form=="wf-leaf")
     leaf=(form=="wf-leaf" || form=="wf-leaf-seq")
-    native=(form=="cpp-seq" || form=="tbb" || form=="parlay")
+    native_wf=(form=="wf-native" || form=="wf-value")
+    native=(form=="cpp-seq" || form=="tbb" || form=="parlay" || native_wf)
     if (spawn=="")spawn=0
     if (!integer(spawn) || (spawn!=0 && spawn!=2 && spawn!=4 && spawn!=8 && spawn!=24) ||
-        ((form!="tbb" && form!="parlay") && spawn))bad("spawn depth")
-    if ((mode!="check" && mode!="bench") || (form!="native" && form!="wf-seq" && !parallel && !leaf && !native) ||
+        ((form!="tbb" && form!="parlay" && !native_wf) && spawn))bad("spawn depth")
+    wf_pool=(parallel || (native_wf && spawn>0))
+    if ((mode!="check" && mode!="bench" && mode!="exhaust") || (form!="native" && form!="wf-seq" && !parallel && !leaf && !native) ||
         (width!=1 && width!=4) || (stats!=0 && stats!=1)) bad("validator arguments")
-    calls=(mode=="check"?2:9)
+    if (mode=="exhaust" && (!native_wf || width!=4 || spawn!=24))bad("exhaustion arguments")
+    calls=(mode=="bench"?9:2)
 }
 NR==1 {
     expected="# quadrature mode=" mode " form=" form " workers=" width " stats=" stats " events=" stats " spawn_depth=" spawn
@@ -59,15 +62,17 @@ NR==2 {
     if (footer || !block || seen>=calls || NF!=19 || $1!=names[block] || $2!=form ||
         $3!=seen || $4!=(seen?"warm":"first")) bad("call identity")
     for (i=5;i<=19;++i) if(!integer($i))bad("noninteger observation")
-    if ($11!=((parallel && width==4)?4:0))bad("actual pool width")
-    if (!stats || !parallel || width==1) {
+    if ($11!=((wf_pool && width==4)?4:0))bad("actual pool width")
+    if (!stats || !wf_pool || width==1) {
         if($10 || $12 || $13 || $14 || $15 || $16)bad("disabled/serial events")
     } else {
-        opportunities=(leaf?nodes[block]-(nodes[block]+1)/2:3*nodes[block]-(nodes[block]+1)/2+2)
+        opportunities=(native_wf?forks:leaf?nodes[block]-(nodes[block]+1)/2:3*nodes[block]-(nodes[block]+1)/2+2)
         if ($12!=$13+$10 || $12!=$14 || $12!=$15 || $12+$16!=opportunities)bad("task conservation")
+        if (mode=="exhaust" && ($12 || $16!=opportunities))bad("full owner-pool fallback")
     }
     if (stats && native) {
         if($17!=nodes[block] || $18!=forks || $19>2*forks || (width==1 && $19))bad("native conservation")
+        if(native_wf && $19!=$10)bad("native WF steal witness")
     } else if($17 || $18 || $19)bad("disabled native observations")
     migrated+=$19
     steals+=$10;++seen;++rows

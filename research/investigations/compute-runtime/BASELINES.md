@@ -25,9 +25,12 @@ adds direct oneTBB `parallel_invoke` and native Parlay `par_do`, sharing a scala
 C++ kernel and five spawn-depth settings against generated WF and C/C++ serial
 controls. Diagnostic subtree counts check actual work and foreign-thread branch
 execution. The first M1 screen shows strong grain sensitivity and remaining WF
-losses. Recursive Rayon, matched-grain native WF, alternative TBB contexts/APIs,
-held-out tuning and qualified native-host placement remain missing; the existing
-flat callback comparisons do not fill those gaps.
+losses. [Matched-grain native WF](../../experiments/compute-runtime/README.md#wf-runtime-at-matched-recursive-grain)
+now compares pointer and by-value frames through the unchanged runtime, with
+exact fork/steal conservation and forced owner-slot exhaustion checks. The M1
+screen narrows the gap at useful grains but does not establish a uniform winner.
+Recursive Rayon, alternative TBB contexts/APIs, held-out tuning and qualified
+native-host placement remain missing; flat callbacks do not fill those gaps.
 The [record batch panel](../../experiments/compute-runtime/README.md#variable-length-utf-8-record-batches)
 also qualifies a native state machine and bounded ASCII-word candidate.
 For its validation-plus-scalar-count contract, simdutf **v9.1.1**, commit

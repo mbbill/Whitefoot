@@ -1612,8 +1612,9 @@ than being mislabeled converged. A temporary image adding one to the computed
 result fails with `quadrature: binary64 result`.
 
 `check-quadrature`, called by the experiment's canonical `check`, runs the same
-WF objects in ordinary and ASan-UBSan images, sixteen forms/grain settings and
-worker requests1/4: 64 processes/1,280 checked results. Host/runtime/floor and
+WF objects in ordinary and ASan-UBSan images, twenty-six forms/grain settings and
+worker requests1/4: 104 processes/2,080 checked results, plus four forced
+owner-slot exhaustion processes/80 results. Host/runtime/floor and
 the native C++/Parlay header code are instrumented; generated WF objects and
 the shared oneTBB library remain ordinary. The instrumented image
 also uses the existing per-lane event counters. At every joined return it
@@ -1636,11 +1637,11 @@ introduced by actualization; they do not by themselves isolate each offer's
 contribution to the ordinary elapsed-time loss.
 
 `quadrature-calibrate` runs the ordinary image sequentially across five passes,
-two worker requests and sixteen forms/grain settings: the original `native`,
+two worker requests and twenty-six forms/grain settings: the original `native`,
 `wf-seq`, `wf-auto`, `wf-leaf-seq`, `wf-leaf`, plus `cpp-seq` and the ten
-native parallel settings described below. Each
+oneTBB/Parlay settings and ten native WF settings described below. Each
 process runs all ten cases, retaining one first and eight warm calls per case:
-160 processes/14,400 checked results. Form order reverses on alternate passes.
+260 processes/23,400 checked results. Form order reverses on alternate passes.
 The AWK reader binds mode, form, requested width and instrumentation to each
 invocation, requires the complete ordered input/call inventory and validates
 work metadata and event totals. Missing-row, wrong-form and missing-footer
@@ -1878,10 +1879,87 @@ all versions still visit3,287 nodes. The WF leaf body offers the latter1,643
 pairs. The comparison exposes a profitable granularity range beyond small-leaf
 suppression, but changes both scheduler and grain: it is not an isolated WF
 runtime deficit. Full-depth TBB alone would be a particularly weak reference.
-Next evidence must include finer grain tuning with held-out confirmation,
-matched-grain native WF controls, recursive Rayon, larger compositions and
-native-host topology/placement qualification. No compiler/runtime/ABI policy
-is adopted by these reference controls.
+The matched-grain WF controls below address part of this gap. Finer grain
+tuning with held-out confirmation, recursive Rayon, larger compositions and
+native-host topology/placement qualification remain required. No compiler/runtime/ABI
+policy is adopted by these reference controls.
+
+### WF runtime at matched recursive grain
+
+`wf-native` and `wf-value` add the recovered WF runtime to the same C++ kernel
+at the same five spawn depths. Both publish the left subtree, compute the right
+on the current stack, join before reading the left result, and release the slot.
+Refused acquisitions execute both children locally with the remaining spawn
+budget; they do not omit work. Depth0 uses the common sequential specialization
+without starting a WF pool. Width1 at positive depths still attempts acquisition
+with no active pool. Pool configuration is checked before first use. These are
+native research adapters, not compiler-generated WF or borrowing/ABI changes.
+
+`wf-native` stores an8-byte pointer to the parent's live closure in the runtime
+frame. That closure references parent-stack arguments and the left result;
+join protects their lifetime. `wf-value` copies nine doubles, two unsigned
+depth fields and a scalar result into an88-byte frame, matching the generated
+WF payload size but not its layout or ABI. Its callback copies arguments into
+C++ storage, computes, and writes result bytes. The owner reads after join and
+before release. `memcpy` accesses raw C-owned storage without assuming a
+constructed C++ object's lifetime there. Both use unchanged runtime entry
+points and no extra scheduler, I/O or stack switching.
+
+Subtree-local diagnostic migration counts must equal the WF successful-steal
+counter. At width4, publication plus slot refusal equals the independent
+oracle's exact fork count; publication, local-pop-plus-steal, run and join
+totals agree. The diagnostic value frame grows to120 bytes for counters/thread
+identity; its timing is not ranked. Four `exhaust` qualifier processes reserve
+all64 owner slots without publishing before invoking each native WF form at
+depth24. Results still match, with zero publications and one refusal per fork
+in the instrumented image. Reservations are released after the joined checks.
+Width1 and exhausted-pool paths are covered; general runtime exhaustion and
+interleaving tests remain required.
+
+The September8 M1 matched-grain cohort retains ordinary SHA256
+`51f111527e44019f1bf5c5600322ab1f0b2f36c4ed7ef64e6260f480a87456cf`,
+native C++ object `c3232552a931dc7e35ee23a04b2241147ca7ed1721db6f2ed3c79b4014baf4ff`,
+and the unchanged filtered WF object
+`1111aea3e8f58a940238204029a1f4b2bfb442bebcf115f75279278ddc187d7a`.
+It uses MacBookPro18,3 / Clang21.0.0, scalar flags, unfixed placement/frequency,
+five passes and all26 settings. All260 processes/23,400 first/warm results are
+retained. The104 normal and four exhaustion qualifiers check2,160 results;
+the four maintained malformed reports reject. The preceding native cohort is
+separate. Below are microsecond medians of five process warm means at width4.
+
+| Input | Generated WF leaf | WF pointer depth8 | WF value depth8 | WF value depth24 | Parlay depth8 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Center peak | 16.021 | 12.292 | 11.198 | 16.281 | 10.917 |
+| Left peak | 13.594 | 10.318 | 9.609 | 14.438 | 8.552 |
+| Right peak | 12.672 | 8.672 | 8.297 | 13.537 | 9.922 |
+| Outside peak | 4.677 | 5.146 | 4.318 | 4.813 | 5.177 |
+| Depth cap | 26.000 | 17.589 | 16.839 | 27.531 | 18.011 |
+
+Paired value-depth8/Parlay-depth8 medians for center/left/right/depth-cap are
+1.008 [0.901–1.064],1.124 [1.081–1.165],0.830 [0.796–0.892] and
+0.931 [0.740–0.989]. Native WF wins2/0/5/5 of five pairs, not uniformly.
+The pinned Parlay `fork_join_scheduler::pardo` publishes its right callback
+and executes left locally; these WF adapters publish left and execute right.
+Thus matched grain does not yet match fork direction. This is a candidate
+explanation for left/right asymmetry, not a demonstrated cause; a direction
+control is needed before assigning that difference to scheduler overhead.
+Against generated WF leaf, value-depth8 ratios are0.696/0.705/0.650/0.650,
+all five pairs faster. However, full-depth native value ratios against generated
+WF are1.043/1.059/1.053/1.074, with only1/0/0/1 faster pairs. These full-depth
+cells do not identify a large compiler-code deficit; useful grain selection
+remains a concrete gap between generated WF and native controls.
+
+Frame byte count alone does not predict the result. At depth8 the88-byte value
+frame beats the8-byte pointer form in5/4/5/4 pairs on those four heavy cases,
+paired medians0.903/0.931/0.969/0.959. M1 assembly allocates272 bytes for the
+borrowed recursive activation and176 for the value activation, versus160 for
+generated WF leaf and128 for the shared C++ sequential specialization. These
+are local activation sizes, not peak stack usage. Different closure access,
+inlining and register allocation remain confounders; no isolated copying/cache
+cost is inferred. Other inputs favor another grain (outside peak value-depth4
+is2.657 us versus depth8's4.318 us). No fixed depth becomes a compiler default.
+Larger compositions, topology-qualified hosts and an input-adaptive policy
+still need evidence.
 
 ## Scalar scheduler comparison
 

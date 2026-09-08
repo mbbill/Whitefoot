@@ -67,7 +67,9 @@ check: check-runtime check-protocol-cost check-abi check-fir check-bench check-r
 
 .PHONY: quadrature-build check-quadrature quadrature-calibrate quadrature-deps
 QUADRATURE_FORMS := native wf-seq wf-auto wf-leaf-seq wf-leaf cpp-seq \
-	tbb-d0 tbb-d2 tbb-d4 tbb-d8 tbb-d24 parlay-d0 parlay-d2 parlay-d4 parlay-d8 parlay-d24
+	tbb-d0 tbb-d2 tbb-d4 tbb-d8 tbb-d24 parlay-d0 parlay-d2 parlay-d4 parlay-d8 parlay-d24 \
+	wf-native-d0 wf-native-d2 wf-native-d4 wf-native-d8 wf-native-d24 \
+	wf-value-d0 wf-value-d2 wf-value-d4 wf-value-d8 wf-value-d24
 quadrature-deps:
 	OUT="$(OUT)" CC="$(CC)" CXX="$(CXX)" sh records-scheduler-deps.sh build
 
@@ -132,6 +134,13 @@ check-quadrature: quadrature-build
 		awk -v mode=check -v form=$$form -v spawn=$$spawn -v width=$$width -v stats=$$stats -f quadrature.awk "$$log"; \
 		grep -E '^# quadrature PASS: outputs=20 stats=[01] steals=[0-9]+ migrated=[0-9]+$$' "$$log"; \
 	done; done; done
+	@set -e; for image in ordinary sanitized; do for form in wf-native wf-value; do \
+		log="$(OUT)/quadrature/exhaust-$$image-$$form.tsv"; \
+		WF_WORKERS=4 "$(OUT)/quadrature/$$image" exhaust $$form 24 > "$$log" 2>&1; \
+		stats=0; if test $$image = sanitized; then stats=1; fi; \
+		awk -v mode=exhaust -v form=$$form -v spawn=24 -v width=4 -v stats=$$stats -f quadrature.awk "$$log"; \
+		grep -E '^# quadrature PASS: outputs=20 stats=[01] steals=0 migrated=0$$' "$$log"; \
+	done; done
 	@set -e; good="$(OUT)/quadrature/check-ordinary-w1-native.tsv"; \
 	for mutation in missing-row wrong-form missing-footer; do \
 		bad="$(OUT)/quadrature/negative-$$mutation.tsv"; \
