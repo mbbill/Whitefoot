@@ -154,24 +154,41 @@ static int qualify(unsigned width) {
 struct Sample {
     uint64_t ns, user, system, rss;
     long voluntary, involuntary;
+    uint64_t gap;
 };
 static int benchmark(int argc, char **argv) {
-    require(argc == 9, "usage: scheduler WIDTH RECORDS MAX_LENGTH SHAPE GRAIN REPS SEED PASS");
+    require(argc == 10, "usage: scheduler WIDTH RECORDS MAX_LENGTH SHAPE GRAIN REPS SEED PASS CADENCE");
     uint64_t width64 = number(argv[1]), count64 = number(argv[2]), limit64 = number(argv[3]);
     uint64_t grain64 = number(argv[5]), reps64 = number(argv[6]), seed64 = number(argv[7]), pass = number(argv[8]);
     require((width64 == 1 || width64 == 2 || width64 == 4) && count64 <= 1048576 && limit64 <= 1048576 &&
             grain64 >= 1 && grain64 <= 1048576 && reps64 >= 1 && reps64 <= 256 && seed64 <= UINT32_MAX, "benchmark domain");
     unsigned width = unsigned(width64);
     size_t count = size_t(count64), limit = size_t(limit64), grain = size_t(grain64), reps = size_t(reps64);
+    const char *cadence = argv[9];
+    bool checked = !std::strcmp(cadence, "checked");
+    uint64_t requested_gap = !std::strcmp(cadence, "sleep-100us") ? 100000 :
+                             !std::strcmp(cadence, "sleep-1ms") ? 1000000 : 0;
+    require(checked || !std::strcmp(cadence, "dense") || requested_gap, "benchmark cadence");
+    require(!count || reps + 1 <= 8388608 / count, "retained output domain");
     Input input(count, limit, argv[4], uint32_t(seed64));
     RecordWork work = input.work(grain);
     size_t chunks = (count + grain - 1) / grain;
     std::vector<Sample> samples(reps + 1);
+    // All cadences use identical distinct output storage for each call. This
+    // permits complete deferred verification without overwriting earlier results.
+    std::vector<std::vector<uint64_t>> outputs(reps + 1, std::vector<uint64_t>(count, UINT64_MAX - 1));
     uint64_t floor = UINT64_MAX;
     for (unsigned i = 0; i < 1000; ++i) { uint64_t start = now(); floor = std::min(floor, now() - start); }
     alarm(90);
+    rusage batch_before, batch_after;
+    require(getrusage(RUSAGE_SELF, &batch_before) == 0, "initial batch resources");
+    uint64_t batch_start = now(), previous_end = 0;
     for (size_t call = 0; call <= reps; ++call) {
-        input.reset();
+        if (call && requested_gap) {
+            timespec remaining{0, long(requested_gap)};
+            while (nanosleep(&remaining, &remaining) != 0) require(errno == EINTR, "inter-call sleep");
+        }
+        work.output = outputs[call].data();
         rusage before, after;
         require(getrusage(RUSAGE_SELF, &before) == 0, "initial resources");
         uint64_t start = now();
@@ -184,8 +201,27 @@ static int benchmark(int argc, char **argv) {
 #endif
         samples[call] = {end - start, cpu_us(after.ru_utime) - cpu_us(before.ru_utime),
                          cpu_us(after.ru_stime) - cpu_us(before.ru_stime), rss,
-                         after.ru_nvcsw - before.ru_nvcsw, after.ru_nivcsw - before.ru_nivcsw};
+                         after.ru_nvcsw - before.ru_nvcsw, after.ru_nivcsw - before.ru_nivcsw,
+                         call ? start - previous_end : 0};
+        previous_end = end;
+        if (checked) {
+            input.output.swap(outputs[call]);
+            input.check();
+            input.output.swap(outputs[call]);
+        }
+    }
+    uint64_t batch_ns = now() - batch_start;
+    require(getrusage(RUSAGE_SELF, &batch_after) == 0, "final batch resources");
+    uint64_t batch_rss = uint64_t(batch_after.ru_maxrss);
+#ifndef __APPLE__
+    batch_rss *= 1024;
+#endif
+    // Every timed result is checked in every mode, including all earlier
+    // calls in a dense burst. The batch resource interval ends before this.
+    for (size_t call = 0; call <= reps; ++call) {
+        input.output.swap(outputs[call]);
         input.check();
+        input.output.swap(outputs[call]);
     }
     /* Qualify real participation after timing, so the first timed invocation
      * still includes the scheduler's lazy startup and dispatch. */
@@ -193,15 +229,20 @@ static int benchmark(int argc, char **argv) {
     uint64_t stop_start = now();
     int shutdown = records_scheduler_stop();
     uint64_t stop_ns = now() - stop_start;
-    std::printf("# backend=%s width=%u shape=%s records=%zu bytes=%" PRIu64 " max_length=%zu grain=%zu chunks=%zu seed=%" PRIu64 " pass=%" PRIu64 " reps=%zu clock_pair_min_ns=%" PRIu64 "\n",
-                records_scheduler_name(), width, argv[4], count, input.offsets.back(), limit, grain, chunks, seed64, pass, reps, floor);
-    std::puts("backend\twidth\tshape\trecords\tbytes\tmax_length\tgrain\tchunks\tseed\tpass\tcall\tphase\tcall_ns\tuser_us\tsystem_us\tmaxrss_bytes\tvoluntary_switches\tinvoluntary_switches");
+    std::printf("# backend=%s width=%u shape=%s records=%zu bytes=%" PRIu64 " max_length=%zu grain=%zu chunks=%zu seed=%" PRIu64 " pass=%" PRIu64 " reps=%zu clock_pair_min_ns=%" PRIu64 " cadence=%s requested_gap_ns=%" PRIu64 "\n",
+                records_scheduler_name(), width, argv[4], count, input.offsets.back(), limit, grain, chunks, seed64, pass, reps, floor, cadence, requested_gap);
+    std::puts("backend\twidth\tshape\trecords\tbytes\tmax_length\tgrain\tchunks\tseed\tpass\tcall\tphase\tcall_ns\tuser_us\tsystem_us\tmaxrss_bytes\tvoluntary_switches\tinvoluntary_switches\tcadence\tgap_ns");
     for (size_t i = 0; i < samples.size(); ++i) {
         auto s = samples[i];
-        std::printf("%s\t%u\t%s\t%zu\t%" PRIu64 "\t%zu\t%zu\t%zu\t%" PRIu64 "\t%" PRIu64 "\t%zu\t%s\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%ld\t%ld\n",
+        std::printf("%s\t%u\t%s\t%zu\t%" PRIu64 "\t%zu\t%zu\t%zu\t%" PRIu64 "\t%" PRIu64 "\t%zu\t%s"
+                    "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%ld\t%ld\t%s\t%" PRIu64 "\n",
                     records_scheduler_name(), width, argv[4], count, input.offsets.back(), limit, grain, chunks, seed64, pass,
-                    i, i ? "warm" : "first", s.ns, s.user, s.system, s.rss, s.voluntary, s.involuntary);
+                    i, i ? "warm" : "first", s.ns, s.user, s.system, s.rss, s.voluntary, s.involuntary, cadence, s.gap);
     }
+    std::printf("# batch_includes_first=1 batch_includes_checks=%d batch_ns=%" PRIu64 " user_us=%" PRIu64 " system_us=%" PRIu64 " maxrss_bytes=%" PRIu64 " voluntary_switches=%ld involuntary_switches=%ld\n",
+                int(checked), batch_ns, cpu_us(batch_after.ru_utime) - cpu_us(batch_before.ru_utime),
+                cpu_us(batch_after.ru_stime) - cpu_us(batch_before.ru_stime), batch_rss,
+                batch_after.ru_nvcsw - batch_before.ru_nvcsw, batch_after.ru_nivcsw - batch_before.ru_nivcsw);
     std::printf("# post_timing_capacity=%u includes_caller=1 capacity_waves=%u explicit_shutdown=%d stop_ns=%" PRIu64 "\n", width, capacity_waves, shutdown, stop_ns);
     std::printf("record scheduler benchmark PASS: calls=%zu outputs=%zu\n", reps + 1, (reps + 1) * count);
     alarm(0); return 0;

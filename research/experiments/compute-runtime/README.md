@@ -629,17 +629,42 @@ These are initial qualified API choices, not proof of each library's fastest
 partitioner or a complete reference frontier. Rayon and OpenCilk still need
 executable compute controls.
 
-Input generation, independent expected results, output allocation/reset and
-full-result checks are outside the timed call. `call_ns` starts immediately
+Input generation, independent expected results, output allocation/initialization
+and full-result checks are outside the timed call. Every invocation has its own
+retained output vector, with the same storage layout in every cadence. The
+host admits at most 8,388,608 retained result elements (64 MiB). `call_ns` starts immediately
 before scheduler dispatch and ends after all callbacks join. The first call
 charges any lazy initialization it triggers; warm calls reuse existing state.
 The WF adapter need not start helpers for an empty or one-chunk range. No warmup
 precedes the first call. Per-call CPU and context-switch observations enclose the clock
 reads too; their resolution and observation overhead matter for tiny work.
-RSS is lifetime peak. Explicit shutdown is reported separately; zero means
-process lifetime, not a free or fully measured teardown. Busy-spin idle CPU
-between checked calls is outside the per-call CPU interval, so this panel
-cannot establish burst/idle resource efficiency.
+RSS is lifetime peak at the observation point. Explicit shutdown is reported
+separately; zero means process lifetime, not a free or fully measured teardown.
+
+The final command argument selects `checked`, `dense`, `sleep-100us` or
+`sleep-1ms`. Checked calls retain the full input/output comparison between
+invocations. Dense calls defer those checks until after the entire batch;
+sleep forms also defer them and request the named interval before each call
+after the first. All modes then verify **every** retained result, not just the
+last invocation. `gap_ns` records the actual end-to-next-start interval,
+including observation overhead, checks where selected, sleep and scheduling
+delay. It is zero on the first call; a sleep request is not an exact achieved
+interval or a performance pass threshold.
+
+The separate batch resource interval encloses the first and all warm calls,
+sampling, explicit sleeps, and per-call checks only in `checked` mode. It
+ends before final deferred verification, the capacity probe, shutdown and
+printing. Thus it charges workers' idle polling during those intervals.
+Batch CPU observations also enclose the batch clock reads. The parser checks
+that batch wall time encloses all calls plus recorded gaps, and that batch
+CPU/switch counts enclose the nested per-call observations. Compare call
+latency and batch CPU together: low wakeup latency can consume substantially
+more CPU between requests. These fixed finite bursts do not establish energy
+efficiency, a production request distribution or an optimal idle policy.
+The earlier `ecce5a2d` panel reused and reset one output buffer. Its dated
+measurements are not pooled with these rows: the new per-call storage changes
+buffer/cache layout even for `checked`, while the within-panel cadence
+contrasts keep that layout fixed.
 
 Every process additionally requires a finite-work participation witness with
 exactly the requested distinct threads, including the caller, and simultaneous
@@ -656,7 +681,9 @@ scalar timing object. Each backend/width qualifier then checks 780 batches /
 and immutable inputs across five shapes, uneven sizes and four grains.
 Sanitized copies cover the C/C++ host, scalar work, adapters, recovered/static
 runtimes and Parlay headers; the linked oneTBB shared library remains an
-ordinary scalar Release build. These checks do not substitute for upstream
+ordinary scalar Release build. Sixteen sanitized cadence smokes additionally
+exercise the timed-host buffer lifecycle across all backends and cadences.
+These checks do not substitute for upstream
 library suites. The driver validates all raw row identities and retains
 source/object/library hashes, flags, qualification logs and host topology.
 
@@ -673,8 +700,13 @@ The normal experiment `check` includes these qualifiers. CI fetches the pinned
 sources before the research gate and runs calibration in its own job, with
 one common recorded CPU mask for all controls. The calibration varies record
 count, length, valid/early-invalid/late-invalid/skewed work, and record grain
-at the same widths. Treat it as a same-host screen; worker affinity within
-the mask, sustained idle costs and held-out confirmation require further work.
+at the same widths. All thirty original input/grain cells run checked and dense;
+three discriminating cells additionally run both sleep intervals, preserving
+their input seeds. Five passes over 66 cadence cells and twelve backend/width
+configurations yield 3,960 processes / 39,240 calls. The gate runs the original
+three smoke inputs at all four cadences: 144 processes / 432 calls. Treat these
+as same-host screens; worker affinity within the mask, sustained idle costs
+and held-out confirmation require further work.
 
 The scheduler header, common callback/host, four adapters and two shell drivers
 belong to this mechanism experiment. Retain them while common-code attribution

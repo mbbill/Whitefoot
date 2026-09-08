@@ -183,6 +183,12 @@ check-scheduler-memory: scheduler-build
 				> "$(OUT)/scheduler-memory-$$mode-w$$width.log" || exit $$?; \
 			cat "$(OUT)/scheduler-memory-$$mode-w$$width.log"; \
 		done; \
+		for cadence in checked dense sleep-100us sleep-1ms; do \
+			WF_WORKERS=2 "$(OUT)/scheduler-memory-$$mode" 2 33 17 unicode 16 2 828219 0 $$cadence \
+				> "$(OUT)/scheduler-memory-$$mode-$$cadence.log" || exit $$?; \
+			tail -n 1 "$(OUT)/scheduler-memory-$$mode-$$cadence.log" | \
+				grep -Fx 'record scheduler benchmark PASS: calls=3 outputs=99' || exit 1; \
+		done; \
 	done
 
 check-scheduler: scheduler-build check-scheduler-memory records-build
