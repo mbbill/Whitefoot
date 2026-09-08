@@ -21,6 +21,8 @@ SCHEDULER_COMMON := $(OUT)/scheduler-host.o $(OUT)/scheduler-native.o \
 SCHEDULERS := wf static tbb parlay rayon-join rayon-iter
 RAYON_LIB := $(OUT)/scheduler-deps/rayon/release/libwf_records_rayon.a
 RAYON_SYSTEM_LIBS := $(if $(filter Linux,$(shell uname -s)),-ldl -lm,)
+SCHEDULER_MEMORY_ENV := ASAN_OPTIONS=detect_stack_use_after_return=1:halt_on_error=1$(if $(filter Linux,$(shell uname -s)),:detect_leaks=1,) LSAN_OPTIONS=exitcode=23
+SCHEDULER_MEMORY_MODE := $(if $(findstring address,$(SANITIZER)),validate,validate-clean)
 STATIC_ORACLE_FLAGS := -DWF_FILTER_NATIVE -Dmain=fir_qualified_oracle_main \
 	-Dfir_native_direct=fir_static_check_direct -Dfir_native_lanes4=fir_static_check_lanes4 \
 	-Dfir_native_lanes8=fir_static_check_lanes8 -Dfir_native_lanes16=fir_static_check_lanes16
@@ -47,25 +49,31 @@ endef
 
 force:
 
-build: $(OUT)/probe
+build: $(OUT)/probe $(OUT)/probe-no-stats
 
-$(OUT)/probe: runtime.c runtime.h probe.c $(FLOOR) force
+$(OUT)/probe $(OUT)/probe-no-stats: runtime.c runtime.h probe.c $(FLOOR) force
 	mkdir -p "$(OUT)"
 	$(CC) $(CFLAGS) -DWF_COMPUTE_TEST -fsanitize=$(SANITIZER) -fno-omit-frame-pointer \
+		-DWF_COMPUTE_STATS=$(if $(filter $(OUT)/probe-no-stats,$@),0,1) \
 		runtime.c probe.c $(FLOOR) -o "$@"
 
 check: check-runtime check-abi check-fir check-bench check-records check-scheduler
 
 check-runtime: build
-	WF_WORKERS=2 "$(OUT)/probe" protocol
-	WF_WORKERS=4 "$(OUT)/probe" protocol
-	WF_WORKERS=2 "$(OUT)/probe" delayed-read
-	WF_WORKERS=2 "$(OUT)/probe" retired-frame
-	WF_WORKERS=4 "$(OUT)/probe" zero-start
-	WF_WORKERS=4 "$(OUT)/probe" partial-start
-	nm "$(OUT)/probe" > "$(OUT)/probe.symbols"
-	@if grep -E ' [Tt] _?(wf_sched_|wf_completion_|wf__completion_)' "$(OUT)/probe.symbols"; then \
-		echo 'compute control unexpectedly links shared scheduler or completion code' >&2; exit 1; \
+	@set -e; for probe in probe probe-no-stats; do \
+		WF_WORKERS=2 "$(OUT)/$$probe" protocol; \
+		WF_WORKERS=4 "$(OUT)/$$probe" protocol; \
+		WF_WORKERS=2 "$(OUT)/$$probe" delayed-read; \
+		WF_WORKERS=2 "$(OUT)/$$probe" retired-frame; \
+		WF_WORKERS=4 "$(OUT)/$$probe" zero-start; \
+		WF_WORKERS=4 "$(OUT)/$$probe" partial-start; \
+		nm "$(OUT)/$$probe" > "$(OUT)/$$probe.symbols"; \
+		if grep -E ' [Tt] _?(wf_sched_|wf_completion_|wf__completion_)' "$(OUT)/$$probe.symbols"; then \
+			echo 'compute control unexpectedly links shared scheduler or completion code' >&2; exit 1; \
+		fi; \
+	done
+	@if grep -E 'wf_compute_steal_count|wf__par_grants' "$(OUT)/probe-no-stats.symbols"; then \
+		echo 'statistics-disabled runtime retains a counter or observer' >&2; exit 1; \
 	fi
 
 compiler:
@@ -136,7 +144,9 @@ scheduler-build:
 	$(CC) -std=c11 $(SCHEDULER_FLAGS) -c records_work.c -o "$(OUT)/scheduler-work.o"
 	$(CC) -std=c11 $(SCHEDULER_FLAGS) -S records_work.c -o "$(OUT)/scheduler-work.s"
 	$(CC) -std=c11 $(SCHEDULER_FLAGS) -c $(FLOOR) -o "$(OUT)/scheduler-floor.o"
-	$(CC) -std=c11 $(SCHEDULER_FLAGS) -c runtime.c -o "$(OUT)/scheduler-runtime.o"
+	$(CC) -std=c11 $(SCHEDULER_FLAGS) -DWF_COMPUTE_STATS=0 -c runtime.c -o "$(OUT)/scheduler-runtime.o"
+	@nm "$(OUT)/scheduler-runtime.o" > "$(OUT)/scheduler-runtime.symbols"
+	@if grep -E 'wf_compute_steal_count|wf__par_grants' "$(OUT)/scheduler-runtime.symbols"; then exit 1; fi
 	$(CC) -std=c11 $(SCHEDULER_FLAGS) -c records_runtime.c -o "$(OUT)/scheduler-wf-adapter.o"
 	$(CC) -std=c11 $(SCHEDULER_FLAGS) -c records_static.c -o "$(OUT)/scheduler-static-adapter.o"
 	$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -isystem "$(OUT)/scheduler-deps/include" \
@@ -158,15 +168,19 @@ scheduler-build:
 	done
 	@printf '%s\n' 'C: $(CC) -std=c11 $(SCHEDULER_FLAGS)' \
 		'C++: $(CXX) -std=c++17 $(SCHEDULER_FLAGS)' \
+		'WF runtime: -DWF_COMPUTE_STATS=0; counter and observer absent' \
 		'link: $(CXX) -pthread -fno-lto; common objects reused unchanged' > "$(OUT)/scheduler-flags.txt"
 	$(CC) --version >> "$(OUT)/scheduler-flags.txt"
 	$(CXX) --version >> "$(OUT)/scheduler-flags.txt"
 
 check-scheduler-memory: scheduler-build
 	@for unit in records_native records_oracle records_work records_runtime records_static runtime; do \
+		stats=; if test $$unit = runtime; then stats=-DWF_COMPUTE_STATS=0; fi; \
 		$(CC) -std=c11 $(SCHEDULER_FLAGS) -fsanitize=$(SANITIZER) -fno-sanitize-recover=all \
-			-fno-omit-frame-pointer -c $$unit.c -o "$(OUT)/scheduler-memory-$$unit.o" || exit $$?; \
+			-fno-omit-frame-pointer $$stats -c $$unit.c -o "$(OUT)/scheduler-memory-$$unit.o" || exit $$?; \
 	done
+	@nm "$(OUT)/scheduler-memory-runtime.o" > "$(OUT)/scheduler-memory-runtime.symbols"
+	@if grep -E 'wf_compute_steal_count|wf__par_grants' "$(OUT)/scheduler-memory-runtime.symbols"; then exit 1; fi
 	$(CC) -std=c11 $(SCHEDULER_FLAGS) -fsanitize=$(SANITIZER) -fno-sanitize-recover=all \
 		-fno-omit-frame-pointer -c $(FLOOR) -o "$(OUT)/scheduler-memory-floor.o"
 	@for unit in records_scheduler records_tbb records_parlay; do \
@@ -180,13 +194,14 @@ check-scheduler-memory: scheduler-build
 			-fno-omit-frame-pointer -DRAYON_STRATEGY=$$variant -I"$(OUT)/scheduler-deps" \
 			-c records_rayon.c -o "$(OUT)/scheduler-memory-rayon-$$strategy.o" || exit $$?; \
 	done
-	@for mode in $(SCHEDULERS); do \
+	@failures=0; for mode in $(SCHEDULERS); do \
 		case $$mode in \
-			wf) adapter='records_runtime runtime';; \
-			static) adapter=records_static;; \
-			tbb) adapter=records_tbb;; \
-			parlay) adapter=records_parlay;; \
-			rayon-join|rayon-iter) adapter=$$mode;; \
+			wf) adapter='records_runtime runtime'; backend=wf-runtime;; \
+			static) adapter=records_static; backend=static-spin;; \
+			tbb) adapter=records_tbb; backend=oneTBB-v2023.1.0-auto-grain1;; \
+			parlay) adapter=records_parlay; backend=parlay-native-grain1;; \
+			rayon-join) adapter=$$mode; backend=rayon-1.12.0-join;; \
+			rayon-iter) adapter=$$mode; backend=rayon-1.12.0-par-iter;; \
 		esac; \
 		set --; \
 		for unit in records_scheduler records_native records_oracle records_work floor $$adapter; do \
@@ -197,17 +212,50 @@ check-scheduler-memory: scheduler-build
 		$(CXX) -pthread -fno-lto -fsanitize=$(SANITIZER) -fno-sanitize-recover=all "$$@" \
 			-o "$(OUT)/scheduler-memory-$$mode" || exit $$?; \
 		for width in 1 2 4; do \
-			WF_WORKERS=$$width "$(OUT)/scheduler-memory-$$mode" check $$width \
-				> "$(OUT)/scheduler-memory-$$mode-w$$width.log" || exit $$?; \
-			cat "$(OUT)/scheduler-memory-$$mode-w$$width.log"; \
+			log="$(OUT)/scheduler-memory-$$mode-w$$width.log"; status=0; \
+			env $(SCHEDULER_MEMORY_ENV) WF_WORKERS=$$width "$(OUT)/scheduler-memory-$$mode" check $$width \
+				> "$$log" 2>&1 || status=$$?; \
+			if sh records-scheduler-memory.sh $(SCHEDULER_MEMORY_MODE) "$$log" $$status "$$backend" $$width qualify; then \
+				printf 'scheduler memory accepted: backend=%s width=%s case=qualify child_status=%s\n' "$$backend" $$width $$status; \
+			else \
+				failures=$$((failures+1)); \
+				cat "$$log" >&2; \
+			fi; \
 		done; \
 		for cadence in checked dense sleep-100us sleep-1ms; do \
-			WF_WORKERS=2 "$(OUT)/scheduler-memory-$$mode" 2 33 17 unicode 16 2 828219 0 $$cadence \
-				> "$(OUT)/scheduler-memory-$$mode-$$cadence.log" || exit $$?; \
-			tail -n 1 "$(OUT)/scheduler-memory-$$mode-$$cadence.log" | \
-				grep -Fx 'record scheduler benchmark PASS: calls=3 outputs=99' || exit 1; \
+			log="$(OUT)/scheduler-memory-$$mode-$$cadence.log"; status=0; \
+			env $(SCHEDULER_MEMORY_ENV) WF_WORKERS=2 "$(OUT)/scheduler-memory-$$mode" 2 33 17 unicode 16 2 828219 0 $$cadence \
+				> "$$log" 2>&1 || status=$$?; \
+			if sh records-scheduler-memory.sh $(SCHEDULER_MEMORY_MODE) "$$log" $$status "$$backend" 2 $$cadence; then \
+				printf 'scheduler memory accepted: backend=%s width=2 case=%s child_status=%s\n' "$$backend" $$cadence $$status; \
+			else \
+				failures=$$((failures+1)); \
+				cat "$$log" >&2; \
+			fi; \
 		done; \
-	done
+	done; test $$failures -eq 0
+	@if test "$$(uname -s)-$$(uname -m)" = Linux-x86_64 && test "$(SCHEDULER_MEMORY_MODE)" = validate; then \
+		mkdir -p "$(OUT)/scheduler-memory-extra" || exit $$?; \
+		$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -fsanitize=$(SANITIZER) -fno-sanitize-recover=all \
+			-fno-omit-frame-pointer -DRECORD_SCHEDULER_LEAK_PROBE -c records_scheduler.cpp \
+			-o "$(OUT)/scheduler-memory-leak-host.o" || exit $$?; \
+		set -- "$(OUT)/scheduler-memory-leak-host.o"; \
+		for unit in records_native records_oracle records_work floor rayon-join; do \
+			set -- "$$@" "$(OUT)/scheduler-memory-$$unit.o"; \
+		done; \
+		$(CXX) -pthread -fno-lto -fsanitize=$(SANITIZER) -fno-sanitize-recover=all "$$@" \
+			"$(RAYON_LIB)" $(RAYON_SYSTEM_LIBS) -o "$(OUT)/scheduler-memory-extra/scheduler-memory-rayon-join" || exit $$?; \
+		log="$(OUT)/scheduler-memory-extra-leak.log"; status=0; \
+		env $(SCHEDULER_MEMORY_ENV) WF_WORKERS=2 "$(OUT)/scheduler-memory-extra/scheduler-memory-rayon-join" check 2 > "$$log" 2>&1 || status=$$?; \
+		sh records-scheduler-memory.sh validate "$$log" $$status rayon-1.12.0-join 2 qualify 257 || { cat "$$log" >&2; exit 1; }; \
+		if sh records-scheduler-memory.sh validate "$$log" $$status rayon-1.12.0-join 2 qualify \
+			> "$(OUT)/scheduler-memory-extra-rejection.log" 2>&1; then \
+			echo 'scheduler memory checker accepted injected extra leak' >&2; exit 1; \
+		fi; \
+		grep -Fxq 'scheduler sanitizer report rejected: unknown allocation or summary' \
+			"$(OUT)/scheduler-memory-extra-rejection.log" || { cat "$(OUT)/scheduler-memory-extra-rejection.log" >&2; exit 1; }; \
+		echo 'scheduler memory negative PASS: additional 257-byte C leak rejected after full qualification'; \
+	else echo 'scheduler memory extra-leak qualification: Linux x86_64 ASan only'; fi
 
 check-scheduler: scheduler-build check-scheduler-memory records-build
 	cargo fmt --manifest-path records-rayon/Cargo.toml -- --check

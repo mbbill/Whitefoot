@@ -3,9 +3,9 @@ enum FirTiles {
   Split(count: u64, left_count: u64, left: box<FirTiles>, right: box<FirTiles>);
 }
 
-fn filter_tiles(input: &buffer<f64>, taps: &buffer<f64>, first: own u64, end: own u64, last_tap: own u64, tile_size: own u64) -> result: own box<FirTiles> reads(input, taps), allocates(heap) contract {
-  define input_count = len(deref(input));
-  define tap_count = len(deref(taps));
+fn filter_tiles(input: &buffer<f64>, taps: &buffer<f64>, first: own u64, end: own u64, last_tap: own u64, tile_size: own u64) -> result: own box<FirTiles> reads(input, taps) contract {
+  define input_count = len_of(deref(input));
+  define tap_count = len_of(deref(taps));
   requires last_tap < tap_count;
   requires last_tap <= 63_u64;
   requires last_tap <= first;
@@ -31,7 +31,7 @@ fn filter_tiles(input: &buffer<f64>, taps: &buffer<f64>, first: own u64, end: ow
 fn sample_count(tiles: &box<FirTiles>) -> result: own u64 reads(tiles) {
   match deref(deref(tiles)) {
     Values(samples: values) => {
-      return len(deref(values));
+      return len_of(deref(values));
     }
     Split(count: size, left_count: half, left: l, right: r) => {
       return deref(size);
@@ -43,7 +43,7 @@ fn sample_get(tiles: &box<FirTiles>, index: own u64, output: &uniq f64) -> resul
   doc "Returns one for a present sample. An absent index returns zero and preserves the caller output; the oracle checks all expected hits, exact count and misses.";
   match deref(deref(tiles)) {
     Values(samples: values) => {
-      let count = len(deref(values));
+      let count = len_of(deref(values));
       if index < count {
         set deref(output) = deref(values)[index];
         return 1_u64;
@@ -62,14 +62,14 @@ fn sample_get(tiles: &box<FirTiles>, index: own u64, output: &uniq f64) -> resul
 }
 
 fn history_get(input: &buffer<f64>, history_count: own u64, index: own u64, output: &uniq f64) -> result: own u64 reads(input), writes(output) contract {
-  define input_count = len(deref(input));
+  define input_count = len_of(deref(input));
   requires history_count <= input_count;
 } {
   doc "Reads the final oldest-first history from the held input prefix, including empty blocks. The research host performs these state queries outside the filter core and uses them as history for the next real call.";
   if index >= history_count {
     return 0_u64;
   }
-  let input_count = len(deref(input));
+  let input_count = len_of(deref(input));
   let first = input_count - history_count;
   let position = first + index;
   set deref(output) = deref(input)[position];
@@ -119,7 +119,7 @@ fn check_impulse(tiles: &box<FirTiles>) -> result: own u64 reads(tiles) {
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let input = buffer_new(7_u64, 0.0_f64);
   set input[2_u64] = 8.0_f64;
   let taps = buffer_new(3_u64, 0.125_f64);

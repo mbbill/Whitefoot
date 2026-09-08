@@ -23,6 +23,13 @@ or remove it, when a qualified replacement makes the duplicate unnecessary.
 
 ## Source and execution boundary
 
+The WF programs use the current `len_of` measure spelling. Their legacy
+`buffer`/`box` allocations have no written allocation effect under EFF-1's
+ambient-heap paragraph; reads/writes and compiler-derived allocation and
+resource-closure checks remain. They still allocate the same representations.
+Explicit `Heap`/`Vector` migration would change provider, refusal and storage
+semantics and is a separate experiment, not part of this compatibility update.
+
 `runtime.c` recovers the pre-I/O runtime from
 [`fee335654d9dea027f4636bbad448d57a4e84d08`](https://github.com/mbbill/Whitefoot/blob/fee335654d9dea027f4636bbad448d57a4e84d08/compiler/src/backend/par_runtime.c).
 It renames acquisition to the current `wf__par_acquire_lane` symbol and retains
@@ -55,8 +62,12 @@ Two safety repairs distinguish it from the historical bytes:
 Several historical choices remain deliberately visible: 64 slots per lane
 (the current shared runtime has a different capacity), at most 64 lanes,
 4096 empty searches before 16 yields, and the old split-budget thresholds.
-Successful steals still increment a shared diagnostic counter. These are
-controls to measure and change, not selected optimal settings.
+These are controls to measure and change, not selected optimal settings.
+`WF_COMPUTE_STATS=1` retains the shared successful-steal counter and its
+observer by default for existing diagnostics. The scalar scheduler timing and
+sanitizer objects use `WF_COMPUTE_STATS=0`: both the counter and observer are
+absent, checked with `nm`, rather than returning an invented zero count.
+Statistics do not participate in task publication, ownership or completion.
 
 ## Run and retained outputs
 
@@ -87,7 +98,7 @@ on ASan's fake stack instead. See the
 [sanitizer mode](https://clang.llvm.org/docs/AddressSanitizer.html#stack-use-after-return-uar)
 and [frame-address builtin](https://gcc.gnu.org/onlinedocs/gcc/Return-Address.html).
 
-The six C probe invocations exercise:
+The same six C probe invocations run with statistics enabled and disabled:
 
 - Actual foreign pthread execution with two and four lanes, plus held thieves
   that force nested owner execution on the original worker stack.
@@ -348,10 +359,11 @@ use six additional binaries named `bench-<runtime>-<kernel>`; each host accepts
 only its compiled WF kernel identifier, preventing a mislabeled WF comparison.
 All retain the real
 floor and the same research wrappers. The shared runtime is an architectural
-control, not a native performance ceiling. Current runtime statistics remain
+control, not a native performance ceiling. This FIR panel's runtime statistics remain
 enabled, including recovery's shared atomic steal counter; differences include
 those costs and the different slot/idle policies. Fine-grained scheduler-only
-claims need a later instrumented-versus-uninstrumented comparison.
+claims must distinguish these objects from the statistics-disabled scalar
+scheduler panel below.
 
 Every invocation starts from the same supplied history and samples. It returns
 all N outputs and K-1 next-history samples, then frees its temporary storage.
@@ -695,6 +707,9 @@ call. Up to three explicit witness waves accommodate lazy startup. A blocking
 cross-index barrier was rejected as a capacity probe: schedulers are allowed
 to execute independent indices sequentially, and Parlay's cold elastic startup
 can delay helper participation. No measured callback waits for another index.
+If all three waves fail, stderr retains each wave's distinct-thread count,
+peak callback activity and caller participation. Peak activity includes
+preempted callbacks; the witness does not establish physical CPU simultaneity.
 
 `check-scheduler` runs the complete 4,595,603-input leaf oracle on the exact
 scalar timing object. Each backend/width qualifier then checks 780 batches /
@@ -709,6 +724,34 @@ library suites. The driver validates all raw row identities and retains
 source/object/library hashes, flags, qualification logs and host topology.
 Child or row-contract failure prints the raw record and failing path before
 exiting, so a failed gate preserves the evidence without rerunning the sample.
+Completed reports are flushed before the strong floor joins the entry thread,
+including when a later process-exit sanitizer check fails. The sanitizer target
+collects every backend/width/cadence report before failing if any case failed;
+it does not retry. `records-scheduler-memory.sh` validates the entire functional
+prefix, using the timing driver's shared `records-scheduler-record.awk` for
+cadence rows. Clean cases require exit zero and no additional output.
+
+Linux x86_64 ASan checks retain LeakSanitizer with an explicit exit code of 23.
+For the pinned Rayon caller-worker API only, the required lifecycle report is
+one 384-byte direct worker allocation and one 1,520-byte indirect queue block,
+with the exact semantic allocation stacks checked by
+`records-scheduler-memory.awk`. All fourteen Rayon reports in the
+[`08e58d63` scheduler run](https://github.com/mbbill/Whitefoot/actions/runs/34184353021)
+had that same shape, after successful functional qualification. The checker
+allows relocation addresses, source line numbers and compiler hashes to vary;
+changed allocation sizes, counts, stack identities, incomplete output, any
+additional diagnostic, and any other exit status fail. This documents retained
+process-lifetime storage, not a memory-clean teardown. No leak suppression is
+installed. Other platforms and non-address sanitizer builds require clean
+exit-zero reports; the explicit replay mode only tests archived Linux reports.
+
+A separate Linux x86_64 ASan executable injects a 257-byte C allocation after
+full qualification. The gate first requires the actual additional allocation
+report and then requires the normal checker to reject it. A missing injection,
+earlier functional failure or unrelated sanitizer failure cannot satisfy that
+negative check. Native Linux execution of this new boundary remains to be
+qualified; archived-report replay and a macOS check cannot establish it. A
+failed qualification does not produce an accepted scheduler calibration.
 
 Fetch dependencies explicitly before the offline build, as with Cargo's
 recorded dependencies:
@@ -736,7 +779,8 @@ Clang 18's invalid AVX10 combination inferred by `-march=native` on one CI
 host; strict warnings and scalar controls remain enabled. New measurements
 are not pooled with the earlier native-target cohort.
 
-The scheduler header, common callback/host, adapters, locked Rayon crate and two shell drivers
+The scheduler header, common callback/host, adapters, locked Rayon crate, shell
+drivers and shared report validators
 belong to this mechanism experiment. Retain them while common-code attribution
 is needed; consolidate them when a broader maintained compute harness provides
 the same boundary. The extracted oracle remains shared with the real WF host.

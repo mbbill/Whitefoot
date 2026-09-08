@@ -100,12 +100,20 @@ static void capacity_chunk(void *opaque, size_t i) {
 }
 static unsigned capacity_check(unsigned width) {
     auto caller = std::this_thread::get_id();
+    struct Observation { size_t threads; unsigned peak; bool caller; } observations[3]{};
     for (unsigned wave = 1; wave <= 3; ++wave) {
         Capacity probe(width);
         records_scheduler_run(width, width * 32, capacity_chunk, &probe);
         require(probe.completed.load() == width * 32 && probe.active.load() == 0, "capacity completion");
         require(probe.threads.size() <= width, "excess participant threads");
-        if (probe.threads.size() == width && probe.threads.count(caller) && probe.peak.load() == width) return wave;
+        auto &observed = observations[wave - 1];
+        observed = {probe.threads.size(), probe.peak.load(), probe.threads.count(caller) != 0};
+        if (observed.threads == width && observed.caller && observed.peak == width) return wave;
+    }
+    for (unsigned wave = 1; wave <= 3; ++wave) {
+        auto observed = observations[wave - 1];
+        std::fprintf(stderr, "record scheduler capacity: backend=%s requested=%u wave=%u threads=%zu peak=%u caller=%u\n",
+                     records_scheduler_name(), width, wave, observed.threads, observed.peak, unsigned(observed.caller));
     }
     require(false, "full capacity was not observed with finite CPU callbacks");
     return 0;
@@ -247,12 +255,34 @@ static int benchmark(int argc, char **argv) {
     std::printf("record scheduler benchmark PASS: calls=%zu outputs=%zu\n", reps + 1, (reps + 1) * count);
     alarm(0); return 0;
 }
+#if defined(RECORD_SCHEDULER_LEAK_PROBE)
+extern "C" __attribute__((noinline)) void records_scheduler_leak_probe(void) {
+    // Volatile publication prevents allocation elision. The floor joins the
+    // entry thread before leak checking, removing its stale stack roots.
+    static void *volatile leaked;
+    leaked = std::malloc(257);
+    require(leaked != nullptr, "leak probe allocation");
+    leaked = nullptr;
+}
+#endif
 extern "C" int wf__main_body(int argc, char **argv) {
+    int status;
     if (argc == 3 && !std::strcmp(argv[1], "check")) {
         uint64_t width = number(argv[2]);
         require(width == 1 || width == 2 || width == 4, "qualification width");
-        return qualify(unsigned(width));
+        status = qualify(unsigned(width));
+    } else {
+        status = benchmark(argc, argv);
     }
-    return benchmark(argc, argv);
+#if defined(RECORD_SCHEDULER_LEAK_PROBE)
+    // A separate sanitizer-only executable proves that the lifecycle checker
+    // rejects an additional leak after a fully successful functional report.
+    records_scheduler_leak_probe();
+#endif
+    // The strong floor joins this entry thread before process-exit sanitizer
+    // checks. Preserve its completed report even if LeakSanitizer then exits
+    // without flushing C stdio. This observation is outside all timed work.
+    require(std::fflush(stdout) == 0, "report flush");
+    return status;
 }
 int main(int argc, char **argv) { return wf__floor_run(argc, argv); }

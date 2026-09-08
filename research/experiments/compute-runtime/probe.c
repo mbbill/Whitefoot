@@ -213,7 +213,9 @@ static void protocol(void) {
     for (index = 0; index < workers - 1; ++index) {
         finish(holders[index], 90 + index, 0);
     }
+#if WF_COMPUTE_STATS
     assert(wf__par_grants() >= workers - 1);
+#endif
     assert(wf__par_acquire_lane(257) == NULL);
     for (unsigned round = 0; round < 16; ++round) {
         void *frames[64];

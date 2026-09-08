@@ -77,7 +77,9 @@ static pthread_once_t wf__par_started = PTHREAD_ONCE_INIT;
 
 _Alignas(WF_PAR_CACHE_LINE) static unsigned long long wf__par_idle;
 
-_Alignas(WF_PAR_CACHE_LINE) unsigned long wf_compute_steal_count;
+#if WF_COMPUTE_STATS
+_Alignas(WF_PAR_CACHE_LINE) static unsigned long wf_compute_steal_count;
+#endif
 
 static _Thread_local struct wf__par_lane *wf__par_self;
 
@@ -171,7 +173,9 @@ static struct wf__par_slot *wf__par_steal(struct wf__par_lane *victim) {
 #if defined(WF_COMPUTE_TEST)
     wf_compute_test_after_steal(1);
 #endif
+#if WF_COMPUTE_STATS
     __atomic_add_fetch(&wf_compute_steal_count, 1, __ATOMIC_RELAXED);
+#endif
     return slot;
 }
 
@@ -573,9 +577,11 @@ unsigned long wf__par_split_budget(unsigned long span, unsigned long weight) {
     return budget;
 }
 
+#if WF_COMPUTE_STATS
 unsigned long wf__par_grants(void) {
     return __atomic_load_n(&wf_compute_steal_count, __ATOMIC_RELAXED);
 }
+#endif
 
 unsigned wf_compute_worker_count(void) {
     return (unsigned)__atomic_load_n(&wf__par_lane_count, __ATOMIC_RELAXED);
