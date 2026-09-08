@@ -21,11 +21,11 @@ jobs:
       matrix:
         include:
           - workload: fir
-            arch: -march=native
+            arch: -march=x86-64-v3
             checks: check-fir check-bench
             driver: fir-bench.sh
           - workload: records
-            arch: -march=native
+            arch: -march=x86-64-v3
             checks: check-records-events
             driver: records-bench.sh
           - workload: scheduler

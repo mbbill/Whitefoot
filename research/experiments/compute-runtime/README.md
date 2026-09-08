@@ -1962,6 +1962,40 @@ is2.657 us versus depth8's4.318 us). No fixed depth becomes a compiler default.
 Larger compositions, topology-qualified hosts and an input-adaptive policy
 still need evidence.
 
+### Linux matched-grain confirmation
+
+The separate Linux cohort at `e6d4bcbe` is retained in
+[run34237663501, artifact10060643475](https://github.com/mbbill/Whitefoot/actions/runs/34237663501/artifacts/10060643475).
+Its ZIP SHA256 is
+`92122d4b6d1b05584bbc8a8c26f764916206447c79cbdd85e7d737bc94a48340`;
+ordinary image SHA256 is
+`bc177d8ba6097ce3103d41b50ce180014cc42b8c147b74e9e93855fc9d60d4eb`.
+All260 calibration processes/23,400 calls,108 qualifier processes/2,160 results,
+46 manifest paths,12 exact-revision sources and213 dependency headers pass the
+independent evidence check. The host is an EPYC7763 Microsoft VM with two
+physical/four SMT logical CPUs under mask0–3, Clang18.1.3 and scalar
+x86-64-v3/no-LTO/strict-FP flags. Individual placement, frequency and quota are
+unqualified. Below are width4 microsecond medians of five process warm means.
+
+| Input | Generated WF leaf | WF value depth8 | Parlay depth8 | WF value depth24 |
+| --- | ---: | ---: | ---: | ---: |
+| Center peak | 34.992 | 24.553 | 30.789 | 43.033 |
+| Left peak | 29.621 | 17.488 | 28.967 | 30.060 |
+| Right peak | 27.037 | 17.248 | 31.282 | 36.166 |
+| Depth cap | 82.379 | 50.980 | 53.249 | 88.597 |
+
+Paired value-depth8/generated-leaf ratios are0.702/0.592/0.634/0.610,
+with5/5/4/5 faster pairs. Against Parlay-depth8 they are0.743/0.606/0.551/0.943,
+with4/5/4/4 faster pairs. Full-depth value/generated-leaf ratios are
+1.209/0.980/1.301/1.079, with0/3/0/0 faster pairs. This supports investigating
+useful grain, not treating the native adapter as an already improved compiler.
+The native adapters in this artifact still publish opposite sides; it does
+not confirm the later reciprocal-direction comparison on Linux.
+All outliers remain: one Parlay center process averages140.179 us versus the
+30.789 us median. Depth-cap median process CPU time is120.375 us for value-depth8
+and68.625 us for Parlay-depth8 despite similar wall times. Aggregate CPU time
+cannot assign this difference to a queue operation, runtime spinning or the OS.
+
 ### Reciprocal fork direction
 
 `parlay-left` calls pinned Parlay `par_do` with the callbacks exchanged, making
@@ -2022,6 +2056,98 @@ does not know the subtree work in advance; direction and useful grain need
 input-adaptive evidence. The next optimization should reduce generated
 fine-grained offers without changing ordinary function ABI, then measure its
 actual work, refusals and scaling on larger compositions and qualified hosts.
+
+### Queue occupancy admission screen
+
+A September8 M1 screen tests whether rejecting acquisition when the owner's
+queue already contains enough jobs can improve the existing generated code.
+This is a rejected default-policy candidate, not an implemented runtime option.
+At `bb80763f`, the generated refusal edge still calls the parallel function;
+its descendants continue trying acquisition. It does not select the internal
+sequential clone. The control changes neither the generated objects nor the
+ordinary frame/join/release ABI.
+
+To reproduce the admission rule in a scratch copy of `runtime.c`, insert the
+following immediately before `index = lane->free_head` in
+`wf__par_acquire_lane`, after attaching the calling lane. Compile the runtime
+with `WF_QUEUE_SCREEN_LIMIT` set to0,1 or4. Zero omits the added loads/test.
+Relink each runtime object with identical qualified quadrature host, floor,
+native C++, original WF and filtered WF objects, preserving scalar flags and
+library dependencies from `quadrature-build`.
+
+```c
+#if WF_QUEUE_SCREEN_LIMIT > 0
+    unsigned long long queued_bottom = __atomic_load_n(&lane->bottom, __ATOMIC_RELAXED);
+    unsigned long long queued_top = __atomic_load_n(&lane->top, __ATOMIC_ACQUIRE);
+    if ((long long)(queued_bottom - queued_top) >= WF_QUEUE_SCREEN_LIMIT) return NULL;
+#endif
+```
+
+The owner reads its bottom and a potentially stale thief-updated top. An early
+refusal changes scheduling; no slot has been acquired and no argument payload
+has moved. Existing exhaustion handling remains. This heuristic sees queued
+job count, not subtree work, idle-worker demand or the dependency critical path.
+
+The screen reuses the retained direction-cohort objects and dependencies on
+MacBookPro18,3 / Clang21.0.0, without SIMD, FP contraction, fast-math or LTO.
+The new images are separately linked: equal input object bytes do not imply
+equal final instruction addresses. Their SHA256 identities for limits0/1/4 are
+`576b3089fc4bd7f3aeb2773de59ef27f2814ad8569b9d05ac9dd139db1ad8e22`,
+`09dca7f5ed5d92c09509a780e2efe42784d762671365ed8990608b8e78881e32` and
+`9f65b0a1c8331dbe5f555d022f3d8f2ee7d39c091201ee14406aa8316cf92660`.
+No timing image is rebuilt after measurement. Placement and frequency are not
+fixed. This is a local screening result, not a Linux or hardware-limit claim.
+
+Each of the three images runs `wf-leaf`, `wf-auto`, `wf-leaf-seq`, `wf-value 8`
+and `parlay-left 8`, at widths1/4, on all ten existing inputs. Thirty ordinary
+`check` processes check600 results. Five passes run150 `bench` processes with
+13,500 checked calls, retaining first calls and all outliers. The tuple order
+is limit, width, form; even passes reverse that complete order. Processes run
+alone, with no concurrent builds or diagnostic runs. Existing `quadrature.awk`
+checks each ordinary report. Its raw header binds mode, form, width and
+instrumentation, but queue-limit identity is bound by the build recipe and
+filename rather than a report field. The table reports width4 generated `wf-leaf` warm
+means, aggregated to a median over five processes, in microseconds.
+
+| Input | No queue limit | Limit1 | Limit4 | Paired limit1/base | Paired limit4/base |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Center peak | 15.469 | 38.250 | 15.094 | 2.445 | 0.988 |
+| Left peak | 13.703 | 13.937 | 13.776 | 0.995 | 0.999 |
+| Right peak | 12.542 | 42.068 | 15.787 | 3.349 | 1.184 |
+| Depth cap | 26.573 | 36.078 | 24.120 | 1.361 | 0.930 |
+
+Limit1 loses all five center/right/depth-cap pairs. Limit4 gains all five
+depth-cap pairs but loses all five right-peak pairs; center and left are mixed.
+The sequential-clone controls have mixed directions on these inputs. The
+unfiltered `wf-auto` benefits more from limit4, but remains slower than the
+filtered generated form. This does not justify restoring small-helper offers.
+
+A separate ASan/UBSan diagnostic uses a new lane-local queue-refusal event,
+kept distinct from actual slot exhaustion. It appends `queue_refusals` to the
+report and checks publications + slot refusals + queue refusals against the
+independent oracle's acquisition opportunities. Joined publication/pop/steal/
+run/join conservation, bitwise results and native-node checks remain. Thirty
+processes check600 results; generated WF and the oneTBB library remain ordinary
+objects as in the existing qualifier. Instrumented timings are not compared
+with the ordinary images. One warm `wf-leaf` observation per input gives:
+
+| Input | Base publications | Limit1 publications / queue refusals | Limit4 publications / queue refusals |
+| --- | ---: | ---: | ---: |
+| Center peak | 1643 | 172 / 1471 | 933 / 710 |
+| Left peak | 1236 | 78 / 1158 | 833 / 403 |
+| Right peak | 1236 | 246 / 990 | 693 / 543 |
+| Depth cap | 4095 | 281 / 3814 | 1477 / 2618 |
+
+Actual slot refusals are zero in these observations. The large decrease in
+publications therefore does not mean fewer acquisition attempts or uniformly
+better scheduling. These diagnostic calls are separate executions, so their
+counts cannot explain each timed call or identify a unique cause of slowdown.
+The result rejects simple occupancy1/4 as a broadly useful default for this
+corpus. It does not reject all demand policies or the current-stack model.
+The next useful distinction is between avoiding task machinery while continuing
+parallel recursive calls, and entering an ordinary sequential subtree; that
+requires separately justified compiler selection and broader work-distribution
+evidence before adopting a policy.
 
 ## Scalar scheduler comparison
 
@@ -2206,11 +2332,14 @@ their input seeds. Five passes over 66 cadence cells and eighteen backend/width
 configurations yield 5,940 processes / 58,860 calls. The gate runs the original
 three smoke inputs at all four cadences: 216 processes / 648 calls. Treat these
 as same-host screens; worker affinity within the mask, sustained idle costs
-and held-out confirmation require further work. The Linux scheduler job selects
+and held-out confirmation require further work. All five Linux compute jobs select
 the explicit C/C++ target `-march=x86-64-v3`; the Rust scheduler library and
 oneTBB library use their default host targets. The explicit target avoids
 Clang 18's invalid AVX10 combination inferred by `-march=native` on one CI
-host; strict warnings and scalar controls remain enabled. New measurements
+host, including the records qualification failure in run34239483038 before
+calibration began. The remaining FIR/records native targets now use the same
+explicit target; this changes target selection, not warning severity or the
+existing per-panel SIMD controls. New measurements
 are not pooled with the earlier native-target cohort.
 
 ### Shared executable layout control
