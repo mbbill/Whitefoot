@@ -1,9 +1,9 @@
 # Container lifecycle source probes
 
-The current compiler executes five complete positive traces and rejects ten
+The current compiler executes six complete positive traces and rejects nine
 nearby programs at the recorded boundaries. Eight rejections follow the
-specified source/proof rules; the two boxed-block probes expose compiler
-defects that are incorrectly reported as source errors. No explicit
+specified source/proof rules; the boxed-capacity probe still exposes a compiler
+defect incorrectly reported as a source error. No explicit
 unsupported-capability diagnostic, compiler crash, or incorrect accept was
 observed. The important distinction is between missing language relationships
 and compiler bugs: the dynamic capacity, result-field, and empty-linear-owner
@@ -12,7 +12,10 @@ limitations below are stated by the active specification.
 Measured on 2026-09-06 at `0f537c77` (documentation-only successor to the
 `eff095c7` integration baseline), with the gate-profile compiler, active v0.51,
 Darwin arm64, and Apple Clang 21.0.0. These are source/lifecycle experiments,
-not timing measurements or evidence for a different target.
+not timing measurements or evidence for a different target. The nested-region
+repair in `20247776` makes the unchanged `pool_boxed_helper` source compile and
+execute; its gate now requires native success instead of preserving the former
+compiler-rejection defect as an expected failure.
 
 ## Reproduction and ownership
 
@@ -48,7 +51,7 @@ fully supersedes its design question; do not keep redundant parallel suites.
 | `pool_false_conservation` | `FN-9`, `Refuted` | A helper that removes one block cannot claim the free count is unchanged. This is an invalid contract, not a missing capability. |
 | `pool_static_length` (generated) | `INV-1`, invariant `initialized` unproved | Changing the static-capacity invariant to initialized length 4 fails after the same checkout. Type-level capacity does not imply initialized length. |
 | `pool_boxed_capacity` | `TYPE-7`, `deref requires a borrow holder` | Direct measurement of the checked-out box's run is incorrectly routed to the borrow-only dereference checker. |
-| `pool_boxed_helper` | `FORM-8`, `RegionSpelling` | A user helper whose input is a run of boxes incorrectly requires an explicit store-region argument. |
+| `pool_boxed_helper` | Compiles, links, exits 0 | A user helper infers its input run's nested boxed-element store region, returns the same box, and preserves the free-count contract. |
 | `linear_failure_cleanup` | Compiles, links, exits 0 | Two actual `linear Ticket` values are consumed on success; the one acquired before a later error is consumed on failure. Both executions run. |
 | `linear_pop_empty` | `PROV-6`, `LinearValueNotConsumed`, binding `drained` | Both linear elements have been popped and consumed, and length zero proved; the empty run still cannot leave scope. |
 | `linear_failure_run` | Same `PROV-6` detail at the error return | A partial construction is drained after acquisition failure, but its proved-empty run cannot leave scope. The diagnostic identifies the empty run, not the discharged ticket. |
@@ -122,15 +125,14 @@ evidence of cheap moves for realistic block sizes or stable addresses while
 borrowed. No memory-layout or speed equivalence to the arena-backed pool is
 claimed.
 
-The alternative `Box<'s, FixedVector<u8, 4>>` probes cannot complete today:
+The alternative `Box<'s, FixedVector<u8, 4>>` probes separate two concerns:
 
 - `pool_boxed_helper` reaches a user helper with the store region nested in
   the input run's boxed element. FORM-8 defines input region positions at any
-  type depth and requires their inference. The compiler's
-  `written_container_type_region` in
+  type depth and requires their inference. The recursive region substitution in
   [calls/user.rs](../../../../compiler/src/semantic/check/expressions/calls/user.rs)
-  recognizes only a `FixedVector` whose element is `Vector`, omitting its
-  boxed-element case, and wrongly reports that the region must be written.
+  now recognizes that position. The unchanged source executes its helper take
+  and return; no explicit region argument or extra allocation is added.
 - `pool_boxed_capacity` uses direct kernel checkout/return to isolate storage
   access from that helper defect. `cap_of(deref(block))` then reports that
   `deref` requires a borrow holder. TYPE-7 admits owned cell content access by
@@ -140,10 +142,10 @@ The alternative `Box<'s, FixedVector<u8, 4>>` probes cannot complete today:
   the wrong path for this source, not a reason to reject boxed fixed storage
   as a language design. Later operations in this candidate remain untested.
 
-Neither failed boxed attempt is repaired by destructuring the box and
-allocating another one, by a fake initialization step, or by changing compiler
-code. A future successful boxed probe must retain the single acquired cell
-through checkout, use, and return, and measure its layout/cost separately.
+The successful helper probe retains its single acquired cell through checkout
+and return. Completing the remaining content-measure probe must preserve that
+identity as well. Neither trace measures layout or movement cost; those require
+a separate matched experiment.
 
 ### Empty ownership is distinct from element ownership
 
