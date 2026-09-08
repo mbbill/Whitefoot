@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    IrArrayRoot, IrFlatElement, IrFunction, IrInstruction, IrNominalId, IrNominalKind, IrOperation,
-    IrProgram, IrTargetDomainObligation, IrType, IrValueId, SystemIntegerResultBound,
+    IrArrayRoot, IrElement, IrFlatElement, IrFunction, IrInstruction, IrNominalId, IrNominalKind,
+    IrOperation, IrProgram, IrTargetDomainObligation, IrType, IrValueId, SystemIntegerResultBound,
 };
 
 use super::qualification::Qualification;
@@ -210,7 +210,6 @@ pub(super) enum TargetStorageType {
         element: Box<TargetStorageType>,
         length: u64,
     },
-    Struct(Vec<TargetStorageType>),
 }
 
 impl TargetStorageType {
@@ -235,10 +234,6 @@ impl TargetStorageType {
 
     pub(super) fn bytes(length: u64) -> Self {
         Self::array(Self::integer(8), length)
-    }
-
-    pub(super) fn structure(fields: impl IntoIterator<Item = Self>) -> Self {
-        Self::Struct(fields.into_iter().collect())
     }
 }
 
@@ -388,39 +383,6 @@ pub(super) fn plan_target_frame(
     })
 }
 
-/// Validates one compiler-owned heap record against the selected allocator
-/// and address domain. Dynamic arrays of this record separately guard their
-/// element count against `runtime_allocation_max`; this function establishes
-/// the fixed element stride and alignment that guard relies on.
-pub(super) fn validate_runtime_storage(
-    target: TargetLayout,
-    qualification: &Qualification,
-    program: &IrProgram<'_, '_, '_>,
-    ty: &TargetStorageType,
-) -> Result<TargetAggregateLayout, TargetLayoutFailure> {
-    let mut layouts = LayoutComputer {
-        target,
-        qualification,
-        program,
-        nominal: HashMap::new(),
-        visiting: HashSet::new(),
-    };
-    let layout = layouts
-        .storage_layout(ty)
-        .map_err(|failure| as_object(failure, TargetObject::RuntimeSizedAllocation))?;
-    if layout.size > target.runtime_allocation_max()
-        || layout.align > target.runtime_allocation_alignment()
-    {
-        return Err(TargetLayoutFailure::Unrepresentable(
-            TargetObject::RuntimeSizedAllocation,
-        ));
-    }
-    Ok(TargetAggregateLayout {
-        size: layout.size,
-        align: layout.align,
-    })
-}
-
 pub(super) fn validate_static_storage(
     target: TargetLayout,
     qualification: &Qualification,
@@ -536,7 +498,7 @@ pub(super) fn validate_program(
         layouts.layout(IrType::Nominal(nominal.id()))?;
     }
     for nominal in program.nominals() {
-        if let IrNominalKind::Box { referent } = nominal.kind() {
+        if let IrNominalKind::Box { referent, .. } = nominal.kind() {
             layouts.layout(*referent)?;
         }
     }
@@ -622,7 +584,7 @@ fn target_integer_result_bounds(
                             }
                         })
                 }
-                IrOperation::BufferLength { buffer } => {
+                IrOperation::BufferMeasure { buffer } => {
                     let Some(IrType::Buffer { element }) = function.value_type(*buffer) else {
                         return Err(TargetLayoutFailure::InvalidIr);
                     };
@@ -686,7 +648,7 @@ fn validate_target_obligation(
                 .ok_or(TargetLayoutFailure::InvalidIr)?
                 .kind()
             {
-                IrNominalKind::Box { referent } => *referent,
+                IrNominalKind::Box { referent, .. } => *referent,
                 _ => return Err(TargetLayoutFailure::InvalidIr),
             };
             if function.value_type(*value) != Some(referent) {
@@ -811,6 +773,112 @@ fn validate_target_obligation(
                 ));
             }
         }
+        // [BLK-2] the run's own take from a store, validated on the same terms
+        // the retiring fill was: the element's actual layout against [OP-9]'s
+        // language ceilings, its alignment against what the storage can
+        // promise, and the retained source bound scaled by the actual stride
+        // [STOR-6].
+        //
+        // What it does *not* carry is the retiring row's byte ceiling against
+        // the allocator parameter domain, and the difference is the refusal.
+        // A take that the store cannot satisfy hands back `None`, which is an
+        // arm of the source program [BLK-2], so an unproved runtime count is
+        // an ordinary program rather than a target stop; every run that is
+        // materialized at all satisfies the successful-allocation invariant
+        // [STOR-6], and a bump take is bounded by its extent's own byte
+        // constant. The scaling is still checked for representability, because
+        // that is the joint fact [OP-9]'s obligation and this qualification
+        // establish together and neither establishes alone.
+        IrOperation::StoreTake(take) => {
+            let actual = layouts.layout(take.element)?;
+            let stride = align_up(
+                layouts.target,
+                actual.size,
+                actual.align,
+                TargetObject::Representation,
+            )?;
+            if !take.layout_ceiling.size.permits(actual.size)
+                || actual.align > take.layout_ceiling.align
+                || !take.layout_ceiling.stride.permits(stride)
+            {
+                return Err(TargetLayoutFailure::Unrepresentable(
+                    TargetObject::Representation,
+                ));
+            }
+            match take.extent {
+                // A bump extent hands out storage at its own alignment
+                // constant, which [BLK-2] requires to be at least the
+                // element's language ceiling; the actual alignment must fit
+                // the same constant before a cursor advance can carry it.
+                Some(extent) => {
+                    if actual.align > extent.align.max(1) {
+                        return Err(TargetLayoutFailure::Unrepresentable(
+                            TargetObject::Representation,
+                        ));
+                    }
+                }
+                None => {
+                    if actual.align > layouts.target.runtime_allocation_alignment() {
+                        return Err(TargetLayoutFailure::Unrepresentable(
+                            TargetObject::RuntimeSizedAllocation,
+                        ));
+                    }
+                }
+            }
+            if function.value_type(take.count)
+                != Some(IrType::Integer {
+                    width: 64,
+                    signed: false,
+                })
+            {
+                return Err(TargetLayoutFailure::InvalidIr);
+            }
+            let count_upper_bound = integer_upper_bounds
+                .get(&take.count)
+                .copied()
+                .map_or(take.count_upper_bound, |target_upper_bound| {
+                    take.count_upper_bound.min(target_upper_bound)
+                });
+            // Mathematical arithmetic, and only the wrap is a stop: the
+            // address-index domain is what a *materialized* run's own element
+            // addressing is judged against, and every run that exists at all
+            // came back through the row's `Some` arm [BLK-2, STOR-6].
+            if count_upper_bound.checked_mul(stride).is_none() {
+                return Err(TargetLayoutFailure::Unrepresentable(
+                    TargetObject::RuntimeSizedAllocation,
+                ));
+            }
+        }
+        // S39 the cell's own take. Its size is one referent and is fixed at
+        // compile time, so the ceiling comparison is the whole of it; the
+        // refusal arm carries a store that cannot satisfy it, exactly as the
+        // run's does.
+        IrOperation::StoreBox(cell) => {
+            let actual = layouts.layout(cell.element)?;
+            if !cell.layout_ceiling.size.permits(actual.size)
+                || actual.align > cell.layout_ceiling.align
+            {
+                return Err(TargetLayoutFailure::Unrepresentable(
+                    TargetObject::Representation,
+                ));
+            }
+            match cell.extent {
+                Some(extent) => {
+                    if actual.align > extent.align.max(1) {
+                        return Err(TargetLayoutFailure::Unrepresentable(
+                            TargetObject::Representation,
+                        ));
+                    }
+                }
+                None => {
+                    if actual.align > layouts.target.runtime_allocation_alignment() {
+                        return Err(TargetLayoutFailure::Unrepresentable(
+                            TargetObject::RuntimeSizedAllocation,
+                        ));
+                    }
+                }
+            }
+        }
         IrOperation::ArrayIndex {
             root,
             target_domain,
@@ -881,13 +949,6 @@ impl LayoutComputer<'_, '_, '_, '_> {
                     align: element.align,
                 })
             }
-            TargetStorageType::Struct(fields) => {
-                let mut layouts = Vec::with_capacity(fields.len());
-                for field in fields {
-                    layouts.push(self.storage_layout(field)?);
-                }
-                self.aggregate_layout(layouts, TargetObject::StackFrame)
-            }
         }
     }
 
@@ -935,10 +996,52 @@ impl LayoutComputer<'_, '_, '_, '_> {
                 self.flat_element(element)?;
                 Ok(Layout { size: 16, align: 8 })
             }
+            // A `Vector` descriptor is a pointer, a capacity, a length, and a
+            // window origin [BLK-1]; a provider is proof-only and carries at
+            // most its own cursor.
+            IrType::Vector { element, .. } => {
+                self.element(element)?;
+                Ok(Layout { size: 32, align: 8 })
+            }
+            IrType::Provider => Ok(Layout { size: 16, align: 8 }),
+            IrType::FixedVector { length: 0, element } => {
+                self.element(element)?;
+                Ok(Layout { size: 16, align: 8 })
+            }
+            IrType::FixedVector { element, length } => {
+                let element = self.element(element)?;
+                let stride = align_up(
+                    self.target,
+                    element.size,
+                    element.align,
+                    TargetObject::Representation,
+                )?;
+                let slots = checked_mul(stride, length, self.target, TargetObject::Representation)?;
+                let align = element.align.max(8);
+                let body = align_up(self.target, slots, 8, TargetObject::Representation)?;
+                let size = align_up(
+                    self.target,
+                    body.checked_add(16)
+                        .ok_or(TargetLayoutFailure::Unrepresentable(
+                            TargetObject::Representation,
+                        ))?,
+                    align,
+                    TargetObject::Representation,
+                )?;
+                Ok(Layout { size, align })
+            }
         }
     }
 
     fn flat_element(&mut self, element: IrFlatElement) -> Result<Layout, TargetLayoutFailure> {
+        self.layout(element.ty())
+    }
+
+    /// One run slot's layout [BLK-1, OP-9]. A slot holding a run holds that
+    /// run's complete representation -- a `FixedVector`'s slots and two
+    /// descriptor words inline, a `Vector`'s four-word descriptor -- so the
+    /// slot layout is that type's own.
+    fn element(&mut self, element: IrElement) -> Result<Layout, TargetLayoutFailure> {
         self.layout(element.ty())
     }
 

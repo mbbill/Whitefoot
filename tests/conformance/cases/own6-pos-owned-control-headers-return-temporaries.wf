@@ -1,0 +1,91 @@
+fn choose(value: &uniq u64) -> result: own Option<u64> writes(value) {
+  set deref(value) = 9_u64;
+  return Some<u64>(value: 7_u64);
+}
+
+fn decide(value: &uniq u64) -> result: own Bool writes(value) {
+  set deref(value) = 11_u64;
+  return True();
+}
+
+fn refuse(value: &uniq u64) -> result: own Bool writes(value) {
+  set deref(value) = 17_u64;
+  return False();
+}
+
+fn through_holder(value: &uniq u64) -> result: own u64 reads(value), writes(value) {
+  region {
+    match choose(value: &uniq deref(value)) {
+      None() => {
+        return 0_u64;
+      }
+      Some(value: chosen) => {
+        set deref(value) = chosen;
+        region {
+          if decide(value: &uniq deref(value)) {
+            set deref(value) = deref(value) +wrap 1_u64;
+          }
+        }
+        return deref(value);
+      }
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let value = 3_u64;
+  region {
+    match choose(value: &uniq value) {
+      None() => {
+        return exit_status(code: 1_u8);
+      }
+      Some(value: chosen) => {
+        set value = chosen;
+      }
+    }
+    if value != 7_u64 {
+      return exit_status(code: 2_u8);
+    }
+    let selected = match choose(value: &uniq value) {
+      None() => {
+        give 0_u64;
+      }
+      Some(value: chosen) => {
+        set value = chosen +wrap 1_u64;
+        give value;
+      }
+    }
+    if selected != 8_u64 {
+      return exit_status(code: 3_u8);
+    }
+    if decide(value: &uniq value) {
+      set value = value +wrap 1_u64;
+    }
+    if value != 12_u64 {
+      return exit_status(code: 4_u8);
+    }
+    let tested = if decide(value: &uniq value) {
+      set value = value +wrap 2_u64;
+      give value;
+    } else {
+      give 0_u64;
+    }
+    if tested != 13_u64 {
+      return exit_status(code: 5_u8);
+    }
+    let rejected = if refuse(value: &uniq value) {
+      give 0_u64;
+    } else {
+      set value = value +wrap 1_u64;
+      give value;
+    }
+    if rejected != 18_u64 {
+      return exit_status(code: 7_u8);
+    }
+    let resumed = through_holder(value: &uniq value);
+    if resumed != 12_u64 {
+      return exit_status(code: 6_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

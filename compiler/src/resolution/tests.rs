@@ -165,8 +165,9 @@ fn named_constants_remain_lexically_declaration_before_use() {
 
 #[test]
 fn decimal_array_sizes_need_no_lexical_target() {
-    let source = br#"fn probe() -> result: own unit pure {
-  let values = array_new::<i32, 4>(0_i32);
+    let source = br#"const values: FixedVector<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
+
+fn probe() -> result: own unit pure {
   return unit;
 }
 "#;
@@ -276,10 +277,9 @@ fn plain_postcondition_selector_is_private_and_definitions_share_one_contract_sc
             .first()
             .expect("one private postcondition record");
         assert_eq!(postcondition.class, PostconditionSelectorClass::Plain);
-        let candidate = postcondition
-            .plain_candidate
-            .as_ref()
-            .expect("plain selector candidate");
+        let [candidate] = postcondition.result_binders.as_slice() else {
+            panic!("one result ordinal binder is required");
+        };
         assert_eq!(candidate.spelling, "result");
         assert_eq!(candidate.origin.role_ordinal(), 0);
         assert!(candidate.paired_field.is_none());
@@ -327,7 +327,11 @@ fn variant_postcondition_selector_preserves_prelude_identity_without_match_roles
                 panic!("one private postcondition record is required");
             };
             assert_eq!(postcondition.class, PostconditionSelectorClass::Variant);
-            assert!(postcondition.plain_candidate.is_none());
+            // [CALL-4] the declaration writes one result, so exactly one
+            // ordinal binder is a candidate; a routed clause names it
+            // through its route rather than as a plain selector.
+            assert_eq!(postcondition.result_binders.len(), 1);
+            assert!(postcondition.route_ordinal.is_none());
             assert!(matches!(
                 postcondition.variant_target,
                 Some(ResolvedTarget::Prelude(id)) if id.ordinal() == 11
@@ -446,10 +450,9 @@ fn postcondition_lookup_waits_for_selector_admission_and_live_conflicts_are_reta
         let [postcondition] = resolved.postconditions() else {
             panic!("one private postcondition record is required");
         };
-        let candidate = postcondition
-            .plain_candidate
-            .as_ref()
-            .expect("plain selector candidate");
+        let [candidate] = postcondition.result_binders.as_slice() else {
+            panic!("one result ordinal binder is required");
+        };
         assert_eq!(candidate.live_conflicts.len(), 1);
         assert!(candidate.later_local_collision.is_none());
         // The comparison is an operator token since v0.41 and produces no
@@ -548,8 +551,15 @@ fn contract_definitions_are_shared_across_clauses_but_do_not_reach_the_body() {
     });
 }
 
+/// [MSR-6] a `pbase` admits an in-scope const generic.
+///
+/// Until v0.45 this test asserted the opposite: `available: [ConstGeneric]`
+/// with the class inadmissible, which is the rejection the containers design
+/// recorded as probe `q10`. That rejection is what [MSR-6] removes, so the
+/// test now pins the admission and the declaration it resolves to rather than
+/// being deleted.
 #[test]
-fn const_generics_remain_outside_the_ordinary_place_base_domain() {
+fn a_const_generic_resolves_as_an_ordinary_place_base() {
     let ordinary = br#"fn value<const n: u64>() -> result: own u64 pure {
   return n;
 }
@@ -570,20 +580,22 @@ fn probe() -> result: own unit pure {
 "#;
     for source in [ordinary.as_slice(), postcondition.as_slice()] {
         with_one_resolution(source, |outcome| {
-            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-                panic!("a const generic must not become an ordinary pbase: {outcome:?}");
+            let ResolutionOutcome::Complete(resolved) = outcome else {
+                panic!("a const generic is an ordinary pbase: {outcome:?}");
             };
-            assert_eq!(issue.rule(), ResolutionRule::Type5);
+            let usage = resolved
+                .lexical_uses()
+                .iter()
+                .find(|usage: &&crate::resolution::LexicalUseRecord| {
+                    usage.role() == LexicalUseRole::PlaceBase && usage.spelling() == "n"
+                })
+                .expect("the place base `n` is a resolved use");
             assert!(matches!(
-                issue.kind(),
-                ResolutionIssueKind::UnresolvedUse {
-                    spelling,
-                    role: LexicalUseRole::PlaceBase,
-                    admissible,
-                    available,
-                } if spelling == "n"
-                    && !admissible.contains(&DeclarationClass::ConstGeneric)
-                    && available.contains(&DeclarationClass::ConstGeneric)
+                usage.target(),
+                ResolvedTarget::Source {
+                    class: DeclarationClass::ConstGeneric,
+                    ..
+                }
             ));
         });
     }
@@ -1949,7 +1961,7 @@ fn probe() -> result: own unit pure {
 
 /// Three roles moved position under v0.23 and the fixture follows them rather
 /// than the assertions moving. `TypeRegion` came only from a `let` annotation
-/// that A3 deletes, so it now rides a signature-borne `slice<'v, i32>`, which
+/// that A3 deletes, so it now rides a signature-borne `Slice<'v, i32>`, which
 /// [TYPE-5] keeps written. `OperationCallee` is the OPNAME form specifically
 /// (`roles.rs` keys it on `TerminalPredicate::OperationName`), and the
 /// fixture's only operation call was `iadd.wrap`, one of the rows [OP-7]
@@ -1958,6 +1970,11 @@ fn probe() -> result: own unit pure {
 /// that keeps its operation-name route.
 #[test]
 fn complete_role_fixture_materializes_every_d_u_and_x_family() {
+    // B7c4b left `viewer` on the retiring surface: the fixture has to
+    // materialize `LexicalUseRole::EffectAllocationRegion`, and the only
+    // spelling that produces it is the region-keyed `allocates(arena 'r)`
+    // entry, which has no path form on the container surface and retires with
+    // `arena<'r, T>` itself.
     let source = br#"contract Bound {
   fn member(value: &i32) -> result: own i32 reads(value);
   law identity(member, 0_i32);
@@ -1969,10 +1986,10 @@ contract Numeric<T: Int> {
 }
 
 struct Package<T: Bound, const n: i32> {
-  items: array<T, n>;
+  items: FixedVector<T, n>;
 }
 
-enum Choice<T> {
+enum Choice<T: affine> {
   Absent();
   Present(value: T);
 }
@@ -1993,7 +2010,7 @@ fn user<T: Bound, const n: i32>['call](arg: &'call T) -> result: &'call T reads(
   return arg;
 }
 
-fn viewer['v](values: own slice<'v, i32>, capability: own Args) -> result: own unit reads(values, capability), allocates(arena 'v) {
+fn viewer['v](values: own Slice<'v, i32>, capability: own Args) -> result: own unit reads(values, capability), allocates(arena 'v) {
   let held = arena_new::<'v, i32>(1_i32);
   return unit;
 }
@@ -2307,7 +2324,7 @@ fn future() -> result: own unit pure {
 fn sibling_contract_signatures_do_not_share_region_parameters() {
     let source = br#"contract Separate {
   fn first(value: &i32) -> result: own unit pure;
-  fn second() -> result: own slice<'r, i32> pure;
+  fn second() -> result: own Slice<'r, i32> pure;
 }
 "#;
     with_one_resolution(source, |outcome| {

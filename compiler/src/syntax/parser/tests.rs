@@ -553,12 +553,14 @@ struct Types<T: Bound, const n: array<u8, 4>> {
 doc "types";
 a: i8; b: i16; c: i32; d: i64; e: u8; f: u16; g: u32; h: u64;
 i: f32; j: f64; k: unit; l: Name<T, 'r, n>; m: array<u8, n>;
-n: slice<'r, u8>; o: box<u8>; p: arena<'r, u8>; q: buffer<u8>;
+n: Slice<'r, u8>; o: box<u8>; p: arena<'r, u8>; q: buffer<u8>;
 }
-enum Choice<T> { doc "choice"; None(); Some(value: T); }
-contract Contract<T> {
+enum Choice<T: copy> { doc "choice"; None(); Some(value: T); }
+linear struct Lease { doc "lease"; slot: u8; }
+linear enum Ticket { doc "ticket"; Open(value: u8); }
+contract Contract<T: affine> {
 doc "contract";
-fn member['r](x: own T) -> result: own T reads(x), writes(x), allocates(heap arena 'r);
+fn member['r](x: own T) -> result: own T reads(x), writes(x), allocates(x);
 law associative(member);
 law identity(member, 0_i32);
 }
@@ -571,13 +573,15 @@ command fn entry(command.args as arguments: own i32, command.cwd as directory: o
 {
 return unit;
 }
-fn everything['r](x: own i32, shared: &'r i32, unique: &uniq 'r i32)
--> result: own unit reads(shared, unique), writes(unique), allocates(heap arena 'r)
+fn everything['r: affine, 's: linear](x: own i32, shared: &'r i32, unique: &uniq 'r i32)
+-> result: own unit reads(shared, unique), writes(unique), allocates(arena 'r)
 contract {
 define pre = 0_i32 +wrap 1_i32;
 define post = 0_i32 +wrap 1_i32;
 requires pre;
+requires pre /defined post;
 ensures when Some(value: routed): routed;
+ensures 2_i32 * routed + 1_i32 <= post - 1_i32;
 }
 {
 doc "body";
@@ -609,6 +613,8 @@ use (0_i32 <= 0_i32);
 }
 region { give ordinary; }
 let named = ordinary;
+let Name(value: destructured) = move made;
+dispose named;
 match ordinary { Some(value: payload) => { give payload; } }
 if compared { let then_branch = ordinary; } else if chosen { break @again; } else { return unit; }
 }
@@ -639,7 +645,7 @@ fn main() -> result: own unit pure {}
         });
         assert!(present, "fixture omitted {production:?}");
     }
-    assert_eq!(productions().len(), 85);
+    assert_eq!(productions().len(), 89);
     assert_eq!(
         parsed
             .tree
@@ -668,7 +674,7 @@ fn main() -> result: own unit pure {}
     assert!(finalized.node_count() >= productions().len());
 }
 
-const KIND_DECLARING_ENTRY: &[u8] = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus allocates(heap) {\n  return unit;\n}\n";
+const KIND_DECLARING_ENTRY: &[u8] = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus pure {\n  return unit;\n}\n";
 
 const EXTERNAL_EFFECT_ROW: &[u8] =
     b"fn probe() -> result: own unit external {\n  return unit;\n}\n";
@@ -964,8 +970,13 @@ fn malformed_local_invariant_certificates_stop_at_their_first_grammar_boundary()
             b"use",
         ),
         (
-            b"fn probe(value: own i32, limit: own i32) -> result: own unit pure {\n  invariant affine_only: value <= limit {\n    use (value.field <= limit);\n  }\n  return unit;\n}\n",
-            b".",
+            // [GRAM-4, MSR-5] an `affine_factor` is an `atom`, so a field
+            // selection derives under the production and [PRF-1] refuses it.
+            // The grammar boundary here is the operator: `+wrap` is an
+            // `infix_op` and is not one of the three affine operators, so it
+            // can neither extend the expression nor stand as the relation.
+            b"fn probe(value: own i32, limit: own i32) -> result: own unit pure {\n  invariant affine_only: value <= limit {\n    use (value +wrap limit <= limit);\n  }\n  return unit;\n}\n",
+            b"+wrap",
         ),
         (
             b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  assert disguised: left <= right {\n    use (left <= right);\n  }\n  return unit;\n}\n",

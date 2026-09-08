@@ -10,14 +10,16 @@ use crate::{
 
 use super::super::goal::{GoalOperation, GoalProjection};
 use super::super::model::{
-    BindingId, CheckedArrayRoot, CheckedExpression, CheckedMode, CheckedNominalKind,
-    CheckedParameter, CheckedStatement, CheckedType, CheckedValue, FunctionId,
+    BindingId, CheckedArrayRoot, CheckedExpression, CheckedIntegerOperation, CheckedMode,
+    CheckedNominalKind, CheckedParameter, CheckedStatement, CheckedType, CheckedValue, FunctionId,
+    IntegerType,
 };
 use super::super::postcondition::{
     CheckedPostcondition, CheckedPostconditionSelector, NormalizedRelation,
     PostconditionConstantOrigin, PostconditionFieldIdentity, PostconditionPlace,
     PostconditionPlaceRoot, PostconditionReturnDatum, PostconditionReturnPlace,
-    PostconditionReturnPlaceRoot, RelationDatum, RelationTemplate, SelectedPostconditionReturn,
+    PostconditionReturnPlaceRoot, RelationDatum, RelationTemplate, RelationTerm,
+    SelectedPostconditionReturn,
 };
 use super::generics::GenericArgument;
 use super::publication;
@@ -29,6 +31,9 @@ enum SelectorAdmissionType {
     Fragment,
     ResultFragment,
     Symbolic,
+    /// [CALL-4] one declared result of measured type. Its value is no [ENT-2]
+    /// term, so only a measure over it is an admitted clause operand.
+    Measured,
     Invalid,
 }
 
@@ -43,6 +48,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         record: &PostconditionResolutionRecord,
         result_type: CheckedType,
+        datums: Vec<(String, u32, CheckedType)>,
         check: impl FnOnce() -> Result<T, CheckStop>,
     ) -> Result<T, CheckStop> {
         let index = self
@@ -57,9 +63,60 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 record: index,
                 result_type,
             }));
+        let previous_datums =
+            std::mem::replace(&mut *self.active_result_datums.borrow_mut(), datums);
         let result = check();
         self.active_postcondition.set(previous);
+        *self.active_result_datums.borrow_mut() = previous_datums;
         result
+    }
+
+    /// The result datums one [FN-9] clause admits, by written spelling
+    /// [CALL-4].
+    ///
+    /// An unrouted clause admits every declared result ordinal's binder at
+    /// that ordinal's own type. A routed clause admits its fresh payload
+    /// datum for the ordinal the route names, and every other ordinal's
+    /// binder unchanged; the routed ordinal's own whole-result binder stays
+    /// unavailable [FN-9].
+    pub(super) fn postcondition_result_datums(
+        &self,
+        record: &PostconditionResolutionRecord,
+        signature: &FunctionSignature,
+        selector: &CheckedPostconditionSelector,
+    ) -> Vec<(String, u32, CheckedType)> {
+        let routed = selector.variant.is_some();
+        let mut datums = Vec::with_capacity(record.result_binders.len() + 1);
+        for (ordinal, binder) in record.result_binders.iter().enumerate() {
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                continue;
+            };
+            if routed && ordinal == selector.ordinal {
+                continue;
+            }
+            let Some(declared) = signature.results.get(ordinal as usize) else {
+                continue;
+            };
+            datums.push((binder.spelling.clone(), ordinal, declared.ty));
+        }
+        if routed && let Some(field) = record.fields.first() {
+            datums.push((
+                field.candidate.spelling.clone(),
+                selector.ordinal,
+                selector.result_type,
+            ));
+        }
+        datums
+    }
+
+    /// The result ordinal and datum type one written selector spelling names
+    /// in the clause being checked, when it names one.
+    fn active_result_datum(&self, spelling: &str) -> Option<(u32, CheckedType)> {
+        self.active_result_datums
+            .borrow()
+            .iter()
+            .find(|(candidate, _, _)| candidate == spelling)
+            .map(|(_, ordinal, ty)| (*ordinal, *ty))
     }
 
     /// Supplies a value-only placeholder to the ordinary expression typer.
@@ -79,21 +136,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .get(context.record)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let atom_path = self.tree.path(atom)?.components();
-        let selector_inside = record.selector_uses.iter().any(|usage| {
+        let Some(usage) = record.selector_uses.iter().find(|usage| {
             let path = usage.origin.node().components();
             path.len() > atom_path.len() && path.starts_with(atom_path)
-        });
-        if !selector_inside {
+        }) else {
             return Ok(None);
-        }
-        Ok(Some(match context.result_type {
+        };
+        // [CALL-4] the spelling names a result ordinal, and its datum type is
+        // that ordinal's. An ordinal whose datum is not a fragment integer is
+        // outside [FN-9]'s admitted operand set in this version.
+        let ty = self
+            .active_result_datum(&usage.spelling)
+            .map_or(context.result_type, |(_, ty)| ty);
+        let _ = context;
+        Ok(Some(match ty {
             CheckedType::Integer(ty) => CheckedValue::Integer { ty, bits: 0 },
-            CheckedType::GenericInt(_) => CheckedValue::NumericIdentity {
-                ty: context.result_type,
-                one: false,
-            },
+            CheckedType::GenericInt(_) => CheckedValue::NumericIdentity { ty, one: false },
             _ => {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
+                return self.issue_origin(
+                    SemanticRule::Fn9,
+                    &usage.origin,
+                    SemanticIssueKind::InvalidPostconditionSelector,
+                );
             }
         }))
     }
@@ -435,7 +499,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(function.node, Production::ContractBlock)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        self.with_postcondition_context(record, selector.result_type, || {
+        let datums = self.postcondition_result_datums(record, function, selector);
+        self.with_postcondition_context(record, selector.result_type, datums, || {
             let mut expanded_bindings = HashMap::<BindingId, ExpandedClauseExpression>::new();
             for (ordinal, parameter) in function.parameters.iter().enumerate() {
                 let local = bindings
@@ -537,10 +602,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         relation: &RelationTemplate,
     ) -> Result<(), CheckStop> {
         for operand in &relation.operands {
-            let RelationDatum::Length(place) = operand else {
+            let RelationDatum::Measure(_, place) = &operand.datum else {
                 continue;
             };
-            let PostconditionPlaceRoot::Parameter { ordinal } = place.root;
+            // [CALL-4] a measure over a result place names no parameter, so
+            // [MSR-3]'s state-parameter inadmissibility does not reach it.
+            let PostconditionPlaceRoot::Parameter { ordinal } = place.root else {
+                continue;
+            };
             let Some(parameter) = function.parameters.get(ordinal as usize) else {
                 continue;
             };
@@ -642,10 +711,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let [left, right] = arguments.as_slice() else {
             return self.invalid_postcondition_relation(final_expression);
         };
-        let Some(left) = self.postcondition_relation_datum(left) else {
+        let Some(left) = self.postcondition_relation_term(left, operand_type) else {
             return self.invalid_postcondition_relation(final_expression);
         };
-        let Some(right) = self.postcondition_relation_datum(right) else {
+        let Some(right) = self.postcondition_relation_term(right, operand_type) else {
             return self.invalid_postcondition_relation(final_expression);
         };
         if left.ty() != operand_type || right.ty() != operand_type {
@@ -692,13 +761,115 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
+    /// One relation term [FN-9]: the datum one clause side names, displaced
+    /// by the constant the rest of that side reduces to.
+    ///
+    /// A side carrying two datums, or a datum with any coefficient other than
+    /// one, is outside the difference-bound fragment [ENT-4] and yields
+    /// `None`, which is the ordinary FN-9 rejection at the clause.
+    fn postcondition_relation_term(
+        &self,
+        expanded: &ExpandedClauseExpression,
+        operand_type: CheckedType,
+    ) -> Option<RelationTerm> {
+        let (datum, displacement) = self.postcondition_relation_operand(expanded)?;
+        match datum {
+            Some(datum) => Some(RelationTerm {
+                datum,
+                displacement,
+            }),
+            // A side with no datum reduced to one constant; it is a literal
+            // operand exactly as a written one is, and the fragment holds it
+            // in the operand's own type.
+            None => Some(RelationTerm::undisplaced(RelationDatum::Literal {
+                value: CheckedValue::Integer {
+                    ty: match operand_type {
+                        CheckedType::Integer(ty) => ty,
+                        _ => return None,
+                    },
+                    bits: representable_bits(operand_type, displacement)?,
+                },
+                origin: PostconditionConstantOrigin::Literal,
+            })),
+        }
+    }
+
+    /// One clause side's affine expression, as at most one datum with
+    /// coefficient one plus a constant [MSR-5].
+    fn postcondition_relation_operand(
+        &self,
+        expanded: &ExpandedClauseExpression,
+    ) -> Option<(Option<RelationDatum>, i128)> {
+        if let ExpandedClauseExpression::Operation {
+            row:
+                GoalOperation::Integer {
+                    operation:
+                        operation @ (CheckedIntegerOperation::AddExact
+                        | CheckedIntegerOperation::SubtractExact
+                        | CheckedIntegerOperation::MultiplyExact),
+                    ..
+                },
+            arguments,
+            ..
+        } = expanded
+        {
+            let [left, right] = arguments.as_slice() else {
+                return None;
+            };
+            let (left_datum, left_value) = self.postcondition_relation_operand(left)?;
+            let (right_datum, right_value) = self.postcondition_relation_operand(right)?;
+            return match operation {
+                CheckedIntegerOperation::AddExact => {
+                    if left_datum.is_some() && right_datum.is_some() {
+                        return None;
+                    }
+                    Some((
+                        left_datum.or(right_datum),
+                        left_value.checked_add(right_value)?,
+                    ))
+                }
+                // Subtracting a datum gives it coefficient minus one, which
+                // no difference-bound term carries.
+                CheckedIntegerOperation::SubtractExact => {
+                    if right_datum.is_some() {
+                        return None;
+                    }
+                    Some((left_datum, left_value.checked_sub(right_value)?))
+                }
+                // A multiplication of two constants is one constant; any
+                // other coefficient leaves the fragment.
+                _ => {
+                    if left_datum.is_some() || right_datum.is_some() {
+                        return None;
+                    }
+                    Some((None, left_value.checked_mul(right_value)?))
+                }
+            };
+        }
+        let datum = self.postcondition_relation_datum(expanded)?;
+        // A written integer literal is a constant of the side rather than
+        // its datum; a const generic and a generic numeric identity keep
+        // their own datum identity, symbolic or not.
+        if let RelationDatum::Literal {
+            value: CheckedValue::Integer { ty, bits },
+            origin: PostconditionConstantOrigin::Literal,
+        } = &datum
+        {
+            return Some((None, integer_value(*ty, *bits)));
+        }
+        Some((Some(datum), 0))
+    }
+
     fn postcondition_relation_datum(
         &self,
         expanded: &ExpandedClauseExpression,
     ) -> Option<RelationDatum> {
         match expanded {
-            ExpandedClauseExpression::Datum(ExpandedClauseDatum::Result { ty }) => {
-                Some(RelationDatum::Result { ty: *ty })
+            ExpandedClauseExpression::Datum(ExpandedClauseDatum::Result { ordinal, ty }) => {
+                Some(RelationDatum::Result {
+                    ordinal: *ordinal,
+                    ty: *ty,
+                })
             }
             ExpandedClauseExpression::Datum(ExpandedClauseDatum::Parameter {
                 ordinal,
@@ -724,29 +895,47 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     origin: origin.clone(),
                 })
             }
+            // [CALL-4] the clause operands of [FN-9] are terms, so a measure
+            // over an admitted formal place is an operand with no per-family
+            // admission, and so is one over an admitted result place.
             ExpandedClauseExpression::Operation {
                 row:
-                    GoalOperation::ArrayLength { .. }
-                    | GoalOperation::BufferLength { .. }
-                    | GoalOperation::SliceLength { .. },
+                    GoalOperation::ArrayMeasure { measure, .. }
+                    | GoalOperation::BufferMeasure { measure, .. }
+                    | GoalOperation::SliceMeasure { measure, .. }
+                    | GoalOperation::ContainerMeasure { measure, .. },
                 arguments,
                 ..
             } => {
-                let [
-                    ExpandedClauseExpression::Datum(ExpandedClauseDatum::Parameter {
+                let [ExpandedClauseExpression::Datum(datum)] = arguments.as_slice() else {
+                    return None;
+                };
+                let (root, projections, ty) = match datum {
+                    ExpandedClauseDatum::Parameter {
                         ordinal,
                         projections,
                         ty,
-                    }),
-                ] = arguments.as_slice()
-                else {
-                    return None;
+                    } => (
+                        PostconditionPlaceRoot::Parameter { ordinal: *ordinal },
+                        projections.clone(),
+                        *ty,
+                    ),
+                    ExpandedClauseDatum::Result { ordinal, ty } => (
+                        PostconditionPlaceRoot::Result { ordinal: *ordinal },
+                        Vec::new(),
+                        *ty,
+                    ),
+                    ExpandedClauseDatum::NamedConst { .. }
+                    | ExpandedClauseDatum::Literal { .. } => return None,
                 };
-                Some(RelationDatum::Length(PostconditionPlace {
-                    root: PostconditionPlaceRoot::Parameter { ordinal: *ordinal },
-                    projections: projections.clone(),
-                    ty: *ty,
-                }))
+                Some(RelationDatum::Measure(
+                    *measure,
+                    PostconditionPlace {
+                        root,
+                        projections,
+                        ty,
+                    },
+                ))
             }
             ExpandedClauseExpression::Operation { .. }
             | ExpandedClauseExpression::InvalidSelectorUse { .. } => None,
@@ -804,19 +993,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let checked = self.build_checked_postcondition_inner(
             function, parameters, selector, relation, body, true,
         )?;
-        let fragment_returns =
-            checked
-                .selected_returns
-                .iter()
-                .all(|selected| match &selected.value {
-                    PostconditionReturnDatum::Place(place) => {
-                        matches!(place.ty, CheckedType::Integer(_))
-                    }
-                    PostconditionReturnDatum::Literal { value, .. } => {
-                        matches!(value.ty(), CheckedType::Integer(_))
-                    }
-                    PostconditionReturnDatum::Length(_) => true,
-                });
+        let fragment_returns = checked.selected_returns.iter().all(|selected| {
+            selected.values.iter().flatten().all(|value| match value {
+                PostconditionReturnDatum::Place(place) => {
+                    matches!(place.ty, CheckedType::Integer(_))
+                }
+                PostconditionReturnDatum::Literal { value, .. } => {
+                    matches!(value.ty(), CheckedType::Integer(_))
+                }
+                PostconditionReturnDatum::Measure(..) => true,
+            })
+        });
         Ok(fragment_returns.then_some(checked))
     }
 
@@ -859,10 +1046,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         self.collect_postcondition_binding_info(body, &mut binding_info);
 
+        // [FN-9, CALL-4] a return is selected for this clause only when every
+        // result ordinal the relation names evaluates there to one admitted
+        // datum; an ordinal the clause does not name imposes nothing.
+        let named = relation
+            .operands
+            .iter()
+            .filter_map(|operand| match &operand.datum {
+                RelationDatum::Result { ordinal, .. } => Some(*ordinal),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
         let mut selected_returns = Vec::new();
         self.collect_postcondition_returns(
             function,
             &selector,
+            &named,
             body,
             &binding_info,
             &mut selected_returns,
@@ -909,6 +1108,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             implicit_deref,
                         },
                     );
+                }
+                // [CALL-4] a destructuring `let` binds one fresh own value per
+                // declared result ordinal, and each is a place a return can
+                // name exactly as an ordinary `let` binding is.
+                CheckedStatement::DestructuringLet {
+                    bindings: binders, ..
+                } => {
+                    for (binding, ty) in binders {
+                        bindings.insert(
+                            *binding,
+                            PostconditionBindingInfo {
+                                ty: *ty,
+                                implicit_deref: false,
+                            },
+                        );
+                    }
                 }
                 CheckedStatement::PropagateLet {
                     binding, ok_type, ..
@@ -984,10 +1199,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn collect_postcondition_returns(
         &self,
         function: &FunctionSignature,
         selector: &CheckedPostconditionSelector,
+        named: &[u32],
         statements: &[CheckedStatement],
         binding_info: &HashMap<BindingId, PostconditionBindingInfo>,
         selected: &mut Vec<SelectedPostconditionReturn>,
@@ -997,53 +1214,55 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::Return {
                     node_path, value, ..
                 } => {
-                    let selected_value = if selector.variant.is_none() {
-                        Some(value)
-                    } else {
-                        let CheckedType::Nominal(result_nominal) = function.result else {
-                            return Err(SemanticCompilerFailure::InvalidResolution.into());
-                        };
-                        if self
-                            .prelude_types
-                            .get(result_nominal.0 as usize)
-                            .and_then(|entry| *entry)
-                            .is_none_or(|ty| !matches!(ty, super::PreludeType::Result(_, _)))
-                        {
+                    // [GRAM-4, CALL-4] a `return e1, ..., en;` is checked as
+                    // one result-list value, so the ordinals are its fields;
+                    // a single-result return is the whole value.
+                    let ordinals: Vec<&CheckedExpression> = match (function.result_list, value) {
+                        (
+                            Some(list),
+                            CheckedExpression::ConstructStruct {
+                                nominal, fields, ..
+                            },
+                        ) if *nominal == list => fields.iter().collect(),
+                        (Some(_), _) => {
                             return Err(SemanticCompilerFailure::InvalidResolution.into());
                         }
-                        match value {
-                            CheckedExpression::ConstructEnum {
-                                nominal,
-                                variant,
-                                fields,
-                                ..
-                            } if *nominal == result_nominal
-                                && *variant == 0
-                                && fields.len() == 1 =>
-                            {
-                                fields.first()
-                            }
-                            CheckedExpression::ConstructEnum {
-                                nominal,
-                                variant,
-                                fields,
-                                ..
-                            } if *nominal == result_nominal
-                                && *variant == 1
-                                && fields.len() == 1 =>
-                            {
-                                None
-                            }
-                            _ => return self.invalid_postcondition_return(node_path),
-                        }
+                        (None, value) => vec![value],
                     };
-                    if let Some(value) = selected_value {
-                        let datum = self
-                            .postcondition_return_datum(value, node_path, binding_info)?
-                            .ok_or_else(|| self.invalid_postcondition_return_stop(node_path))?;
+                    let mut values = Vec::with_capacity(ordinals.len());
+                    let mut selected_at_all = true;
+                    for (ordinal, produced) in ordinals.into_iter().enumerate() {
+                        let Ok(ordinal) = u32::try_from(ordinal) else {
+                            return Err(SemanticCompilerFailure::CounterOverflow.into());
+                        };
+                        let routed = selector.variant.is_some() && ordinal == selector.ordinal;
+                        let produced = if routed {
+                            match self.postcondition_route_payload(
+                                function, ordinal, produced, node_path,
+                            )? {
+                                Some(payload) => payload,
+                                // A direct `Err` return is unselected for this
+                                // routed clause [FN-9].
+                                None => {
+                                    selected_at_all = false;
+                                    values.push(None);
+                                    continue;
+                                }
+                            }
+                        } else {
+                            produced
+                        };
+                        let datum =
+                            self.postcondition_return_datum(produced, node_path, binding_info)?;
+                        if datum.is_none() && named.contains(&ordinal) {
+                            return self.invalid_postcondition_return(node_path);
+                        }
+                        values.push(datum);
+                    }
+                    if selected_at_all {
                         selected.push(SelectedPostconditionReturn {
                             statement: node_path.clone(),
-                            value: datum,
+                            values,
                         });
                     }
                 }
@@ -1053,6 +1272,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         self.collect_postcondition_returns(
                             function,
                             selector,
+                            named,
                             &arm.body,
                             binding_info,
                             selected,
@@ -1064,6 +1284,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedStatement::Region { body, .. } => self.collect_postcondition_returns(
                     function,
                     selector,
+                    named,
                     body,
                     binding_info,
                     selected,
@@ -1072,6 +1293,49 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         Ok(())
+    }
+
+    /// The `Ok` payload one routed ordinal produces at a return, `None` for a
+    /// direct `Err`, and the [FN-9] rejection for every other Result shape.
+    fn postcondition_route_payload<'value>(
+        &self,
+        function: &FunctionSignature,
+        ordinal: u32,
+        value: &'value CheckedExpression,
+        node_path: &crate::NodePath,
+    ) -> Result<Option<&'value CheckedExpression>, CheckStop> {
+        let declared = function
+            .results
+            .get(ordinal as usize)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let CheckedType::Nominal(result_nominal) = declared.ty else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        if self
+            .prelude_types
+            .get(result_nominal.0 as usize)
+            .and_then(|entry| *entry)
+            .is_none_or(|ty| !matches!(ty, super::PreludeType::Result(_, _)))
+        {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        match value {
+            CheckedExpression::ConstructEnum {
+                nominal,
+                variant,
+                fields,
+                ..
+            } if *nominal == result_nominal && *variant == 0 && fields.len() == 1 => {
+                Ok(fields.first())
+            }
+            CheckedExpression::ConstructEnum {
+                nominal,
+                variant,
+                fields,
+                ..
+            } if *nominal == result_nominal && *variant == 1 && fields.len() == 1 => Ok(None),
+            _ => self.invalid_postcondition_return(node_path),
+        }
     }
 
     fn postcondition_return_datum(
@@ -1091,7 +1355,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     origin,
                 }))
             }
-            CheckedExpression::ArrayLength { root, length } => {
+            CheckedExpression::ArrayMeasure {
+                measure,
+                root,
+                length,
+            } => {
                 let place = match root {
                     CheckedArrayRoot::Binding { binding, fields } => {
                         self.postcondition_binding_place(*binding, fields, statement, binding_info)?
@@ -1122,9 +1390,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if actual_length != *length {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
-                Ok(Some(PostconditionReturnDatum::Length(place)))
+                Ok(Some(PostconditionReturnDatum::Measure(*measure, place)))
             }
-            CheckedExpression::BufferLength { root } => {
+            CheckedExpression::BufferMeasure { measure, root } => {
                 let Some(
                     place @ PostconditionReturnPlace {
                         ty: CheckedType::Buffer { element },
@@ -1142,9 +1410,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if element != root.element {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
-                Ok(Some(PostconditionReturnDatum::Length(place)))
+                Ok(Some(PostconditionReturnDatum::Measure(*measure, place)))
             }
-            CheckedExpression::SliceLength { root } => {
+            // [MSR-1, CALL-4] a measure of a run or a bump extent, in the
+            // same return position the three flat measures already occupy. A
+            // measured place is not a field path, so a path carrying a
+            // subscript names no return place here and falls through to the
+            // ordinary rejection.
+            CheckedExpression::ContainerMeasure { measure, root } => {
+                let mut fields = Vec::with_capacity(root.path.len());
+                for step in &root.path {
+                    match step {
+                        super::super::model::CheckedPlaceStep::Field(field) => fields.push(*field),
+                        super::super::model::CheckedPlaceStep::Subscript(_) => return Ok(None),
+                    }
+                }
+                let Some(place) = self.postcondition_binding_place(
+                    root.binding,
+                    &fields,
+                    statement,
+                    binding_info,
+                )?
+                else {
+                    return Ok(None);
+                };
+                if place.ty != root.ty {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                }
+                Ok(Some(PostconditionReturnDatum::Measure(*measure, place)))
+            }
+            CheckedExpression::SliceMeasure { measure, root } => {
                 let Some(
                     place @ PostconditionReturnPlace {
                         ty: CheckedType::Slice { element, .. },
@@ -1157,7 +1452,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if element != root.element {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
-                Ok(Some(PostconditionReturnDatum::Length(place)))
+                Ok(Some(PostconditionReturnDatum::Measure(*measure, place)))
             }
             _ => Ok(None),
         }
@@ -1389,12 +1684,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }))
     }
 
+    /// The result ordinal and datum type a bare selector atom names, when the
+    /// atom is exactly one written result datum [FN-9, CALL-4].
     pub(super) fn postcondition_selector_is_bare_atom(
         &self,
         atom: NodeId,
-    ) -> Result<bool, CheckStop> {
+    ) -> Result<Option<(u32, CheckedType)>, CheckStop> {
         let Some(context) = self.active_postcondition.get() else {
-            return Ok(false);
+            return Ok(None);
         };
         let record = self
             .resolved
@@ -1402,22 +1699,96 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .get(context.record)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let Some(place) = self.tree.first_child_with(atom, Production::Place)? else {
-            return Ok(false);
+            return Ok(None);
         };
         let pbase = self
             .tree
             .first_child_with(place, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let pbase_path = self.tree.path(pbase)?;
-        Ok(self.tree.children(pbase)?.is_empty()
-            && self
+        if !self.tree.children(pbase)?.is_empty()
+            || !self
                 .tree
                 .children_with(place, Production::Psuffix)?
                 .is_empty()
-            && record
-                .selector_uses
+        {
+            return Ok(None);
+        }
+        Ok(record
+            .selector_uses
+            .iter()
+            .find(|usage| usage.origin.node() == pbase_path)
+            .and_then(|usage| self.active_result_datum(&usage.spelling)))
+    }
+
+    /// The declared result ordinal one clause's result datum is anchored to
+    /// [CALL-4].
+    ///
+    /// An unrouted clause is anchored to the first ordinal admitted as a
+    /// result datum; every ordinal remains a datum of the clause, and the
+    /// anchor only fixes which one the selector's admission judgment reads.
+    /// A routed clause is anchored to the ordinal its written binder names,
+    /// or, when the binder is omitted, to the one ordinal whose enum type can
+    /// carry the route. Two such ordinals leave the route ambiguous, and the
+    /// declaration is a hard error citing CALL-4 at the clause.
+    fn postcondition_route_ordinal(
+        &self,
+        record: &PostconditionResolutionRecord,
+        signature: &FunctionSignature,
+        symbolic: bool,
+    ) -> Result<u32, CheckStop> {
+        let routed = record.class == PostconditionSelectorClass::Variant;
+        if !routed {
+            let anchor = record
+                .result_binders
                 .iter()
-                .any(|usage| usage.origin.node() == pbase_path))
+                .zip(&signature.results)
+                .position(|(_, declared)| self.postcondition_fragment_type(declared.ty, symbolic));
+            return u32::try_from(anchor.unwrap_or(0))
+                .map_err(|_| SemanticCompilerFailure::CounterOverflow.into());
+        }
+        if let Some(spelling) = &record.route_ordinal {
+            let Some(named) = record
+                .result_binders
+                .iter()
+                .position(|binder| &binder.spelling == spelling)
+            else {
+                return self
+                    .issue_selector(record, SemanticIssueKind::InvalidPostconditionSelector);
+            };
+            return u32::try_from(named)
+                .map_err(|_| SemanticCompilerFailure::CounterOverflow.into());
+        }
+        let carriers = signature
+            .results
+            .iter()
+            .enumerate()
+            .filter(|(_, declared)| self.postcondition_route_carrier(declared.ty, symbolic))
+            .map(|(ordinal, _)| ordinal)
+            .collect::<Vec<_>>();
+        match carriers.as_slice() {
+            [only] => {
+                u32::try_from(*only).map_err(|_| SemanticCompilerFailure::CounterOverflow.into())
+            }
+            // Zero carriers is the ordinary route-admission refusal below,
+            // which reports the offending result type; anchor it at ordinal
+            // zero and let `validate_postcondition_selector` speak.
+            [] => Ok(0),
+            _ => self.issue_selector(record, SemanticIssueKind::AmbiguousResultRoute),
+        }
+    }
+
+    /// Whether one declared result type can carry a route in this version:
+    /// exactly `own Result<T, E>` with T a fragment integer [FN-9, CALL-4].
+    fn postcondition_route_carrier(&self, ty: CheckedType, symbolic: bool) -> bool {
+        let CheckedType::Nominal(nominal) = ty else {
+            return false;
+        };
+        matches!(
+            self.prelude_types.get(nominal.0 as usize).and_then(|entry| *entry),
+            Some(super::PreludeType::Result(value, _))
+                if self.postcondition_fragment_type(value, symbolic)
+        )
     }
 
     fn admit_postcondition_selector(
@@ -1426,11 +1797,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         signature: &FunctionSignature,
         symbolic: bool,
     ) -> Result<CheckedPostconditionSelector, CheckStop> {
-        if signature.result_mode != CheckedMode::Own {
+        if signature
+            .results
+            .iter()
+            .any(|entry| entry.mode != CheckedMode::Own)
+        {
             return self.issue_selector(record, SemanticIssueKind::InvalidPostconditionSelector);
         }
 
-        let (admission, result_type) = match signature.result {
+        // [CALL-4] a route applies to exactly one declared result ordinal:
+        // the one its written binder names, or — when the binder is omitted —
+        // the one ordinal whose type carries the route's variant. Two ordinals
+        // that could carry it leave the route ambiguous and the declaration is
+        // refused here.
+        let ordinal = self.postcondition_route_ordinal(record, signature, symbolic)?;
+        let declared = signature
+            .results
+            .get(ordinal as usize)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+
+        let (admission, result_type) = match declared.ty {
             ty if self.postcondition_fragment_type(ty, symbolic) => {
                 (SelectorAdmissionType::Fragment, ty)
             }
@@ -1444,20 +1830,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 {
                     (SelectorAdmissionType::ResultFragment, value)
                 }
-                _ => (SelectorAdmissionType::Invalid, signature.result),
+                _ => (SelectorAdmissionType::Invalid, declared.ty),
             },
-            CheckedType::Generic(_) if symbolic => {
-                (SelectorAdmissionType::Symbolic, signature.result)
+            CheckedType::Generic(_) if symbolic => (SelectorAdmissionType::Symbolic, declared.ty),
+            // [CALL-4] a result of measured type is admitted, and a measure
+            // over that result place is the operand it supplies.
+            ty if super::expressions::flat_storage::measured_kind_of(ty).is_some() => {
+                (SelectorAdmissionType::Measured, ty)
             }
-            _ => (SelectorAdmissionType::Invalid, signature.result),
+            _ => (SelectorAdmissionType::Invalid, declared.ty),
         };
-        self.validate_postcondition_selector(record, admission)?;
+        self.validate_postcondition_selector(record, admission, ordinal)?;
 
         let (candidate, variant, field) = match record.class {
             PostconditionSelectorClass::Plain => (
                 record
-                    .plain_candidate
-                    .as_ref()
+                    .result_binders
+                    .get(ordinal as usize)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?,
                 None,
                 None,
@@ -1489,6 +1878,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             block: record.block.clone(),
             selector: record.selector.clone(),
             candidate: candidate.origin.clone(),
+            ordinal,
             variant,
             field,
             result_type,
@@ -1499,19 +1889,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         record: &PostconditionResolutionRecord,
         admission: SelectorAdmissionType,
+        ordinal: u32,
     ) -> Result<(), CheckStop> {
         let candidate = match record.class {
             PostconditionSelectorClass::Plain => {
                 if !matches!(
                     admission,
-                    SelectorAdmissionType::Fragment | SelectorAdmissionType::Symbolic
+                    SelectorAdmissionType::Fragment
+                        | SelectorAdmissionType::Symbolic
+                        | SelectorAdmissionType::Measured
                 ) {
                     return self
                         .issue_selector(record, SemanticIssueKind::InvalidPostconditionSelector);
                 }
                 record
-                    .plain_candidate
-                    .as_ref()
+                    .result_binders
+                    .get(ordinal as usize)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?
             }
             PostconditionSelectorClass::Variant => {
@@ -1600,11 +1993,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         record: &PostconditionResolutionRecord,
         kind: SemanticIssueKind,
     ) -> Result<T, CheckStop> {
+        // [CALL-4] owns the result ordinal and the route's ambiguity; every
+        // other selector rejection is [FN-9]'s admission.
+        let rule = if matches!(kind, SemanticIssueKind::AmbiguousResultRoute) {
+            SemanticRule::Call4
+        } else {
+            SemanticRule::Fn9
+        };
         let node = self
             .tree
             .node_with_path(&record.selector)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        self.issue_node(SemanticRule::Fn9, node, kind)
+        self.issue_node(rule, node, kind)
     }
 
     fn issue_origin<T>(
@@ -1631,4 +2031,39 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         self.issue_node(SemanticRule::Fn9, node, kind)
     }
+}
+
+/// The mathematical value of one checked integer constant, whose `bits` hold
+/// the type-width two's-complement pattern.
+const fn integer_value(ty: IntegerType, bits: u64) -> i128 {
+    let value = bits as i128;
+    if ty.signed() {
+        let width = ty.width() as u32;
+        let sign_bit = 1_u64 << (width - 1);
+        if bits & sign_bit != 0 {
+            return value - (1_i128 << width);
+        }
+    }
+    value
+}
+
+/// The type-width bit pattern of one mathematical value, or `None` when the
+/// value does not fit that type. A clause side reduces over the mathematical
+/// integers [MSR-5], so a constant side outside its own operand type is not
+/// a relation datum and the clause is refused rather than wrapped.
+const fn representable_bits(ty: CheckedType, value: i128) -> Option<u64> {
+    let CheckedType::Integer(ty) = ty else {
+        return None;
+    };
+    let width = ty.width() as u32;
+    let (low, high) = if ty.signed() {
+        (-(1_i128 << (width - 1)), (1_i128 << (width - 1)) - 1)
+    } else {
+        (0, (1_i128 << width) - 1)
+    };
+    if value < low || value > high {
+        return None;
+    }
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+    Some((value & ((1_i128 << width) - 1)) as u64)
 }

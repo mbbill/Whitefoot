@@ -1,0 +1,24 @@
+struct Pair {
+  page: FixedVector<u8, 4>;
+  spare: u64;
+}
+
+fn look(holder: &Pair) -> size: own u64 reads(holder) {
+  doc "PROV-6: `dispose p;` is one consuming use of `p`'s root [OWN-1], so `p` must be rooted in a live own-mode binding of this function. Content reached through a borrow may never be moved, and this statement is no exception to that.";
+  dispose deref(holder);
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "The caller.";
+  let empty = fixed_vector::<u8, 4>();
+  let r1 = place_back(vector: move empty, value: 0_u8);
+  let r2 = place_back(vector: move r1, value: 0_u8);
+  let r3 = place_back(vector: move r2, value: 0_u8);
+  let run = place_back(vector: move r3, value: 0_u8);
+  let pair = Pair(page: move run, spare: 1_u64);
+  region {
+    let n = look(holder: &pair);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,15 @@
+linear struct Lease {
+  slot: u8;
+}
+
+fn discard<T: affine>(value: own T) -> count: own u8 pure {
+  doc "The same body written for the affine class.";
+  return 2_u8;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "PROV-6, S32: an instantiation whose type argument's linearity class is not the written bound is refused at the call, naming the parameter, the bound and the argument. The declaration keeps one verdict; the call is where the class is decided.";
+  let lease = Lease(slot: 3_u8);
+  let n = discard::<Lease>(value: move lease);
+  return exit_status(code: 0_u8);
+}

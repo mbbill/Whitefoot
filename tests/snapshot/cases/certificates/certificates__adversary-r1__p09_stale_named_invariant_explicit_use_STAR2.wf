@@ -1,21 +1,25 @@
-fn probe(table: own buffer<u8>, idx: own u64, limit: own u64) -> found: own u8 reads(table) contract {
-  define room = len(table);
+fn probe<const n: u64>(table: own FixedVector<u8, n>, idx: own u64, limit: own u64) -> found: own u8 reads(table) contract {
+  define spare = len_of(table);
   requires idx < limit;
-  requires limit <= room;
+  requires limit <= spare;
 } {
   doc "expect REJECT fact killed by write: bound_a is proved for the pre-write value of idx; idx is then overwritten to 255 and bound_b explicitly uses bound_a to justify table[idx]. idx=255 against a 4-byte table is an out-of-bounds read if this stale reuse is accepted.";
-  let room = len(table);
-  invariant bound_a: idx < room;
+  let spare = len_of(table);
+  invariant bound_a: idx < spare;
   set idx = 255_u64;
-  invariant bound_b: idx < room {
+  invariant bound_b: idx < spare {
     use bound_a;
   }
   let byte = table[idx];
   return byte;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
-  let table = buffer_new(4_u64, 0_u8);
-  let found = probe(table: move table, idx: 1_u64, limit: 4_u64);
+command fn main() -> status: own ExitStatus pure {
+  let table = fixed_vector::<u8, 4>();
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  let found = probe::<4>(table: move table, idx: 1_u64, limit: 4_u64);
   return exit_status(code: found);
 }

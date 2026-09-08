@@ -42,6 +42,7 @@ fn invalid_label(label: &str) -> SemanticIssueKind {
             "command.stderr".to_owned(),
             "command.handles".to_owned(),
             "command.stdin".to_owned(),
+            "command.heap".to_owned(),
         ],
     }
 }
@@ -64,7 +65,7 @@ fn the_no_input_command_entry_admits_every_live_effect_subset() {
     // With no formal capability there is no legal IDENT subject for reads or
     // writes. FN-7 admits every canonical subset of the remaining command
     // categories; an unexhibited admitted row is EFF-2's later judgment.
-    for row in [&b"pure"[..], &b"allocates(heap)"[..]] {
+    for row in [&b"pure"[..], &b"pure"[..]] {
         let mut source = b"command fn main() -> status: own ExitStatus ".to_vec();
         source.extend_from_slice(row);
         source.extend_from_slice(b" {\n  return exit_status(code: 0_u8);\n}\n");
@@ -116,10 +117,10 @@ fn a_missing_entry_is_the_one_bundle_root_rejection() {
 #[test]
 fn the_entry_is_nongeneric_and_declares_no_region_parameter() {
     assert_rule_at(
-        b"command fn main<T>() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main<T: affine>() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn7,
         SemanticIssueKind::InvalidMain,
-        b"<T>",
+        b"<T: affine>",
     );
     // [FORM-8] separately rejects a region parameter list no position of the
     // declaration writes; [FN-7] is defined first and owns the entry form.
@@ -149,10 +150,12 @@ fn a_missing_command_marker_outranks_legacy_signature_details() {
 
 #[test]
 fn admitted_but_unexhibited_entry_effects_reach_eff2() {
-    // Allocation remains an admitted entry category. This body does not
-    // exhibit it, so it passes FN-7 and rejects later under EFF-2.
+    // [S23] allocation remains an admitted entry category and now names a
+    // provider path rooted in the entry's own `heap` standard input. This
+    // body does not exhibit it, so it passes FN-7 and rejects later under
+    // EFF-2.
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus allocates(heap) {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );

@@ -1,4 +1,4 @@
-const values: array<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
+const values: FixedVector<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
 
 command fn main() -> status: own ExitStatus pure {
   doc "SNAPSHOT REJECT [TYPE-5]: the finder expected ACCEPT for the labeled counted header form, but set total = total +wrap value mixes own u64 with own u8, which is an ordinary type mismatch.";

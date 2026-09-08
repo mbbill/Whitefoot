@@ -1,0 +1,12 @@
+command fn main() -> status: own ExitStatus pure {
+  let run = wrapped();
+  let first = run[0_u64];
+  let second = run[1_u64];
+  let third = run[2_u64];
+  let fourth = run[3_u64];
+  let left = first +wrap second;
+  let right = third +wrap fourth;
+  let total = left +wrap right;
+  let result = total -wrap 14_u8;
+  return exit_status(code: result);
+}

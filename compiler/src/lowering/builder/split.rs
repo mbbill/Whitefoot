@@ -811,11 +811,15 @@ fn frame_bytes(ty: IrType) -> u64 {
         // A descriptor is a pointer and a length; a borrow, a box, and an arena
         // handle are one pointer each.
         IrType::Buffer { .. } | IrType::Slice { .. } => 2 * FRAME_FIELD_ALIGN,
+        // A run descriptor is a pointer, a capacity, a length, and a window
+        // origin; a provider is proof-only [BLK-1, PROV-1].
+        IrType::Vector { .. } => 4 * FRAME_FIELD_ALIGN,
+        IrType::Provider => 2 * FRAME_FIELD_ALIGN,
         IrType::Address(_) => FRAME_FIELD_ALIGN,
         // A nominal travels by value. Charging it the whole frame refuses every
         // loop that would capture one, which is the fail-closed direction until
         // a program asks for it.
-        IrType::Nominal(_) | IrType::Array { .. } => LANE_FRAME_BYTES,
+        IrType::Nominal(_) | IrType::Array { .. } | IrType::FixedVector { .. } => LANE_FRAME_BYTES,
     };
     raw.div_ceil(FRAME_FIELD_ALIGN) * FRAME_FIELD_ALIGN
 }

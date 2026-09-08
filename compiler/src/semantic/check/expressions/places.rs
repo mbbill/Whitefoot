@@ -60,7 +60,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 );
             }
         }
-        if options.explicit_move {
+        if options.explicit_move && self.judges_class_spelling() {
             return self.issue_node(
                 SemanticRule::Own1,
                 use_node,
@@ -79,8 +79,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             )?;
         }
         let mut effects = EffectSet::NONE;
-        for path in self.effect_paths_for_place(&place.resolved, bindings)? {
-            effects.add_read(path);
+        // [EFF-1] a loan-bearing parameter's effect path names the viewed
+        // backing state and not the descriptor, and merely moving, returning
+        // or structurally repacking that value observes none of it: a read
+        // *through* the view is the subscript's own attribution. Before the
+        // shared view became copy this arm was reached only by a consume,
+        // which exhibited the same wrong read; the copy spelling is what made
+        // an accepted program declare it.
+        if !Self::checked_type_is_loan_bearing(place.ty) {
+            for path in self.effect_paths_for_place(&place.resolved, bindings)? {
+                effects.add_read(path);
+            }
         }
         let (mode, borrow, holder) = if copy {
             (CheckedMode::Own, None, None)
@@ -149,7 +158,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let suffixes = self.tree.children_with(node, Production::Psuffix)?;
         let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
         let copy = self.is_copy_type(ty)?;
-        if !copy {
+        // [LIV-2] the read-out of a `deref` target of this statement's commit
+        // is admitted on exactly [SET-2]'s exchange ground: the exchange
+        // leaves the referent place owning one valid value at every program
+        // point, so the sole [OWN-5] exception covers this move as well.
+        let mut read_out_place = borrow.place.clone();
+        read_out_place.extend_fields(&fields);
+        self.check_commit_place_live(&read_out_place, use_node, false)?;
+        let read_out = !copy && options.explicit_move && self.take_commit_read_out(&read_out_place);
+        if !copy && !read_out {
             if options.explicit_move {
                 return self.issue_node(
                     SemanticRule::Own5,
@@ -170,7 +187,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 );
             }
         }
-        if copy && options.explicit_move {
+        if copy && options.explicit_move && self.judges_class_spelling() {
             return self.issue_node(
                 SemanticRule::Own1,
                 use_node,
@@ -181,7 +198,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         self.check_holder_not_suspended(&local, use_node)?;
         let mut resolved = borrow.place.clone();
-        resolved.fields.extend_from_slice(&fields);
+        resolved.extend_fields(&fields);
         self.check_loan_access(
             bindings,
             Some(declaration),
@@ -190,8 +207,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             use_node,
         )?;
         let mut effects = EffectSet::NONE;
-        for path in self.effect_paths_for_place(&resolved, bindings)? {
-            effects.add_read(path);
+        // [EFF-1] as above: the descriptor read through a holder observes the
+        // viewed state no more than a direct one does.
+        if !Self::checked_type_is_loan_bearing(ty) {
+            for path in self.effect_paths_for_place(&resolved, bindings)? {
+                effects.add_read(path);
+            }
         }
         let expression = if !fields.is_empty() {
             CheckedExpression::Project {
@@ -222,7 +243,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 consume_root: false,
             }
         };
-        if copy {
+        // A read-out delivers the referent's own value: the previous owner
+        // leaves through this move and the commit reinitializes the place
+        // [LIV-2], so the value is `own` and carries no borrow.
+        if copy || read_out {
             return Ok(TypedExpression::owned_with_access(
                 expression,
                 effects,
@@ -232,7 +256,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let mode = borrow.mode();
         let mut place = borrow.place.clone();
-        place.fields.extend_from_slice(&fields);
+        place.extend_fields(&fields);
         Ok(TypedExpression {
             expression,
             mode,
@@ -278,7 +302,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     );
                 };
                 match self.nominal(nominal)?.kind {
-                    CheckedNominalKind::Box { referent } => {
+                    CheckedNominalKind::Box { referent, .. } => {
                         inner.expression = CheckedExpression::BoxDeref {
                             carrier: self.tree.path(carrier)?.clone(),
                             nominal,
@@ -352,10 +376,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     consume_root: false,
                 },
                 resolved: local.borrow.map_or_else(
-                    || ResolvedPlace {
-                        root: declaration,
-                        fields: Vec::new(),
-                    },
+                    || ResolvedPlace::fields(declaration, Vec::new()),
                     |borrow| borrow.place,
                 ),
             }
@@ -423,7 +444,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ty: field.ty,
             };
             place.ty = field.ty;
-            place.resolved.fields.push(field_index);
+            place.resolved.extend_fields(&[field_index]);
         }
         Ok(place)
     }

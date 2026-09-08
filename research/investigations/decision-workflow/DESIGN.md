@@ -235,8 +235,9 @@ Reopen the choice if ordinary work repeatedly misses affected reasons, cannot
 retrieve them from the index, or spends more on updating records than the
 decision warrants.
 
-The initial migration provides a row for every active rule. Five convention
-and workflow rows have the scoped grounds above; the other 135 are explicitly
+The initial migration over the v0.51 container amendment provides a row for
+each of its 161 active rules. Five convention
+and workflow rows have the scoped grounds above; the other 156 are explicitly
 `unassessed`/`revisit`, with retained evidence pointers. Those flags do not
 declare the rules unsound. They reject automatic conversion of old `derived`
 labels into current endorsement. The shared premise changes are the clause

@@ -1,0 +1,39 @@
+fn total(run: own Vector<u8>, store: &uniq Heap) -> sum: own u8 reads(run), writes(store) contract {
+  requires len_of(run) >= 4_u64;
+} {
+  doc "Adds the run's first four bytes and releases the run here. D3: this scope holds the store's provider, so the run is affine and the release is derived on the return edge; the row's writes(store) is the capability that release spends.";
+  let a = run[0_u64];
+  let b = run[1_u64];
+  let c = run[2_u64];
+  let d = run[3_u64];
+  let ab = a +wrap b;
+  let cd = c +wrap d;
+  let all = ab +wrap cd;
+  return all;
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "The general store hands out one run of four slots, a counted loop fills it, and a helper holding the provider adds the bytes and takes the derived release.";
+  region {
+    match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let built = move fresh;
+        for @fill (
+          at in 0_u64..4_u64,
+          invariant grown: len_of(built) >= at,
+          invariant spare: room_of(built) + at >= 4_u64,
+          invariant flat: head_of(built) <= 0_u64
+        ) {
+          set built = place_back(vector: move built, value: 3_u8);
+        }
+        region {
+          let sum = total(run: move built, store: &uniq heap);
+          return exit_status(code: sum);
+        }
+      }
+    }
+  }
+}

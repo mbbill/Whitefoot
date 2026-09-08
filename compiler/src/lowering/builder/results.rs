@@ -3,8 +3,8 @@ use crate::semantic::{
 };
 
 use super::{
-    IrBuilder, IrEnumType, IrMatchTarget, IrNominalId, IrOperation, IrTerminator, IrType,
-    LoweringFailure, lower_type,
+    IrBuilder, IrEnumType, IrMatchTarget, IrOperation, IrTerminator, IrType, LoweringFailure,
+    lower_type,
 };
 
 impl IrBuilder<'_> {
@@ -20,8 +20,8 @@ impl IrBuilder<'_> {
         error_drops: &[CheckedDrop],
         context: &PropagationContext,
     ) -> Result<(), LoweringFailure> {
-        let result_nominal = IrNominalId(result_nominal.0);
-        let return_nominal = IrNominalId(return_nominal.0);
+        let result_nominal = self.erased(result_nominal);
+        let return_nominal = self.erased(return_nominal);
         if self.result != IrType::Nominal(return_nominal)
             || context.function.is_empty()
             || context.node_path.components().is_empty()
@@ -54,7 +54,7 @@ impl IrBuilder<'_> {
         self.current = Some(error_block);
         self.bindings = base_bindings.clone();
         let error = self.define(
-            lower_type(error_type)?,
+            lower_type(self.erasure, error_type)?,
             IrOperation::ProjectVariant {
                 aggregate: scrutinee,
                 nominal: result_nominal,
@@ -79,7 +79,7 @@ impl IrBuilder<'_> {
         self.current = Some(ok_block);
         self.bindings = base_bindings;
         let value = self.define(
-            lower_type(ok_type)?,
+            lower_type(self.erasure, ok_type)?,
             IrOperation::ProjectVariant {
                 aggregate: scrutinee,
                 nominal: result_nominal,

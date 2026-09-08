@@ -1,0 +1,19 @@
+fn make['s](store: &uniq Heap<'s>, n: own u64) -> made: own Option<Vector<'s, i32>> reads(store), writes(store), allocates(store) contract {
+  requires buffer_fits::<i32>(n);
+} {
+  doc "The same acquisition with the row's own `fits::<i32>(count)` obligation discharged from a written requirement [BLK-0, OP-9, MSR-4].";
+  region {
+    return heap_vector::<i32>(store: &uniq deref(store), count: n);
+  }
+}
+
+fn make_literal['s](store: &uniq Heap<'s>) -> made: own Option<Vector<'s, i32>> reads(store), writes(store), allocates(store) {
+  doc "A literal count discharges the same obligation without a written requirement.";
+  region {
+    return heap_vector::<i32>(store: &uniq deref(store), count: 64_u64);
+  }
+}
+
+command fn main() -> return_value: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

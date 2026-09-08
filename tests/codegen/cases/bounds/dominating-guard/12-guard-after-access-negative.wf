@@ -1,6 +1,6 @@
 fn probe(b: own buffer<u8>) -> result: own u64 pure {
   doc "PROOF-1 negative: a check after the access cannot dominate it.";
-  let m = len(b);
+  let m = len_of(b);
   let i = 0_u64;
   let sum = 0_u64;
   loop @scan {

@@ -1,15 +1,17 @@
 mod borrows;
 mod cleanup;
+mod confinement;
 mod contracts;
 mod control;
 mod ensures;
 mod entry_form;
-mod expressions;
+pub(in crate::semantic::check) mod expressions;
 mod floats;
 mod generics;
+mod linearity;
 mod nominal_instances;
 mod nominals;
-mod publication;
+pub(crate) mod publication;
 mod requires;
 mod result_state_origin;
 mod support;
@@ -35,12 +37,12 @@ use super::goal::{
     GoalOperation, GoalProjection, first_ephemeral_argument,
 };
 use super::model::{
-    BindingId, CheckedConst, CheckedConstant, CheckedConstantId, CheckedContract,
+    BindingId, CheckedConst, CheckedConstant, CheckedConstantId, CheckedContract, CheckedElement,
     CheckedExpression, CheckedFlatElement, CheckedFunction, CheckedGenericRequirement, CheckedMode,
     CheckedNominal, CheckedNominalKind, CheckedParameter, CheckedProgramData,
     CheckedResultStateOrigin, CheckedSetTarget, CheckedSliceOrigin, CheckedStateOrigins,
     CheckedStatement, CheckedType, CheckedValue, DerivedConst, DerivedConstId, FunctionId,
-    NominalId, ValueInitializerKind, evaluate_const_operation,
+    LoanStrength, NominalId, ValueInitializerKind, evaluate_const_operation,
 };
 use super::permission::{PermissionSignature, analyze_permission};
 use super::permission_ledger::{LedgerSource, render_ledger};
@@ -78,6 +80,15 @@ struct ParameterSignature {
     ty: CheckedType,
 }
 
+/// One declared result ordinal of a callable boundary [GRAM-2, FN-1].
+#[derive(Clone)]
+struct ResultSignature {
+    mode: CheckedMode,
+    ty: CheckedType,
+    /// The ordinal's complete `rtype`, for a diagnostic at the declaration.
+    rtype: NodeId,
+}
+
 #[derive(Clone)]
 struct FunctionSignature {
     id: FunctionId,
@@ -92,8 +103,18 @@ struct FunctionSignature {
     /// How many leading `region_parameters` entries the declaration writes.
     written_regions: usize,
     parameters: Vec<ParameterSignature>,
+    /// The callable result [FN-1]: the written result of a single-result
+    /// declaration, and the compiler-owned result-list value of a declaration
+    /// that writes an ordered result list [GRAM-2, CALL-4].
     result_mode: CheckedMode,
     result: CheckedType,
+    /// Every declared result ordinal in written order. A single-result
+    /// declaration has exactly one entry and it is the callable result above.
+    results: Vec<ResultSignature>,
+    /// The result-list nominal, for a declaration that writes two or more
+    /// results. `None` is the single-result form, whose callable result is
+    /// the written result itself.
+    result_list: Option<NominalId>,
     slice_return_ceiling: Vec<CheckedSliceOrigin>,
     effects_node: NodeId,
     declared_effects: EffectSet,
@@ -122,14 +143,47 @@ fn derive_slice_return_ceiling(
     result_mode: CheckedMode,
     result: CheckedType,
 ) -> Vec<CheckedSliceOrigin> {
-    let (CheckedMode::Own, CheckedType::Slice { region, element }) = (result_mode, result) else {
+    let (
+        CheckedMode::Own,
+        CheckedType::Slice {
+            region,
+            element,
+            strength,
+        },
+    ) = (result_mode, result)
+    else {
         return Vec::new();
     };
     let mut ceiling = vec![CheckedSliceOrigin::ImmutableConst];
     for parameter in parameters {
-        if parameter.mode == CheckedMode::Own
-            && parameter.ty == (CheckedType::Slice { region, element })
-        {
+        let admitted = match parameter.ty {
+            // [VIEW-6] the ceiling half [FN-1] already had: an `own` view
+            // parameter of exactly the result's own type.
+            CheckedType::Slice {
+                region: formal_region,
+                element: formal_element,
+                strength: formal_strength,
+            } => {
+                formal_region == region
+                    && formal_element == element
+                    && match parameter.mode {
+                        CheckedMode::Own => formal_strength == strength,
+                        // [VIEW-6, OWN-6] the shared child reborrow of the
+                        // view a helper was handed: a borrowed view holder at
+                        // the result's own region and element supplies a
+                        // **shared** result at either parent strength, which
+                        // is what makes the fill-and-publish helper writable.
+                        // No borrowed holder supplies an exclusive result: a
+                        // second exclusive loan on one range is what [OWN-5]
+                        // refuses.
+                        CheckedMode::Shared(_) | CheckedMode::Unique(_) => {
+                            strength == LoanStrength::Shared
+                        }
+                    }
+            }
+            _ => false,
+        };
+        if admitted {
             ceiling.push(CheckedSliceOrigin::FormalSlice {
                 parameter: parameter.declaration,
                 region,
@@ -174,6 +228,12 @@ enum ResultProvenance {
 fn type_carries_region(ty: CheckedType, region: DeclarationId) -> bool {
     match ty {
         CheckedType::Slice { region: slice, .. } => slice == region,
+        // A store brand is a component of the type [PROV-1], so a run, a
+        // heap, and an extent each carry their own store region here exactly
+        // as a slice carries its loan region.
+        CheckedType::Vector { region: store, .. }
+        | CheckedType::Heap { region: store }
+        | CheckedType::Extent { region: store, .. } => store == region,
         CheckedType::Generic(_) | CheckedType::GenericInt(_) | CheckedType::GenericFloat(_) => true,
         CheckedType::Unit
         | CheckedType::Bool
@@ -181,6 +241,7 @@ fn type_carries_region(ty: CheckedType, region: DeclarationId) -> bool {
         | CheckedType::Float(_)
         | CheckedType::Nominal(_)
         | CheckedType::Buffer { .. }
+        | CheckedType::FixedVector { .. }
         | CheckedType::Array { .. } => false,
     }
 }
@@ -259,19 +320,81 @@ struct NominalTemplate {
     name: String,
     role: DeclarationRole,
     generic_parameters: Vec<GenericParameter>,
+    /// [S20, GRAM-2] the declaration's own `region_params`, in written order.
+    ///
+    /// They are components of the nominal's type name [TYPE-2], so an
+    /// instance is keyed on them beside its type and const arguments and two
+    /// instances at two regions are two types [PROV-1].
+    region_parameters: Vec<DeclarationId>,
+    /// [PROV-6] whether the declaration writes the `linear` modifier. Every
+    /// instance of a marked declaration is marked.
+    linear: bool,
+    /// [FORM-8] one entry per constructor of this declaration — a struct has
+    /// one, an enum one per variant in tag order — and empty for a
+    /// declaration carrying no `region_params`.
+    constructors: Vec<ConstructorShape>,
+}
+
+/// One `construct` occurrence's declaration data [FORM-8, TYPE-5]: the
+/// template it names, the variant when its nominal is an enum, the
+/// declaration's own generic and region parameters, and the constructor's
+/// shape.
+struct ConstructorSite {
+    template: usize,
+    variant: Option<u32>,
+    generic_parameters: Vec<generics::GenericParameter>,
+    region_parameters: Vec<DeclarationId>,
+    shape: ConstructorShape,
+}
+
+/// What a `construct` of one nominal has to know *before* it forms the
+/// instance [FORM-8].
+///
+/// A construct writes a region argument only for a region parameter no field
+/// operand determines, and the operands are what determine the rest — so the
+/// instance is what the judgment produces and cannot be what it consults.
+/// This is read once, off the declaration's own symbolic instance, whose
+/// region arguments are its region parameters, while the templates are
+/// validated.
+#[derive(Clone, Default)]
+struct ConstructorShape {
+    /// The declared field names of this constructor, in declared order.
+    fields: Vec<String>,
+    /// Parallel to the declaration's `region_parameters`: the field whose
+    /// declared type names that region parameter, and `None` where no field
+    /// of this constructor does, which is exactly the region argument the
+    /// construct writes.
+    determining_field: Vec<Option<usize>>,
 }
 
 /// A nominal instance a derived type named, awaiting interning.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum PendingNominal {
     /// [STOR-2] a box over this referent.
     Box(CheckedType),
+    /// S39 a `Box<'s, T>` over this store region and referent.
+    StoreBox(DeclarationId, CheckedType),
+    /// The compiler-owned result-list nominal of a [BLK-0] row that declares
+    /// an ordered result list [CALL-4]. A row's list is fixed by its own
+    /// instance and has no written form for the interning pass to find.
+    ResultList(Vec<(String, CheckedType)>),
     /// [STOR-2] an `arena<'r, T>` instance over this region and content.
     Arena(DeclarationId, CheckedType),
     /// The one compiler-owned region allocation-list nominal [STOR-3].
     ArenaStorage,
     /// A prelude instance, such as the `Result<T, E>` a checked row produces.
     Prelude(PreludeType),
+    /// [S20, FN-2] one source nominal instance at a region a call determined.
+    ///
+    /// A callee's result names its own formal region, and the instance the
+    /// caller receives is that declaration at the actual region [FORM-8]. No
+    /// caller position need write that type, so the interning pass cannot
+    /// have found it; the checking path records the template and the
+    /// substituted instance key here and the driver interns it.
+    SourceInstance {
+        template: usize,
+        substitution: GenericSubstitution,
+    },
 }
 
 #[derive(Clone)]
@@ -315,9 +438,32 @@ struct LocalBinding {
 }
 
 impl LocalBinding {
+    /// One loan per (region, place, strength); a second formation of the same
+    /// loan adds its own holder rather than a second entry [PROV-3].
     fn push_slice_loan(&mut self, loan: SliceLoan) {
-        if !self.slice_loans.contains(&loan) {
-            self.slice_loans.push(loan);
+        if let Some(existing) = self.slice_loans.iter_mut().find(|existing| {
+            existing.region == loan.region
+                && existing.place == loan.place
+                && existing.strength == loan.strength
+        }) {
+            for descriptor in loan.descriptors {
+                if !existing.descriptors.contains(&descriptor) {
+                    existing.descriptors.push(descriptor);
+                }
+            }
+            return;
+        }
+        self.slice_loans.push(loan);
+    }
+
+    /// [PROV-3] one binding takes the loans its own origin set names: a `let`
+    /// that binds a formed, copied, passed or returned view is where that
+    /// value's liveness — and therefore its loan's extent — begins.
+    fn hold_slice_loans(&mut self, holder: DeclarationId, places: &[ResolvedPlace]) {
+        for loan in &mut self.slice_loans {
+            if places.contains(&loan.place) && !loan.descriptors.contains(&holder) {
+                loan.descriptors.push(holder);
+            }
         }
     }
 
@@ -426,6 +572,13 @@ const EFF2_ROW_FIX: &str = "declare exactly the row the body exhibits: add every
 struct EffectSet {
     reads: Vec<super::model::CheckedStatePath>,
     writes: Vec<super::model::CheckedStatePath>,
+    /// [S23] the declared and exhibited `allocates` paths: one formal-rooted
+    /// path per store whose provider is a value.
+    allocates: Vec<super::model::CheckedStatePath>,
+    /// The ambient heap of `box<T>` and `buffer<T>` [STOR-1]. Its store has no
+    /// provider value, so [EFF-1] gives it no `effect_path` and no written
+    /// entry; the flag is derived, never declared, and never compared, and it
+    /// exists because [PROG-1]'s resource closure still reads it.
     allocates_heap: bool,
     allocates_arenas: Vec<DeclarationId>,
 }
@@ -434,12 +587,14 @@ impl EffectSet {
     const NONE: Self = Self {
         reads: Vec::new(),
         writes: Vec::new(),
+        allocates: Vec::new(),
         allocates_heap: false,
         allocates_arenas: Vec::new(),
     };
     const ALLOCATES_HEAP: Self = Self {
         reads: Vec::new(),
         writes: Vec::new(),
+        allocates: Vec::new(),
         allocates_heap: true,
         allocates_arenas: Vec::new(),
     };
@@ -449,6 +604,9 @@ impl EffectSet {
         }
         for path in other.writes {
             self.add_write(path);
+        }
+        for path in other.allocates {
+            self.add_allocation(path);
         }
         self.allocates_heap |= other.allocates_heap;
         for region in other.allocates_arenas {
@@ -468,6 +626,23 @@ impl EffectSet {
         if !self.writes.contains(&path) {
             self.writes.push(path);
             self.writes.sort_unstable();
+        }
+    }
+
+    /// The row a writer declares. The ambient heap [STOR-1] has no
+    /// `effect_path` and therefore no written entry [EFF-1, S23], so it is not
+    /// part of the row [EFF-2] compares in either direction.
+    fn written_row(&self) -> Self {
+        Self {
+            allocates_heap: false,
+            ..self.clone()
+        }
+    }
+
+    fn add_allocation(&mut self, path: super::model::CheckedStatePath) {
+        if !self.allocates.contains(&path) {
+            self.allocates.push(path);
+            self.allocates.sort_unstable();
         }
     }
 
@@ -511,9 +686,17 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     nominal_states: Vec<u8>,
     source_nominal_instances: Vec<Option<(usize, GenericSubstitution)>>,
     box_nominals: HashMap<CheckedType, NominalId>,
+    /// S39 one `Box<'s, T>` nominal per (store region, referent).
+    store_box_nominals: HashMap<(DeclarationId, CheckedType), NominalId>,
     /// `arena<'r, T>` instances by (region declaration, content type): the
     /// region is part of the type's identity [OWN-3, STOR-4].
     arena_nominals: HashMap<(DeclarationId, CheckedType), NominalId>,
+    /// The compiler-owned result-list nominal of a `fn_decl` that declares an
+    /// ordered result list [GRAM-2, CALL-4], keyed by the ordered result
+    /// binder spellings and types. Two declarations whose result lists agree
+    /// share one nominal; the value a multi-result callable hands back is one
+    /// value of it, and a destructuring binder list is its projection.
+    result_list_nominals: HashMap<Vec<(String, CheckedType)>, NominalId>,
     /// The one compiler-owned region allocation-list nominal, interned on
     /// first use [STOR-3].
     arena_storage_nominal: Option<NominalId>,
@@ -521,6 +704,38 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// Written by the `&self` checking path and drained by the `&mut self`
     /// driver between attempts at one function.
     pending_nominals: RefCell<Vec<PendingNominal>>,
+    /// [PROV-1] the region an elided store brand denotes at the position
+    /// being parsed: the enclosing nominal.s sole region parameter while a
+    /// `struct_decl` or `enum_decl` body is being read, and `None`
+    /// everywhere else, where the brand resolves to the entry heap's store
+    /// region.
+    elided_store_brand: std::cell::Cell<Option<DeclarationId>>,
+    /// [BLK-4] whether this unit's entry selects [FN-7]'s `heap` standard
+    /// input, memoized because the answer is one whole-program fact and the
+    /// scan that reads it is over the unit's own `input_label` nodes.
+    general_store_reachable: std::cell::Cell<Option<bool>>,
+    /// [FN-2, OWN-1, S37] whether the body now being checked is a *concrete
+    /// instance* of a generic template whose spelling one symbolic instance
+    /// has already judged.
+    ///
+    /// The template is the spelling authority: an `affine` or `linear` body
+    /// writes `move`, a `copy` body writes bare use, and the one symbolic
+    /// instance decides both once. The concrete-instance recheck therefore
+    /// does not re-judge the [OWN-1]/[FORM-1] spelling, and a `move` of a
+    /// template-affine value at a copy instance denotes a copy. Every other
+    /// [OWN-1] judgment — consume-once, dead roots, exclusivity — is
+    /// re-judged as usual, because those are properties of the concrete
+    /// instance and not of the written spelling.
+    template_spelling_authority: std::cell::Cell<bool>,
+    /// [LIV-2] the target places of the `set` commit whose right-hand side is
+    /// being checked, and whether that right-hand side has read each out.
+    /// Empty everywhere else: `check_commit` installs it around exactly that
+    /// one expression and removes it before any rejection leaves.
+    commit_read_outs: RefCell<Vec<control::CommitReadOut>>,
+    /// Explicit argument loans survive their call until the enclosing statement
+    /// or non-escaping control header ends [OWN-6]. Nested checking retains
+    /// loans created before its own evaluation boundary.
+    statement_loans: RefCell<Vec<borrows::TemporaryLoan>>,
     prelude_nominals: HashMap<PreludeType, NominalId>,
     system_nominals: HashMap<u8, NominalId>,
     prelude_types: Vec<Option<PreludeType>>,
@@ -556,6 +771,12 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     postcondition_selectors: Vec<CheckedPostconditionSelector>,
     postcondition_unavailable_declarations: Vec<DeclarationId>,
     active_postcondition: Cell<Option<PostconditionCheckContext>>,
+    /// The result datums admitted in the [FN-9] clause currently being
+    /// checked: each written spelling with the result ordinal it names and
+    /// the type that datum has [CALL-4]. A declaration writing one result
+    /// contributes one row at ordinal zero. Set and restored beside
+    /// `active_postcondition`.
+    active_result_datums: RefCell<Vec<(String, u32, CheckedType)>>,
     contracts: Vec<ContractInfo>,
     contracts_by_declaration: HashMap<DeclarationId, usize>,
 }
@@ -716,14 +937,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             ));
         }
         let mut allocations = Vec::new();
-        if effects.allocates_heap {
-            allocations.push("heap".to_owned());
+        for path in &effects.allocates {
+            allocations.push(self.render_effect_path(path, signature)?);
         }
         for region in &effects.allocates_arenas {
             allocations.push(format!("arena {}", self.region_phrase(*region)?));
         }
         if !allocations.is_empty() {
-            categories.push(format!("allocates({})", allocations.join(" ")));
+            let separator = if effects.allocates.is_empty() {
+                " "
+            } else {
+                ", "
+            };
+            categories.push(format!("allocates({})", allocations.join(separator)));
         }
         Ok(if categories.is_empty() {
             "pure".to_owned()
@@ -814,8 +1040,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ));
                 }
             }
-            if left.allocates_heap && !right.allocates_heap {
-                out.push("allocates(heap)".to_owned());
+            for path in &left.allocates {
+                if !right.allocates.contains(path) {
+                    out.push(format!(
+                        "allocates({})",
+                        self.render_effect_path(path, signature)?
+                    ));
+                }
             }
             for region in &left.allocates_arenas {
                 if !right.allocates_arenas.contains(region) {
@@ -843,6 +1074,109 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// mints it under a name no source token can form, and printing that name
     /// would name a region the writer cannot write. Diagnostics that quote a
     /// region go through this instead of the raw spelling.
+    /// [OWN-1, FORM-1, FN-2, S37] whether this body is the authority on the
+    /// spellings [FORM-1] keys on a value's copy/affine class.
+    ///
+    /// Those are `move p` versus a bare `p` [OWN-1] and `replace` versus `set`
+    /// [SET-1, SET-2]: one spelling per meaning, selected by the class. A
+    /// concrete instance of a generic template is not their authority: the
+    /// template's one symbolic instance judged them under the parameter's
+    /// written bound, so at a copy instance a `move` of a template-affine
+    /// value denotes a copy and a `replace` of one denotes the same exchange,
+    /// rather than reopening a judgment the template already made. Every other
+    /// judgment of those rules — consume-once, dead roots, exclusivity, the
+    /// region-free demand on a replacement target — is re-judged here, because
+    /// each is a property of the concrete instance and not of the spelling.
+    /// [PROV-3] register one new binding as a holder of every loan its value's
+    /// origin set names.
+    ///
+    /// The origins are the value's own [PROV-3] set, so this covers the four
+    /// events the rule enumerates — formation, copy, pass and return — with
+    /// one judgment over the set rather than one per event. `immutable-const`
+    /// and a formal origin name no loan of this function and match nothing.
+    pub(in crate::semantic::check) fn hold_slice_loans_of(
+        holder: DeclarationId,
+        slice: Option<&borrows::SliceInfo>,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+    ) {
+        let Some(slice) = slice else {
+            return;
+        };
+        let mut wanted: HashMap<DeclarationId, Vec<ResolvedPlace>> = HashMap::new();
+        for origin in &slice.origins {
+            if let crate::semantic::model::CheckedSliceOrigin::SourcePlace { root, path, .. } =
+                origin
+            {
+                wanted.entry(*root).or_default().push(ResolvedPlace {
+                    root: *root,
+                    path: path.clone(),
+                });
+            }
+        }
+        for (root, places) in wanted {
+            if let Some(local) = bindings.get_mut(&root) {
+                local.hold_slice_loans(holder, &places);
+            }
+        }
+    }
+
+    /// [VIEW-6, OWN-5] the shared child a call published, registered at the
+    /// caller.
+    ///
+    /// A callee handed `&uniq MutSlice<'r, T>` may return the shared child of
+    /// that view [VIEW-6]. The child reaches the caller's own storage, and
+    /// the caller holds the exclusive loan that storage already carries, so
+    /// the freeze the child puts on its parent has to stand here too: the
+    /// parent may not write the elements it views while the returned child
+    /// lives. No new formation happened at this caller, so the loan is
+    /// registered from the result's own origin set, and only where an
+    /// exclusive loan on that place is what the child is a child *of* — a
+    /// shared result over storage no exclusive loan covers already carries
+    /// its own shared loan from its formation.
+    pub(in crate::semantic::check) fn hold_published_child_loan(
+        holder: DeclarationId,
+        ty: CheckedType,
+        slice: Option<&borrows::SliceInfo>,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+    ) {
+        let (
+            CheckedType::Slice {
+                strength: LoanStrength::Shared,
+                ..
+            },
+            Some(slice),
+        ) = (ty, slice)
+        else {
+            return;
+        };
+        let places = slice.effect_places();
+        let mut added: Vec<(DeclarationId, SliceLoan)> = Vec::new();
+        for (root, local) in bindings.iter() {
+            for loan in &local.slice_loans {
+                if loan.strength == LoanStrength::Exclusive && places.contains(&loan.place) {
+                    added.push((
+                        *root,
+                        SliceLoan {
+                            region: slice.region,
+                            place: loan.place.clone(),
+                            strength: LoanStrength::Shared,
+                            descriptors: vec![holder],
+                        },
+                    ));
+                }
+            }
+        }
+        for (root, loan) in added {
+            if let Some(local) = bindings.get_mut(&root) {
+                local.push_slice_loan(loan);
+            }
+        }
+    }
+
+    pub(in crate::semantic::check) fn judges_class_spelling(&self) -> bool {
+        !self.template_spelling_authority.get()
+    }
+
     pub(in crate::semantic::check) fn region_phrase(
         &self,
         region: DeclarationId,
@@ -932,9 +1266,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             nominal_states: Vec::new(),
             source_nominal_instances: Vec::new(),
             box_nominals: HashMap::new(),
+            store_box_nominals: HashMap::new(),
             arena_nominals: HashMap::new(),
+            result_list_nominals: HashMap::new(),
             arena_storage_nominal: None,
             pending_nominals: RefCell::new(Vec::new()),
+            elided_store_brand: std::cell::Cell::new(None),
+            general_store_reachable: std::cell::Cell::new(None),
+            template_spelling_authority: std::cell::Cell::new(false),
+            commit_read_outs: RefCell::new(Vec::new()),
+            statement_loans: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
             system_nominals: HashMap::new(),
             prelude_types: Vec::new(),
@@ -957,6 +1298,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             postcondition_selectors: Vec::new(),
             postcondition_unavailable_declarations: Vec::new(),
             active_postcondition: Cell::new(None),
+            active_result_datums: RefCell::new(Vec::new()),
             contracts: Vec::new(),
             contracts_by_declaration: HashMap::new(),
         })
@@ -996,15 +1338,38 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for index in 0..self.signatures.len() {
             function_inventory.push(self.check_function_interning_nominals(index)?);
         }
-        // Function checking discovers only the instances a derived type
-        // names, which are box and prelude ones; a *source* nominal instance
-        // is always interned from a written type before it runs.
-        for instance in self
-            .source_nominal_instances
-            .iter()
-            .skip(nominal_count_before_function_checking)
-        {
-            if instance.is_some() {
+        // Function checking discovers the instances a derived type names: a
+        // purely local `box<T>` [STOR-2], the `Result<T, E>` a checked row
+        // produces, and — since a call substitutes its region arguments into
+        // every position of the callee's signature, results included
+        // [FN-2] — a *source* instance of a declaration this unit already
+        // names at another region. That last class is admitted here on one
+        // condition: it is one representation with an instance the written
+        // text already interned [S20], so lowering still erases it onto that
+        // instance's own IR nominal and the executable prefix closes over a
+        // complete set of representations. A source instance discovered here
+        // that is related to no earlier one would be a representation no
+        // written type produced, and is a compiler defect.
+        for index in nominal_count_before_function_checking..self.nominals.len() {
+            let id = NominalId(
+                u32::try_from(index)
+                    .map_err(|_| CheckStop::from(SemanticCompilerFailure::CounterOverflow))?,
+            );
+            if self.source_nominal_instance_entry(id)?.is_none() {
+                continue;
+            }
+            let mut related = false;
+            for earlier in 0..nominal_count_before_function_checking {
+                let earlier = NominalId(
+                    u32::try_from(earlier)
+                        .map_err(|_| CheckStop::from(SemanticCompilerFailure::CounterOverflow))?,
+                );
+                if self.nominals_differ_only_in_region(id, earlier)? {
+                    related = true;
+                    break;
+                }
+            }
+            if !related {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
         }
@@ -1163,6 +1528,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 rows
             },
             executable_nominal_count,
+            nominal_lowering_alias: self.nominal_lowering_aliases()?,
             constants: self.checked_constants.clone(),
             derived_consts,
             functions,
@@ -1468,6 +1834,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             PendingNominal::Box(referent) => {
                                 self.intern_box_nominal(referent)?;
                             }
+                            PendingNominal::StoreBox(region, referent) => {
+                                self.intern_store_box_nominal(region, referent)?;
+                            }
+                            PendingNominal::ResultList(results) => {
+                                self.intern_result_list_nominal(&results)?;
+                            }
                             PendingNominal::Arena(region, content) => {
                                 self.intern_arena_nominal(region, content)?;
                             }
@@ -1476,6 +1848,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             }
                             PendingNominal::Prelude(ty) => {
                                 self.intern_prelude_nominal(ty)?;
+                            }
+                            PendingNominal::SourceInstance {
+                                template,
+                                substitution,
+                            } => {
+                                self.ensure_source_nominal_instance(template, substitution)?;
                             }
                         }
                     }
@@ -1499,7 +1877,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.check_function_signature(signature)
     }
 
+    /// [FN-2, OWN-1, S37] one body, checked with the template's spelling
+    /// authority recorded for the instance it is.
+    ///
+    /// A concrete instance of a generic template is exactly the body whose
+    /// [OWN-1]/[FORM-1] spelling the template's own symbolic instance already
+    /// judged under the parameter's written bound, so this instance does not
+    /// re-judge it. A symbolic instance and a nongeneric body are their own
+    /// authority and judge the spelling here.
     fn check_function_signature(
+        &self,
+        signature: &FunctionSignature,
+    ) -> Result<CheckedFunctionInventory, CheckStop> {
+        let previous = self
+            .template_spelling_authority
+            .replace(signature.substitution.len() > 0 && signature.substitution.is_concrete());
+        let outcome = self.check_function_signature_body(signature);
+        self.template_spelling_authority.set(previous);
+        outcome
+    }
+
+    fn check_function_signature_body(
         &self,
         signature: &FunctionSignature,
     ) -> Result<CheckedFunctionInventory, CheckStop> {
@@ -1618,20 +2016,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.written_body_effects(signature, checked.effects.clone())
         };
         let mut release_sites = Vec::new();
-        self.collect_release_sites(&checked.statements, &mut release_sites)?;
+        self.collect_release_sites(signature, &checked.statements, &mut release_sites)?;
         let mut release = EffectSet::NONE;
         for site in &release_sites {
             release = release.union(site.effects.clone());
         }
         let exhibited = syntactic.clone().union(release.clone());
-        if !self.deriving_result_state_origin.get() && exhibited != signature.declared_effects {
+        if !self.deriving_result_state_origin.get()
+            && exhibited.written_row() != signature.declared_effects.written_row()
+        {
             // A state transition contributed only by a release has no offending
             // source occurrence. Keep the owner-bearing diagnostic for that
             // case even though the current system releases have empty memory
             // rows; later resource families may carry an ordinary memory row.
-            let release_only = release.clone().union(syntactic.clone()) != syntactic
-                && release.clone().union(signature.declared_effects.clone())
-                    != signature.declared_effects;
+            let release_only = release.clone().union(syntactic.clone()).written_row()
+                != syntactic.written_row()
+                && release
+                    .clone()
+                    .union(signature.declared_effects.clone())
+                    .written_row()
+                    != signature.declared_effects.written_row();
             if release_only {
                 let owner = release_sites
                     .iter()
@@ -1732,7 +2136,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .cloned()
                 .unwrap_or(CheckedResultStateOrigin::Unknown),
             slice_return_ceiling: signature.slice_return_ceiling.clone(),
-            declared_allocates_heap: signature.declared_effects.allocates_heap,
+            reaches_ambient_heap: checked.effects.allocates_heap,
             declared_state_writes: signature.declared_effects.writes.clone(),
             target_action: crate::TargetAction::INLINE,
             requirements,
@@ -1762,10 +2166,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedStatement::CountedRange { body, .. }
             | CheckedStatement::Region { body, .. } => Self::statements_contain_value_if(body),
             CheckedStatement::Let { .. }
+            | CheckedStatement::DestructuringLet { .. }
             | CheckedStatement::PropagateLet { .. }
             | CheckedStatement::Set { .. }
+            | CheckedStatement::SetList { .. }
             | CheckedStatement::Replace { .. }
             | CheckedStatement::Evaluate(_)
+            | CheckedStatement::Dispose { .. }
             | CheckedStatement::DropExpression { .. }
             | CheckedStatement::Proof(_)
             | CheckedStatement::Return { .. }
@@ -1788,7 +2195,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 signature
                     .parameters
                     .iter()
-                    .map(|parameter| (parameter.declaration, parameter.mode)),
+                    .map(|parameter| (parameter.declaration, parameter.mode, parameter.ty)),
                 &signature.declared_effects.writes,
             ));
         }
@@ -2005,7 +2412,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for statement in statements {
             match statement {
                 CheckedStatement::Let { value, .. }
+                | CheckedStatement::DestructuringLet { value, .. }
                 | CheckedStatement::Evaluate(value)
+                | CheckedStatement::Dispose { value, .. }
                 | CheckedStatement::DropExpression { value, .. }
                 | CheckedStatement::Return { value, .. }
                 | CheckedStatement::Give { value, .. } => {
@@ -2013,6 +2422,41 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 CheckedStatement::PropagateLet { scrutinee, .. } => {
                     self.install_expression_call_requirements(scrutinee, requirements)?;
+                }
+                CheckedStatement::SetList {
+                    targets, values, ..
+                } => {
+                    for target in targets {
+                        match target {
+                            CheckedSetTarget::Place(_) => {}
+                            CheckedSetTarget::ArrayIndex(target) => self
+                                .install_expression_call_requirements(
+                                    &mut target.offset,
+                                    requirements,
+                                )?,
+                            CheckedSetTarget::BufferIndex(target) => self
+                                .install_expression_call_requirements(
+                                    &mut target.offset,
+                                    requirements,
+                                )?,
+                            CheckedSetTarget::Storage(target) => {
+                                for offset in target.offsets_mut() {
+                                    self.install_expression_call_requirements(
+                                        offset,
+                                        requirements,
+                                    )?;
+                                }
+                            }
+                            CheckedSetTarget::SliceIndex(target) => self
+                                .install_expression_call_requirements(
+                                    &mut target.offset,
+                                    requirements,
+                                )?,
+                        }
+                    }
+                    for value in values.expressions_mut() {
+                        self.install_expression_call_requirements(value, requirements)?;
+                    }
                 }
                 CheckedStatement::Set { target, value, .. }
                 | CheckedStatement::Replace { target, value, .. } => {
@@ -2024,6 +2468,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 requirements,
                             )?,
                         CheckedSetTarget::BufferIndex(target) => self
+                            .install_expression_call_requirements(
+                                &mut target.offset,
+                                requirements,
+                            )?,
+                        CheckedSetTarget::Storage(target) => {
+                            for offset in target.offsets_mut() {
+                                self.install_expression_call_requirements(offset, requirements)?;
+                            }
+                        }
+                        CheckedSetTarget::SliceIndex(target) => self
                             .install_expression_call_requirements(
                                 &mut target.offset,
                                 requirements,
@@ -2098,7 +2552,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     })
                     .collect::<Result<Vec<_>, CheckStop>>()?;
             }
+            // A [BLK-0] row's requirement list is declaration data, so the
+            // call instantiated it while it was checked and there is nothing
+            // to install from the source inventory here.
             CheckedExpression::SystemCall { arguments, .. }
+            | CheckedExpression::KernelCall { arguments, .. }
             | CheckedExpression::IntegerOperation { arguments, .. }
             | CheckedExpression::FloatOperation { arguments, .. }
             | CheckedExpression::BooleanOperation { arguments, .. }
@@ -2123,6 +2581,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::ProjectValue { value, .. } => {
                 self.install_expression_call_requirements(value, requirements)?;
             }
+            CheckedExpression::ReadStorage { root, .. } => {
+                for offset in root.offsets_mut() {
+                    self.install_expression_call_requirements(offset, requirements)?;
+                }
+            }
             CheckedExpression::ArrayIndex { offset, .. }
             | CheckedExpression::BufferIndex { offset, .. }
             | CheckedExpression::SliceIndex { offset, .. } => {
@@ -2139,10 +2602,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::Binding { .. }
-            | CheckedExpression::ArrayLength { .. }
-            | CheckedExpression::BufferLength { .. }
+            | CheckedExpression::ArrayMeasure { .. }
+            | CheckedExpression::BufferMeasure { .. }
+            | CheckedExpression::ContainerMeasure { .. }
+            | CheckedExpression::PostconditionResultMeasure { .. }
             | CheckedExpression::SliceOf { .. }
-            | CheckedExpression::SliceLength { .. }
+            | CheckedExpression::SliceMeasure { .. }
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBox { .. }
@@ -2186,7 +2651,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for statement in statements {
             match statement {
                 CheckedStatement::Let { value, .. }
+                | CheckedStatement::DestructuringLet { value, .. }
                 | CheckedStatement::Evaluate(value)
+                | CheckedStatement::Dispose { value, .. }
                 | CheckedStatement::DropExpression { value, .. }
                 | CheckedStatement::Return { value, .. }
                 | CheckedStatement::Give { value, .. } => {
@@ -2194,6 +2661,41 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 CheckedStatement::PropagateLet { scrutinee, .. } => {
                     Self::install_expression_allocation_bounds(scrutinee, bounds)?;
+                }
+                CheckedStatement::SetList {
+                    targets, values, ..
+                } => {
+                    for target in targets {
+                        match target {
+                            CheckedSetTarget::Place(_) => {}
+                            CheckedSetTarget::ArrayIndex(target) => {
+                                Self::install_expression_allocation_bounds(
+                                    &mut target.offset,
+                                    bounds,
+                                )?;
+                            }
+                            CheckedSetTarget::BufferIndex(target) => {
+                                Self::install_expression_allocation_bounds(
+                                    &mut target.offset,
+                                    bounds,
+                                )?;
+                            }
+                            CheckedSetTarget::Storage(target) => {
+                                for offset in target.offsets_mut() {
+                                    Self::install_expression_allocation_bounds(offset, bounds)?;
+                                }
+                            }
+                            CheckedSetTarget::SliceIndex(target) => {
+                                Self::install_expression_allocation_bounds(
+                                    &mut target.offset,
+                                    bounds,
+                                )?;
+                            }
+                        }
+                    }
+                    for value in values.expressions_mut() {
+                        Self::install_expression_allocation_bounds(value, bounds)?;
+                    }
                 }
                 CheckedStatement::Set { target, value, .. }
                 | CheckedStatement::Replace { target, value, .. } => {
@@ -2203,6 +2705,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
                         }
                         CheckedSetTarget::BufferIndex(target) => {
+                            Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
+                        }
+                        CheckedSetTarget::Storage(target) => {
+                            for offset in target.offsets_mut() {
+                                Self::install_expression_allocation_bounds(offset, bounds)?;
+                            }
+                        }
+                        CheckedSetTarget::SliceIndex(target) => {
                             Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
                         }
                     }
@@ -2268,6 +2778,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 Self::install_expression_allocation_bounds(length, bounds)?;
             }
+            // [BLK-0, OP-9] every acquiring row carries the same allocation-fit
+            // obligation, submitted at the call's own node, so the bound the
+            // judgment retained is installed on this call's instance exactly
+            // as it is on a `buffer_new` site's target domains.
+            CheckedExpression::KernelCall {
+                call,
+                instance,
+                arguments,
+                ..
+            } => {
+                if let Some(upper) = bounds.get(call).copied() {
+                    instance.count_upper_bound = Some(upper);
+                }
+                for argument in arguments {
+                    Self::install_expression_allocation_bounds(argument, bounds)?;
+                }
+            }
             CheckedExpression::UserCall { arguments, .. }
             | CheckedExpression::SystemCall { arguments, .. }
             | CheckedExpression::IntegerOperation { arguments, .. }
@@ -2294,6 +2821,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::ProjectValue { value, .. } => {
                 Self::install_expression_allocation_bounds(value, bounds)?;
             }
+            CheckedExpression::ReadStorage { root, .. } => {
+                for offset in root.offsets_mut() {
+                    Self::install_expression_allocation_bounds(offset, bounds)?;
+                }
+            }
             CheckedExpression::ArrayIndex { offset, .. }
             | CheckedExpression::BufferIndex { offset, .. }
             | CheckedExpression::SliceIndex { offset, .. } => {
@@ -2305,10 +2837,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::Binding { .. }
-            | CheckedExpression::ArrayLength { .. }
-            | CheckedExpression::BufferLength { .. }
+            | CheckedExpression::ArrayMeasure { .. }
+            | CheckedExpression::BufferMeasure { .. }
+            | CheckedExpression::ContainerMeasure { .. }
+            | CheckedExpression::PostconditionResultMeasure { .. }
             | CheckedExpression::SliceOf { .. }
-            | CheckedExpression::SliceLength { .. }
+            | CheckedExpression::SliceMeasure { .. }
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBox { .. }
@@ -2456,7 +2990,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
                 length: self.instantiate_goal_const(length, signature)?,
             },
-            GoalOperation::ArrayLength { element, length } => GoalOperation::ArrayLength {
+            GoalOperation::ArrayMeasure {
+                measure,
+                element,
+                length,
+            } => GoalOperation::ArrayMeasure {
+                measure,
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
                 length: self.instantiate_goal_const(length, signature)?,
             },
@@ -2464,7 +3003,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
                 length: self.instantiate_goal_const(length, signature)?,
             },
-            GoalOperation::BufferLength { element } => GoalOperation::BufferLength {
+            GoalOperation::BufferMeasure { measure, element } => GoalOperation::BufferMeasure {
+                measure,
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
             },
             GoalOperation::BufferIndex { element } => GoalOperation::BufferIndex {
@@ -2485,9 +3025,40 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     maximum_length,
                 }
             }
-            GoalOperation::SliceLength { region, element } => GoalOperation::SliceLength {
+            GoalOperation::SliceMeasure {
+                measure,
+                region,
+                element,
+            } => GoalOperation::SliceMeasure {
+                measure,
                 region: self.instantiate_goal_region(region, signature, regions)?,
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
+            },
+            GoalOperation::ContainerMeasure {
+                measure,
+                measured,
+                element,
+                constant,
+            } => GoalOperation::ContainerMeasure {
+                measure,
+                measured,
+                element: element
+                    .map(|element| self.instantiate_goal_element(element, signature, regions))
+                    .transpose()?,
+                constant: constant
+                    .map(|constant| self.instantiate_goal_const(constant, signature))
+                    .transpose()?,
+            },
+            GoalOperation::RunIndex {
+                measured,
+                element,
+                constant,
+            } => GoalOperation::RunIndex {
+                measured,
+                element: self.instantiate_goal_element(element, signature, regions)?,
+                constant: constant
+                    .map(|constant| self.instantiate_goal_const(constant, signature))
+                    .transpose()?,
             },
             GoalOperation::SliceIndex { region, element } => GoalOperation::SliceIndex {
                 region: self.instantiate_goal_region(region, signature, regions)?,
@@ -2513,19 +3084,90 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
                 length: self.instantiate_goal_const(length, signature)?,
             },
-            CheckedType::Slice { region, element } => CheckedType::Slice {
+            CheckedType::Slice {
+                region,
+                element,
+                strength,
+            } => CheckedType::Slice {
                 region: self.instantiate_goal_region(region, signature, regions)?,
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                strength,
             },
             CheckedType::Buffer { element } => CheckedType::Buffer {
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
             },
+            CheckedType::FixedVector { element, length } => CheckedType::FixedVector {
+                element: self.instantiate_goal_element(element, signature, regions)?,
+                length: self.instantiate_goal_const(length, signature)?,
+            },
+            CheckedType::Vector {
+                region, element, ..
+            } => {
+                let region = self.instantiate_goal_region(region, signature, regions)?;
+                CheckedType::Vector {
+                    region,
+                    element: self.instantiate_goal_element(element, signature, regions)?,
+                    release: self.vector_release_class(region)?,
+                }
+            }
+            CheckedType::Heap { region } => CheckedType::Heap {
+                region: self.instantiate_goal_region(region, signature, regions)?,
+            },
+            CheckedType::Extent {
+                region,
+                bytes,
+                align,
+            } => CheckedType::Extent {
+                region: self.instantiate_goal_region(region, signature, regions)?,
+                bytes: self.instantiate_goal_const(bytes, signature)?,
+                align: self.instantiate_goal_const(align, signature)?,
+            },
+            CheckedType::Nominal(id) => self.instantiate_goal_nominal(id, signature, regions)?,
             CheckedType::Unit
             | CheckedType::Bool
             | CheckedType::Integer(_)
-            | CheckedType::Float(_)
-            | CheckedType::Nominal(_) => ty,
+            | CheckedType::Float(_) => ty,
         })
+    }
+
+    /// [S20] one nominal instance read at a caller: its region arguments
+    /// substituted, which is the instance the caller's own value has.
+    ///
+    /// The substituted instance already exists wherever the caller can hold a
+    /// value of it, so this is a lookup and never a minting; where it does
+    /// not, the declaration's own instance stands and the ordinary type
+    /// judgment decides.
+    fn instantiate_goal_nominal(
+        &self,
+        id: NominalId,
+        signature: &FunctionSignature,
+        regions: &[DeclarationId],
+    ) -> Result<CheckedType, CheckStop> {
+        let Some((template, substitution)) = self.source_nominal_instance_entry(id)? else {
+            return Ok(CheckedType::Nominal(id));
+        };
+        if substitution.region_arguments().is_empty() {
+            return Ok(CheckedType::Nominal(id));
+        }
+        let substitution = substitution.clone();
+        let mut mapped = Vec::with_capacity(substitution.region_arguments().len());
+        for (formal, actual) in substitution.region_arguments() {
+            mapped.push((
+                *formal,
+                self.instantiate_goal_region(*actual, signature, regions)?,
+            ));
+        }
+        if mapped == substitution.region_arguments() {
+            return Ok(CheckedType::Nominal(id));
+        }
+        let declaration = self
+            .nominal_templates
+            .get(template)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            .declaration;
+        Ok(self
+            .source_nominal_instance(declaration, &substitution.with_regions(mapped))
+            .map_or(CheckedType::Nominal(id), CheckedType::Nominal))
     }
 
     fn instantiate_goal_flat_element(
@@ -2552,10 +3194,42 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::Generic(_)
             | CheckedType::Array { .. }
             | CheckedType::Slice { .. }
-            | CheckedType::Buffer { .. } => {
+            | CheckedType::Buffer { .. }
+            | CheckedType::FixedVector { .. }
+            | CheckedType::Vector { .. }
+            | CheckedType::Heap { .. }
+            | CheckedType::Extent { .. } => {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
         })
+    }
+
+    /// One run element at a caller's instance [BLK-1].
+    ///
+    /// The lift is one level, so an element that is itself a run instantiates
+    /// through the ordinary type path and is re-lifted; anything the lift does
+    /// not carry is the flat domain's own instantiation.
+    fn instantiate_goal_element(
+        &self,
+        element: CheckedElement,
+        signature: &FunctionSignature,
+        regions: &[DeclarationId],
+    ) -> Result<CheckedElement, CheckStop> {
+        if element.is_run() {
+            let ty = self.instantiate_goal_type(element.ty(), signature, regions)?;
+            return Self::run_element(ty)
+                .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
+        }
+        let flat = element
+            .flat()
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let ty = self.instantiate_goal_type(flat.ty(), signature, regions)?;
+        if let Some(lifted) = Self::run_element(ty) {
+            return Ok(lifted);
+        }
+        Ok(CheckedElement::Flat(
+            self.instantiate_goal_flat_element(flat, signature, regions)?,
+        ))
     }
 
     fn instantiate_goal_const(
@@ -2588,7 +3262,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .borrow()
             .get(id.0 as usize)
             .copied()
-            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     /// Combines two const operands under one const operation.
@@ -2641,7 +3315,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         regions
             .get(index)
             .copied()
-            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     fn instantiate_goal_value(
@@ -2661,6 +3335,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ty: *ty,
                 bits: *bits,
             },
+            // [MSR-6] a const generic is fixed at [FN-2] instantiation, so a
+            // concrete instance reads a mathematical constant and only the
+            // one symbolic instance keeps the declaration-anchored form.
+            CheckedValue::ConstGeneric { declaration, ty } => {
+                match signature.substitution.const_argument(*declaration) {
+                    Some(CheckedConst::Value(value)) => CheckedValue::Integer {
+                        ty: *ty,
+                        bits: value,
+                    },
+                    _ => CheckedValue::ConstGeneric {
+                        declaration: *declaration,
+                        ty: *ty,
+                    },
+                }
+            }
             CheckedValue::NumericIdentity { ty, one } => {
                 match self.instantiate_goal_type(*ty, signature, regions)? {
                     CheckedType::Integer(ty) => CheckedValue::Integer {
@@ -2772,6 +3461,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         super::entailment::ObligationFamily::IntegerDomain => SemanticRule::Op2,
                         super::entailment::ObligationFamily::AllocationFit => SemanticRule::Op9,
                         super::entailment::ObligationFamily::SystemRange => SemanticRule::Sys8,
+                        super::entailment::ObligationFamily::KernelRequirement => {
+                            SemanticRule::Blk0
+                        }
                     },
                     Self::Call(_) => SemanticRule::Fn8,
                 }
@@ -3091,6 +3783,39 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 mechanical_fix: "when the range must be valid, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the system range",
                             },
                         },
+                        // [BLK-0]: a diagnostic arising in this domain cites
+                        // BLK-0 and names the operation in its payload,
+                        // exactly as an [OP-1] diagnostic names its family.
+                        // The row is a declaration record with no source
+                        // node, so the payload carries the row's own ordinal
+                        // and the position of the requirement in that row's
+                        // declared list and never a fabricated `NodePath`.
+                        super::entailment::ObligationFamily::KernelRequirement => {
+                            let operation = outcome
+                                .kernel_row
+                                .and_then(super::kernel::kernel_signature_at)
+                                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                            SemanticIssue {
+                                rule: SemanticRule::Blk0,
+                                location,
+                                kind: SemanticIssueKind::UndischargedKernelRequirement(Box::new(
+                                    crate::UndischargedKernelRequirementDetail {
+                                        operation: operation.spelling,
+                                        operation_ordinal: outcome
+                                            .kernel_row
+                                            .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                                        requirement: u32::from(outcome.conjunct),
+                                        instantiated_goal: residual.to_owned(),
+                                        disposition: if outcome.refuted {
+                                            crate::CallRequirementDisposition::Refuted
+                                        } else {
+                                            crate::CallRequirementDisposition::Unproved
+                                        },
+                                        mechanical_fix: "when the operation must succeed, establish the entire instantiated row requirement with a verified requirement, a source invariant, or explicit finite proof steps before the call; use a dominating branch only when rejection is intended program behavior; otherwise restructure the call",
+                                    },
+                                )),
+                            }
+                        }
                     }))
                 }
                 Rejection::Call(outcome) => {

@@ -659,7 +659,7 @@ mod tests {
 
     /// The scratch buffer hoisted above the loop, which denies the staged
     /// verdict at `&uniq data`.
-    const DENIED_IO_LOOP: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    const DENIED_IO_LOOP: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let name = buffer_new(16_u64, 97_u8);
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
@@ -699,7 +699,7 @@ mod tests {
 
     /// The same loop with its scratch inside the body, which the staged
     /// judgment grants.
-    const GRANTED_IO_LOOP: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    const GRANTED_IO_LOOP: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
@@ -937,7 +937,7 @@ mod tests {
   return 0_u8;
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let name = buffer_new(16_u64, 0_u8);
   let code = 0_u8;
   region {
@@ -1082,7 +1082,7 @@ command fn main() -> status: own ExitStatus pure {
     /// on disk, so the output was not usable as emitted.
     #[test]
     fn a_ledger_names_the_host_path_the_source_was_read_from() {
-        let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+        let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
@@ -1130,12 +1130,12 @@ command fn main() -> status: own ExitStatus pure {
   Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
 }
 
-fn boxed_leaf(w: own u64) -> result: own box<BoxNode> allocates(heap) {
+fn boxed_leaf(w: own u64) -> result: own box<BoxNode> pure {
   let leaf = Leaf(w: w);
   return box_new(move leaf);
 }
 
-fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own box<BoxNode> allocates(heap) {
+fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own box<BoxNode> pure {
   let branch = Branch(left: move left, right: move right, w: 0_u64);
   return box_new(move branch);
 }
@@ -1164,7 +1164,7 @@ fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own 
   }}
 }}
 
-command fn main() -> status: own ExitStatus allocates(heap) {{
+command fn main() -> status: own ExitStatus pure {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
@@ -1194,7 +1194,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
         // and lowering erases it before the permission table is consumed.
         let proved = format!(
             "{TREE_PRELUDE}fn scaled(values: own array<u64, 8>, index: own u64) -> result: own u64 pure {{
-  let size = len(values);
+  let size = len_of(values);
   let bounded = iand(index, 7_u64);
   invariant index_in_range: bounded <= 7_u64;
   return values[bounded];
@@ -1218,7 +1218,7 @@ fn bubble(node: &uniq box<BoxNode>) -> result: own u64 reads(node), writes(node)
   }}
 }}
 
-command fn main() -> status: own ExitStatus allocates(heap) {{
+command fn main() -> status: own ExitStatus pure {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
@@ -1457,7 +1457,7 @@ command fn main() -> status: own ExitStatus pure {
     /// an eligible map with no accumulator.
     #[test]
     fn a_proven_counted_binder_buffer_map_is_permitted() {
-        let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+        let source = b"command fn main() -> status: own ExitStatus pure {
   let out = buffer_new(64_u64, 0_u64);
   for @fill (i in 0_u64..64_u64) {
     set out[i] = i *wrap i;
@@ -1553,7 +1553,7 @@ command fn main() -> status: own ExitStatus pure {
     fn a_counted_loop_a_give_can_leave_is_denied_by_condition_four() {
         let source =
             b"fn scan_until(src: &buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
-  let count = len(deref(src));
+  let count = len_of(deref(src));
   let acc = 0_u64;
   let always = True();
   let answer = if always {
@@ -1572,7 +1572,7 @@ command fn main() -> status: own ExitStatus pure {
   return answer +wrap acc;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let data = buffer_new(64_u64, 1_u64);
   set data[10_u64] = 7_u64;
   region {
@@ -1593,7 +1593,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         // about the exit edge and not about the shape.
         let contained =
             b"fn scan_until(src: &buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
-  let count = len(deref(src));
+  let count = len_of(deref(src));
   let acc = 0_u64;
   let always = True();
   let answer = if always {
@@ -1608,7 +1608,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   return answer +wrap acc;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let data = buffer_new(64_u64, 1_u64);
   set data[10_u64] = 7_u64;
   region {
@@ -1676,7 +1676,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     /// permission rule cannot afford.
     #[test]
     fn the_permission_ledger_reports_a_granted_stage_and_its_disposition_table() {
-        let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+        let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
@@ -1754,7 +1754,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     /// as well as on their text.
     #[test]
     fn a_disposition_table_keeps_one_row_per_place_when_two_rows_read_alike() {
-        let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+        let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let name = buffer_new(16_u64, 97_u8);
   let left = buffer_new(8_u64, 1_u8);
   let right = buffer_new(8_u64, 2_u8);
@@ -1819,7 +1819,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     /// itself, so it cannot drift from the condition that produced it.
     #[test]
     fn the_permission_ledger_names_the_condition_the_place_and_the_admitted_form() {
-        let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+        let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let name = buffer_new(16_u64, 97_u8);
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
@@ -1892,7 +1892,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     /// that node under a phrase that does not assert self-overlap.
     #[test]
     fn a_retained_borrow_denial_names_a_write_and_never_an_overlap_with_itself() {
-        let read_first = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+        let read_first = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let name = buffer_new(16_u64, 97_u8);
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
@@ -1973,7 +1973,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     /// position and a reader could not tell which loop either belonged to.
     #[test]
     fn nested_loops_sharing_one_cut_print_at_their_own_heads() {
-        let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+        let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   for @outer (step in 0_u64..2_u64) {
     let shared = buffer_new(16_u64, 97_u8);
     for @scan (index in 0_u64..4_u64) {
@@ -2083,7 +2083,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   }}
 }}
 
-command fn main() -> status: own ExitStatus allocates(heap) {{
+command fn main() -> status: own ExitStatus pure {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
@@ -2240,12 +2240,12 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
   }
 }
 
-fn make(n: own u64) -> result: own buffer<u16> allocates(heap) {
+fn make(n: own u64) -> result: own buffer<u16> pure {
   let bounded = bounded_count(n: n);
   return buffer_new(bounded, 0_u16);
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let values = make(n: 4_u64);
   return exit_status(code: 0_u8);
 }
@@ -2308,7 +2308,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         // interface: every [SYS-2] semantic identity now has an approved
         // implementation on this target, so no unsupported stop remains
         // between an accepted system program and its emitted module.
-        let writing =b"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {\n    region {\n      match write_once(output: &uniq 'o out, source: &bytes, start: 0_u64, end: 1_u64) {\n        Ok(value: written) => {\n          return exit_status(code: 0_u8);\n        }\n        Err(error: problem) => {\n          return exit_status(code: 1_u8);\n        }\n      }\n    }\n  }\n}\n";
+        let writing =b"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {\n    region {\n      match write_once(output: &uniq 'o out, source: &bytes, start: 0_u64, end: 1_u64) {\n        Ok(value: written) => {\n          return exit_status(code: 0_u8);\n        }\n        Err(error: problem) => {\n          return exit_status(code: 1_u8);\n        }\n      }\n    }\n  }\n}\n";
         let llvm = compile(
             &[SourceInput::new("entry.wf", writing)],
             CompilerLimits::default(),
@@ -2625,7 +2625,7 @@ command fn main() -> status: own ExitStatus pure {
         let contract = rejection(
             "contract.wf",
             br#"fn count(data: &buffer<u8>, start: own u64, end: own u64) -> lines: own u64 reads(data) contract {
-  requires buffer_fits::<u8>(len(deref(data)));
+  requires buffer_fits::<u8>(len_of(deref(data)));
 } {
   return 0_u64;
 }
@@ -2655,8 +2655,8 @@ command fn main() -> status: own ExitStatus pure {
             &[SourceInput::new(
                 "repaired.wf",
                 br#"fn count(data: &buffer<u8>, start: own u64, end: own u64) -> lines: own u64 pure contract {
-  define room = len(deref(data));
-  requires end <= room;
+  define spare = len_of(deref(data));
+  requires end <= spare;
 } {
   return 0_u64;
 }
@@ -2800,10 +2800,10 @@ command fn main() -> status: own ExitStatus pure {
         let detail = rejection(
             "lifetime.wf",
             br#"fn sum(data: &buffer<u8>) -> out: own u64 reads(data) {
-  return len(deref(data));
+  return len_of(deref(data));
 }
 
-fn caller['r](anchor: &'r buffer<u8>) -> out: &'r buffer<u8> allocates(heap) {
+fn caller['r](anchor: &'r buffer<u8>) -> out: &'r buffer<u8> pure {
   let local = buffer_new(4_u64, 0_u8);
   let counted = sum(data: &'r local);
   return anchor;
@@ -2862,7 +2862,7 @@ command fn main() -> status: own ExitStatus pure {
     /// differ in that and in nothing else.
     #[test]
     fn a_one_position_resource_is_offered_the_hoist_that_works() {
-        const EMIT: &str = r#"fn emit(out: &uniq OutputStream, value: own u8) -> written: own u64 reads(out), writes(out), allocates(heap) {
+        const EMIT: &str = r#"fn emit(out: &uniq OutputStream, value: own u8) -> written: own u64 reads(out), writes(out) {
   let one = buffer_new(1_u64, value);
   let sent = 0_u64;
   region {
@@ -2879,7 +2879,7 @@ command fn main() -> status: own ExitStatus pure {
 "#;
         let per_iteration = format!(
             "{EMIT}
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {{
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {{
   for @scan (index in 0_u64..4_u64) {{
     let wrote = emit(out: &uniq out, value: 65_u8);
   }}
@@ -2905,7 +2905,7 @@ command fn main(command.stdout as out: own OutputStream) -> status: own ExitStat
         // the default channel says nothing about it.
         let hoisted = format!(
             "{EMIT}
-command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files), allocates(heap) {{
+command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files) {{
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {{
     let name = buffer_new(16_u64, 97_u8);

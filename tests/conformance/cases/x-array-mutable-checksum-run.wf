@@ -1,11 +1,20 @@
 command fn main() -> status: own ExitStatus pure {
-  doc "A mutable fixed array is filled and folded; counted-loop range facts discharge its indexed writes and reads.";
-  let values = array_new::<u64, 8>(0_u64);
-  for (fill_index in 0_u64..8_u64) {
+  doc "A mutable inline run is filled and folded; counted-loop range facts discharge its indexed writes and reads.";
+  let values = fixed_vector::<u64, 8>();
+  for @build (
+    at in 0_u64..8_u64,
+    invariant grown: len_of(values) >= at,
+    invariant spare: room_of(values) + at >= 8_u64,
+    invariant flat: head_of(values) <= 0_u64
+  ) {
+    set values = place_back(vector: move values, value: 0_u64);
+  }
+  let length = len_of(values);
+  for (fill_index in 0_u64..length) {
     set values[fill_index] = fill_index +wrap 1_u64;
   }
   let total = 0_u64;
-  for (fold_index in 0_u64..8_u64) {
+  for (fold_index in 0_u64..length) {
     let value = values[fold_index];
     set total = total +wrap value;
   }

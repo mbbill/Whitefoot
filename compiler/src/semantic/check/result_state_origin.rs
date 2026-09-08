@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use super::super::model::{
-    BindingId, CheckedExpression, CheckedFunction, CheckedLoopId, CheckedMatchArm,
-    CheckedResultStateOrigin, CheckedResultStatePath, CheckedSetTarget, CheckedStatement,
+    BindingId, CheckedCommitValues, CheckedExpression, CheckedFunction, CheckedLoopId,
+    CheckedMatchArm, CheckedResultStateOrigin, CheckedResultStatePath, CheckedSetTarget,
+    CheckedStatement,
 };
 use super::{CheckStop, Checker};
 
@@ -194,6 +195,68 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 environment.insert(*binding, origin);
                 Ok(OriginFlow::continuing(environment))
             }
+            // [PROV-6] a disposed value binds nothing and leaves no origin.
+            CheckedStatement::Dispose { value, .. } => {
+                self.expression(value, &environment)?;
+                Ok(OriginFlow::continuing(environment))
+            }
+            // [CALL-4] binder i takes result ordinal i, which is field i of
+            // the one result-list value the call produced.
+            CheckedStatement::DestructuringLet {
+                bindings, value, ..
+            } => {
+                let origin = self.expression(value, &environment)?;
+                for (ordinal, (binding, _)) in bindings.iter().enumerate() {
+                    let field = u32::try_from(ordinal)
+                        .map_err(|_| crate::SemanticCompilerFailure::CounterOverflow)?;
+                    environment.insert(*binding, origin.clone().projected(&[field]));
+                }
+                Ok(OriginFlow::continuing(environment))
+            }
+            CheckedStatement::SetList {
+                targets, values, ..
+            } => {
+                // [LIV-2] ordinal i's origin is result ordinal i of the one
+                // call, or the whole origin of written value i.
+                let mut ordinal_origins = Vec::with_capacity(targets.len());
+                match values {
+                    CheckedCommitValues::ResultList { value, .. } => {
+                        let origin = self.expression(value, &environment)?;
+                        for ordinal in 0..targets.len() {
+                            let field = u32::try_from(ordinal)
+                                .map_err(|_| crate::SemanticCompilerFailure::CounterOverflow)?;
+                            ordinal_origins.push(origin.clone().projected(&[field]));
+                        }
+                    }
+                    CheckedCommitValues::Written(values) => {
+                        for value in values {
+                            ordinal_origins.push(self.expression(value, &environment)?);
+                        }
+                    }
+                }
+                for (target, ordinal_origin) in targets.iter().zip(ordinal_origins) {
+                    let binding = target.binding();
+                    let current = environment
+                        .get(&binding)
+                        .cloned()
+                        .unwrap_or(OriginSet::Unknown);
+                    let updated = match target {
+                        CheckedSetTarget::Place(place) if place.fields.is_empty() => ordinal_origin,
+                        CheckedSetTarget::Place(place)
+                            if self.checker.type_carries_identity(target.ty())? =>
+                        {
+                            current.replace_path(&place.fields, ordinal_origin)
+                        }
+                        CheckedSetTarget::Place(_)
+                        | CheckedSetTarget::ArrayIndex(_)
+                        | CheckedSetTarget::BufferIndex(_)
+                        | CheckedSetTarget::Storage(_)
+                        | CheckedSetTarget::SliceIndex(_) => current,
+                    };
+                    environment.insert(binding, updated);
+                }
+                Ok(OriginFlow::continuing(environment))
+            }
             CheckedStatement::PropagateLet {
                 binding,
                 scrutinee,
@@ -238,7 +301,9 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                     }
                     CheckedSetTarget::Place(_)
                     | CheckedSetTarget::ArrayIndex(_)
-                    | CheckedSetTarget::BufferIndex(_) => current,
+                    | CheckedSetTarget::BufferIndex(_)
+                    | CheckedSetTarget::Storage(_)
+                    | CheckedSetTarget::SliceIndex(_) => current,
                 };
                 environment.insert(binding, updated);
                 Ok(OriginFlow::continuing(environment))
@@ -273,7 +338,9 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                     }
                     CheckedSetTarget::Place(_)
                     | CheckedSetTarget::ArrayIndex(_)
-                    | CheckedSetTarget::BufferIndex(_) => previous,
+                    | CheckedSetTarget::BufferIndex(_)
+                    | CheckedSetTarget::Storage(_)
+                    | CheckedSetTarget::SliceIndex(_) => previous,
                 };
                 environment.insert(target_binding, updated);
                 Ok(OriginFlow::continuing(environment))
@@ -450,13 +517,29 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
         let origin = match expression {
             CheckedExpression::Binding { binding, .. }
             | CheckedExpression::BorrowSystemResource { binding, .. }
-            | CheckedExpression::BorrowAddressed { binding, .. }
             | CheckedExpression::BorrowBox { binding, .. }
             | CheckedExpression::ReborrowAddressed { binding, .. }
             | CheckedExpression::DerefAddressed { binding, .. } => environment
                 .get(binding)
                 .cloned()
                 .unwrap_or(OriginSet::Unknown),
+            CheckedExpression::BorrowAddressed { root, .. } => {
+                let fields = root
+                    .path
+                    .iter()
+                    .map(|step| match step {
+                        crate::semantic::model::CheckedPlaceStep::Field(field) => Some(*field),
+                        crate::semantic::model::CheckedPlaceStep::Subscript(_) => None,
+                    })
+                    .collect::<Option<Vec<_>>>();
+                fields.map_or(OriginSet::Unknown, |fields| {
+                    environment
+                        .get(&root.binding)
+                        .cloned()
+                        .unwrap_or(OriginSet::Unknown)
+                        .projected(&fields)
+                })
+            }
             CheckedExpression::Project {
                 binding, fields, ..
             } => environment

@@ -1,0 +1,9 @@
+fn carve['s]() -> made: own Arena<'s, 64, 8> pure {
+  doc "Reserves a bump extent at a caller-supplied region, which no activation of this function owns a frame for.";
+  return arena_frame::<64, 8, 's>();
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "BLK-2: a frame reservation lays its extent out in the reserving activation's own frame, so its written store region must be one an enclosing region block of the reserving function introduced.";
+  return exit_status(code: 0_u8);
+}

@@ -1,12 +1,12 @@
-fn ring_slot_sub(buf: own buffer<u8>, head: own u64, used: own u64) -> value: own u8 reads(buf) contract {
-  define capacity = len(buf);
-  requires head < capacity;
+fn ring_slot_sub<const n: u64>(buf: own FixedVector<u8, n>, front: own u64, used: own u64) -> value: own u8 reads(buf) contract {
+  define capacity = len_of(buf);
+  requires front < capacity;
   requires used < capacity;
   requires capacity <= 4294967296_u64;
 } {
-  doc "expect ACCEPT: manual wraparound (head + used, then subtract capacity once if too big) proves slot < capacity given head < capacity, used < capacity, and a capacity ceiling that keeps head + used from overflowing u64";
-  let capacity = len(buf);
-  let raw = head + used;
+  doc "expect ACCEPT: manual wraparound (front + used, then subtract capacity once if too big) proves slot < capacity given front < capacity, used < capacity, and a capacity ceiling that keeps front + used from overflowing u64";
+  let capacity = len_of(buf);
+  let raw = front + used;
   let too_big = raw >= capacity;
   let value = if too_big {
     let wrapped = raw - capacity;
@@ -21,9 +21,13 @@ fn ring_slot_sub(buf: own buffer<u8>, head: own u64, used: own u64) -> value: ow
   return value;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
-  let buf = buffer_new(4_u64, 9_u8);
-  let value = ring_slot_sub(buf: move buf, head: 3_u64, used: 3_u64);
+command fn main() -> status: own ExitStatus pure {
+  let buf = fixed_vector::<u8, 4>();
+  set buf = place_back(vector: move buf, value: 9_u8);
+  set buf = place_back(vector: move buf, value: 9_u8);
+  set buf = place_back(vector: move buf, value: 9_u8);
+  set buf = place_back(vector: move buf, value: 9_u8);
+  let value = ring_slot_sub::<4>(buf: move buf, front: 3_u64, used: 3_u64);
   if value == 9_u8 {
   } else {
     return exit_status(code: 1_u8);

@@ -17,6 +17,24 @@
 //!   writes one fixed record naming only the resource class. The record
 //!   carries no `rule_id`, no function, and no node path.
 //!
+//! **What stays on the retiring surface here, and why.** Two groups.
+//!
+//! The *allocation-refusal* fixtures are the buffer's own abort edge:
+//! `buffer_new` and `box_new` have no refusal value, so an allocation the host
+//! cannot satisfy reaches `wf_resource_abort()` and that abort is the subject
+//! under test. A store take hands back an `Option` and a cell a `Result`
+//! [BLK-2, S39], so the refusal is an arm of the source program and there is
+//! no abort edge for these assertions to name; migrating them would mean
+//! deleting them. They retire with the rows whose edge they pin.
+//!
+//! The *cycle* fixtures do have a twin, and `stack_ledger`'s
+//! `Box<'s, Tree<'s>>` rewrite proved it: a recursive release walk over cells
+//! at a store is the same walk over `box<T>`. They are not migrated here
+//! because each is a whole-program fixture whose depth, frame sizes and
+//! emitted-symbol counts are calibrated to the retiring layout, and a store
+//! surface changes every one of those figures; re-deriving them is the
+//! retirement batch's own work, on the retirement's own evidence.
+//!
 //! The record's bytes are fixed by two independent constraints that happen to
 //! agree. A signal handler may only reach async-signal-safe facilities, which
 //! admits a constant string written with `write` and essentially nothing else;
@@ -26,7 +44,7 @@
 
 use std::process::Command;
 
-use super::{build_executable, compile, emitted_function, test_directory};
+use super::{build_executable, build_linked_executable, compile, emitted_function, test_directory};
 
 /// The attribute group [`crate::backend::emitter`] gives every definition, and
 /// the value it carries on this host.
@@ -58,7 +76,7 @@ fn depth(chain: &box<Chain>) -> result: own u64 reads(chain) {
   }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let end = End();
   let bottom = box_new(move end);
   let one = More(next: move bottom);
@@ -763,19 +781,19 @@ const HEAP_RECORD_LANE: &[u8] = br#"fn leafwork(v: own u64) -> result: own u64 p
   return v *wrap 3_u64;
 }
 
-fn build(n: own u64) -> result: own u64 allocates(heap) {
+fn build(n: own u64) -> result: own u64 pure {
   let b = buffer_new(4000000000000000000_u64, 7_u8);
   let e = b[0_u64];
   return 0_u64 +wrap n;
 }
 
-fn both(n: own u64) -> result: own u64 allocates(heap) {
+fn both(n: own u64) -> result: own u64 pure {
   let a = build(n: n);
   let c = leafwork(v: n);
   return a +wrap c;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let r = both(n: 5_u64);
   let ok = r > 0_u64;
   if ok {
@@ -825,14 +843,14 @@ fn page_size() -> usize {
 /// taking the refusal edge with it — so a naively written case would ask for
 /// sixteen terabytes, return normally, and test nothing at all. Routing the
 /// index through a type range leaves the optimizer unable to decide the load.
-const REFUSED_ALLOCATION: &[u8] = br#"fn giant(i: own u8) -> result: own u8 allocates(heap) {
+const REFUSED_ALLOCATION: &[u8] = br#"fn giant(i: own u8) -> result: own u8 pure {
   let b = buffer_new(4000000000000000000_u64, 7_u8);
   let wide = cvt::<u8, u64>(i);
   let element = b[wide];
   return element;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   let count = 0_u64;
   region {
     set count = args_count(args: &args);
@@ -855,13 +873,13 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
 /// The lengths are constants so the fit obligation discharges statically and
 /// the fixture stays about the refusal edges rather than about proving a
 /// dynamic length fits.
-const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: own u64) -> result: own u64 allocates(heap) {
+const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: own u64) -> result: own u64 pure {
   let filled = buffer_new(4_u64, 5_u64);
   let vacant = buffer_vacant::<u32>(4_u64);
   let boxed = box_new(7_u64);
   let held = deref(boxed);
-  let filled_len = len(filled);
-  let vacant_len = len(vacant);
+  let filled_len = len_of(filled);
+  let vacant_len = len_of(vacant);
   let total = held +wrap filled_len;
   set total = total +wrap vacant_len;
   region 'a {
@@ -872,7 +890,7 @@ const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: own u64) -> result: own u64 alloc
   return total;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let total = shapes(n: 4_u64);
   match cvt::<u64, u8>(total) {
     Ok(value: byte) => {
@@ -982,12 +1000,11 @@ fn every_allocation_refusal_edge_reaches_the_resource_abort() {
     }
 }
 
-/// A recursion whose every activation carries an array far larger than a
-/// guard page, written and read at an index only the run knows so the frame
-/// cannot be shrunk away.
-///
-/// After the host inliner merges several levels together each activation moves
-/// the stack pointer by roughly three hundred kilobytes at once.
+/// A recursion whose every activation carries an array far larger than a guard
+/// page, written and read at an index only the caller knows so the frame cannot
+/// be shrunk away. The controlled harness below enters only its base case; the
+/// recursive edge keeps the generated function representative of an ordinary
+/// source recursion without making the fault depend on a sequence of frames.
 const LARGE_FRAME_SPINE: &[u8] =
     br#"fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {
   let pad = array_new::<u64, 7168>(v);
@@ -1025,46 +1042,97 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
 }
 "#;
 
-/// A frame far larger than the guard region is still reported, not absorbed.
+/// Runs the generated large-frame function once on a stack whose surrounding
+/// address space belongs to this fixture.
+///
+/// The stack is smaller than the array payload in one source activation. The
+/// reservation beneath it is much larger than that payload and remains
+/// `PROT_NONE`, so neither the floor's alternate stack nor another incidental
+/// mapping can absorb the first access after an unprobed frame steps over the
+/// stack. The thread attaches before making the call, exactly as a runtime lane
+/// does, and its signal is classified against these known bounds.
+const LARGE_FRAME_BODY: &str = r#"#define _GNU_SOURCE
+#include <pthread.h>
+#include <stdint.h>
+#include <sys/mman.h>
+
+extern int wf__floor_run(int argc, char **argv);
+extern void wf__floor_attach_thread(void);
+extern uint64_t wf_spine(uint64_t depth, uint64_t value, uint8_t index);
+
+#define PAD_BYTES ((size_t)16 * 1024 * 1024)
+#define STACK_BYTES ((size_t)32 * 1024)
+
+static char *reservation;
+
+static void *call_large_frame(void *opaque) {
+    (void)opaque;
+    wf__floor_attach_thread();
+    (void)wf_spine(0, 3, 0);
+    return NULL;
+}
+
+int wf__main_body(int argc, char **argv) {
+    pthread_attr_t attributes;
+    pthread_t thread;
+    void *returned = NULL;
+    (void)argc;
+    (void)argv;
+    reservation = mmap(NULL, PAD_BYTES + STACK_BYTES, PROT_NONE,
+                       MAP_PRIVATE | MAP_ANON, -1, 0);
+    if (reservation == MAP_FAILED) {
+        return 2;
+    }
+    if (mprotect(reservation + PAD_BYTES, STACK_BYTES,
+                 PROT_READ | PROT_WRITE) != 0) {
+        return 3;
+    }
+    if (pthread_attr_init(&attributes) != 0
+        || pthread_attr_setstack(&attributes, reservation + PAD_BYTES,
+                                 STACK_BYTES) != 0
+        || pthread_create(&thread, &attributes, call_large_frame, NULL) != 0) {
+        return 4;
+    }
+    pthread_attr_destroy(&attributes);
+    if (pthread_join(thread, &returned) != 0) {
+        return 5;
+    }
+    return 6;
+}
+
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+"#;
+
+/// A frame far larger than the guard region is still contained and reported.
 ///
 /// This is the behaviour the probe attribute buys, as distinct from the
-/// attribute being present. A frame that moves the stack pointer three hundred
-/// kilobytes in one step can clear the whole guard region without touching it;
-/// what happens next depends on what is mapped where it lands. If that memory
-/// is mapped — under the pool, the next lane's stack is packed a few pages
-/// below — the write succeeds and the program carries on with frames outside
-/// its own stack, eventually returning an answer for a computation that never
-/// fit. Nothing about that run says anything went wrong.
+/// attribute being present. Both binaries call the same generated function
+/// once from the top of the fixture's small stack. Probed, the frame walks its
+/// pages and first touches the protected memory within one stride of the low
+/// bound, which the floor reports. Ablated, its first access beyond the stack
+/// is farther into the fixture's protected reservation, which the floor leaves
+/// to the host signal.
 ///
-/// So the case runs the ablation rather than describing it. It strips the
-/// attribute group from this one definition, in this one module, and requires
-/// the two runs to differ: probed, the descent walks its pages, faults inside
-/// the probe stride, and is reported; ablated, it moves the stack pointer
-/// 291,600 bytes in one step, faults far outside anything a descent can reach,
-/// and the floor correctly refuses to call that exhaustion.
-///
-/// Both halves are needed and neither alone is the property. Checking only the
-/// probed run passes against an emitter that stopped emitting the attribute,
-/// as long as something else still reported the death — which is exactly what
-/// happened while the discrimination band was a megabyte wide: the ablated
-/// skip landed inside the band and was reported too, and no case could tell
-/// the difference.
+/// Owning both the stack and the memory beneath it is part of the assertion. A
+/// recursive descent on a host-created stack leaves the final pre-fault stack
+/// position and neighbouring mappings to target code generation and address
+/// placement; either can make an unprobed run fault inside the reporting band
+/// even though its large frame did not walk the guard.
 #[test]
 fn a_frame_larger_than_the_guard_region_is_still_reported() {
-    let module = compile(LARGE_FRAME_SPINE);
+    let module = expose_large_frame_spine(&compile(LARGE_FRAME_SPINE));
     let directory = test_directory();
-    let executable = build_executable(&module, &directory);
+    let executable = build_linked_executable(&module, Some(LARGE_FRAME_BODY), &[], &directory);
     let output = Command::new(&executable)
         .output()
-        .expect("run the large-frame recursion");
-    assert_eq!(
-        output.status.code(),
-        None,
-        "a recursion this deep cannot fit any stack, so it must not return: \
-         {:?}",
-        output.status
-    );
+        .expect("run the probed large frame");
     assert_resource_record(&output.stderr, "stack");
+    assert_eq!(
+        signal_of(&output),
+        Some(libc_sigabrt()),
+        "a probed frame that exhausts its stack ends in the floor's abort: {:?}",
+        output.status,
+    );
 
     let ablated = ablate_probe(&module, "@wf_spine(");
     assert_eq!(
@@ -1073,10 +1141,10 @@ fn a_frame_larger_than_the_guard_region_is_still_reported() {
         "the ablation must remove the group from exactly one definition"
     );
     let elsewhere = test_directory();
-    let unprobed = build_executable(&ablated, &elsewhere);
+    let unprobed = build_linked_executable(&ablated, Some(LARGE_FRAME_BODY), &[], &elsewhere);
     let output = Command::new(&unprobed)
         .output()
-        .expect("run the unprobed large-frame recursion");
+        .expect("run the unprobed large frame");
     assert!(
         output.stderr.is_empty(),
         "an unprobed frame steps over the guard region, so the fault it \
@@ -1084,8 +1152,56 @@ fn a_frame_larger_than_the_guard_region_is_still_reported() {
          reported as one: {:?}",
         String::from_utf8_lossy(&output.stderr)
     );
+    assert_eq!(
+        signal_of(&output),
+        Some(protected_page_signal()),
+        "an unprobed frame keeps the host's protection-fault signal rather than \
+         becoming the floor's abort: {:?}",
+        output.status,
+    );
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
     std::fs::remove_dir_all(&elsewhere).expect("remove the second test directory");
+}
+
+/// Makes the generated function callable by the C fixture and leaves the
+/// fixture to supply the program entry. The generated entry remains in the
+/// module under an unused name so this changes no part of `wf_spine` itself.
+fn expose_large_frame_spine(module: &str) -> String {
+    let mut exposed = module
+        .replacen("define internal i64 @wf_spine(", "define i64 @wf_spine(", 1)
+        .replacen(
+            "define i32 @wf__main_body(",
+            "define i32 @wf__unused_main_body(",
+            1,
+        )
+        .replacen("define i32 @main(", "define i32 @wf__unused_main(", 1);
+    exposed.push_str("\ndeclare i32 @wf__main_body(i32, ptr)\n");
+    assert_eq!(
+        module.matches("define internal i64 @wf_spine(").count(),
+        1,
+        "the fixture must expose exactly one generated spine"
+    );
+    assert_eq!(
+        exposed.matches("define i32 @wf__unused_main_body(").count(),
+        1,
+        "the fixture must rename exactly one generated entry body"
+    );
+    assert_eq!(
+        exposed.matches("define i32 @wf__unused_main(").count(),
+        1,
+        "the fixture must rename exactly one generated host entry"
+    );
+    exposed
+}
+
+#[cfg(target_os = "macos")]
+const fn protected_page_signal() -> i32 {
+    10
+}
+
+#[cfg(not(target_os = "macos"))]
+const fn protected_page_signal() -> i32 {
+    libc_sigsegv()
 }
 
 /// The same module with the probe attribute group taken off the one definition
@@ -1125,17 +1241,17 @@ struct Holder {{
   node: box<Tree>;
 }}
 
-fn boxed_leaf() -> result: own box<Tree> allocates(heap) {{
+fn boxed_leaf() -> result: own box<Tree> pure {{
   let leaf = Leaf();
   return box_new(move leaf);
 }}
 
-fn boxed_branch(left: own box<Tree>, right: own box<Tree>) -> result: own box<Tree> allocates(heap) {{
+fn boxed_branch(left: own box<Tree>, right: own box<Tree>) -> result: own box<Tree> pure {{
   let branch = Branch(left: move left, right: move right);
   return box_new(move branch);
 }}
 
-command fn main() -> status: own ExitStatus allocates(heap) {{
+command fn main() -> status: own ExitStatus pure {{
   let seed = boxed_leaf();
   let held = Holder(node: move seed);
   for @grow (i in 0_u64..{depth}_u64) {{
@@ -1171,7 +1287,7 @@ fn buffer_chain_source(depth: u64) -> Vec<u8> {
   Cons(kids: box<buffer<Option<Chain>>>);
 }}
 
-fn nest(inner: own Chain) -> result: own Chain allocates(heap) {{
+fn nest(inner: own Chain) -> result: own Chain pure {{
   let slots = buffer_vacant::<Chain>(1_u64);
   let filled = Some<Chain>(value: move inner);
   let vacant = replace slots[0_u64] = move filled;
@@ -1185,7 +1301,7 @@ fn nest(inner: own Chain) -> result: own Chain allocates(heap) {{
   return Cons(kids: move held);
 }}
 
-command fn main() -> status: own ExitStatus allocates(heap) {{
+command fn main() -> status: own ExitStatus pure {{
   let holder = buffer_vacant::<Chain>(1_u64);
   let seed = Nil();
   let seeded = Some<Chain>(value: move seed);
@@ -1224,7 +1340,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
 
 /// A value whose ownership graph is a chain rather than a cycle: deep in
 /// nothing, and reached by the same emitter.
-const SHALLOW_OWNERSHIP: &[u8] = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+const SHALLOW_OWNERSHIP: &[u8] = br#"command fn main() -> status: own ExitStatus pure {
   let slots = buffer_vacant::<box<u64>>(2_u64);
   let boxed = box_new(7_u64);
   let wrapped = Some<box<u64>>(value: move boxed);
@@ -1253,59 +1369,80 @@ fn drop_glue_calls(module: &str) -> Vec<(String, Vec<String>)> {
         }
         if inside
             && let Some((_, callee)) = line.split_once("call void @wf.drop.")
-            && let Some((current, calls)) = glue.last_mut()
+            && let Some((_, calls)) = glue.last_mut()
         {
-            let callee = format!("wf.drop.{}", callee.split('(').next().unwrap_or_default());
-            assert_ne!(
-                &callee, current,
-                "a compiler-derived drop calls itself, so its depth is the \
-                 value's and no writer can see it: {current}"
-            );
-            calls.push(callee);
+            calls.push(format!(
+                "wf.drop.{}",
+                callee.split('(').next().unwrap_or_default()
+            ));
         }
     }
     glue
 }
 
-/// No compiler-derived drop can reach itself.
+/// The derived release of a type whose release graph has a cycle is one
+/// release action per node type, entering itself where the graph closes
+/// [PROV-6].
 ///
-/// This is the whole property, and it is structural rather than a depth a case
-/// happened to survive: a cycle among these definitions is unbounded recursion
-/// on the destruction path, reached after the program has already spent its
-/// stack, in code the writer never wrote and cannot instrument. Before this
-/// traversal existed, `wf.drop.t0` called `wf.drop.t0` and the corpus had three
-/// programs that dragged it.
+/// This assertion was its own opposite until 2026-09-04. The compiler ran such
+/// a walk on an explicit heap worklist, and the property under test was that no
+/// compiler-derived drop reached itself, because the recursion has no name in
+/// the source. The owner deleted [PROV-6]'s release-graph cycle refusal that
+/// day and ruled that the walk may recurse: a cycle can arise only where a heap
+/// is allowed, and a heap-allowed program's resource behaviour is a runtime
+/// quantity already, while the worklist bought its bounded depth with a
+/// `realloc` on the release path — an allocation, and on refusal an abort, that
+/// the writer never wrote. The recursion is not invisible: it is a `STACK
+/// cycle` row of the stack ledger, beside the recursions the writer did write.
 ///
 /// The check is over the emitted module rather than over a list of names, so a
-/// new nominal shape whose glue closes a cycle fails it without anyone
+/// new nominal shape whose glue closes a cycle is read here without anyone
 /// remembering to extend a table.
 #[test]
-fn no_compiler_derived_drop_reaches_itself() {
-    // Both owning indirections a cleanup cycle can close through, because the
-    // traversal has a separate arm for each and a cycle in either one is the
-    // same defect.
-    assert_no_drop_glue_cycle(&compile(&boxed_spine_source(4)));
-    assert_no_drop_glue_cycle(&compile(&buffer_chain_source(4)));
+fn a_cyclic_release_graph_lowers_to_one_release_action_that_enters_itself() {
+    // Both owning indirections a cleanup cycle can close through.
+    assert_recursive_drop_glue(&compile(&boxed_spine_source(4)));
+    assert_recursive_drop_glue(&compile(&buffer_chain_source(4)));
 }
 
-fn assert_no_drop_glue_cycle(module: &str) {
+fn assert_recursive_drop_glue(module: &str) {
     let glue = drop_glue_calls(module);
     assert!(
-        glue.iter()
+        !glue
+            .iter()
             .any(|(name, _)| name.starts_with("wf.drop.step.")),
-        "a program with a recursive nominal must lower its drop to a \
-         traversal: {module}"
+        "the release walk is the type's own release actions and no traversal \
+         driver: {module}"
     );
+    assert!(
+        !module.contains("@wf.drop.push") && !module.contains("@wf.drop.run"),
+        "a release walk allocates nothing: {module}"
+    );
+    let mut inside = false;
+    for line in module.lines() {
+        if line.starts_with("define private void @wf.drop.") {
+            inside = true;
+        } else if line == "}" {
+            inside = false;
+        } else if inside {
+            assert!(
+                !line.contains("@wf_resource_abort") && !line.contains("@realloc"),
+                "a release action allocates nothing and reaches no abort: \
+                 {line}"
+            );
+        }
+    }
     let index: std::collections::HashMap<&str, usize> = glue
         .iter()
         .enumerate()
         .map(|(position, (name, _))| (name.as_str(), position))
         .collect();
-    // Depth-first over the call graph, refusing a back edge. A drop glue that
-    // recursed at all would already have failed inside `drop_glue_calls`; this
-    // is what catches a cycle through two or more definitions.
+    // The release graph closes, so exactly one of these definitions reaches
+    // itself through the module's own call graph. Depth-first, looking for the
+    // back edge rather than refusing it.
     let mut colour = vec![0_u8; glue.len()];
     let mut path: Vec<(usize, usize)> = Vec::new();
+    let mut closed = false;
     for root in 0..glue.len() {
         if colour[root] != 0 {
             continue;
@@ -1323,27 +1460,30 @@ fn assert_no_drop_glue_cycle(module: &str) {
             let Some(target) = index.get(callee.as_str()).copied() else {
                 continue;
             };
-            assert_ne!(
-                colour[target], 1,
-                "the compiler-derived drops {} and {callee} reach each other, \
-                 which is unbounded recursion on the destruction path",
-                glue[node].0
-            );
+            if colour[target] == 1 {
+                closed = true;
+                continue;
+            }
             if colour[target] == 0 {
                 colour[target] = 1;
                 path.push((target, 0));
             }
         }
     }
+    assert!(
+        closed,
+        "a recursive nominal's release graph closes, so its release actions \
+         must reach one another: {module}"
+    );
 }
 
-/// A program whose drops cannot reach themselves emits no traversal at all.
+/// A program whose release graph is a chain has no recursive release.
 ///
-/// The traversal is not a new default; it is what the emitter does at exactly
-/// the edges whose depth the *value* chooses. Every other drop keeps the
-/// straight-line expansion it has always had, whose depth the type bounds. A
-/// case that only checked the recursive side would pass against an emitter that
-/// put every program on a worklist and charged them all for it.
+/// Recursion is not a new default; it is what the derived release does at
+/// exactly the edges the type's own release graph closes on. Every other
+/// release keeps the straight-line expansion it has always had, whose depth
+/// the type bounds. A case that only checked the recursive side would pass
+/// against an emitter that made every release enter itself.
 #[test]
 fn an_ownership_chain_keeps_its_straight_line_drop() {
     let module = compile(SHALLOW_OWNERSHIP);
@@ -1351,54 +1491,33 @@ fn an_ownership_chain_keeps_its_straight_line_drop() {
         module.contains("@wf.drop."),
         "this program owns heap storage and must derive drops: {module}"
     );
-    assert!(
-        !module.contains("@wf.drop.push"),
-        "a drop whose depth the type bounds must not pay for a worklist: \
-         {module}"
-    );
+    for (name, calls) in drop_glue_calls(&module) {
+        assert!(
+            !calls.contains(&name),
+            "a release whose depth the type bounds must not enter itself: \
+             {module}"
+        );
+    }
 }
 
-/// Every address formed by the recursive-drop worklist is dominated by a
-/// finite selected-target capacity check. The three `nuw` operations are
-/// justified by that check: doubling stays below the maximum entry count,
-/// byte scaling stays below the allocator/address ceiling, and incrementing a
-/// non-full count stays within the allocated capacity.
-#[test]
-fn recursive_drop_worklist_growth_proves_each_address_domain() {
-    let module = compile(&boxed_spine_source(1));
-    let push = definition_body(&module, "define private void @wf.drop.push");
-    assert!(
-        push.contains("%count.in.range = icmp ule i64 %count, %capacity")
-            && push.contains("%maximum.entries = udiv i64 ")
-            && push.contains("%growth.fits = select i1 %fresh")
-            && push.contains("br i1 %growth.fits, label %grow, label %exhausted"),
-        "worklist growth must establish count and selected-target capacity before addressing: \
-         {push}"
-    );
-    assert!(
-        push.contains("%doubled = shl nuw i64 %capacity, 1")
-            && push.contains("%bytes = mul nuw i64 %wanted, %entry.bytes")
-            && push.contains("%after = add nuw i64 %count, 1"),
-        "only arithmetic dominated by the finite range checks may carry no-wrap facts: {push}"
-    );
-    assert!(
-        !push.contains("%doubled = shl i64")
-            && !push.contains("%bytes = mul i64")
-            && !push.contains("%after = add i64"),
-        "the worklist must not retain unchecked growth arithmetic: {push}"
-    );
-}
-
-/// The traversal reclaims a deep value correctly, end to end.
+/// The recursive release reclaims a deep value correctly, end to end.
 ///
-/// The depth here is not the claim — the case above is what says the traversal
-/// cannot run out of stack at any depth — this one says the traversal is right:
-/// it frees the whole structure, in one pass, and the program ends normally
-/// with an empty record channel.
+/// The depth is not the claim: since 2026-09-04 the release of a cyclic
+/// release graph descends the stack, so how deep a value it can reclaim is the
+/// ordinary stack-availability question [SCOPE-3] defers for every program
+/// that is not `resource_closed` — and a heap-allowed program is exactly the
+/// only kind that can have a cyclic release graph. What this case says is that
+/// the walk is *right*: it frees the whole structure, in one pass, and the
+/// program ends normally with an empty record channel.
+///
+/// The depth was a million while the walk ran on an explicit heap worklist,
+/// where it was also the claim that no depth exhausted the stack. That claim
+/// went with the worklist, and the depth here is one the recursion reaches on
+/// an ordinary thread stack.
 #[test]
 fn a_deep_boxed_spine_is_reclaimed_without_a_record() {
     let directory = test_directory();
-    let executable = build_executable(&compile(&boxed_spine_source(1_000_000)), &directory);
+    let executable = build_executable(&compile(&boxed_spine_source(10_000)), &directory);
     let output = Command::new(&executable)
         .output()
         .expect("run the deep spine");
@@ -1431,7 +1550,7 @@ const BUFFER_CYCLE: &[u8] = br#"enum Chain {
   Cons(kids: box<buffer<Option<Chain>>>);
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let inner = buffer_vacant::<Chain>(2_u64);
   let b = box_new(move inner);
   let node = Cons(kids: move b);
@@ -1494,13 +1613,13 @@ const WIDE_BUFFER_CYCLE: &[u8] = br#"enum Chain {
   Cons(kids: box<buffer<Option<Chain>>>);
 }
 
-fn leafy() -> result: own Chain allocates(heap) {
+fn leafy() -> result: own Chain pure {
   let slots = buffer_vacant::<Chain>(1_u64);
   let held = box_new(move slots);
   return Cons(kids: move held);
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let slots = buffer_vacant::<Chain>(4_u64);
   let child0 = leafy();
   let first = Some<Chain>(value: move child0);
@@ -1554,40 +1673,39 @@ fn definition_body<'a>(module: &'a str, signature: &str) -> &'a str {
     &body[..end]
 }
 
-/// [STOR-3] fixes a buffer drop as each element's drop in ascending index
-/// order followed by that same one heap free, and the traversal has to produce
-/// that order out of a last-in first-out worklist.
+/// [STOR-3] fixes a buffer's release as each element's release in ascending
+/// index order followed by that one heap free, and the release of a buffer
+/// inside a cycle is the same action as the release of any other buffer.
 ///
-/// It does it by pushing in the reverse: the block's own entry first, then the
-/// elements from the last index down. Walking the indices upward instead, or
-/// pushing the block last, both emit a traversal that looks right and reclaims
-/// in the wrong order — and pushing the block last would additionally have the
-/// elements read out of storage the traversal had already released. Nothing
-/// downstream can see the difference, because [STOR-3] gives memory
-/// reclamation the empty effect row, so the order is pinned where it is
-/// chosen.
+/// The order is pinned where it is chosen because nothing downstream can see
+/// it: [STOR-3] gives memory reclamation the empty effect row. Walking the
+/// indices downward, or freeing the block first, both emit a release that
+/// looks right and reclaims in the wrong order — and freeing first would read
+/// every element out of storage the release had already given back.
+///
+/// The case read a worklist step here until 2026-09-04. The order it pins is
+/// the same one; what changed is that the elements are released by an ordinary
+/// ascending loop rather than pushed in reverse onto a last-in first-out list.
 #[test]
 fn a_buffer_in_a_cleanup_cycle_is_walked_in_the_order_the_rule_fixes() {
     let module = compile(&buffer_chain_source(4));
-    // The one definition that takes a buffer descriptor and the worklist: the
-    // per-node drop of the buffer inside the cycle.
-    let buffer_step = definition_body(&module, "({ ptr, i64 } %value, ptr %work)");
-    let block = buffer_step
-        .find(", ptr %pointer)")
-        .expect("the buffer step pushes the block's own entry");
-    let element = buffer_step
-        .find(", ptr %slot)")
-        .expect("the buffer step pushes one entry per element");
+    // The buffer's own release action: the element loop, then the block free.
+    let buffer_drop = definition_body(&module, "define private void @wf.drop.buffer.t");
     assert!(
-        block < element,
-        "the block's entry must be pushed before any element's, so the \
-         last-in first-out traversal takes it last: {buffer_step}"
+        buffer_drop.contains("%index = phi i64 [ 0, %entry ], [ %next, %body ]")
+            && buffer_drop.contains("%next = add i64 %index, 1"),
+        "the elements must be released from index zero upward: {buffer_drop}"
     );
+    let element = buffer_drop
+        .find("%element = load")
+        .expect("the buffer release reads each live element");
+    let block = buffer_drop
+        .find("call void @free(ptr %pointer)")
+        .expect("the buffer release frees its own block");
     assert!(
-        buffer_step.contains("%index = phi i64 [ %length, %entry ], [ %next, %body ]")
-            && buffer_step.contains("%next = sub i64 %index, 1"),
-        "the element entries must be pushed from the last index down, so the \
-         traversal takes index 0 first: {buffer_step}"
+        element < block,
+        "every element must be released before the block that holds it: \
+         {buffer_drop}"
     );
 }
 

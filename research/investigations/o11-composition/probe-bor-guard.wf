@@ -1,5 +1,5 @@
 fn get(table: own array<u8, 4>, symbol: own u64) -> own u8 pure {
-  doc "O11 probe, ruled-flip shape [governance/APPROVALS.md 2026-08-09 (2)]: under v0.30 the else edge of the bor guard establishes only the opaque negative disjunction, so the subscript obligation is undischarged and this file rejects on OP-4. Under the O11 candidate the same edge establishes -below and -above, whose projections negate to symbol >= 0 and symbol < 4, and with len(table) = 4 implicit the obligation discharges and this file is accepted.";
+  doc "O11 probe, ruled-flip shape [governance/APPROVALS.md 2026-08-09 (2)]: under v0.30 the else edge of the bor guard establishes only the opaque negative disjunction, so the subscript obligation is undischarged and this file rejects on OP-4. Under the O11 candidate the same edge establishes -below and -above, whose projections negate to symbol >= 0 and symbol < 4, and with len_of(table) = 4 implicit the obligation discharges and this file is accepted.";
   let below = ilt(symbol, 0_u64);
   let above = ige(symbol, 4_u64);
   let invalid = bor(below, above);

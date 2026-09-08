@@ -7,6 +7,7 @@
 
 mod catalog;
 mod engine;
+mod kernel;
 mod scopes;
 
 #[cfg(test)]
@@ -15,6 +16,12 @@ mod tests;
 use crate::{CanonicalSyntaxUnit, NodePath, SyntaxCoordinate};
 
 pub use engine::{resolve, resolve_with_inventory};
+
+pub use kernel::{
+    CONTAINER_NOMINAL_CLASS, CONTAINER_NOMINAL_CLASSES, CONTAINER_NOMINALS, ContainerNominal,
+    ContainerNominalId, ContainerShape, KERNEL_OPERATION_CLASS, KERNEL_OPERATIONS, KernelOperation,
+    KernelOperationId, KernelRow, container_nominal, kernel_operation,
+};
 
 pub use catalog::{
     Inventory, OPEN_BY_NAME, SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS,
@@ -121,6 +128,23 @@ impl DeclarationId {
 
     pub(crate) const fn index(self) -> usize {
         self.0 as usize
+    }
+
+    /// The entry heap's store region [PROV-1].
+    ///
+    /// The general store the runtime mints before `main` is named by no
+    /// source REGIONID: `main` declares no region parameter [FN-7], so the
+    /// region has no written spelling and every elided store brand that
+    /// resolves to it reaches it by elision alone. It is one region for the
+    /// whole unit, so it is one identity rather than a per-occurrence minted
+    /// declaration, and it is disjoint from every resolver declaration
+    /// because no unit holds `u32::MAX` of them.
+    pub const ENTRY_HEAP_REGION: Self = Self(u32::MAX);
+
+    /// Whether this identity is the entry heap's store region [PROV-1].
+    #[must_use]
+    pub const fn is_entry_heap_region(self) -> bool {
+        self.0 == u32::MAX
     }
 }
 
@@ -401,6 +425,10 @@ pub enum DeclarationOrigin {
     Prelude(PreludeDeclarationId),
     /// One [SYS-2] record from the system domain present in every unit [SYS-3].
     System(SystemDeclarationId),
+    /// One [TYPE-2] compiler-owned container or provider nominal.
+    Container(ContainerNominalId),
+    /// One [BLK-0] kernel-domain operation present in every unit [SYS-3].
+    Kernel(KernelOperationId),
 }
 
 /// One source declaration event and its lookup entries.
@@ -496,6 +524,12 @@ pub enum ResolvedTarget {
     Operation(OperationFamilyId),
     /// One admitted [SYS-2] lookup entry ([SYS-1], [SYS-3]).
     System(SystemDeclarationId),
+    /// One [TYPE-2] compiler-owned container or provider nominal, admitted at
+    /// a `type` TYPEID in every unit.
+    Container(ContainerNominalId),
+    /// One admitted [BLK-0] kernel-domain operation, admitted at a `callee`
+    /// IDENT in every unit [SYS-3].
+    Kernel(KernelOperationId),
 }
 
 /// One lexical use and its exact target.
@@ -604,7 +638,13 @@ pub(crate) struct PostconditionResolutionRecord {
     pub(crate) block: NodePath,
     pub(crate) selector: NodePath,
     pub(crate) class: PostconditionSelectorClass,
-    pub(crate) plain_candidate: Option<PostconditionCandidateRecord>,
+    /// Every declared result ordinal's binder, in written order [GRAM-2].
+    /// A declaration writing one result has exactly one entry, and every
+    /// clause of either class may name any of them [CALL-4].
+    pub(crate) result_binders: Vec<PostconditionCandidateRecord>,
+    /// The route's written ordinal binder, `when b is V(f: r):`, when the
+    /// clause writes one [CALL-4].
+    pub(crate) route_ordinal: Option<String>,
     pub(crate) fields: Vec<PostconditionFieldRecord>,
     pub(crate) variant_target: Option<ResolvedTarget>,
     pub(crate) provisional_uses: Vec<LexicalUseRecord>,

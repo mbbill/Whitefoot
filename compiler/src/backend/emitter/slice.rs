@@ -33,17 +33,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
 
         let pointer = match array {
-            IrArrayRoot::Value(value) => {
-                let llvm_array_type = llvm_type(self.program, array_type)?;
-                let slot = self.entry_slot(FunctionSlot::SliceRoot(result))?;
-                writeln!(
-                    self.output,
-                    "  store {llvm_array_type} {}, ptr {slot}",
-                    self.value_name(value),
-                )
-                .map_err(|_| BackendFailure::TextEmission)?;
-                slot
-            }
+            IrArrayRoot::Value(value) => self.value_place(value)?,
             IrArrayRoot::Constant(id) => constant_symbol(id),
         };
         self.emit_slice_descriptor(result, ty, &pointer, length)
@@ -142,6 +132,42 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             self.value_name(slice),
             self.value_name(offset),
             self.value_name(result),
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+
+    /// [SET-1] one element-position store through an exclusive view.
+    ///
+    /// The descriptor is {data pointer, length}, so the store is the element
+    /// address the read already computes and one `store` through it.
+    pub(super) fn emit_slice_store(
+        &mut self,
+        slice: IrValueId,
+        index: IrValueId,
+        value: IrValueId,
+    ) -> Result<(), BackendFailure> {
+        let Some(slice_type @ IrType::Slice { element }) = self.value_type(slice) else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        if self.value_type(index)
+            != Some(IrType::Integer {
+                width: 64,
+                signed: false,
+            })
+            || self.value_type(value) != Some(element.ty())
+        {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let descriptor_type = llvm_type(self.program, slice_type)?;
+        let element_type = llvm_type(self.program, element.ty())?;
+        let pointer = self.next_temporary()?;
+        let element_pointer = self.next_temporary()?;
+        writeln!(
+            self.output,
+            "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}\n  store {element_type} {}, ptr %{element_pointer}",
+            self.value_name(slice),
+            self.value_name(index),
+            self.value_name(value),
         )
         .map_err(|_| BackendFailure::TextEmission)
     }

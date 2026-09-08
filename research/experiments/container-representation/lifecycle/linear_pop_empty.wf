@@ -1,0 +1,13 @@
+command fn main() -> status: own ExitStatus pure {
+  let empty = fixed_vector::<Ticket, 2>();
+  let first_ticket = Ticket(number: 1_u8);
+  let second_ticket = Ticket(number: 2_u8);
+  let one = place_back(vector: move empty, value: move first_ticket);
+  let two = place_back(vector: move one, value: move second_ticket);
+  let (rest, second) = take_back(vector: move two);
+  let (drained, first) = take_back(vector: move rest);
+  let second_number = consume(ticket: move second);
+  let first_number = consume(ticket: move first);
+  invariant empty_again: len_of(drained) <= 0_u64;
+  return exit_status(code: 0_u8);
+}

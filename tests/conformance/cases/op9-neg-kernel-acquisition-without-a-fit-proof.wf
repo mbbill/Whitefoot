@@ -1,0 +1,10 @@
+fn make['s](store: &uniq Heap<'s>, n: own u64) -> made: own Option<Vector<'s, i32>> reads(store), writes(store), allocates(store) {
+  doc "The count is a completely unconstrained runtime value, so the acquiring row's `fits::<i32>(count)` obligation has nothing to discharge it [BLK-0, OP-9].";
+  region {
+    return heap_vector::<i32>(store: &uniq deref(store), count: n);
+  }
+}
+
+command fn main() -> return_value: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

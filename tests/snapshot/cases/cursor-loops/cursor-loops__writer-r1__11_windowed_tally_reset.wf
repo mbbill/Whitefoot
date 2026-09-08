@@ -1,6 +1,14 @@
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: a counted for loop maintains a windowed tally cursor that resets to zero inside the body whenever it reaches a fixed window size, while a separate running grand total keeps accumulating across every window.";
-  let values = array_new::<u32, 9>(1_u32);
+  let values = fixed_vector::<u32, 9>();
+  for (
+    at_values in 0_u64..9_u64,
+    invariant grown_values: len_of(values) >= at_values,
+    invariant spare_values: room_of(values) + at_values >= 9_u64,
+    invariant flat_values: head_of(values) <= 0_u64
+  ) {
+    set values = place_back(vector: move values, value: 1_u32);
+  }
   let window_tally = 0_u32;
   let grand_total = 0_u32;
   let completed_windows = 0_u32;

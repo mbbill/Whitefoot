@@ -16,16 +16,20 @@ mod floor;
 mod integer;
 mod operations;
 mod parallel;
+mod places;
 mod reinterpret;
+mod runs;
 mod slice;
 mod system;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write;
 
+use super::abi::FunctionAbi;
 use super::qualification::{
     Qualification, QualificationFailure, SystemTarget, qualified_representation, qualify_program,
 };
+use super::storage::{FunctionStoragePlan, operation_operands};
 use super::target::{
     TargetAggregateLayout, TargetFramePlan, TargetFrameSlot, TargetLayout, TargetLayoutFailure,
     TargetStorageType, parallel_lane_frame_layout, plan_target_frame, validate_program,
@@ -33,10 +37,10 @@ use super::target::{
 };
 use crate::{
     IrAddressed, IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation, IrCompletionStep, IrConstant,
-    IrDrop, IrEntry, IrEnumType, IrFloatOperation, IrFunction, IrGlobalValue, IrInstruction,
-    IrIntegerOperation, IrLayoutCeiling, IrNominal, IrNominalId, IrNominalKind, IrOperation,
-    IrOverlap, IrProgram, IrRuntimeTargetObligations, IrTargetDomainObligation, IrTerminator,
-    IrType, IrValueId, SystemResourceType,
+    IrDrop, IrDropSubject, IrEntry, IrEnumType, IrFloatOperation, IrFunction, IrGlobalValue,
+    IrInstruction, IrIntegerOperation, IrLayoutCeiling, IrNominal, IrNominalId, IrNominalKind,
+    IrOperation, IrOverlap, IrProgram, IrRuntimeTargetObligations, IrTargetDomainObligation,
+    IrTerminator, IrType, IrValueId, SystemResourceType,
 };
 use buffer::{buffer_fill_done_label, buffer_probe_join_label, buffer_vacant_done_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
@@ -282,7 +286,12 @@ fn emit_llvm_for(
         text.push_str("declare void @abort() noreturn\n");
         system_declarations.remove("declare void @abort() noreturn");
     }
-    if has_heap_storage {
+    // A general store's run takes its backing from the allocator and gives it
+    // back at the release [PROV-1, BLK-2], so a module holding one declares
+    // the two symbols even where nothing else on this list allocates. It does
+    // not write a resource record: a refused take is the row's own `None`
+    // arm and never an abort.
+    if has_heap_storage || cleanup::program_has_general_run(program) {
         text.push_str("declare ptr @malloc(i64)\ndeclare void @free(ptr)\n");
     }
     for declaration in &system_declarations {
@@ -655,12 +664,18 @@ enum IntrinsicDeclaration {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum FunctionSlot {
-    ArrayFillValue(IrValueId),
+    /// One immutable aggregate value's planned storage, shared only after
+    /// complete control-flow interference checks.
+    OwnedValue(usize),
+    /// The bump extent one [BLK-2] reservation lays out in the reserving
+    /// activation's own frame, at the byte extent and alignment its two type
+    /// constants fix.
+    ExtentStorage(IrValueId),
     ArrayFillIndex(IrValueId),
-    ArrayRoot(IrValueId),
-    InsertArray(IrValueId),
-    SliceRoot(IrValueId),
     Address(IrValueId),
+    /// One stable place per in-flight iteration. The issue-stage definition
+    /// selects its slot; the existing drain completes before that slot is reused.
+    StagedAddress(IrValueId),
     ArenaList(IrValueId),
     Completion(IrValueId, CompletionSlot),
     /// The lane frame each in-flight iteration of a staged loop was granted,
@@ -708,18 +723,43 @@ struct FunctionFramePlan {
     ordered: Vec<FunctionSlot>,
 }
 
+/// Storage selected before emission, including values that survive suspension.
+struct FunctionFrameContents<'plan> {
+    completion_steps: &'plan HashMap<IrValueId, IrCompletionStep>,
+    pipeline: Option<&'plan crate::IrCompletionPipeline>,
+    staged_lane: Option<&'plan parallel::StagedLane>,
+    storage: &'plan FunctionStoragePlan,
+    result_slot: Option<usize>,
+}
+
 impl FunctionFramePlan {
     fn build(
         target: TargetLayout,
         program: &IrProgram<'_, '_, '_>,
         qualification: &Qualification,
         function: &IrFunction,
-        completion_steps: &HashMap<IrValueId, IrCompletionStep>,
-        pipeline: Option<&crate::IrCompletionPipeline>,
-        staged_lane: Option<&parallel::StagedLane>,
+        contents: FunctionFrameContents<'_>,
     ) -> Result<Self, BackendFailure> {
+        let FunctionFrameContents {
+            completion_steps,
+            pipeline,
+            staged_lane,
+            storage,
+            result_slot,
+        } = contents;
         let mut specifications = Vec::new();
         let mut ordered = Vec::new();
+        for (slot, ty) in storage.slots().iter().copied().enumerate() {
+            if Some(slot) != result_slot && storage.destination(slot).is_none() {
+                push_function_slot(
+                    &mut specifications,
+                    &mut ordered,
+                    FunctionSlot::OwnedValue(slot),
+                    TargetStorageType::source(ty),
+                    None,
+                )?;
+            }
+        }
         for (block_index, block) in function.blocks().iter().enumerate() {
             let block_id =
                 IrBlockId::from_index(block_index).map_err(|_| BackendFailure::CounterOverflow)?;
@@ -737,61 +777,26 @@ impl FunctionFramePlan {
                         push_function_slot(
                             &mut specifications,
                             &mut ordered,
-                            FunctionSlot::ArrayFillValue(*result),
-                            TargetStorageType::source(*ty),
-                            None,
-                        )?;
-                        push_function_slot(
-                            &mut specifications,
-                            &mut ordered,
                             FunctionSlot::ArrayFillIndex(*result),
                             TargetStorageType::integer(64),
                             None,
                         )?;
                     }
-                    IrOperation::ArrayIndex {
-                        root: IrArrayRoot::Value(value),
-                        ..
-                    } => {
-                        let root_type = function
-                            .value_type(*value)
-                            .ok_or(BackendFailure::InvalidIr)?;
-                        push_function_slot(
-                            &mut specifications,
-                            &mut ordered,
-                            FunctionSlot::ArrayRoot(*result),
-                            TargetStorageType::source(root_type),
-                            None,
-                        )?;
+                    IrOperation::AddressOf { referent, .. } => {
+                        let storage = TargetStorageType::source(referent.ty());
+                        let iteration = pipeline.filter(|pipeline| {
+                            pipeline.slot_index(block_id).is_some() && !pipeline.drains(block_id)
+                        });
+                        let (key, storage) = if let Some(iteration) = iteration {
+                            (
+                                FunctionSlot::StagedAddress(*result),
+                                TargetStorageType::array(storage, iteration.slots()),
+                            )
+                        } else {
+                            (FunctionSlot::Address(*result), storage)
+                        };
+                        push_function_slot(&mut specifications, &mut ordered, key, storage, None)?;
                     }
-                    IrOperation::InsertArray { .. } => push_function_slot(
-                        &mut specifications,
-                        &mut ordered,
-                        FunctionSlot::InsertArray(*result),
-                        TargetStorageType::source(*ty),
-                        None,
-                    )?,
-                    IrOperation::SliceFromArray {
-                        array: IrArrayRoot::Value(value),
-                    } => {
-                        let array_type = function
-                            .value_type(*value)
-                            .ok_or(BackendFailure::InvalidIr)?;
-                        push_function_slot(
-                            &mut specifications,
-                            &mut ordered,
-                            FunctionSlot::SliceRoot(*result),
-                            TargetStorageType::source(array_type),
-                            None,
-                        )?;
-                    }
-                    IrOperation::AddressOf { referent, .. } => push_function_slot(
-                        &mut specifications,
-                        &mut ordered,
-                        FunctionSlot::Address(*result),
-                        TargetStorageType::source(referent.ty()),
-                        None,
-                    )?,
                     IrOperation::ArenaListNew => push_function_slot(
                         &mut specifications,
                         &mut ordered,
@@ -799,6 +804,19 @@ impl FunctionFramePlan {
                         TargetStorageType::pointer(),
                         None,
                     )?,
+                    // [BLK-2] the reserved extent itself. Its alignment is
+                    // the store's own type constant, which is what makes the
+                    // bump cursor a multiple of it at every program point.
+                    IrOperation::ArenaFrame { bytes, align } => {
+                        if ordered.contains(&FunctionSlot::ExtentStorage(*result)) {
+                            return Err(BackendFailure::InvalidIr);
+                        }
+                        specifications.push(TargetFrameSlot::aligned(
+                            TargetStorageType::bytes(*bytes),
+                            *align,
+                        ));
+                        ordered.push(FunctionSlot::ExtentStorage(*result));
+                    }
                     IrOperation::SystemCall {
                         operation,
                         arguments,
@@ -1117,6 +1135,11 @@ struct FunctionEmitter<'program, 'state> {
     /// The validated physical frame which supplied `entry_prelude` and every
     /// pointer returned to an operation emitter.
     frame: FunctionFramePlan,
+    storage: FunctionStoragePlan,
+    result_slot: Option<usize>,
+    /// Per-operation snapshots for legacy value consumers. Place operations
+    /// read their actual storage directly; a snapshot never becomes an alias.
+    materialized: HashMap<IrValueId, String>,
     temporary: u32,
     /// The module's outlined thunks, shared by every function that hands a
     /// call out.
@@ -1373,14 +1396,20 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             &completion_steps,
             sequential_clones.is_none(),
         )?;
+        let storage = FunctionStoragePlan::build(program, function, pipeline)?;
+        let result_slot = places::returned_storage_slot(function, &storage);
         let frame = FunctionFramePlan::build(
             target,
             program,
             qualification,
             function,
-            &completion_steps,
-            pipeline,
-            staged_lane.as_ref(),
+            FunctionFrameContents {
+                completion_steps: &completion_steps,
+                pipeline,
+                staged_lane: staged_lane.as_ref(),
+                storage: &storage,
+                result_slot,
+            },
         )?;
         let entry_prelude = frame.render(program)?;
         Ok(Self {
@@ -1392,6 +1421,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             output: String::new(),
             entry_prelude,
             frame,
+            storage,
+            result_slot,
+            materialized: HashMap::new(),
             temporary: 0,
             parallel,
             overlaps,
@@ -1430,6 +1462,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 
     fn emit(mut self) -> Result<String, BackendFailure> {
         self.incoming = self.collect_incoming()?;
+        let abi = FunctionAbi::build(self.program, self.function)?;
         let symbol = match self.sequential_clones {
             Some(_) => sequential_clone_symbol(self.function.name()),
             None => source_symbol(self.function.name()),
@@ -1437,17 +1470,36 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         write!(
             self.output,
             "define internal {} @{symbol}(",
-            llvm_type(self.program, self.function.result())?,
+            if abi.result().uses_destination() {
+                "void".to_owned()
+            } else {
+                llvm_type(self.program, abi.result().ty())?
+            },
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        for (index, (value, ty)) in self.function.parameters().iter().enumerate() {
-            if index != 0 {
+        let result_address = abi.result().uses_destination();
+        if result_address {
+            self.output.push_str("ptr %wf.result");
+        }
+        for (index, ((value, _), parameter)) in self
+            .function
+            .parameters()
+            .iter()
+            .zip(abi.parameters())
+            .enumerate()
+        {
+            if index != 0 || result_address {
                 self.output.push_str(", ");
+            }
+            if parameter.is_indirect() {
+                write!(self.output, "ptr %wf.arg.v{}", value.ordinal())
+                    .map_err(|_| BackendFailure::TextEmission)?;
+                continue;
             }
             write!(
                 self.output,
                 "{} {}",
-                llvm_type(self.program, *ty)?,
+                llvm_type(self.program, parameter.ty())?,
                 self.value_name(*value)
             )
             .map_err(|_| BackendFailure::TextEmission)?;
@@ -1455,6 +1507,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         self.output.push_str(") {\n");
         let mut prelude_anchor = None;
         for (index, block) in self.function.blocks().iter().enumerate() {
+            self.materialized.clear();
             let block_id =
                 IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
             writeln!(self.output, "{}:", block_label(block_id))
@@ -1463,6 +1516,20 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 prelude_anchor = Some(self.output.len());
             }
             self.emit_block_parameters(block_id, block)?;
+            if index == 0 {
+                for ((value, _), parameter) in
+                    self.function.parameters().iter().zip(abi.parameters())
+                {
+                    if parameter.is_indirect() {
+                        let destination = self.value_place(*value)?;
+                        self.copy_storage(
+                            parameter.ty(),
+                            &format!("%wf.arg.v{}", value.ordinal()),
+                            &destination,
+                        )?;
+                    }
+                }
+            }
             self.block_slot = self
                 .pipeline
                 .and_then(|pipeline| pipeline.slot_index(block_id));
@@ -1550,6 +1617,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         }
         for (parameter_index, (parameter, ty)) in block.parameters().iter().enumerate() {
+            if self.storage.slot(*parameter).is_some() {
+                continue;
+            }
             write!(
                 self.output,
                 "  {} = phi {} ",
@@ -1601,6 +1671,27 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         index: usize,
         instruction: &IrInstruction,
     ) -> Result<(), BackendFailure> {
+        match instruction {
+            IrInstruction::StoreBuffer {
+                buffer,
+                index,
+                value,
+            } => {
+                self.materialize_operands([*buffer, *index, *value])?;
+            }
+            IrInstruction::StoreSlice {
+                slice,
+                index,
+                value,
+            } => {
+                self.materialize_operands([*slice, *index, *value])?;
+            }
+            IrInstruction::Store { address, value, .. } => {
+                self.materialize_operands([*address, *value])?;
+            }
+            IrInstruction::Drops(_) => {}
+            IrInstruction::Define { .. } => {}
+        }
         self.emit_instruction_body(block, index, instruction)?;
         if let IrInstruction::Define { result, .. } = instruction {
             self.store_staged_carry(*result)?;
@@ -1686,12 +1777,17 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 index,
                 value,
             } => self.emit_buffer_store(*buffer, *index, *value),
+            IrInstruction::StoreSlice {
+                slice,
+                index,
+                value,
+            } => self.emit_slice_store(*slice, *index, *value),
             IrInstruction::Store {
                 address,
                 value,
                 referent,
             } => self.emit_store(*address, *value, *referent),
-            IrInstruction::Drop(drop) => self.emit_drop(*drop),
+            IrInstruction::Drops(drops) => self.emit_drops(drops),
         }
     }
 
@@ -1709,6 +1805,24 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     }
 
     fn emit_definition(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        operation: &IrOperation,
+    ) -> Result<(), BackendFailure> {
+        self.materialized.clear();
+        if self.emit_place_definition(result, ty, operation)? {
+            return Ok(());
+        }
+        self.materialize_operands(operation_operands(operation))?;
+        self.emit_value_definition(result, ty, operation)?;
+        if !self.overlap_handed_out.contains(&result) {
+            self.save_value_result(result)?;
+        }
+        Ok(())
+    }
+
+    fn emit_value_definition(
         &mut self,
         result: IrValueId,
         ty: IrType,
@@ -1799,11 +1913,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 offset,
                 target_domain,
             } => self.emit_array_index(result, ty, *root, *offset, *target_domain),
-            IrOperation::InsertArray {
-                aggregate,
-                index,
-                value,
-            } => self.emit_array_insertion(result, ty, *aggregate, *index, *value),
             IrOperation::BufferFill {
                 length,
                 value,
@@ -1826,7 +1935,25 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 length,
                 maximum_length,
             } => self.emit_buffer_fits(result, ty, *length, *maximum_length),
-            IrOperation::BufferLength { buffer } => self.emit_buffer_length(result, ty, *buffer),
+            IrOperation::BufferMeasure { buffer } => self.emit_buffer_length(result, ty, *buffer),
+            IrOperation::FixedVector => self.emit_fixed_vector(result, ty),
+            IrOperation::ArenaFrame { bytes, align } => {
+                self.emit_arena_frame(result, ty, *bytes, *align)
+            }
+            IrOperation::StoreTake(take) => self.emit_store_take(result, ty, *take),
+            IrOperation::StoreBox(cell) => self.emit_store_box(result, ty, *cell),
+            IrOperation::ContainerMeasure { measure, container } => {
+                self.emit_container_measure(result, ty, *measure, *container)
+            }
+            IrOperation::RunIndex {
+                run,
+                offset,
+                target_domain,
+            } => self.emit_run_index(result, ty, *run, *offset, *target_domain),
+            IrOperation::RunTaken { row, run } => self.emit_run_taken(result, ty, *row, *run),
+            IrOperation::RunBoundary { row, run, value } => {
+                self.emit_run_boundary(result, ty, *row, *run, *value)
+            }
             IrOperation::BufferIndex {
                 buffer,
                 offset,
@@ -1842,7 +1969,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::SliceFromBuffer { buffer } => {
                 self.emit_slice_from_buffer(result, ty, *buffer)
             }
-            IrOperation::SliceLength { slice } => self.emit_slice_length(result, ty, *slice),
+            IrOperation::SliceFromRun { run } => self.emit_slice_from_run(result, ty, *run),
+            IrOperation::SliceMeasure { slice } => self.emit_slice_length(result, ty, *slice),
             IrOperation::SliceIndex {
                 slice,
                 offset,
@@ -1850,6 +1978,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             } => self.emit_slice_index(result, ty, *slice, *offset, *target_domain),
             IrOperation::BoxNew { nominal, value } => {
                 self.emit_box_new(result, ty, *nominal, *value)
+            }
+            IrOperation::BoxTake { nominal, value } => {
+                self.emit_box_take(result, ty, *nominal, *value)
             }
             IrOperation::BoxDeref { nominal, value } => {
                 self.emit_box_deref(result, ty, *nominal, *value)
@@ -1894,6 +2025,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::AddressOf { value, referent } => {
                 self.emit_address_of(result, ty, *value, *referent)
             }
+            IrOperation::ProjectAddress {
+                address,
+                projection,
+            } => self.emit_project_address(result, ty, *address, projection),
             IrOperation::Load { address, referent } => {
                 self.emit_load(result, ty, *address, *referent)
             }
@@ -1997,19 +2132,26 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                         return Err(BackendFailure::InvalidIr);
                     }
                 }
-                self.emit_drops(drops)?;
+                self.emit_place_edge(*target, arguments, drops)?;
                 writeln!(self.output, "  br label %{}", block_label(*target))
                     .map_err(|_| BackendFailure::TextEmission)
             }
             IrTerminator::Return { value, drops } => {
-                if self.value_type(*value) != Some(self.function.result()) {
+                let abi = FunctionAbi::build(self.program, self.function)?;
+                if self.value_type(*value) != Some(abi.result().ty()) {
                     return Err(BackendFailure::InvalidIr);
+                }
+                if abi.result().uses_destination() {
+                    self.store_value_at(*value, "%wf.result")?;
+                    self.emit_drops(drops)?;
+                    return writeln!(self.output, "  ret void")
+                        .map_err(|_| BackendFailure::TextEmission);
                 }
                 self.emit_drops(drops)?;
                 writeln!(
                     self.output,
                     "  ret {} {}",
-                    llvm_type(self.program, self.function.result())?,
+                    llvm_type(self.program, abi.result().ty())?,
                     self.value_name(*value)
                 )
                 .map_err(|_| BackendFailure::TextEmission)
@@ -2019,6 +2161,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 enum_type,
                 targets,
             } => {
+                self.materialize_operands([*scrutinee])?;
                 let (tag, tag_ty) = self.match_tag(*scrutinee, *enum_type)?;
                 writeln!(
                     self.output,
@@ -2099,79 +2242,96 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             .ok_or(BackendFailure::InvalidIr)
     }
 
-    fn emit_drop(&mut self, drop: IrDrop) -> Result<(), BackendFailure> {
-        if self.value_type(drop.value()) != Some(drop.ty()) {
+    /// Validate the checked release and capture only content it actually
+    /// reads. In particular, a no-op owner node requires no aggregate load.
+    fn prepare_drop(&mut self, drop: IrDrop) -> Result<Option<String>, BackendFailure> {
+        let actual = match drop.subject() {
+            IrDropSubject::Value(value) => self.value_type(value),
+            IrDropSubject::Place(address) => match self.value_type(address) {
+                Some(IrType::Address(referent)) => Some(referent.ty()),
+                _ => return Err(BackendFailure::InvalidIr),
+            },
+        };
+        if actual != Some(drop.ty()) {
             return Err(BackendFailure::InvalidIr);
         }
-        let value_name = self.value_name(drop.value());
-        match drop.ty() {
-            IrType::Array { .. } | IrType::Slice { .. } => {}
-            IrType::Buffer { .. } => {
-                emit_value_cleanup(
-                    self.program,
-                    self.qualification,
-                    &mut self.output,
-                    &mut self.temporary,
-                    drop.ty(),
-                    value_name.clone(),
-                )?;
+        let reads_content = match drop.ty() {
+            IrType::Array { .. } | IrType::Slice { .. } => false,
+            IrType::FixedVector { .. } | IrType::Vector { .. } | IrType::Provider => {
+                type_requires_cleanup(self.program, drop.ty())?
             }
+            IrType::Buffer { .. } => true,
             IrType::Nominal(nominal) if !self.nominal(nominal)?.is_tag_only_enum() => {
                 match self.nominal(nominal)?.kind() {
-                    IrNominalKind::Struct { .. } => {}
-                    // An arena value derives no owner-scope drop action; its
-                    // storage is released with its region [STOR-3, STOR-4].
-                    IrNominalKind::Arena { .. } => {}
-                    // The region's allocation-list drop is that release:
-                    // walk the list and free every registered allocation.
-                    IrNominalKind::ArenaStorage => {
-                        emit_value_cleanup(
-                            self.program,
-                            self.qualification,
-                            &mut self.output,
-                            &mut self.temporary,
-                            drop.ty(),
-                            value_name.clone(),
-                        )?;
-                    }
-                    // The checked program's own [SYS-5] record is the single
-                    // source of truth for which action runs here, so a table
-                    // row disagreeing with it stops rather than silently
-                    // emitting a different release.
+                    // The checker supplied separate component records. The
+                    // struct node must not recursively release them again.
+                    IrNominalKind::Struct { .. } | IrNominalKind::Arena { .. } => false,
+                    IrNominalKind::ArenaStorage => true,
                     IrNominalKind::SystemResource(contract) => {
                         if drop.release().action != Some(contract.action) {
                             return Err(BackendFailure::InvalidIr);
                         }
-                        let contract = *contract;
-                        system::emit_resource_release(
-                            self.qualification,
-                            &mut self.output,
-                            contract,
-                            &value_name,
-                        )?;
+                        true
                     }
                     IrNominalKind::Enum { .. } | IrNominalKind::Box { .. } => {
-                        if type_requires_cleanup(self.program, drop.ty())? {
-                            emit_value_cleanup(
-                                self.program,
-                                self.qualification,
-                                &mut self.output,
-                                &mut self.temporary,
-                                drop.ty(),
-                                value_name.clone(),
-                            )?;
-                        }
+                        type_requires_cleanup(self.program, drop.ty())?
                     }
                 }
             }
             _ => return Err(BackendFailure::InvalidIr),
+        };
+        if !reads_content {
+            return Ok(None);
         }
-        writeln!(self.output, "  ; drop {value_name}").map_err(|_| BackendFailure::TextEmission)
+        match drop.subject() {
+            IrDropSubject::Value(value) => self.value_operand(value).map(Some),
+            IrDropSubject::Place(address) => {
+                let snapshot = format!("%{}", self.next_temporary()?);
+                writeln!(
+                    self.output,
+                    "  {snapshot} = load {}, ptr {}",
+                    llvm_type(self.program, drop.ty())?,
+                    self.value_name(address)
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+                Ok(Some(snapshot))
+            }
+        }
     }
 
     fn emit_drops(&mut self, drops: &[IrDrop]) -> Result<(), BackendFailure> {
-        for drop in drops {
-            self.emit_drop(*drop)?;
+        // Capture the complete edge/group before its first effectful release,
+        // just as lowering's former value snapshots did. Phi inputs are also
+        // captured before this group; destination writes follow it.
+        let snapshots = drops
+            .iter()
+            .map(|drop| self.prepare_drop(*drop))
+            .collect::<Result<Vec<_>, _>>()?;
+        for (drop, snapshot) in drops.iter().zip(snapshots) {
+            if let Some(value) = snapshot {
+                if let IrType::Nominal(nominal) = drop.ty()
+                    && let IrNominalKind::SystemResource(contract) = self.nominal(nominal)?.kind()
+                {
+                    let contract = *contract;
+                    system::emit_resource_release(
+                        self.qualification,
+                        &mut self.output,
+                        contract,
+                        &value,
+                    )?;
+                } else {
+                    emit_value_cleanup(
+                        self.program,
+                        self.qualification,
+                        &mut self.output,
+                        &mut self.temporary,
+                        drop.ty(),
+                        value,
+                    )?;
+                }
+            }
+            writeln!(self.output, "  ; drop {}", value_name(drop.operand()))
+                .map_err(|_| BackendFailure::TextEmission)?;
         }
         Ok(())
     }
@@ -2196,7 +2356,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     }
 
     fn value_name(&self, value: IrValueId) -> String {
-        value_name(value)
+        self.materialized
+            .get(&value)
+            .cloned()
+            .unwrap_or_else(|| value_name(value))
     }
 }
 
@@ -2306,14 +2469,6 @@ fn llvm_storage_type(
             "[{length} x {}]",
             llvm_storage_type(program, element)?
         )),
-        TargetStorageType::Struct(fields) => Ok(format!(
-            "{{ {} }}",
-            fields
-                .iter()
-                .map(|field| llvm_storage_type(program, field))
-                .collect::<Result<Vec<_>, _>>()?
-                .join(", ")
-        )),
     }
 }
 
@@ -2380,6 +2535,16 @@ fn llvm_type(program: &IrProgram<'_, '_, '_>, ty: IrType) -> Result<String, Back
             llvm_type(program, element.ty())?
         )),
         IrType::Buffer { .. } | IrType::Slice { .. } => Ok("{ ptr, i64 }".to_owned()),
+        // A `Vector` descriptor is `{ pointer, cap, len, head }`; a
+        // `FixedVector` is its slots followed by `len` and `head`; a provider
+        // is proof-only and carries at most its own base and cursor
+        // [BLK-1, PROV-1, OP-9].
+        IrType::Vector { .. } => Ok("{ ptr, i64, i64, i64 }".to_owned()),
+        IrType::FixedVector { element, length } => Ok(format!(
+            "{{ [{length} x {}], i64, i64 }}",
+            llvm_type(program, element.ty())?
+        )),
+        IrType::Provider => Ok("{ ptr, i64 }".to_owned()),
         IrType::Address(_) => Ok("ptr".to_owned()),
         IrType::Nominal(id) => {
             let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
@@ -2717,6 +2882,11 @@ fn drain_all_completions_except(
 
 /// The label one ordinary instruction's own emission leaves the block at, for
 /// the operations whose lowering opens a further LLVM block.
+/// The block one cell formation joins at S39.
+pub(super) fn store_box_join_label(result: IrValueId) -> String {
+    format!("box.join.v{}", result.ordinal())
+}
+
 fn definition_exit_label(
     _block_id: IrBlockId,
     _index: usize,
@@ -2744,6 +2914,13 @@ fn definition_exit_label(
             operation: IrOperation::BoxNew { .. },
             ..
         } => *label = box_new_ready_label(*result),
+        // S39 a cell formation branches on the store's answer and joins,
+        // so the block a successor's phi names is that join.
+        IrInstruction::Define {
+            result,
+            operation: IrOperation::StoreBox { .. },
+            ..
+        } => *label = store_box_join_label(*result),
         IrInstruction::Define {
             result,
             operation: IrOperation::ArenaNew { .. },

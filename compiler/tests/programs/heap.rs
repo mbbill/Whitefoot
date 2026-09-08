@@ -42,19 +42,16 @@ fn growable_vector_grows_by_affine_replace_and_runs_its_checks() {
 #[test]
 fn affine_slot_buffers_fill_replace_vacate_and_drop_per_element() {
     let llvm = compile_program("option_slots.wf");
-    // The construction is the all-None allocation and the drop of the
-    // box-payload buffer is the derived per-element loop plus one free.
-    assert!(llvm.contains("buffer.vacant.head"));
-    let helper_start = llvm
-        .find("define private void @wf.drop.buffer.t")
-        .expect("box-payload elements must derive the buffer drop loop");
-    let helper_end = llvm[helper_start..]
-        .find("\n}\n")
-        .map(|offset| helper_start + offset)
-        .expect("buffer drop helper must be complete");
-    let helper = &llvm[helper_start..helper_end];
-    assert!(helper.contains("call void @wf.drop.t"));
-    assert_eq!(helper.matches("call void @free").count(), 1);
+    // B7c4b-1: the two slot runs are `FixedVector<Option<T>, n>`s built by the
+    // library's own `vacant` generic, so there is no `buffer_vacant` head to
+    // name and no per-buffer drop helper. What the row still owes is the
+    // release of the one `Some` cell the program leaves in a slot: the run is
+    // frame-resident, its element drop is derived over the slots, and the cell
+    // it holds is freed to the general store.
+    assert!(!llvm.contains("buffer.vacant.head"));
+    assert!(llvm.contains("call ptr @malloc"));
+    let helper = derived_drop(&llvm, "define private void @wf.drop.t");
+    assert!(helper.contains("call void @free"));
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());
@@ -70,19 +67,23 @@ fn recursively_boxed_tree_executes_with_derived_cleanup() {
     assert!(llvm.contains("call ptr @malloc"));
     assert!(llvm.contains("icmp ne ptr"));
     assert!(llvm.contains("call void @free"));
-    // A recursive enum's derived drop is a traversal, not a level of one: the
-    // entry point sets up a worklist and runs it, and the per-node step hands
-    // each of the two boxed children to that worklist instead of descending
-    // into it. The two frees the straight-line helper used to perform are the
-    // traversal's, one for each block it takes off the list.
+    // A recursive enum's derived release is one release action per node type
+    // that enters itself at the closing edge of its release graph [PROV-6]:
+    // the owner deleted the cycle refusal on 2026-09-04 and ruled that the
+    // walk may recurse, so the worklist driver that kept the depth off the
+    // machine stack (an allocation and an abort on the release path) is gone.
+    // Each of the two boxed children is released by the same action, and each
+    // block is freed by the action that owns it.
     let entry = derived_drop(&llvm, "define private void @wf.drop.t");
-    assert!(entry.contains("call void @wf.drop.step."));
-    assert!(entry.contains("call void @wf.drop.run(ptr %work)"));
-    let step = derived_drop(&llvm, "define private void @wf.drop.step.");
-    assert_eq!(step.matches("call void @wf.drop.push").count(), 2);
-    assert!(!step.contains("call void @wf.drop.t"));
-    let traversal = derived_drop(&llvm, "define private void @wf.drop.run");
-    assert!(traversal.contains("call void @free(ptr %node)"));
+    let name = entry
+        .strip_prefix("define private void @")
+        .and_then(|rest| rest.split('(').next())
+        .expect("a derived release action name");
+    assert_eq!(entry.matches(&format!("call void @{name}(")).count(), 2);
+    assert_eq!(entry.matches("call void @free(").count(), 2);
+    assert!(!llvm.contains("@wf.drop.step."));
+    assert!(!llvm.contains("@wf.drop.push"));
+    assert!(!llvm.contains("@wf.drop.run"));
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());
@@ -90,10 +91,11 @@ fn recursively_boxed_tree_executes_with_derived_cleanup() {
     assert!(output.stderr.is_empty());
 }
 
-/// The byte-string layer over the [SET-2] growable buffer: construction from
-/// literal arrays, append and concat by buffer growth, length, bounds-safe
-/// byte access, a naive substring search, and decimal formatting, ending in
-/// one real publication to standard output.
+/// The byte-string layer over the general store's run: construction from
+/// literal runs, append and concat into reserved room, the growth walk that
+/// widens a run that already holds bytes, length, bounds-safe byte access, a
+/// naive substring search, and decimal formatting, ending in one real
+/// publication to standard output.
 ///
 /// The oracle is the published line itself. Intermediate result mismatches
 /// return a nonzero status before publication, and every partial operation is
@@ -101,8 +103,10 @@ fn recursively_boxed_tree_executes_with_derived_cleanup() {
 #[test]
 fn byte_string_builds_searches_and_publishes_its_report() {
     let llvm = compile_program("byte_string.wf");
-    // Growth allocates the wider buffer and releases the superseded one
-    // through the ordinary [SET-2], [STOR-3] path.
+    // B7c4b: the byte string is a `Vector<u8>` at the general store rather
+    // than a `buffer<u8>` field, so the acquisition is `heap_vector` and the
+    // superseded run of `bs_reserve`'s growth walk is released by `dispose`.
+    // Both remain the ordinary [STOR-3] store calls this row named before.
     assert!(llvm.contains("call ptr @malloc"));
     assert!(llvm.contains("call void @free"));
     let output = compile_and_run(&llvm);
@@ -113,31 +117,52 @@ fn byte_string_builds_searches_and_publishes_its_report() {
 
 /// The read-only search layer of `byte_string.wf`, with its own entry.
 ///
-/// Both negative directions below rewrite exactly one construct of these
-/// bytes, so each shows that the construct is load-bearing rather than
-/// decoration. The extraction ends before `bs_push_decimal`, the first
-/// declaration the search layer does not use.
+/// The negative direction below rewrites exactly one construct of these
+/// bytes, so it shows that the construct is load-bearing rather than
+/// decoration. The extraction runs from the growth outcome the layer's own
+/// helpers return and ends before `bs_push_decimal`, the first declaration
+/// the search layer does not use.
+///
+/// B7c4b: the entry builds its two subjects with `heap_vector` and one
+/// `place_back` each, because the byte string is now a run at the general
+/// store rather than a `buffer<u8>` a pure entry could construct on its own.
 fn search_layer_with_entry() -> String {
     let source = include_str!("../../../tests/programs/byte_string.wf");
     let start = source
-        .find("struct ByteString {")
-        .expect("byte-string struct");
+        .find("enum Grown {")
+        .expect("byte-string growth outcome");
     let end = source
         .find("\nfn bs_push_decimal")
         .expect("search-layer end");
     let layer = &source[start..end];
     format!(
         "{layer}
-command fn main() -> status: own ExitStatus allocates(heap) {{
-  let backing = buffer_new(1_u64, 7_u8);
-  let subject = ByteString(buf: move backing, fill: 1_u64);
-  let needle_backing = buffer_new(1_u64, 7_u8);
-  let needle = ByteString(buf: move needle_backing, fill: 1_u64);
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {{
   region {{
-    match bs_find(haystack: &subject, needle: &needle) {{
-      Some(value: at) => {{
-      }}
+    match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {{
       None() => {{
+        return exit_status(code: 70_u8);
+      }}
+      Some(value: fresh) => {{
+        let subject = place_back(vector: move fresh, value: 7_u8);
+        region {{
+          match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {{
+            None() => {{
+              return exit_status(code: 70_u8);
+            }}
+            Some(value: other) => {{
+              let needle = place_back(vector: move other, value: 7_u8);
+              region {{
+                match bs_find(haystack: &subject, needle: &needle) {{
+                  Some(value: at) => {{
+                  }}
+                  None() => {{
+                  }}
+                }}
+              }}
+            }}
+          }}
+        }}
       }}
     }}
   }}
@@ -147,30 +172,24 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
     )
 }
 
-/// The accessor's inner capacity branch is the bounds discharge itself.
+/// The accessor's length branch is the bounds discharge itself.
 ///
-/// Deleting it leaves the same subscript with no established bound, and the
-/// compiler rejects the program under [OP-4] rather than accepting it with a
-/// runtime check: the accessor is safe because the branch proves it, not
-/// because a check was left in.
+/// B7c4b: the accessor used to hold two branches, an outer one against the
+/// stored `fill` and an inner one against the backing buffer's capacity, and
+/// the negative direction deleted the inner one. A run's own `len_of` is now
+/// the only length there is, so there is one branch and the rewrite widens
+/// its comparison by a single byte. The subscript is then left with no
+/// established bound and the compiler rejects the program under [OP-4] rather
+/// than accepting it with a runtime check: the accessor is safe because the
+/// branch proves it, not because a check was left in.
 #[test]
-fn the_byte_accessor_without_its_capacity_branch_is_an_op4_rejection() {
-    let guarded = "  if within {
-    let capacity = len(deref(s).buf);
-    let addressable = index < capacity;
-    if addressable {
-      let value = deref(s).buf[index];
-      return Some<u8>(value: value);
-    }
-  }";
-    let unguarded = "  if within {
-    let value = deref(s).buf[index];
-    return Some<u8>(value: value);
-  }";
+fn the_byte_accessor_without_its_length_branch_is_an_op4_rejection() {
+    let guarded = "  let within = index < stored;";
+    let unguarded = "  let within = index <= stored;";
     let source = search_layer_with_entry();
     let stripped = source.replace(guarded, unguarded);
-    assert_ne!(stripped, source, "the capacity branch must have been found");
+    assert_ne!(stripped, source, "the length branch must have been found");
     let failure = compile_rejection(&[("byte_string_unguarded.wf", stripped.as_bytes())]);
     assert!(failure.contains("[OP-4]"), "{failure}");
-    assert!(failure.contains("index < len(deref(s).buf)"), "{failure}");
+    assert!(failure.contains("index < len_of(deref(s))"), "{failure}");
 }

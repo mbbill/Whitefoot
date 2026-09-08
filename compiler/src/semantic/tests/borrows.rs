@@ -12,8 +12,8 @@ pub(super) const BORROWED_COLUMNS: &[u8] = br#"struct Columns {
 }
 
 fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own u64) -> function_result: own unit reads(left, right), writes(left, right) {
-  let left_room = len(deref(left));
-  let right_room = len(deref(right));
+  let left_room = len_of(deref(left));
+  let right_room = len_of(deref(right));
   let index_value = 0_u64;
   loop @fill {
     let done = index_value == length;
@@ -36,8 +36,8 @@ fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own
 }
 
 fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> function_result: own u64 reads(left, right) {
-  let left_room = len(deref(left));
-  let right_room = len(deref(right));
+  let left_room = len_of(deref(left));
+  let right_room = len_of(deref(right));
   let index_value = 0_u64;
   let total = 0_u64;
   loop @fold {
@@ -65,7 +65,7 @@ fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> f
   return total;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let length = 4_u64;
   let left = buffer_new(length, 0_u64);
   let right = buffer_new(length, 0_u64);
@@ -159,7 +159,7 @@ fn borrowed_column_effect_rows_are_exact() {
 #[test]
 fn borrowed_buffer_length_exhibits_a_read_of_its_storage_origin() {
     let source = br#"fn length(values: &buffer<u8>) -> result: own u64 reads(values) {
-  return len(deref(values));
+  return len_of(deref(values));
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -176,7 +176,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn live_buffer_loans_reject_overlapping_borrows_and_owner_writes() {
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let values = buffer_new(1_u64, 0_u8);
   region {
     let first = &uniq values;
@@ -189,7 +189,7 @@ fn live_buffer_loans_reject_overlapping_borrows_and_owner_writes() {
         SemanticIssueKind::BorrowConflict,
     );
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let values = buffer_new(1_u64, 0_u8);
   region {
     let shared = &values;
@@ -210,7 +210,7 @@ fn user_calls_reject_overlapping_unique_arguments() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let values = buffer_new(1_u64, 0_u8);
   region {
     two(first: &uniq values, second: &uniq values);
@@ -243,8 +243,8 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn call_effects_preserve_the_incoming_storage_origin() {
     let source = br#"fn write(out: &uniq buffer<u8>) -> result: own unit reads(out), writes(out) {
-  let room = len(deref(out));
-  let ok = 0_u64 < room;
+  let spare = len_of(deref(out));
+  let ok = 0_u64 < spare;
   if ok {
     set deref(out)[0_u64] = 1_u8;
   }
@@ -327,8 +327,8 @@ fn count(pool: &Pool) -> result: own u64 reads(pool.count) {
 }
 
 fn first(pool: &Pool) -> result: own u64 reads(pool.left) {
-  let room = len(deref(pool).left);
-  let ok = 0_u64 < room;
+  let spare = len_of(deref(pool).left);
+  let ok = 0_u64 < spare;
   if ok {
     return deref(pool).left[0_u64];
   } else {
@@ -337,8 +337,8 @@ fn first(pool: &Pool) -> result: own u64 reads(pool.left) {
 }
 
 fn update(pool: &uniq Pool) -> result: own unit reads(pool.right), writes(pool.right, pool.count) {
-  let room = len(deref(pool).right);
-  let ok = 0_u64 < room;
+  let spare = len_of(deref(pool).right);
+  let ok = 0_u64 < spare;
   if ok {
     set deref(pool).right[0_u64] = 9_u64;
   }
@@ -444,7 +444,7 @@ fn struct_borrow_roots_block_owner_access_and_affine_moves() {
   count: u64;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let values = buffer_new(1_u64, 0_u64);
   let pool = Pool(values: move values, count: 0_u64);
   region {
@@ -532,7 +532,7 @@ fn consume(source: &buffer<u8>, sibling: own buffer<u8>) -> result: own unit pur
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let source = buffer_new(1_u64, 0_u8);
   let sibling = buffer_new(1_u64, 0_u8);
   let owner = Owner(source: move source, sibling: move sibling);
@@ -554,8 +554,8 @@ fn child_reborrow_shape_and_sibling_exclusivity_follow_own6() {
 }
 
 fn write_byte(out: &uniq buffer<u8>) -> function_result: own unit reads(out), writes(out) {
-  let room = len(deref(out));
-  let first_ok = 0_u64 < room;
+  let spare = len_of(deref(out));
+  let first_ok = 0_u64 < spare;
   if first_ok {
     set deref(out)[0_u64] = 7_u8;
   }
@@ -566,8 +566,8 @@ fn proxy_byte(out: &uniq buffer<u8>) -> function_result: own unit reads(out), wr
   region {
     write_byte(out: &uniq deref(out));
   }
-  let room = len(deref(out));
-  let second_ok = 1_u64 < room;
+  let spare = len_of(deref(out));
+  let second_ok = 1_u64 < spare;
   if second_ok {
     set deref(out)[1_u64] = 9_u8;
   }
@@ -588,7 +588,7 @@ fn proxy_counter(counter: &uniq Counter) -> function_result: own unit reads(coun
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let output = buffer_new(2_u64, 0_u8);
   let counter = Counter(value: 40_u64);
   region {
@@ -697,7 +697,7 @@ command fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let out = buffer_new(1_u64, 0_u8);
   loop @once {
     region {
@@ -720,7 +720,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let out = buffer_new(1_u64, 0_u8);
   region 'r {
     loop @once {
@@ -748,7 +748,7 @@ fn borrow_mode_parameters_of_system_types_carry_the_ordinary_borrow_judgments() 
     // [SYS-2]. An opaque resource has no source-visible content, so its
     // borrow is the value itself.
     let source = br#"fn publish(output: &uniq OutputStream, source: &buffer<u8>, count: own u64) -> result: own unit reads(output, source), writes(output) contract {
-  define capacity = len(deref(source));
+  define capacity = len_of(deref(source));
   requires count <= capacity;
 } {
   region {
@@ -762,7 +762,7 @@ fn borrow_mode_parameters_of_system_types_carry_the_ordinary_borrow_judgments() 
   return unit;
 }
 
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let batch = buffer_new(1_u64, 0_u8);
   region {
     publish(output: &uniq out, source: &batch, count: 1_u64);
@@ -1094,7 +1094,7 @@ fn box_content_borrows_are_ordinary_borrows_rather_than_reborrows() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let b = box_new(4_i32);
   region {
     bump(n: &uniq deref(b));
@@ -1110,7 +1110,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   return unit;
 }
 
-fn outer['s](anchor: &'s i32) -> result: &'s i32 allocates(heap) {
+fn outer['s](anchor: &'s i32) -> result: &'s i32 pure {
   let b = box_new(4_i32);
   hold(n: &uniq 's deref(b));
   return anchor;
@@ -1373,7 +1373,7 @@ fn extension_writes_through_result_holders_kill_source_facts() {
     const HELPER: &[u8] = b"fn passthru['r0](x: &uniq 'r0 u64) -> result: &uniq 'r0 u64 pure {\n  return &uniq 'r0 deref(x);\n}\n\n";
     let mut killed = HELPER.to_vec();
     killed.extend_from_slice(
-        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let i = 1_u64;\n  let b = buffer_new(4_u64, 0_u64);\n  region {\n    let r = passthru(x: &uniq i);\n    set deref(r) = 9_u64;\n  }\n  let e = b[i];\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let i = 1_u64;\n  let b = buffer_new(4_u64, 0_u64);\n  region {\n    let r = passthru(x: &uniq i);\n    set deref(r) = 9_u64;\n  }\n  let e = b[i];\n  return exit_status(code: 0_u8);\n}\n",
     );
     with_semantics_extension(&killed, |outcome| {
         let SemanticOutcome::SourceIssue { issue } = outcome else {
@@ -1387,7 +1387,7 @@ fn extension_writes_through_result_holders_kill_source_facts() {
     });
     let mut control = HELPER.to_vec();
     control.extend_from_slice(
-        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let i = 1_u64;\n  let b = buffer_new(4_u64, 0_u64);\n  region {\n    let r = passthru(x: &uniq i);\n  }\n  let e = b[i];\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let i = 1_u64;\n  let b = buffer_new(4_u64, 0_u64);\n  region {\n    let r = passthru(x: &uniq i);\n  }\n  let e = b[i];\n  return exit_status(code: 0_u8);\n}\n",
     );
     with_semantics_extension(&control, |outcome| {
         let SemanticOutcome::Complete(_) = outcome else {
@@ -1451,7 +1451,7 @@ fn declaration_provenance_rejects_every_undetermined_source_shape() {
         },
     );
     assert_rule(
-        b"fn viewed['r](a: &'r i32, s: own slice<'r, i32>) -> result: &'r i32 pure {\n  return &'r deref(a);\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn viewed['r](a: &'r i32, s: own Slice<'r, i32>) -> result: &'r i32 pure {\n  return &'r deref(a);\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn1,
         SemanticIssueKind::AmbiguousResultProvenance {
             mechanical_fix: AMBIGUOUS_PROVENANCE_FIX,
@@ -1528,7 +1528,7 @@ fn a_region_bearing_borrow_result_is_owned_by_the_rules_stated_before_it() {
 #[test]
 fn declaration_provenance_keeps_the_established_boundary_judgment_order() {
     assert_rule(
-        b"fn borrowed_slice['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: &'descriptor slice<'data, u8> pure {\n  return value;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn borrowed_slice['descriptor, 'data](value: &'descriptor Slice<'data, u8>) -> result: &'descriptor Slice<'data, u8> pure {\n  return value;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn1,
         SemanticIssueKind::BorrowedSliceResult {
             mechanical_fix: "return the direct own slice descriptor under its data region; do not return a borrow of a slice descriptor",

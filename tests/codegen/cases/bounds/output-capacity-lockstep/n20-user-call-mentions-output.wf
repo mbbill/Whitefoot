@@ -1,15 +1,15 @@
 fn observe(buf: &uniq buffer<u8>) -> result: own u64 reads(buf) {
-  return len(deref(buf));
+  return len_of(deref(buf));
 }
 
 fn probe(out: &uniq buffer<u8>, src: own buffer<u8>) -> result: own u64 reads(out), writes(out) contract {
-  define out_len = len(deref(out));
-  define src_len = len(src);
+  define out_len = len_of(deref(out));
+  define src_len = len_of(src);
   define groups = ishr.wrap(out_len, 2_u32);
   define covered = groups *wrap 3_u64;
   requires src_len <= covered;
 } {
-  let n = len(src);
+  let n = len_of(src);
   let i = 0_u64;
   let o = 0_u64;
   region {

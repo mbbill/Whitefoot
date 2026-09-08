@@ -1,0 +1,18 @@
+fn joined(left: own u64, right: own u64) -> total: own u64 pure contract {
+  requires left <= 10_u64;
+  requires right <= 10_u64;
+  ensures total == left + right;
+} {
+  doc "A declared relation whose side carries two datums.";
+  let sum = left + right;
+  return sum;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "FN-9: a declared relation is a difference bound between two operands displaced by a constant, so a clause side carrying two datums is refused at the declaration rather than published as a fact the fragment cannot hold.";
+  let value = joined(left: 1_u64, right: 2_u64);
+  if value == 3_u64 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}

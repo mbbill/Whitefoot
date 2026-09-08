@@ -1,7 +1,17 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: for loop advances two arrays with the same cursor, both indexable in bounds";
-  let a = array_new::<u64, 5>(0_u64);
-  let b = array_new::<u64, 5>(0_u64);
+  let a = fixed_vector::<u64, 5>();
+  set a = place_back(vector: move a, value: 0_u64);
+  set a = place_back(vector: move a, value: 0_u64);
+  set a = place_back(vector: move a, value: 0_u64);
+  set a = place_back(vector: move a, value: 0_u64);
+  set a = place_back(vector: move a, value: 0_u64);
+  let b = fixed_vector::<u64, 5>();
+  set b = place_back(vector: move b, value: 0_u64);
+  set b = place_back(vector: move b, value: 0_u64);
+  set b = place_back(vector: move b, value: 0_u64);
+  set b = place_back(vector: move b, value: 0_u64);
+  set b = place_back(vector: move b, value: 0_u64);
   set a[0_u64] = 1_u64;
   set a[1_u64] = 2_u64;
   set a[2_u64] = 3_u64;

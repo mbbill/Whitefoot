@@ -17,9 +17,12 @@ use crate::{
     SystemOperation, SystemParameterMode, operation_state_effects,
 };
 
-use super::super::super::super::model::{CheckedExpression, CheckedMode, CheckedStateOrigins};
+use super::super::super::super::model::{
+    CheckedExpression, CheckedFlatElement, CheckedMode, CheckedStateOrigins, CheckedType,
+    LoanStrength,
+};
 use super::super::super::borrows::{
-    AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, places_overlap,
+    AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, TemporaryLoan, places_overlap,
 };
 use super::super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
@@ -65,7 +68,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut argument_holders = Vec::with_capacity(fields.len());
         let mut state_origins = Vec::with_capacity(fields.len());
         let mut argument_places = Vec::with_capacity(fields.len());
-        let mut call_scoped_borrows: Vec<BorrowInfo> = Vec::new();
+        let mut call_scoped_borrows: Vec<TemporaryLoan> = Vec::new();
         let mut effects = EffectSet {
             allocates_heap: false,
             ..EffectSet::NONE
@@ -92,7 +95,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let argument =
                 self.check_call_argument_atom(function, atom, bindings, loop_depth, true, false)?;
             for access in &argument.accesses {
-                for borrow in &call_scoped_borrows {
+                for temporary in &call_scoped_borrows {
+                    let borrow = &temporary.borrow;
                     if places_overlap(&access.place, &borrow.place)
                         && match access.kind {
                             AccessKind::Read => borrow.kind == BorrowKind::Unique,
@@ -125,14 +129,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?,
                 },
             };
-            let expected_type = self.system_type(parameter.ty)?;
-            if argument.expression.ty() != expected_type {
+            let actual_type = argument.expression.ty();
+            if !self.system_operand_admits(parameter.ty, actual_type)? {
                 return self.issue_node(
                     SemanticRule::Type5,
                     atom,
                     SemanticIssueKind::type_mismatch(
-                        self.checked_type_name(expected_type)?,
-                        self.checked_type_name(argument.expression.ty())?,
+                        self.system_operand_name(parameter.ty)?,
+                        self.checked_type_name(actual_type)?,
                     ),
                 );
             }
@@ -157,7 +161,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .collect::<Vec<_>>(),
             );
             if explicit_borrow && let Some(borrow) = &argument.borrow {
-                call_scoped_borrows.push(borrow.clone());
+                call_scoped_borrows.push(TemporaryLoan::new(borrow.clone(), &argument));
             }
             checked_borrows.push(passed_borrow);
             argument_holders.push(argument.holder);
@@ -179,7 +183,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             bindings,
             &mut effects,
         )?;
-        let result = self.system_type(operation.result)?;
+        let result = self
+            .system_type(operation.result)?
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        // [SYS-10] reserve_handle explicitly returns its factory loan at call end.
+        if operation.spelling != "reserve_handle" {
+            self.statement_loans
+                .borrow_mut()
+                .extend(call_scoped_borrows);
+        }
         Ok(TypedExpression::owned(
             CheckedExpression::SystemCall {
                 operation: operation_index,
@@ -284,7 +296,7 @@ occurs at one parameter position, so this call's own arguments determine it",
                         .get(index)
                         .and_then(Option::as_ref)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    self.check_loan_access(
+                    self.check_call_loan_access(
                         bindings,
                         actuals.holders.get(index).copied().flatten(),
                         &borrow.place,
@@ -321,6 +333,65 @@ occurs at one parameter position, so this call's own arguments determine it",
             }
         }
         Ok(())
+    }
+
+    /// Whether one actual's type is admitted at one [SYS-2] parameter.
+    ///
+    /// Every parameter but the range-bearing ones names one exact type and is
+    /// admitted by equality. A range-bearing parameter names an operand class
+    /// [SYS-8], which is admitted by membership: a destination takes the
+    /// exclusive view, a source takes the shared one, and both take
+    /// `buffer<u8>` until S34 retires the old container surface. Nothing in
+    /// the row reads what the storage is made of, and the region a view
+    /// carries relates to nothing the row declares, so no member's region is
+    /// constrained here.
+    fn system_operand_admits(
+        &self,
+        declared: crate::SystemTypeRef,
+        actual: CheckedType,
+    ) -> Result<bool, CheckStop> {
+        let element = CheckedFlatElement::Integer(crate::semantic::model::IntegerType::U8);
+        Ok(match declared {
+            crate::SystemTypeRef::DestinationU8 => {
+                matches!(
+                    actual,
+                    CheckedType::Buffer { element: actual_element } if actual_element == element
+                ) || matches!(
+                    actual,
+                    CheckedType::Slice {
+                        element: actual_element,
+                        strength: LoanStrength::Exclusive,
+                        ..
+                    } if actual_element == element
+                )
+            }
+            crate::SystemTypeRef::SourceU8 => {
+                matches!(
+                    actual,
+                    CheckedType::Buffer { element: actual_element } if actual_element == element
+                ) || matches!(
+                    actual,
+                    CheckedType::Slice {
+                        element: actual_element,
+                        strength: LoanStrength::Shared,
+                        ..
+                    } if actual_element == element
+                )
+            }
+            _ => self.system_type(declared)? == Some(actual),
+        })
+    }
+
+    /// What one [SYS-2] parameter position expects, for a [TYPE-5] mismatch.
+    fn system_operand_name(&self, declared: crate::SystemTypeRef) -> Result<String, CheckStop> {
+        Ok(match declared {
+            crate::SystemTypeRef::DestinationU8 => "MutSlice<u8> or buffer<u8>".to_owned(),
+            crate::SystemTypeRef::SourceU8 => "Slice<u8> or buffer<u8>".to_owned(),
+            _ => match self.system_type(declared)? {
+                Some(ty) => self.checked_type_name(ty)?,
+                None => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+            },
+        })
     }
 
     fn invalid_system_arguments(operation: &SystemOperation) -> SemanticIssueKind {

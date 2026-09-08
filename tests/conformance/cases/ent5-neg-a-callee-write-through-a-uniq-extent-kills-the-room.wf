@@ -1,0 +1,18 @@
+fn reserve['s](store: &uniq 's Arena<'s, 64, 1>) -> taken: own Option<Vector<'s, u8>> reads(store), writes(store), allocates(store) {
+  doc "Takes eight bytes from the extent it was handed and hands the run back, which moves the extent's own cursor.";
+  region {
+    return arena_vector::<u8>(store: &uniq deref(store), count: 8_u64);
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "The callee writes the extent behind its `&uniq Arena` parameter. [EFF-2] projects writes(store) onto the actual place workspace, which is the support member of room_of(workspace), and [ENT-5] clause (a) makes that projected write kill the extent's measure facts. The opening room_of(workspace) = 64 must therefore not survive the call, and the later proved take of the whole extent must be rejected at [BLK-0] with the residual room_of(workspace) >= 64_u64. This is the [S34] successor of the retiring buffer program: the extent is the measured non-view referent a `&uniq` parameter may still name [BLK-4].";
+  region 'w {
+    let workspace = arena_frame::<64, 1, 'w>();
+    region {
+      let taken = reserve(store: &uniq workspace);
+      let run = arena_vector_proved::<u8>(store: &uniq workspace, count: 64_u64);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

@@ -9,9 +9,9 @@ struct Sprite {
 }
 
 fn advance(s: &uniq Sprite, limit: own u32) -> result: own Bool reads(s.pos.x, s.speed), writes(s.pos.x) {
-  doc "expect ACCEPT: the write to deref(s).pos.x kills the pre-write image of the nested field, so the post-write comparison reads the freshly stored value, not the stale one used to prove room.";
-  let room = deref(s).pos.x < limit;
-  if room {
+  doc "expect ACCEPT: the write to deref(s).pos.x kills the pre-write image of the nested field, so the post-write comparison reads the freshly stored value, not the stale one used to prove spare.";
+  let spare = deref(s).pos.x < limit;
+  if spare {
   } else {
     return False();
   }

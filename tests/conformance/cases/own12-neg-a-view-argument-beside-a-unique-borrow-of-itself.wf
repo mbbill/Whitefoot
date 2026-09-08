@@ -1,0 +1,15 @@
+fn take(window: &uniq Slice<u8>, other: own Slice<u8>) -> size: own u64 reads(other) {
+  doc "Two positions, one of them unique, over the storage one view names.";
+  return len_of(other);
+}
+
+fn caller(input: own Slice<u8>) -> size: own u64 reads(input) {
+  doc "A formal view is its own binding, not an unknown that overlaps everything: the two arguments here resolve to that one binding, one of them uniquely, so the call is the ordinary [OWN-12] overlap.";
+  region {
+    return take(window: &uniq input, other: input);
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,22 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "BLK-0, CALL-6: a row whose result is an enum states part of its relation list per variant, and publication restricts each routed relation to the arm its route names. The Some arm binds the run the route's own binder spelling names, so the four measures that route publishes over it are the caller's, and place_back's room_of(vector) > 0_u64 is discharged from room_of(r) = count with no branch on room_of at all.";
+  region 'a {
+    let workspace = arena_frame::<4096, 16, 'a>();
+    region {
+      match arena_vector::<u8>(store: &uniq workspace, count: 8_u64) {
+        None() => {
+          return exit_status(code: 1_u8);
+        }
+        Some(value: run) => {
+          let filled = place_back(vector: move run, value: 7_u8);
+          let seen = filled[0_u64];
+          if seen == 7_u8 {
+          } else {
+            return exit_status(code: 2_u8);
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

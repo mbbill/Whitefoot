@@ -1,0 +1,6 @@
+const bad: Box<i32> = 3_i32;
+
+command fn main() -> status: own ExitStatus pure {
+  doc "A const item is pure static rodata, so no compiler-owned container nominal is const-eligible [CONST-2]. A cell names a store region and carries a release action, and a `const` item is not a position at which one is formed at all, so the type is refused where it is written.";
+  return exit_status(code: 0_u8);
+}

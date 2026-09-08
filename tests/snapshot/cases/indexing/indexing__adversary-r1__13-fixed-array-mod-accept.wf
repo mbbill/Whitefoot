@@ -1,5 +1,7 @@
-fn table_lookup(table: own array<u8, 6>, key: own u64) -> value: own u8 pure {
-  doc "expect ACCEPT: indexing a fixed-size array<u8, 6> with a runtime key % 6 is always in [0, 6), regardless of key's value";
+fn table_lookup(table: own FixedVector<u8, 6>, key: own u64) -> value: own u8 reads(table) contract {
+  requires len_of(table) >= 6_u64;
+} {
+  doc "expect ACCEPT: indexing a fixed-size FixedVector<u8, 6> with a runtime key % 6 is always in [0, 6), regardless of key's value";
   let slot = key % 6_u64;
   invariant slot_in_range: slot < 6_u64;
   let value = table[slot];
@@ -7,7 +9,13 @@ fn table_lookup(table: own array<u8, 6>, key: own u64) -> value: own u8 pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let table = array_new::<u8, 6>(11_u8);
+  let table = fixed_vector::<u8, 6>();
+  set table = place_back(vector: move table, value: 11_u8);
+  set table = place_back(vector: move table, value: 11_u8);
+  set table = place_back(vector: move table, value: 11_u8);
+  set table = place_back(vector: move table, value: 11_u8);
+  set table = place_back(vector: move table, value: 11_u8);
+  set table = place_back(vector: move table, value: 11_u8);
   let value = table_lookup(table: move table, key: 4000000000_u64);
   if value == 11_u8 {
   } else {

@@ -642,15 +642,28 @@ impl FunctionEmitter<'_, '_> {
             width: 64,
             signed: false,
         };
-        let buffer_type = IrType::Buffer {
-            element: crate::IrFlatElement::Integer {
-                width: 8,
-                signed: false,
-            },
+        let byte = crate::IrFlatElement::Integer {
+            width: 8,
+            signed: false,
+        };
+        // [SYS-8] the transferred range is one contiguous run of bytes, and
+        // both descriptors that carry one are admitted here: a `buffer<u8>`
+        // and a view of bytes [VIEW-1], whose measure row makes it exactly one
+        // unwrapped range. The two render as the same `{ ptr, i64 }` pair, so
+        // the target preparation below is one text for both — which is what
+        // the direct wrapper already relies on, its `%destination` parameter
+        // being that same rendered type whichever descriptor the caller hands
+        // it.
+        let buffer_type = match self.value_type(*buffer) {
+            Some(ty @ (IrType::Buffer { element } | IrType::Slice { element }))
+                if element == byte =>
+            {
+                ty
+            }
+            _ => return Err(BackendFailure::InvalidIr),
         };
         if self.value_type(*start) != Some(u64_type)
             || self.value_type(*end) != Some(u64_type)
-            || self.value_type(*buffer) != Some(buffer_type)
             || file_offset.is_some_and(|offset| self.value_type(*offset) != Some(u64_type))
         {
             return Err(BackendFailure::InvalidIr);
@@ -1272,8 +1285,9 @@ impl FunctionEmitter<'_, '_> {
         let Some((result_slot, submitted)) = not_submitted else {
             // Every path through this operation submitted, so the wait is the
             // whole join: no branch, no phi and no block of its own.
-            return write!(self.output, "{}", retirement(&value_name(result)))
-                .map_err(|_| BackendFailure::TextEmission);
+            write!(self.output, "{}", retirement(&value_name(result)))
+                .map_err(|_| BackendFailure::TextEmission)?;
+            return self.save_value_result(result);
         };
         let direct = format!("%{}", self.next_temporary()?);
         let completed = format!("%{}", self.next_temporary()?);
@@ -1294,7 +1308,8 @@ impl FunctionEmitter<'_, '_> {
             retirement(&completed),
             value_name(result),
         )
-        .map_err(|_| BackendFailure::TextEmission)
+        .map_err(|_| BackendFailure::TextEmission)?;
+        self.save_value_result(result)
     }
 }
 

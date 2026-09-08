@@ -2,6 +2,7 @@
 - Keep the current representation and container capability map in compiler/README.md. Its supporting tests and backend code determine what the implementation actually reaches.
 - Replacement, initialization, relocation, identity reuse, and cleanup must follow the relevant storage rules and proofs. A past library proposal or privileged implementation does not establish those obligations for a new container.
 - Dated democ layouts and early compiler-slice descriptions below retain their experimental scope; they are not current capability exclusions.
+- The empirical container design selection is [[container-representation]]: general typed owned places and result destinations, distinct full/prefix/circular initialization states, and finite internal range/loan relationships. The first implementation preserves current source semantics; selected later amendments do not become language behavior until the active specification changes. General library representation privileges remain a checked extension direction, and recyclable identity remains separate from ordinary dense storage.
 
 ## Facts
 

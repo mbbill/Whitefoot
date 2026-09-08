@@ -1,0 +1,29 @@
+fn wider['s: affine](one: own Vector<'s, u8>, two: own Vector<'s, u8>) -> width: own u64 reads(one, two) {
+  doc "Reports the capacity two runs of one store share.";
+  let left = room_of(one);
+  let right = room_of(two);
+  let same = left == right;
+  if same {
+    return left;
+  }
+  return right;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "PROV-1: a store region is invariant. Two values have the same store exactly when their types name the same region, decided by exact identity, so a formal region occupying two container parameter positions is fixed by the first actual and the second must name it. Both extents are live and one outlives the other, which is what makes this a store-identity rejection rather than an outlives one.";
+  region 'a {
+    let first = arena_frame::<4096, 16, 'a>();
+    region 'b {
+      let second = arena_frame::<4096, 16, 'b>();
+      region {
+        let one = arena_vector_proved::<u8>(store: &uniq first, count: 256_u64);
+        let two = arena_vector_proved::<u8>(store: &uniq second, count: 256_u64);
+        let width = wider(one: move one, two: move two);
+        if width == 256_u64 {
+          return exit_status(code: 0_u8);
+        }
+      }
+    }
+  }
+  return exit_status(code: 1_u8);
+}

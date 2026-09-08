@@ -49,7 +49,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn float_bound_selects_operations_and_identities_for_every_concrete_instance() {
-    let source = br#"fn affine<T: Float>(value: own T) -> result: own T pure {
+    let source = br#"fn nudge<T: Float>(value: own T) -> result: own T pure {
   let zero = 0_T;
   let one = 1_T;
   let shifted = fadd.strict(value, one);
@@ -57,8 +57,8 @@ fn float_bound_selects_operations_and_identities_for_every_concrete_instance() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let single = affine::<f32>(value: 2.0_f32);
-  let double = affine::<f64>(value: 4.0_f64);
+  let single = nudge::<f32>(value: 2.0_f32);
+  let double = nudge::<f64>(value: 4.0_f64);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -88,7 +88,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn numeric_identity_requires_an_int_or_float_bound() {
-    let source = br#"fn invalid<T>() -> result: own T pure {
+    let source = br#"fn invalid<T: affine>() -> result: own T pure {
   return 0_T;
 }
 
@@ -151,18 +151,51 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// The negative control for the three [FN-6] rejections below: a cycle whose
-/// every call does instantiate the callee at exactly the caller's own type
-/// parameters is *permitted* by FN-6, so it must not reach that rule. It stops
-/// as an unimplemented capability instead, which is what this compiler owes a
-/// legal program it cannot yet monomorphize.
+/// The positive control for the three [FN-6] rejections below: a cycle whose
+/// every call does instantiate the callee at exactly the caller's own
+/// parameters is *permitted* by FN-6, and it is also finite — the call mints
+/// no instance the caller is not already at — so it monomorphizes to the one
+/// instance the program reaches rather than stopping as an unimplemented
+/// capability.
 #[test]
-fn generic_call_cycle_stops_before_concrete_instance_enumeration() {
+fn a_generic_call_cycle_at_the_callers_own_parameters_monomorphizes() {
     let source = br#"fn recursive<T: Int>(value: own T) -> result: own T pure {
   return recursive::<T>(value: value);
 }
 
 command fn main() -> status: own ExitStatus pure {
+  let seen = recursive::<u16>(value: 1_u16);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("a cycle at the caller's own parameters must check: {outcome:?}");
+        };
+        assert_eq!(checked.function_count(), 2);
+    });
+}
+
+/// The one generic cycle that still stops: [FN-6]'s syntactic rule speaks of
+/// *type* parameters, so it does not refuse a call that derives its const
+/// argument from the caller's own const parameter. Each such call mints a
+/// second instance, which mints a third, and the instantiation worklist does
+/// not terminate. That is an unimplemented capability of this compiler and is
+/// reported as one, never as a source rejection.
+#[test]
+fn a_generic_cycle_varying_a_const_argument_stops_before_instance_enumeration() {
+    let source = br#"fn grow<const n: u64>(at: own u64) -> total: own u64 pure {
+  let done = at == 0_u64;
+  if done {
+    return 0_u64;
+  }
+  let next = at -wrap 1_u64;
+  let rest = grow::<n + 1>(at: next);
+  return rest +wrap 1_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let total = grow::<1>(at: 3_u64);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -190,8 +223,8 @@ fn polymorphic_recursion_is_rejected_at_the_call_that_leaves_the_caller_paramete
     // A growing argument is the shape that would actually diverge: each
     // instance would demand a strictly larger one.
     assert_rule(
-        br#"fn poly<T>(x: own T) -> result: own T pure {
-  let y = poly::<array<T, 2>>(x: x);
+        br#"fn poly<T: affine>(x: own T) -> result: own T pure {
+  let y = poly::<FixedVector<T, 2>>(x: x);
   return x;
 }
 
@@ -205,12 +238,12 @@ command fn main() -> status: own ExitStatus pure {
     // A permutation cycle terminates, and FN-6 is deliberately stronger than
     // finiteness requires, so it is rejected all the same.
     assert_rule(
-        br#"fn left<A, B>(first: own A, second: own B) -> result: own A pure {
+        br#"fn left<A: affine, B: affine>(first: own A, second: own B) -> result: own A pure {
   let swapped = right::<B, A>(first: second, second: first);
   return first;
 }
 
-fn right<A, B>(first: own A, second: own B) -> result: own A pure {
+fn right<A: affine, B: affine>(first: own A, second: own B) -> result: own A pure {
   let back = left::<A, B>(first: first, second: second);
   return first;
 }
@@ -234,7 +267,7 @@ command fn main() -> status: own ExitStatus pure {
 /// unimplemented-capability report.
 #[test]
 fn a_cycle_through_a_nongeneric_caller_is_not_polymorphic_recursion() {
-    let source = br#"fn poly<T>(x: own T) -> result: own T pure {
+    let source = br#"fn poly<T: affine>(x: own T) -> result: own T pure {
   let back = trampoline();
   return x;
 }
@@ -264,24 +297,39 @@ command fn main() -> status: own ExitStatus pure {
     assert_rule(source, SemanticRule::Fn1, SemanticIssueKind::ReturnMismatch);
 }
 
+/// [FN-2, OWN-1, S37] the template is the spelling authority.
+///
+/// This test asserted the opposite until the owner's 2026-09-05 ruling: an
+/// `affine`-bounded body writing `move value` was an [OWN-1] `MoveOfCopy`
+/// rejection at every copy instance, so no generic body could serve a copy
+/// type and an affine type, and the library dodged it by instantiating only at
+/// affine types. Under [S37] the body is checked once at the symbolic instance
+/// under its written bound, and the concrete-instance recheck does not
+/// re-judge the [OWN-1]/[FORM-1] spelling: `move` of a template-affine value
+/// at a copy instance denotes a copy. The instance recheck still rejects what
+/// is invalid *at the instance* — the conformance corpus keeps that in
+/// `const1-neg-eval-overflow`, whose body is admitted symbolically and refused
+/// at the instantiation whose value leaves the const domain.
 #[test]
-fn concretely_invalid_generic_body_is_rejected_during_instance_rechecking() {
-    let source = br#"fn transfer<T>(value: own T) -> result: own T pure {
+fn a_move_in_an_affine_bounded_body_denotes_a_copy_at_a_copy_instance() {
+    let source = br#"fn transfer<T: affine>(value: own T) -> result: own T pure {
   return move value;
 }
 
 command fn main() -> status: own ExitStatus pure {
   let copied = transfer::<u8>(value: 7_u8);
+  let payload = Some<u8>(value: 3_u8);
+  let held = transfer::<Option<u8>>(value: move payload);
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule(
-        source,
-        SemanticRule::Own1,
-        SemanticIssueKind::MoveOfCopy {
-            mechanical_fix: "use the copy place without `move`",
-        },
-    );
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("one affine-bounded body must serve a copy and an affine instance: {outcome:?}");
+        };
+        // The template, its copy instance, its affine instance, and `main`.
+        assert_eq!(checked.function_count(), 3);
+    });
 }
 
 #[test]
@@ -311,22 +359,28 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn const_parameters_forward_symbolically_and_instantiate_at_reachable_sizes() {
     let source =
-        br#"fn preserve<const n: u64>(value: own array<u8, n>) -> result: own array<u8, n> pure {
-  let size = len(value);
+        br#"fn preserve<const n: u64>(value: own FixedVector<u8, n>) -> result: own FixedVector<u8, n> reads(value) {
+  let size = len_of(value);
   return move value;
 }
 
-fn forward<const n: u64>(value: own array<u8, n>) -> result: own array<u8, n> pure {
+fn forward<const n: u64>(value: own FixedVector<u8, n>) -> result: own FixedVector<u8, n> reads(value) {
   return preserve::<n>(value: move value);
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let small_input = array_new::<u8, 2>(7_u8);
+  let small_input = fixed_vector::<u8, 2>();
   let small = forward::<2>(value: move small_input);
-  let large_input = array_new::<u8, 5>(9_u8);
+  let large_input = fixed_vector::<u8, 5>();
   let large = forward::<5>(value: move large_input);
-  let first = small[1_u64];
-  let second = large[4_u64];
+  let small_held = len_of(small);
+  if 1_u64 < small_held {
+    let first = small[1_u64];
+  }
+  let large_held = len_of(large);
+  if 4_u64 < large_held {
+    let second = large[4_u64];
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -340,7 +394,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn unbounded_type_parameters_build_only_explicit_reachable_instances() {
-    let source = br#"fn marker<T>() -> result: own unit pure {
+    let source = br#"fn marker<T: affine>() -> result: own unit pure {
   return unit;
 }
 
@@ -368,7 +422,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn generic_argument_kinds_and_const_parameter_types_are_checked() {
     assert_rule_kind(
-        br#"fn marker<T>() -> result: own unit pure {
+        br#"fn marker<T: affine>() -> result: own unit pure {
   return unit;
 }
 
@@ -490,17 +544,17 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn const_and_nested_source_nominal_instances_are_fully_substituted() {
     let source = br#"struct Packet<const n: u64> {
-  bytes: array<u8, n>;
+  bytes: FixedVector<u8, n>;
 }
 
-struct Holder<T> {
+struct Holder<T: affine> {
   value: T;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let short_bytes = array_new::<u8, 2>(7_u8);
+  let short_bytes = fixed_vector::<u8, 2>();
   let short = Packet<2>(bytes: move short_bytes);
-  let long_bytes = array_new::<u8, 5>(11_u8);
+  let long_bytes = fixed_vector::<u8, 5>();
   let long = Packet<5>(bytes: move long_bytes);
   let held = Holder<Packet<2>>(value: move short);
   return exit_status(code: 0_u8);
@@ -517,7 +571,7 @@ command fn main() -> status: own ExitStatus pure {
             .filter(|nominal| nominal.name.starts_with("Packet<"))
             .map(|nominal| match &nominal.kind {
                 CheckedNominalKind::Struct { fields } => match fields[0].ty {
-                    CheckedType::Array {
+                    CheckedType::FixedVector {
                         length: CheckedConst::Value(length),
                         ..
                     } => length,
@@ -543,7 +597,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn source_nominal_argument_arity_and_kinds_are_exact() {
     assert_rule_kind(
-        br#"struct Pair<T> {
+        br#"struct Pair<T: affine> {
   value: T;
 }
 
@@ -557,11 +611,11 @@ command fn main() -> status: own ExitStatus pure {
     );
     assert_rule_kind(
         br#"struct Packet<const n: u64> {
-  bytes: array<u8, n>;
+  bytes: FixedVector<u8, n>;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let bytes = array_new::<u8, 1>(0_u8);
+  let bytes = fixed_vector::<u8, 1>();
   let invalid = Packet<u8>(bytes: move bytes);
   return exit_status(code: 0_u8);
 }
@@ -574,7 +628,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn constructor_only_generic_instances_still_reach_normal_type_diagnostics() {
     assert_rule(
-        br#"struct Holder<T> {
+        br#"struct Holder<T: affine> {
   value: T;
 }
 
@@ -587,10 +641,15 @@ command fn main() -> status: own ExitStatus pure {
     );
 }
 
+/// B7c4b left the vehicle on the retiring surface: the case needs a member
+/// whose own [TYPE-2] judgment fails under the declared bound, and
+/// `array<T, 2>` at an `affine` parameter is that member. A run's element
+/// domain admits a symbolic type parameter, so the migrated declaration is
+/// valid and records no rejection at all. It retires with `array<T, n>`.
 #[test]
 fn unused_generic_nominal_members_are_checked_under_their_declared_bounds() {
     assert_rule_kind(
-        br#"struct Invalid<T> {
+        br#"struct Invalid<T: affine> {
   values: array<T, 2>;
 }
 
@@ -606,7 +665,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn recursive_generic_nominal_layouts_stop_before_concrete_enumeration() {
     assert_unsupported(
-        br#"struct Recursive<T> {
+        br#"struct Recursive<T: affine> {
   next: Recursive<T>;
 }
 
@@ -657,56 +716,86 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn numeric_and_const_parameters_flow_through_flat_storage_operations() {
-    let source = br#"fn filled_array<T: Int, const n: u64>(value: own T) -> result: own array<T, n> pure {
-  return array_new::<T, n>(value);
+fn numeric_and_const_parameters_flow_through_container_operations() {
+    let source = br#"fn filled_run<T: Int, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
+  ensures len_of(result) >= n;
+} {
+  let built = fixed_vector::<T, n>();
+  for @fill (
+    at in 0_u64..n,
+    invariant grown: len_of(built) >= at,
+    invariant spare: room_of(built) + at >= n,
+    invariant flat: head_of(built) <= 0_u64
+  ) {
+    set built = place_back(vector: move built, value: value);
+  }
+  return move built;
 }
 
-fn filled_buffer<T: Int>(length: own u64, value: own T) -> result: own buffer<T> allocates(heap) contract {
+fn filled_float_run<T: Float, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
+  ensures len_of(result) >= n;
+} {
+  let built = fixed_vector::<T, n>();
+  for @fill (
+    at in 0_u64..n,
+    invariant grown: len_of(built) >= at,
+    invariant spare: room_of(built) + at >= n,
+    invariant flat: head_of(built) <= 0_u64
+  ) {
+    set built = place_back(vector: move built, value: value);
+  }
+  return move built;
+}
+
+fn store_run<T: Int>(store: &uniq Heap, length: own u64) -> result: own u64 reads(store), writes(store), allocates(store) contract {
   requires buffer_fits::<T>(length);
 } {
-  return buffer_new(length, value);
+  region {
+    match heap_vector::<T>(store: &uniq deref(store), count: length) {
+      Some(value: fresh) => {
+        return cap_of(fresh);
+      }
+      None() => {
+        return 0_u64;
+      }
+    }
+  }
 }
 
-fn filled_float_array<T: Float, const n: u64>(value: own T) -> result: own array<T, n> pure {
-  return array_new::<T, n>(value);
-}
-
-fn filled_float_buffer<T: Float>(length: own u64, value: own T) -> result: own buffer<T> allocates(heap) contract {
+fn float_store_run<T: Float>(store: &uniq Heap, length: own u64) -> result: own u64 reads(store), writes(store), allocates(store) contract {
   requires buffer_fits::<T>(length);
 } {
-  return buffer_new(length, value);
+  region {
+    match heap_vector::<T>(store: &uniq deref(store), count: length) {
+      Some(value: fresh) => {
+        return cap_of(fresh);
+      }
+      None() => {
+        return 0_u64;
+      }
+    }
+  }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
-  let bytes = filled_array::<u8, 2>(value: 7_u8);
-  let words = filled_array::<i64, 3>(value: -5_i64);
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let bytes = filled_run::<u8, 2>(value: 7_u8);
+  let words = filled_run::<i64, 3>(value: -5_i64);
   let byte = bytes[1_u64];
   let word = words[2_u64];
-  let storage = filled_buffer::<u16>(length: 2_u64, value: 9_u16);
-  let storage_room = len(storage);
-  let storage_ok = 1_u64 < storage_room;
-  if storage_ok {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  let buffered = storage[1_u64];
-  let samples = filled_float_array::<f32, 2>(value: 1.5_f32);
+  let samples = filled_float_run::<f32, 2>(value: 1.5_f32);
   let sample = samples[1_u64];
-  let weights = filled_float_buffer::<f64>(length: 2_u64, value: 2.5_f64);
-  let weights_room = len(weights);
-  let weights_ok = 1_u64 < weights_room;
-  if weights_ok {
-  } else {
-    return exit_status(code: 2_u8);
+  region {
+    let storage_room = store_run::<u16>(store: &uniq heap, length: 2_u64);
   }
-  let weight = weights[1_u64];
+  region {
+    let weights_room = float_store_run::<f64>(store: &uniq heap, length: 2_u64);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("generic flat storage must check and concretize: {outcome:?}");
+            panic!("generic container rows must check and concretize: {outcome:?}");
         };
         assert_eq!(checked.function_count(), 6);
     });
@@ -718,12 +807,12 @@ fn region_bearing_function_and_nominal_arguments_reject_under_fn2() {
         mechanical_fix: "make the slice or arena a direct written parameter or result instead of a generic argument",
     };
     assert_rule(
-        br#"fn instantiate<T>() -> result: own unit pure {
+        br#"fn instantiate<T: affine>() -> result: own unit pure {
   return unit;
 }
 
 fn invalid() -> result: own unit pure {
-  instantiate::<slice<u8>>();
+  instantiate::<Slice<u8>>();
   return unit;
 }
 
@@ -735,10 +824,10 @@ command fn main() -> status: own ExitStatus pure {
         expected.clone(),
     );
     assert_rule(
-        br#"struct Marker<T> {
+        br#"struct Marker<T: affine> {
 }
 
-fn invalid(value: own Marker<slice<u8>>) -> result: own unit pure {
+fn invalid(value: own Marker<Slice<u8>>) -> result: own unit pure {
   return unit;
 }
 
@@ -750,7 +839,7 @@ command fn main() -> status: own ExitStatus pure {
         expected.clone(),
     );
     assert_rule(
-        br#"fn invalid(value: own Option<slice<u8>>) -> result: own unit pure {
+        br#"fn invalid(value: own Option<Slice<u8>>) -> result: own unit pure {
   return unit;
 }
 
@@ -762,12 +851,12 @@ command fn main() -> status: own ExitStatus pure {
         expected.clone(),
     );
     assert_rule(
-        br#"fn instantiate<T>() -> result: own unit pure {
+        br#"fn instantiate<T: affine>() -> result: own unit pure {
   return unit;
 }
 
 fn invalid() -> result: own unit pure {
-  instantiate::<arena<u8>>();
+  instantiate::<Arena<64, 8>>();
   return unit;
 }
 
@@ -789,11 +878,11 @@ fn schema_written_concrete_nominal_arguments_are_rebuilt_after_the_symbolic_chec
   value: T;
 }
 
-fn consume<T>(value: own T) -> result: own unit pure {
+fn consume<T: affine>(value: own T) -> result: own unit pure {
   return unit;
 }
 
-fn wrapper<U>() -> result: own unit pure {
+fn wrapper<U: affine>() -> result: own unit pure {
   let pair = Pair<u8>(value: 1_u8);
   consume::<Pair<u8>>(value: move pair);
   return unit;
@@ -833,16 +922,16 @@ fn partial_schema_rebuild_keeps_only_the_truly_concrete_nominal_instance() {
   right: T;
 }
 
-fn sink<T>() -> result: own unit pure {
+fn sink<T: affine>() -> result: own unit pure {
   return unit;
 }
 
-fn middle<A: Int, B>() -> result: own unit pure {
+fn middle<A: Int, B: affine>() -> result: own unit pure {
   sink::<Pair<A>>();
   return unit;
 }
 
-fn wrapper<U>() -> result: own unit pure {
+fn wrapper<U: affine>() -> result: own unit pure {
   middle::<u8, U>();
   return unit;
 }
@@ -897,11 +986,11 @@ fn partial_schema_rebuild_still_discovers_an_independent_concrete_descendant() {
   right: T;
 }
 
-fn sink<T>() -> result: own unit pure {
+fn sink<T: affine>() -> result: own unit pure {
   return unit;
 }
 
-fn next<X, Y>() -> result: own unit pure {
+fn next<X: affine, Y: affine>() -> result: own unit pure {
   sink::<Y>();
   return unit;
 }
@@ -953,17 +1042,17 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn ordinary_admission_diagnostics_prefer_source_order_over_instance_identity() {
     let source =
-        br#"fn earlier<T>(values: own array<u8, 4>, index: own u64) -> result: own u8 pure {
+        br#"fn earlier<T: affine>(values: own FixedVector<u8, 4>, index: own u64) -> result: own u8 reads(values) {
   return values[index];
 }
 
-fn later(values: own array<u8, 4>, index: own u64) -> result: own u8 pure {
+fn later(values: own FixedVector<u8, 4>, index: own u64) -> result: own u8 reads(values) {
   return values[index];
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let first_values = array_new::<u8, 4>(0_u8);
-  let second_values = array_new::<u8, 4>(0_u8);
+  let first_values = fixed_vector::<u8, 4>();
+  let second_values = fixed_vector::<u8, 4>();
   earlier::<u8>(values: move first_values, index: 5_u64);
   later(values: move second_values, index: 5_u64);
   return exit_status(code: 0_u8);

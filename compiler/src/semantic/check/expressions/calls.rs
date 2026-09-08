@@ -1,5 +1,6 @@
 mod conversions;
 mod floating;
+mod kernel;
 mod reinterpret;
 mod system;
 mod user;
@@ -15,8 +16,8 @@ use crate::{
 
 use super::super::super::model::{
     CheckedBooleanOperation, CheckedExpression, CheckedIntegerArgument,
-    CheckedIntegerArgumentSource, CheckedIntegerErrorClass, CheckedIntegerOperation, CheckedMode,
-    CheckedNominalKind, CheckedNumericType, CheckedType,
+    CheckedIntegerArgumentSource, CheckedIntegerErrorClass, CheckedIntegerOperation,
+    CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedType, LoanStrength,
 };
 use super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PendingNominal, PreludeType,
@@ -54,6 +55,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let operation = crate::system_operation_index(id, self.inventory())
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 self.check_system_call(node, operation, function, bindings, loop_depth)
+            }
+            // One [BLK-0] kernel-domain row: a fourth callee class, checked
+            // from its own compiler-owned signature record.
+            ResolvedTarget::Kernel(id) => {
+                self.check_kernel_call(node, id.ordinal(), function, bindings, loop_depth)
             }
             _ => Err(SemanticCompilerFailure::InvalidResolution.into()),
         }
@@ -102,11 +108,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if spelling == "box_new" {
             return self.check_box_new(node, function, bindings, loop_depth);
         }
-        if spelling == "len" {
-            return self.check_flat_length(node, function, bindings, loop_depth);
+        if let Some(measure) = measure_former(spelling) {
+            return self.check_flat_measure(node, measure, function, bindings, loop_depth);
         }
-        if spelling == "slice_of" {
-            return self.check_slice_of(node, function, bindings, loop_depth);
+        // [VIEW-2] the two formation rows are one judgment at two loan
+        // strengths, so the spelling selects the strength and nothing else.
+        if let Some(strength) = view_former(spelling) {
+            return self.check_slice_of(node, strength, function, bindings, loop_depth);
         }
         if spelling == "cvt" {
             return self.check_conversion(node, function, bindings, loop_depth);
@@ -188,6 +196,37 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if atoms.len() != operand_count {
             return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
         }
+        let mut operands = Vec::with_capacity(operand_count);
+        for atom in atoms.iter().copied() {
+            // An `infix_tail` operand is always an `atom`; a `clause_expr`
+            // operand may also be a `call`, which is how a measure term
+            // reaches a contract clause [MSR-5].
+            let checked = self.check_written_operand(
+                function,
+                atom,
+                bindings,
+                loop_depth,
+                super::super::expressions::PlaceUseContext::Ordinary,
+            )?;
+            operands.push((atom, checked));
+        }
+        self.check_integer_operation_operands(node, operation, operands)
+    }
+
+    /// The same [OP-1] row judgment over operands the caller has already
+    /// checked. A `clause_expr` side is an `affine_expr` whose operands are
+    /// not all `atom` nodes [MSR-5], so the row's typing is stated once here
+    /// and reached from both the written-atom and the affine paths.
+    pub(in crate::semantic::check) fn check_integer_operation_operands(
+        &self,
+        node: NodeId,
+        operation: CheckedIntegerOperation,
+        operands: Vec<(NodeId, TypedExpression)>,
+    ) -> Result<TypedExpression, CheckStop> {
+        let operand_count = operation.operand_count();
+        if operands.len() != operand_count {
+            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
+        }
         let mut arguments = Vec::with_capacity(operand_count);
         let mut argument_metadata = Vec::with_capacity(operand_count);
         let mut effects = EffectSet::NONE;
@@ -198,17 +237,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // itself, so "both operands must have one identical exact type"
         // falls out and cites TYPE-5 at the second operand atom.
         let mut operand_type = None;
-        for (index, atom) in atoms.iter().copied().enumerate() {
-            // An `infix_tail` operand is always an `atom`; a `clause_expr`
-            // operand may also be a `call`, which is how a measure term
-            // reaches a contract clause [MSR-5].
-            let argument = self.check_written_operand(
-                function,
-                atom,
-                bindings,
-                loop_depth,
-                super::super::expressions::PlaceUseContext::Ordinary,
-            )?;
+        for (index, (atom, argument)) in operands.into_iter().enumerate() {
             if argument.mode != CheckedMode::Own {
                 return self.issue_node(
                     SemanticRule::Type5,
@@ -483,7 +512,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 atoms[0],
                 SemanticIssueKind::RegionBearingStorage {
                     mechanical_fix:
-                        "keep the slice or arena as a direct local, parameter, or result; do not store it inside another value",
+                        "keep the slice, arena, or provider as a direct local, parameter, or result; do not store it inside another value",
                 },
             );
         }
@@ -845,5 +874,33 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         Ok(atoms)
+    }
+}
+
+/// The [MSR-1] measure one operation spelling names, if it names one.
+///
+/// The four spellings are one operation family over one place [OP-1]; this is
+/// the selection of the row within it and the only place a spelling reaches a
+/// measure.
+pub(in crate::semantic::check) const fn measure_former(spelling: &str) -> Option<CheckedMeasure> {
+    match spelling.as_bytes() {
+        b"len_of" => Some(CheckedMeasure::Length),
+        b"cap_of" => Some(CheckedMeasure::Capacity),
+        b"room_of" => Some(CheckedMeasure::Room),
+        b"head_of" => Some(CheckedMeasure::Head),
+        _ => None,
+    }
+}
+
+/// The [VIEW-1] loan strength one operation spelling forms, if it forms one.
+///
+/// The two view formation rows are one operation family over one borrowed
+/// place [VIEW-2]; this is the selection of the row within it, and the only
+/// place a spelling reaches a strength.
+pub(in crate::semantic::check) const fn view_former(spelling: &str) -> Option<LoanStrength> {
+    match spelling.as_bytes() {
+        b"slice_of" => Some(LoanStrength::Shared),
+        b"mut_slice_of" => Some(LoanStrength::Exclusive),
+        _ => None,
     }
 }

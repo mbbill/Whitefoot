@@ -1,5 +1,7 @@
-fn read_pair(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 pure {
-  doc "ENT-3 signed Boolean decomposition: the true edge of band(low_ok, high_ok) establishes both positive operands. Their comparison projections discharge both array subscript obligations.";
+fn read_pair(table: own FixedVector<u8, 8>, low: own u64, high: own u64) -> result: own u8 reads(table) contract {
+  requires 8_u64 <= len_of(table);
+} {
+  doc "ENT-3 signed Boolean decomposition: the true edge of band(low_ok, high_ok) establishes both positive operands. Their comparison projections discharge both run subscript obligations.";
   let low_ok = low < 8_u64;
   let high_ok = high < 8_u64;
   let both = band(low_ok, high_ok);
@@ -13,7 +15,15 @@ fn read_pair(table: own array<u8, 8>, low: own u64, high: own u64) -> result: ow
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let table = array_new::<u8, 8>(3_u8);
+  let empty = fixed_vector::<u8, 8>();
+  let s1 = place_back(vector: move empty, value: 3_u8);
+  let s2 = place_back(vector: move s1, value: 3_u8);
+  let s3 = place_back(vector: move s2, value: 3_u8);
+  let s4 = place_back(vector: move s3, value: 3_u8);
+  let s5 = place_back(vector: move s4, value: 3_u8);
+  let s6 = place_back(vector: move s5, value: 3_u8);
+  let s7 = place_back(vector: move s6, value: 3_u8);
+  let table = place_back(vector: move s7, value: 3_u8);
   let value = read_pair(table: move table, low: 1_u64, high: 2_u64);
   if value == 3_u8 {
   } else {

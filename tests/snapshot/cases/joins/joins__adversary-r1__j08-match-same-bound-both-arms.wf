@@ -3,19 +3,19 @@ enum Pick {
   Wide();
 }
 
-fn get(b: own buffer<u8>, i: own u64, choice: own Pick) -> result: own u8 reads(b) {
-  doc "expect ACCEPT: both match arms independently establish i < room before falling through, so the join keeps that common strict bound and b[i] discharges.";
-  let room = len(b);
+fn get(b: own Slice<u8>, i: own u64, choice: own Pick) -> result: own u8 reads(b) {
+  doc "expect ACCEPT: both match arms independently establish i < spare before falling through, so the join keeps that common strict bound and b[i] discharges.";
+  let spare = len_of(b);
   match choice {
     Narrow() => {
-      let inside_n = i < room;
+      let inside_n = i < spare;
       if inside_n {
       } else {
         return 0_u8;
       }
     }
     Wide() => {
-      let inside_w = i < room;
+      let inside_w = i < spare;
       if inside_w {
       } else {
         return 0_u8;
