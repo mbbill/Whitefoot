@@ -63,7 +63,54 @@ $(OUT)/probe $(OUT)/probe-no-stats $(OUT)/probe-events: runtime.c runtime.h runt
 		$(if $(filter $(OUT)/probe-events,$@),-DWF_COMPUTE_EVENTS,) \
 		runtime.c probe.c $(FLOOR) -o "$@"
 
-check: check-runtime check-abi check-fir check-bench check-records-events check-scheduler-events check-mandelbrot
+check: check-runtime check-protocol-cost check-abi check-fir check-bench check-records-events check-scheduler-events check-mandelbrot
+
+.PHONY: protocol-cost-build check-protocol-cost protocol-cost-calibrate
+protocol-cost-build: runtime.c runtime.h runtime_events.h protocol_cost.c protocol_cost.awk $(FLOOR)
+	mkdir -p "$(OUT)/protocol-cost"
+	mkdir -p "$(OUT)/protocol-cost/source"
+	cp protocol_cost.c protocol_cost.awk runtime.c runtime.h runtime_events.h $(FLOOR) Makefile "$(OUT)/protocol-cost/source/"
+	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=1 protocol_cost.c runtime.c $(FLOOR) -o "$(OUT)/protocol-cost/ordinary"
+	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=1 -fsanitize=$(SANITIZER) \
+		-fno-sanitize-recover=all -fno-omit-frame-pointer \
+		protocol_cost.c runtime.c $(FLOOR) -o "$(OUT)/protocol-cost/sanitized"
+	@printf '%s\n' '$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=1' \
+		'sanitized additionally: -fsanitize=$(SANITIZER) -fno-sanitize-recover=all -fno-omit-frame-pointer' \
+		> "$(OUT)/protocol-cost/flags.txt"
+	$(CC) --version >> "$(OUT)/protocol-cost/flags.txt"
+	git rev-parse HEAD > "$(OUT)/protocol-cost/revision.txt"
+	git diff HEAD -- protocol_cost.c runtime.c runtime.h runtime_events.h Makefile $(FLOOR) > "$(OUT)/protocol-cost/source.patch"
+	shasum -a 256 protocol_cost.c protocol_cost.awk runtime.c runtime.h runtime_events.h $(FLOOR) Makefile \
+		"$(OUT)/protocol-cost/ordinary" "$(OUT)/protocol-cost/sanitized" > "$(OUT)/protocol-cost/manifest.sha256"
+
+check-protocol-cost: protocol-cost-build
+	@set -e; for image in ordinary sanitized; do for width in 2 4; do for depth in 1 8 32; do \
+		log="$(OUT)/protocol-cost/check-$$image-w$$width-d$$depth.tsv"; \
+		WF_WORKERS=$$width "$(OUT)/protocol-cost/$$image" $$width $$depth 0 > "$$log" 2>&1; \
+		awk -v width=$$width -v depth=$$depth -v pass=0 -f protocol_cost.awk "$$log"; \
+		grep -Fx '# protocol PASS: samples=18 outputs=4718592' "$$log"; \
+	done; done; done
+
+# Run after qualification; repeated invocations use a fresh RESULTS directory.
+# Raw paired samples retain all observations; no timing threshold selects PASS.
+protocol-cost-calibrate:
+	@test -n "$(RESULTS)" && test -x "$(OUT)/protocol-cost/ordinary"
+	mkdir "$(RESULTS)"
+	@set -e; uname -a > "$(RESULTS)/host.txt"; \
+	if test "$$(uname -s)" = Linux; then \
+		lscpu >> "$(RESULTS)/host.txt"; cat /proc/self/status >> "$(RESULTS)/host.txt"; \
+		if test -r /sys/fs/cgroup/cpu.max; then cat /sys/fs/cgroup/cpu.max >> "$(RESULTS)/host.txt"; fi; \
+	else sysctl hw.model hw.physicalcpu hw.logicalcpu >> "$(RESULTS)/host.txt"; fi; \
+	for pass in 0 1 2 3 4; do \
+		widths='2 4'; depths='1 8 32'; \
+		if test $$((pass % 2)) = 1; then widths='4 2'; depths='32 8 1'; fi; \
+		for width in $$widths; do for depth in $$depths; do \
+			log="$(RESULTS)/w$$width-d$$depth-p$$pass.tsv"; \
+			WF_WORKERS=$$width "$(OUT)/protocol-cost/ordinary" $$width $$depth $$pass > "$$log" 2>&1; \
+			awk -v width=$$width -v depth=$$depth -v pass=$$pass -f protocol_cost.awk "$$log"; \
+			grep -Fx '# protocol PASS: samples=18 outputs=4718592' "$$log"; \
+		done; done; \
+	done
 
 check-runtime: build
 	@set -e; for probe in probe probe-no-stats probe-events; do \

@@ -70,6 +70,87 @@ sanitizer objects use `WF_COMPUTE_STATS=0`: both the counter and observer are
 absent, checked with `nm`, rather than returning an invented zero count.
 Statistics do not participate in task publication, ownership or completion.
 
+## Owner-local task protocol cost
+
+`protocol_cost.c` measures the unstolen acquire/publish/join/read/release path
+against direct calls to the same opaque callback. It uses the ordinary runtime
+and floor without scheduling overrides. Each helper first steals one callback
+and waits on a condition variable inside it; the owner checks the actual pool
+width before waiting for entrants. These callbacks keep helpers unavailable
+without spinning. Their frames and owner-stack gate remain alive until every
+helper callback has been joined, after all measurements.
+
+The owner processes 262,144 tiny modular-integer callbacks per sample, with
+1, 8 or 32 simultaneously published tasks, joined newest first. The direct
+control initializes equally sized groups of stack frames and invokes the same
+function pointer in the same reverse order. Both write every result to an
+output array, checked outside the timed interval. The difference includes
+opaque runtime-frame storage, initialization/checking, deque synchronization
+and release; it does not isolate atomic instructions from cache traffic or
+measure normal parallel speedup, idle-worker wakeup, stealing or exhaustion.
+Keep this diagnostic with the runtime experiment; consolidate or remove it
+when that protocol is replaced.
+
+`check-protocol-cost` qualifies both ordinary and fully C-sanitized images at
+W2/W4 and all three depths through the canonical `check` target. The ordinary
+image uses scalar O3 without LTO, statistics enabled and events disabled.
+Statistics count successful steals; the timed intervals must observe zero.
+Helpers remain inside their held callbacks, so this does not infer the absence
+of all deque contention merely from a zero successful-steal count.
+
+```sh
+make -C research/experiments/compute-runtime check-protocol-cost OUT=/tmp/wf-protocol
+make -C research/experiments/compute-runtime protocol-cost-calibrate \
+  OUT=/tmp/wf-protocol RESULTS=/tmp/wf-protocol/protocol-cost/calibration
+```
+
+Calibration requires a fresh `RESULTS` directory and the already qualified
+ordinary image. It runs 30 processes: W2/W4, depths 1/8/32 and five passes,
+reversing width/depth order on odd passes. Each process warms both paths for at
+least 100 ms, then alternates direct/task order across nine paired samples.
+`first` means the first measured pair after warmup, not cold startup; retain it
+separately from the following eight pairs. Raw nanoseconds include wall time
+and enclosing owner-thread CPU time; neither includes output verification or
+printing. Warmup duration/pair count and all 18 measured rows are retained.
+The footer counts 4,718,592 checked measured outputs per process, excluding
+warmup. No elapsed-time limit selects a performance pass; a 30-second process
+watchdog detects a stalled diagnostic.
+
+The `compute-bench` scheduler job runs this panel sequentially under the same
+recorded CPU mask and retains images, flags, source hashes and raw samples in
+its `protocol-cost` artifact directory. Helper count is a setup condition;
+there is only one executing compute thread during measurement. Thread
+placement/frequency remain uncontrolled. Compare paired task-minus-direct
+nanoseconds per callback within each process before comparing configurations.
+
+The September 8 M1 screen uses Apple Clang 21.0.0 on MacBookPro18,3
+(eight physical/logical CPUs), ordinary image SHA256
+`9e2fbf2a2b29c78246782aba82084f5c1b323dc99aeb01a8fbbb5b936d1112ff`.
+All 30 processes pass, retaining 540 measured rows, 141,557,760 checked output
+positions and zero steals in every measured interval. Values below are
+nanoseconds per callback: medians of five process means over eight warm pairs,
+with the range of those five means. Direct/task columns are separate medians;
+the delta column subtracts within each process before taking its median.
+
+| Pool / pending depth | Direct wall median | Task wall median | Paired extra wall median [min–max] | Paired extra owner CPU median |
+| --- | ---: | ---: | ---: | ---: |
+| W2 / 1 | 1.437 | 14.613 | 13.176 [13.164–13.683] | 13.171 |
+| W2 / 8 | 1.459 | 13.725 | 12.259 [11.917–12.625] | 12.245 |
+| W2 / 32 | 1.305 | 14.186 | 12.824 [12.413–13.033] | 12.820 |
+| W4 / 1 | 1.455 | 15.016 | 13.514 [13.144–13.852] | 13.515 |
+| W4 / 8 | 1.406 | 13.385 | 11.985 [11.899–12.804] | 11.983 |
+| W4 / 32 | 1.284 | 13.736 | 12.452 [12.418–13.136] | 12.449 |
+
+Owner CPU and wall deltas are close in this cohort; depth eight is lower than
+depth one in all five paired passes at each width. This does not isolate the
+last-item CAS: grouping also changes frame reuse, loop work and cache traffic.
+The generated Mandelbrot W4 capacity budget is six split levels, at most 64
+terminal chunks/63 publications for one map, while this diagnostic uses
+16-byte nonrecursive callbacks rather than its 120-byte recursive frames.
+Do not multiply the M1 delta into an estimate of Linux map overhead or stolen
+completion cost. The next comparison needs matching decomposition and real
+generated-frame work as well as the Linux local-protocol measurement.
+
 ## Run and retained outputs
 
 Requires a POSIX LP64 host, Clang/C++17 with sanitizers, CMake, Git, pthreads,
@@ -1224,6 +1305,65 @@ points. This demonstrates how a cheap prefix can select a coarse terminal
 chunk that concentrates most later work. It is consistent with the ordinary
 slowdown, but does not establish the ordinary image's per-call chosen grain:
 logging, image layout and measurement conditions can change the probe.
+
+The corresponding Linux extension at revision
+`1266ef9c14d2a317c15352aa56ae5127cca02211` passed in
+[compute run 34221470922](https://github.com/mbbill/Whitefoot/actions/runs/34221470922).
+Artifact `10054004011` has ZIP SHA256
+`30a7a42e48206ecb9eeda12cc893fc3ff3ee4cfcd5d9a30242f324ee5fe6075f`;
+ordinary image SHA256 is
+`2eaf839bb3fb69ee81944e085ecf61b2518dd6cc28d206c77282eaee7359e985`.
+All 52 manifest paths, including the retained compiler, were verified against
+the exact revision or artifact. The grain panel independently replays 2,625
+processes, 23,625 calls, 69,359,625 outputs and 21,000 gaps; the separate fixed
+panel replays 1,045 processes, 9,405 calls, 24,633,405 outputs and 8,360 gaps.
+Neither panel is pooled with another cohort. Shared qualification comprises
+38 full qualifiers, 95 ordinary/150 grain smokes and three Parlay-auto
+exactly-once/joined-tail/capacity checks. The four Linux sanitized Rayon logs
+retain the exact allowed 1,904-byte/two-allocation lifecycle report; they are
+not leak-free passes.
+
+The host exposes two AMD EPYC 7763 physical cores/four SMT CPUs, mask 0–3,
+with Clang 18.1.3 and scalar x86-64-v3 flags. Individual placement and CPU quota
+remain unqualified. Each native cell below selects its lowest observed median
+from the five grains, using the same reporting samples, not a held-out run.
+Units are microseconds; parentheses give points per callback.
+
+| Native selector | Plane / 4097 | Clustered / 4097 | Trailing / 4097 | Interior / 4097 | Exterior / 4097 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| WF | 245.384 (64) | 324.450 (16) | 316.817 (16) | 1249.363 (16) | 5.836 (256) |
+| Static | 3688.018 (256) | 2520.220 (1024) | 3553.502 (1) | 2556.248 (256) | 3371.318 (1) |
+| oneTBB | 249.179 (64) | 322.213 (16) | 322.019 (16) | 1218.446 (16) | 9.653 (1024) |
+| Parlay fixed | 346.249 (1024) | 449.141 (256) | 443.526 (1) | 1366.242 (1) | 8.182 (256) |
+| Parlay automatic | 317.357 (16) | 389.083 (1) | 592.923 (1) | 1330.765 (1) | 8.428 (64) |
+| Rayon join | 248.141 (64) | 324.911 (16) | 324.883 (16) | 1239.272 (16) | 11.232 (1024) |
+| Rayon iterator | 249.501 (16) | 458.357 (1) | 326.266 (16) | 1245.043 (64) | 9.792 (1024) |
+
+Generated WF capacity core medians are 245.934 / 346.685 / 337.791 / 1294.339 us
+for plane / clustered / trailing / interior. Against each cell's selected
+lowest native median, paired signs are mixed except trailing: capacity/native
+WF grain16 is 1.063 [1.022–1.088], slower in all five pairs. These comparisons
+include generated representation, allocation and decomposition. Default cost
+admission still requires at least 10,960 points for this compiler weight and
+does not split any measured input; this panel changes no default policy.
+
+At trailing/grain64, Parlay automatic is 707.577 us versus fixed 500.917 us,
+paired ratio 1.376 [1.300–1.549], slower in all five pairs. The independent
+fixed panel also loses all five, ratio 1.224 [1.163–1.414]. Automatic loses
+all five grain-screen pairs at grains 1/16 too, but grain256 is mixed and
+grain1024 has four faster pairs; the M1 grain256 outcome does not transfer.
+Equal heavy-point counts and useful iteration totals across clustered and
+trailing rule out a change in total useful work, but Linux has no diagnostic
+trace of the automatic grain chosen by the ordinary image.
+
+Resource counters expose another question: clustered oneTBB W4/grain1024
+records 3,573–3,599 batch involuntary switches across all five processes,
+with core median 845.619 us, versus 322.213 us at grain16. Static's multi-ms
+excursions also persist across this grain screen. These observations warrant
+placement/wait-protocol investigation; they do not identify a cause or prove
+intrinsic scheduler costs. Batch CPU/switch counters include checks and host
+work outside core timing. No observations were discarded, and a four-thread
+budget on this VM does not establish four physical cores of useful progress.
 
 ## Scalar scheduler comparison
 
