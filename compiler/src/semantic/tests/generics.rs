@@ -669,6 +669,40 @@ command fn main() -> status: own ExitStatus pure {
     );
 }
 
+/// The inferred store region is substituted through the complete parameter
+/// type before TYPE-5 compares it with each actual. Reusing one helper at
+/// different indexed places must not depend on the first nominal occurrence.
+#[test]
+fn nested_borrowed_parameter_regions_are_inferred_at_each_call_position() {
+    let source = br#"struct Entry['s] {
+  payload: Box<'s, u64>;
+}
+
+fn inspect['s](entry: &Option<Entry<'s>>, same: &Option<Entry<'s>>) -> result: own u64 pure {
+  return 0_u64;
+}
+
+fn inspect_positions['s](entries: own FixedVector<Option<Entry<'s>>, 4>) -> result: own FixedVector<Option<Entry<'s>>, 4> pure contract {
+  requires 3_u64 <= len_of(entries);
+} {
+  region {
+    let first = inspect(entry: &entries[0_u64], same: &entries[0_u64]);
+    let later = inspect(entry: &entries[2_u64], same: &entries[2_u64]);
+  }
+  return move entries;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(_) = outcome else {
+            panic!("nested borrowed parameter regions must check at every call: {outcome:?}");
+        };
+    });
+}
+
 /// Two distinct store regions survive the same nested result substitution in
 /// declaration order. [FORM-8] keeps both written at `pass` because its one
 /// nominal position carries two region arguments and therefore determines
