@@ -3130,44 +3130,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    /// [S20] one nominal instance read at a caller: its region arguments
-    /// substituted, which is the instance the caller's own value has.
+    /// [FN-2, S20] one nominal instance read at a caller with every formal
+    /// region substituted, which is the instance the caller's own value has.
     ///
-    /// The substituted instance already exists wherever the caller can hold a
-    /// value of it, so this is a lookup and never a minting; where it does
-    /// not, the declaration's own instance stands and the ordinary type
-    /// judgment decides.
+    /// The structural walk is the same one used while checking the call, so
+    /// it reaches a source nominal through PRE-1 wrappers and compiler-owned
+    /// store nominals as well as a source nominal's own region axis. It keeps
+    /// that walk's ordinary lookup-and-defer behavior; it does not assume a
+    /// result-only or nested goal type was itself a direct call argument.
     fn instantiate_goal_nominal(
         &self,
         id: NominalId,
         signature: &FunctionSignature,
         regions: &[DeclarationId],
     ) -> Result<CheckedType, CheckStop> {
-        let Some((template, substitution)) = self.source_nominal_instance_entry(id)? else {
-            return Ok(CheckedType::Nominal(id));
-        };
-        if substitution.region_arguments().is_empty() {
-            return Ok(CheckedType::Nominal(id));
+        if signature.region_parameters.len() != regions.len() {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
-        let substitution = substitution.clone();
-        let mut mapped = Vec::with_capacity(substitution.region_arguments().len());
-        for (formal, actual) in substitution.region_arguments() {
-            mapped.push((
-                *formal,
-                self.instantiate_goal_region(*actual, signature, regions)?,
-            ));
-        }
-        if mapped == substitution.region_arguments() {
-            return Ok(CheckedType::Nominal(id));
-        }
-        let declaration = self
-            .nominal_templates
-            .get(template)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?
-            .declaration;
-        Ok(self
-            .source_nominal_instance(declaration, &substitution.with_regions(mapped))
-            .map_or(CheckedType::Nominal(id), CheckedType::Nominal))
+        let substitution = signature
+            .region_parameters
+            .iter()
+            .copied()
+            .zip(regions.iter().copied())
+            .filter(|(formal, actual)| formal != actual)
+            .collect::<Vec<_>>();
+        self.substitute_type_regions(CheckedType::Nominal(id), &substitution)
     }
 
     fn instantiate_goal_flat_element(

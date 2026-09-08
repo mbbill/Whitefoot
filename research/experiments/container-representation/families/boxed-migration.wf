@@ -126,7 +126,7 @@ fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box
     return 30_u8;
   }
   region {
-    let through_first_collision = view_box_entry::<'s>(entry: &entries[2_u64], same: &entries[2_u64]);
+    let through_first_collision = view_box_entry(entry: &entries[2_u64], same: &entries[2_u64]);
     match through_first_collision {
       Empty() => {
         return 31_u8;
@@ -144,7 +144,7 @@ fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box
     }
   }
   region {
-    let through_second_collision = view_box_entry::<'s>(entry: &entries[3_u64], same: &entries[3_u64]);
+    let through_second_collision = view_box_entry(entry: &entries[3_u64], same: &entries[3_u64]);
     match through_second_collision {
       Empty() => {
         return 34_u8;
@@ -214,7 +214,7 @@ fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box
       } else {
         return 50_u8;
       }
-      let observed_prefix_source = view_box_entry::<'s>(entry: &entries[2_u64], same: &entries[2_u64]);
+      let observed_prefix_source = view_box_entry(entry: &entries[2_u64], same: &entries[2_u64]);
       match observed_prefix_source {
         Empty() => {
           return 51_u8;
@@ -234,7 +234,7 @@ fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box
       } else {
         return 54_u8;
       }
-      let observed_prefix_target = view_box_entry::<'s>(entry: &target[5_u64], same: &target[5_u64]);
+      let observed_prefix_target = view_box_entry(entry: &target[5_u64], same: &target[5_u64]);
       match observed_prefix_target {
         Empty() => {
           return 55_u8;

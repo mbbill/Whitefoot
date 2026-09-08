@@ -1108,18 +1108,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedType::Float(_)
             | CheckedType::Generic(_)
             | CheckedType::GenericInt(_)
-            | CheckedType::GenericFloat(_)
-            | CheckedType::Array { .. }
-            | CheckedType::Buffer { .. } => ty,
+            | CheckedType::GenericFloat(_) => ty,
             CheckedType::Nominal(id) => self.substitute_nominal_regions(id, regions)?,
+            CheckedType::Array { element, length } => CheckedType::Array {
+                element: self.substitute_flat_element_regions(element, regions)?,
+                length,
+            },
             CheckedType::Slice {
                 region,
                 element,
                 strength,
             } => CheckedType::Slice {
                 region: Self::substituted_region(regions, region),
-                element,
+                element: self.substitute_flat_element_regions(element, regions)?,
                 strength,
+            },
+            CheckedType::Buffer { element } => CheckedType::Buffer {
+                element: self.substitute_flat_element_regions(element, regions)?,
             },
             CheckedType::FixedVector { element, length } => CheckedType::FixedVector {
                 element: self.substitute_element_regions(element, regions)?,
@@ -1131,7 +1136,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let region = Self::substituted_region(regions, region);
                 CheckedType::Vector {
                     region,
-                    element,
+                    element: self.substitute_element_regions(element, regions)?,
                     release: self.vector_release_class(region)?,
                 }
             }
@@ -1157,17 +1162,56 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         regions: &[(crate::DeclarationId, crate::DeclarationId)],
     ) -> Result<CheckedElement, CheckStop> {
         Ok(match element {
-            CheckedElement::Flat(_) | CheckedElement::FixedVector { .. } => element,
+            CheckedElement::Flat(element) => {
+                CheckedElement::Flat(self.substitute_flat_element_regions(element, regions)?)
+            }
+            CheckedElement::FixedVector { element, length } => CheckedElement::FixedVector {
+                element: self.substitute_flat_element_regions(element, regions)?,
+                length,
+            },
             CheckedElement::Vector {
                 region, element, ..
             } => {
                 let region = Self::substituted_region(regions, region);
                 CheckedElement::Vector {
                     region,
-                    element,
+                    element: self.substitute_flat_element_regions(element, regions)?,
                     release: self.vector_release_class(region)?,
                 }
             }
+        })
+    }
+
+    /// One flat slot element with the same substitution [FN-2, TYPE-2].
+    ///
+    /// Scalar and symbolic elements contain no region. A nominal element can
+    /// contain one arbitrarily far inside its instance — for example the
+    /// `'s` in `Option<Entry<'s>>` — while remaining one flat slot element.
+    /// Substitution changes that instance identity and preserves whether the
+    /// element was admitted as tag-only or as an affine nominal.
+    fn substitute_flat_element_regions(
+        &self,
+        element: CheckedFlatElement,
+        regions: &[(crate::DeclarationId, crate::DeclarationId)],
+    ) -> Result<CheckedFlatElement, CheckStop> {
+        let (id, tag_only) = match element {
+            CheckedFlatElement::TagOnlyNominal(id) => (id, true),
+            CheckedFlatElement::Nominal(id) => (id, false),
+            CheckedFlatElement::Unit
+            | CheckedFlatElement::Bool
+            | CheckedFlatElement::Integer(_)
+            | CheckedFlatElement::Float(_)
+            | CheckedFlatElement::GenericInt(_)
+            | CheckedFlatElement::GenericFloat(_)
+            | CheckedFlatElement::Generic(_) => return Ok(element),
+        };
+        let CheckedType::Nominal(id) = self.substitute_nominal_regions(id, regions)? else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        Ok(if tag_only {
+            CheckedFlatElement::TagOnlyNominal(id)
+        } else {
+            CheckedFlatElement::Nominal(id)
         })
     }
 

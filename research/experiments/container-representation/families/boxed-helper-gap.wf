@@ -21,13 +21,53 @@ fn replace_one['s](slots: own FixedVector<Option<Entry<'s>>, 1>, replacement: ow
   return move slots, move previous;
 }
 
-fn compose['s](first: own Box<'s, u64>, replacement: own Box<'s, u64>) -> (updated: own FixedVector<Option<Entry<'s>>, 1>, previous: own Option<Entry<'s>>) reads(first), writes(first) {
+fn compose['s](first: own Box<'s, u64>, replacement: own Box<'s, u64>) -> (updated: own FixedVector<Option<Entry<'s>>, 1>, previous: own Option<Entry<'s>>) reads(first), writes(first) contract {
+  ensures len_of(updated) == 1_u64;
+} {
   let (slots, returned) = build(first: move first, replacement: move replacement);
   let entry = Entry(payload: move returned);
   let (updated, previous) = replace_one(slots: move slots, replacement: move entry);
   return move updated, move previous;
 }
 
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    match heap_box(store: &uniq heap, value: 11_u64) {
+      Err(error: back) => {
+        return exit_status(code: 70_u8);
+      }
+      Ok(value: first) => {
+        match heap_box(store: &uniq heap, value: 22_u64) {
+          Err(error: back) => {
+            return exit_status(code: 70_u8);
+          }
+          Ok(value: replacement) => {
+            let (updated, previous) = compose(first: move first, replacement: move replacement);
+            match move previous {
+              None() => {
+                return exit_status(code: 1_u8);
+              }
+              Some(value: old_entry) => {
+                if deref(old_entry.payload) != 11_u64 {
+                  return exit_status(code: 2_u8);
+                }
+              }
+            }
+            let (empty, occupied) = take_back(vector: move updated);
+            match move occupied {
+              None() => {
+                return exit_status(code: 4_u8);
+              }
+              Some(value: new_entry) => {
+                if deref(new_entry.payload) != 22_u64 {
+                  return exit_status(code: 5_u8);
+                }
+              }
+            }
+            return exit_status(code: 0_u8);
+          }
+        }
+      }
+    }
+  }
 }

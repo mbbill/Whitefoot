@@ -18,7 +18,7 @@ use super::super::super::borrows::{
     push_slice_origin,
 };
 use super::super::super::{
-    CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, ResultProvenance,
+    CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PreludeType, ResultProvenance,
     TypedExpression, borrow_result_provenance,
 };
 
@@ -658,14 +658,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// that region from its actual, exactly as a borrow mode does, so the
     /// caller does not write it.
     ///
-    /// [BLK-1]'s one-level lift puts a second place a store region can be
+    /// [BLK-1]'s one-level lift puts further places a store region can be
     /// written: a frame-resident run of store-backed runs names its store in
-    /// its element position and nowhere else, and that region is determined by
-    /// the actual exactly as a top-level one is. Where both levels name a
-    /// region — `Vector<'s, Vector<'t, u8>>` — this reports the outer one
-    /// alone, so the inner is not substituted and the position is the ordinary
-    /// [TYPE-5] region mismatch: fail-closed, and an explicit gap rather than a
-    /// silent second binding.
+    /// its element position, and a flat nominal element can carry one through
+    /// a PRE-1 wrapper such as `Option<Entry<'s>>`. Those regions are
+    /// determined by the actual exactly as a top-level one is. Where both run
+    /// levels name a region — `Vector<'s, Vector<'t, u8>>` — this reports the
+    /// outer one alone, so the inner is not a second implicit binding.
     /// [S20] a source nominal instance carrying exactly one region argument
     /// names that region on the same ground: its region parameter is a
     /// component of its type name [TYPE-2, PROV-1], and a parameter of that
@@ -688,12 +687,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             {
                 return Ok(Some(region));
             }
-            return Ok(match self.nominal_region_axis(id)? {
-                Some([(_, region)]) => Some(*region),
-                _ => None,
-            });
+            if let Some([(_, region)]) = self.nominal_region_axis(id)? {
+                return Ok(Some(*region));
+            }
+            return match self.prelude_type(id) {
+                Some(PreludeType::Option(value)) => self.written_type_region(value),
+                Some(PreludeType::Result(ok, error)) => {
+                    let ok = self.written_type_region(ok)?;
+                    let error = self.written_type_region(error)?;
+                    Ok(match (ok, error) {
+                        (Some(left), Some(right)) if left == right => Some(left),
+                        (Some(region), None) | (None, Some(region)) => Some(region),
+                        (None, None) | (Some(_), Some(_)) => None,
+                    })
+                }
+                Some(PreludeType::Overflow | PreludeType::DivError | PreludeType::NarrowError)
+                | None => Ok(None),
+            };
         }
-        Ok(Self::written_container_type_region(ty))
+        match ty {
+            CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
+                self.written_type_region(element.ty())
+            }
+            CheckedType::FixedVector { element, .. } => match element {
+                CheckedElement::Flat(element) | CheckedElement::FixedVector { element, .. } => {
+                    self.written_type_region(element.ty())
+                }
+                CheckedElement::Vector { region, .. } => Ok(Some(region)),
+            },
+            _ => Ok(Self::written_container_type_region(ty)),
+        }
     }
 
     /// The one *store* region a type writes [PROV-1]: the same relation minus
@@ -1279,7 +1302,7 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
         if matches!(ty, CheckedType::Nominal(_)) {
             return self.with_nominal_type_region(ty, region, actual);
         }
-        Ok(Self::with_type_region(ty, region))
+        self.substitute_type_regions(ty, &[(formal, region)])
     }
 
     /// One formal type with every formal region already resolved.

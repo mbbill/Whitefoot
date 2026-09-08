@@ -594,6 +594,156 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// [FN-2] substitutes a callee's actual region through every result position,
+/// including a nominal stored as one flat element of a run and the
+/// compiler-owned result-list nominal around a multi-result return. The two
+/// types in the `replace_one` call must therefore name `compose`'s `'s`, even
+/// though the printed formal spelling is identical either way.
+#[test]
+fn call_results_substitute_regions_inside_flat_run_elements() {
+    let source = br#"struct Entry['s] {
+  payload: Box<'s, u64>;
+}
+
+fn build['s](first: own Box<'s, u64>, replacement: own Box<'s, u64>) -> (slots: own FixedVector<Option<Entry<'s>>, 1>, returned: own Box<'s, u64>) pure contract {
+  ensures len_of(slots) == 1_u64;
+} {
+  let entry = Entry(payload: move first);
+  let occupied = Some<Entry<'s>>(value: move entry);
+  let slots = fixed_vector::<Option<Entry<'s>>, 1>();
+  set slots = place_back(vector: move slots, value: move occupied);
+  return move slots, move replacement;
+}
+
+fn replace_one['s](slots: own FixedVector<Option<Entry<'s>>, 1>, replacement: own Entry<'s>) -> (updated: own FixedVector<Option<Entry<'s>>, 1>, previous: own Option<Entry<'s>>) reads(slots), writes(slots) contract {
+  requires 1_u64 <= len_of(slots);
+  ensures len_of(updated) == len_of(slots);
+} {
+  let occupied = Some<Entry<'s>>(value: move replacement);
+  let previous = replace slots[0_u64] = move occupied;
+  return move slots, move previous;
+}
+
+fn compose['s](first: own Box<'s, u64>, replacement: own Box<'s, u64>) -> (updated: own FixedVector<Option<Entry<'s>>, 1>, previous: own Option<Entry<'s>>) reads(first), writes(first) {
+  let (slots, returned) = build(first: move first, replacement: move replacement);
+  let entry = Entry(payload: move returned);
+  let (updated, previous) = replace_one(slots: move slots, replacement: move entry);
+  return move updated, move previous;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(_) = outcome else {
+            panic!("nested result-region substitution must check: {outcome:?}");
+        };
+    });
+}
+
+/// The same recursive position is an input position for [FORM-8], so its
+/// region is inferred from the argument and writing it at the call is the
+/// ordinary canonical-spelling rejection.
+#[test]
+fn nested_nominal_parameter_regions_are_inferred_at_calls() {
+    assert_rule_kind(
+        br#"struct Entry['s] {
+  payload: Box<'s, u64>;
+}
+
+fn pass['s](slots: own FixedVector<Option<Entry<'s>>, 1>) -> result: own FixedVector<Option<Entry<'s>>, 1> pure {
+  return move slots;
+}
+
+fn caller['s](slots: own FixedVector<Option<Entry<'s>>, 1>) -> result: own FixedVector<Option<Entry<'s>>, 1> pure {
+  return pass::<'s>(slots: move slots);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Form8,
+        |kind| matches!(kind, SemanticIssueKind::RegionSpelling { .. }),
+    );
+}
+
+/// Two distinct store regions survive the same nested result substitution in
+/// declaration order. [FORM-8] keeps both written at `pass` because its one
+/// nominal position carries two region arguments and therefore determines
+/// neither one.
+#[test]
+fn nested_results_preserve_two_distinct_region_arguments() {
+    let source = br#"struct Pair['left, 'right] {
+  left: Box<'left, u64>;
+  right: Box<'right, u64>;
+}
+
+fn build['left, 'right](left: own Box<'left, u64>, right: own Box<'right, u64>) -> slots: own FixedVector<Option<Pair<'left, 'right>>, 1> pure {
+  let pair = Pair(left: move left, right: move right);
+  let occupied = Some<Pair<'left, 'right>>(value: move pair);
+  let slots = fixed_vector::<Option<Pair<'left, 'right>>, 1>();
+  set slots = place_back(vector: move slots, value: move occupied);
+  return move slots;
+}
+
+fn pass['left, 'right](slots: own FixedVector<Option<Pair<'left, 'right>>, 1>) -> result: own FixedVector<Option<Pair<'left, 'right>>, 1> pure {
+  return move slots;
+}
+
+fn compose['left, 'right](left: own Box<'left, u64>, right: own Box<'right, u64>) -> slots: own FixedVector<Option<Pair<'left, 'right>>, 1> pure {
+  let slots = build(left: move left, right: move right);
+  return pass::<'left, 'right>(slots: move slots);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(_) = outcome else {
+            panic!("both nested result regions must retain their positions: {outcome:?}");
+        };
+    });
+}
+
+/// Swapping those explicit region arguments cannot turn one store's nested
+/// owner into the other's: exact [TYPE-5] identity rejects the handoff.
+#[test]
+fn nested_results_reject_crossed_region_handoffs() {
+    assert_rule_kind(
+        br#"struct Pair['left, 'right] {
+  left: Box<'left, u64>;
+  right: Box<'right, u64>;
+}
+
+fn build['left, 'right](left: own Box<'left, u64>, right: own Box<'right, u64>) -> slots: own FixedVector<Option<Pair<'left, 'right>>, 1> pure {
+  let pair = Pair(left: move left, right: move right);
+  let occupied = Some<Pair<'left, 'right>>(value: move pair);
+  let slots = fixed_vector::<Option<Pair<'left, 'right>>, 1>();
+  set slots = place_back(vector: move slots, value: move occupied);
+  return move slots;
+}
+
+fn pass['left, 'right](slots: own FixedVector<Option<Pair<'left, 'right>>, 1>) -> result: own FixedVector<Option<Pair<'left, 'right>>, 1> pure {
+  return move slots;
+}
+
+fn crossed['left, 'right](left: own Box<'left, u64>, right: own Box<'right, u64>) -> slots: own FixedVector<Option<Pair<'left, 'right>>, 1> pure {
+  let slots = build(left: move left, right: move right);
+  return pass::<'right, 'left>(slots: move slots);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Type5,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
+    );
+}
+
 #[test]
 fn source_nominal_argument_arity_and_kinds_are_exact() {
     assert_rule_kind(
