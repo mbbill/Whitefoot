@@ -322,7 +322,12 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // leaf normalizes a Winsock code onto the Win32 code that table already
 // carries for the same condition (`../windows_runtime.h`,
 // `wf__windows_error_from_socket`).
-const REVIEWED_FOR: &str = "v0.50";
+// v0.51 qualification review: only the specification header and META-6's
+// design-evidence index contract change. All other specification bytes match
+// the outgoing v0.50 archive, including system operations, representations,
+// release rows, entry forms, and host mappings. The qualified table therefore
+// carries forward unchanged; the version tripwire remains in force.
+const REVIEWED_FOR: &str = "v0.51";
 
 /// The number of [SYS-2] opaque resource types with a release row.
 ///

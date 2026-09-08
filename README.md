@@ -56,7 +56,7 @@ authority rules are in [AGENTS.md](AGENTS.md#authority-and-reading).
 - [compiler/](compiler/README.md): the Rust compiler, LLVM emission, and native
   runtime support.
 - [spec/](spec/): the active language, immutable version archives, and rule
-  derivation evidence.
+  [selection-ground index](spec/derivation/derivation-ledger.md#current-index).
 - [tests/](tests/): normative conformance evidence, recorded-verdict snapshots,
   executable programs, and code-generation evidence.
 - [docs/](docs/): principles, writer guidance, engineering practice, and

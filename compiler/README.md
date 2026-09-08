@@ -11,8 +11,9 @@ version and SHA-256 are derived from those bytes by `build.rs` on every build
 that touches them, and every other identity constant in the crate reads that
 generated module. The generated identity is not committed; amending the
 specification changes it in the same build. `whitefoot-spec` checks identity
-consistency, rule references and inventory, derivation-row coverage, and
-generated syntax identity. The root `make check` also checks that released
+consistency, rule references and inventory, unique current selection-ground
+coverage and field structure, and generated syntax identity. The root
+`make check` also checks that released
 specification archives have not changed. There is no approval-ledger chain.
 
 ## Compilation path

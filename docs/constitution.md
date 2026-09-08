@@ -2,171 +2,131 @@
 
 Whitefoot is a programming language designed as a harness for AI agents.
 
-The primary authors are AI agents; humans set objectives, approve changes,
-and judge whether the resulting software serves its intended purpose. The
-language supplies constraints and guidance within which agents construct
-programs, together with machine judgments on the obligations those programs
-must satisfy.
+AI agents are the intended primary authors. Humans set requirements and judge
+whether the resulting software serves its purpose. The language supplies
+constraints, guidance, and machine judgments within which agents construct,
+verify, and revise programs.
 
-Changing the author changes the design tradeoffs. Explicit proofs, detailed
-interfaces, restrictive representations, and verbose source may be worthwhile
-when they improve correctness or performance. Human ease of writing and
-familiarity are not independent objectives. Agents must still have enough
-information and effective feedback to complete the intended work; difficulty
-alone and an impossible or incoherent task are different problems.
+Changing the author changes the design space. Human ease of writing and
+familiarity need not govern it. More explicit source, restrictive forms, or
+harder proofs can be worthwhile when they serve the objectives below. Agents
+must still have enough information and effective feedback to complete the
+intended work. Difficulty and inability to express a required program are
+different costs.
 
-This premise opens a design space. High performance and machine-checked safety
-are Whitefoot's chosen objectives within it. They are not the only values an
-AI-oriented language could choose, and they do not uniquely determine a proof
-system, syntax, representation, or collaboration model. Concrete designs need
-technical reasons and evidence; uncertainty and viable alternatives remain
-part of an honest decision.
+This purpose does not uniquely determine Whitefoot's objectives or mechanisms.
+The objectives are choices about the systems we want to build. The principles
+guide decisions under stated conditions; their usefulness and the designs
+selected under them remain open to technical argument and experiment.
 
-## Objectives
+## Chosen objectives
 
-**P0 — Performance.** Aim for efficient systems programs by making important
-costs and correctness facts available when architecture and implementation
-are chosen. Restrictions and checked facts should enable good algorithms,
-representations, and generated code without writer-accessible escape hatches.
-Measure performance on defined workloads and distinguish algorithm,
-representation, lowering, and proof contributions. A fast program does not
-by itself establish that its proof mechanism caused the gain.
+**P1 — Effective agent authorship.** Agents should be able to construct,
+verify, maintain, and evolve useful systems programs. Adequate information,
+coherent rules, and effective feedback are necessary. A particular model's
+success or failure is evidence under its task and assistance conditions, not
+a permanent limit on what the language should permit.
 
-**R0 — The comparison with existing systems.** Assess the language and major
-competing design directions against effective existing approaches, including
-Rust, in performance, resistance to unchecked shortcuts (W3), and default
-implementation quality (W1). State the comparison boundary, expected benefit,
-and uncertainty. Reusing an existing mechanism can serve the whole design;
-every individual construct need not outperform its counterpart. Novelty alone
-has no value, and a local win does not establish an ecosystem-wide advantage.
+**P0 — Performance.** Aim for efficient systems programs. Important costs and
+correctness facts should be available when architecture and implementation
+are chosen, so that efficient algorithms, representations, and execution are
+practical outcomes of ordinary development.
 
-**P1 — Agent writability.** Agents must be able to construct, verify, and
-revise useful programs under the language's constraints. Local reasoning,
-composable interfaces, and actionable feedback serve this objective. Verbosity
-or difficulty for a human author is not evidence against it; failure by a
-particular model is evidence about that model, task, and available assistance.
-It can expose a language problem without proving one by itself.
+**T1 — Memory and execution safety (D1).** Accepted programs must exclude
+memory corruption, data races, uninitialized reads, silent overflow, and
+other unproved partial operations. Required safety is a constraint on a
+successful design, not a score that an unrelated performance gain can offset.
 
-- **W1 — Default performance and architectural guidance.** Restrictions,
-  interfaces, reusable components, diagnostics, and taught patterns should
-  steer ordinary writers toward efficient, verifiable implementation classes.
-  Prevent shortcuts that hide shared mutation or bypass required reasoning.
-  Each important restriction needs a usable alternative whose costs and
-  limitations are understood. Measure representative coverage, runtime cost,
-  repair effort, and architectural rework. A slow accepted program is a
-  finding to attribute; it is not automatically a language defect. W1 does
-  not promise global optimality or a catalog covering every possible program.
-- **W2 — Available information and local reasoning.** An agent should be able
-  to find the current rules and relevant interfaces without reconstructing
-  project history or unrelated implementations. Additional explicit source
-  can reduce uncertainty. Minimize conflicting instructions, hidden premises,
-  and unnecessary nonlocal knowledge; do not minimize tokens at their expense.
-  A context-window size or today's model cost does not set a permanent language
-  limit. Measure repair and coordination costs under stated conditions.
-- **W3 — No unchecked shortcuts.** Source has no writer-emittable `unsafe`,
-  trusted theorem, or runtime proof trap. A required fact must come from the
-  specification's machine judgments; human approval and writer confidence are
-  not proof. Calls rely on verified contracts or specification-fixed system
-  facts. Expected failures use typed outcomes or intended control flow.
-  The checker cannot recover an omitted requirement or prove an unstated
-  property. Weakening a required contract to rescue an implementation changes
-  the requirement; it is not a proof repair. Evidence about intended behavior
-  must remain independent of the implementation being judged.
-- **W4 — Composable responsibility.** Aim for interfaces that let an agent
-  implement a component and callers rely on its checked guarantees without
-  reconstructing each other's internals. Relevant obligations can include
-  behavior, ownership, effects, and resource relations; each guarantee has
-  the scope its contract and proof system actually express. Successful local
-  proofs alone do not establish adequate requirements, good system
-  architecture, or end-to-end performance. Separating architecture and
-  interface design from parallel component implementation is one collaboration
-  model to investigate, not the only organization this objective permits.
+**T2 — Defined behavior and an explicit trust boundary.** Accepted programs
+must have no undefined behavior within the declared guarantees. State the
+assumptions about the compiler, runtime, host, and foreign components on which
+those guarantees depend. A defect in their implementation does not amend the
+guarantee. The [language specification](../spec/kernel-spec.md) defines the
+exact judgments and trusted boundary.
+
+## Tradeoffs
+
+**Balance.** Preserve required safety and the ability to express the intended
+program. Within that boundary, prefer runtime performance over ease of source
+authorship when a real tradeoff remains. Extra writing, proof, and checking
+effort can be acceptable; it must still leave a feasible development process.
+Today's model cost or context window does not set a permanent language ceiling.
+
+**R5 — Human responsibilities.** Human authorship ergonomics is not an
+independent objective. Understanding requirements, reviewing observable
+behavior, and auditing the trusted boundary remain necessary human tasks.
+Clarity that serves those tasks or effective agent work has value.
 
 **Compatibility.** Backward compatibility has lower priority than improving
-the language. AI-assisted migration can make breaking changes affordable.
-Migration evidence must distinguish mechanical rewriting from changes to
-behavior or contracts; easy source edits do not establish semantic preservation.
+the language. When AI-assisted migration reduces the cost of change, breaking
+changes become more attractive. Mechanical rewriting does not establish that
+behavior or contracts were preserved; those obligations remain.
 
-## Safety and representation commitments
+## Conditional design principles
 
-These are chosen guarantees and design commitments. Their motivation does not
-constitute a proof that a compiler or runtime implements them. The
-[language specification](../spec/kernel-spec.md) defines their exact source
-judgments and trusted boundary.
+**W1 — Guide ordinary implementations toward good performance.** For the
+intended workload, use constraints and usable guidance to steer writers
+toward efficient implementation classes before expensive architectural
+rework is needed. An important restriction needs a viable route for the
+required programs. This objective promises neither global optimality nor a
+closed catalog covering every program.
 
-- **T1 — Memory and thread safety (D1).** Accepted programs must exclude data
-  races, use-after-free, dangling references, double-free, and uninitialized
-  reads. Ownership supports both this safety boundary and optimization facts.
-  Latent memory faults are unsuitable feedback for unattended authors.
-- **T2 — No undefined behavior.** The guarantee is conditional on the declared
-  trusted computing base. The specification's SCOPE-3 owns that boundary,
-  including external resource availability. An implementation defect does not
-  amend the guarantee.
-- **T3 — Defective executions do not tax correct programs.** Do not withhold
-  a proved optimization or overlap merely to reproduce the observables of a
-  compiler or trusted-base defect. Proof-required partial operations are
-  discharged before lowering and proofs are erased, so there is no source
-  proof-failure path to schedule or stabilize. This does not relax required
-  safety checks or the semantics of typed errors, intended branches, and
-  observable effects.
-- **T4 — Resource dependencies are API relations.** Finite resources consumed
-  by system operations must be represented by ownership and source-visible
-  capacity relations. A release that enables later acquisition must produce
-  a relation the checker can use. Overlap must not invent resource exhaustion
-  absent from the corresponding sequential execution and then hide it with
-  scheduler waits or retries. External changes to host availability belong to
-  the specification's explicit outcome or resource boundary. This principle
-  guides each resource API; concrete operation contracts live in the spec.
+**W2 — Make relevant information available.** When work is local, its rules
+and interfaces should be understandable without reconstructing unrelated
+implementations or project history. Reduce hidden premises and conflicting
+instructions. Extra explicit source can improve local reasoning; shorter
+text alone is not the objective.
 
-**D17 — Proof-gated representation authority.** The long-term direction is to
-admit representation privileges only when a deterministic machine checker
-verifies that the exact implementation establishes and preserves every
-required invariant. This includes temporary partial initialization without
-uninitialized reads and elimination of proved-redundant checks. Missing proof
-grants no privilege. A future unproved project primitive, if the specification
-admits one, remains in the declared trusted base. Extensions need hostile
-soundness evidence. This commitment selects no current syntax, universal
-predicate language, or trusted library exemption.
+**W3 — Make guarantees binding on the writer.** A writer must not be able to
+waive a required guarantee or turn an unproved obligation into accepted code
+through an unchecked escape. Required proof receives machine judgment, not
+trust in the author. A weaker requirement is a different task; successful
+checking cannot recover omitted requirements or certify an unstated property.
 
-## Design decisions
+**W4 — Support independently assigned work.** Where systems are developed
+through separate components, their interfaces should expose the obligations
+needed to implement and use them without reconstructing each other's
+internals. Local guarantees help only to the extent that those obligations
+express the intended behavior. This does not select one agent organization
+or establish whole-system correctness or performance from local proofs alone.
 
-**Balance.** Preserve required safety and proof obligations. Within that
-boundary, prefer runtime performance over ease of source authorship when a
-real tradeoff remains. Extra writing, proof, or checking effort can be
-acceptable, but its cost and the ability to complete intended programs must
-be assessed. Present-day model limitations inform experiments; they do not
-settle what a future agent can write.
+**R1 — Justify added mechanisms.** A construct must serve the chosen
+objectives. Familiarity, novelty, or ease of specification alone is
+insufficient. A useful existing mechanism needs no novelty to earn its place.
 
-- **R1 — Earn the construct.** A construct must serve P0 or P1. Familiarity or
-  human-writing comfort alone is not a reason to add it.
-- **R2 — Cuts must preserve useful authoring.** Simplicity alone does not
-  justify removing a capability. Test the replacement on the intended task,
-  including its proof effort and runtime cost.
-- **R3 — Select canonical forms by evidence.** Keep one chosen form per
-  construct and justify it against P0 and P1. A form chosen only for minimality
-  remains provisional. Regularity does not prove efficiency, and choosing one
-  form does not prove that every alternative is unsuitable.
-- **R4 — Move failures earlier.** Prefer making defects unrepresentable, then
-  rule-citing compile-time rejection with actionable diagnostics. A runtime
-  proof trap or hidden fallback cannot substitute for required static proof.
-  Recoverable failures remain ordinary program behavior.
-- **R5 — Make human exceptions explicit.** Human authorship ergonomics is not
-  an independent goal. Human judgment of requirements and behavior, and
-  auditability of the trusted base, remain necessary. Clear contracts,
-  representations, and diagnostics also serve AI correctness and local
-  reasoning under P1.
-- **R6 — Keep the stack open.** Self-hosting, alternative backends, hardware,
-  and surrounding software architecture are open to investigation. Self-hosting
-  tests language capability; proving checker or lowering correctness is a
-  separate task. A future use does not establish one necessary operating-system
-  shape, software layering, or reuse model. Avoid unnecessary dependence on a
-  particular ISA or surrounding stack.
-- **R7 — Separate grounds from conclusions.** Distinguish an objective, a
-  consequence under stated assumptions, a selected mechanism, and an observed
-  result. A rationale can justify trying a design without proving it uniquely
-  necessary. State relevant alternatives, uncertainty, and what evidence would
-  reopen the choice. Experiments determine what works under their conditions;
-  changed conditions can change the decision. A rejected design's actual
-  failure still needs an answer: improved authoring ability does not repair a
-  soundness counterexample. Preserve the intended problem when comparing
-  solutions, or make the changed requirement explicit.
+**R2 — Preserve capability when simplifying.** Reducing language or checker
+complexity is useful when the replacement still supports the intended
+programs, their safety obligations, and their performance needs. A smaller
+language that forces an unsuitable architecture has not achieved this goal.
+
+**R3 — Use regularity where it helps.** Prefer predictable forms when they
+reduce ambiguity, conflicting interpretations, or repair effort. Regularity
+alone does not establish efficient programs, adequate expressivity, or the
+superiority of one exact syntax or formatting convention.
+
+**R4 — Give useful feedback before execution.** Prefer making prohibited
+states unrepresentable, then rejecting them with actionable explanations.
+An executable fallback cannot substitute for required static proof. Expected
+input and environment failures remain intended program behavior.
+
+**T3 — Use established facts without charging for impossible failures.**
+When a fact is proved before execution, use it to remove unnecessary work or
+permit efficient execution. Preserving the observables of a defect outside
+the guarantee is not a reason to withhold a valid optimization. Intended
+errors, effects, and required safety remain part of the semantics.
+
+**T4 — Expose consequential resource relations.** When resource constraints
+affect safe composition or performance, make the relevant obligations
+available at the interfaces where decisions depend on them. Concrete capacity
+representations, release protocols, and scheduling policies are design
+choices whose costs and guarantees need separate grounds.
+
+**D17 — Justify representation privileges.** An implementation seeking a
+privilege on the strength of an invariant must establish and preserve that
+invariant for the exact representation. Missing proof grants no such
+privilege. The proof vocabulary and any remaining trusted implementation
+boundary require their own justification.
+
+**R6 — Keep surrounding architecture open.** Avoid unnecessary dependence
+on a particular instruction set or software stack. The intended author does
+not prescribe one operating-system shape, layering scheme, or reuse model.

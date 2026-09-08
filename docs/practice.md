@@ -22,14 +22,89 @@ compiler changes remain general and project-independent. Performance work is
 most useful when the loss is attributed with a same-source causal comparison
 and a falsifier.
 
-`mcts_mem/` can preserve durable design choices and rejected alternatives. It
-does not authorize work or add a workflow step.
+## Decision work
 
-Maintain the memory with the `mcts-mem-use` skill named in AGENTS.md. Walk from
-the root through the relevant subsystem and its rejected alternatives before
-changing a decision. The skill defines how to maintain nodes and evidence;
-the [completion checklist](review-checklist.md#m-decision-memory--changed-decisions-or-memory-nodes)
-collects the review checks, including lint and replacement endpoints.
+Use this method when choosing or reconsidering language behavior, a trust
+boundary, an interface or representation, an important performance claim,
+or a standing project rule. A routine fix under unchanged requirements and
+design normally needs the owning rule and a distinguishing case, without a
+new investigation or memory entry. Scale the reasoning to uncertainty and
+the cost of a wrong choice; these actions add no approval stage.
+
+| Trigger | Action by the implementing agent | Observable result | Completion check |
+|---|---|---|---|
+| Starting or resuming work | Identify the intended outcome, protected behavior, and affected rules or interfaces. For a nontrivial choice, walk the relevant memory branch and its alternatives using `mcts-mem-use`. Recover current state from actual files and the PR when resuming. | The eventual explanation uses current owners and accounts for relevant prior objections. No start-of-task log is required. | R1 |
+| Reaching a material choice | Separate required properties, preferences, facts, and assumptions. Compare real alternatives, including retaining the current choice when meaningful. State why the selection is appropriate and what could change it. | A short argument in the existing investigation, or in the PR for a small choice; settled reasons are retained in memory. No invented alternatives or compulsory new document. | R1 |
+| Using an experiment to choose | Before running a discriminating measurement, state the comparison, protected requirements, and result that would favor or refute the candidate. Record actual conditions and outcomes. Treat a question invented after seeing results as exploratory. | The relevant experiment or investigation contains the criterion and result; cases test the intended behavior independently. An inconclusive result leaves the choice provisional. | R2, C2, V2 |
+| Settling or changing a choice | Update its standing owner and the affected memory Items; append the actual evidence or replacement history with the skill. Update affected index rows in the same change. | Current guidance agrees with the result; the memory explains it and the index reaches that reason. Record a settled choice during long work, not just at its end. | R3, M1–M3 |
+| Changing an objective, premise, cited source, or rule; finding contrary evidence; meeting a recorded reopening condition | Use rule IDs, index references, and the reason's material dependencies to find affected choices. Reconsider whether each choice still stands, stands on a different ground, or needs replacement. Update the reason and its consumers. | Affected rows and standing guidance are corrected. An unresolved reason is marked `revisit` with the concrete question at its source; it is not silently carried as current support. | R3, R4, T1 |
+| Completing the task | Run applicable checks and the fast completion review; fix findings and publish the reviewed revision to the existing PR. | The existing compact PR report states the checked scope, results, and unresolved questions. | V1–V4 |
+
+The constitution supplies purpose, objectives, tradeoffs, and conditional
+principles. It does not supply a unique solution. The active specification
+defines the chosen language. MCTS-Mem owns concrete decisions and their
+reasons, evidence, and replacement history. The
+[rule-to-ground index](../spec/derivation/derivation-ledger.md#current-index)
+connects active rules to those reasons and their direct technical sources.
+This method governs their use; the checklist checks the resulting work.
+
+**R0 — Compare against useful alternatives.** Assess major design directions
+against effective existing approaches, including Rust where relevant. State
+the task, baseline, expected benefit, and uncertainty. Compare performance,
+resistance to unchecked shortcuts, and ordinary implementation quality where
+they bear on the question. A local win does not establish an ecosystem-wide
+advantage, and each reused construct need not separately outperform Rust.
+
+**R7 — Distinguish the grounds.** A conditional deduction names its premises
+and the conclusion they actually entail. Empirical support names what was
+observed and under which conditions. A provisional choice names its reason,
+uncertainty, and reopening condition. One decision can use all three. Explain
+which claim each supports; a measured instance or a constitutional citation
+does not prove a uniquely necessary mechanism or checker soundness.
+
+### Maintaining the rule index
+
+Keep one row per active rule in the existing ledger's current index. Its
+four columns are the rule ID, basis kinds, review state, and source links with
+their scope. Several rules can link to one shared decision. The linked reason
+owns the detailed argument, relevant constitutional aims, assumptions,
+alternatives, and reopening condition; the index is not a second decision
+record. Use `deduction`, `empirical`, or `provisional`, joined with `+` when
+needed. `current` means the ground has been assessed for the present question,
+not that the design is proved optimal or implemented correctly.
+
+During migration, use `unassessed` with `revisit` for legacy grounds that have
+not been reassessed. Preserve their actual source and open conditions; never
+translate `derived` or `derived_existence_only` mechanically into a claim of
+logical or empirical support. On the next material change to that rule or its
+reason, read the linked evidence, classify the supported claims, and replace
+the marker with an assessed ground or an explicit unresolved question. New
+rules need stated grounds; `unassessed` is not a shortcut for documenting a
+new choice. An ordinary implementation fix need not clear unrelated legacy
+markers.
+
+When a rule is added, amended, or retired, add, update, or remove its current
+row. Retain useful dated evidence and skill-managed history. When a reason
+changes or moves, check rows that cite it and the directly affected standing
+guidance; changing an index row alone cannot repair a false source. Follow
+actual premise dependencies rather than treating every related link as an
+implication. Explain the affected set in the existing PR or investigation,
+including any unresolved `revisit` entries. There is no calendar sweep or
+requirement to load every rule for every task.
+
+Run `make -C compiler spec` after index changes. It checks unique active-rule
+coverage, recognized basis/state fields, and a source reference in each row.
+It does not assess the truth or sufficiency of the reason. Check reference
+targets and meaning in the affected set at completion. After memory edits,
+run `npx mcts-mem lint` and follow the skill's provenance and history rules.
+Do not use an index status as a source acceptance rule or an extra approval
+condition; an unresolved safety objection still requires substantive resolution.
+
+Reconsider the method itself when a task exposes a missed dependency,
+unsupported conclusion, repeated owner correction, or upkeep that displaces
+useful compiler work. Repair the specific trigger, owner, or check that failed
+and record a changed decision in the workflow memory. This is also a material
+choice; adding more process without a demonstrated use is not the remedy.
 
 ## Documentation and local context
 

@@ -49,17 +49,17 @@ or self-description merely to satisfy this table.
 | Document | Content that serves its reader | Content that does not belong |
 |---|---|---|
 | Root README | Project introduction, getting started, navigation | Detailed compiler inventory, a second specification, task history |
-| `docs/constitution.md` | Objectives, design principles, tradeoffs, their meaning and technical rationale | Who requested an edit and when, agent conversations, implementation progress, maintenance instructions |
+| `docs/constitution.md` | Purpose, chosen objectives, tradeoffs, and conditional principles with their meaning and rationale | Who requested an edit and when, agent conversations, implementation progress, maintenance instructions, a selected mechanism asserted as an inevitable consequence of the purpose |
 | `spec/kernel-spec.md` | Normative syntax, semantics, judgments, boundaries and relevant examples | Compiler convenience presented as law, task status, editing history |
 | `compiler/README.md` | Running and checking the compiler, implementation map, supported surface and known limitations | New language rules, task diaries, duplicated investigation reports |
 | `docs/patterns.md` | Writer problems, usable forms, examples, applicability and costs | Additional acceptance rules, unsupported universal performance claims, project administration |
 | `AGENTS.md` / `CLAUDE.md` | Agent entry, project constraints, authority, workflow and pointers to detailed guidance | Research narration, a second detailed checklist or compiler inventory |
-| `docs/practice.md` / this checklist | Engineering methods / completion checks and document boundaries | Language semantics, task-specific outcomes, new owner approval requirements |
+| `docs/practice.md` / this checklist | Engineering methods and decision-update triggers / completion checks and document boundaries | Language semantics, task-specific outcomes, new owner approval requirements |
 | `research/`; `governance/spec-evolution/` | Questions, alternatives, designs, change proposals, reproducible experiments, results and limitations; the research README provides navigation | Task completion as technical evidence, a proposal presented as an implemented rule |
 | `docs/ideas.md`; `docs/bargain.md`, `docs/why-whitefoot.md` | Candidate mechanisms; explanatory essays and dated rationale respectively | A live work queue, invented present-day measurements, contributor process inserted into an essay |
 | `docs/roadmap.md` | Long-range reference directions | Required task sequencing, approval, an authoritative current capability inventory; routine work does not require updating it |
 | `docs/ongoing/` | Existing, bounded implementation notes for their named subsystem | A new per-task reporting system, a second project-wide status inventory |
-| `spec/derivation/` | Rule derivations, selection grounds, evidence qualifications and historical amendments | Silent language changes, unsupported promotion of derivation status, task authorization |
+| `spec/derivation/` | Current rule-to-ground index with classified support and review state; retained historical derivations | A second detailed decision record, silent language changes, historical status treated as current support, task authorization |
 | `mcts_mem/` | Current design choices, sourced evidence and actual rejected alternatives, in skill-defined form | Module inventories, implementation transcripts, task progress or tree-maintenance bookkeeping |
 | PR description | This change's problem, resulting behavior, selection grounds, validation and limitations | An obsolete description of an earlier diff, a new permanent source of project rules |
 
@@ -160,9 +160,8 @@ Source: [specification and test integrity](../AGENTS.md#specification-and-test-i
   the new declaration and title agree. The change declares the [META-5] delta
   (rules, tokens, spellings, exceptions) and evidence/minimality selection
   ground. Affected cases/verdicts, generated syntax, compiler and documentation
-  follow the amendment. For changed rules or constitutional premises, check
-  affected derivation grounds and flag re-grounding needs; an `existence-only`
-  row still has a premise and form-selection condition. For conformance changes,
+  follow the amendment. For changed rules or constitutional premises, apply
+  R3–R4 below. For conformance changes,
   the PR explains the normative expectation and how the changed evidence tests
   it. Do not require an unrelated full-ledger sweep. [META-5/6] are defined in the
   [active specification](../spec/kernel-spec.md#20-spec-meta-rules-ci-checked).
@@ -175,6 +174,44 @@ Source: [specification and test integrity](../AGENTS.md#specification-and-test-i
   machinery demonstrates that a representative wrong result or missing input
   is detected. Reusing established machinery needs no new mutation campaign.
   Active build/test/tool paths do not depend on `archive/`.
+
+## R. Decisions — changed choices, premises or relevant evidence
+
+Source: [decision practice](practice.md#decision-work). These are checks on
+observable artifacts, not a claim to know an agent's internal reasoning or
+a second design review. A routine fix under unchanged design can skip this
+group; absence of a new memory file does not establish that the group is
+inapplicable.
+
+- [ ] **R1 — Stated ground.** A material choice has a retrievable explanation
+  of its purpose, required properties, assumptions, alternatives actually
+  considered, selection reason, and remaining uncertainty. Relevant prior
+  objections are addressed. Distinguish deductions, observations, and
+  provisional choices; a constitutional citation alone does not select a
+  particular mechanism. Flag a substantive question for the implementing
+  agent rather than inventing a rationale.
+- [ ] **R2 — Discriminating evidence.** An experiment used to select a design
+  states what comparison could distinguish it, the conditions and protected
+  requirements, and the actual outcome. A claim of a prediction made before
+  measurement has an inspectable prior criterion; otherwise label the finding
+  exploratory or the timing unverified. A changed requirement, inconclusive
+  result, or trial on one model has not been reported as broader success.
+- [ ] **R3 — Consumed changes of reason.** For changed objectives, premises,
+  rules, cited sources, or evidence meeting a reopening condition, use the diff
+  and direct references to check the named affected set. The explanation says
+  which choices still stand, stand on different grounds, or need replacement.
+  Their current owners and memory agree. Remaining questions have a concrete
+  source and affected `revisit` rows; appending a Fact or marking the index
+  does not supersede contradictory standing guidance. Do not require an
+  unrelated project-wide sweep.
+- [ ] **R4 — Maintained index.** Added/changed/retired rules and changed or
+  moved grounds have corresponding current-index updates. Linked sources
+  resolve and support the stated scope, including relevant constitutional
+  aims and reopening conditions. The native spec check ran after index edits.
+  Historical rows or old `derived` labels have not been passed off as current
+  support. New choices have assessed grounds; unchanged legacy `unassessed`
+  rows may remain visible for gradual migration. Integrity success is not
+  proof that a cited argument is true.
 
 ## M. Decision memory — changed decisions or memory nodes
 

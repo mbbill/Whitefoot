@@ -56,8 +56,12 @@ probably not the next work.
   `compiler/README.md` owns the current implementation map and known gaps.
   Compiler behavior, tests, archived code, and design prose do not define the
   language.
-- `docs/constitution.md` owns objectives and language-design principles;
-  `docs/patterns.md` teaches writer forms without adding acceptance rules.
+- `docs/constitution.md` owns purpose, chosen objectives, tradeoffs, and
+  conditional language-design principles. The current index in
+  `spec/derivation/derivation-ledger.md` connects active rules to selection
+  grounds; its historical derivations are evidence, not current authority.
+  Concrete choices need their own grounds, not just a constitutional ancestor.
+  `docs/patterns.md` teaches writer forms without adding acceptance rules;
   `docs/practice.md` explains engineering and evidence techniques without
   adding approval or merge requirements. README is navigation, not a second
   specification or implementation inventory.
@@ -95,6 +99,13 @@ links mechanically where useful, and review meaning across the affected owners;
 a text search cannot establish logical consistency. Dated evidence retains its
 experimental conditions and is not rewritten as a current capability claim.
 The practical maintenance method is in `docs/practice.md`.
+
+Use [decision practice](docs/practice.md#decision-work) when reaching a material
+choice, settling it, or learning something that changes its grounds. It defines
+the triggers, affected-set procedure, and observable results for updating
+current guidance, memory, and the rule index. Routine fixes under unchanged
+design do not require a new decision record. These are actions within work;
+the completion review below remains the single review checkpoint.
 
 At the end of a repository-changing task, run the applicable checks in
 [the completion review checklist](docs/review-checklist.md) before reporting

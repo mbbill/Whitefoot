@@ -1,11 +1,13 @@
 # A decision workflow for sustained language research
 
-Research proposal, 2026-09-07. The question is how Whitefoot's owner and agents
+Design study and initial migration, 2026-09-07. The question is how Whitefoot's owner and agents
 can make grounded choices, revise them when conditions change, and keep the
-compiler moving without accumulating an unused process. This proposal does
-not activate workflow rules or amend language semantics. The current
-[agent instructions](../../../AGENTS.md) remain authoritative for branch work,
-completion review, and merging.
+compiler moving without accumulating an unused process. This study does
+not define standing workflow rules or language semantics. The selected trial
+method lives in [decision practice](../../../docs/practice.md#decision-work);
+[agent instructions](../../../AGENTS.md) own branch work and merging. The
+constitutional reassessment and initial index migration below implement the
+first application. They do not establish the method's long-term efficacy.
 
 The recommended direction is a small decision method used at actual choices
 and evidence changes, with the existing task-completion review as its review
@@ -55,7 +57,7 @@ The proposed improvement is to make the consumption and revision of reasons
 explicit at the point they can change work. More records alone would not
 address these failures.
 
-## Proposed working method
+## Working method considered
 
 The following are actions during ordinary work, not new approval stages. The
 amount of analysis depends on semantic impact, competing options, uncertainty,
@@ -113,7 +115,8 @@ its scope should follow that failure rather than a default calendar ritual.
 
 ## Roles of the reasoning artifacts
 
-These are proposed content responsibilities, not new documents or formats.
+These responsibilities motivated the selected allocation in the standing
+document map. They do not add another owner of current project rules.
 
 - **Constitution:** the founding purpose, explicit objectives and tradeoffs,
   and general principles with their necessary conditions. Audit each clause's
@@ -127,8 +130,8 @@ These are proposed content responsibilities, not new documents or formats.
   provisional selection. Link shared rationales rather than repeatedly
   asserting that each detail uniquely follows from the founding premise.
   Preserve historical amendments and audit the meaning of existing status
-  labels before changing them. META-6 and its gate remain in force until an
-  explicit coordinated amendment; no parallel replacement ledger is proposed.
+  labels before changing them. META-6 and its gate are amended together for
+  current-index coverage; the existing file also retains the old evidence.
 - **MCTS-Mem:** current decisions, sourced evidence, and actual rejected
   alternatives. Keep its skill-defined Items/Facts/Moves structure and
   provenance rules. Technical uncertainty and reopening conditions belong with
@@ -155,16 +158,108 @@ substantive safety claim is established.
 | Use the existing artifacts with explicit decision and reconsideration triggers | Reasons participate in work, and ordinary fixes stay inexpensive | Recommended for a trial. Its main unresolved risks are missed dependencies and reasoning that looks complete but is poorly supported. |
 | Build an automatic global dependency and consistency system first | Could eventually help detect stale dependent guidance | Meaning and dependency classification remain difficult; a large schema could become another artifact to maintain before improving compiler work. Reconsider tooling after observing retrieval or propagation failures. |
 
-These are compared proposals. No workflow replacement is recorded as an
-adopted MCTS-Mem move by this research document.
+The third alternative is selected for a trial, with the constitutional-chain
+aspect replaced by the index described below. The [decision-ground memory](../../../mcts_mem/whitefoot/development-workflow/decision-grounds.md)
+records that replacement; this comparison is its design source.
+
+## Constitutional reassessment
+
+The founding purpose changes the intended author. It supports investigating
+different tradeoffs; it does not prove which values to choose or which
+mechanism meets them. The following audit covers every clause in the preceding
+constitutional draft. The revised constitution states the resulting principles;
+this comparison retains the placement argument and uncertainty.
+
+| Clause | Ground and disposition | Boundary or open question |
+|---|---|---|
+| Founding purpose | Retain the language designed as a harness for AI agents as the starting premise. | It does not commit to a future OS, full software stack, or a single solution to every design question. |
+| P1 | Retain effective authorship as an objective necessary for the purpose to be useful. | Future feasibility needs investigation; present model scores do not set permanent language ceilings. |
+| P0 | Retain performance as an explicitly chosen systems-language objective. | AI authorship alone does not logically rank runtime speed above every other value. Attribution and baseline measurement belong in practice. |
+| T1, T2 | Retain chosen safety and defined-behavior guarantees, conditional on the explicit trust boundary. | Ownership and exact proof rules are mechanisms; a constitutional promise is not a compiler-correctness proof. T1 now names silent overflow and unproved partial operations explicitly. |
+| Balance, R5 | Retain the tradeoff against human writing comfort while preserving feasibility, safety, requirements review, and trust-boundary audit. | These responsibilities remain even when agents write all source. More effort is acceptable; inability to complete the intended work is not. |
+| Compatibility | Retain a conditional tradeoff: cheaper migration weakens the case for compatibility. | Source rewriting and semantic preservation have different evidence obligations. |
+| W1 | Retain a performance-guidance principle under the intended workloads. | Whether constraints improve ordinary implementations is an empirical question; no global optimum or complete catalog follows. |
+| W2, W4 | Retain information availability and independent component work as conditional ways to serve P1 at scale. | Adequate interfaces and actual collaboration need evidence. They select neither today's contract vocabulary nor one strong/weak-agent organization. |
+| W3 | Retain the writer's inability to waive required guarantees. | Verified contracts, system-fact sources, typed outcomes, and exact proof admission live in the specification. Omitted requirements remain possible. |
+| R1, R2 | Retain justified mechanisms and capability-preserving simplification. R1 now refers to all chosen objectives, including safety. | A useful inherited mechanism need not be novel; a simpler checker cannot be justified by silently weakening the task. |
+| R3 | Retain regularity as a conditional principle; remove the constitutional mandate for one exact form. | Exact canonical bytes and reject-versus-normalize remain selected language rules. Their alternative comparison remains open. |
+| R4 | Retain useful early feedback and the distinction between prohibited states and expected failure. | Exact diagnostic forms and proof judgments are language choices, not consequences of a preferred feedback timing alone. |
+| T3 | Retain the performance principle of using established facts without preserving observables outside the guarantee. | Erasure and exact overlap permissions are defined in SCOPE-2, DIAG-2, EFF, and PAR; their soundness requires separate argument. |
+| T4 | Retain consequential resource relations at relevant interfaces; remove the specific capacity/release/scheduler protocol from the constitution. | SYS and PAR define the current choices. Alternative resource representations can meet the same principle; their grounds remain to reassess. |
+| D17 | Retain the relationship between a claimed invariant and representation privilege. | The deterministic checker, proof vocabulary, partial-initialization representation, and trusted primitive boundary need separate selection and soundness grounds. |
+| R6 | Retain openness of the surrounding architecture. | Self-hosting and compiler proof are distinct research activities, not required constitutional stages. |
+| R0, R7 | Move comparison practice and classification of grounds to the engineering method, retaining their labels there. | They describe how a choice is investigated and explained, rather than adding another language objective. |
+
+### Surface and definition conventions
+
+FORM-1, FORM-2, and FORM-4 remain provisional selections. The retained
+[surface-form record](../../../mcts_mem/whitefoot/surface-form.md) identifies
+the byte-format and no-comment choices as minimality selections awaiting
+comparison. Their current rationale is regularity and predictable editing
+under P1/W2/R3, not necessity from the intended author, a measured advantage,
+or a fixed context limit. Canonicalization rather than rejection, and explicit
+comments rather than declaration-only documentation, remain live comparison
+questions. A representative writer/repair comparison or a repeated inability
+to preserve useful information would reopen the respective choice. The active
+rules remain unchanged while their grounds are provisional.
+
+META-4 retains a single definition site to make references and updates
+locatable under W2. Its old claim that this prevents logical contradictions
+is rejected: two different facts can contradict one another. This is a
+provisional maintainability choice; an observed inconsistency that survives
+the ownership rule or a clearer representation of shared constraints should
+reopen its sufficiency. D3 and R3 in the completion checklist provide a
+semantic check of affected owners, without claiming global consistency.
+
+These are reassessed reasons to retain conventions, not experiments that
+validate them or findings that other conventions fail.
+
+### Decision index
+
+META-6 now serves recoverable reasoning under the founding purpose and W2,
+with the separation of claims expressed by decision practice. The previous
+gate accepted any historical row carrying the ID; it could not distinguish
+an old constitutional chain from a present selection ground. The workflow
+memory also records a broader-source comparison that met an old provisional
+row's stated reopening condition without updating that row. These are reasons
+to connect current entries to decision and evidence triggers.
+
+The selected form is a four-column current table in the existing ledger:
+rule, basis kinds, review state, and scoped source references. Rule IDs are
+already stable; shared sources avoid copied rationales. The gate reads only
+this table and checks coverage and field structure. No separate ADR collection,
+dependency database, per-task ledger, or version counter is needed. The exact
+table shape is provisional, selected for low maintenance cost; checkable
+negative cases establish its integrity behavior, not its workflow efficacy.
+Reopen the choice if ordinary work repeatedly misses affected reasons, cannot
+retrieve them from the index, or spends more on updating records than the
+decision warrants.
+
+The initial migration provides a row for every active rule. Five convention
+and workflow rows have the scoped grounds above; the other 135 are explicitly
+`unassessed`/`revisit`, with retained evidence pointers. Those flags do not
+declare the rules unsound. They reject automatic conversion of old `derived`
+labels into current endorsement. The shared premise changes are the clause
+audit above: all legacy chains need that distinction checked when materially
+touched, including their original form-selection conditions. In particular,
+proof, contract, resource, and overlap mechanisms do not become deductions
+merely because a corresponding constitutional goal survives.
+
+The obsolete provisional register is removed from the active specification's
+header. It mixed selection history and an internal memory reference into the
+language definition, and still called match statement-only. Its original
+conditions remain in the outgoing specification archive and the retained
+derivation record. META-6 changes the evidence index contract, with no change
+to grammar, runtime semantics, or writer acceptance. The outgoing bytes are
+archived unchanged as part of the specification amendment.
 
 ## Trial and transition
 
-Start with the current constitutional reassessment. Classify all its clauses,
-identify missing premises and tensions, and assess their document roles before
-selecting individual language capabilities for further work. Use affected
-rule families to test whether the revised explanation reaches an actual design
-choice rather than stopping at a constitutional citation.
+The clause audit and five assessed rows above are the first application. They
+establish the migration's content and explicit limits, not that the method
+improves future decisions. Continue reassessing legacy grounds as their rules
+or material reasons are touched; do not require an unrelated full sweep to
+fix an ordinary compiler bug.
 
 Then try the method on a small set of real compiler decisions as they arise,
 including an ordinary fix that should not acquire research paperwork. Use
@@ -192,9 +287,9 @@ recover context, and analysis/record-maintenance effort relative to useful
 implementation work. Inspect examples behind counts. A small trial supports
 a local improvement claim, not a forecast of years of reliable operation.
 
-If the method helps, update the existing practice, entry instructions, and
-affected checklist items in place. Rebuild the constitutional and derivation
-grounds without inventing missing historical evidence. Preserve technical
+Use the selected practice and completion checks during those tasks. Change
+them in place when results justify doing so; do not invent missing historical
+evidence to complete the migration. Preserve technical
 records that remain informative; remove or merge this proposal when a
 successor fully carries its useful comparison and trial evidence. Additional
 automation earns its place by addressing observed recurring failures and

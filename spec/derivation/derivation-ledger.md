@@ -1,4 +1,190 @@
-# Derivation Ledger — kernel spec (living artifact)
+# Rule-to-ground index and historical derivations
+
+The [active specification](../kernel-spec.md) defines language behavior. The
+current index connects each active rule to its selection grounds; its basis
+and review state concern the explanation, not program acceptance. Shared
+reasons belong in decision memory or their direct technical source, with
+constitutional aims, assumptions, alternatives, and reopening conditions.
+
+Basis kinds are `deduction` (a conclusion under explicit premises),
+`empirical` (support under recorded experimental conditions), and
+`provisional` (a reasoned choice with unresolved comparison or uncertainty).
+Combine kinds with `+` only when the linked explanation distinguishes their
+claims. `current` means assessed grounds; `revisit` means a concrete issue
+remains to assess. Neither status proves the mechanism or compiler correct.
+
+The migration uses `unassessed` with `revisit` for inherited arguments whose
+current support has not been reassessed. A retained source is a retrieval
+starting point, not a certification that its historical vocabulary or
+`derived` label still applies. The
+[constitutional reassessment](../../research/investigations/decision-workflow/DESIGN.md#constitutional-reassessment)
+identifies the shared changes of premise; the five assessed convention and
+workflow rows below have narrower, explicit grounds. Other rows retain their
+open obligations for reassessment when their rule or material reason changes.
+No historical status is automatically promoted into a new basis kind.
+
+[Decision practice](../../docs/practice.md#maintaining-the-rule-index) owns
+update triggers and the procedure. [Completion review](../../docs/review-checklist.md#r-decisions--changed-choices-premises-or-relevant-evidence)
+checks the affected set. The native specification gate checks only this
+current table's unique active-rule coverage, field vocabulary, and presence
+of source references. Historical rows cannot satisfy that check.
+
+## Current index
+
+| Rule | Basis | Review | Grounds and scope |
+|---|---|---|---|
+| SCOPE-1 | unassessed | revisit | [Retained record](#ledger) |
+| SCOPE-2 | unassessed | revisit | [Retained record](#v021-amendment--obligation-discharge-batch-1-2026-08-07-candidate-stage) |
+| SCOPE-3 | unassessed | revisit | [Retained record](#v035-candidate-amendment--permitted-execution-overlap-2026-08-23) |
+| FORM-1 | provisional | current | [Surface and definition conventions](../../research/investigations/decision-workflow/DESIGN.md#surface-and-definition-conventions); regularity is a reason to try the convention, not evidence of a unique or optimal form. |
+| FORM-2 | provisional | current | [Surface and definition conventions](../../research/investigations/decision-workflow/DESIGN.md#surface-and-definition-conventions); regularity is a reason to try the convention, not evidence of a unique or optimal form. |
+| FORM-3 | unassessed | revisit | [Retained record](#ledger) |
+| FORM-4 | provisional | current | [Surface and definition conventions](../../research/investigations/decision-workflow/DESIGN.md#surface-and-definition-conventions); regularity is a reason to try the convention, not evidence of a unique or optimal form. |
+| FORM-5 | unassessed | revisit | [Retained record](#ledger) |
+| FORM-6 | unassessed | revisit | [Retained record](#ledger) |
+| FORM-7 | unassessed | revisit | [Retained record](#ledger) |
+| FORM-8 | unassessed | revisit | [Retained record](#v042-amendment--form-8-canonical-region-spelling-activated-2026-09-03) |
+| LEX-1 | unassessed | revisit | [Retained record](#ledger) |
+| GRAM-1 | unassessed | revisit | [Retained record](#v023-amendment--floor-5-spelling-relief-activated-2026-08-09) |
+| GRAM-2 | unassessed | revisit | [Retained record](#v029-amendment--opt-in-strict-no-claim-partition-activated-2026-08-15) |
+| GRAM-3 | unassessed | revisit | [Retained record](#ledger) |
+| GRAM-4 | unassessed | revisit | [Retained record](#v048-amendment--a-use-cites-one-premise-activated-2026-09-05) |
+| GRAM-5 | unassessed | revisit | [Retained record](#ledger) |
+| GRAM-6 | unassessed | revisit | [Retained record](#ledger) |
+| GRAM-7 | unassessed | revisit | [Retained record](#ledger) |
+| GIVE-1 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
+| GRAM-8 | unassessed | revisit | [Retained record](#ledger) |
+| GRAM-9 | unassessed | revisit | [Retained record](#ledger) |
+| GRAM-10 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
+| GRAM-11 | unassessed | revisit | [Retained record](#ledger) |
+| TYPE-1 | unassessed | revisit | [Retained record](#ledger) |
+| TYPE-2 | unassessed | revisit | [Retained record](#ledger) |
+| TYPE-3 | unassessed | revisit | [Retained record](#ledger) |
+| TYPE-4 | unassessed | revisit | [Retained record](#ledger) |
+| TYPE-5 | unassessed | revisit | [Retained record](#ledger) |
+| TYPE-6 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
+| TYPE-7 | unassessed | revisit | [Retained record](#ledger) |
+| SET-1 | unassessed | revisit | [Retained record](#ledger) |
+| SET-2 | unassessed | revisit | [Retained record](#ledger) |
+| CONST-1 | unassessed | revisit | [Retained record](#ledger) |
+| CONST-2 | unassessed | revisit | [Retained record](#ledger) |
+| OWN-1 | unassessed | revisit | [Retained record](#ledger) |
+| OWN-2 | unassessed | revisit | [Retained record](#ledger) |
+| OWN-3 | unassessed | revisit | [Retained record](#v043-amendment--loop-body-regions-and-the-ent-6-join-repair-activated-2026-09-04) |
+| OWN-4 | unassessed | revisit | [Retained record](#ledger) |
+| OWN-5 | unassessed | revisit | [Retained record](#ledger) |
+| OWN-6 | unassessed | revisit | [Retained record](#ledger) |
+| OWN-7 | unassessed | revisit | [Retained record](#ledger) |
+| OWN-8 | unassessed | revisit | [Retained record](#ledger) |
+| OWN-9 | unassessed | revisit | [Retained record](#ledger) |
+| OWN-10 | unassessed | revisit | [Retained record](#ledger) |
+| OWN-11 | unassessed | revisit | [Retained record](#ledger) |
+| OWN-12 | unassessed | revisit | [Retained record](#ledger) |
+| OWN-13 | unassessed | revisit | [Retained record](#ledger) |
+| OWN-14 | unassessed | revisit | [Retained record](#ledger) |
+| STOR-1 | unassessed | revisit | [Retained record](#ledger) |
+| STOR-2 | unassessed | revisit | [Retained record](#ledger) |
+| STOR-3 | unassessed | revisit | [Retained record](#v010-and-v011-amendments--resolver-and-semantic-closure-2026-07-22) |
+| STOR-4 | unassessed | revisit | [Retained record](#ledger) |
+| STOR-5 | unassessed | revisit | [Retained record](#ledger) |
+| STOR-6 | unassessed | revisit | [Retained record](#ledger) |
+| OP-1 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
+| OP-2 | unassessed | revisit | [Retained record](#v049-amendment--fold-by-the-declaration-not-by-the-expansion-activated-2026-09-05) |
+| OP-3 | unassessed | revisit | [Retained record](#ledger) |
+| OP-4 | unassessed | revisit | [Retained record](#v029-amendment--opt-in-strict-no-claim-partition-activated-2026-08-15) |
+| OP-5 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
+| OP-6 | unassessed | revisit | [Retained record](#ledger) |
+| OP-7 | unassessed | revisit | [Retained record](#ledger) |
+| OP-8 | unassessed | revisit | [Retained record](#ledger) |
+| OP-9 | unassessed | revisit | [Retained record](#ledger) |
+| FN-1 | unassessed | revisit | [Retained record](#v029-amendment--opt-in-strict-no-claim-partition-activated-2026-08-15) |
+| FN-2 | unassessed | revisit | [Retained record](#ledger) |
+| FN-3 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
+| FN-4 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
+| FN-5 | unassessed | revisit | [Retained record](#ledger) |
+| FN-6 | unassessed | revisit | [Retained record](#ledger) |
+| FN-7 | unassessed | revisit | [Retained record](#v029-amendment--opt-in-strict-no-claim-partition-activated-2026-08-15) |
+| FN-8 | unassessed | revisit | [Retained record](#v046-amendment--a-stated-relation-and-the-atom-that-discharges-it-activated-2026-09-05) |
+| FN-9 | unassessed | revisit | [Retained record](#v029-amendment--opt-in-strict-no-claim-partition-activated-2026-08-15) |
+| MSR-5 | unassessed | revisit | [Retained record](#v044-amendment--the-fact-machinery-activated-2026-09-04) |
+| CALL-4 | unassessed | revisit | [Retained record](#v044-amendment--the-fact-machinery-activated-2026-09-04) |
+| EFF-1 | unassessed | revisit | [Retained record](#ledger) |
+| EFF-2 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
+| EFF-3 | unassessed | revisit | [Retained record](#ledger) |
+| EFF-4 | unassessed | revisit | [Retained record](#v010-and-v011-amendments--resolver-and-semantic-closure-2026-07-22) |
+| EFF-5 | unassessed | revisit | [Retained record](#ledger) |
+| ERR-1 | unassessed | revisit | [Retained record](#ledger) |
+| ERR-2 | unassessed | revisit | [Retained record](#ledger) |
+| ERR-3 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
+| ERR-4 | unassessed | revisit | [Retained record](#ledger) |
+| PROG-1 | unassessed | revisit | [Retained record](#ledger) |
+| PROG-2 | unassessed | revisit | [Retained record](#v09-amendment--canonical-frontend-entrance-closure-2026-07-21) |
+| PROG-3 | unassessed | revisit | [Retained record](#v029-amendment--opt-in-strict-no-claim-partition-activated-2026-08-15) |
+| DIAG-1 | unassessed | revisit | [Retained record](#v029-amendment--opt-in-strict-no-claim-partition-activated-2026-08-15) |
+| DIAG-2 | unassessed | revisit | [Retained record](#v029-amendment--opt-in-strict-no-claim-partition-activated-2026-08-15) |
+| CAP-1 | unassessed | revisit | [Retained record](#ledger) |
+| PAR-1 | unassessed | revisit | [Retained record](#v035-candidate-amendment--permitted-execution-overlap-2026-08-23) |
+| PAR-2 | unassessed | revisit | [Retained record](#ledger) |
+| PAR-3 | unassessed | revisit | [Retained record](#ledger) |
+| GATE-1 | unassessed | revisit | [Retained record](#ledger) |
+| LEDGER-1 | unassessed | revisit | [Retained record](#ledger) |
+| GATE-2 | unassessed | revisit | [Retained record](#ledger) |
+| PRE-1 | unassessed | revisit | [Retained record](#ledger) |
+| SYS-1 | unassessed | revisit | [Retained record](#ledger) |
+| SYS-2 | unassessed | revisit | [Retained record](#ledger) |
+| SYS-3 | unassessed | revisit | [Retained record](#ledger) |
+| HOST-1 | unassessed | revisit | [Retained record](#ledger) |
+| HOST-2 | unassessed | revisit | [Retained record](#ledger) |
+| HOST-3 | unassessed | revisit | [Retained record](#ledger) |
+| PATH-1 | unassessed | revisit | [Retained record](#ledger) |
+| PATH-2 | unassessed | revisit | [Retained record](#ledger) |
+| QUAL-1 | unassessed | revisit | [Retained record](#v021-amendment--obligation-discharge-batch-1-2026-08-07-candidate-stage) |
+| QUAL-2 | unassessed | revisit | [Retained record](#ledger) |
+| QUAL-3 | unassessed | revisit | [Retained record](#ledger) |
+| SYS-4 | unassessed | revisit | [Retained record](#ledger) |
+| SYS-5 | unassessed | revisit | [Retained record](#ledger) |
+| SYS-6 | unassessed | revisit | [Retained record](#ledger) |
+| SYS-7 | unassessed | revisit | [Retained record](#ledger) |
+| SYS-8 | unassessed | revisit | [Retained record](#ledger) |
+| SYS-9 | unassessed | revisit | [Retained record](#ledger) |
+| SYS-10 | unassessed | revisit | [Retained record](#ledger) |
+| SYS-11 | unassessed | revisit | [Retained record](#ledger) |
+| SYS-12 | unassessed | revisit | [Retained record](#ledger) |
+| SYS-13 | unassessed | revisit | [Retained record](#ledger) |
+| SYS-14 | unassessed | revisit | [Retained record](#ledger) |
+| SYS-15 | unassessed | revisit | [Retained record](#v050-amendment-second-half--streams-and-tcp) |
+| SYS-16 | unassessed | revisit | [Retained record](#v050-amendment-second-half--streams-and-tcp) |
+| SYS-17 | unassessed | revisit | [Retained record](#v050-amendment-second-half--streams-and-tcp) |
+| SYS-18 | unassessed | revisit | [Retained record](#v050-amendment-second-half--streams-and-tcp) |
+| ENT-1 | unassessed | revisit | [Retained record](#v048-amendment--a-use-cites-one-premise-activated-2026-09-05) |
+| ENT-2 | unassessed | revisit | [Retained record](#v047-amendment--the-named-const-is-the-number-it-names-activated-2026-09-05) |
+| MSR-3 | unassessed | revisit | [Retained record](#v044-amendment--the-fact-machinery-activated-2026-09-04) |
+| ENT-3 | unassessed | revisit | [Retained record](#v046-amendment--a-stated-relation-and-the-atom-that-discharges-it-activated-2026-09-05) |
+| CALL-6 | unassessed | revisit | [Retained record](#v044-amendment--the-fact-machinery-activated-2026-09-04) |
+| ENT-4 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
+| ENT-5 | unassessed | revisit | [Retained record](#v046-amendment--a-stated-relation-and-the-atom-that-discharges-it-activated-2026-09-05) |
+| ENT-6 | unassessed | revisit | [Retained record](#v046-amendment--a-stated-relation-and-the-atom-that-discharges-it-activated-2026-09-05) |
+| INV-1 | unassessed | revisit | [Retained record](#v047-amendment--the-named-const-is-the-number-it-names-activated-2026-09-05) |
+| PRF-1 | unassessed | revisit | [Retained record](#v049-amendment--fold-by-the-declaration-not-by-the-expansion-activated-2026-09-05) |
+| EX-1 | unassessed | revisit | [Retained record](#ledger) |
+| META-1 | unassessed | revisit | [Retained record](#ledger) |
+| META-2 | unassessed | revisit | [Retained record](#ledger) |
+| META-3 | unassessed | revisit | [Retained record](#ledger) |
+| META-4 | provisional | current | [Surface and definition conventions](../../research/investigations/decision-workflow/DESIGN.md#surface-and-definition-conventions); regularity is a reason to try the convention, not evidence of a unique or optimal form. |
+| META-5 | unassessed | revisit | [Retained record](#ledger) |
+| META-6 | provisional | current | [Decision index](../../research/investigations/decision-workflow/DESIGN.md#decision-index); the selected workflow addresses observed traceability failures, with efficacy still to test. |
+
+## Historical evidence
+
+The following record is retained from the derivation system through the
+2026-09-07 clarification preceding this index migration. Its wording, status
+counts, and per-version claims describe that record's conditions. In
+particular, references to the then-current constitution, required ratification,
+or a logically derived mechanism do not define today's reasons or workflow.
+Old form-selection questions remain evidence to assess, not empty rows to skip.
+The current table above is the only maintained rule inventory in this file.
+
+## Legacy derivation record
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through

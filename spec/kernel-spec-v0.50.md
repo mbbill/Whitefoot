@@ -1,9 +1,11 @@
-# Kernel Specification v0.51
+# Kernel Specification v0.50
 
-Status: ACTIVE v0.51
+Status: ACTIVE v0.50
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives. These bytes are this version's identity; nothing else records it.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
+
+R3-PROVISIONAL REGISTER (constitution audit 2026-07-05; these forms were minimality-selected, not evidence-selected, and require validation before ratification; their derivation status and open evidence are recorded in `spec/derivation/derivation-ledger.md` and relevant live `mcts_mem/` decisions): ordinary loop form (GRAM-4/6; the counted `for_stmt` is evidence-selected in v0.25 and is not this register item), statement-only match (GRAM-7), boundary annotation surface (TYPE-5), no-shadowing (TYPE-6), env-struct closures replacement (FN-5), contracts/conform as interfaces replacement (FN-3 — round-2 verdict still needs_evidence), byte-format choices and reject-vs-canonicalize (FORM-1/2), forced region elision (FORM-8), no-comments (FORM-4), decimal-only literals (FORM-5), checker completeness levers (OWN-3/8/11 — rejection-rate unmeasured), and deref prefix places (GRAM-5).
 
 ## 1. Scope and conformance
 
@@ -3545,7 +3547,5 @@ Its unique machine-checked content is that no rule ID is defined twice and every
 This document states the language and carries no commentary about its own versions: no delta declaration, no description of what a version changed, and no selection ground appear in these bytes, and a version's own such text is not retained here after it activates.
 `CLAUDE.md` defines the repository's four branch-and-main rules: work-branch changes need no approval, while merging into `main` requires owner approval of the exact tested revision and the records those rules require.
 DEFERRED markers are tracked specification-delta obligations and do not create another approval point.
-[META-6] Every active rule has exactly one entry in the current index at `spec/derivation/derivation-ledger.md`, linking to its selection grounds.
-Grounds distinguish conditional deductions, empirical support, and provisional choices; unassessed legacy grounds and reasons requiring reconsideration are explicitly marked.
-The native `whitefoot-spec` gate checks unique active-rule coverage, recognized basis and review fields, and the presence of source references in that current index.
-Index classifications describe design evidence; they do not define writer acceptance or prove the cited arguments.
+[META-6] Every rule carries an entry in `spec/derivation/derivation-ledger.md` tracing it to `docs/constitution.md`; a rule whose chain is refuted or orphaned (evidence card dies, constitutional premise amended) is flagged for re-grounding, and underived rules may not ratify.
+The native `whitefoot-spec` gate checks that every active rule ID has a ledger row.
