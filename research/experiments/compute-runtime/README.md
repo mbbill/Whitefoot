@@ -2320,19 +2320,19 @@ verbose task-clock attribute probe before timing. A command may be a wrapper;
 the CI job selects the installed tool directly. The Linux compute job records its attempt
 to permit process counters on the ephemeral hosted runner. It runs this panel
 after the original short-call calibration on the same recorded CPU mask.
-Five alternating whole-cell orders cover fourteen forms, worker requests1/4 and
-four heavy inputs:560 plain processes, plus560 perf processes if at least one
+Five alternating whole-cell orders cover sixteen forms, worker requests1/4 and
+four heavy inputs:640 plain processes, plus640 perf processes if at least one
 event is available. Each uses4,096 repetitions by default; `ROUNDS` and
 `REPEATS` can select an explicitly recorded different panel. The forms are C
 native, generated WF sequential/leaf/refusal and frontier/its sequential clone,
 C++ sequential, native WF value
 depth8, Parlay-left depth4/8, oneTBB depth8, Rust sequential and both Rayon
-directions at depth8. This is not a general grain
+directions at depths4/8. This is not a general grain
 search. There is no added queue-occupancy cap here; the preceding queue-limit4
 candidate is a different experiment. Normal owner-slot capacity still applies.
 
-`check-quadrature` additionally invokes `quadrature-batch.sh check`. Its220
-successful batch executions check2,420 outputs:208 ordinary/sanitized cells,
+`check-quadrature` additionally invokes `quadrature-batch.sh check`. Its252
+successful batch executions check2,772 outputs:240 ordinary/sanitized cells,
 ten input-selector cells and two FIFO protocol encodings. It checks the
 documented acknowledgement line and perf versions that append a NUL. Five
 negative probes cover wrong repeat identity, unpaired control descriptors,
@@ -2748,8 +2748,8 @@ actual exit status. Address-instrumented Linux x86_64 runs use the existing
 exact pinned caller-worker lifecycle grammar with the quadrature initializer;
 other instrumentation profiles require clean status/stderr. No leak detector
 is disabled and no arbitrary allocation is tolerated. Old records grammar
-replays remain unchanged. The new Linux quadrature stack shape is pending
-actual CI evidence; a mismatch must fail, not expand an allowance silently.
+replays remain unchanged. The first actual Linux quadrature report is described
+below; configurations beyond that report still require CI qualification.
 
 Rust uses O3 with loop/SLP vectorization and LTO disabled; the Linux v3 panel
 also requests Rust x86-64-v3. Rust/Rayon are not ASan/UBSan-instrumented even
@@ -2824,6 +2824,58 @@ Earlier cohorts are not pooled. Kernel timing parity removes the previous
 large confound but does not isolate scheduler cost or qualify a globally
 strongest reference; closure representation, recursion, pool entry and runtime
 policy all remain in the measured end-to-end time.
+
+### Rayon grain replication and Linux lifecycle boundary
+
+The maintained sustained panel adds both Rayon directions at depth4 alongside
+depth8, following the short-call grain screen. The same scalar ordinary image
+`602c2dc9909a404d89337a0eb7416cbcf2c678720678ce3aafccbd248b083012`
+then measures640 plain processes/2,626,560 checked outputs on M1. The new
+batch driver passes252 qualifiers/2,772 outputs;214 full qualifiers/4,280
+outputs from the unchanged build are retained and replayed. All80 manifest
+paths pass. The20 build source snapshots match `dd3f3a83`; the result driver
+has SHA256 `5d69313146a5a09b0cecf8a29a214e8b1d7a6fc793bec65d949e1323e664125b`
+and records the additional depth4 cells. The retained memory reader precedes
+the following Linux fix; that qualification-only reader is not on the plain
+timed path. No source snapshot is rewritten to claim an all-current build.
+
+| Input | Rayon4/Rayon8 wall | Rayon4/Rayon8 CPU | Rayon-left4/Rayon-left8 wall | Rayon-left4/Rayon-left8 CPU |
+| --- | ---: | ---: | ---: | ---: |
+| Center peak |1.122|0.981|1.149|0.988|
+| Left peak |1.503|1.182|2.307|1.483|
+| Right peak |2.447|1.520|1.458|1.170|
+| Depth cap |0.925|0.908|0.847|0.871|
+
+These are W4 same-pass ratio medians, including total process rusage CPU.
+Depth4 improves cap in all five wall/CPU pairs for both directions, but loses
+every pair on both skewed inputs. Center wall loses four pairs for each
+direction despite mixed CPU results. At W1, depth4 improves every input in
+all five wall/CPU pairs: wall ratios range0.885-0.970 for right-offer and
+0.878-0.966 for left-offer. This supports a grain tradeoff, not a per-fork
+cost estimate or a selected optimal policy.
+
+WF-frontier/Rayon-left4 cap wall is0.994 with only three lower pairs and
+maximum1.149; CPU0.952 has four. Against Rayon4 cap wall0.931 wins four
+pairs, maximum1.131. Parlay-left4 cap still gives adverse WF wall1.014 with
+two lower pairs, and native WF8 right wall1.016 has two. Rust/C++ sequential
+W1 wall ratios remain0.998/1.000/0.984/1.005; requested-W4 ratios are
+1.007/1.004/1.004/0.996. Sequential forms have no pool. M1 placement and
+frequency remain uncontrolled; no prior cohort is pooled or normalized away.
+
+The [dd3f3a83 Linux quadrature job](https://github.com/mbbill/Whitefoot/actions/runs/34266355640/job/102196609312)
+fails qualification before timing at its first address-instrumented Rayon
+report (W1/depth0). Artifact10072050405 retains the original stderr and
+functional stdout. The latter passes the20-output oracle; stderr has exactly
+the known384-byte worker and1,520-byte queue allocations, seven/five frames,
+1,904 bytes total. This build keeps `ThreadPool::build` out of line and
+inlines the futex call: initialization frames are build/force/initialize,
+where the records image has force/futex/initialize. The old reader rejects
+that identity; the corrected quadrature-only path accepts the exact observed
+sequence and keeps the original records path. All14 retained records reports
+still pass. Wrong identities, allocations, owners, statuses and extra reports
+reject in replay; two maintained Linux address-profile negatives mutate the
+actual captured pool identity and allocation size. This is no Linux timing
+result and does not yet qualify unseen depths, widths or directions.
 
 ## Scalar scheduler comparison
 

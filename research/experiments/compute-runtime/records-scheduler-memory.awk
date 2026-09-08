@@ -27,6 +27,18 @@ function pool_frame(text, name, rest) {
     rest=substr(text,length(name)+2);
     if (rest !~ /^wf_records_rayon\.[0-9a-f]+-cgu\.[0-9]+$/) fail("pool compilation unit");
 }
+function initialization_frames(first) {
+    if (pool_owner=="quadrature") {
+        # The retained dd3f3a83 Linux quadrature report keeps ThreadPool::build
+        # out of line and inlines Once::call's futex frame. Records does not.
+        pool_frame(frame(stack[first],first),"<rayon_core::thread_pool::ThreadPool>::build::<rayon_core::registry::DefaultSpawn>");
+        pool_frame(frame(stack[first+1],first+1),force);
+    } else {
+        pool_frame(frame(stack[first],first),force);
+        rust_frame(frame(stack[first+1],first+1),"<std::sys::sync::once::futex::Once>::call","sys/sync/once/futex\\.rs");
+    }
+    pool_frame(frame(stack[first+2],first+2),initialize);
+}
 function allocation(    i,text) {
     if (kind=="worker") {
         if (workers++ || n!=7) fail("caller worker allocation count");
@@ -34,16 +46,12 @@ function allocation(    i,text) {
         rust_frame(frame(stack[1],1),"std::sys::alloc::unix::aligned_malloc","sys/alloc/unix\\.rs");
         rust_frame(frame(stack[2],2),"<std::alloc::System as core::alloc::global::GlobalAlloc>::alloc","sys/alloc/unix\\.rs");
         rust_frame(frame(stack[3],3),"__rustc::__rdl_alloc","alloc\\.rs");
-        pool_frame(frame(stack[4],4),force);
-        rust_frame(frame(stack[5],5),"<std::sys::sync::once::futex::Once>::call","sys/sync/once/futex\\.rs");
-        pool_frame(frame(stack[6],6),initialize);
+        initialization_frames(4);
     } else if (kind=="queue") {
         if (queues++ || n!=5 || workers!=1) fail("caller queue allocation count/order");
         object_frame(frame(stack[0],0),"calloc");
         object_frame(frame(stack[1],1),"<crossbeam_deque::deque::Block<rayon_core::job::JobRef>>::new");
-        pool_frame(frame(stack[2],2),force);
-        rust_frame(frame(stack[3],3),"<std::sys::sync::once::futex::Once>::call","sys/sync/once/futex\\.rs");
-        pool_frame(frame(stack[4],4),initialize);
+        initialization_frames(2);
     } else if (kind=="extra") {
         # This branch belongs only to the explicit injected-leak negative
         # control. Its previously unseen caller stack is not a normal allowance.

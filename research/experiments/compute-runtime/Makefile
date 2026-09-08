@@ -189,6 +189,20 @@ check-quadrature: quadrature-build
 	@if sh quadrature-memory.sh clean "$(OUT)/quadrature/negative-diagnostic.stderr" 0 native 0 > "$(OUT)/quadrature/negative-diagnostic.log" 2>&1; then \
 		echo 'quadrature accepted unexpected diagnostic' >&2; exit 1; \
 	fi
+	@set -e; if test "$$(uname -s)/$$(uname -m)/$(if $(findstring address,$(SANITIZER)),address,clean)" = Linux/x86_64/address; then \
+		good="$(OUT)/quadrature/check-sanitized-w1-rayon-d0.tsv.stderr"; \
+		for mutation in pool-identity allocation; do \
+			bad="$(OUT)/quadrature/negative-rayon-$$mutation.stderr"; \
+			case $$mutation in \
+				pool-identity) sed 's/ThreadPool>::build/ThreadPool>::unexpected/' "$$good" > "$$bad"; reason='pool initialization identity';; \
+				allocation) sed 's/Direct leak of 384 byte/Direct leak of 385 byte/' "$$good" > "$$bad"; reason='unknown allocation or summary';; \
+			esac; \
+			if sh quadrature-memory.sh address "$$bad" 23 rayon 1 > "$$bad.log" 2>&1; then \
+				echo "quadrature accepted wrong Rayon $$mutation" >&2; exit 1; \
+			fi; \
+			grep -Fx "scheduler sanitizer report rejected: $$reason" "$$bad.log"; \
+		done; \
+	fi
 	@set -e; good="$(OUT)/quadrature/check-ordinary-w1-native.tsv"; \
 	for mutation in missing-row wrong-form missing-footer; do \
 		bad="$(OUT)/quadrature/negative-$$mutation.tsv"; \

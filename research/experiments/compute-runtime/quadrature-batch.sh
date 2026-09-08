@@ -61,7 +61,7 @@ if test "$mode" = check; then
     for kind in ordinary sanitized; do
         image=$OUT/quadrature/$kind;stats=0;test "$kind" = ordinary || stats=1
         for width in 1 4; do
-            for variant in native wf-leaf-seq wf-leaf wf-refusal wf-frontier-seq-d8 wf-frontier-d8 cpp-seq rust-seq rayon-d8 rayon-left-d8 wf-value-d8 parlay-left-d8 tbb-d8; do
+            for variant in native wf-leaf-seq wf-leaf wf-refusal wf-frontier-seq-d8 wf-frontier-d8 cpp-seq rust-seq rayon-d4 rayon-d8 rayon-left-d4 rayon-left-d8 wf-value-d8 parlay-left-d8 tbb-d8; do
                 decode
                 for input in center-peak right-peak empty depth-zero; do
                     log=$results/$kind-w$width-$variant-$input.tsv
@@ -112,7 +112,7 @@ if test "$mode" = check; then
         if validate_perf > "$perf_log.log" 2>&1;then exit 1;fi
         grep -Fx "quadrature perf report: $reason" "$perf_log.log"
     done
-    printf '%s\n' 'quadrature batch qualification PASS: processes=220 outputs=2420 protocol=2 negative=5'
+    printf '%s\n' 'quadrature batch qualification PASS: processes=252 outputs=2772 protocol=2 negative=5'
     exit 0
 fi
 rounds=${ROUNDS:-5};repeats=${REPEATS:-4096}
@@ -159,7 +159,7 @@ printf '%s\n' "$events" > "$results/events.txt"
 printf 'pass\tobserver\tinput\tform\tworkers\tspawn_depth\trepeats\twarmup\tperf_control\tstats\tnodes_per_call\twall_ns\tuser_us\tsystem_us\tvoluntary\tinvoluntary\tminor_faults\tmajor_faults\twf_lanes\tprocess_cpu_ns\tcaller_cpu_ns\n' > "$results/summary.tsv"
 for width in 1 4; do
     for input in center-peak left-peak right-peak depth-cap; do
-        for variant in native wf-leaf-seq wf-leaf wf-refusal wf-frontier-seq-d8 wf-frontier-d8 cpp-seq rust-seq rayon-d8 rayon-left-d8 wf-value-d8 parlay-left-d4 parlay-left-d8 tbb-d8; do
+        for variant in native wf-leaf-seq wf-leaf wf-refusal wf-frontier-seq-d8 wf-frontier-d8 cpp-seq rust-seq rayon-d4 rayon-d8 rayon-left-d4 rayon-left-d8 wf-value-d8 parlay-left-d4 parlay-left-d8 tbb-d8; do
             for observer in $observers; do printf '%s %s %s %s\n' "$width" "$input" "$variant" "$observer";done
         done
     done
