@@ -84,6 +84,28 @@ _Alignas(WF_PAR_CACHE_LINE) static unsigned long wf_compute_steal_count;
 static _Thread_local struct wf__par_lane *wf__par_self;
 
 static _Thread_local int wf__par_attached;
+#if defined(WF_COMPUTE_EVENTS)
+#include "runtime_events.h"
+/* Diagnostic-only, cumulative lane-local banks. Atomic reads permit snapshots
+ * while background searches continue; such snapshots are not instantaneous.
+ * Keep bank storage separate from the ordinary slot/deque layouts. */
+struct wf_event_bank {
+    _Alignas(WF_PAR_CACHE_LINE) unsigned long values[WF_EVENT_COUNT];
+};
+static struct wf_event_bank wf_events[WF_PAR_MAX_LANES];
+static void wf_event(struct wf__par_lane *lane, unsigned event) {
+    if (lane != NULL)
+        __atomic_add_fetch(&wf_events[lane - wf__par_lanes].values[event], 1, __ATOMIC_RELAXED);
+}
+unsigned long wf_compute_event(unsigned lane, unsigned event) {
+    if (lane >= WF_PAR_MAX_LANES || event >= WF_EVENT_COUNT) abort();
+    return __atomic_load_n(&wf_events[lane].values[event], __ATOMIC_RELAXED);
+}
+#define EVENT(lane, name) wf_event((lane), WF_EVENT_##name)
+#else
+#define EVENT(lane, name) ((void)0)
+#endif
+
 
 static int wf__par_ready;
 static pthread_mutex_t wf__par_ready_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -94,6 +116,7 @@ extern size_t wf__floor_stack_bytes(void);
 static void wf__par_signal(struct wf__par_lane *lane) {
     pthread_mutex_lock(&lane->lock);
     lane->posted = 1;
+    EVENT(wf__par_self, SIGNAL);
     pthread_cond_signal(&lane->signal);
     pthread_mutex_unlock(&lane->lock);
 }
@@ -105,6 +128,7 @@ static void wf__par_wake_one(void) {
         unsigned long long bit = 1ull << index;
 
         if ((__atomic_fetch_and(&wf__par_idle, ~bit, __ATOMIC_ACQ_REL) & bit) != 0) {
+            EVENT(wf__par_self, IDLE_CLAIM);
             wf__par_signal(&wf__par_lanes[index]);
             return;
         }
@@ -138,6 +162,7 @@ static struct wf__par_slot *wf__par_pop(struct wf__par_lane *lane) {
     }
     slot = __atomic_load_n(&lane->buffer[bottom & (WF_PAR_LANE_SLOTS - 1)], __ATOMIC_RELAXED);
     if ((long long)(bottom - top) > 0) {
+        EVENT(lane, LOCAL_POP);
         return slot;
     }
 
@@ -146,14 +171,17 @@ static struct wf__par_slot *wf__par_pop(struct wf__par_lane *lane) {
         slot = NULL;
     }
     __atomic_store_n(&lane->bottom, bottom + 1, __ATOMIC_RELAXED);
+    if (slot != NULL) EVENT(lane, LOCAL_POP);
     return slot;
 }
 
 static struct wf__par_slot *wf__par_steal(struct wf__par_lane *victim) {
+    EVENT(wf__par_self, STEAL_ATTEMPT);
     unsigned long long top = __atomic_load_n(&victim->top, __ATOMIC_ACQUIRE);
     unsigned long long bottom = __atomic_load_n(&victim->bottom, __ATOMIC_ACQUIRE);
     struct wf__par_slot *slot;
     if ((long long)(bottom - top) <= 0) {
+        EVENT(wf__par_self, STEAL_EMPTY);
         return NULL;
     }
 #if defined(WF_COMPUTE_TEST)
@@ -165,6 +193,7 @@ static struct wf__par_slot *wf__par_steal(struct wf__par_lane *victim) {
 #endif
     if (!__atomic_compare_exchange_n(&victim->top, &top, top + 1, 0, __ATOMIC_SEQ_CST,
                                      __ATOMIC_RELAXED)) {
+        EVENT(wf__par_self, STEAL_CAS_FAIL);
 #if defined(WF_COMPUTE_TEST)
         wf_compute_test_after_steal(0);
 #endif
@@ -173,6 +202,7 @@ static struct wf__par_slot *wf__par_steal(struct wf__par_lane *victim) {
 #if defined(WF_COMPUTE_TEST)
     wf_compute_test_after_steal(1);
 #endif
+    EVENT(wf__par_self, STEAL_SUCCESS);
 #if WF_COMPUTE_STATS
     __atomic_add_fetch(&wf_compute_steal_count, 1, __ATOMIC_RELAXED);
 #endif
@@ -209,7 +239,9 @@ static struct wf__par_slot *wf__par_find(struct wf__par_lane *lane) {
 
 static void wf__par_execute(struct wf__par_slot *slot) {
     struct wf__par_lane *waiter;
+    EVENT(wf__par_self, RUN_BEGIN);
     slot->run(slot->frame);
+    EVENT(wf__par_self, RUN_END);
     /* After DONE the owner may read, release and reuse the frame. Only atomic
      * waiter metadata and permanent lane storage may be accessed afterward. */
     __atomic_store_n(&slot->state, WF_PAR_SLOT_DONE, __ATOMIC_SEQ_CST);
@@ -250,6 +282,7 @@ static void wf__par_wait(struct wf__par_lane *lane, struct wf__par_slot *target)
         }
         if (rounds < WF_PAR_SPIN_ROUNDS + WF_PAR_YIELD_ROUNDS) {
             rounds += 1;
+            EVENT(lane, JOIN_YIELD);
             sched_yield();
             continue;
         }
@@ -257,7 +290,9 @@ static void wf__par_wait(struct wf__par_lane *lane, struct wf__par_slot *target)
         pthread_mutex_lock(&lane->lock);
         __atomic_store_n(&target->waiter, lane, __ATOMIC_SEQ_CST);
         while (__atomic_load_n(&target->state, __ATOMIC_SEQ_CST) != WF_PAR_SLOT_DONE) {
+            EVENT(lane, JOIN_PARK);
             pthread_cond_wait(&lane->signal, &lane->lock);
+            EVENT(lane, JOIN_RESUME);
         }
         __atomic_store_n(&target->waiter, NULL, __ATOMIC_RELAXED);
         lane->posted = 0;
@@ -293,6 +328,7 @@ static void *wf__par_worker_main(void *opaque) {
         }
         if (rounds < WF_PAR_SPIN_ROUNDS + WF_PAR_YIELD_ROUNDS) {
             rounds += 1;
+            EVENT(lane, IDLE_YIELD);
             sched_yield();
             continue;
         }
@@ -309,7 +345,9 @@ static void *wf__par_worker_main(void *opaque) {
         pthread_mutex_lock(&lane->lock);
         if (!lane->posted) {
 
+            EVENT(lane, IDLE_PARK);
             pthread_cond_wait(&lane->signal, &lane->lock);
+            EVENT(lane, IDLE_RESUME);
         }
         lane->posted = 0;
         pthread_mutex_unlock(&lane->lock);
@@ -475,6 +513,7 @@ void *wf__par_acquire_lane(unsigned long bytes) {
     }
     index = lane->free_head;
     if (index < 0) {
+        EVENT(lane, SLOT_REFUSAL);
         return NULL;
     }
     slot = &lane->slots[index];
@@ -486,6 +525,7 @@ void wf__par_publish(void *frame, void (*fn)(void *)) {
     struct wf__par_slot *slot = (struct wf__par_slot *)frame;
     slot->run = fn;
     __atomic_store_n(&slot->state, WF_PAR_SLOT_PENDING, __ATOMIC_RELAXED);
+    EVENT(slot->home, PUBLISH);
     wf__par_push(slot->home, slot);
     if (__atomic_load_n(&wf__par_idle, __ATOMIC_SEQ_CST) != 0) {
         wf__par_wake_one();
@@ -495,11 +535,15 @@ void wf__par_publish(void *frame, void (*fn)(void *)) {
 void wf__par_join(void *frame) {
     struct wf__par_slot *target = (struct wf__par_slot *)frame;
     struct wf__par_lane *lane = target->home;
+    EVENT(lane, JOIN);
     struct wf__par_slot *slot = wf__par_pop(lane);
 
     if (slot == target) {
 
+        EVENT(lane, INLINE_RUN);
+        EVENT(lane, RUN_BEGIN);
         target->run(target->frame);
+        EVENT(lane, RUN_END);
         return;
     }
     while (slot != NULL) {
@@ -510,10 +554,14 @@ void wf__par_join(void *frame) {
         }
         slot = wf__par_pop(lane);
         if (slot == target) {
-            target->run(target->frame);
+            EVENT(lane, INLINE_RUN);
+        EVENT(lane, RUN_BEGIN);
+        target->run(target->frame);
+        EVENT(lane, RUN_END);
             return;
         }
     }
+    EVENT(lane, JOIN_WAIT);
     wf__par_wait(lane, target);
 }
 

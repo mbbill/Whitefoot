@@ -22,6 +22,7 @@ SCHEDULER_COMMON := $(OUT)/scheduler-host.o $(OUT)/scheduler-native.o \
 SCHEDULERS := wf static tbb parlay rayon-join rayon-iter
 LAYOUT_SCHEDULERS := $(SCHEDULERS) wf-group4 wf-group16
 RAYON_LIB := $(OUT)/scheduler-deps/rayon/release/libwf_records_rayon.a
+RAYON_EVENTS_LIB := $(OUT)/scheduler-events-deps/rayon/release/libwf_records_rayon.a
 RAYON_SYSTEM_LIBS := $(if $(filter Linux,$(shell uname -s)),-ldl -lm,)
 SCHEDULER_MEMORY_ENV := ASAN_OPTIONS=detect_stack_use_after_return=1:halt_on_error=1$(if $(filter Linux,$(shell uname -s)),:detect_leaks=1,) LSAN_OPTIONS=exitcode=23
 SCHEDULER_MEMORY_MODE := $(if $(findstring address,$(SANITIZER)),validate,validate-clean)
@@ -48,22 +49,24 @@ endef
 	wf-objects check-wf-objects build-bench check-bench bench-calibrate compiler force \
 	records-build check-records records-calibrate scheduler-fetch scheduler-build \
 	check-scheduler check-scheduler-memory scheduler-calibrate scheduler-layout-build \
-	check-scheduler-layout scheduler-layout-calibrate scheduler-trace-build check-scheduler-trace
+	check-scheduler-layout scheduler-layout-calibrate scheduler-trace-build check-scheduler-trace \
+	scheduler-events-build check-scheduler-events
 
 force:
 
-build: $(OUT)/probe $(OUT)/probe-no-stats
+build: $(OUT)/probe $(OUT)/probe-no-stats $(OUT)/probe-events
 
-$(OUT)/probe $(OUT)/probe-no-stats: runtime.c runtime.h probe.c $(FLOOR) force
+$(OUT)/probe $(OUT)/probe-no-stats $(OUT)/probe-events: runtime.c runtime.h runtime_events.h probe.c $(FLOOR) force
 	mkdir -p "$(OUT)"
 	$(CC) $(CFLAGS) -DWF_COMPUTE_TEST -fsanitize=$(SANITIZER) -fno-omit-frame-pointer \
-		-DWF_COMPUTE_STATS=$(if $(filter $(OUT)/probe-no-stats,$@),0,1) \
+		-DWF_COMPUTE_STATS=$(if $(filter $(OUT)/probe,$@),1,0) \
+		$(if $(filter $(OUT)/probe-events,$@),-DWF_COMPUTE_EVENTS,) \
 		runtime.c probe.c $(FLOOR) -o "$@"
 
-check: check-runtime check-abi check-fir check-bench check-records check-scheduler-trace
+check: check-runtime check-abi check-fir check-bench check-records check-scheduler-events
 
 check-runtime: build
-	@set -e; for probe in probe probe-no-stats; do \
+	@set -e; for probe in probe probe-no-stats probe-events; do \
 		WF_WORKERS=2 "$(OUT)/$$probe" protocol; \
 		WF_WORKERS=4 "$(OUT)/$$probe" protocol; \
 		WF_WORKERS=2 "$(OUT)/$$probe" delayed-read; \
@@ -75,7 +78,7 @@ check-runtime: build
 			echo 'compute control unexpectedly links shared scheduler or completion code' >&2; exit 1; \
 		fi; \
 	done
-	@if grep -E 'wf_compute_steal_count|wf__par_grants' "$(OUT)/probe-no-stats.symbols"; then \
+	@if grep -E 'wf_compute_steal_count|wf__par_grants|wf_compute_event|wf_events' "$(OUT)/probe-no-stats.symbols"; then \
 		echo 'statistics-disabled runtime retains a counter or observer' >&2; exit 1; \
 	fi
 
@@ -149,7 +152,7 @@ scheduler-build:
 	$(CC) -std=c11 $(SCHEDULER_FLAGS) -c $(FLOOR) -o "$(OUT)/scheduler-floor.o"
 	$(CC) -std=c11 $(SCHEDULER_FLAGS) -DWF_COMPUTE_STATS=0 -c runtime.c -o "$(OUT)/scheduler-runtime.o"
 	@nm "$(OUT)/scheduler-runtime.o" > "$(OUT)/scheduler-runtime.symbols"
-	@if grep -E 'wf_compute_steal_count|wf__par_grants' "$(OUT)/scheduler-runtime.symbols"; then exit 1; fi
+	@if grep -E 'wf_compute_steal_count|wf__par_grants|wf_compute_event|wf_events' "$(OUT)/scheduler-runtime.symbols"; then exit 1; fi
 	$(CC) -std=c11 $(SCHEDULER_FLAGS) -c records_runtime.c -o "$(OUT)/scheduler-wf-adapter.o"
 	$(CC) -std=c11 $(SCHEDULER_FLAGS) -c records_static.c -o "$(OUT)/scheduler-static-adapter.o"
 	$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -isystem "$(OUT)/scheduler-deps/include" \
@@ -183,7 +186,7 @@ check-scheduler-memory: scheduler-build
 			-fno-omit-frame-pointer $$stats -c $$unit.c -o "$(OUT)/scheduler-memory-$$unit.o" || exit $$?; \
 	done
 	@nm "$(OUT)/scheduler-memory-runtime.o" > "$(OUT)/scheduler-memory-runtime.symbols"
-	@if grep -E 'wf_compute_steal_count|wf__par_grants' "$(OUT)/scheduler-memory-runtime.symbols"; then exit 1; fi
+	@if grep -E 'wf_compute_steal_count|wf__par_grants|wf_compute_event|wf_events' "$(OUT)/scheduler-memory-runtime.symbols"; then exit 1; fi
 	$(CC) -std=c11 $(SCHEDULER_FLAGS) -fsanitize=$(SANITIZER) -fno-sanitize-recover=all \
 		-fno-omit-frame-pointer -c $(FLOOR) -o "$(OUT)/scheduler-memory-floor.o"
 	@for unit in records_scheduler records_tbb records_parlay; do \
@@ -404,7 +407,7 @@ scheduler-trace-build: scheduler-layout-build
 	@nm -n "$(OUT)/scheduler-trace" > "$(OUT)/scheduler-trace.symbols"
 	$(call require-strong,$(OUT)/scheduler-trace,records_state)
 	$(call require-strong,$(OUT)/scheduler-trace,records_scheduler_chunk)
-	@if grep -E 'wf_compute_steal_count|wf__par_grants' "$(OUT)/scheduler-trace.symbols"; then exit 1; fi
+	@if grep -E 'wf_compute_steal_count|wf__par_grants|wf_compute_event|wf_events' "$(OUT)/scheduler-trace.symbols"; then exit 1; fi
 	@printf '%s\n' 'image=scheduler-trace levels=plain,identity,timeline' \
 		'events=common-callback; runtime-jobs-and-OS-switch-events=unobserved' \
 		'identity=per-cell-relaxed-claim,cached-native-TID; timeline=identity-plus-two-clocks' \
@@ -437,6 +440,67 @@ check-scheduler-trace: check-scheduler-layout scheduler-trace-build
 		done; done; \
 	done
 	OUT="$(OUT)" sh records-scheduler-trace.sh check
+
+# Runtime counters remain confined to this diagnostic image. Its common scalar
+# computation and all non-Rayon adapters reuse the ordinary timing objects.
+scheduler-events-build: scheduler-trace-build
+	OUT="$(OUT)" sh records-rayon-events.sh build
+	$(CC) -std=c11 $(SCHEDULER_FLAGS) -DWF_COMPUTE_STATS=0 -DWF_COMPUTE_EVENTS \
+		-c runtime.c -o "$(OUT)/scheduler-events-runtime.o"
+	$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -DRECORD_SCHEDULER_SELECT -DRECORD_SCHEDULER_TRACE \
+		-DRECORD_SCHEDULER_EVENTS -I"$(OUT)/scheduler-events-deps" \
+		-c records_scheduler.cpp -o "$(OUT)/scheduler-events-host.o"
+	@set -e; for strategy in join iter; do \
+		variant=0; if test $$strategy = iter; then variant=1; fi; \
+		$(CC) -std=c11 $(SCHEDULER_FLAGS) -DRAYON_STRATEGY=$$variant -I"$(OUT)/scheduler-events-deps" \
+			-Drecords_scheduler_run=layout_rayon_$${strategy}_run \
+			-Drecords_scheduler_name=layout_rayon_$${strategy}_name \
+			-Drecords_scheduler_stop=layout_rayon_$${strategy}_stop \
+			-c records_rayon.c -o "$(OUT)/scheduler-events-rayon-$$strategy.o"; \
+	done
+	@set -- "$(OUT)/scheduler-events-host.o" "$(OUT)/scheduler-events-runtime.o" "$(OUT)/scheduler-layout-selector.o"; \
+	for unit in native oracle work floor; do set -- "$$@" "$(OUT)/scheduler-$$unit.o"; done; \
+	for mode in wf wf-group4 wf-group16 static tbb parlay; do set -- "$$@" "$(OUT)/scheduler-layout-$$mode.o"; done; \
+	$(CXX) -pthread -fno-lto "$$@" "$(OUT)/scheduler-events-rayon-join.o" "$(OUT)/scheduler-events-rayon-iter.o" \
+		-L"$(OUT)/scheduler-deps/lib" -Wl,-rpath,"$(OUT)/scheduler-deps/lib" -ltbb \
+		"$(RAYON_EVENTS_LIB)" $(RAYON_SYSTEM_LIBS) -o "$(OUT)/scheduler-events"
+	@nm -n "$(OUT)/scheduler-events" > "$(OUT)/scheduler-events.symbols"
+	@printf '%s\n' 'image=scheduler-events; trace levels unchanged; internal events always enabled' \
+		'WF=wf-1,20 counters; Rayon=rayon-join-1,13 counters; schemas are not interchangeable' \
+		'per-call cumulative snapshots outside call clocks, inside batch; per-bank deltas follow call rows' \
+		'ordinary scheduler-trace is the counter-free control; separate image layout contributes perturbation' \
+		'$(SCHEDULER_FLAGS)' > "$(OUT)/scheduler-events-flags.txt"
+
+check-scheduler-events: check-runtime check-scheduler-trace scheduler-events-build
+	$(CC) -std=c11 $(SCHEDULER_FLAGS) -DWF_COMPUTE_STATS=0 -DWF_COMPUTE_EVENTS \
+		-fsanitize=$(SANITIZER) -fno-sanitize-recover=all -fno-omit-frame-pointer \
+		-c runtime.c -o "$(OUT)/scheduler-events-memory-runtime.o"
+	$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -DRECORD_SCHEDULER_SELECT -DRECORD_SCHEDULER_TRACE \
+		-DRECORD_SCHEDULER_EVENTS -I"$(OUT)/scheduler-events-deps" \
+		-fsanitize=$(SANITIZER) -fno-sanitize-recover=all -fno-omit-frame-pointer \
+		-c records_scheduler.cpp -o "$(OUT)/scheduler-events-memory-host.o"
+	@set -- "$(OUT)/scheduler-events-memory-host.o" "$(OUT)/scheduler-events-memory-runtime.o" \
+		"$(OUT)/scheduler-layout-memory-selector.o"; \
+	for unit in records_native records_oracle records_work floor; do set -- "$$@" "$(OUT)/scheduler-memory-$$unit.o"; done; \
+	for mode in wf wf-group4 wf-group16 static tbb parlay; do set -- "$$@" "$(OUT)/scheduler-layout-$$mode.o"; done; \
+	$(CXX) -pthread -fno-lto -fsanitize=$(SANITIZER) -fno-sanitize-recover=all "$$@" \
+		"$(OUT)/scheduler-events-rayon-join.o" "$(OUT)/scheduler-events-rayon-iter.o" \
+		-L"$(OUT)/scheduler-deps/lib" -Wl,-rpath,"$(OUT)/scheduler-deps/lib" -ltbb \
+		"$(RAYON_EVENTS_LIB)" $(RAYON_SYSTEM_LIBS) -o "$(OUT)/scheduler-events-memory-image"
+	@mkdir -p "$(OUT)/scheduler-events-memory"; \
+	for mode in wf rayon-join; do \
+		image="$(OUT)/scheduler-events-memory/scheduler-memory-$$mode"; \
+		ln -f "$(OUT)/scheduler-events-memory-image" "$$image" || exit $$?; \
+		for width in 1 2 4; do for level in plain identity timeline; do \
+			log="$(OUT)/scheduler-events-memory-$$mode-w$$width-$$level.log"; status=0; \
+			env $(SCHEDULER_MEMORY_ENV) WF_WORKERS=$$width "$$image" $$mode trace $$width 33 17 unicode 16 2 828219 0 $$level \
+				> "$$log" 2>&1 || status=$$?; \
+			sh records-scheduler-memory.sh $(SCHEDULER_MEMORY_MODE) "$$log" $$status $$mode $$width events-$$level \
+				|| { cat "$$log" >&2; exit 1; }; \
+			printf 'scheduler events memory accepted: backend=%s width=%s level=%s child_status=%s\n' $$mode $$width $$level $$status; \
+		done; done; \
+	done
+	OUT="$(OUT)" sh records-scheduler-trace.sh events-check
 
 # Refresh the default compiler after source changes. A supplied compiler is
 # an explicit caller-owned dependency and must already be built for this tree.

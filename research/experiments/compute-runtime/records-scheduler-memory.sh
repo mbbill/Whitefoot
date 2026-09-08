@@ -27,6 +27,16 @@ case "$backend" in
     *) usage;;
 esac
 case "$width" in 1|2|4) ;; *) usage;; esac
+schema=''
+case "$test_case" in
+    events-plain|events-identity|events-timeline)
+        case "$backend" in
+            wf-runtime) schema=wf-1;;
+            rayon-1.12.0-join) schema=rayon-join-1;;
+            *) usage;;
+        esac
+        test_case=trace-${test_case#events-};;
+esac
 case "$test_case" in
     qualify) ;;
     trace-plain|trace-identity|trace-timeline) ;;
@@ -54,7 +64,7 @@ awk -v leak="$leak" -v extra="$extra" -v binary="${binary:-}" \
 if test "${test_case#trace-}" != "$test_case"; then
     awk -F '\t' -v backend="$backend" -v width="$width" -v shape=unicode -v count=33 \
         -v limit=17 -v grain=16 -v chunks=3 -v seed=828219 -v pass=0 -v reps=2 \
-        -v shutdown="$shutdown" -v level="${test_case#trace-}" -v expected_bytes=329 \
+        -v shutdown="$shutdown" -v level="${test_case#trace-}" -v expected_bytes=329 -v runtime_schema="$schema" \
         -f "$directory/records-scheduler-trace.awk" "$scratch/prefix" > /dev/null
 elif test "$test_case" = qualify; then
     awk -v backend="$backend" -v width="$width" -v shutdown="$shutdown" '

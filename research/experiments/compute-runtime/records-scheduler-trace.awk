@@ -1,6 +1,7 @@
 # Strict callback trace contract, used by the compute-runtime trace collector.
 # Retire with that diagnostic. Parameters: backend,width,shape,count,limit,
-# grain,chunks,seed,pass,reps,level,shutdown; optional expected_bytes. No output
+# grain,chunks,seed,pass,reps,level,shutdown; optional expected_bytes and
+# runtime_schema (wf-1 or rayon-join-1 for the separate event image). No output
 # precedes full validation.
 # Successful output is one headerless TSV row:
 # backend width shape records bytes max_length grain chunks seed pass reps level
@@ -56,6 +57,18 @@ function expected(position, key, wanted) {
 function complete_call() {
     if (call_seen && (chunk_seen != (level == "plain" ? 0 : chunks) ||
         (level != "plain" && cmp(offered, bytes)))) fail()
+    if (!call_seen || !length(runtime_schema)) return
+    if (runtime_seen != runtime_banks || cmp(runtime_sums[0], jobs)) fail()
+    if (runtime_schema == "wf-1") {
+        if (cmp(add(runtime_sums[1], runtime_sums[5]), jobs) ||
+            cmp(runtime_sums[6], jobs) || cmp(runtime_sums[7], jobs) ||
+            cmp(runtime_sums[9], jobs) || cmp(runtime_sums[8], runtime_sums[1]) > 0 ||
+            cmp(runtime_sums[19], "0")) fail()
+    } else {
+        if (cmp(add(runtime_sums[1], runtime_sums[2]), jobs) ||
+            cmp(runtime_sums[3], jobs) || cmp(add(runtime_sums[4], runtime_sums[5]), jobs)) fail()
+        for (event = 6; event < runtime_events; ++event) if (cmp(runtime_sums[event], "0")) fail()
+    }
 }
 BEGIN {
     if (!length(backend) || !length(shape) || !uint(width) || width == 0 ||
@@ -68,6 +81,15 @@ BEGIN {
     if (chunks != int(count / grain) + (count % grain != 0)) fail()
     call_seen = 0; traced = "0"
     user_sum = system_sum = voluntary_sum = involuntary_sum = peak_rss = "0"
+    if (length(runtime_schema)) {
+        if (width != 1 && width != 2 && width != 4) fail()
+        if (runtime_schema == "wf-1" && backend == "wf-runtime") {
+            runtime_banks = width; runtime_events = 20
+        } else if (runtime_schema == "rayon-join-1" && backend == "rayon-1.12.0-join") {
+            runtime_banks = 5; runtime_events = 13
+        } else fail()
+        jobs = sprintf("%.0f", chunks && (runtime_schema != "wf-1" || width != 1) ? chunks - 1 : 0)
+    }
 }
 NR == 1 {
     if (split($0, p, " ") != 16 || p[1] != "#" || p[2] != "trace") fail()
@@ -85,10 +107,19 @@ NR == 1 {
     meta = 1
     next
 }
+/^# runtime_events / {
+    if (!length(runtime_schema) || NR != 2 || meta != 1 || runtime_meta ||
+        split($0, p, " ") != 5 || p[1] != "#" || p[2] != "runtime_events") fail()
+    expected(3, "schema", runtime_schema); expected(4, "banks", runtime_banks)
+    expected(5, "events", runtime_events)
+    runtime_meta = 1
+    next
+}
 /^call\t/ {
     if (meta != 1 || batch || capacity || passed || call_seen > reps ||
         split($0, p, "\t") != 10 || p[1] != "call" ||
         !uint(p[2]) || p[2] != call_seen || p[3] != (call_seen ? "warm" : "first")) fail()
+    if (length(runtime_schema) && runtime_meta != 1) fail()
     complete_call()
     for (i = 4; i <= 10; ++i) if (!uint(p[i])) fail()
     if (cmp(p[4], p[5]) > 0 || (call_seen && cmp(p[4], call_end) < 0)) fail()
@@ -99,11 +130,28 @@ NR == 1 {
     voluntary_sum = add(voluntary_sum, p[9]); involuntary_sum = add(involuntary_sum, p[10])
     ++call_seen; chunk_seen = 0; offered = "0"; thread_count = 0
     for (key in tids) delete tids[key]
+    runtime_seen = 0
+    for (key in runtime_sums) delete runtime_sums[key]
+    next
+}
+/^runtime\t/ {
+    if (!runtime_meta || !call_seen || batch || capacity || passed || chunk_seen ||
+        runtime_seen >= runtime_banks || split($0, p, "\t") != 3 + runtime_events ||
+        !uint(p[2]) || p[2] != call_seen - 1 || !uint(p[3]) || p[3] != runtime_seen) fail()
+    for (event = 0; event < runtime_events; ++event) {
+        v = p[4 + event]
+        if (!uint(v) || cmp(v, "18446744073709551615") > 0 ||
+            (runtime_schema == "rayon-join-1" && runtime_seen >= width && cmp(v, "0"))) fail()
+        runtime_sums[event] = add(runtime_sums[event], v)
+        if (cmp(runtime_sums[event], "18446744073709551615") > 0) fail()
+    }
+    ++runtime_seen
     next
 }
 /^chunk\t/ {
     if (!call_seen || batch || capacity || passed || level == "plain" ||
         split($0, p, "\t") != 9 || p[1] != "chunk") fail()
+    if (length(runtime_schema) && runtime_seen != runtime_banks) fail()
     for (i = 2; i <= 9; ++i) if (!uint(p[i])) fail()
     if (p[2] != call_seen - 1 || p[3] != chunk_seen || chunk_seen >= chunks || canon(p[4]) == "0") fail()
     first = chunk_seen * grain; records = count - first

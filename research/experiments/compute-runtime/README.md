@@ -1050,6 +1050,117 @@ be tested on the actual host, and unavailable events reported as unavailable,
 not zero. Whole-process counters include input generation and post-batch
 oracles/capacity probes, so they cannot be called dispatch instruction counts.
 
+### Internal WF and Rayon join events
+
+`scheduler-events` extends the callback diagnostic with internal runtime job
+counts. It accepts only the original WF and Rayon join selectors. Both use
+the ordinary scalar common computation and callback objects. WF compiles
+`runtime.c` with `WF_COMPUTE_EVENTS` and legacy statistics disabled; Rayon
+builds a private patched `rayon-core` from the locked offline vendored graph.
+The normal registry, adapter, dependency archive and timing executable remain
+unchanged. The diagnostic patch adds safe counter operations; it does not
+change the existing upstream job representation or latch protocol. The safe
+Rust adapter's private diagnostic copy exports an ordinary C getter whose
+symbol is discovered from that exact build's LLVM IR. This is an experiment
+interface, not a WF language ABI or separate-compilation change.
+
+Every event image keeps counters enabled at all three callback trace levels.
+The collector interleaves this image with the original counter-free
+`scheduler-trace` image, recording the image in an additional summary column.
+Comparisons include changed code/data placement and snapshot effects; they
+cannot isolate a constant cost per counter increment. The ordinary timing
+image and the counter-free trace image contain no new runtime event banks or
+hook calls. Matched local optimized LLVM IR is identical with the new event
+macros absent, for the runtime, ordinary host and callback trace host.
+
+After the usual trace header, an event report names its schema, bank count and
+event count. Each call row is followed by one `runtime` TSV row per bank:
+call index, bank index and event deltas in schema order. `wf-1` uses the twenty
+entries in [runtime_events.h](runtime_events.h). `rayon-join-1` uses the thirteen
+entries listed in the private dependency's retained `metadata.txt`, implemented
+by [records-rayon-events.patch](records-rayon-events.patch). Banks are worker
+indices, not OS thread IDs; Rayon bank four separately observes unregistered
+submitters. Each worker has its own aligned cumulative bank. Counters are read
+atomically and never reset while workers run.
+
+The host snapshots immediately outside each call's resource/clock envelope,
+then validates the deltas before proceeding to the next call. Snapshot and
+validation costs are outside the reported call clock but inside the batch.
+They can also change worker state between calls. Every published job has joined
+before the ending snapshot. Both the host and report parser independently
+check publication = local pop + successful foreign steal = completion. The
+WF check includes run entry, join count and both owner-inline execution paths;
+the Rayon check includes both StackJob execution and `run_inline`, which
+bypasses the executor. Completion increments precede DONE/latch publication
+and do not add later accesses to a caller-owned frame. The common callback
+output/inventory checks still run separately.
+
+A positive binary join tree with N callbacks publishes N-1 queued jobs in this
+qualified cohort. Empty calls publish zero. The original WF width-one adapter
+bypasses its runtime and publishes zero for every N, whereas Rayon width one
+still publishes N-1. Neither queued-job count equals OS context switches or
+the number of common callbacks. Unsupported Rayon injection/broadcast/non-stack
+job events and unused/external banks must be zero for this join-only equation.
+This does not qualify their nonzero paths or general Rayon APIs.
+
+WF failed-search, wait and signal counts can advance while the caller reads
+other banks. They include background activity and are not exact instantaneous
+per-call flows. In particular, `JOIN_WAIT` means entry to helping/wait logic,
+`JOIN_PARK`/`IDLE_PARK` count condition-wait calls, their resume counterparts
+count returns, and `SIGNAL` counts condition-signal calls. None establishes an
+actual OS park, wake or context switch. `SLOT_REFUSAL` counts free-list
+exhaustion only. This bounded join cohort requires zero such refusals; the
+separate runtime protocol retains its exhaustion/fallback qualification.
+
+The canonical check retains existing runtime/scheduler tests and adds an event
+runtime protocol variant with a deterministic held-thief owner-inline count,
+18 C sanitizer event cases and 144 interleaved ordinary smoke processes / 432
+calls. The sanitizer event image instruments host/common C computation/runtime;
+Rayon and its patched safe counter code retain ordinary Rust objects. Linux's
+exact retained-allocation contract remains required. Missing/duplicate bank,
+wrong completion count, absent schema and trailing-report negatives check the
+collector. Calibration interleaves 180 processes / 1,620 calls: original WF and
+Rayon join, three callback levels, two images, five rotating/reversed passes,
+the two 256-record trace inputs and a 4,097-record early-invalid input with
+maximum length 64. All use grain16 and width four including the caller.
+
+```sh
+make -C research/experiments/compute-runtime check-scheduler-events OUT=/tmp/wf-scheduler
+OUT=/tmp/wf-scheduler RESULTS=/tmp/wf-scheduler/events-calibration \
+  sh research/experiments/compute-runtime/records-scheduler-trace.sh events-calibrate
+```
+
+A preliminary M1 screen independently checked all 180 processes, 1,620 calls,
+2,488,860 output positions, 104,040 callback rows, 3,645 runtime-bank rows and
+1,281 manifest hashes. With callback tracing disabled (`plain`), medians of
+five process warm means in the counter-free trace image were:
+
+| Input, grain16, width4 | WF runtime | Rayon join |
+| --- | ---: | ---: |
+| 256 early-invalid records, maximum length 65,536 | 3.511 us | 1.615 us |
+| 256 Unicode records, maximum length 65,536 | 1.964 ms | 1.896 ms |
+| 4,097 early-invalid records, maximum length 64 | 7.584 us | 10.375 us |
+
+The WF long-input counter image records exactly fifteen completed queued jobs
+per call, but its median process mean is 48,530.75 steal attempts. This makes
+idle search/wait behavior a concrete investigation target, not a measured CPU
+cost or proof of the best replacement policy. In this image all four WF and
+Rayon completion banks participate in all forty warm long-input calls. On the
+256-record short input, Rayon completes all queued jobs on the caller in 31/40
+warm calls, while WF uses four completion banks in 31/40 and three in 9/40.
+These are job-completion banks, not callback identities or ordinary histories.
+
+Perturbation remains material: WF's long-input event/control paired median time
+ratio is 0.958 (range 0.943--0.996), despite the extra instructions. Rayon's
+4,097-record short-input ratio is 1.342 (range 0.980--8.604), including a
+101.953 us event-image process mean. Do not interpret a counter image becoming
+faster as negative instrumentation cost or promote its ordering. The local
+screen has no fixed worker placement and is exploratory rather than a retained
+CI artifact. The counter-free/event image SHA-256 identities are respectively
+`a5235c8ff452af0824d1991c85d767c391b3878a22837e6b1242906d5b7c8dbe` and
+`5b5ece137c1eba1ca824ed1e21a31ef1ebaf55c6019b72164ca5363688c542b2`.
+Linux event execution and its actual Rayon retention report remain pending.
+
 ### First complete Linux scalar panel and attribution limit
 
 The [`f8766994` run](https://github.com/mbbill/Whitefoot/actions/runs/34186817212)

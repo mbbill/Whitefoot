@@ -3,6 +3,9 @@
 #endif
 
 #include "runtime.h"
+#if defined(WF_COMPUTE_EVENTS)
+#include "runtime_events.h"
+#endif
 
 #include <assert.h>
 #include <pthread.h>
@@ -203,11 +206,22 @@ static void protocol(void) {
     }
     /* Every thief is held, so these are genuine owner-pop and nested calls. */
     owner_only = 1;
+#if defined(WF_COMPUTE_EVENTS)
+    unsigned long inline_before = wf_compute_event(0, WF_EVENT_INLINE_RUN);
+    unsigned long end_before = wf_compute_event(0, WF_EVENT_RUN_END);
+#endif
     for (index = 0; index < 16; ++index) {
         void *task = acquire(index, 7);
         wf__par_publish(task, compute);
         finish(task, index, 7);
     }
+#if defined(WF_COMPUTE_EVENTS)
+    /* Thieves remain held while sixteen depth-seven trees execute on owner
+     * zero: each tree has its root job and 127 internal forks. This catches
+     * missing completion counts on the direct owner-inline join path. */
+    assert(wf_compute_event(0, WF_EVENT_INLINE_RUN) - inline_before == 2048);
+    assert(wf_compute_event(0, WF_EVENT_RUN_END) - end_before == 2048);
+#endif
     owner_only = 0;
     atomic_store(&unblock, 1);
     for (index = 0; index < workers - 1; ++index) {

@@ -21,6 +21,13 @@
 #include <sys/syscall.h>
 #endif
 #endif
+#if defined(RECORD_SCHEDULER_EVENTS)
+#include "runtime_events.h"
+#include "events-binding.h"
+static_assert(WF_EVENT_COUNT == 20 && RAYON_EVENT_COUNT == 13 && RAYON_EVENT_BANKS == 5,
+              "runtime event schema changed");
+extern "C" uint64_t rayon_event(unsigned, unsigned) __asm__(RAYON_EVENT_SYMBOL);
+#endif
 
 extern "C" int wf__floor_run(int, char **);
 static void require(bool ok, const char *why) {
@@ -215,6 +222,57 @@ template<bool Timeline> static void traced_chunk(void *opaque, size_t chunk) {
     uint64_t end = Timeline ? now() : 0;
     cell.tid = tid; cell.begin = begin; cell.end = end;
 }
+#if defined(RECORD_SCHEDULER_EVENTS)
+struct RuntimeSnapshot { uint64_t values[5][WF_EVENT_COUNT]{}; };
+struct RuntimeEvents {
+    bool wf;
+    unsigned banks, events;
+    explicit RuntimeEvents(unsigned width) : wf(!std::strcmp(records_scheduler_name(), "wf-runtime")),
+        banks(wf ? width : 5), events(wf ? unsigned(WF_EVENT_COUNT) : 13) {
+        require(wf || !std::strcmp(records_scheduler_name(), "rayon-1.12.0-join"), "runtime events require WF or Rayon join");
+    }
+    const char *schema() const { return wf ? "wf-1" : "rayon-join-1"; }
+    RuntimeSnapshot read() const {
+        RuntimeSnapshot result;
+        for (unsigned bank = 0; bank < banks; ++bank)
+            for (unsigned event = 0; event < events; ++event)
+                result.values[bank][event] = wf ? wf_compute_event(bank, event) : rayon_event(bank, event);
+        return result;
+    }
+    RuntimeSnapshot difference(const RuntimeSnapshot &before, const RuntimeSnapshot &after,
+                               unsigned width, size_t chunks) const {
+        RuntimeSnapshot result;
+        uint64_t totals[WF_EVENT_COUNT]{};
+        for (unsigned bank = 0; bank < banks; ++bank) {
+            for (unsigned event = 0; event < events; ++event) {
+                require(after.values[bank][event] >= before.values[bank][event], "runtime counter rollover");
+                auto delta = after.values[bank][event] - before.values[bank][event];
+                result.values[bank][event] = delta;
+                require(delta <= UINT64_MAX - totals[event], "runtime counter sum overflow");
+                totals[event] += delta;
+                if (!wf && bank >= width) require(delta == 0, "Rayon unexpected worker or external activity");
+            }
+        }
+        uint64_t jobs = chunks && (!wf || width != 1) ? chunks - 1 : 0;
+        require(totals[0] == jobs, "runtime publication count");
+        if (wf) {
+            require(totals[WF_EVENT_LOCAL_POP] <= jobs && totals[WF_EVENT_STEAL_SUCCESS] <= jobs &&
+                    totals[WF_EVENT_LOCAL_POP] + totals[WF_EVENT_STEAL_SUCCESS] == jobs, "WF deque conservation");
+            require(totals[WF_EVENT_RUN_BEGIN] == jobs && totals[WF_EVENT_RUN_END] == jobs &&
+                    totals[WF_EVENT_JOIN] == jobs, "WF completion conservation");
+            require(totals[WF_EVENT_INLINE_RUN] <= totals[WF_EVENT_LOCAL_POP] &&
+                    totals[WF_EVENT_SLOT_REFUSAL] == 0, "WF inline or slot inventory");
+        } else {
+            require(totals[1] <= jobs && totals[2] <= jobs && totals[1] + totals[2] == jobs &&
+                    totals[3] == jobs && totals[4] <= jobs && totals[5] <= jobs &&
+                    totals[4] + totals[5] == jobs, "Rayon join conservation");
+            for (unsigned event = 6; event < events; ++event)
+                require(totals[event] == 0, "Rayon unsupported job or queue activity");
+        }
+        return result;
+    }
+};
+#endif
 static int trace(int argc, char **argv) {
     require(argc == 11, "usage: scheduler trace WIDTH RECORDS MAX_LENGTH SHAPE GRAIN REPS SEED PASS LEVEL");
     uint64_t width64 = number(argv[2]), count64 = number(argv[3]), limit64 = number(argv[4]);
@@ -236,6 +294,10 @@ static int trace(int argc, char **argv) {
     std::unique_ptr<TraceCell[]> cells(new TraceCell[(reps + 1) * chunks]);
     struct Call { uint64_t begin, end; Sample resources; };
     std::vector<Call> calls(reps + 1);
+#if defined(RECORD_SCHEDULER_EVENTS)
+    RuntimeEvents runtime(width);
+    std::vector<RuntimeSnapshot> runtime_calls(reps + 1);
+#endif
     uint64_t caller = native_thread_id(), floor = UINT64_MAX;
     for (unsigned i = 0; i < 1000; ++i) { uint64_t start = now(); floor = std::min(floor, now() - start); }
     RecordChunk callback = timeline ? traced_chunk<true> : traced_chunk<false>;
@@ -246,6 +308,12 @@ static int trace(int argc, char **argv) {
     for (size_t call = 0; call <= reps; ++call) {
         TraceWork work{input.work(grain), cells.get() + call * chunks, chunks};
         work.work.output = outputs[call].data();
+#if defined(RECORD_SCHEDULER_EVENTS)
+        // Snapshots enclose each call's clocks/resources, not just dispatch.
+        // Background searches may cross these boundaries. Joined-job counts
+        // are stable; search/wait/signal deltas are not exact interval flows.
+        RuntimeSnapshot runtime_before = runtime.read();
+#endif
         rusage before, after;
         require(getrusage(RUSAGE_SELF, &before) == 0, "initial trace resources");
         uint64_t begin = now();
@@ -253,6 +321,9 @@ static int trace(int argc, char **argv) {
         else records_scheduler_run(width, chunks, callback, &work);
         uint64_t end = now();
         require(getrusage(RUSAGE_SELF, &after) == 0, "final trace resources");
+#if defined(RECORD_SCHEDULER_EVENTS)
+        runtime_calls[call] = runtime.difference(runtime_before, runtime.read(), width, chunks);
+#endif
         uint64_t rss = uint64_t(after.ru_maxrss);
 #ifndef __APPLE__
         rss *= 1024;
@@ -288,10 +359,21 @@ static int trace(int argc, char **argv) {
     uint64_t stop_ns = now() - stop_start;
     std::printf("# trace backend=%s width=%u shape=%s records=%zu bytes=%" PRIu64 " max_length=%zu grain=%zu chunks=%zu seed=%" PRIu64 " pass=%" PRIu64 " reps=%zu level=%s caller_tid=%" PRIu64 " clock_pair_min_ns=%" PRIu64 "\n",
         records_scheduler_name(), width, argv[5], count, input.offsets.back(), limit, grain, chunks, seed64, pass, reps, level, caller, floor);
+#if defined(RECORD_SCHEDULER_EVENTS)
+    std::printf("# runtime_events schema=%s banks=%u events=%u\n", runtime.schema(), runtime.banks, runtime.events);
+#endif
     for (size_t call = 0; call <= reps; ++call) {
         auto c = calls[call]; auto s = c.resources;
         std::printf("call\t%zu\t%s\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%ld\t%ld\n",
             call, call ? "warm" : "first", c.begin, c.end, s.user, s.system, s.rss, s.voluntary, s.involuntary);
+#if defined(RECORD_SCHEDULER_EVENTS)
+        for (unsigned bank = 0; bank < runtime.banks; ++bank) {
+            std::printf("runtime\t%zu\t%u", call, bank);
+            for (unsigned event = 0; event < runtime.events; ++event)
+                std::printf("\t%" PRIu64, runtime_calls[call].values[bank][event]);
+            std::putchar('\n');
+        }
+#endif
         if (plain) continue;
         for (size_t i = 0; i < chunks; ++i) {
             auto &cell = cells[call * chunks + i];
