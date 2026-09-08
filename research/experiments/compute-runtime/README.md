@@ -1006,9 +1006,49 @@ between levels. Do not subtract a constant timer cost or promote observer
 timings into ordinary performance rankings. Local raw files are exploratory,
 not a retained CI artifact; the collection preceded the final parser's added
 329-byte sanitizer-fixture binding. The measured observer executable and
-computation are unchanged by that parser refinement. Linux observer results
-and hardware-event availability remain unqualified until its CI evidence is
-inspected.
+computation are unchanged by that parser refinement.
+
+The [`0bdcb82f` Linux run](https://github.com/mbbill/Whitefoot/actions/runs/34194826873)
+retains the matching trace panel in artifact `compute-scheduler-linux`, ID
+`10043653064`, ZIP SHA-256
+`b1696e650e56aa443beceb61537d8a27c1e61bde500e97485730181599b13dce`.
+Independent reduction checked all 240 processes, 2,160 calls, 552,960 outputs
+and 23,040 events against the frozen collector, reconstructed per-chunk bytes,
+and matched all 531 recorded source/object/dependency hashes. All 72 trace
+sanitizer cases passed their documented contract: 54 clean exits and 18 exact
+Rayon caller-registration retention reports. This audit covers the new trace
+panel and its qualification, not a fresh audit of the older ordinary panels.
+
+On this EPYC 7763 VM, width four uses a CPU mask of 0--3 exposing two physical
+cores and four SMT logical CPUs. Long-Unicode plain observer-image medians of
+five process warm means were WF 3.930 ms, Rayon join 3.927 ms and static 3.812 ms;
+WF and Rayon ranges overlap. These are observer-image controls, not the
+original timing image or a compiled-WF result. Under timeline instrumentation,
+every long-Unicode warm call used four callback TIDs and reached four overlapping
+intervals for all controls except group16, which remained caller-only. In short
+early-invalid calls, WF used three TIDs in all forty calls; Rayon join was
+caller-only in 8/40 and oneTBB in 21/40. The corresponding M1 participation
+differs, so plain-run histories and cross-platform speedups cannot be inferred.
+
+The static early-invalid timeline panel narrows one loss: the median of five
+process ratios of total warm uncovered wall to total warm dispatch wall is
+99.9182%, with range 99.8809--99.9666%. Most elapsed time lies outside the union
+of common callback intervals. This prioritizes dispatch/waiting/OS scheduling
+over optimizing the computation, but does not identify a syscall, spinning,
+preemption or quota as the cause. Ratios of sums weight long calls by duration;
+an unweighted mean of per-call occupancy ratios answers a different question
+and must not be labeled the fraction of total dispatch time.
+
+Linux short group16 plain/timeline process medians were 1.033/2.868 microseconds;
+the median paired timeline/plain ratio was 2.789, compared with 1.354 on M1.
+Instrumentation can change rankings, especially for short work. Internal
+publication/pop/steal/completion counts need separate conservation checks,
+including owner-inline join execution; they are not OS context switches.
+Aligned OS and hardware counters remain unqualified: this manifest records
+`perf_event_paranoid=4` and an unqualified cgroup CPU quota. Availability must
+be tested on the actual host, and unavailable events reported as unavailable,
+not zero. Whole-process counters include input generation and post-batch
+oracles/capacity probes, so they cannot be called dispatch instruction counts.
 
 ### First complete Linux scalar panel and attribution limit
 
