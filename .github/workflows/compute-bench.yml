@@ -26,6 +26,9 @@ jobs:
           - workload: records
             checks: check-records
             driver: records-bench.sh
+          - workload: scheduler
+            checks: check-scheduler
+            driver: records-scheduler-bench.sh
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -33,10 +36,15 @@ jobs:
       - name: Install and record compiler
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang
+          sudo apt-get install -y --no-install-recommends clang cmake
           rustup default stable
           cargo fetch --locked --manifest-path compiler/Cargo.toml
           /usr/bin/clang --version
+      - name: Fetch pinned native schedulers
+        if: matrix.workload == 'scheduler'
+        env:
+          OUT: ${{ runner.temp }}/compute-${{ matrix.workload }}
+        run: make -C research/experiments/compute-runtime scheduler-fetch OUT="$OUT"
       - name: Qualify sources and actual timing objects
         env:
           OUT: ${{ runner.temp }}/compute-${{ matrix.workload }}
@@ -87,3 +95,4 @@ jobs:
             ${{ runner.temp }}/compute-${{ matrix.workload }}/bench-*
             ${{ runner.temp }}/compute-${{ matrix.workload }}/fir*
             ${{ runner.temp }}/compute-${{ matrix.workload }}/records*
+            ${{ runner.temp }}/compute-${{ matrix.workload }}/scheduler-*

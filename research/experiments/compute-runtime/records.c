@@ -14,36 +14,12 @@
 extern uint64_t wf_research_record_summary(const uint8_t *, uint64_t, uint64_t, uint64_t);
 extern int wf__floor_run(int, char **);
 static uint64_t calls;
-static uint64_t reference(const uint8_t *s, size_t n) {
-    size_t i = 0;
-    uint64_t count = 0;
-    while (i < n) {
-        uint8_t b = s[i++];
-        uint32_t v;
-        unsigned more;
-        uint32_t minimum;
-        if (b < 128) { ++count; continue; }
-        if ((b & 0xe0) == 0xc0) { v = b & 0x1f; more = 1; minimum = 0x80; }
-        else if ((b & 0xf0) == 0xe0) { v = b & 0x0f; more = 2; minimum = 0x800; }
-        else if ((b & 0xf8) == 0xf0) { v = b & 0x07; more = 3; minimum = 0x10000; }
-        else return UINT64_MAX;
-        if (n - i < more) return UINT64_MAX;
-        for (unsigned j = 0; j < more; ++j) {
-            b = s[i++];
-            if ((b & 0xc0) != 0x80) return UINT64_MAX;
-            v = (v << 6) | (b & 0x3f);
-        }
-        if (v < minimum || v > 0x10ffff || (v >= 0xd800 && v <= 0xdfff)) return UINT64_MAX;
-        ++count;
-    }
-    return count;
-}
 static void check(const uint8_t *s, size_t n, uint64_t known) {
     uint8_t held[272];
     if (n > 256) abort();
     memset(held, 0xff, sizeof(held));
     memcpy(held + 7, s, n);
-    uint64_t expected = reference(s, n);
+    uint64_t expected = records_reference(s, n);
     if (known != UINT64_MAX - 1 && expected != known) abort();
     uint64_t actual = wf_research_record_summary(held, sizeof(held), 7, n + 7);
     if (records_state(s, n) != expected || records_word(s, n) != expected) abort();
@@ -119,7 +95,7 @@ static void check_batch(const uint8_t *input, size_t n, const uint64_t *offsets,
     if (output_count != end-first || (!output && output_count)) abort();
     for (size_t i = first; i < end; ++i) {
         uint64_t lo = offsets[i], hi = offsets[i+1];
-        uint64_t expected = lo > hi || hi > n ? UINT64_MAX-1 : reference(input+lo, hi-lo);
+        uint64_t expected = lo > hi || hi > n ? UINT64_MAX-1 : records_reference(input+lo, hi-lo);
         if (lo <= hi && hi <= n) {
             if (records_state(input+lo, hi-lo) != expected || records_word(input+lo, hi-lo) != expected) abort();
         }
@@ -243,7 +219,7 @@ static int benchmark(int argc,char **argv) {
         if (kind==1) for (size_t i=0;i+3<length;i+=4) encode(0x10000+(j%0xfffff),data+n+i);
         if (kind==2 && length) data[n]=0xff;
         if (kind==3 && length) data[n+length-1]=0xff;
-        expected[j]=reference(data+n,length);
+        expected[j]=records_reference(data+n,length);
         n+=length; offsets[j+1]=n;
     }
     memcpy(copy,data,n); memcpy(saved,offsets,(count+1)*sizeof(uint64_t));

@@ -26,7 +26,7 @@ printf '%s\n' "$results" > "$OUT/last-records-$mode-path.txt"
     else
         sysctl hw.model hw.ncpu hw.physicalcpu hw.logicalcpu hw.memsize
     fi
-    shasum -a 256 records.wf records_host.ll records.c records_native.c records_native.h records-bench.sh Makefile \
+    shasum -a 256 records.wf records_host.ll records.c records_oracle.c records_native.c records_native.h records-bench.sh Makefile \
         runtime.c runtime.h ../../../compiler/src/backend/wf_floor.c
     shasum -a 256 "$OUT/records-host.ll" "$OUT/records-wf.o" "$OUT/records-native.o" \
         "$OUT/records-weak" "$OUT/records-recovered"

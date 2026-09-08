@@ -13,11 +13,18 @@ The [static worker control](../../experiments/compute-runtime/README.md#static-w
 now dispatches the same qualified objects at one/two/four actual lanes; its
 condition-variable policy has full-oracle/lifecycle evidence and a dated
 [Linux calibration](../../experiments/compute-runtime/README.md#linux-static-control-before-wf-output-groups).
-Dynamic framework rows remain source-informed candidates.
+The [scalar scheduler panel](../../experiments/compute-runtime/README.md#scalar-scheduler-comparison)
+adds executable oneTBB, Parlay and static-spin controls against the recovered
+WF runtime. All use the same precompiled scalar work and callback objects,
+fixed record chunks and one/two/four participants including the caller.
+Automatic SIMD and cross-object LTO are disabled for this scheduling experiment.
+Its WF row uses a C adapter to the real runtime, not compiler-generated WF;
+end-to-end language results remain separate. No row establishes the frontier.
 The [record batch panel](../../experiments/compute-runtime/README.md#variable-length-utf-8-record-batches)
 also qualifies a native state machine and bounded ASCII-word candidate.
 For its validation-plus-scalar-count contract, simdutf **v9.1.1**, commit
-`9dd35adc5f2c87a53c5a0e6e5b43af6fffe7187e`, remains an unbuilt candidate:
+`9dd35adc5f2c87a53c5a0e6e5b43af6fffe7187e`, is outside the maintained panel
+while SIMD work is parked:
 the [pinned API](https://github.com/simdutf/simdutf/blob/v9.1.1/include/simdutf/implementation.h)
 requires validation followed by `count_utf8` on valid inputs. A successful
 `validate_utf8_with_errors` result counts bytes, not scalars. Compare both
@@ -70,16 +77,16 @@ tasking; its examples' timing tables are not evidence for this investigation.
 |---|---|
 | Rayon **1.12.0** versioned API above | Rust compiler, `rayon-core` and full dependency lock, source/binary hashes, local and native-host qualification. |
 | OpenCilk **3.0**, tag `opencilk/v3.0`, release short commit `cd8ccfc`; release notes identify LLVM 19.1.7. [Releases](https://github.com/OpenCilk/opencilk-project/releases). | Resolve full compiler/runtime commits and package hashes. The same release page lists 4.0 release candidates separately; do not silently substitute one. |
-| oneTBB **v2023.1.0**, release short commit `3046c8b`. [Release](https://github.com/uxlfoundation/oneTBB/releases/tag/v2023.1.0). | Full source/package identity, compiler and linked release library; live `main` documentation is not a frozen source audit. |
+| oneTBB **v2023.1.0**, full commit `3046c8b0c29df995980003ea24f4d78c80ec0c8d`. [Release](https://github.com/uxlfoundation/oneTBB/releases/tag/v2023.1.0). | Scalar scheduler experiment builds and retains a shared Release library with automatic vectorization/IPO disabled, persistent arena, automatic partitioner and explicit participant budget. Other partitioners and held-out/native-host performance confirmation remain open. |
 | Taskflow **v4.1.0**, release short commit `45366fe`. [Release](https://github.com/taskflow/taskflow/releases/tag/v4.1.0). | Live docs list **4.2.0 (Master)** separately. Verify each chosen runtime/subflow API against pinned headers; development documentation is not proof that an API exists in 4.1.0. [Release index](https://taskflow.github.io/taskflow/Releases.html). |
-| ParlayLib **`master`**, inspected sources above; no immutable revision pinned | Resolve a full commit, record scheduler macros, allocator and idle settings; qualify target architecture. |
+| ParlayLib **`51017699dcc421f80479cdb238d3092233ad0d26`**, native header backend | Scalar scheduler experiment fixes grain one, private caller-owned pool, default elastic policy and 10,000-microsecond steal timeout; checks full output and participant capacity. Alternative idle policies and held-out/native-host performance confirmation remain open. |
 | Native C strict FIR direct/output-lane candidates and static workers: checked-in source and executable qualification in the [experiment](../../experiments/compute-runtime/README.md#native-fir-and-first-cost-attribution) | Dated Linux screens cover single-caller kernels and static workers with actual capacity, full-oracle and lifecycle qualification. Each calibration retains source/object hashes, compiler and target flags. Held-out confirmation remains pending; other native languages and other workloads remain unimplemented. |
 
 ## Workload matrix
 
 The [WF workload suite](WORKLOADS.md) owns concrete program candidates, capability
-gaps, data selection and correctness coverage. FIR is the first implemented WF
-program in that suite; the other application families remain candidates. The matrix
+gaps, data selection and correctness coverage. FIR and the record validator are
+implemented WF programs in that suite; the other application families remain candidates. The matrix
 below assigns comparison roles to those families; it does not replace a serious
 WF program suite with wrappers around one kernel. `par_layout` is a historical
 smoke/regression program, not evidence for future application performance.

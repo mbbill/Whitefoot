@@ -91,7 +91,7 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
             sudo apt-get update
-            sudo apt-get install -y --no-install-recommends clang
+            sudo apt-get install -y --no-install-recommends clang cmake
           fi
           test -x /usr/bin/clang
           /usr/bin/clang --version
@@ -141,6 +141,10 @@ jobs:
             research/experiments/default-floor/percent-decode/harness/Cargo.toml; do
             cargo fetch --locked --manifest-path "$manifest"
           done
+
+      - name: Fetch pinned native scheduler dependencies
+        if: matrix.stage == 'research'
+        run: make -C research/experiments/compute-runtime scheduler-fetch
 
       # A gate that proves programs die is a gate that makes the kernel run
       # `kernel.core_pattern` a few hundred times. On `ubuntu-24.04` that

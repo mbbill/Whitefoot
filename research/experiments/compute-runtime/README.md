@@ -7,7 +7,10 @@ unmodified emitted module with this runtime and the compiler's weak sequential
 fallback. The normal compiler link driver is unchanged. The FIR calibration
 caller below also links the identical optimized WF object with the existing
 shared runtime, and compares qualified native output-lane SIMD candidates.
-This is cost attribution, not a confirmed performance frontier.
+This is cost attribution, not a confirmed performance frontier. The current
+[scheduler panel](#scalar-scheduler-comparison) disables SIMD and compares
+equal worker budgets with one common scalar compute object. Earlier FIR SIMD
+results below retain their original conditions and do not rank these schedulers.
 
 The [investigation](../../investigations/compute-runtime/README.md) owns the
 architecture question, [WF workload coverage](../../investigations/compute-runtime/WORKLOADS.md)
@@ -57,11 +60,13 @@ controls to measure and change, not selected optimal settings.
 
 ## Run and retained outputs
 
-Requires a POSIX LP64 host, Clang with sanitizers, pthreads, `nm`, and the current
-offline Cargo dependencies. The root `make check` calls this directory's
+Requires a POSIX LP64 host, Clang/C++17 with sanitizers, CMake, Git, pthreads,
+`nm`, the pinned native sources fetched below, and the current offline Cargo
+dependencies. The root `make check` calls this directory's
 `check` target through `research-tests`, using ASan/UBSan by default.
 
 ```sh
+make -C research/experiments/compute-runtime scheduler-fetch OUT=/tmp/wf-compute-asan
 make -C research/experiments/compute-runtime check OUT=/tmp/wf-compute-asan
 make -C research/experiments/compute-runtime check SANITIZER=thread OUT=/tmp/wf-compute-tsan
 ```
@@ -541,7 +546,7 @@ No compiler, runtime interface or execution semantics change in this addition.
 `records_native.c` supplies a matching state machine and a single-pass native
 word candidate: two bounded unaligned eight-byte reads skip sixteen ASCII
 bytes at a code-point boundary; non-ASCII sequences follow explicit byte
-rules. `records.c` independently decodes integer code points to check minimum
+rules. `records_oracle.c` independently decodes integer code points to check minimum
 encoding lengths and scalar ranges. Each qualifier checks 4,595,603 leaf inputs
 and 342 batches / 1,821,070 per-record results, including complete scalar
 encodings, nonempty truncations, all one/two-byte combinations, selected longer
@@ -554,7 +559,7 @@ and recovered full qualifiers, a C-sanitized qualifier, and eighteen timing-host
 smokes. Both timing hosts reuse the exact qualified O3 WF and native objects.
 The C-sanitized qualifier also instruments a separate native object; ordinary
 WF LLVM does not thereby acquire frontend sanitizer instrumentation. Keep these
-six record source/adapter/native/host/driver files while this workload needs the
+record source/adapter/native/host/driver files while this workload needs the
 experiment; consolidate them if a shared workload harness supersedes their role.
 
 Run `make -C research/experiments/compute-runtime records-calibrate OUT=/path/to/output
@@ -580,6 +585,98 @@ Parallel-world selection does not imply that a small batch starts workers.
 The current estimated map weight is 812 and the recovered split policy admits
 no split below 2,956 records. Reports retain actual capacity and steals; a
 partial started pool is rejected, and the full qualifier requires four lanes.
-The two native kernels are initial scalar anchors. simdutf, static/dynamic
-native workers, held-out inputs and dedicated-core measurements remain open;
-this panel does not establish a native frontier or full application throughput.
+The two native kernels are initial scalar anchors. This end-to-end panel does
+not establish a native frontier or full application throughput. SIMD work is
+parked. The separate scheduler comparison below supplies matched static/dynamic
+controls; held-out inputs and dedicated-core measurements remain open.
+
+## Scalar scheduler comparison
+
+This panel isolates scheduling with four implementations: the recovered WF
+runtime, a persistent static busy-spin pool, oneTBB, and Parlay. All four link
+the **same separately compiled** `records_state` computation and
+`records_scheduler_chunk` callback objects. Every callback processes the same
+fixed range of records and writes caller-provided output. The timed path does
+not select the ASCII-word candidate or any SIMD library. C and C++ builds use
+`-O3 -DNDEBUG -fno-vectorize -fno-slp-vectorize -fno-lto`; oneTBB's library build
+also disables automatic vectorization and IPO. The retained assembly permits
+inspection of the actual compute/callback functions. These controls concern
+compiler-generated code in this experiment and its native library, not the
+implementation of operating-system routines.
+
+`records_runtime.c` drives the real `runtime.c` acquisition/publication/join/
+release protocol with a 32-byte C frame. It publishes one half of a range, runs
+the other half on the current stack, then joins and releases. Acquisition
+failure executes that range locally. It bypasses the compiler's static cost
+estimate and generated 112-byte record frame. Therefore a row named
+`wf-runtime` measures the runtime through this C adapter, **not a compiled WF
+program**. There is no new language ABI or lowering path. The end-to-end WF
+program above remains necessary to measure code generation and output ownership.
+
+| Backend | Selected form and charged behavior |
+|---|---|
+| `wf-runtime` | Recovered pool, binary range split, current-stack join/help/steal; process-lifetime helpers. |
+| `static-spin` | Width minus one persistent pthread helpers; contiguous partition of chunk indices, release/acquire epoch and padded completion cells. Every dispatch signals all helpers, including empty partitions. Helpers poll while idle. |
+| `oneTBB-v2023.1.0-auto-grain1` | oneTBB `3046c8b0c29df995980003ea24f4d78c80ec0c8d`; persistent `global_control` and caller-reserving `task_arena`, `parallel_for` with `auto_partitioner` and range grain one. Library workers have process lifetime. |
+| `parlay-native-grain1` | Parlay `51017699dcc421f80479cdb238d3092233ad0d26`; native private pool with caller worker zero, `parallel_for` grain one, default elastic policy and 10,000-microsecond steal timeout; explicit shutdown joins helpers. |
+
+Widths one, two and four include the caller. Each process has one immutable
+width and one external caller. The shared workload is flat and its callbacks
+perform finite independent CPU work; the static adapter cannot nest. TBB and
+Parlay may group chunk indices internally, and the WF and Parlay split orders
+differ: equal callback work does not imply an identical internal task graph.
+These are initial qualified API choices, not proof of each library's fastest
+partitioner or a complete reference frontier. Rayon and OpenCilk still need
+executable compute controls.
+
+Input generation, independent expected results, output allocation/reset and
+full-result checks are outside the timed call. `call_ns` starts immediately
+before scheduler dispatch and ends after all callbacks join. The first call
+charges any lazy initialization it triggers; warm calls reuse existing state.
+The WF adapter need not start helpers for an empty or one-chunk range. No warmup
+precedes the first call. Per-call CPU and context-switch observations enclose the clock
+reads too; their resolution and observation overhead matter for tiny work.
+RSS is lifetime peak. Explicit shutdown is reported separately; zero means
+process lifetime, not a free or fully measured teardown. Busy-spin idle CPU
+between checked calls is outside the per-call CPU interval, so this panel
+cannot establish burst/idle resource efficiency.
+
+Every process additionally requires a finite-work participation witness with
+exactly the requested distinct threads, including the caller, and simultaneous
+callback activity at that width. Benchmark witnesses run **after** timing and
+are reported separately; they do not prove full utilization on every measured
+call. Up to three explicit witness waves accommodate lazy startup. A blocking
+cross-index barrier was rejected as a capacity probe: schedulers are allowed
+to execute independent indices sequentially, and Parlay's cold elastic startup
+can delay helper participation. No measured callback waits for another index.
+
+`check-scheduler` runs the complete 4,595,603-input leaf oracle on the exact
+scalar timing object. Each backend/width qualifier then checks 780 batches /
+270,660 output positions, exactly-once callback indices, joined callback tails,
+and immutable inputs across five shapes, uneven sizes and four grains.
+Sanitized copies cover the C/C++ host, scalar work, adapters, recovered/static
+runtimes and Parlay headers; the linked oneTBB shared library remains an
+ordinary scalar Release build. These checks do not substitute for upstream
+library suites. The driver validates all raw row identities and retains
+source/object/library hashes, flags, qualification logs and host topology.
+
+Fetch dependencies explicitly before the offline build, as with Cargo's
+recorded dependencies:
+
+```sh
+make -C research/experiments/compute-runtime scheduler-fetch OUT=/tmp/wf-scheduler
+make -C research/experiments/compute-runtime check-scheduler OUT=/tmp/wf-scheduler
+make -C research/experiments/compute-runtime scheduler-calibrate OUT=/tmp/wf-scheduler BENCH_ARCH=-march=native
+```
+
+The normal experiment `check` includes these qualifiers. CI fetches the pinned
+sources before the research gate and runs calibration in its own job, with
+one common recorded CPU mask for all controls. The calibration varies record
+count, length, valid/early-invalid/late-invalid/skewed work, and record grain
+at the same widths. Treat it as a same-host screen; worker affinity within
+the mask, sustained idle costs and held-out confirmation require further work.
+
+The scheduler header, common callback/host, four adapters and two shell drivers
+belong to this mechanism experiment. Retain them while common-code attribution
+is needed; consolidate them when a broader maintained compute harness provides
+the same boundary. The extracted oracle remains shared with the real WF host.

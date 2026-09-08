@@ -3,6 +3,7 @@ ROOT := ../../..
 WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
 OUT ?= $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-compute-runtime
 CC := /usr/bin/clang
+CXX := /usr/bin/clang++
 SANITIZER ?= address,undefined
 ASAN_OPTIONS ?= detect_stack_use_after_return=1
 export ASAN_OPTIONS
@@ -13,6 +14,10 @@ SHARED := $(ROOT)/compiler/src/backend/sched
 BENCH_ARCH ?=
 BENCH_CFLAGS := -std=c11 -O3 -g -Wall -Wextra -Werror -Wpedantic -pthread \
 	-fno-fast-math -ffp-contract=off $(BENCH_ARCH)
+SCHEDULER_FLAGS := -O3 -g -DNDEBUG -Wall -Wextra -Werror -Wpedantic -pthread \
+	$(BENCH_ARCH) -fno-vectorize -fno-slp-vectorize -fno-lto
+SCHEDULER_COMMON := $(OUT)/scheduler-host.o $(OUT)/scheduler-native.o \
+	$(OUT)/scheduler-oracle.o $(OUT)/scheduler-work.o $(OUT)/scheduler-floor.o
 STATIC_ORACLE_FLAGS := -DWF_FILTER_NATIVE -Dmain=fir_qualified_oracle_main \
 	-Dfir_native_direct=fir_static_check_direct -Dfir_native_lanes4=fir_static_check_lanes4 \
 	-Dfir_native_lanes8=fir_static_check_lanes8 -Dfir_native_lanes16=fir_static_check_lanes16
@@ -34,7 +39,8 @@ endef
 
 .PHONY: check build check-runtime check-abi check-fir fir-ir check-native native-object check-static \
 	wf-objects check-wf-objects build-bench check-bench bench-calibrate compiler force \
-	records-build check-records records-calibrate
+	records-build check-records records-calibrate scheduler-fetch scheduler-build \
+	check-scheduler check-scheduler-memory scheduler-calibrate
 
 force:
 
@@ -45,7 +51,7 @@ $(OUT)/probe: runtime.c runtime.h probe.c $(FLOOR) force
 	$(CC) $(CFLAGS) -DWF_COMPUTE_TEST -fsanitize=$(SANITIZER) -fno-omit-frame-pointer \
 		runtime.c probe.c $(FLOOR) -o "$@"
 
-check: check-runtime check-abi check-fir check-bench check-records
+check: check-runtime check-abi check-fir check-bench check-records check-scheduler
 
 check-runtime: build
 	WF_WORKERS=2 "$(OUT)/probe" protocol
@@ -79,13 +85,13 @@ records-build: $(WFC)
 	$(CC) $(BENCH_CFLAGS) -Wno-override-module runtime.c $(FLOOR) "$(OUT)/records.ll" -o "$(OUT)/records-command"
 	$(CC) $(BENCH_CFLAGS) -c records_native.c -o "$(OUT)/records-native.o"
 	$(CC) $(BENCH_CFLAGS) -S records_native.c -o "$(OUT)/records-native.s"
-	$(CC) $(BENCH_CFLAGS) records.c $(FLOOR) "$(OUT)/records-wf.o" "$(OUT)/records-native.o" -o "$(OUT)/records-weak"
+	$(CC) $(BENCH_CFLAGS) records.c records_oracle.c $(FLOOR) "$(OUT)/records-wf.o" "$(OUT)/records-native.o" -o "$(OUT)/records-weak"
 	$(CC) $(BENCH_CFLAGS) -DWF_COMPUTE_CONTROL -DRECORD_RUNTIME='"recovered"' \
-		records.c runtime.c $(FLOOR) "$(OUT)/records-wf.o" "$(OUT)/records-native.o" -o "$(OUT)/records-recovered"
+		records.c records_oracle.c runtime.c $(FLOOR) "$(OUT)/records-wf.o" "$(OUT)/records-native.o" -o "$(OUT)/records-recovered"
 	$(CC) $(BENCH_CFLAGS) -fsanitize=$(SANITIZER) -fno-sanitize-recover=all \
 		-fno-omit-frame-pointer -c records_native.c -o "$(OUT)/records-native-sanitized.o"
 	$(CC) $(BENCH_CFLAGS) -DWF_COMPUTE_CONTROL -DRECORD_RUNTIME='"recovered"' -fsanitize=$(SANITIZER) \
-		-fno-sanitize-recover=all -fno-omit-frame-pointer records.c runtime.c $(FLOOR) \
+		-fno-sanitize-recover=all -fno-omit-frame-pointer records.c records_oracle.c runtime.c $(FLOOR) \
 		"$(OUT)/records-wf.o" "$(OUT)/records-native-sanitized.o" -o "$(OUT)/records-sanitized"
 	@for mode in weak recovered sanitized; do nm "$(OUT)/records-$$mode" > "$(OUT)/records-$$mode.symbols"; done
 	$(call require-strong,$(OUT)/records-weak,wf__floor_run)
@@ -111,6 +117,91 @@ check-records: records-build
 
 records-calibrate: check-records
 	OUT="$(OUT)" sh records-bench.sh calibrate
+
+# Download is explicit, as with Cargo's offline research dependencies. The
+# build verifies pins and only installs the private library below OUT.
+scheduler-fetch:
+	OUT="$(OUT)" sh records-scheduler-deps.sh fetch
+
+scheduler-build:
+	mkdir -p "$(OUT)"
+	OUT="$(OUT)" CC="$(CC)" CXX="$(CXX)" sh records-scheduler-deps.sh build
+	$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -c records_scheduler.cpp -o "$(OUT)/scheduler-host.o"
+	$(CC) -std=c11 $(SCHEDULER_FLAGS) -c records_native.c -o "$(OUT)/scheduler-native.o"
+	$(CC) -std=c11 $(SCHEDULER_FLAGS) -S records_native.c -o "$(OUT)/scheduler-native.s"
+	$(CC) -std=c11 $(SCHEDULER_FLAGS) -c records_oracle.c -o "$(OUT)/scheduler-oracle.o"
+	$(CC) -std=c11 $(SCHEDULER_FLAGS) -c records_work.c -o "$(OUT)/scheduler-work.o"
+	$(CC) -std=c11 $(SCHEDULER_FLAGS) -S records_work.c -o "$(OUT)/scheduler-work.s"
+	$(CC) -std=c11 $(SCHEDULER_FLAGS) -c $(FLOOR) -o "$(OUT)/scheduler-floor.o"
+	$(CC) -std=c11 $(SCHEDULER_FLAGS) -c runtime.c -o "$(OUT)/scheduler-runtime.o"
+	$(CC) -std=c11 $(SCHEDULER_FLAGS) -c records_runtime.c -o "$(OUT)/scheduler-wf-adapter.o"
+	$(CC) -std=c11 $(SCHEDULER_FLAGS) -c records_static.c -o "$(OUT)/scheduler-static-adapter.o"
+	$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -isystem "$(OUT)/scheduler-deps/include" \
+		-c records_tbb.cpp -o "$(OUT)/scheduler-tbb-adapter.o"
+	$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -isystem "$(OUT)/scheduler-deps/include" \
+		-c records_parlay.cpp -o "$(OUT)/scheduler-parlay-adapter.o"
+	$(CXX) -pthread -fno-lto $(SCHEDULER_COMMON) "$(OUT)/scheduler-wf-adapter.o" \
+		"$(OUT)/scheduler-runtime.o" -o "$(OUT)/scheduler-wf"
+	$(CXX) -pthread -fno-lto $(SCHEDULER_COMMON) "$(OUT)/scheduler-static-adapter.o" -o "$(OUT)/scheduler-static"
+	$(CXX) -pthread -fno-lto $(SCHEDULER_COMMON) "$(OUT)/scheduler-tbb-adapter.o" \
+		-L"$(OUT)/scheduler-deps/lib" -Wl,-rpath,"$(OUT)/scheduler-deps/lib" -ltbb -o "$(OUT)/scheduler-tbb"
+	$(CXX) -pthread -fno-lto $(SCHEDULER_COMMON) "$(OUT)/scheduler-parlay-adapter.o" -o "$(OUT)/scheduler-parlay"
+	@printf '%s\n' 'C: $(CC) -std=c11 $(SCHEDULER_FLAGS)' \
+		'C++: $(CXX) -std=c++17 $(SCHEDULER_FLAGS)' \
+		'link: $(CXX) -pthread -fno-lto; common objects reused unchanged' > "$(OUT)/scheduler-flags.txt"
+	$(CC) --version >> "$(OUT)/scheduler-flags.txt"
+	$(CXX) --version >> "$(OUT)/scheduler-flags.txt"
+
+check-scheduler-memory: scheduler-build
+	@for unit in records_native records_oracle records_work records_runtime records_static runtime; do \
+		$(CC) -std=c11 $(SCHEDULER_FLAGS) -fsanitize=$(SANITIZER) -fno-sanitize-recover=all \
+			-fno-omit-frame-pointer -c $$unit.c -o "$(OUT)/scheduler-memory-$$unit.o" || exit $$?; \
+	done
+	$(CC) -std=c11 $(SCHEDULER_FLAGS) -fsanitize=$(SANITIZER) -fno-sanitize-recover=all \
+		-fno-omit-frame-pointer -c $(FLOOR) -o "$(OUT)/scheduler-memory-floor.o"
+	@for unit in records_scheduler records_tbb records_parlay; do \
+		$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -fsanitize=$(SANITIZER) -fno-sanitize-recover=all \
+			-fno-omit-frame-pointer -isystem "$(OUT)/scheduler-deps/include" \
+			-c $$unit.cpp -o "$(OUT)/scheduler-memory-$$unit.o" || exit $$?; \
+	done
+	@for mode in wf static tbb parlay; do \
+		case $$mode in \
+			wf) adapter='records_runtime runtime';; \
+			static) adapter=records_static;; \
+			tbb) adapter=records_tbb;; \
+			parlay) adapter=records_parlay;; \
+		esac; \
+		set --; \
+		for unit in records_scheduler records_native records_oracle records_work floor $$adapter; do \
+			set -- "$$@" "$(OUT)/scheduler-memory-$$unit.o"; \
+		done; \
+		if test $$mode = tbb; then set -- "$$@" -L"$(OUT)/scheduler-deps/lib" -Wl,-rpath,"$(OUT)/scheduler-deps/lib" -ltbb; fi; \
+		$(CXX) -pthread -fno-lto -fsanitize=$(SANITIZER) -fno-sanitize-recover=all "$$@" \
+			-o "$(OUT)/scheduler-memory-$$mode" || exit $$?; \
+		for width in 1 2 4; do \
+			WF_WORKERS=$$width "$(OUT)/scheduler-memory-$$mode" check $$width \
+				> "$(OUT)/scheduler-memory-$$mode-w$$width.log" || exit $$?; \
+			cat "$(OUT)/scheduler-memory-$$mode-w$$width.log"; \
+		done; \
+	done
+
+check-scheduler: scheduler-build check-scheduler-memory records-build
+	# Qualify the exact scalar timing leaf with the complete independent oracle.
+	$(CC) -std=c11 $(SCHEDULER_FLAGS) records.c records_oracle.c $(FLOOR) \
+		"$(OUT)/records-wf.o" "$(OUT)/scheduler-native.o" -o "$(OUT)/scheduler-leaf-check"
+	WF_WORKERS=0 "$(OUT)/scheduler-leaf-check" check > "$(OUT)/scheduler-leaf-check.log"
+	grep -Fx 'UTF8 leaf qualification PASS: calls=4595603 all-codepoints all-truncations two-byte-pairs' "$(OUT)/scheduler-leaf-check.log"
+	grep -Fx 'UTF8 batch qualification PASS: world=sequential calls=342 results=1821070' "$(OUT)/scheduler-leaf-check.log"
+	@for mode in wf static tbb parlay; do \
+		for width in 1 2 4; do \
+			WF_WORKERS=$$width "$(OUT)/scheduler-$$mode" check $$width > "$(OUT)/scheduler-$$mode-check-w$$width.log" || exit $$?; \
+			cat "$(OUT)/scheduler-$$mode-check-w$$width.log"; \
+		done; \
+	done
+	OUT="$(OUT)" sh records-scheduler-bench.sh check
+
+scheduler-calibrate: check-scheduler
+	OUT="$(OUT)" sh records-scheduler-bench.sh calibrate
 
 # Refresh the default compiler after source changes. A supplied compiler is
 # an explicit caller-owned dependency and must already be built for this tree.
