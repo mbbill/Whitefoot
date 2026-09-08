@@ -23,6 +23,7 @@ extern double wf_research_quadrature(double, double, double, double, double, uin
 extern double wf_research_quadrature_leaf(double, double, double, double, double, uint64_t, bool);
 extern double wf_research_quadrature_refusal(double, double, double, double, double, uint64_t, bool);
 extern double wf_research_quadrature_frontier(double, double, double, double, double, uint64_t, bool);
+extern double wf_research_quadrature_frontier4(double, double, double, double, double, uint64_t, bool);
 static double (*generated_run)(double,double,double,double,double,uint64_t,bool);
 static bool parallel_form, leaf_form, refusal_form, frontier_form;
 static bool native_control;
@@ -261,9 +262,9 @@ int wf__main_body(int argc,char **argv) {
         require(argc==4 && argv[3][0]>='0' && argv[3][0]<='9',"explicit spawn depth");
         char *end;errno=0;unsigned long parsed=strtoul(argv[3],&end,10);
         require(!errno && !*end && parsed<=24,"spawn depth domain");spawn_depth=(unsigned)parsed;
-        require(!frontier_form || spawn_depth==8,"compiled frontier depth");
+        require(!frontier_form || spawn_depth==4 || spawn_depth==8,"compiled frontier depth");
     } else require(argc==3,"spawn depth only for depth-controlled forms");
-    generated_run=frontier_form?wf_research_quadrature_frontier:refusal_form?wf_research_quadrature_refusal:leaf_form?wf_research_quadrature_leaf:wf_research_quadrature;
+    generated_run=frontier_form?(spawn_depth==4?wf_research_quadrature_frontier4:wf_research_quadrature_frontier):refusal_form?wf_research_quadrature_refusal:leaf_form?wf_research_quadrature_leaf:wf_research_quadrature;
     const char *workers=getenv("WF_WORKERS");
     require(workers && (!strcmp(workers,"1") || !strcmp(workers,"4")),"explicit worker count");
     requested=!strcmp(workers,"4")?4:1;

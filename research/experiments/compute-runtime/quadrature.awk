@@ -24,7 +24,7 @@ BEGIN {
     native=(form=="cpp-seq" || form=="tbb" || form=="parlay" || form=="parlay-left" || native_wf || rayon || form=="rust-seq")
     if (spawn=="")spawn=0
     if (!integer(spawn) || (spawn!=0 && spawn!=2 && spawn!=4 && spawn!=8 && spawn!=24) ||
-        ((form!="tbb" && form!="parlay" && form!="parlay-left" && !native_wf && !frontier && !rayon) && spawn) || (frontier && spawn!=8))bad("spawn depth")
+        ((form!="tbb" && form!="parlay" && form!="parlay-left" && !native_wf && !frontier && !rayon) && spawn) || (frontier && spawn!=4 && spawn!=8))bad("spawn depth")
     wf_pool=(parallel || (native_wf && spawn>0))
     if ((mode!="check" && mode!="bench" && mode!="exhaust") || (form!="native" && form!="wf-seq" && !parallel && !leaf && !native) ||
         (width!=1 && width!=4) || (stats!=0 && stats!=1)) bad("validator arguments")
