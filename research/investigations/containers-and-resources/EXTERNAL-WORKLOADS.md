@@ -31,6 +31,45 @@ The 2026-09-08 extension below adds Linux, Redis and SQLite as explicit tests of
 the systems-performance ceiling. Its source observations remain qualitative;
 the separately linked native cost controls are not upstream application timings.
 
+## Permission mechanisms as design counterchecks
+
+These sources test proposed mechanisms, not container demand or workload
+frequency. Neither upstream implementation nor benchmark was executed here.
+
+GhostCell (ICFP 2021) separates aliased cell references from a branded permission
+token. Borrowing the token controls access without per-cell runtime permission
+metadata; its core implementation uses encapsulated unsafe operations with a
+mechanized soundness argument. The paper's list example separately uses arena
+lifetime, with an Arc alternative, for memory management. The brand identifies
+an access domain, not a node or membership. Its original token API for shared
+cells permits only one same-brand mutable cell borrow at a time; uniquely owned
+cells also support direct access without a token. The token API cannot implement
+an iterator yielding simultaneous mutable references to all possibly cyclic
+nodes. For WF, this is evidence for evaluating separate access authority, not
+evidence that initialization permissions provide keepalive, individual deletion
+or disjoint mutable traversal. A token that avoids per-node counters can impose
+a coarser borrowing boundary. [GhostCell, sections 3.1–3.2](https://plv.mpi-sws.org/rustbelt/ghostcell/paper.pdf#page=9).
+
+Verus source at commit `f9e945252b5a2b989d837defdf72ad04794aa658`
+(main resolved on 2026-09-08) separates raw address-set permission, typed
+initialized/uninitialized permission and deallocation authority. Raw splitting
+preserves provenance; typed conversion requires alignment and the exact extent
+and yields uninitialized permission, not permission to read existing bytes;
+deallocation requires the original extent and authority. This is a concrete
+reference for the single-backing layout obligation. These primitives are declared
+axioms or external bodies. The inspected allocation wrapper aborts on refusal,
+and its raw write permits overwriting an initialized value without dropping it.
+Those are not the WF failure and linear-consumption contracts. Verus also uses
+solver-based verification; its expressive permissions do not establish a
+specification-fixed, terminating WF checker. [Memory primitives](https://github.com/verus-lang/verus/blob/f9e945252b5a2b989d837defdf72ad04794aa658/source/vstd/raw_ptr.rs#L569-L969),
+[verification model](https://github.com/verus-lang/verus/blob/f9e945252b5a2b989d837defdf72ad04794aa658/README.md).
+
+These observations challenge two shortcuts in the WF comparison: identifying
+access permission with backing lifetime, and treating raw splitting as sufficient
+authority for a typed layout. They select neither a public pointer interface nor
+an unrestricted proof language. The actual WF alternatives and missing checking
+obligations remain in [FOUNDATION.md](FOUNDATION.md).
+
 ## Kernel, database and cache-server ceiling cases
 
 The owner selected performance before breadth and explicitly allowed intended

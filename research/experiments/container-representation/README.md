@@ -24,7 +24,9 @@ Its parts answer different questions:
 - `costs/`: same-algorithm native hash lookup layout and extent-validation
   controls, with a matched-query Rust standard-map comparator. It tests whether
   a retained runtime check is material under its stated workload and boundary;
-  it is not a checked Whitefoot map implementation.
+  an owning sparse-map control additionally compares one-backing layouts through
+  mutation, migration/refusal and cleanup. These are not checked Whitefoot map
+  implementations.
 - `families/`: current-language hash-table operations, a binary heap with a
   native cost control, an ordered-node component, and variable-record byte-page
   insertion/deletion; boxed-entry dynamic migration and matched byte-growth

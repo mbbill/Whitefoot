@@ -348,6 +348,26 @@
   logical unlink, so removal of membership alone does not authorize reclamation.
   [Pinned deletion protocol](../../../research/investigations/containers-and-resources/EXTERNAL-WORKLOADS.md#linux-independent-membership-and-delayed-reclamation). (sourced)
 
+- 2026-09-08 measurement: the same-algorithm dense heap retains whole-run
+  transfers across ordinary owning helper calls, and byte growth retains scalar
+  copying with circular-index arithmetic. These controls distinguish lowering
+  costs from a need for writer-visible storage permissions; the existing owning
+  box and nested-region reproducers separately identify implementation defects.
+  [Operations, generated code, measurements and limits](../../../research/experiments/container-representation/families/RESULTS.md). (code)
+- 2026-09-08 rationale: the bounded next storage experiment is projected layout
+  of ordinary valid slot values. Its compact physical target does not establish
+  WF admission; a general resource-permission alternative must clear a required
+  operation/layout/lifetime boundary and supply deterministic symbolic checking
+  and erasure, not merely generate identical native code. This does not replace
+  the implemented ownership basis or select a public initialization API.
+  [Decision and falsifiers](../../../research/investigations/containers-and-resources/FOUNDATION.md#independent-ceilings-and-dispositions). (sourced)
+- 2026-09-08 source evidence: branded cell access and raw/typed permissions
+  illuminate different obligations. The inspected GhostCell example separates
+  access authority from arena/reference-counted lifetime; the pinned Verus
+  primitive separates uninitialized typed permission from deallocation authority.
+  Neither provides WF's acceptance, allocation-refusal and linear-cleanup rules.
+  [Sources and limitations](../../../research/investigations/containers-and-resources/EXTERNAL-WORKLOADS.md#permission-mechanisms-as-design-counterchecks). (sourced)
+
 ## Moves
 
 - Selected general place/result-destination support as the first implementation,

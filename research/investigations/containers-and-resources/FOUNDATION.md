@@ -12,12 +12,19 @@ path. Compare executable cost, including initialization, lookup, mutation,
 allocation, movement, peak storage, tail work and necessary metadata. A compact
 proof or a small kernel inventory is not a substitute for those results.
 
-**The overall architecture selection is open.** The previous recommendation to
-make finite nominal invariants and full-array conversion the next container-wide
-foundation was not established by the completed workload coverage. Its pool
-contract was synthesized for a controlled compiler experiment. The evidence
-below preserves useful findings without treating that experiment as a demand
-distribution or an implementation priority.
+**Select ordinary valid values as the implementation baseline, and a projected
+slot layout as the next storage-extension experiment.** A general library
+resource-permission system remains a bounded alternative, not a selected public
+foundation. The experiment must preserve the operation and ownership contracts
+below without extra per-slot permission metadata; failure to do so reopens that
+choice. This is a next-implementation decision, not a claim that current WF
+covers every system container.
+
+The earlier pool-driven recommendation of nominal invariants and full-array
+conversion did not establish a container-wide priority. Its controlled contract
+remains useful evidence, but neither it nor the new map controls measure demand
+distribution. Common-family coverage and independent lifetime/layout ceilings
+remain explicit below.
 
 The [active specification](../../../spec/kernel-spec.md) defines accepted
 programs. The [compiler guide](../../../compiler/README.md) owns implemented
@@ -120,6 +127,11 @@ threshold as a Whitefoot requirement. A byte-page codec does not need arbitrary
 typed holes merely because its physical entry lengths vary. A borrowed cursor or
 multi-index object cannot be claimed covered by copying values into a run.
 
+The [permission-mechanism counterchecks](EXTERNAL-WORKLOADS.md#permission-mechanisms-as-design-counterchecks)
+likewise separate a branded access discipline from backing lifetime, and raw
+permission splitting from checked typed layout. Their proof/trust models are
+comparators, not acceptance authority for WF.
+
 Generic behavior is a separate axis: hash/equality/comparison and callbacks must
 have an admitted invocation mechanism and effects. A concrete u64 table does not
 establish a reusable arbitrary-key library. Memory safety also differs from
@@ -157,9 +169,14 @@ the safety relation. Replacing an occupied slot with a tombstone transfers the
 old payload exactly once. Read-only control projection could support probing;
 writing a byte alone must not create an occupied generic payload.
 
-This is a hypothetical layout facility, not existing source syntax or a selected
+This is a selected experiment, not existing source syntax or a validated
 implementation. It could obtain sparse typed storage without requiring writers
-to prove an arbitrary ownership-set predicate. It has concrete limits:
+to prove an arbitrary ownership-set predicate. For R0, the expected W3/W1 delta
+is for authors of custom container representations: obtaining compact layout
+through checked ordinary value operations without unchecked implementation
+steps. This is not a claim that using Rust's existing safe collections requires
+unsafe code, nor a measured speedup over Rust or a demonstrated WF authoring win.
+It has concrete limits:
 
 - A tag plus an arbitrary byte fingerprint and extra empty/deleted states do not
   fit one byte. A compact control encoding needs a checked finite range/variant
@@ -252,11 +269,28 @@ guard is possible only with an intended false outcome, not an injected trap.
 No runtime proof table, second occupancy bitmap or additional cleanup scan is
 part of this candidate.
 
+The sketch's `ac` and `ap` name separate allocations. It does not yet cover two
+typed planes inside one backing, which is the fair primary native layout
+comparison: charging only the split representation for a second allocation would
+mix layout with provider/refusal costs. One backing needs a checked layout rule
+in addition to focus. It must consume raw bytes under one root allocation
+identity, establish aligned, non-overlapping control and payload planes, and
+retain padding responsibility and the root release authority. Plane identities
+are not independently freeable allocations. Before freeing the root, all planes
+and padding must return their complete raw byte coverage with no live loans.
+Integer extent/alignment checks can occur in a total layout constructor with an
+intended size-refusal result; this is different from revalidating ownership on
+each payload access. This shared layout obligation applies to a projected enum
+as well as to a library resource implementation. Ordinary byte splitting and a
+cast do not establish typed validity, alignment or release authority.
+
 This is a plausible restricted proof design, not a demonstrated sound checker,
 erasure result or authoring-cost measurement. Checked, definition-justified
 predicate introduction provides authority; privacy could hide representation but
 is not what makes a proof unforgeable. The design covers fixed-stride sequential
-storage. It does not supply arbitrary overlays, variable tails, hash correctness,
+storage. General zero-sized linear elements would still need counted ownership
+obligations even when their byte extent is empty. It does not supply arbitrary
+overlays, variable tails, hash correctness,
 stored membership, concurrent mutation or backing keepalive. Ordinary enums
 provide the control/payload validity relation; a projected-enum layout would
 have to preserve it while admitting the required dynamic operations. If their
@@ -410,17 +444,30 @@ container substrate. The current evidence supports this order:
    retirement. Re-measure
    the same operations after the change; the current ratio is not a promised
    speedup. This is a general lowering experiment, not a heap-specific ABI.
-3. Compare one resource-owning sparse container under the two storage routes
-   below. Keep ordinary valid values as the implemented baseline and projected
-   enum layout as the narrower candidate. A library resource-proof route remains
-   a challenger with explicit proof-checking and cost obligations, rather than
-   an already selected replacement for runs.
+3. Prototype projected layout for ordinary slot enums against the native owning
+   sparse control below. Keep construction, matching, transfer and cleanup on
+   general valid-value operations. The target is one backing with compact control
+   and payload planes, runtime-indexed access and no second occupancy/token table.
+   Compare with the current ordinary representation and preserve the same refusal
+   and migration outcomes. The resource-proof route remains a challenger with
+   explicit symbolic checking and erasure obligations.
 
 No production code is changed by this research. These steps identify useful
-implementation experiments; only the first two have an executable current
-compiler defect or measured cost as their immediate selection ground.
+implementation experiments. The first two address executable compiler defects or
+measured lowering costs; the third tests whether a general layout mechanism can
+retain the native sparse representation advantage with WF authority.
 
-### The bounded storage comparison still required
+### Sparse experiment contract and decision boundary
+
+The [owning sparse control](../../experiments/container-representation/costs/RESULTS.md#owning-sparse-layout-and-migration)
+executes the native operation chain, resource conservation, refusal, actual
+growth, returned migration progress and cleanup. At 4096 slots on the measured
+ABI, matched one-backing layouts use 24 versus 17 bytes per capacity unit;
+separate resource allocations and descriptors are counted outside those figures.
+Half-full same-capacity rehash plus digest has a lower split-layout median in
+this run. The narrow timing does not establish general hash-table throughput.
+These are physical and protocol targets for the next WF experiment, not evidence
+that either proposed WF authority is already admitted.
 
 Use one concrete map payload containing an owning resource. Execute collision
 insertion, duplicate replacement, removal, lookup past a tombstone, reuse, growth
@@ -431,13 +478,22 @@ failure contract across ordinary optional values, projected enums and resource
 permissions. A seven-bit fingerprint with empty/deleted states is one matched
 encoding; an arbitrary eight-bit fingerprint is a different layout comparison.
 
-First allow entry relocation, as an ordinary open-addressed map may. Then compare
-a stable-row variant justified by the external grouping/dictionary contracts.
-Do not charge every map for address stability it does not promise. Record lookup
-and update time, maximum migration work per operation, allocation count, peak
-backing, initialized bytes and payload movement. Embed a fallible large-element
-producer in insertion to compare complete results, internal result destinations
-and a proposed vacant destination with the same effects and cleanup outcomes.
+Entry relocation is permitted in this first contract. Its owning resource retains
+its separate backing, but the key and owner descriptor may move. A future stable-row
+comparison must retain an actual borrow of the row/descriptor, not infer that need
+merely from an owning payload. Do not charge every map for address stability it
+does not promise. Track control examinations, migration work, allocation count,
+peak backing, initialized bytes and payload movement; timing claims apply only
+to the operation actually measured.
+
+The native control is the physical target, not a checked implementation of either
+WF authority. The projected-layout prototype must then admit the same dynamic
+operation chain and conserve every resource through refusal, returned progress
+and cleanup. A separate fallible large-element insertion must compare complete
+results, internal result destinations and any proposed vacant destination with
+the same effects and cleanup. This belongs to the construction/placement
+implementation experiment: the existing fresh-result control does not already
+establish in-place generic map construction.
 
 If projected enums and resource permissions produce the same representation and
 operations, timing cannot distinguish their proof authorities. The broader route
@@ -465,7 +521,7 @@ The available evidence supports different next actions for different families:
 | --- | --- | --- |
 | Dense/fixed sequences and priority queues | Use ordinary valid values; correct and improve general storage transfer first | Matched operations still force material initialization, descriptor or movement cost after that repair |
 | Full arrays of general elements | Distinct completed-value form remains useful; current flat-element restriction and linear-empty cleanup are language boundaries | A checked construction/consumption route and its actual representation, not an empty pool contract alone |
-| Hash and ordered containers | Concrete scalar operations work; resource-owning complete operations and generic behavior remain incomplete | The matched sparse comparison above; a complete ordered mutation trace after owning-box repair |
+| Hash and ordered containers | Ordinary scalar operations and a boxed migration component work; prototype projected sparse layout next | Failure to preserve the native owning-map contract/cost, or a required operation beyond ordinary projected values; ordered mutation follows owning-box repair |
 | Deques and rings | A wrapped logical-index trace works; a wrapped run is correctly refused as one contiguous view | A two-span consumer/growth trace that prices any required copying and admits the actual loans |
 | Growable runs, strings and inline/spill forms | Source-written byte growth/refusal executes and has loop/bulk/realloc controls; no WF realloc or finished spill result | General owner-return helper, repeated reserve/spill and copy-heavy resize controls including peak storage and address validity |
 | Packed byte records | Current initialized byte storage executes variable records and overlapping movement | Measured bulk/initialization/compact-handle cost, or an actually required typed layout that byte codecs cannot preserve |
@@ -480,8 +536,20 @@ separately restricted by STOR-5. Allocation/resize and variable-tail layout need
 their own provider and layout contracts. A slot permission alone supplies none
 of these, and the architecture must not claim those system needs solved.
 
-This bounds the unresolved alternatives and the next useful implementation work.
-It does not yet certify the complete container foundation: the sparse resource
-comparison, checked retained access, and remaining helper/layout cost evidence
-are outstanding. The native protocol and growth controls narrow those questions
-without declaring their unimplemented WF counterparts solved.
+The decision has three explicit outcomes. Ordinary valid values remain the
+baseline for families whose measured problems lie in lowering. Projected layout
+is selected for a bounded prototype because compact sparse storage has a
+concrete physical advantage without yet requiring a new writer resource logic.
+General resource permissions become the preferred candidate only if a required
+operation, layout or lifetime cannot be retained through ordinary/projected
+values and the alternative supplies a credible deterministic checking and
+erasure path. Equal native code cannot choose between proof authorities.
+
+Research can therefore hand off to those implementation experiments without
+claiming a universal container substrate. Generic behavior, complete ordered
+mutation, two-span consumers, inline spill, full general arrays, stored lifetime,
+variable tails and concurrent retirement remain named capability questions.
+They are not silently counted as solved or prerequisites to fixing the observed
+compiler defects. Reopen the selected route when one supplies a concrete
+contract/cost counterexample; do not infer either universal coverage or universal
+failure from the bounded map alone.
