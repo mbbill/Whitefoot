@@ -2260,6 +2260,127 @@ time to those counters. The result supports further compiler grain experiments;
 larger compositions, Linux replication and a useful general admission policy
 remain unqualified.
 
+### Sustained batches and regional counters
+
+`quadrature-batch-calibrate` adds a separate throughput/cost-attribution panel:
+
+```sh
+make -C research/experiments/compute-runtime quadrature-batch-calibrate \
+  OUT=/absolute/qualified-output RESULTS=/absolute/fresh-batch-results
+```
+
+The existing `ordinary` image also accepts `batch form [spawn-depth]` with
+`WF_QUADRATURE_INPUT` selecting one of the ten existing fixtures and
+`WF_QUADRATURE_REPEATS` in1..65536. Each process constructs the independent
+explicit-stack oracle, checks eight warmup results, then executes the selected
+integration repeatedly. The loop accumulates a bitwise mismatch for every
+result and checks it after timing. It has one common indirect dispatch per
+integration, loaded once through a volatile function pointer before warmup;
+the visible C kernel cannot be hoisted out of the loop. The retained M1
+assembly has an indirect call on every loop iteration. There is no per-call
+clock, printing or oracle construction in this interval. All calls join before
+the next call begins; this does not model overlapping requests or nested
+application composition.
+
+`getrusage(RUSAGE_SELF)` encloses the two batch clocks and records process-wide
+user/system CPU, voluntary/involuntary context switches and minor/major faults.
+CPU divided by wall is average process CPU concurrency, including spinning
+helpers, not useful-work occupancy. Zero-resolution wall observations remain
+valid raw records but cannot supply a ratio denominator. Pool width follows
+actual offers: isolated empty/terminal-only filtered inputs need not initialize
+the lazy WF pool even with a four-worker request.
+
+On Linux, the collector probes each requested `perf` event on the actual host:
+task-clock, context-switches, cpu-migrations, page-faults, cycles, instructions,
+branches, branch-misses, cache-references and cache-misses. Unavailable events
+retain their probe output and are never replaced with zero. With available
+events, a separate observer runs `perf stat --delay=-1 --control=fd:3,4`; the
+host enables counters after warmup and waits for acknowledgement, then disables
+them after the batch resource snapshot. The inherited process scope includes
+worker threads, not other processes on the CPU mask. This follows the
+[upstream perf control and inheritance interface](https://raw.githubusercontent.com/torvalds/linux/v6.8/tools/perf/Documentation/perf-stat.txt).
+Counts include boundary acknowledgement/resource/clock/disable work. The
+enable-ack gap can also change helper parking before the batch, so perf/plain
+differences are not a pure counter-overhead subtraction. Raw event runtime and
+running percentage are retained; missing, duplicate, not-counted or zero-runtime
+selected events fail report qualification. Multiplexed counts are not exact
+simultaneous instruction/cycle attribution. Event availability alone does not
+qualify PMU accuracy or cache-event semantics on a particular CPU.
+
+The Linux compute job installs a recorded perf binary and records its attempt
+to permit process counters on the ephemeral hosted runner. It runs this panel
+after the original short-call calibration on the same recorded CPU mask.
+Five alternating whole-cell orders cover nine forms, worker requests1/4 and
+four heavy inputs:360 plain processes, plus360 perf processes if at least one
+event is available. Each uses4,096 repetitions by default; `ROUNDS` and
+`REPEATS` can select an explicitly recorded different panel. The forms are C
+native, generated WF sequential/leaf/refusal, C++ sequential, native WF value
+depth8, Parlay-left depth4/8 and oneTBB depth8. This is not a general grain
+search. There is no added queue-occupancy cap here; the preceding queue-limit4
+candidate is a different experiment. Normal owner-slot capacity still applies.
+
+`check-quadrature` additionally invokes `quadrature-batch.sh check`. Its140
+successful batch executions check1,540 outputs:128 ordinary/sanitized cells,
+ten input-selector cells and two FIFO protocol encodings. It checks the
+documented acknowledgement line and perf versions that append a NUL. Five
+negative probes cover wrong repeat identity, unpaired control descriptors,
+missing perf events, uncounted events and zero event runtime. The report
+validator binds the fixture's expected result as well as its input/work count.
+Default check result paths are unique; explicit results and calibration paths
+must be fresh. Both new collector files belong to this panel and retire with
+it. Existing short-call/exhaustion/task-conservation checks remain in place.
+
+The first M1 batch cohort has360 plain processes,1,474,560 timed calls and2,880
+checked warmups. MacBookPro18,3/Clang21.0.0, scalar strict-FP/no-FMA/no-LTO,
+unfixed placement/frequency and no overlapping native timing/builds apply.
+The ordinary image is
+`4da81c9e4a66147230da16e1e7a4797d873b1755b18a1b41d8305218768d93c1`;
+the host object is
+`2b5395b0277dbed8b0cb7aa8ff027af165f0705674a6d5d228750967fb418d8a`.
+The measured collector/validator SHA256 identities are
+`a0468a679f0bc7a5bc419b13b1c0332de3aef9ea4fe2c037ed09d729088413de` and
+`a8ce99464b3b47107b6018d8793dfad889e33559c6ccbe0dddf3a4f1b8a471f1`.
+The build's original140-process batch qualification had two negative probes;
+the final collector was then qualified in a fresh140-process replay including
+all five negatives before timing. Its manifest is separate from the original
+build source snapshot. The existing short-call qualification also passes160
+processes/3,200 results and its five malformed-report probes. An earlier
+unmeasured batch build exposed a wrong lazy-pool-width expectation; another
+exposed shell-function environment persistence in a negative test. Both were
+fixed before the retained image and final checker replay. A sandbox-denied CPU
+metadata read also stopped before timing; the complete cohort uses a fresh
+directory and a successful host record.
+
+Width4 medians of five process observations follow, in microseconds per
+integration. CPU is the sum of user and system time over all process threads.
+
+| Input | Generated leaf wall | Generated leaf CPU | Native WF depth8 wall | Native WF depth8 CPU | Parlay-left depth8 wall | Parlay-left depth8 CPU |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Center peak |15.377|59.697|10.722|40.303|10.284|41.137|
+| Left peak |13.576|49.471|9.084|32.857|9.374|37.395|
+| Right peak |12.889|49.014|8.674|32.926|8.847|34.818|
+| Depth cap |25.512|99.096|17.068|64.100|17.745|69.911|
+
+Generated-leaf/Parlay-depth8 paired wall ratios are1.515/1.448/1.488/1.438;
+the corresponding CPU ratios are1.489/1.306/1.433/1.417. All five pairs lose
+in wall and CPU on every input. Native WF depth8 also wins both quantities in
+all five pairs. Generated-leaf CPU/wall medians are3.882/3.842/3.775/3.863;
+Parlay depth8 is3.951/3.928/3.941/3.922. Generated WF's sequential clone versus
+C++ sequential has paired wall ratios1.001/1.010/1.011/1.008 at worker request4.
+This prioritizes excess parallel CPU work, including possible spinning, and
+the generated grain/call paths over a large scalar-kernel deficit or mostly
+sleeping workers. It does not separate acquisition, bookkeeping, cache misses
+and spinning, or establish a general runtime limit.
+
+Scheduling policy changes OS observations too. Parlay-left depth4's center,
+left and right inputs have median11,500/27,062/8,395 involuntary switches per
+4,096-call batch, with zero median voluntary switches; depth8 has75/72/160
+involuntary switches. Left-peak wall medians are26.414 versus9.374 microseconds,
+but depth-cap favors depth4 at16.860 versus17.745. These counters do not price
+each switch or prove which wait/yield/preemption mechanism caused the loss.
+No default grain is selected. Actual Linux regional hardware data and broader
+composition remain pending; this M1 cohort has no perf counter measurements.
+
 ## Scalar scheduler comparison
 
 This panel investigates scheduling with six forms: the recovered WF runtime,

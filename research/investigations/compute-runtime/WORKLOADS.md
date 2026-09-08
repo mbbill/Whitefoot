@@ -39,7 +39,12 @@ Reciprocal native fork-direction controls expose mirrored left/right skew
 effects while preserving the ordered result and all oracle work counts.
 An opt-in generated sequential-refusal control now tests subtree selection on
 actual compiler output; fixed queue occupancy remains an unqualified admission
-policy, with input-dependent gains and losses. Recursive Rayon, general compiler
+policy, with input-dependent gains and losses. A separate
+[sustained batch panel](../../experiments/compute-runtime/README.md#sustained-batches-and-regional-counters)
+now measures joined repeated integrations and process CPU/context switches;
+the M1 comparison prioritizes excess parallel CPU work over a large scalar
+kernel deficit. Linux regional PMU collection is wired but not yet qualified.
+Recursive Rayon, general compiler
 grain selection and held-out/native-host confirmation
 remain missing. The ten-case screen does not
 yet qualify larger application composition and does not replace the application

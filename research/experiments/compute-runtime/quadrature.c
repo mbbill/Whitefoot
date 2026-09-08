@@ -7,6 +7,7 @@
 #include "quadrature_native.h"
 #include <errno.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -15,6 +16,7 @@
 #include <string.h>
 #include <sys/resource.h>
 #include <time.h>
+#include <unistd.h>
 
 extern int wf__floor_run(int, char **);
 extern double wf_research_quadrature(double, double, double, double, double, uint64_t, bool);
@@ -142,10 +144,83 @@ static double run(const Input *p,const char *form) {
         p->a,p->b,p->center,p->width,p->tolerance,p->depth);
     return generated_run(p->a,p->b,p->center,p->width,p->tolerance,p->depth,parallel_form);
 }
+/* One opaque dispatch shared by every sustained form prevents a visible pure
+ * native kernel from being hoisted out of the repeated-input loop. Read once
+ * before warmup; the timed loop pays one common indirect call per result. */
+static double (*volatile batch_dispatch)(const Input *,const char *)=run;
+static unsigned environment_number(const char *name,unsigned minimum,unsigned maximum) {
+    const char *text=getenv(name);char *end;
+    require(text && text[0]>='0' && text[0]<='9',"batch numeric environment");
+    errno=0;unsigned long value=strtoul(text,&end,10);
+    require(!errno && !*end && value>=minimum && value<=maximum,"batch numeric domain");
+    return (unsigned)value;
+}
+/* perf stat starts with inherited counters disabled. Its acknowledgement
+ * brackets a sustained batch, excluding oracle construction and pool warmup.
+ * Counts include this boundary protocol and resource/clock reads; they are
+ * not instruction counts for an individual call or scheduler operation. */
+static void perf_command(int control,int acknowledgement,const char *command) {
+    if(control<0)return;
+    size_t sent=0,length=strlen(command);
+    while(sent<length) {
+        ssize_t n=write(control,command+sent,length-sent);
+        if(n<0 && errno==EINTR)continue;
+        require(n>0,"perf control write");sent+=(size_t)n;
+    }
+    char ack[4];size_t received=0;bool skipped_nul=false;
+    while(received<sizeof(ack)) {
+        ssize_t n=read(acknowledgement,ack+received,1);
+        if(n<0 && errno==EINTR)continue;
+        require(n>0,"perf acknowledgement read");
+        /* perf versions writing sizeof("ack\n") leave a trailing NUL
+         * before the next acknowledgement. The documented line has none. */
+        if(!received && !ack[0] && !skipped_nul){skipped_nul=true;continue;}
+        received+=(size_t)n;
+    }
+    require(!memcmp(ack,"ack\n",sizeof(ack)),"perf acknowledgement value");
+}
+static void run_batch(const char *form) {
+    const char *input=getenv("WF_QUADRATURE_INPUT");const Input *p=NULL;
+    require(input!=NULL,"batch input environment");
+    for(size_t i=0;i<sizeof(cases)/sizeof(cases[0]);++i)
+        if(!strcmp(input,cases[i].name))p=&cases[i];
+    require(p!=NULL,"batch input identity");
+    unsigned repeats=environment_number("WF_QUADRATURE_REPEATS",1,65536);
+    int control=-1,acknowledgement=-1;
+    require((getenv("WF_PERF_CONTROL_FD")!=NULL)==(getenv("WF_PERF_ACK_FD")!=NULL),"paired perf descriptors");
+    if(getenv("WF_PERF_CONTROL_FD")) {
+        control=(int)environment_number("WF_PERF_CONTROL_FD",3,INT_MAX);
+        acknowledgement=(int)environment_number("WF_PERF_ACK_FD",3,INT_MAX);
+        require(control!=acknowledgement,"distinct perf descriptors");
+    }
+    Reference r=reference(p);uint64_t expected=bits(r.value),mismatch=0;
+    double (*execute)(const Input *,const char *)=batch_dispatch;
+    const unsigned warmup=8;
+    for(unsigned i=0;i<warmup;++i)require(bits(execute(p,form))==expected,"batch warmup result");
+    struct rusage before,after;
+    perf_command(control,acknowledgement,"enable\n");
+    require(!getrusage(RUSAGE_SELF,&before),"batch resources before");
+    uint64_t start=now();
+    for(unsigned i=0;i<repeats;++i)mismatch|=bits(execute(p,form))^expected;
+    uint64_t elapsed=now()-start;
+    require(!getrusage(RUSAGE_SELF,&after),"batch resources after");
+    perf_command(control,acknowledgement,"disable\n");
+    require(!mismatch,"batch binary64 result");
+    unsigned lanes=wf_compute_worker_count();
+    bool offers=(parallel_form && (!leaf_form || r.nodes>1)) || (native_wf && r.forks);
+    require(lanes==((offers && requested==4)?4:0),"batch WF pool width");
+    puts("# quadrature batch v1: input form workers spawn_depth repeats warmup perf_control stats nodes_per_call wall_ns user_us system_us voluntary involuntary minor_faults major_faults wf_lanes");
+    printf("%s\t%s\t%u\t%u\t%u\t%u\t%d\t%d\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%ld\t%ld\t%ld\t%ld\t%u\n",
+        p->name,form,requested,spawn_depth,repeats,warmup,control>=0,WF_COMPUTE_STATS,r.nodes,elapsed,
+        cpu_us(after.ru_utime)-cpu_us(before.ru_utime),cpu_us(after.ru_stime)-cpu_us(before.ru_stime),
+        after.ru_nvcsw-before.ru_nvcsw,after.ru_nivcsw-before.ru_nivcsw,
+        after.ru_minflt-before.ru_minflt,after.ru_majflt-before.ru_majflt,lanes);
+    printf("# quadrature batch PASS: outputs=%u expected=%a mismatch=0\n",repeats+warmup,r.value);
+}
 int wf__main_body(int argc,char **argv) {
-    require(argc==3 || argc==4,"usage: quadrature check|bench|exhaust form [spawn-depth]");
-    bool bench=!strcmp(argv[1],"bench"),exhaust=!strcmp(argv[1],"exhaust");
-    require(bench || exhaust || !strcmp(argv[1],"check"),"mode");
+    require(argc==3 || argc==4,"usage: quadrature check|bench|exhaust|batch form [spawn-depth]");
+    bool bench=!strcmp(argv[1],"bench"),exhaust=!strcmp(argv[1],"exhaust"),batch=!strcmp(argv[1],"batch");
+    require(bench || exhaust || batch || !strcmp(argv[1],"check"),"mode");
     const char *form=argv[2];
     refusal_form=!strcmp(form,"wf-refusal") || !strcmp(form,"wf-refusal-seq");
     leaf_form=!strcmp(form,"wf-leaf") || !strcmp(form,"wf-leaf-seq") || refusal_form;
@@ -164,6 +239,10 @@ int wf__main_body(int argc,char **argv) {
     const char *workers=getenv("WF_WORKERS");
     require(workers && (!strcmp(workers,"1") || !strcmp(workers,"4")),"explicit worker count");
     requested=!strcmp(workers,"4")?4:1;
+    if(batch) {
+        run_batch(form);quadrature_native_stop();
+        require(!fflush(stdout),"batch report flush");return 0;
+    }
     void **held=NULL;unsigned reserved=0;
     if(exhaust) {
         require(requested==4 && ((native_wf && spawn_depth==24) || (refusal_form && parallel_form)),"exhaustion control arguments");

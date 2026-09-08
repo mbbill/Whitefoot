@@ -55,6 +55,25 @@ jobs:
         env:
           OUT: ${{ runner.temp }}/compute-${{ matrix.workload }}
         run: make -C research/experiments/compute-runtime scheduler-fetch OUT="$OUT"
+      - name: Prepare optional regional performance counters
+        if: matrix.workload == 'quadrature'
+        env:
+          OUT: ${{ runner.temp }}/compute-${{ matrix.workload }}
+        run: |
+          sudo apt-get install -y --no-install-recommends linux-tools-generic
+          mkdir -p "$OUT/quadrature"
+          # This is an ephemeral hosted runner. Record the permission change;
+          # a VM without a PMU still reports hardware events as unavailable.
+          {
+            sysctl kernel.perf_event_paranoid
+            if ! sudo sysctl -w kernel.perf_event_paranoid=-1; then
+              echo 'perf permission adjustment unavailable'
+            fi
+            perf_tool=$(find -L /usr/lib/linux-tools -type f -name perf | sort -V | tail -1)
+            test -n "$perf_tool"
+            "$perf_tool" version
+            echo "PERF=$perf_tool" >> "$GITHUB_ENV"
+          } > "$OUT/quadrature/perf-setup.txt" 2>&1
       - name: Qualify sources and actual timing objects
         env:
           OUT: ${{ runner.temp }}/compute-${{ matrix.workload }}
@@ -82,6 +101,8 @@ jobs:
           if test '${{ matrix.workload }}' = quadrature; then
             taskset -c "$selected" make -C research/experiments/compute-runtime quadrature-calibrate \
               OUT="$OUT" RESULTS="$OUT/calibration"
+            taskset -c "$selected" make -C research/experiments/compute-runtime quadrature-batch-calibrate \
+              OUT="$OUT" RESULTS="$OUT/quadrature/batch-calibration"
           else
             taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/calibration" \
               sh research/experiments/compute-runtime/${{ matrix.driver }} calibrate
@@ -121,6 +142,11 @@ jobs:
             echo 'This screen is not held-out confirmation or a fastest-runtime claim.'
             if test -f "$OUT/calibration/summary.tsv"; then
               echo "Retained process rows: $(awk 'END {print NR-1}' "$OUT/calibration/summary.tsv")"
+            fi
+            if test -f "$OUT/quadrature/batch-calibration/summary.tsv"; then
+              echo "Sustained batch rows: $(awk 'END {print NR-1}' "$OUT/quadrature/batch-calibration/summary.tsv")"
+              cat "$OUT/quadrature/batch-calibration/availability.tsv"
+              echo 'Regional counters include batch-boundary overhead and all worker CPU work; unavailable events are not zero.'
             fi
             if test -f "$OUT/budget-calibration/summary.tsv"; then
               echo "Cost, chunk cap and input-check cadence rows: $(awk 'END {print NR-1}' "$OUT/budget-calibration/summary.tsv")"

@@ -65,7 +65,7 @@ $(OUT)/probe $(OUT)/probe-no-stats $(OUT)/probe-events: runtime.c runtime.h runt
 
 check: check-runtime check-protocol-cost check-abi check-fir check-bench check-records-events check-scheduler-events check-mandelbrot check-quadrature
 
-.PHONY: quadrature-build check-quadrature quadrature-calibrate quadrature-deps
+.PHONY: quadrature-build check-quadrature quadrature-calibrate quadrature-deps quadrature-batch-calibrate
 QUADRATURE_FORMS := native wf-seq wf-auto wf-leaf-seq wf-leaf wf-refusal-seq wf-refusal cpp-seq \
 	tbb-d0 tbb-d2 tbb-d4 tbb-d8 tbb-d24 parlay-d0 parlay-d2 parlay-d4 parlay-d8 parlay-d24 \
 	wf-native-d0 wf-native-d2 wf-native-d4 wf-native-d8 wf-native-d24 \
@@ -77,7 +77,7 @@ quadrature-deps:
 
 quadrature-build: $(WFC) quadrature-deps
 	mkdir -p "$(OUT)/quadrature/source"
-	cp quadrature.wf quadrature_host.ll quadrature.c quadrature.awk quadrature_native.cpp quadrature_native.h records-scheduler-deps.sh runtime.c runtime.h runtime_events.h $(FLOOR) Makefile "$(OUT)/quadrature/source/"
+	cp quadrature.wf quadrature_host.ll quadrature.c quadrature.awk quadrature-batch.sh quadrature-batch.awk quadrature_native.cpp quadrature_native.h records-scheduler-deps.sh runtime.c runtime.h runtime_events.h $(FLOOR) Makefile "$(OUT)/quadrature/source/"
 	mkdir -p "$(OUT)/quadrature/deps"
 	cp -R "$(OUT)/scheduler-deps/lib" "$(OUT)/quadrature/deps/"
 	cp "$(OUT)/scheduler-deps/metadata.txt" "$(OUT)/scheduler-deps/build/compile_commands.json" "$(OUT)/quadrature/deps/"
@@ -174,6 +174,10 @@ check-quadrature: quadrature-build
 		"$(OUT)/quadrature/negative-refusal-spine.tsv" > "$(OUT)/quadrature/negative-refusal-spine.tsv.log" 2>&1; then \
 		echo 'quadrature accepted wrong refusal spine' >&2; exit 1; \
 	fi
+	OUT="$(OUT)" sh quadrature-batch.sh check
+
+quadrature-batch-calibrate:
+	OUT="$(OUT)" RESULTS="$(RESULTS)" sh quadrature-batch.sh calibrate
 
 quadrature-calibrate:
 	@test -n "$(RESULTS)" && test -x "$(OUT)/quadrature/ordinary"
