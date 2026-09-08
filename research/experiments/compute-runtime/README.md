@@ -875,6 +875,64 @@ counts identify search traffic and local execution as measurable distinctions;
 they do not establish their CPU cost or explain the opposite M1/Linux timing
 directions. No production performance improvement follows from event timings.
 
+The [Linux event run at `63687369`](https://github.com/mbbill/Whitefoot/actions/runs/34213463345)
+independently verifies the same 1,170 processes, 10,530 calls, 42,120 bank rows
+and 1,010,880 deltas, plus nineteen source/artifact hashes. The compiler binary
+is again absent. This runner is an EPYC **9V74**, unlike the prior 7763 cadence
+host; it exposes two physical cores/four SMT logical CPUs, mask 0--3, with
+quota and per-worker placement unqualified. Artifact `10050888685` has ZIP
+SHA256 `d3422dea5f31677bc60f23f4443c010c28472727f994bc08bc72185310cefd10`.
+Published-job counts and zero observed slot refusals reproduce the M1 panel.
+The search behavior does not: early-invalid4,097/team idle-origin attempts
+decrease in all five batch-check pairs, ratio 0.660 [0.093, 0.812]; skew4,097/team
+decreases in three of five, ratio 0.549 [0, 1.253]. Early-invalid256 shifts
+toward more stolen jobs under batch checks on both hosts. These are separate
+instrumented cohorts, not a timing comparison or a universal search rule.
+
+### Idle search spacing control
+
+A bounded M1 control over `63687369` tests whether fewer idle searches improve
+the compiled WF record workload. One executable selects zero or sixteen ARM
+`__yield()` hints after each failed idle search during the initial 4,096-scan
+phase. The selector is read before worker creation and stays immutable.
+Join/help, deque ownership, completion, wakeup, split policy and fallback are
+unchanged. This is a processor hint, not `sched_yield` or a WF language feature.
+The same scan budget remains, so spacing also changes time to park; this is
+not an isolated measurement of the cost of a search.
+
+Timing and detailed events use separate images, each with 320 processes and
+5,440 calls: team/capacity, call/batch input checks, requested widths zero/four,
+zero/sixteen hints, four cells and five rotating passes with sixteen warm
+calls plus a first call. Cells are early-invalid256 and Unicode256 with
+maximum length 65,536, and early-invalid4,097 and skew4,097 with maximum length
+128; seed 828219. Both modes share one image within a panel and the same emitted
+WF object. Statistics are enabled; vectorization/LTO are disabled; placement
+is unfixed. Forty-eight qualification processes cover protocol interleavings,
+ASan/UBSan and TSan full record qualifiers, and repetition boundaries. Sanitizers
+cover C components, not the emitted WF object. Exact metadata and inactive
+steal validation were strengthened after measurement and replayed on retained
+raw data; executable and raw results were unchanged.
+
+With detailed events disabled, long Unicode/capacity/batch core medians improve
+from 1.791 to 1.755 ms, paired ratio 0.9798 [0.9674, 0.9996], all five pairs lower.
+The other fifteen width-four core comparisons have mixed directions. Under
+per-call checks, early-invalid256/team batch CPU increases in every pair:
+median 8.499 to 9.484 ms, paired increases 0.641--1.483 ms. Skew4,097/team/call
+batch CPU falls 0.308 to 0.249 ms in every pair, but core time worsens in four
+of five. Batch CPU includes the first call, checks and printing; it is not
+scheduler CPU cost. Width-zero short controls remain noisy despite the selector
+having no worker on which to act.
+
+The event panel confirms fewer searches in selected cells: early-invalid4,097/
+team/call retains three stolen jobs per warm call while idle-origin attempts
+fall in all five pairs, ratio 0.800 [0.554, 0.828]. Its timing panel does not
+show a consistent core improvement. Fewer searches alone therefore do not
+select this fixed spacing policy; no default change is promoted. The timing
+image SHA256 is
+`a97bd86631bb2e9d27715993c11ca3e14a9be60ee5a500f41c2af9a5f3855869`;
+the event image is
+`571f8aaf2e82e5dbfcad38805c2a0236c6d700849063dc903c454b2caeb558b8`.
+
 ## Scalar scheduler comparison
 
 This panel investigates scheduling with six forms: the recovered WF runtime,
