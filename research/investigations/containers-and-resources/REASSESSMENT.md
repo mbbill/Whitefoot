@@ -35,6 +35,111 @@ corresponding specification amendments. The initial programs need no new public
 container syntax. Their implementation now supplies evidence for reviewing the
 foundation's concrete form, rather than committing to every mechanism it introduced.
 
+### Proposed control-header temporary-loan boundary
+
+The 2026-09-07 closeout review distinguishes target capture from authority to
+commit. Capturing an index before the RHS permits that RHS to change the index;
+it does not permit the RHS to borrow the selected storage and then commit through
+an overlapping path while that temporary loan remains live. SET-1/SET-2 already
+require the complete post-RHS loan judgment. Enforcing it exposed a separate
+choice in OWN-6: the current statement-end rule also retains a direct match
+call's temporary arguments throughout every arm. The proposal below is research;
+it has not amended OWN-6 or the corresponding expected compiler verdicts.
+
+**Recommendation:** complete an owned enum scrutinee, then end just the temporary
+argument loans created while evaluating it before entering an arm. Cover both
+statement and value matches. Apply the corresponding boundary to the exact
+owned Bool condition of statement and value conditionals; GRAM-4/GRAM-5 admit
+call expressions there too. This is one control-header boundary, without a new
+region syntax, a callee-name test, or body-dependent escape analysis.
+
+The relevant workload obligation is sequential acquisition with typed refusal:
+acquire one node or block, retain its owned success value, then acquire another
+through the same provider. The recursive forms in
+[`prefix_expression.wf`](../../../tests/programs/prefix_expression.wf) and
+[`par_layout.wf`](../../../tests/programs/par_layout.wf) expose that obligation.
+They are capability witnesses, not a distribution of real application demand.
+A provider's store brand in a returned Box or Vector identifies storage; it does
+not keep an exclusive borrow of the provider descriptor alive (STOR-5/PROV-1).
+
+Three alternatives were considered:
+
+| Boundary | Consequence | Assessment |
+| --- | --- | --- |
+| Whole enclosing match statement | Retains a non-escaping argument loan across later acquisitions. Binding the result first is not a general replacement: child reborrows require a region confined to one statement, and FN-9/BLK-0 route variant facts only from the direct matched call. | No additional live-reference protection has been identified for an owned, borrow-free scrutinee at arm entry. |
+| Every call return | Also changes ordered RHS lists and mutation commits. It requires a separate account of borrowed results, surviving views, and their parent authority throughout expression evaluation. | Broader than the composition problem studied here; not recommended in this amendment. |
+| Completed non-escaping control header | Retains ordinary statement loans and all persistent/result loans; permits provider reuse before the selected arm's work. | Recommended using the existing mode and stored-content judgments. |
+
+The proposed OWN-4/OWN-6 amendment has the following exact boundaries:
+
+1. A successfully checked `own` enum scrutinee in `match_stmt` or `value_match`,
+   or the exact `own Bool` condition in `if_stmt` or `value_if`, ends the temporary
+   argument loans created by that evaluation after it completes and before any
+   arm or branch begins.
+2. A temporary created before that header is unaffected. The header cannot
+   end a bound borrow holder's region-governed loan, a surviving view's loan,
+   or the permanent suspension associated with a candidate-position borrowed result.
+3. Matching through a borrow retains OWN-13, including payload-binder loans and
+   parent suspension. No successful tag or branch choice narrows provenance.
+4. A header-created statement child ends at this boundary. Its parent resumes
+   only after its last suspending child ends. The child still must satisfy the
+   existing local-region and enclosing-statement admission requirements. Writing
+   the temporary's region explicitly does not turn it into a bound holder: that
+   region remains its formation and type-validity ceiling, while OWN-6 fixes its
+   shorter temporary-loan endpoint. OWN-4 must explicitly defer call-scoped
+   temporary liveness to OWN-6 instead of stating an unconditional block-end
+   endpoint; bound holders retain OWN-4's block-end rule.
+5. Temporary loans in ordinary `set`, `replace`, and ordered result expressions
+   still last through their statement. Target capture grants no commit exemption.
+6. The boundary ends static access authority, not ownership, destructors, or
+   physical storage lifetime. Overlapped execution must complete the header's
+   result and argument accesses under PAR-1/PAR-3 before entering its continuation.
+
+The non-escape argument uses existing language premises. STOR-5 recursively
+excludes borrows and views from enum payloads, including substituted generic
+payloads, and from its enumerated stored-content positions. A direct borrowed
+result does not satisfy the owned-scrutinee judgment; a direct view is not an enum. Surviving named
+holders and views keep their independent loans. With all argument accesses
+finished, no usable reference derived from one of the ended temporary arguments
+remains at branch entry. Removing those children can therefore resume a parent
+without introducing two usable aliases. This is a local argument under the
+current stored-content restriction, not a proof for future borrowed payloads;
+admitting those would require revisiting this criterion in the same amendment.
+
+The current backend joins ordinary completion work before a match terminator,
+materializes the scrutinee before reading its tag, and drains a staged lane in
+join, result copy, release order before the remainder runs. The relevant paths
+are `emit_terminator` in `compiler/src/backend/emitter.rs` and
+`emit_staged_lane_retirement` in `compiler/src/backend/emitter/parallel.rs`.
+Staged permission separately retains call loans from typed argument footprints;
+it does not read the lexical checker's temporary-loan stack. Task-frame backing
+must still last through join return and the corresponding retirement, including
+suspension or worker migration. This proposal needs no runtime API or I/O
+scheduling change. The separate I/O branch's publication entry is not present in
+this worktree, so this inspection does not certify its unmerged implementation.
+
+The Rust comparison is narrower than copying temporary destruction rules. The
+[Rust Reference](https://doc.rust-lang.org/reference/destructors.html#temporary-scopes)
+keeps match-scrutinee temporary storage outside a dedicated temporary scope;
+that concerns destruction, not whether every argument reference stays live
+through every arm. Rust separately uses
+[non-lexical borrow lifetimes](https://doc.rust-lang.org/stable/edition-guide/rust-2018/ownership-and-lifetimes/non-lexical-lifetimes.html).
+Whitefoot's expected W1 benefit is composable typed acquisition under a fixed
+local judgment; its W3 boundary remains mandatory static proof with no writer
+escape. This choice claims no measured speed advantage over Rust and no general
+substitute for Rust's wider borrowed-result expressiveness.
+
+The proposed delta is numbered rules +0, tokens +0, operation spellings +0,
+exceptions +1: one non-escaping control-header lifetime boundary in OWN-6,
+including child resumption at that boundary, with OWN-4 explicitly deferring
+temporary-loan liveness to OWN-6. The selection ground is the
+composition obstruction and type-based non-escape argument, not preservation of
+existing compiler output. Before delivery, implementation evidence must cover
+owned statement/value headers, parent resumption, named and result-carrying loans,
+borrowed matches, sibling argument overlap, repeated acquisition, and native
+staged retirement. Existing negative mutation cases remain negative. The full
+canonical gate and CI must then validate the actual amended revision.
+
 ### Empirical ground
 
 The maintained [experiment bundle](../../experiments/container-representation/README.md)
