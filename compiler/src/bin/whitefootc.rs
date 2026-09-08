@@ -31,7 +31,7 @@ use whitefoot::{
     FLOOR_WINDOWS_RUNTIME_SOURCE, SCHED_PRIM_WINDOWS_SOURCE, WINDOWS_RUNTIME_SOURCE,
 };
 
-const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N] [--par-sequential-refusal] [--no-overlap] [--par-ledger] \
+const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N] [--par-sequential-refusal] [--par-recursive-frontier N] [--no-overlap] [--par-ledger] \
 [--stack-ledger] [-o OUTPUT] SOURCE...";
 
 // The compiler walks typed source and lowering trees recursively. Windows
@@ -576,6 +576,8 @@ struct Options {
     scalar_leaf_limit: Option<u32>,
     /// Opt-in ordinary-ABI sequential calls on refused compute offers.
     sequential_refusal: bool,
+    /// Opt-in private recursive component layers, with ordinary call signatures.
+    recursive_frontier: Option<std::num::NonZeroU8>,
     /// Emit the module a compiler with no overlap lowering at all emits.
     ///
     /// This is the sequential reference build, and it exists for one reason:
@@ -612,6 +614,7 @@ impl Options {
         let mut par = false;
         let mut scalar_leaf_limit = None;
         let mut sequential_refusal = false;
+        let mut recursive_frontier = None;
         let mut no_overlap = false;
         let mut par_ledger = false;
         let mut stack_ledger = false;
@@ -635,6 +638,23 @@ impl Options {
                     })?;
                     if scalar_leaf_limit.replace(limit).is_some() {
                         return Err("--par-scalar-leaf-limit may be written only once".to_owned());
+                    }
+                }
+                "--par-recursive-frontier" => {
+                    cursor += 1;
+                    let level = arguments
+                        .get(cursor)
+                        .filter(|value| {
+                            !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
+                        })
+                        .and_then(|value| value.parse::<u8>().ok())
+                        .filter(|value| *value <= 32)
+                        .and_then(std::num::NonZeroU8::new)
+                        .ok_or_else(|| {
+                            "--par-recursive-frontier requires an integer in 1..32".to_owned()
+                        })?;
+                    if recursive_frontier.replace(level).is_some() {
+                        return Err("--par-recursive-frontier may be written only once".to_owned());
                     }
                 }
                 "--par-sequential-refusal" => {
@@ -695,11 +715,15 @@ impl Options {
         if sequential_refusal && !par {
             return Err("--par-sequential-refusal requires --par".to_owned());
         }
+        if recursive_frontier.is_some() && !par {
+            return Err("--par-recursive-frontier requires --par".to_owned());
+        }
         Ok(Self {
             emit_llvm,
             par,
             scalar_leaf_limit,
             sequential_refusal,
+            recursive_frontier,
             no_overlap,
             par_ledger,
             stack_ledger,
@@ -716,6 +740,12 @@ impl Options {
     fn overlap(&self) -> OverlapLowering {
         if self.no_overlap {
             OverlapLowering::Off
+        } else if let Some(maximum_levels) = self.recursive_frontier {
+            OverlapLowering::OnWithRecursiveFrontier {
+                maximum_levels,
+                maximum_scalar_leaf_operations: self.scalar_leaf_limit,
+                sequential_refusal: self.sequential_refusal,
+            }
         } else if self.par && self.sequential_refusal {
             OverlapLowering::OnWithSequentialRefusal {
                 maximum_scalar_leaf_operations: self.scalar_leaf_limit,
@@ -1007,6 +1037,58 @@ mod tests {
             ],
         ] {
             assert!(parse(&arguments).is_err(), "{arguments:?}");
+        }
+    }
+
+    #[test]
+    fn recursive_frontier_requires_compute_and_composes_with_other_controls() {
+        let options = parse(&[
+            "--par",
+            "--par-recursive-frontier",
+            "8",
+            "--par-sequential-refusal",
+            "--par-scalar-leaf-limit",
+            "16",
+            "value.wf",
+        ])
+        .unwrap();
+        assert_eq!(
+            options.overlap(),
+            OverlapLowering::OnWithRecursiveFrontier {
+                maximum_levels: std::num::NonZeroU8::new(8).unwrap(),
+                maximum_scalar_leaf_operations: Some(16),
+                sequential_refusal: true,
+            }
+        );
+        for value in ["1", "32"] {
+            assert!(parse(&["--par", "--par-recursive-frontier", value, "value.wf"]).is_ok());
+        }
+        for value in ["0", "33", "256", "-1", "+1", "", "1.5"] {
+            let error = parse(&["--par", "--par-recursive-frontier", value, "value.wf"])
+                .err()
+                .unwrap();
+            assert!(error.contains("--par-recursive-frontier"), "{error}");
+        }
+        for args in [
+            vec!["--par-recursive-frontier", "8", "value.wf"],
+            vec!["--par", "--par-recursive-frontier"],
+            vec![
+                "--par",
+                "--par-recursive-frontier",
+                "8",
+                "--no-overlap",
+                "value.wf",
+            ],
+            vec![
+                "--par",
+                "--par-recursive-frontier",
+                "8",
+                "--par-recursive-frontier",
+                "8",
+                "value.wf",
+            ],
+        ] {
+            assert!(parse(&args).is_err(), "{args:?}");
         }
     }
 

@@ -55,9 +55,13 @@ A [private generated recursion frontier](../../experiments/compute-runtime/READM
 now narrows the M1 gap using layers of the actual generated function and its
 existing sequential clone. The depth8 control gives paired median wall
 reductions of34-37% against generated leaf on four heavy inputs, but still has
-mixed Parlay wins and combines grain with specialization/layout effects. General compiler integration,
-exact transformed task/exhaustion checks and Linux replication remain open;
-this is not a selected depth or a public ABI change.
+mixed Parlay wins and combines grain with specialization/layout effects.
+The subsequent [compiler control](../../experiments/compute-runtime/README.md#compiler-generated-recursion-frontier)
+now passes exact task and full owner-slot exhaustion checks on this workload.
+Its normal compiler output reproduces34.8-37.0% paired median wall reductions
+against generated leaf on M1; strongest-reference wins remain mixed. Linux
+replication and held-out coverage remain open; this is not a selected depth or
+a public ABI change.
 Recursive Rayon, general compiler
 grain selection and held-out/native-host confirmation
 remain missing. The ten-case screen does not

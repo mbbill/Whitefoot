@@ -9,13 +9,14 @@ BEGIN {
     # also checked by the ordinary quadrature qualification for all forms.
     split("0x1.dac670561e696p-1 0x1.8a205fd558741p-5 0x1.54b66ed3898f4p-5 0x1.54b66ed3898f4p-5 0x1.8f66c9347d918p-7 0x1.1b91b91b91b92p-1 0x1.170b527c76338p-3 0x1.54b66ed3898f2p-5 0x0p+0 -0x1.1b6e192eb8a66p-1",values," ")
     for(i=1;i<=10;++i)if(input==names[i]){expected_nodes=nodes[i];expected_value=values[i]}
-    parallel=(form=="wf-auto" || form=="wf-leaf" || form=="wf-refusal")
+    frontier=(form=="wf-frontier" || form=="wf-frontier-seq")
+    parallel=(form=="wf-auto" || form=="wf-leaf" || form=="wf-refusal" || form=="wf-frontier")
     native_wf=(form=="wf-native" || form=="wf-value" || form=="wf-value-right")
     native=(native_wf || form=="tbb" || form=="parlay" || form=="parlay-left")
     if(!expected_nodes || (width!=1 && width!=4) || !integer(repeats) || repeats<1 || repeats>65536 ||
         (stats!=0 && stats!=1) || (control!=0 && control!=1) || !integer(spawn) || spawn>24 ||
-        (!native && spawn!=0) || (!native && !parallel && form!="native" && form!="cpp-seq" &&
-        form!="wf-seq" && form!="wf-leaf-seq" && form!="wf-refusal-seq"))bad("validator arguments")
+        (!native && !frontier && spawn!=0) || (frontier && spawn!=8) || (!native && !parallel && form!="native" && form!="cpp-seq" &&
+         !frontier && form!="wf-seq" && form!="wf-leaf-seq" && form!="wf-refusal-seq"))bad("validator arguments")
 }
 NR==1 {
     if($0!="# quadrature batch v2: input form workers spawn_depth repeats warmup perf_control stats nodes_per_call wall_ns user_us system_us voluntary involuntary minor_faults major_faults wf_lanes process_cpu_ns caller_cpu_ns")bad("columns")

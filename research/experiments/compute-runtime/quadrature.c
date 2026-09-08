@@ -22,8 +22,9 @@ extern int wf__floor_run(int, char **);
 extern double wf_research_quadrature(double, double, double, double, double, uint64_t, bool);
 extern double wf_research_quadrature_leaf(double, double, double, double, double, uint64_t, bool);
 extern double wf_research_quadrature_refusal(double, double, double, double, double, uint64_t, bool);
+extern double wf_research_quadrature_frontier(double, double, double, double, double, uint64_t, bool);
 static double (*generated_run)(double,double,double,double,double,uint64_t,bool);
-static bool parallel_form, leaf_form, refusal_form;
+static bool parallel_form, leaf_form, refusal_form, frontier_form;
 static bool native_cpp;
 static bool native_wf;
 static unsigned native_kind, spawn_depth, requested;
@@ -231,20 +232,22 @@ int wf__main_body(int argc,char **argv) {
     bool bench=!strcmp(argv[1],"bench"),exhaust=!strcmp(argv[1],"exhaust"),batch=!strcmp(argv[1],"batch");
     require(bench || exhaust || batch || !strcmp(argv[1],"check"),"mode");
     const char *form=argv[2];
+    frontier_form=!strcmp(form,"wf-frontier") || !strcmp(form,"wf-frontier-seq");
     refusal_form=!strcmp(form,"wf-refusal") || !strcmp(form,"wf-refusal-seq");
-    leaf_form=!strcmp(form,"wf-leaf") || !strcmp(form,"wf-leaf-seq") || refusal_form;
-    parallel_form=!strcmp(form,"wf-auto") || !strcmp(form,"wf-leaf") || !strcmp(form,"wf-refusal");
+    leaf_form=!strcmp(form,"wf-leaf") || !strcmp(form,"wf-leaf-seq") || refusal_form || frontier_form;
+    parallel_form=!strcmp(form,"wf-auto") || !strcmp(form,"wf-leaf") || !strcmp(form,"wf-refusal") || !strcmp(form,"wf-frontier");
     native_wf=!strcmp(form,"wf-native") || !strcmp(form,"wf-value") || !strcmp(form,"wf-value-right");
     native_cpp=!strcmp(form,"cpp-seq") || !strcmp(form,"tbb") || !strcmp(form,"parlay") || !strcmp(form,"parlay-left") || native_wf;
     native_kind=!strcmp(form,"tbb")?1:!strcmp(form,"parlay")?2:!strcmp(form,"wf-native")?3:
         !strcmp(form,"wf-value")?4:!strcmp(form,"parlay-left")?5:!strcmp(form,"wf-value-right")?6:0;
     require(!strcmp(form,"native") || !strcmp(form,"wf-seq") || parallel_form || leaf_form || native_cpp,"form");
-    if(native_kind) {
+    if(native_kind || frontier_form) {
         require(argc==4 && argv[3][0]>='0' && argv[3][0]<='9',"explicit spawn depth");
         char *end;errno=0;unsigned long parsed=strtoul(argv[3],&end,10);
         require(!errno && !*end && parsed<=24,"spawn depth domain");spawn_depth=(unsigned)parsed;
-    } else require(argc==3,"spawn depth only for native schedulers");
-    generated_run=refusal_form?wf_research_quadrature_refusal:leaf_form?wf_research_quadrature_leaf:wf_research_quadrature;
+        require(!frontier_form || spawn_depth==8,"compiled frontier depth");
+    } else require(argc==3,"spawn depth only for depth-controlled forms");
+    generated_run=frontier_form?wf_research_quadrature_frontier:refusal_form?wf_research_quadrature_refusal:leaf_form?wf_research_quadrature_leaf:wf_research_quadrature;
     const char *workers=getenv("WF_WORKERS");
     require(workers && (!strcmp(workers,"1") || !strcmp(workers,"4")),"explicit worker count");
     requested=!strcmp(workers,"4")?4:1;
@@ -254,7 +257,7 @@ int wf__main_body(int argc,char **argv) {
     }
     void **held=NULL;unsigned reserved=0;
     if(exhaust) {
-        require(requested==4 && ((native_wf && spawn_depth==24) || (refusal_form && parallel_form)),"exhaustion control arguments");
+        require(requested==4 && ((native_wf && spawn_depth==24) || ((refusal_form || frontier_form) && parallel_form)),"exhaustion control arguments");
         reserved=wf_compute_slot_capacity();held=calloc(reserved,sizeof(*held));
         require(held!=NULL && reserved>0,"exhaustion reservation array");
         for(unsigned i=0;i<reserved;++i) {
@@ -317,7 +320,7 @@ int wf__main_body(int argc,char **argv) {
                     publishes==events[WF_EVENT_RUN_BEGIN] && publishes==joins,"joined task conservation");
             if((parallel_form || (native_wf && spawn_depth)) && requested==4) {
                 require(wf_compute_worker_count()==4,"four-worker startup");
-                uint64_t opportunities=native_wf?r.forks:leaf_form?r.nodes-r.leaves:3*r.nodes-r.leaves+2;
+                uint64_t opportunities=(native_wf || frontier_form)?r.forks:leaf_form?r.nodes-r.leaves:3*r.nodes-r.leaves+2;
                 if(refusal_form) {
                     /* Descendants entered through a sequential clone attempt no
                      * acquisition. Full refusal follows only the right spine,

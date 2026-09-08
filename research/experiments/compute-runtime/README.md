@@ -1612,9 +1612,9 @@ than being mislabeled converged. A temporary image adding one to the computed
 result fails with `quadrature: binary64 result`.
 
 `check-quadrature`, called by the experiment's canonical `check`, runs the same
-WF objects in ordinary and ASan-UBSan images, thirty-eight forms/grain settings and
-worker requests1/4: 152 processes/3,040 checked results, plus eight forced
-owner-slot exhaustion processes/160 results, totaling160 processes/3,200 results.
+WF objects in ordinary and ASan-UBSan images, forty forms/grain settings and
+worker requests1/4: 160 processes/3,200 checked results, plus ten forced
+owner-slot exhaustion processes/200 results, totaling170 processes/3,400 results.
 Host/runtime/floor and
 the native C++/Parlay header code are instrumented; generated WF objects and
 the shared oneTBB library remain ordinary. The instrumented image
@@ -1640,13 +1640,14 @@ introduced by actualization; they do not by themselves isolate each offer's
 contribution to the ordinary elapsed-time loss.
 
 `quadrature-calibrate` runs the ordinary image sequentially across five passes,
-two worker requests and thirty-eight forms/grain settings: the original `native`,
+two worker requests and forty forms/grain settings: the original `native`,
 `wf-seq`, `wf-auto`, `wf-leaf-seq`, `wf-leaf`, the two generated refusal forms,
+the two compiler-generated frontier forms,
 plus `cpp-seq`, ten
 oneTBB/Parlay settings, ten native WF settings and ten reciprocal direction
 settings described below. Each
 process runs all ten cases, retaining one first and eight warm calls per case:
-380 processes/34,200 checked results. Form order reverses on alternate passes.
+400 processes/36,000 checked results. Form order reverses on alternate passes.
 The AWK reader binds mode, form, requested width and instrumentation to each
 invocation, requires the complete ordered input/call inventory and validates
 work metadata and event totals. Missing-row, wrong-form and missing-footer
@@ -2180,7 +2181,7 @@ CLI composition/invalid-option test pass.
 `--par --par-scalar-leaf-limit 16 --par-sequential-refusal`; they select its
 parallel entry and sequential clone respectively. The original and filtered
 modules remain byte-identical to the preceding direction-cohort modules.
-`check-quadrature` covers all38 settings at widths1/4 in ordinary/instrumented
+At that refusal-control revision, `check-quadrature` covered all38 settings at widths1/4 in ordinary/instrumented
 images, plus eight full-owner-slot exhaustion processes:160 processes and3,200
 checked results. The generated refusal form joins the existing native exhaustion
 controls. Independent explicit-stack oracle state identifies nodes on the
@@ -2318,17 +2319,18 @@ verbose task-clock attribute probe before timing. A command may be a wrapper;
 the CI job selects the installed tool directly. The Linux compute job records its attempt
 to permit process counters on the ephemeral hosted runner. It runs this panel
 after the original short-call calibration on the same recorded CPU mask.
-Five alternating whole-cell orders cover nine forms, worker requests1/4 and
-four heavy inputs:360 plain processes, plus360 perf processes if at least one
+Five alternating whole-cell orders cover eleven forms, worker requests1/4 and
+four heavy inputs:440 plain processes, plus440 perf processes if at least one
 event is available. Each uses4,096 repetitions by default; `ROUNDS` and
 `REPEATS` can select an explicitly recorded different panel. The forms are C
-native, generated WF sequential/leaf/refusal, C++ sequential, native WF value
+native, generated WF sequential/leaf/refusal and frontier/its sequential clone,
+C++ sequential, native WF value
 depth8, Parlay-left depth4/8 and oneTBB depth8. This is not a general grain
 search. There is no added queue-occupancy cap here; the preceding queue-limit4
 candidate is a different experiment. Normal owner-slot capacity still applies.
 
-`check-quadrature` additionally invokes `quadrature-batch.sh check`. Its140
-successful batch executions check1,540 outputs:128 ordinary/sanitized cells,
+`check-quadrature` additionally invokes `quadrature-batch.sh check`. Its172
+successful batch executions check1,892 outputs:160 ordinary/sanitized cells,
 ten input-selector cells and two FIFO protocol encodings. It checks the
 documented acknowledgement line and perf versions that append a NUL. Five
 negative probes cover wrong repeat identity, unpaired control descriptors,
@@ -2537,8 +2539,9 @@ numerical depth/convergence tests, operands, result order,88-byte frame,
 null fallback, join and release are preserved. The limit bounds offered
 recursion, not numerical depth. Public shims and ordinary signatures are
 unchanged; there is no added runtime word, TLS depth or hidden parameter.
-This is a private emitted-code experiment, not a compiler option or a general
-transformation for mutual recursion, external calls or arbitrary effects.
+At measurement time this was a private emitted-code experiment, preceding the
+compiler control below; it did not qualify mutual recursion, external calls
+or arbitrary effects.
 
 Exact reversal checks all48 function/callback layer pairs. The stock regenerated
 object and relinked ordinary/sanitized images match the qualified base exactly.
@@ -2583,9 +2586,85 @@ Parlay-relative0.907, all five wins), but loses all five Parlay pairs on both
 skewed inputs. Frontier12 loses all five Parlay pairs on every input.
 Frontier24/stock wall ratios0.951/0.919/0.979/0.928 retain specialization/layout
 effects despite unchanged offer opportunities; only depth-cap wins all five.
-No fixed depth is selected as a default. The generated-code gain is promising
-but still needs general compiler implementation, task/exhaustion qualification,
-Linux replication and held-out workloads before a scheduling policy is chosen.
+No fixed depth is selected as a default. This screen alone does not qualify a
+general compiler transformation, task/exhaustion behavior, Linux replication
+or held-out workloads. The subsequent compiler qualification follows below.
+
+### Compiler-generated recursion frontier
+
+The normal compiler now exposes the opt-in
+[`--par --par-recursive-frontier N`](../../../compiler/README.md#parallel-and-completion-lowering)
+control. The compiler implementation map owns eligibility and call-level
+semantics. This panel builds `wf-frontier` and `wf-frontier-seq` with depth8
+and scalar-leaf limit16, beside all preceding generated and native forms in
+one ordinary image. The fixed depth is an experimental candidate, not a
+default or a demonstrated best policy. `spawn_depth=8` identifies these forms
+in reports; another requested depth is refused because that image contains
+only the depth8 generated variant. No textual recursive-call rewriting is
+performed by the harness: its existing shim only exposes generated functions.
+
+`make check-quadrature` includes the new forms and full owner-slot exhaustion.
+The independent explicit-stack oracle counts internal tree nodes above the
+parallel frontier; the report reader retains the existing depth8 reference
+counts. Every instrumented four-worker parallel run requires publication plus
+slot refusal to equal that count, and every published task to join and finish exactly once. Under
+full exhaustion it requires zero publications and the exact refusal count.
+An added negative report substitutes the full-depth center count1643 for247
+and must fail. Original full-depth and sequential-refusal checks stay intact.
+Batch calibration includes both new forms using the existing regional clocks
+and bitwise output checks; instrumented binaries are never timing references.
+
+Initial M1 qualification of the compiler change on base `68a2be9c` passes
+170 full/exhaustion processes with3,400 checked outputs and172 sustained-batch
+qualification processes with1,892 outputs. The normal center-peak frontier
+run publishes247 tasks; full owner-slot exhaustion reports0 publications and
+247 refusals. This closes the private LLVM screen's missing task/exhaustion
+qualification for this generated workload. The ordinary image SHA256 is
+`f97d20da025a64542a6924dd6b918814b5202c73bbd779eeca904f80d03e2a58`;
+compiler binary SHA256 is
+`6ed1f21620d6c316e8f16ed3eacb7c801b2c90d1b74246dbe9d199419addfa61`.
+The local build reuses the preceding pinned scalar scheduler dependency build;
+all harness/generated/runtime objects are rebuilt. ASan/UBSan cover the C/C++
+host, runtime, floor and header-based Parlay, while generated LLVM and the
+oneTBB library remain ordinary, as before. Compiler cases additionally check
+self/mutual recursion, successful and refused callbacks, scalar/destination
+results, shared and exclusive borrows, and a suspending cyclic component that
+must retain its old emission.
+
+The maintained batch caller subsequently measures440 plain processes across
+eleven forms, two worker requests, four inputs and five alternating whole-cell
+orders:1,802,240 timed integrations plus3,520 warmups, all checked bitwise.
+MacBookPro18,3/Clang21, scalar strict FP with SIMD/FMA/LTO off; no overlapping
+native timing, builds or tests. Placement and frequency remain uncontrolled.
+A sandbox metadata attempt stopped at `sysctl` before any measured cell;
+the complete cohort ran outside that sandbox. `perf` is unavailable on macOS.
+
+| Input | Generated leaf wall us | Compiler frontier8 wall us | Frontier/leaf wall | Frontier/Parlay-left8 wall | Faster than Parlay-left8 pairs /5 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Center peak |15.834|9.924|0.648|0.946|3|
+| Left peak |13.977|8.845|0.630|0.937|5|
+| Right peak |12.886|8.059|0.639|0.983|4|
+| Depth cap |25.669|16.732|0.652|0.963|5|
+
+Wall values are medians of process batch means; ratios are medians of matched
+pass ratios, not ratios of the displayed medians. Frontier/leaf wall ratios
+give paired median reductions34.8-37.0%, with all five wins for every input.
+Rusage CPU ratios are0.589/0.593/0.610/0.643, also all five wins. Relative to
+Parlay-left8, CPU ratios are0.847/0.862/0.901/0.922 with5/5/4/5 lower pairs.
+This reproduces the private screen's benefit through the normal compiler,
+without establishing a uniform advantage over the strongest reference:
+frontier/Parlay-left4 depth-cap wall is0.996 with only three lower pairs.
+Native WF value8 depth-cap similarly remains mixed (wall0.983, three wins).
+Single-worker frontier-sequential/leaf-sequential wall ratios are
+0.997/0.993/1.009/1.001 with3/3/2/2 lower pairs; these controls have no uniform
+speedup and retain the small right/depth-cap adverse medians.
+With a worker request of4, those same sequential forms still start no WF
+pool; their paired wall ratios are1.002/1.006/1.013/1.000, only two lower pairs
+each. The depth-cap control retains an adverse maximum1.155. Neither control
+is normalized away or treated as proof of code-layout neutrality.
+Specialization/layout, fixed-grain selection and M1 placement remain material
+limits. Linux replication and held-out application coverage remain open;
+neither this cohort nor the private screen establishes a universal ceiling.
 
 ## Scalar scheduler comparison
 

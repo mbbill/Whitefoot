@@ -1541,6 +1541,16 @@ pub enum OverlapLowering {
     Completion,
     /// Actualize completion operations and eligible compute groups.
     On,
+    /// Research control: specialize ordinary recursive components into private
+    /// call layers, then enter their existing same-ABI sequential clones.
+    OnWithRecursiveFrontier {
+        /// Number of component call levels that may offer compute work.
+        maximum_levels: std::num::NonZeroU8,
+        /// Optional scalar-leaf offer suppression.
+        maximum_scalar_leaf_operations: Option<u32>,
+        /// Also select sequential clones on refused compute offers.
+        sequential_refusal: bool,
+    },
     /// Research control: an ungranted non-suspending compute call may enter
     /// its existing ordinary-ABI sequential clone at the original join.
     OnWithSequentialRefusal {
@@ -2244,9 +2254,15 @@ pub struct IrProgram<'classified, 'lexed, 'source> {
     entry: IrEntry,
     actualization: Vec<String>,
     sequential_compute_refusal: bool,
+    recursive_compute_frontier: Option<std::num::NonZeroU8>,
 }
 
 impl IrProgram<'_, '_, '_> {
+    /// Opt-in private recursive call specialization; never an acceptance bound.
+    pub(crate) const fn recursive_compute_frontier(&self) -> Option<std::num::NonZeroU8> {
+        self.recursive_compute_frontier
+    }
+
     /// Opt-in machine-code selection after a refused compute acquisition.
     pub(crate) const fn sequential_compute_refusal(&self) -> bool {
         self.sequential_compute_refusal

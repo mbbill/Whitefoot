@@ -2,6 +2,7 @@
 
 mod abi;
 mod emitter;
+mod graph;
 mod qualification;
 mod stack_ledger;
 mod storage;

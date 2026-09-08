@@ -212,6 +212,24 @@ policy; acceptance and proof checking are unchanged. The
 [quadrature refusal control](../research/experiments/compute-runtime/README.md#sequential-subtrees-after-refusal)
 compares the generated forms and exercises full owner-slot exhaustion.
 
+The recursive grain experiment `--par --par-recursive-frontier N` emits N
+ordinary parallel call levels for eligible recursive components, then calls
+their existing sequential clones. The CLI accepts 1..32; this limits private
+code expansion, not source recursion, acceptance or proof work. Direct and
+mutual recursion use the same call-graph rule: every call within a component,
+including a published callback or refused task, advances one level. A call
+to another component starts at that component's ordinary entry. There is no
+global nesting-depth guarantee. Reaching a sequential clone also suppresses
+compute offers in its descendant call closure, as in the existing sequential
+world. No runtime field, TLS counter, hidden parameter or result-layout change
+is introduced; every copy uses the ordinary function ABI and emission path.
+The control composes with scalar-leaf suppression and sequential refusal;
+refusal can select a sequential subtree before the frontier. Components that
+may suspend, carry staged completion, or contain synthesized loop functions
+retain the existing path. Nonrecursive code is unchanged. This is an explicit
+experiment, not a selected default policy. Its qualification and measurements
+live in the [recursive frontier panel](../research/experiments/compute-runtime/README.md#compiler-generated-recursion-frontier).
+
 The first multi-operation loop path is deliberately specific: one
 source-derived fixed two-slot bounded batch for the direct staged counted-loop
 shape. On native POSIX completion targets the runtime window is bounded to

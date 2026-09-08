@@ -14,19 +14,20 @@ BEGIN {
     split("3 3 3 3 3 1 0 3 0 3", forks2," ")
     split("15 15 15 15 15 1 0 15 0 15", forks4," ")
     split("29 247 176 176 184 1 0 255 0 91", forks8," ")
+    frontier=(form=="wf-frontier" || form=="wf-frontier-seq")
     refusal=(form=="wf-refusal" || form=="wf-refusal-seq")
     split("5 7 6 13 10 1 0 12 0 6", refusal_forks," ")
-    parallel=(form=="wf-auto" || form=="wf-leaf" || form=="wf-refusal")
-    leaf=(form=="wf-leaf" || form=="wf-leaf-seq" || refusal)
+    parallel=(form=="wf-auto" || form=="wf-leaf" || form=="wf-refusal" || form=="wf-frontier")
+    leaf=(form=="wf-leaf" || form=="wf-leaf-seq" || refusal || frontier)
     native_wf=(form=="wf-native" || form=="wf-value" || form=="wf-value-right")
     native=(form=="cpp-seq" || form=="tbb" || form=="parlay" || form=="parlay-left" || native_wf)
     if (spawn=="")spawn=0
     if (!integer(spawn) || (spawn!=0 && spawn!=2 && spawn!=4 && spawn!=8 && spawn!=24) ||
-        ((form!="tbb" && form!="parlay" && form!="parlay-left" && !native_wf) && spawn))bad("spawn depth")
+        ((form!="tbb" && form!="parlay" && form!="parlay-left" && !native_wf && !frontier) && spawn) || (frontier && spawn!=8))bad("spawn depth")
     wf_pool=(parallel || (native_wf && spawn>0))
     if ((mode!="check" && mode!="bench" && mode!="exhaust") || (form!="native" && form!="wf-seq" && !parallel && !leaf && !native) ||
         (width!=1 && width!=4) || (stats!=0 && stats!=1)) bad("validator arguments")
-    if (mode=="exhaust" && (width!=4 || !((native_wf && spawn==24) || (refusal && parallel))))bad("exhaustion arguments")
+    if (mode=="exhaust" && (width!=4 || !((native_wf && spawn==24) || ((refusal || frontier) && parallel))))bad("exhaustion arguments")
     calls=(mode=="bench"?9:2)
 }
 NR==1 {
@@ -68,7 +69,7 @@ NR==2 {
     if (!stats || !wf_pool || width==1) {
         if($10 || $12 || $13 || $14 || $15 || $16)bad("disabled/serial events")
     } else {
-        opportunities=(native_wf?forks:leaf?nodes[block]-(nodes[block]+1)/2:3*nodes[block]-(nodes[block]+1)/2+2)
+        opportunities=((native_wf || frontier)?forks:leaf?nodes[block]-(nodes[block]+1)/2:3*nodes[block]-(nodes[block]+1)/2+2)
         if (refusal && mode=="exhaust")opportunities=refusal_forks[block]
         if ($12!=$13+$10 || $12!=$14 || $12!=$15)bad("joined task conservation")
         if (refusal && mode!="exhaust") {

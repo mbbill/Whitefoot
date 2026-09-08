@@ -204,8 +204,9 @@ pub(crate) fn sequential_clone_symbol(name: &str) -> String {
 /// shared word it needs costs two contended read-modify-writes per task, which
 /// took the fine-grain oracle cell from 0.4905 s to 0.9254 s. Nothing here reads
 /// a per-task signal. Under the default policy the two worlds never call each
-/// other; the opt-in refusal policy reuses an existing null branch and has no
-/// additional runtime demand signal. Declining descendant compute permissions
+/// other; the opt-in refusal policy reuses an existing null branch, while the
+/// recursive frontier selects the sequential callee statically at its final
+/// private layer. Neither adds a runtime demand signal. Declining descendant compute permissions
 /// preserves [PAR-1] operations, arguments and the same-ABI result; the call
 /// still executes at the original join. May-suspend callees retain their
 /// ordinary fallback. The optional
@@ -501,7 +502,7 @@ impl FunctionEmitter<'_, '_> {
             .copied()
             .ok_or(BackendFailure::InvalidIr)?;
 
-        let callee = source_symbol(target.name());
+        let callee = self.callee_symbol(function, target.name());
         let thunk = self.parallel.register(|symbol| {
             thunk_definition(
                 symbol,
