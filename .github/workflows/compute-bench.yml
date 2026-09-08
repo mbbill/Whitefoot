@@ -51,7 +51,7 @@ jobs:
           cargo fetch --locked --manifest-path compiler/Cargo.toml
           /usr/bin/clang --version
       - name: Fetch pinned native schedulers
-        if: matrix.workload == 'scheduler' || matrix.workload == 'mandelbrot'
+        if: matrix.workload == 'scheduler' || matrix.workload == 'mandelbrot' || matrix.workload == 'quadrature'
         env:
           OUT: ${{ runner.temp }}/compute-${{ matrix.workload }}
         run: make -C research/experiments/compute-runtime scheduler-fetch OUT="$OUT"

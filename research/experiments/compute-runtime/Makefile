@@ -65,10 +65,19 @@ $(OUT)/probe $(OUT)/probe-no-stats $(OUT)/probe-events: runtime.c runtime.h runt
 
 check: check-runtime check-protocol-cost check-abi check-fir check-bench check-records-events check-scheduler-events check-mandelbrot check-quadrature
 
-.PHONY: quadrature-build check-quadrature quadrature-calibrate
-quadrature-build: $(WFC)
+.PHONY: quadrature-build check-quadrature quadrature-calibrate quadrature-deps
+QUADRATURE_FORMS := native wf-seq wf-auto wf-leaf-seq wf-leaf cpp-seq \
+	tbb-d0 tbb-d2 tbb-d4 tbb-d8 tbb-d24 parlay-d0 parlay-d2 parlay-d4 parlay-d8 parlay-d24
+quadrature-deps:
+	OUT="$(OUT)" CC="$(CC)" CXX="$(CXX)" sh records-scheduler-deps.sh build
+
+quadrature-build: $(WFC) quadrature-deps
 	mkdir -p "$(OUT)/quadrature/source"
-	cp quadrature.wf quadrature_host.ll quadrature.c quadrature.awk runtime.c runtime.h runtime_events.h $(FLOOR) Makefile "$(OUT)/quadrature/source/"
+	cp quadrature.wf quadrature_host.ll quadrature.c quadrature.awk quadrature_native.cpp quadrature_native.h records-scheduler-deps.sh runtime.c runtime.h runtime_events.h $(FLOOR) Makefile "$(OUT)/quadrature/source/"
+	mkdir -p "$(OUT)/quadrature/deps"
+	cp -R "$(OUT)/scheduler-deps/lib" "$(OUT)/quadrature/deps/"
+	cp "$(OUT)/scheduler-deps/metadata.txt" "$(OUT)/scheduler-deps/build/compile_commands.json" "$(OUT)/quadrature/deps/"
+	cd "$(OUT)/scheduler-deps" && find include -type f -exec shasum -a 256 {} + > "$(OUT)/quadrature/deps/headers.sha256"
 	"$(WFC)" --par --par-ledger --emit-llvm quadrature.wf -o "$(OUT)/quadrature/module.ll" > "$(OUT)/quadrature/ledger.txt"
 	grep -F 'pair(adaptive, adaptive)' "$(OUT)/quadrature/ledger.txt"
 	grep -F 'call void @wf__par_publish(' "$(OUT)/quadrature/module.ll"
@@ -86,28 +95,42 @@ quadrature-build: $(WFC)
 	$(CC) $(RECORD_FLAGS) -Wno-override-module -c "$(OUT)/quadrature/leaf-host.ll" -o "$(OUT)/quadrature/wf-leaf.o"
 	$(CC) $(RECORD_FLAGS) -Wno-override-module -S "$(OUT)/quadrature/leaf-host.ll" -o "$(OUT)/quadrature/wf-leaf.s"
 	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=0 -S quadrature.c -o "$(OUT)/quadrature/native.s"
-	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=0 quadrature.c runtime.c $(FLOOR) "$(OUT)/quadrature/wf.o" "$(OUT)/quadrature/wf-leaf.o" -lm -o "$(OUT)/quadrature/ordinary"
-	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=1 -DWF_COMPUTE_EVENTS -fsanitize=$(SANITIZER) \
-		-fno-sanitize-recover=all -fno-omit-frame-pointer \
-		quadrature.c runtime.c $(FLOOR) "$(OUT)/quadrature/wf.o" "$(OUT)/quadrature/wf-leaf.o" -lm -o "$(OUT)/quadrature/sanitized"
+	@set -e; for image in ordinary sanitized; do \
+		stats=0; flags=''; if test $$image = sanitized; then stats=1; flags='-DWF_COMPUTE_EVENTS -fsanitize=$(SANITIZER) -fno-sanitize-recover=all -fno-omit-frame-pointer'; fi; \
+		for unit in quadrature runtime; do \
+			$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=$$stats $$flags -c $$unit.c -o "$(OUT)/quadrature/$$image-$$unit.o"; \
+		done; \
+		$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=$$stats $$flags -c $(FLOOR) -o "$(OUT)/quadrature/$$image-floor.o"; \
+		$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -fno-fast-math -ffp-contract=off -DWF_COMPUTE_STATS=$$stats $$flags \
+			-isystem "$(OUT)/scheduler-deps/include" -c quadrature_native.cpp -o "$(OUT)/quadrature/$$image-native.o"; \
+		$(CXX) -pthread -fno-lto $$flags "$(OUT)/quadrature/$$image-quadrature.o" "$(OUT)/quadrature/$$image-runtime.o" \
+			"$(OUT)/quadrature/$$image-floor.o" "$(OUT)/quadrature/$$image-native.o" \
+			"$(OUT)/quadrature/wf.o" "$(OUT)/quadrature/wf-leaf.o" \
+			-L"$(OUT)/quadrature/deps/lib" -Wl,-rpath,"$(OUT)/quadrature/deps/lib" -ltbb -lm -o "$(OUT)/quadrature/$$image"; \
+	done
+	$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -fno-fast-math -ffp-contract=off -DWF_COMPUTE_STATS=0 \
+		-isystem "$(OUT)/scheduler-deps/include" -S quadrature_native.cpp -o "$(OUT)/quadrature/native-cpp.s"
 	@nm "$(OUT)/quadrature/ordinary" > "$(OUT)/quadrature/ordinary.symbols"
 	$(call require-strong,$(OUT)/quadrature/ordinary,wf__par_acquire_lane)
 	$(call require-strong,$(OUT)/quadrature/ordinary,wf__floor_run)
 	@printf '%s\n' '$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=0' \
+		'$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -fno-fast-math -ffp-contract=off -DWF_COMPUTE_STATS=0' \
 		'WF original: --par; scalar-leaf control: --par --par-scalar-leaf-limit 16' \
-		'sanitized: -DWF_COMPUTE_STATS=1 -DWF_COMPUTE_EVENTS -fsanitize=$(SANITIZER) -fno-sanitize-recover=all -fno-omit-frame-pointer; host/runtime/floor only; generated WF object ordinary' > "$(OUT)/quadrature/flags.txt"
+		'sanitized: -DWF_COMPUTE_STATS=1 -DWF_COMPUTE_EVENTS -fsanitize=$(SANITIZER) -fno-sanitize-recover=all -fno-omit-frame-pointer; host/runtime/floor/native C++ and Parlay headers; generated WF and oneTBB library ordinary' > "$(OUT)/quadrature/flags.txt"
 	$(CC) --version >> "$(OUT)/quadrature/flags.txt"
 	cp "$(WFC)" "$(OUT)/quadrature/whitefootc"
 	git rev-parse HEAD > "$(OUT)/quadrature/revision.txt"
-	cd "$(OUT)/quadrature" && shasum -a 256 source/* module.ll host.ll wf.o wf.s native.s ordinary sanitized whitefootc flags.txt ledger.txt revision.txt leaf-module.ll leaf-host.ll wf-leaf.o wf-leaf.s leaf-ledger.txt > manifest.sha256
+	cd "$(OUT)/quadrature" && shasum -a 256 source/* module.ll host.ll *.o *.s ordinary sanitized whitefootc flags.txt ledger.txt revision.txt leaf-module.ll leaf-host.ll leaf-ledger.txt > manifest.sha256
+	cd "$(OUT)/quadrature" && find deps -type f -exec shasum -a 256 {} + >> manifest.sha256
 
 check-quadrature: quadrature-build
-	@set -e; for image in ordinary sanitized; do for width in 1 4; do for form in native wf-seq wf-auto wf-leaf-seq wf-leaf; do \
-		log="$(OUT)/quadrature/check-$$image-w$$width-$$form.tsv"; \
-		WF_WORKERS=$$width "$(OUT)/quadrature/$$image" check $$form > "$$log" 2>&1; \
+	@set -e; for image in ordinary sanitized; do for width in 1 4; do for variant in $(QUADRATURE_FORMS); do \
+		form=$${variant%-d*}; spawn=0; set -- $$form; case $$variant in *-d*) spawn=$${variant##*-d}; set -- $$form $$spawn;; esac; \
+		log="$(OUT)/quadrature/check-$$image-w$$width-$$variant.tsv"; \
+		WF_WORKERS=$$width "$(OUT)/quadrature/$$image" check "$$@" > "$$log" 2>&1; \
 		stats=0; if test $$image = sanitized; then stats=1; fi; \
-		awk -v mode=check -v form=$$form -v width=$$width -v stats=$$stats -f quadrature.awk "$$log"; \
-		grep -E '^# quadrature PASS: outputs=20 stats=[01] steals=[0-9]+$$' "$$log"; \
+		awk -v mode=check -v form=$$form -v spawn=$$spawn -v width=$$width -v stats=$$stats -f quadrature.awk "$$log"; \
+		grep -E '^# quadrature PASS: outputs=20 stats=[01] steals=[0-9]+ migrated=[0-9]+$$' "$$log"; \
 	done; done; done
 	@set -e; good="$(OUT)/quadrature/check-ordinary-w1-native.tsv"; \
 	for mutation in missing-row wrong-form missing-footer; do \
@@ -121,6 +144,11 @@ check-quadrature: quadrature-build
 			echo "quadrature accepted $$mutation" >&2; exit 1; \
 		fi; \
 	done
+	@sed '3s/forks=3/forks=0/' "$(OUT)/quadrature/check-ordinary-w4-tbb-d2.tsv" > "$(OUT)/quadrature/negative-forks.tsv"
+	@if awk -v mode=check -v form=tbb -v spawn=2 -v width=4 -v stats=0 -f quadrature.awk \
+		"$(OUT)/quadrature/negative-forks.tsv" > "$(OUT)/quadrature/negative-forks.tsv.log" 2>&1; then \
+		echo 'quadrature accepted wrong fork count' >&2; exit 1; \
+	fi
 
 quadrature-calibrate:
 	@test -n "$(RESULTS)" && test -x "$(OUT)/quadrature/ordinary"
@@ -129,11 +157,12 @@ quadrature-calibrate:
 	if test "$$(uname -s)" = Linux; then lscpu >> "$(RESULTS)/host.txt"; taskset -pc $$$$ >> "$(RESULTS)/host.txt"; \
 	else sysctl hw.model hw.ncpu hw.physicalcpu >> "$(RESULTS)/host.txt"; fi; \
 	for pass in 1 2 3 4 5; do \
-		if test $$((pass % 2)) = 1; then forms='native wf-seq wf-auto wf-leaf-seq wf-leaf'; else forms='wf-leaf wf-leaf-seq wf-auto wf-seq native'; fi; \
-		for width in 1 4; do for form in $$forms; do \
-			WF_WORKERS=$$width "$(OUT)/quadrature/ordinary" bench $$form > "$(RESULTS)/p$$pass-w$$width-$$form.tsv" 2>&1; \
-			awk -v mode=bench -v form=$$form -v width=$$width -v stats=0 -f quadrature.awk "$(RESULTS)/p$$pass-w$$width-$$form.tsv"; \
-			grep -E '^# quadrature PASS: outputs=90 stats=0 steals=0$$' "$(RESULTS)/p$$pass-w$$width-$$form.tsv"; \
+		forms='$(QUADRATURE_FORMS)'; if test $$((pass % 2)) = 0; then forms=$$(printf '%s\n' $$forms | awk '{a[NR]=$$0} END {for(i=NR;i>0;--i)print a[i]}'); fi; \
+		for width in 1 4; do for variant in $$forms; do \
+			form=$${variant%-d*}; spawn=0; set -- $$form; case $$variant in *-d*) spawn=$${variant##*-d}; set -- $$form $$spawn;; esac; \
+			WF_WORKERS=$$width "$(OUT)/quadrature/ordinary" bench "$$@" > "$(RESULTS)/p$$pass-w$$width-$$variant.tsv" 2>&1; \
+			awk -v mode=bench -v form=$$form -v spawn=$$spawn -v width=$$width -v stats=0 -f quadrature.awk "$(RESULTS)/p$$pass-w$$width-$$variant.tsv"; \
+			grep -E '^# quadrature PASS: outputs=90 stats=0 steals=0 migrated=0$$' "$(RESULTS)/p$$pass-w$$width-$$variant.tsv"; \
 		done; done; \
 	done
 

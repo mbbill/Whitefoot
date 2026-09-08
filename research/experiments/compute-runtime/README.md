@@ -1612,8 +1612,10 @@ than being mislabeled converged. A temporary image adding one to the computed
 result fails with `quadrature: binary64 result`.
 
 `check-quadrature`, called by the experiment's canonical `check`, runs the same
-WF objects in ordinary and host/runtime/floor ASan-UBSan images, five forms and
-worker requests1/4: 20 processes/400 checked results. The instrumented image
+WF objects in ordinary and ASan-UBSan images, sixteen forms/grain settings and
+worker requests1/4: 64 processes/1,280 checked results. Host/runtime/floor and
+the native C++/Parlay header code are instrumented; generated WF objects and
+the shared oneTBB library remain ordinary. The instrumented image
 also uses the existing per-lane event counters. At every joined return it
 checks publication = local pop + successful steal = run begin = run end = join;
 for the original four-worker parallel form it checks publication + slot refusal
@@ -1634,10 +1636,11 @@ introduced by actualization; they do not by themselves isolate each offer's
 contribution to the ordinary elapsed-time loss.
 
 `quadrature-calibrate` runs the ordinary image sequentially across five passes,
-two worker requests and five forms (`native`, `wf-seq`, `wf-auto`, `wf-leaf-seq`,
-`wf-leaf`). Each
+two worker requests and sixteen forms/grain settings: the original `native`,
+`wf-seq`, `wf-auto`, `wf-leaf-seq`, `wf-leaf`, plus `cpp-seq` and the ten
+native parallel settings described below. Each
 process runs all ten cases, retaining one first and eight warm calls per case:
-50 processes/4,500 checked results. Form order reverses on alternate passes.
+160 processes/14,400 checked results. Form order reverses on alternate passes.
 The AWK reader binds mode, form, requested width and instrumentation to each
 invocation, requires the complete ordered input/call inventory and validates
 work metadata and event totals. Missing-row, wrong-form and missing-footer
@@ -1658,13 +1661,14 @@ pool is inactive. `wf-leaf-seq` and `wf-leaf` select the sequential/parallel
 bodies compiled with the opt-in scalar-leaf control described below. Both
 modules share one timing executable, runtime and native kernel; the host chooses
 a common indirect generated-call adapter before timing. No default or runtime
-interface changes.
-Rayon/oneTBB/Parlay comparisons for this nested algorithm remain to be added;
-their existing flat callback adapters do not qualify that comparison.
+interface changes. The oneTBB/Parlay forms below execute the recursive algorithm
+directly, rather than reusing the flat callback adapters. A recursive Rayon
+control and broader tuning remain missing.
 
 Run qualification first, then calibrate alone in a fresh result directory:
 
 ```sh
+make -C research/experiments/compute-runtime scheduler-fetch OUT=/tmp/wf-quadrature
 make -C research/experiments/compute-runtime check-quadrature OUT=/tmp/wf-quadrature
 make -C research/experiments/compute-runtime quadrature-calibrate \
   OUT=/tmp/wf-quadrature RESULTS=/tmp/wf-quadrature/calibration
@@ -1715,7 +1719,7 @@ The original W4 parallel path loses all five paired passes against W1 sequential
 on centered/left/right peaks and the depth-cap case, medians
 2.587/2.634/2.721/2.545. Centered peak medians are34.372 us sequential and
 89.308 us parallel. This confirms a loss on a second host, not the scalar-leaf
-control's Linux benefit, which has not yet been measured.
+control's Linux benefit; the later control cohort is reported below.
 
 ### Scalar leaf offer control
 
@@ -1777,9 +1781,107 @@ depth-zero/empty are mixed. No adverse or first-call sample is removed.
 
 The remaining small-call losses motivate recursive granularity work. A useful
 four-worker gain on some fixtures is not a top-tier parallel-reference result:
-strong native recursive libraries, larger inputs/compositions and a Linux
-control measurement remain required. No threshold has been selected as a
-default from this screen.
+larger inputs/compositions and strong native recursive comparisons remain
+required. No threshold has been selected as a default from this screen.
+
+The [five-form Linux scalar-leaf run at `8f7eed90`](https://github.com/mbbill/Whitefoot/actions/runs/34232662823)
+retains artifact10058498265, ZIP SHA256
+`f8dd6d24914b590c9f8c8d5d51727f97466d6419322ae4559ab98e8560747626`.
+All25 hashes, nine source snapshots,50 processes/4,500 calibration calls and
+20 qualifiers/400 results match that exact revision. Ordinary image SHA256 is
+`466d7af03aa51dd0d920432c7358ad8c09bd9cf0c329c7bd99dcbccb53cedaf6`.
+This is EPYC7763, two physical/four SMT CPUs under mask0–3, Clang18.1.3
+scalar x86-64-v3, with placement/frequency/quota unqualified. It differs from
+the preceding EPYC9V74 cohort. Leaf W4 improves over original W4 in all five
+pairs for every case. However, centered/left/right peaks and depth cap have
+leaf-W4/W1-sequential paired medians1.094 [0.972–1.636],1.115 [1.101–1.680],
+1.095 [1.003–1.254] and1.115 [0.981–1.188]; only1/0/0/1 pairs improve.
+Center medians are32.521 us sequential,81.990 original parallel and35.600
+filtered parallel. Depth-cap original warm process means range189.226–641.830
+us, all retained. Thus the M1 speedup over sequential does not repeat here;
+no OS cause is assigned from aggregate CPU/context-switch observations.
+The matching [complete gate](https://github.com/mbbill/Whitefoot/actions/runs/34232663071)
+passes, including the deterministic strong-runtime linkage observer.
+
+### Native recursive grain comparison
+
+`quadrature_native.cpp` supplies a scalar C++ sequential specialization and
+direct recursive oneTBB `parallel_invoke` / Parlay `par_do` specializations.
+All use the same density, Simpson arithmetic, stopping condition and ordered
+left-plus-right result. At spawn depths0/2/4/8/24, nodes below that frontier
+call the sequential specialization with no scheduler branch. Depth24 offers
+every nonterminal pair in these fixtures; depth0 includes native pool entry
+but no recursive forks. These are five initial grain settings, not a fully
+tuned envelope or a selected WF policy. The existing scalar C recursion and
+both WF modules remain in the same executable and use the same oracle.
+The C++ entry boundary differs from the generated WF adapter; `cpp-seq` and
+depth0 expose kernel/entry overhead before attributing differences to scheduling.
+
+oneTBB uses the pinned v2023.1.0 library, a persistent arena with one reserved
+external participant, and `max_allowed_parallelism` equal to the requested
+width. Each `parallel_invoke` uses its default bound context; shared contexts
+and alternative task APIs are not yet tuned. Parlay uses pinned native
+`51017699`, a caller-owned width-sized pool and the default elastic idle policy.
+Only the selected runtime starts a pool in each process. Creation is inside
+the first timed run; Parlay helper destruction follows all joined measurements.
+oneTBB retains its process-lifetime pool. No CPU pinning or idle-policy override
+is silently introduced. Builds verify the upstream pins and source cleanliness
+through the existing dependency caller; artifacts retain the library, header
+hashes, compiler commands, C++ assembly, objects, source snapshots and report.
+The native implementation follows the documented
+[oneTBB fork/join contract](https://uxlfoundation.github.io/oneTBB/main/specification/source/algorithms/functions/parallel_invoke_func.html)
+and the [pinned Parlay implementation](https://github.com/cmuparlay/parlaylib/blob/51017699dcc421f80479cdb238d3092233ad0d26/include/parlay/parallel.h).
+
+The diagnostic build counts executed nodes, application-level fork pairs and
+branches beginning on a different thread from their parent. Counters are
+subtree-local and combined after joins. Nodes and forks must match the
+independent explicit-stack oracle; worker request1 must observe no migrated
+branches. These are not upstream internal task counts or OS context switches.
+The existing `steals`, `pool_lanes` and publication fields remain WF-specific;
+zero there says nothing about native pool participation. Both native runtimes
+observe migrated branches in the four-worker positive-depth qualification
+cohort, but that does not prove all four participants were active simultaneously.
+The timing build omits native counting and thread-ID reads; all event fields
+are zero. Per-call process CPU and OS context switches remain raw observations,
+not instruction counts or an isolated task-switch cost.
+
+The September8 M1 native screen (MacBookPro18,3, Clang21.0.0, unfixed placement
+and frequency) retains ordinary SHA256
+`35dcc23fb6575b28a216453235cb3c12f05000597445703ab9d7cc0efccc3bf0`,
+native C++ object `9ba3bced70575c8f0cb4b426f3603890bdedae1fcc010d37bfa4abd4965bfff2`
+and the unchanged filtered WF object
+`1111aea3e8f58a940238204029a1f4b2bfb442bebcf115f75279278ddc187d7a`.
+The ordinary executable is a new cohort, not the preceding five-form image.
+All sixteen settings, all ten inputs and all first/warm samples are retained.
+Selected four-worker medians of five process warm means, in microseconds:
+
+| Input | WF leaf | TBB depth4 | TBB depth24 | Parlay depth8 | Parlay depth24 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Center peak | 15.495 | 14.896 | 164.396 | 10.724 | 16.755 |
+| Left peak | 13.250 | 19.073 | 128.427 | 8.703 | 13.588 |
+| Right peak | 12.823 | 12.735 | 124.948 | 9.995 | 15.333 |
+| Outside peak | 4.760 | 7.396 | 30.187 | 5.453 | 6.094 |
+| Depth cap | 26.323 | 21.386 | 381.568 | 18.188 | 31.516 |
+
+For centered/left/right peaks and depth cap, paired WF-leaf/Parlay-depth8
+ratios are1.478 [0.864–1.567],1.571 [1.284–1.620],1.324 [0.738–1.515]
+and1.526 [1.030–1.600]. Parlay is faster in4/5,5/5,4/5 and5/5 pairs
+respectively. Some cases have substantial between-process variation; an
+observed median win is not held-out confirmation. TBB depth2 has a depth-cap
+median19.161 us and beats WF in5/5 pairs. TBB depth4 beats WF
+on center/depth-cap in4/5, while losing on left peak in5/5. Thus neither one
+runtime nor one depth wins every input. C/C++ sequential centered-peak medians
+are21.651/21.656 us; this screen does not identify a large scalar-kernel deficit.
+
+For center peak, depth8 executes247 fork pairs versus1,643 at depth24;
+all versions still visit3,287 nodes. The WF leaf body offers the latter1,643
+pairs. The comparison exposes a profitable granularity range beyond small-leaf
+suppression, but changes both scheduler and grain: it is not an isolated WF
+runtime deficit. Full-depth TBB alone would be a particularly weak reference.
+Next evidence must include finer grain tuning with held-out confirmation,
+matched-grain native WF controls, recursive Rayon, larger compositions and
+native-host topology/placement qualification. No compiler/runtime/ABI policy
+is adopted by these reference controls.
 
 ## Scalar scheduler comparison
 

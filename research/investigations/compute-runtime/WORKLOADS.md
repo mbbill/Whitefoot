@@ -28,11 +28,15 @@ adds data-dependent subdivision and nested ordinary sibling calls, with an
 explicit-stack binary64 oracle, analytic checks for converged fixtures and
 an initial scalar C/WF comparison. The original M1/Linux screens observe
 substantial parallel-body slowdown. An opt-in scalar-leaf offer control improves
-the heavier M1 cases, while smaller cases still lose to sequential execution;
-publication and generated-code contributions are not separately isolated.
-The ten-case screen does not yet qualify larger
-application composition or multiple native recursive schedulers, and does not
-replace the application rows below.
+the heavier M1 cases; its later Linux cohort improves relative to original
+parallel execution but does not reproduce the sequential speedup. Publication
+and generated-code contributions are not separately isolated. Native recursive
+oneTBB/Parlay controls now vary spawn depth against a common scalar C++ kernel,
+with the same oracle and subtree-local diagnostic counts. The M1 grain screen
+exposes remaining WF losses; native WF at matched grain, recursive Rayon and
+held-out/native-host confirmation remain missing. The ten-case screen does not
+yet qualify larger application composition and does not replace the application
+rows below.
 Keep the inventory current as
 programs become executable; consolidate it when the suite's implemented coverage
 supersedes this selection.

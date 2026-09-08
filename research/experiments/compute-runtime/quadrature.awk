@@ -11,42 +11,54 @@ BEGIN {
     split("59 3287 2473 2473 503 3 1 8191 1 183", nodes," ")
     split("0 0 0 0 0 0 1 4009 0 0", capped," ")
     split("5 14 14 14 10 1 0 12 0 7", depths," ")
+    split("3 3 3 3 3 1 0 3 0 3", forks2," ")
+    split("15 15 15 15 15 1 0 15 0 15", forks4," ")
+    split("29 247 176 176 184 1 0 255 0 91", forks8," ")
     parallel=(form=="wf-auto" || form=="wf-leaf")
     leaf=(form=="wf-leaf" || form=="wf-leaf-seq")
-    if ((mode!="check" && mode!="bench") || (form!="native" && form!="wf-seq" && !parallel && !leaf) ||
+    native=(form=="cpp-seq" || form=="tbb" || form=="parlay")
+    if (spawn=="")spawn=0
+    if (!integer(spawn) || (spawn!=0 && spawn!=2 && spawn!=4 && spawn!=8 && spawn!=24) ||
+        ((form!="tbb" && form!="parlay") && spawn))bad("spawn depth")
+    if ((mode!="check" && mode!="bench") || (form!="native" && form!="wf-seq" && !parallel && !leaf && !native) ||
         (width!=1 && width!=4) || (stats!=0 && stats!=1)) bad("validator arguments")
     calls=(mode=="check"?2:9)
 }
 NR==1 {
-    expected="# quadrature mode=" mode " form=" form " workers=" width " stats=" stats " events=" stats
+    expected="# quadrature mode=" mode " form=" form " workers=" width " stats=" stats " events=" stats " spawn_depth=" spawn
     if ($0!=expected) bad("command identity")
     next
 }
 NR==2 {
-    if ($0!="# columns=input form call phase wall_ns user_us system_us voluntary involuntary steals pool_lanes publishes local_pops runs joins slot_refusals") bad("columns")
+    if ($0!="# columns=input form call phase wall_ns user_us system_us voluntary involuntary steals pool_lanes publishes local_pops runs joins slot_refusals native_nodes native_forks migrated_branches") bad("columns")
     next
 }
 /^# input=/ {
     if (footer || (block && seen!=calls)) bad("missing calls")
     ++block;seen=0
-    if (block>count || NF!=8 || field($2,"input=")!=names[block]) bad("input order")
+    if (block>count || NF!=9 || field($2,"input=")!=names[block]) bad("input order")
     if (field($3,"nodes=")!=nodes[block] || field($4,"leaves=")!=(nodes[block]+1)/2 ||
         field($5,"capped=")!=capped[block] || field($6,"deepest=")!=depths[block] ||
         field($7,"evaluations=")!=3+2*nodes[block]) bad("work metadata")
     if (field($8,"expected=") !~ /^-?0x[01](\.[0-9a-f]+)?p[+-][0-9]+$/) bad("expected value")
+    forks=field($9,"forks=")
+    if (!integer(forks))bad("noninteger forks")
+    forks+=0
+    expected_forks=(spawn==0?0:spawn==2?forks2[block]:spawn==4?forks4[block]:spawn==8?forks8[block]:(nodes[block]-1)/2)
+    if (forks!=expected_forks)bad("fork metadata")
     next
 }
 /^# quadrature PASS:/ {
-    if (footer || block!=count || seen!=calls || NF!=6) bad("footer position")
+    if (footer || block!=count || seen!=calls || NF!=7) bad("footer position")
     if (field($4,"outputs=")!=count*calls || field($5,"stats=")!=stats ||
-        field($6,"steals=")!=steals) bad("footer totals")
+        field($6,"steals=")!=steals || field($7,"migrated=")!=migrated) bad("footer totals")
     if (stats && parallel && width==4 && !steals) bad("no actual steal")
     footer=1;next
 }
 {
-    if (footer || !block || seen>=calls || NF!=16 || $1!=names[block] || $2!=form ||
+    if (footer || !block || seen>=calls || NF!=19 || $1!=names[block] || $2!=form ||
         $3!=seen || $4!=(seen?"warm":"first")) bad("call identity")
-    for (i=5;i<=16;++i) if(!integer($i))bad("noninteger observation")
+    for (i=5;i<=19;++i) if(!integer($i))bad("noninteger observation")
     if ($11!=((parallel && width==4)?4:0))bad("actual pool width")
     if (!stats || !parallel || width==1) {
         if($10 || $12 || $13 || $14 || $15 || $16)bad("disabled/serial events")
@@ -54,6 +66,10 @@ NR==2 {
         opportunities=(leaf?nodes[block]-(nodes[block]+1)/2:3*nodes[block]-(nodes[block]+1)/2+2)
         if ($12!=$13+$10 || $12!=$14 || $12!=$15 || $12+$16!=opportunities)bad("task conservation")
     }
+    if (stats && native) {
+        if($17!=nodes[block] || $18!=forks || $19>2*forks || (width==1 && $19))bad("native conservation")
+    } else if($17 || $18 || $19)bad("disabled native observations")
+    migrated+=$19
     steals+=$10;++seen;++rows
 }
 END {

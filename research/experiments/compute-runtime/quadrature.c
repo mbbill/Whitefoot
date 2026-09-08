@@ -4,6 +4,7 @@
  * attribution. Retire with the owning quadrature experiment. No SIMD or FMA. */
 #include "runtime.h"
 #include "runtime_events.h"
+#include "quadrature_native.h"
 #include <errno.h>
 #include <inttypes.h>
 #include <math.h>
@@ -20,6 +21,8 @@ extern double wf_research_quadrature(double, double, double, double, double, uin
 extern double wf_research_quadrature_leaf(double, double, double, double, double, uint64_t, bool);
 static double (*generated_run)(double,double,double,double,double,uint64_t,bool);
 static bool parallel_form, leaf_form;
+static bool native_cpp;
+static unsigned native_kind, spawn_depth, requested;
 static void require(bool ok, const char *why) {
     if (!ok) { fprintf(stderr, "quadrature: %s\n", why); exit(1); }
 }
@@ -84,7 +87,7 @@ static double oracle_simpson(double a,double b,double fa,double fm,double fb) {
     return value;
 }
 typedef struct { double a,b,fa,fm,fb,whole,tol,m,fl,fr,left,right,result; unsigned depth,state; } Node;
-typedef struct { double value; uint64_t nodes,leaves,capped; unsigned deepest; } Reference;
+typedef struct { double value; uint64_t nodes,leaves,capped,forks; unsigned deepest; } Reference;
 static Reference reference(const Input *p) {
     Node stack[25]={0}; unsigned top=0; Reference out={0};
     volatile double endpoints=p->a+p->b,m=endpoints*0.5;
@@ -105,6 +108,7 @@ static Reference reference(const Input *p) {
                 n->result=value;n->state=3;++out.leaves;
                 if (!n->depth && fabs(delta)>threshold)++out.capped;
             } else {
+                if(top<spawn_depth)++out.forks;
                 n->state=1;require(top<24,"oracle stack domain");
                 volatile double tol=n->tol*0.5;
                 Node child={.a=n->a,.b=n->m,.fa=n->fa,.fm=n->fl,.fb=n->fm,
@@ -131,28 +135,38 @@ static Reference reference(const Input *p) {
 }
 static double run(const Input *p,const char *form) {
     if(!strcmp(form,"native"))return native(p);
+    if(native_cpp)return quadrature_native_run(native_kind,requested,spawn_depth,
+        p->a,p->b,p->center,p->width,p->tolerance,p->depth);
     return generated_run(p->a,p->b,p->center,p->width,p->tolerance,p->depth,parallel_form);
 }
 int wf__main_body(int argc,char **argv) {
-    require(argc==3,"usage: quadrature check|bench native|wf-seq|wf-auto|wf-leaf-seq|wf-leaf");
+    require(argc==3 || argc==4,"usage: quadrature check|bench form [spawn-depth]");
     bool bench=!strcmp(argv[1],"bench");require(bench || !strcmp(argv[1],"check"),"mode");
     const char *form=argv[2];
     leaf_form=!strcmp(form,"wf-leaf") || !strcmp(form,"wf-leaf-seq");
     parallel_form=!strcmp(form,"wf-auto") || !strcmp(form,"wf-leaf");
-    require(!strcmp(form,"native") || !strcmp(form,"wf-seq") || parallel_form || leaf_form,"form");
+    native_cpp=!strcmp(form,"cpp-seq") || !strcmp(form,"tbb") || !strcmp(form,"parlay");
+    native_kind=!strcmp(form,"tbb")?1:!strcmp(form,"parlay")?2:0;
+    require(!strcmp(form,"native") || !strcmp(form,"wf-seq") || parallel_form || leaf_form || native_cpp,"form");
+    if(native_kind) {
+        require(argc==4 && argv[3][0]>='0' && argv[3][0]<='9',"explicit spawn depth");
+        char *end;errno=0;unsigned long parsed=strtoul(argv[3],&end,10);
+        require(!errno && !*end && parsed<=24,"spawn depth domain");spawn_depth=(unsigned)parsed;
+    } else require(argc==3,"spawn depth only for native schedulers");
     generated_run=leaf_form?wf_research_quadrature_leaf:wf_research_quadrature;
     const char *workers=getenv("WF_WORKERS");
     require(workers && (!strcmp(workers,"1") || !strcmp(workers,"4")),"explicit worker count");
-    unsigned requested=!strcmp(workers,"4")?4:1;
-    unsigned calls=bench?9:2;uint64_t outputs=0,total_steals=0;
-    printf("# quadrature mode=%s form=%s workers=%u stats=%d events=%d\n",argv[1],form,requested,WF_COMPUTE_STATS,
+    requested=!strcmp(workers,"4")?4:1;
+    unsigned calls=bench?9:2;uint64_t outputs=0,total_steals=0,total_migrated=0;
+    printf("# quadrature mode=%s form=%s workers=%u stats=%d events=%d spawn_depth=%u\n",argv[1],form,requested,WF_COMPUTE_STATS,
 #if defined(WF_COMPUTE_EVENTS)
         1
 #else
         0
 #endif
+        ,spawn_depth
     );
-    puts("# columns=input form call phase wall_ns user_us system_us voluntary involuntary steals pool_lanes publishes local_pops runs joins slot_refusals");
+    puts("# columns=input form call phase wall_ns user_us system_us voluntary involuntary steals pool_lanes publishes local_pops runs joins slot_refusals native_nodes native_forks migrated_branches");
     for(size_t i=0;i<sizeof(cases)/sizeof(cases[0]);++i) {
         const Input *p=&cases[i];Reference r=reference(p);
         if(p->converged) {
@@ -160,7 +174,7 @@ int wf__main_body(int argc,char **argv) {
             require(r.capped==0,"unexpected depth exhaustion");
             require(fabsl((long double)r.value-exact)<=8*p->tolerance+0x1p-48L,"analytic integral");
         }
-        printf("# input=%s nodes=%" PRIu64 " leaves=%" PRIu64 " capped=%" PRIu64 " deepest=%u evaluations=%" PRIu64 " expected=%a\n",p->name,r.nodes,r.leaves,r.capped,r.deepest,3+2*r.nodes,r.value);
+        printf("# input=%s nodes=%" PRIu64 " leaves=%" PRIu64 " capped=%" PRIu64 " deepest=%u evaluations=%" PRIu64 " expected=%a forks=%" PRIu64 "\n",p->name,r.nodes,r.leaves,r.capped,r.deepest,3+2*r.nodes,r.value,r.forks);
         for(unsigned call=0;call<calls;++call) {
             struct rusage before,after;require(!getrusage(RUSAGE_SELF,&before),"resources before");
 #if WF_COMPUTE_STATS
@@ -178,6 +192,17 @@ int wf__main_body(int argc,char **argv) {
 #endif
             require(!getrusage(RUSAGE_SELF,&after),"resources after");
             require(bits(value)==bits(r.value),"binary64 result");++outputs;
+            QuadratureObservation observed=quadrature_native_observation();
+#if WF_COMPUTE_STATS
+            if(native_cpp) {
+                require(observed.nodes==r.nodes && observed.forks==r.forks,"native work conservation");
+                require(observed.migrated<=2*observed.forks,"native branch count");
+                if(requested==1)require(!observed.migrated,"native single-worker exclusion");
+            } else require(!observed.nodes && !observed.forks && !observed.migrated,"native exclusion");
+#else
+            require(!observed.nodes && !observed.forks && !observed.migrated,"disabled native counters");
+#endif
+            total_migrated+=observed.migrated;
             unsigned long publishes=0,pops=0,runs=0,joins=0,refusals=0;
 #if defined(WF_COMPUTE_EVENTS)
             for(unsigned e=0;e<WF_EVENT_COUNT;++e)events[e]=event_sum(e)-events[e];
@@ -191,11 +216,11 @@ int wf__main_body(int argc,char **argv) {
                 require(publishes+refusals==opportunities,"recursive publication opportunities");
             } else require(publishes==0,"sequential publication exclusion");
 #endif
-            printf("%s\t%s\t%u\t%s\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%ld\t%ld\t%lu\t%u\t%lu\t%lu\t%lu\t%lu\t%lu\n",
+            printf("%s\t%s\t%u\t%s\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%ld\t%ld\t%lu\t%u\t%lu\t%lu\t%lu\t%lu\t%lu\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\n",
                 p->name,form,call,call?"warm":"first",elapsed,
                 cpu_us(after.ru_utime)-cpu_us(before.ru_utime),cpu_us(after.ru_stime)-cpu_us(before.ru_stime),
                 after.ru_nvcsw-before.ru_nvcsw,after.ru_nivcsw-before.ru_nivcsw,steals,wf_compute_worker_count(),
-                publishes,pops,runs,joins,refusals);
+                publishes,pops,runs,joins,refusals,observed.nodes,observed.forks,observed.migrated);
         }
     }
 #if WF_COMPUTE_STATS
@@ -204,7 +229,8 @@ int wf__main_body(int argc,char **argv) {
 #else
     if(parallel_form && requested==4)require(wf_compute_worker_count()==4,"four-worker startup");
 #endif
-    printf("# quadrature PASS: outputs=%" PRIu64 " stats=%d steals=%" PRIu64 "\n",outputs,WF_COMPUTE_STATS,total_steals);
+    printf("# quadrature PASS: outputs=%" PRIu64 " stats=%d steals=%" PRIu64 " migrated=%" PRIu64 "\n",outputs,WF_COMPUTE_STATS,total_steals,total_migrated);
+    quadrature_native_stop();
     require(!fflush(stdout),"report flush");return 0;
 }
 int main(int argc,char **argv) { return wf__floor_run(argc,argv); }
