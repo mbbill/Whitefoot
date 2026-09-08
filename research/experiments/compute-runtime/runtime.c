@@ -30,6 +30,10 @@ _Static_assert(sizeof(unsigned long) == 8, "compute control requires POSIX LP64"
 #define WF_PAR_SPLIT_OVERSUBSCRIBE 16
 #define WF_PAR_SPLIT_WORK_PER_CHUNK 1200000
 
+#if defined(WF_COMPUTE_BUDGET_CONTROL)
+int wf_compute_capacity_budget;
+#endif
+
 #define WF_PAR_SLOT_FREE 0
 #define WF_PAR_SLOT_PENDING 1
 #define WF_PAR_SLOT_DONE 2
@@ -617,6 +621,11 @@ unsigned long wf__par_split_budget(unsigned long span, unsigned long weight) {
     }
     want = (unsigned long)lanes * WF_PAR_SPLIT_OVERSUBSCRIBE;
 
+#if defined(WF_COMPUTE_BUDGET_CONTROL)
+    if (wf_compute_capacity_budget) {
+        affordable = span;
+    } else
+#endif
     if (weight >= (unsigned long)WF_PAR_SPLIT_WORK_PER_CHUNK) {
         affordable = span;
     } else {

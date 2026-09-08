@@ -635,6 +635,72 @@ not establish a native frontier or full application throughput. SIMD work is
 parked. The separate scheduler comparison below supplies matched static/dynamic
 controls; held-out inputs and dedicated-core measurements remain open.
 
+### Isolating the static cost budget
+
+`records-budget` compares two runtime budget policies in one executable with
+the same emitted WF object. The research host selects `WF_BUDGET_CONTROL=cost`
+or `capacity` before floor entry and before any worker can read the flag.
+`cost` preserves estimated affordability; `capacity` bypasses only that test.
+Both retain the requested lane limit, span cap, queue backpressure, binary
+budget-depth descent and acquire-failure fallback. At width four the capacity
+policy allows at most 64 terminal chunks; it does not create one job per record.
+The ordinary runtime and record hosts do not contain this control unless built
+with `WF_COMPUTE_BUDGET_CONTROL`. No compiler rule, source signature or default
+scheduling policy changes.
+
+`check-records-budget` retains `check-records`, then runs both policies through
+the full leaf/batch qualifier in ordinary and C-sanitized images and thirty
+policy/width/input smoke processes. It is included in the experiment's canonical
+`check` and in the Linux records CI job. Statistics remain enabled, and the
+emitted WF object remains ordinary LLVM rather than frontend-sanitizer code.
+
+```sh
+make -C research/experiments/compute-runtime check-records-budget OUT=/tmp/wf-records
+OUT=/tmp/wf-records RESULTS=/tmp/wf-records/budget-calibration \
+  sh research/experiments/compute-runtime/records-bench.sh budget-calibrate
+```
+
+The calibration interleaves both policies at requested widths zero/two/four
+over thirteen cells: five input shapes at 256 long and 4,097 shorter records,
+two tiny 33-record inputs and an empty input. Five rotating/reversed passes
+with eight warm calls plus a separate first call produce 390 processes / 3,510
+calls. Policy is part of each raw report, filename, configuration and summary;
+the same executable hash is checked before and after the panel. Width zero
+is the neutral control, not a competing parallel runtime. Keep early-invalid
+and skewed inputs beside expensive inputs when evaluating the cost of removing
+the threshold. Core includes output allocation/initialization and computation;
+cycle also copies and releases the result. Batch CPU includes checks and
+printing and is not a per-call scheduling-cost measurement. A budget-policy
+speedup over WF's own serial execution does not establish a native frontier.
+
+An unfixed-placement M1 screen independently checked all 390 processes / 3,510
+calls, 5,894,370 output positions and nineteen manifest hash entries. Selected
+requested-width-four core timings below are medians of five process warm means;
+the paired ratios compare matching passes and need not equal the ratio of the
+displayed medians. No scratch-prototype samples are pooled into this screen.
+
+| Input | Cost policy | Capacity policy | Paired capacity/cost ratio [range] |
+| --- | ---: | ---: | ---: |
+| 256 Unicode records, maximum length 65,536 | 7.077 ms | 1.984 ms | 0.279 [0.272--0.333] |
+| 4,097 Unicode records, maximum length 128 | 132.599 us | 70.354 us | 0.530 [0.528--0.548] |
+| 256 early-invalid records, maximum length 65,536 | 5.834 us | 11.135 us | 2.642 [1.565--3.878] |
+| 256 skewed records, maximum length 65,536 | 22.172 us | 26.047 us | 1.170 [1.142--1.282] |
+| 33 early-invalid records, maximum length 64 | 0.130 us | 3.016 us | 22.275 [21.231--39.789] |
+
+Every pair improves for the two Unicode rows and regresses for the other three.
+The long 256-record cost runs report zero started lanes despite requesting
+two/four; capacity reports two/four. Capacity's paired long-input speedups over
+its own width-zero control are 1.914x at two and 3.553x at four. At width zero,
+both policies stay sequential and the long-input capacity/cost ratio is 1.000
+[0.993--1.008]. Tiny absolute times approach clock resolution; preserve their
+regressions without treating their ratios as precise scheduler instruction costs.
+The shared executable SHA-256 is
+`6d68093b4ca9ecedf135e724cd1a1b99cc6af7164daf709e7c58b52a2f33e80d`; the WF
+object SHA-256 is
+`766c426f8e02d8bdfc624eed8d9ce8f4cf4ee7f2a6407c27a7750bbae2983543`.
+This exposes a cost-selection problem, not a reason to make capacity the
+default. Linux budget-policy performance remains to be qualified.
+
 ## Scalar scheduler comparison
 
 This panel investigates scheduling with six forms: the recovered WF runtime,
@@ -1237,8 +1303,28 @@ calls, and these unfixed-placement local results do not establish a speedup.
 The counter-free/event image SHA-256 identities are respectively
 `79093eb45285b4a95dfd43e6591f4881db58fafe2a4f7457cdd02276152a9dd1` and
 `af5c17d4144d1b3a020ae111bd68c5aafd4f1042741fb9fe871f6caf3177ff8c`.
-Linux `wf-2` execution remains unqualified; the retained Linux panel above
-uses `wf-1` and cannot supply origin counts.
+The [`c1da4761` Linux run](https://github.com/mbbill/Whitefoot/actions/runs/34202766630)
+subsequently qualified `wf-2`. Artifact `compute-scheduler-linux`, ID
+`10046719545`, ZIP SHA-256
+`91bee7fa66e701d85b8b411a4bb26a2ca4112ca6d81b03dbdb7227bdbb7ecc56`, retains
+180 processes / 1,620 calls. Independent checking matched all summaries and
+304 scoped hash entries, including 35 source entries against the exact revision,
+and all 1,620 WF per-bank success partitions. All eighteen actual event sanitizer
+contracts passed: nine WF clean exits and nine Rayon exit-23 reports with
+1,904 retained bytes in two allocations. The earlier `wf-1` panel cannot supply
+origin counts and remains separate evidence.
+
+This runner is an EPYC 7763 VM with two physical cores / four SMT logical CPUs,
+mask 0--3, with quota and individual worker placement unqualified. Long-input
+`plain` join-attempt shares have median 63.10% [54.71--69.79%]; the caller
+supplies 40.75% [38.58--43.82%] of join attempts. This again locates substantial
+search work in worker-side nested joins, without estimating its CPU cost.
+Counter-free long-input medians [ranges] are WF 3.924 [3.881--3.939] ms and
+Rayon 3.919 [3.833--3.996] ms, with overlapping ranges. The corresponding
+event/control paired ratios are 1.278 [1.269--1.334] and 1.272 [1.238--1.293],
+slower in all five pairs for both runtimes. This large shared perturbation
+requires separating image and instrumentation effects; it is not an isolated
+WF counter-overhead estimate or evidence of a production performance loss.
 
 ### First complete Linux scalar panel and attribution limit
 

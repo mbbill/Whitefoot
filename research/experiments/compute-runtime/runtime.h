@@ -25,6 +25,11 @@ unsigned long wf__par_grants(void);
 unsigned wf_compute_worker_count(void);
 unsigned wf_compute_slot_capacity(void);
 
+#if defined(WF_COMPUTE_BUDGET_CONTROL)
+/* Research host sets this once before entering the floor or creating workers. */
+extern int wf_compute_capacity_budget;
+#endif
+
 #if defined(WF_COMPUTE_TEST)
 void wf_compute_test_before_steal_read(unsigned victim, unsigned long long top);
 void wf_compute_test_after_steal_read(void *observed);

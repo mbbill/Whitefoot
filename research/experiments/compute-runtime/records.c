@@ -277,6 +277,12 @@ int wf__main_body(int argc,char **argv) {
     return benchmark(argc,argv);
 }
 int main(int argc,char **argv) {
+#if defined(WF_COMPUTE_BUDGET_CONTROL)
+    const char *policy=getenv("WF_BUDGET_CONTROL");
+    require(policy && (!strcmp(policy,"cost") || !strcmp(policy,"capacity")),"budget control policy");
+    wf_compute_capacity_budget=!strcmp(policy,"capacity");
+    printf("# budget_policy=%s\n",policy);
+#endif
     entry_start=now();
     return wf__floor_run(argc,argv);
 }

@@ -63,7 +63,7 @@ $(OUT)/probe $(OUT)/probe-no-stats $(OUT)/probe-events: runtime.c runtime.h runt
 		$(if $(filter $(OUT)/probe-events,$@),-DWF_COMPUTE_EVENTS,) \
 		runtime.c probe.c $(FLOOR) -o "$@"
 
-check: check-runtime check-abi check-fir check-bench check-records check-scheduler-events
+check: check-runtime check-abi check-fir check-bench check-records-budget check-scheduler-events
 
 check-runtime: build
 	@set -e; for probe in probe probe-no-stats probe-events; do \
@@ -134,6 +134,28 @@ check-records: records-build
 
 records-calibrate: check-records
 	OUT="$(OUT)" sh records-bench.sh calibrate
+
+.PHONY: records-budget-build check-records-budget
+records-budget-build: records-build
+	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_CONTROL -DWF_COMPUTE_BUDGET_CONTROL -DRECORD_RUNTIME='"budget"' \
+		records.c records_oracle.c runtime.c $(FLOOR) "$(OUT)/records-wf.o" "$(OUT)/records-native.o" -o "$(OUT)/records-budget"
+	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_CONTROL -DWF_COMPUTE_BUDGET_CONTROL -DRECORD_RUNTIME='"budget"' \
+		-fsanitize=$(SANITIZER) -fno-sanitize-recover=all -fno-omit-frame-pointer \
+		records.c records_oracle.c runtime.c $(FLOOR) "$(OUT)/records-wf.o" "$(OUT)/records-native-sanitized.o" \
+		-o "$(OUT)/records-budget-sanitized"
+	@printf '%s\n' 'budget=cost,capacity; same executable and emitted WF object; policy selected before floor entry' \
+		'capacity bypasses estimated affordability only; span, lane limit, queue backpressure and fallback remain' \
+		'statistics enabled; emitted WF object is not frontend-sanitizer-instrumented' > "$(OUT)/records-budget-flags.txt"
+
+check-records-budget: check-records records-budget-build
+	@set -e; for image in budget budget-sanitized; do for policy in cost capacity; do \
+		log="$(OUT)/records-$$image-$$policy-check.log"; \
+		WF_WORKERS=4 WF_BUDGET_CONTROL="$$policy" "$(OUT)/records-$$image" check > "$$log"; \
+		grep -Fxq "# budget_policy=$$policy" "$$log"; \
+		grep -Fxq 'UTF8 leaf qualification PASS: calls=4595603 all-codepoints all-truncations two-byte-pairs' "$$log"; \
+		grep -Fxq 'UTF8 batch qualification PASS: world=parallel calls=342 results=1821070' "$$log"; \
+	done; done
+	OUT="$(OUT)" sh records-bench.sh budget-check
 
 # Download is explicit, as with Cargo's offline research dependencies. The
 # build verifies pins and only installs the private library below OUT.

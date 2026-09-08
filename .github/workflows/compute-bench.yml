@@ -26,7 +26,7 @@ jobs:
             driver: fir-bench.sh
           - workload: records
             arch: -march=native
-            checks: check-records
+            checks: check-records-budget
             driver: records-bench.sh
           - workload: scheduler
             arch: -march=x86-64-v3
@@ -74,6 +74,10 @@ jobs:
           test -n "$selected"
           taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/calibration" \
             sh research/experiments/compute-runtime/${{ matrix.driver }} calibrate
+          if test '${{ matrix.workload }}' = records; then
+            taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/budget-calibration" \
+              sh research/experiments/compute-runtime/records-bench.sh budget-calibrate
+          fi
           if test '${{ matrix.workload }}' = scheduler; then
             taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/layout-calibration" \
               sh research/experiments/compute-runtime/records-scheduler-bench.sh layout
@@ -117,6 +121,7 @@ jobs:
           path: |
             ${{ runner.temp }}/compute-${{ matrix.workload }}-build.log
             ${{ runner.temp }}/compute-${{ matrix.workload }}/calibration/
+            ${{ runner.temp }}/compute-${{ matrix.workload }}/budget-calibration/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/layout-calibration/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/trace-calibration/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/events-calibration/
