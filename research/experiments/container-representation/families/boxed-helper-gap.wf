@@ -1,0 +1,33 @@
+struct Entry['s] {
+  payload: Box<'s, u64>;
+}
+
+fn build['s](first: own Box<'s, u64>, replacement: own Box<'s, u64>) -> (slots: own FixedVector<Option<Entry<'s>>, 1>, returned: own Box<'s, u64>) pure contract {
+  ensures len_of(slots) == 1_u64;
+} {
+  let entry = Entry(payload: move first);
+  let occupied = Some<Entry<'s>>(value: move entry);
+  let slots = fixed_vector::<Option<Entry<'s>>, 1>();
+  set slots = place_back(vector: move slots, value: move occupied);
+  return move slots, move replacement;
+}
+
+fn replace_one['s](slots: own FixedVector<Option<Entry<'s>>, 1>, replacement: own Entry<'s>) -> (updated: own FixedVector<Option<Entry<'s>>, 1>, previous: own Option<Entry<'s>>) reads(slots), writes(slots) contract {
+  requires 1_u64 <= len_of(slots);
+  ensures len_of(updated) == len_of(slots);
+} {
+  let occupied = Some<Entry<'s>>(value: move replacement);
+  let previous = replace slots[0_u64] = move occupied;
+  return move slots, move previous;
+}
+
+fn compose['s](first: own Box<'s, u64>, replacement: own Box<'s, u64>) -> (updated: own FixedVector<Option<Entry<'s>>, 1>, previous: own Option<Entry<'s>>) reads(first), writes(first) {
+  let (slots, returned) = build(first: move first, replacement: move replacement);
+  let entry = Entry(payload: move returned);
+  let (updated, previous) = replace_one(slots: move slots, replacement: move entry);
+  return move updated, move previous;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

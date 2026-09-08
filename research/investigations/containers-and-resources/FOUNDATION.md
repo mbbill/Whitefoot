@@ -90,7 +90,9 @@ The first [current-language family witnesses](../../experiments/container-repres
 now execute a bounded optional-entry hash table, a dense binary heap, a
 B+ tree leaf-split component, and a variable-record byte page with insertion,
 deletion, overlapping movement and ordinary invalid-input/refusal outcomes.
-The hash trace does not yet cover growth or rehash;
+An additional boxed-entry component now executes runtime-indexed migration and
+collision probing, with earlier map operations prepared at selected positions.
+It does not establish a general map API or return/resume migration contract;
 the leaf component is not a complete ordered map. A separate valid-source boxed
 tree reproducer exposes descriptor-replacement lowering failure and is explicitly
 deferred executable correctness evidence, not a source-language rejection.
@@ -101,6 +103,16 @@ boundaries despite the earlier fresh-destination improvements. That is a measure
 implementation cost to investigate before attributing dense-heap performance to
 the absence of a lower-level storage language. The helpers explicitly preserve
 the contiguous head-zero property through verified contracts.
+
+The [byte-growth comparison](../../experiments/container-representation/families/RESULTS.md#explicit-byte-run-growth-and-refusal)
+executes source-written allocation, copy, fill and refusal, including injected
+first/second allocation failure. Existing storage preserves the old bytes on
+failed growth inside the trace. Matched loop, bulk-copy and realloc controls show
+that growth policy and complete-operation cost must be measured: realloc loses
+at the smallest tested size, while larger operations include generation and
+digest work that can dominate copying. No spare-byte initialization is forced
+by this source. Retained circular-index arithmetic and scalar copying provide
+an ordinary lowering target; these timings do not select a new storage authority.
 
 The Linux, Redis and SQLite observations in the external study make the last rows
 concrete. They do not impose pointer tagging, GC, C callbacks or any upstream
@@ -169,6 +181,89 @@ resource grammar and checked induction are a candidate, but this is new proof
 machinery rather than a widening of numeric `ensures` clauses. Its checking and
 erasure have not been implemented or validated by the current finite model.
 
+### A bounded symbolic resource candidate
+
+The broader route needs an actual checking rule for a runtime index, not a
+compile-time token for every element. One candidate restricts predicates to
+finite sums, separating products and structurally indexed segments. The notation
+here is a research sketch, not Whitefoot syntax or implemented acceptance:
+
+```text
+Slot(ac, ap, i) = Ctl(ac,i,Empty)   * Raw(ap,T,i,i+1)
+               | Ctl(ac,i,Deleted) * Raw(ap,T,i,i+1)
+               | exists fp:checked7, v.
+                   Ctl(ac,i,Full(fp)) * Init(ap,T,i,v)
+Seg(ac,ap,lo,lo) = emp
+Seg(ac,ap,lo,hi+1) = Seg(ac,ap,lo,hi) * Slot(ac,ap,hi)
+
+focus(Seg(ac,ap,lo,hi), proof(lo <= i < hi))
+  -> exists fresh k.
+     Seg(ac,ap,lo,i) * Slot(ac,ap,i) * Seg(ac,ap,i+1,hi)
+     * FocusKey(k,ac,ap,lo,hi,i)
+```
+
+`ac` and `ap` are fresh existential allocation identities produced by allocation;
+they cannot be manufactured from an integer, equal capacity or a reused address.
+`*` conserves linear responsibility. Focus generates a fresh linear closing key;
+unfocus consumes the three pieces and that same key. It cannot recreate a segment
+while a piece is borrowed or missing. Finite split/join, checked sum
+introduction/elimination, construct/take,
+borrow/end and release rules form a syntax-directed checker. Predicate definitions
+cannot add axioms or arbitrary executable tests. A `Full` control byte by itself
+never introduces an initialized `T`. The seven-bit fingerprint is ordinary
+algorithmic data; spatial validity does not establish that it matches the key.
+
+Opening consumes the selected `Slot` and its `FocusKey`, producing
+`Open(k,ac,ap,i,control_state,payload_state)`, an exclusive linear resource retaining
+that key and owning the slot's initialized control byte and raw or initialized
+payload responsibility. Taking a payload changes its payload state to raw and
+yields an ordinary owned value, leaving `Open(...,Full(fp),Raw)` until the control
+is changed. Closing consumes the open resource and returns a valid `Slot` and
+that same `FocusKey` only when its two states satisfy one of the alternatives above.
+Until `Deleted` is written, the physical control can still say `Full`. That
+transient state is safe only because the closed slot/segment authority has been
+consumed: other code cannot observe it as a valid closed table. Every transition
+updates the open responsibility, and returning a normal table requires restoring
+the relation and closing it. Letting a shared closed-table view coexist with
+this transition would permit an uninitialized read and must be rejected.
+
+A written loop invariant can own a processed empty/deleted source prefix, its
+remaining segment, the complete destination segment, and an optional separately
+held entry. The checker verifies entry, one symbolic iteration and exit, with
+explicit arithmetic steps and one structural fold/unfold. Runtime capacity does
+not cause proof unrolling or occupancy enumeration. Migration focuses source
+index `i`, extracts its entry, closes that source as deleted, then probes dynamic
+destination indices. Each focus retains the entire complement. Successful
+placement consumes the held entry; exhausted probing or intended refusal returns
+both table owners, cursor and still-held entry as partial progress. It does not
+promise rollback. A second simultaneous focus requires checked disjoint indices.
+
+Cleanup uses the same induction to consume live values and recover vacant
+coverage. `Ctl(ac,i,state)` owns one initialized byte. After payloads are retired,
+cleanup unfolds and consumes vacant slots rather than rebuilding their segment.
+A `retire_ctl` step consumes each control byte's responsibility and yields
+`Raw(ac,u8,i,i+1)`; adjacent raw spans fold/join to cover `ac` without clearing its
+physical bytes. Freeing a backing requires its complete raw coverage and no
+remaining loan, initialized cell or open responsibility *for that allocation*. An extracted
+Box may remain independently owned after the old slot backing is freed. Allocation
+identity, segment/focus/open evidence and induction erase; actual control loads,
+probing, payload movement, destruction and allocation execute. A runtime bounds
+guard is possible only with an intended false outcome, not an injected trap.
+No runtime proof table, second occupancy bitmap or additional cleanup scan is
+part of this candidate.
+
+This is a plausible restricted proof design, not a demonstrated sound checker,
+erasure result or authoring-cost measurement. Checked, definition-justified
+predicate introduction provides authority; privacy could hide representation but
+is not what makes a proof unforgeable. The design covers fixed-stride sequential
+storage. It does not supply arbitrary overlays, variable tails, hash correctness,
+stored membership, concurrent mutation or backing keepalive. Ordinary enums
+provide the control/payload validity relation; a projected-enum layout would
+have to preserve it while admitting the required dynamic operations. If their
+representation and operations match, this larger proof surface has no established
+performance advantage. A concrete counterexample
+to that narrower route remains the condition for selecting it.
+
 ### Runtime-checked identity and retained membership
 
 A stable slab with two indexes has two meaningfully different contracts. Under
@@ -188,7 +283,16 @@ runtime check also cannot preserve memory after it returns a borrow unless the
 access protocol keeps the backing alive. These candidate identities are not a
 claim that the arena-index ownership pattern rejected in STOR-1 has been admitted.
 
-The next comparison should use the same non-copy payload in a deleting/rehashing
+A [two-index native control](../../experiments/container-representation/authority/RESULTS.md#two-indexes-and-object-lifetime)
+now distinguishes those contracts through weak expiry, two retained memberships,
+an independent access ticket, wrong-store rejection and finite generation
+exhaustion. A rejected ticket return must preserve the ticket so it can still
+release the original access. This experiment does not supply WF admission,
+store-identity uniqueness or backing lifetime: its logical ticket is not a borrow,
+and its separate actual borrow relies on Rust's lifetime rules. It confirms the
+protocol distinction without pricing a proposed WF representation.
+
+The matched comparison should use the same non-copy payload in a deleting/rehashing
 map and a slab with two indexes, testing weak identity and retained membership
 separately. Price current complete-value storage, projected enum layout, and
 resource evidence against the same operations, including intended runtime
@@ -292,11 +396,18 @@ container substrate. The current evidence supports this order:
    owner descriptor path. The deferred ordered-node program must become an
    ordinary native success in all three modes. This restores a correctness
    baseline for owning-node algorithms; it does not add a new tree primitive.
+   The reduced boxed-helper region-substitution discrepancy also blocks this
+   nested-result helper composition: first repair FN-2 substitution through
+   nested input/output types, then validate the rest of the deferred program.
 2. Investigate ordinary owned-helper argument/result destinations using the heap
    cost control and the earlier dense and fallible-result controls. A move into a
    helper followed by return to the owner should not intrinsically require a
-   payload copy at every call. Reuse must still preserve RHS evaluation, reads of
-   the old value, aliasing, failure cleanup and actual loan retirement. Re-measure
+   payload copy at every call. The byte-growth control adds a separate loop/bulk
+   lowering question: investigate whether contiguous-access and alias facts
+   enable better ordinary loop/bulk lowering, then measure the same operation.
+   Reuse must preserve RHS
+   evaluation, reads of the old value, aliasing, failure cleanup and actual loan
+   retirement. Re-measure
    the same operations after the change; the current ratio is not a promised
    speedup. This is a general lowering experiment, not a heap-specific ABI.
 3. Compare one resource-owning sparse container under the two storage routes
@@ -337,12 +448,13 @@ that the narrower route cannot express is a real discriminator even if a scalar
 lookup benchmark happens to match.
 
 Two independent controls prevent the map from replacing the overall coverage
-question. The byte-page witness now supplies insertion, deletion and malformed
-input behavior; growing backing, bulk movement and reusable validation costs
-remain unmeasured. A two-index stable-object control must distinguish weak lookup
-returning `Expired` from retained membership making deletion return `Busy` or
-delaying it. It must check identity across store mismatch, reuse and finite
-generation exhaustion. Neither experiment requires implementing concurrent RCU
+question. The byte-page witness supplies insertion, deletion and malformed
+input behavior, and the growth trace prices one complete byte-run operation.
+Bulk page movement and reusable validation costs remain distinct from that trace.
+The two-index control distinguishes weak lookup returning `Expired` from retained
+membership making deletion return `Busy`, including store mismatch, reuse and
+generation exhaustion. It does not establish an efficient checked WF admission
+or backing lifetime. Neither experiment requires implementing concurrent RCU
 first or silently changing the current STOR-1 boundary.
 
 ### Independent ceilings and dispositions
@@ -355,9 +467,9 @@ The available evidence supports different next actions for different families:
 | Full arrays of general elements | Distinct completed-value form remains useful; current flat-element restriction and linear-empty cleanup are language boundaries | A checked construction/consumption route and its actual representation, not an empty pool contract alone |
 | Hash and ordered containers | Concrete scalar operations work; resource-owning complete operations and generic behavior remain incomplete | The matched sparse comparison above; a complete ordered mutation trace after owning-box repair |
 | Deques and rings | A wrapped logical-index trace works; a wrapped run is correctly refused as one contiguous view | A two-span consumer/growth trace that prices any required copying and admits the actual loans |
-| Growable runs, strings and inline/spill forms | Allocation plus source movement is the route to test; no realloc or finished spill cost result is established | Same-contract reserve/refusal, spill and resize controls including peak storage and address validity |
+| Growable runs, strings and inline/spill forms | Source-written byte growth/refusal executes and has loop/bulk/realloc controls; no WF realloc or finished spill result | General owner-return helper, repeated reserve/spill and copy-heavy resize controls including peak storage and address validity |
 | Packed byte records | Current initialized byte storage executes variable records and overlapping movement | Measured bulk/initialization/compact-handle cost, or an actually required typed layout that byte codecs cannot preserve |
-| Stable slots, sparse sets and multiple memberships | Bounds-safe storage alone does not supply object identity or retained lifetime; weak and retained contracts stay separate | The two-index control, priced lookup/metadata and an explicit source admission design |
+| Stable slots, sparse sets and multiple memberships | The two-index native control distinguishes weak/retained memberships and logical access; bounds alone supply neither | Priced lookup/metadata, authoritative store identity and a checked source admission/backing-lifetime design |
 | Shared/concurrent containers | Sequential storage selection grants no reclamation protocol | A separately specified publish/read/retire contract with the actual memory model and scheduling behavior |
 
 Generic hash/equality/comparison invocation is independently unavailable under
@@ -370,4 +482,6 @@ of these, and the architecture must not claim those system needs solved.
 
 This bounds the unresolved alternatives and the next useful implementation work.
 It does not yet certify the complete container foundation: the sparse resource
-comparison, two-index control and remaining growth/cost evidence are outstanding.
+comparison, checked retained access, and remaining helper/layout cost evidence
+are outstanding. The native protocol and growth controls narrow those questions
+without declaring their unimplemented WF counterparts solved.

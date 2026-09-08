@@ -14,7 +14,9 @@ Its parts answer different questions:
   programs that must still be rejected.
 - `authority/`: finite concrete range certificates compared with an independent
   per-slot oracle; this is neither a language extension nor evidence that a
-  symbolic library implementation already passes the compiler.
+  symbolic library implementation already passes the compiler. A separate
+  native two-index control distinguishes weak identity, retained membership and
+  logical access retirement without claiming a WF lifetime design.
 - `foundation/`: matched native layouts, a safe Rust boxed-array baseline,
   concrete construction/failure/retirement protocols, and a finite comparison of
   whole-result and field-destination construction. A current Whitefoot wide-result
@@ -25,8 +27,9 @@ Its parts answer different questions:
   it is not a checked Whitefoot map implementation.
 - `families/`: current-language hash-table operations, a binary heap with a
   native cost control, an ordered-node component, and variable-record byte-page
-  insertion/deletion. Exact rejected forms and
-  a deferred boxed-tree runtime defect distinguish specification limits from
+  insertion/deletion; boxed-entry dynamic migration and matched byte-growth
+  allocation/refusal controls. Exact rejected forms, a deferred helper-region
+  discrepancy and a boxed-tree runtime defect distinguish specification limits from
   implementation gaps; the latter is compiled, but not certified as executing
   correctly, by the ordinary check.
 

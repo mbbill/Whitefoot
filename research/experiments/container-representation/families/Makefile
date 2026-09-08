@@ -5,8 +5,9 @@ RUSTC ?= rustc
 CLANG ?= clang
 EXE := $(if $(filter Windows_NT,$(OS)),.exe,)
 BUILD := .build
+.DELETE_ON_ERROR:
 
-.PHONY: check measure reproduce-runtime-gap clean
+.PHONY: check measure reproduce-runtime-gap reproduce-region-gap clean
 
 $(BUILD):
 	mkdir -p $@
@@ -26,10 +27,26 @@ $(BUILD)/priority-costs$(EXE): priority-costs.c $(BUILD)/priority.ll
 $(BUILD)/priority-boundary-costs$(EXE): priority-costs.c $(BUILD)/priority.ll
 	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ -o $@
 
-check: $(BUILD)/priority-costs$(EXE) $(BUILD)/priority-boundary-costs$(EXE)
-	rustfmt --edition 2024 --check abi.rs
+$(BUILD)/growth-abi$(EXE): growth-abi.rs | $(BUILD)
+	$(RUSTC) --edition=2024 -D warnings -C opt-level=2 $< -o $@
+
+$(BUILD)/growth.raw.ll: growth.wf $(WHITEFOOTC) | $(BUILD)
+	$(WHITEFOOTC) --no-overlap --emit-llvm $< -o $@
+
+$(BUILD)/growth.instrumented.ll: $(BUILD)/growth.raw.ll $(BUILD)/growth-abi$(EXE)
+	$(BUILD)/growth-abi$(EXE) $< $@
+
+$(BUILD)/growth.opt.ll: $(BUILD)/growth.instrumented.ll $(BUILD)/growth-abi$(EXE)
+	$(CLANG) -O2 -Wno-override-module -x ir -S -emit-llvm $< -o $@
+	$(BUILD)/growth-abi$(EXE) --verify $@
+
+$(BUILD)/growth-costs$(EXE): growth-costs.c $(BUILD)/growth.opt.ll
+	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $^ -o $@
+
+check: $(BUILD)/priority-costs$(EXE) $(BUILD)/priority-boundary-costs$(EXE) $(BUILD)/growth-costs$(EXE)
+	rustfmt --edition 2024 --check abi.rs growth-abi.rs
 	@set -eu; \
-	  for source in hashmap ordered priority packed-page; do \
+	  for source in hashmap ordered priority packed-page growth boxed-migration; do \
 	    for mode in default par no-overlap; do \
 	      case "$$mode" in default) flags= ;; par) flags=--par ;; no-overlap) flags=--no-overlap ;; esac; \
 	      "$(WHITEFOOTC)" $$flags "$$source.wf" -o "$(BUILD)/$$source-$$mode$(EXE)"; \
@@ -52,13 +69,18 @@ check: $(BUILD)/priority-costs$(EXE) $(BUILD)/priority-boundary-costs$(EXE)
 	  done
 	$(BUILD)/priority-costs$(EXE) check
 	$(BUILD)/priority-boundary-costs$(EXE) check
+	$(BUILD)/growth-costs$(EXE) check
 
 measure: check
 	$(BUILD)/priority-costs$(EXE) measure > $(BUILD)/priority-measurements.csv
 	$(BUILD)/priority-boundary-costs$(EXE) measure > $(BUILD)/priority-boundary-measurements.csv
+	$(BUILD)/growth-costs$(EXE) measure > $(BUILD)/growth-measurements.csv
 
 reproduce-runtime-gap: check
 	$(BUILD)/ordered-runtime-gap-default$(EXE)
+
+reproduce-region-gap: | $(BUILD)
+	$(WHITEFOOTC) boxed-helper-gap.wf -o $(BUILD)/boxed-helper-gap$(EXE)
 
 clean:
 	rm -rf $(BUILD)
