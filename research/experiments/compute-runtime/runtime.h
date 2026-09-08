@@ -29,6 +29,9 @@ unsigned wf_compute_slot_capacity(void);
 /* Research host sets this once before entering the floor or creating workers:
  * 0 preserves cost, 1 bypasses cost, 2 also caps requested chunks at lanes. */
 extern int wf_compute_capacity_budget;
+/* Optional terminal-chunk request under capacity mode; zero keeps the normal
+ * lane-derived request. Set before worker startup, never during execution. */
+extern unsigned long wf_compute_requested_chunks;
 #endif
 
 #if defined(WF_COMPUTE_TEST)

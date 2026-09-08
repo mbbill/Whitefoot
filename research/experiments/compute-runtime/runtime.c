@@ -32,6 +32,7 @@ _Static_assert(sizeof(unsigned long) == 8, "compute control requires POSIX LP64"
 
 #if defined(WF_COMPUTE_BUDGET_CONTROL)
 int wf_compute_capacity_budget;
+unsigned long wf_compute_requested_chunks;
 #endif
 
 #define WF_PAR_SLOT_FREE 0
@@ -624,6 +625,7 @@ unsigned long wf__par_split_budget(unsigned long span, unsigned long weight) {
 #if defined(WF_COMPUTE_BUDGET_CONTROL)
     if (wf_compute_capacity_budget) {
         if (wf_compute_capacity_budget == 2) want = (unsigned long)lanes;
+        else if (wf_compute_requested_chunks) want = wf_compute_requested_chunks;
         affordable = span;
     } else
 #endif

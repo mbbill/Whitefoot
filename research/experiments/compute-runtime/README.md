@@ -151,6 +151,36 @@ Do not multiply the M1 delta into an estimate of Linux map overhead or stolen
 completion cost. The next comparison needs matching decomposition and real
 generated-frame work as well as the Linux local-protocol measurement.
 
+The Linux protocol panel at exact revision
+`e8e5d23a83afa296991faac1c8d7834dc84b34eb` is retained in
+[compute run 34224388554](https://github.com/mbbill/Whitefoot/actions/runs/34224388554),
+artifact `10055333586`, ZIP SHA256
+`d02d28ae66ffbc624b2f86686428f87373a36f47fd52d2e9f552944e9172fd45`.
+Ordinary image SHA256 is
+`c1f3d765c7b0b8d2940e0933f7aba00400c1cad0b38714ad76c1babf2132b623`.
+Independent replay verifies 30 processes/540 rows/141,557,760 measured outputs,
+12 ordinary/ASan-UBSan qualifiers, all nine manifest entries and seven source
+snapshots against that revision. Every measured steal delta is zero.
+The host exposes two EPYC 7763 physical cores/four SMT CPUs under mask0–3;
+Clang18.1.3 uses scalar x86-64-v3 without LTO. Individual placement/frequency
+and CPU quota remain unqualified. It is a separate cohort from M1.
+
+| Pool / pending depth | Direct wall median | Task wall median | Paired extra wall median [min–max] | Paired extra owner CPU median |
+| --- | ---: | ---: | ---: | ---: |
+| W2 / 1 | 3.299 | 11.645 | 8.347 [8.264–8.930] | 8.347 |
+| W2 / 8 | 2.170 | 9.124 | 6.951 [6.911–7.491] | 6.950 |
+| W2 / 32 | 2.190 | 9.149 | 6.956 [6.946–7.183] | 6.956 |
+| W4 / 1 | 3.299 | 11.853 | 8.560 [8.518–9.737] | 8.560 |
+| W4 / 8 | 2.173 | 9.157 | 6.984 [6.970–7.278] | 6.982 |
+| W4 / 32 | 2.193 | 9.207 | 7.003 [6.947–7.168] | 7.003 |
+
+Units and aggregation match the M1 table. Both depths8/32 have lower extra
+wall cost than depth1 in all five matched passes at each width; their mutual
+comparison is mixed, unlike M1. The direct control itself drops from about
+3.3 ns at depth1 to 2.2 ns at depths8/32, reinforcing that grouping changes
+more than the runtime's last-item handling. These measurements do not bound
+the cost of a contended publication or stolen completion.
+
 ## Run and retained outputs
 
 Requires a POSIX LP64 host, Clang/C++17 with sanitizers, CMake, Git, pthreads,
@@ -1032,7 +1062,11 @@ NaN/infinities, zero and maximum iteration limits, empty/odd/non-power-of-two
 batches and maximum repetition counts qualify the boundary. Each full
 qualifier checks 185,155 single points and 252 batches / 184,422 outputs.
 `check-mandelbrot` runs all nineteen configurations in ordinary and C-sanitized
-images, then ninety-five timing smokes and 150 grain-panel smokes. The new
+images, then ninety-five timing smokes and 150 grain-panel smokes. The split
+panel below additionally qualifies eight distinct backend/width/policy forms
+in both images and runs 56 smokes. Full qualification uses its own grain16
+fixtures, so timing grains sharing one backend/width/policy do not duplicate
+that qualification. The
 Parlay automatic-grain entry also runs the existing atomic exactly-once,
 joined-tail and capacity qualifier at widths one, two and four using the same
 adapter object in the shared scheduler image. The existing pinned Rayon Linux
@@ -1044,7 +1078,8 @@ execution must qualify the new shared image's lifecycle report separately.
 
 After `make scheduler-fetch`, run `make check-mandelbrot` with an absolute
 `OUT`, then `OUT=... RESULTS=... sh mandelbrot-bench.sh calibrate` and
-`OUT=... RESULTS=... sh mandelbrot-bench.sh grain-calibrate`. Run these
+`OUT=... RESULTS=... sh mandelbrot-bench.sh grain-calibrate`. The targeted split
+comparison uses `OUT=... RESULTS=... sh mandelbrot-bench.sh split-calibrate`. Run these
 commands from this experiment directory; `RESULTS` must not exist. Canonical
 `check` includes qualification, and the `mandelbrot-linux` compute CI job builds,
 checks and calibrates sequentially on one recorded CPU mask. The native
@@ -1364,6 +1399,71 @@ placement/wait-protocol investigation; they do not identify a cause or prove
 intrinsic scheduler costs. Batch CPU/switch counters include checks and host
 work outside core timing. No observations were discarded, and a four-thread
 budget on this VM does not establish four physical cores of useful progress.
+
+### Matched terminal-range comparison
+
+The split panel asks how much generated/native loss follows from their
+different terminal ranges. Under `WF_COMPUTE_BUDGET_CONTROL`, the host may
+set `wf_compute_requested_chunks` before floor entry. Zero retains the
+lane-derived request; the new `chunks16`/`chunks256` capacity policies request
+16/256 terminal chunks at W4. Existing capacity requests 64. Span limits,
+queue backpressure, acquisition refusal and sequential fallback still apply;
+default cost/team behavior and public function signatures do not change.
+An outside-timing check validates the requested budget, including short spans.
+It also initializes the lane-count cache before the first measured chunk-policy
+call; first-call setup is therefore not identical across policies.
+
+Fourteen configurations share one image: generated sequential W1, generated
+W4 cost/capacity/chunks16/chunks256, and native WF/oneTBB/Rayon join at W4 with
+16/64/256 points per callback. These native selectors follow the earlier
+heavy-cell leaders; the broader seven-selector matrix remains maintained.
+Plane/trailing/interior/exterior each run at 4,096 and 4,097 points, limit256,
+plus exterior33/limit16. Five rotating/reflected passes with eight warm calls
+and one separate first call produce 630 processes/5,670 calls, 20,667,150
+checked outputs and 5,040 gaps. Checks and timing scope match the other panels.
+
+At 4,096 points, generated 16/64/256 terminal chunks match the point ranges
+of native grain256/64/16. Native WF recursively bisects those callback ranges;
+the requested partition geometry aligns, but frame layout, allocation, kernel
+code, actual steals and fallback can still differ. At 4,097 points the native
+forms expose 17/65/257 fixed-size callbacks, versus 16/64/256 balanced generated
+terminal ranges: this is deliberately an uneven-boundary control. Requested
+chunks are not measured publications or useful occupancy. At 33 points,
+capacity and chunks256 clamp to the same depth; their timing difference is
+not evidence of a different intended decomposition.
+
+The September 8 M1 split screen uses ordinary image SHA256
+`208a7f139310a106072f723a3da9846b10d9e29ac04f7868d484c92a49302e3d`.
+Its generated WF object is byte-identical to the prior grain image, SHA256
+`3e7fdf1462fd6158ed548ea9361bfdfad7c6337614eb06fd10d84e0cadadbfd0`.
+All 52 manifest paths, 630 processes and raw summaries were independently
+replayed. Qualification retains 54 full reports and 301 smokes/28,335 calls.
+The M1 placement/frequency controls and scalar flags are unchanged; this is a
+new cohort, not pooled with earlier measurements. Core-time medians below use five
+process warm means, in microseconds, at 4,096 points.
+
+| Input | WF chunks16 | WF capacity64 | WF chunks256 | Native WF grain64 |
+| --- | ---: | ---: | ---: | ---: |
+| Plane | 184.323 | 178.906 | 178.302 | 172.203 |
+| Trailing | 226.844 | 228.104 | 230.068 | 225.458 |
+| Interior | 925.958 | 897.281 | 897.625 | 888.599 |
+| Exterior | 3.839 | 5.266 | 6.354 | 4.641 |
+
+At matching 64-terminal geometry, generated/native WF paired core-time ratios are
+1.037 [1.005–1.043] on plane, 1.012 [1.011–1.189] on trailing and
+1.010 [1.009–1.025] on interior, slower in all five pairs for each. At 256
+terminals, generated/native grain16 also loses all five on these heavy cells.
+Thus matching terminal geometry does not eliminate the generated/native loss
+in this M1 cohort. It does not isolate frame copying from different scalar
+kernel code or prove the cause of the earlier Linux loss.
+
+Reducing to 16 chunks improves trailing versus capacity64 in all five pairs
+at both sizes: ratios 0.995 [0.841–0.995] at 4,096 and 0.994 [0.976–0.996]
+at 4,097. Exterior4096 improves to 3.839 from 5.266 us, paired ratio
+0.729 [0.638–0.790], also all five faster. But plane4096 regresses in all five,
+ratio 1.034 [1.013–1.061]; interior4096 is mixed. Increasing to 256 chunks
+does not consistently improve the heavy cells and worsens exterior at both
+large sizes in all five pairs. Neither request is selected as a new default.
 
 ## Scalar scheduler comparison
 

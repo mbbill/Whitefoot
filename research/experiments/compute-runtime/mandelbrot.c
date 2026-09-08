@@ -111,6 +111,16 @@ static void release(Work *w) {
     if(generated)wf_research_mandelbrot_release(w->output,w->n);else free(w->output);
     w->output=NULL;
 }
+/* Check the research request outside timing, including spans too short for
+ * its full depth. This does not claim that all terminal ranges run in parallel. */
+static void check_requested_chunks(size_t n) {
+    if (!wf_compute_requested_chunks) return;
+    unsigned long depth=wf__par_split_budget(n,1);
+    require(depth<64,"split depth domain");
+    unsigned long chunks=1ul<<depth;
+    size_t bound=n<wf_compute_requested_chunks?n:wf_compute_requested_chunks;
+    require(width>1 && (bound<2 ? depth==0 : chunks<=bound && chunks>bound/2),"requested split budget");
+}
 static void destroy(Work *w) { free(w->x);free(w->y);free(w->held_x);free(w->held_y);free(w->expected); }
 static int qualify(void) {
     const double known[][3]={{0,0,64},{-1,0,64},{-2,0,64},{0,1,64},{2,0,2},{3,0,1},{0,3,1}};
@@ -133,6 +143,7 @@ static int qualify(void) {
     const size_t sizes[]={0,1,3,33,257,4097};
     for(size_t s=0;s<7;++s)for(size_t n=0;n<6;++n)for(size_t k=0;k<6;++k) {
         Work w=input(sizes[n],limits[k],shapes[s],828219,16);
+        check_requested_chunks(w.n);
         w.poison=true;
         for(size_t i=0;i<w.n;++i) {
             require(native(w.x[i],w.y[i],w.limit)==w.expected[i] && wf_research_escape(w.x[i],w.y[i],w.limit)==w.expected[i],"leaf");++leaves;
@@ -150,6 +161,7 @@ static int body(int argc,char **argv) {
     require(reps>=1 && reps<=256 && seed<=UINT32_MAX,"measurement domain");
     require(generated ? grain==0 : grain>=1 && grain<=1048576,"native grain or automatic split");
     Work w=input(n,limit,shape,(uint32_t)seed,generated?1:grain);
+    check_requested_chunks(n);
     uint64_t *sink=malloc((n?n:1)*sizeof(uint64_t));require(sink!=NULL,"result sink");
     printf("# backend=%s width=%u policy=%s shape=%s points=%zu limit=%" PRIu64 " grain=%zu reps=%" PRIu64 " seed=%" PRIu64 " pass=%" PRIu64 " iterations=%" PRIu64 "\n",backend,width,policy,shape,n,limit,grain,reps,seed,pass,w.iterations);
     puts("call\tphase\tcore_ns\tcycle_ns");
@@ -184,9 +196,15 @@ int main(int argc,char **argv) {
     generated=!strcmp(backend,"wf-auto") || !strcmp(backend,"wf-seq");
     require(strcmp(backend,"wf-seq") || width==1,"sequential width");
     policy=getenv("WF_BUDGET_CONTROL");if(!policy)policy="cost";
-    require(!strcmp(policy,"cost") || !strcmp(policy,"team") || !strcmp(policy,"capacity"),"budget policy");
+    require(!strcmp(policy,"cost") || !strcmp(policy,"team") || !strcmp(policy,"capacity") ||
+            !strcmp(policy,"chunks16") || !strcmp(policy,"chunks256"),"budget policy");
     require(generated || !strcmp(policy,"cost"),"split policy only applies to generated maps");
     wf_compute_capacity_budget=!strcmp(policy,"team")?2:!strcmp(policy,"capacity");
+    if(!strcmp(policy,"chunks16") || !strcmp(policy,"chunks256")) {
+        require(generated && !strcmp(backend,"wf-auto") && width==4,"explicit chunk control");
+        wf_compute_capacity_budget=1;
+        wf_compute_requested_chunks=!strcmp(policy,"chunks16")?16:256;
+    }
     if(!generated)records_scheduler_select(backend);
     return wf__floor_run(argc,argv);
 }
