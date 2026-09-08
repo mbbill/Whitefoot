@@ -20,6 +20,7 @@ SCHEDULER_FLAGS := -O3 -g -DNDEBUG -Wall -Wextra -Werror -Wpedantic -pthread \
 SCHEDULER_COMMON := $(OUT)/scheduler-host.o $(OUT)/scheduler-native.o \
 	$(OUT)/scheduler-oracle.o $(OUT)/scheduler-work.o $(OUT)/scheduler-floor.o
 SCHEDULERS := wf static tbb parlay rayon-join rayon-iter
+LAYOUT_SCHEDULERS := $(SCHEDULERS) wf-group4 wf-group16
 RAYON_LIB := $(OUT)/scheduler-deps/rayon/release/libwf_records_rayon.a
 RAYON_SYSTEM_LIBS := $(if $(filter Linux,$(shell uname -s)),-ldl -lm,)
 SCHEDULER_MEMORY_ENV := ASAN_OPTIONS=detect_stack_use_after_return=1:halt_on_error=1$(if $(filter Linux,$(shell uname -s)),:detect_leaks=1,) LSAN_OPTIONS=exitcode=23
@@ -236,6 +237,27 @@ check-scheduler-memory: scheduler-build
 			fi; \
 		done; \
 	done; test $$failures -eq 0
+	# Qualify the new grouped paths with instrumented computation and runtime,
+	# in addition to the shared host/selector checks and original adapter suite.
+	@for group in 4 16; do \
+		$(CC) -std=c11 $(SCHEDULER_FLAGS) -DRECORD_WF_GROUP=$$group \
+			-fsanitize=$(SANITIZER) -fno-sanitize-recover=all -fno-omit-frame-pointer \
+			-c records_runtime.c -o "$(OUT)/scheduler-memory-wf-group$$group.o" || exit $$?; \
+		set -- "$(OUT)/scheduler-memory-records_scheduler.o" "$(OUT)/scheduler-memory-wf-group$$group.o"; \
+		for unit in records_native records_oracle records_work floor runtime; do \
+			set -- "$$@" "$(OUT)/scheduler-memory-$$unit.o"; \
+		done; \
+		$(CXX) -pthread -fno-lto -fsanitize=$(SANITIZER) -fno-sanitize-recover=all "$$@" \
+			-o "$(OUT)/scheduler-memory-wf-group$$group" || exit $$?; \
+		for width in 1 2 4; do \
+			log="$(OUT)/scheduler-memory-wf-group$$group-w$$width.log"; status=0; \
+			env $(SCHEDULER_MEMORY_ENV) WF_WORKERS=$$width "$(OUT)/scheduler-memory-wf-group$$group" \
+				check $$width > "$$log" 2>&1 || status=$$?; \
+			sh records-scheduler-memory.sh $(SCHEDULER_MEMORY_MODE) "$$log" $$status wf-group$$group $$width qualify \
+				|| { cat "$$log" >&2; exit 1; }; \
+			cat "$$log"; \
+		done; \
+	done
 	@if test "$$(uname -s)-$$(uname -m)" = Linux-x86_64 && test "$(SCHEDULER_MEMORY_MODE)" = validate; then \
 		mkdir -p "$(OUT)/scheduler-memory-extra" || exit $$?; \
 		$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -fsanitize=$(SANITIZER) -fno-sanitize-recover=all \
@@ -285,11 +307,14 @@ scheduler-layout-build: scheduler-build
 	$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -DRECORD_SCHEDULER_SELECT \
 		-c records_scheduler.cpp -o "$(OUT)/scheduler-layout-host.o"
 	$(CC) -std=c11 $(SCHEDULER_FLAGS) -c records_selector.c -o "$(OUT)/scheduler-layout-selector.o"
-	@for mode in $(SCHEDULERS); do \
+	@for mode in $(LAYOUT_SCHEDULERS); do \
 		prefix=layout_$$(printf '%s' "$$mode" | tr - _); \
 		set -- -Drecords_scheduler_run=$${prefix}_run -Drecords_scheduler_name=$${prefix}_name \
 			-Drecords_scheduler_stop=$${prefix}_stop; \
 		case $$mode in \
+			wf-group4|wf-group16) group=$${mode#wf-group}; \
+				$(CC) -std=c11 $(SCHEDULER_FLAGS) "$$@" -DRECORD_WF_GROUP=$$group \
+					-c records_runtime.c -o "$(OUT)/scheduler-layout-$$mode.o" || exit $$?;; \
 			wf|static) source=records_static.c; if test $$mode = wf; then source=records_runtime.c; fi; \
 				$(CC) -std=c11 $(SCHEDULER_FLAGS) "$$@" -c $$source -o "$(OUT)/scheduler-layout-$$mode.o" || exit $$?;; \
 			tbb|parlay) $(CXX) -std=c++17 $(SCHEDULER_FLAGS) "$$@" -isystem "$(OUT)/scheduler-deps/include" \
@@ -301,7 +326,7 @@ scheduler-layout-build: scheduler-build
 	done
 	@set -- "$(OUT)/scheduler-layout-host.o" "$(OUT)/scheduler-layout-selector.o"; \
 	for unit in native oracle work floor runtime; do set -- "$$@" "$(OUT)/scheduler-$$unit.o"; done; \
-	for mode in $(SCHEDULERS); do set -- "$$@" "$(OUT)/scheduler-layout-$$mode.o"; done; \
+	for mode in $(LAYOUT_SCHEDULERS); do set -- "$$@" "$(OUT)/scheduler-layout-$$mode.o"; done; \
 	$(CXX) -pthread -fno-lto "$$@" -L"$(OUT)/scheduler-deps/lib" -Wl,-rpath,"$(OUT)/scheduler-deps/lib" \
 		-ltbb "$(RAYON_LIB)" $(RAYON_SYSTEM_LIBS) -o "$(OUT)/scheduler-layout"
 	@nm -n "$(OUT)/scheduler-layout" > "$(OUT)/scheduler-layout.symbols"
@@ -314,11 +339,12 @@ scheduler-layout-build: scheduler-build
 	done
 	@printf '%s\n' 'image=scheduler-layout selection=before-floor-entry dispatch=common-indirect' \
 		'loaded=WF-runtime,static,oneTBB,Parlay,Rayon-join,Rayon-iter' \
+		'WF_callback_grouping=original,4,16; compiler_cost_policy=unchanged' \
 		'common_objects=scheduler-native.o,scheduler-work.o,scheduler-oracle.o,scheduler-floor.o,scheduler-runtime.o' \
 		'sanitizer_scope=selector-and-host; ordinary-qualified-adapters-and-common-objects' > "$(OUT)/scheduler-layout-flags.txt"
 
 check-scheduler-layout: check-scheduler scheduler-layout-build
-	@for mode in $(SCHEDULERS); do \
+	@for mode in $(LAYOUT_SCHEDULERS); do \
 		for width in 1 2 4; do \
 			log="$(OUT)/scheduler-layout-$$mode-check-w$$width.log"; status=0; \
 			WF_WORKERS=$$width "$(OUT)/scheduler-layout" $$mode check $$width > "$$log" 2>&1 || status=$$?; \
@@ -334,12 +360,12 @@ check-scheduler-layout: check-scheduler scheduler-layout-build
 		-fno-omit-frame-pointer -c records_selector.c -o "$(OUT)/scheduler-layout-memory-selector.o"
 	@set -- "$(OUT)/scheduler-layout-memory-host.o" "$(OUT)/scheduler-layout-memory-selector.o"; \
 	for unit in native oracle work floor runtime; do set -- "$$@" "$(OUT)/scheduler-$$unit.o"; done; \
-	for mode in $(SCHEDULERS); do set -- "$$@" "$(OUT)/scheduler-layout-$$mode.o"; done; \
+	for mode in $(LAYOUT_SCHEDULERS); do set -- "$$@" "$(OUT)/scheduler-layout-$$mode.o"; done; \
 	$(CXX) -pthread -fno-lto -fsanitize=$(SANITIZER) -fno-sanitize-recover=all "$$@" \
 		-L"$(OUT)/scheduler-deps/lib" -Wl,-rpath,"$(OUT)/scheduler-deps/lib" \
 		-ltbb "$(RAYON_LIB)" $(RAYON_SYSTEM_LIBS) -o "$(OUT)/scheduler-layout-memory-image"
 	@mkdir -p "$(OUT)/scheduler-layout-memory"; failures=0; \
-	for mode in $(SCHEDULERS); do \
+	for mode in $(LAYOUT_SCHEDULERS); do \
 		image="$(OUT)/scheduler-layout-memory/scheduler-memory-$$mode"; \
 		ln -f "$(OUT)/scheduler-layout-memory-image" "$$image" || exit $$?; \
 		cmp "$(OUT)/scheduler-layout-memory-image" "$$image" || exit $$?; \

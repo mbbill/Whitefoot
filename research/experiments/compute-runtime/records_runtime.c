@@ -4,6 +4,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Experimental callback grouping, independent of the compiler's cost policy.
+ * The default retains the original single-callback terminal exactly. */
+#ifndef RECORD_WF_GROUP
+#define RECORD_WF_GROUP 1
+#endif
+#if RECORD_WF_GROUP != 1 && RECORD_WF_GROUP != 4 && RECORD_WF_GROUP != 16
+#error "unsupported WF callback grouping control"
+#endif
+
 typedef struct {
     RecordChunk chunk;
     void *context;
@@ -20,8 +29,12 @@ static void run_frame(void *opaque) {
 
 static void run_range(Frame frame) {
     size_t count = frame.end - frame.first;
-    if (count <= 1) {
+    if (count <= RECORD_WF_GROUP) {
+#if RECORD_WF_GROUP == 1
         if (count) frame.chunk(frame.context, frame.first);
+#else
+        for (size_t i = frame.first; i < frame.end; ++i) frame.chunk(frame.context, i);
+#endif
         return;
     }
     void *task = wf__par_acquire_lane(sizeof(frame));
@@ -61,5 +74,13 @@ void records_scheduler_run(unsigned width, size_t chunks, RecordChunk chunk, voi
     }
 }
 
-const char *records_scheduler_name(void) { return "wf-runtime"; }
+const char *records_scheduler_name(void) {
+#if RECORD_WF_GROUP == 4
+    return "wf-runtime-group4";
+#elif RECORD_WF_GROUP == 16
+    return "wf-runtime-group16";
+#else
+    return "wf-runtime";
+#endif
+}
 int records_scheduler_stop(void) { return 0; }

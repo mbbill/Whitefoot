@@ -17,6 +17,8 @@ case "$mode" in
 esac
 case "$backend" in
     wf|wf-runtime) backend=wf-runtime; shutdown=0;;
+    wf-group4|wf-runtime-group4) backend=wf-runtime-group4; shutdown=0;;
+    wf-group16|wf-runtime-group16) backend=wf-runtime-group16; shutdown=0;;
     static|static-spin) backend=static-spin; shutdown=1;;
     tbb|oneTBB-v2023.1.0-auto-grain1) backend=oneTBB-v2023.1.0-auto-grain1; shutdown=0;;
     parlay|parlay-native-grain1) backend=parlay-native-grain1; shutdown=1;;

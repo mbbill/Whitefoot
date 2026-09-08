@@ -827,7 +827,8 @@ are not pooled with the earlier native-target cohort.
 
 ### Shared executable layout control
 
-`scheduler-layout` links namespaced copies of all six adapters into one image.
+`scheduler-layout` links namespaced copies of all six adapters and two WF
+callback-grouping controls into one image.
 Its first argument selects exactly one backend before floor entry; each
 process retains that selection and width. The leaf, callback and common C
 objects are those qualified by the standalone panel. Their addresses within
@@ -845,10 +846,12 @@ standalone run also retain run-order effects; neither result should be silently
 pooled with the other.
 
 `check-scheduler-layout` retains the complete `check-scheduler` prerequisite,
-then runs all eighteen shared-image backend/width qualifiers and 72 dense smoke
-processes / 216 calls. An additional eighteen ASan/UBSan qualifiers instrument
+then runs all twenty-four shared-image backend/width qualifiers and 96 dense smoke
+processes / 288 calls. An additional twenty-four ASan/UBSan qualifiers instrument
 the new selector and shared host, linking the ordinary qualified common objects
-and adapters. The broader standalone sanitizer coverage remains necessary.
+and adapters. The broader standalone sanitizer coverage remains necessary;
+six extra grouped-WF qualifiers instrument the adapter, host, common computation
+and runtime at widths one, two and four.
 Hardlinked aliases preserve the unchanged strict Linux Rayon report grammar;
 they contain the same sanitizer image. Missing and invalid backend arguments
 must fail with the expected diagnostic before execution.
@@ -857,8 +860,8 @@ The canonical experiment `check` includes this target. CI runs the standalone
 calibration followed by the shared-image panel under the same CPU mask. The
 `layout` driver mode uses four dense input cells: valid Unicode and early-invalid
 records at 256 / maximum 65,536 bytes and 4,097 / maximum 128 bytes, grain 16.
-Seeds match their standalone counterparts. Five passes over all eighteen
-configurations yield 360 processes / 3,780 calls. Raw grammar, full-output checks
+Seeds match their standalone counterparts. Five passes over all twenty-four
+configurations yield 480 processes / 5,040 calls. Raw grammar, full-output checks
 and post-timing capacity requirements are unchanged. Build and run it with:
 
 ```sh
@@ -868,6 +871,58 @@ make -C research/experiments/compute-runtime scheduler-layout-calibrate OUT=/tmp
 Dependencies must first be fetched as shown above. The Linux qualification
 and shared-image results below cover the `d6bf6c08` image; they do not turn the
 earlier standalone result into a scheduler-only comparison.
+
+### Callback grouping controls
+
+The shared-image selectors `wf-group4` and `wf-group16` stop binary splitting
+when a range contains at most four or sixteen of the original callbacks. They
+execute every callback in that range, including the uneven tail, on the current
+stack. Callback record grain remains sixteen in the layout panel. Acquisition,
+publication, join, release, exhaustion fallback and the 32-byte adapter frame
+remain the same. The ordinary `wf` selector retains its original conditional
+single-callback terminal; neither the compiler nor the default runtime policy
+changes. Distinct backend names retain each grouping choice in raw summaries.
+
+These controls test a decomposition tradeoff, not an improved WF compiler cost
+model. At 256 records and callback grain sixteen there are only sixteen
+callbacks: group16 executes the entire range on the caller without acquiring
+or publishing a task. The WF pool starts only in the subsequent, untimed
+capacity probe. Requested width four and successful post-timing capacity do
+not establish four participating workers during the measurement.
+
+A preliminary local M1 screen against `52d2435d` motivated the Linux control.
+One scratch image contained the original adapter, a separate loop-form cutoff1
+control, cutoffs4/16 and all five native references. All used the same scalar
+leaf/callback objects with loop/SLP vectorization and LTO disabled. Four inputs, nine selectors,
+seven rotating/reversed process passes and 32 warm calls yielded 252 processes,
+8,316 calls and 18,099,774 checked outputs. The seed was 828219, requested width
+four and cadence dense. Medians of process warm means follow in microseconds:
+
+| Input (records / maximum bytes per record) | Original WF C adapter | Group4 | Group16 |
+|---|---:|---:|---:|
+| Early invalid 256 / 65,536 | 2.651 | 1.345 | 0.837 |
+| Early invalid 4,097 / 128 | 7.379 | 5.999 | 5.704 |
+| Unicode 4,097 / 128 | 69.833 | 69.256 | 68.682 |
+| Unicode 256 / 65,536 | 1,956.217 | 1,967.574 | 6,684.581 |
+
+Group16 was faster in all seven paired early-invalid 256-record passes and
+slower in all seven long-Unicode passes. The paired median time ratios were
+0.329 and 3.394 respectively. Pool initialization and work exposure differ;
+this does not isolate per-task scheduler cost. Other cells have overlapping
+ranges, and one original long-Unicode process mean reached 4.644 milliseconds.
+No sample was dropped. The scratch loop-form cutoff1 was not optimized-IR
+identical to the original conditional terminal and is not substituted for it.
+Local scratch raw files are not a retained CI artifact, and per-worker placement
+and thermal state were not controlled. Treat these numbers as exploratory;
+the maintained Linux matrix provides the reproducible follow-up, not evidence
+that these M1 rankings transfer to another machine.
+
+A separate 84-process M1 screen tested removing the redundant release-time
+`FREE` store and caching a slot index in existing padding. It checked 2,772
+calls / 6,033,258 outputs, with identical linked leaf/callback bytes and
+addresses. Neither candidate established a repeatable gain across these four
+inputs; both remain unpromoted. Reduced release instruction counts alone did
+not justify a runtime change.
 
 ### First complete Linux scalar panel and attribution limit
 

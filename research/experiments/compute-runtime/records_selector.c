@@ -11,6 +11,8 @@
     const char *prefix##_name(void); \
     int prefix##_stop(void)
 DECLARE_ADAPTER(layout_wf);
+DECLARE_ADAPTER(layout_wf_group4);
+DECLARE_ADAPTER(layout_wf_group16);
 DECLARE_ADAPTER(layout_static);
 DECLARE_ADAPTER(layout_tbb);
 DECLARE_ADAPTER(layout_parlay);
@@ -26,6 +28,7 @@ typedef struct {
 #define ADAPTER(key, prefix) {key, prefix##_run, prefix##_name, prefix##_stop}
 static const Adapter adapters[] = {
     ADAPTER("wf", layout_wf), ADAPTER("static", layout_static),
+    ADAPTER("wf-group4", layout_wf_group4), ADAPTER("wf-group16", layout_wf_group16),
     ADAPTER("tbb", layout_tbb), ADAPTER("parlay", layout_parlay),
     ADAPTER("rayon-join", layout_rayon_join), ADAPTER("rayon-iter", layout_rayon_iter)
 };

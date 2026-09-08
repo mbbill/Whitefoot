@@ -40,7 +40,7 @@ printf '%s\n' "$results" > "$OUT/last-scheduler-$mode-path.txt"
     printf 'mode=%s rounds=%s kernel=scalar-records-state\n' "$mode" "$rounds"
     printf '%s\n' 'common_leaf=scheduler-native.o common_callback=scheduler-work.o'
     if test "$layout" = 1; then
-        printf '%s\n' 'measured_executable=scheduler-layout all18configs=same-image' \
+        printf '%s\n' 'measured_executable=scheduler-layout all24configs=same-image' \
             'comparison=within-shared-image; standalone order/layout/library-load effects remain separate'
         cat "$OUT/scheduler-layout-flags.txt"
     else
@@ -90,6 +90,15 @@ parlay parlay-native-grain1 1
 rayon-join rayon-1.12.0-join 0
 rayon-iter rayon-1.12.0-par-iter 0
 CONFIG
+if test "$layout" = 1; then
+    for group in 4 16; do
+        for width in 1 2 4; do
+            printf 'wf-group%s wf-runtime-group%s %s 0\n' "$group" "$group" "$width"
+        done
+    done >> "$results/configurations.txt"
+fi
+configurations=$(wc -l < "$results/configurations.txt")
+if test "$layout" = 1; then test "$configurations" -eq 24; else test "$configurations" -eq 18; fi
 while read -r scheduler backend width shutdown; do
     qualifier="$OUT/scheduler-$scheduler-check-w$width.log"
     if test "$layout" = 1; then qualifier="$OUT/scheduler-layout-$scheduler-check-w$width.log"; fi
@@ -205,7 +214,7 @@ while read -r shape count limit grain seed cadence; do
         pass=$((pass+1))
     done
 done < "$results/cells.txt"
-expected=$((cell*18*rounds))
+expected=$((cell*configurations*rounds))
 test "$processes" -eq "$expected"
 test "$(wc -l < "$results/summary.tsv")" -eq "$((expected+1))"
 if test "$layout" = 1; then test "$(shasum -a 256 "$OUT/scheduler-layout")" = "$layout_hash"; fi
