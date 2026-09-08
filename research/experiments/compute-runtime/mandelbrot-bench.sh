@@ -2,7 +2,7 @@
 set -eu
 cd "$(dirname "$0")"
 mode=${1:?mode required}
-case "$mode" in check|calibrate|grain-check|grain-calibrate|split-check|split-calibrate) ;; *) exit 1;; esac
+case "$mode" in check|calibrate|grain-check|grain-calibrate|split-check|split-calibrate|allocation-check|allocation-calibrate) ;; *) exit 1;; esac
 : "${OUT:?build output required}"
 rounds=${ROUNDS:-5}
 case "$rounds" in ''|*[!0-9]*) exit 1;; esac
@@ -50,7 +50,7 @@ for backend in wf static tbb parlay parlay-auto rayon-join rayon-iter; do
         printf '%s 1 cost %s\n%s 4 cost %s\n' "$backend" "$grain" "$backend" "$grain" >> "$results/configurations.txt"
     done
 done
-case "$mode" in split-*)
+case "$mode" in split-*|allocation-*)
     cat > "$results/configurations.txt" <<'CONFIG'
 wf-seq 1 cost 0
 wf-auto 4 cost 0
@@ -62,9 +62,15 @@ CONFIG
         for grain in 16 64 256; do printf '%s 4 cost %s\n' "$backend" "$grain"; done
     done >> "$results/configurations.txt"
     configurations=14
+    case "$mode" in allocation-*)
+        for backend in wf tbb rayon-join; do
+            for grain in 16 64 256; do printf '%s 4 zero %s\n' "$backend" "$grain"; done
+        done >> "$results/configurations.txt"
+        configurations=23
+    ;; esac
 ;; esac
 test "$(wc -l < "$results/configurations.txt")" -eq "$configurations"
-if test "$mode" = check || test "$mode" = split-check; then
+if test "$mode" = check || test "$mode" = split-check || test "$mode" = allocation-check; then
     # Full qualification supplies its own grain16 fixtures. Distinct timing
     # grains of one backend/width/policy need only one identical qualification.
     awk '!seen[$1 " " $2 " " $3]++' "$results/configurations.txt" > "$results/qualification-configurations.txt"
@@ -89,7 +95,13 @@ if test "$mode" = check || test "$mode" = split-check; then
         done < "$results/qualification-configurations.txt"
     done
 fi
-if test "$mode" = split-check; then
+if test "$mode" = allocation-check; then
+    rounds=1
+    printf '%s\n' 'plane 0 0' 'trailing 4096 256' 'exterior 33 16' > "$results/cells.txt"
+elif test "$mode" = allocation-calibrate; then
+    for shape in plane trailing interior exterior; do printf '%s 4096 256\n' "$shape"; done > "$results/cells.txt"
+    printf '%s\n' 'exterior 33 16' >> "$results/cells.txt"
+elif test "$mode" = split-check; then
     rounds=1
     printf '%s\n' 'plane 0 0' 'trailing 4096 256' 'trailing 4097 256' 'exterior 33 16' > "$results/cells.txt"
 elif test "$mode" = split-calibrate; then

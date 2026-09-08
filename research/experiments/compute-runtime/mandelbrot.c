@@ -19,7 +19,7 @@ extern void wf_research_mandelbrot_release(uint64_t *, uint64_t);
 extern void records_scheduler_select(const char *);
 static const char *backend, *policy;
 static unsigned width;
-static bool generated;
+static bool generated, clear_native;
 static void require(bool ok, const char *why) {
     if (!ok) { fprintf(stderr,"mandelbrot: %s\n",why); exit(1); }
 }
@@ -96,6 +96,12 @@ static void run(Work *w) {
         require(length==w->n,"generated length");
     } else {
         w->output=malloc((w->n?w->n:1)*sizeof(uint64_t));require(w->output!=NULL,"output allocation");
+        if(clear_native && w->poison)for(size_t i=0;i<w->n;++i)w->output[i]=UINT64_MAX;
+        if(clear_native)memset(w->output,0,w->n*sizeof(uint64_t));
+        if(clear_native && w->poison) {
+            volatile const uint64_t *observed=w->output;
+            for(size_t i=0;i<w->n;++i)require(observed[i]==0,"native output clearing");
+        }
         if(w->poison)for(size_t i=0;i<w->n;++i)w->output[i]=UINT64_MAX;
         records_scheduler_run(width,(w->n+w->grain-1)/w->grain,native_chunk,w);
     }
@@ -197,8 +203,9 @@ int main(int argc,char **argv) {
     require(strcmp(backend,"wf-seq") || width==1,"sequential width");
     policy=getenv("WF_BUDGET_CONTROL");if(!policy)policy="cost";
     require(!strcmp(policy,"cost") || !strcmp(policy,"team") || !strcmp(policy,"capacity") ||
-            !strcmp(policy,"chunks16") || !strcmp(policy,"chunks256"),"budget policy");
-    require(generated || !strcmp(policy,"cost"),"split policy only applies to generated maps");
+            !strcmp(policy,"chunks16") || !strcmp(policy,"chunks256") || !strcmp(policy,"zero"),"experiment policy");
+    clear_native=!strcmp(policy,"zero");
+    require(generated ? !clear_native : (!strcmp(policy,"cost") || clear_native),"policy applies to selected form");
     wf_compute_capacity_budget=!strcmp(policy,"team")?2:!strcmp(policy,"capacity");
     if(!strcmp(policy,"chunks16") || !strcmp(policy,"chunks256")) {
         require(generated && !strcmp(backend,"wf-auto") && width==4,"explicit chunk control");

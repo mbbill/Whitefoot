@@ -1066,7 +1066,8 @@ images, then ninety-five timing smokes and 150 grain-panel smokes. The split
 panel below additionally qualifies eight distinct backend/width/policy forms
 in both images and runs 56 smokes. Full qualification uses its own grain16
 fixtures, so timing grains sharing one backend/width/policy do not duplicate
-that qualification. The
+that qualification. The allocation panel adds eleven forms in both images and
+69 smokes. The
 Parlay automatic-grain entry also runs the existing atomic exactly-once,
 joined-tail and capacity qualifier at widths one, two and four using the same
 adapter object in the shared scheduler image. The existing pinned Rayon Linux
@@ -1079,8 +1080,9 @@ execution must qualify the new shared image's lifecycle report separately.
 After `make scheduler-fetch`, run `make check-mandelbrot` with an absolute
 `OUT`, then `OUT=... RESULTS=... sh mandelbrot-bench.sh calibrate` and
 `OUT=... RESULTS=... sh mandelbrot-bench.sh grain-calibrate`. The targeted split
-comparison uses `OUT=... RESULTS=... sh mandelbrot-bench.sh split-calibrate`. Run these
-commands from this experiment directory; `RESULTS` must not exist. Canonical
+comparison uses `OUT=... RESULTS=... sh mandelbrot-bench.sh split-calibrate`;
+output initialization uses `OUT=... RESULTS=... sh mandelbrot-bench.sh allocation-calibrate`.
+Run all commands from this experiment directory; `RESULTS` must not exist. Canonical
 `check` includes qualification, and the `mandelbrot-linux` compute CI job builds,
 checks and calibrates sequentially on one recorded CPU mask. The native
 adapters reuse the scheduler panel's pinned sources and scalar build path.
@@ -1464,6 +1466,92 @@ at 4,097. Exterior4096 improves to 3.839 from 5.266 us, paired ratio
 ratio 1.034 [1.013–1.061]; interior4096 is mixed. Increasing to 256 chunks
 does not consistently improve the heavy cells and worsens exterior at both
 large sizes in all five pairs. Neither request is selected as a new default.
+
+The Linux split panel at exact revision
+`1b4dd9dc91c68c50abcaa845ada43aa3103430fa` passed in
+[compute run 34225829509](https://github.com/mbbill/Whitefoot/actions/runs/34225829509).
+Artifact `10055773336` has ZIP SHA256
+`1eb5abaca810213c74b303206b0518c3ecf02df26b50f10ad2261fbfbcd82118`;
+ordinary image SHA256 is
+`aa2a22b37872df2798294ac6fc0ee338cd2f4418d5beb830a262babb157ad938`.
+Independent replay verifies all 630 processes/5,670 calls/20,667,150 outputs,
+5,040 gaps and 52 manifest paths including the retained compiler. All 54 full
+qualifiers pass the strict Linux grammar, including five exact permitted
+Rayon lifecycle reports, along with 301 smokes. The EPYC 7763 VM exposes two
+physical/four SMT CPUs under mask0–3 with scalar Clang18.1.3/x86-64-v3;
+individual placement and quota remain unqualified. Keep this cohort separate.
+
+At trailing4097, generated chunks16 takes 458.790 us versus capacity64
+336.241 us, paired core ratio 1.373 [1.294–1.451], slower in all five pairs.
+Chunks256 takes 330.123 us, ratio 0.979 [0.971–0.988], faster in all five.
+This reverses the M1 direction for the smaller request. Trailing4096 has
+large mixed ranges and does not support the same all-five conclusion.
+At matched4096 geometry, capacity/native-WF-grain64 has mixed signs on all
+three heavy inputs, unlike M1. Interior chunks256/native-WF-grain16 still
+loses all five, ratio 1.013 [1.006–1.072]. At 33 points chunks256 is faster
+than capacity in all five, but both clamp to the same intended depth; this
+does not demonstrate a benefit from more splitting. No request is promoted
+to a default from these host-dependent observations.
+
+### Output initialization comparison
+
+The emitted WF wrapper allocates and zeroes its output before calling the
+map, whereas the original native path allocates uninitialized output. The
+allocation panel adds native policy `zero`, which clears exactly the output
+range after the same allocation call and before the unchanged scheduler.
+The existing native `cost` label retains uninitialized allocation. This policy
+is rejected for generated forms and does not select a different native kernel
+or runtime budget. Clearing stays inside core timing. It can change cache
+ownership/page effects as well as add writes; the paired difference is an
+output-clearing policy observation, not an isolated allocator or memset cost.
+
+Qualification first fills the output with a nonzero sentinel, clears it,
+checks through volatile reads, then re-poisons every output before scheduling.
+Thus a missing clear fails deterministically and a missing compute write is
+still visible. A one-shot build deleting only the clear statement fails with
+`mandelbrot: native output clearing`; no altered qualifier is retained.
+The ordinary timing path does not execute these qualification-only loops.
+M1 assembly retains malloc followed by bzero on the zero policy path, rather
+than folding it into calloc. The generated object and native recurrence
+remain unchanged.
+
+Twenty-three same-image configurations retain the five generated controls
+and add cost/zero pairs for native WF/oneTBB/Rayon join at grains16/64/256.
+Plane/trailing/interior/exterior4096 at limit256 and exterior33 at limit16
+produce 575 processes/5,175 calls/16,991,595 checked outputs/4,600 gaps across
+five passes, with eight warm calls and a separate first call. Qualification
+retains 76 full reports and 370 smokes/34,384 calls across all four panels.
+The September 8 M1 image SHA256 is
+`5ea7bb0a93804b0fe2d194268eb01c86592aceed5f269207c0d220144889121e`;
+the generated object remains
+`3e7fdf1462fd6158ed548ea9361bfdfad7c6337614eb06fd10d84e0cadadbfd0`.
+All 52 manifest paths and raw samples were independently replayed. Scalar
+flags and unfixed placement/frequency remain; this is a separate cohort.
+
+The table shows core-time medians over five process warm means at 4,096 points,
+in microseconds. Native WF uses grain64 and generated capacity requests64,
+matching terminal geometry. Ratios are computed within matched passes first.
+
+| Input | Native WF cost | Native WF zero | Generated WF capacity | Native zero/cost paired ratio [min–max] |
+| --- | ---: | ---: | ---: | ---: |
+| Plane | 175.010 | 174.615 | 180.823 | 1.004 [0.983–1.014] |
+| Trailing | 225.609 | 226.094 | 228.443 | 1.002 [0.991–1.042] |
+| Interior | 894.484 | 887.521 | 899.073 | 0.985 [0.967–1.024] |
+| Exterior | 4.583 | 4.448 | 4.896 | 1.011 [0.881–1.103] |
+
+None of the 45 native zero/cost groups improves in all five pairs. Three
+Rayon join groups regress in all five (trailing4096/grain16,
+exterior4096/grain64 and exterior33/grain256); the rest have mixed directions.
+On plane4096, generated/native-WF-zero loses all five at each matched request:
+chunks16/grain256 is 1.020 [1.015–1.030], capacity64/grain64 is
+1.012 [1.007–1.114], and chunks256/grain16 is 1.017 [1.005–1.043].
+Adding native output clearing therefore does not remove that observed loss.
+The other large-input comparisons against native WF zero remain mixed, and
+large excursions are retained:
+trailing chunks16 reaches a process mean of 1,503.146 us and a ratio of 6.649
+against its matched native-zero control. These observations do not support
+an additive universal zeroing cost or assign the remaining loss to a specific
+compiler or runtime mechanism. Linux must qualify this new image separately.
 
 ## Scalar scheduler comparison
 

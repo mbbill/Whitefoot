@@ -281,6 +281,7 @@ check-mandelbrot: mandelbrot-build
 	OUT="$(OUT)" sh mandelbrot-bench.sh check
 	OUT="$(OUT)" sh mandelbrot-bench.sh grain-check
 	OUT="$(OUT)" sh mandelbrot-bench.sh split-check
+	OUT="$(OUT)" sh mandelbrot-bench.sh allocation-check
 
 # Download is explicit, as with Cargo's offline research dependencies. The
 # build verifies pins and only installs the private library below OUT.

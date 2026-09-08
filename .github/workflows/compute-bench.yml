@@ -83,6 +83,8 @@ jobs:
               sh research/experiments/compute-runtime/mandelbrot-bench.sh grain-calibrate
             taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/split-calibration" \
               sh research/experiments/compute-runtime/mandelbrot-bench.sh split-calibrate
+            taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/allocation-calibration" \
+              sh research/experiments/compute-runtime/mandelbrot-bench.sh allocation-calibrate
           fi
           if test '${{ matrix.workload }}' = records; then
             taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/budget-calibration" \
@@ -146,6 +148,7 @@ jobs:
             ${{ runner.temp }}/compute-${{ matrix.workload }}/calibration/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/grain-calibration/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/split-calibration/
+            ${{ runner.temp }}/compute-${{ matrix.workload }}/allocation-calibration/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/budget-calibration/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/record-events-calibration/
             ${{ runner.temp }}/compute-${{ matrix.workload }}/layout-calibration/
