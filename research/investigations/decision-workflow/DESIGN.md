@@ -1,0 +1,202 @@
+# A decision workflow for sustained language research
+
+Research proposal, 2026-09-07. The question is how Whitefoot's owner and agents
+can make grounded choices, revise them when conditions change, and keep the
+compiler moving without accumulating an unused process. This proposal does
+not activate workflow rules or amend language semantics. The current
+[agent instructions](../../../AGENTS.md) remain authoritative for branch work,
+completion review, and merging.
+
+The recommended direction is a small decision method used at actual choices
+and evidence changes, with the existing task-completion review as its review
+checkpoint. Its value should be tested through better decisions, recoverable
+reasons, and useful compiler progress. No source below establishes that this
+particular combination will work indefinitely for Whitefoot.
+
+## Evidence and applicability
+
+The sources were read on 2026-09-07. Established engineering methods and
+project policies provide precedents; recent agent-team reports provide
+experience under particular conditions. These are grounds for a trial, not a
+controlled comparison proving one universally best workflow.
+
+| Primary source | Supported practice | Application and limit here |
+|---|---|---|
+| Michael Nygard, [Documenting Architecture Decisions](https://www.cognitect.com/blog/2011/11/15/documenting-architecture-decisions), 2011 | Short records of significant decisions retain context, consequences, and superseded choices. Consequences can become the context for later decisions. | MCTS-Mem already supplies the record and replacement history. Use its existing structure; an additional numbered ADR collection would duplicate it. The original article reports early experience, not a long-term controlled study. |
+| NASA, [Decision Analysis](https://www.nasa.gov/reference/6-8-decision-analysis/), Systems Engineering Handbook | Define criteria, compare alternatives, examine uncertainty that could change their ranking, and scale analysis effort to the decision. | Separate required properties from preferences and examine consequential uncertainty. Borrow the reasoning method, not NASA's organizational approvals or a scoring matrix for every edit. |
+| [Rust RFC process](https://rust-lang.github.io/rfcs/) | Substantial changes receive design discussion; many bug fixes and documentation changes use ordinary PR review. Adoption does not imply implementation or implementation priority. | Scale investigation to semantic impact and uncertainty. Whitefoot's work branches remain available for prototypes without a preliminary RFC approval or community waiting period. |
+| Nosek et al., [The preregistration revolution](https://psychologicalsciences.unimelb.edu.au/__data/assets/pdf_file/0007/2888098/The-preregistration-revolution.pdf), PNAS, 2018, DOI 10.1073/pnas.1708274114 | Distinguish generating explanations from existing observations from testing predictions with new observations. Exploration remains useful. | Before a measurement intended to select a design, state what would distinguish alternatives. Preserve changes of question or analysis as exploratory findings. This methodological argument does not require preregistering ordinary debugging. |
+| OpenAI, [Harness engineering](https://openai.com/index/harness-engineering/), 2026-02-11 | A small entry map, repository-local knowledge, mechanical boundary checks, and ongoing maintenance supported one agent-built product. | Keep relevant knowledge discoverable and repair demonstrated drift. Its execution-plan hierarchy, relaxed merge gates, and automated merges do not transfer to Whitefoot's existing workflow. The report covers one product and a limited period. |
+| Anthropic, [Effective context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents), 2025-09-29 | Retrieve relevant information incrementally; provide sufficient context without a monolithic instruction dump. Retrieval itself has costs. | Follow current owners, rule references, and relevant memory branches. Measure retrieval failures and effort; do not turn a current context-window size into a language-design ceiling. |
+| Anthropic, [Demystifying evals for AI agents](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents), 2026-01-09 | Inspect final outcomes as well as transcripts; combine deterministic, model, and human judgments; calibrate model graders and maintain evaluation tasks. | Verify actual artifacts and required behavior. A fast reviewer can identify local checklist violations but does not certify design soundness. Agent agreement alone is not independent technical evidence. |
+| Thoughtworks, [Fitness function-driven development](https://www.thoughtworks.com/insights/articles/fitness-function-driven-development) | Executable checks can protect selected architectural properties as a system evolves. | Keep useful checks in the existing gate and add checks for observed failure modes. Tests protect their stated properties; they cannot establish that every constitutional choice is justified. |
+
+## What the current process already provides
+
+Whitefoot already has work-branch autonomy, an exact-revision merge boundary,
+a canonical complete test entry point, document owners, bounded completion
+review, and skill-managed decision history. These are useful foundations.
+
+The [workflow memory](../../../mcts_mem/whitefoot/development-workflow.md)
+records two relevant failure mechanisms: a rolling plan became a changelog
+because the working process did not consume it, and current guidance stayed
+stale while new Facts accumulated below it. Those records are historical
+rationale for avoiding duplicate state and connecting new evidence to current
+instructions; they are not additional workflow authority.
+
+The [derivation ledger](../../../spec/derivation/derivation-ledger.md) also
+records form-selection questions that remain open. Finding a constitutional
+ancestor, finding a convincing selection argument, and proving an execution
+property are different achievements. A row's presence can be checked
+mechanically; the validity and continued relevance of its reasons require
+substantive examination.
+
+The proposed improvement is to make the consumption and revision of reasons
+explicit at the point they can change work. More records alone would not
+address these failures.
+
+## Proposed working method
+
+The following are actions during ordinary work, not new approval stages. The
+amount of analysis depends on semantic impact, competing options, uncertainty,
+and the cost of reversal. A local fix under unchanged rules normally needs its
+existing specification and a distinguishing case. A choice about accepted
+programs, trust boundaries, representations, or important performance claims
+needs an explicit selection argument.
+
+| Occasion | Useful action | Result and existing home |
+|---|---|---|
+| Starting a relevant task | Identify the intended outcome, required behavior, and current rule or decision. Follow the relevant memory branch and alternatives when making a nontrivial choice. | Enough context to begin; no mandatory task document. An existing issue, PR, or conversation can identify the question. |
+| Reaching a material choice | Separate required properties from preferences and assumptions. Compare plausible alternatives, including keeping the current design when meaningful. Identify uncertainty that could change the choice. | A concise argument in the question's investigation; small choices can be explained directly in the PR. Do not invent alternatives to fill a form. |
+| Learning something discriminating | Use a witness, prototype, proof argument, or measurement that addresses the actual uncertainty. Preserve the task's behavior and comparison conditions. Investigate unexpected results. | Evidence in the relevant tests or research location; exploratory findings remain distinguishable from a previously stated prediction. |
+| A reason changes or a choice is settled | Revisit affected dependent decisions and current guidance. A dependent choice may survive on other grounds; explain that rather than automatically discarding it. | Current guidance in its owner and durable reasons in the appropriate MCTS-Mem node. Record settled choices when settled, including during a longer task. |
+| Completing a task | Run applicable technical checks and the existing fast completion review; address concrete findings and publish the delivered revision to its PR. | The existing compact PR report. Main still requires owner approval and the complete gate on the exact revision. |
+
+Useful decision information fits into ordinary prose: the problem and scope;
+required properties and preferences; supporting facts and open assumptions;
+alternatives actually considered; the current choice and its costs; and the
+conditions and dependents relevant to reconsideration. This is a reading and
+thinking aid, not a mandatory document schema. Detailed evidence stays at its
+source instead of being copied into each explanation.
+
+When a task resumes after a handoff or context reset, recover its requested
+outcome, relevant changes, validation, and unresolved question from the PR,
+working tree, and investigation where one exists. Temporary progress belongs
+to the task, not the durable decision history. Verify the actual revision and
+artifacts before trusting a previous completion summary.
+
+### Reconsideration that does not require a whole-project sweep
+
+Examples of useful triggers are a contradictory test or measurement, a newly
+encountered program that meets an old decision's revisit condition, a changed
+target or model capability relevant to the original cost argument, a changed
+objective, or repeated workarounds indicating an assumption is wrong.
+
+For each trigger, name the affected reason and its source. Follow the decisions
+that explicitly depend on it, examining whether that dependency is material
+before proceeding farther. Record consequential dependencies in prose and
+links as decisions are made; a bare related-topic link does not establish
+dependence. Existing rule IDs, named concepts, and references are the initial
+index. A new graph database is not needed to test this method.
+
+Separate three outcomes: the original ground still holds; the choice remains
+useful but needs a corrected ground; or the choice should change. An old
+measurement remains an old measurement even when it stops selecting today's
+design. A missing rationale is unknown until recovered, not an invitation to
+invent a plausible history. Improved authoring ability can change a cost
+argument; it does not repair a soundness counterexample.
+
+Old or untouched areas can still contain undiscovered stale guidance. Triggered
+review does not prove global consistency. A later targeted maintenance sweep
+is justified if ordinary work repeatedly misses the same class of dependency;
+its scope should follow that failure rather than a default calendar ritual.
+
+## Roles of the reasoning artifacts
+
+These are proposed content responsibilities, not new documents or formats.
+
+- **Constitution:** the founding purpose, explicit objectives and tradeoffs,
+  and general principles with their necessary conditions. Audit each clause's
+  grounds and placement. A specific mechanism cannot establish its own
+  suitability merely by first becoming a constitutional clause.
+- **Active specification:** the language currently being defined. Correctness
+  tests follow its judgments, including while a design is being reconsidered.
+  A behavior change remains an explicit specification amendment.
+- **Derivation ledger:** evolve the existing artifact toward a rule-to-ground
+  index. Distinguish a conditional deduction, empirical support, and a
+  provisional selection. Link shared rationales rather than repeatedly
+  asserting that each detail uniquely follows from the founding premise.
+  Preserve historical amendments and audit the meaning of existing status
+  labels before changing them. META-6 and its gate remain in force until an
+  explicit coordinated amendment; no parallel replacement ledger is proposed.
+- **MCTS-Mem:** current decisions, sourced evidence, and actual rejected
+  alternatives. Keep its skill-defined Items/Facts/Moves structure and
+  provenance rules. Technical uncertainty and reopening conditions belong with
+  the affected reason; a proposal in an investigation is not yet a live Item.
+- **Investigations and experiments:** the design comparison and reproducible
+  evidence, with original conditions retained. A selected research question may
+  need these; a routine task does not need a new dossier.
+- **Practice, agent entry, and completion checklist:** the method, its entry
+  points, and the final bounded checks respectively. These consume the other
+  artifacts without duplicating their changing technical content.
+
+All language decisions should have an intelligible ground, but the depth can
+vary. Several spelling details can share a provisional convention; a new
+proof authority needs its own soundness argument. Neither a missing benchmark
+for a harmless convention nor a completed checklist should decide whether a
+substantive safety claim is established.
+
+## Alternatives weighed for the workflow
+
+| Candidate | Benefit | Reason for the present recommendation |
+|---|---|---|
+| Retain the constitutional-derivation system and add stricter bookkeeping | Familiar traceability and easy coverage checks | Does not address assumptions hidden inside constitutional clauses or the difference between a rationale and a logical consequence. |
+| Require a full RFC and staged design review before significant branch work | Deliberation is visible before implementation | Adds a preliminary coordination gate and delays prototypes that may provide the needed evidence. Existing branch autonomy and one completion review fit this research compiler better. |
+| Use the existing artifacts with explicit decision and reconsideration triggers | Reasons participate in work, and ordinary fixes stay inexpensive | Recommended for a trial. Its main unresolved risks are missed dependencies and reasoning that looks complete but is poorly supported. |
+| Build an automatic global dependency and consistency system first | Could eventually help detect stale dependent guidance | Meaning and dependency classification remain difficult; a large schema could become another artifact to maintain before improving compiler work. Reconsider tooling after observing retrieval or propagation failures. |
+
+These are compared proposals. No workflow replacement is recorded as an
+adopted MCTS-Mem move by this research document.
+
+## Trial and transition
+
+Start with the current constitutional reassessment. Classify all its clauses,
+identify missing premises and tensions, and assess their document roles before
+selecting individual language capabilities for further work. Use affected
+rule families to test whether the revised explanation reaches an actual design
+choice rather than stopping at a constitutional citation.
+
+Then try the method on a small set of real compiler decisions as they arise,
+including an ordinary fix that should not acquire research paperwork. Use
+these scenarios as checks on the proposal:
+
+| Scenario | Expected useful behavior |
+|---|---|
+| A surface rule cites canonicality as its sole justification | Distinguish consistency with the selected convention from evidence that the convention serves the intended author. Do not silently change accepted source. |
+| A broader program supplies the evidence an old provisional proof decision awaited | Revisit that decision's actual selection condition and dependent guidance; do not merely append a result beneath unchanged conclusions. |
+| A previously rejected mechanism becomes affordable to implement | Recover its recorded failure, identify what changed, and check any other failure grounds before reconsidering it. |
+| A local compiler defect violates an unchanged rule | Add or identify the distinguishing regression and fix the normal path, without a new decision record or approval stage. |
+| A fresh agent resumes the work | Recover the current choice, evidence, uncertainty, and next useful action from relevant owners without reading the entire project history. |
+
+The scenarios are a trial proposal, not results already obtained. Initial
+replays of known failures check retrieval and reasoning behavior; they do not
+establish improvement on unfamiliar design problems. Compare with the current
+method using the same requested outcomes and available evidence. Record model,
+context, assistance, and any reuse of known answers. Inspect outcomes and
+specific reasoning errors rather than scoring compliance with one sequence
+of tool calls.
+
+Useful observations are missed relevant reasons, unjustified changes to task
+requirements, stale dependent guidance, repeated owner corrections, time to
+recover context, and analysis/record-maintenance effort relative to useful
+implementation work. Inspect examples behind counts. A small trial supports
+a local improvement claim, not a forecast of years of reliable operation.
+
+If the method helps, update the existing practice, entry instructions, and
+affected checklist items in place. Rebuild the constitutional and derivation
+grounds without inventing missing historical evidence. Preserve technical
+records that remain informative; remove or merge this proposal when a
+successor fully carries its useful comparison and trial evidence. Additional
+automation earns its place by addressing observed recurring failures and
+having a maintained caller. The workflow itself remains open to revision when
+its cost exceeds the problems it prevents.

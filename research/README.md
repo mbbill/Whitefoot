@@ -21,6 +21,9 @@ objectives, assumptions, mechanism choices, and experimental results. The active
   were replaced. Update the affected standing guidance when recording a change.
 - [Archive promotion audit](archive-promotion-audit.md): a non-authoritative
   map from historical findings to useful successors and remaining questions.
+- [Decision workflow investigation](investigations/decision-workflow/DESIGN.md):
+  external practices, a proposed method for using and revising design reasons,
+  and a trial for the constitutional reassessment and subsequent compiler work.
 
 The [roadmap](../docs/roadmap.md) is reference material outside the working
 loop. Research does not update its status or wait for it. Dated results state
