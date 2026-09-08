@@ -50,6 +50,27 @@ Its executed cases insert 25 and 5 into `[10,20,30]`, and reject duplicate 20.
 The source handles allocator refusal, but this experiment does not inject either
 allocation failure and therefore does not dynamically validate those cleanup edges.
 
+`packed-page.wf` stores variable-length records as a byte length followed by
+payload bytes in a fully initialized 32-byte run. It validates and hashes complete
+records, prepends by shifting the used bytes backwards, and removes the first
+record by shifting the remaining bytes forwards. Both shifts deliberately overlap
+their source ranges. The hash includes each length byte and the ordered payload,
+with independently calculated expectations for the written byte sequences.
+The executed cases include two successive prepends, deletion/compaction, a
+truncated record, an oversized page extent, insufficient spare capacity, a payload
+shorter than its requested record, and empty deletion. Refused mutation leaves
+the input owner and used extent available; ordinary invalid-input branches supply
+the bounds facts before any indexed access. `remove_first` validates the first
+record only, and `prepend` preserves the existing bytes without validating their
+format. Neither claims that arbitrary input becomes a wholly validated page.
+
+This is a byte-codec and movement witness, not the SQLite or listpack format, a
+typed-record overlay, an optimized bulk-copy result, or a growing page. The full
+32-byte initialization and run descriptor are retained source costs. Validation
+is repeated on each scan; there is no exported validated-view capability. This
+probe shows that variable byte-record lengths and overlap movement alone do not
+require arbitrary typed vacant storage. It does not price those operations.
+
 ## Deliberate boundaries and failures
 
 `rejected-wrapper.wf` records the active FN-9 restriction on measures over a

@@ -29,7 +29,7 @@ $(BUILD)/priority-boundary-costs$(EXE): priority-costs.c $(BUILD)/priority.ll
 check: $(BUILD)/priority-costs$(EXE) $(BUILD)/priority-boundary-costs$(EXE)
 	rustfmt --edition 2024 --check abi.rs
 	@set -eu; \
-	  for source in hashmap ordered priority; do \
+	  for source in hashmap ordered priority packed-page; do \
 	    for mode in default par no-overlap; do \
 	      case "$$mode" in default) flags= ;; par) flags=--par ;; no-overlap) flags=--no-overlap ;; esac; \
 	      "$(WHITEFOOTC)" $$flags "$$source.wf" -o "$(BUILD)/$$source-$$mode$(EXE)"; \

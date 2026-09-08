@@ -87,8 +87,10 @@ a matched executable comparison before it can support a performance conclusion.
 | Shared/concurrent containers | Publish, observe, mutate, retire, reclaim | Existing staged lexical access covers only its stated scope | RCU/epoch/shared lifetime is not supplied by a sequential slot API |
 
 The first [current-language family witnesses](../../experiments/container-representation/families/RESULTS.md)
-now execute a bounded optional-entry hash table, a dense binary heap, and a
-B+ tree leaf-split component. The hash trace does not yet cover growth or rehash;
+now execute a bounded optional-entry hash table, a dense binary heap, a
+B+ tree leaf-split component, and a variable-record byte page with insertion,
+deletion, overlapping movement and ordinary invalid-input/refusal outcomes.
+The hash trace does not yet cover growth or rehash;
 the leaf component is not a complete ordered map. A separate valid-source boxed
 tree reproducer exposes descriptor-replacement lowering failure and is explicitly
 deferred executable correctness evidence, not a source-language rejection.
@@ -123,9 +125,14 @@ test behavior independently.
 | Library-selected typed storage with checked resource evidence | Allows library algorithms to choose initialized sets, placement and transitions | Dynamic state cannot be checked compositionally, proof effort explodes, erasure adds metadata, or borrowing/cleanup remains inexpressible |
 | Checked runtime validation with reusable access | Can move proof work to construction/boundary paths while keeping hot operations simple | Validation repeats on hot mutation or cannot establish the needed ownership/initializedness authority |
 
-These strategies can supply different components of one eventual design. No
-hybrid is selected merely because it sounds flexible. Every component needs an
-operation and cost that justify it; do not build all four infrastructures.
+These rows are not four mutually exclusive architectures. Runtime validation is
+an access strategy available to each representation, and a projected enum is a
+layout extension of ordinary valid values. The unresolved storage choice is
+narrower: can compiler-maintained valid values with library-selected layouts meet
+the required costs, or must libraries also compose initialization, borrowing and
+release permissions? Improvements to ordinary place/ABI handling are relevant to
+both. Do not build four infrastructures or choose the broader proof surface
+because its claimed coverage is larger.
 
 ### A narrower competitor to arbitrary storage permissions
 
@@ -276,24 +283,91 @@ retains its detailed transition and descriptor comparison. Its implementation
 selection is superseded by this document; the executable evidence remains useful
 under its stated conditions.
 
-## Next implementation decision and unresolved work
+## Evidence-backed implementation sequence
 
-The next production change is not selected yet. First complete current-language
-critical-operation probes across the common families, and preserve exact rejected
-forms beside accepted alternatives when they expose a meaningful boundary.
-Then compare costs under the same semantic and resource contracts, including
-retained runtime checks. Attribute a gap to algorithm, representation, proof
-surface, allocation interface or lowering before proposing a change.
+The next implementation experiment can be chosen without declaring a universal
+container substrate. The current evidence supports this order:
 
-The strongest candidate interventions will be tested against at least one
-different family so a pool-specific or hashmap-specific fix cannot silently
-become the universal substrate. Required negative evidence includes wrong-slot
-permission, borrow across relocation, cleanup after partial construction,
-collision-chain deletion, stale identity and invalid encoded offsets where
-applicable. This is a finite set of discriminating programs, not a requirement
-to verify whole operating systems before advancing the compiler.
+1. Repair the existing owning-box replacement defect through the general borrowed
+   owner descriptor path. The deferred ordered-node program must become an
+   ordinary native success in all three modes. This restores a correctness
+   baseline for owning-node algorithms; it does not add a new tree primitive.
+2. Investigate ordinary owned-helper argument/result destinations using the heap
+   cost control and the earlier dense and fallible-result controls. A move into a
+   helper followed by return to the owner should not intrinsically require a
+   payload copy at every call. Reuse must still preserve RHS evaluation, reads of
+   the old value, aliasing, failure cleanup and actual loan retirement. Re-measure
+   the same operations after the change; the current ratio is not a promised
+   speedup. This is a general lowering experiment, not a heap-specific ABI.
+3. Compare one resource-owning sparse container under the two storage routes
+   below. Keep ordinary valid values as the implemented baseline and projected
+   enum layout as the narrower candidate. A library resource-proof route remains
+   a challenger with explicit proof-checking and cost obligations, rather than
+   an already selected replacement for runs.
 
-The research is ready for an implementation decision when the coverage matrix
-has concrete dispositions, the decisive performance comparisons are executable,
-and the recommended slice names both the operation it unlocks and the unresolved
-ceiling it does not yet address. Passing CI alone cannot establish that condition.
+No production code is changed by this research. These steps identify useful
+implementation experiments; only the first two have an executable current
+compiler defect or measured cost as their immediate selection ground.
+
+### The bounded storage comparison still required
+
+Use one concrete map payload containing an owning resource. Execute collision
+insertion, duplicate replacement, removal, lookup past a tombstone, reuse, growth
+rehash and final cleanup. Specify allocation refusal and an intended stop during
+migration, returning all still-owned state; do not assume rollback of completed
+work. Compare the same capacity, key/hash, control encoding, migration policy and
+failure contract across ordinary optional values, projected enums and resource
+permissions. A seven-bit fingerprint with empty/deleted states is one matched
+encoding; an arbitrary eight-bit fingerprint is a different layout comparison.
+
+First allow entry relocation, as an ordinary open-addressed map may. Then compare
+a stable-row variant justified by the external grouping/dictionary contracts.
+Do not charge every map for address stability it does not promise. Record lookup
+and update time, maximum migration work per operation, allocation count, peak
+backing, initialized bytes and payload movement. Embed a fallible large-element
+producer in insertion to compare complete results, internal result destinations
+and a proposed vacant destination with the same effects and cleanup outcomes.
+
+If projected enums and resource permissions produce the same representation and
+operations, timing cannot distinguish their proof authorities. The broader route
+must additionally demonstrate symbolic runtime-index focus, retention of the other
+slots, transfer/cleanup and erasure without an extra token table or scan. A finite
+concrete model is insufficient. Conversely, a required layout or retained access
+that the narrower route cannot express is a real discriminator even if a scalar
+lookup benchmark happens to match.
+
+Two independent controls prevent the map from replacing the overall coverage
+question. The byte-page witness now supplies insertion, deletion and malformed
+input behavior; growing backing, bulk movement and reusable validation costs
+remain unmeasured. A two-index stable-object control must distinguish weak lookup
+returning `Expired` from retained membership making deletion return `Busy` or
+delaying it. It must check identity across store mismatch, reuse and finite
+generation exhaustion. Neither experiment requires implementing concurrent RCU
+first or silently changing the current STOR-1 boundary.
+
+### Independent ceilings and dispositions
+
+The available evidence supports different next actions for different families:
+
+| Area | Current disposition | Evidence that would change it |
+| --- | --- | --- |
+| Dense/fixed sequences and priority queues | Use ordinary valid values; correct and improve general storage transfer first | Matched operations still force material initialization, descriptor or movement cost after that repair |
+| Full arrays of general elements | Distinct completed-value form remains useful; current flat-element restriction and linear-empty cleanup are language boundaries | A checked construction/consumption route and its actual representation, not an empty pool contract alone |
+| Hash and ordered containers | Concrete scalar operations work; resource-owning complete operations and generic behavior remain incomplete | The matched sparse comparison above; a complete ordered mutation trace after owning-box repair |
+| Deques and rings | A wrapped logical-index trace works; a wrapped run is correctly refused as one contiguous view | A two-span consumer/growth trace that prices any required copying and admits the actual loans |
+| Growable runs, strings and inline/spill forms | Allocation plus source movement is the route to test; no realloc or finished spill cost result is established | Same-contract reserve/refusal, spill and resize controls including peak storage and address validity |
+| Packed byte records | Current initialized byte storage executes variable records and overlapping movement | Measured bulk/initialization/compact-handle cost, or an actually required typed layout that byte codecs cannot preserve |
+| Stable slots, sparse sets and multiple memberships | Bounds-safe storage alone does not supply object identity or retained lifetime; weak and retained contracts stay separate | The two-index control, priced lookup/metadata and an explicit source admission design |
+| Shared/concurrent containers | Sequential storage selection grants no reclamation protocol | A separately specified publish/read/retire contract with the actual memory model and scheduling behavior |
+
+Generic hash/equality/comparison invocation is independently unavailable under
+FN-2/3/5: numeric and linearity bounds do not let a library call a supplied
+behavior. A concrete key type is sufficient for the representation experiment,
+but cannot certify a reusable generic library. Stored member provenance is
+separately restricted by STOR-5. Allocation/resize and variable-tail layout need
+their own provider and layout contracts. A slot permission alone supplies none
+of these, and the architecture must not claim those system needs solved.
+
+This bounds the unresolved alternatives and the next useful implementation work.
+It does not yet certify the complete container foundation: the sparse resource
+comparison, two-index control and remaining growth/cost evidence are outstanding.
