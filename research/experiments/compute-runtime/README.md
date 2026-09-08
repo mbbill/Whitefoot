@@ -1159,7 +1159,47 @@ screen has no fixed worker placement and is exploratory rather than a retained
 CI artifact. The counter-free/event image SHA-256 identities are respectively
 `a5235c8ff452af0824d1991c85d767c391b3878a22837e6b1242906d5b7c8dbe` and
 `5b5ece137c1eba1ca824ed1e21a31ef1ebaf55c6019b72164ca5363688c542b2`.
-Linux event execution and its actual Rayon retention report remain pending.
+The matching [`619d33d2` Linux run](https://github.com/mbbill/Whitefoot/actions/runs/34198733090)
+completed the event panel. Artifact `compute-scheduler-linux`, ID `10045199631`,
+ZIP SHA-256
+`4034f6a56de98df56364c3a7d7b5625cab40ba8b45bcc54f0010fedbaf2cd774`, retains
+the raw reports and build inputs. Independent reconstruction checked all 180
+processes / 1,620 calls, including 810 event calls, summaries and conservation,
+and all 304 scoped hash entries (35 source entries across 27 files checked
+against the exact revision). All eighteen
+actual event-image sanitizer cases passed their contracts: nine WF clean
+exits and nine Rayon exit-23 reports with exactly 384 direct plus 1,520 indirect
+retained bytes. This scope does not re-audit the older full timing panel.
+
+This host is an Intel Xeon Platinum 8370C VM, two physical cores / four SMT
+logical CPUs, process mask 0--3, scalar Clang 18.1.3. Quota and individual worker
+placement remain unqualified. It is a different CPU from the earlier EPYC
+7763 trace panel; absolute times across those runs are not revision effects.
+Counter-free `plain` medians [ranges] of five process warm means, each over
+eight calls, are:
+
+| Input, grain16, width4 | WF runtime | Rayon join |
+| --- | ---: | ---: |
+| 256 early-invalid records, maximum length 65,536 | 2.634 [2.543--4.403] us | 6.688 [2.456--10.353] us |
+| 256 Unicode records, maximum length 65,536 | 4.672 [4.587--4.734] ms | 4.665 [4.576--4.779] ms |
+| 4,097 early-invalid records, maximum length 64 | 19.798 [18.718--30.200] us | 23.828 [22.304--29.022] us |
+
+Every corresponding range overlaps. In the long-input `plain` event image, both
+runtimes complete queued jobs on four banks in all forty warm calls. WF's
+median process means are 32,136.125 steal attempts, 32,129.25 empty searches
+and 4.375 successful steals; Rayon records 6.25 successful steals. The fixed
+fifteen completed queued jobs and these search counts measure different work.
+They do not price the searches in CPU cycles or distinguish join-origin from
+idle-worker searches. On the 4,097-record input WF completes jobs on three
+banks in all forty calls; Rayon uses three in 38/40 and four in 2/40. The
+counter-free involuntary-switch process-mean medians are zero for WF and
+4.375 for Rayon on that input, a co-observation rather than a causal attribution.
+
+Linux `plain` event/control paired median time ratios [ranges] are 0.989
+[0.978--1.007] for WF long input and 1.007 [0.953--1.010] for Rayon long input.
+For the 4,097-record short input they are 1.180 [0.760--1.388] and 1.071
+[0.909--1.212]. Keep observer-image timing separate from ordinary performance;
+these comparisons neither isolate counter cost nor establish a fastest runtime.
 
 ### First complete Linux scalar panel and attribution limit
 
