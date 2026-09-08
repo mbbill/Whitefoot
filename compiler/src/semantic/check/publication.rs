@@ -147,7 +147,9 @@ impl DifferenceSystem {
 /// constant name one term; a literal is folded onto the zero term instead.
 #[derive(Eq, PartialEq)]
 enum OperandKey {
-    Result,
+    /// One declared result ordinal [CALL-4]. Distinct ordinals are distinct
+    /// destination datums even when their value types agree.
+    Result(u32),
     Parameter(u32, ProjectionKey),
     NamedConst(crate::DeclarationId, ProjectionKey),
     /// One measure of one formal place [MSR-1]: two clauses name one term
@@ -195,7 +197,7 @@ impl DeclaredSystem {
 
     fn operand(&mut self, datum: &RelationDatum) -> Option<Operand> {
         let key = match datum {
-            RelationDatum::Result { .. } => OperandKey::Result,
+            RelationDatum::Result { ordinal, .. } => OperandKey::Result(*ordinal),
             RelationDatum::Parameter {
                 ordinal,
                 projections,

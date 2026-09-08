@@ -83,6 +83,33 @@ fn ensures_smoke() {
 }
 
 #[test]
+fn published_relations_keep_distinct_scalar_result_ordinals_separate() {
+    let source = format!(
+        "fn pair() -> (zero: own i32, one: own i32) pure contract {{\n  ensures zero == 0_i32;\n  ensures one == 1_i32;\n}} {{\n  return 0_i32, 1_i32;\n}}\n\n{COMMAND_MAIN}"
+    );
+    assert_complete(source.as_bytes());
+}
+
+#[test]
+fn contradictory_relations_on_one_scalar_result_ordinal_still_reject() {
+    let source = format!(
+        "fn contradictory() -> (zero: own i32, spare: own i32) pure contract {{\n  ensures zero == 0_i32;\n  ensures spare == 1_i32;\n  ensures zero == 1_i32;\n}} {{\n  return 0_i32, 1_i32;\n}}\n\n{COMMAND_MAIN}"
+    );
+    assert_rule(
+        source.as_bytes(),
+        SemanticRule::Call6,
+        SemanticIssueKind::ContradictoryPublishedRelations {
+            relations: vec![
+                "ensures zero == 0_i32;".to_owned(),
+                "ensures spare == 1_i32;".to_owned(),
+                "ensures zero == 1_i32;".to_owned(),
+            ],
+            mechanical_fix: "state one consistent relation set: a contract whose clauses cannot hold together publishes every fact at every caller",
+        },
+    );
+}
+
+#[test]
 fn a_computed_constant_offset_is_not_an_fn9_relation_operand() {
     let source = br#"fn shifted(value: own u8) -> result: own u8 pure contract {
   define next = value +wrap 1_u8;
