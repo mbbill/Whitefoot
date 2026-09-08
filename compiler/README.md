@@ -187,15 +187,21 @@ reductions. A denied permission leaves the program sequential; it does not
 change source acceptance. Proof-only statements introduce no runtime branch,
 lock, dependency, scheduling event, or task edge.
 
-The opt-in compute experiment `--par --par-scalar-leaf-limit N` omits offers
-of scalar leaves containing at most N nonconstant IR operations. Eligible
+Under `--par`, the compiler omits offers of scalar leaves containing at most
+16 nonconstant IR operations by default. `--par-scalar-leaf-limit N` changes
+that threshold; `--par-scalar-leaf-limit off` restores unfiltered offers.
+Zero retains its meaning of filtering only zero-operation leaves. Eligible
 leaves have one returning block, scalar arguments/results and only scalar
 constants, arithmetic, boolean operations, conversions or reinterpretations;
 calls, memory operations, branches, loops and drops exclude a function. The
 original calls remain, and a partially retained group keeps its original
 source-last join site. This narrows actualization after checking; permission,
-acceptance, ordinary function ABI and default `--par` behavior are unchanged.
-The count is a research heuristic, not a target instruction or time estimate.
+acceptance and ordinary function ABI are unchanged. Compilation without `--par`
+still leaves compute outlining off. The count is a provisional cost heuristic,
+not a target instruction or time estimate. The default selects the consistently
+beneficial leaf filter from the measured quadrature inputs on M1 and Linux;
+it does not select a recursive grain or establish a gain on every workload or
+on the normal shared runtime. The research runtime remains separately linked.
 Its qualification and measurements live in the
 [quadrature experiment](../research/experiments/compute-runtime/README.md#scalar-leaf-offer-control).
 

@@ -15,8 +15,12 @@ The normal compiler link path is unchanged. The experiment retains qualified
 workloads, native references and dated performance results. The
 [WF workload coverage](WORKLOADS.md) and [reference matrix](BASELINES.md)
 distinguish that evidence from broader comparisons still missing.
-Further compiler scheduling-policy development is deferred: existing opt-in
-controls remain experimental, with no selected universal grain or new default.
+Further compiler scheduling-policy development is deferred. The existing
+scalar-leaf filter becomes the `--par` default at 16 nonconstant IR operations,
+with an explicit `off` override. Recursive frontier and sequential refusal
+remain opt-in; no universal recursive grain is selected. The
+[compiler guide](../../../compiler/README.md#parallel-and-completion-lowering)
+owns these current defaults and their evidence limits.
 The immediate integration scope is the measured compute foundation and its
 test/reference tools, before returning to I/O execution design.
 The separate

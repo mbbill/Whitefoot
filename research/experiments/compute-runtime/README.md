@@ -1732,8 +1732,20 @@ control's Linux benefit; the later control cohort is reported below.
 
 ### Scalar leaf offer control
 
-`--par --par-scalar-leaf-limit 16` is an opt-in compiler experiment, not a new
-default or a language rule. After the normal checks and lowering, it identifies
+The compiler now uses scalar-leaf limit 16 under `--par` by default. This is a
+provisional cost choice based on the consistently positive M1/Linux comparisons
+below, not a universal optimum or a language rule. Override it with
+`--par-scalar-leaf-limit N`, or disable it with `--par-scalar-leaf-limit off`.
+Zero still filters zero-operation leaves. Recursive frontier and sequential
+refusal remain opt-in. All unfiltered control recipes in this experiment now
+write `off` explicitly, preserving their previous lowering and exact work
+expectations. Explicit filtered/frontier recipes retain their named thresholds.
+The default does not change the runtime linked by normal compiler invocations;
+the measurements below used the research compute runtime and do not qualify
+shared-runtime performance or broader workload gains.
+
+The dated cohorts below tested this as an opt-in control. After the normal
+checks and lowering, it identifies
 one-block returning functions with scalar parameters/results, no drops and only
 constants or scalar arithmetic/boolean/conversion/reinterpretation operations.
 Constants do not count toward the limit. A call, memory operation, control-flow
@@ -1791,7 +1803,9 @@ depth-zero/empty are mixed. No adverse or first-call sample is removed.
 The remaining small-call losses motivate recursive granularity work. A useful
 four-worker gain on some fixtures is not a top-tier parallel-reference result:
 larger inputs/compositions and strong native recursive comparisons remain
-required. No threshold has been selected as a default from this screen.
+required. This original screen did not select a default; the later integration
+choice above also considers the following Linux comparison and preserves an
+explicit unfiltered control.
 
 The [five-form Linux scalar-leaf run at `8f7eed90`](https://github.com/mbbill/Whitefoot/actions/runs/34232662823)
 retains artifact10058498265, ZIP SHA256

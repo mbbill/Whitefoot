@@ -27,7 +27,8 @@ or irregular graph traversal, and does not replace the missing rows below.
 adds data-dependent subdivision and nested ordinary sibling calls, with an
 explicit-stack binary64 oracle, analytic checks for converged fixtures and
 an initial scalar C/WF comparison. The original M1/Linux screens observe
-substantial parallel-body slowdown. An opt-in scalar-leaf offer control improves
+substantial parallel-body slowdown. The scalar-leaf offer control, initially
+opt-in and now the `--par` default at threshold 16, improves
 the heavier M1 cases; its later Linux cohort improves relative to original
 parallel execution but does not reproduce the sequential speedup. Publication
 and generated-code contributions are not separately isolated. Native recursive

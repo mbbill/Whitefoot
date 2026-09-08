@@ -89,7 +89,7 @@ quadrature-build: $(WFC) quadrature-deps
 	cp -R "$(OUT)/scheduler-deps/lib" "$(OUT)/quadrature/deps/"
 	cp "$(OUT)/scheduler-deps/metadata.txt" "$(OUT)/scheduler-deps/build/compile_commands.json" "$(OUT)/quadrature/deps/"
 	cd "$(OUT)/scheduler-deps" && find include -type f -exec shasum -a 256 {} + > "$(OUT)/quadrature/deps/headers.sha256"
-	"$(WFC)" --par --par-ledger --emit-llvm quadrature.wf -o "$(OUT)/quadrature/module.ll" > "$(OUT)/quadrature/ledger.txt"
+	"$(WFC)" --par --par-scalar-leaf-limit off --par-ledger --emit-llvm quadrature.wf -o "$(OUT)/quadrature/module.ll" > "$(OUT)/quadrature/ledger.txt"
 	grep -F 'pair(adaptive, adaptive)' "$(OUT)/quadrature/ledger.txt"
 	grep -F 'call void @wf__par_publish(' "$(OUT)/quadrature/module.ll"
 	sed -e 's/@main(/@wf_quadrature_command_main(/g' -e 's/@wf__main_body(/@wf_quadrature_command_body(/g' \
@@ -159,7 +159,7 @@ quadrature-build: $(WFC) quadrature-deps
 	$(call require-strong,$(OUT)/quadrature/ordinary,wf__floor_run)
 	@printf '%s\n' '$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=0' \
 		'$(CXX) -std=c++17 $(SCHEDULER_FLAGS) -fno-fast-math -ffp-contract=off -DWF_COMPUTE_STATS=0' \
-		'WF original: --par; scalar-leaf control: --par --par-scalar-leaf-limit 16; refusal control additionally --par-sequential-refusal; frontier controls instead --par-recursive-frontier 4 or 8' \
+		'WF original: --par --par-scalar-leaf-limit off; scalar-leaf control: --par --par-scalar-leaf-limit 16; refusal control additionally --par-sequential-refusal; frontier controls instead --par-recursive-frontier 4 or 8' \
 		'sanitized: -DWF_COMPUTE_STATS=1 -DWF_COMPUTE_EVENTS -fsanitize=$(SANITIZER) -fno-sanitize-recover=all -fno-omit-frame-pointer; host/runtime/floor/native C++ and Parlay headers; generated WF and oneTBB library ordinary' > "$(OUT)/quadrature/flags.txt"
 	$(CC) --version >> "$(OUT)/quadrature/flags.txt"
 	@printf 'Rayon kernel/scheduler RUSTFLAGS=%s\nRust diagnostics use quadrature-stats; Rust/Rayon are not sanitizer-instrumented.\n' '$(QUADRATURE_RUST_FLAGS)' >> "$(OUT)/quadrature/flags.txt"
@@ -390,7 +390,7 @@ compiler:
 # declared element pointer/count; release still consumes the WF buffer.
 records-build: $(WFC)
 	mkdir -p "$(OUT)"
-	"$(WFC)" --par --par-ledger --emit-llvm records.wf -o "$(OUT)/records.ll" > "$(OUT)/records.ledger"
+	"$(WFC)" --par --par-scalar-leaf-limit off --par-ledger --emit-llvm records.wf -o "$(OUT)/records.ll" > "$(OUT)/records.ledger"
 	grep -F 'split independent map' "$(OUT)/records.ledger"
 	grep -F 'call void @wf__par_publish(' "$(OUT)/records.ll"
 	sed -e 's/@main(/@wf_record_command_main(/g' \
@@ -486,7 +486,7 @@ check-records-events: check-records-budget records-events-build
 
 .PHONY: mandelbrot-build check-mandelbrot
 mandelbrot-build: scheduler-layout-build $(WFC)
-	"$(WFC)" --par --par-ledger --emit-llvm mandelbrot.wf -o "$(OUT)/mandelbrot.ll" > "$(OUT)/mandelbrot.ledger"
+	"$(WFC)" --par --par-scalar-leaf-limit off --par-ledger --emit-llvm mandelbrot.wf -o "$(OUT)/mandelbrot.ll" > "$(OUT)/mandelbrot.ledger"
 	grep -F 'split independent map' "$(OUT)/mandelbrot.ledger"
 	sed -e 's/@main(/@wf_mandelbrot_command_main(/g' -e 's/@wf__main_body(/@wf_mandelbrot_command_body(/g' \
 		"$(OUT)/mandelbrot.ll" > "$(OUT)/mandelbrot-host.ll"
@@ -913,7 +913,7 @@ endif
 
 check-abi: $(WFC)
 	mkdir -p "$(OUT)"
-	"$(WFC)" --par --par-ledger --emit-llvm abi.wf -o "$(OUT)/abi.ll" > "$(OUT)/abi.ledger"
+	"$(WFC)" --par --par-scalar-leaf-limit off --par-ledger --emit-llvm abi.wf -o "$(OUT)/abi.ll" > "$(OUT)/abi.ledger"
 	grep -F 'declare' "$(OUT)/abi.ll" > "$(OUT)/abi.declarations"
 	@if grep -E '@wf__completion_|@wf_sched_' "$(OUT)/abi.ll"; then \
 		echo 'compute ABI fixture unexpectedly requires I/O or scheduler symbols' >&2; exit 1; \
@@ -935,7 +935,7 @@ check-abi: $(WFC)
 
 fir-ir: $(WFC)
 	mkdir -p "$(OUT)"
-	"$(WFC)" --par --par-ledger --emit-llvm fir.wf fir_direct.wf -o "$(OUT)/fir.ll" > "$(OUT)/fir.ledger"
+	"$(WFC)" --par --par-scalar-leaf-limit off --par-ledger --emit-llvm fir.wf fir_direct.wf -o "$(OUT)/fir.ll" > "$(OUT)/fir.ledger"
 	grep -F 'pair(filter_tiles, filter_tiles)' "$(OUT)/fir.ledger"
 	grep -F 'call void @wf__par_publish(' "$(OUT)/fir.ll"
 	grep -E '^define i32 @main\(' "$(OUT)/fir.ll"
@@ -945,7 +945,7 @@ fir-ir: $(WFC)
 	sed -e 's/@main(/@wf_research_fir_command_main(/g' \
 		-e 's/@wf__main_body(/@wf_research_fir_command_body(/g' "$(OUT)/fir.ll" > "$(OUT)/fir-host.ll"
 	cat fir_host.ll >> "$(OUT)/fir-host.ll"
-	"$(WFC)" --par --par-ledger --emit-llvm fir.wf fir_lanes.wf -o "$(OUT)/fir-lanes.ll" > "$(OUT)/fir-lanes.ledger"
+	"$(WFC)" --par --par-scalar-leaf-limit off --par-ledger --emit-llvm fir.wf fir_lanes.wf -o "$(OUT)/fir-lanes.ll" > "$(OUT)/fir-lanes.ledger"
 	grep -F 'pair(filter_tiles, filter_tiles)' "$(OUT)/fir-lanes.ledger"
 	grep -F 'call void @wf__par_publish(' "$(OUT)/fir-lanes.ll"
 	grep -E '^define i32 @main\(' "$(OUT)/fir-lanes.ll"

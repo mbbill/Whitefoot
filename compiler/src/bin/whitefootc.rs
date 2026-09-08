@@ -31,7 +31,7 @@ use whitefoot::{
     FLOOR_WINDOWS_RUNTIME_SOURCE, SCHED_PRIM_WINDOWS_SOURCE, WINDOWS_RUNTIME_SOURCE,
 };
 
-const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N] [--par-sequential-refusal] [--par-recursive-frontier N] [--no-overlap] [--par-ledger] \
+const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N|off] [--par-sequential-refusal] [--par-recursive-frontier N] [--no-overlap] [--par-ledger] \
 [--stack-ledger] [-o OUTPUT] SOURCE...";
 
 // The compiler walks typed source and lowering trees recursively. Windows
@@ -572,7 +572,9 @@ struct Options {
     /// worker lanes or terminate when the pool is first required; it cannot
     /// silently select the sequential world.
     par: bool,
-    /// Opt-in scalar-leaf offer suppression for compute-grain measurements.
+    /// Resolved scalar-leaf offer limit: 16 under --par unless overridden.
+    /// Explicit `off` keeps every otherwise eligible offer; zero still filters
+    /// leaves containing no nonconstant operations.
     scalar_leaf_limit: Option<u32>,
     /// Opt-in ordinary-ABI sequential calls on refused compute offers.
     sequential_refusal: bool,
@@ -627,15 +629,17 @@ impl Options {
                 "--par" => par = true,
                 "--par-scalar-leaf-limit" => {
                     cursor += 1;
-                    let value = arguments.get(cursor).ok_or_else(|| {
-                        "--par-scalar-leaf-limit requires a nonnegative u32".to_owned()
-                    })?;
-                    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
-                        return Err("--par-scalar-leaf-limit requires a nonnegative u32".to_owned());
-                    }
-                    let limit = value.parse::<u32>().map_err(|_| {
-                        "--par-scalar-leaf-limit requires a nonnegative u32".to_owned()
-                    })?;
+                    let invalid =
+                        || "--par-scalar-leaf-limit requires a nonnegative u32 or off".to_owned();
+                    let value = arguments.get(cursor).ok_or_else(invalid)?;
+                    let limit = if value == "off" {
+                        None
+                    } else {
+                        if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+                            return Err(invalid());
+                        }
+                        Some(value.parse::<u32>().map_err(|_| invalid())?)
+                    };
                     if scalar_leaf_limit.replace(limit).is_some() {
                         return Err("--par-scalar-leaf-limit may be written only once".to_owned());
                     }
@@ -721,7 +725,11 @@ impl Options {
         Ok(Self {
             emit_llvm,
             par,
-            scalar_leaf_limit,
+            scalar_leaf_limit: if par {
+                scalar_leaf_limit.unwrap_or(Some(16))
+            } else {
+                None
+            },
             sequential_refusal,
             recursive_frontier,
             no_overlap,
@@ -1010,6 +1018,86 @@ mod tests {
         assert!(options.par);
         assert!(!options.par_ledger, "lanes are not a ledger request");
         assert_eq!(options.sources.len(), 1);
+    }
+
+    #[test]
+    fn compute_leaf_default_and_explicit_overrides_select_the_expected_lowering() {
+        assert_eq!(
+            parse(&["value.wf"]).unwrap().overlap(),
+            OverlapLowering::Completion
+        );
+        assert_eq!(
+            parse(&["--par", "value.wf"]).unwrap().overlap(),
+            OverlapLowering::OnWithoutSmallScalarLeaves {
+                maximum_operations: 16
+            }
+        );
+        assert_eq!(
+            parse(&["--par", "--par-scalar-leaf-limit", "off", "value.wf"])
+                .unwrap()
+                .overlap(),
+            OverlapLowering::On
+        );
+        assert_eq!(
+            parse(&["--par", "--par-scalar-leaf-limit", "0", "value.wf"])
+                .unwrap()
+                .overlap(),
+            OverlapLowering::OnWithoutSmallScalarLeaves {
+                maximum_operations: 0
+            }
+        );
+        for (arguments, expected) in [
+            (
+                vec!["--par", "--par-sequential-refusal", "value.wf"],
+                Some(16),
+            ),
+            (
+                vec![
+                    "--par",
+                    "--par-sequential-refusal",
+                    "--par-scalar-leaf-limit",
+                    "off",
+                    "value.wf",
+                ],
+                None,
+            ),
+        ] {
+            assert_eq!(
+                parse(&arguments).unwrap().overlap(),
+                OverlapLowering::OnWithSequentialRefusal {
+                    maximum_scalar_leaf_operations: expected
+                }
+            );
+        }
+        assert_eq!(
+            parse(&[
+                "--par",
+                "--par-recursive-frontier",
+                "8",
+                "--par-scalar-leaf-limit",
+                "off",
+                "value.wf"
+            ])
+            .unwrap()
+            .overlap(),
+            OverlapLowering::OnWithRecursiveFrontier {
+                maximum_levels: std::num::NonZeroU8::new(8).unwrap(),
+                maximum_scalar_leaf_operations: None,
+                sequential_refusal: false,
+            }
+        );
+        assert!(parse(&["--par-scalar-leaf-limit", "off", "value.wf"]).is_err());
+        assert!(
+            parse(&[
+                "--par",
+                "--par-scalar-leaf-limit",
+                "off",
+                "--par-scalar-leaf-limit",
+                "16",
+                "value.wf"
+            ])
+            .is_err()
+        );
     }
 
     #[test]
