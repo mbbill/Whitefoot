@@ -14,7 +14,7 @@ now dispatches the same qualified objects at one/two/four actual lanes; its
 condition-variable policy has full-oracle/lifecycle evidence and a dated
 [Linux calibration](../../experiments/compute-runtime/README.md#linux-static-control-before-wf-output-groups).
 The [scalar scheduler panel](../../experiments/compute-runtime/README.md#scalar-scheduler-comparison)
-adds executable oneTBB, Parlay and static-spin controls against the recovered
+adds executable oneTBB, Parlay, Rayon join/parallel-iterator and static-spin controls against the recovered
 WF runtime. All use the same precompiled scalar work and callback objects,
 fixed record chunks and one/two/four participants including the caller.
 Automatic SIMD and cross-object LTO are disabled for this scheduling experiment.
@@ -50,6 +50,7 @@ screen where their mechanism is relevant; a full Cartesian product is unnecessar
 | oneTBB; mandatory dynamic reference | `parallel_for`/`parallel_reduce`, `parallel_invoke`/`task_group`; local depth-first execution and stealing aim to combine locality with load balance. Compare automatic, affinity and static partitioning where appropriate. | Static partitioning omits load balancing; adaptive partitioning and retained affinity have distinct costs. Measure cold/warm reuse, grain sensitivity, nested participation and actual worker budget; do not force one partitioner on all workloads. |
 | ParlayLib; additional fine-grain candidate | Native `par_do`/`parallel_for` scheduler, explicit grain control and nested helping; its parallel algorithm library also supplies end-to-end candidates. | Force and record the native scheduler, since the same API can select OpenCilk, OpenMP, TBB or serial backends. Charge scheduler creation and idle policy. Upstream README says support beyond x86-64 is unexplored: ARM is an explicit qualification gap, not an assumed supported platform. |
 | Taskflow; additional graph / dynamic-task candidate | Reusable task graph for known dependencies; dynamic subflow and runtime tasking are distinct forms. Graph reuse can amortize construction; cooperative task execution may serve irregular work. | Charge node/edge construction and reclamation unless reuse is part of the workload. Do not rank Taskflow using only recursive subflows: upstream identifies extra graph overhead and offers runtime tasking. Qualify the fastest applicable pinned API before a framework-level conclusion. |
+| Go; additional native runtime / end-to-end candidate | Chunked goroutines and persistent workers with explicit `GOMAXPROCS`; compare natural bounded parallel forms and their startup, scheduling and allocation costs. | Qualify native scalar code generation and serial work before attributing a gap to scheduling. Calling a common C leaf through cgo on every small chunk adds a different boundary; that result cannot establish pure scheduler cost. |
 
 LLVM documents both loop and SLP vectorization, including diagnostics and
 limitations from calls and floating-point ordering; optimized serial qualification
@@ -75,7 +76,7 @@ tasking; its examples' timing tables are not evidence for this investigation.
 
 | Source identity actually verified | Experiment pin / evidence still missing |
 |---|---|
-| Rayon **1.12.0** versioned API above | Rust compiler, `rayon-core` and full dependency lock, source/binary hashes, local and native-host qualification. |
+| Rayon **1.12.0**, rayon-core **1.13.0**, full Cargo lock in the scalar scheduler experiment | Executable recursive join and indexed parallel iterator, caller worker zero, process-lifetime pool, identical scalar C leaf/callback. Artifacts retain Rust compiler, flags, emitted C ABI symbol and archive hashes. Local flat-work/full-output/capacity checks are implemented; native-host performance, nested composition and broader cutoff tuning remain open. |
 | OpenCilk **3.0**, tag `opencilk/v3.0`, release short commit `cd8ccfc`; release notes identify LLVM 19.1.7. [Releases](https://github.com/OpenCilk/opencilk-project/releases). | Resolve full compiler/runtime commits and package hashes. The same release page lists 4.0 release candidates separately; do not silently substitute one. |
 | oneTBB **v2023.1.0**, full commit `3046c8b0c29df995980003ea24f4d78c80ec0c8d`. [Release](https://github.com/uxlfoundation/oneTBB/releases/tag/v2023.1.0). | Scalar scheduler experiment builds and retains a shared Release library with automatic vectorization/IPO disabled, persistent arena, automatic partitioner and explicit participant budget. Other partitioners and held-out/native-host performance confirmation remain open. |
 | Taskflow **v4.1.0**, release short commit `45366fe`. [Release](https://github.com/taskflow/taskflow/releases/tag/v4.1.0). | Live docs list **4.2.0 (Master)** separately. Verify each chosen runtime/subflow API against pinned headers; development documentation is not proof that an API exists in 4.1.0. [Release index](https://taskflow.github.io/taskflow/Releases.html). |

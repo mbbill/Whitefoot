@@ -21,12 +21,15 @@ jobs:
       matrix:
         include:
           - workload: fir
+            arch: -march=native
             checks: check-fir check-bench
             driver: fir-bench.sh
           - workload: records
+            arch: -march=native
             checks: check-records
             driver: records-bench.sh
           - workload: scheduler
+            arch: -march=x86-64-v3
             checks: check-scheduler
             driver: records-scheduler-bench.sh
     runs-on: ubuntu-24.04
@@ -51,7 +54,7 @@ jobs:
         run: |
           set -o pipefail
           make -C research/experiments/compute-runtime ${{ matrix.checks }} \
-            OUT="$OUT" BENCH_ARCH=-march=native 2>&1 | tee "$RUNNER_TEMP/compute-${{ matrix.workload }}-build.log"
+            OUT="$OUT" BENCH_ARCH=${{ matrix.arch }} 2>&1 | tee "$RUNNER_TEMP/compute-${{ matrix.workload }}-build.log"
       - name: Calibrate sequentially on one recorded CPU mask
         env:
           OUT: ${{ runner.temp }}/compute-${{ matrix.workload }}

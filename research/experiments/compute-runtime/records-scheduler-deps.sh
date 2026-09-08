@@ -27,6 +27,7 @@ fetch() {
 if test "$mode" = fetch; then
     fetch "$tbb" "$tbb_pin" https://github.com/uxlfoundation/oneTBB.git
     fetch "$parlay" "$parlay_pin" https://github.com/cmuparlay/parlaylib.git
+    cargo fetch --locked --manifest-path records-rayon/Cargo.toml
     printf 'scheduler sources PASS: oneTBB=%s Parlay=%s\n' "$tbb_pin" "$parlay_pin"
     exit 0
 fi
@@ -66,6 +67,32 @@ case "$(uname -s)" in
     *) echo 'scheduler dependency host is not qualified' >&2; exit 1;;
 esac
 test -f "$library"
+# Cargo's lock pins the full Rayon dependency graph. Both crate types retain
+# the ordinary public C-callable function in the static archive without an
+# unsafe no_mangle/export_name attribute. Fail closed if its emitted symbol
+# is not unique; no assumption about a persistent Rust-mangled name escapes
+# this exact build. All dependency crates receive the same scalar flags.
+rayon=$prefix/rayon
+mkdir -p "$rayon"
+rayon_flags='-C no-vectorize-loops -C no-vectorize-slp -C lto=off -C symbol-mangling-version=v0'
+RUSTFLAGS="$rayon_flags" cargo rustc --locked --offline --release \
+    --manifest-path records-rayon/Cargo.toml --target-dir "$rayon" -- --emit=llvm-ir,link
+awk '
+    /^define .* @_RNv[^ (]*3run\(/ {
+        split($0,a,"@"); symbol=a[2]; sub(/\(.*/, "", symbol); count++
+    }
+    END { if (count!=1) exit 1; print symbol }
+' "$rayon"/release/deps/wf_records_rayon-*.ll > "$rayon/export.txt"
+case "$(uname -s)" in Darwin) label_prefix=_;; Linux) label_prefix=;; esac
+printf '#define RAYON_SYMBOL "%s%s"\n' "$label_prefix" "$(cat "$rayon/export.txt")" > "$prefix/rayon-binding.h"
+{
+    printf 'RUSTFLAGS=%s\n' "$rayon_flags"
+    rustc -vV
+    cargo --version
+    cargo tree --locked --offline --manifest-path records-rayon/Cargo.toml
+    shasum -a 256 records-rayon/Cargo.toml records-rayon/Cargo.lock records-rayon/adapter.rs \
+        "$rayon/release/libwf_records_rayon.a" "$prefix/rayon-binding.h"
+} > "$rayon/metadata.txt"
 {
     printf 'oneTBB=%s source=%s\nParlay=%s source=%s\n' "$tbb_pin" "$tbb" "$parlay_pin" "$parlay"
     printf 'library=%s\nC=%s\nCXX=%s\nscalar_flags=%s\n' "$library" "$cc" "$cxx" "$scalar"
@@ -75,5 +102,6 @@ test -f "$library"
     "$cxx" --version
     shasum -a 256 "$library" "$build/CMakeCache.txt" "$build/compile_commands.json"
     shasum -a 256 "$prefix/include/oneapi/tbb/version.h" "$prefix/include/parlay/scheduler.h"
+    cat "$rayon/metadata.txt"
 } > "$prefix/metadata.txt"
 printf 'scheduler dependencies PASS: scalar shared oneTBB and pinned Parlay at %s\n' "$prefix"

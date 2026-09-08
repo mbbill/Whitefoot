@@ -18,6 +18,9 @@ SCHEDULER_FLAGS := -O3 -g -DNDEBUG -Wall -Wextra -Werror -Wpedantic -pthread \
 	$(BENCH_ARCH) -fno-vectorize -fno-slp-vectorize -fno-lto
 SCHEDULER_COMMON := $(OUT)/scheduler-host.o $(OUT)/scheduler-native.o \
 	$(OUT)/scheduler-oracle.o $(OUT)/scheduler-work.o $(OUT)/scheduler-floor.o
+SCHEDULERS := wf static tbb parlay rayon-join rayon-iter
+RAYON_LIB := $(OUT)/scheduler-deps/rayon/release/libwf_records_rayon.a
+RAYON_SYSTEM_LIBS := $(if $(filter Linux,$(shell uname -s)),-ldl -lm,)
 STATIC_ORACLE_FLAGS := -DWF_FILTER_NATIVE -Dmain=fir_qualified_oracle_main \
 	-Dfir_native_direct=fir_static_check_direct -Dfir_native_lanes4=fir_static_check_lanes4 \
 	-Dfir_native_lanes8=fir_static_check_lanes8 -Dfir_native_lanes16=fir_static_check_lanes16
@@ -146,6 +149,13 @@ scheduler-build:
 	$(CXX) -pthread -fno-lto $(SCHEDULER_COMMON) "$(OUT)/scheduler-tbb-adapter.o" \
 		-L"$(OUT)/scheduler-deps/lib" -Wl,-rpath,"$(OUT)/scheduler-deps/lib" -ltbb -o "$(OUT)/scheduler-tbb"
 	$(CXX) -pthread -fno-lto $(SCHEDULER_COMMON) "$(OUT)/scheduler-parlay-adapter.o" -o "$(OUT)/scheduler-parlay"
+	@for strategy in join iter; do \
+		variant=0; if test $$strategy = iter; then variant=1; fi; \
+		$(CC) -std=c11 $(SCHEDULER_FLAGS) -DRAYON_STRATEGY=$$variant -I"$(OUT)/scheduler-deps" \
+			-c records_rayon.c -o "$(OUT)/scheduler-rayon-$$strategy-adapter.o" || exit $$?; \
+		$(CXX) -pthread -fno-lto $(SCHEDULER_COMMON) "$(OUT)/scheduler-rayon-$$strategy-adapter.o" \
+			"$(RAYON_LIB)" $(RAYON_SYSTEM_LIBS) -o "$(OUT)/scheduler-rayon-$$strategy" || exit $$?; \
+	done
 	@printf '%s\n' 'C: $(CC) -std=c11 $(SCHEDULER_FLAGS)' \
 		'C++: $(CXX) -std=c++17 $(SCHEDULER_FLAGS)' \
 		'link: $(CXX) -pthread -fno-lto; common objects reused unchanged' > "$(OUT)/scheduler-flags.txt"
@@ -164,18 +174,26 @@ check-scheduler-memory: scheduler-build
 			-fno-omit-frame-pointer -isystem "$(OUT)/scheduler-deps/include" \
 			-c $$unit.cpp -o "$(OUT)/scheduler-memory-$$unit.o" || exit $$?; \
 	done
-	@for mode in wf static tbb parlay; do \
+	@for strategy in join iter; do \
+		variant=0; if test $$strategy = iter; then variant=1; fi; \
+		$(CC) -std=c11 $(SCHEDULER_FLAGS) -fsanitize=$(SANITIZER) -fno-sanitize-recover=all \
+			-fno-omit-frame-pointer -DRAYON_STRATEGY=$$variant -I"$(OUT)/scheduler-deps" \
+			-c records_rayon.c -o "$(OUT)/scheduler-memory-rayon-$$strategy.o" || exit $$?; \
+	done
+	@for mode in $(SCHEDULERS); do \
 		case $$mode in \
 			wf) adapter='records_runtime runtime';; \
 			static) adapter=records_static;; \
 			tbb) adapter=records_tbb;; \
 			parlay) adapter=records_parlay;; \
+			rayon-join|rayon-iter) adapter=$$mode;; \
 		esac; \
 		set --; \
 		for unit in records_scheduler records_native records_oracle records_work floor $$adapter; do \
 			set -- "$$@" "$(OUT)/scheduler-memory-$$unit.o"; \
 		done; \
 		if test $$mode = tbb; then set -- "$$@" -L"$(OUT)/scheduler-deps/lib" -Wl,-rpath,"$(OUT)/scheduler-deps/lib" -ltbb; fi; \
+		case $$mode in rayon-*) set -- "$$@" "$(RAYON_LIB)" $(RAYON_SYSTEM_LIBS);; esac; \
 		$(CXX) -pthread -fno-lto -fsanitize=$(SANITIZER) -fno-sanitize-recover=all "$$@" \
 			-o "$(OUT)/scheduler-memory-$$mode" || exit $$?; \
 		for width in 1 2 4; do \
@@ -192,13 +210,14 @@ check-scheduler-memory: scheduler-build
 	done
 
 check-scheduler: scheduler-build check-scheduler-memory records-build
+	cargo fmt --manifest-path records-rayon/Cargo.toml -- --check
 	# Qualify the exact scalar timing leaf with the complete independent oracle.
 	$(CC) -std=c11 $(SCHEDULER_FLAGS) records.c records_oracle.c $(FLOOR) \
 		"$(OUT)/records-wf.o" "$(OUT)/scheduler-native.o" -o "$(OUT)/scheduler-leaf-check"
 	WF_WORKERS=0 "$(OUT)/scheduler-leaf-check" check > "$(OUT)/scheduler-leaf-check.log"
 	grep -Fx 'UTF8 leaf qualification PASS: calls=4595603 all-codepoints all-truncations two-byte-pairs' "$(OUT)/scheduler-leaf-check.log"
 	grep -Fx 'UTF8 batch qualification PASS: world=sequential calls=342 results=1821070' "$(OUT)/scheduler-leaf-check.log"
-	@for mode in wf static tbb parlay; do \
+	@for mode in $(SCHEDULERS); do \
 		for width in 1 2 4; do \
 			WF_WORKERS=$$width "$(OUT)/scheduler-$$mode" check $$width > "$(OUT)/scheduler-$$mode-check-w$$width.log" || exit $$?; \
 			cat "$(OUT)/scheduler-$$mode-check-w$$width.log"; \

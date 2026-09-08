@@ -592,14 +592,19 @@ controls; held-out inputs and dedicated-core measurements remain open.
 
 ## Scalar scheduler comparison
 
-This panel isolates scheduling with four implementations: the recovered WF
-runtime, a persistent static busy-spin pool, oneTBB, and Parlay. All four link
+This panel isolates scheduling with six forms: the recovered WF runtime,
+a persistent static busy-spin pool, oneTBB, Parlay, and Rayon join/parallel
+iterator. All six link
 the **same separately compiled** `records_state` computation and
 `records_scheduler_chunk` callback objects. Every callback processes the same
 fixed range of records and writes caller-provided output. The timed path does
 not select the ASCII-word candidate or any SIMD library. C and C++ builds use
 `-O3 -DNDEBUG -fno-vectorize -fno-slp-vectorize -fno-lto`; oneTBB's library build
-also disables automatic vectorization and IPO. The retained assembly permits
+also disables automatic vectorization and IPO. Rayon 1.12.0 and its locked
+dependency crates use Rust release O3 with loop/SLP vectorization and LTO
+disabled. Its precompiled Rust standard library is not rebuilt; the shared
+computation and callback are still the identical scalar C objects.
+The retained assembly permits
 inspection of the actual compute/callback functions. These controls concern
 compiler-generated code in this experiment and its native library, not the
 implementation of operating-system routines.
@@ -619,15 +624,31 @@ program above remains necessary to measure code generation and output ownership.
 | `static-spin` | Width minus one persistent pthread helpers; contiguous partition of chunk indices, release/acquire epoch and padded completion cells. Every dispatch signals all helpers, including empty partitions. Helpers poll while idle. |
 | `oneTBB-v2023.1.0-auto-grain1` | oneTBB `3046c8b0c29df995980003ea24f4d78c80ec0c8d`; persistent `global_control` and caller-reserving `task_arena`, `parallel_for` with `auto_partitioner` and range grain one. Library workers have process lifetime. |
 | `parlay-native-grain1` | Parlay `51017699dcc421f80479cdb238d3092233ad0d26`; native private pool with caller worker zero, `parallel_for` grain one, default elastic policy and 10,000-microsecond steal timeout; explicit shutdown joins helpers. |
+| `rayon-1.12.0-join` | Locked Rayon 1.12.0 / rayon-core 1.13.0; binary recursive `join` down to one common callback per leaf, caller worker zero plus width-minus-one helpers; process-lifetime pool. |
+| `rayon-1.12.0-par-iter` | Same Rayon pool and callback; indexed parallel iterator over the chunk indices with its default adaptive splitting. |
 
 Widths one, two and four include the caller. Each process has one immutable
 width and one external caller. The shared workload is flat and its callbacks
-perform finite independent CPU work; the static adapter cannot nest. TBB and
-Parlay may group chunk indices internally, and the WF and Parlay split orders
+perform finite independent CPU work; the static adapter cannot nest. TBB,
+Parlay and Rayon iterators may group chunk indices internally, and split orders
 differ: equal callback work does not imply an identical internal task graph.
 These are initial qualified API choices, not proof of each library's fastest
-partitioner or a complete reference frontier. Rayon and OpenCilk still need
-executable compute controls.
+partitioner or a complete reference frontier. OpenCilk still needs an executable
+compute control. Go's native runtime/end-to-end comparison remains separate
+future work; per-chunk cgo costs must not be attributed solely to scheduling.
+
+Rayon's `use_current_thread` registers the owner as worker zero. Calls use the
+inside-pool join/help path directly; there is no outside-pool `install` dispatch
+or extra nonparticipating owner counted as a worker. The current-thread
+registry cannot be detached by this API, so shutdown reports process lifetime.
+The research Rust crate forbids unsafe code. A C adapter binds its ordinary
+public `extern "C"` function using the exact build's LLVM symbol, rejecting a
+missing or nonunique export. Emitting both rlib and staticlib keeps that symbol
+visible without unsafe export attributes. The callback has the original C
+pointer/index prototype; Rust transports the opaque address without
+dereferencing it, and joined completion bounds the caller-owned storage lifetime.
+This build-local binding is not a WF module ABI. The lockfile, compiler identity,
+scalar flags, emitted IR, binding and static archive remain in the artifact.
 
 Input generation, independent expected results, output allocation/initialization
 and full-result checks are outside the timed call. Every invocation has its own
@@ -680,12 +701,14 @@ scalar timing object. Each backend/width qualifier then checks 780 batches /
 270,660 output positions, exactly-once callback indices, joined callback tails,
 and immutable inputs across five shapes, uneven sizes and four grains.
 Sanitized copies cover the C/C++ host, scalar work, adapters, recovered/static
-runtimes and Parlay headers; the linked oneTBB shared library remains an
-ordinary scalar Release build. Sixteen sanitized cadence smokes additionally
+runtimes and Parlay headers; the linked oneTBB shared library and Rayon static
+archive remain ordinary scalar Release builds. Twenty-four sanitized cadence smokes additionally
 exercise the timed-host buffer lifecycle across all backends and cadences.
 These checks do not substitute for upstream
 library suites. The driver validates all raw row identities and retains
 source/object/library hashes, flags, qualification logs and host topology.
+Child or row-contract failure prints the raw record and failing path before
+exiting, so a failed gate preserves the evidence without rerunning the sample.
 
 Fetch dependencies explicitly before the offline build, as with Cargo's
 recorded dependencies:
@@ -702,13 +725,18 @@ one common recorded CPU mask for all controls. The calibration varies record
 count, length, valid/early-invalid/late-invalid/skewed work, and record grain
 at the same widths. All thirty original input/grain cells run checked and dense;
 three discriminating cells additionally run both sleep intervals, preserving
-their input seeds. Five passes over 66 cadence cells and twelve backend/width
-configurations yield 3,960 processes / 39,240 calls. The gate runs the original
-three smoke inputs at all four cadences: 144 processes / 432 calls. Treat these
+their input seeds. Five passes over 66 cadence cells and eighteen backend/width
+configurations yield 5,940 processes / 58,860 calls. The gate runs the original
+three smoke inputs at all four cadences: 216 processes / 648 calls. Treat these
 as same-host screens; worker affinity within the mask, sustained idle costs
-and held-out confirmation require further work.
+and held-out confirmation require further work. The Linux scheduler job selects
+the explicit C/C++ target `-march=x86-64-v3`; the Rust scheduler library and
+oneTBB library use their default host targets. The explicit target avoids
+Clang 18's invalid AVX10 combination inferred by `-march=native` on one CI
+host; strict warnings and scalar controls remain enabled. New measurements
+are not pooled with the earlier native-target cohort.
 
-The scheduler header, common callback/host, four adapters and two shell drivers
+The scheduler header, common callback/host, adapters, locked Rayon crate and two shell drivers
 belong to this mechanism experiment. Retain them while common-code attribution
 is needed; consolidate them when a broader maintained compute harness provides
 the same boundary. The extracted oracle remains shared with the real WF host.

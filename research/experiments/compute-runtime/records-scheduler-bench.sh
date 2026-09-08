@@ -12,11 +12,11 @@ results=${RESULTS:-$OUT/scheduler-$mode-$$}
 test ! -e "$results"
 test -s "$OUT/scheduler-flags.txt"
 test -s "$OUT/scheduler-deps/metadata.txt"
-for unit in host native oracle work floor runtime wf-adapter static-adapter tbb-adapter parlay-adapter; do
+for unit in host native oracle work floor runtime wf-adapter static-adapter tbb-adapter parlay-adapter rayon-join-adapter rayon-iter-adapter; do
     test -s "$OUT/scheduler-$unit.o"
 done
 for unit in native work; do test -s "$OUT/scheduler-$unit.s"; done
-for scheduler in wf static tbb parlay; do test -x "$OUT/scheduler-$scheduler"; done
+for scheduler in wf static tbb parlay rayon-join rayon-iter; do test -x "$OUT/scheduler-$scheduler"; done
 # Both common C computation and C++ dispatch are ordinary scalar release builds.
 awk '
     /^C: / || /^C\+\+: / {
@@ -31,7 +31,7 @@ printf '%s\n' "$results" > "$OUT/last-scheduler-$mode-path.txt"
 {
     printf 'mode=%s rounds=%s kernel=scalar-records-state\n' "$mode" "$rounds"
     printf '%s\n' 'common_leaf=scheduler-native.o common_callback=scheduler-work.o' \
-        'measured_executables=scheduler-wf,scheduler-static,scheduler-tbb,scheduler-parlay' \
+        'measured_executables=scheduler-wf,scheduler-static,scheduler-tbb,scheduler-parlay,scheduler-rayon-join,scheduler-rayon-iter' \
         'interval=joined-dispatch first=lazy-start warm=separate post-timing-capacity=excluded' \
         'outputs=distinct-preallocated-per-call batch=all-calls-and-gaps final-verification=excluded'
     git rev-parse HEAD
@@ -51,9 +51,11 @@ printf '%s\n' "$results" > "$OUT/last-scheduler-$mode-path.txt"
     shasum -a 256 records_scheduler.cpp records_scheduler.h records_work.c records_native.c records_native.h \
         records_oracle.c records_runtime.c records_static.c records_tbb.cpp records_parlay.cpp \
         runtime.c runtime.h records-scheduler-bench.sh records-scheduler-deps.sh Makefile \
-        records.c records.wf records_host.ll ../../../compiler/src/backend/wf_floor.c
+        records.c records.wf records_host.ll ../../../compiler/src/backend/wf_floor.c \
+        records_rayon.c records-rayon/Cargo.toml records-rayon/Cargo.lock records-rayon/adapter.rs
     shasum -a 256 "$OUT"/scheduler-*.o "$OUT"/scheduler-*.s "$OUT/scheduler-flags.txt" \
-        "$OUT/scheduler-wf" "$OUT/scheduler-static" "$OUT/scheduler-tbb" "$OUT/scheduler-parlay"
+        "$OUT/scheduler-wf" "$OUT/scheduler-static" "$OUT/scheduler-tbb" "$OUT/scheduler-parlay" \
+        "$OUT/scheduler-rayon-join" "$OUT/scheduler-rayon-iter"
     find "$OUT/scheduler-deps" -type f -exec shasum -a 256 {} +
 } > "$results/manifest.txt"
 git diff --binary HEAD > "$results/source.patch"
@@ -64,6 +66,8 @@ wf wf-runtime 0
 static static-spin 1
 tbb oneTBB-v2023.1.0-auto-grain1 0
 parlay parlay-native-grain1 1
+rayon-join rayon-1.12.0-join 0
+rayon-iter rayon-1.12.0-par-iter 0
 CONFIG
 while read -r scheduler backend width shutdown; do
     qualifier="$OUT/scheduler-$scheduler-check-w$width.log"
@@ -143,9 +147,14 @@ while read -r shape count limit grain seed cadence; do
         ' "$results/configurations.txt" > "$results/order.txt"
         while read -r scheduler backend width shutdown; do
             file="$results/$shape-n$count-l$limit-g$grain-$cadence-$scheduler-w$width-p$pass.tsv"
-            WF_WORKERS="$width" "$OUT/scheduler-$scheduler" "$width" "$count" "$limit" "$shape" \
-                "$grain" "$reps" "$seed" "$pass" "$cadence" > "$file" 2>&1
-            awk -F '\t' -v backend="$backend" -v width="$width" -v shape="$shape" -v count="$count" \
+            if WF_WORKERS="$width" "$OUT/scheduler-$scheduler" "$width" "$count" "$limit" "$shape" \
+                "$grain" "$reps" "$seed" "$pass" "$cadence" > "$file" 2>&1; then :; else
+                status=$?
+                printf 'scheduler child rejected: status=%s file=%s\n' "$status" "$file" >&2
+                cat "$file" >&2
+                exit "$status"
+            fi
+            if awk -F '\t' -v backend="$backend" -v width="$width" -v shape="$shape" -v count="$count" \
                 -v limit="$limit" -v grain="$grain" -v chunks="$chunks" -v seed="$seed" -v pass="$pass" \
                 -v reps="$reps" -v shutdown="$shutdown" -v expected_bytes="$input_bytes" \
                 -v cadence="$cadence" -v requested_gap="$requested_gap" -v checks="$checks" '
@@ -213,7 +222,12 @@ while read -r shape count limit grain seed cadence; do
                     printf "\t%s\t%.0f\t%.3f\t%.0f\t%.0f",cadence,requested_gap,gap_sum/reps,gap_minimum,gap_maximum;
                     printf "\t%.0f\t%.0f\t%.0f\t%.0f\t%.0f\t%.0f\t%.0f\t%d\n",totals[4],totals[5],totals[6],totals[5]+totals[6],totals[7],totals[8],totals[9],checks;
                 }
-            ' "$file" >> "$results/summary.tsv"
+            ' "$file" >> "$results/summary.tsv"; then :; else
+                status=$?
+                printf 'scheduler row contract rejected: status=%s file=%s\n' "$status" "$file" >&2
+                cat "$file" >&2
+                exit "$status"
+            fi
             if test -z "$input_bytes"; then
                 input_bytes=$(awk -F '\t' 'NR==3 { print $5 }' "$file")
                 printf '%s\t%s\t%s\t%s\t%s\n' "$shape" "$count" "$limit" "$seed" "$input_bytes" >> "$results/input-bytes.tsv"
@@ -223,7 +237,7 @@ while read -r shape count limit grain seed cadence; do
         pass=$((pass+1))
     done
 done < "$results/cells.txt"
-expected=$((cell*12*rounds))
+expected=$((cell*18*rounds))
 test "$processes" -eq "$expected"
 test "$(wc -l < "$results/summary.tsv")" -eq "$((expected+1))"
 printf 'record scheduler %s PASS: processes=%s results=%s\n' "$mode" "$processes" "$results"
