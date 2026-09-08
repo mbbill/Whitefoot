@@ -379,8 +379,6 @@ int wf__main_body(int argc,char **argv) {
     }
 #if WF_COMPUTE_STATS
     if(parallel_form && requested==4 && !exhaust)require(total_steals>0,"parallel actualization");
-    if((native_kind==7 || native_kind==8) && requested==4 && spawn_depth)
-        require(total_migrated>0,"Rayon branch migration witness");
     if(!parallel_form && !native_wf)require(total_steals==0,"sequential task exclusion");
 #else
     if((parallel_form || (native_wf && spawn_depth)) && requested==4)require(wf_compute_worker_count()==4,"four-worker startup");

@@ -11,9 +11,14 @@ This investigation starts at main revision
 `6cc00984415a39c507fa74897c9269b10beebfee`. The source audit below identifies a
 recovery control, now implemented and locally qualified in the
 [compute runtime experiment](../../experiments/compute-runtime/README.md).
-The normal compiler link path is unchanged, and no new performance result is
-claimed. The [WF workload coverage](WORKLOADS.md) and
-[reference matrix](BASELINES.md) define the broader comparison still to build.
+The normal compiler link path is unchanged. The experiment retains qualified
+workloads, native references and dated performance results. The
+[WF workload coverage](WORKLOADS.md) and [reference matrix](BASELINES.md)
+distinguish that evidence from broader comparisons still missing.
+Further compiler scheduling-policy development is deferred: existing opt-in
+controls remain experimental, with no selected universal grain or new default.
+The immediate integration scope is the measured compute foundation and its
+test/reference tools, before returning to I/O execution design.
 The separate
 [I/O investigation, PR #26](https://github.com/mbbill/Whitefoot/pull/26), is
 paused and retains its implementation and measurements. Its stackless path is

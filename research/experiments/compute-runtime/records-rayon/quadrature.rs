@@ -166,6 +166,13 @@ fn adaptive<const PARALLEL: bool, const LEFT_OFFER: bool>(
     if !PARALLEL {
         return Result::merge(run_left(), run_right(), false);
     }
+    join_results::<LEFT_OFFER>(run_left, run_right)
+}
+
+fn join_results<const LEFT_OFFER: bool>(
+    run_left: impl FnOnce() -> Result + Send,
+    run_right: impl FnOnce() -> Result + Send,
+) -> Result {
     #[cfg(feature = "quadrature-stats")]
     let owner = std::thread::current().id();
     let observe = |result: Result| {
@@ -183,6 +190,38 @@ fn adaptive<const PARALLEL: bool, const LEFT_OFFER: bool>(
         rayon::join(|| observe(run_left()), || observe(run_right()))
     };
     Result::merge(left, right, true)
+}
+
+#[cfg(all(test, feature = "quadrature-stats"))]
+#[test]
+fn fork_join_migration_witness() {
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(2)
+        .build()
+        .unwrap();
+    let barrier = std::sync::Barrier::new(2);
+    for left_offer in [false, true] {
+        let result = pool.install(|| {
+            let left = || {
+                barrier.wait();
+                Result::leaf(1.0)
+            };
+            let right = || {
+                barrier.wait();
+                Result::leaf(2.0)
+            };
+            // The first closure waits for the offered closure. With two
+            // otherwise free workers, progress requires an actual handoff.
+            // Exercise the same join and migration accounting as the kernel.
+            if left_offer {
+                join_results::<true>(left, right)
+            } else {
+                join_results::<false>(left, right)
+            }
+        });
+        assert_eq!(result.value, 3.0);
+        assert_eq!((result.nodes, result.forks, result.migrated), (3, 1, 1));
+    }
 }
 
 // The caller participates as worker zero: width4 means it plus three helpers.

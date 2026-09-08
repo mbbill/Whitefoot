@@ -76,7 +76,6 @@ NR==2 {
     if (field($4,"outputs=")!=count*calls || field($5,"stats=")!=stats ||
         field($6,"steals=")!=steals || field($7,"migrated=")!=migrated) bad("footer totals")
     if (stats && parallel && width==4 && mode!="exhaust" && !steals) bad("no actual steal")
-    if (stats && rayon && width==4 && spawn && !migrated) bad("no Rayon migration")
     footer=1;next
 }
 /^# worker_nodes / {

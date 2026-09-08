@@ -3097,7 +3097,32 @@ Single-worker and zero-cut forms credit only worker0. A maintained Rust
 broadcast test credits four distinct amounts on four workers, verifies their
 index identities and reset, independently of the recursive aggregate count.
 Maintained negative reports reject incorrect totals, inactive-worker work,
-missing rows and wrong call identities. Existing migration checks remain.
+missing rows and wrong call identities. Per-call migration/work consistency
+checks remain; the schedule-independent capability check is described below.
+
+The `05649749` [macOS research job](https://github.com/mbbill/Whitefoot/actions/runs/34274301809/job/102223392979)
+exposed `Rayon branch migration witness`: its short calls completed without
+any migrated branch. Requiring positive migration in every small benchmark
+process was incorrect. [Rayon join](https://docs.rs/rayon/1.12.0/rayon/fn.join.html)
+permits local execution when the offered branch is not stolen. The earlier
+failures without forwarded stderr remain unclassified; this diagnosis applies
+to the failure whose actual diagnostic is retained.
+
+Positive migration is now tested through the kernel's shared `join_results`
+helper in an otherwise idle two-worker pool. The first closure waits at a
+two-party barrier, so the offered closure must run on the other worker before
+the pair can finish. Both publication directions require exactly one migrated
+branch and the exact combined result/node/fork counts. Blocking is confined
+to this controlled test, not benchmark computation. The separate worker-label
+broadcast/reset test remains. Normal reports allow an all-local schedule;
+they still require exact results, work/fork counts, worker conservation and
+agreement between helper work and migration. A maintained all-local report
+checks acceptance, and a report with helper work but zero migration must
+reject for that specific inconsistency. This replaces a probabilistic
+actualization assertion with a controlled path check; no numerical, memory,
+resource-exhaustion or work-conservation check is removed. The extracted
+helper may affect code layout, so earlier timing results stay bound to their
+original images rather than being assigned to this repair.
 
 These are computation-node counts, not equally expensive instructions, task
 durations, upstream internal jobs or OS context switches. The added worker

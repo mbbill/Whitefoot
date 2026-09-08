@@ -174,7 +174,7 @@ quadrature-build: $(WFC) quadrature-deps
 check-quadrature: quadrature-build
 	RUSTFLAGS='$(QUADRATURE_RUST_FLAGS)' cargo test --locked --offline --release \
 		--manifest-path records-rayon/Cargo.toml --target-dir "$(OUT)/quadrature/rayon-sanitized" \
-		--features quadrature-stats quadrature::work::worker_counter_identity_and_reset -- --exact
+		--features quadrature-stats quadrature::
 	@set -e; for image in ordinary sanitized; do for width in 1 4; do for variant in $(QUADRATURE_FORMS); do \
 		form=$${variant%-d*}; spawn=0; set -- $$form; case $$variant in *-d*) spawn=$${variant##*-d}; set -- $$form $$spawn;; esac; \
 		log="$(OUT)/quadrature/check-$$image-w$$width-$$variant.tsv"; \
@@ -193,11 +193,15 @@ check-quadrature: quadrature-build
 		awk -v mode=exhaust -v form=$$form -v spawn=$$spawn -v width=4 -v stats=$$stats -f quadrature.awk "$$log"; \
 		grep -E '^# quadrature PASS: outputs=20 stats=[01] steals=0 migrated=0$$' "$$log"; \
 	done; done
-	@awk '!/^#/ {$$19=0} /^# quadrature PASS:/ {$$7="migrated=0"} {print}' "$(OUT)/quadrature/check-sanitized-w4-rayon-d8.tsv" > "$(OUT)/quadrature/negative-rayon-migration.tsv"
+	@awk '!/^#/ {$$19=0;n=$$17} /^# worker_nodes / {$$5="w0=" n;$$6="w1=0";$$7="w2=0";$$8="w3=0"} /^# quadrature PASS:/ {$$7="migrated=0"} {print}' \
+		"$(OUT)/quadrature/check-sanitized-w4-rayon-d8.tsv" > "$(OUT)/quadrature/serial-rayon-schedule.tsv"
+	@awk -v mode=check -v form=rayon -v spawn=8 -v width=4 -v stats=1 -f quadrature.awk "$(OUT)/quadrature/serial-rayon-schedule.tsv"
+	@sed '/^# worker_nodes input=smooth call=0 /s/w0=59 w1=0/w0=58 w1=1/' "$(OUT)/quadrature/serial-rayon-schedule.tsv" > "$(OUT)/quadrature/negative-rayon-migration.tsv"
 	@if awk -v mode=check -v form=rayon -v spawn=8 -v width=4 -v stats=1 -f quadrature.awk \
 		"$(OUT)/quadrature/negative-rayon-migration.tsv" > "$(OUT)/quadrature/negative-rayon-migration.tsv.log" 2>&1; then \
-		echo 'quadrature accepted absent Rayon migration' >&2; exit 1; \
+		echo 'quadrature accepted helper work without Rayon migration' >&2; exit 1; \
 	fi
+	@grep -Fx 'quadrature report: worker migration witness' "$(OUT)/quadrature/negative-rayon-migration.tsv.log"
 	@printf 'unexpected diagnostic\n' > "$(OUT)/quadrature/negative-diagnostic.stderr"
 	@set -e; good="$(OUT)/quadrature/check-sanitized-w1-rayon-d4.tsv"; \
 	for mutation in worker-total worker-width worker-missing worker-identity; do \

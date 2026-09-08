@@ -63,7 +63,9 @@ against generated leaf on M1 and31.7-34.5% in the subsequent Linux VM panel;
 strongest-reference wins remain mixed. This is not a selected depth or
 a public ABI change. Reciprocal recursive Rayon and its Rust sequential
 kernel now extend the qualified M1 and Linux compute matrices. A subsequent
-full gate passes; earlier intermittent research failures remain unexplained.
+full gate passes; a later diagnosed short-Rayon migration assertion is replaced
+by a controlled fork/join witness. Earlier failures without diagnostics remain
+unclassified.
 The independent
 [frontier work model](../../experiments/compute-runtime/README.md#recursive-frontier-work-model)
 exposes coarse-grain skew limits but does not explain fork-direction asymmetry.

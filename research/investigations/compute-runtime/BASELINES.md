@@ -38,8 +38,11 @@ adds both fork directions and a Rust sequential kernel control. M1 correctness
 is qualified; replacing aggregate recursive arguments with scalars removes
 the initial large sequential-kernel gap. The configured Linux compute matrix
 also passes, including its exact lifecycle reports. A subsequent full gate
-passes without reproducing the earlier research failures, whose cause remains
-unverified. Diagnostic [worker-node attribution](../../experiments/compute-runtime/README.md#rayon-worker-work-attribution)
+passes without reproducing the earlier research failures. A later diagnosed
+macOS failure exposed an invalid requirement for every short Rayon process
+to migrate work; a controlled fork/join test replaces that timing-dependent
+assertion. Earlier failures lacking diagnostics remain unclassified.
+Diagnostic [worker-node attribution](../../experiments/compute-runtime/README.md#rayon-worker-work-attribution)
 now measures the Rust/Rayon controls' actual work distribution separately from
 ordinary timing. Broader Rayon tuning,
 alternative TBB contexts/APIs, held-out tuning and
