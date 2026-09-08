@@ -80,11 +80,11 @@ struct Input {
     }
 };
 struct Capacity {
-    unsigned width;
+    unsigned width, iterations;
     std::atomic<unsigned> active{0}, peak{0}, completed{0};
     std::mutex mutex;
     std::set<std::thread::id> threads;
-    explicit Capacity(unsigned value) : width(value) {}
+    Capacity(unsigned value, unsigned work) : width(value), iterations(work) {}
 };
 static void capacity_chunk(void *opaque, size_t i) {
     auto &probe = *static_cast<Capacity *>(opaque);
@@ -94,15 +94,18 @@ static void capacity_chunk(void *opaque, size_t i) {
     while (peak < active && !probe.peak.compare_exchange_weak(peak, active)) {}
     require(active <= probe.width, "callback capacity exceeded");
     volatile uint64_t value = i + 1;
-    for (unsigned work = 0; work < 100000; ++work) value = value * UINT64_C(6364136223846793005) + 1;
+    for (unsigned work = 0; work < probe.iterations; ++work) value = value * UINT64_C(6364136223846793005) + 1;
     probe.active.fetch_sub(1);
     probe.completed.fetch_add(1);
 }
 static unsigned capacity_check(unsigned width) {
     auto caller = std::this_thread::get_id();
+    // Fixed finite waves expose overlap despite delayed worker dispatch.
+    // No callback waits for another index or a measured timing threshold.
+    const unsigned iterations[] = {100000, 1000000, 10000000};
     struct Observation { size_t threads; unsigned peak; bool caller; } observations[3]{};
     for (unsigned wave = 1; wave <= 3; ++wave) {
-        Capacity probe(width);
+        Capacity probe(width, iterations[wave - 1]);
         records_scheduler_run(width, width * 32, capacity_chunk, &probe);
         require(probe.completed.load() == width * 32 && probe.active.load() == 0, "capacity completion");
         require(probe.threads.size() <= width, "excess participant threads");
@@ -112,8 +115,8 @@ static unsigned capacity_check(unsigned width) {
     }
     for (unsigned wave = 1; wave <= 3; ++wave) {
         auto observed = observations[wave - 1];
-        std::fprintf(stderr, "record scheduler capacity: backend=%s requested=%u wave=%u threads=%zu peak=%u caller=%u\n",
-                     records_scheduler_name(), width, wave, observed.threads, observed.peak, unsigned(observed.caller));
+        std::fprintf(stderr, "record scheduler capacity: backend=%s requested=%u wave=%u iterations=%u threads=%zu peak=%u caller=%u\n",
+                     records_scheduler_name(), width, wave, iterations[wave - 1], observed.threads, observed.peak, unsigned(observed.caller));
     }
     require(false, "full capacity was not observed with finite CPU callbacks");
     return 0;

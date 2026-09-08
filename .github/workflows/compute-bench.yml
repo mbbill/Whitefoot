@@ -91,6 +91,9 @@ jobs:
         if: always()
         with:
           name: compute-${{ matrix.workload }}-linux
+          # The scheduler manifest hashes Cargo's hidden build fingerprints.
+          # These paths contain generated experiment output, not source caches.
+          include-hidden-files: true
           path: |
             ${{ runner.temp }}/compute-${{ matrix.workload }}-build.log
             ${{ runner.temp }}/compute-${{ matrix.workload }}/calibration/

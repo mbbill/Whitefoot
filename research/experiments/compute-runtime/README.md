@@ -703,11 +703,17 @@ Every process additionally requires a finite-work participation witness with
 exactly the requested distinct threads, including the caller, and simultaneous
 callback activity at that width. Benchmark witnesses run **after** timing and
 are reported separately; they do not prove full utilization on every measured
-call. Up to three explicit witness waves accommodate lazy startup. A blocking
+call. Up to three explicit witness waves use 100,000, 1,000,000 and 10,000,000
+dependent arithmetic iterations per callback, retaining 32 callbacks per
+requested worker. Longer finite work gives delayed workers an opportunity to
+overlap; the same full-width predicate applies in every wave. This addresses
+the observed static-pool case where all four threads participated but three
+identical short waves never overlapped four callbacks. It neither changes a
+measured sample nor retries one. A blocking
 cross-index barrier was rejected as a capacity probe: schedulers are allowed
 to execute independent indices sequentially, and Parlay's cold elastic startup
 can delay helper participation. No measured callback waits for another index.
-If all three waves fail, stderr retains each wave's distinct-thread count,
+If all three waves fail, stderr retains each wave's iteration count, distinct-thread count,
 peak callback activity and caller participation. Peak activity includes
 preempted callbacks; the witness does not establish physical CPU simultaneity.
 
@@ -749,9 +755,13 @@ A separate Linux x86_64 ASan executable injects a 257-byte C allocation after
 full qualification. The gate first requires the actual additional allocation
 report and then requires the normal checker to reject it. A missing injection,
 earlier functional failure or unrelated sanitizer failure cannot satisfy that
-negative check. Native Linux execution of this new boundary remains to be
-qualified; archived-report replay and a macOS check cannot establish it. A
-failed qualification does not produce an accepted scheduler calibration.
+negative check. The
+[`d6fcc9a5` Linux run](https://github.com/mbbill/Whitefoot/actions/runs/34186079602)
+qualified all 42 normal reports, including 14 actual Rayon exit-23 reports.
+The additional allocation produced 2,161 bytes in three allocations and the
+normal checker rejected it specifically as an extra allocation. That run later
+failed the static width-four capacity witness, so it has no accepted calibration.
+A failed qualification does not produce an accepted scheduler calibration.
 
 Fetch dependencies explicitly before the offline build, as with Cargo's
 recorded dependencies:
