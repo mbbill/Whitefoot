@@ -2002,7 +2002,11 @@ pub(crate) fn visit_read_bindings(
         | CheckedExpression::DerefAddressed { binding, .. } => note(*binding),
         CheckedExpression::BorrowAddressed { root, .. }
         | CheckedExpression::ContainerMeasure { root, .. }
-        | CheckedExpression::ReadStorage { root, .. } => note(root.binding),
+        | CheckedExpression::ReadStorage { root, .. } => {
+            if let Some(binding) = root.binding() {
+                note(binding);
+            }
+        }
         CheckedExpression::BorrowBuffer { root, .. }
         | CheckedExpression::BufferMeasure { root, .. }
         | CheckedExpression::BufferIndex { root, .. } => note(root.binding),
@@ -2022,7 +2026,11 @@ pub(crate) fn visit_read_bindings(
             }
             CheckedSliceSource::Buffer(root) => note(root.binding),
             CheckedSliceSource::ArenaContent { binding, .. } => note(*binding),
-            CheckedSliceSource::Run(root) => note(root.binding),
+            CheckedSliceSource::Run(root) => {
+                if let Some(binding) = root.binding() {
+                    note(binding);
+                }
+            }
             CheckedSliceSource::ViewHolder { binding, .. } => note(*binding),
         },
         _ => {}
@@ -2206,7 +2214,10 @@ pub(super) fn rooted_container_place(
     root: &super::model::CheckedContainerRoot,
 ) -> ResolvedPlace {
     let mut projections = Vec::new();
-    if places.is_holder(root.binding) {
+    if root
+        .binding()
+        .is_some_and(|binding| places.is_holder(binding))
+    {
         projections.push(super::places::PlaceProjection::Deref);
     }
     projections.extend(root.path.iter().map(|step| match step {
@@ -2219,7 +2230,7 @@ pub(super) fn rooted_container_place(
         }
     }));
     places.resolve_projected(&super::places::ProjectedPlaceTerm {
-        root: PlaceRoot::Binding(root.binding),
+        root: root.root,
         projections,
     })
 }

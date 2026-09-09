@@ -14,6 +14,7 @@ mod model;
 pub(crate) mod permission;
 mod permission_ledger;
 mod places;
+pub(crate) use places::PlaceRoot as CheckedPlaceRoot;
 mod postcondition;
 mod staged_permission;
 mod target_action;

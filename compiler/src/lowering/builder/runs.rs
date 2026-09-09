@@ -510,15 +510,18 @@ impl IrBuilder<'_> {
         &mut self,
         root: &CheckedContainerRoot,
     ) -> Result<IrValueId, LoweringFailure> {
+        let Some(binding) = root.binding() else {
+            return self.lower_place_address(root);
+        };
         if self
             .bindings
-            .get(&root.binding)
+            .get(&binding)
             .copied()
             .is_some_and(|storage| matches!(self.value_type(storage), Ok(IrType::Address(_))))
         {
             return self.lower_place_address(root);
         }
-        let value = self.binding_value(root.binding)?;
+        let value = self.binding_value(binding)?;
         let value = self.project_place_path(value, &root.path)?;
         if self.value_type(value)? != lower_type(self.erasure, root.ty)? {
             return Err(LoweringFailure::InvalidCheckedProgram);

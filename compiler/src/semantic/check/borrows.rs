@@ -204,6 +204,10 @@ pub(super) struct BorrowInfo {
     pub(super) region: DeclarationId,
     pub(super) place: ResolvedPlace,
     pub(super) origin_region: Option<DeclarationId>,
+    /// A signature candidate is a loan ceiling, not the exact value returned.
+    /// Only an exact place may transfer its value facts or receive a strong
+    /// update of its contained ownership state.
+    pub(super) exact_place: bool,
 }
 
 /// A non-escaping argument temporary and the holder its child suspends.
@@ -388,6 +392,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut ty = bindings
             .get(&place.root)
             .map(|binding| binding.ty)
+            .or_else(|| {
+                self.constants
+                    .get(&place.root)
+                    .and_then(|id| self.checked_constants.get(id.0 as usize))
+                    .map(|constant| constant.ty)
+            })
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let mut fields = Vec::new();
         for field in place.field_prefix() {
@@ -421,6 +431,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         place: &ResolvedPlace,
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<Vec<CheckedStatePath>, CheckStop> {
+        if self.constants.contains_key(&place.root) {
+            return Ok(Vec::new());
+        }
         let canonical = self.state_path(place, bindings)?;
         let binding = bindings
             .get(&place.root)
@@ -935,8 +948,9 @@ absent when it writes none",
     ///
     /// A Box borrow addresses the pointer slot in its owner, so reads and
     /// replacement through the holder share that storage [OWN-5, TYPE-7].
-    /// Legacy buffer/view descriptors and opaque system resources retain
-    /// their value representation.
+    /// Legacy buffer/view descriptors retain their value representation.
+    /// Opaque system resources use their separate owner-slot borrow form;
+    /// that form also preserves caller storage for replacement.
     pub(super) fn borrow_addresses_storage(&self, ty: CheckedType) -> Result<bool, CheckStop> {
         Ok(match ty {
             CheckedType::Nominal(nominal) => matches!(
@@ -982,6 +996,7 @@ absent when it writes none",
             region,
             place: ResolvedPlace::fields(parameter.declaration, Vec::new()),
             origin_region: Some(region),
+            exact_place: true,
         })
     }
 
@@ -1065,6 +1080,68 @@ inside the `region` block whose region it takes",
             return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, pbase);
         }
         let root_use = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
+        if let ResolvedTarget::Source {
+            declaration,
+            class: DeclarationClass::NamedConst,
+        } = root_use.target()
+        {
+            if kind == BorrowKind::Unique {
+                return self.issue_node(
+                    SemanticRule::Const2,
+                    node,
+                    SemanticIssueKind::ImmutableSetTarget,
+                );
+            }
+            let constant_id = *self
+                .constants
+                .get(&declaration)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let constant = self.constant(constant_id)?;
+            let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
+            // A descriptor-free constant run is not an ordinary in-memory
+            // FixedVector descriptor. Scalar projection is unchanged, but
+            // borrowing the complete value needs a representation adapter.
+            if suffixes.is_empty() && constant.declared_type != constant.ty {
+                return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
+            }
+            let (path, ty, offsets) = self.resolve_storage_path(
+                &suffixes,
+                constant.ty,
+                bindings,
+                function,
+                loop_depth,
+                true,
+            )?;
+            if !self.borrow_addresses_storage(ty)? {
+                return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
+            }
+            let mut place = ResolvedPlace::fields(declaration, Vec::new());
+            place.extend_storage(&path);
+            let borrow = BorrowInfo {
+                kind,
+                region,
+                place,
+                origin_region: None,
+                exact_place: true,
+            };
+            return Ok(TypedExpression {
+                expression: CheckedExpression::BorrowAddressed {
+                    carrier: self.tree.path(carrier)?.clone(),
+                    root: CheckedContainerRoot {
+                        root: crate::semantic::CheckedPlaceRoot::Constant(constant_id),
+                        path,
+                        ty,
+                    },
+                },
+                mode: borrow.mode(),
+                borrow: Some(borrow),
+                slice: None,
+                holder: None,
+                reference_value: true,
+                effects: offsets.effects,
+                accesses: offsets.accesses,
+            });
+        }
         let ResolvedTarget::Source {
             declaration,
             class: DeclarationClass::Value,
@@ -1142,6 +1219,7 @@ inside the `region` block whose region it takes",
             region,
             place,
             origin_region: None,
+            exact_place: true,
         };
         let slice = local.slice.clone();
         let expression = match ty {
@@ -1200,7 +1278,7 @@ inside the `region` block whose region it takes",
             _ if self.borrow_addresses_storage(ty)? => CheckedExpression::BorrowAddressed {
                 carrier: self.tree.path(carrier)?.clone(),
                 root: CheckedContainerRoot {
-                    binding: local.binding,
+                    root: crate::semantic::CheckedPlaceRoot::Binding(local.binding),
                     path,
                     ty,
                 },
@@ -1623,6 +1701,7 @@ and name it on the returned reborrow"
             region,
             place,
             origin_region: parent.origin_region,
+            exact_place: parent.exact_place,
         };
         // The reborrowed descriptor reaches the same storage its parent does,
         // so the child's origin set is the parent's own [VIEW-2].

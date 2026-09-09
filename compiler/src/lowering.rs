@@ -1355,6 +1355,11 @@ pub enum IrOperation {
         value: IrValueId,
         referent: IrAddressed,
     },
+    /// Address of immutable program-lifetime storage. It never owns a frame
+    /// slot or participates in local destination reuse.
+    ConstantAddress {
+        constant: IrConstantId,
+    },
     /// A typed child place of an already stable owner or borrow. This keeps
     /// the same backing and lifetime; it does not read or copy its content.
     ProjectAddress {

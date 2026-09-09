@@ -482,6 +482,15 @@ impl LocalBinding {
         right.state_origins = None;
         left.suspended = false;
         right.suspended = false;
+        // Join precision by conjunction below. Borrow holders cannot be
+        // rebound [TYPE-7, SET-1], so a valid loop never changes an existing
+        // header holder's precision; its ordinary equality remains exact.
+        if let Some(borrow) = &mut left.borrow {
+            borrow.exact_place = false;
+        }
+        if let Some(borrow) = &mut right.borrow {
+            borrow.exact_place = false;
+        }
         left == right
     }
 
@@ -489,6 +498,9 @@ impl LocalBinding {
     /// holds for the region remainder, matching [OWN-4]'s named-region
     /// liveness of the borrows that carry it.
     fn merge_region_loans_from(&mut self, other: &Self) {
+        if let (Some(left), Some(right)) = (&mut self.borrow, &other.borrow) {
+            left.exact_place &= right.exact_place;
+        }
         for loan in &other.slice_loans {
             self.push_slice_loan(loan.clone());
         }
@@ -1780,6 +1792,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .first_child_with(node, Production::Type)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let ty = self.parse_const_type(ty_node)?;
+        let declared_type = self.parse_type(ty_node)?;
         let value_node = self
             .tree
             .first_child_with(node, Production::Cvalue)?
@@ -1793,6 +1806,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             id,
             declaration: declaration_id,
             name,
+            declared_type,
             ty,
             value,
         });

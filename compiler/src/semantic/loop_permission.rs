@@ -684,7 +684,7 @@ impl<'check> Survey<'check, '_> {
                     super::model::CheckedPlaceStep::Field(_)
                     | super::model::CheckedPlaceStep::BoxReferent(_) => None,
                 })?;
-                (target.binding, &index.obligation)
+                (target.binding()?, &index.obligation)
             }
             CheckedSetTarget::SliceIndex(target) => (target.root.binding, &target.obligation),
             CheckedSetTarget::Place(_) => return None,
@@ -738,9 +738,9 @@ impl<'check> Survey<'check, '_> {
             // A run's or a bump extent's descriptor storage is the resolved
             // place of the measured value itself [MSR-2].
             CheckedExpression::ContainerMeasure { root, .. }
-            | CheckedExpression::BorrowAddressed { root, .. } => {
-                Some((root.binding, rooted_container_place(self.places, root)))
-            }
+            | CheckedExpression::BorrowAddressed { root, .. } => root
+                .binding()
+                .map(|binding| (binding, rooted_container_place(self.places, root))),
             CheckedExpression::ReadStorage { root, .. } => {
                 let place = rooted_container_place(self.places, root);
                 let index = root.path.iter().rev().find_map(|step| match step {
@@ -749,15 +749,16 @@ impl<'check> Survey<'check, '_> {
                     | super::model::CheckedPlaceStep::BoxReferent(_) => None,
                 });
                 if let Some(index) = index
-                    && let Some(map) = self.proven_affine_map_at(root.binding, &index.obligation)
+                    && let Some(binding) = root.binding()
+                    && let Some(map) = self.proven_affine_map_at(binding, &index.obligation)
                 {
                     self.element_reads.push(ProvenElementRead {
-                        binding: root.binding,
+                        binding,
                         place: place.clone(),
                         map,
                     });
                 }
-                Some((root.binding, place))
+                root.binding().map(|binding| (binding, place))
             }
             CheckedExpression::BufferIndex {
                 root, obligation, ..
@@ -814,9 +815,9 @@ impl<'check> Survey<'check, '_> {
                 CheckedSliceSource::ArenaContent { binding, .. } => {
                     Some((*binding, slice_source_place(self.places, source)))
                 }
-                CheckedSliceSource::Run(root) => {
-                    Some((root.binding, slice_source_place(self.places, source)))
-                }
+                CheckedSliceSource::Run(root) => root
+                    .binding()
+                    .map(|binding| (binding, slice_source_place(self.places, source))),
                 CheckedSliceSource::ViewHolder { binding, .. } => {
                     Some((*binding, slice_source_place(self.places, source)))
                 }

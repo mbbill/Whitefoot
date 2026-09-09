@@ -2046,6 +2046,23 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::AddressOf { value, referent } => {
                 self.emit_address_of(result, ty, *value, *referent)
             }
+            IrOperation::ConstantAddress { constant } => {
+                let global = self
+                    .program
+                    .constant(*constant)
+                    .ok_or(BackendFailure::InvalidIr)?;
+                if !matches!(ty, IrType::Address(referent) if referent.ty() == global.ty()) {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                writeln!(
+                    self.output,
+                    "  {} = getelementptr inbounds {}, ptr {}, i64 0",
+                    self.value_name(result),
+                    llvm_type(self.program, global.ty())?,
+                    constant_symbol(*constant)
+                )
+                .map_err(|_| BackendFailure::TextEmission)
+            }
             IrOperation::ProjectAddress {
                 address,
                 projection,

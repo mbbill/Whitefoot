@@ -46,7 +46,7 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
                             collect_expression(&target.offset, bindings);
                         }
                         CheckedSetTarget::Storage(root) => {
-                            bindings.insert(root.binding);
+                            bindings.extend(root.binding());
                             collect_place(root, bindings);
                         }
                         CheckedSetTarget::SliceIndex(target) => {
@@ -70,7 +70,7 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
                         collect_expression(&target.offset, bindings);
                     }
                     CheckedSetTarget::Storage(root) => {
-                        bindings.insert(root.binding);
+                        bindings.extend(root.binding());
                         collect_place(root, bindings);
                     }
                     CheckedSetTarget::SliceIndex(target) => {
@@ -133,7 +133,7 @@ fn collect_borrowed_place_expression(
         }
         CheckedExpression::BorrowAddressed { root, .. }
         | CheckedExpression::ReadStorage { root, .. } => {
-            bindings.insert(root.binding);
+            bindings.extend(root.binding());
             collect_place(root, bindings);
         }
         CheckedExpression::BoxDeref { value, .. }
@@ -152,14 +152,14 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         }
         CheckedExpression::BorrowAddressed { root, .. }
         | CheckedExpression::ReadStorage { root, .. } => {
-            bindings.insert(root.binding);
+            bindings.extend(root.binding());
             collect_place(root, bindings);
         }
         CheckedExpression::SliceOf {
             source: crate::semantic::CheckedSliceSource::Run(root),
             ..
         } => {
-            bindings.insert(root.binding);
+            bindings.extend(root.binding());
             collect_place(root, bindings);
         }
         CheckedExpression::ContainerMeasure { root, .. } => collect_place(root, bindings),
@@ -218,7 +218,7 @@ fn collect_place(root: &crate::semantic::CheckedContainerRoot, bindings: &mut Ha
             // A Box projection follows the pointer in its actual owner slot,
             // including when only a descriptor measure is read through it.
             crate::semantic::CheckedPlaceStep::BoxReferent(_) => {
-                bindings.insert(root.binding);
+                bindings.extend(root.binding());
             }
             crate::semantic::CheckedPlaceStep::Subscript(subscript) => {
                 collect_expression(&subscript.offset, bindings);
@@ -257,11 +257,27 @@ impl IrBuilder<'_> {
         &mut self,
         root: &crate::semantic::CheckedContainerRoot,
     ) -> Result<IrValueId, LoweringFailure> {
-        let address = self
-            .bindings
-            .get(&root.binding)
-            .copied()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        let address = match root.root {
+            crate::semantic::CheckedPlaceRoot::Binding(binding) => self
+                .bindings
+                .get(&binding)
+                .copied()
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+            crate::semantic::CheckedPlaceRoot::Constant(id) => {
+                let constant = self
+                    .constants
+                    .get(id.0 as usize)
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                let referent =
+                    IrAddressed::of(constant.ty()).ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                self.define(
+                    IrType::Address(referent),
+                    IrOperation::ConstantAddress {
+                        constant: constant.id(),
+                    },
+                )?
+            }
+        };
         let address = self.project_address_path(address, &root.path)?;
         let referent = IrAddressed::of(lower_type(self.erasure, root.ty)?)
             .ok_or(LoweringFailure::InvalidCheckedProgram)?;

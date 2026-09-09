@@ -105,7 +105,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedType::Vector { .. }
             | CheckedType::Extent { .. } => {
                 Ok(CheckedIndexedPlace::Container(CheckedContainerPlace {
-                    root: CheckedContainerRoot { binding, path, ty },
+                    root: CheckedContainerRoot {
+                        root: crate::semantic::CheckedPlaceRoot::Binding(binding),
+                        path,
+                        ty,
+                    },
                     resolved: place.resolved,
                     offsets,
                     holder,

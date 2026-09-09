@@ -523,6 +523,9 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 .cloned()
                 .unwrap_or(OriginSet::Unknown),
             CheckedExpression::BorrowAddressed { root, .. } => {
+                let Some(binding) = root.binding() else {
+                    return Ok(OriginSet::fresh());
+                };
                 let fields = root
                     .path
                     .iter()
@@ -534,7 +537,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                     .collect::<Option<Vec<_>>>();
                 fields.map_or(OriginSet::Unknown, |fields| {
                     environment
-                        .get(&root.binding)
+                        .get(&binding)
                         .cloned()
                         .unwrap_or(OriginSet::Unknown)
                         .projected(&fields)

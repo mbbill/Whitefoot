@@ -145,7 +145,7 @@ impl CheckedIndexedPlace {
         };
         Ok(Self::Container(CheckedContainerPlace {
             root: CheckedContainerRoot {
-                binding: *binding,
+                root: crate::semantic::CheckedPlaceRoot::Binding(*binding),
                 path: fields
                     .iter()
                     .copied()
@@ -231,6 +231,73 @@ impl CheckedIndexedPlace {
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    fn constant_storage_place(
+        &self,
+        constant: super::super::super::model::CheckedConstantId,
+        suffixes: &[NodeId],
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        function: &FunctionSignature,
+        loop_depth: usize,
+        require_named_offsets: bool,
+    ) -> Result<CheckedContainerPlace, CheckStop> {
+        let value = self.constant(constant)?;
+        let (path, ty, offsets) = self.resolve_storage_path(
+            suffixes,
+            value.ty,
+            bindings,
+            function,
+            loop_depth,
+            require_named_offsets,
+        )?;
+        let mut resolved = ResolvedPlace::fields(value.declaration, Vec::new());
+        resolved.extend_storage(&path);
+        Ok(CheckedContainerPlace {
+            root: CheckedContainerRoot {
+                root: crate::semantic::CheckedPlaceRoot::Constant(constant),
+                path,
+                ty,
+            },
+            resolved,
+            holder: None,
+            offsets,
+        })
+    }
+
+    pub(super) fn check_constant_storage_read(
+        &self,
+        node: NodeId,
+        constant: super::super::super::model::CheckedConstantId,
+        suffixes: &[NodeId],
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        function: &FunctionSignature,
+        options: PlaceUseOptions,
+    ) -> Result<TypedExpression, CheckStop> {
+        let place = self.constant_storage_place(
+            constant,
+            suffixes,
+            bindings,
+            function,
+            options.loop_depth,
+            false,
+        )?;
+        if options.explicit_move
+            && place
+                .root
+                .path
+                .iter()
+                .all(|step| matches!(step, CheckedPlaceStep::Field(_)))
+        {
+            return self.issue_node(
+                SemanticRule::Own1,
+                node,
+                SemanticIssueKind::MoveOfCopy {
+                    mechanical_fix: "read the constant's copy scalar without `move`",
+                },
+            );
+        }
+        self.check_storage_read(node, place, bindings, options)
+    }
+
     pub(in crate::semantic::check) fn check_array_new(
         &self,
         node: NodeId,
@@ -1205,6 +1272,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             )?
             .into_element_storage()?;
         if let CheckedIndexedPlace::Container(container) = indexed {
+            if container.root.binding().is_none() {
+                return self.issue_node(
+                    SemanticRule::Const2,
+                    node,
+                    SemanticIssueKind::ImmutableSetTarget,
+                );
+            }
             let container = self.extend_storage_place(
                 container,
                 &suffixes[subscript..],
@@ -1721,7 +1795,29 @@ view",
             }
             DeclarationClass::NamedConst => {
                 if !base_suffixes.is_empty() {
-                    return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
+                    let constant = *self
+                        .constants
+                        .get(&declaration)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    let place = self.constant_storage_place(
+                        constant,
+                        base_suffixes,
+                        bindings,
+                        function,
+                        loop_depth,
+                        true,
+                    )?;
+                    if place.root.measured().is_none() {
+                        return self.issue_node(
+                            SemanticRule::Type5,
+                            anchor,
+                            SemanticIssueKind::type_mismatch(
+                                "an array, buffer, or slice place",
+                                self.checked_type_name(place.root.ty)?,
+                            ),
+                        );
+                    }
+                    return Ok(CheckedIndexedPlace::Container(place));
                 }
                 let id = *self
                     .constants
@@ -1856,7 +1952,11 @@ view",
                     .filter_map(CheckedPlaceStep::place_step)
                     .collect();
                 Ok(CheckedIndexedPlace::Container(CheckedContainerPlace {
-                    root: CheckedContainerRoot { binding, path, ty },
+                    root: CheckedContainerRoot {
+                        root: crate::semantic::CheckedPlaceRoot::Binding(binding),
+                        path,
+                        ty,
+                    },
                     resolved: ResolvedPlace::from_path(declaration, resolved_path),
                     offsets,
                     holder: None,

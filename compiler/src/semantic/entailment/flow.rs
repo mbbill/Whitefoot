@@ -2022,7 +2022,9 @@ impl Analyzer<'_, '_> {
                 self.append_holder_chain(*binding, holders);
             }
             CheckedExpression::BorrowAddressed { root, .. } => {
-                self.append_holder_chain(root.binding, holders);
+                if let Some(binding) = root.binding() {
+                    self.append_holder_chain(binding, holders);
+                }
             }
             CheckedExpression::BorrowBuffer { root, .. }
             | CheckedExpression::BufferMeasure { root, .. } => {
@@ -4336,9 +4338,37 @@ impl Analyzer<'_, '_> {
     // Terms and relations from checked expressions
     // ------------------------------------------------------------------
 
+    /// CONST-2's total field selection substitutes the immutable initializer.
+    /// Preserve that known scalar while reads still carry the constant's
+    /// actual storage identity. A subscript remains an OP-4 operation rather
+    /// than adding a new automatic constant-evaluation family here.
+    fn constant_storage_scalar(&self, expression: &CheckedExpression) -> Option<&CheckedValue> {
+        let CheckedExpression::ReadStorage { root, .. } = expression else {
+            return None;
+        };
+        let PlaceRoot::Constant(id) = root.root else {
+            return None;
+        };
+        let declaration = self.context.constant_declaration(id)?;
+        let mut value = &self.context.constant(declaration)?.value;
+        for step in &root.path {
+            let CheckedPlaceStep::Field(index) = step else {
+                return None;
+            };
+            let CheckedValue::Struct { fields, .. } = value else {
+                return None;
+            };
+            value = fields.get(*index as usize)?;
+        }
+        (self.is_copy(root.ty) && value.ty() == root.ty).then_some(value)
+    }
+
     /// Reads an expression as a term or constant [ENT-2]; anything else is
     /// no operand and establishes or derives nothing.
     fn read_operand(&mut self, expression: &CheckedExpression) -> Option<TermId> {
+        if let Some(value) = self.constant_storage_scalar(expression).cloned() {
+            return self.read_operand(&CheckedExpression::Constant(value));
+        }
         match expression {
             // [MSR-6] a const generic read as a value is the symbolic
             // constant term [ENT-2] clause (c) fixes; a concrete [FN-2]
@@ -4565,6 +4595,9 @@ impl Analyzer<'_, '_> {
         expression: &CheckedExpression,
         admitted_partial: bool,
     ) -> Option<GoalExpression> {
+        if let Some(value) = self.constant_storage_scalar(expression) {
+            return Some(GoalExpression::Datum(GoalDatum::Literal(value.clone())));
+        }
         // A non-consuming place read is admitted by its final copy value, not
         // by the mode of every holder traversed on the way there. In
         // particular, reading through an owning box must retain the box's
@@ -4834,8 +4867,7 @@ impl Analyzer<'_, '_> {
             // quantity the reader row loads.
             CheckedExpression::ContainerMeasure { measure, root } => {
                 let measured = root.measured()?;
-                let argument =
-                    self.goal_binding_place(root.binding, root.goal_projections(), root.ty);
+                let argument = self.goal_container_place(root)?;
                 build_operation(
                     GoalOperation::ContainerMeasure {
                         measure: *measure,
@@ -4858,14 +4890,10 @@ impl Analyzer<'_, '_> {
                     {
                         return None;
                     }
-                    return Some(self.goal_binding_place(
-                        root.binding,
-                        root.goal_projections(),
-                        root.ty,
-                    ));
+                    return self.goal_container_place(root);
                 };
                 let base = CheckedContainerRoot {
-                    binding: root.binding,
+                    root: root.root,
                     path: prefix.to_vec(),
                     ty: index.base_type,
                 };
@@ -4879,8 +4907,7 @@ impl Analyzer<'_, '_> {
                         constant: base.type_constant(),
                     },
                 };
-                let collection =
-                    self.goal_binding_place(base.binding, base.goal_projections(), base.ty);
+                let collection = self.goal_container_place(&base)?;
                 build_operation(
                     row,
                     Vec::new(),
@@ -5082,6 +5109,19 @@ impl Analyzer<'_, '_> {
                 }))
             }
         }
+    }
+
+    fn goal_container_place(&self, root: &CheckedContainerRoot) -> Option<GoalExpression> {
+        Some(match root.root {
+            PlaceRoot::Binding(binding) => {
+                self.goal_binding_place(binding, root.goal_projections(), root.ty)
+            }
+            PlaceRoot::Constant(id) => GoalExpression::Datum(GoalDatum::NamedConst {
+                declaration: self.context.constant_declaration(id)?,
+                projections: root.goal_projections(),
+                ty: root.ty,
+            }),
+        })
     }
 
     fn projected_binding_type(&self, binding: BindingId, fields: &[u32]) -> Option<CheckedType> {
@@ -6574,6 +6614,7 @@ impl Analyzer<'_, '_> {
     /// [MSR-4] disposition rather than admitted unchecked.
     fn non_wrapped_window_goal(&mut self, root: &CheckedContainerRoot) -> Option<ConcreteGoal> {
         let measured = root.measured()?;
+        let argument = self.goal_container_place(root)?;
         let measure = |measure| GoalExpression::Operation {
             row: GoalOperation::ContainerMeasure {
                 measure,
@@ -6584,11 +6625,7 @@ impl Analyzer<'_, '_> {
             type_arguments: Vec::new(),
             const_arguments: Vec::new(),
             result: CheckedType::Integer(IntegerType::U64),
-            arguments: vec![self.goal_binding_place(
-                root.binding,
-                root.goal_projections(),
-                root.ty,
-            )],
+            arguments: vec![argument.clone()],
         };
         Some(ConcreteGoal::new(GoalExpression::Operation {
             row: GoalOperation::Integer {
@@ -7631,7 +7668,10 @@ impl Analyzer<'_, '_> {
         states: &mut ProofFlowState,
     ) -> bool {
         let mut projections = Vec::new();
-        if self.is_holder(root.binding) {
+        if root
+            .binding()
+            .is_some_and(|binding| self.is_holder(binding))
+        {
             projections.push(PlaceProjection::Deref);
         }
         let mut reached = true;
@@ -7648,7 +7688,7 @@ impl Analyzer<'_, '_> {
                         return false;
                     };
                     let base = ProjectedPlaceTerm {
-                        root: PlaceRoot::Binding(root.binding),
+                        root: root.root,
                         projections: projections.clone(),
                     };
                     let reaches_offset = self
@@ -7681,7 +7721,10 @@ impl Analyzer<'_, '_> {
     /// field list.
     fn container_root_path(&self, root: &CheckedContainerRoot) -> ProjectedPlaceTerm {
         let mut projections = Vec::new();
-        if self.is_holder(root.binding) {
+        if root
+            .binding()
+            .is_some_and(|binding| self.is_holder(binding))
+        {
             projections.push(PlaceProjection::Deref);
         }
         projections.extend(root.path.iter().map(|step| match step {
@@ -7692,7 +7735,7 @@ impl Analyzer<'_, '_> {
             }
         }));
         ProjectedPlaceTerm {
-            root: PlaceRoot::Binding(root.binding),
+            root: root.root,
             projections,
         }
     }
@@ -9576,6 +9619,9 @@ impl Analyzer<'_, '_> {
         expression: &CheckedExpression,
         state: &mut AffineFlowState,
     ) -> Option<AffineForm> {
+        if let Some(value) = self.constant_storage_scalar(expression).cloned() {
+            return self.affine_pre_domain_form(&CheckedExpression::Constant(value), state);
+        }
         let mut events = Vec::new();
         self.collect_expression_kills(expression, &mut events);
         if !events.is_empty() {
@@ -10691,6 +10737,9 @@ impl Analyzer<'_, '_> {
         expression: &CheckedExpression,
         state: &mut AffineFlowState,
     ) -> Option<AffineForm> {
+        if let Some(value) = self.constant_storage_scalar(expression).cloned() {
+            return self.affine_pure_expression_form(&CheckedExpression::Constant(value), state);
+        }
         let formed = match expression {
             CheckedExpression::Constant(CheckedValue::Integer { ty, bits })
             | CheckedExpression::NamedConstant {
@@ -11041,7 +11090,7 @@ impl Analyzer<'_, '_> {
                 path.projections
                     .retain(|projection| !matches!(projection, PlaceProjection::Deref));
                 let place = self.render_projected_place(&ProjectedPlaceTerm {
-                    root: PlaceRoot::Binding(root.binding),
+                    root: root.root,
                     projections: path.projections,
                 });
                 return Some(format!("{}({place})", measure.spelling()));

@@ -1857,7 +1857,7 @@ impl<'program> IrBuilder<'program> {
                 nominal,
                 ..
             } => self.lower_place_address(&crate::semantic::CheckedContainerRoot {
-                binding: *binding,
+                root: crate::semantic::CheckedPlaceRoot::Binding(*binding),
                 path: fields
                     .iter()
                     .copied()
@@ -2275,7 +2275,7 @@ impl<'program> IrBuilder<'program> {
                         .map(crate::semantic::CheckedPlaceStep::Field)
                         .collect();
                     let root = crate::semantic::CheckedContainerRoot {
-                        binding: *binding,
+                        root: crate::semantic::CheckedPlaceRoot::Binding(*binding),
                         path,
                         ty: *ty,
                     };

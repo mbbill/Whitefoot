@@ -347,7 +347,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let result_borrow_info = result_candidate
             .and_then(|index| checked_borrows.get(index))
             .cloned()
-            .flatten();
+            .flatten()
+            .map(|mut borrow| {
+                borrow.exact_place = false;
+                borrow
+            });
         let result_borrow =
             if let Some((argument, borrow)) = result_candidate.zip(result_borrow_info.as_ref()) {
                 if let Some(holder) = result_candidate
@@ -366,13 +370,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             .suspended = true;
                     }
                 }
-                let root = bindings
-                    .get(&borrow.place.root)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                    .binding;
+                let root = if let Some(local) = bindings.get(&borrow.place.root) {
+                    crate::semantic::CheckedPlaceRoot::Binding(local.binding)
+                } else if let Some(constant) = self.constants.get(&borrow.place.root) {
+                    crate::semantic::CheckedPlaceRoot::Constant(*constant)
+                } else {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                };
                 Some(CheckedResultBorrow {
                     argument,
-                    binding: root,
+                    root,
                     path: borrow.place.path.clone(),
                 })
             } else {
@@ -428,7 +435,38 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<GoalExpression, CheckStop> {
         if expected_mode != CheckedMode::Own {
             let borrow = passed_borrow.ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            return self.goal_referent_image(&borrow.place, expected_type, bindings);
+            if borrow.exact_place {
+                return self.goal_referent_image(&borrow.place, expected_type, bindings);
+            }
+            // FN-1's candidate protects every mutable origin a returned
+            // borrow may reach, including when the delivered value is a
+            // different immutable constant. ENT-2's value identity is the
+            // actual holder, never that conservative loan ceiling.
+            let place_parent = self
+                .tree
+                .first_child_with(atom, Production::BorrowExpr)?
+                .unwrap_or(atom);
+            let place = self
+                .tree
+                .first_child_with(place_parent, Production::Place)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            if self.call_goal_place_contains_subscript(place)? {
+                return Ok(GoalExpression::Datum(GoalDatum::EvaluatedValue {
+                    function: caller,
+                    occurrence: EvaluatedValueOccurrence::CallArgument {
+                        call: call.clone(),
+                        argument: ordinal,
+                    },
+                    captured_type: expected_type,
+                    projections: Vec::new(),
+                    ty: expected_type,
+                }));
+            }
+            let (image, _) = self.call_goal_place_inner(place, bindings)?;
+            if image.ty() != expected_type {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            }
+            return Ok(image);
         }
 
         if self
@@ -575,7 +613,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                     if let Some(borrow) = &local.borrow {
                         (
-                            self.goal_referent_image(&borrow.place, local.ty, bindings)?,
+                            if borrow.exact_place {
+                                self.goal_referent_image(&borrow.place, local.ty, bindings)?
+                            } else {
+                                GoalExpression::Datum(GoalDatum::Place {
+                                    root: local.binding,
+                                    projections: vec![GoalProjection::Deref],
+                                    ty: local.ty,
+                                })
+                            },
                             true,
                         )
                     } else {

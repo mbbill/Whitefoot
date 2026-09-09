@@ -710,6 +710,9 @@ pub(crate) struct CheckedConstant {
     /// Resolved declaration identity retained for named-const goal leaves.
     pub(crate) declaration: DeclarationId,
     pub(crate) name: String,
+    /// Source value type, before a fixed-run constant's descriptor-free
+    /// dense storage normalization. Borrowing cannot change this identity.
+    pub(crate) declared_type: CheckedType,
     pub(crate) ty: CheckedType,
     pub(crate) value: CheckedValue,
 }
@@ -1340,7 +1343,7 @@ pub(crate) struct CheckedSliceRoot {
 /// constant is stored nowhere at run time.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedContainerRoot {
-    pub(crate) binding: BindingId,
+    pub(crate) root: super::places::PlaceRoot,
     /// The path below the root: field selections and subscripts, in written
     /// order [MSR-1]. `len_of(table[i])` is a term, so a measured place is
     /// not a field path.
@@ -1383,6 +1386,13 @@ pub(crate) struct CheckedPlaceSubscript {
 }
 
 impl CheckedContainerRoot {
+    pub(crate) const fn binding(&self) -> Option<BindingId> {
+        match self.root {
+            super::places::PlaceRoot::Binding(binding) => Some(binding),
+            super::places::PlaceRoot::Constant(_) => None,
+        }
+    }
+
     /// The exact storage projection consumed by [OWN-7] and [ENT-5].
     pub(crate) fn place_path(&self) -> Vec<super::places::PlaceStep> {
         self.path
@@ -1713,17 +1723,17 @@ pub(crate) struct CheckedIntegerArgument {
     pub(crate) source: CheckedIntegerArgumentSource,
 }
 
-/// The caller-side root a bound borrow-mode call result reads and writes
-/// through: the resolved place of the single provenance-candidate actual
-/// [OWN-6, ENT-5]. The record deliberately keeps the complete actual place
-/// even when the callee returned a narrower suffix of it.
+/// The conservative caller storage claim of a bound borrow-mode result:
+/// the complete single provenance-candidate actual [OWN-6, ENT-5]. The
+/// delivered referent may be a narrower suffix or unrelated immutable
+/// constant. This record supports exclusion and kills, never value identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedResultBorrow {
     /// The sole provenance-candidate argument, in declared parameter order.
     /// Lowering retains this relation to the actual argument value rather
     /// than reconstructing an address from the resolved source path.
     pub(crate) argument: usize,
-    pub(crate) binding: BindingId,
+    pub(crate) root: super::places::PlaceRoot,
     pub(crate) path: Vec<super::places::PlaceStep>,
 }
 
@@ -2284,7 +2294,9 @@ impl CheckedSetTarget {
             Self::Place(target) => target.binding,
             Self::ArrayIndex(target) => target.binding,
             Self::BufferIndex(target) => target.root.binding,
-            Self::Storage(target) => target.binding,
+            Self::Storage(target) => target
+                .binding()
+                .expect("checked mutation targets have local roots"),
             Self::SliceIndex(target) => target.root.binding,
         }
     }

@@ -7,18 +7,8 @@ use super::super::model::{
 use super::{assert_rule, assert_rule_kind, with_semantics};
 
 #[test]
-fn nested_constant_array_accesses_keep_explicit_capability_boundaries() {
-    super::assert_unsupported(
-        br#"const rows: array<array<u64, 2>, 1> =[[7_u64, 9_u64]];
-
-command fn main() -> status: own ExitStatus pure {
-  let value = rows[0_u64][1_u64];
-  return exit_status(code: 0_u8);
-}
-"#,
-        crate::UnsupportedSemanticFeature::CompositeValues,
-    );
-    super::assert_unsupported(
+fn nested_constant_arrays_support_typed_reads_and_shared_borrows() {
+    with_semantics(
         br#"const rows: array<array<u64, 2>, 1> =[[7_u64, 9_u64]];
 
 fn read(values: &array<array<u64, 2>, 1>) -> result: own u64 reads(values) {
@@ -26,14 +16,24 @@ fn read(values: &array<array<u64, 2>, 1>) -> result: own u64 reads(values) {
 }
 
 command fn main() -> status: own ExitStatus pure {
+  let direct = rows[0_u64][1_u64];
   region {
     let value = read(values: &rows);
   }
   return exit_status(code: 0_u8);
 }
 "#,
-        crate::UnsupportedSemanticFeature::RegionsAndBorrows,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "constant typed places: {outcome:?}"
+            )
+        },
     );
+}
+
+#[test]
+fn nested_fixed_vector_constants_keep_an_explicit_capability_boundary() {
     super::assert_unsupported(
         br#"const rows: array<FixedVector<u64, 2>, 1> =[[7_u64, 9_u64]];
 
@@ -42,6 +42,103 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         crate::UnsupportedSemanticFeature::CompositeValues,
+    );
+}
+
+#[test]
+fn constant_struct_field_reads_preserve_their_scalar_proof_facts() {
+    for offset in [1_u64, 2_u64] {
+        let source = format!(
+            "struct Limits {{\n  offset: u64;\n}}\n\nstruct Settings {{\n  limits: Limits;\n}}\n\nconst settings: Settings = Settings(limits: Limits(offset: {offset}_u64));\n\ncommand fn main() -> status: own ExitStatus pure {{\n  let values = array_new::<u64, 2>(7_u64);\n  let index = settings.limits.offset;\n  let successor = index + 1_u64;\n  let value = values[index];\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        with_semantics(source.as_bytes(), |outcome| {
+            if offset == 1 {
+                assert!(
+                    matches!(outcome, SemanticOutcome::Complete(_)),
+                    "known scalar field must prove the index: {outcome:?}"
+                );
+            } else {
+                let SemanticOutcome::SourceIssue { issue } = outcome else {
+                    panic!("out-of-bounds field: {outcome:?}");
+                };
+                assert_eq!(issue.rule(), SemanticRule::Op4);
+            }
+        });
+    }
+}
+
+#[test]
+fn constant_typed_places_remain_immutable_and_proof_checked() {
+    let prefix = "const rows: array<array<u64, 2>, 1> =[[7_u64, 9_u64]];\n\n";
+    for action in [
+        "set rows[0_u64][1_u64] = 5_u64;",
+        "let old = replace rows[0_u64][1_u64] = 5_u64;",
+        "region {\n    let target = &uniq rows;\n  }",
+        "region {\n    let target = &uniq rows[0_u64];\n  }",
+    ] {
+        let source = format!(
+            "{prefix}command fn main() -> status: own ExitStatus pure {{\n  {action}\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        assert_rule_kind(source.as_bytes(), SemanticRule::Const2, |kind| {
+            matches!(kind, SemanticIssueKind::ImmutableSetTarget)
+        });
+    }
+    for (action, rule) in [
+        ("let taken = move rows;", SemanticRule::Own1),
+        ("let taken = move rows[0_u64];", SemanticRule::Type2),
+        ("let taken = move rows[0_u64][0_u64];", SemanticRule::Own1),
+        ("let value = rows[1_u64][0_u64];", SemanticRule::Op4),
+        (
+            "region {\n    let target = &rows;\n    set deref(target)[0_u64][0_u64] = 5_u64;\n  }",
+            SemanticRule::Own5,
+        ),
+    ] {
+        let source = format!(
+            "{prefix}command fn main() -> status: own ExitStatus pure {{\n  {action}\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::SourceIssue { issue } = outcome else {
+                panic!("{action}: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), rule, "{action}: {issue:?}");
+        });
+    }
+}
+
+#[test]
+fn normalized_constant_run_storage_is_not_an_array_borrow() {
+    // This legal source use needs an ordinary FixedVector borrow descriptor;
+    // its current capability stop is independent of any callee type mismatch.
+    super::assert_unsupported(
+        br#"const table: FixedVector<u64, 2> =[7_u64, 9_u64];
+
+command fn main() -> status: own ExitStatus pure {
+  region {
+    let shared = &table;
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        crate::UnsupportedSemanticFeature::RegionsAndBorrows,
+    );
+    // The dense physical backing must also never create an array-typed
+    // source borrow. The same operand capability stops before the call's
+    // otherwise incompatible parameter type is checked.
+    super::assert_unsupported(
+        br#"const table: FixedVector<u64, 2> =[7_u64, 9_u64];
+
+fn read(values: &array<u64, 2>) -> result: own u64 reads(values) {
+  return deref(values)[1_u64];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  region {
+    let value = read(values: &table);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        crate::UnsupportedSemanticFeature::RegionsAndBorrows,
     );
 }
 
@@ -429,8 +526,8 @@ fn replacing_an_owned_box_kills_its_referents_old_measure() {
 /// B7c4b moved this module off `array<T, n>` and `array_new`. The [S34] const
 /// run keeps the array place as its storage type — four exact constants over a
 /// run of `n` slots, materialized from the type — so a const's checked type is
-/// still `CheckedType::Array` and its subscript is still `ArrayIndex` rooted at
-/// the constant. Everything a program builds is a `FixedVector`, whose
+/// still `CheckedType::Array` and its subscript uses `ReadStorage` rooted at
+/// the constant. This fixture's constructed runs are `FixedVector`s, whose
 /// capacity is standing and whose `len_of`, `room_of` and `head_of` are
 /// descriptor words, so a built run's measure is `ContainerMeasure`, its
 /// subscript is `ReadStorage`, and its indexed commit is `CheckedSetTarget::
@@ -505,15 +602,19 @@ command fn main() -> status: own ExitStatus pure {
         assert!(matches!(
             &body[5],
             CheckedStatement::Let {
-                value: CheckedExpression::ArrayIndex {
-                    root: super::super::model::CheckedArrayRoot::Constant(_),
-                    length: CheckedConst::Value(4),
-                    obligation,
-                    target_domain: CheckedTargetDomainObligation::ElementAddress,
+                value: CheckedExpression::ReadStorage {
+                    root: CheckedContainerRoot {
+                        root: super::super::places::PlaceRoot::Constant(_),
+                        ty: CheckedType::Integer(IntegerType::U8),
+                        path,
+                    },
                     ..
                 },
                 ..
-            } if !obligation.components().is_empty()
+            } if matches!(path.as_slice(), [CheckedPlaceStep::Subscript(index)]
+                if matches!(index.base_type, CheckedType::Array { length: CheckedConst::Value(4), .. })
+                && index.target_domain == CheckedTargetDomainObligation::ElementAddress
+                && !index.obligation.components().is_empty())
         ));
     });
 }

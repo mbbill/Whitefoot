@@ -1,5 +1,75 @@
 use super::{compile, compile_and_run, compile_rejection, emitted_function};
 
+#[test]
+fn returned_borrow_guards_check_the_delivered_value_across_retained_calls() {
+    let source = br#"const alternative: u64 = 9_u64;
+
+fn select['r](value: &'r u64) -> result: &'r u64 reads(value) {
+  if deref(value) == 0_u64 {
+    return &'r alternative;
+  } else {
+    return value;
+  }
+}
+
+fn indexed(value: &u64) -> result: own u64 reads(value) contract {
+  requires deref(value) < 2_u64;
+} {
+  let rows = array_new::<u64, 2>(7_u64);
+  let index = deref(value);
+  return rows[index];
+}
+
+fn forward(value: &u64) -> result: own u64 reads(value) {
+  let chosen = select(value: value);
+  if deref(chosen) < 2_u64 {
+    return indexed(value: chosen);
+  } else {
+    return 99_u64;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let zero = 0_u64;
+  let one = 1_u64;
+  region {
+    let refused = forward(value: &zero);
+    let accepted = forward(value: &one);
+    if refused != 99_u64 {
+      return exit_status(code: 1_u8);
+    }
+    if accepted != 7_u64 {
+      return exit_status(code: 2_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap)
+            .lines()
+            .map(|line| {
+                if let Some(header) = line
+                    .strip_prefix("define internal ")
+                    .and_then(|line| line.strip_suffix(" {"))
+                {
+                    format!("define {header} noinline {{\n")
+                } else {
+                    format!("{line}\n")
+                }
+            })
+            .collect::<String>();
+        let output = compile_and_run(&module);
+        assert_eq!(output.status.code(), Some(0), "{overlap:?}: {output:?}");
+        assert!(output.stdout.is_empty(), "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+}
+
 const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes(out: &uniq MutSlice<u8>, source: own Vector<u8>, store: &uniq Heap) -> written: own u64 reads(source), writes(out, store) contract {
   define out_length = len_of(deref(out));
   define source_length = len_of(source);

@@ -335,13 +335,25 @@ establish optimal transfer cost across calls.
 
 The unchanged recursive [CONST-2] relation admits nested constant arrays and
 array elements containing eligible structs; their globals use recursive aggregate
-layout. This does not yet provide complete source access to those globals:
-direct nested const subscripts stop at `Unsupported(CompositeValues)`, and a
-shared borrow of the whole nested array stops at `Unsupported(RegionsAndBorrows)`.
-Eligible `FixedVector` constants nested inside another constant also stop at
-`Unsupported(CompositeValues)`; only the top-level run's dense constant storage
-normalization is implemented. Native C observation tests the emitted global
-layout, not an otherwise unavailable WF read path.
+layout. Typed constant places support direct copy-scalar projections, projected
+measures, and shared borrows passed through ordinary helpers, including returned
+shared holders. They retain immutable program-lifetime storage identity and add
+no state effects. The same typed projection and load path serves local and static
+storage; a static address never owns a local cleanup or reusable destination.
+Borrow-result candidates remain conservative loan claims. Requirements passed
+to another helper use the actual returned holder's value identity, so a
+candidate's value predicate cannot authorize a different static referent.
+The initializer's known scalar field values remain available to proof analysis.
+Native tests retain the helpers and independently observe the recursive C layout.
+Eligible `FixedVector` constants nested inside another constant still stop at
+`Unsupported(CompositeValues)`. A whole shared borrow of a top-level constant
+`FixedVector` remains `Unsupported(RegionsAndBorrows)`: its descriptor-free
+storage cannot be passed as an ordinary run descriptor or as an array of a
+different source type. Existing scalar projections, measures and `slice_of`
+uses of those constant runs remain available. A borrow-returning function with
+no candidate parameter can check a direct constant-returning body, but binding
+its call result still reports `Unsupported(RegionsAndBorrows)` until a static
+result-origin summary is available.
 
 **Control headers retire only their own non-escaping temporary loans.** After an
 `own` enum scrutinee or exact `own Bool` condition has completed, the checker

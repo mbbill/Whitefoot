@@ -669,6 +669,7 @@ fn terminator_operands(terminator: &IrTerminator) -> Vec<IrValueId> {
 pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
     match operation {
         IrOperation::Constant(_)
+        | IrOperation::ConstantAddress { .. }
         | IrOperation::FixedVector
         | IrOperation::ArenaFrame { .. }
         | IrOperation::ArenaListNew => Vec::new(),

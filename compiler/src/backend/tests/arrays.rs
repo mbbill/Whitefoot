@@ -1,6 +1,113 @@
 use super::{compile, compile_and_run, compile_rejection, emitted_function};
 
 #[test]
+fn constant_typed_places_execute_shared_calls_and_nested_projections() {
+    let source = br#"struct Entry {
+  tag: u64;
+  samples: array<array<u64, 2>, 2>;
+}
+
+const entries: array<Entry, 2> =[Entry(tag: 17_u64, samples:[[19_u64, 23_u64],[29_u64, 31_u64]]), Entry(tag: 37_u64, samples:[[41_u64, 43_u64],[47_u64, 53_u64]])];
+
+const entry: Entry = Entry(tag: 59_u64, samples:[[61_u64, 67_u64],[71_u64, 73_u64]]);
+
+fn retain['r](values: &'r array<Entry, 2>) -> result: &'r array<Entry, 2> pure {
+  return values;
+}
+
+fn read(values: &array<Entry, 2>, outer: own u64, row: own u64, column: own u64) -> result: own u64 reads(values) contract {
+  requires outer < 2_u64;
+  requires row < 2_u64;
+  requires column < 2_u64;
+} {
+  return deref(values)[outer].samples[row][column];
+}
+
+fn read_row(values: &array<u64, 2>, index: own u64) -> result: own u64 reads(values) contract {
+  requires index < 2_u64;
+} {
+  return deref(values)[index];
+}
+
+fn read_entry(value: &Entry) -> result: own u64 reads(value.tag) {
+  return deref(value).tag;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  if entries[1_u64].samples[1_u64][1_u64] != 53_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if entry.tag != 59_u64 {
+    return exit_status(code: 2_u8);
+  }
+  let length = len_of(entry.samples[1_u64]);
+  if length != 2_u64 {
+    return exit_status(code: 3_u8);
+  }
+  region 'outer {
+    region {
+      let shared = retain(values: &'outer entries);
+      let first = read(values: shared, outer: 0_u64, row: 0_u64, column: 1_u64);
+      let last = read(values: shared, outer: 1_u64, row: 1_u64, column: 1_u64);
+      if first != 23_u64 {
+        return exit_status(code: 4_u8);
+      }
+      if last != 53_u64 {
+        return exit_status(code: 5_u8);
+      }
+      let projected = read_row(values: &entry.samples[1_u64], index: 0_u64);
+      if projected != 71_u64 {
+        return exit_status(code: 6_u8);
+      }
+      let tag = read_entry(value: &entry);
+      if tag != 59_u64 {
+        return exit_status(code: 7_u8);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    // Independent calls with storage unavailable to the WF optimizer retain
+    // even the identity helper's returned-pointer ABI. The WF caller above
+    // separately supplies actual immutable globals through the same helpers.
+    let observer = r#"#include <stdint.h>
+#include <stdlib.h>
+struct Entry { uint64_t tag; uint64_t samples[2][2]; };
+extern const struct Entry *wf_retain(const struct Entry *);
+extern uint64_t wf_read(const struct Entry *, uint64_t, uint64_t, uint64_t);
+extern uint64_t wf_read_row(const uint64_t *, uint64_t);
+extern uint64_t wf_read_entry(const struct Entry *);
+__attribute__((constructor)) static void check_shared_abi(void) {
+    const struct Entry values[2] = {
+        {101, {{103, 107}, {109, 113}}},
+        {127, {{131, 137}, {139, 149}}}
+    };
+    const struct Entry *retained = wf_retain(values);
+    if (retained != values) exit(81);
+    if (wf_read(retained, 1, 1, 0) != 139) exit(82);
+    if (wf_read_row(values[0].samples[1], 1) != 113) exit(83);
+    if (wf_read_entry(&values[1]) != 127) exit(84);
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        // Keep an externally callable pointer ABI as well as call boundaries:
+        // noinline alone still lets IPSCCP specialize an internal helper to
+        // this caller's one constant global and remove its pointer argument.
+        let module = retain_nested_run_calls(&super::emit_lowered(source, overlap))
+            .replace("define internal ", "define ");
+        let output = super::compile_link_and_run(&module, Some(observer), &[]);
+        assert_eq!(output.status.code(), Some(0), "{overlap:?}: {output:?}");
+        assert!(output.stdout.is_empty(), "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+}
+
+#[test]
 fn nested_constant_arrays_emit_complete_recursive_global_layouts() {
     let source = br#"struct Entry {
   tag: u64;
@@ -15,9 +122,8 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    // This observes the global layout independently. Nested const-root WF
-    // reads and borrows remain explicit semantic capability gaps, covered by
-    // the matching semantic tests; exporting these globals grants no WF API.
+    // This observes recursive global layout independently of the WF access
+    // test above, using the host's ordinary C array and struct layout.
     let module = compile(source)
         .replace("@.wf_const.0", "@wf_test_rows")
         .replace("@.wf_const.1", "@wf_test_entries")

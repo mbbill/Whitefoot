@@ -1477,22 +1477,33 @@ fn declaration_provenance_admits_distinct_region_sources_and_keeps_them_usable()
 /// A borrow-mode result with no candidate parameter at all keeps its
 /// boundary: permanently read-only named-const storage is the only source
 /// left [CONST-2, OWN-10], so provenance is unique by elimination and FN-1
-/// forms no rejection here. The body then meets the checker's missing
-/// const-rooted borrow as an explicit capability stop — never an
-/// invalid-source verdict, and never the ambiguity rejection.
+/// forms no rejection here. Its body now uses the ordinary typed constant
+/// address. A call still needs a constant-origin result summary, so that
+/// separate capability boundary remains explicit.
 #[test]
 fn declaration_provenance_admits_the_zero_candidate_boundary() {
     with_semantics(
         b"const anchor: i32 = 7_i32;\n\nfn sourced['r](n: own i32) -> result: &'r i32 pure {\n  return &'r anchor;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| {
-            let SemanticOutcome::Unsupported { unsupported } = outcome else {
-                panic!("a zero-candidate boundary is legal, not rejected: {outcome:?}");
-            };
-            assert_eq!(
-                unsupported.feature(),
-                UnsupportedSemanticFeature::RegionsAndBorrows,
-            );
+            assert!(matches!(outcome, SemanticOutcome::Complete(_)), "a zero-candidate body is legal: {outcome:?}");
         },
+    );
+    super::assert_unsupported(
+        br#"const anchor: i32 = 7_i32;
+
+fn sourced['r](n: own i32) -> result: &'r i32 pure {
+  return &'r anchor;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  region 'r {
+    let value = sourced::<'r>(n: 0_i32);
+    let observed = deref(value);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        UnsupportedSemanticFeature::RegionsAndBorrows,
     );
 }
 

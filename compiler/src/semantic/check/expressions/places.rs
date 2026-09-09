@@ -121,7 +121,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedExpression::ReadStorage {
                 carrier: self.tree.path(use_node)?.clone(),
                 root: CheckedContainerRoot {
-                    binding,
+                    root: crate::semantic::CheckedPlaceRoot::Binding(binding),
                     path,
                     ty: place.ty,
                 },
@@ -550,7 +550,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             place: place.resolved,
             element: false,
             target: CheckedSetTarget::Storage(CheckedContainerRoot {
-                binding,
+                root: crate::semantic::CheckedPlaceRoot::Binding(binding),
                 path,
                 ty: place.ty,
             }),

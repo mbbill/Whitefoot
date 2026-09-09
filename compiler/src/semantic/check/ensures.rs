@@ -1435,6 +1435,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // subscript names no return place here and falls through to the
             // ordinary rejection.
             CheckedExpression::ContainerMeasure { measure, root } => {
+                let Some(binding) = root.binding() else {
+                    return Ok(None);
+                };
                 let mut fields = Vec::with_capacity(root.path.len());
                 for step in &root.path {
                     match step {
@@ -1443,12 +1446,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         | super::super::model::CheckedPlaceStep::Subscript(_) => return Ok(None),
                     }
                 }
-                let Some(place) = self.postcondition_binding_place(
-                    root.binding,
-                    &fields,
-                    statement,
-                    binding_info,
-                )?
+                let Some(place) =
+                    self.postcondition_binding_place(binding, &fields, statement, binding_info)?
                 else {
                     return Ok(None);
                 };

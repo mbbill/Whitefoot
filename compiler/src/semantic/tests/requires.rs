@@ -9,6 +9,113 @@ use super::super::model::{
 };
 use super::{assert_rule, with_semantics, with_semantics_dark};
 
+/// FN-1's candidate is a loan ceiling. A shared result may instead point to
+/// immutable static storage, so the input's predicate is not a predicate of
+/// the delivered referent [ENT-2]. These sources must fail before lowering.
+#[test]
+fn borrow_result_loan_ceilings_do_not_transfer_value_requirements() {
+    for actual in ["chosen", "&deref(chosen)", "alias"] {
+        let alias = if actual == "alias" {
+            "  let alias = chosen;\n"
+        } else {
+            ""
+        };
+        let source = format!(
+            "const alternative: u64 = 9_u64;\n\nfn select['r](value: &'r u64) -> result: &'r u64 pure {{\n  return &'r alternative;\n}}\n\nfn indexed(value: &u64) -> result: own u64 reads(value) contract {{\n  requires deref(value) < 1_u64;\n}} {{\n  let rows = array_new::<u64, 1>(7_u64);\n  let index = deref(value);\n  return rows[index];\n}}\n\nfn forward(value: &u64) -> result: own u64 reads(value) contract {{\n  requires deref(value) < 1_u64;\n}} {{\n  let chosen = select(value: value);\n{alias}  region {{\n    return indexed(value: {actual});\n  }}\n}}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        super::assert_rule_kind(source.as_bytes(), SemanticRule::Fn8, |kind| {
+            matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
+        });
+    }
+    for scalar in [false, true] {
+        let (declarations, ty, alternative, input, projected, effect) = if scalar {
+            ("", "u64", "9_u64", "deref(value)", "deref(chosen)", "value")
+        } else {
+            (
+                "struct Entry {\n  offset: u64;\n}\n\n",
+                "Entry",
+                "Entry(offset: 9_u64)",
+                "deref(value).offset",
+                "deref(chosen).offset",
+                "value.offset",
+            )
+        };
+        let source = format!(
+            "{declarations}const alternative: {ty} = {alternative};\n\nfn select['r](value: &'r {ty}) -> result: &'r {ty} pure {{\n  return &'r alternative;\n}}\n\nfn indexed(value: own u64) -> result: own u64 pure contract {{\n  requires value < 1_u64;\n}} {{\n  let rows = array_new::<u64, 1>(7_u64);\n  return rows[value];\n}}\n\nfn forward(value: &{ty}) -> result: own u64 reads({effect}) contract {{\n  requires {input} < 1_u64;\n}} {{\n  let chosen = select(value: value);\n  return indexed(value: {projected});\n}}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        super::assert_rule_kind(source.as_bytes(), SemanticRule::Fn8, |kind| {
+            matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
+        });
+    }
+    super::assert_rule_kind(
+        br#"const zero: u64 = 0_u64;
+
+const alternative: u64 = 9_u64;
+
+fn select['r](value: &'r u64) -> result: &'r u64 pure {
+  return &'r alternative;
+}
+
+fn indexed(value: &u64) -> result: own u64 reads(value) contract {
+  requires deref(value) < 1_u64;
+} {
+  let rows = array_new::<u64, 1>(7_u64);
+  let index = deref(value);
+  return rows[index];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  region {
+    let chosen = select(value: &zero);
+    let value = indexed(value: chosen);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Fn8,
+        |kind| matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_)),
+    );
+}
+
+#[test]
+fn borrow_result_own_referent_guard_authorizes_its_actual_value() {
+    with_semantics(
+        br#"const alternative: u64 = 9_u64;
+
+fn select['r](value: &'r u64) -> result: &'r u64 pure {
+  return &'r alternative;
+}
+
+fn indexed(value: &u64) -> result: own u64 reads(value) contract {
+  requires deref(value) < 1_u64;
+} {
+  let rows = array_new::<u64, 1>(7_u64);
+  let index = deref(value);
+  return rows[index];
+}
+
+fn forward(value: &u64) -> result: own u64 reads(value) {
+  let chosen = select(value: value);
+  if deref(chosen) < 1_u64 {
+    return indexed(value: chosen);
+  } else {
+    return 99_u64;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "the guard tests the delivered referent, and refusal is real behavior: {outcome:?}"
+            )
+        },
+    );
+}
+
 #[test]
 fn a_non_bool_requires_predicate_cites_op5() {
     assert_rule(
@@ -1038,7 +1145,13 @@ command fn main() -> status: own ExitStatus pure {
         let [requirement] = requirements.as_slice() else {
             panic!("call must retain exactly one requirement");
         };
-        assert!(matches!(arguments[0], CheckedExpression::ArrayIndex { .. }));
+        assert!(matches!(
+            &arguments[0],
+            CheckedExpression::ReadStorage { root, .. }
+                if matches!(root.root, super::super::places::PlaceRoot::Constant(_))
+                    && matches!(root.path.as_slice(), [super::super::model::CheckedPlaceStep::Subscript(index)]
+                        if !index.obligation.components().is_empty())
+        ));
         assert_eq!(argument_nodes.len(), 1);
         let GoalExpression::Datum(GoalDatum::EvaluatedValue {
             function: caller,
