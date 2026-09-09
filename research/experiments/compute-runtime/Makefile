@@ -175,7 +175,36 @@ quadrature-build: $(WFC) quadrature-deps
 	cd "$(OUT)/quadrature" && find source -type f -exec shasum -a 256 {} + >> manifest.sha256
 	cd "$(OUT)/quadrature" && find deps -type f -exec shasum -a 256 {} + >> manifest.sha256
 
-check-quadrature: quadrature-build
+# The same generated computations/oracle on the maintained runtime. Native
+# references run in each image to expose kernel/image differences separately.
+.PHONY: quadrature-formal-build quadrature-formal-calibrate
+quadrature-formal-build: quadrature-build
+	rm -rf "$(OUT)/quadrature/formal-source"
+	mkdir -p "$(OUT)/quadrature/formal-source"
+	cp -R "$(SHARED)" "$(OUT)/quadrature/formal-source/sched"
+	cp "$(FLOOR)" "$(OUT)/quadrature/formal-source/"
+	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=0 -DWF_FORMAL_RUNTIME -c quadrature.c -o "$(OUT)/quadrature/formal-host.o"
+	@set -e; for unit in core prim_host entry; do \
+		$(CC) $(RECORD_FLAGS) -c "$(SHARED)/$$unit.c" -o "$(OUT)/quadrature/formal-$$unit.o"; \
+	done
+	$(CXX) -pthread -fno-lto "$(OUT)/quadrature/formal-host.o" \
+		"$(OUT)/quadrature/formal-core.o" "$(OUT)/quadrature/formal-prim_host.o" "$(OUT)/quadrature/formal-entry.o" \
+		"$(OUT)/quadrature/ordinary-floor.o" "$(OUT)/quadrature/ordinary-native.o" \
+		"$(OUT)/quadrature/wf.o" "$(OUT)/quadrature/wf-leaf.o" "$(OUT)/quadrature/wf-refusal.o" \
+		"$(OUT)/quadrature/wf-frontier.o" "$(OUT)/quadrature/wf-frontier4.o" \
+		"$(OUT)/quadrature/rayon-ordinary/release/libwf_records_rayon.a" $(RAYON_SYSTEM_LIBS) \
+		-L"$(OUT)/quadrature/deps/lib" -Wl,-rpath,"$(OUT)/quadrature/deps/lib" -ltbb -lm -o "$(OUT)/quadrature/formal"
+	"$(WFC)" --par quadrature.wf -o "$(OUT)/quadrature/command"
+	WF_WORKERS=1 "$(OUT)/quadrature/command"
+	WF_WORKERS=4 "$(OUT)/quadrature/command"
+	cd "$(OUT)/quadrature" && shasum -a 256 formal formal-*.o command >> manifest.sha256
+	cd "$(OUT)/quadrature" && find formal-source -type f -exec shasum -a 256 {} + >> manifest.sha256
+
+quadrature-formal-calibrate: quadrature-formal-build
+	OUT="$(OUT)" RESULTS="$(OUT)/quadrature/formal-calibration" sh quadrature-batch.sh formal-calibrate
+
+check-quadrature: quadrature-formal-build
+	OUT="$(OUT)" sh quadrature-batch.sh formal-check
 	RUSTFLAGS='$(QUADRATURE_RUST_FLAGS)' cargo test --locked --offline --release \
 		--manifest-path records-rayon/Cargo.toml --target-dir "$(OUT)/quadrature/rayon-sanitized" \
 		--features quadrature-stats quadrature::

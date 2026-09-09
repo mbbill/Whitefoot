@@ -4,6 +4,12 @@
  * attribution. Retire with the owning quadrature experiment. No SIMD or FMA. */
 #include "runtime.h"
 #include "runtime_events.h"
+#ifdef WF_FORMAL_RUNTIME
+#include "../../../compiler/src/backend/sched/entry.h"
+#if WF_COMPUTE_STATS || defined(WF_COMPUTE_EVENTS)
+#error "formal runtime attribution uses its own diagnostics, not recovered runtime counters"
+#endif
+#endif
 #include "quadrature_native.h"
 #include <errno.h>
 #include <inttypes.h>
@@ -26,6 +32,14 @@ extern double wf_research_quadrature_frontier(double, double, double, double, do
 extern double wf_research_quadrature_frontier4(double, double, double, double, double, uint64_t, bool);
 static double (*generated_run)(double,double,double,double,double,uint64_t,bool);
 static bool parallel_form, leaf_form, refusal_form, frontier_form;
+static unsigned pool_lanes(void) {
+#ifdef WF_FORMAL_RUNTIME
+    unsigned helpers=wf__sched_pool_running();
+    return helpers?helpers+1u:0u;
+#else
+    return wf_compute_worker_count();
+#endif
+}
 static bool native_control;
 static bool native_wf;
 static unsigned native_kind, spawn_depth, requested;
@@ -224,24 +238,40 @@ static void run_batch(const char *form) {
     perf_command(control,acknowledgement,"enable\n");
     require(!getrusage(RUSAGE_SELF,&before),"batch resources before");
     uint64_t process_start=cpu_clock_ns(CLOCK_PROCESS_CPUTIME_ID);
-    uint64_t caller_start=cpu_clock_ns(CLOCK_THREAD_CPUTIME_ID);
+    /* Keep identical clock-observer work in both images. The volatile stores
+     * retain conversion work even when the migrating image discards values. */
+    volatile uint64_t caller_start=cpu_clock_ns(CLOCK_THREAD_CPUTIME_ID);
     uint64_t start=now();
     for(unsigned i=0;i<repeats;++i)mismatch|=bits(execute(p,form))^expected;
     uint64_t elapsed=now()-start;
-    uint64_t caller_cpu=cpu_clock_ns(CLOCK_THREAD_CPUTIME_ID)-caller_start;
+    volatile uint64_t caller_end=cpu_clock_ns(CLOCK_THREAD_CPUTIME_ID);
     uint64_t process_cpu=cpu_clock_ns(CLOCK_PROCESS_CPUTIME_ID)-process_start;
     require(!getrusage(RUSAGE_SELF,&after),"batch resources after");
     perf_command(control,acknowledgement,"disable\n");
     require(!mismatch,"batch binary64 result");
-    unsigned lanes=wf_compute_worker_count();
+    /* A maintained scheduler stack can resume on another host thread. Only
+     * whole-process CPU is comparable across that interval. */
+#ifdef WF_FORMAL_RUNTIME
+    (void)caller_start;(void)caller_end;
+    const char *caller_cpu_text="unavailable";
+#else
+    char caller_cpu_text[32];
+    snprintf(caller_cpu_text,sizeof(caller_cpu_text),"%" PRIu64,caller_end-caller_start);
+#endif
+    unsigned lanes=pool_lanes();
     bool offers=(parallel_form && (!leaf_form || r.nodes>1)) || (native_wf && r.forks);
     require(lanes==((offers && requested==4)?4:0),"batch WF pool width");
-    puts("# quadrature batch v2: input form workers spawn_depth repeats warmup perf_control stats nodes_per_call wall_ns user_us system_us voluntary involuntary minor_faults major_faults wf_lanes process_cpu_ns caller_cpu_ns");
-    printf("%s\t%s\t%u\t%u\t%u\t%u\t%d\t%d\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%ld\t%ld\t%ld\t%ld\t%u\t%" PRIu64 "\t%" PRIu64 "\n",
+#ifdef WF_FORMAL_RUNTIME
+    const char *version="formal-v1";
+#else
+    const char *version="v2";
+#endif
+    printf("# quadrature batch %s: input form workers spawn_depth repeats warmup perf_control stats nodes_per_call wall_ns user_us system_us voluntary involuntary minor_faults major_faults wf_lanes process_cpu_ns caller_cpu_ns\n",version);
+    printf("%s\t%s\t%u\t%u\t%u\t%u\t%d\t%d\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%ld\t%ld\t%ld\t%ld\t%u\t%" PRIu64 "\t%s\n",
         p->name,form,requested,spawn_depth,repeats,warmup,control>=0,WF_COMPUTE_STATS,r.nodes,elapsed,
         cpu_us(after.ru_utime)-cpu_us(before.ru_utime),cpu_us(after.ru_stime)-cpu_us(before.ru_stime),
         after.ru_nvcsw-before.ru_nvcsw,after.ru_nivcsw-before.ru_nivcsw,
-        after.ru_minflt-before.ru_minflt,after.ru_majflt-before.ru_majflt,lanes,process_cpu,caller_cpu);
+        after.ru_minflt-before.ru_minflt,after.ru_majflt-before.ru_majflt,lanes,process_cpu,caller_cpu_text);
     printf("# quadrature batch PASS: outputs=%u expected=%a mismatch=0\n",repeats+warmup,r.value);
 }
 int wf__main_body(int argc,char **argv) {
@@ -268,11 +298,18 @@ int wf__main_body(int argc,char **argv) {
     const char *workers=getenv("WF_WORKERS");
     require(workers && (!strcmp(workers,"1") || !strcmp(workers,"4")),"explicit worker count");
     requested=!strcmp(workers,"4")?4:1;
+#ifdef WF_FORMAL_RUNTIME
+    /* The core starts helper threads at first acquisition, so native library
+     * references do not start an extra WF pool. This observer supports only
+     * batch mode; recovered-runtime event/exhaustion checks stay separate. */
+    require(batch,"formal image requires batch mode");
+#endif
     if(batch) {
         run_batch(form);quadrature_native_stop();
         require(!fflush(stdout),"batch report flush");return 0;
     }
     void **held=NULL;unsigned reserved=0;
+#ifndef WF_FORMAL_RUNTIME
     if(exhaust) {
         require(requested==4 && ((native_wf && spawn_depth==24) || ((refusal_form || frontier_form) && parallel_form)),"exhaustion control arguments");
         reserved=wf_compute_slot_capacity();held=calloc(reserved,sizeof(*held));
@@ -281,6 +318,7 @@ int wf__main_body(int argc,char **argv) {
             held[i]=wf__par_acquire_lane(8);require(held[i]!=NULL,"exhaustion slot reservation");
         }
     }
+#endif
     unsigned calls=bench?9:2;uint64_t outputs=0,total_steals=0,total_migrated=0;
     printf("# quadrature mode=%s form=%s workers=%u stats=%d events=%d spawn_depth=%u\n",argv[1],form,requested,WF_COMPUTE_STATS,
 #if defined(WF_COMPUTE_EVENTS)
@@ -339,7 +377,7 @@ int wf__main_body(int argc,char **argv) {
             require(publishes==pops+events[WF_EVENT_STEAL_SUCCESS] && publishes==runs &&
                     publishes==events[WF_EVENT_RUN_BEGIN] && publishes==joins,"joined task conservation");
             if((parallel_form || (native_wf && spawn_depth)) && requested==4) {
-                require(wf_compute_worker_count()==4,"four-worker startup");
+                require(pool_lanes()==4,"four-worker startup");
                 uint64_t opportunities=(native_wf || frontier_form)?r.forks:leaf_form?r.nodes-r.leaves:3*r.nodes-r.leaves+2;
                 if(refusal_form) {
                     /* Descendants entered through a sequential clone attempt no
@@ -360,7 +398,7 @@ int wf__main_body(int argc,char **argv) {
             printf("%s\t%s\t%u\t%s\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%ld\t%ld\t%lu\t%u\t%lu\t%lu\t%lu\t%lu\t%lu\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\n",
                 p->name,form,call,call?"warm":"first",elapsed,
                 cpu_us(after.ru_utime)-cpu_us(before.ru_utime),cpu_us(after.ru_stime)-cpu_us(before.ru_stime),
-                after.ru_nvcsw-before.ru_nvcsw,after.ru_nivcsw-before.ru_nivcsw,steals,wf_compute_worker_count(),
+                after.ru_nvcsw-before.ru_nvcsw,after.ru_nivcsw-before.ru_nivcsw,steals,pool_lanes(),
                 publishes,pops,runs,joins,refusals,observed.nodes,observed.forks,observed.migrated);
 #if WF_COMPUTE_STATS
             if(native_kind>=7) {
@@ -381,7 +419,7 @@ int wf__main_body(int argc,char **argv) {
     if(parallel_form && requested==4 && !exhaust)require(total_steals>0,"parallel actualization");
     if(!parallel_form && !native_wf)require(total_steals==0,"sequential task exclusion");
 #else
-    if((parallel_form || (native_wf && spawn_depth)) && requested==4)require(wf_compute_worker_count()==4,"four-worker startup");
+    if((parallel_form || (native_wf && spawn_depth)) && requested==4)require(pool_lanes()==4,"four-worker startup");
 #endif
     printf("# quadrature PASS: outputs=%" PRIu64 " stats=%d steals=%" PRIu64 " migrated=%" PRIu64 "\n",outputs,WF_COMPUTE_STATS,total_steals,total_migrated);
     for(unsigned i=0;i<reserved;++i)wf__par_release(held[i]);

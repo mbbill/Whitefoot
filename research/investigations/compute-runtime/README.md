@@ -607,6 +607,57 @@ ThreadSanitizer check also passes. Scheduler/deque tests passed before the
 external-callback narrowing, which does not change those primitives. Final
 native CI, canonical and all-platform performance acceptance remain required.
 
+### Wake-coalescing measurements at 536abedd
+
+The [five native screens](https://github.com/mbbill/Whitefoot/actions/runs/34360325388)
+completed and all retain performance failures. Linux/Windows I/O checks passed;
+the gate completed eleven jobs successfully but Linux unit was cancelled,
+without a test failure reported in its log. Canonical local `make check` is
+still running. No platform is performance-qualified by these results.
+
+For long batches at four participants and 4,096 outputs, candidate/previous
+paired wall medians for tile16/64/256/1024 were respectively
+0.8518/0.8355/0.9093/1.1362 on Linux x86-64 and
+0.9106/0.9371/0.9174/0.8739 on Linux AArch64. The x86-64 coarse cell was slower
+in all five pairs (range 1.1165–1.2346). At two participants, that same coarse
+cell regressed on both Linux targets: medians 1.2407 and 1.2107, with minima
+1.1450 and 1.1912. These losses prevent selecting coalescing as a portable win.
+
+The Linux x86-64 diagnostic at two participants / 4,096 / tile1024 recorded
+1,085 voluntary switches for the candidate versus 16 for previous; batch
+user+system CPU was 313,576 versus 303,222 us. At four participants those
+switch counts were 7,066 versus 3,332, CPU 693,577 versus 629,609 us. These
+are separate diagnostic batches, not causal estimates or five extra samples.
+Core stack-park counts differ from host waits and must not be substituted for
+them. Artifact `10107962650` has ZIP SHA-256
+`bc651e07c570e71fbdcd44f61af6ccbc983d514d143edf0d0bdf0153d2176e51`;
+all 899 extracted manifest entries matched. The next attribution question is
+why fewer notification opportunities coincide with more host waiting in these
+coarse cells, while fine-grained cells improve.
+
+A local M1 run of the same runtime source bytes (captured as a dirty tree over
+5e3cbc24 before publication) also retained losses: four-participant small-cell
+candidate/previous medians were 0.7852/0.7286/0.7381/0.8207, but corresponding
+candidate/recovered medians remained 2.0369/1.4395/1.8415/1.6178. This is local
+exploration, not another CI platform pass.
+
+### Maintained-runtime quadrature coverage
+
+The existing quadrature program/oracle now also executes on the maintained
+scheduler, with the comparison protocol owned by the
+[experiment](../../experiments/compute-runtime/README.md#adaptive-recursive-quadrature).
+This adds recursive/skewed/depth-limited computations to the formal-runtime
+comparison. Same-object attribution remains distinct from normal CLI delivery:
+the ordinary CLI command is checked, but its timing remains unfinished.
+
+Local full quadrature rebuilding succeeded. Its checks passed after granting
+native CPU-topology access: 160 new formal/recovered processes plus all the
+existing quadrature, sanitizer, exhaustion and batch-protocol checks. Review
+caught and corrected nested source snapshots on repeated builds and invalid
+caller-thread CPU subtraction across formal stack migration. Formal calibration
+and native CI for this coverage are pending; Windows, stronger scaling and
+end-to-end delivery qualification remain open.
+
 ## Earlier investigation and evidence
 
 The selected question is whether Whitefoot's proof-derived compute parallelism

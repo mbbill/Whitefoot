@@ -206,6 +206,8 @@ jobs:
               OUT="$OUT" RESULTS="$OUT/calibration"
             taskset -c "$selected" make -C research/experiments/compute-runtime quadrature-batch-calibrate \
               OUT="$OUT" RESULTS="$OUT/quadrature/batch-calibration"
+            taskset -c "$selected" env OUT="$OUT" RESULTS="$OUT/quadrature/formal-calibration" \
+              sh research/experiments/compute-runtime/quadrature-batch.sh formal-calibrate
           else
             taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/calibration" \
               sh research/experiments/compute-runtime/${{ matrix.driver }} calibrate
@@ -245,6 +247,12 @@ jobs:
             echo 'This screen is not held-out confirmation or a fastest-runtime claim.'
             if test -f "$OUT/calibration/summary.tsv"; then
               echo "Retained process rows: $(awk 'END {print NR-1}' "$OUT/calibration/summary.tsv")"
+            fi
+            if test -f "$OUT/quadrature/formal-calibration/parity.tsv"; then
+              echo 'Maintained/recovered quadrature parity (wall and process CPU)'
+              echo '```text'
+              cat "$OUT/quadrature/formal-calibration/parity.tsv"
+              echo '```'
             fi
             if test -f "$OUT/quadrature/batch-calibration/summary.tsv"; then
               echo "Sustained batch rows: $(awk 'END {print NR-1}' "$OUT/quadrature/batch-calibration/summary.tsv")"

@@ -1579,6 +1579,40 @@ additive output-initialization cost.
 
 ## Adaptive recursive quadrature
 
+The maintained-runtime path is `quadrature-formal-build` and
+`quadrature-formal-calibrate`. It links `compiler/src/backend/sched/` and the
+maintained floor directly, reusing the generated WF objects, independent
+explicit-stack oracle and native libraries. It does not add a research
+runtime. Both images start WF helper threads only when a task is acquired;
+native TBB/Parlay/Rayon forms therefore run without a second WF worker pool.
+The same native forms run in each image so linked-image/kernel differences
+remain visible. The ordinary `whitefootc --par quadrature.wf -o command` path
+is also exercised for correctness; its startup and elapsed time are not yet
+measured by this panel.
+
+Canonical `check-quadrature` includes 160 maintained/recovered batch processes:
+ten inputs, widths one/four, and sequential/default/depth4/depth8 generated
+forms. Every call is checked against the oracle. The numerical schema is
+shared, but `formal-v1` identifies the maintained runtime separately from the
+recovered `v2` report. Caller-thread CPU is explicitly `unavailable` in formal
+reports because the scheduler may resume a stack on another host thread;
+whole-process CPU and wall time remain measured. Negative reports reject a
+false runtime identity or invented caller-thread CPU.
+
+Formal calibration retains 2,400 processes: five forward/reverse passes over
+the same ten inputs and widths, four WF forms and eight C++/Rust/native-runtime
+reference forms, each in both images. Each process warms up eight times and
+checks 256 measured calls; it never pools those calls as independent process
+samples. The native forms include serial kernels and TBB, Parlay and Rayon at
+two spawn depths. They provide strong algorithm/runtime comparisons, not a
+proof that no faster reference exists. SIMD, contraction and LTO remain off.
+`parity.tsv` flags each matched generated-form cell when the median paired
+maintained/recovered wall or process-CPU ratio exceeds 1.05. Small/noisy cells
+are retained for investigation. All native rows remain in `summary.tsv`.
+Linux CI runs this screen; macOS local checking is supported. Windows,
+additional widths, burst/tail measurements, formal-image sanitizers and normal
+CLI timing remain required before broader qualification.
+
 `quadrature.wf` integrates the Lorentz profile
 `1 / (1 + ((x - center) / width)^2)` over caller-supplied endpoints using
 adaptive Simpson subdivision. Each node evaluates two new points, compares

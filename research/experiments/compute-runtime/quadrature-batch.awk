@@ -3,6 +3,9 @@
 function bad(why) { print "quadrature batch report: " why > "/dev/stderr"; failed=1; exit 1 }
 function integer(x) { return x ~ /^[0-9]+$/ }
 BEGIN {
+    if (runtime=="")runtime="recovered"
+    if (runtime!="recovered" && runtime!="formal")bad("runtime selection")
+    if (runtime=="formal" && stats!=0)bad("formal observation scope")
     split("smooth center-peak left-peak right-peak outside-peak loose depth-zero depth-cap empty reverse",names," ")
     split("59 3287 2473 2473 503 3 1 8191 1 183",nodes," ")
     # Pinned binary64 fixtures from the independent explicit-stack oracle,
@@ -19,13 +22,14 @@ BEGIN {
          !frontier && form!="wf-seq" && form!="wf-leaf-seq" && form!="wf-refusal-seq"))bad("validator arguments")
 }
 NR==1 {
-    if($0!="# quadrature batch v2: input form workers spawn_depth repeats warmup perf_control stats nodes_per_call wall_ns user_us system_us voluntary involuntary minor_faults major_faults wf_lanes process_cpu_ns caller_cpu_ns")bad("columns")
+    if($0!="# quadrature batch " (runtime=="formal"?"formal-v1":"v2") ": input form workers spawn_depth repeats warmup perf_control stats nodes_per_call wall_ns user_us system_us voluntary involuntary minor_faults major_faults wf_lanes process_cpu_ns caller_cpu_ns")bad("columns")
     next
 }
 NR==2 {
     if(NF!=19 || $1!=input || $2!=form || $3!=width || $4!=spawn || $5!=repeats ||
         $6!=8 || $7!=control || $8!=stats || $9!=expected_nodes)bad("batch identity")
-    for(i=3;i<=19;++i)if(!integer($i))bad("noninteger observation")
+    for(i=3;i<=(runtime=="formal"?18:19);++i)if(!integer($i))bad("noninteger observation")
+    if(runtime=="formal" && $19!="unavailable")bad("migrating caller clock")
     offers=(parallel && (form=="wf-auto" || expected_nodes>1)) || (native_wf && spawn && expected_nodes>1)
     if($17!=((offers && width==4)?4:0))bad("WF pool width")
     next
