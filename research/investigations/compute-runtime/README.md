@@ -81,7 +81,8 @@ unchanged recovered baseline, and the candidate formal runtime. CI covers the
 four POSIX targets and Windows. The Windows job invokes the same script with
 the native MSVC-target compiler and existing Windows runtime leaves; it compares
 the fixed formal-before scheduler/floor, candidate, frozen previous revision
-and same-source longer-idle-window control. All link the same current Windows
+and same-source longer-idle-window control. A byte-identical candidate replica
+measures process/host variability. All link the same current Windows
 host/completion sources, compiled beside each scheduler's own headers.
 This overlay is needed by generated host diagnostics; "before"
 does not mean an entirely historical Windows runtime. No research runtime
@@ -394,6 +395,34 @@ in 15.625 ms increments; it is a reason to investigate, not repeated CPU
 qualification. The default remains 256. Artifact `10105001028` has ZIP SHA-256
 `59dd8807b83927faa6cd4a5a60c031744077258b1535ee0bc5cfa9aeeabd53c5`.
 
+The four POSIX artifacts from the same run reinforce that the longer fixed
+window is not a portable default. These are idle4096/candidate ratios; wall is
+the median paired warm-core ratio, while CPU is the separate longer diagnostic
+batch (one process per mode, including verification):
+
+| Target | Participants | 4,096 / tile 1,024 wall / CPU | 65,536 / tile 64 wall / CPU |
+| --- | ---: | ---: | ---: |
+| Linux x64 | 4 | 0.635 / 0.941 | 1.186 / 1.415 |
+| Linux ARM64 | 4 | 0.772 / 0.948 | 1.145 / 1.237 |
+| macOS x64 | 4 | 0.746 / 1.594 | 1.019 / 1.117 |
+| macOS ARM64 | 2 | 0.621 / 1.599 | 1.059 / 1.163 |
+
+The small Linux cell's voluntary context switches fall from 8,769 to 27 on
+x64 and 9,369 to 22 on ARM64. In the large tile-64 cell they remain similar
+(1,606/1,588 and 2,119/2,192), despite longer spinning. These process-wide
+counts support the idle-gap explanation without equating a context switch to
+a particular runtime park. Darwin reports zero voluntary switches in these
+samples, which is not evidence that no wait occurred. Other tiles also retain
+CPU increases. Every extracted file matched its artifact manifest; ZIP hashes
+are:
+
+| Artifact | ZIP SHA-256 |
+| --- | --- |
+| `10104829158` (Linux x64) | `e309f48d11a2dc5bddea69eca754d0ba3ec66ee51c91941b6e40a84743eb8f2f` |
+| `10104872709` (Linux ARM64) | `c6f3b1c811b5d37c003d178db649f81b6299203625652298b67291784d619b6a` |
+| `10104910285` (macOS x64) | `a5501261e72fb2b20921f57c17cc8ffcbfbe37217d2dbea214cc640822b1935f` |
+| `10105005239` (macOS ARM64) | `0a3b14bddb39736a3105c921ad31b4e32823bde4165fa6e497437aa63c80105c` |
+
 A local four-participant M1 full-link/core-only comparison used the same scalar
 WF object, inputs 4,096/65,536, tiles 64/1,024, and five alternating process
 pairs with 1,024/256 warm calls. Median wall ratios were 0.833, 1.224, 1.006
@@ -465,7 +494,8 @@ object. On Windows every historical scheduler is compiled with its matching
 headers and an identical current host/completion overlay, including the SC
 bridge recheck. Thus previous isolates the core change, not a difference in
 Windows bridge source. All source snapshots, flags and binary hashes travel
-with the artifact. Native results for this candidate remain pending.
+with the artifact. Native results are recorded below; performance remains
+unqualified.
 
 The local M1 script run completed all oracle, normal-CLI, width and diagnostic
 checks and returned the performance-failure status. Against previous, 22 of
@@ -482,6 +512,43 @@ measurements. It found no remaining blocking issue within that scope; the
 diagnostic metadata now explicitly distinguishes before (reports disabled)
 from previous/current controls (race-free reports enabled). This scoped review
 does not certify the whole PR or the outstanding performance goal.
+
+### Same-image variability control
+
+The [five native screens at `c8384799`](https://github.com/mbbill/Whitefoot/actions/runs/34355813654)
+completed their oracle, CLI, width and diagnostic checks; all five retain
+performance failures. Its [12-job gate](https://github.com/mbbill/Whitefoot/actions/runs/34355813469)
+and [Linux/Windows I/O checks](https://github.com/mbbill/Whitefoot/actions/runs/34355813476)
+passed. The Windows EPYC 7763 screen has candidate/previous paired wall median
+0.9250 (range 0.8780–0.9739) at four participants, 4,096 / tile 256, but its
+separate long diagnostic instead records 51.185/37.521 us warm means. At two
+participants, 4,096 / tile 1,024, the paired median is 1.2808
+(0.7627–1.6418); its long diagnostic is also slower, 32.616/22.920 us.
+These opposing observations do not qualify an overall speedup. Windows
+artifact `10105858169` has ZIP SHA-256
+`da4fe392b6c5c5e00033a3eb9273c9bd3a8e063cce3753ab7fec42360d8ab780`;
+all extracted file hashes matched its manifest.
+
+The Linux and Windows results retain large paired ranges,
+including in one-participant cells. Reducing a locked instruction has not yet
+established an end-to-end improvement. The next screen adds `replica`, a
+byte-for-byte copy of the candidate executable invoked independently with the
+same input, width and sample count. The script verifies binary identity; its
+raw runtime label remains candidate. Candidate and replica are adjacent in
+each pass and reverse order together. Their median wall ratio must lie within
+`[1/1.05, 1.05]`; both faster and slower discrepancies flag investigation.
+Existing before/recovered/previous/idle comparisons and thresholds remain.
+
+This A/A control measures variability without a source or code-generation
+difference. An adverse A/A result cannot excuse a candidate loss or pass a
+platform: it says the measurement conditions need further work before a small
+effect can be attributed. The same raw first/warm samples are retained. This
+addition does not yet provide repeated CPU diagnostics or normal CLI timing.
+Shell syntax and whitespace checks pass. The actual extracted summary program
+accepts A/A medians 1.00, 0.98 and 1.03, rejects 1.08 and 0.94, and rejects a
+missing replica. Independent review found no issue in the binary-copy order,
+invocation labels, symmetric band or artifact coverage. Native A/A results
+remain pending.
 
 ## Earlier investigation and evidence
 

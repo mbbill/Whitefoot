@@ -17,8 +17,8 @@ floor=wf_floor.c
 leaf=prim_host.c
 platform_flags=-pthread
 libraries=-lm
-modes='before candidate recovered previous idle4096'
-references='before recovered previous idle4096'
+modes='before candidate replica recovered previous idle4096'
+references='before recovered previous idle4096 replica'
 diagnostic_modes='candidate previous idle4096'
 case "$host" in
     Darwin|Linux) ;;
@@ -29,8 +29,8 @@ case "$host" in
         platform_flags=
         libraries='-lpsapi -lws2_32'
         # The frozen recovered control has no qualified Windows port.
-        modes='before candidate previous idle4096'
-        references='before previous idle4096'
+        modes='before candidate replica previous idle4096'
+        references='before previous idle4096 replica'
         diagnostic_modes='before candidate previous idle4096'
         ;;
     *) echo "unsupported native screen host: $host" >&2; exit 1 ;;
@@ -98,6 +98,7 @@ git diff --binary > "$out/source.patch"
 flags="-std=c11 -O3 -g $platform_flags -fno-fast-math -ffp-contract=off -fno-vectorize -fno-slp-vectorize -fno-lto"
 printf '%s\n' "$CC $flags; recovered additionally -DWF_COMPUTE_STATS=0 -DWF_COMPUTE_CONTROL; shared additionally -DWF_SHARED_CONTROL" \
     "measured_modes=$modes; references=$references; libraries=$libraries" \
+    'replica: byte-identical copy of candidate, independently invoked; raw runtime label remains candidate; A/A wall band is symmetric' \
     'previous: frozen 6060cc67 maintained scheduler/floor before completion-order changes; same WF object' \
     'idle4096: current runtime sources with only -DWF_SCHED_IDLE_SPIN_ROUNDS=4096u changed; default remains 256' \
     'diagnostics: separate longer batches; candidate/previous/idle4096 use WF_SCHED_REPORT=1, before uses 0; not pooled into wall samples' \
@@ -124,6 +125,13 @@ cat fir_host.ll >> "$out/host.ll"
 "$CC" $flags -DWF_FILTER_NATIVE fir_check.c "$out/native.o" $libraries -o "$out/oracle$exe"
 "$out/oracle$exe" > "$out/oracle.txt"
 for mode in $modes; do
+    if test "$mode" = replica; then
+        # Measure host/process variability with identical code and data.
+        # Keep candidate/replica adjacent; the sample loop reverses their order.
+        cp "$out/candidate$exe" "$out/replica$exe"
+        cmp -s "$out/candidate$exe" "$out/replica$exe"
+        continue
+    fi
     runtime="$root/compiler/src/backend"
     policy_flags=
     if test "$mode" = previous; then runtime="$out/previous-source/compiler/src/backend"; fi
@@ -201,7 +209,8 @@ awk -F '\t' -v references="$references" '
             for(i=0;i<5;i++)for(j=i+1;j<5;j++)if(ratio[j]<ratio[i]) {
                 tmp=ratio[i];ratio[i]=ratio[j];ratio[j]=tmp
             }
-            verdict=ratio[2]<=1.05?"within-band":"investigate"
+            within=ratio[2]<=1.05 && (ref!="replica" || ratio[2]>=1/1.05)
+            verdict=within?"within-band":"investigate"
             if(verdict=="investigate")failed=1
             printf "%s\t%s\t%.4f\t%.4f\t%.4f\t%s\n",cell,ref,ratio[2],ratio[0],ratio[4],verdict
         }
