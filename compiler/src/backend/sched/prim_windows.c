@@ -229,7 +229,16 @@ void wf_prim_park(uint64_t observed) {
     if (wf__sched_host_park(observed)) {
         return;
     }
+    /* Only a still-current epoch needs a wait announcement. The SC read
+     * after announcing remains the lost-wake check. */
+    if (wf_prim_load_q(&wf_prim_wake_epoch, WF_PRIM_SEQ_CST) != observed) {
+        return;
+    }
     AcquireSRWLockExclusive(&wf_prim_wake_lock);
+    if (wf_prim_load_q(&wf_prim_wake_epoch, WF_PRIM_SEQ_CST) != observed) {
+        ReleaseSRWLockExclusive(&wf_prim_wake_lock);
+        return;
+    }
     wf_prim_store_u(&wf_prim_wake_needed, 1u, WF_PRIM_SEQ_CST);
     wf_prim_sleepers += 1u;
     while ((uint64_t)InterlockedCompareExchange64(

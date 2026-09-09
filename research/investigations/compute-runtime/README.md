@@ -612,8 +612,9 @@ native CI, canonical and all-platform performance acceptance remain required.
 The [five native screens](https://github.com/mbbill/Whitefoot/actions/runs/34360325388)
 completed and all retain performance failures. Linux/Windows I/O checks passed;
 the gate completed eleven jobs successfully but Linux unit was cancelled,
-without a test failure reported in its log. Canonical local `make check` is
-still running. No platform is performance-qualified by these results.
+without a test failure reported in its log. Exact-revision local root
+`make check` passed, including compiler, research, conformance and snapshot
+checks. No platform is performance-qualified by these results.
 
 For long batches at four participants and 4,096 outputs, candidate/previous
 paired wall medians for tile16/64/256/1024 were respectively
@@ -654,9 +655,38 @@ Local full quadrature rebuilding succeeded. Its checks passed after granting
 native CPU-topology access: 160 new formal/recovered processes plus all the
 existing quadrature, sanitizer, exhaustion and batch-protocol checks. Review
 caught and corrected nested source snapshots on repeated builds and invalid
-caller-thread CPU subtraction across formal stack migration. Formal calibration
-and native CI for this coverage are pending; Windows, stronger scaling and
-end-to-end delivery qualification remain open.
+caller-thread CPU subtraction across formal stack migration. The first
+[native CI attempt at d5cd68b8](https://github.com/mbbill/Whitefoot/actions/runs/34363309499/job/102505558200)
+stopped before calibration: the existing sanitizer validator rejected a
+384-byte Rayon pool-build allocation report. That check remains enforced;
+the run supplies no formal quadrature performance result. Windows, stronger
+scaling and end-to-end delivery qualification remain open.
+
+### Eliding obsolete wait announcements
+
+The next maintained-runtime candidate checks the wake epoch before taking the
+host wait lock. Fallback POSIX and Windows primitives also recheck under the
+lock before announcing. Completion already had that locked check. A changed
+epoch returns to the scheduler's work scan; it neither consumes a notification
+nor clears the wake-needed flag. The existing post-announcement SC checks
+remain the lost-wake protection. Ordinary calls, current-stack joins, public
+ABI and I/O routing are unchanged. The frozen previous control advances to
+`d5cd68b8` to isolate these early returns from the preceding coalescing change.
+
+This targets avoidable mutex and announcement traffic, not the cost of a
+necessary kernel sleep. An ephemeral local M1 million-call stale-epoch probe
+measured 9.06–16.27 ns/call before and 2.17–5.79 ns/call after across five
+sequential pairs. Order/frequency effects are visible; this is path-cost
+evidence only, not an application speedup or cross-platform qualification.
+Selection still requires the same application-level wall and CPU criteria,
+including the coarse Linux regressions and unchanged I/O progress checks.
+
+Scoped independent review found no blocking defect in the early-return
+handshake. The modified tree passed the maintained completion harness with
+0/1/4 helpers and no-cache mode, the default-route ThreadSanitizer probe,
+scheduler smoke and Windows GNU cross-compilation. Native Windows MSVC CI,
+application measurements and the exact candidate's canonical check remain
+required; these focused results do not qualify a platform.
 
 ## Earlier investigation and evidence
 

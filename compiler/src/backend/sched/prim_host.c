@@ -135,7 +135,17 @@ void wf_prim_park(uint64_t observed) {
     if (wf__sched_host_park(observed)) {
         return;
     }
+    /* An epoch invalidated during the idle scan needs neither the wait lock
+     * nor a new announcement. The post-announcement SC recheck still closes
+     * publications racing this early observation. */
+    if (__atomic_load_n(&wf_prim_wake_epoch, __ATOMIC_SEQ_CST) != observed) {
+        return;
+    }
     pthread_mutex_lock(&wf_prim_wake_lock);
+    if (__atomic_load_n(&wf_prim_wake_epoch, __ATOMIC_SEQ_CST) != observed) {
+        pthread_mutex_unlock(&wf_prim_wake_lock);
+        return;
+    }
     __atomic_store_n(&wf_prim_wake_needed, 1u, __ATOMIC_SEQ_CST);
     wf_prim_sleepers += 1u;
     while (__atomic_load_n(&wf_prim_wake_epoch, __ATOMIC_SEQ_CST) == observed) {

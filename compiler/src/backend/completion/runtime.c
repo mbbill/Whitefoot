@@ -194,6 +194,12 @@ enum wf_completion_park_result wf_completion_park_if_unchanged(
         return WF_COMPLETION_PARK_FAILED;
     }
 
+    /* The caller may have scanned for work since capturing this epoch. An
+     * already-obsolete wait returns without contending on the host wait lock. */
+    if (atomic_load_explicit(&runtime->wake_epoch, memory_order_acquire)
+        != observed_epoch) {
+        return WF_COMPLETION_PARK_EPOCH_CHANGED;
+    }
     wf_completion_wait_lock(&runtime->wait);
     if (atomic_load_explicit(&runtime->wake_epoch, memory_order_acquire)
         != observed_epoch) {
