@@ -986,6 +986,40 @@ commands now request this option; their host-driven attribution objects stay
 at the separately recorded `-O3` setting. Full ordinary CLI timing and broader
 native workload coverage remain open.
 
+### Follow-up native screen at 47efc919
+
+Exact 47efc919 passes canonical `make check` with local loopback networking
+permitted and all twelve [gate jobs](https://github.com/mbbill/Whitefoot/actions/runs/34375782088).
+The first local invocation stopped at seven network tests because the sandbox
+denied listener creation; those tests were retained and pass in the complete
+rerun. The [compute run](https://github.com/mbbill/Whitefoot/actions/runs/34375782076)
+completes all five formal screens, including normal scalar CLI FIR correctness.
+Every formal screen still fails performance acceptance.
+
+The new Linux x64 host is EPYC 9V74, whereas 98c283cb ran on EPYC 7763.
+On 9V74, ordinary-layout coarse candidate/f2 medians are 0.9958 at two workers
+and 0.9959 at four, before applying any placement control. The corresponding
+recovered-runtime ratios remain 1.2069 and 1.2805. Thus this run does not
+reproduce the old host's 16-27% regression and cannot establish that placement
+resolved it. On Linux ARM64, ordinary four-worker coarse is 0.9932 versus f2
+and 1.6048 versus recovered; the larger integration gap remains.
+
+The separate ELF cohort completes on both Linux architectures and verifies
+equal starts for every non-join text symbol. On x64 its two/four-worker coarse
+wall medians are 0.9812/0.9979; A/A is 1.0023/0.9904. Whole-batch CPU medians
+are 0.9775/1.0241, with mixed individual pairs. Four-worker coarse RSS has an
+unresolved 1.2831 median ratio, despite equal text starts; this observation is
+not normalized away. The first64 view also retains a four-worker fine loss
+(1.0525). On ARM64, fixed-start four-worker coarse is 1.0154 and fine is 0.9801.
+Neither layout cohort qualifies overall performance.
+
+The x64 [artifact](https://github.com/mbbill/Whitefoot/actions/runs/34375782076/artifacts/10114114172)
+has ZIP SHA256 `525d464e71eb1963374e71a9665c9b7b13e615b8fa70d4dfe53ccc711f5ea0db`.
+Its maps retain equal data-section starts, while `.wf_join` and unwind metadata
+sizes differ. Function-address equality is the checked invariant, not wholesale
+instruction/data equality. The original-host loss stays unresolved; avoid a
+production linker change selected only from the new host's near-parity cohort.
+
 ## Earlier investigation and evidence
 
 The selected question is whether Whitefoot's proof-derived compute parallelism
