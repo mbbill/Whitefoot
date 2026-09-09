@@ -71,6 +71,78 @@ static void *device_main(void *argument) {
 static unsigned long long io_rounds;
 static unsigned long long compute_sum;
 
+/* Hold the other threads outside the core while the caller joins their
+ * oldest task. Only the caller can execute the queued siblings; each must
+ * run on its existing stack, not on an EMPTY stack borrowed for the join.
+ * The last sibling releases the held workers. This witnesses repeated
+ * successful helping at the production setting, beyond the model's one turn. */
+#define HELP_SIBLINGS 32u
+static pthread_mutex_t help_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t help_signal = PTHREAD_COND_INITIALIZER;
+static unsigned help_arrived;
+static unsigned help_completed;
+static int help_wrong_stack;
+static wf_sched_stack *help_stack;
+
+static void held_worker(void *frame) {
+    (void)frame;
+    pthread_mutex_lock(&help_lock);
+    help_arrived += 1u;
+    pthread_cond_broadcast(&help_signal);
+    while (help_completed < HELP_SIBLINGS) {
+        pthread_cond_wait(&help_signal, &help_lock);
+    }
+    pthread_mutex_unlock(&help_lock);
+}
+
+static void helped_sibling(void *frame) {
+    *(unsigned *)frame = 1u;
+    pthread_mutex_lock(&help_lock);
+    if (wf_sched_current_stack(&core) != help_stack) {
+        help_wrong_stack = 1;
+    }
+    help_completed += 1u;
+    pthread_cond_broadcast(&help_signal);
+    pthread_mutex_unlock(&help_lock);
+}
+
+static void repeated_current_stack_help(void) {
+    void *held[WORKERS];
+    void *siblings[HELP_SIBLINGS];
+    unsigned index;
+    help_stack = wf_sched_current_stack(&core);
+    for (index = 0; index < WORKERS; index += 1u) {
+        held[index] = wf_sched_acquire(&core, sizeof(unsigned));
+        if (held[index] == NULL) abort();
+        wf_sched_publish(&core, held[index], held_worker);
+    }
+    pthread_mutex_lock(&help_lock);
+    while (help_arrived < WORKERS) {
+        pthread_cond_wait(&help_signal, &help_lock);
+    }
+    pthread_mutex_unlock(&help_lock);
+    for (index = 0; index < HELP_SIBLINGS; index += 1u) {
+        siblings[index] = wf_sched_acquire(&core, sizeof(unsigned));
+        if (siblings[index] == NULL) abort();
+        *(unsigned *)siblings[index] = 0u;
+        wf_sched_publish(&core, siblings[index], helped_sibling);
+    }
+    wf_sched_join_frame(&core, held[0]);
+    for (index = 0; index < HELP_SIBLINGS; index += 1u) {
+        wf_sched_join_frame(&core, siblings[index]);
+        if (*(unsigned *)siblings[index] != 1u) abort();
+        wf_sched_release(&core, siblings[index]);
+    }
+    for (index = 0; index < WORKERS; index += 1u) {
+        wf_sched_join_frame(&core, held[index]);
+        wf_sched_release(&core, held[index]);
+    }
+    if (help_wrong_stack || help_completed != HELP_SIBLINGS) {
+        (void)fprintf(stderr, "repeated compute help left the current stack\n");
+        exit(1);
+    }
+}
+
 /* One I/O operation: a record in this frame, submitted, then joined. */
 static void one_read(void) {
     wf_sched_record record;
@@ -121,6 +193,7 @@ static void hand_out_group(unsigned count) {
 static void main_body(void *argument) {
     unsigned round;
     (void)argument;
+    repeated_current_stack_help();
     for (round = 0; round < 40u; round += 1u) {
         wf_sched_record first;
         wf_sched_record second;
@@ -148,6 +221,9 @@ int main(void) {
     unsigned index;
     int status;
     wf_sched_statistics counts;
+    /* Initialization must reset live metadata even when its caller supplies
+     * reused, nonzero storage rather than the process's pristine BSS. */
+    memset(&core, 0xa5, sizeof(core));
     if (wf_sched_init(&core, WORKERS + 1u, STACKS, STACK_BYTES) != 0) {
         (void)fprintf(stderr, "core init failed\n");
         return 1;

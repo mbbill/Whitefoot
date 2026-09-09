@@ -54,13 +54,18 @@ const ENUMERATOR_UNITS: [(&str, &str); 7] = [
 /// so a yield in front of the park forces every device completion ahead of the
 /// park and the one thread then never sleeps on the primitive, which S10a
 /// asserts it does; at (2,4) a yield round fails seventeen schedules with
-/// "thread 1 spins with nothing left to change what it spins on".
-const ENUMERATOR_DEFINES: [&str; 6] = [
+/// "thread 1 spins with nothing left to change what it spins on". The compute
+/// join's bounded helping likewise uses one round before its EMPTY fallback;
+/// this is reduced-bound protocol evidence, not a claim that one successful
+/// task covers all longer histories. Native sched-smoke exercises repeated
+/// successful helping at the production setting.
+const ENUMERATOR_DEFINES: [&str; 7] = [
     "-DWF_SCHED_ENUMERATE",
     "-DWF_SCHED_LANE_SLOTS=2u",
     "-DWF_SCHED_MAX_THREADS=4u",
     "-DWF_SCHED_MAX_STACKS=8u",
     "-DWF_SCHED_IDLE_SPIN_ROUNDS=1u",
+    "-DWF_SCHED_JOIN_HELP_ROUNDS=1u",
     "-DWF_SCHED_IDLE_YIELD_ROUNDS=0u",
 ];
 

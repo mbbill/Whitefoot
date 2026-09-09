@@ -85,6 +85,96 @@ cannot complete the broader workload, CPU, CLI timing or five-target goal.
 Linked-image layout can also change despite using identical WF object bytes;
 small differences require independent confirmation and attribution.
 
+The first [four-target native CI screen at `708e3c4d`](https://github.com/mbbill/Whitefoot/actions/runs/34343071425)
+completed its oracle, normal-CLI correctness and actual-pool-width checks, but
+all four targets failed its performance band. Representative median paired
+candidate/recovered ratios (16 taps, tile 64, five processes per cell) are:
+
+| Native target | Participants | 4,096 outputs | 65,536 outputs |
+| --- | ---: | ---: | ---: |
+| Linux x86-64 | 4 | 1.741 | 1.390 |
+| Linux AArch64 | 4 | 2.088 | 1.512 |
+| macOS x86-64 | 4 | 5.444 | 1.206 |
+| macOS AArch64 | 2 | 1.777 | 1.062 |
+
+The macOS AArch64 runner exposes three CPUs, so the screen measures widths one
+and two there. Linux x86-64 exposes four logical CPUs on two SMT cores; these
+rows are within-host comparisons, not comparable four-physical-core machines.
+The run's `formal-runtime-<target>` artifacts retain raw samples, sources,
+binaries, build options and host identity. In one Linux four-participant small
+batch, candidate voluntary/involuntary switches total 1,023 versus 50 for the
+control; startup is 2.151 ms versus 0.210 ms and peak RSS 25.16 MB versus 2.33 MB.
+These process measurements include verification and are not core-only CPU
+profiles. The [Windows mixed timing run](https://github.com/mbbill/Whitefoot/actions/runs/34343071339)
+failed because `io-warm` remained unstable across two complete cohorts.
+[Linux and Windows completion correctness](https://github.com/mbbill/Whitefoot/actions/runs/34343071312)
+passed; that does not make Windows performance qualified.
+
+The next bounded candidate initializes only the configured lane prefix and the
+trailing status/idle metadata. The original full-capacity clear touches about
+20 MiB even with one participant. The prediction is lower startup time and RSS
+without a warm regression. It preserves the original hot-data layout and all
+public-call/task-frame ABIs. A first variant moved metadata before the lanes;
+two independent local M1 cohorts found a repeatable roughly 6% small-input
+loss, so that layout change was removed. Clearing the two live regions instead
+retains the startup saving without needing an enumerator layout change. The
+poisoned-storage smoke checks that live fields do not depend on pristine BSS.
+Local FIR measurements use the same WF object, widths one/four, 16 taps,
+4,096/65,536 outputs, tiles 64/1,024 and five alternating processes of 256 warm
+calls per cell. Against the published shared-runtime control at `708e3c4d`, the
+unchanged-layout candidate is within the wall-time band in seven cells; the
+remaining small-input median ratio is 1.060 with a wide 0.775–1.116 paired range.
+This is not parity with the recovered runtime. Warm acceptance remains open;
+startup savings alone do not select it.
+
+The compute-join hypothesis is that short stolen work finishes sooner than
+the shared park/resume round trip. Give a compute join a bounded interval of
+current-stack pop/steal/help and processor pauses before taking an EMPTY stack.
+READY stacks remain immediately eligible, and every empty-handed turn still
+drains I/O progress; after the interval the existing park/exhaustion protocol
+applies. This changes internal scheduling policy, not calls or source semantics.
+Compare zero, 16, 64 and 256 turns using identical WF object bytes; reject a
+wall-time gain bought with a repeatable CPU-cost increase above the stated band.
+The earlier rejected helper-first change had no bounded wait when no work was
+available, so it did not test this short-completion hypothesis. Qualify mixed
+progress and all enumerator configurations before publishing any selection.
+
+The branch candidate uses 256 outer turns following the local zero/16/64/256
+screen. This bounds neither callback duration nor recursive stack depth. The
+final local `formal-screen` (five processes, 64 warm calls, widths one/two/four)
+passes all 24 wall comparisons against the fixed formal-before control, but
+fails 12 of 24 against the recovered runtime. Selected four-participant results
+are below; CPU is the whole measured batch including checks, not core-only.
+
+| FIR input / tile | Before core mean | Candidate core mean | Recovered core mean | Before / candidate batch CPU |
+| --- | ---: | ---: | ---: | ---: |
+| 4,096 / 64 | 36.59 us | 28.14 us | 14.53 us | 15.72 / 10.91 ms |
+| 65,536 / 1,024 | 149.09 us | 135.75 us | 133.80 us | 72.78 / 59.78 ms |
+
+For the first row, startup falls from 1.471 to 0.176 ms and peak RSS from
+22.51 to 3.36 MB. Mean process context switches fall from 647 to 340; for the
+second row they fall from 1,135 to 268. These are local candidate results, not
+cross-platform acceptance. The screen still does not time the normal CLI path,
+and its pool-width check is not a witness of useful work on every worker.
+
+All four reduced-bound enumeration configurations pass with one help turn;
+the (two-thread, four-stack) sweep explores 44,732,346 states. This checks the
+protocol at that bound, not all production histories. The native smoke runs
+32 successive sibling tasks on the caller's existing stack while the other
+workers hold its join target; every result is checked and joined before frame
+release. The default passes, while zero help turns fail its current-stack
+assertion. Its mixed I/O cases and poisoned initialization also pass. Independent
+scoped review found no remaining issue in these changes after correcting the
+model-coverage claim.
+
+Native code-quality work remains: deque cells are still plain accesses despite
+possible stale thieves racing ring reuse, and diagnostic counters can be read
+while workers update them. The screen avoids the concurrent counter snapshot,
+but the shared runtime still updates counters while the recovered timing build
+disables them. These are unresolved correctness/accounting issues, not justified
+by a successful enumeration or a faster timing. They must be addressed before
+final qualification.
+
 ## Earlier investigation and evidence
 
 The selected question is whether Whitefoot's proof-derived compute parallelism

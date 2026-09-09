@@ -3,7 +3,8 @@
  * This is the unit `research/investigations/io-model/PARK-ON-MISS.md` §7
  * describes. It owns the pool of Whitefoot stacks and their states, the ready
  * list, the park handshake, the per-lane deque of compute hand-outs, and the
- * one rule a join runs (§2). It reaches shared state through the seven
+ * join protocol (§2), with bounded compute helping before taking an EMPTY
+ * stack. It reaches shared state through the seven
  * primitives of `prim.h` and through nothing else, which is what lets the
  * same source compile against the enumerator's replacement primitives and be
  * driven through every interleaving of them (§11).
@@ -200,6 +201,15 @@ typedef struct wf_sched_lane {
 #define WF_SCHED_IDLE_YIELD_ROUNDS 16u
 #endif
 
+/* Before obtaining an EMPTY stack, a compute join can help on its current
+ * stack for a bounded number of outer turns. A task can itself recurse or
+ * perform I/O, so this bounds neither elapsed time nor nested stack depth.
+ * READY continuations and I/O progress remain eligible on every turn. Zero
+ * retains immediate park-on-miss behavior. */
+#if !defined(WF_SCHED_JOIN_HELP_ROUNDS)
+#define WF_SCHED_JOIN_HELP_ROUNDS 256u
+#endif
+
 /* The counters one thread keeps. */
 typedef struct wf_sched_statistics {
     unsigned long long parks;
@@ -294,14 +304,16 @@ int wf_sched_run(wf_sched_core *core, unsigned thread, void (*entry)(void *), vo
  * entry thread's loop leave (§5, §6). */
 void wf_sched_post_status(wf_sched_core *core, int status);
 
-/* The rule (§2) over one record: read it if DONE; run it here if it is the
- * newest entry of this thread's own deque; else park this stack; else the
- * exhausted arm the record's kind selects. `is_io` names that kind. */
+/* Return if DONE; run an owned newest compute task inline; otherwise resume
+ * READY work or park on an EMPTY stack. Compute joins defer the EMPTY choice
+ * for bounded current-stack helping; I/O joins never run other tasks above
+ * their waiting frame. When no stack is available, each kind keeps its
+ * progress-preserving exhaustion arm. `is_io` names the record kind. */
 void wf_sched_join(wf_sched_core *core, wf_sched_record *record, int is_io);
 
-/* The one publisher call: store DONE, load the waiter, and mark that stack
- * READY (§6). The drain calls it for an I/O record; `wf_sched_execute` calls
- * it for a compute slot. */
+/* The one publisher call: enter COMPLETING, claim any registered waiter,
+ * publish DONE as the last record access, then notify the claimed stack.
+ * The drain calls it for I/O; `wf_sched_execute` calls it for compute. */
 void wf_sched_complete(wf_sched_core *core, wf_sched_record *record);
 
 /* Compute hand-outs, the module's ABI. */

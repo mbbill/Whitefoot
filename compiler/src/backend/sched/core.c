@@ -392,15 +392,16 @@ static int wf_sched_park(
     return 1;
 }
 
-/* Line three's precondition: a switch target, READY first, else free. */
-static wf_sched_stack *wf_sched_take_target(wf_sched_core *core, int *was_ready) {
+/* READY continuations are always eligible. A compute join can defer taking
+ * an EMPTY stack while it helps or waits briefly on its current stack. */
+static wf_sched_stack *wf_sched_take_target(wf_sched_core *core, int take_empty, int *was_ready) {
     wf_sched_stack *target = wf_sched_ready_pop(core);
     if (target != NULL) {
         *was_ready = 1;
         return target;
     }
     *was_ready = 0;
-    return wf_sched_pool_pop(core);
+    return take_empty ? wf_sched_pool_pop(core) : NULL;
 }
 
 /* ---------------------------------------------------------- the rule (§2) */
@@ -550,6 +551,7 @@ static int wf_sched_idle_step(
 }
 
 void wf_sched_join(wf_sched_core *core, wf_sched_record *record, int is_io) {
+    unsigned help_rounds = is_io ? 0u : WF_SCHED_JOIN_HELP_ROUNDS;
     for (;;) {
         wf_sched_thread *thread = wf_sched_current_thread(core);
         wf_sched_stack *target;
@@ -584,19 +586,21 @@ void wf_sched_join(wf_sched_core *core, wf_sched_record *record, int is_io) {
                  * someone else's to finish, so fall through to line three. */
             }
         }
-        /* line three */
-        target = wf_sched_take_target(core, &was_ready);
+        /* READY work first; defer the EMPTY target during compute helping. */
+        target = wf_sched_take_target(core, help_rounds == 0u, &was_ready);
         if (target != NULL) {
             (void)wf_sched_park(core, record, target, was_ready);
             continue;
         }
-        /* line four */
+        /* I/O exhaustion, or current-stack compute helping/exhaustion. */
         if (is_io) {
             thread->counts.exhausted_io_waits += 1u;
             (void)wf_sched_idle_step(core, record, &left);
             continue;
         }
-        thread->counts.exhausted_compute_waits += 1u;
+        if (help_rounds == 0u) {
+            thread->counts.exhausted_compute_waits += 1u;
+        }
         {
             wf_sched_slot *slot = wf_sched_pop(thread->lane);
             if (slot == NULL) {
@@ -610,8 +614,15 @@ void wf_sched_join(wf_sched_core *core, wf_sched_record *record, int is_io) {
                  * a drain publishes, and with every other thread parked or
                  * spinning nobody else drains it (the enumerator reached the
                  * spin on S1 at one thread and three stacks, §11). */
-                wf_prim_yield();
+                if (help_rounds != 0u) {
+                    wf_prim_pause();
+                } else {
+                    wf_prim_yield();
+                }
             }
+        }
+        if (help_rounds != 0u) {
+            help_rounds -= 1u;
         }
     }
 }
@@ -692,7 +703,11 @@ int wf_sched_init(
     if (stack_count > WF_SCHED_MAX_STACKS) {
         return 1;
     }
-    memset(core, 0, sizeof(*core));
+    /* The configured width bounds every subsequent lane access. Clearing the
+     * whole capacity faults in about 20 MiB even for a one-thread program.
+     * Keep the lane layout unchanged and reset the trailing metadata too. */
+    memset(core, 0, offsetof(wf_sched_core, lanes) + sizeof(core->lanes[0]) * thread_count);
+    memset(&core->status_posted, 0, sizeof(*core) - offsetof(wf_sched_core, status_posted));
     core->thread_count = thread_count;
     core->stack_count = stack_count;
     core->stack_bytes = stack_bytes;

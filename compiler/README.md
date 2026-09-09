@@ -187,6 +187,16 @@ reductions. A denied permission leaves the program sequential; it does not
 change source acceptance. Proof-only statements introduce no runtime branch,
 lock, dependency, scheduling event, or task edge.
 
+Normal compilation uses the maintained shared scheduler in
+`src/backend/sched/`. Compute joins run an owned newest task inline and allow
+bounded current-stack helping before taking another stack; READY continuations
+remain eligible and empty-handed turns still advance I/O completions. I/O joins
+keep their existing park/progress behavior. Runtime startup initializes only
+configured lanes and live metadata rather than touching all lane capacity.
+These changes preserve ordinary calls and the emitted task-frame ABI. Their
+cross-platform performance qualification remains open in the
+[compute investigation](../research/investigations/compute-runtime/README.md).
+
 Under `--par`, the compiler omits offers of scalar leaves containing at most
 16 nonconstant IR operations by default. `--par-scalar-leaf-limit N` changes
 that threshold; `--par-scalar-leaf-limit off` restores unfiltered offers.

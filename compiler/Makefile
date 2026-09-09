@@ -333,6 +333,12 @@ sched-smoke:
 # 4 086 519 269 with it, 47 seconds against 157. A second round costs 24 times
 # the states at (2,3) and is not worth what it adds.
 #
+# The compute join's bounded help interval also uses one round: it reaches
+# current-stack help, empty-handed progress/pause, and the subsequent EMPTY
+# stack fallback. This is reduced-bound protocol evidence, not enumeration
+# of the production history bound; sched-smoke exercises repeated successful
+# helping on the native stack at the production setting.
+#
 # The yield rounds are pinned to zero, and that is a statement about the model
 # rather than about the spin. The enumerator makes a yield block until another
 # process has written shared state, which is the only way a spin can observe
@@ -351,6 +357,7 @@ sched-enumerate:
 	$(CC) $(COMPLETION_BASE_CFLAGS) -DWF_SCHED_ENUMERATE -DWF_SCHED_LANE_SLOTS=2u \
 		-DWF_SCHED_MAX_THREADS=4u -DWF_SCHED_MAX_STACKS=8u \
 		-DWF_SCHED_IDLE_SPIN_ROUNDS=1u -DWF_SCHED_IDLE_YIELD_ROUNDS=0u \
+		-DWF_SCHED_JOIN_HELP_ROUNDS=1u \
 		$(SCHED_DIR)/core.c $(SCHED_DIR)/enumerate.c $(SCHED_DIR)/schedules.c \
 		-o "$(COMPLETION_TMP)/sched-enumerate"
 	@# The four sweeps are independent and the two-thread ones are long, so
