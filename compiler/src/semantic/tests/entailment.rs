@@ -7310,6 +7310,60 @@ command fn main() -> status: own ExitStatus pure {
     );
 }
 
+#[test]
+fn a_projected_const_array_does_not_gain_a_bare_constant_element_range() {
+    let source = br#"struct Indices {
+  entries: array<u64, 2>;
+}
+
+const table: Indices = Indices(entries:[0_u64, 1_u64]);
+
+const values: array<i32, 2> =[7_i32, 9_i32];
+
+fn bound_read(i: own u64) -> result: own i32 pure {
+  if i < 2_u64 {
+    let index = table.entries[i];
+    return values[index];
+  } else {
+    return 0_i32;
+  }
+}
+
+fn direct_read(i: own u64) -> result: own i32 pure {
+  if i < 2_u64 {
+    return values[table.entries[i]];
+  } else {
+    return 0_i32;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let bound = obligations(source, "bound_read");
+    assert_eq!(bound.len(), 2);
+    assert!(
+        bound[0].discharged,
+        "the actual index guard proves the read"
+    );
+    assert!(
+        !bound[1].discharged,
+        "S9 does not read initializer ranges through a constant's field"
+    );
+    let direct = obligations(source, "direct_read");
+    assert_eq!(direct.len(), 2);
+    assert!(direct[0].discharged);
+    assert!(
+        !direct[1].discharged,
+        "the nested subscript remains no term"
+    );
+    assert_eq!(
+        direct[1].residual.as_deref(),
+        Some("table.entries[i] < len_of(values)")
+    );
+}
+
 // ---------------------------------------------------------------------
 // [ENT-3] S4 requires facts
 // ---------------------------------------------------------------------

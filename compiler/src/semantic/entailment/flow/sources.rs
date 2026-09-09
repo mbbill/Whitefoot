@@ -15,8 +15,8 @@ use super::super::super::goal::CheckedRequirement;
 use super::super::super::model::{
     BindingId, CheckedArrayRoot, CheckedConst, CheckedEnumType, CheckedExpression,
     CheckedIntegerArgumentSource, CheckedIntegerOperation, CheckedMatchArm, CheckedMeasure,
-    CheckedNominalKind, CheckedSetTarget, CheckedSliceSource, CheckedType, CheckedValue,
-    IntegerType, MeasuredKind,
+    CheckedNominalKind, CheckedPlaceStep, CheckedSetTarget, CheckedSliceSource, CheckedType,
+    CheckedValue, IntegerType, MeasuredKind,
 };
 use super::super::fragment_type;
 use super::super::state::{
@@ -1386,11 +1386,6 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    /// [ENT-3] S9: `let x: own T = c[i];` where c is the bare IDENT of a
-    /// named const of type `array<T, N>` and T a fragment type establishes
-    /// vlo <= x and x <= vhi over its N declared element values. The index's
-    /// own bounds obligation is judged separately and is unaffected. Deeper
-    /// const shapes establish nothing.
     /// [ENT-3.S14] the interval one admitted non-constant multiplication
     /// proved, published on the value it bound.
     ///
@@ -1448,6 +1443,11 @@ impl Analyzer<'_, '_> {
         );
     }
 
+    /// [ENT-3] S9: `let x: own T = c[i];` where c is the bare IDENT of a
+    /// named const of type `array<T, N>` and T a fragment type establishes
+    /// vlo <= x and x <= vhi over its N declared element values. The index's
+    /// own bounds obligation is judged separately and is unaffected. Deeper
+    /// const shapes establish nothing.
     fn establish_element_range(
         &mut self,
         node_path: &crate::NodePath,
@@ -1456,12 +1456,24 @@ impl Analyzer<'_, '_> {
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) -> bool {
-        let CheckedExpression::ArrayIndex {
-            root: CheckedArrayRoot::Constant(constant),
-            ..
-        } = value
-        else {
-            return false;
+        let constant = match value {
+            CheckedExpression::ArrayIndex {
+                root: CheckedArrayRoot::Constant(constant),
+                ..
+            } => *constant,
+            CheckedExpression::ReadStorage { root, .. } => {
+                let PlaceRoot::Constant(constant) = root.root else {
+                    return false;
+                };
+                // Typed storage preserves the same bare-constant, single
+                // subscript source shape. Fields or deeper subscripts do
+                // not gain an element-range fact through this adapter.
+                if !matches!(root.path.as_slice(), [CheckedPlaceStep::Subscript(_)]) {
+                    return false;
+                }
+                constant
+            }
+            _ => return false,
         };
         let Some(constant) = self.context.constants.get(constant.0 as usize) else {
             return true;

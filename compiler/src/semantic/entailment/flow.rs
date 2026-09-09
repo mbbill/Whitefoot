@@ -14752,6 +14752,52 @@ impl Analyzer<'_, '_> {
         rendered
     }
 
+    /// Render the checked storage path without reducing subscript offsets
+    /// to overlap identities: even a non-term offset retains its source
+    /// expression in an obligation's residual.
+    fn render_storage_place(&self, root: &CheckedContainerRoot) -> String {
+        let mut rendered = self.render_place(&PlaceTerm {
+            root: root.root,
+            deref: root
+                .binding()
+                .is_some_and(|binding| self.is_holder(binding)),
+            fields: Vec::new(),
+        });
+        let mut ty = match root.root {
+            PlaceRoot::Binding(binding) => self.summary(binding).and_then(|summary| summary.ty),
+            PlaceRoot::Constant(id) => self
+                .context
+                .constants
+                .get(id.0 as usize)
+                .map(|value| value.ty),
+        };
+        for step in &root.path {
+            match step {
+                CheckedPlaceStep::Field(field) => {
+                    if let Some((name, selected)) =
+                        ty.and_then(|ty| self.field_name(ty, *field)).flatten()
+                    {
+                        rendered.push('.');
+                        rendered.push_str(&name);
+                        ty = Some(selected);
+                    } else {
+                        rendered.push_str(".?");
+                        ty = None;
+                    }
+                }
+                CheckedPlaceStep::BoxReferent(nominal) => {
+                    rendered = format!("deref({rendered})");
+                    ty = self.deref_type(CheckedType::Nominal(*nominal));
+                }
+                CheckedPlaceStep::Subscript(index) => {
+                    rendered.push_str(&format!("[{}]", self.render_expression(&index.offset)));
+                    ty = Some(index.element_type);
+                }
+            }
+        }
+        rendered
+    }
+
     fn render_expression(&self, expression: &CheckedExpression) -> String {
         match expression {
             CheckedExpression::Constant(CheckedValue::ConstGeneric { .. }) => {
@@ -14806,6 +14852,7 @@ impl Analyzer<'_, '_> {
                     self.render_expression(offset)
                 )
             }
+            CheckedExpression::ReadStorage { root, .. } => self.render_storage_place(root),
             CheckedExpression::BufferIndex { root, offset, .. } => {
                 let base = PlaceTerm {
                     root: PlaceRoot::Binding(root.binding),
