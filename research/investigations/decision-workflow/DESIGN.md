@@ -228,8 +228,9 @@ amendment; this does not select replacement language mechanisms.
 | FN-7 | The prohibition on global state and static regions remains, with the existing immutable-constant exception. The preceding argument claimed mutable globals would erode parameter-derived noalias facts, hide channels from signatures, and pre-seed shared concurrency state. Those claims require assessment against concrete alternative designs and execution requirements; old P0/W3/T1 labels do not make them necessary conclusions. |
 | ERR-3 | Result propagation, consumption, return behavior, and context attachment remain specified. The preceding argument appealed to earlier error discovery, avoiding context loss from manual rematching, one mechanical pattern, and preventing dropped errors. These are separate intended benefits to assess, not conclusions established by R4/W1/W3. |
 
-All ten current-index rows remain unassessed with their historical records
-and this scoped explanation. Removing the citations does not establish their
+The citation cleanup left all ten current-index rows unassessed with their
+historical records and this scoped explanation. Later scoped assessments are
+linked from their current rows. Removing the citations does not establish their
 mechanisms' optimality, sufficiency, or failure. Reassess the actual reasons
 when the rule or relevant evidence is materially changed.
 
@@ -281,9 +282,9 @@ Reopen the choice if ordinary work repeatedly misses affected reasons, cannot
 retrieve them from the index, or spends more on updating records than the
 decision warrants.
 
-The initial migration over the v0.51 container amendment provides a row for
+The initial migration over the v0.51 container amendment provided a row for
 each of its 161 active rules. Five convention
-and workflow rows have the scoped grounds above; the other 156 are explicitly
+and workflow rows had the scoped grounds above; the other 156 were explicitly
 `unassessed`/`revisit`, with retained evidence pointers. Those flags do not
 declare the rules unsound. They reject automatic conversion of old `derived`
 labels into current endorsement. The shared premise changes are the clause
@@ -373,3 +374,19 @@ reports the 15 transformed entries as an append-only violation; after commit
 it uses the repaired baseline. Both results must be reported alongside the
 original-revision comparison, rather than treating a new baseline as proof
 that nothing changed. No lint rule or exclusion is changed.
+
+## First bounded application
+
+On 2026-09-09, the [constant-initialization assessment](../const-eval/INITIALIZATION.md)
+used the new process on an existing rule whose constitutional citation had been
+removed. Reading its construction dependency exposed an overbroad historical
+transposition argument. The discriminating probe was committed before execution;
+its outcome separated a guaranteed rejection from an accepted logic error. The
+result updated the scoped rule grounds and memory while preserving the actual
+language behavior and historical rationale.
+
+This application exposed a practical requirement already present in the update
+step: a neighboring rule's rationale may need reconsideration even when its
+implementation is unchanged. It did not require a new workflow rule, a global
+ledger sweep, or a claim that all of CONST-2 had been reassessed. One application
+establishes neither reduced review cost nor long-term synchronization reliability.

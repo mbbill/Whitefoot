@@ -9,6 +9,9 @@
 - 2026-07-08 statement: the honest delta over Rust is on cheat-proofness and check-time rejection, not performance — Rust leaves tuple structs and all enum payloads positional (admitting exactly the silent same-typed transposition this form closes) and permits free field order with shorthand and update syntax; Whitefoot names every product in one byte sequence. (sourced)
 - 2026-07-08 statement: the weak-writer net sign is experiment-gated — the adoption record pre-registers transposition-rate reduction versus the new wrong-field-name error class as the decision metric, with direction already forced and only magnitude open. (sourced)
 
+- 2026-09-09 observation: in the CONST-2 struct fixture, removing the height field rejects with GRAM-8, while exchanging its two u64 initializer values under unchanged correct labels compiles and then exits 1 under the original expected-value checks. Named fields do not exclude same-typed value transpositions; the earlier replacement rationale cannot establish that broader guarantee. Reproduction and scope: [constant initialization](../../../research/investigations/const-eval/INITIALIZATION.md). (code)
+- 2026-09-09 rationale: the constant-initialization assessment retains explicit coverage provisionally to reject omissions. A specified valid default could also meet initialization safety, so the safety objective does not uniquely select written coverage; comparative agent benefit and other construction conventions remain unassessed. [Alternatives and reopening condition](../../../research/investigations/const-eval/INITIALIZATION.md). (sourced)
+
 ## Moves
 
 - 2026-07-08 (e687100a) replaced [[positional-construction]]: positional construction of same-typed fields admits silent transposition — an in-bounds wrong value on the forbidden silent-corruption rung; named-in-declared-order fields lift it to a check-time reject while declared order keeps one byte sequence (sourced)

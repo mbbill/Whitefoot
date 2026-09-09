@@ -18,15 +18,16 @@ current support has not been reassessed. A retained source is a retrieval
 starting point, not a certification that its historical vocabulary or
 `derived` label still applies. The
 [constitutional reassessment](../../research/investigations/decision-workflow/DESIGN.md#constitutional-reassessment)
-identifies the shared changes of premise; the five assessed convention and
-workflow rows below have narrower, explicit grounds. Other rows retain their
+identifies the shared changes of premise; the five current convention and
+workflow rows below have narrower, explicit grounds. A later constant-initialization
+assessment covers only part of CONST-2 and remains revisitable. Other rows retain their
 open obligations for reassessment when their rule or material reason changes.
 No historical status is automatically promoted into a new basis kind.
 
 The reassessment also records the retirement of the constitution's old letter
 classes and the later interview's performance, safety, and compatibility
 criteria. Historical references to those labels do not name current clauses.
-The five assessed rows retain the scoped provisional reasons linked below;
+The five current convention/workflow rows retain their scoped provisional reasons;
 the remaining open grounds are not repaired by substituting new clause names.
 
 [Decision practice](../../docs/practice.md#maintaining-the-rule-index) owns
@@ -59,7 +60,7 @@ of source references. Historical rows cannot satisfy that check.
 | GRAM-6 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
 | GRAM-7 | unassessed | revisit | [Retained record](#ledger) |
 | GIVE-1 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
-| GRAM-8 | unassessed | revisit | [Retained record](#ledger) |
+| GRAM-8 | unassessed | revisit | [Retained record](#ledger); [Complete constant initialization](../../research/investigations/const-eval/INITIALIZATION.md): constant-field omission rejects, but correct labels do not reject swapped same-typed values; general naming/order benefits remain unassessed. |
 | GRAM-9 | unassessed | revisit | [Retained record](#ledger) |
 | GRAM-10 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
 | GRAM-11 | unassessed | revisit | [Retained record](#ledger); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification. |
@@ -74,7 +75,7 @@ of source references. Historical rows cannot satisfy that check.
 | SET-1 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
 | SET-2 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
 | CONST-1 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| CONST-2 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification. |
+| CONST-2 | deduction+provisional | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification; [Complete constant initialization](../../research/investigations/const-eval/INITIALIZATION.md): only initialization coverage reassessed; full values require initialized components, while omission rejection is provisionally selected; other CONST-2 grounds remain unassessed. |
 | OWN-1 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
 | OWN-2 | unassessed | revisit | [Retained record](#ledger) |
 | OWN-3 | unassessed | revisit | [Retained record](#v043-amendment--loop-body-regions-and-the-ent-6-join-repair-activated-2026-09-04); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |

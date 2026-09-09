@@ -58,3 +58,37 @@ they do not compare agent productivity, generated-code performance, or all
 possible defaulting designs. Reopen the explicit-coverage choice when a concrete
 constant workload or comparative writer trial shows a safer or more effective
 form under the same intended-value and initialization requirements.
+
+## Results and disposition
+
+Run on 2026-09-09, Darwin arm64 with Apple Clang 21.0.0. The criteria are
+preserved in commit `8da2c5cc`, before execution. The compiler source and active
+specification were unchanged by this assessment. Build with
+`cargo build --profile gate --bin whitefootc --locked --offline` in `compiler/`,
+then compile each fixture through `whitefootc source.wf -o program` and run it.
+
+| Fixture initializer | Compile result | Execution result |
+|---|---|---|
+| `Window(width: 3_u64, height: 2_u64)` (unchanged fixture) | Accepted | Exit 0 |
+| `Window(width: 3_u64)` | GRAM-8 `InvalidConstructionFields`, declared fields `width`, `height` | No executable |
+| `Window(width: 2_u64, height: 3_u64)` (initializer only; checks unchanged) | Accepted | Exit 1 from the fixture's independent expected-value check |
+
+`cargo test --profile gate --lib semantic::tests::arrays:: --locked --offline`
+passed all seven existing tests, including the two named above. This verifies
+the selected array witnesses, not every constant shape.
+
+The implementation follows the distinction: array initializer length is checked
+before element construction, and struct field coverage/order is checked before
+building the complete value in
+[constant checking](../../../compiler/src/semantic/check/types.rs). The result
+supports retaining complete explicit coverage as the current omission-rejection
+choice. It does not demonstrate that a defaulting form would be unsafe, slower,
+or harder for an agent to use.
+
+The affected set is CONST-2's coverage requirement, its GRAM-8 construction
+dependency, and the [construction rationale](../../../mcts_mem/whitefoot/surface-form/construction-form.md).
+The current index links this scoped assessment. CONST-2's other eligibility,
+lifetime, representation, and read rules remain outside this assessment;
+GRAM-8's general naming/order selection still lacks the comparative authoring
+evidence its historical record asks for. Their rows remain `revisit`.
+The active specification, compiler, and conformance expectations need no change.
