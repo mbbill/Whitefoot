@@ -2,6 +2,7 @@
 - Active rules have one current index entry connecting them to scoped selection grounds. Conditional deductions, empirical support, and provisional choices are distinguished; inherited unassessed reasons are visible as requiring reconsideration.
 - Decision memory owns current choices and replacement history. Detailed technical arguments and measurements remain at their sources; the index carries references rather than a second rationale.
 - Work uses four occasions: read current owners at start or resumption; state grounds at a material choice; update reasons and material dependents when conclusions or grounds change; run applicable checks and another agent's review at completion. Routine fixes under unchanged design do not require new decision records.
+- Legacy memory format repairs retain an original Git revision and entry mapping, preserve historical claims and conditions, and are reviewed against that source before the repaired baseline is committed. Substantive corrections remain append-only.
 - Task completion checks the affected records and their integrity. The index does not define source acceptance, and no additional approval stage is introduced.
 - Unresolved proposals and assumptions retain that status in the reasoning records. Changed grounds trigger reconsideration of dependent choices without automatically rejecting their conclusions.
 
@@ -14,6 +15,8 @@
 - 2026-09-08 owner rationale: general advice to distinguish grounds did not tell an agent when to act or what result to leave. Material-choice triggers, retrievable reasons, verification of open assumptions, and updates to the affected owners provide checkable actions; reasoning effort is proportional to impact, error cost, and reversibility. (sourced)
 
 - 2026-09-09 owner rationale: rules without clear use occasions had allowed documentation to drift, while longer rule sets are easier to skip. The owner selected a lightweight workflow combining entry instructions, mechanical checks, and a final reviewing agent; reasons and experiment criteria must be recorded when used, since a final review cannot recover their missing history. The four-occasion procedure refines the existing trial rather than adding another approval point. (sourced)
+
+- 2026-09-09 owner decision: repair the inherited memory-lint baseline while retaining the original record and factual meaning. The preceding append-only rule and malformed legacy entries could not both pass the same lint; the documented exception is confined to traceable metadata and classification repair, with semantic corrections still appended. (sourced)
 
 ## Moves
 

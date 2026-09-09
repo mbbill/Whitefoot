@@ -342,3 +342,34 @@ successor fully carries its useful comparison and trial evidence. Additional
 automation earns its place by addressing observed recurring failures and
 having a maintained caller. The workflow itself remains open to revision when
 its cost exceeds the problems it prevents.
+
+## Legacy memory format repair
+
+The owner selected repair of the inherited lint baseline on 2026-09-09.
+The original [container node at 46a608a1](https://github.com/mbbill/Whitefoot/blob/46a608a17bec308ec9f9ebf6d73cd66a48d8f27e/mcts_mem/whitefoot/data-model/container-representation.md)
+is the immutable comparison source. The repair changes representation of the
+record, not the historical design or measurements:
+
+- The ten untagged 2026-09-06 Facts retain their full bodies and gain `sourced`:
+  these entries cite historical assessments and experiment reports; the repair
+  does not claim to have rerun their measurements.
+- The bb8eb30f occurrence/representation/provenance pitfall becomes four atomic
+  entries with the same date and revision: lost occurrence use, erased parameter
+  modes, lost call-result provenance, and the resulting placement limitation.
+- Four undated prose entries under Moves become dated historical rationales in
+  Facts, retaining their full bodies. The first three are present in d998dd0a,
+  and the external-trace entry first appears in 4f8fb9d5, both 2026-09-06.
+  They did not record paired tree-node replacements; inventing counterpart nodes
+  would fabricate history. Their actual selections and supersession claims remain.
+- The current representation-authority Item states its technical selection
+  conditions without the retired D17 label or a workflow-status phrase.
+
+The ordinary append-only rule remains appropriate for substantive history.
+Keeping malformed entries unchanged would leave lint permanently failing;
+excluding the node or weakening lint would conceal future defects. A traced,
+reviewed format repair preserves the record and restores a useful baseline.
+The linter compares history against HEAD: before committing this repair it
+reports the 15 transformed entries as an append-only violation; after commit
+it uses the repaired baseline. Both results must be reported alongside the
+original-revision comparison, rather than treating a new baseline as proof
+that nothing changed. No lint rule or exclusion is changed.

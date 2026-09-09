@@ -138,6 +138,14 @@ content placement, references, examples and consistency in this affected set.
 Mechanical checks establish paths and executable behavior, not consistency
 of the prose or suitability for its reader.
 
+Invalid legacy memory formatting needs a documented repair, not a lint waiver.
+Identify the original Git revision and account for each changed entry; preserve
+its claims, dates, experimental limits, and actual alternatives. Correct only
+supported metadata or classification errors; append substantive corrections.
+Review the repair against that original revision before committing it, then run
+lint on the committed tree. Its HEAD-based append-only check is not evidence
+that the historical repair preserved meaning.
+
 Historical essays and experimental records keep their original conditions;
 do not append a second implementation inventory to keep an old essay
 apparently current. The roadmap remains outside the working loop. A retained

@@ -239,6 +239,9 @@ Use the `mcts-mem-use` skill; this section does not replace its grammar.
   actual paired nodes and their reasons match verbatim. Compare Facts/Moves
   with the task base to catch rewritten history even after a commit. Do not
   alter committed history or weaken lint merely to obtain a green result.
+  For a documented legacy format repair, compare every changed entry against
+  the identified original revision under decision practice; a clean lint on
+  the new HEAD does not validate that repair.
 - [ ] **M3 — Evidence.** New facts have the skill's provenance and an actual
   source; guesses and historical results are labeled accurately. Items state
   current choices, Facts record evidence, and Moves record actual re-decisions.
