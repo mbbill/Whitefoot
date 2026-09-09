@@ -1193,7 +1193,7 @@ command fn main() -> status: own ExitStatus pure {{
         // `scaled` makes the fact explicit, the semantic checker verifies it,
         // and lowering erases it before the permission table is consumed.
         let proved = format!(
-            "{TREE_PRELUDE}fn scaled(values: own array<u64, 8>, index: own u64) -> result: own u64 pure {{
+            "{TREE_PRELUDE}fn scaled(values: own array<u64, 8>, index: own u64) -> result: own u64 reads(values) {{
   let size = len_of(values);
   let bounded = iand(index, 7_u64);
   invariant index_in_range: bounded <= 7_u64;

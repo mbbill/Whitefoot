@@ -1,4 +1,4 @@
-fn drain(link: &uniq TcpConnection, scratch: &uniq MutSlice<u8>) -> result: own u8 reads(link.receive, link.send, scratch), writes(link.receive, link.send, scratch) contract {
+fn drain(link: &uniq TcpConnection, scratch: &uniq MutSlice<u8>) -> result: own u8 reads(link.receive, scratch), writes(link.receive, scratch) contract {
   define room = len_of(deref(scratch));
   requires 32_u64 <= room;
 } {
@@ -19,7 +19,7 @@ fn drain(link: &uniq TcpConnection, scratch: &uniq MutSlice<u8>) -> result: own 
 }
 
 command fn main(command.handles as handles: own HandleFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(handles, heap), writes(handles, heap), allocates(heap) {
-  doc "EFF-1, SYS-18: an effect path may name a struct field, and a system struct's two directions are ordinary fields, so `link.receive` and `link.send` are the paths a helper over a whole connection declares and the row is stated leaf by leaf rather than over the aggregate. The checker admits this program and lowering lowers it; the target has no approved row for a TCP submission in this version, so it stops at target qualification, which is not a source-language rejection [QUAL-1].";
+  doc "EFF-1, EFF-2, SYS-18: the receiving and sending directions are ordinary struct fields. The helper accesses only `link.receive` and `scratch`, so its exact row names those paths without charging the untouched sending direction. Borrowing the whole connection still grants no simultaneous access to its sending field. The qualified POSIX target admits the TCP operations [QUAL-1].";
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 32_u64) {
       None() => {

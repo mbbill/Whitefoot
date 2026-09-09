@@ -158,11 +158,11 @@ command fn main(command.stdout as out: own OutputStream) -> status: own ExitStat
 "#;
 
 const LANE_FRAME_LAYOUT_FUNCTIONS: &[u8] =
-    br#"fn exact_frame(values: own array<u8, 255>) -> result: own u8 pure {
+    br#"fn exact_frame(values: own array<u8, 255>) -> result: own u8 reads(values) {
   return values[0_u64];
 }
 
-fn over_frame(values: own array<u8, 256>) -> result: own u8 pure {
+fn over_frame(values: own array<u8, 256>) -> result: own u8 reads(values) {
   return values[0_u64];
 }
 
@@ -173,7 +173,7 @@ command fn main() -> status: own ExitStatus pure {
 
 fn lane_frame_program(length: u64) -> Vec<u8> {
     format!(
-        "fn first(values: own array<u8, {length}>) -> result: own u8 pure {{\n  \
+        "fn first(values: own array<u8, {length}>) -> result: own u8 reads(values) {{\n  \
          return values[0_u64];\n}}\n\n\
          command fn main() -> status: own ExitStatus pure {{\n  \
          let left_values = array_new::<u8, {length}>(7_u8);\n  \

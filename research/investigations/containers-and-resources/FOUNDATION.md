@@ -575,6 +575,14 @@ three fields. The body checker and result-origin replay share this projection.
 Eight focused cases cover direct and nested fields, reborrows, exact read/write
 rows, rejection of omitted or extra effects, and the displaced owner's returned
 field origin. This repair does not supply the post-call owner update below.
+The conformance case
+[`systcp-connection-field-effect-paths`](../../../tests/conformance/cases/systcp-connection-field-effect-paths.wf)
+had declared both TCP directions although its helper only calls `receive_next`.
+Its row is corrected to `reads(link.receive, scratch), writes(link.receive,
+scratch)`: EFF-1 admits the field path, SYS-18 makes the directions ordinary
+fields, and EFF-2 requires declared and exhibited effects to match exactly. The
+accept verdict and executable behavior are unchanged; the correction removes
+the spurious sending-field effects exposed by the selected-field repair.
 
 The same failure needs no container. Consider this complete helper body:
 

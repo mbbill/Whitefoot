@@ -780,7 +780,7 @@ fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own 
   return box_new(move branch);
 }
 
-fn scaled(values: own array<u8, 8>, index: own u64) -> result: own u8 pure {
+fn scaled(values: own array<u8, 8>, index: own u64) -> result: own u8 reads(values) {
   return values[index];
 }
 
@@ -838,7 +838,7 @@ fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own 
   return box_new(move branch);
 }
 
-fn scaled(values: own array<u8, 8>, index: own u64) -> result: own u8 pure {
+fn scaled(values: own array<u8, 8>, index: own u64) -> result: own u8 reads(values) {
   let size = len_of(values);
   if index < size {
     return values[index];
@@ -1293,7 +1293,7 @@ fn an_unproved_interposed_subscript_is_rejected_before_permission() {
   return deref(v);
 }
 
-fn probe['r](values: own array<u8, 8>, index: own u64, cell: &'r u64, other: &'r u64) -> result: own u64 reads(cell, other) {
+fn probe['r](values: own array<u8, 8>, index: own u64, cell: &'r u64, other: &'r u64) -> result: own u64 reads(values, cell, other) {
   let a = peek(v: other);
   let picked = values[index];
   let b = peek(v: cell);
@@ -1324,7 +1324,7 @@ fn a_proved_interposed_subscript_creates_no_exit() {
   return deref(v);
 }
 
-fn probe['r](values: own array<u8, 8>, cell: &'r u64, other: &'r u64) -> result: own u64 reads(cell, other) {
+fn probe['r](values: own array<u8, 8>, cell: &'r u64, other: &'r u64) -> result: own u64 reads(values, cell, other) {
   let a = peek(v: other);
   let picked = values[3_u64];
   let b = peek(v: cell);

@@ -597,8 +597,10 @@ command fn main() -> status: own ExitStatus pure {
         ],
     },
     Probe {
-        name: "array-element-is-not-flat.wf",
-        source: br#"fn take(value: own array<Option<u64>, 4>) -> out: own u64 pure {
+        // TYPE-2 now admits owning array elements; STOR-5 still forbids
+        // storing a view inside that complete owner.
+        name: "array-element-is-a-view.wf",
+        source: br#"fn take(value: own array<Slice<u8>, 4>) -> out: own u64 pure {
   return 0_u64;
 }
 
@@ -606,9 +608,9 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
-        rule: "TYPE-2",
+        rule: "STOR-5",
         sentences: &[
-            r#"TypeMismatch { expected: "a flat element type: an integer, a float, Bool, unit, or a struct or enum whose fields are themselves flat element types", found: "Option<u64>" }"#,
+            r#"RegionBearingStorage { mechanical_fix: "keep the slice, arena, or provider as a direct local, parameter, or result; do not store it inside another value" }"#,
         ],
     },
     // -------------------------------------------------------------------

@@ -1001,23 +1001,35 @@ fn every_allocation_refusal_edge_reaches_the_resource_abort() {
 }
 
 /// A recursion whose every activation carries an array far larger than a guard
-/// page, written and read at an index only the caller knows so the frame cannot
-/// be shrunk away. The controlled harness below enters only its base case; the
+/// page, handed to a retained reader so the frame cannot be shrunk away. A
+/// same-index local store/load can forward its scalar value and erase the
+/// array entirely; it does not establish a large physical frame. The
+/// controlled harness below enters only its base case; the
 /// recursive edge keeps the generated function representative of an ordinary
 /// source recursion without making the fault depend on a sequence of frames.
 const LARGE_FRAME_SPINE: &[u8] =
-    br#"fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {
+    br#"fn read_pad(values: &array<u64, 7168>, index: own u64) -> result: own u64 reads(values) contract {
+  requires index < 7168_u64;
+} {
+  return deref(values)[index];
+}
+
+fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {
   let pad = array_new::<u64, 7168>(v);
   let wide = cvt::<u8, u64>(i);
   set pad[wide] = depth;
   let done = depth == 0_u64;
   if done {
-    return pad[wide];
+    region {
+      return read_pad(values: &pad, index: wide);
+    }
   }
   let next = depth -wrap 1_u64;
   let a = spine(depth: next, v: v, i: i);
-  let b = pad[wide];
-  return a +wrap b;
+  region {
+    let b = read_pad(values: &pad, index: wide);
+    return a +wrap b;
+  }
 }
 
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
@@ -1126,13 +1138,13 @@ fn a_frame_larger_than_the_guard_region_is_still_reported() {
     let output = Command::new(&executable)
         .output()
         .expect("run the probed large frame");
-    assert_resource_record(&output.stderr, "stack");
     assert_eq!(
         signal_of(&output),
         Some(libc_sigabrt()),
         "a probed frame that exhausts its stack ends in the floor's abort: {:?}",
         output.status,
     );
+    assert_resource_record(&output.stderr, "stack");
 
     let ablated = ablate_probe(&module, "@wf_spine(");
     assert_eq!(
@@ -1175,11 +1187,31 @@ fn expose_large_frame_spine(module: &str) -> String {
             1,
         )
         .replacen("define i32 @main(", "define i32 @wf__unused_main(", 1);
+    // Keep the ordinary source borrow crossing an opaque call boundary. The
+    // reader's body and result stay unchanged; external visibility prevents
+    // whole-program argument specialization and noinline preserves its call.
+    exposed = exposed
+        .lines()
+        .map(|line| {
+            if line.starts_with("define internal i64 @wf_read_pad(") {
+                line.replacen("define internal ", "define ", 1)
+                    .replace(" #0 {", " noinline #0 {")
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     exposed.push_str("\ndeclare i32 @wf__main_body(i32, ptr)\n");
     assert_eq!(
         module.matches("define internal i64 @wf_spine(").count(),
         1,
         "the fixture must expose exactly one generated spine"
+    );
+    assert_eq!(
+        exposed.matches("define i64 @wf_read_pad(").count(),
+        1,
+        "the fixture retains exactly one source array reader"
     );
     assert_eq!(
         exposed.matches("define i32 @wf__unused_main_body(").count(),

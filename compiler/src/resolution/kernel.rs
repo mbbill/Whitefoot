@@ -361,9 +361,9 @@ mod tests {
     }
 
     /// [BLK-0]'s first-parameter ordering, over the inventory this version
-    /// carries: the transforming rows name `vector` first, the acquiring rows
-    /// name their provider first, and the two rows that neither transform nor
-    /// provide take no value parameter at all.
+    /// carries: the consuming rows name `vector` or `values` first, and the
+    /// acquiring rows name their provider first. Rows with no value parameter
+    /// have no first-parameter obligation.
     #[test]
     fn every_row_orders_its_first_parameter() {
         for operation in KERNEL_OPERATIONS {
@@ -371,7 +371,7 @@ mod tests {
                 continue;
             };
             assert!(
-                matches!(*first, "vector" | "store"),
+                matches!(*first, "vector" | "values" | "store"),
                 "{} names {first} first",
                 operation.spelling
             );

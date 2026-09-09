@@ -80,6 +80,7 @@
 //! correction to a note, not a defect. A future scan-recognition change is a
 //! performance question for its own attributed slice.
 
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use super::deterministic_target::{HostScript, run_emitted_on_deterministic_host};
@@ -239,35 +240,212 @@ fn call_argument<'line>(line: &'line str, callee: &str, wanted: usize) -> Option
     None
 }
 
-/// The standard descriptor each of `wfgrep`'s publications names.
-///
-/// A publication is one source `publish_all` call. In the emitted program each
-/// appears in exactly one of two forms: a call into the out-of-line
-/// `publish_all`, whose descriptor follows its aggregate result destination,
-/// or — where the host
-/// inliner expanded that site — the typed submission of the expanded copy,
-/// carrying the same literal descriptor. The out-of-line body's own submission
-/// names the parameter instead of a literal and is not a publication site; it
-/// is the one transfer the one source `write_once` site emits.
-fn publications() -> Vec<u32> {
-    let mut descriptors = Vec::new();
-    for line in program().lines() {
-        let Some(target) = call_target(line) else {
-            continue;
-        };
-        let argument = match target {
-            "wf_publish_all" => call_argument(line, target, 1),
-            "wf__completion_file_write_submit" => call_argument(line, target, 0),
-            _ => None,
-        };
-        let Some(argument) = argument else {
-            continue;
-        };
-        if let Some(descriptor) = argument
-            .split_whitespace()
-            .next_back()
-            .and_then(|token| token.parse::<u32>().ok())
+fn operand(argument: &str) -> &str {
+    argument.split_whitespace().next_back().unwrap()
+}
+
+fn instruction<'function>(function: &'function str, value: &str) -> Option<&'function str> {
+    let prefix = format!("  {value} = ");
+    function.lines().find_map(|line| line.strip_prefix(&prefix))
+}
+
+/// The byte-addressed frame slots the host optimizer prints. This observation
+/// deliberately has no general LLVM layout evaluator: a changed form needs
+/// fresh inspection, rather than guessing which owner it names.
+fn byte_slot<'function>(function: &'function str, pointer: &str) -> Option<(&'function str, u64)> {
+    let gep = instruction(function, pointer)?;
+    let (_, address) = gep.strip_prefix("getelementptr ")?.split_once("i8, ptr ")?;
+    let (base, offset) = address.split_once(", i64 ")?;
+    Some((base, offset.parse().ok()?))
+}
+
+/// Trace source-output owners through the addressed resource ABI. The entry
+/// initializes their slots with 1 and 2; clang may combine those adjacent
+/// stores. Surviving helper calls forward the slot pointers, and an inlined
+/// submission loads the descriptor. This checks routing, not arbitrary memory
+/// immutability; the deterministic-host runs below check actual publications.
+fn publication_owners<'function>(
+    functions: &[&'function str],
+) -> Vec<HashMap<&'function str, u32>> {
+    let mut owners = vec![HashMap::new(); functions.len()];
+    let entry = functions[0];
+    // The bootstrap's successful entry initializes the input owners. Do not
+    // mistake later stores of result tags for standard-descriptor inputs.
+    for line in basic_block(entry, "enter:").lines().map(str::trim) {
+        if let Some(store) = line.strip_prefix("store i32 ") {
+            let (value, destination) = store.split_once(", ptr ").unwrap();
+            if let Ok(descriptor @ (1 | 2)) = value.parse::<u32>() {
+                record_publication_owner(
+                    &mut owners[0],
+                    destination.split(',').next().unwrap(),
+                    descriptor,
+                );
+            }
+        } else if let Some(destination) = line.strip_prefix("store <2 x i32> <i32 1, i32 2>, ptr ")
         {
+            let pointer = destination.split(',').next().unwrap();
+            let (base, offset) = byte_slot(entry, pointer)
+                .unwrap_or_else(|| panic!("unknown paired output-slot address: {line}"));
+            record_publication_owner(&mut owners[0], pointer, 1);
+            let mut found_error = false;
+            for candidate in entry
+                .lines()
+                .filter_map(|line| line.trim_start().split_once(" = ").map(|(value, _)| value))
+            {
+                if byte_slot(entry, candidate) == Some((base, offset + 4)) {
+                    record_publication_owner(&mut owners[0], candidate, 2);
+                    found_error = true;
+                }
+            }
+            assert!(
+                found_error,
+                "paired store must name the stderr slot: {line}"
+            );
+        }
+    }
+    assert!(
+        [1, 2]
+            .iter()
+            .all(|fd| owners[0].values().any(|found| found == fd)),
+        "both standard-output owners must have explicit entry initialization"
+    );
+    let mut validate_edges = false;
+    loop {
+        let mut changed = false;
+        for (caller, function) in functions.iter().enumerate() {
+            for line in function.lines() {
+                if let Some((value, load)) = line.trim_start().split_once(" = load i32, ptr ") {
+                    let pointer = load.split(',').next().unwrap();
+                    if let Some(descriptor) = owners[caller].get(pointer).copied() {
+                        changed |= record_publication_owner(&mut owners[caller], value, descriptor);
+                    }
+                }
+                let Some(target) = call_target(line).filter(|target| *target != "wf_publish_all")
+                else {
+                    continue;
+                };
+                let Some((callee, body)) = functions.iter().enumerate().find(|(_, body)| {
+                    body.lines()
+                        .next()
+                        .unwrap()
+                        .contains(&format!("@{target}("))
+                }) else {
+                    continue;
+                };
+                let header = body.lines().next().unwrap();
+                let mut ordinal = 0;
+                while let Some(parameter) = call_argument(header, target, ordinal) {
+                    let actual = operand(call_argument(line, target, ordinal).unwrap());
+                    let descriptor = owners[caller].get(actual).copied();
+                    if validate_edges && let Some(expected) = owners[callee].get(operand(parameter))
+                    {
+                        assert_eq!(
+                            descriptor,
+                            Some(*expected),
+                            "unresolved input for tracked output owner {} at {line}",
+                            operand(parameter)
+                        );
+                    }
+                    if let Some(descriptor) = descriptor {
+                        changed |= record_publication_owner(
+                            &mut owners[callee],
+                            operand(parameter),
+                            descriptor,
+                        );
+                    }
+                    ordinal += 1;
+                }
+            }
+        }
+        if !changed {
+            if validate_edges {
+                return owners;
+            }
+            // A known incoming edge cannot stand in for another unresolved
+            // edge. After convergence, every actual supplying a tracked
+            // formal must resolve to that same owner, recursion included.
+            validate_edges = true;
+        }
+    }
+}
+
+#[test]
+#[should_panic(expected = "unresolved input for tracked output owner %destination")]
+fn publication_owner_routing_rejects_an_unknown_second_incoming_edge() {
+    let caller = "define void @caller(ptr %unknown) {
+entry:
+  %out = alloca i32
+  %err = alloca i32
+  br label %enter
+enter:
+  store i32 1, ptr %out
+  store i32 2, ptr %err
+  call void @relay(ptr %out)
+  call void @relay(ptr %unknown)
+  ret void
+}";
+    let relay = "define void @relay(ptr %destination) {
+entry:
+  call void @wf_publish_all(ptr null, ptr %destination)
+  ret void
+}";
+    publication_owners(&[caller, relay]);
+}
+
+fn record_publication_owner<'value>(
+    owners: &mut HashMap<&'value str, u32>,
+    value: &'value str,
+    descriptor: u32,
+) -> bool {
+    let previous = owners.insert(value, descriptor);
+    assert!(
+        previous.is_none_or(|previous| previous == descriptor),
+        "conflicting output owners for {value}: {previous:?} and {descriptor}"
+    );
+    previous.is_none()
+}
+
+/// One source publication appears as a surviving `publish_all` call or an
+/// inlined native submission. The out-of-line body's own submission is the
+/// separately counted transfer site, not another publication. Unknown routing
+/// fails explicitly; losing a pointer identity never silently drops a site.
+fn publications() -> Vec<u32> {
+    let functions = program_functions();
+    let owners = publication_owners(functions);
+    let mut descriptors = Vec::new();
+    for (function, owners) in functions.iter().zip(owners) {
+        if function
+            .lines()
+            .next()
+            .unwrap()
+            .contains("@wf_publish_all(")
+        {
+            continue;
+        }
+        for line in function.lines() {
+            let Some(target) = call_target(line) else {
+                continue;
+            };
+            let ordinal = match target {
+                "wf_publish_all" => 1,
+                "wf__completion_file_write_submit" => 0,
+                _ => continue,
+            };
+            let argument = operand(call_argument(line, target, ordinal).unwrap());
+            let descriptor = owners
+                .get(argument)
+                .copied()
+                .or_else(|| argument.parse().ok())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "unknown publication owner in {}:\n{line}",
+                        function.lines().next().unwrap()
+                    )
+                });
+            assert!(
+                matches!(descriptor, 1 | 2),
+                "unexpected publication destination at {line}"
+            );
             descriptors.push(descriptor);
         }
     }
@@ -660,10 +838,28 @@ fn open_read_is_one_direct_relative_open_on_the_directorys_own_descriptor() {
         1,
         "the name route copies the component once:\n{opening}"
     );
-    // Its failure arm is the cold mapper, reached only when the open failed.
+    // Resource borrows carry an owner address. Follow the submitted descriptor
+    // through its load to the slot initialized with the bootstrap's cwd; a
+    // promoted direct value is the same routing without the load.
+    let submit = opening
+        .lines()
+        .find(|line| call_target(line) == Some("wf__completion_file_open_at_submit"))
+        .unwrap();
+    let directory =
+        operand(call_argument(submit, "wf__completion_file_open_at_submit", 0).unwrap());
+    let from_cwd_slot = instruction(entry(), directory)
+        .and_then(|load| load.strip_prefix("load i32, ptr "))
+        .and_then(|load| load.split(',').next())
+        .is_some_and(|pointer| {
+            basic_block(entry(), "enter:").lines().any(|line| {
+                line.trim_start()
+                    .strip_prefix("store i32 %cwd, ptr ")
+                    .is_some_and(|store| store.split(',').next() == Some(pointer))
+            })
+        });
     assert!(
-        opening.contains("%cwd"),
-        "the dirfd is the supplied directory's own"
+        directory == "%cwd" || from_cwd_slot,
+        "the submitted dirfd must be the supplied directory's own: {directory}\n{opening}"
     );
 }
 
@@ -822,8 +1018,8 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
         1,
         "one transfer per surviving copy of the one source write_once site"
     );
-    // Every publication whose destination the optimizer resolved to a literal
-    // descriptor. Derived from source: `search_file` publishes twice to the
+    // Every publication traced to its standard-output owner, through the
+    // addressed resource ABI. Derived from source: `search_file` publishes twice to the
     // standard-output owner — one flush of a full batch and one of the
     // remainder — and the standard-error owner is reached by the three sites
     // that publish an assembled diagnostic plus `main`'s two startup
@@ -834,8 +1030,16 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
     // its length back and each of its three callers publishes. The two owners
     // are separate and stay separate descriptors [SYS-12].
     let published = publications();
-    assert_eq!(published.iter().filter(|fd| **fd == 1).count(), 2);
-    assert_eq!(published.iter().filter(|fd| **fd == 2).count(), 5);
+    assert_eq!(
+        published.iter().filter(|fd| **fd == 1).count(),
+        2,
+        "{published:?}"
+    );
+    assert_eq!(
+        published.iter().filter(|fd| **fd == 2).count(),
+        5,
+        "{published:?}"
+    );
     // Each transfer is alone on its path: the block that holds it computes an
     // address, submits the operation and joins it, so nothing allocates,
     // copies the transferred bytes, takes a lock, or touches a signal

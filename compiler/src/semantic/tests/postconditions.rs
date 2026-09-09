@@ -2294,16 +2294,16 @@ command fn main() -> status: own ExitStatus pure {
     );
 }
 
-/// B7c4b left the vehicle on the retiring surface: what this case needs is a
-/// header whose own [TYPE-2] violation must win over the unresolved selector,
-/// and `array<T, 1>` at an `affine` parameter is that violation. A run admits
-/// a symbolic type parameter as its element, so the migrated program records
-/// the resolution issue instead — a different verdict. It retires with
-/// `array<T, n>`.
+/// An unavailable header must report its own premise failure before the
+/// unresolved selector. A full array now admits an affine element, so use
+/// the real PROV-6 failure of forwarding an affine parameter to a copy bound.
 #[test]
 fn unavailable_symbolic_header_does_not_forward_its_entry_issue() {
-    let source =
-        br#"fn unavailable<T: affine>(value: own array<T, 1>) -> result: own T pure contract {
+    let source = br#"struct CopyOnly<T: copy> {
+  value: T;
+}
+
+fn unavailable<T: affine>(value: own CopyOnly<T>) -> result: own T pure contract {
   ensures result == missing;
 } {
   return value;
@@ -2317,14 +2317,25 @@ command fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::SourceIssue { issue } = outcome else {
             panic!("ordinary header issue must win, got {outcome:?}");
         };
-        assert_eq!(issue.rule(), SemanticRule::Type2);
+        assert_eq!(issue.rule(), SemanticRule::Prov6);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::LinearityBoundMismatch {
+                bound: "copy",
+                actual: "affine",
+                ..
+            }
+        ));
     });
 }
 
 #[test]
 fn unavailable_record_does_not_suppress_a_later_independent_selector() {
-    let source =
-        br#"fn unavailable<T: affine>(value: own array<T, 1>) -> result: own T pure contract {
+    let source = br#"struct CopyOnly<T: copy> {
+  value: T;
+}
+
+fn unavailable<T: affine>(value: own CopyOnly<T>) -> result: own T pure contract {
   ensures result == missing;
 } {
   return value;
@@ -2391,14 +2402,17 @@ command fn main() -> status: own ExitStatus pure {
     );
 }
 
-/// B7c4b left the vehicle on the retiring surface for the same reason the
-/// symbolic-header case above states: `FixedVector<T, 2>` is a valid field, so
-/// the migrated `Invalid` is not invalid and neither this case nor the one
-/// below it would test what it names.
+/// The symbolic affine parameter cannot satisfy CopyOnly's copy bound,
+/// although the selected concrete argument i32 can. Checking just that
+/// concrete instance would miss the referenced template's PROV-6 failure.
 #[test]
 fn referenced_generic_nominal_must_pass_its_symbolic_template_judgment() {
-    let source = br#"struct Invalid<T: affine> {
-  values: array<T, 2>;
+    let source = br#"struct CopyOnly<T: copy> {
+  value: T;
+}
+
+struct Invalid<T: affine> {
+  values: CopyOnly<T>;
 }
 
 fn probe(value: own Invalid<i32>) -> result: own unit pure contract {
@@ -2415,14 +2429,26 @@ command fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::SourceIssue { issue } = outcome else {
             panic!("the referenced symbolic nominal premise must win: {outcome:?}");
         };
-        assert_eq!(issue.rule(), SemanticRule::Type2);
+        assert_eq!(issue.rule(), SemanticRule::Prov6);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::LinearityBoundMismatch {
+                bound: "copy",
+                actual: "affine",
+                ..
+            }
+        ));
     });
 }
 
 #[test]
 fn unrelated_invalid_generic_nominal_does_not_suppress_selector_admission() {
-    let source = br#"struct Invalid<T: affine> {
-  values: array<T, 2>;
+    let source = br#"struct CopyOnly<T: copy> {
+  value: T;
+}
+
+struct Invalid<T: affine> {
+  values: CopyOnly<T>;
 }
 
 fn invalid() -> result: own unit pure contract {

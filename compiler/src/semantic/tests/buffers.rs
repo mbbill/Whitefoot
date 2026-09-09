@@ -845,11 +845,11 @@ command fn main() -> status: own ExitStatus pure {
     );
 }
 
-/// B7c4b left this case on the retiring surface: [TYPE-2]'s flat-element
-/// restriction is `array<T, n>`'s own, and a run admits an affine element, so
-/// the migrated declaration records no rejection.
+/// [TYPE-2] a complete array admits affine elements under the full-array
+/// amendment. The old flat-only rejection no longer applies to this type;
+/// its unused initialized elements receive their ordinary derived cleanup.
 #[test]
-fn array_elements_stay_copy_only_under_type2() {
+fn array_elements_admit_affine_values_under_type2() {
     with_semantics(
         br#"fn keep(value: own array<Option<u32>, 2>) -> result: own unit pure {
   return unit;
@@ -860,10 +860,10 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         |outcome| {
-            let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-                panic!("an affine array element must reject: {outcome:?}");
-            };
-            assert_eq!(issue.rule(), SemanticRule::Type2);
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "an affine array element must check: {outcome:?}"
+            );
         },
     );
 }
