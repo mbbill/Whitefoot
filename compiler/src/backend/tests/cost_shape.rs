@@ -216,7 +216,10 @@ fn definition_start(module: &str, at: usize) -> Option<usize> {
 /// operand does not end it early.
 fn call_argument<'line>(line: &'line str, callee: &str, wanted: usize) -> Option<&'line str> {
     let open = line.find(&format!("@{callee}("))? + callee.len() + 2;
-    let rest = &line[open..];
+    comma_item(&line[open..], wanted)
+}
+
+fn comma_item(rest: &str, wanted: usize) -> Option<&str> {
     let mut depth = 0_usize;
     let mut ordinal = 0_usize;
     let mut start = 0_usize;
@@ -237,7 +240,7 @@ fn call_argument<'line>(line: &'line str, callee: &str, wanted: usize) -> Option
             _ => {}
         }
     }
-    None
+    (ordinal == wanted).then(|| rest[start..].trim())
 }
 
 fn operand(argument: &str) -> &str {
@@ -257,6 +260,40 @@ fn byte_slot<'function>(function: &'function str, pointer: &str) -> Option<(&'fu
     let (_, address) = gep.strip_prefix("getelementptr ")?.split_once("i8, ptr ")?;
     let (base, offset) = address.split_once(", i64 ")?;
     Some((base, offset.parse().ok()?))
+}
+
+/// The emitted frame has an ordinary literal struct type. Optimizers may
+/// retain its field GEPs instead of reducing them to byte offsets. Identifying
+/// adjacent i32 fields needs no layout of the unrelated preceding fields.
+fn struct_slot<'function>(
+    function: &'function str,
+    pointer: &str,
+) -> Option<(&'function str, &'function str, usize)> {
+    let gep = instruction(function, pointer)?.strip_prefix("getelementptr ")?;
+    let gep = gep.strip_prefix("inbounds ").unwrap_or(gep);
+    let (fields, address) = gep.strip_prefix("{ ")?.rsplit_once(" }, ptr ")?;
+    let (base, index) = address
+        .split_once(", i32 0, i32 ")
+        .or_else(|| address.split_once(", i64 0, i32 "))?;
+    Some((base, fields, index.parse().ok()?))
+}
+
+fn adjacent_i32_slots(function: &str, first: &str, second: &str) -> bool {
+    if let (Some((left, offset)), Some((right, next))) =
+        (byte_slot(function, first), byte_slot(function, second))
+    {
+        return left == right && offset.checked_add(4) == Some(next);
+    }
+    let (Some((left, fields, index)), Some((right, other_fields, next))) =
+        (struct_slot(function, first), struct_slot(function, second))
+    else {
+        return false;
+    };
+    left == right
+        && fields == other_fields
+        && index.checked_add(1) == Some(next)
+        && comma_item(fields, index) == Some("i32")
+        && comma_item(fields, next) == Some("i32")
 }
 
 /// Trace source-output owners through the addressed resource ABI. The entry
@@ -284,22 +321,21 @@ fn publication_owners<'function>(
         } else if let Some(destination) = line.strip_prefix("store <2 x i32> <i32 1, i32 2>, ptr ")
         {
             let pointer = destination.split(',').next().unwrap();
-            let (base, offset) = byte_slot(entry, pointer)
-                .unwrap_or_else(|| panic!("unknown paired output-slot address: {line}"));
             record_publication_owner(&mut owners[0], pointer, 1);
             let mut found_error = false;
             for candidate in entry
                 .lines()
                 .filter_map(|line| line.trim_start().split_once(" = ").map(|(value, _)| value))
             {
-                if byte_slot(entry, candidate) == Some((base, offset + 4)) {
+                if adjacent_i32_slots(entry, pointer, candidate) {
                     record_publication_owner(&mut owners[0], candidate, 2);
                     found_error = true;
                 }
             }
             assert!(
                 found_error,
-                "paired store must name the stderr slot: {line}"
+                "paired store must name the stderr slot: {line}\naddress: {:?}",
+                instruction(entry, pointer)
             );
         }
     }
@@ -390,6 +426,26 @@ entry:
   ret void
 }";
     publication_owners(&[caller, relay]);
+}
+
+#[test]
+fn publication_owner_routing_reads_adjacent_typed_frame_fields() {
+    let entry = "define void @entry_point() {
+entry:
+  %frame = alloca { [9 x i8], { ptr, i64 }, i32, i32, i64, i32 }
+  %out = getelementptr inbounds { [9 x i8], { ptr, i64 }, i32, i32, i64, i32 }, ptr %frame, i32 0, i32 2
+  %err = getelementptr inbounds { [9 x i8], { ptr, i64 }, i32, i32, i64, i32 }, ptr %frame, i64 0, i32 3
+  %later = getelementptr inbounds { [9 x i8], { ptr, i64 }, i32, i32, i64, i32 }, ptr %frame, i32 0, i32 5
+  br label %enter
+enter:
+  store <2 x i32> <i32 1, i32 2>, ptr %out, align 4
+  ret void
+}";
+    let owners = publication_owners(&[entry]);
+    assert_eq!(owners[0].get("%out"), Some(&1));
+    assert_eq!(owners[0].get("%err"), Some(&2));
+    assert!(!owners[0].contains_key("%later"));
+    assert!(!adjacent_i32_slots(entry, "%err", "%out"));
 }
 
 fn record_publication_owner<'value>(
