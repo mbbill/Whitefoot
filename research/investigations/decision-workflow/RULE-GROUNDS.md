@@ -222,10 +222,15 @@ specific to the target and implementation being used.
 The constitution's [ordinary-object requirement](../../../docs/constitution.md#external-interaction-through-ordinary-objects)
 fixes uniform source treatment of I/O and other resources. It does not select
 one object decomposition, result-origin analysis, or release implementation.
+This is a chosen architectural constraint, not a theorem uniquely implied by
+performance or safety alone.
 A diagnosis must distinguish an API that omits a required relation from a
 general language or compiler limitation by checking the corresponding ordinary
 object case. A resource-specific example alone does not justify a special
-ownership or effect rule.
+ownership or effect rule. A current compiler limitation does not demonstrate
+that the ordinary model cannot express the required behavior. Native adapters
+may implement host-specific operations, but must honor their complete
+source-level contracts without hidden I/O-specific permissions or dependencies.
 
 | Rules | Grounds and limits |
 |---|---|

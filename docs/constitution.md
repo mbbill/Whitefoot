@@ -71,21 +71,12 @@ environment failures must have defined program behavior.
 
 ## External interaction through ordinary objects
 
-At the source-language level, I/O and other external resources must be fully
-represented through ordinary objects, ownership, borrowing, effects, and
-callable contracts. Being an I/O operation or a resource object must not itself
-introduce special syntax, ownership privileges, effect attribution, or proof
-rules. Required lifetime, sequencing, and capacity relations must be expressed
-through the same language abstractions used for other objects.
-
-Distinguish an incomplete API contract from a gap in those abstractions. Repair
-a missing resource relation in the API; when the same need exists for ordinary
-objects, evaluate a general language capability. An exception requires a
-concrete demonstration that the required behavior cannot be represented by
-this model while meeting the project's safety and performance requirements.
-A current compiler limitation alone does not establish that necessity. Native
-adapters may implement host-specific operations, but must honor their complete
-source-level contracts without hidden I/O-specific permissions or dependencies.
+I/O and external resources must be represented through the same object,
+ownership, borrowing, effect, and proof abstractions as other program state.
+Their required relations belong in ordinary callable contracts. An external
+role alone grants no source-language exception. A departure requires a
+demonstrated inability to meet required behavior, safety, and performance
+through this model.
 
 ## Compatibility and evolution
 
