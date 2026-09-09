@@ -17,9 +17,9 @@ floor=wf_floor.c
 leaf=prim_host.c
 platform_flags=-pthread
 libraries=-lm
-modes='before candidate recovered help0'
-references='before recovered help0'
-diagnostic_modes='candidate help0'
+modes='before candidate recovered help0 idle4096'
+references='before recovered help0 idle4096'
+diagnostic_modes='candidate help0 idle4096'
 case "$host" in
     Darwin|Linux) ;;
     MINGW*|MSYS*)
@@ -29,9 +29,9 @@ case "$host" in
         platform_flags=
         libraries='-lpsapi -lws2_32'
         # The frozen recovered control has no qualified Windows port.
-        modes='before candidate help0'
-        references='before help0'
-        diagnostic_modes='before candidate help0'
+        modes='before candidate help0 idle4096'
+        references='before help0 idle4096'
+        diagnostic_modes='before candidate help0 idle4096'
         ;;
     *) echo "unsupported native screen host: $host" >&2; exit 1 ;;
 esac
@@ -94,6 +94,7 @@ flags="-std=c11 -O3 -g $platform_flags -fno-fast-math -ffp-contract=off -fno-vec
 printf '%s\n' "$CC $flags; recovered additionally -DWF_COMPUTE_STATS=0 -DWF_COMPUTE_CONTROL; shared additionally -DWF_SHARED_CONTROL" \
     "measured_modes=$modes; references=$references; libraries=$libraries" \
     'help0: current runtime sources with only -DWF_SCHED_JOIN_HELP_ROUNDS=0u changed' \
+    'idle4096: current runtime sources with only -DWF_SCHED_IDLE_SPIN_ROUNDS=4096u changed; default remains 256' \
     'diagnostics: separate longer batches; current schedulers use WF_SCHED_REPORT=1, historical scheduler uses 0; not pooled into wall samples' \
     'WF: --par defaults; same optimized WF object in every attribution image' \
     'CLI: normal --par link, correctness only; end-to-end timing remains open' > "$out/flags.txt"
@@ -121,6 +122,7 @@ for mode in $modes; do
     runtime="$root/compiler/src/backend"
     policy_flags=
     if test "$mode" = help0; then policy_flags=-DWF_SCHED_JOIN_HELP_ROUNDS=0u; fi
+    if test "$mode" = idle4096; then policy_flags=-DWF_SCHED_IDLE_SPIN_ROUNDS=4096u; fi
     if test "$mode" = before; then runtime="$out/baseline-source/compiler/src/backend"; fi
     set --
     if test -n "$exe"; then
@@ -214,6 +216,8 @@ for width in $widths; do
             for mode in $diagnostic_modes; do
                 log="$out/diagnostics/$mode-w$width-n$n-t$tile.tsv"
                 reports=1
+                spin_rounds=256
+                if test "$mode" = idle4096; then spin_rounds=4096; fi
                 # Historical scheduler counters are not race-free. The host
                 # wait counters come from the identical current bridge in all
                 # Windows images and may safely be observed for before too.
@@ -223,10 +227,14 @@ for width in $widths; do
                 wait_reports=0
                 if test -n "$exe"; then wait_reports=1; fi
                 awk -F '\t' -v width="$width" -v expected="$diagnostic_calls" \
-                    -v expected_reports="$reports" -v expected_wait="$wait_reports" '
+                    -v expected_reports="$reports" -v expected_wait="$wait_reports" \
+                    -v expected_spin="$spin_rounds" '
                     {sub(/\r$/, "")}
                     /^# actual_lanes=/ {split($0,a,"="); lanes++; if(a[2]!=width)bad=1}
-                    /^# sched: / {reports++}
+                    /^# sched: / {
+                        reports++
+                        if($0 !~ (" spin_rounds=" expected_spin " "))bad=1
+                    }
                     /^# host_wait: announcements=[0-9]+ signals=[0-9]+ / {waits++}
                     $10=="warm" {calls++}
                     END {exit bad || lanes!=1 || reports!=expected_reports ||

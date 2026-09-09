@@ -81,9 +81,9 @@ unchanged recovered baseline, and the candidate formal runtime. CI covers the
 four POSIX targets and Windows. The Windows job invokes the same script with
 the native MSVC-target compiler and existing Windows runtime leaves; it compares
 the fixed formal-before scheduler/floor, candidate, and same-source zero-help
-control. All link the same current Windows host/completion sources, compiled
-beside each scheduler's
-own headers. This overlay is needed by generated host diagnostics; "before"
+and longer-idle-window controls. All link the same current Windows
+host/completion sources, compiled beside each scheduler's own headers.
+This overlay is needed by generated host diagnostics; "before"
 does not mean an entirely historical Windows runtime. No research runtime
 is ported. Its benchmark uses QueryPerformanceCounter for elapsed time,
 GetProcessTimes for whole-process CPU time, and peak working set for memory;
@@ -230,7 +230,8 @@ the probe; Linux CI additionally runs it under ThreadSanitizer. At `0f1603b2`,
 the four POSIX native probes and both [host correctness jobs](https://github.com/mbbill/Whitefoot/actions/runs/34350981830)
 pass, including Windows's native probe and Linux's ThreadSanitizer run.
 The [partitioned repository CI](https://github.com/mbbill/Whitefoot/actions/runs/34350982089)
-also passes on that revision; the canonical local `make check` is still running.
+also passes on that revision. The canonical local `make check` for `0f1603b2`
+completed successfully, including the full native conformance adapter.
 
 The repair's local M1 cost comparison uses byte-identical WF object files,
 alternating repaired/`aeb35be5` binaries, widths one/four, inputs 4,096/65,536,
@@ -317,7 +318,7 @@ idle window enough to put workers to sleep between bursts, making the next
 call pay a host wake. This is a hypothesis, not an attribution. A large increase
 in wait announcements/signals accompanying the regression would support a
 focused idle-window control; comparable counts would send the investigation
-back to other costs. No runtime policy is changed for this measurement.
+back to other costs. No runtime policy was changed for this measurement.
 POSIX attribution images still omit the completion bridge while Windows images
 include it; full-link POSIX timing and ordinary CLI timing remain required.
 The new getters and FIR instrumentation pass strict C syntax checks and
@@ -325,6 +326,52 @@ full-link M1 correctness smokes at one/four participants; these smokes ran
 during the canonical check and are not performance measurements. Independent
 review found no implementation defect in this diagnostic delta; its metadata
 and process-total versus batch-boundary clarifications are incorporated.
+
+The [Windows wait observations at `076a476b`](https://github.com/mbbill/Whitefoot/actions/runs/34352414576)
+were recorded on an EPYC 9V74, two cores/four logical CPUs, Windows Server 2025,
+Clang 20.1.8, high-performance power plan. This is a different processor from
+the earlier EPYC 7763 runs; compare controls within this run. At four
+participants, 4,096 / tile 1,024, the five candidate/before paired wall ratios
+have median 2.146 and range 1.263–2.837. Each short process has 64 warm calls
+plus one retained first call. Its observations are:
+
+| Mode | Five warm process means (us) | Batch wait announcements | Batch wake signals |
+| --- | --- | --- | --- |
+| Before | 20.66, 16.10, 16.14, 16.59, 20.43 | 33, 29, 24, 26, 35 | 45, 48, 35, 43, 54 |
+| Candidate | 44.34, 45.68, 43.92, 20.95, 32.58 | 198, 193, 196, 11, 111 | 194, 199, 196, 10, 108 |
+| Zero help | 33.95, 36.34, 34.15, 32.32, 26.45 | 129, 114, 127, 129, 75 | 176, 154, 188, 183, 115 |
+
+The candidate's slower processes coincide with many more wait announcements
+and wake signals. The separate long diagnostic process instead has 81
+announcements over 4,097 calls and mean warm time 18.16 us, compared with
+before's 244 announcements and 19.23 us. It does not reproduce the short-run
+loss, so neither ignoring the short samples nor attributing the difference to
+call count alone is justified. Long-batch candidate/before CPU is 468.75/437.5
+ms and wall is 179.74/177.85 ms; these include verification and remain one
+process per mode. Artifact `10104466331` has ZIP SHA-256
+`e820fa5a9d45ebc9db8490b939aec00c3f67294df7528229480948ae284fe9e5`.
+
+This co-observation supports the planned idle-window control. `idle4096` uses
+the identical current runtime and WF object with only the existing
+`WF_SCHED_IDLE_SPIN_ROUNDS` set to 4,096 instead of 256. The default is unchanged.
+The predicted result is fewer host waits together with removal of the short
+Windows loss. If waits fall without wall improvement, that hypothesis is
+insufficient. Even a wall improvement cannot select the policy if longer
+spinning creates an unresolved CPU regression. The same five-target screen
+retains all other cells, CPU observations and existing controls. CI now also
+triggers on completion and Windows host changes, whose code is part of the
+Windows timing images.
+The full-link M1 smoke passes with the longer window and reports 4,096 rounds;
+diagnostic validation rejects that report when 256 rounds are expected.
+Independent review confirmed the control's scope, wiring and recorded artifact
+figures. This is preparation for CI measurement, not policy qualification.
+
+A local four-participant M1 full-link/core-only comparison used the same scalar
+WF object, inputs 4,096/65,536, tiles 64/1,024, and five alternating process
+pairs with 1,024/256 warm calls. Median wall ratios were 0.833, 1.224, 1.006
+and 0.963 respectively, with broad paired ranges (0.336–1.363 in the first
+cell). This is unresolved local noise, not a selection ground for removing
+the completion bridge or a substitute for normal CLI and mixed-program timing.
 
 ## Earlier investigation and evidence
 

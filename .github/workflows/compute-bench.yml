@@ -9,6 +9,8 @@ on:
     paths:
       - 'research/experiments/compute-runtime/**'
       - 'compiler/src/backend/sched/**'
+      - 'compiler/src/backend/completion/**'
+      - 'compiler/src/backend/windows_runtime.*'
       - 'compiler/src/backend/wf_floor*'
       - 'compiler/src/bin/whitefootc.rs'
       - '.github/workflows/compute-bench.yml'
