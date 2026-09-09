@@ -445,7 +445,8 @@ static unsigned wf__sched_workers_once;
 
 /* Whether `wf__sched_report` answers: `WF_SCHED_REPORT`, read once at the
  * core's entry with every other startup setting, so a value this runtime
- * cannot mean ends the run there and not at exit. */
+ * cannot mean ends the run there and not at exit. Mode 1 serves private
+ * observers; mode 2 also prints at ordinary program return. */
 static unsigned long wf__sched_report_wanted;
 
 static void wf__sched_start_workers_once(void) {
@@ -469,7 +470,7 @@ int wf__sched_start(void) {
     if (ceiling != 0u) {
         (void)wf__sched_setting("WF_IO_HELPERS", ceiling, &helpers);
     }
-    (void)wf__sched_setting("WF_SCHED_REPORT", 1ul, &wf__sched_report_wanted);
+    (void)wf__sched_setting("WF_SCHED_REPORT", 2ul, &wf__sched_report_wanted);
     (void)wf__sched_setting("WF_SPLIT_WORK", WF_PAR_SPLIT_WORK_CEILING, &wf__sched_split_work);
     requested = wf__sched_requested_lanes();
     threads = requested >= 2 ? (unsigned)requested : 1u;
@@ -505,6 +506,18 @@ static void wf__sched_entry_body(void *argument) {
     wf_sched_post_status(&wf__sched_core, status);
 }
 
+/* Keep formatting and its buffer off the ordinary entry frame. This runs
+ * only after the program body has returned, on the host entry stack while
+ * stdio is still live, including on Windows. Workers may still be idle-loop
+ * participants: the atomic report is observational, not a simultaneous
+ * snapshot or a shutdown protocol. */
+__attribute__((noinline)) static void wf__sched_print_report(void) {
+    char report[512];
+    if (wf__sched_report(report, sizeof(report))) {
+        (void)fprintf(stderr, "%s\n", report);
+    }
+}
+
 int wf__sched_entry_stack(
     int (*body)(int, char **),
     int argc,
@@ -525,6 +538,9 @@ int wf__sched_entry_stack(
     call.argc = argc;
     call.argv = argv;
     *status = wf__sched_enter(0u, wf__sched_entry_body, &call);
+    if (wf__sched_report_wanted == 2ul) {
+        wf__sched_print_report();
+    }
     return 1;
 }
 

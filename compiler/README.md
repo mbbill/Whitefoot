@@ -209,6 +209,12 @@ updates and permit live reads, without promising a simultaneous pool snapshot.
 An experimental C build override, `WF_SCHED_STATS=0`, erases these increments
 and makes private scheduler reports unavailable; normal compiler links retain
 the enabled default. Counter-cost measurements have not selected a new default.
+`WF_SCHED_REPORT=2` prints one scheduler counter line on stderr when a normal
+program returns through the shared runtime. No extra observer or custom link
+is needed. Mode 1 retains the private observer API without automatic output;
+0/unset stays silent. These are live atomic observations, not a simultaneous
+snapshot, and builds with counters disabled cannot report them. Diagnostic
+runs must be kept separate from timing samples.
 Task slots use an owner-local free list and an atomic foreign-return list
 sharing one fixed capacity. Release rechecks the current physical thread after
 possible continuation migration; local acquisition and return avoid CAS.

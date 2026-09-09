@@ -126,8 +126,9 @@ unsigned wf__sched_pool_running(void);
 unsigned long wf__par_grants(void);
 
 /* The core's summed counters as one line of text, when the run asked for
- * them with `WF_SCHED_REPORT` (0 or unset: no line; 1: the line), read at the
- * core's entry under the one settings rule. Answers 1 and writes the line
+ * them with `WF_SCHED_REPORT` (0 or unset: unavailable; 1: observer-only;
+ * 2: also print on stderr at ordinary program return), read at the core's
+ * entry under the one settings rule. Answers 1 and writes the line
  * when it was asked for and fits, 0 otherwise. It is for an observer or a
  * gate that has to say what the threads did rather than only what they
  * granted; no program reads it. Builds with WF_SCHED_STATS=0 always answer

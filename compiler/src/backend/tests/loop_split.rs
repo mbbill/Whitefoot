@@ -709,6 +709,7 @@ static void report(void) {
         wf__par_split_budget(65536ul, 219ul),
         wf__par_split_budget(~0ul, ~0ul));
 }
+
 __attribute__((constructor)) static void observe(void) { atexit(report); }
 "#,
     );
@@ -748,6 +749,53 @@ __attribute__((constructor)) static void observe(void) { atexit(report); }
         );
     }
     std::fs::remove_dir_all(&directory).expect("remove split-work test");
+}
+
+#[test]
+fn ordinary_shared_runtime_can_report_without_an_observer() {
+    let directory = test_directory();
+    let executable = build_executable(&emit_with_overlap(PERMITTED_FOLD), &directory);
+    let mut runs = Vec::new();
+    for workers in ["1", "4"] {
+        for report in ["0", "1", "2"] {
+            let output = Command::new(&executable)
+                .env("WF_WORKERS", workers)
+                .env("WF_SPLIT_WORK", "60000")
+                .env("WF_SCHED_REPORT", report)
+                .output()
+                .expect("run ordinary shared runtime with report mode");
+            assert!(output.status.success(), "{output:?}");
+            assert_eq!(output.stdout.len(), 8);
+            if report == "2" {
+                let text = String::from_utf8_lossy(&output.stderr);
+                assert_eq!(text.lines().count(), 1, "{text}");
+                assert!(
+                    text.starts_with(&format!("sched: threads={workers} ")),
+                    "{text}"
+                );
+                let started = if workers == "1" { "0" } else { "3" };
+                assert!(
+                    text.contains(&format!("workers_started={started} ")),
+                    "{text}"
+                );
+            } else {
+                assert!(output.stderr.is_empty(), "{output:?}");
+            }
+            runs.push((format!("workers={workers} report={report}"), output.stdout));
+        }
+    }
+    identical(&runs).expect("diagnostics must not change the program output");
+    let rejected = Command::new(&executable)
+        .env("WF_SCHED_REPORT", "3")
+        .output()
+        .expect("reject an unsupported report mode");
+    assert_eq!(rejected.status.code(), Some(1));
+    assert!(rejected.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&rejected.stderr),
+        "whitefoot scheduler: WF_SCHED_REPORT must be an integer from 0 through 2\n"
+    );
+    std::fs::remove_dir_all(&directory).expect("remove report-mode test");
 }
 
 /// A split that carries captures and folds under a second admitted operation

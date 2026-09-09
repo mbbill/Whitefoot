@@ -527,7 +527,7 @@ check-records-events: check-records-budget records-events-build
 	$(call qualify-record-controls,events events-sanitized)
 	OUT="$(OUT)" sh records-bench.sh events-check
 
-.PHONY: mandelbrot-build check-mandelbrot mandelbrot-command-build check-mandelbrot-command mandelbrot-command-screen
+.PHONY: mandelbrot-build check-mandelbrot mandelbrot-command-build check-mandelbrot-command mandelbrot-command-screen mandelbrot-command-diagnose
 mandelbrot-command-build: $(WFC)
 	OUT="$(OUT)" WFC="$(WFC)" CC="$(CC)" CXX="$(CXX)" sh mandelbrot-command.sh build
 
@@ -536,6 +536,9 @@ check-mandelbrot-command: mandelbrot-command-build
 
 mandelbrot-command-screen: mandelbrot-command-build
 	OUT="$(OUT)" WFC="$(WFC)" CC="$(CC)" CXX="$(CXX)" sh mandelbrot-command.sh screen
+
+mandelbrot-command-diagnose: mandelbrot-command-build
+	OUT="$(OUT)" WFC="$(WFC)" CC="$(CC)" CXX="$(CXX)" sh mandelbrot-command.sh diagnose
 
 mandelbrot-build: scheduler-layout-build $(WFC)
 	"$(WFC)" --par --par-scalar-leaf-limit off --par-ledger --emit-llvm mandelbrot.wf mandelbrot_command.wf -o "$(OUT)/mandelbrot.ll" > "$(OUT)/mandelbrot.ledger"

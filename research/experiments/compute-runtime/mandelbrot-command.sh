@@ -8,9 +8,11 @@ cd "$(dirname "$0")"
 CC=${CC:-/usr/bin/clang}
 CXX=${CXX:-/usr/bin/clang++}
 mode=${1:-check}
-case "$mode" in build|check|screen|summarize) ;; *) exit 2;; esac
+case "$mode" in build|check|screen|summarize|diagnose) ;; *) exit 2;; esac
 # This panel owns the policy matrix; inherited tuning must not alter a cell.
 unset WF_SPLIT_WORK
+WF_SCHED_REPORT=0
+export WF_SCHED_REPORT
 mkdir -p "$OUT/mandelbrot-command"
 out=$(cd "$OUT/mandelbrot-command" && pwd)
 exe=
@@ -20,6 +22,16 @@ case "$(uname -s)" in
     MINGW*|MSYS*) exe=.exe; thread_flags=; runner_flags='-municode -lpsapi';;
 esac
 scalar_flags='-O2 -g -Wall -Wextra -Werror -Wpedantic -fno-fast-math -ffp-contract=off -fno-vectorize -fno-slp-vectorize -fno-lto'
+verify_report() {
+    awk -v threads="$2" -v started="$3" '
+        BEGIN {split("threads workers_started parks cancels resumes steals inline_runs exhausted_io exhausted_compute late_parks line_one spin_rounds yield_rounds", keys, " ")}
+        {sub(/\r$/, "")}
+        NF!=14 || $1!="sched:" || $2!=("threads=" threads) {bad=1}
+        started!="any" && $3!=("workers_started=" started) {bad=1}
+        {for(i=2;i<=NF;i++) if($i!~("^" keys[i-1] "=[0-9]+$")) bad=1}
+        END {exit bad || NR!=1}
+    ' "$1"
+}
 if test "$mode" = build; then
     "$WFC" --par --no-vectorize mandelbrot.wf mandelbrot_command.wf -o "$out/par$exe"
     "$WFC" --no-overlap --no-vectorize mandelbrot.wf mandelbrot_command.wf -o "$out/seq$exe"
@@ -45,6 +57,35 @@ if test "$mode" = build; then
             'oracle mode checks the native point kernel against an independent volatile binary64 recurrence and known orbits; timed commands check an ordered 64-bit digest' \
             'command runner: process wall, child CPU and peak memory; POSIX context switches, unavailable on Windows'
     } > "$out/flags.txt"
+    exit 0
+fi
+if test "$mode" = diagnose; then
+    mkdir "$out/diagnostics"
+    if test -n "$exe"; then cpus=$NUMBER_OF_PROCESSORS; else cpus=$(getconf _NPROCESSORS_ONLN); fi
+    widths=1
+    if test "$cpus" -ge 2; then widths="$widths 2"; fi
+    if test "$cpus" -ge 4; then widths="$widths 4"; fi
+    printf 'shape\tcount\tworkers\tsplit_work\tlimit\trepetitions\tseed\texpected\n' > "$out/diagnostics/inputs.tsv"
+    for shape in 0 1 2 3 4 5 6; do
+        for count in 4096 65536; do
+            repetitions=32
+            if test "$count" = 65536; then repetitions=2; fi
+            expected=$("$out/native$exe" oracle "$shape" "$count" 256 "$repetitions" 92821)
+            for workers in $widths; do
+                for work in 0 60000 240000 1200000; do
+                    log="$out/diagnostics/s$shape-n$count-w$workers-work$work"
+                    WF_WORKERS=$workers WF_SPLIT_WORK=$work WF_SCHED_REPORT=2 \
+                        "$out/par$exe" "$shape" "$count" 256 "$repetitions" 92821 "$expected" \
+                        > "$log.stdout" 2> "$log.stderr"
+                    test ! -s "$log.stdout"
+                    verify_report "$log.stderr" "$workers" any
+                    printf '%s\t%s\t%s\t%s\t256\t%s\t92821\t%s\n' \
+                        "$shape" "$count" "$workers" "$work" "$repetitions" "$expected" >> "$out/diagnostics/inputs.tsv"
+                done
+            done
+        done
+    done
+    printf 'Ordinary-command scheduler diagnostics complete: %s\n' "$out/diagnostics"
     exit 0
 fi
 if test "$mode" = summarize; then
@@ -182,6 +223,17 @@ for invalid in -1 no 1000000001 18446744073709551616; do
     tr -d '\r' < "$out/check/stderr.txt" > "$out/check/diagnostic.txt"
     printf 'whitefoot scheduler: WF_SPLIT_WORK must be an integer from 0 through 1000000000\n' > "$out/check/expected-diagnostic.txt"
     cmp "$out/check/diagnostic.txt" "$out/check/expected-diagnostic.txt"
+done
+# The normal executable must report configured/started workers without an
+# observer library. A positive tiny work threshold ensures this small loop
+# actually reaches the worker-start path, regardless of who steals its tasks.
+expected=$("$out/native$exe" oracle 4 257 128 3 92821)
+for workers in 1 4; do
+    log="$out/check/report-w$workers"
+    WF_WORKERS=$workers WF_SPLIT_WORK=1 WF_SCHED_REPORT=2 \
+        "$out/par$exe" 4 257 128 3 92821 "$expected" > "$log.stdout" 2> "$log.stderr"
+    test ! -s "$log.stdout"
+    verify_report "$log.stderr" "$workers" "$((workers-1))"
 done
 if test -z "$exe"; then
     for sanitizer in asan tsan; do

@@ -1115,6 +1115,17 @@ Raw process samples, oracle inputs/digests, tool flags, source copies, host
 metadata and executable/compiler hashes are artifacts. Requested counts do not
 prove every worker executed a task; runtime attribution needs separate evidence.
 
+`make mandelbrot-command-diagnose OUT=<fresh-absolute-directory>` runs the same
+inputs separately with the normal executable's `WF_SCHED_REPORT=2`. It records
+one live scheduler report per process at widths 1/2/4 where available and work
+settings 0/60,000/240,000/1,200,000: 168 reports on a four-participant host, 112
+on a two-participant host. The reports and oracle inputs are retained under
+`diagnostics/` in each CI artifact. The correctness check requires the normal
+CLI to report configured/started workers without a custom observer link.
+Timing runs explicitly disable automatic reports. Diagnostic counts are not
+timing samples or a simultaneous shutdown snapshot; a started worker need not
+have executed a task, and counts alone do not identify time lost waiting.
+
 The initial screen reports per-cell paired median/min/max wall, CPU and RSS
 ratios. A wall/CPU **gap** requires all five ratios above 1.05 and all five WF
 wall A/A ratios inside [0.95, 1.05]. Gaps in the default WF/native comparisons
@@ -1151,7 +1162,7 @@ but **all 140 wall/CPU comparison rows are `noisy-open`**; its all-interior W2
 median is 1.9866. None of these is platform performance acceptance. Windows
 stops before timing on MSVC's deprecated `getenv` diagnostic in the native
 reference. The subsequent reference uses `_dupenv_s`, frees its buffer and
-retains strict warnings; a new Windows execution is required.
+retains strict warnings; the later run below executes it on Windows.
 
 The local `cd059f74` cohort (`split-work-local2`, evidence currently local only)
 then completes all 1,400 oracle-checked processes on the eight-core M1 Pro,
@@ -1194,6 +1205,49 @@ These results support retaining an explicit policy control and investigating
 cost estimation and task/wakeup overhead in the maintained runtime. They do
 not select a universal lower default: cheap exits, CPU cost, memory, additional
 computations and every CI target still require qualification.
+
+The [subsequent five-target run at `ab6cf582`](https://github.com/mbbill/Whitefoot/actions/runs/34400322732)
+uses the `cd059f74` implementation. All five ordinary-command correctness
+steps pass, including Windows with the corrected native reference. Four hosts
+complete 1,400 timing processes each; macOS ARM64 has two participants and
+completes 980. All five screens fail on performance gaps. Recomputing each
+summary with its captured AWK reproduces its bytes and exit status. The eleven
+available executable/source hashes per artifact verify; the compiler executable
+itself is not included, so its recorded hash cannot be checked from the ZIP.
+For all-interior, 4,096-point input, paired median ratios are:
+
+| CI target | Workers | Default/static wall | 60,000/default wall | 60,000/static wall | 60,000/static CPU | A/A wall range |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Linux x64 | 4 | 3.3877 | 0.4509 | 1.5231 | 0.9899 | 0.9918–1.0161 |
+| Linux ARM64 | 4 | 3.7132 | 0.4189 | 1.5550 | 1.0047 | 0.9990–1.0024 |
+| macOS x64 (noisy) | 4 | 3.4629 | 0.3125 | 1.1342 | 1.0541 | 0.9251–1.0052 |
+| macOS ARM64 (noisy) | 2 | 1.9956 | 0.5178 | 1.0494 | 1.0297 | 0.9644–1.0828 |
+| Windows x64 | 4 | 3.1124 | 0.3607 | 1.1275 | 0.8889 | 0.9946–1.0016 |
+
+The Linux 60,000/static wall ranges are 1.4799–1.6235 and 1.4816–1.6244;
+the substantial remaining loss is not just the M1's roughly 7% median gap.
+Their CPU ratios remain close to one, suggesting parallel utilization/waiting
+deserves investigation rather than establishing a cause. Linux x64 exposes
+four hardware threads on two EPYC 7763 cores; Linux ARM64 exposes four
+Neoverse-N2 cores. Each comparison uses matching participant counts on its own
+host. Windows wall ratios are 1.0845–1.3710, while its CPU ratios span
+0.6000–1.3333; that coarse/noisy CPU accounting does not establish a CPU win.
+For the same Linux x64 cell, the median process CPU/wall ratio is 2.4789 for
+60,000 versus 3.8284 for static; summed voluntary/involuntary context switches
+have medians 609 versus 17. Linux ARM64 has utilization ratios 2.4553 versus
+3.8137 and switch medians 590 versus 14. These five-process observations
+motivate collecting task/park reports on the normal path. They do not isolate
+which runtime operation causes the lost utilization or prove every context
+switch was a scheduler-requested yield.
+The macOS cells fail the A/A window and remain unresolved. Across all cells,
+wall A/A is noisy in 19/42 Linux x64, 16/42 Linux ARM64, 27/42 macOS x64,
+25/28 macOS ARM64 and 24/42 Windows cells. No platform is qualified by this run.
+
+Raw artifacts: [Linux x64](https://github.com/mbbill/Whitefoot/actions/runs/34400322732/artifacts/10123241270),
+[Linux ARM64](https://github.com/mbbill/Whitefoot/actions/runs/34400322732/artifacts/10123230529),
+[macOS x64](https://github.com/mbbill/Whitefoot/actions/runs/34400322732/artifacts/10123346930),
+[macOS ARM64](https://github.com/mbbill/Whitefoot/actions/runs/34400322732/artifacts/10123248547),
+[Windows x64](https://github.com/mbbill/Whitefoot/actions/runs/34400322732/artifacts/10123353544).
 
 ### Historical manual-link panel
 

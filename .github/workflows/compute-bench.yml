@@ -62,6 +62,7 @@ jobs:
           export OUT="$scratch" WFC="$scratch/compiler/gate/whitefootc$suffix" CC="$cc" CXX="$cxx"
           sh research/experiments/compute-runtime/mandelbrot-command.sh build
           sh research/experiments/compute-runtime/mandelbrot-command.sh check
+          sh research/experiments/compute-runtime/mandelbrot-command.sh diagnose
       - name: Measure whole commands against matched scalar native controls
         run: |
           scratch="$RUNNER_TEMP/mandelbrot-command"
