@@ -420,17 +420,16 @@ static wf_sched_stack *wf_sched_take_target(wf_sched_core *core, int take_empty,
  * test, and -- for the scheduler loop's own turn -- this thread's own deque
  * and a steal. Returns 1 when a look found something and the turn acted on
  * it, which is what makes the caller's loop restart, and 0 when every look
- * missed. The caller passes zero while polling without a registration, or
- * its published idle bit during the final pre-sleep recheck. Every arm that
- * acts ends that registration before switching or running a hand-out. */
+ * missed. The turn's registration -- this thread's bit in `core->idle` and,
+ * for an I/O record, the in-place waiter marker -- is raised by the caller
+ * before the first of these looks and is ended here by every arm that acts,
+ * because each of them either switches away or runs a hand-out here and none
+ * may leave a thread published as idle while it does. */
 static void wf_sched_idle_end(
     wf_sched_core *core,
     wf_sched_record *on_record,
     unsigned long long idle_bit
 ) {
-    if (idle_bit == 0ull) {
-        return;
-    }
     (void)wf_prim_and_q(&core->idle, ~idle_bit, WF_PRIM_SEQ_CST);
     if (on_record != NULL) {
         /* The in-place registration ends with the turn; a publisher that
@@ -443,10 +442,10 @@ static void wf_sched_idle_end(
 static int wf_sched_idle_looks(
     wf_sched_core *core,
     wf_sched_record *on_record,
-    unsigned long long bit,
     int *left_for_status
 ) {
     wf_sched_thread *thread = wf_sched_current_thread(core);
+    unsigned long long bit = 1ull << thread->index;
     wf_sched_stack *ready;
     if (on_record != NULL) {
         /* Pair with the publisher's SC COMPLETING store and waiter load:
@@ -483,7 +482,7 @@ static int wf_sched_idle_looks(
         return 1;
     }
     if (on_record == NULL) {
-        /* This scan is repeated after registration before any host sleep. */
+        /* The deques, looked at after the bit went up (§6). */
         wf_sched_slot *slot = wf_sched_pop(thread->lane);
         if (slot == NULL) {
             slot = wf_sched_find(core, thread);
@@ -497,14 +496,13 @@ static int wf_sched_idle_looks(
     return 0;
 }
 
-/* Step 4 of the scheduler loop and the I/O exhaustion arm share one idle
- * sequence. Poll without announcing a sleeper first: finding a short-lived
- * gap then needs neither a shared idle-bit update nor a publisher's wake.
- * Before sleeping, retain the complete registered window (§6): register,
- * capture the epoch, flush/progress, recheck all work, then park on the epoch.
- * The earlier polling does not substitute for any check in that window.
- * `on_record` names the record to park on if a READY stack appears; only the
- * entry thread tests process exit. Returns 1 when the loop must restart.
+/* Step 4 of the scheduler loop and the I/O arm of the fourth line are one
+ * sequence (§6): raise this turn's registration, capture the epoch, flush and
+ * progress, look, and park on the captured epoch -- with a bounded spin over
+ * those same looks between the last of them and the park. `on_record`, when
+ * given, is the record this stack would park on if a READY stack appears, and
+ * the entry test is the entry thread's alone. Returns 1 when the loop must
+ * restart.
  *
  * Where the spin sits is the whole of what it costs and most of what it buys.
  * It is after the drain, because the drain is the only thing that delivers an
@@ -515,11 +513,12 @@ static int wf_sched_idle_looks(
  * drain, a turn that had something to find has already found it and never
  * reaches the spin at all.
  *
- * Registration happens only after polling misses. A publisher before it is
- * covered by the final work recheck; one after the capture either changes
- * the epoch or leaves work that the recheck finds. Progress is repeated in
- * that final window so staged I/O and completions cannot be slept through.
- * `core.h` owns the bounded polling limits. */
+ * It is inside the capture-to-park window rather than in front of it, and that
+ * is what keeps §6's lost-wake argument the argument it was: every look the
+ * spin makes is a look after the epoch capture, so a publisher that acts after
+ * the capture either moved the epoch, which makes the park below return at
+ * once, or left a push one of these looks finds. What the spin is for, and
+ * where its two constants come from, is `core.h`. */
 static int wf_sched_idle_step(
     wf_sched_core *core,
     wf_sched_record *on_record,
@@ -532,25 +531,10 @@ static int wf_sched_idle_step(
     unsigned round;
     uint64_t epoch;
     *left_for_status = 0;
-    if (wf_prim_progress(core)) {
-        return 1;
-    }
-    if (wf_sched_idle_looks(core, on_record, 0ull, left_for_status)) {
-        return 1;
-    }
-    for (round = 0u; round < look_rounds; round += 1u) {
-        if (round < spin_rounds) {
-            wf_prim_pause();
-        } else {
-            wf_prim_yield();
-        }
-        if (wf_sched_idle_looks(core, on_record, 0ull, left_for_status)) {
-            return 1;
-        }
-    }
-    /* The bit goes up before capture and before the final look. A publisher
-     * missing the bit must have left work for that look. A completion drain
-     * either sees the in-place marker or precedes the final record recheck. */
+    /* The bit goes up before the epoch is captured and before the last look,
+     * so a publisher that misses the bit is one whose push the look finds.
+     * The in-place waiter registers the same way, so a drain on another
+     * thread wakes it instead of storing DONE past its sleep. */
     (void)wf_prim_or_q(&core->idle, bit, WF_PRIM_SEQ_CST);
     if (on_record != NULL) {
         wf_prim_store_p((void **)&on_record->waiter, WF_SCHED_WAITER_IN_PLACE, WF_PRIM_SEQ_CST);
@@ -560,8 +544,18 @@ static int wf_sched_idle_step(
         wf_sched_idle_end(core, on_record, bit);
         return 1;
     }
-    if (wf_sched_idle_looks(core, on_record, bit, left_for_status)) {
+    if (wf_sched_idle_looks(core, on_record, left_for_status)) {
         return 1;
+    }
+    for (round = 0u; round < look_rounds; round += 1u) {
+        if (round < spin_rounds) {
+            wf_prim_pause();
+        } else {
+            wf_prim_yield();
+        }
+        if (wf_sched_idle_looks(core, on_record, left_for_status)) {
+            return 1;
+        }
     }
     wf_prim_park(epoch);
     wf_sched_idle_end(core, on_record, bit);

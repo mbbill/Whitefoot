@@ -209,9 +209,9 @@ updates and permit live reads, without promising a simultaneous pool snapshot.
 Task slots use an owner-local free list and an atomic foreign-return list
 sharing one fixed capacity. Release rechecks the current physical thread after
 possible continuation migration; local acquisition and return avoid CAS.
-Idle threads poll before announcing a sleeper. Before parking they register,
-capture the wake epoch and repeat progress and all work checks; progress also
-runs before polling so staged I/O is not delayed by the polling window.
+Idle threads register and capture the wake epoch before progressing and
+polling for work. Delaying registration until after polling was measured and
+rejected as the general policy; the investigation records its local tradeoffs.
 Condition-variable wait paths coalesce notifications for already-signaled
 waiters while retaining an SC wake epoch and rearming at every announcement.
 External I/O callbacks retain per-publication notifications.

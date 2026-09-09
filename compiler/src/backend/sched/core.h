@@ -154,9 +154,7 @@ typedef struct wf_sched_lane {
  * drain and last look found nothing repeats those looks -- the ready list and
  * this thread's own deque and a steal, or the record a stack waits on -- for
  * SPIN rounds of `wf_prim_pause` and then YIELD rounds of `wf_prim_yield`,
- * and only then registers for sleep, captures the epoch and repeats the
- * progress/work checks before parking. Polling workers need no wake
- * announcement; the final registered recheck closes the lost-wake race. These are
+ * and only then parks on the epoch it captured before all of them. These are
  * scheduling policy numbers of the same kind as `WF_PAR_SPLIT_OVERSUBSCRIBE`
  * in `sched/entry.c`: nothing about which programs are accepted, what they
  * compute, or what any of them observes depends on either one, and the park

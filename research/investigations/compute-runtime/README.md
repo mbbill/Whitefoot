@@ -1245,10 +1245,10 @@ Both [I/O host jobs](https://github.com/mbbill/Whitefoot/actions/runs/3438549030
 and all four [I/O benchmark/read jobs](https://github.com/mbbill/Whitefoot/actions/runs/34385490307)
 pass. These are evidence of preserved I/O function, not compute acceptance.
 
-### Open delayed idle-registration experiment
+### Delayed idle registration: rejected as the general policy
 
-The next candidate compares with dc383eef, keeping task slots, counters,
-spin/yield limits and the stack policy fixed. The current idle turn publishes
+The 461a7130 candidate compares with dc383eef, keeping task slots, counters,
+spin/yield limits and the stack policy fixed. The original idle turn publishes
 its idle bit before its bounded polling window. Every task publication that
 sees any such bit calls the shared wake primitive, which advances an atomic
 epoch even when notification coalescing avoids the host lock. The recovered
@@ -1302,8 +1302,8 @@ does not select this policy; the CPU regressions remain open. The CI screen
 adds frozen dc383eef as `slotbase` while preserving all previous controls and
 acceptance limits, to test the different native hosts. Initial local setup and
 compile failures occurred before timing and are retained separately; no timed
-sample is discarded. Full candidate canonical checking and native CI remain
-pending.
+sample is discarded. Subsequent exact-revision checks and native results
+follow below.
 
 Independent review of this round over dc383eef covers the maintained idle
 protocol, frozen comparison sources, diagnostic boundaries, sanitizer grammar
@@ -1314,6 +1314,83 @@ are corrected, with no remaining finding in that scope. Current canonical
 checking, cross-platform performance and normal-CLI timing are unverified;
 the local CPU regressions are unresolved. This is not whole-PR approval or
 completion of the delivery goal.
+
+Exact 461a7130 subsequently passes local canonical `make check`: compiler
+903 seconds, research 220, conformance 99 and snapshot 20. The
+[native CI cohort](https://github.com/mbbill/Whitefoot/actions/runs/34388362153)
+completes all five formal-runtime screens, all failing performance acceptance.
+Long-view candidate/dc383eef paired medians are below; all five pairs and
+replica controls remain in the artifacts, including noisy and losing cells.
+
+| Native host | 4096/t64 W2 | W4 | 4096/t1024 W2 | W4 | 65536/t16 W2 | W4 |
+|---|---:|---:|---:|---:|---:|---:|
+| Linux x86_64 | 1.0350 | 1.0743 | 0.9736 | 1.0254 | 1.0086 | 1.0021 |
+| Linux AArch64 | 1.0063 | 0.9706 | 0.8354 | 0.9840 | 1.0001 | 0.9965 |
+| macOS AArch64 | 1.0670 | not run | 0.9201 | not run | 0.9855 | not run |
+| macOS x86_64 | 1.1328 | 1.0867 | 0.9860 | 1.0260 | 0.9794 | 1.0137 |
+| Windows x86_64 | 0.9859 | 1.1995 | 0.8083 | 1.0788 | 1.0020 | 1.0063 |
+
+Windows W4 4096/t64 loses in every pair, 1.1078–1.3487, with A/A median
+0.9602. Linux x86_64 at that cell also loses in every pair, 1.0542–1.0897,
+with A/A 0.9989. Conversely Linux AArch64 W2 4096/t1024 gains in every
+pair, 0.8006–0.8457, with A/A 1.0010; retain this genuine local benefit.
+Windows W2 coarse has 0.7374–0.8356 but noisy A/A 0.9519
+(0.8119–1.2152). macOS x86_64 has widespread A/A variability, including
+W4 coarse 0.9063 (0.5447–1.2883). No platform-wide speedup follows from
+these medians. Windows W4 coarse is still 3.3351 times historical formal-before;
+Linux x86_64 W4 coarse is 1.2867 times recovered, and Linux AArch64 is
+1.6192 times recovered. The original broad performance goal remains open.
+
+The [partitioned gate](https://github.com/mbbill/Whitefoot/actions/runs/34388362074)
+has nine passes and three cancellations at its configured eight-minute limit:
+Linux/macOS unit and Linux static. Two Linux jobs still have an enumeration
+process at cancellation; macOS unit completes its largest enumeration just
+before cancellation. The new state space nearly doubles the earlier largest
+enumeration. Keep the limit and full test coverage; the cancelled checks are
+not passes. Both research jobs pass the corrected sanitizer classification.
+Records, scheduler, FIR and Mandelbrot extended jobs pass; quadrature retains
+its performance failure. Both [I/O host jobs](https://github.com/mbbill/Whitefoot/actions/runs/34388362124)
+and all four [I/O benchmark/read jobs](https://github.com/mbbill/Whitefoot/actions/runs/34388362058)
+pass.
+
+The local CPU regression has a narrower attribution. In the first W1
+65536/t16 cohort, core-time totals for 513 calls have medians 275.10 ms
+before and 274.40 ms after; cycle time outside core changes from 509.68 to
+534.94 ms, while checking outside cycle stays near 6.92 ms. That outside-core
+interval includes prefix preparation, result access and release. The linked
+WF/accessor text starts move by 32 bytes despite identical computation objects.
+A second local 60-process cohort uses the same objects and five alternating
+passes over fine/coarse W1 cells. Its normal layout repeats the fine batch-CPU
+regression, median 1.0395 (1.0228–1.0411; CPU A/A 1.0025), and outside-core
+cycle median 1.0584 (1.0425–1.0620). A Mach-O order-file control holds 16
+WF/accessor/native text starts fixed, including outlined cold text. There the
+fine CPU median is 1.0078 (0.9975–1.0474; A/A 1.0056) and outside-core
+cycle median 1.0064 (0.9988–1.0525). Coarse CPU medians stay near 1.002
+under both layouts. This supports a local code-layout contribution; matching
+text starts does not match every relocation, data address or stub, and does
+not explain other platforms' scheduler regressions. The first object-order-only
+build fails its cold-text address invariant before timing; that failed build
+is retained. The successful `late-idle-layout-run2` source snapshots, order file,
+object hashes, raw rows and reproduction script remain local-only evidence.
+Timing starts after the exact canonical process exits, without concurrent
+local tests.
+
+Under the stated cross-platform no-regression criterion, restore dc383eef's
+idle-registration order in the maintained core. Keep the independent report
+classification repair, wake-epoch diagnostics, frozen comparisons and all
+limits. This rejects the change as the general default, not the ARM cell
+benefit or every future adaptive policy. Independent selection review checks
+the native ratios, gate outcomes and layout-control scope and finds no blocker
+to that restoration. The restored tree still requires its own current checks;
+461a7130's canonical success is not success of a later revision.
+
+The restored tree passes native scheduler smoke, the 200,000-task concurrent
+deque-reuse probe, and the 16,000-submission default I/O route probe. A rebuilt
+ordinary compiler links the scalar `--par --no-vectorize` FIR command, which
+runs successfully at one and four workers (correctness only). Final scoped
+review confirms the two core files exactly match dc383eef, checks all five
+CI table rows and recomputes the 60-process layout result, with no remaining
+finding. The restored revision's own canonical and CI results remain pending.
 
 ## Earlier investigation and evidence
 

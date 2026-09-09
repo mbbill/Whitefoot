@@ -111,7 +111,7 @@ printf '%s\n' "$CC $flags; recovered additionally -DWF_COMPUTE_STATS=0 -DWF_COMP
     'replica: byte-identical copy of candidate, independently invoked; raw runtime label remains candidate; A/A wall band is symmetric' \
     'previous: frozen f2d9d0fa maintained scheduler/floor and Windows host/completion sources with repaired wait rearming, before owned-inline completion' \
     'unaligned: frozen 8b61e7c4 maintained runtime before counter isolation and owner-local task slots; retained historical comparison.' \
-    'slotbase: frozen dc383eef maintained runtime with owner-local task slots, before delayed idle registration. Compare candidate/slotbase for this change; instruction layout can also differ.' \
+    'slotbase: frozen dc383eef maintained runtime with owner-local task slots and original idle registration; restored after the delayed-registration experiment at 461a7130. Retained direct baseline; instruction layout can also differ.' \
     'idle4096: current runtime sources with only -DWF_SCHED_IDLE_SPIN_ROUNDS=4096u changed; default remains 256' \
     'diagnostics: separate longer batches; candidate/previous/unaligned/slotbase/idle4096 use WF_SCHED_REPORT=1, before uses 0; wake_epoch counts notification-epoch advances, not task publications or kernel wakeups; not pooled into wall samples' \
     'wall samples: 4096 warm calls for n4096, 512 for n65536; first64 retained as a separate short view of each process, not independent extra samples' \
