@@ -131,6 +131,7 @@ int main(void) {
         *frame = id;
         wf_sched_publish(&core, frame, task);
     }
+    check(wf_sched_acquire(&core, sizeof(unsigned)) == NULL, "full lane did not refuse acquisition");
     while (__atomic_load_n(&ready, __ATOMIC_ACQUIRE) != PROBE_WORKERS) wf_prim_pause();
     __atomic_store_n(&started, 1u, __ATOMIC_RELEASE);
     while (__atomic_load_n(&completed, __ATOMIC_ACQUIRE) == 0u) wf_prim_pause();
@@ -156,11 +157,13 @@ int main(void) {
     for (id = 0; id < PROBE_TASKS; id += 1u) check(seen[id] == 1u, "missing task");
     check(completed == PROBE_TASKS, "wrong completion count");
     check(core.lanes[0].top == core.lanes[0].bottom, "deque not empty");
-    for (index = core.lanes[0].free_head; index != WF_SCHED_NO_SLOT;
-         index = core.lanes[0].slots[index].next_free) {
-        check(index < WF_SCHED_LANE_SLOTS, "invalid free-list index");
-        check(returned[index]++ == 0u, "free-list cycle");
-        free_count += 1u;
+    for (unsigned list = 0; list < 2u; list += 1u) {
+        index = list == 0u ? core.lanes[0].free_head : core.lanes[0].local_free_head;
+        for (; index != WF_SCHED_NO_SLOT; index = core.lanes[0].slots[index].next_free) {
+            check(index < WF_SCHED_LANE_SLOTS, "invalid free-list index");
+            check(returned[index]++ == 0u, "free-list cycle or duplicate membership");
+            free_count += 1u;
+        }
     }
     check(free_count == WF_SCHED_LANE_SLOTS, "slot not returned");
     wf_sched_statistics_sum(&core, &counts);

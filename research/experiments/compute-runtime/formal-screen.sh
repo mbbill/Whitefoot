@@ -321,7 +321,7 @@ EOF
     cmp "$out/layout/previous-other-text.txt" "$out/layout/candidate-other-text.txt"
     cp "$out/layout-candidate" "$out/layout-replica"
     cmp "$out/layout-candidate" "$out/layout-replica"
-    printf '%s\n' 'Linux layout cohort: frozen 8b61e7c4 (layout-candidate) versus f2 (layout-previous), not the current counter-isolation candidate. Join placed after .fini; all non-join text symbol addresses match. Instruction/data equality is not assumed: size-bearing symbols, ELF maps and disassembly are retained. Smaller separate cohort, never pooled with ordinary samples.' >> "$out/flags.txt"
+    printf '%s\n' 'Linux layout cohort: frozen 8b61e7c4 (layout-candidate) versus f2 (layout-previous), not the current runtime candidate. Join placed after .fini; all non-join text symbol addresses match. Instruction/data equality is not assumed: size-bearing symbols, ELF maps and disassembly are retained. Smaller separate cohort, never pooled with ordinary samples.' >> "$out/flags.txt"
     printf 'mode\tworkers\tn\ttile\tpass\tcore_mean_ns\tcycle_mean_ns\n' > "$out/layout-means.tsv"
     cp "$out/layout-means.tsv" "$out/layout-short-means.tsv"
     for width in $widths; do

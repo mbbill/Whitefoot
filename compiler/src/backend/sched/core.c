@@ -765,7 +765,8 @@ int wf_sched_init(
             lane->slots[slot].next_free = slot + 1u;
         }
         lane->slots[WF_SCHED_LANE_SLOTS - 1u].next_free = WF_SCHED_NO_SLOT;
-        lane->free_head = 0;
+        lane->free_head = WF_SCHED_NO_SLOT;
+        lane->local_free_head = 0;
         core->threads[index].lane = lane;
         core->threads[index].index = index;
     }
@@ -847,17 +848,24 @@ void *wf_sched_acquire(wf_sched_core *core, unsigned long bytes) {
     if (bytes > (unsigned long)WF_SCHED_FRAME_BYTES) {
         return NULL;
     }
-    /* The pop of a single-consumer, multi-producer list: read the head with
-     * acquire, read its successor, swing the head (I3, §7). */
-    head = wf_prim_load_u(&lane->free_head, WF_PRIM_ACQUIRE);
-    for (;;) {
-        unsigned next;
-        if (head == WF_SCHED_NO_SLOT) {
-            return NULL;
-        }
-        next = lane->slots[head].next_free;
-        if (wf_prim_cas_u(&lane->free_head, &head, next, WF_PRIM_ACQ_REL, WF_PRIM_ACQUIRE)) {
-            break;
+    /* Only this physical thread accesses its local list. Relaxed primitives
+     * retain enumerator visibility without a read-modify-write operation. */
+    head = wf_prim_load_u(&lane->local_free_head, WF_PRIM_RELAXED);
+    if (head != WF_SCHED_NO_SLOT) {
+        wf_prim_store_u(&lane->local_free_head, lane->slots[head].next_free, WF_PRIM_RELAXED);
+    } else {
+        /* Foreign returns retain the single-consumer, multi-producer list:
+         * acquire the published successor, then claim its head (I3). */
+        head = wf_prim_load_u(&lane->free_head, WF_PRIM_ACQUIRE);
+        for (;;) {
+            unsigned next;
+            if (head == WF_SCHED_NO_SLOT) {
+                return NULL;
+            }
+            next = lane->slots[head].next_free;
+            if (wf_prim_cas_u(&lane->free_head, &head, next, WF_PRIM_ACQ_REL, WF_PRIM_ACQUIRE)) {
+                break;
+            }
         }
     }
     slot = &lane->slots[head];
@@ -884,8 +892,15 @@ void wf_sched_release(wf_sched_core *core, void *frame) {
     wf_sched_slot *slot = wf_sched_slot_of(frame);
     wf_sched_lane *lane = slot->home;
     unsigned self = (unsigned)(slot - lane->slots);
-    unsigned head = wf_prim_load_u(&lane->free_head, WF_PRIM_RELAXED);
-    (void)core;
+    unsigned head;
+    /* A joining continuation may have migrated. Classify its current
+     * physical thread here, never from its original publication thread. */
+    if (wf_sched_current_thread(core)->lane == lane) {
+        slot->next_free = wf_prim_load_u(&lane->local_free_head, WF_PRIM_RELAXED);
+        wf_prim_store_u(&lane->local_free_head, self, WF_PRIM_RELAXED);
+        return;
+    }
+    head = wf_prim_load_u(&lane->free_head, WF_PRIM_RELAXED);
     for (;;) {
         slot->next_free = head;
         if (wf_prim_cas_u(&lane->free_head, &head, self, WF_PRIM_RELEASE, WF_PRIM_RELAXED)) {

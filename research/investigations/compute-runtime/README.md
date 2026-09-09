@@ -1020,9 +1020,9 @@ sizes differ. Function-address equality is the checked invariant, not wholesale
 instruction/data equality. The original-host loss stays unresolved; avoid a
 production linker change selected only from the new host's near-parity cohort.
 
-### Open counter-isolation experiment
+### Counter-isolation experiment
 
-After 8b61e7c4, a maintained-core candidate aligns each physical thread's
+After 8b61e7c4, a maintained-core candidate aligned each physical thread's
 statistics to 128 bytes. Counters remain atomic and enabled; this does not
 change their live-observation contract. The thread record grows from 136 to
 256 bytes, adding 7,680 bytes across its 64-element array and shifting later
@@ -1057,6 +1057,99 @@ reference coverage. The Linux join-placement cohort now freezes its subject
 at 8b61e7c4 versus f2: changing thread layout invalidates its non-join-address
 premise for the current candidate. Its original-host question remains open;
 its separate verdict cannot qualify the new candidate.
+
+### Counter-isolation CI at 59dd9c18
+
+All five [native formal screens](https://github.com/mbbill/Whitefoot/actions/runs/34380683524)
+complete and fail performance acceptance. Selected long-batch candidate/8b61e7c4
+median ratios follow; values above one are slower. These are matched same-host
+comparisons, not ratios across machines or runs.
+
+| Platform | Small coarse, 2 workers | Small coarse, 4 workers | Large fine, 2 workers | Large fine, 4 workers |
+| --- | ---: | ---: | ---: | ---: |
+| Linux x64 | 0.9802 | 1.0432 | 0.8811 | 0.9444 |
+| Linux ARM64 | 1.2858 | 1.0863 | 1.0069 | 0.9485 |
+| Windows x64 MSVC | 1.2691 | 1.0126 | 0.9550 | 0.9627 |
+| macOS ARM64 | 1.0717 | unavailable | 0.8980 | unavailable |
+| macOS x64 | 0.9385 | 1.3034 | 0.9446 | 1.0113 |
+
+Small/coarse is 4,096 outputs / tile 1,024; large/fine is 65,536 / tile 16.
+The ARM64 Mac screen exercises one/two workers and has no four-worker cell.
+The Intel Mac four-worker
+coarse ratio has range 0.8116–1.9184 and candidate/replica 1.0730, so its median
+cannot establish a stable regression. Windows two-worker coarse ranges
+0.7137–1.3786. By contrast, Linux ARM64's two/four-worker coarse losses occur
+in every pair and remain outside its near-unity identical-image medians.
+
+The Linux ARM64 [artifact](https://github.com/mbbill/Whitefoot/actions/runs/34380683524/artifacts/10116059462)
+is SHA256 `62082f14bfa9537f192fb822cd5799acf21df2052285c767cb94c6c8a865cd46`;
+its host is four-core Neoverse-N2 without SMT. Two/four-worker coarse
+whole-batch CPU ratios are 1.1361/1.0853, with all five pairs above one.
+Two-worker candidate processes have 3,532–3,867 voluntary context switches,
+versus 41–405 for the control. Separate diagnostic processes record 130 versus
+14 parks and 4,079 versus 4,098 steals. These observations implicate additional
+waiting/waking costs but do not isolate why a layout change caused them;
+diagnostic counters are not paired timing samples. The layout is rejected as
+a general default rather than compensating for these losses with fine-task wins.
+
+All twelve [gate CI jobs](https://github.com/mbbill/Whitefoot/actions/runs/34380683471)
+and both [I/O host jobs](https://github.com/mbbill/Whitefoot/actions/runs/34380683469)
+pass. The Windows I/O benchmark stops because `io-warm` remains unstable after
+two cohorts; its mixed observer records 1,024 grants. This is not an I/O
+performance pass. Local canonical checking stops at missing pinned scheduler
+source paths after compiler checks pass; the unchanged revision is being
+rerun with verified TBB/Parlay pins and explicit source paths. No full local
+canonical pass is claimed for this revision yet.
+
+### Open owner-local slot experiment
+
+The next maintained-core experiment is developed from 59dd9c18 but removes
+its counter alignment before performance comparison. The Linux ARM64 CI at
+59dd9c18 finds stable coarse small-input candidate/unaligned regressions:
+two-worker median 1.2858 (range 1.2579–1.3560, A/A 0.9947), four-worker 1.0863
+(1.0610–1.1063, A/A 1.0111). All five pairs lose in each cell. That prevents
+selecting counter isolation as a general optimization. Task-slot changes are
+compared against 8b61e7c4 for an unchanged counter layout. A comparison with
+59dd9c18 would include the reversal and cannot isolate the slot change.
+
+In the baseline, every successful acquire/release pair changes one shared
+free-list head with two CAS
+operations, including same-thread returns. The frozen recovered implementation
+uses a local list; restoring plain accesses to the shared head would lose
+foreign returns after a joining continuation migrates. Instead, separate the
+owner's local free list from the existing atomic foreign-return list. Both use
+the same fixed slot capacity. Acquisition prefers local slots and falls back
+to the original atomic pop; release rechecks current physical-thread identity.
+No stack policy, task-frame ABI, source acceptance or I/O progress rule changes.
+
+The provisional test is whether avoiding the local CAS pair improves matched
+scalar workloads without losses in foreign-return-heavy or exhausted cases.
+Compare with frozen 8b61e7c4, retaining identical-image variation,
+whole-process CPU/RSS and ordinary CLI delivery. Native smoke, bounded
+enumeration, concurrent full-capacity reuse and live counter observation must
+hold before performance evidence can select the change. The enumerator models
+both heads, enforces local-list ownership and retains both free chains in its
+state digest; no interleaving or failure check is removed. This is an open
+experiment, not a selected optimization or cross-platform qualification.
+
+The first local slot-only cohort completes 180 processes at one/two/four
+workers, the same two input sizes/tiles and warm counts as the smaller local
+counter experiment. Two-worker large/fine core-wall ratio is 0.9437
+(0.9323–0.9620, replica/candidate 0.9962), but four-worker large/fine is 1.3036
+(0.7512–1.4040, replica/candidate 1.0071). Four-worker small/fine is 1.0266;
+small/coarse is 0.9784. This is not a uniform improvement. The four-worker
+large/fine whole-batch CPU median is 1.0629; two-worker large/coarse RSS is
+1.1200. Verification is outside core-wall timing but inside batch CPU, so
+apparent batch CPU savings elsewhere cannot be attributed to scheduler work.
+These raw samples are retained locally as `owner-slots-perf`; they are not
+published CI artifacts or a portable reproduction reference.
+
+The final combined candidate passes native smoke, 200,000-task reuse with
+full-capacity refusal, the native deque probe under ThreadSanitizer, all four bounded enumeration
+configurations, and a rebuilt ordinary scalar CLI FIR command at one/four
+workers. Independent review finds no remaining correctness blocker after
+adding a per-step two-list membership/cycle check before state pruning.
+Cross-platform performance and full candidate canonical validation remain open.
 
 ## Earlier investigation and evidence
 

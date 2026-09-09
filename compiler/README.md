@@ -206,8 +206,9 @@ Deque ring cells use atomic pointer accesses even for failed steals racing
 cell reuse; thief index reads participate in the owner's sequentially
 consistent claim ordering. Diagnostic counters use single-writer atomic
 updates and permit live reads, without promising a simultaneous pool snapshot.
-Their per-thread storage is aligned to 128 bytes; its performance and memory
-effects remain under qualification rather than an established improvement.
+Task slots use an owner-local free list and an atomic foreign-return list
+sharing one fixed capacity. Release rechecks the current physical thread after
+possible continuation migration; local acquisition and return avoid CAS.
 Condition-variable wait paths coalesce notifications for already-signaled
 waiters while retaining an SC wake epoch and rearming at every announcement.
 External I/O callbacks retain per-publication notifications.

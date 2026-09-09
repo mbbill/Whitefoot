@@ -110,6 +110,7 @@ enum word_class {
     W_BOTTOM,
     W_CELL,
     W_FREE,
+    W_LOCAL_FREE,
     W_SLOT_STATE,
     W_SLOT_WAITER,
     W_IO_STATE,
@@ -460,6 +461,7 @@ static void build_words(void) {
         add_word(&lane->top, W_TOP, index, 0);
         add_word(&lane->bottom, W_BOTTOM, index, 0);
         add_word(&lane->free_head, W_FREE, index, 0);
+        add_word(&lane->local_free_head, W_LOCAL_FREE, index, 0);
         for (slot = 0; slot < WF_SCHED_LANE_SLOTS; slot += 1u) {
             add_word(&lane->buffer[slot], W_CELL, index, slot);
             add_word(&lane->slots[slot].record.state, W_SLOT_STATE, index, slot);
@@ -869,7 +871,11 @@ static void note_word_write(const word *w, unsigned long long old, unsigned long
         }
         break;
     case W_FREE:
-        if (kind == OP_CAS) {
+    case W_LOCAL_FREE:
+        if (w->cls == W_LOCAL_FREE && (w->index != me || kind != OP_STORE)) {
+            fail_execution("thread %u changed the local free list of lane %u outside an owner store (I3)", me, w->index);
+        }
+        if (kind == OP_CAS || w->cls == W_LOCAL_FREE) {
             wf_sched_lane *lane = &wf_enum_core.lanes[w->index];
             unsigned expected = (unsigned)old;
             unsigned desired = (unsigned)value;
@@ -940,7 +946,10 @@ static unsigned long long prim_load(const void *address, unsigned width) {
     o.kind = OP_LOAD;
     o.word = address;
     o.width = width;
-    (void)require_word(address, "a load");
+    const word *w = require_word(address, "a load");
+    if (w->cls == W_LOCAL_FREE && w->index != current_index()) {
+        fail_execution("thread %u read the local free list of lane %u (I3)", current_index(), w->index);
+    }
     announce(&o);
     return read_word(address, width);
 }
@@ -1487,10 +1496,35 @@ static void check_words(void) {
     }
 }
 
+/* Local and foreign-return chains are disjoint views of the same capacity.
+ * Check every primitive boundary, not just the final native-probe inventory. */
+static void check_slot_free_lists(void) {
+    unsigned index;
+    for (index = 0; index < wf_enum_core.thread_count; index += 1u) {
+        const wf_sched_lane *lane = &wf_enum_core.lanes[index];
+        unsigned char seen[WF_SCHED_LANE_SLOTS] = {0};
+        unsigned list;
+        for (list = 0; list < 2u; list += 1u) {
+            unsigned slot = list == 0u ? lane->free_head : lane->local_free_head;
+            while (slot != WF_SCHED_NO_SLOT) {
+                if (slot >= WF_SCHED_LANE_SLOTS) {
+                    fail_execution("lane %u has an invalid free slot %u (I3)", index, slot);
+                }
+                if (seen[slot]) {
+                    fail_execution("lane %u has a free-list cycle or duplicate slot %u (I3)", index, slot);
+                }
+                seen[slot] = 1;
+                slot = lane->slots[slot].next_free;
+            }
+        }
+    }
+}
+
 static void check_state(void) {
     unsigned index;
     unsigned on_free;
     check_words();
+    check_slot_free_lists();
     unsigned on_ready;
     unsigned exec_seen = 0;
     wf_sched_stack *last;
@@ -2189,6 +2223,7 @@ static void digest_core(digest *d, size_t bytes) {
         const wf_sched_lane *lane = &wf_enum_core.lanes[index];
         unsigned free_mask = 0;
         unsigned head = lane->free_head;
+        unsigned list;
         unsigned slot;
         digest_bytes(d, (const unsigned char *)&lane->top, sizeof lane->top);
         digest_bytes(d, (const unsigned char *)&lane->bottom, sizeof lane->bottom);
@@ -2197,9 +2232,13 @@ static void digest_core(digest *d, size_t bytes) {
          * assuming positions outside the current index interval are dead. */
         digest_bytes(d, (const unsigned char *)lane->buffer, sizeof lane->buffer);
         digest_bytes(d, (const unsigned char *)&lane->free_head, sizeof lane->free_head);
-        while (head != WF_SCHED_NO_SLOT && head < WF_SCHED_LANE_SLOTS && !((free_mask >> head) & 1u)) {
-            free_mask |= 1u << head;
-            head = lane->slots[head].next_free;
+        digest_bytes(d, (const unsigned char *)&lane->local_free_head, sizeof lane->local_free_head);
+        for (list = 0; list < 2u; list += 1u) {
+            if (list == 1u) head = lane->local_free_head;
+            while (head != WF_SCHED_NO_SLOT && head < WF_SCHED_LANE_SLOTS && !((free_mask >> head) & 1u)) {
+                free_mask |= 1u << head;
+                head = lane->slots[head].next_free;
+            }
         }
         for (slot = 0; slot < WF_SCHED_LANE_SLOTS; slot += 1u) {
             const wf_sched_slot *entry = &lane->slots[slot];

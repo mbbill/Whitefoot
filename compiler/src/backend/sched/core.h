@@ -122,15 +122,16 @@ typedef struct wf_sched_stack {
 /* ------------------------------------------------------------- the lanes */
 
 /* One lane: a Chase-Lev deque of slots and the slot storage. Pushed and
- * popped by its owning thread only, stolen from by any (I2). Its free list is
- * popped by the owning thread only and pushed by any thread, because a
- * resumed stack releases on whichever thread resumed it (I3), so both ends
- * of that list are atomic. */
+ * popped by its owning thread only, stolen from by any (I2). Only the owner
+ * consumes free slots. Local returns use an owner-only list;
+ * a resumed stack on another thread pushes onto the atomic return list (I3).
+ * Both lists draw from the same fixed slot storage and never share a slot. */
 typedef struct wf_sched_lane {
     unsigned long long top;
     unsigned long long bottom;
     wf_sched_slot *buffer[WF_SCHED_LANE_SLOTS];
-    unsigned free_head;
+    unsigned free_head;       /* Foreign returns: atomic, one consumer. */
+    unsigned local_free_head; /* Owner-only acquisition and local returns. */
     unsigned long long seed;
     wf_sched_slot slots[WF_SCHED_LANE_SLOTS];
 } wf_sched_lane;
@@ -241,9 +242,7 @@ typedef struct wf_sched_thread {
     void *entry_argument;
     wf_sched_stack *pending_empty;
     wf_sched_stack *pending_commit;
-    /* Keep independent physical-thread writers on separate cache lines,
-     * including hosts with 128-byte lines. Live observation stays atomic. */
-    _Alignas(128) wf_sched_statistics counts;
+    wf_sched_statistics counts;
 } wf_sched_thread;
 
 /* The core's one instance. The runtime has exactly one; the enumerator makes
