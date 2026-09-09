@@ -146,9 +146,14 @@ void wf_prim_park(uint64_t observed) {
         pthread_mutex_unlock(&wf_prim_wake_lock);
         return;
     }
-    __atomic_store_n(&wf_prim_wake_needed, 1u, __ATOMIC_SEQ_CST);
     wf_prim_sleepers += 1u;
-    while (__atomic_load_n(&wf_prim_wake_epoch, __ATOMIC_SEQ_CST) == observed) {
+    for (;;) {
+        /* A delayed broadcast can cover a waiter that already captured
+         * its epoch. Such a wake needs a fresh arm/recheck before re-sleep. */
+        __atomic_store_n(&wf_prim_wake_needed, 1u, __ATOMIC_SEQ_CST);
+        if (__atomic_load_n(&wf_prim_wake_epoch, __ATOMIC_SEQ_CST) != observed) {
+            break;
+        }
         pthread_cond_wait(&wf_prim_wake_signal, &wf_prim_wake_lock);
     }
     wf_prim_sleepers -= 1u;

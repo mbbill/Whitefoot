@@ -684,9 +684,86 @@ including the coarse Linux regressions and unchanged I/O progress checks.
 Scoped independent review found no blocking defect in the early-return
 handshake. The modified tree passed the maintained completion harness with
 0/1/4 helpers and no-cache mode, the default-route ThreadSanitizer probe,
-scheduler smoke and Windows GNU cross-compilation. Native Windows MSVC CI,
-application measurements and the exact candidate's canonical check remain
-required; these focused results do not qualify a platform.
+scheduler smoke and Windows GNU cross-compilation. The published `f6e71c6a`
+also passed exact-revision root `make check`. These correctness checks do not
+qualify a platform's performance.
+
+The local M1 screen completed all 720 process means and 72 diagnostic batches
+but failed its performance criteria. At 4,096 outputs / tile1024, two/four
+participant candidate/previous paired medians were 0.9309/0.9268, with every
+pair below one. At 65,536 / tile16 they were 1.0580/1.3244; the four-participant
+range was 0.9762–1.5283. Short-prefix views also retained failures. These are
+the source bytes later published as f6e71c6a, captured while dirty over
+d5cd68b8, not a clean-revision timing claim.
+
+The [f6e71c6a Linux x86-64 screen](https://github.com/mbbill/Whitefoot/actions/runs/34364977223/job/102511242442)
+did not reproduce that large/fine local regression: its four-participant
+candidate/previous median was 0.9919 (0.9848–1.0121). However, small/coarse
+candidate/recovered medians remained 1.4821 and 1.8206 at two/four participants.
+The four-participant small/coarse A/A median was itself 1.0510. No platform is
+accepted on the basis of this mixed evidence.
+
+A local layout control has been built separately. The wait edit moved
+entry/WF/native functions by 24 bytes in the original pair, while the core
+functions stayed in place. Linking the changed primitive last with a common
+Darwin order file holds every other text-symbol address fixed across that
+pair; writable-data addresses also match, but a floor constant still moves.
+Common host and computation objects are reused. This diagnoses a possible
+layout confound; it neither changes the production linker nor erases the
+original regressions.
+
+### Equal-epoch notifications must rearm the next wait
+
+The layout attribution did not finish: the run completed 67 process rows before
+a f6e71c6a four-participant 4,096 / tile1024 process stalled. A native
+sample showed all four threads in the scheduler loop's condition wait;
+105 seconds of elapsed time had consumed only 0.33 seconds of CPU. Its partial
+timings are not a completed layout experiment. The process was sampled and
+then terminated; debugger attachment did not complete.
+
+Independent review confirmed a legal missed-wake execution in notification
+coalescing, predating the early-return optimization. A publisher can advance
+the epoch before a new waiter captures it, but acquire the wait lock only
+after that waiter sleeps. Its delayed broadcast clears wake-needed and wakes
+the new waiter with an unchanged epoch. The old loop sleeps again without
+rearming; the next publication can then skip its required signal.
+
+Both POSIX/Windows fallback primitives and the shared completion condition
+loop now rearm with SC ordering, then recheck the epoch with SC ordering,
+before every repeated wait. Registration counts still describe park calls,
+not each sleep attempt; timeout/error handling and external I/O routes remain.
+A harness-only observer on return from the real condition wait lets the
+regression deliver the delayed notifier's locked reset/broadcast tail, wait
+for the actual return/re-sleep, then send a real notification. Resetting the
+observer under the wait lock also excludes earlier spurious returns.
+
+The final regression fails against the frozen f6e71c6a completion unit and
+passes against the repair with otherwise matching test objects. The combined
+working tree passes helper counts 0/1/4 and no-cache mode, and the completion
+TSan harness passes helper counts 0/1/4. Both repaired Windows units compile
+with the Windows GNU cross-toolchain; native MSVC execution remains required.
+Separately, the
+original frozen f6 compute/host objects with only the POSIX primitive repaired
+completed 100 fresh processes of the stalled case, each verifying 4,097 calls.
+All other text-symbol addresses match the stalled image. This supplies native
+weak-primitive progress evidence as well as the deterministic completion test;
+it is not performance qualification or conclusive attribution of every hang.
+
+The [f6 quadrature job](https://github.com/mbbill/Whitefoot/actions/runs/34364977223/job/102511242571)
+also stopped during formal calibration, at pass4 / four participants /
+center-peak / wf-leaf, after its earlier correctness checks passed. Its last
+summary row was written at 14:47 UTC; cancellation was at 14:59 UTC with a
+formal process still present. Artifact `10110358723` ZIP SHA-256 is
+`cb08a0b039e0ea9c3031d9d1f3d2ea45cc49fdb7889e5dcb3d8676be38148961`.
+Linux AArch64's formal screen was also cancelled while comparing runtimes.
+Those are incomplete measurements, not performance passes.
+
+The timing reference returns to pre-coalescing `5e3cbc24`. Keeping the known
+stalling f6/d5 implementations in every timing loop would prevent completing
+the matrix and would not establish a qualified reference. Their evidence is
+retained, and the old f6 completion unit now fails the new regression; no
+acceptance threshold or workload was relaxed. Native CI and exact-revision
+canonical validation of the repair remain required.
 
 ## Earlier investigation and evidence
 

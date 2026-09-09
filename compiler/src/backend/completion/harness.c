@@ -230,6 +230,15 @@ typedef struct park_context {
     enum wf_completion_park_result result;
 } park_context;
 
+static _Atomic(wf_completion_wait *) watched_wait;
+static _Atomic unsigned watched_returns;
+
+void wf_completion_test_wait_return(wf_completion_wait *wait) {
+    if (atomic_load_explicit(&watched_wait, memory_order_acquire) == wait) {
+        atomic_fetch_add_explicit(&watched_returns, 1u, memory_order_release);
+    }
+}
+
 static void *park_thread(void *opaque) {
     park_context *context = opaque;
     context->result = wf_completion_park_if_unchanged(
@@ -496,6 +505,55 @@ static int test_unified_wake_epoch(void) {
     CHECK(after.compute_notifications == before.compute_notifications + 1);
     CHECK(atomic_load_explicit(&host_wakes, memory_order_relaxed) == 1);
 
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    return 0;
+}
+
+/* A delayed notifier's final locked reset/broadcast can reach a newer
+ * waiter that already captured its epoch. Deliver that exact tail, observe
+ * the real condition wait returning, then require a later notification to
+ * wake the re-sleeping waiter. No sleep duration selects the interleaving. */
+static int test_equal_epoch_notification_rearms_before_resleep(void) {
+    wf_completion_runtime runtime;
+    park_context parked;
+    pthread_t thread;
+    unsigned attempts;
+    unsigned rearmed;
+    struct timespec delay = {.tv_sec = 0, .tv_nsec = 1000000};
+
+    CHECK(wf_completion_runtime_init(&runtime) == 0);
+    wf_completion_notify_compute(&runtime);
+    parked.runtime = &runtime;
+    parked.epoch = wf_completion_wake_epoch(&runtime);
+    parked.result = WF_COMPLETION_PARK_FAILED;
+    atomic_store_explicit(&watched_returns, 0u, memory_order_relaxed);
+    atomic_store_explicit(&watched_wait, &runtime.wait, memory_order_release);
+    CHECK(pthread_create(&thread, NULL, park_thread, &parked) == 0);
+    CHECK(wait_until_parked(&runtime) == 0);
+    wf_completion_wait_lock(&runtime.wait);
+    atomic_store_explicit(&watched_returns, 0u, memory_order_relaxed);
+    atomic_store_explicit(&runtime.wake_needed, 0u, memory_order_seq_cst);
+    wf_completion_wait_wake(&runtime.wait, 1);
+    wf_completion_wait_unlock(&runtime.wait);
+    for (attempts = 0; attempts < 5000; ++attempts) {
+        if (atomic_load_explicit(&watched_returns, memory_order_acquire) != 0u) {
+            break;
+        }
+        (void)nanosleep(&delay, NULL);
+    }
+    CHECK(attempts != 5000);
+    /* The return hook runs with this mutex held. Taking it after observing
+     * the hook passes the waiter's next loop iteration and actual re-sleep. */
+    wf_completion_wait_lock(&runtime.wait);
+    rearmed = atomic_load_explicit(&runtime.wake_needed, memory_order_relaxed);
+    wf_completion_wait_unlock(&runtime.wait);
+    wf_completion_notify_compute(&runtime);
+    CHECK(pthread_join(thread, NULL) == 0);
+    atomic_store_explicit(&watched_wait, NULL, memory_order_release);
+    CHECK(rearmed == 1u);
+    CHECK(parked.result == WF_COMPLETION_PARK_WOKEN);
+    CHECK(wf_completion_parked_scheduler_count(&runtime) == 0u);
+    CHECK(wf_completion_statistics_snapshot(&runtime).parks == 1u);
     CHECK(wf_completion_runtime_destroy(&runtime) == 0);
     return 0;
 }
@@ -3279,6 +3337,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_exactly_one_completion_per_submission_under_race(argv[1]));
     RUN_TEST(test_a_completion_claims_an_in_place_registration());
     RUN_TEST(test_unified_wake_epoch());
+    RUN_TEST(test_equal_epoch_notification_rearms_before_resleep());
     RUN_TEST(test_one_epoch_wakes_every_announced_thread());
     RUN_TEST(test_condition_notifications_coalesce_without_suppressing_external_wakes());
     RUN_TEST(test_linux_independent_operations_use_available_target(argv[1]));

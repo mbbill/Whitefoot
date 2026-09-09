@@ -133,8 +133,8 @@ static void wf_completion_notify_scheduler(wf_completion_runtime *runtime) {
             if (runtime->wake_callback != NULL) {
                 runtime->wake_callback(runtime->wake_context);
             }
-            /* One waiter needs one signal. Two or more captured the same old
-             * global epoch, so all of them must recheck after this transition. */
+            /* All announced waiters must recheck. A waiter whose captured
+             * epoch is still current rearms before it sleeps again. */
             wf_completion_wait_wake(&runtime->wait, parked != 1);
             atomic_fetch_add_explicit(
                 &runtime->stat_wake_signals,
@@ -225,13 +225,18 @@ enum wf_completion_park_result wf_completion_park_if_unchanged(
         return WF_COMPLETION_PARK_EPOCH_CHANGED;
     }
 
-    while (atomic_load_explicit(&runtime->wake_epoch, memory_order_acquire)
-           == observed_epoch) {
+    do {
         slept = wf_completion_wait_sleep(&runtime->wait, timeout_milliseconds);
         if (slept != WF_COMPLETION_WAIT_WOKEN) {
             break;
         }
-    }
+        /* A notifier may advance the epoch before this waiter captures it,
+         * then clear wake_needed and signal after it sleeps. An equal-epoch
+         * wake must re-arm, then SC-recheck, before another actual wait. The
+         * registration count remains one for this whole park invocation. */
+        atomic_store_explicit(&runtime->wake_needed, 1, memory_order_seq_cst);
+    } while (atomic_load_explicit(&runtime->wake_epoch, memory_order_seq_cst)
+             == observed_epoch);
     atomic_fetch_sub_explicit(
         &runtime->parked_schedulers,
         1,

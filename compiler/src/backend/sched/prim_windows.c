@@ -239,13 +239,14 @@ void wf_prim_park(uint64_t observed) {
         ReleaseSRWLockExclusive(&wf_prim_wake_lock);
         return;
     }
-    wf_prim_store_u(&wf_prim_wake_needed, 1u, WF_PRIM_SEQ_CST);
     wf_prim_sleepers += 1u;
-    while ((uint64_t)InterlockedCompareExchange64(
-               (volatile LONG64 *)&wf_prim_wake_epoch,
-               0,
-               0
-           ) == observed) {
+    for (;;) {
+        /* Re-arm even when a delayed notification woke this waiter without
+         * changing its captured epoch. The following SC read closes races. */
+        wf_prim_store_u(&wf_prim_wake_needed, 1u, WF_PRIM_SEQ_CST);
+        if (wf_prim_load_q(&wf_prim_wake_epoch, WF_PRIM_SEQ_CST) != observed) {
+            break;
+        }
         if (SleepConditionVariableSRW(
                 &wf_prim_wake_signal,
                 &wf_prim_wake_lock,
