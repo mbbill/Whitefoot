@@ -16,8 +16,9 @@ proof or a small kernel inventory is not a substitute for those results.
 boundaries before selecting a new storage permission.** The
 [full-array experiment](#selected-full-array-experiment) now has
 [native ownership and layout evidence](../../experiments/container-representation/foundation/RESULTS.md#dense-full-array-operations).
-The [generic brand boundary](#generic-brand-parameters) and current owner routing
-below are separate correctness and composability gaps. Projected slot layout
+The [generic brand boundary](#generic-brand-parameters) now preserves explicit
+type brands through ordinary helpers. Current owner routing below remains a
+separate correctness and composability gap. Projected slot layout
 remains the selected sparse-storage experiment;
 a general library resource-permission system remains its bounded challenger,
 not the public foundation. Neither choice claims coverage of every system
@@ -456,8 +457,9 @@ including mutation through a borrow. The counterexamples and candidate boundary
 below are not covered by the native Box writeback or transfer measurements.
 
 The full-array contract below now executes through the same typed element,
-place, ownership, and release machinery. Preserve its native controls while
-repairing generic brand parameters and current-owner transfer. Prototype projected layout for
+place, ownership, and release machinery. Preserve its native controls and the
+generic brand reader controls while repairing current-owner transfer.
+Prototype projected layout for
 ordinary slot enums against the native owning sparse control. Keep that sparse
 experiment's construction, matching, transfer and cleanup on general valid-value
 operations, with one backing, compact control and payload planes, runtime-indexed
