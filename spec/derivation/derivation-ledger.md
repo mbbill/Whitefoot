@@ -10,28 +10,21 @@ Basis kinds are `deduction` (a conclusion under explicit premises),
 `empirical` (support under recorded experimental conditions), and
 `provisional` (a reasoned choice with unresolved comparison or uncertainty).
 Combine kinds with `+` only when the linked explanation distinguishes their
-claims. `current` means assessed grounds; `revisit` means a concrete issue
-remains to assess. Neither status proves the mechanism or compiler correct.
+claims. `current` means assessed grounds with no concrete unresolved objection
+identified; `revisit` means a concrete issue remains open, including after an
+assessment. Neither status proves the mechanism or compiler correct.
 
-The migration uses `unassessed` with `revisit` for inherited arguments whose
-current support has not been reassessed. A retained source is a retrieval
-starting point, not a certification that its historical vocabulary or
-`derived` label still applies. The
-[constitutional reassessment](../../research/investigations/decision-workflow/DESIGN.md#constitutional-reassessment)
-identifies the shared changes of premise; the five current convention and
-workflow rows below have narrower, explicit grounds. A later constant-initialization
-assessment covers only part of CONST-2 and remains revisitable. The
-[source-proof assessment](../../research/investigations/proof-certificate-architecture/SOURCE-CHECKING.md)
-also distinguishes checked authority from provisional mechanisms in ENT-1,
-ENT-6, INV-1 and PRF-1; their remaining questions stay explicit. Other rows
-retain their open obligations when their rule or material reason changes.
-No historical status is automatically promoted into a new basis kind.
+The [complete grounds assessment](../../research/investigations/decision-workflow/RULE-GROUNDS.md)
+covers all 161 active rules, including the facets outside the earlier focused
+constant and source-proof assessments. No row remains unassessed. Of these,
+129 have current provisional grounds and 32 retain concrete questions
+under `revisit`. Assessment is not proof of optimality, soundness, experimental
+superiority, or target-scale feasibility. The linked sections state conditional
+arguments, selected mechanisms, alternatives, and reopening conditions.
 
-The reassessment also records the retirement of the constitution's old letter
-classes and the later interview's performance, safety, and compatibility
-criteria. Historical references to those labels do not name current clauses.
-The five current convention/workflow rows retain their scoped provisional reasons;
-the remaining open grounds are not repaired by substituting new clause names.
+Historical evidence remains below with its original conditions and retired
+constitutional labels. It is a retrieval source, not current authority; no
+historical status was promoted by substituting a new clause name.
 
 [Decision practice](../../docs/practice.md#maintaining-the-rule-index) owns
 update triggers and the procedure. [Completion review](../../docs/review-checklist.md#r-decisions--changed-choices-premises-or-relevant-evidence)
@@ -43,167 +36,167 @@ of source references. Historical rows cannot satisfy that check.
 
 | Rule | Basis | Review | Grounds and scope |
 |---|---|---|---|
-| SCOPE-1 | unassessed | revisit | [Retained record](#ledger) |
-| SCOPE-2 | unassessed | revisit | [Retained record](#v021-amendment--obligation-discharge-batch-1-2026-08-07-candidate-stage) |
-| SCOPE-3 | unassessed | revisit | [Retained record](#v035-candidate-amendment--permitted-execution-overlap-2026-08-23) |
-| FORM-1 | provisional | current | [Surface and definition conventions](../../research/investigations/decision-workflow/DESIGN.md#surface-and-definition-conventions); predictable editing is an unmeasured hypothesis, not a constitutional requirement or a benefit established by corpus frequency or migration cost. |
-| FORM-2 | provisional | current | [Surface and definition conventions](../../research/investigations/decision-workflow/DESIGN.md#surface-and-definition-conventions); predictable editing is an unmeasured hypothesis, not a constitutional requirement or a benefit established by corpus frequency or migration cost; [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04). |
-| FORM-3 | unassessed | revisit | [Retained record](#ledger) |
-| FORM-4 | provisional | current | [Surface and definition conventions](../../research/investigations/decision-workflow/DESIGN.md#surface-and-definition-conventions); predictable editing is an unmeasured hypothesis, not a constitutional requirement or a benefit established by corpus frequency or migration cost. |
-| FORM-5 | unassessed | revisit | [Retained record](#ledger) |
-| FORM-6 | unassessed | revisit | [Retained record](#ledger); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification. |
-| FORM-7 | unassessed | revisit | [Retained record](#ledger); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification. |
-| FORM-8 | unassessed | revisit | [Retained record](#v042-amendment--form-8-canonical-region-spelling-activated-2026-09-03); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| LEX-1 | unassessed | revisit | [Retained record](#ledger) |
-| GRAM-1 | unassessed | revisit | [Retained record](#v023-amendment--floor-5-spelling-relief-activated-2026-08-09) |
-| GRAM-2 | unassessed | revisit | [Retained record](#v029-amendment--opt-in-strict-no-claim-partition-activated-2026-08-15); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| GRAM-3 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| GRAM-4 | unassessed | revisit | [Retained record](#v048-amendment--a-use-cites-one-premise-activated-2026-09-05); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| GRAM-5 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| GRAM-6 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| GRAM-7 | unassessed | revisit | [Retained record](#ledger) |
-| GIVE-1 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
-| GRAM-8 | unassessed | revisit | [Retained record](#ledger); [Complete constant initialization](../../research/investigations/const-eval/INITIALIZATION.md): constant-field omission rejects, but correct labels do not reject swapped same-typed values; general naming/order benefits remain unassessed. |
-| GRAM-9 | unassessed | revisit | [Retained record](#ledger) |
-| GRAM-10 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
-| GRAM-11 | unassessed | revisit | [Retained record](#ledger); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification. |
-| TYPE-1 | unassessed | revisit | [Retained record](#ledger) |
-| TYPE-2 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| TYPE-3 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| TYPE-4 | unassessed | revisit | [Retained record](#ledger) |
-| TYPE-5 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| TYPE-6 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| MSR-6 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| TYPE-7 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| SET-1 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| SET-2 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| CONST-1 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| CONST-2 | deduction+provisional | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification; [Complete constant initialization](../../research/investigations/const-eval/INITIALIZATION.md): only initialization coverage reassessed; full values require initialized components, while omission rejection is provisionally selected; other CONST-2 grounds remain unassessed. |
-| OWN-1 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| OWN-2 | unassessed | revisit | [Retained record](#ledger) |
-| OWN-3 | unassessed | revisit | [Retained record](#v043-amendment--loop-body-regions-and-the-ent-6-join-repair-activated-2026-09-04); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| OWN-4 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| OWN-5 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| OWN-6 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| OWN-7 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| OWN-8 | unassessed | revisit | [Retained record](#ledger) |
-| OWN-9 | unassessed | revisit | [Retained record](#ledger) |
-| OWN-10 | unassessed | revisit | [Retained record](#ledger) |
-| OWN-11 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| OWN-12 | unassessed | revisit | [Retained record](#ledger) |
-| OWN-13 | unassessed | revisit | [Retained record](#ledger); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification. |
-| OWN-14 | unassessed | revisit | [Retained record](#ledger) |
-| LIV-1 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| LIV-2 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| PROV-1 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| PROV-6 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| BLK-0 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| BLK-1 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| BLK-2 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| BLK-3 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| BLK-4 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| VIEW-1 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| VIEW-2 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| VIEW-4 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| VIEW-6 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| STOR-1 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| STOR-2 | unassessed | revisit | [Retained record](#ledger) |
-| STOR-3 | unassessed | revisit | [Retained record](#v010-and-v011-amendments--resolver-and-semantic-closure-2026-07-22); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| STOR-4 | unassessed | revisit | [Retained record](#ledger) |
-| STOR-5 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| STOR-6 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| OP-1 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification. |
-| OP-2 | unassessed | revisit | [Retained record](#v049-amendment--fold-by-the-declaration-not-by-the-expansion-activated-2026-09-05) |
-| OP-3 | unassessed | revisit | [Retained record](#ledger) |
-| OP-4 | unassessed | revisit | [Retained record](#v029-amendment--opt-in-strict-no-claim-partition-activated-2026-08-15); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| OP-5 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
-| OP-6 | unassessed | revisit | [Retained record](#ledger) |
-| OP-7 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification. |
-| OP-8 | unassessed | revisit | [Retained record](#ledger); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification. |
-| OP-9 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| FN-1 | unassessed | revisit | [Retained record](#v029-amendment--opt-in-strict-no-claim-partition-activated-2026-08-15); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| FN-2 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| FN-3 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| FN-4 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
-| FN-5 | unassessed | revisit | [Retained record](#ledger) |
-| FN-6 | unassessed | revisit | [Retained record](#ledger) |
-| FN-7 | unassessed | revisit | [Retained record](#v029-amendment--opt-in-strict-no-claim-partition-activated-2026-08-15); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification. |
-| FN-8 | unassessed | revisit | [Retained record](#v046-amendment--a-stated-relation-and-the-atom-that-discharges-it-activated-2026-09-05); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| FN-9 | unassessed | revisit | [Retained record](#v029-amendment--opt-in-strict-no-claim-partition-activated-2026-08-15); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| MSR-5 | unassessed | revisit | [Retained record](#v044-amendment--the-fact-machinery-activated-2026-09-04); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| CALL-4 | unassessed | revisit | [Retained record](#v044-amendment--the-fact-machinery-activated-2026-09-04); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| EFF-1 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| EFF-2 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| EFF-3 | unassessed | revisit | [Retained record](#ledger) |
-| EFF-4 | unassessed | revisit | [Retained record](#v010-and-v011-amendments--resolver-and-semantic-closure-2026-07-22) |
-| EFF-5 | unassessed | revisit | [Retained record](#ledger) |
-| ERR-1 | unassessed | revisit | [Retained record](#ledger) |
-| ERR-2 | unassessed | revisit | [Retained record](#ledger) |
-| ERR-3 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15); [Legacy inline rationale](../../research/investigations/decision-workflow/DESIGN.md#legacy-inline-rationales); retired constitutional labels supply no current justification. |
-| ERR-4 | unassessed | revisit | [Retained record](#ledger) |
-| PROG-1 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| PROG-2 | unassessed | revisit | [Retained record](#v09-amendment--canonical-frontend-entrance-closure-2026-07-21) |
-| PROG-3 | unassessed | revisit | [Retained record](#v029-amendment--opt-in-strict-no-claim-partition-activated-2026-08-15) |
-| DIAG-1 | unassessed | revisit | [Retained record](#v029-amendment--opt-in-strict-no-claim-partition-activated-2026-08-15); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| DIAG-2 | unassessed | revisit | [Retained record](#v029-amendment--opt-in-strict-no-claim-partition-activated-2026-08-15) |
-| CAP-1 | unassessed | revisit | [Retained record](#ledger) |
-| PAR-1 | unassessed | revisit | [Retained record](#v035-candidate-amendment--permitted-execution-overlap-2026-08-23) |
-| PAR-2 | unassessed | revisit | [Retained record](#ledger) |
-| PAR-3 | unassessed | revisit | [Retained record](#ledger) |
-| GATE-1 | unassessed | revisit | [Retained record](#ledger) |
-| LEDGER-1 | unassessed | revisit | [Retained record](#ledger) |
-| GATE-2 | unassessed | revisit | [Retained record](#ledger) |
-| PRE-1 | unassessed | revisit | [Retained record](#ledger) |
-| SYS-1 | unassessed | revisit | [Retained record](#ledger) |
-| SYS-2 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| SYS-3 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| HOST-1 | unassessed | revisit | [Retained record](#ledger) |
-| HOST-2 | unassessed | revisit | [Retained record](#ledger) |
-| HOST-3 | unassessed | revisit | [Retained record](#ledger) |
-| PATH-1 | unassessed | revisit | [Retained record](#ledger) |
-| PATH-2 | unassessed | revisit | [Retained record](#ledger) |
-| QUAL-1 | unassessed | revisit | [Retained record](#v021-amendment--obligation-discharge-batch-1-2026-08-07-candidate-stage) |
-| QUAL-2 | unassessed | revisit | [Retained record](#ledger) |
-| QUAL-3 | unassessed | revisit | [Retained record](#ledger) |
-| SYS-4 | unassessed | revisit | [Retained record](#ledger) |
-| SYS-5 | unassessed | revisit | [Retained record](#ledger) |
-| SYS-6 | unassessed | revisit | [Retained record](#ledger) |
-| SYS-7 | unassessed | revisit | [Retained record](#ledger) |
-| SYS-8 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| SYS-9 | unassessed | revisit | [Retained record](#ledger) |
-| SYS-10 | unassessed | revisit | [Retained record](#ledger) |
-| SYS-11 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| SYS-12 | unassessed | revisit | [Retained record](#ledger) |
-| SYS-13 | unassessed | revisit | [Retained record](#ledger) |
-| SYS-14 | unassessed | revisit | [Retained record](#ledger); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| SYS-15 | unassessed | revisit | [Retained record](#v050-amendment-second-half--streams-and-tcp); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| SYS-16 | unassessed | revisit | [Retained record](#v050-amendment-second-half--streams-and-tcp) |
-| SYS-17 | unassessed | revisit | [Retained record](#v050-amendment-second-half--streams-and-tcp) |
-| SYS-18 | unassessed | revisit | [Retained record](#v050-amendment-second-half--streams-and-tcp); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| ENT-1 | deduction+provisional | revisit | [Source proof grounds](../../research/investigations/proof-certificate-architecture/SOURCE-CHECKING.md#assessed-grounds-and-unresolved-choices): checked authority and consequences of specification-defined derivability; no-SMT selection, full vocabulary, generic policy and practical cost remain open. [Retained record](#v048-amendment--a-use-cites-one-premise-activated-2026-09-05). |
-| ENT-2 | unassessed | revisit | [Retained record](#v047-amendment--the-named-const-is-the-number-it-names-activated-2026-09-05); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| MSR-1 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| MSR-2 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| MSR-3 | unassessed | revisit | [Retained record](#v044-amendment--the-fact-machinery-activated-2026-09-04); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| CALL-1 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| CALL-2 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| CALL-3 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| CALL-5 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| ENT-3 | unassessed | revisit | [Retained record](#v046-amendment--a-stated-relation-and-the-atom-that-discharges-it-activated-2026-09-05); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| CALL-6 | unassessed | revisit | [Retained record](#v044-amendment--the-fact-machinery-activated-2026-09-04); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| ENT-4 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
-| ENT-5 | unassessed | revisit | [Retained record](#v046-amendment--a-stated-relation-and-the-atom-that-discharges-it-activated-2026-09-05); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| ENT-6 | provisional | revisit | [Source proof grounds](../../research/investigations/proof-certificate-architecture/SOURCE-CHECKING.md#assessed-grounds-and-unresolved-choices): fixed automatic families are a selected boundary, not a constitutional necessity; exact family costs, integer-domain normalization and product publication remain unassessed. [Retained record](#v046-amendment--a-stated-relation-and-the-atom-that-discharges-it-activated-2026-09-05); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04). |
-| MSR-4 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04); [Shared AUTO rationale correction](../../research/investigations/proof-certificate-architecture/SOURCE-CHECKING.md#alternatives-and-evidence-boundaries) does not assess the complete numeric disposition or its bridges. |
-| INV-1 | deduction+provisional | revisit | [Source proof grounds](../../research/investigations/proof-certificate-architecture/SOURCE-CHECKING.md#assessed-grounds-and-unresolved-choices): base and preservation justify the selected induction model; written affine syntax, placement, joins and exhaustion choices remain open. [Retained record](#v047-amendment--the-named-const-is-the-number-it-names-activated-2026-09-05); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04). |
-| PRF-1 | deduction+provisional | revisit | [Source proof grounds](../../research/investigations/proof-certificate-architecture/SOURCE-CHECKING.md#assessed-grounds-and-unresolved-choices): independently proved premises and checked nonnegative composition support the target; neither linear total cost, the 4096-use ceiling nor redundancy rejection follows from this argument. [Retained record](#v049-amendment--fold-by-the-declaration-not-by-the-expansion-activated-2026-09-05). |
-| EX-1 | unassessed | revisit | [Retained record](#ledger) |
-| META-1 | unassessed | revisit | [Retained record](#ledger) |
-| META-2 | unassessed | revisit | [Retained record](#ledger) |
-| META-3 | unassessed | revisit | [Retained record](#ledger) |
-| META-4 | provisional | current | [Surface and definition conventions](../../research/investigations/decision-workflow/DESIGN.md#surface-and-definition-conventions); regularity is a reason to try the convention, not evidence of a unique or optimal form. |
-| META-5 | unassessed | revisit | [Retained record](#ledger) |
-| META-6 | provisional | current | [Decision index](../../research/investigations/decision-workflow/DESIGN.md#decision-index); the selected workflow addresses observed traceability failures, with efficacy still to test. |
+| SCOPE-1 | deduction+provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); concrete open question retained. |
+| SCOPE-2 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); selected mechanism remains provisional. |
+| SCOPE-3 | deduction+provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); concrete open question retained. |
+| FORM-1 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); selected mechanism remains provisional. |
+| FORM-2 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); selected mechanism remains provisional. |
+| FORM-3 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); selected mechanism remains provisional. |
+| FORM-4 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); selected mechanism remains provisional. |
+| FORM-5 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); selected mechanism remains provisional. |
+| FORM-6 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); selected mechanism remains provisional. |
+| FORM-7 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); selected mechanism remains provisional. |
+| FORM-8 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); selected mechanism remains provisional. |
+| LEX-1 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); selected mechanism remains provisional. |
+| GRAM-1 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); selected mechanism remains provisional. |
+| GRAM-2 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); selected mechanism remains provisional. |
+| GRAM-3 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); selected mechanism remains provisional. |
+| GRAM-4 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); selected mechanism remains provisional. |
+| GRAM-5 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); selected mechanism remains provisional. |
+| GRAM-6 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); selected mechanism remains provisional. |
+| GRAM-7 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); selected mechanism remains provisional. |
+| GIVE-1 | deduction+provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); concrete open question retained. |
+| GRAM-8 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); selected mechanism remains provisional. |
+| GRAM-9 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); selected mechanism remains provisional. |
+| GRAM-10 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); selected mechanism remains provisional. |
+| GRAM-11 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#scope-and-surface); selected mechanism remains provisional. |
+| TYPE-1 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| TYPE-2 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| TYPE-3 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| TYPE-4 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| TYPE-5 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| TYPE-6 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| MSR-6 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#proof-state-and-transport); selected mechanism remains provisional. |
+| TYPE-7 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| SET-1 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| SET-2 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| CONST-1 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| CONST-2 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| OWN-1 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| OWN-2 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| OWN-3 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| OWN-4 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| OWN-5 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| OWN-6 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| OWN-7 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| OWN-8 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| OWN-9 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| OWN-10 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| OWN-11 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| OWN-12 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| OWN-13 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| OWN-14 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| LIV-1 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| LIV-2 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| PROV-1 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| PROV-6 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| BLK-0 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| BLK-1 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| BLK-2 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| BLK-3 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| BLK-4 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| VIEW-1 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| VIEW-2 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| VIEW-4 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| VIEW-6 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| STOR-1 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| STOR-2 | provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); concrete open question retained. |
+| STOR-3 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| STOR-4 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| STOR-5 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| STOR-6 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage); selected mechanism remains provisional. |
+| OP-1 | provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#numeric-operations); concrete open question retained. |
+| OP-2 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#numeric-operations); selected mechanism remains provisional. |
+| OP-3 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#numeric-operations); selected mechanism remains provisional. |
+| OP-4 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#numeric-operations); selected mechanism remains provisional. |
+| OP-5 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#numeric-operations); selected mechanism remains provisional. |
+| OP-6 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#numeric-operations); selected mechanism remains provisional. |
+| OP-7 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#numeric-operations); selected mechanism remains provisional. |
+| OP-8 | deduction+provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#numeric-operations); concrete open question retained. |
+| OP-9 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#numeric-operations); selected mechanism remains provisional. |
+| FN-1 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#functions-and-contracts); selected mechanism remains provisional. |
+| FN-2 | provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#functions-and-contracts); concrete open question retained. |
+| FN-3 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#functions-and-contracts); selected mechanism remains provisional. |
+| FN-4 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#functions-and-contracts); selected mechanism remains provisional. |
+| FN-5 | provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#functions-and-contracts); concrete open question retained. |
+| FN-6 | deduction+provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#functions-and-contracts); concrete open question retained. |
+| FN-7 | provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#functions-and-contracts); concrete open question retained. |
+| FN-8 | deduction+provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#functions-and-contracts); concrete open question retained. |
+| FN-9 | deduction+provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#functions-and-contracts); concrete open question retained. |
+| MSR-5 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#proof-state-and-transport); selected mechanism remains provisional. |
+| CALL-4 | deduction+provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#proof-state-and-transport); concrete open question retained. |
+| EFF-1 | provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); concrete open question retained. |
+| EFF-2 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| EFF-3 | provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); concrete open question retained. |
+| EFF-4 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| EFF-5 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| ERR-1 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| ERR-2 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| ERR-3 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| ERR-4 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| PROG-1 | provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); concrete open question retained. |
+| PROG-2 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| PROG-3 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| DIAG-1 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| DIAG-2 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| CAP-1 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| PAR-1 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| PAR-2 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| PAR-3 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| GATE-1 | provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); concrete open question retained. |
+| LEDGER-1 | provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); concrete open question retained. |
+| GATE-2 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| PRE-1 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| SYS-1 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| SYS-2 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| SYS-3 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| HOST-1 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| HOST-2 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| HOST-3 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| PATH-1 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| PATH-2 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| QUAL-1 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| QUAL-2 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| QUAL-3 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| SYS-4 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| SYS-5 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| SYS-6 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| SYS-7 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| SYS-8 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| SYS-9 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| SYS-10 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| SYS-11 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| SYS-12 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| SYS-13 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| SYS-14 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| SYS-15 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| SYS-16 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| SYS-17 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| SYS-18 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#effects-execution-and-system-interfaces); selected mechanism remains provisional. |
+| ENT-1 | deduction+provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#proof-state-and-transport); concrete open question retained. |
+| ENT-2 | deduction+provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#proof-state-and-transport); concrete open question retained. |
+| MSR-1 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#proof-state-and-transport); selected mechanism remains provisional. |
+| MSR-2 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#proof-state-and-transport); selected mechanism remains provisional. |
+| MSR-3 | deduction+provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#proof-state-and-transport); concrete open question retained. |
+| CALL-1 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#proof-state-and-transport); selected mechanism remains provisional. |
+| CALL-2 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#proof-state-and-transport); selected mechanism remains provisional. |
+| CALL-3 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#proof-state-and-transport); selected mechanism remains provisional. |
+| CALL-5 | provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#proof-state-and-transport); concrete open question retained. |
+| ENT-3 | deduction+provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#proof-state-and-transport); concrete open question retained. |
+| CALL-6 | deduction+provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#proof-state-and-transport); selected mechanism remains provisional. |
+| ENT-4 | deduction+provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#proof-state-and-transport); concrete open question retained. |
+| ENT-5 | deduction+provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#proof-state-and-transport); concrete open question retained. |
+| ENT-6 | deduction+provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#proof-state-and-transport); concrete open question retained. |
+| MSR-4 | deduction+provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#proof-state-and-transport); concrete open question retained. |
+| INV-1 | deduction+provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#proof-state-and-transport); concrete open question retained. |
+| PRF-1 | deduction+provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#proof-state-and-transport); concrete open question retained. |
+| EX-1 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#specification-maintenance); selected mechanism remains provisional. |
+| META-1 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#specification-maintenance); selected mechanism remains provisional. |
+| META-2 | provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#specification-maintenance); concrete open question retained. |
+| META-3 | provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#specification-maintenance); concrete open question retained. |
+| META-4 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#specification-maintenance); selected mechanism remains provisional. |
+| META-5 | provisional | revisit | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#specification-maintenance); concrete open question retained. |
+| META-6 | provisional | current | [Assessed grounds](../../research/investigations/decision-workflow/RULE-GROUNDS.md#specification-maintenance); selected mechanism remains provisional. |
 ## Historical evidence
 
 The following record retains the derivation system through the v0.51

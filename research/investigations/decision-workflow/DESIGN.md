@@ -9,6 +9,8 @@ method lives in [decision practice](../../../docs/practice.md#decision-work);
 [agent instructions](../../../AGENTS.md) own branch work and merging. The
 constitutional reassessment and initial index migration below implement the
 first application. They do not establish the method's long-term efficacy.
+The subsequent [full-rule assessment](RULE-GROUNDS.md) supplies present-day
+arguments for the remaining inherited grounds and retains unresolved questions.
 
 The recommended direction is a small decision method used at actual choices
 and evidence changes, with the existing task-completion review as its review
@@ -409,8 +411,10 @@ including whether a proposed technical remedy belongs in a later task.
 
 The affected-set walk also reached MSR-4 through its shared AUTO rationale and
 an inaccurate host-qualification comment describing the specification delta.
-MSR-4's index now points to the scoped correction. The source comment's repair
-is outside this documentation-only source-file scope and remains an explicit
-finding in the source-proof assessment. Finding these connections demonstrates
+MSR-4's index now points to the full-rule assessment, which includes the scoped
+correction. The comment was initially left
+as an explicit finding outside the source-file scope; the owner subsequently
+authorized its correction without changing executable code. Finding these
+connections demonstrates
 a concrete use of the dependency walk, not that every dependency is discoverable
 or that review cost is reduced. A recorded finding is not a completed repair.

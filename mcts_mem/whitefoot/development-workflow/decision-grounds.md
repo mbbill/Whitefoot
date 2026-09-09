@@ -1,5 +1,5 @@
 - The constitution supplies complete clauses stating purpose, chosen objectives, obligations, prohibitions, tradeoffs, and applicable conditions; concrete decisions have separately stated grounds.
-- Active rules have one current index entry connecting them to scoped selection grounds. Conditional deductions, empirical support, and provisional choices are distinguished; inherited unassessed reasons are visible as requiring reconsideration.
+- Active rules have one current index entry connecting them to scoped selection grounds. Conditional deductions, empirical support, and provisional choices are distinguished; unassessed reasons and assessed-but-unresolved objections are distinguished.
 - Decision memory owns current choices and replacement history. Detailed technical arguments and measurements remain at their sources; the index carries references rather than a second rationale.
 - Work uses four occasions: read current owners at start or resumption; state grounds at a material choice; update reasons and material dependents when conclusions or grounds change; run applicable checks and another agent's review at completion. Routine fixes under unchanged design do not require new decision records.
 - Legacy memory format repairs retain an original Git revision and entry mapping, preserve historical claims and conditions, and are reviewed against that source before the repaired baseline is committed. Substantive corrections remain append-only.
@@ -22,6 +22,8 @@
 - 2026-09-09 owner rationale: independently pinning the memory checker or copying its invocation into repository guidance can leave verification on old rules after the maintenance skill changes. Keep those instructions with the skill and inspect their execution at completion instead of maintaining a second tool contract. (sourced)
 
 - 2026-09-09 owner clarification: reassessing language decisions and exercising documentation maintenance do not authorize compiler implementation changes in a documentation PR. Read the requested scope at the start; an uncovered technical issue can remain an explicitly open finding without turning into implementation work. (sourced)
+
+- 2026-09-09 rationale: an assessed selection can still have a concrete unresolved objection. The full-rule arguments in research/investigations/decision-workflow/RULE-GROUNDS.md retain allocation-effect conflicts, ambiguous meta/trust-boundary wording, and proof/instantiation cost questions instead of treating assessment as approval of the mechanism; future work must resolve those grounds without using existing test migration costs as justification. (sourced)
 
 ## Moves
 

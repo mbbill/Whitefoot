@@ -24,6 +24,12 @@ and development-feasibility objectives.
 
 ## Assessed grounds and unresolved choices
 
+The table records the scope of this focused assessment. The later
+[full-rule assessment](../decision-workflow/RULE-GROUNDS.md#proof-state-and-transport)
+examines the remaining facets below and preserves concrete cost and expression
+questions as `revisit`; it supplies arguments, not new comparative experiments
+or a formal soundness proof.
+
 | Rule and assessed aspect | Grounds that hold | What remains open |
 |---|---|---|
 | ENT-1: authority and deterministic acceptance | Required proof cannot be replaced by a writer assertion or an optimizer result. Given specification-defined derivability, timeouts and machine speed cannot decide whether a source theorem follows. Fixed automatic rules and explicit evidence provide one inspectable implementation strategy. | The constitution does not independently require no SMT or exactly this fact vocabulary. These remain selected mechanisms. Coverage, checking costs and the complete generic/source-schema policy need their own assessment; determinism and termination alone do not establish feasibility. |
@@ -81,20 +87,18 @@ and any implementation repair belong to subsequent compiler work.
 
 ## Affected set and reopening conditions
 
-The reassessment updates the four current index rows, the compiler guide's
-cost interpretation and the proof memory's current grounds. MSR-4 shares the
-AUTO boundary, so its row links this correction without claiming its numeric
-routing has been assessed. Writer patterns continue to teach the specified
-forms: none of the open alternatives is a new writing permission. FN-8/FN-9
-retain their independently checked contract model; their selection grounds are
-not certified by this narrower assessment.
+The focused reassessment affected the four current index rows, the compiler
+guide's cost interpretation and the proof memory's current grounds. MSR-4
+shares the AUTO boundary; its complete routing and FN-8/FN-9's contract choices
+are now assessed in the linked full-rule assessment. This narrower study does
+not certify those mechanisms. Writer patterns continue to teach the specified
+forms: none of the open alternatives is a new writing permission.
 
-The existing v0.52 note in
-[host qualification](../../../compiler/src/backend/qualification.rs) says all
-other specification bytes match v0.51. That description is too strong: the
-amendment also changes selection-rationale prose. Host mappings and qualified
-operations retain their semantics, but that source comment remains inaccurate;
-its correction is outside this documentation-only change's source-file scope.
+The v0.52 note in
+[host qualification](../../../compiler/src/backend/qualification.rs) describes
+preserved host semantics rather than claiming unchanged specification bytes:
+the amendment also changes selection-rationale prose. Host mappings and
+qualified operations retain their semantics.
 
 Reopen the concrete selections when a target workload exposes unavailable
 proofs, a stage-attributed cost study changes the feasibility judgment, or
