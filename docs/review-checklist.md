@@ -234,8 +234,9 @@ Use the `mcts-mem-use` skill; this section does not replace its grammar.
   fix or refactor need not manufacture a decision entry. Read from the root
   into the relevant subsystem and alternatives; do not judge isolated search
   hits as the current tree.
-- [ ] **M2 — Integrity.** After tree edits, run `npx mcts-mem lint` and inspect
-  its result. For changed replacements, also check that both links name the
+- [ ] **M2 — Integrity.** Verify that tree edits were checked according to the
+  current `mcts-mem-use` skill and inspect the actual results, including any
+  limitation or fallback. For changed replacements, also check that both links name the
   actual paired nodes and their reasons match verbatim. Compare Facts/Moves
   with the task base to catch rewritten history even after a commit. Do not
   alter committed history or weaken lint merely to obtain a green result.
@@ -279,5 +280,5 @@ references; `make -C compiler format lint` and the
 [focused compiler commands](../compiler/README.md#running-and-checking) for
 code. `make static` does not check document purpose or all links, and compiler
 `docs` builds Rust API documentation, not this prose checklist. The root
-[Makefile](../Makefile) owns the full gate inventory; run `npx mcts-mem lint`
-separately for memory edits.
+[Makefile](../Makefile) owns the full gate inventory; memory verification follows
+the current skill and is checked under M2.

@@ -68,7 +68,9 @@ probably not the next work.
 - `mcts_mem/` is where decisions are recorded: what was tried, what was
   concluded, why a form was chosen, and which implementations it replaced.
   Write there when a question is settled, not when a batch ends. Maintain it
-  with the `mcts-mem-use` skill and run `npx mcts-mem lint` after tree edits.
+  with the current `mcts-mem-use` skill and follow its verification instructions
+  after tree edits. The skill owns checker setup and invocation; do not duplicate
+  those instructions or pin its tool version in repository guidance or CI.
   The skill owns node structure, provenance, replacement pairs, and append-only
   history; lint checks integrity, not the truth of the recorded evidence.
 - Architecture dossiers, `archive/done/`, and

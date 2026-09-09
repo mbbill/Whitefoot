@@ -110,7 +110,8 @@ Run `make -C compiler spec` after index changes. It checks unique active-rule
 coverage, recognized basis/state fields, and a source reference in each row.
 It does not assess the truth or sufficiency of the reason. Check reference
 targets and meaning in the affected set at completion. After memory edits,
-run `npx mcts-mem lint` and follow the skill's provenance and history rules.
+follow the current `mcts-mem-use` skill's verification, provenance, and history
+instructions. Checker setup and invocation belong to the skill.
 Do not use an index status as a source acceptance rule or an extra approval
 condition; an unresolved safety objection still requires substantive resolution.
 

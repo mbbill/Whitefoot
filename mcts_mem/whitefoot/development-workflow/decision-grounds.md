@@ -4,6 +4,7 @@
 - Work uses four occasions: read current owners at start or resumption; state grounds at a material choice; update reasons and material dependents when conclusions or grounds change; run applicable checks and another agent's review at completion. Routine fixes under unchanged design do not require new decision records.
 - Legacy memory format repairs retain an original Git revision and entry mapping, preserve historical claims and conditions, and are reviewed against that source before the repaired baseline is committed. Substantive corrections remain append-only.
 - Task completion checks the affected records and their integrity. The index does not define source acceptance, and no additional approval stage is introduced.
+- Memory verification follows the current maintenance skill; repository guidance and CI do not duplicate its checker setup, invocation, or version selection. Completion review checks the actual verification results.
 - Unresolved proposals and assumptions retain that status in the reasoning records. Changed grounds trigger reconsideration of dependent choices without automatically rejecting their conclusions.
 
 ## Facts
@@ -17,6 +18,8 @@
 - 2026-09-09 owner rationale: rules without clear use occasions had allowed documentation to drift, while longer rule sets are easier to skip. The owner selected a lightweight workflow combining entry instructions, mechanical checks, and a final reviewing agent; reasons and experiment criteria must be recorded when used, since a final review cannot recover their missing history. The four-occasion procedure refines the existing trial rather than adding another approval point. (sourced)
 
 - 2026-09-09 owner decision: repair the inherited memory-lint baseline while retaining the original record and factual meaning. The preceding append-only rule and malformed legacy entries could not both pass the same lint; the documented exception is confined to traceable metadata and classification repair, with semantic corrections still appended. (sourced)
+
+- 2026-09-09 owner rationale: independently pinning the memory checker or copying its invocation into repository guidance can leave verification on old rules after the maintenance skill changes. Keep those instructions with the skill and inspect their execution at completion instead of maintaining a second tool contract. (sourced)
 
 ## Moves
 
