@@ -15,6 +15,8 @@
 
 - 2026-09-06 (2620c413) constraint: product operands may themselves be products. Expanding them can exceed degree two or replace a provable affine residual with an unprovable one. Each fold instead removes one of the finite monomials. (sourced)
 
+- 2026-09-09 limitation: the earlier 64/128/256-use timing record supplies neither stage attribution nor a pinned reproduction bundle; its 4096-use implication is extrapolation, not measurement. The documented checker separately queries target redundancy and relation premises, checks named-premise availability, accumulates the sum and proves a residual, so explicit step count alone cannot establish linear total cost. See `research/investigations/proof-certificate-architecture/SOURCE-CHECKING.md`. (sourced)
+
 ## Moves
 
 - 2026-09-05 replaced [[fold-by-operand-image]]: a local's image is transparent, so `let stride = width + padding;` gives `stride` the image `width + padding`, and a product over `stride` and a certificate scaling by `stride` arrived at the fold as different arithmetic; matching by declaration is the rule the neighbouring premise already used (sourced)

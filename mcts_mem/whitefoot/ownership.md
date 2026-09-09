@@ -1,9 +1,9 @@
-- Ownership is a deliberately simplified affine calculus: single owner per value, explicit `move` in ordinary consuming expressions, structurally declared consumption in the closed match and Result-propagation contexts, whole-binding death on any partial move, reinitialization only via a new binding.
-- Regions are lexical and named; every borrow is written with its mode and region — there is no inference of modes, regions, or lifetimes anywhere in the language.
-- Two borrow modes exist beside ownership: shared and exclusive; exclusivity is judged over resolved places, and content reached through any borrow can never be moved.
-- Overlap is conservative: struct fields are disjoint by prefix; two indexed places are disjoint only when both indices are unequal literals; two fully substituted direct slices overlap when any pair of their finite resolved-place origins overlaps. An immutable-const origin needs no write conflict, while a formal-slice origin never proves disjointness before call substitution (OWN-7).
-- `set` overwrites only a writable copy-typed final place; `replace` ([[affine-replacement]], SET-2) atomically exchanges a writable region-free affine final place with a same-typed replacement, binding the old value under the new `let` — no temporary hole, no implicit destruction, and the sole admitted move of content reached through a `&uniq` holder.
-- The checker rejects when unsure: a sound-but-unprovable program is rejected with a diagnostic naming the rule and a restructuring, never accepted on trust.
+- Ownership uses single-owner affine values, explicit ordinary moves, and closed structural consuming contexts. Partial consumption normally kills the root; same-statement read-out and complete-binding reinitialization follow the selected atomic commit model.
+- Regions are lexical, named or unnamed. Borrow modes are explicit at mode-bearing positions; structurally determined region positions are elided under the canonical region rule, and body binder modes are derived.
+- Two borrow modes exist beside ownership: shared and exclusive. Exclusivity is judged over resolved places; ordinary moves through a borrow are forbidden, while atomic replacement has its separately checked exchange permission.
+- Overlap is conservative over complete resolved paths: distinct fields and unequal literal indices establish disjointness. View-origin checking quantifies over the complete substituted origin sets; immutable constant storage supplies no write conflict.
+- Assignment writes copy values or performs the admitted affine read-out/reinitialization commit. Atomic [[affine-replacement]] exchanges a writable region-free affine place while binding its previous owner; neither operation grants arbitrary revival or a visible uninitialized hole.
+- The checker rejects when required safety cannot be established, with a rule and restructuring rather than a writer trust escape.
 
 ## Facts
 
@@ -37,6 +37,8 @@
 - 2026-07-23 owner-approved specification: v0.17 gives every direct slice one finite static possible-origin set while each runtime descriptor still points to one actual origin. `slice_of` creates a singleton, movement preserves the complete set, and alias/effect judgments quantify over all members; under the deliberately unchanged named-region liveness, moving or returning the descriptor does not shorten its shared claim. (sourced)
 
 - 2026-08-18 (eb8e8634) rationale: v0.31 selects atomic replace for the take/replace question because the mandatory old-value binder is forced by the no-implicit-destruction constraint and the no-hole constraint is met by construction; typed holes and closed-scope holes were rejected as per-place flow state the D1a levers exclude, and swap-only as binding revival. (sourced)
+- 2026-09-09 correction: The active OWN-1, OWN-2, FORM-8, TYPE-5, and LIV-2 rules supersede the old summary that every region is written, body modes are never derived, and a consumed binding can never be reinitialized. The conditional grounds in research/investigations/decision-workflow/RULE-GROUNDS.md do not extend the older ownership experiments to the combined current calculus. (sourced)
+
 ## Moves
 
 - 2026-07-07 (7c1d7641) replaced [[inferred-borrow-checking]]: replicating rustc's borrow checker is unacceptable implementation effort — a normal compiler frontend is acceptable, rustc-scale inference is not — so D1 stands only on a simplified explicit-region, reject-when-unsure calculus (owner ruling D1a, 2026-07-02) (sourced)

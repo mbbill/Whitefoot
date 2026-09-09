@@ -1,7 +1,9 @@
 # Whitefoot — agent instructions
 
-Whitefoot is a proof-carrying systems language for AI-written, human-approved
-code. Accepted programs must make memory corruption, data races, uninitialized
+Whitefoot is a programming language designed as a harness for AI agents.
+Its chosen systems-language design carries machine-checked source proofs.
+Accepted programs
+must make memory corruption, data races, uninitialized
 reads, silent overflow, and every other unproved partial operation
 unrepresentable. There is no writer-accessible unsafe escape or runtime trap.
 Every partial operation is admitted only after machine proof of its domain.
@@ -54,15 +56,21 @@ probably not the next work.
   `compiler/README.md` owns the current implementation map and known gaps.
   Compiler behavior, tests, archived code, and design prose do not define the
   language.
-- `docs/constitution.md` owns objectives and language-design principles;
-  `docs/patterns.md` teaches writer forms without adding acceptance rules.
+- `docs/constitution.md` owns purpose, chosen objectives, tradeoffs, and
+  conditional language-design principles. The current index in
+  `spec/derivation/derivation-ledger.md` connects active rules to selection
+  grounds; its historical derivations are evidence, not current authority.
+  Concrete choices need their own grounds, not just a constitutional ancestor.
+  `docs/patterns.md` teaches writer forms without adding acceptance rules;
   `docs/practice.md` explains engineering and evidence techniques without
   adding approval or merge requirements. README is navigation, not a second
   specification or implementation inventory.
 - `mcts_mem/` is where decisions are recorded: what was tried, what was
   concluded, why a form was chosen, and which implementations it replaced.
   Write there when a question is settled, not when a batch ends. Maintain it
-  with the `mcts-mem-use` skill and run `npx mcts-mem lint` after tree edits.
+  with the current `mcts-mem-use` skill and follow its verification instructions
+  after tree edits. The skill owns checker setup and invocation; do not duplicate
+  those instructions or pin its tool version in repository guidance or CI.
   The skill owns node structure, provenance, replacement pairs, and append-only
   history; lint checks integrity, not the truth of the recorded evidence.
 - Architecture dossiers, `archive/done/`, and
@@ -84,22 +92,23 @@ probably not the next work.
 Read only the material relevant to the current task. Do not turn historical
 research into an implied implementation requirement.
 
-Maintain a current fact in its owning document and link to it elsewhere. When
-a decision changes, update the affected standing guidance as well as recording
-the decision; appending history does not supersede a contradictory instruction.
-Follow rule IDs, named interfaces, and references to find the affected reading
-set. Do not require every task to load the whole repository. Check commands and
-links mechanically where useful, and review meaning across the affected owners;
-a text search cannot establish logical consistency. Dated evidence retains its
-experimental conditions and is not rewritten as a current capability claim.
-The practical maintenance method is in `docs/practice.md`.
+Follow the four occasions in [decision practice](docs/practice.md#decision-work):
 
-At the end of a repository-changing task, run the applicable checks in
-[the completion review checklist](docs/review-checklist.md) before reporting
-completion or handing over the result. It defines document content and
-citation boundaries and the bounded checks for a fast reviewing agent.
-Report concrete findings in the task or PR and recheck affected items after
-fixes; no separate review record or owner approval is required.
+1. **Start or resume:** read the affected current owners; for a material choice,
+   also recover the relevant constitutional aims and existing decision grounds.
+2. **Choose:** state why a material choice fits its requirements and evidence;
+   record a discriminating experiment's criterion before using it to choose.
+3. **Update:** when a conclusion or its grounds change, update current guidance,
+   memory, affected rule-index entries, and material dependents in the same work.
+4. **Finish:** run applicable checks and another agent's
+   [completion review](docs/review-checklist.md), fix findings, and publish the
+   result. This is the single review checkpoint; no separate review record or
+   owner approval is required for branch work.
+
+Decision practice defines the material-choice boundary, reading and writing
+locations, and affected-set procedure. Routine fixes under unchanged design
+need no new decision record. Record reasons when choices settle, not by
+reconstructing them at task completion.
 
 When working on an existing open PR, use that PR as the owner's review
 surface. After each completed round of changes, applicable checks, and review,
