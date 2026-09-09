@@ -6,6 +6,8 @@
 - Update affected standing guidance when recording a new decision. Follow the authority map and local-context maintenance method in AGENTS.md and docs/practice.md instead of copying a new current-state paragraph into multiple documents.
 - Task-completion review combines mechanical integrity checks with a bounded semantic checklist. The reviewer identifies local violations; unresolved design questions return to the implementing agent.
 - An existing pull request is the owner's review surface for its continuing work; a local-only result is not a delivered revision.
+- Delivery is checked against the requested user entry point and observable outcome, including necessary integration absent from a diff. Experiments and passing checks alone do not establish compiler capability delivery.
+- Research holds exploration and validation. A separate substantive compiler or runtime implementation there requires explicit owner permission for that specific exception; general research or optimization authorization is insufficient.
 - Agent collaboration arrangements are task-specific experiments. The intended stronger-architect/lower-cost-implementer model does not reinstate the retired plan and numbered-task protocols.
 
 ## Facts
@@ -28,6 +30,8 @@
 - 2026-09-07 owner rationale: the owner reviews changes only on pull requests. Completed work left in a local worktree is unavailable at that review surface and forces a separate reminder before review can begin. (sourced)
 
 - 2026-09-07 owner explanation: changing the author to AI changes an input to the software-development design problem. The constitution guides which solutions to explore, experiments inform whether to keep them, and decision memory preserves facts, conclusions, and changed directions. A rationale need not yield a unique answer. This supports conditional comparisons and explicit uncertainty rather than promoting an experiment or a plausible derivation into an immutable premise. (sourced)
+
+- 2026-09-09 owner rationale: compute optimization was understood as work on the maintained compiler, but its measured runtime existed only in research. The owner requires substantive compiler components to be developed in the maintained implementation unless a specific separate research implementation is explicitly permitted. Future implementation and completion review must verify the actual user path, not treat an experimental result or a limitation disclaimer as delivery. See the research boundary in AGENTS.md and delivery checks in docs/review-checklist.md. (sourced)
 
 ## Moves
 

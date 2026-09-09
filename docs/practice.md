@@ -32,12 +32,33 @@ its meaning is normally routine. If the work reveals a new design question,
 use the choice step then; task size and file count do not determine this.
 Scale the reasoning to uncertainty, impact, error cost, and reversibility.
 
+Identify the delivery entry point and observable outcome from the user's
+request at start or resumption. For a compiler, runtime, library, or performance
+change, state how an ordinary user reaches the changed behavior. Keep this
+brief in the existing PR or investigation; do not create a separate plan.
+An explicitly requested experiment may deliver evidence alone. Otherwise,
+an experimental link override, private entry point, or manual setup does not
+establish delivery through the normal path.
+
+An experimental deliverable does not waive the
+[research implementation boundary](../AGENTS.md#repository-structure-and-hygiene).
+Use maintained compiler components for compiler experiments; a separate
+research implementation requires the specific owner permission defined there.
+
+Check experimental validity and delivery completeness separately. Once an
+experiment supports a candidate, carry the required integration forward as
+unfinished work. If integration requires a directional design choice, surface
+that choice rather than silently deferring integration or narrowing the goal.
+Additional experiments, passing tests, and merging code do not substitute for
+the requested observable outcome. Reassess the remaining work from the original
+request at handoff, including necessary changes absent from the diff.
+
 | Occasion | Action | Observable result / completion check |
 |---|---|---|
 | Start or resume | Read the requested outcome and scope, then the affected current owner: the specification for language behavior, compiler guide and code for implementation, or document role for prose. Newly found issues do not expand the task's scope. For a material choice, read the relevant constitutional clauses and follow the rule index to its reasons; walk the relevant memory branch and alternatives with the skill. On resumption, verify the actual working tree and PR state. | The work follows the relevant requirements and accounts for prior objections. No reading log or task document. A1, D3, R1. |
 | Choose | State required properties, facts, assumptions, actual alternatives, the selection reason, and what could change it. Use deduction only for conclusions the stated premises entail; otherwise state the empirical or provisional ground. Before an experiment intended to select a design, record what result would distinguish the candidates; keep later exploration identifiable. | A concise reason in the existing investigation, or the PR for a small choice; experimental criteria and results at their source. R1, R2. |
 | Update | When a choice is settled or its grounds change, update the standing owner and memory; update index rows for affected language rules. Follow references and material dependencies into consumers, reconsidering each affected choice. Continue if its conclusion or grounds change; stop at an unaffected dependency. Keep unresolved grounds explicit, with a concrete question and affected rows marked `revisit`. Do this when the conclusion is reached, including during long tasks. | Current guidance, recorded reasons, and the index agree. State the affected set and any unresolved reason in the existing explanation. R3, R4, M1–M3. |
-| Finish | Run applicable mechanical checks, give another agent the task constraints, full diff and actual results, and use the completion checklist. Fix findings and recheck affected items, then publish the reviewed changes and compact report to the existing PR. | Check results, findings and limitations at the review surface. No separate review file or additional approval stage. V1–V4. |
+| Finish | Run applicable mechanical checks, give another agent the task constraints, full diff and actual results, and use the completion checklist. Fix findings and recheck affected items, then publish the reviewed changes and compact report to the existing PR. | Check results, findings and limitations at the review surface. No separate review file or additional approval stage. V0–V4. |
 
 For a choice without an existing rule or memory node, use the nearest relevant
 owner and memory branch; do not require an index entry merely to begin.

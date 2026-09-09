@@ -182,6 +182,27 @@ active `spec/`, and the `compiler/` — and so supporting material stays where a
 reader expects it. Keeping that legible is a standing obligation, not a
 one-time cleanup.
 
+**Research is not an alternative implementation home.** `research/` is for
+exploration and validation: experiments, benchmarks, independent oracles,
+reference implementations, measurements, and design evidence. Substantive
+Whitefoot compiler capabilities and components, including runtime components,
+MUST be implemented in the maintained compiler source and exercised through
+its normal integration path. Without explicit owner permission for the
+specific exception, agents MUST NOT implement or maintain a separate version
+of such a capability or component under `research/`, or substitute a
+research-only implementation for requested compiler work. Calling it a
+prototype, control, experiment, or temporary implementation does not create
+permission. A general instruction to research, benchmark, optimize, or work
+autonomously is NOT permission for this exception.
+
+If a separate research implementation is necessary, first explain its scope,
+why the maintained implementation cannot serve the experiment, and how it will
+be integrated or retired, and obtain explicit owner permission before creating
+it. Record that permission and its limits in the existing PR or investigation.
+Even an authorized research implementation is not delivery of a compiler
+capability until the requested normal path uses it. The work-branch freedom
+above does not waive this boundary.
+
 - A new top-level entry — a directory or file at the repository root — is a
   structural decision, not an implementation detail. Put new material in the
   existing directory that already owns its kind; create a root entry only when

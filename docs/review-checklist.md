@@ -110,6 +110,15 @@ Source: [repository hygiene](../AGENTS.md#repository-structure-and-hygiene).
   credential, or machine-local setup has leaked into the diff. New/modified
   artifacts use English. Tooling uses the project's native path unless its
   different role justifies another tool; the two agent entry files agree.
+- [ ] **A5 — Research boundary.** Substantive Whitefoot compiler or runtime
+  capabilities live in the maintained compiler implementation, not in a
+  separate research implementation. For any exception, identify explicit
+  owner permission covering that specific component and scope; an experiment
+  label or general research authorization does not suffice. Check actual
+  implementation ownership and normal-path callers, not just directory names
+  or documentation disclaimers. Unauthorized research substitutes are findings
+  even when their tests pass. Apply the
+  [research boundary](../AGENTS.md#repository-structure-and-hygiene).
 
 ## D. Documentation — changed prose, comments or examples
 
@@ -253,6 +262,16 @@ Use the `mcts-mem-use` skill; this section does not replace its grammar.
 
 Source: [evidence practice](practice.md#evidence-guidance) and
 [merge boundary](../AGENTS.md#branch-and-main-boundary).
+
+- [ ] **V0 — Delivery completeness.** Starting from the user's requested
+  outcome and actual entry point, verify the changed behavior is reachable
+  through the intended normal path. Identify necessary work missing from the
+  diff as well as defects in changed files. An experiment, private entry point,
+  manual link override, passing tests, or a merge is not a substitute for
+  integration unless the requested scope is explicitly experimental. Report
+  unfinished integration and directional choices; do not silently redefine
+  completion around the artifacts already produced. See
+  [decision practice](practice.md#decision-work).
 
 - [ ] **V1 — Actual checks.** Applicable checks ran on the delivered content;
   commands, results and limitations are available. Missing tools, unrun tests,
