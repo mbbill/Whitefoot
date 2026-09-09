@@ -262,6 +262,10 @@ supports them:
 This list is an implementation map, not a second language specification. The
 compiler deliberately reports remaining active-spec gaps as unsupported and
 keeps conservative LLVM when no specification-backed optimization fact exists.
+Effect checking projects a borrowed opaque-resource field to that field's state,
+including nested fields and child reborrows. Unrelated scalar siblings contribute
+no effect merely because they share its struct. Returned-owner origin summaries
+retain the same selected field path.
 The implemented run placements cover inline storage, bump extents, and the
 general store:
 `fixed_vector` forms an inline run, `arena_frame` reserves a bump extent in the

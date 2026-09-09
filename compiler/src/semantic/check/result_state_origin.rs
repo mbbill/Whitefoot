@@ -516,7 +516,6 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
         }
         let origin = match expression {
             CheckedExpression::Binding { binding, .. }
-            | CheckedExpression::BorrowSystemResource { binding, .. }
             | CheckedExpression::BorrowBox { binding, .. }
             | CheckedExpression::ReborrowAddressed { binding, .. }
             | CheckedExpression::DerefAddressed { binding, .. } => environment
@@ -542,6 +541,9 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 })
             }
             CheckedExpression::Project {
+                binding, fields, ..
+            }
+            | CheckedExpression::BorrowSystemResource {
                 binding, fields, ..
             } => environment
                 .get(binding)

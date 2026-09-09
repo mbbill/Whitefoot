@@ -966,3 +966,131 @@ fn general_elements_retain_deep_resource_release_effects() {
     assert_complete(accepted);
     assert_release_mismatch(rejected, "files", b"pure");
 }
+
+const RESOURCE_FIELD_BORROW: &str = r#"struct Holder {
+  before: u64;
+  file: ReadFile;
+  after: u64;
+}
+
+struct Nested {
+  before: u64;
+  holder: Holder;
+  after: u64;
+}
+
+fn exchange(target: &uniq ReadFile, incoming: own ReadFile) -> previous: own ReadFile reads(target), writes(target) {
+  let displaced = replace deref(target) = move incoming;
+  return move displaced;
+}
+
+fn inspect(holder: own Holder, incoming: own ReadFile) -> result: own Holder reads(holder.file), writes(holder.file) {
+  region {
+    let previous = exchange(target: &uniq holder.file, incoming: move incoming);
+  }
+  return move holder;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+
+#[test]
+fn resource_field_borrow_projects_only_the_selected_state() {
+    assert_complete(RESOURCE_FIELD_BORROW.as_bytes());
+}
+
+#[test]
+fn resource_field_borrow_projects_a_nested_selected_state() {
+    let source = RESOURCE_FIELD_BORROW
+        .replace("holder: own Holder", "holder: own Nested")
+        .replace("result: own Holder", "result: own Nested")
+        .replace("holder.file", "holder.holder.file");
+    assert_complete(source.as_bytes());
+}
+
+#[test]
+fn resource_field_borrow_child_projects_only_the_selected_state() {
+    let source = RESOURCE_FIELD_BORROW
+        .replace("holder: own Holder", "holder: &uniq Holder")
+        .replace("result: own Holder", "result: own unit")
+        .replace("&uniq holder.file", "&uniq deref(holder).file")
+        .replace("return move holder;", "return unit;");
+    assert_complete(source.as_bytes());
+}
+
+#[test]
+fn resource_field_borrow_cannot_omit_its_selected_read_or_write() {
+    for row in ["reads(holder.file)", "writes(holder.file)", "pure"] {
+        let source = RESOURCE_FIELD_BORROW.replace("reads(holder.file), writes(holder.file)", row);
+        assert_rule_kind(source.as_bytes(), SemanticRule::Eff2, |kind| {
+            matches!(kind, SemanticIssueKind::EffectMismatch { .. })
+        });
+    }
+}
+
+#[test]
+fn resource_field_borrow_child_projects_a_nested_selected_state() {
+    let source = RESOURCE_FIELD_BORROW
+        .replace("holder: own Holder", "holder: &uniq Nested")
+        .replace("result: own Holder", "result: own unit")
+        .replace("holder.file", "holder.holder.file")
+        .replace(
+            "&uniq holder.holder.file",
+            "&uniq deref(holder).holder.file",
+        )
+        .replace("return move holder;", "return unit;");
+    assert_complete(source.as_bytes());
+}
+
+#[test]
+fn resource_field_borrow_rejects_unobserved_sibling_or_whole_root_rows() {
+    for row in [
+        "reads(holder.before, holder.file), writes(holder.file)",
+        "reads(holder.file), writes(holder.file, holder.after)",
+        "reads(holder), writes(holder)",
+    ] {
+        let source = RESOURCE_FIELD_BORROW.replace("reads(holder.file), writes(holder.file)", row);
+        assert_rule_kind(source.as_bytes(), SemanticRule::Eff2, |kind| {
+            matches!(kind, SemanticIssueKind::EffectMismatch { .. })
+        });
+    }
+}
+
+#[test]
+fn resource_field_borrow_preserves_a_whole_resource_root() {
+    let source = RESOURCE_FIELD_BORROW
+        .replace("holder: own Holder", "holder: own ReadFile")
+        .replace("result: own Holder", "result: own ReadFile")
+        .replace("holder.file", "holder");
+    assert_complete(source.as_bytes());
+}
+
+#[test]
+fn resource_field_borrow_projects_the_returned_displaced_owner_summary() {
+    let source = RESOURCE_FIELD_BORROW
+        .replace("holder: own Holder", "holder: &uniq Holder")
+        .replace("result: own Holder", "result: own ReadFile")
+        .replace(
+            "let previous = exchange(target: &uniq holder.file, incoming: move incoming);",
+            "return exchange(target: &uniq deref(holder).file, incoming: move incoming);",
+        )
+        .replace("  return move holder;\n", "");
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("the selected field must retain its callable result origin: {outcome:?}");
+        };
+        assert_eq!(
+            program.data.functions[1].result_state_origin,
+            CheckedResultStateOrigin::Finite {
+                formals: vec![CheckedResultStatePath {
+                    result_fields: Vec::new(),
+                    result_variant: None,
+                    parameter: 0,
+                    parameter_fields: vec![1],
+                }],
+            }
+        );
+    });
+}

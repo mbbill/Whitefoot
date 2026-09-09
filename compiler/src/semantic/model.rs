@@ -2014,6 +2014,8 @@ pub(crate) enum CheckedExpression {
         /// direction fields are ordinary field places [SYS-18], so a borrow of
         /// one is this expression with a one-element path.
         fields: Vec<u32>,
+        /// Origins of the selected resource, projected relative to that
+        /// resource rather than the enclosing binding's other fields.
         state_origins: Option<CheckedStateOrigins>,
         nominal: NominalId,
     },

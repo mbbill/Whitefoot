@@ -1183,7 +1183,10 @@ inside the `region` block whose region it takes",
                     carrier: self.tree.path(carrier)?.clone(),
                     binding: local.binding,
                     fields: fields.clone(),
-                    state_origins: local.state_origins.clone(),
+                    state_origins: local
+                        .state_origins
+                        .clone()
+                        .map(|origins| origins.projected(&fields)),
                     nominal,
                 }
             }
@@ -1583,7 +1586,10 @@ and name it on the returned reborrow"
                     carrier: self.tree.path(carrier)?.clone(),
                     binding: local.binding,
                     fields: fields.clone(),
-                    state_origins: local.state_origins.clone(),
+                    state_origins: local
+                        .state_origins
+                        .clone()
+                        .map(|origins| origins.projected(&fields)),
                     nominal,
                 }
             }
