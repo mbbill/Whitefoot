@@ -906,43 +906,35 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
 fn every_release_close_is_one_discarded_attempt() {
     // The three closing resource kinds close: `DirectoryRead`, `DirectorySource`,
     // and `ReadFile`. Across the command and its retained helper definitions,
-    // the optimizer retains eighteen compiler-derived release sites. HandlePermit
+    // the optimizer retains fourteen compiler-derived release sites. HandlePermit
     // itself erases before emission. The typed file adapter validates a
     // provisional descriptor before publishing it as a Whitefoot value, so its
     // failure cleanup belongs to the adapter rather than to this IR.
     //
-    // Two independent changes moved this number off the nine it stood at, and
-    // both are re-derived from source rather than relaxed.
+    // Re-derived against unchanged source at 4f971ea0 and the return-storage
+    // change at b75306c7: the former retains eighteen closes at host -O2,
+    // while the latter removes exactly four unreachable viewability exits
+    // from `main`. Direct result storage exposes the zero head returned by
+    // each inlined `zeroed_bytes` fill, so `head <= room` is always true.
+    // The removed blocks are bb5, bb10, bb15 and bb20: the failure exits after
+    // forming the pattern, root name, root path and report runs. Their four
+    // allocation-refusal exits remain; no acquired owner loses its release.
     //
-    // The completion runtime made a close one submission into the record its
-    // own frame reserved and one join of that record
-    // (`research/investigations/io-model/PARK-ON-MISS.md` §8). The emitter
-    // writes the same release sites it wrote before; what moved is what the
-    // host optimizer can merge. Two closing edges of `wf__main_body` used to
-    // end in an identical one-instruction tail and were folded into one; each
-    // now ends in a two-call sequence over its own record block, which is not
-    // the same tail, so both stand.
-    //
-    // The containers batch then moved `wfgrep`'s scratch runs off the ambient
-    // heap onto the general store, and that growth is all in `main`. An
-    // ambient `buffer_new` was one expression that either produced a run or
-    // aborted the process, so it left `main`'s control flow alone. A take from
-    // the store is a `match` on an `Option` with a refusal arm, followed by
-    // the window-viewability test the source writes before it forms a view,
-    // and `main` makes four of them. Each new source edge leaving `main`
-    // carries the release of the `command.cwd` `DirectoryRead` the entry holds
-    // for the whole run [STOR-3].
-    //
-    // No resource gained a release and none lost one: the same three kinds
-    // close on more edges because the store surface gave `main` more ways to
-    // leave, and fewer of those edges share a tail the optimizer can fold.
+    // The fourteen remaining sites have distinct source responsibilities:
+    // `main` closes its cwd on four allocation refusals, the startup and
+    // root-length error returns, and its final error/no-match/match returns
+    // (nine). It also closes the opened root directory and fallback file
+    // (two). `walk` closes its enumeration source, each opened child file,
+    // and each opened child directory (three). The completion close remains
+    // one submission and one join, and each acquired owner reaches only its
+    // corresponding release on an execution [STOR-3, SYS-5].
     let closes = program()
         .matches("@wf__completion_file_close_submit(")
         .count();
     assert_eq!(
         closes,
-        18,
-        "all eighteen closing return edges must remain:\n{}",
+        14,
+        "all fourteen retained closing sites must remain:\n{}",
         program()
     );
     // The close diagnostic is discarded and an ambiguous close is never
@@ -1196,13 +1188,17 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
     // initialization is the source's own `zeroed_bytes` and `zeroed_words`
     // fill loop, which is why the eleven sites no longer read as eleven
     // literal `@calloc`s. Every take goes through one of those two helpers,
-    // and the host inliner expanded eight of the eleven call sites and left
-    // three as calls, so the eleven appear here as eight `@malloc`s of the
-    // eight expanded sizes plus three calls to the out-of-line
+    // and the host inliner expands nine of the eleven call sites and leaves
+    // two as calls, so the eleven appear here as nine `@malloc`s of the
+    // expanded sizes plus two calls to the out-of-line
     // `wf_zeroed_bytes`, whose own take is the one `@malloc` of a
     // non-constant size in the program. That split is an inlining fact and
     // not a source one, so both halves are asserted and their sum is the
-    // eleven the source writes.
+    // eleven the source writes. Rechecking 4f971ea0 against b75306c7 accounts
+    // for the former eight/three split: `main`'s 1280-byte report is now
+    // inlined too. All four `main` takes, both `search_file` takes and the
+    // first three `walk` takes are expanded. Only `walk`'s 1024-byte child
+    // path and 1280-byte report remain calls into `zeroed_bytes`.
     let mut expanded = 0;
     let mut out_of_line = 0;
     let mut helper_takes = 0;
@@ -1235,12 +1231,13 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
         11,
         "eleven source runs, eleven store takes"
     );
-    assert_eq!(expanded, 8, "eight takes are expanded at their call site");
-    assert_eq!(out_of_line, 3, "three takes remain calls into the helper");
+    assert_eq!(expanded, 9, "nine takes are expanded at their call site");
+    assert_eq!(out_of_line, 2, "two takes remain calls into the helper");
     for (size, count) in [
         ("@malloc(i64 4096)", 2),
         ("@malloc(i64 8192)", 2),
         ("@malloc(i64 1024)", 1),
+        ("@malloc(i64 1280)", 1),
         ("@malloc(i64 65664)", 1),
         ("@malloc(i64 512)", 1),
         ("@malloc(i64 256)", 1),
@@ -1256,9 +1253,9 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
     // guarantee: the fill loop is inside `zeroed_bytes` and `zeroed_words`,
     // between the take and the hand-back, so a caller cannot reach a filled
     // run without having taken it and cannot re-reach the fill without taking
-    // another. Owned aggregate destinations now make LLVM retain three
-    // 228-byte inactive-result initializations and one 16-byte frame-metadata
-    // initialization as memset. These do not refill a run's heap payload.
+    // another. Owned aggregate destinations also make LLVM retain memset
+    // initializations of 40-byte inactive Options, 236-byte inactive Results
+    // and 16-byte frame metadata. These do not refill a run's heap payload.
     // Keep the no-refill claim on pointer provenance, rather than forbidding
     // the unrelated aggregate initialization instruction by name.
     for forbidden in ["@realloc(", "@reallocf(", "bzero"] {
@@ -1289,15 +1286,11 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
     // function makes precedes every host transfer it reaches, so no buffer is
     // first created in the drain, the match loop, or the flush.
     //
-    // The stronger property the argv-list version could state — that the *last*
-    // allocation also precedes the first transfer — no longer holds textually,
-    // and its failure is inlining rather than re-initialization: the host
-    // inliner expands `search_file`'s body into `main`'s single-file arm, so
-    // `main` textually holds a callee's prologue allocations after `main`'s own
-    // root open. The per-buffer count above is what now carries "one
-    // allocation per source buffer"; that a call allocates once rather than per
-    // read is a source fact — every buffer is bound at its function's entry —
-    // which no inspection of the merged module can restate.
+    // `search_file` remains a retained helper, reached after `main` opens the
+    // fallback file or `walk` opens a child. Its two allocations are per file,
+    // not per read. The per-buffer count above carries "one allocation per
+    // source buffer"; this ordering check additionally requires allocation to
+    // begin before that function's first emitted transfer.
     for function in program_functions() {
         let Some(first_allocation) = ["@malloc(", "@wf_zeroed_bytes(", "@wf_zeroed_words("]
             .iter()
