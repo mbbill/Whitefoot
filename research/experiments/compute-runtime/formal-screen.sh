@@ -16,8 +16,8 @@ floor=wf_floor.c
 leaf=prim_host.c
 platform_flags=-pthread
 libraries=-lm
-modes='before candidate recovered'
-references='before recovered'
+modes='before candidate recovered help0'
+references='before recovered help0'
 case "$host" in
     Darwin|Linux) ;;
     MINGW*|MSYS*)
@@ -27,8 +27,8 @@ case "$host" in
         platform_flags=
         libraries='-lpsapi -lws2_32'
         # The frozen recovered control has no qualified Windows port.
-        modes='before candidate'
-        references=before
+        modes='before candidate help0'
+        references='before help0'
         ;;
     *) echo "unsupported native screen host: $host" >&2; exit 1 ;;
 esac
@@ -41,7 +41,7 @@ git -C "$root" diff --exit-code "$before" -- \
 mkdir -p "$OUT"
 mkdir "$OUT/formal-screen"
 out=$(cd "$OUT/formal-screen" && pwd)
-mkdir -p "$out/baseline-source" "$out/source" "$out/raw"
+mkdir -p "$out/baseline-source" "$out/source" "$out/raw" "$out/diagnostics"
 git -C "$root" archive "$before" compiler/src/backend/sched "compiler/src/backend/$floor" \
     > "$out/before.tar"
 tar -xf "$out/before.tar" -C "$out/baseline-source"
@@ -90,8 +90,13 @@ git diff --binary > "$out/source.patch"
 flags="-std=c11 -O3 -g $platform_flags -fno-fast-math -ffp-contract=off -fno-vectorize -fno-slp-vectorize -fno-lto"
 printf '%s\n' "$CC $flags; recovered additionally -DWF_COMPUTE_STATS=0 -DWF_COMPUTE_CONTROL; shared additionally -DWF_SHARED_CONTROL" \
     "measured_modes=$modes; references=$references; libraries=$libraries" \
+    'help0: current runtime sources with only -DWF_SCHED_JOIN_HELP_ROUNDS=0u changed' \
+    'diagnostics: separate longer current-runtime batches with WF_SCHED_REPORT=1; not pooled into wall samples' \
     'WF: --par defaults; same optimized WF object in every attribution image' \
     'CLI: normal --par link, correctness only; end-to-end timing remains open' > "$out/flags.txt"
+if test -n "$exe"; then
+    printf '%s\n' 'Windows before: historical scheduler/floor plus current host/completion sources; candidate: current scheduler/floor plus those same host/completion sources.' >> "$out/flags.txt"
+fi
 "$WFC" --par --emit-llvm fir.wf fir_direct.wf -o "$out/module.ll"
 "$WFC" --par fir.wf fir_direct.wf -o "$out/command$exe"
 sed -e 's/@main(/@wf_research_fir_command_main(/g' \
@@ -109,6 +114,8 @@ cat fir_host.ll >> "$out/host.ll"
 "$out/oracle$exe" > "$out/oracle.txt"
 for mode in $modes; do
     runtime="$root/compiler/src/backend"
+    policy_flags=
+    if test "$mode" = help0; then policy_flags=-DWF_SCHED_JOIN_HELP_ROUNDS=0u; fi
     if test "$mode" = before; then runtime="$out/baseline-source/compiler/src/backend"; fi
     set --
     if test -n "$exe"; then
@@ -126,7 +133,7 @@ for mode in $modes; do
             $libraries -o "$out/$mode$exe"
     else
         # shellcheck disable=SC2086
-        "$CC" $flags -DWF_SHARED_CONTROL "-DFIR_RUNTIME=\"$mode\"" fir_bench.c \
+        "$CC" $flags $policy_flags -DWF_SHARED_CONTROL "-DFIR_RUNTIME=\"$mode\"" fir_bench.c \
             "$runtime/$floor" "$runtime/sched/core.c" \
             "$runtime/sched/$leaf" "$runtime/sched/entry.c" \
             "$@" "$out/wf.o" "$out/native.o" $libraries -o "$out/$mode$exe"
@@ -145,8 +152,8 @@ for width in $widths; do
             while test "$pass" -lt 5; do
                 order=$modes
                 if test "$((pass % 2))" = 1; then
-                    order='candidate before'
-                    if test -z "$exe"; then order="recovered $order"; fi
+                    order=
+                    for mode in $modes; do order="$mode $order"; done
                 fi
                 for mode in $order; do
                     log="$out/raw/$mode-w$width-n$n-t$tile-p$pass.tsv"
@@ -188,6 +195,29 @@ awk -F '\t' -v references="$references" '
         exit failed
     }' "$out/means.tsv" > "$out/summary.tsv" && result=0 || result=$?
 cat "$out/summary.tsv"
+# Preserve the completed wall verdict even if a later diagnostic fails.
+# Current-source counters are race-free. Historical controls are excluded from
+# live observation. Longer batches reduce CPU-accounting quantization but are
+# diagnostic process samples, not extra independent samples in the wall test.
+for width in $widths; do
+    for n in 4096 65536; do
+        diagnostic_calls=512
+        if test "$n" = 4096; then diagnostic_calls=4096; fi
+        for tile in 16 64 256 1024; do
+            for mode in candidate help0; do
+                log="$out/diagnostics/$mode-w$width-n$n-t$tile.tsv"
+                WF_SCHED_REPORT=1 WF_WORKERS="$width" "$out/$mode$exe" \
+                    wf 16 "$n" "$tile" "$diagnostic_calls" 92821 0 > "$log"
+                awk -F '\t' -v width="$width" -v expected="$diagnostic_calls" '
+                    {sub(/\r$/, "")}
+                    /^# actual_lanes=/ {split($0,a,"="); lanes++; if(a[2]!=width)bad=1}
+                    /^# sched: / {reports++}
+                    $10=="warm" {calls++}
+                    END {exit bad || lanes!=1 || reports!=1 || calls!=expected}' "$log"
+            done
+        done
+    done
+done
 if test -n "$exe"; then
     find "$out" -type f ! -name manifest.sha256 -exec sha256sum {} + > "$out/manifest.sha256"
 else

@@ -96,7 +96,7 @@ jobs:
         run: |
           {
             echo '## x86_64-pc-windows-msvc: initial FIR runtime screen'
-            echo 'Same WF object; normal CLI correctness checked. Before-control only: strong native parallel references, broader workloads, CPU acceptance and CLI timing remain open.'
+            echo 'Same WF object; normal CLI correctness checked. Historical scheduler/floor and current-source zero-help controls; strong native parallel references, broader workloads, CPU acceptance and CLI timing remain open.'
             echo '```text'
             cat "$RUNNER_TEMP/formal-runtime/formal-screen/summary.tsv"
             echo '```'

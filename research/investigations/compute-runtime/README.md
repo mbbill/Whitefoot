@@ -80,7 +80,10 @@ formal-before revision `188088d41552d0d3bccf8368798dcc44702bf75c`, a checked
 unchanged recovered baseline, and the candidate formal runtime. CI covers the
 four POSIX targets and Windows. The Windows job invokes the same script with
 the native MSVC-target compiler and existing Windows runtime leaves; it compares
-only the fixed formal-before control with the candidate. No research runtime
+only the fixed formal-before scheduler/floor with the candidate. Both link the
+same current Windows host/completion sources, compiled beside each scheduler's
+own headers. This overlay is needed by generated host diagnostics; "before"
+does not mean an entirely historical Windows runtime. No research runtime
 is ported. Its benchmark uses QueryPerformanceCounter for elapsed time,
 GetProcessTimes for whole-process CPU time, and peak working set for memory;
 context-switch counts are explicitly unavailable. CPU times' 100-ns units do
@@ -234,11 +237,53 @@ wall ratios are within 5% (0.933–1.034); whole-batch CPU median ratios span
 The broader 64-call FIR screen still fails. Correctness selects this repair;
 native CI and further controlled comparisons must establish its cost.
 
-The recovered runtime remains frozen, including its analogous deque defects;
+The recovered runtime remains frozen, including its acquire-only thief index
+reads (its ring cells already use atomics);
 its timing is historical comparison evidence, not a correctness-qualified
 implementation to restore. The shared runtime still updates counters while
 the recovered timing build disables them. This accounting asymmetry and
 broader fair native references remain unresolved before final qualification.
+
+A local maintained-core layout experiment separated owner-written deque bottom
+from the thieves' top and isolated each physical thread's observed counters
+on 128-byte boundaries. The current layout packs 136-byte thread records,
+allowing independent counter writers to share a line. Two alternating M1
+cohorts used identical scalar WF objects, widths one/four, inputs 4,096/65,536,
+tiles 64/1,024, five process pairs and 1,024/256 warm calls for small/large
+inputs. At four participants, 65,536 / tile 64, candidate/original wall ratios
+were 0.958 and 0.922, with CPU ratios 0.974 and 0.958. Small-input/tile-64 wall
+ratios were 0.980 and 1.020. One single-participant large-input cell had an
+unresolved 1.114 RSS ratio in the second cohort, with roughly 0.56 MB variation
+inside both sets. The layout is not selected or retained in the implementation;
+resolve the Windows policy regression and memory observation before reopening
+this candidate. Native smoke and the 200,000-task deque probe passed; no claim
+of cross-platform layout qualification follows.
+
+The [first complete Windows FIR screen at `b4a3283d`](https://github.com/mbbill/Whitefoot/actions/runs/34349696349)
+passes oracle, normal CLI and pool-width checks, but fails three of 24 wall
+cells against its historical scheduler/floor control. At four participants,
+4,096 / tile 1,024 has median paired ratio 2.781, range 2.712–2.981. Its five
+process means are 60.94–63.04 us versus 21.12–22.95 us; pooled warm-call p50 is
+60.9 versus 15.9 us and p95 is 76.5 versus 69.1 us. These are different sample
+levels, not interchangeable confidence estimates. The host is Windows Server
+2025, EPYC 7763, two cores/four logical CPUs, high-performance power plan,
+Clang 20.1.8. QPC frequency is 10 MHz. Whole-process CPU readings for these
+short batches jump in 15.625-ms multiples and include zeros; they cannot
+establish CPU efficiency. Do not attribute the regression to helping alone:
+the two controls contain several scheduler changes. The next causal control
+holds current sources fixed and sets only compute helping to zero, with
+separate longer diagnostic batches for current-runtime counters and CPU.
+
+The first local M1 same-source help comparison completed all 480 process
+samples and 48 separate diagnostic processes. At four participants and 65,536
+outputs, candidate/help0 median wall ratios are 0.878 at tile 64 and 0.909 at
+tile 1,024. Small-input ratios are less stable; this does not answer the
+Windows regression. One 4,097-call diagnostic process at 4,096 / tile 1,024
+records 677 parks for the candidate versus 5,841 for help0, with whole-batch
+CPU 418.6 versus 522.3 ms. The report and exact lane/warm-call counts are
+validated per diagnostic process. One process is explanatory evidence, not
+CPU-performance qualification. The wall verdict is saved before diagnostics
+so a later diagnostic failure cannot hide completed measurements.
 
 ## Earlier investigation and evidence
 
