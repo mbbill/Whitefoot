@@ -633,9 +633,11 @@ All invariant occurrences of one formal must agree. An input loan sharing that
 formal must outlive its fixed brand, regardless of parameter order; it cannot
 shorten the brand. Complete parameter types are checked after the final
 substitution, so a direct view requires the exact resulting view type rather
-than implicit lifetime conversion. The language's explicit shared child-view
-route `slice_of(&deref(parent))` still reaches `Unsupported(RegionsAndBorrows)`;
-the brand repair does not implement that separate capability. Empty variant
+than implicit lifetime conversion. VIEW-2's shared child through a borrowed
+`Slice` or `MutSlice` is supported. A separate `&array` probe reaches
+`Unsupported(RegionsAndBorrows)` before the ordinary OWN-6 reborrow judgment:
+its multi-statement child region is not admitted by the view-holder exception.
+The brand repair does not change that boundary. Empty variant
 construction still requires any brand its operands do not supply.
 
 Where the axis leaves the program is the lowering: a region names a store for

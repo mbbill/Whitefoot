@@ -49,7 +49,7 @@ fn invariant_brands_require_exact_view_types_in_either_parameter_order() {
 }
 
 #[test]
-fn matching_view_brands_preserve_the_explicit_child_view_capability_boundary() {
+fn borrowed_array_view_probe_stops_before_the_reborrow_judgment() {
     let source = br#"struct Mark['s] {
   value: u64;
 }
@@ -77,6 +77,9 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 1_u8);
 }
 "#;
+    // This array-holder probe is not VIEW-2's Slice/MutSlice-holder exception:
+    // its multi-statement child region violates OWN-6. The current compiler
+    // stops before that judgment; Unsupported is not evidence of admission.
     assert_unsupported(source, UnsupportedSemanticFeature::RegionsAndBorrows);
     let direct = std::str::from_utf8(source)
         .unwrap()

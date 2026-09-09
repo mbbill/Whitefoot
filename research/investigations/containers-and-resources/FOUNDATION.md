@@ -593,10 +593,12 @@ an input brand and an input loan, the actual brand fixes it and every actual loa
 that fixed region. No parameter order may shorten the brand. Formals appearing
 only in non-brand positions retain their previous region judgment. Complete type
 equality is checked after the final substitution: outlives alone does not convert
-one direct view type into another. Explicit VIEW-2 formation remains the route
-for a shorter view in the language. The checked `slice_of(&deref(parent))`
-counterexample still reaches the compiler's `RegionsAndBorrows` capability gap;
-this amendment does not implement that existing formation rule. Stored-content
+one direct view type into another. VIEW-2's explicit shared child through a
+borrowed `Slice` or `MutSlice` is supported. The separate probe whose `parent`
+borrows an array stops at `RegionsAndBorrows` before the OWN-6 judgment. Its
+multi-statement child region fails ordinary reborrow admission; an Unsupported
+observation does not make it a language-legal instance of the view-holder
+exception. This amendment changes neither boundary. Stored-content
 restrictions and provider-release bounds remain intact.
 The old single-region extractor is insufficient even after fixing spelling:
 `Pair<'a, 'b>` and `Vector<'a, Vector<'b, u8>>` require both positions.
