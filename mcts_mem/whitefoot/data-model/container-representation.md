@@ -81,11 +81,15 @@
   per-slot storage. Other cases retain separate storage; source consume modes
   grant no input/result aliasing permission.
 - An ordinary synchronous call's whole owned result may reuse one consumed,
-  same-typed aggregate binding when the callee snapshots inputs before any write,
+  same-typed aggregate binding when the callee snapshots inputs before body writes,
   complete CFG liveness kills the old contents, and the backing is not exposed.
   Ambiguous inputs, ordered multi-results and overlap/completion schedules retain
   separate storage. This bounded ABI argument supplements checked ownership;
   it does not follow from an `own` mode alone.
+- One eligible owned entry group may share the caller's result destination after
+  every other indirect input reaches private storage. Its entry transfer remains
+  valid for equal or different input/result addresses. Exposed groups and deferred
+  uses retain independent backing.
 - Capture mutation targets before the RHS and revalidate their writability under
   the complete post-RHS loan state. Read the displaced old owner at the admitted
   replace commit. An address's storage must survive RHS effects;
@@ -410,6 +414,14 @@
   [Physical lowering](../../../compiler/src/lowering/physical_types.rs),
   [call closure](../../../compiler/src/lowering/specialize.rs),
   [execution evidence and scope](../../../research/experiments/container-representation/families/RESULTS.md). (code)
+
+- 2026-09-09 measurement: an eligible retained append helper needs one 144-byte
+  entry transfer and no private aggregate slot, versus two transfers and 144
+  bytes of explicit native stack on `9e731905`. A result can alias a different
+  consumed input: preserving that input privately before initializing result
+  storage passes the two-input counterexample. Input/result equality is not an
+  ABI premise, and addressed priority-queue helpers retain their prior copies.
+  [Conditions, comparison and limits](../../../research/experiments/container-representation/foundation/RESULTS.md#alternative-return-destinations). (code)
 
 - 2026-09-06 (d998dd0a) historical rationale: Selected general place/result-destination support as the first implementation,
   including the semantic field/index/cell/borrow support needed to turn the frozen
