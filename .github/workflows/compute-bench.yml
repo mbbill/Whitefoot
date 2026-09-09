@@ -171,7 +171,7 @@ jobs:
         run: |
           make -C compiler sched-deque-test CC=/usr/bin/clang \
             COMPLETION_TMP="$RUNNER_TEMP/formal-deque"
-      - name: Compare the shared runtime with fixed controls
+      - name: Compare the compute runtime with repaired historical and research controls
         env:
           OUT: ${{ runner.temp }}/formal-runtime
         run: make -C research/experiments/compute-runtime formal-screen OUT="$OUT"
@@ -186,12 +186,6 @@ jobs:
             cat "$RUNNER_TEMP/formal-runtime/formal-screen/summary.tsv"
             echo 'First 64 calls of the same processes (overlapping short view)'
             cat "$RUNNER_TEMP/formal-runtime/formal-screen/short-summary.tsv"
-            if test -f "$RUNNER_TEMP/formal-runtime/formal-screen/layout-summary.tsv"; then
-              echo 'Separate frozen Linux join control (8b61e7c4 versus f2, not current candidate): non-join symbol addresses matched'
-              cat "$RUNNER_TEMP/formal-runtime/formal-screen/layout-summary.tsv"
-              echo 'Overlapping first64 view of the layout cohort'
-              cat "$RUNNER_TEMP/formal-runtime/formal-screen/layout-short-summary.tsv"
-            fi
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
@@ -218,7 +212,7 @@ jobs:
           clang --version
           cargo build --locked --profile gate --bin whitefootc \
             --manifest-path compiler/Cargo.toml --target-dir "$RUNNER_TEMP/formal-runtime/compiler"
-      - name: Compare the shared runtime with its fixed Windows control
+      - name: Compare the compute runtime with its repaired historical Windows control
         run: |
           OUT="$(cygpath -u "$RUNNER_TEMP")/formal-runtime" \
             WFC="$(cygpath -u "$RUNNER_TEMP")/formal-runtime/compiler/gate/whitefootc.exe" \
@@ -228,7 +222,7 @@ jobs:
         run: |
           {
             echo '## x86_64-pc-windows-msvc: initial FIR runtime screen'
-            echo 'Same WF object; normal CLI correctness checked. Historical scheduler/floor, frozen previous, current idle-window and identical-image controls; strong native parallel references, broader workloads, CPU acceptance and CLI timing remain open.'
+            echo 'Same WF object; normal CLI correctness checked. Repaired historical compute and identical-image controls; strong native parallel references, broader workloads, CPU acceptance and CLI timing remain open.'
             echo '```text'
             echo 'Long batches'
             cat "$RUNNER_TEMP/formal-runtime/formal-screen/summary.tsv"

@@ -399,8 +399,8 @@ fn ordinary_lane_frame_limits_match_the_runtime_slot() {
         crate::LANE_FRAME_BYTES
     );
     assert!(
-        core.contains(&format!(
-            "_Alignas({PARALLEL_LANE_FRAME_ALIGNMENT}) unsigned char frame[WF_SCHED_FRAME_BYTES];"
+        crate::SCHED_CORE_SOURCE.contains(&format!(
+            "_Alignas({PARALLEL_LANE_FRAME_ALIGNMENT}) unsigned char frame[WF_PAR_FRAME_BYTES];"
         )),
         "the core slot must provide the alignment target layout relies on"
     );
@@ -1852,7 +1852,7 @@ fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
     let directory = test_directory();
 
     // "The pool started" is read from the core's own count of the pool
-    // threads it started, which the observer prints on the `sched:` line
+    // threads it started, which the observer prints on the `compute:` line
     // after the grant line. It is not read from the grant count: a grant is a
     // steal, and a steal is a scheduling event that needs a pool thread to be
     // given a CPU while the offering lane still holds the work. The
@@ -2347,13 +2347,13 @@ fn counted_run(executable: &Path, workers: Option<&str>) -> (u64, std::process::
 }
 
 /// The number of pool threads the core started in one counted run, read from
-/// the `sched:` line the observer prints after the grant line when the run
+/// the `compute:` line the observer prints after the grant line when the run
 /// asks for the core's counters, which every counted run does.
 fn workers_started(output: &std::process::Output) -> u64 {
     let report = String::from_utf8_lossy(&output.stderr).into_owned();
     report
         .lines()
-        .find(|line| line.starts_with("sched: "))
+        .find(|line| line.starts_with("compute: "))
         .and_then(|line| {
             line.split_whitespace()
                 .find_map(|field| field.strip_prefix("workers_started="))
@@ -2550,48 +2550,15 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
 }
 "#;
 
-/// The staged call of a permitted loop is offered to a lane, and the refused
-/// edge is the same call publishing the same bytes.
-///
-/// Both halves matter and they fail differently. The shape half says the
-/// hand-out is where the schedule needs it: the frame is acquired and
-/// published where the iteration is issued, and joined, read, and released in
-/// the exact drain — so the loop's back edge is crossed with the call still
-/// running, which is the whole of what [PAR-3] grants here. The observable
-/// half says taking that grant changes nothing: `WF_WORKERS=0` and `1` are the
-/// opt-out, so every iteration takes the refused edge and runs its own call
-/// where it is written, and `4` starts a pool that grants — and all of them
-/// publish the same status. The default compilation names no lane entry at
-/// all, because a hand-out exists only in the world that asked for one.
+/// Generic suspended user-call pipelines are deliberately retired. Preserve
+/// the source loop, mutations, errors and cleanup using ordinary calls.
 #[test]
-fn a_staged_may_suspend_call_is_offered_to_a_lane_and_refused_to_the_same_bytes() {
+fn a_staged_may_suspend_call_stays_on_the_current_stack() {
     let overlapped = emit_with_overlap(STAGED_MAY_SUSPEND_CALL);
     let body = function_body(&overlapped, "@wf_main");
-    let acquisition = body
-        .find("= call ptr @wf__par_acquire_lane(i64 ")
-        .expect("the staged call must acquire a lane frame");
-    let publish = body
-        .find("call void @wf__par_publish(ptr")
-        .expect("the acquired frame must be given the outlined call");
-    let refused = body
-        .find("\npar.staged.inline.")
-        .expect("a refused acquisition must run the call where it is written");
-    let join = body
-        .find("call void @wf__par_join(ptr")
-        .expect("the drain must join the frame");
-    let release = body
-        .find("call void @wf__par_release(ptr")
-        .expect("the drain must give the frame back");
-    assert!(
-        acquisition < publish && publish < refused && refused < join && join < release,
-        "the offer is in the carrying block and the retirement in the drain:\n{body}"
-    );
-    // The retirement is in a different block from the offer, which is what
-    // says an iteration is carried across the loop's back edge.
-    assert!(
-        body[publish..join].contains("par.staged.offered."),
-        "the join must be reached only after the issue stage has left:\n{body}"
-    );
+    assert!(body.contains("@wf_probe("));
+    assert!(!body.contains("@wf__par_publish("));
+    assert!(!body.contains("par.staged."));
 
     let sequential = emit(STAGED_MAY_SUSPEND_CALL);
     for entry in [
@@ -2627,35 +2594,9 @@ fn a_staged_may_suspend_call_is_offered_to_a_lane_and_refused_to_the_same_bytes(
             output.status.code().unwrap_or(-1).to_le_bytes().to_vec(),
         ));
     }
-    identical(&runs).expect("a refused lane must publish the granted lane's bytes");
+    identical(&runs).expect("worker settings must preserve ordinary I/O results");
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
-}
-
-/// The compile-time window ceiling of a staged lane hand-out is the runtime's
-/// own lane slot count.
-///
-/// Two numbers that have to agree and live in two languages: the lowering
-/// sizes the ring and states the ceiling from one, and the runtime refuses an
-/// acquisition past the other. A ceiling above the runtime's would buy a
-/// window whose extra iterations are refused a frame and run inline, which is
-/// depth the ring paid for and never got; a ceiling below it would leave depth
-/// the lane could have granted.
-#[test]
-fn the_staged_lane_window_ceiling_is_the_runtimes() {
-    let declared = crate::SCHED_CORE_HEADER
-        .lines()
-        .find_map(|line| line.strip_prefix("#define WF_SCHED_LANE_SLOTS "))
-        .expect("the core must state its lane slot count");
-    assert_eq!(
-        declared
-            .trim()
-            .trim_end_matches('u')
-            .parse::<u64>()
-            .expect("a decimal count"),
-        crate::LANE_SLOTS,
-        "the lowering's staged window ceiling has drifted from the runtime's"
-    );
 }
 
 /// The same staged loop shape with a submitted *system* operation at the cut,
@@ -2714,10 +2655,6 @@ fn a_system_operation_bound_by_a_let_is_not_the_lane_form() {
     // The lane hand-out's ring is an array of frame addresses, one per slot;
     // the shape is named whole because a host may emit an array of the same
     // length for something else (Darwin's path buffers are `[1024 x i8]`).
-    assert!(
-        !overlapped.contains(&format!("[{} x ptr]", crate::LANE_SLOTS)),
-        "a submitted operation's ring is not the lane hand-out's:\n{overlapped}"
-    );
 
     let directory = test_directory();
     let executable = build_executable(&overlapped, &directory);
@@ -2857,29 +2794,16 @@ fn owned_pair_results_survive_ordinary_join_and_forced_refusal() {
 }
 
 #[test]
-fn owned_staged_results_and_cleanup_survive_retirement_and_forced_refusal() {
+fn owned_io_results_and_cleanup_survive_ordinary_calls() {
     let module = emit_with_overlap(STAGED_OWNED_RESULTS_AND_CLEANUP);
     let main = function_body(&module, "@wf_main");
-    let issued = main
-        .find("call void @wf__par_publish(ptr ")
-        .expect("the aggregate-returning user call must be handed out");
-    let retired = main
-        .find("call void @wf__par_join(ptr ")
-        .expect("the drain must retire that hand-out");
-    assert!(issued < retired);
-    assert!(main[issued..retired].contains("par.staged.offered."));
-    assert!(main.contains("\npar.staged.inline."));
-    assert!(main.contains("\npar.staged.refused."));
-    // Both selected representations really cross the staging boundary: a
-    // Report result, and the Scratch owner released only by the drain.
-    for nominal in ["%wf.t0", "%wf.t1"] {
-        assert!(main.contains(&format!("[{} x {nominal}]", crate::LANE_SLOTS)));
-    }
-    run_owned_lane_cases(STAGED_OWNED_RESULTS_AND_CLEANUP, &module, 32, 4, 9, 4, 2);
+    assert!(!main.contains("@wf__par_publish("));
+    assert!(!main.contains("par.staged."));
+    run_owned_lane_cases(STAGED_OWNED_RESULTS_AND_CLEANUP, &module, 32, 0, 9, 4, 0);
 }
 
 #[test]
-fn owned_staged_inline_places_keep_each_iterations_backing_until_retirement() {
+fn owned_io_calls_keep_each_iterations_backing_until_return() {
     let source = br#"struct Scratch {
   stamp: u64;
 }
@@ -2931,26 +2855,13 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
 "#;
     let module = emit_with_overlap(source);
     let main = function_body(&module, "@wf_main");
-    assert!(main.contains("par.staged.offered."));
-    // Pin construction into the current iteration's backing, not merely a
-    // later copy into it. The native modes below then observe that same
-    // backing through deferred mutation, join and retirement.
-    let slot_projection = format!(
-        " = getelementptr inbounds [{} x %wf.t0], ptr ",
-        crate::LANE_SLOTS
-    );
-    assert!(main.lines().any(|line| {
-        let Some((address, _)) = line.trim().split_once(&slot_projection) else {
-            return false;
-        };
-        main.contains(&format!("store %wf.t0 zeroinitializer, ptr {address}\n"))
-    }));
-    assert!(!main.contains("load %wf.t0,"));
-    run_owned_lane_cases(source, &module, 0, 4, 1, 0, 2);
+    assert!(!main.contains("par.staged."));
+    assert!(!main.contains("@wf__par_publish("));
+    run_owned_lane_cases(source, &module, 0, 0, 1, 0, 0);
 }
 
 #[test]
-fn owned_match_headers_and_staged_results_observe_completed_scratch() {
+fn owned_match_headers_and_bound_io_results_observe_completed_scratch() {
     let source = std::str::from_utf8(STAGED_OWNED_RESULTS_AND_CLEANUP)
         .expect("the fixture is UTF-8")
         .replace(
@@ -2989,20 +2900,16 @@ fn owned_match_headers_and_staged_results_observe_completed_scratch() {
     }
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 
-    // The current staged optimizer selects user calls bound by let; direct
-    // user-call match headers above use ordinary completion. Exercise the
-    // actual staged path too, retaining the same enum result and arm access.
+    // Both match headers and let-bound I/O calls use ordinary completion.
     let staged = source.replace(
         "match probe(root: &cwd, permit: move permit, name: &name, scratch: &uniq scratch, mark: 3_u8, stamp: index) {",
         "let reported = probe(root: &cwd, permit: move permit, name: &name, scratch: &uniq scratch, mark: 3_u8, stamp: index);\n          match reported {",
     );
     let module = emit_with_overlap(staged.as_bytes());
     let main = function_body(&module, "@wf_main");
-    assert!(main.contains("call void @wf__par_publish(ptr "));
-    assert!(main.contains("\npar.staged.offered."));
-    // Deferred publication makes an early arm observe stale scratch, while
-    // the observer checks exact frame/source release and real overlap.
-    run_owned_lane_cases(staged.as_bytes(), &module, 48, 4, 5, 4, 2);
+    assert!(!main.contains("@wf__par_publish("));
+    assert!(!main.contains("par.staged."));
+    run_owned_lane_cases(staged.as_bytes(), &module, 48, 0, 5, 4, 0);
 }
 
 /// The native core still performs every real grant, publication, join and
@@ -3078,7 +2985,7 @@ fn run_owned_lane_cases(
         };
         assert_eq!(count("attempts"), attempts, "{report}");
         let granted = count("granted");
-        if *mode == "1" {
+        if *mode == "1" || attempts == 0 {
             assert_eq!(granted, 0, "the actual acquisition edge must refuse");
         } else {
             assert!(

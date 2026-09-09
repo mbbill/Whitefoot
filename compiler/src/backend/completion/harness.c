@@ -36,15 +36,7 @@
 #include <time.h>
 #include <unistd.h>
 
-/* The runtime's own answer to the window query when nothing else bounds it. A
- * test which means to reach that boundary must name the same number the bridge
- * does.
- *
- * It used to be half the process-wide operation capacity.  There is no
- * operation capacity any more -- the record is a block of the submitting frame
- * -- and every submitted operation's batch carries the compiler's ceiling of
- * two, so the only form this number reaches is a staged loop whose call is a
- * lane hand-out, and it is the lane's own slot count (design §7). */
+/* The completion driver's default bound before slot size and static caps. */
 #define WF_HARNESS_WINDOW_DEFAULT 1024u
 /* The private storage the window query affords one loop before the compiler's
  * ceiling and the loop's own slot size apply.  A test which means to reach
@@ -197,7 +189,7 @@ int wf_completion_test_poll(
  *   - `test_drain_wakes_the_registered_token_owner`: the consume-wait
  *     registration.  Its property -- a completion elsewhere wakes the thread
  *     that registered for it -- survives as the in-place waiter, and is tested
- *     by `test_a_completion_claims_an_in_place_registration` and
+ *     by `test_a_completion_publishes_results` and
  *     `test_a_helper_completion_wakes_a_waiting_join`.
  *   - `test_bridge_capacity_falls_back_per_operation` and
  *     `test_open_capacity_refuses_and_resubmits`: the per-operation capacity
@@ -280,15 +272,15 @@ static void harness_record_init(
     enum wf_file_operation_kind kind
 ) {
     memset(record, 0, sizeof(*record));
-    wf_sched_record_init(&record->sched);
+    wf_completion_record_init(record);
     record->request.kind = kind;
     record->opened_descriptor = -1;
     record->open_outcome = WF_FILE_OPEN_SUCCEEDED;
 }
 
 static int harness_record_done(const wf_completion_record *record) {
-    return __atomic_load_n(&record->sched.state, __ATOMIC_ACQUIRE)
-        == WF_SCHED_DONE;
+    return atomic_load_explicit(&record->state, memory_order_acquire)
+        == WF_COMPLETION_DONE;
 }
 
 /* Submits one record to the bounded adapter and runs it on this thread. */
@@ -425,18 +417,15 @@ static int test_exactly_one_completion_per_submission_under_race(
  * before storing DONE, so exactly one of the two owns the wake.  Checked
  * without a park so the answer is a fact rather than a sample: after the
  * publication the registration is gone and the state is DONE. */
-static int test_a_completion_claims_an_in_place_registration(void) {
+static int test_a_completion_publishes_results(void) {
     wf_completion_record record;
 
     harness_record_init(&record, WF_FILE_PREAD);
-    CHECK(record.sched.state == WF_SCHED_PENDING);
-    CHECK(record.sched.waiter == NULL);
-    record.sched.waiter = WF_SCHED_WAITER_IN_PLACE;
+    CHECK(record.state == WF_COMPLETION_PENDING);
     record.result.kind = WF_FILE_PREAD;
     record.result.value = 7;
     wf_completion_record_complete(&record);
     CHECK(harness_record_done(&record));
-    CHECK(record.sched.waiter == NULL);
     CHECK(record.result.value == 7);
 
     /* A record no one waits on is published just the same, and the publisher
@@ -445,7 +434,6 @@ static int test_a_completion_claims_an_in_place_registration(void) {
     record.result.kind = WF_FILE_CLOSE;
     wf_completion_record_complete(&record);
     CHECK(harness_record_done(&record));
-    CHECK(record.sched.waiter == NULL);
     return 0;
 }
 
@@ -2460,53 +2448,12 @@ static int test_a_helper_completion_wakes_a_waiting_join(void) {
     return 0;
 }
 
-/* An I/O join made on a pool stack parks that stack, and the completion
- * resumes it.
- *
- * This is design §11 item 1 in its real-thread form, and the case above in the
- * shape a linked program actually runs: there the join is made from a plain
- * harness thread with no stack to park, so it takes §2's fourth line and waits
- * in place; here the thread enters the core the way `sched/smoke.c` does, the
- * join has a stack, and §2's third line parks it.
- *
- * The operation is completed by a thread of this case's own rather than by an
- * engine, and that is what makes the park unconditional. A record the bounded
- * adapter still holds is run by the joining thread itself, which is the engine
- * doing its job and not a park; a record in the ring is reaped by whichever
- * thread makes the next progress pass. Which of those a real read takes
- * depends on the helper policy and on whether this host has io_uring, so a
- * case that submitted one would assert a park on some gate hosts and not
- * others. A record only another thread can publish takes §2's third line on
- * every host and every helper setting, and it is the same record, the same
- * join entry point and the same publication call
- * (`wf_completion_record_complete`) an operation of any kind ends in.
- *
- * What the counters say is the whole property. `parks` above zero says the
- * stack really parked rather than spinning to DONE; `resumes` equal to `parks`
- * says every parked stack came back; and the join returned the record's own
- * result, so the stack that was resumed is the stack that joined. The
- * publisher sleeps first, so a join that did not park would have to spin on a
- * record nothing had completed: a park that was never resumed is a hang the
- * watchdog reports by name.
- *
- * Three stacks and one thread: the entry takes one, so a park has one to
- * switch to and the exhausted arm is not what is being tested. The core is the
- * process's own `wf__sched_core`, which nothing has started here -- a harness
- * link carries no floor, so no entry started it -- and it stays initialised for
- * the cases after this one, whose joins run on plain threads and wait in place
- * exactly as before.
- *
- * A compute hand-out joined newest-first on the core from a linked program is
- * not duplicated here: `compiler/tests/programs/parallel.rs` runs whole
- * compiled programs whose overlap groups do exactly that, at several worker
- * counts, and reads the core's own grant count back. */
-typedef struct pool_stack_join_context {
-    int failed;
+/* A delayed publisher must wake the ordinary thread waiting in I/O join. */
+typedef struct current_stack_join_context {
     wf_harness_record record;
     int64_t value;
     int error_code;
-    uint64_t publications_before;
-} pool_stack_join_context;
+} current_stack_join_context;
 
 static void *complete_after_a_delay(void *opaque) {
     wf_completion_record *record = opaque;
@@ -2519,50 +2466,22 @@ static void *complete_after_a_delay(void *opaque) {
     return NULL;
 }
 
-static void run_pool_stack_join(void *argument) {
-    pool_stack_join_context *context = argument;
-    wf_completion_record *record = (wf_completion_record *)context->record.bytes;
+/* Generic suspended-stack resumption is retired. The same delayed
+ * publication must wake a native thread blocked in the delivered I/O join. */
+static int test_an_io_join_waits_on_the_current_stack(void) {
+    current_stack_join_context context;
     pthread_t publisher;
-
-    context->failed = 1;
-    if (wf__sched_current_stack() == NULL) {
-        wf_sched_post_status(&wf__sched_core, 0);
-        return;
-    }
-    context->publications_before = wf__completion_publications();
-    harness_record_init(record, WF_FILE_READ);
-    if (pthread_create(&publisher, NULL, complete_after_a_delay, record) != 0) {
-        wf_sched_post_status(&wf__sched_core, 0);
-        return;
-    }
-    wf__completion_file_join(
-        context->record.bytes,
-        &context->value,
-        &context->error_code
-    );
-    if (pthread_join(publisher, NULL) != 0) {
-        wf_sched_post_status(&wf__sched_core, 0);
-        return;
-    }
-    context->failed = 0;
-    wf_sched_post_status(&wf__sched_core, 0);
-}
-
-static int test_an_io_join_on_a_pool_stack_parks_and_is_resumed(void) {
-    pool_stack_join_context context;
-    wf_sched_statistics counts;
-
     memset(&context, 0, sizeof(context));
-    context.value = -1;
-    context.error_code = -1;
-    CHECK(wf_sched_init(&wf__sched_core, 1u, 3u, 256u * 1024u) == 0);
-    CHECK(wf__sched_enter(0u, run_pool_stack_join, &context) == 0);
-    wf_sched_statistics_sum(&wf__sched_core, &counts);
-    CHECK(context.failed == 0);
+    wf_completion_record *record = (wf_completion_record *)context.record.bytes;
+    harness_record_init(record, WF_FILE_READ);
+    uint64_t before = wf__completion_publications();
+    uint64_t parks = wf__completion_wait_announcements();
+    CHECK(pthread_create(&publisher, NULL, complete_after_a_delay, record) == 0);
+    wf__completion_file_join(context.record.bytes, &context.value, &context.error_code);
+    CHECK(pthread_join(publisher, NULL) == 0);
     CHECK(context.value == 11 && context.error_code == 0);
-    CHECK(wf__completion_publications() == context.publications_before + 1u);
-    CHECK(counts.parks >= 1u);
-    CHECK(counts.resumes == counts.parks);
+    CHECK(wf__completion_publications() == before + 1);
+    CHECK(wf__completion_wait_announcements() > parks);
     return 0;
 }
 
@@ -2627,13 +2546,7 @@ static int test_completion_window_answers_at_the_boundaries(void) {
     uint64_t budget = WF_HARNESS_WINDOW_BYTE_BUDGET;
     uint64_t two;
 
-    /* The runtime's unconstrained answer is its own throughput choice.  It
-     * used to be half the process operation capacity, because a loop holding
-     * every record would have pushed the rest of the program onto the
-     * capacity-wait path; there is no capacity and no wait to be pushed onto
-     * any more, and the number is the lane's slot count, since a staged lane
-     * hand-out is the one form no compiler ceiling bounds below it (design
-     * §7). */
+    /* The runtime's default is a throughput bound, not global capacity. */
     CHECK(unconstrained >= 1u);
     CHECK(unconstrained <= WF_HARNESS_WINDOW_DEFAULT);
 
@@ -3335,7 +3248,7 @@ int main(int argc, char **argv) {
         (void)setenv("WF_IO_HELPERS", "1", 0);
     }
     RUN_TEST(test_exactly_one_completion_per_submission_under_race(argv[1]));
-    RUN_TEST(test_a_completion_claims_an_in_place_registration());
+    RUN_TEST(test_a_completion_publishes_results());
     RUN_TEST(test_unified_wake_epoch());
     RUN_TEST(test_equal_epoch_notification_rearms_before_resleep());
     RUN_TEST(test_one_epoch_wakes_every_announced_thread());
@@ -3360,7 +3273,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_helper_count_above_its_bound_is_refused());
     RUN_TEST(test_shutdown_refuses_every_later_entry());
     RUN_TEST(test_a_helper_completion_wakes_a_waiting_join());
-    RUN_TEST(test_an_io_join_on_a_pool_stack_parks_and_is_resumed());
+    RUN_TEST(test_an_io_join_waits_on_the_current_stack());
     RUN_TEST(test_readiness_refusal_is_not_a_terminal_outcome());
     RUN_TEST(test_completion_window_answers_at_the_boundaries());
     RUN_TEST(test_a_submitted_operation_is_kicked_before_it_waits(argv[1]));

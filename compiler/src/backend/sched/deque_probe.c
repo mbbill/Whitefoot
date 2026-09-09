@@ -15,7 +15,7 @@
 
 #define PROBE_WORKERS 4u
 #define PROBE_TASKS 200000u
-static wf_sched_core core;
+
 static unsigned seen[PROBE_TASKS];
 static unsigned completed;
 static unsigned ready;
@@ -37,30 +37,29 @@ static void task(void *frame) {
           "task executed twice");
 }
 
-static void execute(wf_sched_slot *slot) {
-    /* This harness gives the executor sole responsibility for retirement;
-     * no external joiner holds the frame after publication. */
-    wf_sched_execute(&core, slot);
-    wf_sched_release(&core, slot->frame);
+static void execute(struct wf__par_slot *slot) {
+    /* Publish completion; the owning lane joins and releases the slot. */
+    wf__par_execute(slot);
+
     (void)__atomic_fetch_add(&completed, 1u, __ATOMIC_RELEASE);
 }
 
 static void await_start(void) {
     (void)__atomic_fetch_add(&ready, 1u, __ATOMIC_RELEASE);
     while (!__atomic_load_n(&started, __ATOMIC_ACQUIRE)) {
-        wf_prim_pause();
+        wf_prim_yield();
     }
 }
 
 static void worker(unsigned index) {
-    wf_prim_set_thread_index(index);
+    wf__par_self = &wf__par_lanes[index];
     await_start();
     while (!__atomic_load_n(&stopped, __ATOMIC_ACQUIRE)) {
-        wf_sched_slot *slot = wf_sched_find(&core, &core.threads[index]);
+        struct wf__par_slot *slot = wf__par_find(wf__par_self);
         if (slot != NULL) {
             execute(slot);
         } else {
-            wf_prim_pause();
+            wf_prim_yield();
         }
     }
 }
@@ -69,10 +68,9 @@ static void observer(void) {
     unsigned long long previous = 0;
     await_start();
     do {
-        wf_sched_statistics counts;
-        wf_sched_statistics_sum(&core, &counts);
-        check(counts.steals >= previous, "live steal count moved backward");
-        previous = counts.steals;
+        unsigned long long steals = wf__par_grants();
+        check(steals >= previous, "live steal count moved backward");
+        previous = steals;
         observations += 1u;
     } while (!__atomic_load_n(&stopped, __ATOMIC_ACQUIRE));
 }
@@ -113,69 +111,56 @@ static void join_thread(probe_thread thread) {
 
 int main(void) {
     probe_thread threads[PROBE_WORKERS];
-    wf_sched_statistics counts;
-    unsigned returned[WF_SCHED_LANE_SLOTS] = {0};
-    unsigned id;
-    unsigned index;
+    unsigned returned[WF_PAR_LANE_SLOTS] = {0};
+    void *frames[WF_PAR_LANE_SLOTS];
     unsigned free_count = 0;
-    check(wf_sched_init(&core, PROBE_WORKERS, PROBE_WORKERS + 1u, 65536u) == 0,
-          "initialization failed");
-    wf_prim_set_thread_index(0);
-    for (index = 1; index <= PROBE_WORKERS; index += 1u) {
-        threads[index - 1u] = start_thread(index);
+    for (unsigned i = 0; i < PROBE_WORKERS; ++i) {
+        wf__par_prepare(&wf__par_lanes[i], (int)i);
+        check(wf_prim_wait_init(&wf__par_lanes[i].wait) == 0, "wait initialization failed");
     }
-    /* Fill once before starting thieves, so remote execution is required. */
-    for (id = 0; id < WF_SCHED_LANE_SLOTS; id += 1u) {
-        unsigned *frame = wf_sched_acquire(&core, sizeof(*frame));
-        check(frame != NULL, "initial lane capacity missing");
-        *frame = id;
-        wf_sched_publish(&core, frame, task);
-    }
-    check(wf_sched_acquire(&core, sizeof(unsigned)) == NULL, "full lane did not refuse acquisition");
-    while (__atomic_load_n(&ready, __ATOMIC_ACQUIRE) != PROBE_WORKERS) wf_prim_pause();
-    __atomic_store_n(&started, 1u, __ATOMIC_RELEASE);
-    while (__atomic_load_n(&completed, __ATOMIC_ACQUIRE) == 0u) wf_prim_pause();
-    for (; id < PROBE_TASKS; id += 1u) {
-        unsigned *frame;
-        while ((frame = wf_sched_acquire(&core, sizeof(*frame))) == NULL) {
-            wf_sched_slot *slot = wf_sched_pop(&core.lanes[0]);
-            if (slot != NULL) execute(slot); else wf_prim_pause();
+    wf__par_self = &wf__par_lanes[0];
+    __atomic_store_n(&wf__par_lane_count, PROBE_WORKERS, __ATOMIC_RELAXED);
+    for (unsigned i = 1; i <= PROBE_WORKERS; ++i) threads[i-1] = start_thread(i);
+    unsigned id = 0;
+    while (id < PROBE_TASKS) {
+        unsigned batch = PROBE_TASKS - id;
+        if (batch > WF_PAR_LANE_SLOTS) batch = WF_PAR_LANE_SLOTS;
+        for (unsigned i = 0; i < batch; ++i) {
+            unsigned *frame = wf__par_acquire_lane(sizeof(*frame));
+            check(frame != NULL, "lane capacity missing");
+            *frame = id++;
+            frames[i] = frame;
+            wf__par_publish(frame, task);
         }
-        *frame = id;
-        wf_sched_publish(&core, frame, task);
-        if ((id & 3u) == 0u) {
-            wf_sched_slot *slot = wf_sched_pop(&core.lanes[0]);
-            if (slot != NULL) execute(slot);
+        if (batch == WF_PAR_LANE_SLOTS)
+            check(wf__par_acquire_lane(sizeof(unsigned)) == NULL, "full lane did not refuse");
+        if (!__atomic_load_n(&started, __ATOMIC_RELAXED)) {
+            while (__atomic_load_n(&ready, __ATOMIC_ACQUIRE) != PROBE_WORKERS) wf_prim_yield();
+            __atomic_store_n(&started, 1u, __ATOMIC_RELEASE);
+            /* Require real remote execution before the owner starts helping. */
+            while (__atomic_load_n(&completed, __ATOMIC_ACQUIRE) == 0) wf_prim_yield();
         }
-    }
-    while (__atomic_load_n(&completed, __ATOMIC_ACQUIRE) < PROBE_TASKS) {
-        wf_sched_slot *slot = wf_sched_pop(&core.lanes[0]);
-        if (slot != NULL) execute(slot); else wf_prim_pause();
+        for (unsigned i = batch; i > 0; --i) {
+            wf__par_join(frames[i-1]);
+            wf__par_release(frames[i-1]);
+        }
     }
     __atomic_store_n(&stopped, 1u, __ATOMIC_RELEASE);
-    for (index = 0; index < PROBE_WORKERS; index += 1u) join_thread(threads[index]);
-    for (id = 0; id < PROBE_TASKS; id += 1u) check(seen[id] == 1u, "missing task");
-    check(completed == PROBE_TASKS, "wrong completion count");
-    check(core.lanes[0].top == core.lanes[0].bottom, "deque not empty");
-    for (unsigned list = 0; list < 2u; list += 1u) {
-        index = list == 0u ? core.lanes[0].free_head : core.lanes[0].local_free_head;
-        for (; index != WF_SCHED_NO_SLOT; index = core.lanes[0].slots[index].next_free) {
-            check(index < WF_SCHED_LANE_SLOTS, "invalid free-list index");
-            check(returned[index]++ == 0u, "free-list cycle or duplicate membership");
-            free_count += 1u;
-        }
+    for (unsigned i = 0; i < PROBE_WORKERS; ++i) join_thread(threads[i]);
+    for (id = 0; id < PROBE_TASKS; ++id) check(seen[id] == 1, "missing task");
+    struct wf__par_lane *lane = &wf__par_lanes[0];
+    check(lane->top == lane->bottom, "deque not empty");
+    for (int i = lane->free_head; i >= 0; i = lane->slots[i].next_free) {
+        check((unsigned)i < WF_PAR_LANE_SLOTS, "invalid free-list index");
+        check(returned[i]++ == 0, "free-list cycle");
+        ++free_count;
     }
-    check(free_count == WF_SCHED_LANE_SLOTS, "slot not returned");
-    wf_sched_statistics_sum(&core, &counts);
-    if (WF_SCHED_STATS) {
-        check(counts.steals > 0 && counts.steals <= PROBE_TASKS, "invalid final steal count");
-    } else {
-        /* The initial completed wait already requires a real thief. Removing
-         * observational writes must preserve all task/slot checks above. */
-        check(counts.steals == 0, "disabled steal counter changed");
-    }
+    check(free_count == WF_PAR_LANE_SLOTS, "slot not returned");
+    unsigned long long steals = wf__par_grants();
+    check(WF_SCHED_STATS ? steals > 0 && steals <= PROBE_TASKS : steals == 0,
+          "invalid steal count");
     check(observations > 0, "observer never ran");
-    (void)printf("sched deque probe: PASS tasks=%u steals=%llu observations=%llu slots=%u\n",
-                 completed, counts.steals, observations, free_count);
+    printf("sched deque probe: PASS tasks=%u steals=%llu observations=%llu slots=%u\n",
+           PROBE_TASKS, steals, observations, free_count);
     return 0;
 }

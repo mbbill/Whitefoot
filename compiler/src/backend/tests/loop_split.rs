@@ -770,7 +770,7 @@ fn ordinary_shared_runtime_can_report_without_an_observer() {
                 let text = String::from_utf8_lossy(&output.stderr);
                 assert_eq!(text.lines().count(), 1, "{text}");
                 assert!(
-                    text.starts_with(&format!("sched: threads={workers} ")),
+                    text.starts_with(&format!("compute: threads={workers} ")),
                     "{text}"
                 );
                 let started = if workers == "1" { "0" } else { "3" };

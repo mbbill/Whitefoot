@@ -1,5 +1,11 @@
 # Park on miss: the measurements of design §12 and the plan's added choices
 
+This is dated evidence for the retired managed-stack runtime. The compiler's
+`park-on-miss-measurements` target is removed: these probes depend on that
+runtime's stack switching, ready queues and statistics. Commands below describe
+the historical tree, reproducible at `d858008f`, not the current compute runtime.
+See [the preserved unified checkpoint](../../investigations/io-model/README.md).
+
 `research/investigations/io-model/PARK-ON-MISS.md` §12 lists the measurements
 that must exist before the design's choices are made, and
 `archive/current-plan.md`'s "Decided 2026-09-05: measured before chosen" adds four

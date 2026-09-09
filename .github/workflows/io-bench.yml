@@ -331,7 +331,7 @@ jobs:
   # order alternates within each pair. The native C runner rejects a process
   # before reporting its QPC time unless exit status, stdout, and stderr are
   # exact. An untimed observed link separately proves that a compute publish
-  # occurs while an IOCP request is outstanding, a non-owner worker executes,
+  # occurs between I/O submit and join, a non-owner worker executes,
   # every accepted operation publishes and is consumed, and fallback is zero.
   bench-windows:
     name: bench-windows-qualified (windows-latest)

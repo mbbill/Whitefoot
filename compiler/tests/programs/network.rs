@@ -387,29 +387,13 @@ fn a_refused_connect_hands_its_permit_back_on_both_routes() {
     }
 }
 
-/// Four peers connect before any of them speaks, and the last to connect is
-/// the first to be answered.
-///
-/// A server that takes the four connections one at a time is parked in its
-/// first peer's `receive_next` while the fourth peer waits, so this exchange
-/// cannot complete; only a server whose four accepts are in flight at once
-/// answers it. That is what the staged permission grants the fixed-trip
-/// accept loop of `tcp_fanout.wf` in a `--par` build [PAR-3], and what the
-/// lane hand-out of its staged call takes: the prologue of each iteration
-/// takes its permit and publishes its `serve_one`, and the remainders, one
-/// parked callee per peer, run overlapped. The reads carry a deadline so a
-/// server that serves peers in turn fails this case in bounded time rather
-/// than hanging it.
-///
-/// Three workers, on both routes, because the property is about what the
-/// runtime does with a wait and not about how many cores the runner has. A
-/// pool sized to a large machine gives each of the four peers a worker of its
-/// own, so a runtime that let every one of those workers block inside its own
-/// peer's `receive_next` would still answer all four here and fail only on a
-/// three-core host. Pinned below the peer count, the fourth peer is answered
-/// only if the waits are carried by something other than the workers.
+/// Generic suspended-WF fanout is retired. Four accepted connections must
+/// still be served correctly under --par on native and helper routes, with
+/// peers speaking in acceptance order. The earlier reverse-order test was
+/// specifically a managed-stack concurrency requirement; this does not claim
+/// the same head-of-line-blocking behavior or throughput.
 #[test]
-fn four_peers_are_served_at_once_under_par_on_both_routes() {
+fn four_peers_are_served_in_order_under_par_on_both_routes() {
     let llvm = compile_program_with_overlap("tcp_fanout.wf");
     let program = build_program(&llvm);
     for native_ring in [true, false] {
@@ -419,7 +403,7 @@ fn four_peers_are_served_at_once_under_par_on_both_routes() {
         let mut streams = (0..4_u8)
             .map(|_| connect_when_ready(port))
             .collect::<Vec<_>>();
-        for peer in (0..4_u8).rev() {
+        for peer in 0..4_u8 {
             let stream = &mut streams[usize::from(peer)];
             stream
                 .set_read_timeout(Some(Duration::from_secs(20)))
@@ -429,7 +413,7 @@ fn four_peers_are_served_at_once_under_par_on_both_routes() {
             let mut returned = Vec::new();
             stream.read_to_end(&mut returned).unwrap_or_else(|error| {
                 panic!(
-                    "peer {peer} was not answered while earlier peers were still silent \
+                    "peer {peer} was not answered in acceptance order \
                      (native ring: {native_ring}): {error}"
                 )
             });
@@ -441,48 +425,16 @@ fn four_peers_are_served_at_once_under_par_on_both_routes() {
     }
 }
 
-/// The fanout loop's carrying block offers its staged call to a lane, and its
-/// drain retires it.
-///
-/// The end-to-end case above proves the four peers are answered at once; this
-/// one pins the shape that does it, so a regression that quietly returns the
-/// loop to serving in turn fails here as well as there. The publish is in the
-/// block the loop carries an iteration out of, and the join and the release
-/// are in the exact drain, which is the whole of the schedule: submit at the
-/// staged point, retire in iteration order. The `--no-overlap` module names
-/// none of the four lane entries, because a hand-out exists only in the world
-/// that asked for one.
+/// A may-suspend WF activation stays an ordinary call. The permission
+/// ledger can still describe its source independence, without promising
+/// that the compute runtime actualizes that permission.
 #[test]
-fn the_fanout_loop_offers_its_staged_call_to_a_lane_and_retires_it_in_the_drain() {
+fn the_fanout_loop_keeps_may_suspend_calls_on_the_current_stack() {
     let overlapped = compile_program_with_overlap("tcp_fanout.wf");
     let main = emitted_function(&overlapped, "main");
-    // The window is asked once at the loop's entry, with the trip count the
-    // source states and the compiler's own ceiling: one lane frame slot per
-    // in-flight iteration.
-    assert!(
-        main.contains(&format!(
-            "call i64 @wf__completion_window(i64 4, i64 0, i64 {})",
-            whitefoot::LANE_SLOTS
-        )),
-        "the staged loop must ask for its window once at entry:\n{main}"
-    );
-    let offer = labelled_block(main, "par.staged.offer.");
-    assert!(
-        offer.contains("call void @wf__par_publish("),
-        "the carrying block must publish the staged call's frame:\n{main}"
-    );
-    let wait = labelled_block(main, "par.staged.wait.");
-    assert!(
-        wait.contains("call void @wf__par_join(") && wait.contains("call void @wf__par_release("),
-        "the drain must join the frame, read it, and give it back:\n{main}"
-    );
-    // The refused edge is the same call on the same operands, run where it is
-    // written, and its answer waits in the same ring element the drain reads.
-    let inline = labelled_block(main, "par.staged.inline.");
-    assert!(
-        inline.contains("call i8 @wf_serve_one("),
-        "a refused acquisition must run the staged call inline:\n{main}"
-    );
+    assert!(main.contains("@wf_serve_one("));
+    assert!(!main.contains("@wf__par_publish("));
+    assert!(!main.contains("par.staged."));
 
     let sequential = compile_program_without_overlap("tcp_fanout.wf");
     for entry in [
@@ -496,22 +448,4 @@ fn the_fanout_loop_offers_its_staged_call_to_a_lane_and_retires_it_in_the_drain(
             "the --no-overlap module must name no lane entry, found {entry}"
         );
     }
-}
-
-/// The instructions of the first block whose label starts with `prefix`.
-///
-/// A label is the only unindented line inside an emitted function body, so the
-/// block runs from the line after its label to the next unindented line.
-fn labelled_block(function: &str, prefix: &str) -> String {
-    let mut lines = function
-        .lines()
-        .skip_while(|line| !line.starts_with(prefix));
-    assert!(
-        lines.next().is_some(),
-        "no block labelled {prefix} in:\n{function}"
-    );
-    lines
-        .take_while(|line| line.starts_with(' '))
-        .collect::<Vec<_>>()
-        .join("\n")
 }

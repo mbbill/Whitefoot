@@ -196,37 +196,32 @@ comparison build at the ordinary `-O2` level. It does not promise that platform
 libraries or memory operations contain no SIMD instructions. Vectorization
 remains enabled by default.
 
-Normal compilation uses the maintained shared scheduler in
-`src/backend/sched/`. Compute joins run an owned newest task inline and allow
-bounded current-stack helping before taking another stack; READY continuations
-remain eligible and empty-handed turns still advance I/O completions. I/O joins
-keep their existing park/progress behavior. Runtime startup initializes only
-configured lanes and live metadata rather than touching all lane capacity.
-Deque ring cells use atomic pointer accesses even for failed steals racing
-cell reuse; thief index reads participate in the owner's sequentially
-consistent claim ordering. Diagnostic counters use single-writer atomic
-updates and permit live reads, without promising a simultaneous pool snapshot.
-An experimental C build override, `WF_SCHED_STATS=0`, erases these increments
-and makes private scheduler reports unavailable; normal compiler links retain
-the enabled default. Counter-cost measurements have not selected a new default.
-`WF_SCHED_REPORT=2` prints one scheduler counter line on stderr when a normal
-program returns through the shared runtime. No extra observer or custom link
-is needed. Mode 1 retains the private observer API without automatic output;
-0/unset stays silent. These are live atomic observations, not a simultaneous
-snapshot, and builds with counters disabled cannot report them. Diagnostic
-runs must be kept separate from timing samples.
-Task slots use an owner-local free list and an atomic foreign-return list
-sharing one fixed capacity. Release rechecks the current physical thread after
-possible continuation migration; local acquisition and return avoid CAS.
-Idle threads register and capture the wake epoch before progressing and
-polling for work. Delaying registration until after polling was measured and
-rejected as the general policy; the investigation records its local tradeoffs.
-Condition-variable wait paths coalesce notifications for already-signaled
-waiters while retaining an SC wake epoch and rearming at every announcement.
-External I/O callbacks retain per-publication notifications.
-These changes preserve ordinary calls and the emitted task-frame ABI. Their
-cross-platform performance qualification remains open in the
-[compute investigation](../research/investigations/compute-runtime/README.md).
+Normal compilation uses the maintained compute runtime in
+`src/backend/sched/`. Each worker has an ordinary stack and a fixed local
+deque of 64 task slots. A join first runs its newest owned task directly,
+then helps or steals on the current stack; an empty search eventually yields
+and sleeps. There is no managed-stack pool, continuation migration or ready
+queue. Deque cells are atomic, thief index loads participate in the owner's
+SC claim order, and only the offering thread releases its slots. Workers
+start lazily, with the same stack reservation and exhaustion handling as the
+command entry. Partial startup keeps the workers that actually started;
+complete failure declines offers and executes ordinary calls.
+
+Compute callbacks must not suspend for I/O. Such WF functions retain their
+ordinary calls and ABI. Direct independent I/O operations still submit to the
+typed completion runtime and join at their dependency boundary. Their native
+io_uring, IOCP and helper routes remain, but joining waits on the caller's
+current stack. Generic suspended-function fanout is deferred: a silent TCP
+peer can now hold up a loop that serves connections in source order.
+
+`WF_SCHED_REPORT=1` enables the private observer; `2` additionally prints
+configured threads, started workers, steals and per-lane capacity at process
+exit. Unset/zero stays silent. Counters are per-lane atomic observations,
+not a simultaneous snapshot; `WF_SCHED_STATS=0` erases counter updates for
+controlled C measurements. Diagnostic runs stay separate from timings.
+`WF_STACKS` no longer configures anything: the runtime has no switchable stack
+pool. The [compute investigation](../research/investigations/compute-runtime/README.md)
+owns current qualification results and the preserved unified-runtime checkpoint.
 
 Under `--par`, the compiler omits offers of scalar leaves containing at most
 16 nonconstant IR operations by default. `--par-scalar-leaf-limit N` changes
@@ -277,7 +272,7 @@ retain the existing path. Nonrecursive code is unchanged. This is an explicit
 experiment, not a selected default policy. Its qualification and measurements
 live in the [recursive frontier panel](../research/experiments/compute-runtime/README.md#compiler-generated-recursion-frontier).
 
-The shared runtime's `WF_SPLIT_WORK` setting controls the minimum estimated
+The compute runtime's `WF_SPLIT_WORK` setting controls the minimum estimated
 work per chunk of an already permitted compute loop. It is read once before
 the program starts: unset/empty uses 1,200,000, zero declines loop splitting,
 and positive values through 1,000,000,000 tune the threshold. Invalid values
@@ -301,38 +296,29 @@ When one function contains two staged loops, both deliberately remain ordinary.
 Wider control flow, operation families, and multi-loop selection remain
 possible future extensions; this path does not imply those capabilities.
 
-With `--par`, an admitted may-suspend user call bound by `let` can drive a
-bounded lane batch. Issue-local values needed by the remainder or cleanup are
-carried per slot. An addressed owner retains its address over distinct backing
-for each in-flight iteration; its contents are read after join, including
-mutations made by the callee. The complete caller frame is planned and checked
-before emission. Joined aggregate results reach caller backing before the lane
-frame is released, and each iteration's remainder and checked cleanup finish
-before its pipeline slot is reused. These representations consume the existing
-source permission judgment and do not add an I/O or scheduling protocol.
+May-suspend user calls, including those bound by `let` in a staged loop, use
+ordinary calls. Their aggregate results, addressed storage and checked cleanup
+stay live through return. Only direct typed system operations use the bounded
+completion driver. The source permission is preserved but not actualized by
+a compute lane.
 
-The completion runtime uses bounded, generation-checked operation storage and
-separate exactly-once result-ready, loan-released, and terminal milestones.
-Native queues, helper lanes, wakeups, and completion ports are target-private
-protocol state, never Whitefoot shared storage. The macOS and Linux paths are
-qualified for the implemented operations, including Linux io_uring where its
-route is available.
+Each completion record lives in its submitting frame. The engine writes the
+result, publishes DONE with release ordering as its final record access, and
+notifies the I/O wake epoch. Join acquires DONE before consuming the result
+or ending the frame's lifetime. There is no separate operation-slot pool or
+runtime generation table. Native queues and helper state remain target-private.
 
 The exact `x86_64-pc-windows-msvc` row is native-qualified for the
 compiler-owned UTF-16 command bootstrap and the direct, bounded blocking, and
 IOCP positioned-I/O routes. An IOCP-eligible request cannot silently use the
 direct or blocking route: handle association or submission failure stops at
-the host boundary. At full bounded storage the emitter retires the oldest
-addressable source-owned generation; when no one-slot owner is addressable it
-waits for core progress, then retries that same request. Native probes require
-zero eligible fallback. Synchronous-success operations publish inline only
+the host boundary. Native probes require zero eligible fallback. Synchronous-success operations publish inline only
 after the runtime has disabled their completion packets; pending operations
 publish through the IOCP worker.
 
 Every emitted Windows `--par` module requires the compiler-owned compute pool
 through hard external ABI obligations. A missing runtime fails to link, and an
-invalid worker configuration or partial startup fails at the host boundary
-instead of selecting sequential execution. The native gate requires a
+invalid worker configuration fails before user code. Partial worker startup\nretains the available pool; complete refusal uses ordinary calls. The native gate requires a
 non-owner worker to execute and steal source work while preserving the
 sequential build's exact bytes. A fixed-host paired gate qualifies compute,
 warm IOCP, and mixed compute-plus-IOCP execution against matched controls on

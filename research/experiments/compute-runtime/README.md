@@ -8,7 +8,7 @@ fallback. Current implementation work belongs in `compiler/`; the
 [ordinary-command panel](#ordinary-cli-mandelbrot) measures its normal link path
 without this research runtime. The FIR calibration
 caller below also links the identical optimized WF object with the existing
-shared runtime, and compares qualified native output-lane SIMD candidates.
+maintained runtime, and compares qualified native output-lane SIMD candidates.
 This is cost attribution, not a confirmed performance frontier. The current
 [scheduler panel](#scalar-scheduler-comparison) disables SIMD and compares
 equal worker budgets with one common scalar compute object. Earlier FIR SIMD
@@ -20,9 +20,14 @@ and [native references](../../investigations/compute-runtime/BASELINES.md).
 `abi.wf` is only a small ABI diagnostic. FIR, UTF-8 record batches and
 [Mandelbrot point rendering](#mandelbrot-point-rendering) provide distinct
 computations; nested composition and broader application coverage remain open.
-Keep this control while it distinguishes recovery
-from the shared runtime; consolidate it into the compiler runtime and its tests,
-or remove it, when a qualified replacement makes the duplicate unnecessary.
+Keep this frozen control through qualification of the maintained compute-first
+runtime; remove it when the production replacement has passed the comparison.
+`make formal-screen OUT=<fresh-absolute-path>` compares one scalar WF object
+against repaired historical and recovered cores on POSIX, and the repaired
+historical native core on Windows. It also checks the ordinary CLI executable.
+An identical production image is the noise control. Raw artifacts retain core
+and allocation-inclusive durations, process CPU and memory; wall-time summaries
+are an initial screen, not whole-workload or all-platform acceptance.
 
 ## Historical versus recovered pure-compute comparison
 
@@ -104,8 +109,8 @@ Two safety repairs distinguish it from the historical bytes:
 - The owner's mutex and condition variable are initialized before any workers
   start; a zero-worker startup destroys those resources and declines tasks.
 
-Several historical choices remain deliberately visible: 64 slots per lane
-(the current shared runtime has a different capacity), at most 64 lanes,
+Several historical choices remain deliberately visible: 64 slots per lane,
+at most 64 lanes,
 4096 empty searches before 16 yields, and the old split-budget thresholds.
 These are controls to measure and change, not selected optimal settings.
 `WF_COMPUTE_STATS=1` retains the shared successful-steal counter and its

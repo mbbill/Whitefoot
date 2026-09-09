@@ -421,7 +421,7 @@ check-runtime: build
 		WF_WORKERS=4 "$(OUT)/$$probe" zero-start; \
 		WF_WORKERS=4 "$(OUT)/$$probe" partial-start; \
 		nm "$(OUT)/$$probe" > "$(OUT)/$$probe.symbols"; \
-		if grep -E ' [Tt] _?(wf_sched_|wf_completion_|wf__completion_)' "$(OUT)/$$probe.symbols"; then \
+		if grep -E ' [Tt] _?(wf_sched_|wf__sched_|wf_completion_|wf__completion_)' "$(OUT)/$$probe.symbols"; then \
 			echo 'compute control unexpectedly links shared scheduler or completion code' >&2; exit 1; \
 		fi; \
 	done
@@ -989,7 +989,7 @@ check-abi: $(WFC)
 	"$(OUT)/abi-sequential"
 	nm "$(OUT)/abi" > "$(OUT)/abi.symbols"
 	$(call require-strong,$(OUT)/abi,wf__par_acquire_lane)
-	@if grep -E ' [Tt] _?(wf_sched_|wf_completion_|wf__completion_)' "$(OUT)/abi.symbols"; then \
+	@if grep -E ' [Tt] _?(wf_sched_|wf__sched_|wf_completion_|wf__completion_)' "$(OUT)/abi.symbols"; then \
 		echo 'compute ABI binary unexpectedly links shared scheduler or completion code' >&2; exit 1; \
 	fi
 
@@ -1042,7 +1042,7 @@ check-fir: fir-ir
 	nm "$(OUT)/fir" > "$(OUT)/fir.symbols"
 	$(call require-strong,$(OUT)/fir,wf__par_acquire_lane)
 	$(call require-strong,$(OUT)/fir,wf__floor_run)
-	@if grep -E ' [Tt] _?(wf_sched_|wf_completion_|wf__completion_)' "$(OUT)/fir.symbols"; then \
+	@if grep -E ' [Tt] _?(wf_sched_|wf__sched_|wf_completion_|wf__completion_)' "$(OUT)/fir.symbols"; then \
 		echo 'FIR unexpectedly links shared scheduler or completion code' >&2; exit 1; \
 	fi
 
@@ -1174,11 +1174,11 @@ build-bench: check-wf-objects check-native check-static
 	$(call require-strong,$(OUT)/bench-shared-wf-lanes16-slp,wf__floor_run)
 	$(call require-strong,$(OUT)/bench-recovered-wf-lanes16-slp,wf__par_acquire_lane)
 	$(call require-strong,$(OUT)/bench-shared-wf-lanes16-slp,wf__par_acquire_lane)
-	grep -E ' T _?wf_sched_join$$' "$(OUT)/bench-shared.symbols"
-	grep -E ' T _?wf_sched_join$$' "$(OUT)/bench-shared-wf-lanes16.symbols"
-	grep -E ' T _?wf_sched_join$$' "$(OUT)/bench-shared-wf-lanes16-slp.symbols"
+	grep -E ' T _?wf__par_join$$' "$(OUT)/bench-shared.symbols"
+	grep -E ' T _?wf__par_join$$' "$(OUT)/bench-shared-wf-lanes16.symbols"
+	grep -E ' T _?wf__par_join$$' "$(OUT)/bench-shared-wf-lanes16-slp.symbols"
 	@for suffix in '' -wf-lanes16 -wf-lanes16-slp; do \
-		if grep -E ' [Tt] _?(wf_sched_|wf_completion_|wf__completion_)' "$(OUT)/bench-recovered$$suffix.symbols"; then \
+		if grep -E ' [Tt] _?(wf_sched_|wf__sched_|wf_completion_|wf__completion_)' "$(OUT)/bench-recovered$$suffix.symbols"; then \
 			echo 'recovered timing binary unexpectedly links shared runtime' >&2; exit 1; \
 		fi; \
 	done

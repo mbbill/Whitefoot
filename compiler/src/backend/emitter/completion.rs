@@ -45,27 +45,19 @@ pub const COMPLETION_LINUX_IO_URING_SOURCE: &str = include_str!("../completion/l
 /// The target-guarded Windows IOCP ring embedded in the compiler.
 pub const COMPLETION_WINDOWS_IOCP_SOURCE: &str = include_str!("../completion/windows_iocp.c");
 
-/// The scheduler core's contract embedded in the compiler.
-///
-/// The completion record begins with a `wf_sched_record` and every publication
-/// goes through `wf_sched_complete`, so a link that carries the completion
-/// runtime carries the core beside it
-/// (`research/investigations/io-model/PARK-ON-MISS.md` §5, §7).
+/// The compute task ABI and fixed frame capacity embedded in the compiler.
 pub const SCHED_CORE_HEADER: &str = include_str!("../sched/core.h");
-/// The scheduler core embedded in the compiler.
+/// Ordinary-stack join/help/steal, shared by every native target.
 pub const SCHED_CORE_SOURCE: &str = include_str!("../sched/core.c");
-/// The seven primitives the core reaches shared state through.
+/// Native thread creation, per-lane waiting and process configuration.
 pub const SCHED_PRIM_HEADER: &str = include_str!("../sched/prim.h");
-/// The host's implementation of those primitives.
+/// POSIX platform operations.
 pub const SCHED_PRIM_HOST_SOURCE: &str = include_str!("../sched/prim_host.c");
-/// Windows's implementation of the same set, the twin of the above.
+/// Windows platform operations, using threads rather than fibers.
 pub const SCHED_PRIM_WINDOWS_SOURCE: &str = include_str!("../sched/prim_windows.c");
-/// The one stack switch, shared by the host primitives and the enumerator.
-pub const SCHED_SWITCH_HEADER: &str = include_str!("../sched/switch.h");
-/// The platform layer over the core: its one instance, the startup policy and
-/// the emitted module's `wf__par_*` ABI (design §7's platform layer).
+/// Common process configuration and runtime entry.
 pub const SCHED_ENTRY_HEADER: &str = include_str!("../sched/entry.h");
-/// That layer's implementation, which replaces `par_runtime.c`.
+/// The configuration implementation shared by compute and I/O components.
 pub const SCHED_ENTRY_SOURCE: &str = include_str!("../sched/entry.c");
 
 /// Size in bytes of the opaque record block an emitted frame reserves for one

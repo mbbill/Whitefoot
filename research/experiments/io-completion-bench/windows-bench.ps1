@@ -306,10 +306,9 @@ if ($AcquireAt -lt 0 -or $PublishAt -le $AcquireAt -or $ParJoinAt -le $PublishAt
 #        that started and never granted a lane cannot produce a positive count.
 #   `publishes`, `outstanding_publishes` and `kernel_overlap_publishes`
 #     (`WF_PAR_MIXED_PROBE`)
-#     -> the IR assertion above. That the compute member runs while the first
-#        read is outstanding is a property of the one lowering, fixed for every
-#        iteration by the emitted order, so it is pinned where it is decided
-#        instead of counted once per run.
+#     -> the IR assertion above checks compute publication between submit
+#        and join. It does not prove the kernel request is still outstanding
+#        when compute executes; the observed link separately checks grants.
 #   the IOCP inline and dequeued completion counts
 #     -> nothing on the protocol's side, deliberately. The ring still keeps
 #        both (`wf_windows_iocp_statistics` in `completion/windows_iocp.h`) and

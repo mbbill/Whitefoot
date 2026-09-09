@@ -1,15 +1,32 @@
-# Compute performance in the shared runtime
+# Compute runtime qualification
 
 ## Current owner direction (2026-09-09)
 
-Pause integration and optimization of the unified scheduler. First compare
-the historical main pure-compute runtime with the recovered research compute
-runtime, reporting performance, correctness, code quality, portability and
-integration tradeoffs. The owner reads that report before selecting and
-integrating a formal compute runtime. Earlier sections below record the unified
-experiment and its unresolved results; they do not authorize proceeding past
-this report-first boundary. The unified compiler implementation is preserved
-as an exact [research checkpoint](../io-model/UNIFIED-RUNTIME-CHECKPOINT.md).
+The owner reviewed the [comparison](PURE-COMPUTE-COMPARISON.md) and authorized
+production integration on 2026-09-09. Use historical main `9051576f`'s ordinary
+worker stacks and current-stack join/help/steal as the base, with atomic deque
+cells, corrected thief ordering and startup/lifetime fixes. Deliver through
+ordinary `whitefootc`, in `compiler/`, with one runtime for all programs.
+The unified implementation remains an exact
+[research checkpoint](../io-model/UNIFIED-RUNTIME-CHECKPOINT.md).
+
+Compute workers must not run arbitrary may-suspend WF calls. Such calls execute
+ordinarily; direct typed I/O operations still submit and join through the
+existing io_uring, IOCP or helper backends, waiting on the current stack.
+No managed-stack pool, continuation migration or ready queue belongs in the
+compute path. The public ordinary-call ABI and proof judgments stay unchanged.
+This deliberately retires generic staged user-call concurrency: network fanout
+that needs independently suspended WF activations is deferred. Sequential TCP,
+direct independent I/O submission, result/error handling, cleanup and exhaustion
+remain required. Tests of the retired mechanism must be replaced or retired
+with this explanation, never silently treated as equivalent functionality.
+
+The implementation review covers scheduler sources and platform leaves,
+completion record publication/waiting, floor entry, compiler hand-out selection,
+staged-loop lowering and their tests. Reuse the existing workload/reference
+panels for five-target native CI qualification below; do not build another
+benchmark framework or tune I/O. Historical safety evidence has the limited
+scope stated in the comparison, not a claim that every earlier audit was wrong.
 
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 

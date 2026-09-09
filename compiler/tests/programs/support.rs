@@ -14,9 +14,9 @@ use whitefoot::{
     COMPLETION_WAIT_HOST_SOURCE, COMPLETION_WINDOWS_IOCP_HEADER, CompilationFailure,
     CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS,
     OverlapLowering, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
-    SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER, SourceInput,
-    WINDOWS_RUNTIME_HEADER, compile, compile_with_overlap, compile_with_permission_ledger,
-    module_requires_completion_runtime, module_requires_parallel_runtime,
+    SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SourceInput, WINDOWS_RUNTIME_HEADER, compile,
+    compile_with_overlap, compile_with_permission_ledger, module_requires_completion_runtime,
+    module_requires_parallel_runtime,
 };
 // Read by the superseded-inventory rejection in the directory-walking cases.
 use whitefoot::{Inventory, compile_with_inventory};
@@ -66,7 +66,6 @@ fn stage_runtime_units(
     let mut units = vec![
         ("sched/core.h", SCHED_CORE_HEADER),
         ("sched/prim.h", SCHED_PRIM_HEADER),
-        ("sched/switch.h", SCHED_SWITCH_HEADER),
         ("sched/entry.h", SCHED_ENTRY_HEADER),
         ("sched/core.c", SCHED_CORE_SOURCE),
         ("sched/prim_host.c", SCHED_PRIM_HOST_SOURCE),

@@ -24,9 +24,9 @@ esac
 scalar_flags='-O2 -g -Wall -Wextra -Werror -Wpedantic -fno-fast-math -ffp-contract=off -fno-vectorize -fno-slp-vectorize -fno-lto'
 verify_report() {
     awk -v threads="$2" -v started="$3" '
-        BEGIN {split("threads workers_started parks cancels resumes steals inline_runs exhausted_io exhausted_compute late_parks line_one spin_rounds yield_rounds", keys, " ")}
+        BEGIN {split("threads workers_started steals slots_per_lane", keys, " ")}
         {sub(/\r$/, "")}
-        NF!=14 || $1!="sched:" || $2!=("threads=" threads) {bad=1}
+        NF!=5 || $1!="compute:" || $2!=("threads=" threads) {bad=1}
         started!="any" && $3!=("workers_started=" started) {bad=1}
         {for(i=2;i<=NF;i++) if($i!~("^" keys[i-1] "=[0-9]+$")) bad=1}
         END {exit bad || NR!=1}

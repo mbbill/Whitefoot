@@ -20,7 +20,7 @@ pub use emitter::{
     COMPLETION_WINDOWS_IOCP_SOURCE, FLOOR_RUNTIME_SOURCE, FLOOR_STACK_BYTES,
     FLOOR_WINDOWS_RUNTIME_SOURCE, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER,
     SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_PRIM_WINDOWS_SOURCE,
-    SCHED_SWITCH_HEADER, WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE, emit_llvm,
-    module_requires_completion_runtime, module_requires_parallel_runtime,
+    WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE, emit_llvm, module_requires_completion_runtime,
+    module_requires_parallel_runtime,
 };
 pub use stack_ledger::{Architecture, stack_ledger};

@@ -61,7 +61,12 @@ extern int wf__floor_run(int, char **);
 #ifdef WF_SHARED_CONTROL
 extern int wf__sched_report(char *, size_t);
 extern unsigned wf__sched_pool_running(void);
-extern uint64_t wf_prim_epoch(void);
+extern uint64_t wf_prim_epoch(void) __attribute__((weak));
+#endif
+#ifdef WF_RUNTIME_CONTROL
+/* A read-only observer supplied by the runtime comparison, including for
+ * frozen controls whose private observation ABI differs from production. */
+extern unsigned wf_bench_worker_count(void);
 #endif
 
 static uint64_t entered_at;
@@ -298,7 +303,7 @@ int wf__main_body(int argc, char **argv) {
 #endif
 #ifdef WF_SHARED_CONTROL
     const char *report_setting = getenv("WF_SCHED_REPORT");
-    int observe_wake_epoch = report_setting != NULL && strcmp(report_setting, "1") == 0;
+    int observe_wake_epoch = wf_prim_epoch != NULL && report_setting != NULL && strcmp(report_setting, "1") == 0;
     uint64_t wake_epoch_before = observe_wake_epoch ? wf_prim_epoch() : 0;
 #endif
     uint64_t batch_start = now();
@@ -375,6 +380,9 @@ int wf__main_body(int argc, char **argv) {
         printf("# wake_epoch: advances=%" PRIu64 " scope=batch_including_checks\n",
                wake_epoch_delta);
     }
+#endif
+#ifdef WF_RUNTIME_CONTROL
+    printf("# actual_lanes=%u\n", wf_bench_worker_count());
 #endif
 #ifdef WF_COMPLETION_WAIT_STATS
     printf("# host_wait: announcements=%" PRIu64 " signals=%" PRIu64

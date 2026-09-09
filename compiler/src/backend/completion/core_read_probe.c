@@ -95,14 +95,14 @@ ssize_t wf_completion_test_pread(
  * record protocol runs over.  Nothing here parks a stack or registers a
  * waiter, so `wf_sched_complete` stores COMPLETING and then DONE and touches
  * nothing else. */
-static wf_sched_core probe_core;
+
 
 void wf_completion_record_complete(wf_completion_record *record) {
-    wf_sched_complete(&probe_core, &record->sched);
+    wf_completion_record_publish(record);
 }
 
 static int record_is_done(const wf_completion_record *record) {
-    return record->sched.state == WF_SCHED_DONE;
+    return record->state == WF_COMPLETION_DONE;
 }
 
 /* Runs one positioned read through the adapter and reads its record back.
@@ -121,7 +121,7 @@ static int complete_positioned_read(
     wf_completion_record record;
 
     memset(&record, 0, sizeof(record));
-    wf_sched_record_init(&record.sched);
+    wf_completion_record_init(&record);
     record.request.kind = WF_FILE_PREAD;
     record.request.operation.pread.descriptor = descriptor;
     record.request.operation.pread.buffer = buffer;
@@ -347,7 +347,7 @@ static int test_independent_reads_complete_in_reverse_order(
     CHECK(wf_file_adapter_init(&adapter, &runtime, 0, 0) == 0);
 
     memset(&first, 0, sizeof(first));
-    wf_sched_record_init(&first.sched);
+    wf_completion_record_init(&first);
     first.request.kind = WF_FILE_PREAD;
     first.request.operation.pread.descriptor = descriptor;
     first.request.operation.pread.buffer = &first_byte;
@@ -355,7 +355,7 @@ static int test_independent_reads_complete_in_reverse_order(
     first.request.operation.pread.offset = 0;
 
     second = first;
-    wf_sched_record_init(&second.sched);
+    wf_completion_record_init(&second);
     second.request.operation.pread.buffer = &second_byte;
     second.request.operation.pread.offset = 5;
 
@@ -389,7 +389,6 @@ int main(int argc, char **argv) {
         return 2;
     }
     atomic_init(&positioned_read_host_calls, 0);
-    CHECK(wf_sched_init(&probe_core, 1u, 2u, 256u * 1024u) == 0);
     CHECK(test_positioned_read_result_boundaries(argv[1]) == 0);
     CHECK(test_independent_reads_complete_in_reverse_order(argv[1]) == 0);
     puts("completion-core-read-probe: PASS");

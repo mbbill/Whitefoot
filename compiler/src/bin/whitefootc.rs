@@ -10,8 +10,8 @@ use whitefoot::{
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
     COMPLETION_WINDOWS_IOCP_HEADER, CompilerLimits, FLOOR_STACK_BYTES, LoweringOptions,
     OverlapLowering, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
-    SCHED_PRIM_HEADER, SCHED_SWITCH_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER,
-    compile_with_io_notices, compile_with_permission_ledger, host_optimization_arguments,
+    SCHED_PRIM_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER, compile_with_io_notices,
+    compile_with_permission_ledger, host_optimization_arguments,
     module_requires_completion_runtime, module_requires_parallel_runtime, stack_ledger,
 };
 
@@ -109,7 +109,6 @@ const FLOOR_COMPILE_UNITS: &[&str] = &["wf_floor_windows.c", "windows_runtime.c"
 const CORE_SHARED_UNITS: &[RuntimeUnit] = &[
     unit("sched/core.h", SCHED_CORE_HEADER),
     unit("sched/prim.h", SCHED_PRIM_HEADER),
-    unit("sched/switch.h", SCHED_SWITCH_HEADER),
     unit("sched/entry.h", SCHED_ENTRY_HEADER),
     unit("sched/core.c", SCHED_CORE_SOURCE),
     unit("sched/entry.c", SCHED_ENTRY_SOURCE),

@@ -132,10 +132,20 @@ jobs:
             suffix=; if test "$stats" = 0; then suffix=-no-stats; fi
             clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
               -DWF_SCHED_LANE_SLOTS=8u -DWF_SCHED_STATS="$stats" \
-              compiler/src/backend/sched/deque_probe.c compiler/src/backend/sched/prim_windows.c \
+              compiler/src/backend/sched/deque_probe.c compiler/src/backend/sched/entry.c compiler/src/backend/sched/prim_windows.c \
               -o "$RUNNER_TEMP/sched-deque-probe$suffix.exe"
             "$RUNNER_TEMP/sched-deque-probe$suffix.exe"
           done
+
+      - name: Exercise compute startup failures and frame lifetime
+        run: |
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -DWF_SCHED_TEST \
+            compiler/src/backend/sched/smoke.c compiler/src/backend/sched/entry.c \
+            compiler/src/backend/sched/prim_windows.c -o "$RUNNER_TEMP/sched-smoke.exe"
+          for mode in normal owner-fail worker-fail partial; do
+            WF_WORKERS=4 "$RUNNER_TEMP/sched-smoke.exe" "$mode"
+          done
+          WF_WORKERS=1 "$RUNNER_TEMP/sched-smoke.exe"
 
       # The runtime the driver stages on this target, in the three groups it
       # stages: the scheduler core with its Windows leaf, the completion
@@ -288,12 +298,7 @@ jobs:
           fi
           exit "$status"
 
-      # The whole staged runtime plus the floor, under the warning set the
-      # repository gate uses. There is deliberately no second pass under
-      # `-DWF_SCHED_ENUMERATE`: the enumerator (`sched/enumerate.c`) is a POSIX
-      # test harness that reserves its own coroutine stacks with `mmap`, it is
-      # not staged into any link on this target, and it is not meant to compile
-      # here.
+      # Strict-check the same native units the ordinary compiler links.
       - name: Strict-check the complete Windows runtime
         run: |
           clang -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -fsyntax-only \
@@ -919,37 +924,14 @@ jobs:
             "$par_dir/observed.normalized" > /dev/null || \
             fail_par "no non-owner worker executed source work"
 
-      # The floor, on a pool stack that is a fiber.
-      #
-      # Every other step here would pass with the floor off: this is the one
-      # that says an overflow *on a stack the scheduler core made* is still the
-      # one classified abnormal end a correct program can reach. It matters
-      # more on this platform than on the other, because the two halves it
-      # exercises are both Windows's own -- a fiber's stack is the kernel's and
-      # not a mapping of ours, and the classification is by exception code with
-      # `SetThreadStackGuarantee`'s emergency stack under it, where POSIX
-      # classifies by address against bounds the switch writes.
-      #
-      # Two configurations, because they reach the guard on different stacks:
-      # at the shipped default the recursion is carried by whichever thread
-      # the pool gives it, and at `WF_WORKERS=4` the deep half is handed out,
-      # so the descent runs on a worker's pool fiber rather than the entry's.
-      #
-      # Several rounds of each, because the one defect this step has found so
-      # far was intermittent: a guarantee belongs to the calling thread or
-      # fiber, the floor had set it on the threads' host stacks only, and a
-      # pool fiber overflowed with nothing under the handler but what was left
-      # of the page the guard had been. How much that was depended on where in
-      # the page the descent stopped, which the steals decide, so the same
-      # bytes passed on one push and segfaulted on the next
-      # (`sched/prim_windows.c`, `wf_prim_fiber_main`). One draw is not
-      # evidence against that class of defect; a handful on each stack is.
-      - name: Require the floor to classify an overflow on a pool fiber
+      # Ordinary command and compute-worker threads each install the floor.
+      # Repeat the deep parallel recursion to cover whichever thread steals it.
+      - name: Require the floor to classify an overflow on an ordinary compute thread
         run: |
           fail_floor() {
             local stage="$1"
             local status="${2:-1}"
-            echo "::error title=Windows floor on a pool fiber::${stage}"
+            echo "::error title=Windows floor on a compute thread::${stage}"
             exit "$status"
           }
           floor_dir="$RUNNER_TEMP/whitefoot-e2e/windows-floor"

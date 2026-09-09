@@ -37,10 +37,8 @@
  * `.CRT$XCU` initializer on MSVC and to `.init_array` on ELF, both of which
  * run before `main`; `atexit` handlers run first in the exit sequence on both
  * platforms, before any terminator and with the streams intact. The LIFO order
- * against the bridge's own `atexit(wf_bridge_shutdown)` does not matter: that
- * handler returns at once while the scheduler pool is still running
- * (`completion/bridge.c`), so whichever way round they fall, this one finds a
- * live stream and a live core.
+ * against the bridge's own shutdown handler does not matter: compute counters
+ * have static storage and helper shutdown leaves them intact.
  *
  * The read is a benign race by construction. The core keeps its counters per
  * thread so that no two threads ever write one word, the counters are static

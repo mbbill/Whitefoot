@@ -35,14 +35,14 @@ pub use backend::{
     COMPLETION_WINDOWS_IOCP_SOURCE, FLOOR_RUNTIME_SOURCE, FLOOR_STACK_BYTES,
     FLOOR_WINDOWS_RUNTIME_SOURCE, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER,
     SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_PRIM_WINDOWS_SOURCE,
-    SCHED_SWITCH_HEADER, WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE,
-    module_requires_completion_runtime, module_requires_parallel_runtime, stack_ledger,
+    WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE, module_requires_completion_runtime,
+    module_requires_parallel_runtime, stack_ledger,
 };
 pub use driver::*;
 pub use lexer::*;
 /// The compile-time choice of whether the backend actualizes the permission
 /// judgment's overlap groups.
-pub use lowering::{LANE_SLOTS, LoweringOptions, OverlapLowering};
+pub use lowering::{LoweringOptions, OverlapLowering};
 pub use resolution::*;
 pub use source::*;
 pub use spec::*;
