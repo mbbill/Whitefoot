@@ -6,8 +6,9 @@ cd "$(dirname "$0")"
 : "${OUT:?set OUT}"
 : "${WFC:?set WFC to the current compiler}"
 CC=${CC:-/usr/bin/clang}
-# Counter reads are diagnostic runs, not part of this timing screen. This also
-# avoids live reads from the historical controls' pre-repair counters.
+# Scheduler counter reports are confined to current-runtime diagnostics;
+# historical scheduler counters are never read live. Windows images also read
+# current-bridge wait counters at batch boundaries, outside timed core calls.
 WF_SCHED_REPORT=0
 export WF_SCHED_REPORT
 host=$(uname -s)
@@ -18,6 +19,7 @@ platform_flags=-pthread
 libraries=-lm
 modes='before candidate recovered help0'
 references='before recovered help0'
+diagnostic_modes='candidate help0'
 case "$host" in
     Darwin|Linux) ;;
     MINGW*|MSYS*)
@@ -29,6 +31,7 @@ case "$host" in
         # The frozen recovered control has no qualified Windows port.
         modes='before candidate help0'
         references='before help0'
+        diagnostic_modes='before candidate help0'
         ;;
     *) echo "unsupported native screen host: $host" >&2; exit 1 ;;
 esac
@@ -91,11 +94,13 @@ flags="-std=c11 -O3 -g $platform_flags -fno-fast-math -ffp-contract=off -fno-vec
 printf '%s\n' "$CC $flags; recovered additionally -DWF_COMPUTE_STATS=0 -DWF_COMPUTE_CONTROL; shared additionally -DWF_SHARED_CONTROL" \
     "measured_modes=$modes; references=$references; libraries=$libraries" \
     'help0: current runtime sources with only -DWF_SCHED_JOIN_HELP_ROUNDS=0u changed' \
-    'diagnostics: separate longer current-runtime batches with WF_SCHED_REPORT=1; not pooled into wall samples' \
+    'diagnostics: separate longer batches; current schedulers use WF_SCHED_REPORT=1, historical scheduler uses 0; not pooled into wall samples' \
     'WF: --par defaults; same optimized WF object in every attribution image' \
     'CLI: normal --par link, correctness only; end-to-end timing remains open' > "$out/flags.txt"
 if test -n "$exe"; then
-    printf '%s\n' 'Windows before: historical scheduler/floor plus current host/completion sources; candidate: current scheduler/floor plus those same host/completion sources.' >> "$out/flags.txt"
+    printf '%s\n' 'Windows before: historical scheduler/floor plus current host/completion sources; candidate: current scheduler/floor plus those same host/completion sources.' \
+        'Windows host-wait counts: batch deltas from current bridge, including verification; announcements are not guaranteed kernel sleeps, signals are not awakened-thread counts.' \
+        'Windows diagnostic before: WF_SCHED_REPORT=0; historical scheduler counters are never read live.' >> "$out/flags.txt"
 fi
 "$WFC" --par --emit-llvm fir.wf fir_direct.wf -o "$out/module.ll"
 "$WFC" --par fir.wf fir_direct.wf -o "$out/command$exe"
@@ -119,6 +124,7 @@ for mode in $modes; do
     if test "$mode" = before; then runtime="$out/baseline-source/compiler/src/backend"; fi
     set --
     if test -n "$exe"; then
+        set -- -DWF_COMPLETION_WAIT_STATS "-I$runtime/completion"
         for unit in windows_runtime.c completion/runtime.c completion/wait_windows.c \
             completion/file_adapter.c completion/file_windows.c completion/bridge.c \
             completion/windows_iocp.c; do
@@ -197,23 +203,34 @@ awk -F '\t' -v references="$references" '
 cat "$out/summary.tsv"
 # Preserve the completed wall verdict even if a later diagnostic fails.
 # Current-source counters are race-free. Historical controls are excluded from
-# live observation. Longer batches reduce CPU-accounting quantization but are
+# scheduler-counter observation. Windows before additionally observes only
+# its current bridge counters. Longer batches reduce CPU-accounting quantization but are
 # diagnostic process samples, not extra independent samples in the wall test.
 for width in $widths; do
     for n in 4096 65536; do
         diagnostic_calls=512
         if test "$n" = 4096; then diagnostic_calls=4096; fi
         for tile in 16 64 256 1024; do
-            for mode in candidate help0; do
+            for mode in $diagnostic_modes; do
                 log="$out/diagnostics/$mode-w$width-n$n-t$tile.tsv"
-                WF_SCHED_REPORT=1 WF_WORKERS="$width" "$out/$mode$exe" \
+                reports=1
+                # Historical scheduler counters are not race-free. The host
+                # wait counters come from the identical current bridge in all
+                # Windows images and may safely be observed for before too.
+                if test "$mode" = before; then reports=0; fi
+                WF_SCHED_REPORT="$reports" WF_WORKERS="$width" "$out/$mode$exe" \
                     wf 16 "$n" "$tile" "$diagnostic_calls" 92821 0 > "$log"
-                awk -F '\t' -v width="$width" -v expected="$diagnostic_calls" '
+                wait_reports=0
+                if test -n "$exe"; then wait_reports=1; fi
+                awk -F '\t' -v width="$width" -v expected="$diagnostic_calls" \
+                    -v expected_reports="$reports" -v expected_wait="$wait_reports" '
                     {sub(/\r$/, "")}
                     /^# actual_lanes=/ {split($0,a,"="); lanes++; if(a[2]!=width)bad=1}
                     /^# sched: / {reports++}
+                    /^# host_wait: announcements=[0-9]+ signals=[0-9]+ / {waits++}
                     $10=="warm" {calls++}
-                    END {exit bad || lanes!=1 || reports!=1 || calls!=expected}' "$log"
+                    END {exit bad || lanes!=1 || reports!=expected_reports ||
+                        waits!=expected_wait || calls!=expected}' "$log"
             done
         done
     done

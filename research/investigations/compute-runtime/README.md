@@ -80,8 +80,9 @@ formal-before revision `188088d41552d0d3bccf8368798dcc44702bf75c`, a checked
 unchanged recovered baseline, and the candidate formal runtime. CI covers the
 four POSIX targets and Windows. The Windows job invokes the same script with
 the native MSVC-target compiler and existing Windows runtime leaves; it compares
-only the fixed formal-before scheduler/floor with the candidate. Both link the
-same current Windows host/completion sources, compiled beside each scheduler's
+the fixed formal-before scheduler/floor, candidate, and same-source zero-help
+control. All link the same current Windows host/completion sources, compiled
+beside each scheduler's
 own headers. This overlay is needed by generated host diagnostics; "before"
 does not mean an entirely historical Windows runtime. No research runtime
 is ported. Its benchmark uses QueryPerformanceCounter for elapsed time,
@@ -225,8 +226,11 @@ monotone observed steal counts. Both native M1 and ThreadSanitizer runs pass.
 The same probe reports a counter race with the old core; after applying only
 the counter repair to that old core, it reports the separate ring-cell race.
 No race suppression is used. POSIX canonical checks and Windows native CI run
-the probe; Linux CI additionally runs it under ThreadSanitizer. Native CI for
-the repair remains outstanding.
+the probe; Linux CI additionally runs it under ThreadSanitizer. At `0f1603b2`,
+the four POSIX native probes and both [host correctness jobs](https://github.com/mbbill/Whitefoot/actions/runs/34350981830)
+pass, including Windows's native probe and Linux's ThreadSanitizer run.
+The [partitioned repository CI](https://github.com/mbbill/Whitefoot/actions/runs/34350982089)
+also passes on that revision; the canonical local `make check` is still running.
 
 The repair's local M1 cost comparison uses byte-identical WF object files,
 alternating repaired/`aeb35be5` binaries, widths one/four, inputs 4,096/65,536,
@@ -284,6 +288,43 @@ CPU 418.6 versus 522.3 ms. The report and exact lane/warm-call counts are
 validated per diagnostic process. One process is explanatory evidence, not
 CPU-performance qualification. The wall verdict is saved before diagnostics
 so a later diagnostic failure cannot hide completed measurements.
+
+The [five-target help control at `0f1603b2`](https://github.com/mbbill/Whitefoot/actions/runs/34350982086)
+completed all formal screens and their diagnostics, but every platform still
+has failing wall cells. At Windows four participants, 4,096 / tile 1,024,
+candidate/before is 2.773 (paired range 1.507–3.130); candidate/help0 is 1.128
+(0.565–1.788). The zero-help process means are 33.63–55.37 us, still well above
+before's 19.22–24.38 us. Thus the helping budget alone does not account for the
+regression. Windows artifact `10103808989` has ZIP SHA-256
+`7cc55bf141adc868b9e8499d5cd08bea374365b5ff2fa9ba394d4001ba181bea`.
+
+For that cell, separate 4,097-call diagnostic processes record candidate/help0
+batch wall 355.4/340.1 ms and CPU 937.5/984.4 ms. Their live process-total
+scheduler reports show stack parks 48/7,562, including startup/selection rather
+than exactly the batch interval. Whole-batch costs include verification;
+one diagnostic process per mode is not
+independent CPU qualification. The enormous reduction in stack parks does not
+produce a corresponding wall reduction. These are stack switches, not host
+sleeps. The next measurement reads the existing current bridge's atomic wait
+announcements and host wake signals at batch boundaries, including for the
+historical scheduler overlay without reading its unsafe scheduler counters.
+The getters live in the maintained compiler, do not initialize the bridge,
+and add no updates to hot paths. An announcement may be cancelled before
+sleeping, and a signal does not count awakened threads.
+
+The next question is whether faster empty-ready checks shorten the fixed-round
+idle window enough to put workers to sleep between bursts, making the next
+call pay a host wake. This is a hypothesis, not an attribution. A large increase
+in wait announcements/signals accompanying the regression would support a
+focused idle-window control; comparable counts would send the investigation
+back to other costs. No runtime policy is changed for this measurement.
+POSIX attribution images still omit the completion bridge while Windows images
+include it; full-link POSIX timing and ordinary CLI timing remain required.
+The new getters and FIR instrumentation pass strict C syntax checks and
+full-link M1 correctness smokes at one/four participants; these smokes ran
+during the canonical check and are not performance measurements. Independent
+review found no implementation defect in this diagnostic delta; its metadata
+and process-total versus batch-boundary clarifications are incorporated.
 
 ## Earlier investigation and evidence
 

@@ -1904,6 +1904,18 @@ uint64_t wf__completion_window(
 
 /* ------------------------------------------------------- the statistics */
 
+uint64_t wf__completion_wait_announcements(void) {
+    return atomic_load_explicit(&wf_bridge_wake_ready, memory_order_acquire) == 0
+        ? 0
+        : atomic_load_explicit(&wf_bridge_runtime.stat_parks, memory_order_relaxed);
+}
+
+uint64_t wf__completion_wait_signals(void) {
+    return atomic_load_explicit(&wf_bridge_wake_ready, memory_order_acquire) == 0
+        ? 0
+        : atomic_load_explicit(&wf_bridge_runtime.stat_wake_signals, memory_order_relaxed);
+}
+
 uint64_t wf__completion_file_submissions(void) {
     uint64_t submissions = wf_bridge_file_ready == 0
         ? 0

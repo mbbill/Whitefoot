@@ -23,6 +23,9 @@
 #include <time.h>
 #endif
 #include "fir_native.h"
+#ifdef WF_COMPLETION_WAIT_STATS
+#include "bridge.h"
+#endif
 #ifdef WF_FILTER_STATIC
 #include "fir_static.h"
 #endif
@@ -288,6 +291,10 @@ int wf__main_body(int argc, char **argv) {
     struct rusage before, after;
     require(getrusage(RUSAGE_SELF, &before) == 0, "getrusage failed");
 #endif
+#ifdef WF_COMPLETION_WAIT_STATS
+    uint64_t wait_announcements_before = wf__completion_wait_announcements();
+    uint64_t wait_signals_before = wf__completion_wait_signals();
+#endif
     uint64_t batch_start = now();
     /* Call zero is retained as first invocation, then REPS warm invocations.
      * Checks warm the output/cache between calls and are never subtracted from
@@ -298,6 +305,10 @@ int wf__main_body(int argc, char **argv) {
         require(memcmp(state, expected_state, h * sizeof(double)) == 0, "wrong history bits");
     }
     uint64_t batch_ns = now() - batch_start;
+#ifdef WF_COMPLETION_WAIT_STATS
+    uint64_t wait_announcements = wf__completion_wait_announcements() - wait_announcements_before;
+    uint64_t wait_signals = wf__completion_wait_signals() - wait_signals_before;
+#endif
 #if defined(_WIN32)
     ProcessUsage after = process_usage();
 #else
@@ -351,6 +362,11 @@ int wf__main_body(int argc, char **argv) {
     char report[1024];
     if (wf__sched_report(report, sizeof(report))) printf("# %s\n", report);
     else puts("# shared_pool_report=disabled_or_unavailable");
+#endif
+#ifdef WF_COMPLETION_WAIT_STATS
+    printf("# host_wait: announcements=%" PRIu64 " signals=%" PRIu64
+           " scope=batch_including_checks snapshot=non_simultaneous\n",
+           wait_announcements, wait_signals);
 #endif
     puts("runtime\tkernel\tworkers\tk\tn\ttile\tseed\tpass\tcall\tphase\tcore_ns\tcycle_ns");
     for (size_t i = 0; i <= reps; ++i)
