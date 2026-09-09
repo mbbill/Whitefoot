@@ -497,10 +497,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Ok(());
         }
         let llvm = llvm_type(self.program, ty)?;
-        let temporary = self.next_temporary()?;
+        // Keep the checked snapshot and its ordering, but do not expand an
+        // aggregate into SSA fields merely to copy it. The target's allocated
+        // type size includes representation padding and is not the source
+        // layout ceiling or a run's initialized length. memmove also preserves
+        // a snapshot when the proven places overlap and is a no-op at size zero.
+        self.intrinsics.insert(IntrinsicDeclaration::MemoryMove);
         writeln!(
             self.output,
-            "  %{temporary} = load {llvm}, ptr {source}\n  store {llvm} %{temporary}, ptr {destination}"
+            "  call void @llvm.memmove.p0.p0.i64(ptr {destination}, ptr {source}, i64 ptrtoint (ptr getelementptr ({llvm}, ptr null, i32 1) to i64), i1 false)"
         )
         .map_err(|_| BackendFailure::TextEmission)
     }

@@ -89,6 +89,41 @@ alias case protects parameter snapshots: result storage may alias a later caller
 input, so an entry-parameter group must not become the result destination during
 the earlier prologue copies. Unproved placement retains independent storage.
 
+### Encoding the remaining snapshots
+
+An exploratory rewrite of the retained owning-record LLVM module showed that
+whole aggregate loads and stores can expand into thousands of scalar operations.
+The next comparison keeps the required snapshots and replaces only their
+memory-to-memory encoding with `llvm.memmove`. The size is the target type's
+allocated size, including padding; it is neither the source layout ceiling nor
+the run's initialized length. Zero-sized copies perform no access. Source
+initialization, release order, parameter snapshots and simultaneous CFG reads
+retain their previous meaning.
+
+The comparison criterion is identical observed values and allocation/release
+ledgers, preservation of the existing no-extra-copy system cost checks, and a
+smaller generated implementation of the wide construction. Generated code size
+and frame reservation are distinct from elapsed time and actual memory traffic;
+this experiment does not set a speedup threshold or claim copy elimination.
+The alternative is the existing whole typed load/store pair. LLVM's
+[frontend guidance](https://llvm.org/docs/Frontend/PerformanceTips.html#avoid-creating-values-of-aggregate-type)
+recommends avoiding aggregate SSA values, and its
+[memory-move contract](https://llvm.org/docs/LangRef.html#llvm-memmove-intrinsic)
+permits overlapping source and destination. No new source operation, pointer
+authority or runtime check is introduced.
+
+The implementation comparison on 2026-09-09 uses the owning-record source above,
+baseline `d4ea2117`, `--no-overlap` emission, Apple Clang 21.0.0 at `-O2` on arm64
+macOS, retained internal calls and the same allocation observer. Both executions produce
+`A1:4128; A2:8; F2; A3:8; A4:8; F3; F4; F1;`: the failed producer releases its
+first child, and success releases both children and the reserved run exactly
+once. Optimized LLVM falls from 20,379 to 1,885 lines; the linked executable's
+`__text` section falls from 71,276 to 6,928 bytes. The producer's explicit local
+stack subtraction changes from 8,864 to 8,224 bytes, excluding register saves.
+Actual bulk-copy calls and other aggregate SSA materialization remain. These
+results supersede no earlier timing and establish neither copy-free construction
+nor a throughput or latency gain.
+
 ## Finite result-tree construction model
 
 `construction.rs` is a safe Rust model of that candidate, measured 2026-09-07.

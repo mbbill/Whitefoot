@@ -346,6 +346,11 @@ the result. Parameter snapshots remain independent before body/result writes.
 An ordinary synchronous call's whole result may also reuse one consumed,
 same-typed aggregate input when the callee snapshots its inputs before writing,
 CFG liveness kills the prior content, and no borrow exposes that backing.
+Required memory-to-memory aggregate snapshots use target-sized bulk transfers, preserving
+the existing read/write order and overlap behavior. This avoids expanding a
+large snapshot into aggregate SSA fields; it does not eliminate the snapshot,
+initialize a vacant element, or change its ownership. Simultaneous CFG transfers
+still read every incoming value before writing any destination.
 Ambiguous inputs, ordered multi-results and overlap/completion schedules retain
 separate storage; general alias-directed placement remains incomplete.
 

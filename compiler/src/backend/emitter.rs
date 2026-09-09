@@ -330,6 +330,13 @@ fn emit_llvm_for(
     text.push_str(&system.definitions);
     for intrinsic in intrinsics {
         match intrinsic {
+            IntrinsicDeclaration::MemoryMove => {
+                writeln!(
+                    text,
+                    "declare void @llvm.memmove.p0.p0.i64(ptr, ptr, i64, i1 immarg)"
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+            }
             IntrinsicDeclaration::Overflow { name, ty } => {
                 writeln!(text, "declare {{ {ty}, i1 }} @{name}({ty}, {ty})")
                     .map_err(|_| BackendFailure::TextEmission)?;
@@ -635,6 +642,7 @@ struct Incoming {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum IntrinsicDeclaration {
+    MemoryMove,
     Overflow {
         name: String,
         ty: String,

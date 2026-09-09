@@ -261,6 +261,49 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn zero_sized_aggregate_replacement_preserves_adjacent_fields() {
+    let source = br#"struct Envelope {
+  before: u64;
+  empty: array<u64, 0>;
+  after: u64;
+}
+
+fn replace_empty(target: &uniq Envelope, value: own array<u64, 0>) -> result: own unit reads(target.empty), writes(target.empty) {
+  let previous = replace deref(target).empty = move value;
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let empty = array_new::<u64, 0>(0_u64);
+  let envelope = Envelope(before: 17_u64, empty: move empty, after: 29_u64);
+  let replacement = array_new::<u64, 0>(43_u64);
+  region {
+    let ignored = replace_empty(target: &uniq envelope, value: move replacement);
+  }
+  if envelope.before != 17_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if envelope.after != 29_u64 {
+    return exit_status(code: 2_u8);
+  }
+  let size = len_of(envelope.empty);
+  if size != 0_u64 {
+    return exit_status(code: 3_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        assert_success(&retain_calls(&module));
+    }
+}
+
+#[test]
 fn general_and_extent_boxes_keep_distinct_cleanup_actions() {
     let source = br#"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
