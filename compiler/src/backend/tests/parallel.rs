@@ -1898,23 +1898,24 @@ fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
     // before the program body, so no byte of the program's own output can
     // appear, and the one line it writes names the setting and the ceiling.
     for setting in ["abc", "-1", "65"] {
-        let (_, refused) = counted.run(Some(setting));
-        assert_ne!(
+        let refused = Command::new(&counted.executable)
+            .env("WF_WORKERS", setting)
+            .env("WF_SCHED_REPORT", "1")
+            .output()
+            .expect("run the invalid configuration");
+        assert_eq!(
             refused.status.code(),
-            Some(0),
+            Some(1),
             "WF_WORKERS={setting} is a configuration error and must not run"
         );
         assert!(
             refused.stdout.is_empty(),
             "a refused configuration must reach no program output"
         );
-        // The observer this fixture links reports the grant count from an
-        // exit handler, so it writes a line of its own after the refusal's.
-        // The refusal is the first line and the whole of what the runtime
-        // wrote before it stopped.
+        // Incomplete startup cannot run observers that query the runtime.
         assert_eq!(
-            String::from_utf8_lossy(&refused.stderr).lines().next(),
-            Some("whitefoot scheduler: WF_WORKERS must be an integer from 0 through 64"),
+            String::from_utf8_lossy(&refused.stderr),
+            "whitefoot scheduler: WF_WORKERS must be an integer from 0 through 64\n",
             "the refusal must name the setting and its ceiling"
         );
     }
