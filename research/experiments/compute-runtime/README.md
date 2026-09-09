@@ -1139,6 +1139,62 @@ three at W4. This identifies a concrete policy limitation to investigate;
 the measurements include input/kernel/command cost and do not isolate the
 scheduler's per-task cost. No default policy was changed by this panel.
 
+The [first five-target CI run at `444b89b8`](https://github.com/mbbill/Whitefoot/actions/runs/34397780620)
+completed 770 timing processes each on Linux x64, Linux ARM64 and macOS x64,
+and 560 on the two-participant macOS ARM64 runner. All four completed the
+48-case correctness and native sanitizer checks. Recomputing the summaries
+from their raw process matrices reproduces their exits exactly. All-interior,
+4,096-point W4 WF/static wall medians are **3.5647** on Linux x64 and
+**3.7268** on Linux ARM64, with all five paired ratios above 3.53 and 3.67
+respectively. macOS x64 is noisy for this cell. The macOS ARM64 job exits zero,
+but **all 140 wall/CPU comparison rows are `noisy-open`**; its all-interior W2
+median is 1.9866. None of these is platform performance acceptance. Windows
+stops before timing on MSVC's deprecated `getenv` diagnostic in the native
+reference. The subsequent reference uses `_dupenv_s`, frees its buffer and
+retains strict warnings; a new Windows execution is required.
+
+The local `cd059f74` cohort (`split-work-local2`, evidence currently local only)
+then completes all 1,400 oracle-checked processes on the eight-core M1 Pro,
+after the `444b89b8` canonical gate finishes and without concurrent compilation
+or tests. The screen returns failure because default-path gaps remain; no
+failed or noisy cell is removed. The normal compiler and all executable/source
+hashes are retained. The native serial control now bypasses per-batch pool
+atomics; comparisons below are within this cohort. At W4 and 4,096 points,
+paired median ratios are:
+
+| Distribution | 60,000/default wall | 60,000/static wall | 60,000/static CPU |
+| --- | ---: | ---: | ---: |
+| Plane | 0.3996 | 1.1182 | 1.0248 |
+| Boundary | 0.3521 | 1.1174 | 1.0095 |
+| Interleaved | 0.3661 | 1.1083 | 1.0281 |
+| All interior | 0.3011 | 1.0677 | 1.0102 |
+| All exterior (noisy) | 1.1550 | 1.2762 | 1.0806 |
+
+Relative to the default's sequential execution at this small size, 60,000 also
+raises process CPU: medians are 1.1940/1.1346/1.1466/1.0786 for plane,
+boundary, interleaved and all-interior respectively, with all five paired
+ratios above one in each cell. The 7.9–19.4% CPU increase accompanies the wall
+gain and remains a cost to explain, despite CPU being close to static.
+
+All-interior A/A wall ratios are [0.9978, 1.0032], and its 60,000/default
+wall ratios are [0.2973, 0.3028]: the ordinary path regains substantial
+parallelism. This is still a 5.4–8.1% wall deficit against static; neither
+the gain nor the close CPU ratio establishes top-tier completion. Its peak
+RSS ratio to static is 1.9574 (3,014,656 versus 1,540,096 bytes), which remains
+an unexplained process-memory gap rather than being hidden by the timing win.
+For all-exterior small input,
+60,000/default CPU ratios are [1.8342, 2.0303] with median 1.9996, while its
+wall A/A fails the noise window. This remains adverse evidence even though it
+is not a clean timing qualification. At 65,536 points, all-interior timing is
+essentially unchanged by 60,000 (1.0082 versus default), while interior-first
+and interior-last improve to 0.6148/0.6155 through finer balancing. Static
+partitions are not a strong ceiling for those skewed distributions.
+
+These results support retaining an explicit policy control and investigating
+cost estimation and task/wakeup overhead in the maintained runtime. They do
+not select a universal lower default: cheap exits, CPU cost, memory, additional
+computations and every CI target still require qualification.
+
 ### Historical manual-link panel
 
 The C host checks every returned count against an explicitly rounded recurrence
