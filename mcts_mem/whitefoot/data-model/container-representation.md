@@ -423,6 +423,26 @@
   ABI premise, and addressed priority-queue helpers retain their prior copies.
   [Conditions, comparison and limits](../../../research/experiments/container-representation/foundation/RESULTS.md#alternative-return-destinations). (code)
 
+- 2026-09-09 evidence: complete owning arrays use the same checked element,
+  place, generic-store and release paths as other owned aggregates. Native
+  witnesses retain helper calls, preserve wrapped order, replace an owning
+  element, and fail each step of a three-element construction with exact prefix
+  cleanup. A heap-owned array separately returns both original element owners
+  when its outer allocation refuses. Dense layout avoids universal window
+  metadata but does not solve partial initialization or promise stable addresses
+  for inline elements.
+  [Selection and alternatives](../../../research/investigations/containers-and-resources/FOUNDATION.md#selected-full-array-experiment),
+  [Executable witnesses](../../../compiler/src/backend/tests/arrays.rs). (code)
+
+- 2026-09-09 measurement: for three 136-byte owning records on arm64 macOS with
+  Apple Clang 21 at `-O2`, a retained indexed array reader matches the C reader's
+  instructions. Array-to-run conversion retains one 408-byte transfer in
+  both implementations; run-to-array conversion retains an extra 424-byte input
+  snapshot in Whitefoot. All three possible input heads preserve payload order
+  and owner identities in an independent native observer. This is code-shape and
+  behavior evidence, not elapsed-time parity or zero-copy construction.
+  [Matched source, assembly and limits](../../../research/experiments/container-representation/foundation/RESULTS.md#dense-full-array-operations). (sourced)
+
 - 2026-09-06 (d998dd0a) historical rationale: Selected general place/result-destination support as the first implementation,
   including the semantic field/index/cell/borrow support needed to turn the frozen
   wide-record and inline-view probes into executed positives. Require element-sized

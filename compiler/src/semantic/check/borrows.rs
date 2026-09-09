@@ -898,10 +898,9 @@ absent when it writes none",
     ///
     /// [OWN-2] restricts no type, so this states what the checker, lowering,
     /// and backend carry today rather than a language rule: every directly
-    /// stored value, plus the descriptor and opaque-handle types that are
-    /// already their own borrow. An unsubstituted generic
-    /// stay explicitly unsupported instead of being misreported as invalid
-    /// source.
+    /// stored value, including descriptor and opaque-resource types. An
+    /// unsubstituted generic stays explicitly unsupported instead of being
+    /// misreported as invalid source.
     pub(super) fn borrowable_type(&self, ty: CheckedType) -> Result<bool, CheckStop> {
         Ok(match ty {
             CheckedType::Buffer { .. } | CheckedType::Slice { .. } => true,
