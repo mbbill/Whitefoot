@@ -67,7 +67,7 @@ $(OUT)/probe $(OUT)/probe-no-stats $(OUT)/probe-events: runtime.c runtime.h runt
 		$(if $(filter $(OUT)/probe-events,$@),-DWF_COMPUTE_EVENTS,) \
 		runtime.c probe.c $(FLOOR) -o "$@"
 
-check: check-runtime check-protocol-cost check-abi check-fir check-bench check-records-events check-scheduler-events check-mandelbrot check-quadrature
+check: check-runtime check-protocol-cost check-abi check-fir check-bench check-records-events check-scheduler-events check-mandelbrot check-mandelbrot-command check-quadrature
 
 .PHONY: quadrature-build check-quadrature quadrature-calibrate quadrature-deps quadrature-batch-calibrate quadrature-worker-profile
 QUADRATURE_FORMS := native wf-seq wf-auto wf-leaf-seq wf-leaf wf-refusal-seq wf-refusal wf-frontier-seq-d8 wf-frontier-d8 cpp-seq \
@@ -527,9 +527,18 @@ check-records-events: check-records-budget records-events-build
 	$(call qualify-record-controls,events events-sanitized)
 	OUT="$(OUT)" sh records-bench.sh events-check
 
-.PHONY: mandelbrot-build check-mandelbrot
+.PHONY: mandelbrot-build check-mandelbrot mandelbrot-command-build check-mandelbrot-command mandelbrot-command-screen
+mandelbrot-command-build: $(WFC)
+	OUT="$(OUT)" WFC="$(WFC)" CC="$(CC)" CXX="$(CXX)" sh mandelbrot-command.sh build
+
+check-mandelbrot-command: mandelbrot-command-build
+	OUT="$(OUT)" WFC="$(WFC)" CC="$(CC)" CXX="$(CXX)" sh mandelbrot-command.sh check
+
+mandelbrot-command-screen: mandelbrot-command-build
+	OUT="$(OUT)" WFC="$(WFC)" CC="$(CC)" CXX="$(CXX)" sh mandelbrot-command.sh screen
+
 mandelbrot-build: scheduler-layout-build $(WFC)
-	"$(WFC)" --par --par-scalar-leaf-limit off --par-ledger --emit-llvm mandelbrot.wf -o "$(OUT)/mandelbrot.ll" > "$(OUT)/mandelbrot.ledger"
+	"$(WFC)" --par --par-scalar-leaf-limit off --par-ledger --emit-llvm mandelbrot.wf mandelbrot_command.wf -o "$(OUT)/mandelbrot.ll" > "$(OUT)/mandelbrot.ledger"
 	grep -F 'split independent map' "$(OUT)/mandelbrot.ledger"
 	sed -e 's/@main(/@wf_mandelbrot_command_main(/g' -e 's/@wf__main_body(/@wf_mandelbrot_command_body(/g' \
 		"$(OUT)/mandelbrot.ll" > "$(OUT)/mandelbrot-host.ll"

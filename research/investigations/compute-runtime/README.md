@@ -98,6 +98,14 @@ cannot complete the broader workload, CPU, CLI timing or five-target goal.
 Linked-image layout can also change despite using identical WF object bytes;
 small differences require independent confirmation and attribution.
 
+The separate [ordinary CLI Mandelbrot panel](../../experiments/compute-runtime/README.md#ordinary-cli-mandelbrot)
+now measures normal executables, including startup, input generation, rendering,
+digest and shutdown, against scalar native serial/static commands. Its
+five-target CI jobs supplement the identical-object FIR comparison. The first
+local cohort exposes missed parallelism in small expensive loops under the
+maintained split-budget policy; it does not qualify the broader goal. Kernel
+versus scheduling attribution and strong dynamic references remain necessary.
+
 The first [four-target native CI screen at `708e3c4d`](https://github.com/mbbill/Whitefoot/actions/runs/34343071425)
 completed its oracle, normal-CLI correctness and actual-pool-width checks, but
 all four targets failed its performance band. Representative median paired
@@ -1463,8 +1471,8 @@ disabled builds do not, and each starts the requested participant count.
 Scoped independent review of the initial seven-file change finds no blocking issue:
 all nine erased address expressions have no scheduler action or variable-length
 array evaluation, and the Windows test loop retains both configurations.
-Windows execution and ordinary-CLI adoption remain unverified; local timing
-evidence follows below.
+Windows execution is covered by the subsequent CI result below; ordinary-CLI
+adoption remains unselected. Local timing evidence follows below.
 
 The local M1-series counter-cost cohort uses two layouts, one/two/four
 participants, 4096/65536 samples, tile 16/1024, and five alternating passes
@@ -1520,8 +1528,8 @@ controls, thresholds and participant checks remain. Separate diagnostics
 request reports in both current modes: `nostats` must omit scheduler counts
 while retaining the external wake-epoch observation. This comparison uses
 ordinary link placement and may include layout effects; it does not by itself
-isolate counter instruction cost. Cross-platform execution of this addition
-is pending, and no new default is selected from the local reversal.
+isolate counter instruction cost. The subsequent cross-platform result is
+mixed, and no new default is selected from the local reversal.
 The exact updated diagnostic parser accepts all six existing local on/off
 reports and rejects all six with the expected report availability inverted;
 shell syntax and patch whitespace checks pass.
@@ -1529,6 +1537,20 @@ Final scoped independent review of the nine-file change recomputes both
 360-process cohorts from raw output, verifies the five-platform CI table and
 unchanged prior assertions, and finds no blocking issue. This does not certify
 the whole PR, the new revision's full gate or its pending platform execution.
+
+At `16dece48`, the [compute CI run](https://github.com/mbbill/Whitefoot/actions/runs/34394169877)
+executed all five formal screens, including both counter configurations; all
+five still fail overall performance acceptance. The exact local canonical
+`make check` passes, all twelve gate jobs pass, and the existing I/O host and
+benchmark jobs pass. These are correctness results, not compute acceptance.
+Long-view ratios below are **enabled/disabled** (above one favors disabling),
+five matched process pairs. Linux x64 W4, 4,096 outputs/tile256 is
+**0.8441 [0.7770, 0.9057]**; Linux ARM64 W2, 4,096/tile1024 is
+**1.1685 [1.1140, 1.2358]**. Windows W4, 65,536/tile16 is
+**1.0077 [0.9970, 1.0217]**. macOS rows show substantial variability;
+neither their nominal gains nor the cross-platform mixture establishes a
+general counter-removal benefit. Runtime counters therefore remain enabled
+by default. Ordinary command measurements are a separate panel above.
 
 ## Earlier investigation and evidence
 

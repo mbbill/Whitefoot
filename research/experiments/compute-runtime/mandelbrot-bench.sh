@@ -27,7 +27,7 @@ printf '%s\n' "$results" > "$OUT/last-mandelbrot-$mode-path.txt"
     else
         sysctl hw.model hw.ncpu hw.physicalcpu hw.logicalcpu hw.memsize
     fi
-    shasum -a 256 mandelbrot.wf mandelbrot_host.ll mandelbrot.c mandelbrot-bench.sh Makefile runtime.c runtime.h \
+    shasum -a 256 mandelbrot.wf mandelbrot_command.wf mandelbrot_host.ll mandelbrot.c mandelbrot-bench.sh Makefile runtime.c runtime.h \
         records_scheduler.h records_selector.c records_runtime.c records_static.c records_tbb.cpp records_parlay.cpp records_rayon.c \
         records-scheduler-deps.sh records-scheduler-memory.awk records-scheduler-memory.sh records-rayon/adapter.rs \
         records-rayon/Cargo.toml records-rayon/Cargo.lock ../../../compiler/src/backend/wf_floor.c

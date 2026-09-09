@@ -1,10 +1,12 @@
 # Compute runtime recovery control
 
-This experiment isolates current-stack compute join/help/steal from the shared
-I/O scheduler. It supplies a research runtime for the current compiler's
+The original recovery control isolates current-stack compute join/help/steal
+from the shared I/O scheduler. Its frozen research runtime serves the compiler's
 ordinary task frames, checks the concurrent protocol, and links the same
 unmodified emitted module with this runtime and the compiler's weak sequential
-fallback. The normal compiler link driver is unchanged. The FIR calibration
+fallback. Current implementation work belongs in `compiler/`; the
+[ordinary-command panel](#ordinary-cli-mandelbrot) measures its normal link path
+without this research runtime. The FIR calibration
 caller below also links the identical optimized WF object with the existing
 shared runtime, and compares qualified native output-lane SIMD candidates.
 This is cost attribution, not a confirmed performance frontier. The current
@@ -1055,6 +1057,78 @@ zero tests zero. All arithmetic uses separate strict binary64 operations.
 Coordinates and iteration limits are runtime inputs. This finite rounded
 recurrence is the comparison contract: analytic interior shortcuts, different
 rounding, FMA contraction and SIMD are outside this scalar scheduler panel.
+
+### Ordinary CLI Mandelbrot
+
+`make mandelbrot-command-screen OUT=<fresh-absolute-directory>` builds actual
+executables with `whitefootc --par --no-vectorize` and
+`--no-overlap --no-vectorize`, using the maintained shared runtime and default
+publication policy. No emitted symbol is renamed or runtime implementation
+substituted. `mandelbrot_command.wf` adds runtime arguments, input generation,
+repeated rendering and an ordered 64-bit output digest to the existing kernel.
+The no-argument command preserves the original three-point smoke. The command
+arguments are `SHAPE COUNT LIMIT REPETITIONS SEED EXPECTED_CHECKSUM`.
+
+`mandelbrot_command.cpp` supplies independent native commands: a strict scalar
+serial kernel, a persistent static-partition pool with caller participation,
+and a volatile binary64 recurrence oracle checked against known orbits. Oracle
+mode also checks the optimized native point kernel pointwise; timed WF and
+native commands compare the ordered digest, which is not a collision-free
+proof. Input generation, zero-initialized output allocation, digest work,
+startup and shutdown are inside the whole-process measurement on both sides.
+The one-lane native path still pays a few pool atomics per batch; it is not
+claimed as the best possible serial implementation. The static pool spins and
+yields while idle; its CPU cost is charged. It is a regular-work reference,
+not a dynamic scheduling ceiling for skew. SIMD, reassociation, contraction,
+fast math and LTO are disabled for the comparison.
+
+`command_runner.c` measures process wall time, child user/system CPU and peak
+memory on POSIX and Windows, plus POSIX context switches (Windows reports NA).
+`mandelbrot-command.sh` owns build, correctness and measurement; its AWK
+summarizer consumes the complete process matrix. These experiment-only tools
+are used by the Makefile and five-target `ordinary-command` CI jobs; remove
+them with this workload or consolidate when another maintained panel replaces
+the same measurement. They implement no WF compiler/runtime capability.
+
+The correctness target `check-mandelbrot-command` is part of canonical research
+checks: 48 input cases cover seven distributions, zero/odd/larger counts,
+iteration limits, repeated calls and seeds including u64 maximum, with WF
+sequential/parallel and native serial/static at widths 1/2/4. Wrong digests and
+invalid arguments must fail. Native static also runs under ASan/UBSan and TSan
+on POSIX. Windows requires actual execution in CI; POSIX sanitizers are not
+evidence about its native build.
+
+The timing matrix uses shapes 0–6 (plane, boundary, interior-first, interleaved,
+all-interior, all-exterior, interior-last), counts 4,096/65,536, limit 256 and
+32/2 batches respectively: 131,072 points per process. It runs five alternating
+passes with matching requested worker counts 1/2/4 where available, plus a
+byte-identical WF replica. A four-worker-capable host produces 770 processes.
+Raw process samples, oracle inputs/digests, tool flags, source copies, host
+metadata and executable/compiler hashes are artifacts. Requested counts do not
+prove every worker executed a task; runtime attribution needs separate evidence.
+
+The initial screen reports per-cell paired median/min/max wall, CPU and RSS
+ratios. A wall/CPU **gap** requires all five ratios above 1.05 and all five WF
+wall A/A ratios inside [0.95, 1.05]; gaps fail the screen after all measurements.
+Noisy cells and unavailable CPU ratios remain open. RSS is descriptive. This
+5% rule is an initial diagnostic criterion selected after the first local
+exploratory cohort and before CI, not a pre-registered claim about that cohort.
+Five processes do not establish population tails, and a screen without gaps
+does not establish full performance acceptance or the complete project goal.
+
+The first local cohort used the `16dece48` compiler on an eight-core M1 Pro,
+with the initial command sources captured in its artifact. At four requested
+workers, 4,096-point plane, boundary and interleaved loads had paired WF/static
+wall medians **2.782, 3.153 and 3.012**. Their five ratios all exceeded 1.05,
+with A/A inside the stated window. The same workloads at 65,536 points were
+much closer; this does not excuse the small expensive loops. Emitted IR calls
+`wf__par_split_budget(span, 219)`. The maintained threshold is 1,200,000 work
+units per chunk: 4,096 elements admit zero split levels, while 65,536 admits
+three at W4. This identifies a concrete policy limitation to investigate;
+the measurements include input/kernel/command cost and do not isolate the
+scheduler's per-task cost. No default policy was changed by this panel.
+
+### Historical manual-link panel
 
 The C host checks every returned count against an explicitly rounded recurrence
 and verifies both input arrays after every call. Known fixed/escaping orbits,

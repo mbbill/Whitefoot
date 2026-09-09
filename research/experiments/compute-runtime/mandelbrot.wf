@@ -44,7 +44,7 @@ fn release_points(output: own buffer<u64>) -> result: own u64 pure {
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn command_smoke() -> status: own ExitStatus pure {
   let real = buffer_new(3_u64, 0.0_f64);
   let imaginary = buffer_new(3_u64, 0.0_f64);
   set real[1_u64] = 2.0_f64;

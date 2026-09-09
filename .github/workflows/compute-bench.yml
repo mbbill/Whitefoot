@@ -20,6 +20,76 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  mandelbrot-command:
+    name: ordinary-command (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build native compiler and qualify ordinary commands
+        run: |
+          rustup default stable
+          rustc -vV | grep -Fx 'host: ${{ matrix.target }}'
+          scratch="$RUNNER_TEMP/mandelbrot-command"
+          suffix=
+          cc=/usr/bin/clang
+          cxx=/usr/bin/clang++
+          if command -v cygpath >/dev/null; then
+            scratch="$(cygpath -u "$RUNNER_TEMP")/mandelbrot-command"
+            suffix=.exe
+            cc=clang
+            cxx=clang++
+          fi
+          cargo build --locked --profile gate --bin whitefootc \
+            --manifest-path compiler/Cargo.toml --target-dir "$scratch/compiler"
+          export OUT="$scratch" WFC="$scratch/compiler/gate/whitefootc$suffix" CC="$cc" CXX="$cxx"
+          sh research/experiments/compute-runtime/mandelbrot-command.sh build
+          sh research/experiments/compute-runtime/mandelbrot-command.sh check
+      - name: Measure whole commands against matched scalar native controls
+        run: |
+          scratch="$RUNNER_TEMP/mandelbrot-command"
+          suffix=
+          if command -v cygpath >/dev/null; then
+            scratch="$(cygpath -u "$RUNNER_TEMP")/mandelbrot-command"
+            suffix=.exe
+          fi
+          export OUT="$scratch" WFC="$scratch/compiler/gate/whitefootc$suffix"
+          sh research/experiments/compute-runtime/mandelbrot-command.sh screen
+      - name: Publish ordinary-command comparisons
+        if: always()
+        run: |
+          {
+            echo '## ${{ matrix.target }}: scalar Mandelbrot ordinary CLI'
+            echo 'Whole-process wall, CPU and peak memory; five paired processes per cell. Ratios above one favor the reference.'
+            echo 'A gap means all five ratios exceed 1.05 with all wall A/A ratios inside [0.95, 1.05]. Noisy cells remain open; a clean screen is not full goal qualification.'
+            echo 'Static partitions are a regular-work control, not a skew scheduling ceiling. CPU includes native spinning; memory is descriptive.'
+            echo '```text'
+            cat "$RUNNER_TEMP/mandelbrot-command/mandelbrot-command/screen/summary.tsv"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ordinary-command-${{ matrix.target }}
+          path: ${{ runner.temp }}/mandelbrot-command/mandelbrot-command
+
   formal-runtime-posix:
     name: formal-runtime (${{ matrix.target }})
     strategy:

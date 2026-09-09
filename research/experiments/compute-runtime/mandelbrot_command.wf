@@ -1,0 +1,229 @@
+fn decimal(digits: &MutSlice<u8>, length: own u64) -> result: own Result<u64, u8> reads(digits) contract {
+  requires length <= len_of(deref(digits));
+} {
+  doc "Parses a complete nonempty decimal u64. Invalid digits and overflow are input errors; wrapping arithmetic is exact after the explicit decimal overflow test.";
+  if length == 0_u64 {
+    return Err<u64, u8>(error: 2_u8);
+  }
+  let value = 0_u64;
+  for @scan (index in 0_u64..length) {
+    let byte = deref(digits)[index];
+    if byte < 48_u8 {
+      return Err<u64, u8>(error: 2_u8);
+    }
+    if byte > 57_u8 {
+      return Err<u64, u8>(error: 2_u8);
+    }
+    let digit_byte = byte - 48_u8;
+    let digit = cvt::<u8, u64>(digit_byte);
+    if value > 1844674407370955161_u64 {
+      return Err<u64, u8>(error: 2_u8);
+    }
+    if value == 1844674407370955161_u64 {
+      if digit > 5_u64 {
+        return Err<u64, u8>(error: 2_u8);
+      }
+    }
+    let scaled = value *wrap 10_u64;
+    set value = scaled +wrap digit;
+  }
+  return Ok<u64, u8>(value: value);
+}
+
+fn number_argument(args: &Args, position: own u64) -> result: own Result<u64, u8> reads(args) {
+  doc "Reads decimal text through the host's UTF-8 route on every platform, using a fixed stack scratch run.";
+  let digits = fixed_vector::<u8, 20>();
+  for @blank (
+    at in 0_u64..20_u64,
+    invariant grown: len_of(digits) >= at,
+    invariant spare: room_of(digits) + at >= 20_u64,
+    invariant flat: head_of(digits) <= 0_u64
+  ) {
+    set digits = place_back(vector: move digits, value: 0_u8);
+  }
+  region {
+    let window = mut_slice_of(&uniq digits);
+    match arg_get(args: args, position: position) {
+      Ok(value: text) => {
+        region {
+          match host_copy_utf8(value: &text, destination: &uniq window, start: 0_u64, end: 20_u64) {
+            Ok(value: written) => {
+              invariant bound: written <= 20_u64;
+              invariant room: 20_u64 <= len_of(window);
+              return decimal(digits: &window, length: written);
+            }
+            Err(error: problem) => {
+              return Err<u64, u8>(error: 2_u8);
+            }
+          }
+        }
+      }
+      Err(error: problem) => {
+        return Err<u64, u8>(error: 2_u8);
+      }
+    }
+  }
+}
+
+fn command_checksum(shape: own u64, count: own u64, limit: own u64, repetitions: own u64, initial_seed: own u64) -> result: own Result<u64, u8> pure contract {
+  requires shape <= 6_u64;
+  requires count <= 1048576_u64;
+  requires limit <= 65536_u64;
+} {
+  doc "Builds deterministic point batches, renders through the ordinary parallel map, and folds every output in order. Input construction, allocations, checks and destruction remain in whole-command cost.";
+  let real = buffer_new(count, 0.0_f64);
+  let imaginary = buffer_new(count, 0.0_f64);
+  let seed = initial_seed;
+  let checksum = 14695981039346656037_u64;
+  let quarter = count / 4_u64;
+  for @batches (batch in 0_u64..repetitions) {
+    for @coordinates (i in 0_u64..count) {
+      let scaled_a = seed *wrap 6364136223846793005_u64;
+      set seed = scaled_a +wrap 1442695040888963407_u64;
+      let mantissa_a = seed % 4503599627370496_u64;
+      let bits_a = 4607182418800017408_u64 +wrap mantissa_a;
+      let encoded_a = reinterpret::<u64, f64>(bits_a);
+      let a = fsub.strict(encoded_a, 1.0_f64);
+      let scaled_b = seed *wrap 6364136223846793005_u64;
+      set seed = scaled_b +wrap 1442695040888963407_u64;
+      let mantissa_b = seed % 4503599627370496_u64;
+      let bits_b = 4607182418800017408_u64 +wrap mantissa_b;
+      let encoded_b = reinterpret::<u64, f64>(bits_b);
+      let b = fsub.strict(encoded_b, 1.0_f64);
+      let x = 3.0_f64;
+      let y = 0.0_f64;
+      if shape == 0_u64 {
+        let x_offset = fmul.strict(3.0_f64, a);
+        let y_offset = fmul.strict(3.0_f64, b);
+        set x = fadd.strict(-2.0_f64, x_offset);
+        set y = fadd.strict(-1.5_f64, y_offset);
+      }
+      if shape == 1_u64 {
+        let centered_a = fsub.strict(a, 0.5_f64);
+        let centered_b = fsub.strict(b, 0.5_f64);
+        let x_offset = fmul.strict(centered_a, 0.03125_f64);
+        let y_offset = fmul.strict(centered_b, 0.03125_f64);
+        set x = fadd.strict(-0.75_f64, x_offset);
+        set y = fadd.strict(0.125_f64, y_offset);
+      }
+      if shape == 4_u64 {
+        set x = 0.0_f64;
+      }
+      if shape == 2_u64 {
+        if i < quarter {
+          set x = 0.0_f64;
+        }
+      }
+      if shape == 3_u64 {
+        let phase = i % 4_u64;
+        if phase == 0_u64 {
+          set x = 0.0_f64;
+        }
+      }
+      if shape == 6_u64 {
+        let start = count - quarter;
+        if i >= start {
+          set x = 0.0_f64;
+        }
+      }
+      set real[i] = x;
+      set imaginary[i] = y;
+    }
+    region {
+      let output = render_points(real: &real, imaginary: &imaginary, first: 0_u64, end: count, limit: limit);
+      let actual_count = len_of(output);
+      if actual_count != count {
+        return Err<u64, u8>(error: 1_u8);
+      }
+      for @digest (i in 0_u64..count) {
+        let mixed = checksum *wrap 1099511628211_u64;
+        set checksum = mixed +wrap output[i];
+      }
+    }
+  }
+  return Ok<u64, u8>(value: checksum);
+}
+
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
+  doc "No arguments retain the original known-orbit smoke check. Otherwise accept SHAPE COUNT LIMIT REPETITIONS SEED EXPECTED_CHECKSUM; the external oracle supplies the final expected digest.";
+  region {
+    let argc = args_count(args: &args);
+    if argc == 1_u64 {
+      return command_smoke();
+    }
+    if argc != 7_u64 {
+      return exit_status(code: 2_u8);
+    }
+    let shape = match number_argument(args: &args, position: 1_u64) {
+      Ok(value: parsed) => {
+        give parsed;
+      }
+      Err(error: problem) => {
+        return exit_status(code: 2_u8);
+      }
+    }
+    let count = match number_argument(args: &args, position: 2_u64) {
+      Ok(value: parsed) => {
+        give parsed;
+      }
+      Err(error: problem) => {
+        return exit_status(code: 2_u8);
+      }
+    }
+    let limit = match number_argument(args: &args, position: 3_u64) {
+      Ok(value: parsed) => {
+        give parsed;
+      }
+      Err(error: problem) => {
+        return exit_status(code: 2_u8);
+      }
+    }
+    let repetitions = match number_argument(args: &args, position: 4_u64) {
+      Ok(value: parsed) => {
+        give parsed;
+      }
+      Err(error: problem) => {
+        return exit_status(code: 2_u8);
+      }
+    }
+    let seed = match number_argument(args: &args, position: 5_u64) {
+      Ok(value: parsed) => {
+        give parsed;
+      }
+      Err(error: problem) => {
+        return exit_status(code: 2_u8);
+      }
+    }
+    let expected = match number_argument(args: &args, position: 6_u64) {
+      Ok(value: parsed) => {
+        give parsed;
+      }
+      Err(error: problem) => {
+        return exit_status(code: 2_u8);
+      }
+    }
+    if shape > 6_u64 {
+      return exit_status(code: 2_u8);
+    }
+    if count > 1048576_u64 {
+      return exit_status(code: 2_u8);
+    }
+    if limit > 65536_u64 {
+      return exit_status(code: 2_u8);
+    }
+    if repetitions > 4096_u64 {
+      return exit_status(code: 2_u8);
+    }
+    match command_checksum(shape: shape, count: count, limit: limit, repetitions: repetitions, initial_seed: seed) {
+      Ok(value: actual) => {
+        if actual == expected {
+          return exit_status(code: 0_u8);
+        }
+        return exit_status(code: 1_u8);
+      }
+      Err(error: problem) => {
+        return exit_status(code: 1_u8);
+      }
+    }
+  }
+}
