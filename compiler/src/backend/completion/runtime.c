@@ -44,6 +44,7 @@ int wf_completion_runtime_init(wf_completion_runtime *runtime) {
     memset(runtime, 0, sizeof(*runtime));
     atomic_init(&runtime->wake_epoch, 0);
     atomic_init(&runtime->parked_schedulers, 0);
+    atomic_init(&runtime->wake_needed, 0);
     atomic_init(&runtime->stat_parks, 0);
     atomic_init(&runtime->stat_wake_signals, 0);
     atomic_init(&runtime->stat_compute_notifications, 0);
@@ -94,17 +95,17 @@ int wf_completion_runtime_destroy(wf_completion_runtime *runtime) {
 
 /* Raises the epoch and wakes whoever announced sleep against it.
  *
- * The publisher raises the epoch and then reads the sleeper count; a
- * scheduler about to sleep raises the sleeper count and then reads the epoch.
+ * The publisher raises the epoch and then reads wake_needed; a scheduler
+ * about to sleep sets wake_needed and then reads the epoch.
  * Both cannot read the old value, so either this call sees a sleeper and takes
  * the lock and wakes it, or the scheduler sees the new epoch and does not
- * sleep at all.  Both sides must stay sequentially consistent for that to
- * hold, which is why the two park paths -- this unit's and the Linux target's
- * external wait -- name the order explicitly at their own increment and
- * recheck. */
+ * sleep at all. A zero written by an earlier notifier instead means it
+ * already signalled the current announced set. All three park paths use the
+ * shared announcement and an SC epoch recheck; a new announcement cannot
+ * interleave the notifier's flag reset and host signal under the wait lock. */
 static void wf_completion_notify_scheduler(wf_completion_runtime *runtime) {
     atomic_fetch_add_explicit(&runtime->wake_epoch, 1, memory_order_seq_cst);
-    if (atomic_load_explicit(&runtime->parked_schedulers, memory_order_seq_cst)
+    if (atomic_load_explicit(&runtime->wake_needed, memory_order_seq_cst)
         == 0) {
         return;
     }
@@ -114,7 +115,17 @@ static void wf_completion_notify_scheduler(wf_completion_runtime *runtime) {
             &runtime->parked_schedulers,
             memory_order_relaxed
         );
-        if (parked != 0) {
+        unsigned needed = atomic_load_explicit(&runtime->wake_needed, memory_order_relaxed);
+        /* External endpoints may consume a wake without waking every old
+         * announcement (notably IOCP). Preserve their existing per-publication
+         * notifications; coalesce only the condition-variable wait path. */
+        if (parked == 0 || runtime->wake_callback == NULL) {
+            atomic_store_explicit(&runtime->wake_needed, 0, memory_order_seq_cst);
+        }
+        if (parked != 0 && needed != 0) {
+            /* A condition-variable broadcast covers the announced set; a new
+             * announcement rearms notification. External callbacks continue
+             * to receive every publication while a waiter remains. */
             /* An active scheduler observes the epoch or its record directly.
              * Only an announced sleeper needs an explicit host wake. External
              * target waits increment parked_schedulers under this same lock,
@@ -140,6 +151,12 @@ uint64_t wf_completion_wake_epoch(const wf_completion_runtime *runtime) {
         return 0;
     }
     return atomic_load_explicit(&runtime->wake_epoch, memory_order_acquire);
+}
+
+void wf_completion_announce_park_locked(wf_completion_runtime *runtime) {
+    atomic_store_explicit(&runtime->wake_needed, 1, memory_order_seq_cst);
+    atomic_fetch_add_explicit(&runtime->parked_schedulers, 1, memory_order_seq_cst);
+    atomic_fetch_add_explicit(&runtime->stat_parks, 1, memory_order_relaxed);
 }
 
 void wf_completion_notify_compute(wf_completion_runtime *runtime) {
@@ -184,17 +201,12 @@ enum wf_completion_park_result wf_completion_park_if_unchanged(
         return WF_COMPLETION_PARK_EPOCH_CHANGED;
     }
 
-    atomic_fetch_add_explicit(
-        &runtime->parked_schedulers,
-        1,
-        memory_order_seq_cst
-    );
-    atomic_fetch_add_explicit(&runtime->stat_parks, 1, memory_order_relaxed);
+    wf_completion_announce_park_locked(runtime);
 
     /* This second observation closes announce-sleep -> sleep against a
      * publisher which raised the epoch and then looked for a sleeper.  It is
-     * sequentially consistent, and so is the increment above it, because that
-     * pair against the publisher's own pair is the whole of what keeps a wake
+     * sequentially consistent, and so is the wake_needed store above it. That
+     * pair against the publisher's own pair is what keeps a wake
      * from being lost now that the publisher no longer takes this lock. */
     if (atomic_load_explicit(&runtime->wake_epoch, memory_order_seq_cst)
         != observed_epoch) {

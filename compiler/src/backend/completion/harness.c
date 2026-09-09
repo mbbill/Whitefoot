@@ -483,6 +483,10 @@ static int test_unified_wake_epoch(void) {
     parked.result = WF_COMPLETION_PARK_FAILED;
     CHECK(pthread_create(&thread, NULL, park_thread, &parked) == 0);
     CHECK(wait_until_parked(&runtime) == 0);
+    /* Pass the final epoch recheck before notifying: observing the count
+     * alone also permits a not-yet-sleeping thread to cancel its park. */
+    wf_completion_wait_lock(&runtime.wait);
+    wf_completion_wait_unlock(&runtime.wait);
     before = wf_completion_statistics_snapshot(&runtime);
     wf_completion_notify_compute(&runtime);
     CHECK(pthread_join(thread, NULL) == 0);
@@ -530,6 +534,8 @@ static int test_one_epoch_wakes_every_announced_thread(void) {
         );
     }
     CHECK(wait_until_parked_count(&runtime, 2u) == 0);
+    wf_completion_wait_lock(&runtime.wait);
+    wf_completion_wait_unlock(&runtime.wait);
     before = wf_completion_statistics_snapshot(&runtime);
     wf_completion_notify_compute(&runtime);
     for (index = 0; index < 2; ++index) {
@@ -540,6 +546,83 @@ static int test_one_epoch_wakes_every_announced_thread(void) {
     CHECK(after.compute_notifications == before.compute_notifications + 1);
     CHECK(after.wake_signals == before.wake_signals + 1);
     CHECK(atomic_load_explicit(&host_wakes, memory_order_relaxed) == 1);
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    return 0;
+}
+
+static int test_condition_notifications_coalesce_without_suppressing_external_wakes(void) {
+    wf_completion_runtime runtime;
+    _Atomic unsigned host_wakes;
+    uint64_t epoch;
+    unsigned index;
+
+    atomic_init(&host_wakes, 0);
+    CHECK(wf_completion_runtime_init(&runtime) == 0);
+    epoch = wf_completion_wake_epoch(&runtime);
+
+    /* Model a condition waiter whose notified consumer has not resumed to
+     * withdraw its announcement. No actual host sleep is needed for this
+     * interval; the real-thread test above checks delivery to every sleeper. */
+    wf_completion_wait_lock(&runtime.wait);
+    wf_completion_announce_park_locked(&runtime);
+    wf_completion_wait_unlock(&runtime.wait);
+    for (index = 0; index < 1024u; index += 1u) {
+        wf_completion_notify_target(&runtime);
+    }
+    CHECK(wf_completion_wake_epoch(&runtime) == epoch + 1024u);
+    CHECK(wf_completion_statistics_snapshot(&runtime).wake_signals == 1u);
+
+    /* A new announcement must rearm notification even while the old waiter
+     * remains announced. Its newer epoch cannot inherit the earlier signal. */
+    wf_completion_wait_lock(&runtime.wait);
+    wf_completion_announce_park_locked(&runtime);
+    wf_completion_wait_unlock(&runtime.wait);
+    for (index = 0; index < 1024u; index += 1u) {
+        wf_completion_notify_compute(&runtime);
+    }
+    CHECK(wf_completion_wake_epoch(&runtime) == epoch + 2048u);
+    CHECK(wf_completion_statistics_snapshot(&runtime).wake_signals == 2u);
+    CHECK(wf_completion_parked_scheduler_count(&runtime) == 2u);
+
+    wf_completion_wait_lock(&runtime.wait);
+    atomic_fetch_sub_explicit(&runtime.parked_schedulers, 2u, memory_order_relaxed);
+    wf_completion_wait_unlock(&runtime.wait);
+    wf_completion_notify_target(&runtime);
+    CHECK(wf_completion_statistics_snapshot(&runtime).wake_signals == 2u);
+
+    /* A cancelled announcement leaves no sleeper. A notification clears its
+     * pending flag, and a later real announcement still rearms the endpoint. */
+    wf_completion_wait_lock(&runtime.wait);
+    wf_completion_announce_park_locked(&runtime);
+    atomic_fetch_sub_explicit(&runtime.parked_schedulers, 1u, memory_order_relaxed);
+    wf_completion_wait_unlock(&runtime.wait);
+    wf_completion_notify_target(&runtime);
+    CHECK(wf_completion_statistics_snapshot(&runtime).wake_signals == 2u);
+    wf_completion_wait_lock(&runtime.wait);
+    wf_completion_announce_park_locked(&runtime);
+    wf_completion_wait_unlock(&runtime.wait);
+    wf_completion_notify_target(&runtime);
+    CHECK(wf_completion_statistics_snapshot(&runtime).wake_signals == 3u);
+    wf_completion_wait_lock(&runtime.wait);
+    atomic_fetch_sub_explicit(&runtime.parked_schedulers, 1u, memory_order_relaxed);
+    wf_completion_wait_unlock(&runtime.wait);
+
+    /* External callbacks retain the original per-publication behavior: a
+     * consumable port token does not imply every old waiter has been woken. */
+    CHECK(wf_completion_set_wake_callback(&runtime, record_host_wake, &host_wakes) == 0);
+    wf_completion_wait_lock(&runtime.wait);
+    wf_completion_announce_park_locked(&runtime);
+    wf_completion_wait_unlock(&runtime.wait);
+    for (index = 0; index < 1024u; index += 1u) {
+        wf_completion_notify_target(&runtime);
+    }
+    CHECK(atomic_load_explicit(&host_wakes, memory_order_relaxed) == 1024u);
+    wf_completion_wait_lock(&runtime.wait);
+    atomic_fetch_sub_explicit(&runtime.parked_schedulers, 1u, memory_order_relaxed);
+    wf_completion_wait_unlock(&runtime.wait);
+    wf_completion_notify_target(&runtime);
+    CHECK(atomic_load_explicit(&host_wakes, memory_order_relaxed) == 1024u);
+
     CHECK(wf_completion_runtime_destroy(&runtime) == 0);
     return 0;
 }
@@ -3197,6 +3280,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_a_completion_claims_an_in_place_registration());
     RUN_TEST(test_unified_wake_epoch());
     RUN_TEST(test_one_epoch_wakes_every_announced_thread());
+    RUN_TEST(test_condition_notifications_coalesce_without_suppressing_external_wakes());
     RUN_TEST(test_linux_independent_operations_use_available_target(argv[1]));
     RUN_TEST(test_single_thread_file_progress(argv[1]));
     RUN_TEST(test_bridge_independent_positioned_reads(argv[1]));

@@ -8,7 +8,7 @@ cd "$(dirname "$0")"
 CC=${CC:-/usr/bin/clang}
 # Scheduler reports use race-free candidate and previous-runtime counters;
 # the older before counters are never read live. Windows images also read
-# current-bridge wait counters at batch boundaries, outside timed core calls.
+# host-bridge wait counters at batch boundaries, outside timed core calls.
 WF_SCHED_REPORT=0
 export WF_SCHED_REPORT
 host=$(uname -s)
@@ -36,7 +36,7 @@ case "$host" in
     *) echo "unsupported native screen host: $host" >&2; exit 1 ;;
 esac
 before=188088d41552d0d3bccf8368798dcc44702bf75c
-previous=6060cc679f5413bfcc5c758dde5a626fdd70925a
+previous=5e3cbc24cd7c514e4200fa320163c34ebbb56be9
 root=$(git rev-parse --show-toplevel)
 git -C "$root" diff --exit-code "$before" -- \
     research/experiments/compute-runtime/runtime.c \
@@ -49,7 +49,8 @@ mkdir -p "$out/baseline-source" "$out/previous-source" "$out/source" "$out/raw" 
 git -C "$root" archive "$before" compiler/src/backend/sched "compiler/src/backend/$floor" \
     > "$out/before.tar"
 tar -xf "$out/before.tar" -C "$out/baseline-source"
-git -C "$root" archive "$previous" compiler/src/backend/sched "compiler/src/backend/$floor" \
+git -C "$root" archive "$previous" compiler/src/backend/sched compiler/src/backend/completion \
+    compiler/src/backend/windows_runtime.c compiler/src/backend/windows_runtime.h "compiler/src/backend/$floor" \
     > "$out/previous.tar"
 tar -xf "$out/previous.tar" -C "$out/previous-source"
 cp fir.wf fir_direct.wf fir_host.ll fir_bench.c fir_native.c fir_native.h \
@@ -58,10 +59,9 @@ cp -R "$root/compiler/src/backend/sched" "$out/source/"
 cp "$root/compiler/src/backend/$floor" "$out/source/"
 if test -n "$exe"; then
     # The generated Windows object reaches host diagnostics even for compute.
-    # Keep current host/completion sources identical across controls, while
-    # compiling each with its own scheduler headers and private layout.
-    for destination in "$out/source" "$out/baseline-source/compiler/src/backend" \
-        "$out/previous-source/compiler/src/backend"; do
+    # The oldest baseline needs the current host overlay; previous keeps its
+    # frozen host/completion implementation. Each uses matching private headers.
+    for destination in "$out/source" "$out/baseline-source/compiler/src/backend"; do
         mkdir -p "$destination/completion"
         cp "$root/compiler/src/backend/windows_runtime.h" "$destination/"
         cp "$root"/compiler/src/backend/completion/*.h "$destination/completion/"
@@ -99,14 +99,15 @@ flags="-std=c11 -O3 -g $platform_flags -fno-fast-math -ffp-contract=off -fno-vec
 printf '%s\n' "$CC $flags; recovered additionally -DWF_COMPUTE_STATS=0 -DWF_COMPUTE_CONTROL; shared additionally -DWF_SHARED_CONTROL" \
     "measured_modes=$modes; references=$references; libraries=$libraries" \
     'replica: byte-identical copy of candidate, independently invoked; raw runtime label remains candidate; A/A wall band is symmetric' \
-    'previous: frozen 6060cc67 maintained scheduler/floor before completion-order changes; same WF object' \
+    'previous: frozen 5e3cbc24 maintained scheduler/floor and Windows host/completion sources before wake coalescing; same WF object' \
     'idle4096: current runtime sources with only -DWF_SCHED_IDLE_SPIN_ROUNDS=4096u changed; default remains 256' \
     'diagnostics: separate longer batches; candidate/previous/idle4096 use WF_SCHED_REPORT=1, before uses 0; not pooled into wall samples' \
+    'wall samples: 4096 warm calls for n4096, 512 for n65536; first64 retained as a separate short view of each process, not independent extra samples' \
     'WF: --par defaults; same optimized WF object in every attribution image' \
     'CLI: normal --par link, correctness only; end-to-end timing remains open' > "$out/flags.txt"
 if test -n "$exe"; then
-    printf '%s\n' 'Windows before/previous: each frozen scheduler/floor plus identical current host/completion overlay; candidate: current scheduler/floor plus that overlay. The overlay includes the SC in-place bridge recheck in every mode.' \
-        'Windows host-wait counts: batch deltas from current bridge, including verification; announcements are not guaranteed kernel sleeps, signals are not awakened-thread counts.' \
+    printf '%s\n' 'Windows before: old scheduler/floor plus current host/completion overlay. Previous: its own frozen scheduler/floor/host/completion sources. Candidate: all current sources. Every set uses matching private headers.' \
+        'Windows host-wait counts: batch deltas from each matching bridge, including verification; announcements are not guaranteed kernel sleeps, signals are not awakened-thread counts.' \
         'Windows diagnostic before: WF_SCHED_REPORT=0; historical scheduler counters are never read live.' >> "$out/flags.txt"
 fi
 "$WFC" --par --emit-llvm fir.wf fir_direct.wf -o "$out/module.ll"
@@ -165,9 +166,12 @@ widths=1
 if test "$cpus" -ge 2; then widths="$widths 2"; fi
 if test "$cpus" -ge 4; then widths="$widths 4"; fi
 printf 'mode\tworkers\tn\ttile\tpass\tcore_mean_ns\tcycle_mean_ns\n' > "$out/means.tsv"
+cp "$out/means.tsv" "$out/short-means.tsv"
 for width in $widths; do
     WF_WORKERS="$width" "$out/command$exe" > "$out/cli-w$width.txt"
     for n in 4096 65536; do
+        calls=512
+        if test "$n" = 4096; then calls=4096; fi
         for tile in 16 64 256 1024; do
             pass=0
             while test "$pass" -lt 5; do
@@ -178,14 +182,21 @@ for width in $widths; do
                 fi
                 for mode in $order; do
                     log="$out/raw/$mode-w$width-n$n-t$tile-p$pass.tsv"
-                    WF_WORKERS="$width" "$out/$mode$exe" wf 16 "$n" "$tile" 64 92821 "$pass" > "$log"
+                    WF_WORKERS="$width" "$out/$mode$exe" wf 16 "$n" "$tile" "$calls" 92821 "$pass" > "$log"
                     awk -v width="$width" '
                         /^# actual_lanes=/ {split($2,a,"="); seen++; if(a[2]!=width)exit 1}
                         END {if(seen!=1)exit 1}' "$log"
                     awk -F '\t' -v mode="$mode" -v w="$width" -v n="$n" -v t="$tile" -v p="$pass" \
-                        '$10=="warm" {core+=$11;cycle+=$12;calls++}
-                        END {if(calls!=64)exit 1; printf "%s\t%s\t%s\t%s\t%s\t%.3f\t%.3f\n",mode,w,n,t,p,core/calls,cycle/calls}' \
-                        "$log" >> "$out/means.tsv"
+                        -v expected="$calls" -v short_file="$out/short-means.tsv" \
+                        '$10=="warm" {
+                            core+=$11;cycle+=$12;calls++
+                            if(calls<=64){short_core+=$11;short_cycle+=$12}
+                        }
+                        END {
+                            if(calls!=expected)exit 1
+                            printf "%s\t%s\t%s\t%s\t%s\t%.3f\t%.3f\n",mode,w,n,t,p,core/calls,cycle/calls
+                            printf "%s\t%s\t%s\t%s\t%s\t%.3f\t%.3f\n",mode,w,n,t,p,short_core/64,short_cycle/64 >> short_file
+                        }' "$log" >> "$out/means.tsv"
                 done
                 pass=$((pass + 1))
             done
@@ -193,6 +204,8 @@ for width in $widths; do
     done
 done
 # Process means, not individual warm calls, are the independent samples.
+# The short view overlaps the long view; it is never pooled as extra evidence.
+summarize() {
 awk -F '\t' -v references="$references" '
     BEGIN {reference_count=split(references,reference," ")}
     NR==1 {next}
@@ -215,8 +228,12 @@ awk -F '\t' -v references="$references" '
             printf "%s\t%s\t%.4f\t%.4f\t%.4f\t%s\n",cell,ref,ratio[2],ratio[0],ratio[4],verdict
         }
         exit failed
-    }' "$out/means.tsv" > "$out/summary.tsv" && result=0 || result=$?
+    }' "$1" > "$2"
+}
+summarize "$out/means.tsv" "$out/summary.tsv" && result=0 || result=$?
+summarize "$out/short-means.tsv" "$out/short-summary.tsv" || result=$?
 cat "$out/summary.tsv"
+cat "$out/short-summary.tsv"
 # Preserve the completed wall verdict even if a later diagnostic fails.
 # Current and previous-source counters are race-free. The older before control is excluded from
 # scheduler-counter observation. Windows before additionally observes only
@@ -233,8 +250,8 @@ for width in $widths; do
                 spin_rounds=256
                 if test "$mode" = idle4096; then spin_rounds=4096; fi
                 # Historical scheduler counters are not race-free. The host
-                # wait counters come from the identical current bridge in all
-                # Windows images and may safely be observed for before too.
+                # wait counters in the current overlay may safely be observed
+                # for before too; previous observes its own frozen bridge.
                 if test "$mode" = before; then reports=0; fi
                 WF_SCHED_REPORT="$reports" WF_WORKERS="$width" "$out/$mode$exe" \
                     wf 16 "$n" "$tile" "$diagnostic_calls" 92821 0 > "$log"

@@ -82,8 +82,9 @@ four POSIX targets and Windows. The Windows job invokes the same script with
 the native MSVC-target compiler and existing Windows runtime leaves; it compares
 the fixed formal-before scheduler/floor, candidate, frozen previous revision
 and same-source longer-idle-window control. A byte-identical candidate replica
-measures process/host variability. All link the same current Windows
-host/completion sources, compiled beside each scheduler's own headers.
+measures process/host variability. Previous keeps its own frozen Windows
+host/completion sources; candidate and the oldest before control link current
+host/completion sources beside matching private headers.
 This overlay is needed by generated host diagnostics; "before"
 does not mean an entirely historical Windows runtime. No research runtime
 is ported. Its benchmark uses QueryPerformanceCounter for elapsed time,
@@ -547,8 +548,64 @@ addition does not yet provide repeated CPU diagnostics or normal CLI timing.
 Shell syntax and whitespace checks pass. The actual extracted summary program
 accepts A/A medians 1.00, 0.98 and 1.03, rejects 1.08 and 0.94, and rejects a
 missing replica. Independent review found no issue in the binary-copy order,
-invocation labels, symmetric band or artifact coverage. Native A/A results
-remain pending.
+invocation labels, symmetric band or artifact coverage.
+
+The [five-target A/A run at `5e3cbc24`](https://github.com/mbbill/Whitefoot/actions/runs/34357325383)
+completed and failed every platform's performance screen. Replica comparisons
+outside the symmetric band were Windows 2/24, Linux x86-64 11/24, Linux
+AArch64 6/24, macOS x86-64 4/24 and macOS AArch64 3/16. Linux x86-64's
+one-participant 4,096 / tile64 median was 1.3323 (range 0.7952–1.3897),
+despite identical executable bytes. These short cohorts cannot reliably select
+small runtime effects. They do not invalidate the recorded losses or grant
+acceptance. That revision passed its local canonical `make check`, its
+[12-job gate](https://github.com/mbbill/Whitefoot/actions/runs/34357325212), and
+[Linux/Windows I/O checks](https://github.com/mbbill/Whitefoot/actions/runs/34357325252).
+
+The next screen lengthens each independent process to 4,096 warm calls for
+4,096 outputs and 512 calls for 65,536 outputs. Both the full batch and its
+first64 prefix retain the same verdict criteria; either can fail. The prefix
+is an overlapping view, not extra independent samples or an exact repeat of
+the former 64-call process cohort. Raw first calls remain available. Five
+processes remain the independent samples; the longer batch does not create
+thousands of independent observations. CPU diagnostics remain separate and
+normal CLI timing remains open.
+
+### Coalescing condition-wait notifications
+
+The maintained completion runtime and fallback host primitives now re-arm a
+wake-needed flag when a waiter announces. Every publication still advances the
+SC epoch. On the condition-variable-only path, the first notification for the
+announced set takes the wait lock and signals; later notifications can skip
+that lock until a new announcement. The flag/epoch SC pair closes the no-lock
+missed-wake race. External callbacks retain the original per-publication
+behavior: the flag stays set while an external waiter remains. This is one
+shared runtime and its existing routes, not link-time runtime selection.
+
+The candidate targets a measured cost: the Windows `c8384799` long
+4-participant 65,536 / tile16 diagnostic counted 102,543 notification signals
+for 1,551 announcements. That compute-only bridge uses condition variables;
+signals are requests, not awakened threads or IOCP posts. Performance selection
+requires lower notification/CPU cost without stable wall-time regressions;
+results remain pending on all five targets. The previous control is frozen at
+`5e3cbc24`, including its Windows bridge.
+
+Review prevented extending coalescing to external I/O waits. A new IOCP park
+can consume an older waiter's packet. Retaining and re-posting that packet
+until all announcements withdraw would preserve the token but could keep the
+queue permanently nonempty at the port's concurrency limit, preventing older
+waiters from running. This follows the documented [IOCP concurrency behavior](https://learn.microsoft.com/en-us/windows/win32/fileio/i-o-completion-ports).
+That proposed repair was removed before publication. Existing IOCP token
+ownership/progress remains an unresolved correctness question; passing prior
+I/O tests does not settle it. This round preserves the old external notifier
+and token-consumption behavior instead of introducing an unqualified I/O change.
+
+The harness checks coalescing, rearming, cancelled announcements, and unchanged
+external notification counts. Existing real-thread wake tests now synchronize
+past the final epoch recheck before requiring a wake result. The final narrowed
+macOS harness passes at helper counts 0/1/4 and in no-cache mode; its bridge
+ThreadSanitizer check also passes. Scheduler/deque tests passed before the
+external-callback narrowing, which does not change those primitives. Final
+native CI, canonical and all-platform performance acceptance remain required.
 
 ## Earlier investigation and evidence
 

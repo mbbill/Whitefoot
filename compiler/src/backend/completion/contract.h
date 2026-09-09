@@ -472,6 +472,9 @@ typedef struct wf_completion_runtime {
     wf_completion_wait wait;
     _Atomic uint64_t wake_epoch;
     _Atomic unsigned parked_schedulers;
+    /* New announcements set this. Condition-wait notifications clear it under
+     * wait's lock; external endpoints retain per-publication notifications. */
+    _Atomic unsigned wake_needed;
 
     _Atomic uint64_t stat_parks;
     _Atomic uint64_t stat_wake_signals;
@@ -484,6 +487,10 @@ typedef struct wf_completion_runtime {
 
 /* Returns zero on success. */
 int wf_completion_runtime_init(wf_completion_runtime *runtime);
+
+/* Announce a new wait while holding runtime->wait. The caller must recheck
+ * wake_epoch with SC ordering before sleeping and withdraw its count on exit. */
+void wf_completion_announce_park_locked(wf_completion_runtime *runtime);
 
 /* Destroy refuses while any parked scheduler still exists.  It returns zero
  * on success and EBUSY/EINVAL otherwise. */

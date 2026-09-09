@@ -1195,19 +1195,10 @@ int wf_linux_io_uring_park(
         return 0;
     }
     /* Sequentially consistent, and paired with the sequentially consistent
-     * epoch load below: a core publisher raises the epoch and then reads this
-     * count without taking the wait's lock, so this announcement and that read are
-     * what keeps an eventfd wake from being lost. */
-    atomic_fetch_add_explicit(
-        &adapter->runtime->parked_schedulers,
-        1,
-        memory_order_seq_cst
-    );
-    atomic_fetch_add_explicit(
-        &adapter->runtime->stat_parks,
-        1,
-        memory_order_relaxed
-    );
+     * epoch load below: a core publisher raises the epoch and then reads the
+     * wake-needed flag without taking the wait's lock. That flag/recheck pair
+     * keeps an eventfd wake from being lost. */
+    wf_completion_announce_park_locked(adapter->runtime);
     announced = 1;
     if (atomic_load_explicit(
             &adapter->runtime->wake_epoch,

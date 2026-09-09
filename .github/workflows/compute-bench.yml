@@ -61,7 +61,10 @@ jobs:
             echo '## ${{ matrix.target }}: initial FIR runtime screen'
             echo 'Same WF object; normal CLI correctness also checked. Broader workloads, CPU acceptance, and CLI timing remain open.'
             echo '```text'
+            echo 'Long batches'
             cat "$RUNNER_TEMP/formal-runtime/formal-screen/summary.tsv"
+            echo 'First 64 calls of the same processes (overlapping short view)'
+            cat "$RUNNER_TEMP/formal-runtime/formal-screen/short-summary.tsv"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
@@ -98,9 +101,12 @@ jobs:
         run: |
           {
             echo '## x86_64-pc-windows-msvc: initial FIR runtime screen'
-            echo 'Same WF object; normal CLI correctness checked. Historical scheduler/floor and current-source zero-help controls; strong native parallel references, broader workloads, CPU acceptance and CLI timing remain open.'
+            echo 'Same WF object; normal CLI correctness checked. Historical scheduler/floor, frozen previous, current idle-window and identical-image controls; strong native parallel references, broader workloads, CPU acceptance and CLI timing remain open.'
             echo '```text'
+            echo 'Long batches'
             cat "$RUNNER_TEMP/formal-runtime/formal-screen/summary.tsv"
+            echo 'First 64 calls of the same processes (overlapping short view)'
+            cat "$RUNNER_TEMP/formal-runtime/formal-screen/short-summary.tsv"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4

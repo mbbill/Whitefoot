@@ -96,6 +96,7 @@ static pthread_mutex_t wf_prim_wake_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t wf_prim_wake_signal = PTHREAD_COND_INITIALIZER;
 static uint64_t wf_prim_wake_epoch;
 static unsigned wf_prim_sleepers;
+static unsigned wf_prim_wake_needed;
 
 /* Platform item 2 of design §7: one wait and wake primitive.
  *
@@ -135,6 +136,7 @@ void wf_prim_park(uint64_t observed) {
         return;
     }
     pthread_mutex_lock(&wf_prim_wake_lock);
+    __atomic_store_n(&wf_prim_wake_needed, 1u, __ATOMIC_SEQ_CST);
     wf_prim_sleepers += 1u;
     while (__atomic_load_n(&wf_prim_wake_epoch, __ATOMIC_SEQ_CST) == observed) {
         pthread_cond_wait(&wf_prim_wake_signal, &wf_prim_wake_lock);
@@ -147,10 +149,18 @@ void wf_prim_wake(void) {
     if (wf__sched_host_wake()) {
         return;
     }
-    pthread_mutex_lock(&wf_prim_wake_lock);
     __atomic_add_fetch(&wf_prim_wake_epoch, 1u, __ATOMIC_SEQ_CST);
-    if (wf_prim_sleepers != 0u) {
-        pthread_cond_broadcast(&wf_prim_wake_signal);
+    /* A new waiter sets wake_needed before its SC epoch recheck. Already
+     * signalled waiters need no duplicate host signal while they resume. */
+    if (__atomic_load_n(&wf_prim_wake_needed, __ATOMIC_SEQ_CST) == 0u) {
+        return;
+    }
+    pthread_mutex_lock(&wf_prim_wake_lock);
+    if (__atomic_load_n(&wf_prim_wake_needed, __ATOMIC_RELAXED) != 0u) {
+        __atomic_store_n(&wf_prim_wake_needed, 0u, __ATOMIC_SEQ_CST);
+        if (wf_prim_sleepers != 0u) {
+            pthread_cond_broadcast(&wf_prim_wake_signal);
+        }
     }
     pthread_mutex_unlock(&wf_prim_wake_lock);
 }

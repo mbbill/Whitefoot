@@ -197,6 +197,9 @@ Deque ring cells use atomic pointer accesses even for failed steals racing
 cell reuse; thief index reads participate in the owner's sequentially
 consistent claim ordering. Diagnostic counters use single-writer atomic
 updates and permit live reads, without promising a simultaneous pool snapshot.
+Condition-variable wait paths coalesce notifications for already-signaled
+waiters while retaining an SC wake epoch and rearming at every announcement.
+External I/O callbacks retain per-publication notifications.
 These changes preserve ordinary calls and the emitted task-frame ABI. Their
 cross-platform performance qualification remains open in the
 [compute investigation](../research/investigations/compute-runtime/README.md).

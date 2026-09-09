@@ -187,6 +187,7 @@ static SRWLOCK wf_prim_wake_lock = SRWLOCK_INIT;
 static CONDITION_VARIABLE wf_prim_wake_signal = CONDITION_VARIABLE_INIT;
 static uint64_t wf_prim_wake_epoch;
 static unsigned wf_prim_sleepers;
+static unsigned wf_prim_wake_needed;
 
 /* Platform item 2 of design section 7, the Windows half.
  *
@@ -229,6 +230,7 @@ void wf_prim_park(uint64_t observed) {
         return;
     }
     AcquireSRWLockExclusive(&wf_prim_wake_lock);
+    wf_prim_store_u(&wf_prim_wake_needed, 1u, WF_PRIM_SEQ_CST);
     wf_prim_sleepers += 1u;
     while ((uint64_t)InterlockedCompareExchange64(
                (volatile LONG64 *)&wf_prim_wake_epoch,
@@ -256,10 +258,17 @@ void wf_prim_wake(void) {
     if (wf__sched_host_wake()) {
         return;
     }
-    AcquireSRWLockExclusive(&wf_prim_wake_lock);
     (void)InterlockedIncrement64((volatile LONG64 *)&wf_prim_wake_epoch);
-    if (wf_prim_sleepers != 0u) {
-        WakeAllConditionVariable(&wf_prim_wake_signal);
+    /* Same SC announcement/epoch handshake as the POSIX leaf. */
+    if (wf_prim_load_u(&wf_prim_wake_needed, WF_PRIM_SEQ_CST) == 0u) {
+        return;
+    }
+    AcquireSRWLockExclusive(&wf_prim_wake_lock);
+    if (wf_prim_load_u(&wf_prim_wake_needed, WF_PRIM_RELAXED) != 0u) {
+        wf_prim_store_u(&wf_prim_wake_needed, 0u, WF_PRIM_SEQ_CST);
+        if (wf_prim_sleepers != 0u) {
+            WakeAllConditionVariable(&wf_prim_wake_signal);
+        }
     }
     ReleaseSRWLockExclusive(&wf_prim_wake_lock);
 }
