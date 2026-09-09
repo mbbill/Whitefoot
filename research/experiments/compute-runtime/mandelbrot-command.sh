@@ -9,6 +9,8 @@ CC=${CC:-/usr/bin/clang}
 CXX=${CXX:-/usr/bin/clang++}
 mode=${1:-check}
 case "$mode" in build|check|screen|summarize) ;; *) exit 2;; esac
+# This panel owns the policy matrix; inherited tuning must not alter a cell.
+unset WF_SPLIT_WORK
 mkdir -p "$OUT/mandelbrot-command"
 out=$(cd "$OUT/mandelbrot-command" && pwd)
 exe=
@@ -37,6 +39,7 @@ if test "$mode" = build; then
         "$CXX" --version
         printf '%s\n' "native=$scalar_flags $thread_flags" \
             'WF: ordinary --par or --no-overlap with --no-vectorize at default -O2; no private ABI or runtime override' \
+            'policy controls use the identical par image with WF_SPLIT_WORK=60000,240000,0; baseline and replica use the unset default' \
             'native serial: kernel/command reference; native static: persistent equal contiguous partitions, caller participates, pause/yield idle policy, startup and shutdown charged' \
             'static partitions are a strong regular-work reference, not a dynamic scheduling ceiling for skewed work' \
             'oracle mode checks the native point kernel against an independent volatile binary64 recurrence and known orbits; timed commands check an ordered 64-bit digest' \
@@ -85,7 +88,7 @@ if test "$mode" = screen; then
             for workers in $widths; do
                 pass=0
                 while test "$pass" -lt 5; do
-                    order='par replica static'
+                    order='par replica work60000 work240000 nosplit static'
                     if test "$workers" = 1; then order="seq serial $order"; fi
                     if test "$((pass%2))" = 1; then
                         reversed=
@@ -95,11 +98,20 @@ if test "$mode" = screen; then
                     for form in $order; do
                         case "$form" in
                             serial|static) set -- "$out/native$exe" "$form";;
+                            work60000|work240000|nosplit) set -- "$out/par$exe";;
                             *) set -- "$out/$form$exe";;
                         esac
                         set -- "$@" "$shape" "$count" "$limit" "$repetitions" 92821 "$expected"
                         log="$out/screen/raw/$form-w$workers-s$shape-n$count-p$pass.tsv"
-                        WF_WORKERS=$workers "$out/runner$exe" "$@" > "$log"
+                        (
+                            unset WF_SPLIT_WORK
+                            case "$form" in
+                                work60000) export WF_SPLIT_WORK=60000;;
+                                work240000) export WF_SPLIT_WORK=240000;;
+                                nosplit) export WF_SPLIT_WORK=0;;
+                            esac
+                            WF_WORKERS=$workers "$out/runner$exe" "$@"
+                        ) > "$log"
                         awk -F '\t' '{sub(/\r$/, "")} NF!=7 || $1<=0 || $7!=0 {bad=1} END {exit bad || NR!=1}' "$log"
                         printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t' "$shape" "$count" "$limit" "$repetitions" "$pass" "$form" "$workers" >> "$out/screen/processes.tsv"
                         tr -d '\r' < "$log" >> "$out/screen/processes.tsv"
@@ -136,7 +148,9 @@ verify_case() {
     expect_status 0 "$out/seq$exe" "$shape" "$count" "$limit" "$repetitions" "$seed" "$expected"
     expect_status 0 "$out/native$exe" serial "$shape" "$count" "$limit" "$repetitions" "$seed" "$expected"
     for workers in 1 2 4; do
-        WF_WORKERS=$workers expect_status 0 "$out/par$exe" "$shape" "$count" "$limit" "$repetitions" "$seed" "$expected"
+        for split_work in 0 60000 240000 1200000; do
+            WF_WORKERS=$workers WF_SPLIT_WORK=$split_work expect_status 0 "$out/par$exe" "$shape" "$count" "$limit" "$repetitions" "$seed" "$expected"
+        done
         WF_WORKERS=$workers expect_status 0 "$out/native$exe" static "$shape" "$count" "$limit" "$repetitions" "$seed" "$expected"
     done
 }
@@ -160,6 +174,15 @@ for image in par seq; do
     expect_status 2 "$out/$image$exe" 0 0 65537 0 0 0
     expect_status 2 "$out/$image$exe" 0 0 0 4097 0 0
 done
+for invalid in -1 no 1000000001 18446744073709551616; do
+    actual_status=0
+    WF_SPLIT_WORK=$invalid "$out/par$exe" > "$out/check/stdout.txt" 2> "$out/check/stderr.txt" || actual_status=$?
+    test "$actual_status" = 1
+    test ! -s "$out/check/stdout.txt"
+    tr -d '\r' < "$out/check/stderr.txt" > "$out/check/diagnostic.txt"
+    printf 'whitefoot scheduler: WF_SPLIT_WORK must be an integer from 0 through 1000000000\n' > "$out/check/expected-diagnostic.txt"
+    cmp "$out/check/diagnostic.txt" "$out/check/expected-diagnostic.txt"
+done
 if test -z "$exe"; then
     for sanitizer in asan tsan; do
         for shape in 0 1 6; do
@@ -173,4 +196,4 @@ fi
 awk -F '\t' '{sub(/\r$/, "")} NF!=7 || $1<=0 || $2<0 || $3<0 || $4<=0 || $7!=0 {bad=1} END {exit bad || NR!=1}' "$out/check/runner.tsv"
 if "$out/runner$exe" "$out/par$exe" 0 0 0 0 0 0 > "$out/check/runner-wrong.tsv"; then exit 1; fi
 awk -F '\t' '{sub(/\r$/, "")} NF!=7 || $7!=1 {bad=1} END {exit bad || NR!=1}' "$out/check/runner-wrong.tsv"
-printf 'Mandelbrot ordinary-command qualification PASS: 48 input cases, scalar WF/serial/static, workers 1/2/4; %s\n' "$out/check"
+printf 'Mandelbrot ordinary-command qualification PASS: 48 input cases, scalar WF/serial/static, workers 1/2/4, split work 0/60000/240000/1200000; %s\n' "$out/check"

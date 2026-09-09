@@ -271,6 +271,18 @@ retain the existing path. Nonrecursive code is unchanged. This is an explicit
 experiment, not a selected default policy. Its qualification and measurements
 live in the [recursive frontier panel](../research/experiments/compute-runtime/README.md#compiler-generated-recursion-frontier).
 
+The shared runtime's `WF_SPLIT_WORK` setting controls the minimum estimated
+work per chunk of an already permitted compute loop. It is read once before
+the program starts: unset/empty uses 1,200,000, zero declines loop splitting,
+and positive values through 1,000,000,000 tune the threshold. Invalid values
+fail as startup configuration errors. Worker-count bounds and busy-lane
+refusal still apply. This changes no source permission, function ABI, ordinary
+call hand-out or I/O mechanism. It allows the same ordinary CLI executable to
+compare grains without replacing the runtime or changing code placement.
+The default is provisional: static weights cannot distinguish expensive
+data-dependent work from fast exits, and a lower threshold can harm cheap
+loops. Whole-command qualification covers both before selecting a default.
+
 The first multi-operation loop path is deliberately specific: one
 source-derived fixed two-slot bounded batch for the direct staged counted-loop
 shape. On native POSIX completion targets the runtime window is bounded to

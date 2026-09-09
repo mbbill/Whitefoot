@@ -2282,7 +2282,7 @@ impl CountedProgram {
 /// Links one module against the runtime and the observer, and returns the
 /// executable. Linking is the expensive half, so a case that wants several runs
 /// of one module pays for it once.
-fn link_counting_grants(
+pub(super) fn link_counting_grants(
     module: &str,
     directory: &Path,
     observer_source: &str,

@@ -17,7 +17,8 @@ NR==1 {
     if (NF!=14 || $1!~/^[0-6]$/ || ($2!=4096 && $2!=65536) || $3!=256 ||
         $4!=($2==4096?32:2) || $5!~/^[0-4]$/ ||
         ($7!=1 && $7!=2 && $7!=4) || $14!=0) invalid("cell or status at line " NR)
-    if ($6!="par" && $6!="replica" && $6!="static" && $6!="seq" && $6!="serial") invalid("form")
+    if ($6!="par" && $6!="replica" && $6!="static" && $6!="seq" && $6!="serial" &&
+        $6!="work60000" && $6!="work240000" && $6!="nosplit") invalid("form")
     if (($6=="seq" || $6=="serial") && $7!=1) invalid("serial width")
     for (i=8;i<=11;i++) if ($i!~/^[0-9]+$/) invalid("metric")
     if (!(($12~/^[0-9]+$/ && $13~/^[0-9]+$/) || ($12=="NA" && $13=="NA"))) invalid("context switches")
@@ -45,7 +46,7 @@ function compare(shape,count,w,left,right,    p,k,l,r,aa,quiet,available,m,low,h
             l=k SUBSEP left; r=k SUBSEP right
             if(metric==1) {a[p]=wall[l]/wall[r]}
             if(metric==2) {
-                if(cpu[r]==0) {available=0; a[p]=0} else a[p]=cpu[l]/cpu[r]
+                if(cpu[r]==0 || cpu[l]==0) {available=0; a[p]=0} else a[p]=cpu[l]/cpu[r]
             }
             if(metric==3) {a[p]=rss[l]/rss[r]}
         }
@@ -53,7 +54,11 @@ function compare(shape,count,w,left,right,    p,k,l,r,aa,quiet,available,m,low,h
         state="reported"
         if(metric==1 || metric==2) {
             state=quiet?"no-observed-gap":"noisy-open"
-            if(quiet && low>1.05) {state="gap"; gaps++}
+            if(quiet && low>1.05) {
+                state="gap"
+                # Tuning controls are diagnostic, not the selected default.
+                if(left=="par" || left=="seq") gaps++
+            }
         }
         if(!available) state="unavailable-open"
         print shape,count,w,left "/" right,(metric==1?"wall":metric==2?"cpu":"rss"), \
@@ -64,14 +69,19 @@ function compare(shape,count,w,left,right,    p,k,l,r,aa,quiet,available,m,low,h
 END {
     if(bad) exit 2
     if(width!=expected_workers) invalid("missing planned worker count")
-    split("par replica static seq serial",forms," ")
+    split("par replica static work60000 work240000 nosplit seq serial",forms," ")
     for(s=0;s<7;s++) for(n=4096;n<=65536;n*=16) for(w=1;w<=width;w*=2)
-        for(p=0;p<5;p++) for(f=1;f<=(w==1?5:3);f++)
+        for(p=0;p<5;p++) for(f=1;f<=(w==1?8:6);f++)
             if(!((s SUBSEP n SUBSEP w SUBSEP p SUBSEP forms[f]) in wall)) invalid("missing sample")
     print "shape","count","workers","comparison","metric","median_ratio","min_ratio","max_ratio","screen"
     for(s=0;s<7;s++) for(n=4096;n<=65536;n*=16) for(w=1;w<=width;w*=2) {
         compare(s,n,w,"par","static")
         compare(s,n,w,"par","replica")
+        compare(s,n,w,"work60000","par")
+        compare(s,n,w,"work240000","par")
+        compare(s,n,w,"nosplit","par")
+        compare(s,n,w,"work60000","static")
+        compare(s,n,w,"work240000","static")
         if(w==1) compare(s,n,w,"seq","serial")
     }
     # This is an initial regression screen, not full performance qualification.

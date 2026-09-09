@@ -1076,8 +1076,8 @@ mode also checks the optimized native point kernel pointwise; timed WF and
 native commands compare the ordered digest, which is not a collision-free
 proof. Input generation, zero-initialized output allocation, digest work,
 startup and shutdown are inside the whole-process measurement on both sides.
-The one-lane native path still pays a few pool atomics per batch; it is not
-claimed as the best possible serial implementation. The static pool spins and
+The one-lane native path renders directly, without per-batch pool atomics;
+its one-time team construction/destruction remains charged. The static pool spins and
 yields while idle; its CPU cost is charged. It is a regular-work reference,
 not a dynamic scheduling ceiling for skew. SIMD, reassociation, contraction,
 fast math and LTO are disabled for the comparison.
@@ -1093,8 +1093,10 @@ the same measurement. They implement no WF compiler/runtime capability.
 The correctness target `check-mandelbrot-command` is part of canonical research
 checks: 48 input cases cover seven distributions, zero/odd/larger counts,
 iteration limits, repeated calls and seeds including u64 maximum, with WF
-sequential/parallel and native serial/static at widths 1/2/4. Wrong digests and
-invalid arguments must fail. Native static also runs under ASan/UBSan and TSan
+sequential/parallel and native serial/static at widths 1/2/4. Parallel WF runs
+also cover `WF_SPLIT_WORK=0/60000/240000/1200000`; invalid startup settings must
+fail before the command body. Wrong digests and invalid arguments must fail.
+Native static also runs under ASan/UBSan and TSan
 on POSIX. Windows requires actual execution in CI; POSIX sanitizers are not
 evidence about its native build.
 
@@ -1102,15 +1104,24 @@ The timing matrix uses shapes 0–6 (plane, boundary, interior-first, interleave
 all-interior, all-exterior, interior-last), counts 4,096/65,536, limit 256 and
 32/2 batches respectively: 131,072 points per process. It runs five alternating
 passes with matching requested worker counts 1/2/4 where available, plus a
-byte-identical WF replica. A four-worker-capable host produces 770 processes.
+byte-identical WF replica. The `work60000`, `work240000` and `nosplit` forms
+execute the **same par image** with `WF_SPLIT_WORK=60000`, `240000` and `0`.
+Inherited split tuning is removed from the baseline and native commands.
+These values distinguish a zero-level default and budgets for up to two or eight chunks
+at 4,096 points/W4, while also exposing over-splitting on cheap exits. They
+are diagnostic controls, not selected defaults. A four-worker-capable host
+produces 1,400 processes; the initial panel before these controls had 770.
 Raw process samples, oracle inputs/digests, tool flags, source copies, host
 metadata and executable/compiler hashes are artifacts. Requested counts do not
 prove every worker executed a task; runtime attribution needs separate evidence.
 
 The initial screen reports per-cell paired median/min/max wall, CPU and RSS
 ratios. A wall/CPU **gap** requires all five ratios above 1.05 and all five WF
-wall A/A ratios inside [0.95, 1.05]; gaps fail the screen after all measurements.
-Noisy cells and unavailable CPU ratios remain open. RSS is descriptive. This
+wall A/A ratios inside [0.95, 1.05]. Gaps in the default WF/native comparisons
+and the original WF A/A comparison fail the screen after all measurements;
+tuning comparisons remain diagnostic.
+Noisy cells and CPU ratios with a zero accounting sample on either side remain
+open. RSS is descriptive. This
 5% rule is an initial diagnostic criterion selected after the first local
 exploratory cohort and before CI, not a pre-registered claim about that cohort.
 Five processes do not establish population tails, and a screen without gaps

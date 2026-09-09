@@ -116,6 +116,10 @@ public:
     }
 
     void run(const Points &points) {
+        if (lanes_ == 1) {
+            render(points, 0, 1);
+            return;
+        }
         points_ = points;
         remaining_.store(lanes_ - 1, std::memory_order_relaxed);
         generation_.fetch_add(1, std::memory_order_release);
@@ -188,8 +192,18 @@ int main(int argc, char **argv) {
     if (args[0] > 6 || args[1] > 1048576 || args[2] > 65536 || args[3] > 4096) return 2;
     std::uint64_t lanes = 1;
     if (!reference && !serial) {
+#ifdef _WIN32
+        char *setting = nullptr;
+        std::size_t length = 0;
+        if (_dupenv_s(&setting, &length, "WF_WORKERS") != 0) return 2;
+#else
         const char *setting = std::getenv("WF_WORKERS");
-        if (setting && (!number(setting, lanes) || lanes == 0 || lanes > 64)) return 2;
+#endif
+        const bool valid = !setting || (number(setting, lanes) && lanes != 0 && lanes <= 64);
+#ifdef _WIN32
+        std::free(setting);
+#endif
+        if (!valid) return 2;
     }
     const auto actual = checksum(reference, static_cast<unsigned>(lanes), args[0],
                                  static_cast<std::size_t>(args[1]), args[2], args[3], args[4]);

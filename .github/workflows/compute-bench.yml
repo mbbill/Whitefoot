@@ -79,6 +79,7 @@ jobs:
             echo '## ${{ matrix.target }}: scalar Mandelbrot ordinary CLI'
             echo 'Whole-process wall, CPU and peak memory; five paired processes per cell. Ratios above one favor the reference.'
             echo 'A gap means all five ratios exceed 1.05 with all wall A/A ratios inside [0.95, 1.05]. Noisy cells remain open; a clean screen is not full goal qualification.'
+            echo 'WF_SPLIT_WORK controls share the exact par image. Their ratios are diagnostic; default WF/native and original WF A/A gaps fail this screen.'
             echo 'Static partitions are a regular-work control, not a skew scheduling ceiling. CPU includes native spinning; memory is descriptive.'
             echo '```text'
             cat "$RUNNER_TEMP/mandelbrot-command/mandelbrot-command/screen/summary.tsv"

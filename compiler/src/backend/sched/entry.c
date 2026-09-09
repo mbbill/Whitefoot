@@ -121,6 +121,17 @@ __attribute__((weak)) size_t wf__floor_stack_bytes(void) {
 #define WF_PAR_SPLIT_OVERSUBSCRIBE 16
 #define WF_PAR_SPLIT_WORK_PER_CHUNK 1200000
 
+/* Process-wide policy, fixed before workers start. A static body estimate
+ * cannot distinguish an expensive data-dependent loop from its early exit.
+ * WF_SPLIT_WORK exposes the minimum estimated work per chunk for same-image
+ * qualification; zero declines loop splitting. It changes neither the
+ * permission nor the task ABI. The bounded descent and busy-lane refusal
+ * still apply at every positive value. The default remains the measured
+ * historical value until broader ordinary-command evidence selects another.
+ * The ceiling fits signed long on every supported host. */
+#define WF_PAR_SPLIT_WORK_CEILING 1000000000ul
+static unsigned long wf__sched_split_work = WF_PAR_SPLIT_WORK_PER_CHUNK;
+
 /* The one rule every startup setting of this runtime follows.
  *
  * Unset or empty means "this setting places no instruction", and each caller
@@ -459,6 +470,7 @@ int wf__sched_start(void) {
         (void)wf__sched_setting("WF_IO_HELPERS", ceiling, &helpers);
     }
     (void)wf__sched_setting("WF_SCHED_REPORT", 1ul, &wf__sched_report_wanted);
+    (void)wf__sched_setting("WF_SPLIT_WORK", WF_PAR_SPLIT_WORK_CEILING, &wf__sched_split_work);
     requested = wf__sched_requested_lanes();
     threads = requested >= 2 ? (unsigned)requested : 1u;
     /* The stack reservation is made here, at the core's entry, before the
@@ -621,7 +633,8 @@ unsigned long wf__par_split_budget(unsigned long span, unsigned long weight) {
     unsigned long affordable;
     unsigned long chunks;
     unsigned long budget;
-    if (lanes < 2) {
+    const unsigned long work_per_chunk = wf__sched_split_work;
+    if (lanes < 2 || work_per_chunk == 0) {
         return 0;
     }
     if (lane != NULL) {
@@ -637,10 +650,10 @@ unsigned long wf__par_split_budget(unsigned long span, unsigned long weight) {
     want = (unsigned long)lanes * WF_PAR_SPLIT_OVERSUBSCRIBE;
     /* `span * weight / WORK_PER_CHUNK`, computed so a span near the whole u64
      * range cannot wrap into a small answer. */
-    if (weight >= (unsigned long)WF_PAR_SPLIT_WORK_PER_CHUNK) {
+    if (weight >= work_per_chunk) {
         affordable = span;
     } else {
-        affordable = span / (((unsigned long)WF_PAR_SPLIT_WORK_PER_CHUNK + weight - 1) / weight);
+        affordable = span / ((work_per_chunk + weight - 1) / weight);
     }
     chunks = (want < affordable) ? want : affordable;
     /* The descent is the base-two logarithm of the chunk count, so the depth
