@@ -554,6 +554,72 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
 }
 
 #[test]
+fn ordinary_box_owner_transfer_keeps_values_and_release_across_two_helpers() {
+    let source = br#"struct Observed {
+  previous: u64;
+  current: u64;
+}
+
+fn exchange['s](slot: &uniq Box<'s, u64>, incoming: own Box<'s, u64>) -> previous: own Box<'s, u64> reads(slot), writes(slot) {
+  let displaced = replace deref(slot) = move incoming;
+  return move displaced;
+}
+
+fn observe['s](owner: own Box<'s, u64>, incoming: own Box<'s, u64>, store: &uniq Heap<'s>) -> result: own Observed reads(owner, incoming), writes(owner, store) {
+  let previous_value = 0_u64;
+  region {
+    let previous = exchange(slot: &uniq owner, incoming: move incoming);
+    set previous_value = deref(previous);
+  }
+  let current_value = deref(owner);
+  return Observed(previous: previous_value, current: current_value);
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    match heap_box(store: &uniq heap, value: 11_u64) {
+      Err(error: back) => {
+        return exit_status(code: 70_u8);
+      }
+      Ok(value: owner) => {
+        match heap_box(store: &uniq heap, value: 22_u64) {
+          Err(error: back) => {
+            return exit_status(code: 71_u8);
+          }
+          Ok(value: incoming) => {
+            let seen = observe(owner: move owner, incoming: move incoming, store: &uniq heap);
+            if seen.previous != 11_u64 {
+              return exit_status(code: 1_u8);
+            }
+            if seen.current != 22_u64 {
+              return exit_status(code: 2_u8);
+            }
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        let observed = retain_calls(&module)
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        let host = allocation_observer(2, 0);
+        let output = compile_link_and_run(&observed, Some(&host), &[]);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(output.stdout, b"A1;A2;F1;F2;");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+}
+
+#[test]
 fn borrowed_box_replacement_updates_the_owner_and_releases_each_cell_once() {
     let source = br#"fn exchange['s](slot: &uniq Box<'s, u64>, incoming: own Box<'s, u64>) -> previous: own Box<'s, u64> reads(slot), writes(slot) {
   let displaced = replace deref(slot) = move incoming;

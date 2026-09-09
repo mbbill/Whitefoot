@@ -10,8 +10,8 @@ use super::super::super::super::goal::{
     EvaluatedValueOccurrence, GoalDatum, GoalExpression, GoalProjection,
 };
 use super::super::super::super::model::{
-    CheckedExpression, CheckedMode, CheckedNominalKind, CheckedResultBorrow, CheckedSliceOrigin,
-    CheckedStateOrigins, CheckedType, LoanStrength,
+    CheckedExpression, CheckedMode, CheckedNominalKind, CheckedResultBorrow,
+    CheckedResultStateOrigin, CheckedSliceOrigin, CheckedStateOrigins, CheckedType, LoanStrength,
 };
 use super::super::super::borrows::{
     AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, SliceInfo, TemporaryLoan, places_overlap,
@@ -328,6 +328,60 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let result = self.substitute_result_type(signature.result, signature, &actual_regions)?;
         let result_mode =
             self.substituted_mode(signature.result_mode, signature, &actual_regions)?;
+        // [FN-1] all components read one entry snapshot. Effects were projected
+        // above; the returned value keeps this image after referents change.
+        let result_state = self
+            .result_state_origins
+            .borrow()
+            .get(target.0 as usize)
+            .cloned()
+            .unwrap_or(CheckedResultStateOrigin::Unknown);
+        let result_origins = self
+            .type_carries_identity(result)?
+            .then(|| CheckedStateOrigins::instantiate(&result_state, &state_origins));
+        if !self.deriving_result_state_origin.get() {
+            let summaries = self
+                .borrowed_state_origins
+                .borrow()
+                .get(target.0 as usize)
+                .cloned()
+                .unwrap_or_default();
+            let mut updates = Vec::new();
+            for summary in summaries {
+                let ordinal = summary.parameter as usize;
+                let image = CheckedStateOrigins::instantiate(&summary.origin, &state_origins);
+                let before = state_origins.get(ordinal).and_then(Option::as_ref);
+                if !image.unknown && before == Some(&image) {
+                    continue;
+                }
+                let borrow = checked_borrows
+                    .get(ordinal)
+                    .and_then(Option::as_ref)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let Some(fields) = self
+                    .state_fields_of_place(&borrow.place, bindings)?
+                    .filter(|_| borrow.exact_place && !image.unknown)
+                else {
+                    return self
+                        .unsupported(crate::UnsupportedSemanticFeature::OwnerStateRouting, node);
+                };
+                updates.push((borrow.place.root, fields, image));
+            }
+            // OWN-5 already established disjoint exclusive actuals. Resolve
+            // every image before installing any of them into caller storage.
+            for (root, fields, image) in updates {
+                let local = bindings
+                    .get_mut(&root)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                local.state_origins = Some(
+                    local
+                        .state_origins
+                        .take()
+                        .unwrap_or_else(CheckedStateOrigins::fresh)
+                        .replace_path(&fields, Some(image)),
+                );
+            }
+        }
         let slice = self.substitute_slice_result(signature, result, &checked_slices)?;
         let slice_origins = slice
             .as_ref()
@@ -388,6 +442,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(TypedExpression {
             expression: CheckedExpression::UserCall {
                 function: target,
+                state_origins: result_origins.map(Box::new),
                 call,
                 argument_nodes,
                 arguments,
@@ -1317,7 +1372,7 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
                         access,
                         node,
                     )?;
-                    for path in self.effect_paths_for_place(&place, bindings)? {
+                    for path in self.effect_paths_for_place(node, &place, bindings)? {
                         actual_paths.push(path);
                     }
                 } else if let CheckedType::Slice { strength, .. } = parameter.ty {
@@ -1350,18 +1405,29 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
                     }
                     for mut place in slice.effect_places() {
                         place.extend_fields(&formal.fields);
-                        actual_paths.extend(self.effect_paths_for_place(&place, bindings)?);
+                        actual_paths.extend(self.effect_paths_for_place(node, &place, bindings)?);
                     }
                 }
 
-                for place in argument_places.get(index).into_iter().flatten() {
+                for place in argument_places
+                    .get(index)
+                    .into_iter()
+                    .flatten()
+                    .filter(|_| {
+                        parameter.mode == CheckedMode::Own
+                            && state_origins.get(index).and_then(Option::as_ref).is_none()
+                    })
+                {
                     let mut path = self.state_path(place, bindings)?;
                     path.fields.extend_from_slice(&formal.fields);
                     actual_paths.push(path);
                 }
                 if let Some(origins) = state_origins.get(index).and_then(Option::as_ref) {
                     if origins.unknown && !self.deriving_result_state_origin.get() {
-                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                        return self.unsupported(
+                            crate::UnsupportedSemanticFeature::OwnerStateRouting,
+                            node,
+                        );
                     }
                     for origin in origins.clone().projected(&formal.fields).formals {
                         actual_paths.push(origin.source);

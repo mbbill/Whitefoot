@@ -1291,6 +1291,84 @@ command fn main() -> status: own ExitStatus pure {
     );
 }
 
+#[test]
+fn entry_dead_owner_reinitialization_has_no_displaced_owner_write() {
+    let source = r#"fn reuse(file: own ReadFile, incoming: own ReadFile) -> (current: own ReadFile, previous: own ReadFile) pure {
+  let previous = move file;
+  set file = move incoming;
+  return move file, move previous;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "an entry-dead binding initializes without writing its displaced owner: {outcome:?}"
+        );
+    });
+    let spurious = source.replacen(" pure {", " writes(file) {", 1);
+    assert_rule_kind(spurious.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { extra, .. }
+            if extra == &["writes(file)"])
+    });
+}
+
+#[test]
+fn same_statement_owner_readout_retains_its_atomic_commit_write() {
+    let source = r#"fn relay(file: own ReadFile) -> result: own ReadFile pure {
+  return move file;
+}
+
+fn rebind(file: own ReadFile) -> result: own ReadFile reads(file), writes(file) {
+  set file = relay(file: move file);
+  return move file;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "same-statement read-out and write remain one atomic exchange: {outcome:?}"
+        );
+    });
+    let missing = source.replacen("reads(file), writes(file)", "reads(file)", 1);
+    assert_rule_kind(missing.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
+            if missing == &["writes(file)"])
+    });
+}
+
+#[test]
+fn a_prior_rhs_borrow_cannot_retarget_a_later_atomic_readout() {
+    assert_rule_kind(
+        br#"fn install(target: &uniq ReadFile, incoming: own ReadFile) -> result: own unit reads(target), writes(target) {
+  let previous = replace deref(target) = move incoming;
+  return unit;
+}
+
+fn later(file: &uniq ReadFile, incoming: own ReadFile) -> result: own unit reads(file), writes(file) {
+  let marker = unit;
+  region {
+    set (marker, deref(file)) = install(target: &uniq deref(file), incoming: move incoming), move deref(file);
+  }
+  return marker;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Own5,
+        |kind| matches!(kind, SemanticIssueKind::BorrowConflict),
+    );
+}
+
 /// [LIV-2] after its read-out the target is dead for the remainder of the
 /// right-hand side.
 ///

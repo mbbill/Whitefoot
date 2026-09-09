@@ -342,7 +342,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
         self.check_mutation_target_class(node, ty, form)?;
         let mut effects = EffectSet::NONE;
-        for path in self.effect_paths_for_place(&resolved, bindings)? {
+        for path in self.effect_paths_for_place(node, &resolved, bindings)? {
             effects.add_write(path.clone());
             if form.is_replace() {
                 effects.add_read(path);
@@ -1485,7 +1485,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if (matches!(access_kind, AccessKind::Read) || read_out)
                     && !Self::checked_type_is_loan_bearing(ty)
                 {
-                    for path in self.effect_paths_for_place(&access, bindings)? {
+                    for path in self.effect_paths_for_place(use_node, &access, bindings)? {
                         effects.add_read(path);
                     }
                 }
@@ -1748,7 +1748,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         )?;
         self.check_mutation_target_class(node, ty, form)?;
         let mut effects = EffectSet::NONE;
-        for path in self.effect_paths_for_place(&resolved, bindings)? {
+        for path in self.effect_paths_for_place(node, &resolved, bindings)? {
             effects.add_write(path.clone());
             if form.is_replace() {
                 // [SET-2, EFF-2]: the commit is one read and one write of

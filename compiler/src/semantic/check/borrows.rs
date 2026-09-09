@@ -196,6 +196,17 @@ impl ResolvedPlace {
             })
             .collect()
     }
+
+    /// An exact static product path, unlike the enclosing effect-path prefix.
+    pub(super) fn state_fields(&self) -> Option<Vec<u32>> {
+        self.storage_path
+            .iter()
+            .map(|step| match step {
+                PlaceProjection::Field(field) => Some(*field),
+                PlaceProjection::Deref | PlaceProjection::Subscript(_) => None,
+            })
+            .collect()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -426,8 +437,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// formal identities. Fresh local owners yield no enclosing effect;
     /// moved affine owners retain their structural formal sources; a scalar
     /// borrow parameter falls back to its direct parameter place.
+    /// An unresolved owner image reports the capability gap at the operation
+    /// that needs its effect paths, without rejecting mere value transport.
     pub(super) fn effect_paths_for_place(
         &self,
+        node: NodeId,
         place: &ResolvedPlace,
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<Vec<CheckedStatePath>, CheckStop> {
@@ -440,7 +454,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         if let Some(origins) = &binding.state_origins {
             if origins.unknown && !self.deriving_result_state_origin.get() {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
+                return self.unsupported(UnsupportedSemanticFeature::OwnerStateRouting, node);
             }
             let mut paths = origins
                 .clone()

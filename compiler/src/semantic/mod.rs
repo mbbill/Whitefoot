@@ -1327,6 +1327,8 @@ pub enum UnsupportedSemanticFeature {
     BoxReferentMove,
     /// An ownership-state join not yet covered by the selected finite rule.
     OwnershipJoin,
+    /// A changed owner image whose exact caller storage cannot be represented.
+    OwnerStateRouting,
     /// Repeated match arms, whose meaning the active specification does not select.
     DuplicateMatchArm,
     /// An OP-1 family outside the implemented scalar and nominal-tag families.

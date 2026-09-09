@@ -773,7 +773,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     AccessKind::Read,
                     atoms[0],
                 )?;
-                for path in self.effect_paths_for_place(&container.resolved, bindings)? {
+                for path in self.effect_paths_for_place(atoms[0], &container.resolved, bindings)? {
                     effects.add_read(path);
                 }
                 // [EFF-2] an offset occurring inside the measured place is
@@ -789,7 +789,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     AccessKind::Read,
                     atoms[0],
                 )?;
-                for path in self.effect_paths_for_place(&buffer.resolved, bindings)? {
+                for path in self.effect_paths_for_place(atoms[0], &buffer.resolved, bindings)? {
                     effects.add_read(path);
                 }
             }
@@ -802,7 +802,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         AccessKind::Read,
                         atoms[0],
                     )?;
-                    for path in self.effect_paths_for_place(&descriptor.place, bindings)? {
+                    for path in
+                        self.effect_paths_for_place(atoms[0], &descriptor.place, bindings)?
+                    {
                         effects.add_read(path);
                     }
                 }
@@ -816,7 +818,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     )?;
                 }
                 for place in slice.slice.effect_places() {
-                    for path in self.effect_paths_for_place(&place, bindings)? {
+                    for path in self.effect_paths_for_place(atoms[0], &place, bindings)? {
                         effects.add_read(path);
                     }
                 }
@@ -959,7 +961,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             node,
         )?;
         let mut effects = place.offsets.effects;
-        for path in self.effect_paths_for_place(&place.resolved, bindings)? {
+        for path in self.effect_paths_for_place(node, &place.resolved, bindings)? {
             effects.add_read(path);
         }
         let mut accesses = place.offsets.accesses;
@@ -1203,7 +1205,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 target_domain: CheckedTargetDomainObligation::ElementAddress,
             },
             CheckedIndexedPlace::Buffer(buffer) => {
-                for path in self.effect_paths_for_place(&buffer.resolved, bindings)? {
+                for path in self.effect_paths_for_place(use_node, &buffer.resolved, bindings)? {
                     effects.add_read(path);
                 }
                 CheckedExpression::BufferIndex {
@@ -1219,12 +1221,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedIndexedPlace::Slice(slice) => {
                 if let Some(descriptor) = &slice.descriptor {
-                    for path in self.effect_paths_for_place(&descriptor.place, bindings)? {
+                    for path in
+                        self.effect_paths_for_place(use_node, &descriptor.place, bindings)?
+                    {
                         effects.add_read(path);
                     }
                 }
                 for place in slice.slice.effect_places() {
-                    for path in self.effect_paths_for_place(&place, bindings)? {
+                    for path in self.effect_paths_for_place(use_node, &place, bindings)? {
                         effects.add_read(path);
                     }
                 }
@@ -1312,7 +1316,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 node,
             )?;
             let mut effects = container.offsets.effects;
-            for path in self.effect_paths_for_place(&container.resolved, bindings)? {
+            for path in self.effect_paths_for_place(node, &container.resolved, bindings)? {
                 effects.add_write(path.clone());
                 if form.is_replace() {
                     effects.add_read(path);
@@ -1488,7 +1492,7 @@ view",
                 )
             }
             CheckedIndexedPlace::Buffer(buffer) => {
-                for path in self.effect_paths_for_place(&buffer.resolved, bindings)? {
+                for path in self.effect_paths_for_place(node, &buffer.resolved, bindings)? {
                     effects.add_write(path.clone());
                     if form.is_replace() {
                         // [SET-2, EFF-2]: one read and one write of the
@@ -1520,7 +1524,7 @@ view",
                 // child reborrow of it lives.
                 self.check_child_reborrow_freeze(bindings, &slice.slice.effect_places(), node)?;
                 for origin in slice.slice.effect_places() {
-                    for path in self.effect_paths_for_place(&origin, bindings)? {
+                    for path in self.effect_paths_for_place(node, &origin, bindings)? {
                         effects.add_write(path.clone());
                         if form.is_replace() {
                             effects.add_read(path);

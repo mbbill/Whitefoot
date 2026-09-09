@@ -211,8 +211,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 continue;
             }
             let revives = self.commit_revives_binding(*target_node, bindings)?;
-            let mutation =
+            let mut mutation =
                 self.check_set_target(function, *target_node, bindings, scope.loops.len())?;
+            if revives {
+                // An entry-dead complete binding has no current owner whose
+                // state this initialization could write [LIV-2, EFF-2]. Its
+                // bare target evaluates no offsets or other expressions;
+                // ordinary target admission, the RHS and the commit kill
+                // still apply. Same-statement read-out keeps its own write.
+                mutation.effects = EffectSet::NONE;
+            }
             for earlier in &targets {
                 if self.commit_targets_overlap(&earlier.mutation, &mutation) {
                     return self.issue_node(
@@ -295,7 +303,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // attributes its initialization.
             let place = ResolvedPlace::fields(declaration, Vec::new());
             let mut target_effects = EffectSet::NONE;
-            for path in self.effect_paths_for_place(&place, bindings)? {
+            for path in self.effect_paths_for_place(target_node, &place, bindings)? {
                 target_effects.add_write(path);
             }
             let mutation = MutationTarget {
@@ -578,23 +586,49 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         values: &[super::super::TypedExpression],
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
     ) -> Result<(), CheckStop> {
+        // Every RHS was evaluated before the atomic commit. In particular a
+        // result list's ordinals all use the one returned image, and installing
+        // one field cannot change the origin substituted for another field.
+        let images = values
+            .iter()
+            .map(|value| self.state_origins_of_value(value, bindings))
+            .collect::<Result<Vec<_>, _>>()?;
         for (index, target) in targets.iter().enumerate() {
-            if !self.commit_reinitializes_binding(target) {
+            if self.commit_reinitializes_binding(target) {
+                bindings
+                    .get_mut(&target.mutation.declaration)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                    .live = true;
+            }
+            if !self.type_carries_identity(target.mutation.target.ty())? {
                 continue;
             }
-            let origins = match values.get(index) {
-                Some(value) if values.len() == targets.len() => {
-                    self.state_origins_of_value(value, bindings)?
-                }
-                _ => None,
+            let image = if values.len() == targets.len() {
+                images.get(index).cloned().flatten()
+            } else {
+                let field =
+                    u32::try_from(index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+                images
+                    .first()
+                    .cloned()
+                    .flatten()
+                    .map(|image| image.projected(&[field]))
+            };
+            let Some(fields) = self.state_fields_of_place(&target.mutation.place, bindings)? else {
+                // Owning indirection and indexed contents need separate
+                // allocation/element identities; this slice changes neither.
+                continue;
             };
             let local = bindings
-                .get_mut(&target.mutation.declaration)
+                .get_mut(&target.mutation.place.root)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            local.live = true;
-            if origins.is_some() {
-                local.state_origins = origins;
-            }
+            local.state_origins = Some(
+                local
+                    .state_origins
+                    .take()
+                    .unwrap_or_else(crate::semantic::model::CheckedStateOrigins::fresh)
+                    .replace_path(&fields, image),
+            );
         }
         Ok(())
     }

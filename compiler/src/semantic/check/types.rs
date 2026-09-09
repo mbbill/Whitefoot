@@ -10,9 +10,9 @@ use crate::{
 
 use super::super::model::{
     CheckedConst, CheckedConstant, CheckedConstantId, CheckedElement, CheckedExpression,
-    CheckedFlatElement, CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedResultStateOrigin,
-    CheckedStateOrigins, CheckedStatePath, CheckedStatement, CheckedType, CheckedValue,
-    ConstOperation, FloatType, IntegerType, LoanStrength, evaluate_const_operation,
+    CheckedFlatElement, CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedStateOrigins,
+    CheckedStatePath, CheckedStatement, CheckedType, CheckedValue, ConstOperation, FloatType,
+    IntegerType, LoanStrength, evaluate_const_operation,
 };
 use super::floats::parse_float_literal;
 use super::generics::GenericSubstitution;
@@ -67,13 +67,6 @@ impl StateOriginResolution {
             (Self::Finite(left), Self::Finite(right)) => left.union(&right),
             (Self::Absent, Self::Absent) | (Self::Finite(_), Self::Absent) => {}
         }
-    }
-
-    fn projected(mut self, fields: &[u32]) -> Self {
-        if let Self::Finite(origins) = self {
-            self = Self::Finite(origins.projected(fields));
-        }
-        self
     }
 }
 
@@ -1138,6 +1131,36 @@ extent's region is one the caller must choose, so it is written at every positio
         Ok(!self.type_state_leaf_paths(ty)?.is_empty())
     }
 
+    /// The current finite owner image has ordinary roots and static product
+    /// fields. Enum payloads, indexed elements, and owning referents need
+    /// their distinct value/storage representation before a strong update.
+    pub(super) fn state_fields_of_place(
+        &self,
+        place: &super::borrows::ResolvedPlace,
+        bindings: &HashMap<crate::DeclarationId, LocalBinding>,
+    ) -> Result<Option<Vec<u32>>, CheckStop> {
+        let Some(fields) = place.state_fields() else {
+            return Ok(None);
+        };
+        let mut ty = bindings
+            .get(&place.root)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            .ty;
+        for field in &fields {
+            let CheckedType::Nominal(id) = ty else {
+                return Ok(None);
+            };
+            let CheckedNominalKind::Struct { fields, .. } = &self.nominal(id)?.kind else {
+                return Ok(None);
+            };
+            ty = fields
+                .get(*field as usize)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                .ty;
+        }
+        Ok(Some(fields))
+    }
+
     /// Follows a checked value through moves, borrows, and closed-world call
     /// summaries to every direct formal path which may supply its state leaves.
     pub(super) fn state_origins_of_value(
@@ -1166,7 +1189,10 @@ extent's region is one the caller must choose, so it is written at every positio
         } else {
             None
         };
-        let origins = match self.expression_state_origins(&value.expression) {
+        let origins = match value.borrow.as_ref().and(rooted.clone()).map_or_else(
+            || self.expression_state_origins(&value.expression),
+            StateOriginResolution::Finite,
+        ) {
             StateOriginResolution::Absent => {
                 rooted.map_or(StateOriginResolution::Absent, StateOriginResolution::Finite)
             }
@@ -1251,6 +1277,9 @@ extent's region is one the caller must choose, so it is written at every positio
     }
 
     fn expression_state_origins(&self, expression: &CheckedExpression) -> StateOriginResolution {
+        if self.is_copy_type(expression.ty()).unwrap_or(false) {
+            return StateOriginResolution::Absent;
+        }
         match expression {
             CheckedExpression::Binding { state_origins, .. }
             | CheckedExpression::Project { state_origins, .. }
@@ -1269,49 +1298,10 @@ extent's region is one the caller must choose, so it is written at every positio
                 }
                 None => StateOriginResolution::Unknown(call.clone()),
             },
-            CheckedExpression::UserCall {
-                function,
-                arguments,
-                call,
-                ..
-            } => match self
-                .result_state_origins
-                .borrow()
-                .get(function.0 as usize)
+            CheckedExpression::UserCall { state_origins, .. } => state_origins
+                .as_deref()
                 .cloned()
-            {
-                Some(CheckedResultStateOrigin::NoState) => StateOriginResolution::Absent,
-                Some(CheckedResultStateOrigin::Finite { formals }) => {
-                    let finite = CheckedStateOrigins {
-                        unknown: false,
-                        formals: Vec::new(),
-                    };
-                    let mut resolved = StateOriginResolution::Finite(finite);
-                    for formal in formals {
-                        let Some(argument) = arguments.get(formal.parameter as usize) else {
-                            return StateOriginResolution::Unknown(call.clone());
-                        };
-                        let mut mapped = self
-                            .expression_state_origins(argument)
-                            .projected(&formal.parameter_fields);
-                        if let StateOriginResolution::Finite(origins) = &mut mapped {
-                            for origin in &mut origins.formals {
-                                let mut value_fields = formal.result_fields.clone();
-                                value_fields.extend_from_slice(&origin.value_fields);
-                                origin.value_fields = value_fields;
-                                if formal.result_variant.is_some() {
-                                    origin.variant = formal.result_variant;
-                                }
-                            }
-                        }
-                        resolved.union(mapped);
-                    }
-                    resolved
-                }
-                Some(CheckedResultStateOrigin::Unknown) | None => {
-                    StateOriginResolution::Unknown(call.clone())
-                }
-            },
+                .map_or(StateOriginResolution::Absent, StateOriginResolution::Finite),
             CheckedExpression::ConstructStruct { fields, .. } => {
                 let mut origins = StateOriginResolution::Absent;
                 for (ordinal, field) in fields.iter().enumerate() {

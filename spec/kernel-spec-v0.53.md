@@ -1,6 +1,6 @@
-# Kernel Specification v0.54
+# Kernel Specification v0.53
 
-Status: ACTIVE v0.54
+Status: ACTIVE v0.53
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives. These bytes are this version's identity; nothing else records it.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
@@ -624,7 +624,6 @@ A region-bearing target type — `Slice<'r, U>` or `arena<'r, U>` at any depth o
 The right-hand side must produce exactly `own T` under the [TYPE-5] judgment stated there.
 On successful revalidation, the commit performs one read of the previous value into x's storage and one write of the replacement value into resolved(p), with no writer-observable program point between them: at every program point the place holds exactly one valid owner, and no temporary uninitialized hole, vacancy state, or move-from-target residue exists.
 The commit is not a consuming use of the target root under [OWN-1]: the root binding remains live, no partial-move death occurs, and the moved-out value's sole owner is x, an ordinary `own T` binding thereafter with the ordinary [OWN-1] and [STOR-3] lifecycle.
-For a concretely affine target, the previous value carries its existing state identity into x, and the replacement carries its existing state identity into the target; neither transfer changes the target's storage address or its loan relationships [EFF-2]. A copy instantiation of an admitted affine generic uses [EFF-2]'s copy-observation and copy-write identity rules instead [FN-2].
 Through a live usable `&uniq` holder the commit is the sole exception to [OWN-5]'s prohibition on moving content reached through a borrow: the exchange leaves the far-side owner owning exactly one valid T in that place at every program point, and exclusivity already excludes every other observer for the statement's duration.
 A commit through a shared holder is never admitted, and a suspended holder is not usable [OWN-5].
 Under [EFF-2]'s attribution the commit is one read and one write of the target's ultimate storage origin.
@@ -832,7 +831,6 @@ This is a hard error citing LIV-2 at the second such target `place`, carrying bo
 
 A target that names a binding in scope keeps that binding's [ENT-2] term and is a commit, never a declaration [TYPE-6].
 Under [EFF-2]'s attribution the statement exhibits one write of each target's ultimate storage origin, and the right-hand side's own row in addition, which carries the read of every target the right-hand side reads out.
-The sole exception is a complete bare binding already dead on entry to this statement: its commit initializes the new owner and exhibits no write of a previous owner's state, because no previous owner remains there. This exception preserves the right-hand side's effects, the commit's kill, the binding's term, and the liveness judgment. A target read out by this same statement was live on entry and keeps the ordinary write contribution.
 For a bare binding, a field selection, or a `deref` the ultimate storage origin is that place's own storage; for a subscript `P[i]` it is the descriptor storage of `P[i]` and none of `P`'s own [MSR-2].
 Each commit is an [ENT-5] kill event over that storage exactly as [SET-1]'s single commit is, and one statement's commits apply on one edge, after the right-hand side's own events and before any relation the right-hand side publishes into its targets [ENT-3.S12, CALL-6].
 A commit derives no drop, release, finalizer, or cleanup edge [STOR-3]: a copy target's previous value needs none, and an affine target's previous value has already left through the read-out or was already gone.
@@ -1578,7 +1576,7 @@ The language defines no numeric frame limit, and `array_new` remains pure becaus
 
 ## 8. Functions, generics, contracts
 
-[FN-1] A concrete function's callable boundary states everything ordinary callers need: parameter modes and types, the ordered result list's modes and types, one formal-path state-effect row, its region parameters and the unnamed regions of its remaining region positions [FORM-8], the ordered [FN-8] requirement GoalTemplates, the ordered verified [FN-9] normal-result RelationTemplates, one compiler-derived normal-exit state-routing summary, and one compiler-derived target summary.
+[FN-1] A concrete function's callable boundary states everything ordinary callers need: parameter modes and types, the ordered result list's modes and types, one formal-path state-effect row, its region parameters and the unnamed regions of its remaining region positions [FORM-8], the ordered [FN-8] requirement GoalTemplates, the ordered verified [FN-9] normal-result RelationTemplates, one compiler-derived result-state routing summary, and one compiler-derived target summary.
 Every result binder's spelling is mandatory but ignored by callable-signature equality and denotes no runtime storage.
 
 A `fn_decl` writes one result or a parenthesized list of two or more [GRAM-2], and a `fn_sig` writes one.
@@ -1587,9 +1585,7 @@ A declaration that writes a list hands its ordinals back together, and a caller 
 This rule's remaining sentences are stated over a written result and read per ordinal where a declaration writes a list.
 The written templates are checked interface propositions rather than trusted declarations; a caller consults only their verified finite summaries and never a callee body.
 The written effect paths state which parameter-supplied state the function observes or changes. The checker derives the exact same set from body accesses, direct system contracts, releases, and calls and checks it in both directions under [EFF-2].
-The normal-exit state-routing summary records, for each ordinary owned state leaf an owned result or an exclusive parameter's referent may contain on normal exit, whether that value is fresh or is the same value supplied by one or more formal parameter leaves at entry. Its result and exclusive-referent components are derived together from existing move, construction, replacement, commit, match, return, and ownership flow. It adds no source syntax, identity, parent relation, permission, or runtime field. A result with no state leaf has an empty result component; that does not erase the exclusive-referent components.
-At a call, the callee's effects and every summary component are instantiated from one entry image of the actuals after argument evaluation. On normal return, the caller retains the instantiated result origins and installs all exclusive-referent exit origins together at the actual resolved places. Updating one actual cannot change the entry image used for another actual or result. A later effect or compiler-derived release uses the identities then held in that value, including a replaced owner in an otherwise unchanged caller storage location.
-This summary describes value identity rather than borrow provenance: it neither changes a loan nor turns a returned borrow's signature-derived provenance ceiling into an exact returned location. It supplies no termination proof and removes no edge from the conservative structural normal-control graph or occurrence from [EFF-2]'s body-syntactic contribution. Recursive summary derivation is the least fixed point over finite formal-leaf routes and fresh-origin alternatives, with no call-history expansion, timeout, or work-budget acceptance condition.
+The result-state routing summary records, for each ordinary owned state leaf the result may carry, whether that value is fresh or is the same value supplied by one or more formal parameter leaves. It is derived from existing move, construction, match, return, and ownership flow; it adds no source syntax, identity, parent relation, permission, or runtime field. A caller uses it only to preserve those existing value identities when a later effect or compiler-derived release acts through the returned owner. A result with no state leaf has the empty summary.
 The target summary states `never-suspends` or `may-suspend` and, for each reachable suspending action, the applicable `result-ready` components, `loan-released(formal path)` facts, and `terminal`; a release with no writer result has no `result-ready` milestone.
 That summary is derived from exact system contracts and the finite concrete call graph, never written, inferred from a spelling, or weakened by a declaration. It describes suspension and ownership handoff only; it grants no access and supplies no concurrency or alias judgment.
 Strengthening a requirement GoalTemplate or RelationTemplate is a caller-visible interface change.
@@ -2060,7 +2056,6 @@ A named const root and `immutable-const` contribute no read effect because their
 
 A direct `Slice<'r, T>` parameter names its viewed backing state rather than its descriptor. Reading through it contributes `reads(parameter)`; a slice derived from an incoming buffer or slice parameter retains that formal-rooted origin, and a multi-origin slice contributes the deduplicated union of every formal-rooted origin. The descriptor's own mode region still governs its loan, but no lifetime spelling enters an effect row.
 Binding, moving, passing, returning, borrowing, reborrowing, and slicing preserve the existing resolved place identity. This is the same identity tracking already required by ownership and move checking; EFF-2 adds no parent link, result ancestry, resource root, or second provenance system.
-Transferring a complete affine value into a binding or static struct field preserves that value's state identity, even when it replaces the previous owner there; the binding and its loan relationships are not the transferred value. Copying a scalar observation out of state does not transfer that state's identity, and writing a copy field preserves the containing state's identity. A formal effect path continues to name the state supplied at function entry after its original formal binding has been consumed or replaced.
 
 At a user or system call, each callee effect path selects its root formal's actual argument and appends its static field suffix to that actual's resolved place. Holder resolution then reaches the borrowed referent, and a slice actual projects through its complete [OWN-5] origin set. A projection rooted in one of the current function's formals contributes the corresponding current-function path. A projection rooted only in fresh local state contributes no enclosing effect.
 Thus a callee write through a child reborrow of incoming `&uniq` storage reaches the incoming formal path, while the same callee write through fresh local storage frames out. Equal lifetime arguments never merge two suppliers because lifetimes do not participate in this substitution.
@@ -2083,7 +2078,6 @@ A memory-reclamation action whose walk spends a capability instead carries `writ
 A `dispose p;` statement is not a release contribution: it is a written statement, so its one write of `p`'s ultimate storage origin and the write of each resolved provider place are body-syntactic contributions attributed exactly as a commit's write is [PROV-6, LIV-2].
 
 A [SET-1] commit is one write under this attribution, and a [SET-2] commit is one read and one write of the same target origin.
-A [LIV-2] reinitialization of a complete binding already dead at statement entry has that rule's explicit no-previous-owner exception; same-statement read-out and replacement keep their ordinary contributions.
 A shared-holder commit is rejected [OWN-5] and contributes no accepted effect judgment.
 Effects exhibited while evaluating the target and right-hand side contribute normally; an accepted target subscript is discharged [OP-4] and contributes no extra effect.
 Rows are checked both ways against the exhibited row defined above: undeclared-but-exhibited and declared-but-unexhibited are both errors, and an entry contributed only by the release contribution is checked exactly like one written in the body.

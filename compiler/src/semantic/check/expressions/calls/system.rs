@@ -303,14 +303,30 @@ occurs at one parameter position, so this call's own arguments determine it",
                         access,
                         node,
                     )?;
-                    paths.extend(self.effect_paths_for_place(&borrow.place, bindings)?);
+                    paths.extend(self.effect_paths_for_place(node, &borrow.place, bindings)?);
                 }
-                for place in actuals.argument_places.get(index).into_iter().flatten() {
+                for place in actuals
+                    .argument_places
+                    .get(index)
+                    .into_iter()
+                    .flatten()
+                    .filter(|_| {
+                        matches!(parameter.mode, SystemParameterMode::Own)
+                            && actuals
+                                .state_origins
+                                .get(index)
+                                .and_then(Option::as_ref)
+                                .is_none()
+                    })
+                {
                     paths.push(self.state_path(place, bindings)?);
                 }
                 if let Some(origins) = actuals.state_origins.get(index).and_then(Option::as_ref) {
                     if origins.unknown && !self.deriving_result_state_origin.get() {
-                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                        return self.unsupported(
+                            crate::UnsupportedSemanticFeature::OwnerStateRouting,
+                            node,
+                        );
                     }
                     for origin in &origins.formals {
                         paths.push(origin.source.clone());

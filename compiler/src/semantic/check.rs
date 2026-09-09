@@ -38,12 +38,12 @@ use super::goal::{
     GoalOperation, GoalProjection, first_ephemeral_argument,
 };
 use super::model::{
-    BindingId, CheckedConst, CheckedConstant, CheckedConstantId, CheckedContract, CheckedElement,
-    CheckedExpression, CheckedFlatElement, CheckedFunction, CheckedGenericRequirement, CheckedMode,
-    CheckedNominal, CheckedNominalKind, CheckedParameter, CheckedProgramData,
-    CheckedResultStateOrigin, CheckedSetTarget, CheckedSliceOrigin, CheckedStateOrigins,
-    CheckedStatement, CheckedType, CheckedValue, DerivedConst, DerivedConstId, FunctionId,
-    LoanStrength, NominalId, ValueInitializerKind, evaluate_const_operation,
+    BindingId, CheckedBorrowedStateOrigin, CheckedConst, CheckedConstant, CheckedConstantId,
+    CheckedContract, CheckedElement, CheckedExpression, CheckedFlatElement, CheckedFunction,
+    CheckedGenericRequirement, CheckedMode, CheckedNominal, CheckedNominalKind, CheckedParameter,
+    CheckedProgramData, CheckedResultStateOrigin, CheckedSetTarget, CheckedSliceOrigin,
+    CheckedStateOrigins, CheckedStatement, CheckedType, CheckedValue, DerivedConst, DerivedConstId,
+    FunctionId, LoanStrength, NominalId, ValueInitializerKind, evaluate_const_operation,
 };
 use super::permission::{PermissionSignature, analyze_permission};
 use super::permission_ledger::{LedgerSource, render_ledger};
@@ -767,6 +767,7 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// Closed-world structural state origins for the currently selected
     /// concrete or symbolic function inventory, indexed by FunctionId.
     result_state_origins: RefCell<Vec<CheckedResultStateOrigin>>,
+    borrowed_state_origins: RefCell<Vec<Vec<CheckedBorrowedStateOrigin>>>,
     /// The preliminary body pass records enough checked control/data flow to
     /// derive the summaries but deliberately postpones EFF-2 equality until
     /// the summaries reach a fixed point.
@@ -1307,6 +1308,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             templates_by_declaration: HashMap::new(),
             functions_by_declaration: HashMap::new(),
             result_state_origins: RefCell::new(Vec::new()),
+            borrowed_state_origins: RefCell::new(Vec::new()),
             deriving_result_state_origin: Cell::new(false),
             constants: HashMap::new(),
             checked_constants: Vec::new(),
@@ -2195,6 +2197,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .get(signature.id.0 as usize)
                 .cloned()
                 .unwrap_or(CheckedResultStateOrigin::Unknown),
+            borrowed_state_origins: self
+                .borrowed_state_origins
+                .borrow()
+                .get(signature.id.0 as usize)
+                .cloned()
+                .unwrap_or_default(),
             slice_return_ceiling: signature.slice_return_ceiling.clone(),
             reaches_ambient_heap: checked.effects.allocates_heap,
             declared_state_writes: signature.declared_effects.writes.clone(),

@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
 use super::super::model::{
-    BindingId, CheckedCommitValues, CheckedExpression, CheckedFunction, CheckedLoopId,
-    CheckedMatchArm, CheckedResultStateOrigin, CheckedResultStatePath, CheckedSetTarget,
-    CheckedStatement,
+    BindingId, CheckedBorrowedStateOrigin, CheckedCommitValues, CheckedExpression, CheckedFunction,
+    CheckedLoopId, CheckedMatchArm, CheckedMode, CheckedPlaceStep, CheckedResultStateOrigin,
+    CheckedResultStatePath, CheckedSetTarget, CheckedStateOrigin, CheckedStateOrigins,
+    CheckedStatePath, CheckedStatement,
 };
 use super::{CheckStop, Checker};
 
@@ -95,7 +96,7 @@ impl OriginSet {
         match (self, replacement) {
             (Self::Unknown, _) | (_, Self::Unknown) => Self::Unknown,
             (Self::Absent, replacement) => replacement,
-            (current @ Self::Finite { .. }, Self::Absent) => current,
+            (Self::Finite { .. }, Self::Absent) => Self::Absent,
             (
                 Self::Finite {
                     formals: mut current,
@@ -120,13 +121,60 @@ impl OriginSet {
     }
 }
 
-type OriginEnvironment = HashMap<BindingId, OriginSet>;
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct OriginEnvironment {
+    values: HashMap<BindingId, OriginSet>,
+    // A missing entry is an ordinary owner. None is a borrowed result whose
+    // signature gives a provenance ceiling, not an exact returned location.
+    aliases: HashMap<BindingId, Option<(BindingId, Vec<u32>)>>,
+}
+
+impl OriginEnvironment {
+    fn new() -> Self {
+        Self::default()
+    }
+    fn insert(&mut self, binding: BindingId, origin: OriginSet) {
+        self.values.insert(binding, origin);
+    }
+    fn place(&self, binding: BindingId, fields: &[u32]) -> Option<(BindingId, Vec<u32>)> {
+        let (root, mut path) = match self.aliases.get(&binding) {
+            Some(alias) => alias.clone()?,
+            None => (binding, Vec::new()),
+        };
+        path.extend_from_slice(fields);
+        Some((root, path))
+    }
+    fn read(&self, binding: BindingId, fields: &[u32]) -> OriginSet {
+        self.place(binding, fields)
+            .map_or(OriginSet::Unknown, |(root, fields)| {
+                self.values
+                    .get(&root)
+                    .cloned()
+                    .unwrap_or(OriginSet::Unknown)
+                    .projected(&fields)
+            })
+    }
+    fn write(&mut self, place: Option<(BindingId, Vec<u32>)>, origin: OriginSet) {
+        if let Some((root, fields)) = place {
+            let current = self.values.remove(&root).unwrap_or(OriginSet::Unknown);
+            self.values
+                .insert(root, current.replace_path(&fields, origin));
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct OriginSummary {
+    result: OriginSet,
+    borrowed: Vec<(u32, OriginSet)>,
+}
 
 struct OriginFlow {
     continuation: Option<OriginEnvironment>,
     returns: OriginSet,
     gives: Vec<(OriginSet, OriginEnvironment)>,
     breaks: Vec<(CheckedLoopId, OriginEnvironment)>,
+    exits: Vec<OriginEnvironment>,
 }
 
 impl OriginFlow {
@@ -136,6 +184,7 @@ impl OriginFlow {
             returns: OriginSet::Absent,
             gives: Vec::new(),
             breaks: Vec::new(),
+            exits: Vec::new(),
         }
     }
 }
@@ -143,13 +192,13 @@ impl OriginFlow {
 struct OriginAnalyzer<'a, 'b, 'unit, 'classified, 'lexed, 'source> {
     checker: &'a Checker<'unit, 'classified, 'lexed, 'source>,
     function: &'b CheckedFunction,
-    summaries: &'b [OriginSet],
+    summaries: &'b [OriginSummary],
 }
 
 impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
     OriginAnalyzer<'a, 'b, 'unit, 'classified, 'lexed, 'source>
 {
-    fn analyze(&self) -> Result<OriginSet, CheckStop> {
+    fn analyze(&self) -> Result<OriginSummary, CheckStop> {
         let mut environment = OriginEnvironment::new();
         for (ordinal, parameter) in self.function.parameters.iter().enumerate() {
             let leaves = self.checker.type_state_leaf_paths(parameter.ty)?;
@@ -161,8 +210,31 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                     .unwrap_or(OriginSet::Unknown)
             };
             environment.insert(parameter.binding, origin);
+            if parameter.mode != CheckedMode::Own {
+                environment
+                    .aliases
+                    .insert(parameter.binding, Some((parameter.binding, Vec::new())));
+            }
         }
-        Ok(self.scan_block(&self.function.body, environment)?.returns)
+        let flow = self.scan_block(&self.function.body, environment)?;
+        let exit = join_environments(flow.exits);
+        let mut borrowed = Vec::new();
+        for (ordinal, parameter) in self.function.parameters.iter().enumerate() {
+            if matches!(parameter.mode, CheckedMode::Unique(_))
+                && self.checker.type_carries_identity(parameter.ty)?
+            {
+                borrowed.push((
+                    u32::try_from(ordinal)
+                        .map_err(|_| crate::SemanticCompilerFailure::CounterOverflow)?,
+                    exit.as_ref()
+                        .map_or(OriginSet::Absent, |exit| exit.read(parameter.binding, &[])),
+                ));
+            }
+        }
+        Ok(OriginSummary {
+            result: flow.returns,
+            borrowed,
+        })
     }
 
     fn scan_block(
@@ -179,6 +251,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
             flow.returns.union(next.returns);
             flow.gives.extend(next.gives);
             flow.breaks.extend(next.breaks);
+            flow.exits.extend(next.exits);
             flow.continuation = next.continuation;
         }
         Ok(flow)
@@ -191,13 +264,17 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
     ) -> Result<OriginFlow, CheckStop> {
         match statement {
             CheckedStatement::Let { binding, value, .. } => {
-                let origin = self.expression(value, &environment)?;
+                let origin = self.expression(value, &mut environment)?;
+                if self.is_borrow_expression(value, &environment) {
+                    let place = self.borrow_place(value, &environment);
+                    environment.aliases.insert(*binding, place);
+                }
                 environment.insert(*binding, origin);
                 Ok(OriginFlow::continuing(environment))
             }
             // [PROV-6] a disposed value binds nothing and leaves no origin.
             CheckedStatement::Dispose { value, .. } => {
-                self.expression(value, &environment)?;
+                self.expression(value, &mut environment)?;
                 Ok(OriginFlow::continuing(environment))
             }
             // [CALL-4] binder i takes result ordinal i, which is field i of
@@ -205,7 +282,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
             CheckedStatement::DestructuringLet {
                 bindings, value, ..
             } => {
-                let origin = self.expression(value, &environment)?;
+                let origin = self.expression(value, &mut environment)?;
                 for (ordinal, (binding, _)) in bindings.iter().enumerate() {
                     let field = u32::try_from(ordinal)
                         .map_err(|_| crate::SemanticCompilerFailure::CounterOverflow)?;
@@ -221,7 +298,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 let mut ordinal_origins = Vec::with_capacity(targets.len());
                 match values {
                     CheckedCommitValues::ResultList { value, .. } => {
-                        let origin = self.expression(value, &environment)?;
+                        let origin = self.expression(value, &mut environment)?;
                         for ordinal in 0..targets.len() {
                             let field = u32::try_from(ordinal)
                                 .map_err(|_| crate::SemanticCompilerFailure::CounterOverflow)?;
@@ -230,30 +307,15 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                     }
                     CheckedCommitValues::Written(values) => {
                         for value in values {
-                            ordinal_origins.push(self.expression(value, &environment)?);
+                            ordinal_origins.push(self.expression(value, &mut environment)?);
                         }
                     }
                 }
                 for (target, ordinal_origin) in targets.iter().zip(ordinal_origins) {
-                    let binding = target.binding();
-                    let current = environment
-                        .get(&binding)
-                        .cloned()
-                        .unwrap_or(OriginSet::Unknown);
-                    let updated = match target {
-                        CheckedSetTarget::Place(place) if place.fields.is_empty() => ordinal_origin,
-                        CheckedSetTarget::Place(place)
-                            if self.checker.type_carries_identity(target.ty())? =>
-                        {
-                            current.replace_path(&place.fields, ordinal_origin)
-                        }
-                        CheckedSetTarget::Place(_)
-                        | CheckedSetTarget::ArrayIndex(_)
-                        | CheckedSetTarget::BufferIndex(_)
-                        | CheckedSetTarget::Storage(_)
-                        | CheckedSetTarget::SliceIndex(_) => current,
-                    };
-                    environment.insert(binding, updated);
+                    if self.checker.type_carries_identity(target.ty())? {
+                        let place = self.target_place(target, &environment);
+                        environment.write(place, ordinal_origin);
+                    }
                 }
                 Ok(OriginFlow::continuing(environment))
             }
@@ -264,12 +326,13 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 error_type,
                 ..
             } => {
-                let origin = self.expression(scrutinee, &environment)?;
+                let origin = self.expression(scrutinee, &mut environment)?;
                 let returns = if !self.checker.type_carries_identity(*error_type)? {
                     OriginSet::Absent
                 } else {
                     origin.clone().enum_payload(1, 0)
                 };
+                let exits = vec![environment.clone()];
                 environment.insert(
                     *binding,
                     if !self.checker.type_carries_identity(*ok_type)? {
@@ -283,29 +346,15 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                     returns,
                     gives: Vec::new(),
                     breaks: Vec::new(),
+                    exits,
                 })
             }
             CheckedStatement::Set { target, value, .. } => {
-                let origin = self.expression(value, &environment)?;
-                let binding = target.binding();
-                let current = environment
-                    .get(&binding)
-                    .cloned()
-                    .unwrap_or(OriginSet::Unknown);
-                let updated = match target {
-                    CheckedSetTarget::Place(place) if place.fields.is_empty() => origin,
-                    CheckedSetTarget::Place(place)
-                        if self.checker.type_carries_identity(target.ty())? =>
-                    {
-                        current.replace_path(&place.fields, origin)
-                    }
-                    CheckedSetTarget::Place(_)
-                    | CheckedSetTarget::ArrayIndex(_)
-                    | CheckedSetTarget::BufferIndex(_)
-                    | CheckedSetTarget::Storage(_)
-                    | CheckedSetTarget::SliceIndex(_) => current,
-                };
-                environment.insert(binding, updated);
+                let origin = self.expression(value, &mut environment)?;
+                if self.checker.type_carries_identity(target.ty())? {
+                    let place = self.target_place(target, &environment);
+                    environment.write(place, origin);
+                }
                 Ok(OriginFlow::continuing(environment))
             }
             CheckedStatement::Replace {
@@ -314,50 +363,41 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 value,
                 ..
             } => {
-                let replacement = self.expression(value, &environment)?;
-                let target_binding = target.binding();
-                let previous = environment
-                    .get(&target_binding)
-                    .cloned()
-                    .unwrap_or(OriginSet::Unknown);
-                let extracted = match target {
-                    CheckedSetTarget::Place(place)
-                        if self.checker.type_carries_identity(target.ty())? =>
-                    {
-                        previous.clone().projected(&place.fields)
-                    }
-                    _ => OriginSet::Absent,
+                let replacement = self.expression(value, &mut environment)?;
+                let place = self.target_place(target, &environment);
+                let extracted = if self.checker.type_carries_identity(target.ty())? {
+                    place.as_ref().map_or(OriginSet::Unknown, |(root, fields)| {
+                        environment.read(*root, fields)
+                    })
+                } else {
+                    OriginSet::Absent
                 };
                 environment.insert(*binding, extracted);
-                let updated = match target {
-                    CheckedSetTarget::Place(place) if place.fields.is_empty() => replacement,
-                    CheckedSetTarget::Place(place)
-                        if self.checker.type_carries_identity(target.ty())? =>
-                    {
-                        previous.replace_path(&place.fields, replacement)
-                    }
-                    CheckedSetTarget::Place(_)
-                    | CheckedSetTarget::ArrayIndex(_)
-                    | CheckedSetTarget::BufferIndex(_)
-                    | CheckedSetTarget::Storage(_)
-                    | CheckedSetTarget::SliceIndex(_) => previous,
-                };
-                environment.insert(target_binding, updated);
+                if self.checker.type_carries_identity(target.ty())? {
+                    environment.write(place, replacement);
+                }
                 Ok(OriginFlow::continuing(environment))
             }
-            CheckedStatement::Evaluate(_)
-            | CheckedStatement::DropExpression { .. }
-            | CheckedStatement::Proof(_) => Ok(OriginFlow::continuing(environment)),
-            CheckedStatement::Return { value, .. } => Ok(OriginFlow {
-                continuation: None,
-                returns: self.expression(value, &environment)?,
-                gives: Vec::new(),
-                breaks: Vec::new(),
-            }),
+            CheckedStatement::Evaluate(value) | CheckedStatement::DropExpression { value, .. } => {
+                self.expression(value, &mut environment)?;
+                Ok(OriginFlow::continuing(environment))
+            }
+            CheckedStatement::Proof(_) => Ok(OriginFlow::continuing(environment)),
+            CheckedStatement::Return { value, .. } => {
+                let returns = self.expression(value, &mut environment)?;
+                Ok(OriginFlow {
+                    continuation: None,
+                    returns,
+                    gives: Vec::new(),
+                    breaks: Vec::new(),
+                    exits: vec![environment],
+                })
+            }
             CheckedStatement::Give { value, .. } => Ok(OriginFlow {
                 continuation: None,
                 returns: OriginSet::Absent,
-                gives: vec![(self.expression(value, &environment)?, environment)],
+                gives: vec![(self.expression(value, &mut environment)?, environment)],
+                exits: Vec::new(),
                 breaks: Vec::new(),
             }),
             CheckedStatement::Match {
@@ -391,6 +431,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 returns: OriginSet::Absent,
                 gives: Vec::new(),
                 breaks: vec![(*target, environment)],
+                exits: Vec::new(),
             }),
             CheckedStatement::Region { body, .. } => self.scan_block(body, environment),
         }
@@ -404,10 +445,11 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
         continues: bool,
         value_match: bool,
         result_binding: Option<BindingId>,
-        environment: OriginEnvironment,
+        mut environment: OriginEnvironment,
     ) -> Result<OriginFlow, CheckStop> {
-        let scrutinee_origin = self.expression(scrutinee, &environment)?;
+        let scrutinee_origin = self.expression(scrutinee, &mut environment)?;
         let mut returns = OriginSet::Absent;
+        let mut exits = Vec::new();
         let mut outer_gives = Vec::new();
         let mut outer_breaks = Vec::new();
         let mut continuations = Vec::new();
@@ -421,9 +463,13 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                     OriginSet::Absent
                 };
                 arm_environment.insert(binder.binding, origin);
+                if binder.mode != CheckedMode::Own {
+                    arm_environment.aliases.insert(binder.binding, None);
+                }
             }
             let arm_flow = self.scan_block(&arm.body, arm_environment)?;
             returns.union(arm_flow.returns);
+            exits.extend(arm_flow.exits);
             outer_breaks.extend(arm_flow.breaks);
             if value_match {
                 for (origin, give_environment) in arm_flow.gives {
@@ -450,6 +496,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
         Ok(OriginFlow {
             continuation,
             returns,
+            exits,
             gives: outer_gives,
             breaks: outer_breaks,
         })
@@ -497,32 +544,151 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
         Ok(OriginFlow {
             continuation: join_environments(exits),
             returns: body_flow.returns,
+            exits: body_flow.exits,
             gives: body_flow.gives,
             breaks: outer_breaks,
         })
     }
 
-    fn expression(
+    fn target_place(
+        &self,
+        target: &CheckedSetTarget,
+        environment: &OriginEnvironment,
+    ) -> Option<(BindingId, Vec<u32>)> {
+        match target {
+            CheckedSetTarget::Place(place) => environment.place(place.binding, &place.fields),
+            CheckedSetTarget::Storage(root) => {
+                let fields = static_fields(&root.path)?;
+                environment.place(root.binding()?, &fields)
+            }
+            _ => None,
+        }
+    }
+
+    fn is_borrow_expression(
         &self,
         expression: &CheckedExpression,
         environment: &OriginEnvironment,
-    ) -> Result<OriginSet, CheckStop> {
-        if self
-            .checker
-            .type_state_leaf_paths(expression.ty())?
-            .is_empty()
-        {
-            return Ok(OriginSet::Absent);
+    ) -> bool {
+        match expression {
+            CheckedExpression::BorrowBox { .. }
+            | CheckedExpression::BorrowSystemResource { .. }
+            | CheckedExpression::BorrowAddressed { .. }
+            | CheckedExpression::ReborrowAddressed { .. } => true,
+            CheckedExpression::Binding { binding, .. } => environment.aliases.contains_key(binding),
+            CheckedExpression::UserCall { result_borrow, .. } => result_borrow.is_some(),
+            _ => false,
         }
+    }
+
+    fn borrow_place(
+        &self,
+        expression: &CheckedExpression,
+        environment: &OriginEnvironment,
+    ) -> Option<(BindingId, Vec<u32>)> {
+        match expression {
+            CheckedExpression::Binding { binding, .. }
+            | CheckedExpression::BorrowBox { binding, .. }
+            | CheckedExpression::ReborrowAddressed { binding, .. } => {
+                environment.place(*binding, &[])
+            }
+            CheckedExpression::BorrowSystemResource {
+                binding, fields, ..
+            } => environment.place(*binding, fields),
+            CheckedExpression::BorrowAddressed { root, .. } => {
+                environment.place(root.binding()?, &static_fields(&root.path)?)
+            }
+            _ => None,
+        }
+    }
+
+    // Replay and the ordinary call checker share the same field substitution.
+    // The bridge uses this function's real formal declarations; no synthetic
+    // source identity or recursive call-history node is introduced.
+    fn instantiate(&self, image: &OriginSet, arguments: &[OriginSet]) -> OriginSet {
+        let OriginSet::Finite { formals } = image else {
+            return image.clone();
+        };
+        if formals.iter().any(|route| {
+            matches!(
+                arguments.get(route.parameter as usize),
+                Some(OriginSet::Absent)
+            )
+        }) {
+            return OriginSet::Absent;
+        }
+        let arguments = arguments
+            .iter()
+            .map(|argument| match argument {
+                OriginSet::Absent => None,
+                OriginSet::Unknown => Some(CheckedStateOrigins::unknown()),
+                OriginSet::Finite { formals } => {
+                    let mut origins = CheckedStateOrigins::fresh();
+                    for route in formals {
+                        let Some(parameter) =
+                            self.function.parameters.get(route.parameter as usize)
+                        else {
+                            return Some(CheckedStateOrigins::unknown());
+                        };
+                        origins.formals.push(CheckedStateOrigin {
+                            value_fields: route.result_fields.clone(),
+                            variant: route.result_variant,
+                            source: CheckedStatePath {
+                                root: parameter.declaration,
+                                fields: route.parameter_fields.clone(),
+                            },
+                        });
+                    }
+                    Some(origins)
+                }
+            })
+            .collect::<Vec<_>>();
+        let instantiated = CheckedStateOrigins::instantiate(
+            &CheckedResultStateOrigin::Finite {
+                formals: formals.clone(),
+            },
+            &arguments,
+        );
+        if instantiated.unknown {
+            return OriginSet::Unknown;
+        }
+        let mut formals = Vec::new();
+        for origin in instantiated.formals {
+            let Some(ordinal) = self
+                .function
+                .parameters
+                .iter()
+                .position(|parameter| parameter.declaration == origin.source.root)
+            else {
+                return OriginSet::Unknown;
+            };
+            let Ok(parameter) = u32::try_from(ordinal) else {
+                return OriginSet::Unknown;
+            };
+            formals.push(CheckedResultStatePath {
+                result_fields: origin.value_fields,
+                result_variant: origin.variant,
+                parameter,
+                parameter_fields: origin.source.fields,
+            });
+        }
+        formals.sort_unstable();
+        formals.dedup();
+        OriginSet::Finite { formals }
+    }
+
+    fn expression(
+        &self,
+        expression: &CheckedExpression,
+        environment: &mut OriginEnvironment,
+    ) -> Result<OriginSet, CheckStop> {
         let origin = match expression {
             CheckedExpression::Binding { binding, .. }
             | CheckedExpression::BorrowBox { binding, .. }
             | CheckedExpression::ReborrowAddressed { binding, .. }
-            | CheckedExpression::DerefAddressed { binding, .. } => environment
-                .get(binding)
-                .cloned()
-                .unwrap_or(OriginSet::Unknown),
-            CheckedExpression::BorrowAddressed { root, .. } => {
+            | CheckedExpression::DerefAddressed { binding, .. } => environment.read(*binding, &[]),
+            CheckedExpression::BorrowAddressed { root, .. }
+            | CheckedExpression::ReadStorage { root, .. } => {
                 let Some(binding) = root.binding() else {
                     return Ok(OriginSet::fresh());
                 };
@@ -536,11 +702,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                     })
                     .collect::<Option<Vec<_>>>();
                 fields.map_or(OriginSet::Unknown, |fields| {
-                    environment
-                        .get(&binding)
-                        .cloned()
-                        .unwrap_or(OriginSet::Unknown)
-                        .projected(&fields)
+                    environment.read(binding, &fields)
                 })
             }
             CheckedExpression::Project {
@@ -548,11 +710,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
             }
             | CheckedExpression::BorrowSystemResource {
                 binding, fields, ..
-            } => environment
-                .get(binding)
-                .cloned()
-                .unwrap_or(OriginSet::Unknown)
-                .projected(fields),
+            } => environment.read(*binding, fields),
             CheckedExpression::SystemCall { operation, .. } => match crate::SYSTEM_OPERATIONS
                 .get(usize::from(*operation))
                 .map(|operation| operation.result_state_origin)
@@ -565,35 +723,33 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 function,
                 arguments,
                 ..
-            } => match self.summaries.get(function.0 as usize) {
-                Some(OriginSet::Finite { formals }) => {
-                    let mut origin = OriginSet::Finite {
-                        formals: Vec::new(),
-                    };
-                    for formal in formals {
-                        let Some(argument) = arguments.get(formal.parameter as usize) else {
-                            return Ok(OriginSet::Unknown);
-                        };
-                        let mut mapped = self
-                            .expression(argument, environment)?
-                            .projected(&formal.parameter_fields);
-                        if let OriginSet::Finite { formals, .. } = &mut mapped {
-                            for mapped in formals {
-                                let mut result_fields = formal.result_fields.clone();
-                                result_fields.extend_from_slice(&mapped.result_fields);
-                                mapped.result_fields = result_fields;
-                                if formal.result_variant.is_some() {
-                                    mapped.result_variant = formal.result_variant;
-                                }
-                            }
-                        }
-                        origin.union(mapped);
-                    }
-                    origin
+            } => {
+                let mut entry = Vec::with_capacity(arguments.len());
+                let mut places = Vec::with_capacity(arguments.len());
+                for argument in arguments {
+                    entry.push(self.expression(argument, environment)?);
+                    places.push(self.borrow_place(argument, environment));
                 }
-                Some(OriginSet::Absent) => OriginSet::Absent,
-                Some(OriginSet::Unknown) | None => OriginSet::Unknown,
-            },
+                if let Some(summary) = self.summaries.get(function.0 as usize) {
+                    let result = self.instantiate(&summary.result, &entry);
+                    let updates = summary
+                        .borrowed
+                        .iter()
+                        .map(|(ordinal, image)| {
+                            (
+                                places.get(*ordinal as usize).cloned().flatten(),
+                                self.instantiate(image, &entry),
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    for (place, image) in updates {
+                        environment.write(place, image);
+                    }
+                    result
+                } else {
+                    OriginSet::Unknown
+                }
+            }
             CheckedExpression::ConstructStruct { fields, .. } => {
                 let mut origin = OriginSet::Absent;
                 for (ordinal, field) in fields.iter().enumerate() {
@@ -645,6 +801,9 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 origin
             }
         };
+        if !self.checker.type_carries_identity(expression.ty())? {
+            return Ok(OriginSet::Absent);
+        }
         Ok(match origin {
             // `Absent` is the recursive fixed-point bottom only for a user
             // call whose callee has not published a route yet. Every other
@@ -662,13 +821,24 @@ fn join_environments(environments: Vec<OriginEnvironment>) -> Option<OriginEnvir
     let mut environments = environments.into_iter();
     let mut joined = environments.next()?;
     for environment in environments {
-        for (binding, origin) in environment {
-            match joined.get_mut(&binding) {
+        for (binding, origin) in environment.values {
+            match joined.values.get_mut(&binding) {
                 Some(current) => current.union(origin),
                 None => {
                     joined.insert(binding, origin);
                 }
             }
+        }
+        for (binding, alias) in environment.aliases {
+            joined
+                .aliases
+                .entry(binding)
+                .and_modify(|old| {
+                    if *old != alias {
+                        *old = None;
+                    }
+                })
+                .or_insert(alias);
         }
     }
     Some(joined)
@@ -701,47 +871,77 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
         let mut summaries = functions
             .iter()
-            .map(
-                |function| match self.type_state_leaf_paths(function.result) {
-                    Ok(_) => OriginSet::Absent,
-                    Err(_) => OriginSet::Unknown,
-                },
-            )
-            .collect::<Vec<_>>();
+            .map(|function| {
+                let mut borrowed = Vec::new();
+                for (ordinal, parameter) in function.parameters.iter().enumerate() {
+                    if matches!(parameter.mode, CheckedMode::Unique(_))
+                        && self.type_carries_identity(parameter.ty)?
+                    {
+                        let ordinal = u32::try_from(ordinal)
+                            .map_err(|_| crate::SemanticCompilerFailure::CounterOverflow)?;
+                        borrowed.push((ordinal, OriginSet::Absent));
+                    }
+                }
+                Ok(OriginSummary {
+                    result: OriginSet::Absent,
+                    borrowed,
+                })
+            })
+            .collect::<Result<Vec<_>, CheckStop>>()?;
         loop {
-            let mut next = Vec::with_capacity(functions.len());
-            for function in &functions {
-                next.push(if self.type_state_leaf_paths(function.result)?.is_empty() {
-                    OriginSet::Absent
-                } else {
+            let next = functions
+                .iter()
+                .map(|function| {
                     OriginAnalyzer {
                         checker: self,
                         function,
                         summaries: &summaries,
                     }
-                    .analyze()?
-                });
-            }
+                    .analyze()
+                })
+                .collect::<Result<Vec<_>, _>>()?;
             if next == summaries {
                 break;
             }
             summaries = next;
         }
-
-        let resolved = functions
-            .iter()
-            .zip(summaries)
-            .map(|(function, origin)| {
-                if self.type_state_leaf_paths(function.result)?.is_empty() {
-                    return Ok(CheckedResultStateOrigin::NoState);
-                }
-                Ok(match origin {
-                    OriginSet::Finite { formals } => CheckedResultStateOrigin::Finite { formals },
-                    OriginSet::Absent | OriginSet::Unknown => CheckedResultStateOrigin::Unknown,
-                })
-            })
-            .collect::<Result<Vec<_>, CheckStop>>()?;
-        self.result_state_origins.replace(resolved);
+        let mut resolved_results = Vec::with_capacity(functions.len());
+        let mut resolved_borrows = Vec::with_capacity(functions.len());
+        for (function, summary) in functions.iter().zip(summaries) {
+            resolved_results.push(if self.type_carries_identity(function.result)? {
+                export_origin(summary.result)
+            } else {
+                CheckedResultStateOrigin::NoState
+            });
+            resolved_borrows.push(
+                summary
+                    .borrowed
+                    .into_iter()
+                    .map(|(parameter, origin)| CheckedBorrowedStateOrigin {
+                        parameter,
+                        origin: export_origin(origin),
+                    })
+                    .collect(),
+            );
+        }
+        self.result_state_origins.replace(resolved_results);
+        self.borrowed_state_origins.replace(resolved_borrows);
         Ok(())
+    }
+}
+
+fn static_fields(path: &[CheckedPlaceStep]) -> Option<Vec<u32>> {
+    path.iter()
+        .map(|step| match step {
+            CheckedPlaceStep::Field(field) => Some(*field),
+            _ => None,
+        })
+        .collect()
+}
+
+fn export_origin(origin: OriginSet) -> CheckedResultStateOrigin {
+    match origin {
+        OriginSet::Finite { formals } => CheckedResultStateOrigin::Finite { formals },
+        OriginSet::Absent | OriginSet::Unknown => CheckedResultStateOrigin::Unknown,
     }
 }

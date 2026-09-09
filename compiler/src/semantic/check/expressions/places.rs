@@ -107,7 +107,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // which exhibited the same wrong read; the copy spelling is what made
         // an accepted program declare it.
         if !Self::checked_type_is_loan_bearing(place.ty) {
-            for path in self.effect_paths_for_place(&place.resolved, bindings)? {
+            for path in self.effect_paths_for_place(use_node, &place.resolved, bindings)? {
                 effects.add_read(path);
             }
         }
@@ -243,7 +243,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // [EFF-1] as above: the descriptor read through a holder observes the
         // viewed state no more than a direct one does.
         if !Self::checked_type_is_loan_bearing(ty) {
-            for path in self.effect_paths_for_place(&resolved, bindings)? {
+            for path in self.effect_paths_for_place(use_node, &resolved, bindings)? {
                 effects.add_read(path);
             }
         }
@@ -534,7 +534,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.check_loan_access(bindings, holder, &place.resolved, AccessKind::Write, node)?;
         self.check_mutation_target_class(node, place.ty, form)?;
         let mut effects = EffectSet::NONE;
-        for path in self.effect_paths_for_place(&place.resolved, bindings)? {
+        for path in self.effect_paths_for_place(node, &place.resolved, bindings)? {
             effects.add_write(path.clone());
             if form.is_replace() {
                 effects.add_read(path);

@@ -20,6 +20,18 @@
   complete loan lifetime.
   Absence of a candidate record does not imply that an owned view has no borrowed
   backing.
+- Derive ordinary callable owner transfer jointly for owned results and values
+  left in exclusive referents on normal exit. Instantiate their origins and
+  call effects from one entry image, then install stored outputs together at
+  exact actual places. A pointer slot or formal spelling is not the identity of
+  the current value it holds. The implemented whole-owner/static-field image
+  does not establish nested-content, indexed-element or enum-payload routing;
+  a borrow-result ceiling supplies no exact writeback target. Unknown origin
+  dependencies remain explicit compiler limitations, never fresh state.
+- Reinitializing a complete binding already dead at statement entry contributes
+  no write of its moved-out owner's state. Same-statement read-out retains the
+  read and commit write. Preserve the RHS effects, commit kill, term identity,
+  ownership and loan judgments under either form.
 - Distinguish full fixed arrays, initialized prefixes, and circular windows.
   Persistent fixed extent and full initialization belong to the relevant type or
   state; variable length and head are not universal array metadata. Placement and
@@ -495,3 +507,24 @@
   the first slice into a universal storage proof framework. Reopen the owning
   layer if the checked ordinary form breaks the frozen contract, rather than
   hiding the gap with a guard, hard cap, extra scan, or extra allocation. (sourced)
+- 2026-09-09 selection: ordinary Box direct/helper comparisons expose a lost
+  incoming-state read after exclusive replacement, independently of any I/O
+  API. The selected normal-exit summary carries both returned owners and
+  exclusive referent outputs from one entry image. Whole-owner/static-product
+  routing and exact actual locations are the implemented slice; nested content
+  remains unresolved. The former infinite-recursion `Unknown` assertion was
+  replaced with ordinary behavior controls because absence of normal returns
+  does not determine that internal encoding. A nested displaced-Box read now
+  has an explicit routing-capability diagnostic rather than an internal error;
+  this is not implementation of the missing transfer. LIV-2 separately exempts
+  entry-dead complete-binding initialization from an old-owner write while
+  preserving same-statement read-out effects.
+  [Grounds and scope](../../../research/investigations/containers-and-resources/FOUNDATION.md#owner-identity-across-replacement-and-calls). (sourced)
+- 2026-09-09 challenge: broader native tests reject the static-path prototype
+  at heap-array displacement, enum-child displacement and a returned-borrow
+  writeback. Their prior executable expectations remain unchanged. An unknown
+  summary cannot be recovered merely from currently empty actual-origin lists:
+  inserting an incoming owner into fresh unrepresented Box contents can leave
+  such a list falsely empty. That recovery was rejected before implementation;
+  a sound complete-content bound is still required.
+  [Counterexample and retained regressions](../../../research/investigations/containers-and-resources/FOUNDATION.md#owner-identity-across-replacement-and-calls). (sourced)

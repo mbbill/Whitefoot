@@ -618,7 +618,31 @@ kernel operation or runtime metadata, and claims no new optimization. Inline
 variants whose operands supply no brand, composite Result measure postconditions,
 ordinary owning-element spill and compact enum layout remain independent gaps.
 
-### Current owner-routing gap
+### Owner identity across replacement and calls
+
+The normal-return defect also occurs with ordinary memory owners. An
+`exchange(target: &uniq box<u64>, incoming: own box<u64>)` helper performs
+`let previous = replace deref(target) = move incoming;` and returns `previous`.
+A caller then reads its remaining `owner`. At published revision `d53ffe95`
+(whose compiler sources equal the tested `e376025d` executable), writing the
+exchange directly requires `reads(owner, incoming), writes(owner)`, but routing
+the same exchange through the helper accepts an omitted `reads(incoming)` and
+rejects the complete row as extra. The same comparison with `Box<'s, u64>` and
+an explicit `Heap<'s>` parameter gives the same discrepancy; the provider adds
+its ordinary release write. These are compilation observations, not evidence
+for a file-specific rule or for a new public container operation.
+
+The selected repair extends the callable summary to the current state left in
+exclusive actuals. If entry owners are F and I, the result holds F and the
+original target location holds I on exit. Reusing a spelling or pointer slot
+does not make I the same input state as F. The semantic regression
+`ordinary_box_owner_transfer_preserves_incoming_reads_across_helpers` compares
+both Box forms, direct/helper code, and complete/omitted effect rows. The native
+`ordinary_box_owner_transfer_keeps_values_and_release_across_two_helpers`
+retains both helper boundaries and observes old=11, current=22 and the exact
+two-allocation/two-release ledger in all three execution modes. It establishes
+ordinary owner transfer for that case, not nested-content routing, timing
+parity, or container-family completion.
 
 Two small source checks expose lost identities, without requiring a new storage
 permission. In a full `FixedVector<ReadFile, 1>`, replace slot zero with an
@@ -627,7 +651,8 @@ in a caller. The caller must retain the incoming file's release effect. A focuse
 check against revision `1f545791` instead rejects that caller's
 `writes(files, incoming)` as having an extra `writes(incoming)`. The
 [current replacement analyzer](../../../compiler/src/semantic/check/result_state_origin.rs)
-updates ordinary binding/field origins but does not update a `Storage` target;
+updates ordinary binding/static-field origins but does not update an indexed
+`Storage` target's contained-owner image;
 the body checker and the result analyzer also disagree about the extracted
 origin. The defect is lost ownership flow, not lost runtime length information.
 An independent static-field precision defect is repaired in `16a20bb9`. For an
@@ -674,16 +699,14 @@ at the call's argument evaluation point. Native scalar `ReadFile` and aggregate
 `HostString` cases exercise shared/exclusive parameters, selected fields,
 reborrows, borrowed results, and pointer/extent observations in all three
 execution modes. The qualified runtime ABI is unchanged. These tests establish
-physical writeback and descriptor access, while the missing semantic post-call
-owner routing remains open.
+physical writeback and descriptor access; that physical repair did not provide
+the semantic post-call owner routing selected here.
 
 The required transfer has two outputs. If the entry target owns F and the
 incoming argument owns I, the returned owner is F and the target's exit content
 is I. A second exchange with J must return I and leave J. A result-only summary
 cannot express the caller storage left behind by an exclusive borrowed actual.
-FN-1 currently specifies result-state routing, while EFF-2 requires preserved
-owner identities through moves and borrows; it does not explicitly specify this
-post-call stored-owner summary. Before implementing that boundary, state its
+The v0.54 FN-1 amendment extends the former result-only boundary with that
 entry-to-normal-exit transfer and its application to the actual resolved place.
 All returned and written-back origins must be instantiated from one entry
 snapshot and committed together, including static fields, nested owning paths,
@@ -710,6 +733,81 @@ assertion demanding `Unknown` rather than an empty set does not settle that
 question or justify a language amendment. Evaluate the ordinary-object case
 under FN-1 and EFF-2, including normally returning controls, before attributing
 the issue to an I/O API or selecting a new origin-analysis mechanism.
+
+Accordingly, the prototype's internal `Unknown` assertion for this unclosed
+recursion was replaced with three ordinary Box behavior checks: an unused
+nonreturning helper is valid, a helper that returns its input after at most one
+recursive call preserves that input's required read effect, and a read before
+unbounded recursion still contributes its structural effect. This changes the
+test's unsupported premise rather than selecting a new summary lattice.
+
+The earlier nested `box<ReadFile>` unit-returning test also assumed an exact
+`Unsupported` outcome without settling how the outer allocation and current
+contained owner's identities are represented separately. It is replaced by
+`ordinary_displaced_box_result_reports_the_unrepresented_origin_at_use`: an
+ordinary `box<box<u64>>` helper returns the inner Box displaced by SET-2 and its
+caller reads that old result. SET-2 and FN-1 already determine the old value's
+identity. The prior implementation reported `InvalidResolution` at the read;
+the capability diagnostic now reports `OwnerStateRouting` there. This is not
+implementation of nested-content transfer. Unit-returning internal replacement,
+including its post-call contained-state image, remains unresolved and must not
+be counted as unchanged contents or as completed container support.
+
+The selected representation implements whole owners and static product fields,
+keeps callable effects and all output components on one entry snapshot, and
+applies simultaneous updates only to exact actual places. A returned borrow's
+signature ceiling is insufficient to identify such a place. General typed
+paths through owning indirection, enum payloads, and indexed contents remain
+the separate candidate below. Neither permanent unions of replaced owners nor
+treating unrepresented transfers as fresh was selected.
+
+The related LIV-2 amendment distinguishes a complete binding already dead at
+statement entry from a same-statement read-out. Reinitializing the former
+writes no previous owner's state; the latter still performs its atomic read
+and write. This is an explicit change to LIV-2's former universal commit-write
+sentence, not merely a compiler interpretation of FN-1. It prevents a moved-out
+value from acquiring a spurious write effect when its old variable is reused,
+while retaining the RHS effects, commit kill, term identity and loan checks.
+
+Selection is evidence-selected for ordinary direct/helper equivalence and
+preservation of transferred owners; the finite joint-summary mechanism and
+the dead-binding initialization exception are provisional choices with those
+grounds. The alternatives considered were result-only summaries (lose the
+stored output), inspecting callee bodies at every ordinary call (breaks the
+selected callable boundary), and retaining every replaced owner indefinitely
+(loses current-state precision). Reopen the representation when ordinary
+nested/indexed cases cannot retain precise identities at practical checking
+cost. The affected rules are FN-1, EFF-2, SET-2 and LIV-2. META-5 delta: rules
++0/-0 (four amended), grammar productions +0/-0, tokens/spellings +0/-0,
+exceptions +1/-0 (the entry-dead complete-binding write exception). Runtime
+layouts, system contracts and target milestones are unchanged. The active
+rule index, compiler capability map and container decision memory follow this
+scope; no claim about general I/O resource API design follows from it.
+
+The broader compiler suite challenges this implementation boundary: the native
+cases `heap_full_arrays_preserve_elements_across_calls_replacement_and_refusal`,
+`borrowed_enum_payload_replacement_updates_the_child_owner_in_its_box`, and
+`opaque_resource_borrows_write_back_through_calls_fields_and_reborrows` all
+passed at `d53ffe95` but stop with `OwnerStateRouting` under the new prototype.
+The first two need a displaced value to cross a helper after indexed or enum
+payload replacement; the third needs precise writeback through a returned
+borrow. Their original executable assertions remain intact. The prototype is
+therefore not ready to replace the existing implementation, and focused
+whole-Box success does not discharge these regressions.
+
+One tempting recovery is to instantiate an unknown summary as formal-free
+when every actual currently has an explicitly empty origin set. That would be
+valid if those sets were sound upper bounds on all currently reachable state.
+The current incomplete content updates do not establish that premise. For
+example, create a fresh `box<box<u64>>`, replace its inner cell with the owned
+formal `incoming`, then pass the outer Box to a helper that returns its old
+inner cell. The later read is a read of `incoming`. If the unrepresented
+replacement leaves the outer Box's old empty metadata, the proposed recovery
+incorrectly frames that read out. The recovery was rejected without applying
+it; treating `None` and explicitly unknown actuals conservatively does not
+repair the falsely empty actual. A complete content-state upper bound or an
+explicit completeness argument must precede any such refinement. No test is
+retired or expectation relaxed to bypass this challenge.
 
 A candidate implementation represents finite current ownership state with typed
 paths, not execution history. Keep an owning Box or run's storage anchor separate
@@ -749,24 +847,27 @@ place is invalid because it loses the incoming owner's identity.
 
 Separately, SET-2 says a commit touches the target's ultimate storage origin,
 while ordinary binding and static-field replacement change the current value
-origin and EFF-2 adds no permanent parent ancestry. The proposed ordinary-leaf
-interpretation keeps the borrowed address/loan fixed, changes the current owner
-F to I, and attributes a second direct leaf replacement to I, like the existing
-static-field transfer. Interior run-slot mutation instead retains that run's
-actual storage anchor. This distinction is not selected by the counterexamples;
-its exact rule and borrowed-summary boundary remain open. Adding a permanent
-cell ancestry to every local or reference is not an accepted repair.
+origin and EFF-2 adds no permanent parent ancestry. The selected whole-owner and
+static-field rule keeps the borrowed address/loan fixed, changes the current
+owner F to I, and attributes a second direct replacement to I. The separate
+representation of an owning allocation and its changing contents remains open:
+an interior run-slot mutation retains the run's actual storage anchor while
+transferring its contained owners. The scalar Box direct/helper controls do not
+select that internal representation or settle every nested effect projection.
+Adding a permanent cell ancestry to every local or reference is not an accepted
+repair.
 
-The first implementation must cover both consumed-and-returned owners and
-exclusive borrowed writeback, including the direct resource leaf, static fields,
-Box contents, and exact singleton/literal-slot exchanges. Before implementation,
-the falsifiers are two successive replacements and helper calls with independently
+Completion of the remaining typed-content extension requires both
+consumed-and-returned owners and exclusive borrowed writeback through Box
+contents and exact singleton/literal-slot exchanges, preserving the completed
+whole-owner/static-field paths. Its falsifiers include two successive
+replacements and helper calls with independently
 released old/current owners; omission and spurious addition of each formal effect;
 reborrowed and disjoint-field writeback; same captured versus changed indices;
 branch and priority-loop joins; and retained native descriptor replacement with
 an exact release observer. Check source-size growth with long overwrite chains,
 branch diamonds and repeated helper composition. Unknown residual indices,
-general recursive summaries, finer source contracts and proof-informed exclusion
+recursive contained-state summaries, finer source contracts and proof-informed exclusion
 remain explicit questions. A fix limited to own-input/result helpers, a green
 Box ABI test, or one straight-line graph cannot close this gap.
 

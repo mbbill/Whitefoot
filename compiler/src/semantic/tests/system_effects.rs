@@ -1094,3 +1094,564 @@ fn resource_field_borrow_projects_the_returned_displaced_owner_summary() {
         );
     });
 }
+
+#[test]
+fn ordinary_box_owner_transfer_preserves_incoming_reads_across_helpers() {
+    let legacy = r#"fn exchange(target: &uniq box<u64>, incoming: own box<u64>) -> previous: own box<u64> reads(target), writes(target) {
+  let previous = replace deref(target) = move incoming;
+  return move previous;
+}
+
+fn observe(owner: own box<u64>, incoming: own box<u64>) -> result: own u64 reads(owner, incoming), writes(owner) {
+  region {
+    let previous = exchange(target: &uniq owner, incoming: move incoming);
+  }
+  return deref(owner);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let modern = r#"fn exchange['s](target: &uniq Box<'s, u64>, incoming: own Box<'s, u64>) -> previous: own Box<'s, u64> reads(target), writes(target) {
+  let previous = replace deref(target) = move incoming;
+  return move previous;
+}
+
+fn observe['s](owner: own Box<'s, u64>, incoming: own Box<'s, u64>, store: &uniq Heap<'s>) -> result: own u64 reads(owner, incoming), writes(owner, store) {
+  region {
+    let previous = exchange(target: &uniq owner, incoming: move incoming);
+  }
+  return deref(owner);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    for helper in [legacy, modern] {
+        let direct = helper.replace(
+            "  region {\n    let previous = exchange(target: &uniq owner, incoming: move incoming);\n  }",
+            "  let previous = replace owner = move incoming;",
+        );
+        for source in [helper, direct.as_str()] {
+            assert_complete(source.as_bytes());
+            let omitted = source.replace("reads(owner, incoming)", "reads(owner)");
+            assert_rule_kind(omitted.as_bytes(), SemanticRule::Eff2, |kind| {
+                matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
+                    if missing.iter().any(|effect| effect == "reads(incoming)"))
+            });
+        }
+    }
+}
+
+const OWNER_WRITEBACK: &str = r#"fn exchange(target: &uniq ReadFile, incoming: own ReadFile) -> previous: own ReadFile reads(target), writes(target) {
+  let previous = replace deref(target) = move incoming;
+  return move previous;
+}
+
+fn install(target: &uniq ReadFile, incoming: own ReadFile) -> result: own unit reads(target), writes(target) {
+  let previous = replace deref(target) = move incoming;
+  return unit;
+}
+
+fn release_all(file: own ReadFile, first: own ReadFile, second: own ReadFile) -> result: own unit reads(file, first), writes(file, first, second) {
+  region {
+    let previous = exchange(target: &uniq file, incoming: move first);
+  }
+  region {
+    let installed = install(target: &uniq file, incoming: move second);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "FN-1, EFF-2, SET-2: two exclusive-borrowed exchanges leave successive incoming owners in the same location. The first returned owner is the original file, the second helper releases first and returns unit, and the caller releases second. Both result and exclusive-storage exit state use the entry image; an empty result component cannot erase writeback. These uncalled declarations test checked callable composition without opening host files.";
+  return exit_status(code: 0_u8);
+}
+"#;
+
+#[test]
+fn owner_writeback_tracks_two_exchanges_and_a_unit_result() {
+    with_semantics(OWNER_WRITEBACK.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("joint exit routes must check: {outcome:?}");
+        };
+        for function in &program.data.functions[..2] {
+            assert_eq!(function.borrowed_state_origins.len(), 1);
+            assert_eq!(function.borrowed_state_origins[0].parameter, 0);
+            assert_eq!(
+                function.borrowed_state_origins[0].origin,
+                CheckedResultStateOrigin::Finite {
+                    formals: vec![root(1)]
+                }
+            );
+        }
+        assert_eq!(
+            program.data.functions[0].result_state_origin,
+            CheckedResultStateOrigin::Finite {
+                formals: vec![root(0)]
+            }
+        );
+        assert_eq!(
+            program.data.functions[1].result_state_origin,
+            CheckedResultStateOrigin::NoState
+        );
+    });
+}
+
+#[test]
+fn owner_writeback_cannot_hide_the_installed_owners_release() {
+    let source = OWNER_WRITEBACK.replace("writes(file, first, second)", "writes(file, first)");
+    assert_rule_kind(source.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(
+            kind,
+            SemanticIssueKind::EffectMismatch { .. }
+                | SemanticIssueKind::ReleaseEffectMismatch { .. }
+        )
+    });
+}
+
+#[test]
+fn owner_writeback_follows_nested_reborrowed_fields() {
+    let source = OWNER_WRITEBACK.replace("fn release_all(", "struct Pair {\n  before: u64;\n  file: ReadFile;\n  after: u64;\n}\n\nstruct Outer {\n  pair: Pair;\n}\n\nfn release_all(")
+        .replace("file: own ReadFile, first:", "file: &uniq Outer, first:")
+        .replace("reads(file, first), writes(file, first, second)", "reads(file.pair.file, first), writes(file.pair.file, first)")
+        .replace("&uniq file,", "&uniq deref(file).pair.file,");
+    assert_complete(source.as_bytes());
+    let rejected = source.replace("writes(file.pair.file, first)", "writes(file.pair.file)");
+    assert_rule_kind(rejected.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(
+            kind,
+            SemanticIssueKind::EffectMismatch { .. }
+                | SemanticIssueKind::ReleaseEffectMismatch { .. }
+        )
+    });
+}
+
+#[test]
+fn owner_writeback_does_not_bypass_the_unique_generic_run_restriction() {
+    let source = br#"fn exchange<T: affine>(target: &uniq T, incoming: own T) -> previous: own T reads(target), writes(target) {
+  let previous = replace deref(target) = move incoming;
+  return move previous;
+}
+
+fn copy_instance(value: &uniq u64) -> result: own u64 reads(value), writes(value) {
+  region {
+    let old = exchange::<u64>(target: &uniq deref(value), incoming: 7_u64);
+  }
+  return deref(value);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Blk4, |kind| {
+        matches!(
+            kind,
+            SemanticIssueKind::UniqueParameterReachesContainer { .. }
+        )
+    });
+}
+
+#[test]
+fn owner_writeback_whole_affine_replacement_agrees_with_direct_code() {
+    let source = br#"struct Cell {
+  count: u64;
+  owner: box<u64>;
+}
+
+fn fresh_cell() -> result: own Cell pure {
+  let owner = box_new(0_u64);
+  return Cell(count: 0_u64, owner: move owner);
+}
+
+fn exchange(target: &uniq Cell, incoming: own Cell) -> previous: own Cell reads(target.count, target.owner), writes(target.count, target.owner) {
+  let previous = replace deref(target) = move incoming;
+  return move previous;
+}
+
+fn direct(cell: own Cell) -> result: own Cell reads(cell.count, cell.owner), writes(cell.count, cell.owner) {
+  let fresh = fresh_cell();
+  let previous = replace cell = move fresh;
+  return move cell;
+}
+
+fn indirect(cell: own Cell) -> result: own Cell reads(cell.count, cell.owner), writes(cell.count, cell.owner) {
+  let fresh = fresh_cell();
+  region {
+    let previous = exchange(target: &uniq cell, incoming: move fresh);
+  }
+  return move cell;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("whole-value transfer must check: {outcome:?}");
+        };
+        for function in &program.data.functions[2..4] {
+            assert_eq!(
+                function.result_state_origin,
+                CheckedResultStateOrigin::Finite {
+                    formals: Vec::new()
+                }
+            );
+        }
+    });
+}
+
+#[test]
+fn owner_writeback_copy_field_assignment_preserves_the_existing_aggregate() {
+    let source = br#"struct Cell {
+  count: u64;
+  owner: box<u64>;
+}
+
+fn set_count(cell: &uniq Cell) -> result: own unit writes(cell.count) {
+  set deref(cell).count = 7_u64;
+  return unit;
+}
+
+fn change(cell: own Cell) -> result: own Cell writes(cell.count) {
+  region {
+    let changed = set_count(cell: &uniq cell);
+  }
+  return move cell;
+}
+
+fn repack(cell: &Cell) -> result: own Cell reads(cell.count) {
+  let count = deref(cell).count;
+  let owner = box_new(0_u64);
+  return Cell(count: count, owner: move owner);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("copy and aggregate identities must differ: {outcome:?}");
+        };
+        let expected = vec![0, 1]
+            .into_iter()
+            .map(|field| CheckedResultStatePath {
+                result_fields: vec![field],
+                result_variant: None,
+                parameter: 0,
+                parameter_fields: vec![field],
+            })
+            .collect();
+        assert_eq!(
+            program.data.functions[1].result_state_origin,
+            CheckedResultStateOrigin::Finite { formals: expected }
+        );
+        assert_eq!(
+            program.data.functions[2].result_state_origin,
+            CheckedResultStateOrigin::Finite {
+                formals: Vec::new()
+            }
+        );
+    });
+}
+
+#[test]
+fn owner_writeback_evaluate_and_discarded_result_keep_call_updates() {
+    for source in [
+        OWNER_WRITEBACK.replace("let installed = ", ""),
+        OWNER_WRITEBACK.replace("let previous = exchange", "exchange"),
+    ] {
+        assert_complete(source.as_bytes());
+    }
+}
+
+#[test]
+fn owner_writeback_keeps_the_release_capability_requirement_for_dispose() {
+    let source = OWNER_WRITEBACK.replace(
+        "incoming: move first);",
+        "incoming: move first);\n    dispose previous;",
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Prov6, |kind| {
+        matches!(kind, SemanticIssueKind::DisposeWithoutCapabilityLeaf { .. })
+    });
+}
+
+#[test]
+fn owner_writeback_substitutes_disjoint_outputs_from_one_entry_image() {
+    let source = br#"struct Pair {
+  left: ReadFile;
+  right: ReadFile;
+}
+
+fn rotate(left: &uniq ReadFile, right: &uniq ReadFile, incoming: own ReadFile) -> previous: own ReadFile reads(left, right), writes(left, right) {
+  let old_left = replace deref(left) = move incoming;
+  let old_right = replace deref(right) = move old_left;
+  return move old_right;
+}
+
+fn apply(pair: own Pair, incoming: own ReadFile) -> result: own Pair reads(pair.left, pair.right), writes(pair.left, pair.right) {
+  region {
+    let previous = rotate(left: &uniq pair.left, right: &uniq pair.right, incoming: move incoming);
+  }
+  return move pair;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("simultaneous disjoint substitution must check: {outcome:?}");
+        };
+        assert_eq!(
+            program.data.functions[0]
+                .borrowed_state_origins
+                .iter()
+                .map(|image| image.origin.clone())
+                .collect::<Vec<_>>(),
+            vec![
+                CheckedResultStateOrigin::Finite {
+                    formals: vec![root(2)]
+                },
+                CheckedResultStateOrigin::Finite {
+                    formals: vec![root(0)]
+                }
+            ]
+        );
+        assert_eq!(
+            program.data.functions[1].result_state_origin,
+            CheckedResultStateOrigin::Finite {
+                formals: vec![
+                    CheckedResultStatePath {
+                        result_fields: vec![0],
+                        result_variant: None,
+                        parameter: 1,
+                        parameter_fields: Vec::new()
+                    },
+                    CheckedResultStatePath {
+                        result_fields: vec![1],
+                        result_variant: None,
+                        parameter: 0,
+                        parameter_fields: vec![0]
+                    },
+                ]
+            }
+        );
+    });
+}
+
+#[test]
+fn owner_writeback_affine_generic_own_exchange_supports_copy_instantiation() {
+    let source = br#"fn exchange_owned<T: affine>(target: own T, incoming: own T) -> (current: own T, previous: own T) reads(target), writes(target) {
+  let previous = replace target = move incoming;
+  return move target, move previous;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let (current, previous) = exchange_owned::<u64>(target: 1_u64, incoming: 2_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source);
+}
+
+#[test]
+fn owner_writeback_recursive_exchange_reaches_a_joint_fixed_point() {
+    let source = br#"fn recursive_exchange(target: &uniq ReadFile, incoming: own ReadFile, stop: own Bool) -> previous: own ReadFile reads(target), writes(target) {
+  if stop {
+    let previous = replace deref(target) = move incoming;
+    return move previous;
+  } else {
+    region {
+      return recursive_exchange(target: &uniq deref(target), incoming: move incoming, stop: stop);
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("joint recursion must reach its finite routes: {outcome:?}");
+        };
+        assert_eq!(
+            program.data.functions[0].result_state_origin,
+            CheckedResultStateOrigin::Finite {
+                formals: vec![root(0)]
+            }
+        );
+        assert_eq!(
+            program.data.functions[0].borrowed_state_origins[0].origin,
+            CheckedResultStateOrigin::Finite {
+                formals: vec![root(1)]
+            }
+        );
+    });
+}
+
+#[test]
+fn owner_writeback_does_not_treat_a_returned_loan_ceiling_as_an_exact_place() {
+    let source = br#"fn alias['r](value: &uniq 'r ReadFile) -> result: &uniq 'r ReadFile pure {
+  return &uniq 'r deref(value);
+}
+
+fn exchange(target: &uniq ReadFile, incoming: own ReadFile) -> previous: own ReadFile reads(target), writes(target) {
+  let previous = replace deref(target) = move incoming;
+  return move previous;
+}
+
+fn apply(file: own ReadFile, incoming: own ReadFile) -> result: own unit reads(file), writes(file, incoming) {
+  region {
+    let holder = alias(value: &uniq file);
+    region {
+      let previous = exchange(target: &uniq deref(holder), incoming: move incoming);
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Unsupported { ref unsupported } if unsupported.feature() == crate::UnsupportedSemanticFeature::OwnerStateRouting),
+            "an inexact location must remain an explicit capability gap: {outcome:?}"
+        );
+    });
+}
+
+#[test]
+fn an_uncalled_nonreturning_box_helper_needs_no_chosen_origin_encoding() {
+    // FN-1 describes returned values, not the analysis representation of a
+    // function that never returns one. This source supplies no counterexample
+    // to an empty may-origin summary; the returning controls below do.
+    let source = br#"fn unclosed(value: own box<u64>) -> result: own box<u64> pure {
+  let next = unclosed(value: move value);
+  return move next;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source);
+}
+
+#[test]
+fn a_returning_recursive_box_helper_preserves_the_input_read_effect() {
+    let source = r#"fn recur(value: own box<u64>, stop: own Bool) -> result: own box<u64> pure {
+  if stop {
+    return move value;
+  } else {
+    let done = True();
+    let next = recur(value: move value, stop: done);
+    return move next;
+  }
+}
+
+fn observe(value: own box<u64>, stop: own Bool) -> result: own u64 reads(value) {
+  let returned = recur(value: move value, stop: stop);
+  return deref(returned);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source.as_bytes());
+    let omitted = source.replace("reads(value)", "pure");
+    assert_rule_kind(omitted.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
+            if missing.iter().any(|effect| effect == "reads(value)"))
+    });
+}
+
+#[test]
+fn a_nonreturning_box_helper_keeps_its_structural_read_effect() {
+    let source = r#"fn unclosed(value: own box<u64>) -> result: own box<u64> reads(value) {
+  let observed = deref(value);
+  let next = unclosed(value: move value);
+  return move next;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source.as_bytes());
+    let omitted = source.replace("reads(value)", "pure");
+    assert_rule_kind(omitted.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
+            if missing.iter().any(|effect| effect == "reads(value)"))
+    });
+}
+
+#[test]
+fn ordinary_displaced_box_result_reports_the_unrepresented_origin_at_use() {
+    let source = br#"fn exchange(target: &uniq box<box<u64>>, incoming: own box<u64>) -> previous: own box<u64> reads(target), writes(target) {
+  let previous = replace deref(deref(target)) = move incoming;
+  return move previous;
+}
+
+fn observe(owner: own box<box<u64>>, incoming: own box<u64>) -> result: own u64 reads(owner), writes(owner) {
+  region {
+    let previous = exchange(target: &uniq owner, incoming: move incoming);
+    return deref(previous);
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Unsupported { ref unsupported } if unsupported.feature() == crate::UnsupportedSemanticFeature::OwnerStateRouting),
+            "a valid displaced-owner read must report the missing routing capability, not an internal failure: {outcome:?}"
+        );
+    });
+}
+
+#[test]
+fn ordinary_displaced_run_reports_unknown_origin_at_kernel_use() {
+    let helper = br#"fn extract(target: own box<FixedVector<u64, 0>>, incoming: own FixedVector<u64, 0>) -> previous: own FixedVector<u64, 0> reads(target), writes(target) {
+  let previous = replace deref(target) = move incoming;
+  return move previous;
+}
+
+fn convert(owner: own box<FixedVector<u64, 0>>, incoming: own FixedVector<u64, 0>) -> result: own array<u64, 0> reads(owner), writes(owner) {
+  let previous = extract(target: move owner, incoming: move incoming);
+  return array_from_fixed(vector: move previous);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(helper, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Unsupported { ref unsupported }
+                if unsupported.feature() == crate::UnsupportedSemanticFeature::OwnerStateRouting),
+            "kernel effect projection must report its missing origin capability: {outcome:?}"
+        );
+    });
+    assert_complete(br#"fn convert(owner: own box<FixedVector<u64, 0>>, incoming: own FixedVector<u64, 0>) -> result: own array<u64, 0> reads(owner), writes(owner) {
+  let previous = replace deref(owner) = move incoming;
+  return array_from_fixed(vector: move previous);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#);
+}

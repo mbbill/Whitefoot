@@ -1556,6 +1556,39 @@ pub(crate) struct CheckedStateOrigin {
 }
 
 impl CheckedStateOrigins {
+    /// Instantiate one boundary image from the same pre-call argument values
+    /// used for every other result and exclusive-referent image.
+    pub(crate) fn instantiate(
+        image: &CheckedResultStateOrigin,
+        arguments: &[Option<Self>],
+    ) -> Self {
+        let formals = match image {
+            CheckedResultStateOrigin::NoState => return Self::fresh(),
+            CheckedResultStateOrigin::Unknown => return Self::unknown(),
+            CheckedResultStateOrigin::Finite { formals } => formals,
+        };
+        let mut result = Self::fresh();
+        for formal in formals {
+            let Some(argument) = arguments.get(formal.parameter as usize) else {
+                return Self::unknown();
+            };
+            let mut mapped = argument
+                .clone()
+                .unwrap_or_else(Self::fresh)
+                .projected(&formal.parameter_fields);
+            for origin in &mut mapped.formals {
+                let mut fields = formal.result_fields.clone();
+                fields.extend_from_slice(&origin.value_fields);
+                origin.value_fields = fields;
+                if formal.result_variant.is_some() {
+                    origin.variant = formal.result_variant;
+                }
+            }
+            result.union(&mapped);
+        }
+        result
+    }
+
     pub(crate) fn fresh() -> Self {
         Self {
             unknown: false,
@@ -1673,6 +1706,14 @@ pub(crate) struct CheckedResultStatePath {
     pub(crate) parameter_fields: Vec<u32>,
 }
 
+/// The current value left in an exclusive formal's referent on normal exits.
+/// Its sources use the same entry-parameter coordinates as a returned owner.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedBorrowedStateOrigin {
+    pub(crate) parameter: u32,
+    pub(crate) origin: CheckedResultStateOrigin,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedSliceSource {
     Array {
@@ -1759,6 +1800,8 @@ pub(crate) enum CheckedExpression {
     },
     UserCall {
         function: FunctionId,
+        /// Result image instantiated before any exclusive-referent writeback.
+        state_origins: Option<Box<CheckedStateOrigins>>,
         /// Exact source call occurrence and declared-order argument atoms.
         call: NodePath,
         argument_nodes: Vec<NodePath>,
@@ -2213,6 +2256,8 @@ pub(crate) struct CheckedMatchArm {
 /// target stage can emit the exact [SYS-5] action.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedDrop {
+    /// The existing source edge whose normal exit performs this release.
+    pub(crate) source_edge: NodePath,
     pub(crate) binding: BindingId,
     pub(crate) fields: Vec<u32>,
     pub(crate) ty: CheckedType,
@@ -2534,6 +2579,7 @@ pub(crate) struct CheckedFunction {
     pub(crate) result: CheckedType,
     /// Closed-world state origin of this function's result.
     pub(crate) result_state_origin: CheckedResultStateOrigin,
+    pub(crate) borrowed_state_origins: Vec<CheckedBorrowedStateOrigin>,
     pub(crate) slice_return_ceiling: Vec<CheckedSliceOrigin>,
     /// Whether this function's own body reaches an ambient-heap allocation
     /// [STOR-1]. The ambient heap has no provider value, so [EFF-1] gives it

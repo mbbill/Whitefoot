@@ -1,0 +1,16 @@
+fn exchange['s](slot: &uniq Box<'s, u64>, incoming: own Box<'s, u64>) -> previous: own Box<'s, u64> reads(slot), writes(slot) {
+  let previous = replace deref(slot) = move incoming;
+  return move previous;
+}
+
+fn observe['s](owner: own Box<'s, u64>, incoming: own Box<'s, u64>, store: &uniq Heap<'s>) -> result: own u64 reads(owner), writes(owner, store) {
+  region {
+    let previous = exchange(slot: &uniq owner, incoming: move incoming);
+  }
+  return deref(owner);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "EFF-2: after exchange the Box left in owner is the incoming value. Reading it requires reads(incoming), even though the caller's binding and borrow target retained the spelling owner. A call must preserve this identity exactly as a direct replace does.";
+  return exit_status(code: 0_u8);
+}

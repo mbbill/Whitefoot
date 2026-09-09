@@ -16,7 +16,7 @@ use crate::{
 
 use super::super::model::{
     BindingId, CheckedDrop, CheckedExpression, CheckedLoopId, CheckedMode, CheckedProjectedDrop,
-    CheckedSetTarget, CheckedStatement, CheckedType, ValueInitializerKind,
+    CheckedStatement, CheckedType, ValueInitializerKind,
 };
 use super::borrows::ReborrowPosition;
 use super::expressions::MutationTarget;
@@ -442,7 +442,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // release contribution, because `dispose` is a written statement.
         let mut effects = value.effects;
         for access in &value.accesses {
-            for path in self.effect_paths_for_place(&access.place, bindings)? {
+            for path in self.effect_paths_for_place(node, &access.place, bindings)? {
                 effects.add_write(path);
             }
         }
@@ -456,7 +456,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let state_origins = whole_origins
                 .clone()
                 .map(|origins| origins.projected(&fields));
-            effects = effects.union(self.effects_of_row(release.row, state_origins.as_ref())?);
+            effects = effects.union(self.effects_of_row(
+                release.row,
+                state_origins.as_ref(),
+                self.tree.path(node)?,
+            )?);
             drops.push(CheckedProjectedDrop {
                 state_origins,
                 fields,
@@ -751,6 +755,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             effects: target_effects,
             unsupported: target_unsupported,
             access,
+            place,
             ..
         } = self.check_replace_target(function, target_node, bindings, scope.loops.len())?;
         let value =
@@ -787,16 +792,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let replacement_origins = self.state_origins_of_value(&value, bindings)?;
         let previous_whole_origins = bindings
-            .get(&target_declaration)
+            .get(&place.root)
             .and_then(|binding| binding.state_origins.clone());
-        let target_fields = match &target {
-            CheckedSetTarget::Place(place) => Some(place.fields.as_slice()),
-            CheckedSetTarget::ArrayIndex(_)
-            | CheckedSetTarget::BufferIndex(_)
-            | CheckedSetTarget::Storage(_)
-            | CheckedSetTarget::SliceIndex(_) => None,
-        };
-        let previous_origins = match (previous_whole_origins.clone(), target_fields) {
+        let target_fields = self.state_fields_of_place(&place, bindings)?;
+        let previous_origins = match (previous_whole_origins.clone(), target_fields.as_deref()) {
             (Some(origins), Some(fields)) => Some(origins.projected(fields)),
             (origins, None) => origins,
             (None, Some(_)) => None,
@@ -829,7 +828,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
         if target_carries_identity {
-            let updated = match (previous_whole_origins, target_fields) {
+            if bindings
+                .get(&target_declaration)
+                .and_then(|local| local.borrow.as_ref())
+                .is_some_and(|borrow| !borrow.exact_place)
+            {
+                return self
+                    .unsupported(UnsupportedSemanticFeature::OwnerStateRouting, target_node);
+            }
+            let updated = match (previous_whole_origins, target_fields.as_deref()) {
                 (Some(origins), Some(fields)) => {
                     Some(origins.replace_path(fields, replacement_origins))
                 }
@@ -837,7 +844,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 (origins, None) => origins,
             };
             bindings
-                .get_mut(&target_declaration)
+                .get_mut(&place.root)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?
                 .state_origins = updated;
         }
@@ -1060,6 +1067,7 @@ so the block is written `region { ... }`",
                 let paths = self.drop_paths(local.ty, Vec::new())?;
                 for (fields, ty, release) in self.released_paths(paths)? {
                     drops.push(CheckedDrop {
+                        source_edge: self.tree.path(edge)?.clone(),
                         binding: local.binding,
                         state_origins: local
                             .state_origins

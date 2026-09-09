@@ -431,9 +431,26 @@ descriptors and aggregate leases. System-call lowering reads the qualified
 resource value from that address; the target ABI stays unchanged. Retained-call
 native controls cover descriptor exchange with inert test identities and
 HostString field replacement through borrowed results and reborrows.
-Effect-origin routing after a resource is written back through a borrowed
-actual remains incomplete; these address tests do not establish correct
-release-effect attribution for that separate flow.
+Normal-exit state summaries preserve ordinary whole owners and static struct
+fields replaced through exclusive actuals, including unit-result helpers,
+reborrows, simultaneous disjoint updates, and recursive callable composition.
+Effects, returned owners and stored outputs use one call-entry image; later
+reads and releases follow the current owner. A complete binding already dead
+at statement entry initializes without an old-owner write, while same-statement
+read-out retains its commit write. Ordinary Box direct/helper controls and
+retained native calls cover both state attribution and physical writeback.
+Nested owning contents, indexed elements and enum payload updates do not yet
+have a complete separate state image. Using an unknown returned owner's state
+reports `OwnerStateRouting`; a returned borrow's candidate ceiling is not
+treated as an exact writeback location. Internal replacement returning no
+tracked owner remains an unresolved routing limitation, not evidence that its
+contained owners stayed unchanged. These boundaries apply to ordinary memory
+and resource objects alike.
+The current normal-exit prototype still regresses three retained native cases:
+heap full-array replacement, boxed enum-child replacement, and replacement
+through a returned resource borrow. They remain enabled and must pass before
+this prototype is considered complete. The investigation records why an empty
+current origin list alone cannot safely recover an unknown summary.
 An owning Box's run or extent referent supports measures and indexed access
 through the same typed place path. Replacing its owner invalidates referent
 facts. Box content also supports copy assignment, affine replacement and

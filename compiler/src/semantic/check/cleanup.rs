@@ -187,7 +187,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     release,
                 } => {
                     self.collect_expression_release_sites(value, sites)?;
-                    let effects = self.effects_of_row(release.row, state_origins.as_ref())?;
+                    // A discarded affine result comes from an expression
+                    // statement's call, whose checked carrier is its source.
+                    let source = value
+                        .carrier()
+                        .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                    let effects =
+                        self.effects_of_row(release.row, state_origins.as_ref(), source)?;
                     if effects != EffectSet::NONE {
                         sites.push(ReleaseSite {
                             owner: ReleaseOwner::ExpressionResult,
@@ -261,7 +267,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for drop in drops {
             // The drop record already carries its [SYS-5] row, so attribution
             // reads the checked program rather than rederiving it.
-            let mut effects = self.effects_of_row(drop.release.row, drop.state_origins.as_ref())?;
+            let mut effects = self.effects_of_row(
+                drop.release.row,
+                drop.state_origins.as_ref(),
+                &drop.source_edge,
+            )?;
             // [PROV-6, D3] a derived release of store-backed storage spends
             // that store's provider capability, and the scope it runs in says
             // so in its own row.
@@ -285,13 +295,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(), CheckStop> {
         match expression {
             CheckedExpression::Project {
+                carrier,
                 binding,
                 residual_drops,
                 ..
             } => {
                 for drop in residual_drops {
-                    let effects =
-                        self.effects_of_row(drop.release.row, drop.state_origins.as_ref())?;
+                    let effects = self.effects_of_row(
+                        drop.release.row,
+                        drop.state_origins.as_ref(),
+                        carrier,
+                    )?;
                     if effects != EffectSet::NONE {
                         sites.push(ReleaseSite {
                             owner: ReleaseOwner::Binding(*binding),
@@ -373,6 +387,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         row: SystemReleaseRow,
         origins: Option<&super::super::model::CheckedStateOrigins>,
+        source: &crate::NodePath,
     ) -> Result<EffectSet, CheckStop> {
         let mut effects = EffectSet::NONE;
         if row.state_write {
@@ -380,7 +395,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             };
             if origins.unknown && !self.deriving_result_state_origin.get() {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
+                let node = self
+                    .tree
+                    .node_with_path(source)
+                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                return self
+                    .unsupported(crate::UnsupportedSemanticFeature::OwnerStateRouting, node);
             }
             for origin in &origins.formals {
                 effects.add_write(origin.source.clone());

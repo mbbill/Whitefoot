@@ -384,7 +384,11 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // opaque resource representations and release rows, host ABIs, and entry
 // forms retain their v0.52 semantics. The qualified table carries forward
 // unchanged; the version tripwire remains in force.
-const REVIEWED_FOR: &str = "v0.53";
+// v0.54 qualification review: ordinary normal-exit owner routing and the
+// entry-dead binding effect exception change compiler semantic metadata only.
+// No system operation ID, resource representation, target ABI, entry form,
+// release contract, or suspension milestone changes; retain the same table.
+const REVIEWED_FOR: &str = "v0.54";
 
 /// The number of [SYS-2] opaque resource types with a release row.
 ///
