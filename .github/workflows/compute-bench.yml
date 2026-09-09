@@ -68,6 +68,45 @@ jobs:
           name: formal-runtime-${{ matrix.target }}
           path: ${{ runner.temp }}/formal-runtime/formal-screen
 
+  formal-runtime-windows:
+    name: formal-runtime (x86_64-pc-windows-msvc)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build the native compiler
+        run: |
+          rustup default stable
+          rustc -vV | grep -Fx 'host: x86_64-pc-windows-msvc'
+          clang --version
+          cargo build --locked --profile gate --bin whitefootc \
+            --manifest-path compiler/Cargo.toml --target-dir "$RUNNER_TEMP/formal-runtime/compiler"
+      - name: Compare the shared runtime with its fixed Windows control
+        run: |
+          OUT="$(cygpath -u "$RUNNER_TEMP")/formal-runtime" \
+            WFC="$(cygpath -u "$RUNNER_TEMP")/formal-runtime/compiler/gate/whitefootc.exe" \
+            CC=clang sh research/experiments/compute-runtime/formal-screen.sh
+      - name: Publish per-cell wall-time screen
+        if: always()
+        run: |
+          {
+            echo '## x86_64-pc-windows-msvc: initial FIR runtime screen'
+            echo 'Same WF object; normal CLI correctness checked. Before-control only: strong native parallel references, broader workloads, CPU acceptance and CLI timing remain open.'
+            echo '```text'
+            cat "$RUNNER_TEMP/formal-runtime/formal-screen/summary.tsv"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: formal-runtime-x86_64-pc-windows-msvc
+          path: ${{ runner.temp }}/formal-runtime/formal-screen
+
   compute-linux:
     name: ${{ matrix.workload }}-linux
     strategy:

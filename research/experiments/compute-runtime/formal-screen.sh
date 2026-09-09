@@ -1,11 +1,37 @@
 #!/bin/sh
-# Initial POSIX shared-runtime attribution, not the full delivery qualification.
+# Initial shared-runtime attribution, not the full delivery qualification.
 # Called by `make formal-screen`; every timed image uses the same WF object.
 set -eu
 cd "$(dirname "$0")"
 : "${OUT:?set OUT}"
 : "${WFC:?set WFC to the current compiler}"
 CC=${CC:-/usr/bin/clang}
+# Counter reads are diagnostic runs, not part of this timing screen. This also
+# avoids live reads from the historical controls' pre-repair counters.
+WF_SCHED_REPORT=0
+export WF_SCHED_REPORT
+host=$(uname -s)
+exe=
+floor=wf_floor.c
+leaf=prim_host.c
+platform_flags=-pthread
+libraries=-lm
+modes='before candidate recovered'
+references='before recovered'
+case "$host" in
+    Darwin|Linux) ;;
+    MINGW*|MSYS*)
+        exe=.exe
+        floor=wf_floor_windows.c
+        leaf=prim_windows.c
+        platform_flags=
+        libraries=-lpsapi
+        # The frozen recovered control has no qualified Windows port.
+        modes='before candidate'
+        references=before
+        ;;
+    *) echo "unsupported native screen host: $host" >&2; exit 1 ;;
+esac
 before=188088d41552d0d3bccf8368798dcc44702bf75c
 root=$(git rev-parse --show-toplevel)
 git -C "$root" diff --exit-code "$before" -- \
@@ -16,13 +42,13 @@ mkdir -p "$OUT"
 mkdir "$OUT/formal-screen"
 out=$(cd "$OUT/formal-screen" && pwd)
 mkdir -p "$out/baseline-source" "$out/source" "$out/raw"
-git -C "$root" archive "$before" compiler/src/backend/sched compiler/src/backend/wf_floor.c \
+git -C "$root" archive "$before" compiler/src/backend/sched "compiler/src/backend/$floor" \
     > "$out/before.tar"
 tar -xf "$out/before.tar" -C "$out/baseline-source"
 cp fir.wf fir_direct.wf fir_host.ll fir_bench.c fir_native.c fir_native.h \
     fir_check.c formal-screen.sh runtime.c runtime.h runtime_events.h "$out/source/"
 cp -R "$root/compiler/src/backend/sched" "$out/source/"
-cp "$root/compiler/src/backend/wf_floor.c" "$out/source/"
+cp "$root/compiler/src/backend/$floor" "$out/source/"
 cp "$WFC" "$out/whitefootc"
 {
     git rev-parse HEAD
@@ -31,23 +57,28 @@ cp "$WFC" "$out/whitefootc"
     uname -a
     "$CC" --version
     rustc -vV
-    if test "$(uname -s)" = Darwin; then
+    if test "$host" = Darwin; then
         sysctl hw.model hw.ncpu hw.physicalcpu hw.logicalcpu hw.memsize
-    else
+    elif test "$host" = Linux; then
         lscpu
         cat /proc/self/status
         for quota in /sys/fs/cgroup/cpu.max /sys/fs/cgroup/cpu/cpu.cfs_quota_us; do
             if test -f "$quota"; then cat "$quota"; fi
         done
+    else
+        powershell.exe -NoProfile -Command 'Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors | Format-List'
+        powershell.exe -NoProfile -Command 'Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,TotalVisibleMemorySize | Format-List'
+        MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' powercfg.exe /getactivescheme
     fi
 } > "$out/host.txt"
 git diff --binary > "$out/source.patch"
-flags='-std=c11 -O3 -g -pthread -fno-fast-math -ffp-contract=off -fno-vectorize -fno-slp-vectorize -fno-lto'
+flags="-std=c11 -O3 -g $platform_flags -fno-fast-math -ffp-contract=off -fno-vectorize -fno-slp-vectorize -fno-lto"
 printf '%s\n' "$CC $flags; recovered additionally -DWF_COMPUTE_STATS=0 -DWF_COMPUTE_CONTROL; shared additionally -DWF_SHARED_CONTROL" \
+    "measured_modes=$modes; references=$references; libraries=$libraries" \
     'WF: --par defaults; same optimized WF object in every attribution image' \
     'CLI: normal --par link, correctness only; end-to-end timing remains open' > "$out/flags.txt"
 "$WFC" --par --emit-llvm fir.wf fir_direct.wf -o "$out/module.ll"
-"$WFC" --par fir.wf fir_direct.wf -o "$out/command"
+"$WFC" --par fir.wf fir_direct.wf -o "$out/command$exe"
 sed -e 's/@main(/@wf_research_fir_command_main(/g' \
     -e 's/@wf__main_body(/@wf_research_fir_command_body(/g' "$out/module.ll" > "$out/host.ll"
 cat fir_host.ll >> "$out/host.ll"
@@ -58,41 +89,44 @@ cat fir_host.ll >> "$out/host.ll"
 "$CC" $flags -c fir_native.c -o "$out/native.o"
 # Qualify the native oracle independently before using it in timed comparisons.
 # shellcheck disable=SC2086
-"$CC" $flags -DWF_FILTER_NATIVE fir_check.c "$out/native.o" -lm -o "$out/oracle"
-"$out/oracle" > "$out/oracle.txt"
-for mode in before candidate recovered; do
+"$CC" $flags -DWF_FILTER_NATIVE fir_check.c "$out/native.o" $libraries -o "$out/oracle$exe"
+"$out/oracle$exe" > "$out/oracle.txt"
+for mode in $modes; do
     runtime="$root/compiler/src/backend"
     if test "$mode" = before; then runtime="$out/baseline-source/compiler/src/backend"; fi
     if test "$mode" = recovered; then
         # The existing, unchanged POSIX control is a baseline only.
         # shellcheck disable=SC2086
         "$CC" $flags -DWF_COMPUTE_STATS=0 -DWF_COMPUTE_CONTROL "-DFIR_RUNTIME=\"$mode\"" \
-            fir_bench.c runtime.c "$runtime/wf_floor.c" "$out/wf.o" "$out/native.o" \
-            -lm -o "$out/$mode"
+            fir_bench.c runtime.c "$runtime/$floor" "$out/wf.o" "$out/native.o" \
+            $libraries -o "$out/$mode$exe"
     else
         # shellcheck disable=SC2086
         "$CC" $flags -DWF_SHARED_CONTROL "-DFIR_RUNTIME=\"$mode\"" fir_bench.c \
-            "$runtime/wf_floor.c" "$runtime/sched/core.c" \
-            "$runtime/sched/prim_host.c" "$runtime/sched/entry.c" \
-            "$out/wf.o" "$out/native.o" -lm -o "$out/$mode"
+            "$runtime/$floor" "$runtime/sched/core.c" \
+            "$runtime/sched/$leaf" "$runtime/sched/entry.c" \
+            "$out/wf.o" "$out/native.o" $libraries -o "$out/$mode$exe"
     fi
 done
-cpus=$(getconf _NPROCESSORS_ONLN)
+if test -n "$exe"; then cpus=$NUMBER_OF_PROCESSORS; else cpus=$(getconf _NPROCESSORS_ONLN); fi
 widths=1
 if test "$cpus" -ge 2; then widths="$widths 2"; fi
 if test "$cpus" -ge 4; then widths="$widths 4"; fi
 printf 'mode\tworkers\tn\ttile\tpass\tcore_mean_ns\tcycle_mean_ns\n' > "$out/means.tsv"
 for width in $widths; do
-    WF_WORKERS="$width" "$out/command" > "$out/cli-w$width.txt"
+    WF_WORKERS="$width" "$out/command$exe" > "$out/cli-w$width.txt"
     for n in 4096 65536; do
         for tile in 16 64 256 1024; do
             pass=0
             while test "$pass" -lt 5; do
-                order='before candidate recovered'
-                if test "$((pass % 2))" = 1; then order='recovered candidate before'; fi
+                order=$modes
+                if test "$((pass % 2))" = 1; then
+                    order='candidate before'
+                    if test -z "$exe"; then order="recovered $order"; fi
+                fi
                 for mode in $order; do
                     log="$out/raw/$mode-w$width-n$n-t$tile-p$pass.tsv"
-                    WF_WORKERS="$width" "$out/$mode" wf 16 "$n" "$tile" 64 92821 "$pass" > "$log"
+                    WF_WORKERS="$width" "$out/$mode$exe" wf 16 "$n" "$tile" 64 92821 "$pass" > "$log"
                     awk -v width="$width" '
                         /^# actual_lanes=/ {split($2,a,"="); seen++; if(a[2]!=width)exit 1}
                         END {if(seen!=1)exit 1}' "$log"
@@ -107,13 +141,14 @@ for width in $widths; do
     done
 done
 # Process means, not individual warm calls, are the independent samples.
-awk -F '\t' '
+awk -F '\t' -v references="$references" '
+    BEGIN {reference_count=split(references,reference," ")}
     NR==1 {next}
     {cell=$2 FS $3 FS $4; cells[cell]=1; value[$1 FS cell FS $5]=$6}
     END {
         print "workers\tn\ttile\treference\tmedian_paired_ratio\tmin_ratio\tmax_ratio\twall_screen"
-        for(cell in cells) for(r=0;r<2;r++) {
-            ref=r==0?"before":"recovered"
+        for(cell in cells) for(r=1;r<=reference_count;r++) {
+            ref=reference[r]
             for(p=0;p<5;p++) {
                 a=value["candidate" FS cell FS p]; b=value[ref FS cell FS p]
                 if(a<=0||b<=0)exit 2
@@ -129,5 +164,9 @@ awk -F '\t' '
         exit failed
     }' "$out/means.tsv" > "$out/summary.tsv" && result=0 || result=$?
 cat "$out/summary.tsv"
-find "$out" -type f ! -name manifest.sha256 -exec shasum -a 256 {} + > "$out/manifest.sha256"
+if test -n "$exe"; then
+    find "$out" -type f ! -name manifest.sha256 -exec sha256sum {} + > "$out/manifest.sha256"
+else
+    find "$out" -type f ! -name manifest.sha256 -exec shasum -a 256 {} + > "$out/manifest.sha256"
+fi
 exit "$result"

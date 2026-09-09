@@ -78,8 +78,15 @@ does not measure compute-region CPU fractions.
 reproduces the initial POSIX screen through the current compiler, with fixed
 formal-before revision `188088d41552d0d3bccf8368798dcc44702bf75c`, a checked
 unchanged recovered baseline, and the candidate formal runtime. CI covers the
-four POSIX targets; the existing Windows native mixed-runtime protocol remains
-in `io-bench.yml`. This screen is FIR-only, its normal CLI execution is a
+four POSIX targets and Windows. The Windows job invokes the same script with
+the native MSVC-target compiler and existing Windows runtime leaves; it compares
+only the fixed formal-before control with the candidate. No research runtime
+is ported. Its benchmark uses QueryPerformanceCounter for elapsed time,
+GetProcessTimes for whole-process CPU time, and peak working set for memory;
+context-switch counts are explicitly unavailable. CPU times' 100-ns units do
+not imply that small batches have 100-ns accounting resolution. Strong native
+parallel references and CPU acceptance remain required on Windows. The existing
+mixed-runtime protocol remains in `io-bench.yml`. This screen is FIR-only, its normal CLI execution is a
 correctness check, and its threshold evaluates warm core wall time only. It
 cannot complete the broader workload, CPU, CLI timing or five-target goal.
 Linked-image layout can also change despite using identical WF object bytes;

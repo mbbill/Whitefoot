@@ -11,8 +11,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <psapi.h>
+#else
 #include <sys/resource.h>
 #include <time.h>
+#endif
 #include "fir_native.h"
 #ifdef WF_FILTER_STATIC
 #include "fir_static.h"
@@ -38,7 +44,11 @@ extern uint64_t wf_research_fir_history(const double *, uint64_t, uint64_t,
 extern uint64_t wf_research_fir_release(void *);
 extern int wf__par_pool_active(void);
 extern unsigned long wf__par_grants(void);
+#if defined(_WIN32)
+extern int wf__floor_run(int, void *);
+#else
 extern int wf__floor_run(int, char **);
+#endif
 #ifdef WF_COMPUTE_CONTROL
 #include "runtime.h"
 #endif
@@ -48,6 +58,9 @@ extern unsigned wf__sched_pool_running(void);
 #endif
 
 static uint64_t entered_at;
+#if defined(_WIN32)
+static uint64_t clock_frequency;
+#endif
 #ifdef WF_FILTER_STATIC
 static int static_enabled;
 static unsigned static_requested;
@@ -63,9 +76,19 @@ static void require(int condition, const char *message) {
 }
 
 static uint64_t now(void) {
+#if defined(_WIN32)
+    LARGE_INTEGER t;
+    require(QueryPerformanceCounter(&t) != 0, "QueryPerformanceCounter failed");
+    uint64_t ticks = (uint64_t)t.QuadPart;
+    /* Divide before scaling the absolute counter to avoid overflowing after
+     * a short host uptime. Frequency is initialized before runtime entry. */
+    return (ticks / clock_frequency) * UINT64_C(1000000000)
+        + (ticks % clock_frequency) * UINT64_C(1000000000) / clock_frequency;
+#else
     struct timespec t;
     require(clock_gettime(CLOCK_MONOTONIC_RAW, &t) == 0, "clock_gettime failed");
     return (uint64_t)t.tv_sec * UINT64_C(1000000000) + (uint64_t)t.tv_nsec;
+#endif
 }
 
 static size_t number(const char *s, size_t maximum) {
@@ -90,9 +113,29 @@ static double sample(uint32_t *state, size_t i) {
     return ((double)v / 1009.0) * scale;
 }
 
+#if defined(_WIN32)
+typedef struct {
+    uint64_t user_us, system_us, maxrss_bytes;
+} ProcessUsage;
+
+static uint64_t filetime_us(FILETIME t) {
+    return (((uint64_t)t.dwHighDateTime << 32) | t.dwLowDateTime) / 10u;
+}
+
+static ProcessUsage process_usage(void) {
+    FILETIME created, exited, kernel, user;
+    PROCESS_MEMORY_COUNTERS memory;
+    require(GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user) != 0,
+            "GetProcessTimes failed");
+    require(GetProcessMemoryInfo(GetCurrentProcess(), &memory, sizeof(memory)) != 0,
+            "GetProcessMemoryInfo failed");
+    return (ProcessUsage){filetime_us(user), filetime_us(kernel), memory.PeakWorkingSetSize};
+}
+#else
 static uint64_t timeval_us(struct timeval t) {
     return (uint64_t)t.tv_sec * UINT64_C(1000000) + (uint64_t)t.tv_usec;
 }
+#endif
 
 typedef struct {
     uint64_t core, cycle;
@@ -225,15 +268,23 @@ int wf__main_body(int argc, char **argv) {
     require(readings != NULL, "reading allocation failed");
     uint64_t clock_min = UINT64_MAX;
     uint64_t clock_positive_min = UINT64_MAX;
+#if defined(_WIN32)
+    uint64_t resolution_ns = (UINT64_C(1000000000) + clock_frequency - 1) / clock_frequency;
+#else
     struct timespec resolution;
     require(clock_getres(CLOCK_MONOTONIC_RAW, &resolution) == 0, "clock_getres failed");
+#endif
     for (unsigned i = 0; i < 1000; ++i) {
         uint64_t a = now(), b = now();
         if (b - a < clock_min) clock_min = b - a;
         if (b > a && b - a < clock_positive_min) clock_positive_min = b - a;
     }
+#if defined(_WIN32)
+    ProcessUsage before = process_usage();
+#else
     struct rusage before, after;
     require(getrusage(RUSAGE_SELF, &before) == 0, "getrusage failed");
+#endif
     uint64_t batch_start = now();
     /* Call zero is retained as first invocation, then REPS warm invocations.
      * Checks warm the output/cache between calls and are never subtracted from
@@ -244,7 +295,11 @@ int wf__main_body(int argc, char **argv) {
         require(memcmp(state, expected_state, h * sizeof(double)) == 0, "wrong history bits");
     }
     uint64_t batch_ns = now() - batch_start;
+#if defined(_WIN32)
+    ProcessUsage after = process_usage();
+#else
     require(getrusage(RUSAGE_SELF, &after) == 0, "getrusage failed");
+#endif
     printf("# runtime=%s kernel=%s workers_requested=%s world=%s entry_ns=%" PRIu64
            " select_ns=%" PRIu64 " clock_pair_min_ns=%" PRIu64 "\n",
            FIR_RUNTIME, argv[1], workers,
@@ -253,6 +308,18 @@ int wf__main_body(int argc, char **argv) {
 #endif
            parallel ? "parallel" : "sequential",
            body_at - entered_at, select_ns, clock_min);
+#if defined(_WIN32)
+    printf("# clock=QueryPerformanceCounter frequency_hz=%" PRIu64
+           " reported_resolution_ns=%" PRIu64 " clock_pair_positive_min_ns=%" PRIu64 "\n",
+           clock_frequency, resolution_ns,
+           clock_positive_min == UINT64_MAX ? 0 : clock_positive_min);
+    printf("# batch_includes_checks=1 batch_ns=%" PRIu64 " user_us=%" PRIu64
+           " system_us=%" PRIu64 " maxrss_bytes=%" PRIu64
+           " voluntary_switches=unavailable involuntary_switches=unavailable\n",
+           batch_ns, after.user_us - before.user_us, after.system_us - before.system_us,
+           after.maxrss_bytes);
+    puts("# cpu_clock=GetProcessTimes cpu_unit_ns=100 memory_metric=PeakWorkingSetSize");
+#else
     printf("# clock=CLOCK_MONOTONIC_RAW reported_resolution_ns=%" PRIu64
            " clock_pair_positive_min_ns=%" PRIu64 "\n",
            (uint64_t)resolution.tv_sec * UINT64_C(1000000000) + (uint64_t)resolution.tv_nsec,
@@ -267,6 +334,7 @@ int wf__main_body(int argc, char **argv) {
            batch_ns, timeval_us(after.ru_utime) - timeval_us(before.ru_utime),
            timeval_us(after.ru_stime) - timeval_us(before.ru_stime), rss,
            after.ru_nvcsw - before.ru_nvcsw, after.ru_nivcsw - before.ru_nivcsw);
+#endif
 #ifdef WF_COMPUTE_CONTROL
     printf("# actual_lanes=%u", parallel ? wf_compute_worker_count() : 1u);
 #if WF_COMPUTE_STATS
@@ -279,7 +347,7 @@ int wf__main_body(int argc, char **argv) {
     printf("# actual_lanes=%u\n", wf__sched_pool_running() + 1u);
     char report[1024];
     if (wf__sched_report(report, sizeof(report))) printf("# %s\n", report);
-    else puts("# shared_pool_report=not_initialized");
+    else puts("# shared_pool_report=disabled_or_unavailable");
 #endif
     puts("runtime\tkernel\tworkers\tk\tn\ttile\tseed\tpass\tcall\tphase\tcore_ns\tcycle_ns");
     for (size_t i = 0; i <= reps; ++i)
@@ -312,6 +380,14 @@ int wf__main_body(int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
+#if defined(_WIN32)
+    LARGE_INTEGER frequency;
+    require(QueryPerformanceFrequency(&frequency) != 0 && frequency.QuadPart > 0,
+            "QueryPerformanceFrequency failed");
+    clock_frequency = (uint64_t)frequency.QuadPart;
+    require(clock_frequency <= UINT64_MAX / UINT64_C(1000000000),
+            "performance counter frequency exceeds conversion range");
+#endif
     entered_at = now();
     return wf__floor_run(argc, argv);
 }
