@@ -386,6 +386,57 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
+#[test]
+fn an_owning_box_index_renders_only_its_written_dereference() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
+  let values = array_new::<u8, 2>(7_u8);
+  let boxed = box_new(move values);
+  let result = deref(boxed)[0_u64] + 1_u8;
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the indexed operand remains no term: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+        assert_eq!(
+            issue.kind(),
+            &SemanticIssueKind::UndischargedIntegerDomainObligation {
+                residual: "deref(boxed)[0_u64] +defined 1_u8".to_owned(),
+                disposition: StaticObligationDisposition::Unproved,
+                mechanical_fix: OVERFLOW_FIX,
+            },
+        );
+    });
+}
+
+#[test]
+fn a_borrowed_array_index_preserves_its_holder_dereference() {
+    let source = br#"fn increment(values: &array<u8, 2>) -> result: own u8 reads(values) {
+  return deref(values)[0_u64] + 1_u8;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the indexed operand remains no term: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+        assert_eq!(
+            issue.kind(),
+            &SemanticIssueKind::UndischargedIntegerDomainObligation {
+                residual: "deref(values)[0_u64] +defined 1_u8".to_owned(),
+                disposition: StaticObligationDisposition::Unproved,
+                mechanical_fix: OVERFLOW_FIX,
+            },
+        );
+    });
+}
+
 /// Rule precedence is stable on the default semantic path: an unexhibited
 /// allocation effect rejects under EFF-2 before an unproved exact-site
 /// obligation, while the matching `pure` row reaches OP-2.

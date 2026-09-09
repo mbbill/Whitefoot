@@ -14760,7 +14760,7 @@ impl Analyzer<'_, '_> {
             root: root.root,
             deref: root
                 .binding()
-                .is_some_and(|binding| self.is_holder(binding)),
+                .is_some_and(|binding| self.needs_implicit_deref(binding)),
             fields: Vec::new(),
         });
         let mut ty = match root.root {
