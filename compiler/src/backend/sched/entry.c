@@ -659,6 +659,9 @@ unsigned long wf__par_split_budget(unsigned long span, unsigned long weight) {
 
 unsigned long wf__par_grants(void) {
     wf_sched_statistics counts;
+    if (!WF_SCHED_STATS) {
+        return 0;
+    }
     wf_sched_statistics_sum(&wf__sched_core, &counts);
     return (unsigned long)counts.steals;
 }
@@ -666,7 +669,7 @@ unsigned long wf__par_grants(void) {
 int wf__sched_report(char *buffer, size_t capacity) {
     wf_sched_statistics counts;
     int written;
-    if (wf__sched_report_wanted == 0ul || buffer == NULL || capacity == 0u) {
+    if (!WF_SCHED_STATS || wf__sched_report_wanted == 0ul || buffer == NULL || capacity == 0u) {
         return 0;
     }
     wf_sched_statistics_sum(&wf__sched_core, &counts);

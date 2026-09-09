@@ -128,10 +128,14 @@ jobs:
 
       - name: Exercise native deque reuse and live counters
         run: |
-          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
-            -DWF_SCHED_LANE_SLOTS=8u compiler/src/backend/sched/deque_probe.c \
-            compiler/src/backend/sched/prim_windows.c -o "$RUNNER_TEMP/sched-deque-probe.exe"
-          "$RUNNER_TEMP/sched-deque-probe.exe"
+          for stats in 1 0; do
+            suffix=; if test "$stats" = 0; then suffix=-no-stats; fi
+            clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
+              -DWF_SCHED_LANE_SLOTS=8u -DWF_SCHED_STATS="$stats" \
+              compiler/src/backend/sched/deque_probe.c compiler/src/backend/sched/prim_windows.c \
+              -o "$RUNNER_TEMP/sched-deque-probe$suffix.exe"
+            "$RUNNER_TEMP/sched-deque-probe$suffix.exe"
+          done
 
       # The runtime the driver stages on this target, in the three groups it
       # stages: the scheduler core with its Windows leaf, the completion

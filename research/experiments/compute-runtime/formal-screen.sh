@@ -17,9 +17,9 @@ floor=wf_floor.c
 leaf=prim_host.c
 platform_flags=-pthread
 libraries=-lm
-modes='before candidate replica recovered previous unaligned slotbase idle4096'
-references='before recovered previous unaligned slotbase idle4096 replica'
-diagnostic_modes='candidate previous unaligned slotbase idle4096'
+modes='before candidate replica recovered previous unaligned slotbase idle4096 nostats'
+references='before recovered previous unaligned slotbase idle4096 nostats replica'
+diagnostic_modes='candidate previous unaligned slotbase idle4096 nostats'
 case "$host" in
     Darwin|Linux) ;;
     MINGW*|MSYS*)
@@ -29,9 +29,9 @@ case "$host" in
         platform_flags=
         libraries='-lpsapi -lws2_32'
         # The frozen recovered control has no qualified Windows port.
-        modes='before candidate replica previous unaligned slotbase idle4096'
-        references='before previous unaligned slotbase idle4096 replica'
-        diagnostic_modes='before candidate previous unaligned slotbase idle4096'
+        modes='before candidate replica previous unaligned slotbase idle4096 nostats'
+        references='before previous unaligned slotbase idle4096 nostats replica'
+        diagnostic_modes='before candidate previous unaligned slotbase idle4096 nostats'
         ;;
     *) echo "unsupported native screen host: $host" >&2; exit 1 ;;
 esac
@@ -113,7 +113,8 @@ printf '%s\n' "$CC $flags; recovered additionally -DWF_COMPUTE_STATS=0 -DWF_COMP
     'unaligned: frozen 8b61e7c4 maintained runtime before counter isolation and owner-local task slots; retained historical comparison.' \
     'slotbase: frozen dc383eef maintained runtime with owner-local task slots and original idle registration; restored after the delayed-registration experiment at 461a7130. Retained direct baseline; instruction layout can also differ.' \
     'idle4096: current runtime sources with only -DWF_SCHED_IDLE_SPIN_ROUNDS=4096u changed; default remains 256' \
-    'diagnostics: separate longer batches; candidate/previous/unaligned/slotbase/idle4096 use WF_SCHED_REPORT=1, before uses 0; wake_epoch counts notification-epoch advances, not task publications or kernel wakeups; not pooled into wall samples' \
+    'nostats: current runtime sources with only -DWF_SCHED_STATS=0 changed; default remains 1. Ordinary link placement can differ, so this is not an isolated instruction-cost claim.' \
+    'diagnostics: separate longer batches; candidate/previous/unaligned/slotbase/idle4096/nostats request WF_SCHED_REPORT=1, before uses 0. nostats must omit scheduler counters while retaining the external epoch observation; wake_epoch counts notification-epoch advances, not task publications or kernel wakeups; not pooled into wall samples' \
     'wall samples: 4096 warm calls for n4096, 512 for n65536; first64 retained as a separate short view of each process, not independent extra samples' \
     'WF: --par --no-vectorize; same optimized WF object in every attribution image' \
     'CLI: normal --par --no-vectorize link at -O2, correctness only; end-to-end timing remains open' > "$out/flags.txt"
@@ -151,6 +152,7 @@ for mode in $modes; do
     if test "$mode" = unaligned; then runtime="$out/unaligned-source/compiler/src/backend"; fi
     if test "$mode" = slotbase; then runtime="$out/slotbase-source/compiler/src/backend"; fi
     if test "$mode" = idle4096; then policy_flags=-DWF_SCHED_IDLE_SPIN_ROUNDS=4096u; fi
+    if test "$mode" = nostats; then policy_flags=-DWF_SCHED_STATS=0; fi
     if test "$mode" = before; then runtime="$out/baseline-source/compiler/src/backend"; fi
     set --
     if test -n "$exe"; then
@@ -268,12 +270,15 @@ for width in $widths; do
                 # wait counters in the current overlay may safely be observed
                 # for before too; previous observes its own frozen bridge.
                 if test "$mode" = before; then reports=0; fi
+                expected_reports=$reports
+                if test "$mode" = nostats; then expected_reports=0; fi
                 WF_SCHED_REPORT="$reports" WF_WORKERS="$width" "$out/$mode$exe" \
                     wf 16 "$n" "$tile" "$diagnostic_calls" 92821 0 > "$log"
                 wait_reports=0
                 if test -n "$exe"; then wait_reports=1; fi
                 awk -F '\t' -v width="$width" -v expected="$diagnostic_calls" \
-                    -v expected_reports="$reports" -v expected_wait="$wait_reports" \
+                    -v expected_reports="$expected_reports" -v expected_epochs="$reports" \
+                    -v expected_wait="$wait_reports" \
                     -v expected_spin="$spin_rounds" '
                     {sub(/\r$/, "")}
                     /^# actual_lanes=/ {split($0,a,"="); lanes++; if(a[2]!=width)bad=1}
@@ -285,7 +290,7 @@ for width in $widths; do
                     /^# wake_epoch: advances=[0-9]+ scope=batch_including_checks$/ {epochs++}
                     $10=="warm" {calls++}
                     END {exit bad || lanes!=1 || reports!=expected_reports ||
-                        waits!=expected_wait || epochs!=expected_reports || calls!=expected}' "$log"
+                        waits!=expected_wait || epochs!=expected_epochs || calls!=expected}' "$log"
             done
         done
     done

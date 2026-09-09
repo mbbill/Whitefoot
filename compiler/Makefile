@@ -324,17 +324,23 @@ sched-smoke:
 # switching, so ThreadSanitizer can track every tested thread normally.
 sched-deque-test:
 	@mkdir -p "$(COMPLETION_TMP)"
-	$(CC) $(COMPLETION_BASE_CFLAGS) -DWF_SCHED_LANE_SLOTS=8u \
-		$(SCHED_DIR)/deque_probe.c $(SCHED_DIR)/prim_host.c \
-		-o "$(COMPLETION_TMP)/sched-deque-probe"
-	"$(COMPLETION_TMP)/sched-deque-probe"
+	@set -e; for stats in 1 0; do \
+		suffix=; if test $$stats = 0; then suffix=-no-stats; fi; \
+		$(CC) $(COMPLETION_BASE_CFLAGS) -DWF_SCHED_LANE_SLOTS=8u -DWF_SCHED_STATS=$$stats \
+			$(SCHED_DIR)/deque_probe.c $(SCHED_DIR)/prim_host.c \
+			-o "$(COMPLETION_TMP)/sched-deque-probe$$suffix"; \
+		"$(COMPLETION_TMP)/sched-deque-probe$$suffix"; \
+	done
 
 sched-deque-tsan:
 	@mkdir -p "$(COMPLETION_TMP)"
-	$(CC) $(COMPLETION_BASE_CFLAGS) -fsanitize=thread -DWF_SCHED_LANE_SLOTS=8u \
-		$(SCHED_DIR)/deque_probe.c $(SCHED_DIR)/prim_host.c \
-		-o "$(COMPLETION_TMP)/sched-deque-tsan"
-	"$(COMPLETION_TMP)/sched-deque-tsan"
+	@set -e; for stats in 1 0; do \
+		suffix=; if test $$stats = 0; then suffix=-no-stats; fi; \
+		$(CC) $(COMPLETION_BASE_CFLAGS) -fsanitize=thread -DWF_SCHED_LANE_SLOTS=8u -DWF_SCHED_STATS=$$stats \
+			$(SCHED_DIR)/deque_probe.c $(SCHED_DIR)/prim_host.c \
+			-o "$(COMPLETION_TMP)/sched-deque-tsan$$suffix"; \
+		"$(COMPLETION_TMP)/sched-deque-tsan$$suffix"; \
+	done
 
 # The §11 gate: every interleaving of the core's primitive steps at the four
 # configurations §11 derives from §5's floor, (T=1,S=2), (T=1,S=3), (T=2,S=3)

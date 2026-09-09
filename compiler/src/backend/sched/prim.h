@@ -250,14 +250,30 @@ static inline int wf_prim_cas_p(
 /* Observational counters have one physical-thread writer and may have live
  * readers. They carry no scheduler state or synchronization edges. The
  * enumerator excludes them from state and does not branch on their accesses.
- * A load/store increment suffices because no second writer can intervene. */
+ * A load/store increment suffices because no second writer can intervene.
+ * The explicit build override isolates their cost without changing storage,
+ * task ownership or the shared runtime implementation. Keep the current
+ * default until native performance and normal-path delivery are qualified. */
+#if !defined(WF_SCHED_STATS)
+#define WF_SCHED_STATS 1
+#endif
+#if WF_SCHED_STATS != 0 && WF_SCHED_STATS != 1
+#error "WF_SCHED_STATS must be zero or one"
+#endif
+
 static inline unsigned long long wf_prim_count_read(const unsigned long long *word) {
     return __atomic_load_n(word, __ATOMIC_RELAXED);
 }
 
+#if WF_SCHED_STATS
 static inline void wf_prim_count_increment(unsigned long long *word) {
     __atomic_store_n(word, wf_prim_count_read(word) + 1u, __ATOMIC_RELAXED);
 }
+#else
+/* Counter-address expressions only identify the physical-thread observer.
+ * Erase those lookups too; none may perform a scheduler action. */
+#define wf_prim_count_increment(word) ((void)sizeof(word))
+#endif
 
 /* ------------------------------------------------------- the rest (2-7) */
 

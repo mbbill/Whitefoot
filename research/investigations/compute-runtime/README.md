@@ -1390,7 +1390,145 @@ ordinary compiler links the scalar `--par --no-vectorize` FIR command, which
 runs successfully at one and four workers (correctness only). Final scoped
 review confirms the two core files exactly match dc383eef, checks all five
 CI table rows and recomputes the 60-process layout result, with no remaining
-finding. The restored revision's own canonical and CI results remain pending.
+finding. Exact restored revision `815b97e9` passes local canonical `make check`
+with a clean worktree: compiler 586 s, research 212 s, full native conformance
+98 s, snapshots 20 s. Its CI qualification remains open; a local gate pass
+does not establish the five-platform performance requirement.
+
+The restored revision's [five-platform screen](https://github.com/mbbill/Whitefoot/actions/runs/34391106128)
+finishes with all five formal-runtime jobs failing the declared performance
+screen. For small/coarse FIR (`n=4096`, tile 1024), long-batch paired medians
+are below; ratios below one favor the restored candidate. The macOS ARM host
+has two participants; the other rows have four. These are runtime attribution
+comparisons, not ordinary-CLI performance or a new native-reference ceiling.
+
+| Host | Historical formal `before` | Recovered | Restored parent `slotbase` | Byte-identical A/A |
+|---|---:|---:|---:|---:|
+| Linux x64 | 1.0163 | 1.4956 | 1.0231 | 0.9934 |
+| Linux ARM64 | 1.0726 | 1.7342 | 1.0139 | 1.0093 |
+| macOS ARM64 | 0.9828 | 1.5506 | 1.0132 | 1.1430 |
+| macOS x64 | 0.4264 | 1.0635 | 0.6566 | 0.8637 |
+| Windows x64 | 1.0154 | unavailable | 1.0165 | 1.0336 |
+
+Linux recovered comparisons are stable across these five pairs: x64
+1.4571–1.5155, ARM64 1.6939–1.7507. Both macOS rows have large A/A drift and
+cannot select a runtime policy from their medians. Windows small/finer tile
+64 still costs 1.0906 of `before` (1.0495–1.1435; A/A 0.9787). Restoring the
+previous policy therefore does not close the broader performance deficit.
+The recovered control's previously documented memory-order defect remains;
+its timing does not qualify that implementation's correctness.
+
+The restored [gate](https://github.com/mbbill/Whitefoot/actions/runs/34391106075)
+has eleven successful jobs and one cancelled Linux unit job at the existing
+eight-minute ceiling. Its largest scheduler enumeration finishes before
+cancellation; the frozen-source proof-root test is still outstanding. This
+is an incomplete CI check, not a language rejection or evidence of a runtime
+failure. Both [I/O host jobs](https://github.com/mbbill/Whitefoot/actions/runs/34391106143)
+and all four [I/O benchmark jobs](https://github.com/mbbill/Whitefoot/actions/runs/34391106543)
+pass. The limit and assertions remain unchanged.
+
+### Open observational-counter cost experiment
+
+The maintained runtime updates its physical-thread counters even when
+`WF_SCHED_REPORT=0`; the frozen recovered timing build erases its counters.
+This known accounting asymmetry needs a same-source measurement. An explicit
+`WF_SCHED_STATS=0` build removes only counter increments and their observer
+address lookups, leaving the record, lane and thread layouts unchanged.
+Private grant queries return zero and scheduler reports are unavailable in
+that build, rather than presenting zero counts as a measured idle schedule.
+The current default remains one; no ordinary compiler performance improvement
+is delivered or claimed by merely adding this experimental override.
+
+Compare enabled/disabled builds of the restored maintained core using the same
+scalar computation objects, participant counts and byte-identical replicas.
+Keep diagnostic runs enabled and separate. Check native task/I/O behavior and
+the absence of reported counters when disabled; inspect every erased argument
+for scheduler side effects. Use fixed computation text placement as an
+additional local attribution control, not a substitute for normal CLI timing.
+The one-participant FIR path runs sequentially and records no scheduler
+increments; treat any apparent gain there as a negative control for layout
+and measurement noise, not a benefit from erasing counters.
+Any adoption must reach the ordinary compiler link on every supported target
+and retain instrumented correctness witnesses. No source acceptance, public
+signature or execution-semantics change is intended.
+
+The local native deque and ThreadSanitizer checks pass with both settings
+(200,000 tasks per run), retaining the enabled counter assertions and requiring
+remote execution independently of those counters. The disabled shared runtime
+also passes the 16,000-submission default file/TCP route probe. The first route
+attempt was denied a loopback listener by the execution sandbox; the same
+assertions pass with that permission. Six separate FIR diagnostic processes
+at one, two and four participants verify that enabled builds report counters,
+disabled builds do not, and each starts the requested participant count.
+Scoped independent review of the initial seven-file change finds no blocking issue:
+all nine erased address expressions have no scheduler action or variable-length
+array evaluation, and the Windows test loop retains both configurations.
+Windows execution and ordinary-CLI adoption remain unverified; local timing
+evidence follows below.
+
+The local M1-series counter-cost cohort uses two layouts, one/two/four
+participants, 4096/65536 samples, tile 16/1024, and five alternating passes
+of enabled/disabled/byte-identical-disabled-replica: 360 processes per cohort.
+Small inputs have 4096 warm calls per process; large inputs have 512. Both
+use the same strict scalar WF/native objects. The fixed-layout pair matches
+all 16 computation/accessor/native text starts. Timing starts after the exact
+815b97e9 canonical process exits, with no concurrent local test or compilation.
+
+The first timing cohort (`counter-cost-perf-run2`) retains all 360 complete,
+oracle-checked outputs, but its driver exits with a parsing error because its
+source was edited during execution to add a separate summarizer. It is not
+reported as a successful driver run. The immutable replacement driver and
+separate summarizer both pass for `counter-cost-perf-run3`, again checking
+all call and actual-participant counts. The first build attempt, which lacked
+the copied native header, failed before timing and is retained separately.
+
+Large/fine FIR gives contradictory batch-to-batch evidence. Below are medians
+of five paired process core means, disabled/enabled, with each range; the
+first column is explicitly the complete data from the failed driver cohort.
+
+| Layout / participants | First cohort data | Clean replacement cohort |
+|---|---:|---:|
+| Default / 2 | 0.9196 (0.9152–0.9239) | 0.9773 (0.9219–0.9893) |
+| Fixed computation text / 2 | 0.9246 (0.9168–0.9845) | 1.0574 (0.9922–1.0718) |
+| Default / 4 | 1.2470 (0.8747–1.2796) | 0.8532 (0.8449–1.2192) |
+| Fixed computation text / 4 | 1.2607 (1.1850–1.3188) | 0.6648 (0.5835–0.6995) |
+
+The fixed-layout W4 batch CPU medians likewise reverse from 1.1424 to 0.7948.
+Extracted complete `__TEXT,__text` bytes match between cohorts for each
+fixed-layout mode, so a different rebuilt instruction stream does not explain
+that reversal. This does not establish equal runtime placement, allocation
+addresses, OS scheduling or work distribution. The clean run's W4 fixed-layout
+A/A core ratio is 0.9763 (0.9466–1.0256); within-batch A/A alone does not detect
+the full cross-cohort instability. Do not select only the favorable cohort.
+
+The sequential negative control is useful too: default-layout W1 large/fine
+batch CPU ratios are 1.0338 and 1.0420 despite no scheduler increments; with
+fixed computation text they are 0.9992 and 1.0006. That supports a placement
+contribution to this non-scheduler cost, not a claim that counters make
+sequential execution faster. There is no established general counter-erasure
+benefit, and the compiler default remains enabled. The build override remains
+an explicit attribution tool while scheduling/placement causes are unresolved.
+Source snapshots, flags, symbol/text checks, hashes, raw process rows and
+reproduction drivers for both cohorts remain local-only evidence.
+An attempted follow-up macOS stack sample produced no report before the
+benchmark exited; the sampler remained idle and was terminated. Those
+instrumented runs are not timing evidence or an attribution result.
+
+The existing five-platform formal screen now adds `nostats` from the same
+maintained sources, with only the explicit counter override. All previous
+controls, thresholds and participant checks remain. Separate diagnostics
+request reports in both current modes: `nostats` must omit scheduler counts
+while retaining the external wake-epoch observation. This comparison uses
+ordinary link placement and may include layout effects; it does not by itself
+isolate counter instruction cost. Cross-platform execution of this addition
+is pending, and no new default is selected from the local reversal.
+The exact updated diagnostic parser accepts all six existing local on/off
+reports and rejects all six with the expected report availability inverted;
+shell syntax and patch whitespace checks pass.
+Final scoped independent review of the nine-file change recomputes both
+360-process cohorts from raw output, verifies the five-platform CI table and
+unchanged prior assertions, and finds no blocking issue. This does not certify
+the whole PR, the new revision's full gate or its pending platform execution.
 
 ## Earlier investigation and evidence
 

@@ -167,7 +167,13 @@ int main(void) {
     }
     check(free_count == WF_SCHED_LANE_SLOTS, "slot not returned");
     wf_sched_statistics_sum(&core, &counts);
-    check(counts.steals > 0 && counts.steals <= PROBE_TASKS, "invalid final steal count");
+    if (WF_SCHED_STATS) {
+        check(counts.steals > 0 && counts.steals <= PROBE_TASKS, "invalid final steal count");
+    } else {
+        /* The initial completed wait already requires a real thief. Removing
+         * observational writes must preserve all task/slot checks above. */
+        check(counts.steals == 0, "disabled steal counter changed");
+    }
     check(observations > 0, "observer never ran");
     (void)printf("sched deque probe: PASS tasks=%u steals=%llu observations=%llu slots=%u\n",
                  completed, counts.steals, observations, free_count);

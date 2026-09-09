@@ -121,7 +121,8 @@ unsigned wf__sched_pool_running(void);
  * No Whitefoot construct can name it and no program reads it; it exists so
  * that a measurement, or a gate, can tell a pool that grants lanes from one
  * that silently never does. A hand-out the offering thread ran itself at its
- * own join overlapped with nothing, so it is not counted here. */
+ * own join overlapped with nothing, so it is not counted here. Builds with
+ * WF_SCHED_STATS=0 have no grant observation and return zero. */
 unsigned long wf__par_grants(void);
 
 /* The core's summed counters as one line of text, when the run asked for
@@ -129,7 +130,8 @@ unsigned long wf__par_grants(void);
  * core's entry under the one settings rule. Answers 1 and writes the line
  * when it was asked for and fits, 0 otherwise. It is for an observer or a
  * gate that has to say what the threads did rather than only what they
- * granted; no program reads it. */
+ * granted; no program reads it. Builds with WF_SCHED_STATS=0 always answer
+ * zero without writing a report, even when WF_SCHED_REPORT requests one. */
 int wf__sched_report(char *buffer, size_t capacity);
 
 /* ------------------------------------------- the emitted module's ABI */
