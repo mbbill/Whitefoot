@@ -3,7 +3,11 @@
 #if !defined(__APPLE__)
 #define _POSIX_C_SOURCE 200809L
 #endif
+#ifdef WF_SHARED_CONTROL
+#include "entry.h"
+#else
 #include "runtime.h"
+#endif
 #include <inttypes.h>
 #include <pthread.h>
 #include <stdbool.h>
@@ -25,6 +29,13 @@ typedef struct {
   bool released;
 } Gate;
 typedef void (*Callback)(void *);
+static unsigned worker_count(void) {
+#ifdef WF_SHARED_CONTROL
+  return wf__sched_pool_running() + 1u;
+#else
+  return wf_compute_worker_count();
+#endif
+}
 static void insist(bool condition) {
   if (!condition)
     abort();
@@ -107,7 +118,7 @@ int wf__main_body(int argc, char **argv) {
   for (unsigned i = 0; i < width - 1; ++i) {
     held[i] = wf__par_acquire_lane(sizeof(Gate *));
     insist(held[i] != NULL);
-    insist(wf_compute_worker_count() == width);
+    insist(worker_count() == width);
     Gate *address = &gate;
     memcpy(held[i], &address, sizeof(address));
     wf__par_publish(held[i], hold_worker);
@@ -116,7 +127,7 @@ int wf__main_body(int argc, char **argv) {
       insist(pthread_cond_wait(&gate.changed, &gate.lock) == 0);
     insist(pthread_mutex_unlock(&gate.lock) == 0);
   }
-  insist(wf_compute_worker_count() == width);
+  insist(worker_count() == width);
   unsigned long setup_steals = wf__par_grants();
   insist(setup_steals == width - 1);
   size_t count = 262144;

@@ -260,7 +260,10 @@ void wf_sched_complete(wf_sched_core *core, wf_sched_record *record) {
         && !wf_prim_cas_p((void **)&record->waiter, (void **)&waiter, NULL, WF_PRIM_SEQ_CST, WF_PRIM_SEQ_CST)) {
         waiter = NULL;
     }
-    wf_prim_store_u(&record->state, WF_SCHED_DONE, WF_PRIM_SEQ_CST);
+    /* COMPLETING and the waiter registration/recheck carry the SC
+     * missed-registration handshake. DONE only publishes the result and
+     * the publisher's last record access to an acquiring joiner. */
+    wf_prim_store_u(&record->state, WF_SCHED_DONE, WF_PRIM_RELEASE);
     if (waiter == NULL) {
         return;
     }
@@ -445,7 +448,10 @@ static int wf_sched_idle_looks(
     unsigned long long bit = 1ull << thread->index;
     wf_sched_stack *ready;
     if (on_record != NULL) {
-        unsigned state = wf_prim_load_u(&on_record->state, WF_PRIM_ACQUIRE);
+        /* Pair with the publisher's SC COMPLETING store and waiter load:
+         * after registering in place, either this look sees COMPLETING/DONE
+         * or the publisher sees the marker and wakes the host wait. */
+        unsigned state = wf_prim_load_u(&on_record->state, WF_PRIM_SEQ_CST);
         if (state == WF_SCHED_DONE || state == WF_SCHED_COMPLETING) {
             wf_sched_idle_end(core, on_record, bit);
             return 1;

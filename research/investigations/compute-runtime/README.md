@@ -80,8 +80,8 @@ formal-before revision `188088d41552d0d3bccf8368798dcc44702bf75c`, a checked
 unchanged recovered baseline, and the candidate formal runtime. CI covers the
 four POSIX targets and Windows. The Windows job invokes the same script with
 the native MSVC-target compiler and existing Windows runtime leaves; it compares
-the fixed formal-before scheduler/floor, candidate, and same-source zero-help
-and longer-idle-window controls. All link the same current Windows
+the fixed formal-before scheduler/floor, candidate, frozen previous revision
+and same-source longer-idle-window control. All link the same current Windows
 host/completion sources, compiled beside each scheduler's own headers.
 This overlay is needed by generated host diagnostics; "before"
 does not mean an entirely historical Windows runtime. No research runtime
@@ -351,7 +351,7 @@ ms and wall is 179.74/177.85 ms; these include verification and remain one
 process per mode. Artifact `10104466331` has ZIP SHA-256
 `e820fa5a9d45ebc9db8490b939aec00c3f67294df7528229480948ae284fe9e5`.
 
-This co-observation supports the planned idle-window control. `idle4096` uses
+This co-observation motivated the idle-window control. `idle4096` uses
 the identical current runtime and WF object with only the existing
 `WF_SCHED_IDLE_SPIN_ROUNDS` set to 4,096 instead of 256. The default is unchanged.
 The predicted result is fewer host waits together with removal of the short
@@ -364,7 +364,35 @@ Windows timing images.
 The full-link M1 smoke passes with the longer window and reports 4,096 rounds;
 diagnostic validation rejects that report when 256 rounds are expected.
 Independent review confirmed the control's scope, wiring and recorded artifact
-figures. This is preparation for CI measurement, not policy qualification.
+figures.
+
+The [five-target screen at `6060cc67`](https://github.com/mbbill/Whitefoot/actions/runs/34353534080)
+completed, with performance failures on every target. Its separate
+[12-job gate](https://github.com/mbbill/Whitefoot/actions/runs/34353534106) and
+[Linux/Windows I/O checks](https://github.com/mbbill/Whitefoot/actions/runs/34353534059)
+passed. On Windows, the EPYC 7763 host had two cores/four logical CPUs,
+Windows Server 2025, Clang 20.1.8 and the high-performance power plan. At four
+participants, 4,096 / tile 1,024, the five paired candidate/idle4096 wall
+ratios have median 3.7455, range 1.6301–4.4359; idle4096/before has median
+0.803. The separate 4,097-call diagnostic processes recorded:
+
+| Mode | Warm mean (us) | p50 / p95 (us) | Batch wall (ms) | Batch CPU (ms) | Wait announcements / signals |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Before | 17.326 | 15.1 / 27.5 | 186.052 | 734.375 | 258 / 362 |
+| Candidate, idle 256 | 53.329 | 59.5 / 68.0 | 353.217 | 765.625 | 9,825 / 9,888 |
+| Zero join help | 41.493 | 46.8 / 66.2 | 299.462 | 796.875 | 6,577 / 9,486 |
+| Idle 4,096 | 13.999 | 13.0 / 17.7 | 189.939 | 750.000 | 0 / 0 |
+
+This supports idle/wake overhead as a major loss in this short cell. It does
+not select 4,096 as the default: at four participants and 65,536 / tile 64,
+idle4096/candidate wall is 0.980 while diagnostic batch CPU is 1.261;
+tile 256 is 0.985 wall and 1.203 CPU; tile 1,024 is 0.994 wall and 1.729 CPU.
+Those cells still enter host waits after the longer spin. Increasing a fixed
+window buys burst latency but spends CPU before long idle gaps. CPU comes
+from one diagnostic process per mode, includes verification, and is quantized
+in 15.625 ms increments; it is a reason to investigate, not repeated CPU
+qualification. The default remains 256. Artifact `10105001028` has ZIP SHA-256
+`59dd8807b83927faa6cd4a5a60c031744077258b1535ee0bc5cfa9aeeabd53c5`.
 
 A local four-participant M1 full-link/core-only comparison used the same scalar
 WF object, inputs 4,096/65,536, tiles 64/1,024, and five alternating process
@@ -372,6 +400,88 @@ pairs with 1,024/256 warm calls. Median wall ratios were 0.833, 1.224, 1.006
 and 0.963 respectively, with broad paired ranges (0.336–1.363 in the first
 cell). This is unresolved local noise, not a selection ground for removing
 the completion bridge or a substitute for normal CLI and mixed-program timing.
+
+## Completion ordering candidate
+
+The maintained core is testing release publication of DONE while retaining
+the SC COMPLETING store, waiter observation/claim, and park registration and
+recheck. Both the core's in-place idle recheck and the bridge's host-stack
+fallback recheck now use SC. Their acquire-only forms did
+not establish the following SC-order argument. No state, ABI, waiter ownership,
+stack switch or I/O progress mechanism changes.
+
+If the publisher misses a still-live registration, its SC waiter observation
+precedes that registration in the SC order. The preceding COMPLETING store therefore
+precedes the parker's subsequent SC state recheck, which cannot still observe
+the old PENDING initialization. It sees COMPLETING or the later DONE and
+avoids an unnotified sleep. If the publisher claims the registration, the
+existing phase handshake owns its wake. A cancellation or replacement registration
+does not inherit an old check: every new registration has its own SC recheck,
+including after a failed publisher claim. DONE remains the final record access;
+its release store and the joiner's acquiring read publish the result before
+the joiner may release the frame. This uses the mixed SC/non-SC load rules in
+[C11 draft N1570, 7.17.3 paragraph 6](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf).
+Deleting COMPLETING instead is unsound: a publisher could see NULL, a parker
+could register and read PENDING, and only then would DONE be stored with no
+claimed waiter to wake.
+
+The experimental criteria are unchanged protocol-enumerator and native
+concurrency checks, code generation on all supported targets, and measured
+task/FIR costs against the same current source with SC DONE. Enumeration
+checks SC histories, not weak-memory executions; the ordering argument and
+independent review remain necessary. A removed x86 locked instruction is a
+cost hypothesis, not a measured end-to-end improvement. This candidate is
+separate from the idle-window CI control and is not performance-qualified.
+
+Focused M1 checks passed the native smoke, 200,000-task deque probe, its
+ThreadSanitizer build, and all four SC enumeration configurations (the largest
+visited 44,819,639 states). The completion default-route probe and its
+ThreadSanitizer build also passed with the full bridge and localhost TCP.
+The existing protocol-cost benchmark now also
+links the maintained shared scheduler directly, using the same held-helper
+setup, output oracle and zero-additional-steals assertion as its recovered
+baseline. `check-protocol-cost` passed all three images at widths two/four and
+depths one/eight/32. Only the recovered image is sanitizer-instrumented in that
+target; the shared deque has its own ThreadSanitizer check. The existing
+`protocol-cost-calibrate` target still calibrates the recovered runtime only.
+
+A separate M1 owner-local comparison used five alternating process pairs,
+four participants with three helpers held, 100 ms warmup, and eight warm
+samples of 262,144 tasks each. Candidate/SC-before median task-time ratios
+were 0.9994, 1.0020 and 0.9986 at depths one/eight/32, with all paired ratios
+between 0.9930 and 1.0219. There is no demonstrated M1 gain. Cross-target
+compilation of the actual core shows identical completion-function assembly
+on both ARM targets, and final DONE publication changes from `xchg` to `mov`
+on all three x64 targets. The Apple ARM in-place idle recheck changes from
+`ldapr` to `ldar`. Cross-compilation is instruction inspection, not native
+platform qualification.
+
+The next five-target screen replaces the zero-help attribution control with
+`previous`, frozen maintained scheduler/floor sources at `6060cc67`. Zero-help
+already isolated the join-help question and does not isolate this memory-order
+change. Both the original before and recovered controls remain, as does
+idle4096; no performance threshold is relaxed. Every image uses the same WF
+object. On Windows every historical scheduler is compiled with its matching
+headers and an identical current host/completion overlay, including the SC
+bridge recheck. Thus previous isolates the core change, not a difference in
+Windows bridge source. All source snapshots, flags and binary hashes travel
+with the artifact. Native results for this candidate remain pending.
+
+The local M1 script run completed all oracle, normal-CLI, width and diagnostic
+checks and returned the performance-failure status. Against previous, 22 of
+24 median ratios were within the screen band; two participants at 65,536 /
+tile 16 measured 1.0979 (range 1.0790–1.1183), and four participants at 4,096 /
+tile 256 measured 1.0964 (0.9806–1.1570). These losses remain unresolved;
+neither the protocol microbenchmark nor cross-target instruction inspection
+overrides actual workload measurements. This is local evidence, not CI
+acceptance.
+
+Independent review of this delta covered the completion ordering, bridge
+fallback, maintained-runtime protocol host, comparison provenance and recorded
+measurements. It found no remaining blocking issue within that scope; the
+diagnostic metadata now explicitly distinguishes before (reports disabled)
+from previous/current controls (race-free reports enabled). This scoped review
+does not certify the whole PR or the outstanding performance goal.
 
 ## Earlier investigation and evidence
 

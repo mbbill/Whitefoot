@@ -1124,7 +1124,10 @@ static void wf_bridge_wait_in_place(wf_completion_record *record) {
             WF_PRIM_SEQ_CST
         );
         epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
-        if (wf_bridge_record_state(record) == WF_SCHED_PENDING
+        /* This post-registration recheck participates in the publisher's
+         * SC COMPLETING/waiter handshake, as the core's park recheck does.
+         * The speculative outer look and subsequent bounded spin may acquire. */
+        if (wf_prim_load_u(&record->sched.state, WF_PRIM_SEQ_CST) == WF_SCHED_PENDING
             && !wf_bridge_spin_for_completion(record)) {
             wf_bridge_park(epoch);
         }

@@ -326,21 +326,27 @@ protocol-cost-build: runtime.c runtime.h runtime_events.h protocol_cost.c protoc
 	mkdir -p "$(OUT)/protocol-cost"
 	mkdir -p "$(OUT)/protocol-cost/source"
 	cp protocol_cost.c protocol_cost.awk runtime.c runtime.h runtime_events.h $(FLOOR) Makefile "$(OUT)/protocol-cost/source/"
+	cp -R $(SHARED) "$(OUT)/protocol-cost/source/"
 	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=1 protocol_cost.c runtime.c $(FLOOR) -o "$(OUT)/protocol-cost/ordinary"
+	$(CC) $(RECORD_FLAGS) -DWF_SHARED_CONTROL -I$(SHARED) protocol_cost.c \
+		$(SHARED)/core.c $(SHARED)/entry.c $(SHARED)/prim_host.c $(FLOOR) \
+		-o "$(OUT)/protocol-cost/shared-ordinary"
 	$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=1 -fsanitize=$(SANITIZER) \
 		-fno-sanitize-recover=all -fno-omit-frame-pointer \
 		protocol_cost.c runtime.c $(FLOOR) -o "$(OUT)/protocol-cost/sanitized"
 	@printf '%s\n' '$(CC) $(RECORD_FLAGS) -DWF_COMPUTE_STATS=1' \
-		'sanitized additionally: -fsanitize=$(SANITIZER) -fno-sanitize-recover=all -fno-omit-frame-pointer' \
+		'shared-ordinary: $(CC) $(RECORD_FLAGS) -DWF_SHARED_CONTROL -I$(SHARED), maintained shared scheduler' \
+		'recovered-runtime sanitized image additionally: -fsanitize=$(SANITIZER) -fno-sanitize-recover=all -fno-omit-frame-pointer' \
 		> "$(OUT)/protocol-cost/flags.txt"
 	$(CC) --version >> "$(OUT)/protocol-cost/flags.txt"
 	git rev-parse HEAD > "$(OUT)/protocol-cost/revision.txt"
-	git diff HEAD -- protocol_cost.c runtime.c runtime.h runtime_events.h Makefile $(FLOOR) > "$(OUT)/protocol-cost/source.patch"
+	git diff HEAD -- protocol_cost.c runtime.c runtime.h runtime_events.h Makefile $(FLOOR) $(SHARED) > "$(OUT)/protocol-cost/source.patch"
 	shasum -a 256 protocol_cost.c protocol_cost.awk runtime.c runtime.h runtime_events.h $(FLOOR) Makefile \
+		$(SHARED)/* "$(OUT)/protocol-cost/shared-ordinary" \
 		"$(OUT)/protocol-cost/ordinary" "$(OUT)/protocol-cost/sanitized" > "$(OUT)/protocol-cost/manifest.sha256"
 
 check-protocol-cost: protocol-cost-build
-	@set -e; for image in ordinary sanitized; do for width in 2 4; do for depth in 1 8 32; do \
+	@set -e; for image in ordinary sanitized shared-ordinary; do for width in 2 4; do for depth in 1 8 32; do \
 		log="$(OUT)/protocol-cost/check-$$image-w$$width-d$$depth.tsv"; \
 		WF_WORKERS=$$width "$(OUT)/protocol-cost/$$image" $$width $$depth 0 > "$$log" 2>&1; \
 		awk -v width=$$width -v depth=$$depth -v pass=0 -f protocol_cost.awk "$$log"; \

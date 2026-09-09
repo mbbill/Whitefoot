@@ -6,8 +6,8 @@ cd "$(dirname "$0")"
 : "${OUT:?set OUT}"
 : "${WFC:?set WFC to the current compiler}"
 CC=${CC:-/usr/bin/clang}
-# Scheduler counter reports are confined to current-runtime diagnostics;
-# historical scheduler counters are never read live. Windows images also read
+# Scheduler reports use race-free candidate and previous-runtime counters;
+# the older before counters are never read live. Windows images also read
 # current-bridge wait counters at batch boundaries, outside timed core calls.
 WF_SCHED_REPORT=0
 export WF_SCHED_REPORT
@@ -17,9 +17,9 @@ floor=wf_floor.c
 leaf=prim_host.c
 platform_flags=-pthread
 libraries=-lm
-modes='before candidate recovered help0 idle4096'
-references='before recovered help0 idle4096'
-diagnostic_modes='candidate help0 idle4096'
+modes='before candidate recovered previous idle4096'
+references='before recovered previous idle4096'
+diagnostic_modes='candidate previous idle4096'
 case "$host" in
     Darwin|Linux) ;;
     MINGW*|MSYS*)
@@ -29,13 +29,14 @@ case "$host" in
         platform_flags=
         libraries='-lpsapi -lws2_32'
         # The frozen recovered control has no qualified Windows port.
-        modes='before candidate help0 idle4096'
-        references='before help0 idle4096'
-        diagnostic_modes='before candidate help0 idle4096'
+        modes='before candidate previous idle4096'
+        references='before previous idle4096'
+        diagnostic_modes='before candidate previous idle4096'
         ;;
     *) echo "unsupported native screen host: $host" >&2; exit 1 ;;
 esac
 before=188088d41552d0d3bccf8368798dcc44702bf75c
+previous=6060cc679f5413bfcc5c758dde5a626fdd70925a
 root=$(git rev-parse --show-toplevel)
 git -C "$root" diff --exit-code "$before" -- \
     research/experiments/compute-runtime/runtime.c \
@@ -44,10 +45,13 @@ git -C "$root" diff --exit-code "$before" -- \
 mkdir -p "$OUT"
 mkdir "$OUT/formal-screen"
 out=$(cd "$OUT/formal-screen" && pwd)
-mkdir -p "$out/baseline-source" "$out/source" "$out/raw" "$out/diagnostics"
+mkdir -p "$out/baseline-source" "$out/previous-source" "$out/source" "$out/raw" "$out/diagnostics"
 git -C "$root" archive "$before" compiler/src/backend/sched "compiler/src/backend/$floor" \
     > "$out/before.tar"
 tar -xf "$out/before.tar" -C "$out/baseline-source"
+git -C "$root" archive "$previous" compiler/src/backend/sched "compiler/src/backend/$floor" \
+    > "$out/previous.tar"
+tar -xf "$out/previous.tar" -C "$out/previous-source"
 cp fir.wf fir_direct.wf fir_host.ll fir_bench.c fir_native.c fir_native.h \
     fir_check.c formal-screen.sh runtime.c runtime.h runtime_events.h "$out/source/"
 cp -R "$root/compiler/src/backend/sched" "$out/source/"
@@ -56,7 +60,8 @@ if test -n "$exe"; then
     # The generated Windows object reaches host diagnostics even for compute.
     # Keep current host/completion sources identical across controls, while
     # compiling each with its own scheduler headers and private layout.
-    for destination in "$out/source" "$out/baseline-source/compiler/src/backend"; do
+    for destination in "$out/source" "$out/baseline-source/compiler/src/backend" \
+        "$out/previous-source/compiler/src/backend"; do
         mkdir -p "$destination/completion"
         cp "$root/compiler/src/backend/windows_runtime.h" "$destination/"
         cp "$root"/compiler/src/backend/completion/*.h "$destination/completion/"
@@ -70,7 +75,7 @@ fi
 cp "$WFC" "$out/whitefootc"
 {
     git rev-parse HEAD
-    printf 'before=%s\n' "$before"
+    printf 'before=%s\nprevious=%s\n' "$before" "$previous"
     git diff --stat
     uname -a
     "$CC" --version
@@ -93,13 +98,13 @@ git diff --binary > "$out/source.patch"
 flags="-std=c11 -O3 -g $platform_flags -fno-fast-math -ffp-contract=off -fno-vectorize -fno-slp-vectorize -fno-lto"
 printf '%s\n' "$CC $flags; recovered additionally -DWF_COMPUTE_STATS=0 -DWF_COMPUTE_CONTROL; shared additionally -DWF_SHARED_CONTROL" \
     "measured_modes=$modes; references=$references; libraries=$libraries" \
-    'help0: current runtime sources with only -DWF_SCHED_JOIN_HELP_ROUNDS=0u changed' \
+    'previous: frozen 6060cc67 maintained scheduler/floor before completion-order changes; same WF object' \
     'idle4096: current runtime sources with only -DWF_SCHED_IDLE_SPIN_ROUNDS=4096u changed; default remains 256' \
-    'diagnostics: separate longer batches; current schedulers use WF_SCHED_REPORT=1, historical scheduler uses 0; not pooled into wall samples' \
+    'diagnostics: separate longer batches; candidate/previous/idle4096 use WF_SCHED_REPORT=1, before uses 0; not pooled into wall samples' \
     'WF: --par defaults; same optimized WF object in every attribution image' \
     'CLI: normal --par link, correctness only; end-to-end timing remains open' > "$out/flags.txt"
 if test -n "$exe"; then
-    printf '%s\n' 'Windows before: historical scheduler/floor plus current host/completion sources; candidate: current scheduler/floor plus those same host/completion sources.' \
+    printf '%s\n' 'Windows before/previous: each frozen scheduler/floor plus identical current host/completion overlay; candidate: current scheduler/floor plus that overlay. The overlay includes the SC in-place bridge recheck in every mode.' \
         'Windows host-wait counts: batch deltas from current bridge, including verification; announcements are not guaranteed kernel sleeps, signals are not awakened-thread counts.' \
         'Windows diagnostic before: WF_SCHED_REPORT=0; historical scheduler counters are never read live.' >> "$out/flags.txt"
 fi
@@ -121,7 +126,7 @@ cat fir_host.ll >> "$out/host.ll"
 for mode in $modes; do
     runtime="$root/compiler/src/backend"
     policy_flags=
-    if test "$mode" = help0; then policy_flags=-DWF_SCHED_JOIN_HELP_ROUNDS=0u; fi
+    if test "$mode" = previous; then runtime="$out/previous-source/compiler/src/backend"; fi
     if test "$mode" = idle4096; then policy_flags=-DWF_SCHED_IDLE_SPIN_ROUNDS=4096u; fi
     if test "$mode" = before; then runtime="$out/baseline-source/compiler/src/backend"; fi
     set --
@@ -204,7 +209,7 @@ awk -F '\t' -v references="$references" '
     }' "$out/means.tsv" > "$out/summary.tsv" && result=0 || result=$?
 cat "$out/summary.tsv"
 # Preserve the completed wall verdict even if a later diagnostic fails.
-# Current-source counters are race-free. Historical controls are excluded from
+# Current and previous-source counters are race-free. The older before control is excluded from
 # scheduler-counter observation. Windows before additionally observes only
 # its current bridge counters. Longer batches reduce CPU-accounting quantization but are
 # diagnostic process samples, not extra independent samples in the wall test.
