@@ -219,13 +219,21 @@ Reopen a profile when a required host operation, observation, or failure cannot
 be represented without weakening its contract. Qualification evidence must be
 specific to the target and implementation being used.
 
+The constitution's [ordinary-object requirement](../../../docs/constitution.md#external-interaction-through-ordinary-objects)
+fixes uniform source treatment of I/O and other resources. It does not select
+one object decomposition, result-origin analysis, or release implementation.
+A diagnosis must distinguish an API that omits a required relation from a
+general language or compiler limitation by checking the corresponding ordinary
+object case. A resource-specific example alone does not justify a special
+ownership or effect rule.
+
 | Rules | Grounds and limits |
 |---|---|
 | EFF-1 | Formal-rooted state paths expose a callee's accesses and allocation authority for composition. Exact category equality and canonical order are provisional; safe upper-bound rows are an alternative. Ambient box/buffer allocation explicitly contributes no written row, yet OP-1 still prints `allocates(heap)` without a provider parameter. These two descriptions need reconciliation. |
 | EFF-2 | Body accesses, call projection, returned-state routing, and derived releases must account for the effects the selected model promises. Both-ways equality and framing fresh local state out of the callable boundary are provisional mechanisms. A framed-out effect is not thereby unobservable or freely eliminable. |
 | EFF-3 | Equal-argument pure, never-suspending calls have the rule's selected reordering/deduplication permission; unused-call elimination additionally needs termination evidence and is unavailable in v0. Purity alone proves no termination or algebraic law. Its statement that pure excludes allocation needs reconciliation with EFF-1's ambient allocation treatment; a complete transformation argument must retain ownership, observations, and control behavior. |
 | EFF-4 | No writer abort/trap/proof fallback follows from the chosen safety policy. Prohibiting all exception/unwinding mechanisms is a stronger selected execution design; a different defined recoverable-error mechanism could be safe. External resource/TCB failure is not a source effect or a proof bypass. |
-| EFF-5 | Explicit ordinary state parameters prevent hidden mutable system access and let ownership/effects govern interaction. One unified state model is provisional. Native aliases do not change language-place identity, and parallel/reordering permissions still need their complete observation argument. |
+| EFF-5 | Explicit ordinary state parameters prevent hidden mutable system access and let ownership/effects govern interaction. Uniform source treatment is a constitutional requirement; the exact state-object decomposition and host mapping remain provisional choices. Native aliases do not change language-place identity, and parallel/reordering permissions still need their complete observation argument. |
 | ERR-1 | Expected failures need defined behavior. Result/Option with explicit dispatch is a provisional encoding; safety alone does not rule out every other total error representation. |
 | ERR-2 | Every reachable variant needs defined handling. Enumerating all arms without a wildcard makes additions visible to writers, but is a stronger provisional policy than exhaustiveness alone. Bool's if-only and empty-else conventions are surface choices, not consequences of error safety. |
 | ERR-3 | Propagation must transfer payload ownership and perform the ordinary error exit/cleanup exactly once. Let-only syntax, exact error-type equality, and automatic context metadata are selected conveniences; propagation grants no new proof or borrow escape. |

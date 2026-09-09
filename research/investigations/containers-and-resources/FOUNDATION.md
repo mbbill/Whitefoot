@@ -688,8 +688,28 @@ entry-to-normal-exit transfer and its application to the actual resolved place.
 All returned and written-back origins must be instantiated from one entry
 snapshot and committed together, including static fields, nested owning paths,
 and multiple disjoint unique actuals. Reborrows must update the ultimate owner,
-not merely a copied holder record. A missing transfer cannot mean fresh or
-unchanged; an unavailable case must remain an explicit compiler limitation.
+not merely a copied holder record. For an operation that normally completes,
+inability to represent its transfer cannot establish fresh or unchanged content;
+an unavailable case must remain an explicit compiler limitation.
+
+This requirement does not by itself decide the summary of a call with no normal
+return. For example, this witness uses only an ordinary owning memory object:
+
+```wf
+fn unclosed(value: own box<u64>) -> result: own box<u64> pure {
+  let next = unclosed(value: move value);
+  return move next;
+}
+```
+
+It cannot alone establish an incorrect returned-object identity: no invocation
+returns an object. An empty may-origin set may be vacuously correct on normal
+returns; whether the internal analysis must retain an unresolved state is a
+separate representation and structural-effect question. A failing internal
+assertion demanding `Unknown` rather than an empty set does not settle that
+question or justify a language amendment. Evaluate the ordinary-object case
+under FN-1 and EFF-2, including normally returning controls, before attributing
+the issue to an I/O API or selecting a new origin-analysis mechanism.
 
 A candidate implementation represents finite current ownership state with typed
 paths, not execution history. Keep an owning Box or run's storage anchor separate
