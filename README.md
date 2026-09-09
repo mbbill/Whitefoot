@@ -1,8 +1,9 @@
 # Whitefoot
 
 Whitefoot is a programming language designed as a harness for AI agents.
-It targets systems software, using constraints, explicit interfaces, and
-machine-checked proofs to guide authors toward safe, efficient programs.
+It serves human-directed systems development with implementation delegated to
+agents, using constraints, explicit interfaces, and machine-checked proofs to
+guide authors toward safe, efficient programs.
 The compiler checks required source evidence and erases it before execution;
 writers have no unchecked
 escape hatch. The [specification](spec/kernel-spec.md) defines the exact
@@ -17,9 +18,9 @@ efficient, verifiable classes and to expose architectural mistakes early.
 The goal is useful default performance, not a guarantee that every accepted
 program is globally optimal.
 
-Human ease of writing is not an independent goal. Additional source and proof
-effort can be worthwhile when they improve performance or correctness, while
-usable feedback and enough information to complete the task still matter.
+Ease of manual source authorship is not an independent goal. Additional source
+and proof effort can be worthwhile when they improve performance or correctness,
+while usable feedback and enough information to complete the task still matter.
 Changing the intended author opens alternatives; experiments must establish
 which mechanisms work under their stated conditions.
 

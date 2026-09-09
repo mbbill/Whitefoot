@@ -207,7 +207,8 @@ new green result does not answer the original question. A representative
 writer trial can expose that failure and test a possible constraint or
 diagnostic; it cannot establish that the language knows unstated requirements.
 
-For agent-led development, distinguish at least these observations:
+When evaluating implementation delegated to agents, distinguish at least these
+observations:
 
 - whether the required implementation and proof can be expressed;
 - whether the tested agent can produce them with the supplied interfaces,

@@ -6,17 +6,22 @@ Its purpose does not uniquely determine its objectives or mechanisms. The
 objectives below are explicit choices; concrete designs require their own
 grounds.
 
-## Agent-led development
+## Development objectives
 
-The language must support AI agents in constructing, compiling, verifying,
-maintaining, and evolving useful software at the scale of its target projects.
+Whitefoot must enable people to delegate implementation to AI agents while
+retaining control over software objectives and key tradeoffs. The language must
+enforce formalizable requirements through machine-checkable constraints,
+reducing dependence on repeated human inspection of generated code.
+
+The language must support construction, verification, maintenance, and evolution
+at the scale of its target projects.
 Whitefoot primarily targets large systems such as kernels, compilers, and
 browsers, while also seeking to support small embedded systems.
 
-Human ease of writing and familiarity may be sacrificed to serve the language's
-objectives. More verbose source and additional proof work are acceptable costs
-when they serve those objectives and leave development, compilation, and
-verification practically feasible.
+Ease of manual source authorship and syntactic familiarity may be sacrificed
+to serve the language's objectives. More verbose source and additional proof
+work are acceptable costs when they serve those objectives and leave
+development, compilation, and verification practically feasible.
 
 ## Performance
 
