@@ -588,7 +588,14 @@ void wf_sched_join(wf_sched_core *core, wf_sched_record *record, int is_io) {
                 wf_sched_slot *popped = wf_sched_pop(thread->lane);
                 if (popped == slot) {
                     wf_prim_count_increment(&thread->counts.inline_runs);
-                    wf_sched_execute(core, slot);
+                    /* Removing our own join target claims its execution.
+                     * Its unique joining continuation is this call, so no
+                     * other stack can register as its waiter. Nested I/O
+                     * can migrate this entire continuation but registers
+                     * on its own record. Avoid the cross-stack completion
+                     * handshake; retain DONE for repeated joins and release. */
+                    slot->run(slot->frame);
+                    wf_prim_store_u(&record->state, WF_SCHED_DONE, WF_PRIM_RELEASE);
                     return;
                 }
                 if (popped != NULL) {

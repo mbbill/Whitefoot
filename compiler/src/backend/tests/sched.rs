@@ -9,6 +9,7 @@
 //! the interleaving behaves, and it is not this gate.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::process::Command;
 
 use super::test_directory;
@@ -72,13 +73,14 @@ const ENUMERATOR_DEFINES: [&str; 7] = [
 /// Reached at every swept configuration: a park, the two states it passes
 /// through, the resume that ends it, and a stack that empties to the pool and
 /// is handed out again (group A items 1 to 4 and 8).
-const EVERY_CONFIGURATION: [&str; 6] = [
+const EVERY_CONFIGURATION: [&str; 7] = [
     "parks",
     "suspended",
     "ready_from_suspended",
     "resume",
     "empty",
     "take",
+    "owner_done",
 ];
 
 /// Group C item 11 at §5's floor, S = T + 1: the first park empties the free
@@ -91,7 +93,7 @@ const AT_THE_FLOOR: [&str; 2] = ["exhausted_io", "exhausted_compute"];
 /// that is not the parking one, a steal, a READY stack found inside the I/O
 /// arm (item 12), and each place a publication can land relative to the
 /// parking window.
-const AT_TWO_THREADS: [&str; 12] = [
+const AT_TWO_THREADS: [&str; 13] = [
     "notified",
     "ready_from_notified",
     "cancel_suspending_io",
@@ -104,6 +106,7 @@ const AT_TWO_THREADS: [&str; 12] = [
     "post_while_asleep",
     "post_elsewhere",
     "late_parks",
+    "owner_done_after_migration",
 ];
 
 /// Item 7's arm, a cancel consuming a notification, is unreachable by the
@@ -165,18 +168,18 @@ fn fields(line: &str) -> BTreeMap<&str, &str> {
         .collect()
 }
 
-/// Builds the enumerator and sweeps every interleaving of one configuration.
-/// `search` is the enumerator's search: `state`, the gate's explicit-state
-/// search, or `dfs`, the re-executing walk of every interleaving that is the
-/// reference at one thread.
-fn enumerate(threads: u32, stacks: u32, search: &str) -> Report {
-    let directory = test_directory();
+fn build_enumerator(directory: &Path, core_source: &str) {
     for (name, source) in ENUMERATOR_UNITS {
+        let source = if name == "core.c" {
+            core_source
+        } else {
+            source
+        };
         std::fs::write(directory.join(name), source).expect("write one enumerator unit");
     }
     let executable = directory.join("enumerate");
     let compiled = Command::new("/usr/bin/clang")
-        .current_dir(&directory)
+        .current_dir(directory)
         .args([
             "-std=c11",
             "-O2",
@@ -196,7 +199,16 @@ fn enumerate(threads: u32, stacks: u32, search: &str) -> Report {
         "the enumerator must compile:\n{}",
         String::from_utf8_lossy(&compiled.stderr)
     );
+}
 
+/// Builds the enumerator and sweeps every interleaving of one configuration.
+/// `search` is the enumerator's search: `state`, the gate's explicit-state
+/// search, or `dfs`, the re-executing walk of every interleaving that is the
+/// reference at one thread.
+fn enumerate(threads: u32, stacks: u32, search: &str) -> Report {
+    let directory = test_directory();
+    build_enumerator(&directory, SCHED_CORE_SOURCE);
+    let executable = directory.join("enumerate");
     let configuration = format!("threads={threads} stacks={stacks}");
     let threads_argument = threads.to_string();
     let stacks_argument = stacks.to_string();
@@ -253,6 +265,27 @@ fn enumerate(threads: u32, stacks: u32, search: &str) -> Report {
         configuration,
         schedules,
     }
+}
+
+/// Join ownership alone does not authorize an early DONE. The checker must
+/// also witness the target callback returning, including when it performs I/O.
+#[test]
+fn enumerator_rejects_owned_completion_before_callback_return() {
+    let run_then_done = "slot->run(slot->frame);\n                    wf_prim_store_u(&record->state, WF_SCHED_DONE, WF_PRIM_RELEASE);";
+    let done_then_run = "wf_prim_store_u(&record->state, WF_SCHED_DONE, WF_PRIM_RELEASE);\n                    slot->run(slot->frame);";
+    assert_eq!(SCHED_CORE_SOURCE.matches(run_then_done).count(), 1);
+    let faulty = SCHED_CORE_SOURCE.replace(run_then_done, done_then_run);
+    let directory = test_directory();
+    build_enumerator(&directory, &faulty);
+    let swept = Command::new(directory.join("enumerate"))
+        .args(["--threads", "1", "--stacks", "2", "--schedule", "S5"])
+        .output()
+        .expect("run the faulty completion model");
+    assert!(!swept.status.success(), "the model accepted an early DONE");
+    assert!(String::from_utf8_lossy(&swept.stderr).contains(
+        "a record was stored DONE without COMPLETING or its unregistered joining continuation"
+    ));
+    std::fs::remove_dir_all(&directory).expect("remove the faulty model directory");
 }
 
 /// §5's floor for one thread, and the configuration a host at the floor

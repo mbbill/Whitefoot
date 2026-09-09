@@ -46,6 +46,9 @@ typedef struct wf_enum_coverage {
     /* Publications (DONE stores) that found a parked waiter, by kind. */
     unsigned long long publish_io;
     unsigned long long publish_compute;
+    /* A directly executed target completed on its joining call stack. */
+    unsigned long long owner_done;
+    unsigned long long owner_done_after_migration;
     /* The greatest number of stacks parked at once in any state. */
     unsigned long long max_parked;
     /* States in which every thread was asleep while an operation was in

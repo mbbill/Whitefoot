@@ -762,8 +762,147 @@ The timing reference returns to pre-coalescing `5e3cbc24`. Keeping the known
 stalling f6/d5 implementations in every timing loop would prevent completing
 the matrix and would not establish a qualified reference. Their evidence is
 retained, and the old f6 completion unit now fails the new regression; no
-acceptance threshold or workload was relaxed. Native CI and exact-revision
-canonical validation of the repair remain required.
+acceptance threshold or workload was relaxed. Exact f2d9d0fa subsequently passes
+local canonical `make check`: compiler 581 seconds, research 210, conformance
+99 and snapshot 21, ending `WHITEFOOT ALL TESTS GREEN`. Linux and Windows native
+I/O host checks pass. The Linux research CI gate still fails on the previously
+seen Rayon caller-worker 384-byte LSan report; its validator expects the
+associated indirect queue as well. The direct allocation matches the known
+`use_current_thread` lifecycle, but why that queue is absent from this report
+has not been established. No sanitizer criterion is relaxed.
+
+The [f2d9d0fa compute run](https://github.com/mbbill/Whitefoot/actions/runs/34369584492)
+completes all five native FIR screens, with performance
+failures rather than stalled timing loops. Long-batch paired medians below
+are candidate/reference; `previous` is pre-coalescing 5e3cbc24. Each ratio
+uses five fresh-process pairs on its own host, not cross-host timings.
+
+| Host | Workers | N / tile | Previous | Recovered | Identical replica |
+|---|---:|---|---:|---:|---:|
+| Linux x64 | 4 | 4096 / 1024 | 0.9039 | 1.4356 | 0.9925 |
+| Linux x64 | 4 | 65536 / 16 | 0.9763 | 1.1428 | 0.9846 |
+| Linux ARM64 | 4 | 4096 / 1024 | 0.8251 | 1.6742 | 1.0095 |
+| Linux ARM64 | 4 | 65536 / 16 | 1.0023 | 1.2143 | 1.0212 |
+| macOS ARM64 | 2 | 4096 / 1024 | 0.9274 | 1.6086 | 0.9944 |
+
+All five coarse-cell pairs lose to recovered on each listed host. Long-batch
+A/A has two cells outside its band on Linux x64, zero on Linux ARM64, and
+five of sixteen on macOS ARM64; the latter does not qualify small deltas.
+The same run's quadrature panel completes all 2,400 processes with 256 repeats
+and its data verifier passes. Performance does not: center-peak / wf-leaf /
+four workers has formal/recovered wall 1.2726 and CPU 1.4620. Successful data
+collection after the wait repair is not performance acceptance.
+
+An independent delivery review also confirms that these attribution images
+do not close ordinary CLI timing. FIR and quadrature commands are tiny smoke
+cases; records' command is manually linked and Mandelbrot lacks that normal
+CLI panel. Substantial input generation and repetition live in C drivers.
+Normal linking uses O2; attribution uses O3 with auto-vectorization disabled.
+A general scalar control must also suppress the maintained lowering's explicit
+wide byte probes; Clang vectorizer flags alone cannot remove those vectors.
+These remain delivery gaps, not grounds for applying research timings to the
+ordinary executable.
+
+Windows also completes with a failed performance screen. Its four-worker
+4,096 / tile1024 candidate/previous median is 0.8898, but candidate/identical
+replica is 0.7542 (range 0.6036-1.3159), so the apparent improvement is not
+qualified. Four of 24 long-batch A/A cells are outside the band. The research
+recovered control still has no qualified Windows port; these ratios are
+against the maintained-runtime control, not evidence of parity with recovered.
+macOS x64 is also noisy: nine of 24 long-batch A/A cells exceed the band.
+At four workers, 4,096 / tile1024 has candidate/previous 1.0174,
+candidate/recovered 1.3533 and candidate/replica 1.3368; this does not qualify
+a precise implementation delta. No native platform meets full acceptance.
+
+### Completing an owned join target locally
+
+The M1 large/fine diagnostic executed approximately 2.09 million tasks in
+the owner's inline-join branch versus about 12,000 steals. Every inline task
+still paid the generic completion handshake. The next maintained-core
+candidate removes that handshake only after the owner successfully pops its
+own join target. It calls the body and release-publishes DONE directly.
+Generic helper/steal execution and I/O completion keep the full handshake.
+The local comparison uses f2d9d0fa as its reference and the same repaired
+wait primitive in both images; f6's defective wait is not a timing control.
+
+The premise is the existing unique live joining continuation: the compiler
+keeps the handle private and emits join, result read, then release. That
+continuation is the direct caller, so it cannot simultaneously be parked on
+this record. Nested calls or I/O may migrate the whole stack; their waits
+name their own records. This does not admit concurrent joins on a shared
+future, change public ABI, change callback execution or select a runtime.
+
+The enumerator permits the direct PENDING-to-DONE edge only for the active
+same-stack compute join, after its callback-return witness, with no waiter.
+Both witnesses are checkpointed with the logical stack. It still requires
+COMPLETING for I/O and generic completions. All four full sweeps pass;
+the two-thread/four-stack S5 sweep observes 119 owner-DONE transitions after
+migration, not 119 independent tasks. A negative case rejects DONE before
+callback return. Native smoke holds thieves, defers its device completion
+until the inner stack is SUSPENDED, then verifies one inline execution, one
+park/resume, the result and a repeated join. It passes, as do the six Rust
+scheduler tests, bridge ThreadSanitizer and Windows GNU core cross-compilation.
+These focused checks preceded the waiter repair; the combined-tree completion
+checks are recorded above. Native CI and the candidate's full canonical check
+remain unverified. Selection requires application and CPU improvement without
+losing these ownership and progress properties, not merely fewer instructions.
+
+Two local FIR cohorts each complete 90 fresh processes: one/two/four workers,
+4,096 / tile1024 and 65,536 / tile16, five alternating passes, fixed/inline/
+identical-replica images. Every output is checked. They run after the exact
+f2 canonical process exits, with common computation/host/primitive objects.
+In the ordinary link layout, long compute ratios are near parity (two-worker
+fine 0.9777; four-worker fine 0.9971), but whole-batch CPU rises 9-15%, even in
+the sequential world that cannot execute the changed join branch. The one-worker
+large case's core remains about 535-538 us while its full cycle grows from
+about 1,598 to 1,818 us. The CPU observation includes verification; it cannot
+be attributed solely to the scheduler.
+
+The join edit shrinks text by 28 bytes and shifts later functions. A separate
+Darwin order-file control places join last and holds every other text-symbol
+address fixed. Under that layout, the extra batch CPU cost disappears. For
+two-worker fine work, all five core and CPU pairs improve: medians 0.9662 and
+0.9809; identical-image core ratio is 1.0113. Four-worker fine medians are
+0.9937 core and 0.9974 CPU. Short coarse work still loses: two-worker first64
+core ratio 1.0843, range 1.0570-1.1886. These are overlapping short views of
+the same processes, not independent cohorts. The local layout experiment
+diagnoses the confound; it neither changes the production linker nor qualifies
+the candidate's overall application performance.
+
+Two quadrature cohorts then complete 240 processes each, with 4,096 checked
+repeats plus eight warmups: fixed/inline/replica, four inputs, one/four workers,
+leaf and sequential-kernel forms, five alternating passes. Both use common
+f2 gate computation/host/primitive objects; the second holds all non-join
+text-symbol addresses fixed. Its candidate/fixed ratios are:
+
+| Input | One-worker leaf wall / CPU | Four-worker leaf wall / CPU |
+|---|---|---|
+| Center peak | 0.9410 / 0.9412 | 0.9577 / 0.9489 |
+| Left peak | 0.9421 / 0.9421 | 0.9694 / 0.9704 |
+| Right peak | 0.9335 / 0.9335 | 0.9885 / 0.9941 |
+| Depth cap | 0.9938 / 0.9934 | 0.9341 / 0.9279 |
+
+All five one-worker peaked-input pairs improve in both layouts; their fixed
+layout A/A wall medians are 0.9992-1.0033. This one-worker leaf form explicitly
+executes the outlined task path on the core without helper threads; it is not
+the ordinary CLI's automatic sequential-world selection. Separate sequential
+kernel controls remain near parity. Four-worker medians also improve, but
+individual wall/CPU pairs lose and A/A ranges are wide; no per-cell pass is
+claimed from those medians. In the first layout, four-worker center-peak wall
+is 0.9283 and depth-cap is 0.9462, showing why layout-conditioned results must
+remain separate rather than pooled.
+
+The repeated local-task benefit justifies native CI evaluation of this small
+maintained-core shortcut; it does not resolve the FIR short-batch losses or
+the much larger recovered-runtime gaps. The next five-target screen pins
+`previous` to repaired f2d9d0fa to isolate the shortcut. Workloads, thresholds
+and the recovered/identical-image controls remain unchanged. Full application
+qualification and ordinary CLI timing remain open.
+
+The combined-tree `whitefootc` binary is rebuilt through Cargo's gate profile.
+Its normal `--par ... -o ...` FIR and quadrature executables pass at one/four
+workers. This confirms current-source CLI integration and correctness, not
+ordinary CLI performance qualification.
 
 ## Earlier investigation and evidence
 

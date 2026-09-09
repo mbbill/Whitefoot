@@ -36,7 +36,7 @@ case "$host" in
     *) echo "unsupported native screen host: $host" >&2; exit 1 ;;
 esac
 before=188088d41552d0d3bccf8368798dcc44702bf75c
-previous=5e3cbc24cd7c514e4200fa320163c34ebbb56be9
+previous=f2d9d0fab8a8b9892c6c3c8fc74f7159164cff45
 root=$(git rev-parse --show-toplevel)
 git -C "$root" diff --exit-code "$before" -- \
     research/experiments/compute-runtime/runtime.c \
@@ -99,7 +99,7 @@ flags="-std=c11 -O3 -g $platform_flags -fno-fast-math -ffp-contract=off -fno-vec
 printf '%s\n' "$CC $flags; recovered additionally -DWF_COMPUTE_STATS=0 -DWF_COMPUTE_CONTROL; shared additionally -DWF_SHARED_CONTROL" \
     "measured_modes=$modes; references=$references; libraries=$libraries" \
     'replica: byte-identical copy of candidate, independently invoked; raw runtime label remains candidate; A/A wall band is symmetric' \
-    'previous: frozen 5e3cbc24 maintained scheduler/floor and Windows host/completion sources before notification coalescing; later controls have a reproduced lost-wake defect and are excluded from timing' \
+    'previous: frozen f2d9d0fa maintained scheduler/floor and Windows host/completion sources with repaired wait rearming, before owned-inline completion' \
     'idle4096: current runtime sources with only -DWF_SCHED_IDLE_SPIN_ROUNDS=4096u changed; default remains 256' \
     'diagnostics: separate longer batches; candidate/previous/idle4096 use WF_SCHED_REPORT=1, before uses 0; not pooled into wall samples' \
     'wall samples: 4096 warm calls for n4096, 512 for n65536; first64 retained as a separate short view of each process, not independent extra samples' \

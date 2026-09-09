@@ -29,17 +29,21 @@ static wf_sched_core core;
  * drain uses. */
 static pthread_mutex_t device_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t device_signal = PTHREAD_COND_INITIALIZER;
-static wf_sched_record *device_queue[DEVICE_QUEUE];
+typedef struct device_request {
+    wf_sched_record *record;
+    int require_suspension;
+} device_request;
+static device_request device_queue[DEVICE_QUEUE];
 static unsigned device_head;
 static unsigned device_tail;
 static int device_stopping;
 
-static void device_submit(wf_sched_record *record) {
+static void device_submit(wf_sched_record *record, int require_suspension) {
     pthread_mutex_lock(&device_lock);
     if ((device_tail + 1u) % DEVICE_QUEUE == device_head) {
         abort();
     }
-    device_queue[device_tail] = record;
+    device_queue[device_tail] = (device_request){record, require_suspension};
     device_tail = (device_tail + 1u) % DEVICE_QUEUE;
     pthread_cond_signal(&device_signal);
     pthread_mutex_unlock(&device_lock);
@@ -49,6 +53,7 @@ static void *device_main(void *argument) {
     (void)argument;
     for (;;) {
         wf_sched_record *record;
+        device_request request;
         struct timespec pause = {0, 200000};
         pthread_mutex_lock(&device_lock);
         while (device_head == device_tail && !device_stopping) {
@@ -58,9 +63,20 @@ static void *device_main(void *argument) {
             pthread_mutex_unlock(&device_lock);
             return NULL;
         }
-        record = device_queue[device_head];
+        request = device_queue[device_head];
+        record = request.record;
         device_head = (device_head + 1u) % DEVICE_QUEUE;
         pthread_mutex_unlock(&device_lock);
+        if (request.require_suspension) {
+            for (;;) {
+                wf_sched_stack *waiter = __atomic_load_n(&record->waiter, __ATOMIC_ACQUIRE);
+                if (waiter != NULL && waiter != WF_SCHED_WAITER_IN_PLACE
+                    && __atomic_load_n(&waiter->phase, __ATOMIC_ACQUIRE) == WF_SCHED_STACK_SUSPENDED) {
+                    break;
+                }
+                nanosleep(&pause, NULL);
+            }
+        }
         nanosleep(&pause, NULL);
         wf_sched_complete(&core, record);
     }
@@ -83,6 +99,7 @@ static unsigned help_arrived;
 static unsigned help_completed;
 static int help_wrong_stack;
 static wf_sched_stack *help_stack;
+static void owned_target_io_roundtrip(void);
 
 static void held_worker(void *frame) {
     (void)frame;
@@ -121,6 +138,7 @@ static void repeated_current_stack_help(void) {
         pthread_cond_wait(&help_signal, &help_lock);
     }
     pthread_mutex_unlock(&help_lock);
+    owned_target_io_roundtrip();
     for (index = 0; index < HELP_SIBLINGS; index += 1u) {
         siblings[index] = wf_sched_acquire(&core, sizeof(unsigned));
         if (siblings[index] == NULL) abort();
@@ -144,10 +162,10 @@ static void repeated_current_stack_help(void) {
 }
 
 /* One I/O operation: a record in this frame, submitted, then joined. */
-static void one_read(void) {
+static void one_read(int require_suspension) {
     wf_sched_record record;
     wf_sched_record_init(&record);
-    device_submit(&record);
+    device_submit(&record, require_suspension);
     wf_sched_join(&core, &record, 1);
     __atomic_add_fetch(&io_rounds, 1u, __ATOMIC_RELAXED);
 }
@@ -155,8 +173,38 @@ static void one_read(void) {
 /* A hand-out whose callee does I/O: it parks on whatever stack it runs on. */
 static void read_then_add(void *frame) {
     unsigned long long *cell = frame;
-    one_read();
+    one_read(0);
     *cell += 1u;
+}
+
+static void owned_read_then_add(void *frame) {
+    one_read(1);
+    *(unsigned long long *)frame += 1u;
+}
+
+/* The other workers are held, so this target must take its owner's inline
+ * join branch. Its callback still parks on I/O. DONE, result visibility and
+ * a repeated join must survive returning through that nested suspension. */
+static void owned_target_io_roundtrip(void) {
+    wf_sched_statistics before;
+    wf_sched_statistics after;
+    void *frame = wf_sched_acquire(&core, sizeof(unsigned long long));
+    wf_sched_record *record;
+    if (frame == NULL) abort();
+    record = &wf_sched_slot_of(frame)->record;
+    *(unsigned long long *)frame = 0u;
+    wf_sched_statistics_sum(&core, &before);
+    wf_sched_publish(&core, frame, owned_read_then_add);
+    wf_sched_join_frame(&core, frame);
+    wf_sched_join_frame(&core, frame);
+    wf_sched_statistics_sum(&core, &after);
+    if (*(unsigned long long *)frame != 1u || record->state != WF_SCHED_DONE
+        || record->waiter != NULL || after.inline_runs != before.inline_runs + 1u
+        || after.parks != before.parks + 1u || after.resumes != before.resumes + 1u) {
+        (void)fprintf(stderr, "owned inline target lost its result or completion across nested I/O\n");
+        exit(1);
+    }
+    wf_sched_release(&core, frame);
 }
 
 /* A group of N hand-outs published together and joined newest first (§4). */
@@ -199,8 +247,8 @@ static void main_body(void *argument) {
         wf_sched_record second;
         wf_sched_record_init(&first);
         wf_sched_record_init(&second);
-        device_submit(&first);
-        device_submit(&second);
+        device_submit(&first, 0);
+        device_submit(&second, 0);
         wf_sched_join(&core, &second, 1);
         wf_sched_join(&core, &first, 1);
         __atomic_add_fetch(&io_rounds, 2u, __ATOMIC_RELAXED);
@@ -265,7 +313,7 @@ int main(void) {
         counts.exhausted_io_waits,
         counts.exhausted_compute_waits
     );
-    if (status != 7 || io_rounds != 40u * 2u + 40u * 4u || compute_sum != 40u * 4u
+    if (status != 7 || io_rounds != 1u + 40u * 2u + 40u * 4u || compute_sum != 40u * 4u
         || counts.parks != counts.resumes) {
         (void)fprintf(stderr, "sched smoke: FAIL\n");
         return 1;

@@ -35,7 +35,9 @@ extern "C" {
 /* A record's state: PENDING from publication; COMPLETING while its one
  * publisher claims the waiter; DONE after that, the publisher's last touch of
  * the record, which is what lets the joiner's frame die or the slot be
- * released the moment DONE is read. Never back. A compute slot returns to its
+ * released the moment DONE is read. An owner executing its own join target
+ * has no separate waiter and publishes DONE directly after the call returns.
+ * Never back. A compute slot returns to its
  * lane's free list and is re-initialised at its next acquisition. */
 #define WF_SCHED_PENDING 1u
 #define WF_SCHED_DONE 2u
@@ -309,12 +311,15 @@ void wf_sched_post_status(wf_sched_core *core, int status);
  * READY work or park on an EMPTY stack. Compute joins defer the EMPTY choice
  * for bounded current-stack helping; I/O joins never run other tasks above
  * their waiting frame. When no stack is available, each kind keeps its
- * progress-preserving exhaustion arm. `is_io` names the record kind. */
+ * progress-preserving exhaustion arm. `is_io` names the record kind.
+ * Each compiler-private record has one live joining continuation; handles
+ * are not futures permitting simultaneous joins from independent stacks. */
 void wf_sched_join(wf_sched_core *core, wf_sched_record *record, int is_io);
 
 /* The one publisher call: enter COMPLETING, claim any registered waiter,
  * publish DONE as the last record access, then notify the claimed stack.
- * The drain calls it for I/O; `wf_sched_execute` calls it for compute. */
+ * The drain calls it for I/O; `wf_sched_execute` calls it for compute.
+ * An owner executing its own join target finishes directly in that join. */
 void wf_sched_complete(wf_sched_core *core, wf_sched_record *record);
 
 /* Compute hand-outs, the module's ABI. */

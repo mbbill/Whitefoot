@@ -174,6 +174,11 @@ typedef struct stack_info {
      * stack and the stack is still parked. */
     int claimed_by;
     unsigned io_depth;
+    /* The innermost compute join on this logical stack. Saved/restored by
+     * nested calls and checkpointed with the other oracle bookkeeping. */
+    wf_sched_record *compute_join;
+    wf_sched_record *returned_compute;
+    int returned_after_migration;
 } stack_info;
 
 /* One executed transition of the trace, and the choice state at the state it
@@ -785,7 +790,30 @@ static void note_word_write(const word *w, unsigned long long old, unsigned long
             fail_execution("a record began completing from state %llu", old);
         }
         if (value == WF_SCHED_DONE && old != WF_SCHED_COMPLETING) {
-            fail_execution("a record was stored DONE from state %llu, not COMPLETING", old);
+            int on = current_exec_stack();
+            wf_sched_record *record = NULL;
+            if (w->cls == W_SLOT_STATE) {
+                record = &wf_enum_core.lanes[w->index].slots[w->sub].record;
+            }
+            /* Only the unique joining continuation may finish a directly
+             * executed target without the publisher/waiter handshake.
+             * Foreign execution and every I/O completion retain it. */
+            if (old != WF_SCHED_PENDING || record == NULL || on < 0
+                || stacks[on].compute_join != record
+                || stacks[on].returned_compute != record || record->waiter != NULL) {
+                fail_execution("a record was stored DONE without COMPLETING or its unregistered joining continuation");
+            }
+            cov.owner_done += 1u;
+            if (stacks[on].returned_after_migration) {
+                cov.owner_done_after_migration += 1u;
+            }
+        }
+        if (value == WF_SCHED_DONE && w->cls == W_SLOT_STATE) {
+            int on = current_exec_stack();
+            if (on >= 0) {
+                stacks[on].returned_compute = NULL;
+                stacks[on].returned_after_migration = 0;
+            }
         }
         if (value != WF_SCHED_DONE && value != WF_SCHED_PENDING && value != WF_SCHED_COMPLETING) {
             fail_execution("a record was given the state %llu", value);
@@ -1343,10 +1371,16 @@ typedef struct hand_out_frame {
 static void hand_out_trampoline(void *frame) {
     hand_out_frame *f = frame;
     int on = current_exec_stack();
+    unsigned entered_on = current_index();
     if (on >= 0 && stacks[on].io_depth != 0u) {
         fail_execution("a hand-out ran above an I/O join on stack %d (I1)", on);
     }
     f->run(f->payload);
+    if (on < 0 || current_exec_stack() != on) {
+        fail_execution("a hand-out returned outside its logical call stack");
+    }
+    stacks[on].returned_compute = &wf_sched_slot_of(frame)->record;
+    stacks[on].returned_after_migration = current_index() != entered_on;
 }
 
 void *wf_enum_hand_out(void (*run)(void *payload), unsigned long payload_bytes) {
@@ -1365,7 +1399,16 @@ void *wf_enum_hand_out(void (*run)(void *payload), unsigned long payload_bytes) 
 }
 
 void wf_enum_join(void *payload) {
-    wf_sched_join_frame(&wf_enum_core, (unsigned char *)payload - offsetof(hand_out_frame, payload));
+    void *frame = (unsigned char *)payload - offsetof(hand_out_frame, payload);
+    int on = current_exec_stack();
+    wf_sched_record *previous;
+    if (on < 0) {
+        fail_execution("a compute join ran outside a scheduler stack");
+    }
+    previous = stacks[on].compute_join;
+    stacks[on].compute_join = &wf_sched_slot_of(frame)->record;
+    wf_sched_join_frame(&wf_enum_core, frame);
+    stacks[on].compute_join = previous;
 }
 
 void wf_enum_release(void *payload) {
@@ -2632,7 +2675,8 @@ static void print_coverage(FILE *out) {
         " cancel_suspending_io=%llu cancel_suspending_compute=%llu cancel_notified_io=%llu"
         " cancel_notified_compute=%llu resume=%llu resume_foreign=%llu empty=%llu take=%llu"
         " start_after_park=%llu post_in_window=%llu post_while_asleep=%llu post_elsewhere=%llu"
-        " post_by_worker=%llu late_third_line=%llu publish_io=%llu publish_compute=%llu"
+        " post_by_worker=%llu late_third_line=%llu publish_io=%llu publish_compute=%llu owner_done=%llu"
+        " owner_done_after_migration=%llu"
         " parks=%llu cancels=%llu resumes=%llu steals=%llu inline_runs=%llu exhausted_io=%llu"
         " exhausted_compute=%llu late_parks=%llu line_one=%llu max_parked=%llu all_asleep=%llu"
         " sleeps=%llu states=%llu pruned=%llu replay_steps=%u replay_completions=%u"
@@ -2643,7 +2687,8 @@ static void print_coverage(FILE *out) {
         cov.ready_from_notified, cov.cancel_suspending_io, cov.cancel_suspending_compute,
         cov.cancel_notified_io, cov.cancel_notified_compute, cov.resume, cov.resume_foreign, cov.empty,
         cov.take, cov.start_after_park, cov.post_in_window, cov.post_while_asleep, cov.post_elsewhere,
-        cov.post_by_worker, cov.late_third_line, cov.publish_io, cov.publish_compute, cov.stats.parks,
+        cov.post_by_worker, cov.late_third_line, cov.publish_io, cov.publish_compute, cov.owner_done,
+        cov.owner_done_after_migration, cov.stats.parks,
         cov.stats.cancels, cov.stats.resumes, cov.stats.steals, cov.stats.inline_runs,
         cov.stats.exhausted_io_waits, cov.stats.exhausted_compute_waits, cov.stats.late_parks,
         cov.stats.line_one, cov.max_parked, cov.all_asleep, cov.sleeps, states_seen, states_pruned,
