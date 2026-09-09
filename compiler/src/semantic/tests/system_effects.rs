@@ -958,3 +958,11 @@ command fn main() -> status: own ExitStatus pure {
 "#,
     );
 }
+
+#[test]
+fn general_elements_retain_deep_resource_release_effects() {
+    let accepted = b"fn release_files(files: own FixedVector<FixedVector<FixedVector<ReadFile, 2>, 2>, 2>) -> result: own unit writes(files) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let rejected = b"fn release_files(files: own FixedVector<FixedVector<FixedVector<ReadFile, 2>, 2>, 2>) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    assert_complete(accepted);
+    assert_release_mismatch(rejected, "files", b"pure");
+}

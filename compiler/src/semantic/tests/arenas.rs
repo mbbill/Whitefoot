@@ -87,7 +87,7 @@ fn missing_main_still_rejects_when_nothing_else_does() {
 #[test]
 fn missing_main_wins_over_an_unsupported_capability() {
     with_semantics(
-        b"fn quiet(storage: own FixedVector<Slice<u8>, 1>) -> result: own unit pure {\n  return unit;\n}\n",
+        b"fn quiet(storage: own buffer<buffer<u8>>) -> result: own unit pure {\n  return unit;\n}\n",
         |outcome| {
             let SemanticOutcome::SourceIssue { issue } = outcome else {
                 panic!("a main-less unit must reject: {outcome:?}");

@@ -333,7 +333,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             self.ensure_nominal_type(subject_node, &GenericSubstitution::default())?;
             let subject = self.parse_type(subject_node)?;
-            if !subject.is_concrete() {
+            if !subject.is_concrete(&self.elements.borrow()) {
                 return self.issue_node(
                     SemanticRule::Fn3,
                     subject_node,

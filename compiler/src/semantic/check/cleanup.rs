@@ -60,6 +60,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // release contribution exactly as a box referent's does.
             return self.release_row_of_type(element.ty(), visited);
         }
+        if let CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } = ty {
+            return self.release_row_of_type(self.element_type(element)?, visited);
+        }
         let CheckedType::Nominal(id) = ty else {
             // Scalars carry no release action, and array and slice elements
             // are flat copy data with no release of their own.

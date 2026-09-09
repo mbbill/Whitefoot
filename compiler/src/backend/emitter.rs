@@ -291,7 +291,7 @@ fn emit_llvm_for(
     // the two symbols even where nothing else on this list allocates. It does
     // not write a resource record: a refused take is the row's own `None`
     // arm and never an abort.
-    if has_heap_storage || cleanup::program_has_general_run(program) {
+    if has_heap_storage || cleanup::program_has_general_run(program)? {
         text.push_str("declare ptr @malloc(i64)\ndeclare void @free(ptr)\n");
     }
     for declaration in &system_declarations {
@@ -2542,7 +2542,10 @@ fn llvm_type(program: &IrProgram<'_, '_, '_>, ty: IrType) -> Result<String, Back
         IrType::Vector { .. } => Ok("{ ptr, i64, i64, i64 }".to_owned()),
         IrType::FixedVector { element, length } => Ok(format!(
             "{{ [{length} x {}], i64, i64 }}",
-            llvm_type(program, element.ty())?
+            llvm_type(
+                program,
+                program.element(element).ok_or(BackendFailure::InvalidIr)?
+            )?
         )),
         IrType::Provider => Ok("{ ptr, i64 }".to_owned()),
         IrType::Address(_) => Ok("ptr".to_owned()),

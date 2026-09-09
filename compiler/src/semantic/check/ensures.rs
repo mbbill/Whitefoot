@@ -342,7 +342,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     let substitution =
                         match self.call_generic_substitution(call, &template, &caller.substitution)
                         {
-                            Ok(substitution) if substitution.is_concrete() => substitution,
+                            Ok(substitution)
+                                if substitution.is_concrete(&self.elements.borrow()) =>
+                            {
+                                substitution
+                            }
                             Ok(_)
                             | Err(
                                 CheckStop::Issue(_)
@@ -448,7 +452,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         signature: &FunctionSignature,
     ) -> Result<Vec<CheckedPostconditionSelector>, CheckStop> {
-        if signature.substitution.is_concrete() {
+        if signature.substitution.is_concrete(&self.elements.borrow()) {
             return Ok(self
                 .postcondition_selectors
                 .iter()
@@ -958,7 +962,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         relation: RelationTemplate,
         body: &[CheckedStatement],
     ) -> Result<CheckedPostcondition, CheckStop> {
-        if !function.substitution.is_concrete() {
+        if !function.substitution.is_concrete(&self.elements.borrow()) {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
         self.build_checked_postcondition_inner(
@@ -979,7 +983,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         relation: RelationTemplate,
         body: &[CheckedStatement],
     ) -> Result<Option<CheckedPostcondition>, CheckStop> {
-        if function.substitution.is_concrete() {
+        if function.substitution.is_concrete(&self.elements.borrow()) {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
         if !matches!(selector.result_type, CheckedType::Integer(_))
@@ -1020,7 +1024,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut const_substitutions = Vec::new();
         for (declaration, argument) in function.substitution.entries() {
             match argument {
-                GenericArgument::Type(ty) if ty.is_concrete() => {
+                GenericArgument::Type(ty) if ty.is_concrete(&self.elements.borrow()) => {
                     type_substitutions.push((*declaration, *ty));
                 }
                 GenericArgument::Const(super::super::model::CheckedConst::Value(value)) => {

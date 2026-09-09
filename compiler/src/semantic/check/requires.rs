@@ -11,9 +11,8 @@ use super::super::goal::{
     CheckedRequirement, GoalDatum, GoalExpression, GoalOperation, GoalProjection, GoalTemplate,
 };
 use super::super::model::{
-    BindingId, CheckedConst, CheckedElement, CheckedExpression, CheckedFloatOperation,
-    CheckedIntegerOperation, CheckedMode, CheckedNominalKind, CheckedStatement, CheckedType,
-    CheckedValue,
+    BindingId, CheckedConst, CheckedExpression, CheckedFloatOperation, CheckedIntegerOperation,
+    CheckedMode, CheckedNominalKind, CheckedStatement, CheckedType, CheckedValue,
 };
 use super::super::postcondition::PostconditionConstantOrigin;
 use super::{CheckStop, Checker, ControlCounters, ControlScope, FunctionSignature, LocalBinding};
@@ -463,10 +462,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Vector { element, .. } => (Some(element), None),
                 CheckedType::Extent { bytes, .. } => (None, Some(bytes)),
                 CheckedType::Array { element, length } => {
-                    (Some(CheckedElement::Flat(element)), Some(length))
+                    (Some(self.intern_element(element.ty())?), Some(length))
                 }
                 CheckedType::Buffer { element } | CheckedType::Slice { element, .. } => {
-                    (Some(CheckedElement::Flat(element)), None)
+                    (Some(self.intern_element(element.ty())?), None)
                 }
                 _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
             };

@@ -4,7 +4,7 @@
 //! graph. Equal layouts alone never merge types. Pair visitation makes cyclic
 //! graphs finite without a depth limit or an acceptance heuristic.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::semantic::{CheckedNominalKind, CheckedProgramData, CheckedReleaseClass};
 use crate::{DeclarationId, NominalId};
@@ -12,6 +12,86 @@ use crate::{DeclarationId, NominalId};
 use super::*;
 
 type Releases = Vec<(DeclarationId, CheckedReleaseClass)>;
+
+pub(super) struct PhysicalTypeMap {
+    pub(super) nominals: Vec<IrNominalId>,
+    pub(super) elements: Vec<Option<IrElement>>,
+}
+
+/// Lower only elements reached by executable types. Generic proof replay can
+/// leave symbolic entries in the checked table; they have no physical type.
+/// Structural children are interned before parents, so ascending handle order
+/// is a topological order even when nominal references close an owning graph.
+pub(super) fn base_elements(
+    data: &CheckedProgramData,
+    nominals: &[IrNominalId],
+) -> Result<(Vec<IrType>, Vec<Option<IrElement>>), LoweringFailure> {
+    let mut pending = data
+        .functions
+        .iter()
+        .flat_map(specialize::executable_types)
+        .collect::<Vec<_>>();
+    pending.extend(data.constants.iter().map(|constant| constant.ty));
+    for nominal in data.nominals.iter().take(data.executable_nominal_count) {
+        match &nominal.kind {
+            CheckedNominalKind::Struct { fields } => {
+                pending.extend(fields.iter().map(|field| field.ty))
+            }
+            CheckedNominalKind::Enum { variants } => pending.extend(
+                variants
+                    .iter()
+                    .flat_map(|variant| &variant.fields)
+                    .map(|field| field.ty),
+            ),
+            CheckedNominalKind::Box { referent, .. } => pending.push(*referent),
+            CheckedNominalKind::Arena { content, .. } => pending.push(*content),
+            CheckedNominalKind::ArenaStorage | CheckedNominalKind::SystemResource { .. } => {}
+        }
+    }
+    let mut needed = BTreeSet::new();
+    while let Some(ty) = pending.pop() {
+        if let CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } = ty
+            && needed.insert(element.index())
+        {
+            pending.push(
+                *data
+                    .elements
+                    .get(element.index())
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+            );
+        }
+    }
+    let mut map = vec![None; data.elements.len()];
+    let mut elements = Vec::new();
+    let mut interned = HashMap::new();
+    for index in needed {
+        let ty = lower_type(
+            TypeLowering {
+                nominals,
+                elements: &map,
+                releases: &[],
+            },
+            data.elements[index],
+        )?;
+        map[index] = Some(intern_element(&mut elements, &mut interned, ty)?);
+    }
+    Ok((elements, map))
+}
+
+fn intern_element(
+    elements: &mut Vec<IrType>,
+    interned: &mut HashMap<IrType, IrElement>,
+    ty: IrType,
+) -> Result<IrElement, LoweringFailure> {
+    if let Some(id) = interned.get(&ty) {
+        return Ok(*id);
+    }
+    let id =
+        IrElement(u32::try_from(elements.len()).map_err(|_| LoweringFailure::CounterOverflow)?);
+    elements.push(ty);
+    interned.insert(ty, id);
+    Ok(id)
+}
 
 struct Instance {
     source: NominalId,
@@ -22,11 +102,20 @@ struct Instance {
 pub(super) struct PhysicalTypes<'a> {
     data: &'a CheckedProgramData,
     pub(super) nominals: Vec<IrNominal>,
+    pub(super) elements: Vec<IrType>,
+    base_elements: Vec<Option<IrElement>>,
+    interned_elements: HashMap<IrType, IrElement>,
+    element_instances: HashMap<(CheckedElement, Releases), IrElement>,
     instances: Vec<Instance>,
 }
 
 impl<'a> PhysicalTypes<'a> {
-    pub(super) fn new(data: &'a CheckedProgramData, nominals: Vec<IrNominal>) -> Self {
+    pub(super) fn new(
+        data: &'a CheckedProgramData,
+        nominals: Vec<IrNominal>,
+        elements: Vec<IrType>,
+        base_elements: Vec<Option<IrElement>>,
+    ) -> Self {
         let instances = data
             .nominal_lowering_alias
             .iter()
@@ -42,6 +131,14 @@ impl<'a> PhysicalTypes<'a> {
         Self {
             data,
             nominals,
+            interned_elements: elements
+                .iter()
+                .enumerate()
+                .map(|(index, ty)| (*ty, IrElement(index as u32)))
+                .collect(),
+            elements,
+            base_elements,
+            element_instances: HashMap::new(),
             instances,
         }
     }
@@ -49,15 +146,47 @@ impl<'a> PhysicalTypes<'a> {
     pub(super) fn map(
         &mut self,
         releases: &[(DeclarationId, CheckedReleaseClass)],
-    ) -> Result<Vec<IrNominalId>, LoweringFailure> {
-        (0..self.data.executable_nominal_count)
+    ) -> Result<PhysicalTypeMap, LoweringFailure> {
+        let nominals = (0..self.data.executable_nominal_count)
             .map(|index| {
                 self.nominal(
                     NominalId(u32::try_from(index).map_err(|_| LoweringFailure::CounterOverflow)?),
                     releases,
                 )
             })
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut elements = vec![None; self.data.elements.len()];
+        for (index, mapped) in elements.iter_mut().enumerate() {
+            if self.base_elements[index].is_some() {
+                *mapped = Some(self.element(
+                    CheckedElement(
+                        u32::try_from(index).map_err(|_| LoweringFailure::CounterOverflow)?,
+                    ),
+                    releases,
+                )?);
+            }
+        }
+        Ok(PhysicalTypeMap { nominals, elements })
+    }
+
+    fn element(
+        &mut self,
+        source: CheckedElement,
+        releases: &[(DeclarationId, CheckedReleaseClass)],
+    ) -> Result<IrElement, LoweringFailure> {
+        let key = (source, releases.to_vec());
+        if let Some(id) = self.element_instances.get(&key) {
+            return Ok(*id);
+        }
+        let ty = *self
+            .data
+            .elements
+            .get(source.index())
+            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        let ty = self.ty(ty, releases)?;
+        let id = intern_element(&mut self.elements, &mut self.interned_elements, ty)?;
+        self.element_instances.insert(key, id);
+        Ok(id)
     }
 
     fn family(&self, source: NominalId) -> Result<NominalId, LoweringFailure> {
@@ -159,6 +288,31 @@ impl<'a> PhysicalTypes<'a> {
         ty: CheckedType,
         releases: &[(DeclarationId, CheckedReleaseClass)],
     ) -> Result<IrType, LoweringFailure> {
+        match ty {
+            CheckedType::FixedVector { element, length } => {
+                return Ok(IrType::FixedVector {
+                    element: self.element(element, releases)?,
+                    length: length
+                        .value()
+                        .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                });
+            }
+            CheckedType::Vector {
+                region,
+                element,
+                release,
+            } => {
+                return Ok(IrType::Vector {
+                    element: self.element(element, releases)?,
+                    release: lower_release_class(effective_release(
+                        releases,
+                        Some(region),
+                        release,
+                    )),
+                });
+            }
+            _ => {}
+        }
         let mut map = self
             .data
             .nominal_lowering_alias
@@ -174,15 +328,13 @@ impl<'a> PhysicalTypes<'a> {
                 CheckedType::Array { element, .. }
                 | CheckedType::Buffer { element }
                 | CheckedType::Slice { element, .. } => pending.push(element.ty()),
-                CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
-                    pending.push(element.ty())
-                }
                 _ => {}
             }
         }
         lower_type(
             TypeLowering {
                 nominals: &map,
+                elements: &[],
                 releases,
             },
             ty,
@@ -301,7 +453,18 @@ impl<'a> PhysicalTypes<'a> {
                     {
                         return Ok(false);
                     }
-                    pending.push((le.ty(), re.ty()));
+                    pending.push((
+                        *self
+                            .data
+                            .elements
+                            .get(le.index())
+                            .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                        *self
+                            .data
+                            .elements
+                            .get(re.index())
+                            .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                    ));
                 }
                 (
                     CheckedType::FixedVector {
@@ -312,7 +475,18 @@ impl<'a> PhysicalTypes<'a> {
                         element: right,
                         length: rn,
                     },
-                ) if ln == rn => pending.push((left.ty(), right.ty())),
+                ) if ln == rn => pending.push((
+                    *self
+                        .data
+                        .elements
+                        .get(left.index())
+                        .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                    *self
+                        .data
+                        .elements
+                        .get(right.index())
+                        .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                )),
                 (
                     CheckedType::Array {
                         element: left,
@@ -357,6 +531,7 @@ fn effective_release(
     region.map_or(fallback, |region| {
         TypeLowering {
             nominals: &[],
+            elements: &[],
             releases,
         }
         .release(region, fallback)

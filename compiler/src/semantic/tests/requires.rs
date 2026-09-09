@@ -4,8 +4,8 @@ use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 use super::super::entailment::{CallGoalDisposition, CallGoalEvidence};
 use super::super::goal::{GoalDatum, GoalExpression, GoalOperation, GoalProjection};
 use super::super::model::{
-    CheckedConst, CheckedElement, CheckedExpression, CheckedFlatElement, CheckedIntegerOperation,
-    CheckedNominalKind, CheckedStatement, CheckedType, CheckedValue, IntegerType, MeasuredKind,
+    CheckedConst, CheckedExpression, CheckedIntegerOperation, CheckedNominalKind, CheckedStatement,
+    CheckedType, CheckedValue, IntegerType, MeasuredKind,
 };
 use super::{assert_rule, with_semantics, with_semantics_dark};
 
@@ -578,12 +578,13 @@ command fn main() -> status: own ExitStatus pure {
             panic!("projected run must remain the formal datum");
         };
         assert_eq!(projections, &[GoalProjection::Field(0)]);
+        let CheckedType::FixedVector { element, length } = *ty else {
+            panic!("projected type must remain a fixed run");
+        };
+        assert_eq!(length, CheckedConst::Value(2));
         assert_eq!(
-            *ty,
-            CheckedType::FixedVector {
-                element: CheckedElement::Flat(CheckedFlatElement::Integer(IntegerType::U8)),
-                length: CheckedConst::Value(2),
-            }
+            checked.element_type(element),
+            Some(CheckedType::Integer(IntegerType::U8))
         );
     });
 }

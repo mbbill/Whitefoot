@@ -1172,25 +1172,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         element: CheckedElement,
         regions: &[(crate::DeclarationId, crate::DeclarationId)],
     ) -> Result<CheckedElement, CheckStop> {
-        Ok(match element {
-            CheckedElement::Flat(element) => {
-                CheckedElement::Flat(self.substitute_flat_element_regions(element, regions)?)
-            }
-            CheckedElement::FixedVector { element, length } => CheckedElement::FixedVector {
-                element: self.substitute_flat_element_regions(element, regions)?,
-                length,
-            },
-            CheckedElement::Vector {
-                region, element, ..
-            } => {
-                let region = Self::substituted_region(regions, region);
-                CheckedElement::Vector {
-                    region,
-                    element: self.substitute_flat_element_regions(element, regions)?,
-                    release: self.vector_release_class(region)?,
-                }
-            }
-        })
+        let ty = self.substitute_type_regions(self.element_type(element)?, regions)?;
+        self.intern_element(ty)
     }
 
     /// One flat slot element with the same substitution [FN-2, TYPE-2].
@@ -1448,7 +1431,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         ..
                     },
                 ) => {
-                    pending.push((left.ty(), right.ty()));
+                    pending.push((self.element_type(left)?, self.element_type(right)?));
                     !release_sensitive || left_release == right_release
                 }
                 (
@@ -1461,7 +1444,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         length: right_length,
                     },
                 ) => {
-                    pending.push((left.ty(), right.ty()));
+                    pending.push((self.element_type(left)?, self.element_type(right)?));
                     left_length == right_length
                 }
                 (
@@ -1771,6 +1754,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if checkpoint > self.nominals.len() {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
+        // Element identities are append-only because a retained generic goal
+        // may still carry a scratch structural handle until its bridge is
+        // reified. Never reuse a key whose nominal identity is being retired.
+        // Unreachable historical entries are not executable type roots.
+        let mut retained = HashSet::new();
+        for (index, ty) in self.elements.borrow().iter().copied().enumerate() {
+            let mut nominals = Vec::new();
+            self.collect_type_nominals(ty, &mut nominals)?;
+            if nominals.iter().all(|id| (id.0 as usize) < checkpoint) {
+                retained.insert(CheckedElement(
+                    u32::try_from(index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+                ));
+            }
+        }
+        self.element_ids
+            .borrow_mut()
+            .retain(|_, id| retained.contains(id));
         self.nominals.truncate(checkpoint);
         self.nominal_nodes.truncate(checkpoint);
         self.nominal_states.truncate(checkpoint);

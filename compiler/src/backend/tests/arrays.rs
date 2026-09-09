@@ -356,3 +356,239 @@ command fn main() -> status: own ExitStatus pure {
     assert!(output.stdout.is_empty());
     assert!(output.stderr.is_empty());
 }
+
+#[test]
+fn general_run_elements_preserve_array_places_and_standing_extents() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
+  let row = array_new::<u64, 2>(7_u64);
+  let empty = fixed_vector::<array<u64, 2>, 2>();
+  let rows = place_back(vector: move empty, value: move row);
+  let width = len_of(rows[0_u64]);
+  let capacity = cap_of(rows[0_u64]);
+  let head = head_of(rows[0_u64]);
+  let room = room_of(rows[0_u64]);
+  set rows[0_u64][1_u64] = 9_u64;
+  if rows[0_u64][0_u64] != 7_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if rows[0_u64][1_u64] != 9_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if width != 2_u64 {
+    return exit_status(code: 3_u8);
+  }
+  if capacity != 2_u64 {
+    return exit_status(code: 4_u8);
+  }
+  if head != 0_u64 {
+    return exit_status(code: 5_u8);
+  }
+  if room != 0_u64 {
+    return exit_status(code: 6_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [
+        crate::OverlapLowering::Off,
+        crate::OverlapLowering::On,
+        crate::OverlapLowering::Completion,
+    ] {
+        let llvm = super::emit_lowered(source, overlap);
+        let output = compile_and_run(&llvm);
+        assert!(output.status.success(), "{overlap:?}: {output:?}");
+        assert!(output.stdout.is_empty());
+        assert!(output.stderr.is_empty());
+    }
+}
+
+/// An owning element crosses more than the former one-level run lift. The
+/// allocation ledger observes the complete nested window and generic handoff,
+/// rather than only whether a deeply nested type can be named.
+#[test]
+fn general_run_elements_preserve_nested_owners_across_generic_calls() {
+    let source = br#"fn pass<T: linear>(value: own T) -> result: own T pure {
+  return move value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let first = box_new(17_u64);
+  let second = box_new(29_u64);
+  let leaf = fixed_vector::<box<u64>, 2>();
+  set leaf = place_back(vector: move leaf, value: move first);
+  set leaf = place_back(vector: move leaf, value: move second);
+  let middle = fixed_vector::<FixedVector<box<u64>, 2>, 1>();
+  set middle = place_back(vector: move middle, value: move leaf);
+  let outer = fixed_vector::<FixedVector<FixedVector<box<u64>, 2>, 1>, 1>();
+  set outer = place_back(vector: move outer, value: move middle);
+  let carried = pass::<FixedVector<FixedVector<FixedVector<box<u64>, 2>, 1>, 1>>(value: move outer);
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        let observed = retain_nested_run_calls(&module)
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        let host = super::owned_places::allocation_observer(2, 0);
+        let output = super::compile_link_and_run(&observed, Some(&host), &[]);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(output.stdout, b"A1;A2;F1;F2;", "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+}
+
+/// The same unconstrained region and captured generic call must preserve the
+/// different release classes inside three inline run layers.
+#[test]
+fn general_run_elements_preserve_box_brands_across_region_polymorphic_calls() {
+    let source = br#"fn pass<T: linear>(value: own T) -> result: own T pure {
+  return move value;
+}
+
+fn nest['s](value: own Box<'s, u64>) -> result: own FixedVector<FixedVector<FixedVector<Box<'s, u64>, 1>, 1>, 1> pure {
+  let leaf = fixed_vector::<Box<'s, u64>, 1>();
+  set leaf = place_back(vector: move leaf, value: move value);
+  let middle = fixed_vector::<FixedVector<Box<'s, u64>, 1>, 1>();
+  set middle = place_back(vector: move middle, value: move leaf);
+  let outer = fixed_vector::<FixedVector<FixedVector<Box<'s, u64>, 1>, 1>, 1>();
+  set outer = place_back(vector: move outer, value: move middle);
+  return move outer;
+}
+
+fn carry['s](value: own FixedVector<FixedVector<FixedVector<Box<'s, u64>, 1>, 1>, 1>) -> result: own FixedVector<FixedVector<FixedVector<Box<'s, u64>, 1>, 1>, 1> pure {
+  return pass::<FixedVector<FixedVector<FixedVector<Box<'s, u64>, 1>, 1>, 1>>(value: move value);
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region 'a {
+    let store = arena_frame::<8, 8, 'a>();
+    region {
+      match heap_box(store: &uniq heap, value: 17_u64) {
+        Err(error: back) => {
+          return exit_status(code: 70_u8);
+        }
+        Ok(value: general) => {
+          match arena_box(store: &uniq store, value: 29_u64) {
+            Err(error: back) => {
+              return exit_status(code: 70_u8);
+            }
+            Ok(value: extent) => {
+              let general_nested = nest(value: move general);
+              let extent_nested = nest(value: move extent);
+              let general_carried = carry(value: move general_nested);
+              let extent_carried = carry(value: move extent_nested);
+              return exit_status(code: 0_u8);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        let observed = retain_nested_run_calls(&module)
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        let host = super::owned_places::allocation_observer(1, 0);
+        let output = super::compile_link_and_run(&observed, Some(&host), &[]);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        // The arena cell remains owned by its extent. Only the heap cell may
+        // reach the host allocator, exactly once after the returned run dies.
+        assert_eq!(output.stdout, b"A1;F1;", "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+}
+
+/// Vector's descriptor has finite layout even when its elements own another
+/// Vector of the same node type. The release graph follows actual initialized
+/// windows, and refusal must clean up the already constructed child.
+#[test]
+fn general_run_elements_close_recursive_descriptor_layout_and_cleanup() {
+    let source = br#"struct Tree['s] {
+  children: Vector<'s, Tree<'s>>;
+}
+
+fn build['s](store: &uniq Heap<'s>) -> result: own Option<Tree<'s>> reads(store), writes(store), allocates(store) {
+  region {
+    match heap_vector::<Tree<'s>>(store: &uniq deref(store), count: 1_u64) {
+      None() => {
+        return None<Tree<'s>>();
+      }
+      Some(value: empty_children) => {
+        let child = Tree(children: move empty_children);
+        region {
+          match heap_vector::<Tree<'s>>(store: &uniq deref(store), count: 1_u64) {
+            None() => {
+              return None<Tree<'s>>();
+            }
+            Some(value: parent_children) => {
+              let populated = place_back(vector: move parent_children, value: move child);
+              let root = Tree(children: move populated);
+              return Some<Tree<'s>>(value: move root);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    match build(store: &uniq heap) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: tree) => {
+        return exit_status(code: 0_u8);
+      }
+    }
+  }
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        let observed = retain_nested_run_calls(&module)
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        for (refused, status, expected) in
+            [(0, 0, "A1;A2;F1;F2;"), (1, 70, "X1;"), (2, 70, "A1;X2;F1;")]
+        {
+            let host = super::owned_places::allocation_observer(2, refused);
+            let output = super::compile_link_and_run(&observed, Some(&host), &[]);
+            assert_eq!(output.status.code(), Some(status), "{output:?}");
+            assert_eq!(output.stdout, expected.as_bytes(), "{output:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+        }
+    }
+}
+
+fn retain_nested_run_calls(module: &str) -> String {
+    module
+        .lines()
+        .map(|line| {
+            if line.starts_with("define internal ")
+                && let Some(header) = line.strip_suffix(" {")
+            {
+                format!("{header} noinline {{\n")
+            } else {
+                format!("{line}\n")
+            }
+        })
+        .collect()
+}

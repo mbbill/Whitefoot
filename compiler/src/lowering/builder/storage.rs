@@ -404,11 +404,21 @@ impl IrBuilder<'_> {
                 }
                 crate::semantic::CheckedPlaceStep::Subscript(subscript) => {
                     let offset = self.expression(&subscript.offset)?;
-                    (
-                        IrPlaceProjection::RunElement {
+                    let projection = match lower_type(self.erasure, subscript.base_type)? {
+                        IrType::Array { .. } => IrPlaceProjection::ArrayElement {
                             offset,
                             target_domain: subscript.target_domain.into(),
                         },
+                        IrType::FixedVector { .. } | IrType::Vector { .. } => {
+                            IrPlaceProjection::RunElement {
+                                offset,
+                                target_domain: subscript.target_domain.into(),
+                            }
+                        }
+                        _ => return Err(LoweringFailure::InvalidCheckedProgram),
+                    };
+                    (
+                        projection,
                         lower_type(self.erasure, subscript.element_type)?,
                     )
                 }

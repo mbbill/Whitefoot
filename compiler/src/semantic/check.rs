@@ -682,6 +682,8 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     reborrow_extension: bool,
     tree: TreeView<'unit, 'classified, 'lexed, 'source>,
     nominals: Vec<CheckedNominal>,
+    elements: RefCell<Vec<CheckedType>>,
+    element_ids: RefCell<HashMap<CheckedType, CheckedElement>>,
     nominal_nodes: Vec<Option<NodeId>>,
     nominal_states: Vec<u8>,
     source_nominal_instances: Vec<Option<(usize, GenericSubstitution)>>,
@@ -1262,6 +1264,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             reborrow_extension,
             tree: TreeView::new(resolved)?,
             nominals: Vec::new(),
+            elements: RefCell::new(Vec::new()),
+            element_ids: RefCell::new(HashMap::new()),
             nominal_nodes: Vec::new(),
             nominal_states: Vec::new(),
             source_nominal_instances: Vec::new(),
@@ -1513,6 +1517,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(CheckedProgramData {
             inventory: self.inventory(),
             nominals: self.nominals.clone(),
+            elements: self.elements.borrow().clone(),
             system_structs: {
                 let mut rows = self
                     .system_nominals
@@ -1911,9 +1916,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         signature: &FunctionSignature,
     ) -> Result<CheckedFunctionInventory, CheckStop> {
-        let previous = self
-            .template_spelling_authority
-            .replace(signature.substitution.len() > 0 && signature.substitution.is_concrete());
+        let previous = self.template_spelling_authority.replace(
+            signature.substitution.len() > 0
+                && signature.substitution.is_concrete(&self.elements.borrow()),
+        );
         let outcome = self.check_function_signature_body(signature);
         self.template_spelling_authority.set(previous);
         outcome
@@ -2095,7 +2101,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        let postconditions = if signature.substitution.is_concrete() {
+        let postconditions = if signature.substitution.is_concrete(&self.elements.borrow()) {
             postcondition_selectors
                 .into_iter()
                 .zip(postcondition_relations)
@@ -2278,6 +2284,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     constants: &self.checked_constants,
                     constant_ids: &self.constants,
                     nominals: &self.nominals,
+                    elements: &self.elements.borrow(),
                     verified_postconditions: &[],
                     verified_postcondition_proofs: &[],
                     binding_names: &checked.binding_names,
@@ -2339,6 +2346,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         constants: &self.checked_constants,
                         constant_ids: &self.constants,
                         nominals: &self.nominals,
+                        elements: &self.elements.borrow(),
                         verified_postconditions: &verified_postconditions,
                         verified_postcondition_proofs: &verified_postcondition_proofs,
                         binding_names: &checked.binding_names,
@@ -3216,30 +3224,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// One run element at a caller's instance [BLK-1].
     ///
-    /// The lift is one level, so an element that is itself a run instantiates
-    /// through the ordinary type path and is re-lifted; anything the lift does
-    /// not carry is the flat domain's own instantiation.
+    /// Complete slot types use the ordinary recursive type substitution and
+    /// are re-interned only after all formal type, const and region arguments
+    /// have been instantiated.
     fn instantiate_goal_element(
         &self,
         element: CheckedElement,
         signature: &FunctionSignature,
         regions: &[DeclarationId],
     ) -> Result<CheckedElement, CheckStop> {
-        if element.is_run() {
-            let ty = self.instantiate_goal_type(element.ty(), signature, regions)?;
-            return Self::run_element(ty)
-                .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
-        }
-        let flat = element
-            .flat()
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let ty = self.instantiate_goal_type(flat.ty(), signature, regions)?;
-        if let Some(lifted) = Self::run_element(ty) {
-            return Ok(lifted);
-        }
-        Ok(CheckedElement::Flat(
-            self.instantiate_goal_flat_element(flat, signature, regions)?,
-        ))
+        let ty = self.instantiate_goal_type(self.element_type(element)?, signature, regions)?;
+        self.intern_element(ty)
     }
 
     fn instantiate_goal_const(

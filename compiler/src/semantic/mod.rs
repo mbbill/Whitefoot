@@ -1389,6 +1389,11 @@ pub struct CheckedProgram<'classified, 'lexed, 'source> {
 }
 
 impl CheckedProgram<'_, '_, '_> {
+    #[cfg(test)]
+    pub(crate) fn element_type(&self, element: CheckedElement) -> Option<CheckedType> {
+        self.data.elements.get(element.0 as usize).copied()
+    }
+
     /// Returns the number of checked source functions.
     #[must_use]
     #[cfg(test)]

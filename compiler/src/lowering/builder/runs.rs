@@ -63,6 +63,13 @@ impl IrBuilder<'_> {
                     .ok_or(LoweringFailure::InvalidCheckedProgram)?;
                 self.lower_fixed_measure(constant)
             }
+            MeasureCell::ExactExtent if matches!(root.ty, CheckedType::Array { .. }) => {
+                let length = root
+                    .type_constant()
+                    .and_then(|constant| constant.value())
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                self.lower_fixed_measure(length)
+            }
             MeasureCell::ExactExtent | MeasureCell::ExactRuntime | MeasureCell::Bounded => {
                 let container = self.container_root_value(root)?;
                 // A bump extent carries one measure word, its cursor: its
@@ -125,14 +132,22 @@ impl IrBuilder<'_> {
                 }
                 CheckedPlaceStep::Subscript(subscript) => {
                     let offset = self.expression(&subscript.offset)?;
-                    self.define(
-                        lower_type(self.erasure, subscript.element_type)?,
-                        IrOperation::RunIndex {
-                            run: value,
+                    let operation = match lower_type(self.erasure, subscript.base_type)? {
+                        IrType::Array { .. } => IrOperation::ArrayIndex {
+                            root: IrArrayRoot::Value(value),
                             offset,
                             target_domain: subscript.target_domain.into(),
                         },
-                    )?
+                        IrType::FixedVector { .. } | IrType::Vector { .. } => {
+                            IrOperation::RunIndex {
+                                run: value,
+                                offset,
+                                target_domain: subscript.target_domain.into(),
+                            }
+                        }
+                        _ => return Err(LoweringFailure::InvalidCheckedProgram),
+                    };
+                    self.define(lower_type(self.erasure, subscript.element_type)?, operation)?
                 }
             };
         }

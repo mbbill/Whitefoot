@@ -170,7 +170,7 @@ inside the `region` block whose region it takes",
         // is "not shown reachable", not "proven unreachable", so the rejection
         // stays. Widening what `array<T, N>` or `buffer<T>` admit re-opens the
         // question and owes this arm a test.
-        let element_type = indexed.element_type();
+        let element_type = indexed.element_type(self)?;
         // An affine-element buffer is viewable in principle ([OP-1] states no
         // copy bound on the viewed T), but the in-place borrowed element read
         // a view would serve is not implemented, so the view stops as an

@@ -100,6 +100,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
                 self.loan_bearing_with(element.ty(), visited)
             }
+            CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
+                self.loan_bearing_with(self.element_type(element)?, visited)
+            }
             CheckedType::Nominal(id) => {
                 if !visited.insert(id) {
                     return Ok(false);
@@ -164,7 +167,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // A run owns the elements of its window [BLK-1], so its
                 // element is a sub-node exactly as a field is.
                 CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
-                    pending.push(element.ty());
+                    pending.push(self.element_type(element)?);
                 }
                 CheckedType::Nominal(id) => pending.extend(self.owned_components(id)?),
                 _ => {}

@@ -188,17 +188,17 @@ impl CheckedIndexedPlace {
         }
     }
 
-    fn element_type(&self) -> CheckedType {
+    fn element_type(&self, checker: &Checker<'_, '_, '_, '_>) -> Result<CheckedType, CheckStop> {
         match self {
-            Self::Array(array) => array.element_type,
-            Self::Buffer(buffer) => buffer.element_type,
-            Self::Slice(slice) => slice.root.element.ty(),
-            // A bump extent is measured and not indexable, so an element type
-            // is asked of it only after [OP-4] has already refused it.
-            Self::Container(container) => container
-                .root
-                .element()
-                .map_or(CheckedType::Unit, |element| element.ty()),
+            Self::Array(array) => Ok(array.element_type),
+            Self::Buffer(buffer) => Ok(buffer.element_type),
+            Self::Slice(slice) => Ok(slice.root.element.ty()),
+            Self::Container(container) => checker.element_type(
+                container
+                    .root
+                    .element()
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+            ),
         }
     }
 }
@@ -390,7 +390,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             0,
         )?;
         let payload = self.retained_operation_type_argument(node, function)?;
-        if !payload.is_concrete() {
+        if !payload.is_concrete(&self.elements.borrow()) {
             // A generic payload defers to the concrete instantiation; the
             // template-side judgment is not implemented yet.
             return self.unsupported(UnsupportedSemanticFeature::Generics, node);
@@ -537,7 +537,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedType::FixedVector { element, length } => {
                 let length = length.value()?;
-                let element = self.layout_ceiling_inner(element.ty(), visiting)?;
+                let element =
+                    self.layout_ceiling_inner(self.element_type(element).ok()?, visiting)?;
                 let align = element.align.max(8);
                 let elements = multiply_layout_magnitude(element.stride, length);
                 let body = round_up_layout_magnitude(elements, 8);
@@ -957,7 +958,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // General suffix paths are legal source. Even when the legacy
             // representation cannot carry a valid projection, selecting a
             // nonexistent field of its known element type is TYPE-5.
-            self.resolve_struct_path(&suffixes[subscript + 1..], indexed.element_type())?;
+            self.resolve_struct_path(&suffixes[subscript + 1..], indexed.element_type(self)?)?;
             return self.unsupported(UnsupportedSemanticFeature::CompositeValues, place);
         }
         // [LIV-2, BLK-1] the one affine element read a subscript admits: a
@@ -968,13 +969,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // which is exactly the ground [SET-2]'s exchange stands on. Every
         // other affine subscript read is the rejection below.
         let element_read_out = options.explicit_move
-            && !self.is_copy_type(indexed.element_type())?
+            && !self.is_copy_type(indexed.element_type(self)?)?
             && self.element_read_out(function, &indexed, suffix, bindings, options.loop_depth)?;
         // [TYPE-2] affine elements leave and enter their slots only through
         // [SET-2] replacement and are read in place through borrowed match:
         // a subscript read would mint a second owner of the stored value, so
         // both the bare and the `move` spelling reject here.
-        if !element_read_out && !self.is_copy_type(indexed.element_type())? {
+        if !element_read_out && !self.is_copy_type(indexed.element_type(self)?)? {
             if options.explicit_move {
                 return self.issue_node(
                     SemanticRule::Type2,
@@ -1230,7 +1231,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             });
         }
         if subscript + 1 != suffixes.len() {
-            self.resolve_struct_path(&suffixes[subscript + 1..], indexed.element_type())?;
+            self.resolve_struct_path(&suffixes[subscript + 1..], indexed.element_type(self)?)?;
             return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
         }
         match &indexed {
@@ -1482,16 +1483,14 @@ view",
                 ty = selected;
                 continue;
             };
-            // [OP-4] a subscript inside a place indexes one of the two runs:
-            // every other indexable base has a flat element [TYPE-2], which
-            // no measure table row and no further subscript reaches.
-            let element = match ty {
+            // [OP-4] each suffix selects the complete element type of its
+            // already-typed base. Array storage can be nested in a run slot.
+            let element_type = match ty {
                 CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
-                    element
+                    self.element_type(element)?
                 }
-                CheckedType::Array { .. }
-                | CheckedType::Buffer { .. }
-                | CheckedType::Slice { .. } => {
+                CheckedType::Array { element, .. } => element.ty(),
+                CheckedType::Buffer { .. } | CheckedType::Slice { .. } => {
                     return self.unsupported(UnsupportedSemanticFeature::CompositeValues, suffix);
                 }
                 _ => {
@@ -1499,7 +1498,7 @@ view",
                         SemanticRule::Op4,
                         suffix,
                         SemanticIssueKind::type_mismatch(
-                            "a run base, whose element a subscript inside a place selects",
+                            "an indexable base",
                             self.checked_type_name(ty)?,
                         ),
                     );
@@ -1529,14 +1528,14 @@ view",
             path.push(CheckedPlaceStep::Subscript(Box::new(
                 CheckedPlaceSubscript {
                     base_type: ty,
-                    element_type: element.ty(),
+                    element_type,
                     offset: offset.expression,
                     obligation: self.tree.path(suffix)?.clone(),
                     target_domain: CheckedTargetDomainObligation::ElementAddress,
                     place_offset,
                 },
             )));
-            ty = element.ty();
+            ty = element_type;
         }
         Ok((path, ty, carried))
     }
@@ -1707,10 +1706,8 @@ view",
         // place for; the field prefix is what those branches read.
         let fields = field_prefix(&path);
         match ty {
-            CheckedType::Array { element, length } => {
-                let Some(fields) = fields else {
-                    return self.unsupported(UnsupportedSemanticFeature::CompositeValues, anchor);
-                };
+            CheckedType::Array { element, length } if fields.is_some() => {
+                let fields = fields.ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 let root = match root {
                     CheckedArrayRoot::Binding { binding, .. } => {
                         CheckedArrayRoot::Binding { binding, fields }
@@ -1809,7 +1806,8 @@ view",
             // row and [OP-4] makes the two runs indexable bases; a `Heap<'s>`
             // has neither, so it falls through to the operand rejection
             // below.
-            CheckedType::FixedVector { .. }
+            CheckedType::Array { .. }
+            | CheckedType::FixedVector { .. }
             | CheckedType::Vector { .. }
             | CheckedType::Extent { .. } => {
                 let (Some(binding), Some(declaration)) = (binding, declaration) else {

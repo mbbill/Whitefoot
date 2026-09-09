@@ -4867,16 +4867,20 @@ impl Analyzer<'_, '_> {
                     path: prefix.to_vec(),
                     ty: index.base_type,
                 };
-                let measured = base.measured()?;
-                let element = base.element()?;
+                let row = match base.ty {
+                    CheckedType::Array { element, length } => {
+                        GoalOperation::ArrayIndex { element, length }
+                    }
+                    _ => GoalOperation::RunIndex {
+                        measured: base.measured()?,
+                        element: base.element()?,
+                        constant: base.type_constant(),
+                    },
+                };
                 let collection =
                     self.goal_binding_place(base.binding, base.goal_projections(), base.ty);
                 build_operation(
-                    GoalOperation::RunIndex {
-                        measured,
-                        element,
-                        constant: base.type_constant(),
-                    },
+                    row,
                     Vec::new(),
                     Vec::new(),
                     root.ty,
@@ -5218,7 +5222,7 @@ impl Analyzer<'_, '_> {
             // [OP-4] a subscript selects the base's element type, which
             // [MSR-1] admits in a measure place and [BLK-1] gives the one
             // slot a run holds.
-            GoalProjection::Subscript(_) => element_type(input),
+            GoalProjection::Subscript(_) => element_type(input, self.context.elements),
         }
     }
 
@@ -14421,7 +14425,7 @@ impl Analyzer<'_, '_> {
                 }
                 PlaceProjection::Subscript(offset) => {
                     rendered.push_str(&format!("[{}]", self.render_offset(*offset)));
-                    ty = ty.and_then(element_type);
+                    ty = ty.and_then(|ty| element_type(ty, self.context.elements));
                 }
                 PlaceProjection::Deref => {
                     rendered = format!("deref({rendered})");
@@ -14690,7 +14694,7 @@ impl Analyzer<'_, '_> {
                 }
                 GoalProjection::Subscript(offset) => {
                     rendered.push_str(&format!("[{}]", self.render_offset(*offset)));
-                    ty = ty.and_then(element_type);
+                    ty = ty.and_then(|ty| element_type(ty, self.context.elements));
                 }
             }
         }
@@ -14830,12 +14834,12 @@ fn invalidate_goal_origin_for_set(state: &mut FactState, target: &CheckedSetTarg
 }
 
 /// The type one slot of an indexable base holds [OP-4, BLK-1].
-fn element_type(input: CheckedType) -> Option<CheckedType> {
+fn element_type(input: CheckedType, elements: &[CheckedType]) -> Option<CheckedType> {
     match input {
         CheckedType::Array { element, .. } | CheckedType::Buffer { element } => Some(element.ty()),
         CheckedType::Slice { element, .. } => Some(element.ty()),
         CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
-            Some(element.ty())
+            elements.get(element.0 as usize).copied()
         }
         _ => None,
     }

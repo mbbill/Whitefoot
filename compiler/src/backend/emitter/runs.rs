@@ -40,6 +40,12 @@ impl RunShape {
         }
     }
 
+    fn element_type(self, program: &IrProgram<'_, '_, '_>) -> Result<IrType, BackendFailure> {
+        program
+            .element(self.element())
+            .ok_or(BackendFailure::InvalidIr)
+    }
+
     /// The aggregate field index of `len`.
     const fn length_field(self) -> u32 {
         match self {
@@ -105,7 +111,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         };
         if target_domain != IrTargetDomainObligation::ElementAddress
-            || shape.element().ty() != element
+            || shape.element_type(self.program)? != element
             || self.value_type(offset)
                 != Some(IrType::Integer {
                     width: 64,
@@ -561,7 +567,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let Some(shape) = RunShape::of(run_type) else {
             return Err(BackendFailure::InvalidIr);
         };
-        if shape.element() != IrElement::Flat(element) {
+        if shape.element_type(self.program)? != element.ty() {
             return Err(BackendFailure::InvalidIr);
         }
         let head = self.run_word(run_type, run, shape.head_field())?;
@@ -593,7 +599,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let Some(shape) = RunShape::of(run_type) else {
             return Err(BackendFailure::InvalidIr);
         };
-        if shape.element().ty() != ty
+        if shape.element_type(self.program)? != ty
             || self.value_type(offset)
                 != Some(IrType::Integer {
                     width: 64,
@@ -625,7 +631,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let Some(shape) = RunShape::of(run_type) else {
             return Err(BackendFailure::InvalidIr);
         };
-        if shape.element().ty() != ty {
+        if shape.element_type(self.program)? != ty {
             return Err(BackendFailure::InvalidIr);
         }
         let physical = self.boundary_slot(shape, run_type, run, row)?;
@@ -652,7 +658,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         };
         match (row.places(), value) {
             (true, Some(value)) => {
-                if self.value_type(value) != Some(shape.element().ty()) {
+                if self.value_type(value) != Some(shape.element_type(self.program)?) {
                     return Err(BackendFailure::InvalidIr);
                 }
             }
@@ -669,7 +675,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             let physical = self.boundary_slot(shape, run_type, run, row)?;
             let element_pointer =
                 self.element_pointer(result, shape, run_type, updated, &physical)?;
-            let element_type = llvm_type(self.program, shape.element().ty())?;
+            let element_type = llvm_type(self.program, shape.element_type(self.program)?)?;
             let operand = self.value_operand(value)?;
             writeln!(
                 self.output,
@@ -846,7 +852,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         run: IrValueId,
         physical: &str,
     ) -> Result<String, BackendFailure> {
-        let element_type = llvm_type(self.program, shape.element().ty())?;
+        let element_type = llvm_type(self.program, shape.element_type(self.program)?)?;
         let pointer = self.next_temporary()?;
         match shape {
             RunShape::Inline { .. } => {

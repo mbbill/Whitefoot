@@ -554,13 +554,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let length = self.checked_const_name(length)?;
                 format!(
                     "FixedVector<{}, {length}>",
-                    self.checked_type_name(element.ty())?
+                    self.checked_type_name(self.element_type(element)?)?
                 )
             }
             CheckedType::Vector {
                 region, element, ..
             } => {
-                let element = self.checked_type_name(element.ty())?;
+                let element = self.checked_type_name(self.element_type(element)?)?;
                 match self.region_spelling(region).as_str() {
                     "" => format!("Vector<{element}>"),
                     region => format!("Vector<{region}, {element}>"),
@@ -1817,7 +1817,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 CheckedType::Array { element, .. } => pending.push(element.ty()),
                 CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
-                    pending.push(element.ty())
+                    pending.push(self.element_type(element)?)
                 }
                 CheckedType::Nominal(id) if visited.insert(id) => match &self.nominal(id)?.kind {
                     CheckedNominalKind::Struct { fields } => {

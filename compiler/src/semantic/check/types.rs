@@ -469,7 +469,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     pending.push(element.ty());
                 }
                 CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
-                    pending.push(element.ty());
+                    pending.push(self.element_type(element)?);
                 }
                 CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
                     CheckedNominalKind::Arena { .. } => return Ok(true),
@@ -750,33 +750,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticIssueKind::type_mismatch(expected, found),
             )
         };
-        // [BLK-1] what a slot may hold: every copy element, one region-free
-        // affine nominal stored by value, one type parameter under any of its
-        // three bounds — which [FN-2] resolves at every concrete instance —
-        // and one element that is itself a run, descriptor included. The lift
-        // is one level: the element run's own element is flat, so a third
-        // level is an explicit unsupported capability rather than a source
-        // rejection.
+        // [BLK-1] every nameable type is a slot type; STOR-5 checks
+        // contained providers and views independently of representation.
         let element_of = |argument: NodeId| -> Result<CheckedElement, CheckStop> {
             let element_node = self
                 .tree
                 .first_child_with(argument, Production::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            self.reject_region_bearing_storage_type(element_node, substitution)?;
             let element_type = self.parse_type_with(element_node, substitution)?;
-            if let CheckedType::Generic(declaration) = element_type {
-                return Ok(CheckedElement::Flat(CheckedFlatElement::Generic(
-                    declaration,
-                )));
-            }
-            if let Some(lifted) = Self::run_element(element_type) {
-                return Ok(lifted);
-            }
-            match self.buffer_element(element_type)? {
-                Some(element) => Ok(CheckedElement::Flat(element)),
-                None => self
-                    .unsupported(UnsupportedSemanticFeature::CompositeValues, element_node)
-                    .map(|()| CheckedElement::Flat(CheckedFlatElement::Unit)),
-            }
+            self.intern_element(element_type)
         };
         match shape {
             crate::ContainerShape::Vector => {
@@ -1862,7 +1845,7 @@ extent's region is one the caller must choose, so it is written at every positio
         // slots itself, which is the place every read of it resolves to and
         // the measure row every one of its four measures already reads.
         if let CheckedType::FixedVector { element, length } = ty {
-            let CheckedElement::Flat(element) = element else {
+            let Some(element) = self.flat_element(self.element_type(element)?)? else {
                 return self.issue_node(
                     SemanticRule::Const2,
                     node,
@@ -1965,30 +1948,34 @@ extent's region is one the caller must choose, so it is written at every positio
         }
     }
 
-    /// The one-level lift of [BLK-1]'s element domain: a run whose own
-    /// element is flat is itself an element, its descriptor included.
-    ///
-    /// It is `None` for every other type, including a run whose element is
-    /// already lifted — that is the second level, which this version does not
-    /// represent — so a caller falls through to the flat domain and, failing
-    /// that, to the unsupported capability.
-    pub(super) const fn run_element(ty: CheckedType) -> Option<CheckedElement> {
-        match ty {
-            CheckedType::FixedVector {
-                element: CheckedElement::Flat(element),
-                length,
-            } => Some(CheckedElement::FixedVector { element, length }),
-            CheckedType::Vector {
-                region,
-                element: CheckedElement::Flat(element),
-                release,
-            } => Some(CheckedElement::Vector {
-                region,
-                element,
-                release,
-            }),
-            _ => None,
+    /// Resolve one checked-program-local structural element handle.
+    pub(in crate::semantic) fn element_type(
+        &self,
+        element: CheckedElement,
+    ) -> Result<CheckedType, CheckStop> {
+        self.elements
+            .borrow()
+            .get(element.0 as usize)
+            .copied()
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
+    }
+
+    /// Hash-cons the complete slot type. Children have already been formed by
+    /// the ordinary type parser, so structural edges always point backwards.
+    pub(in crate::semantic) fn intern_element(
+        &self,
+        ty: CheckedType,
+    ) -> Result<CheckedElement, CheckStop> {
+        if let Some(element) = self.element_ids.borrow().get(&ty).copied() {
+            return Ok(element);
         }
+        let element = CheckedElement(
+            u32::try_from(self.elements.borrow().len())
+                .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+        );
+        self.elements.borrow_mut().push(ty);
+        self.element_ids.borrow_mut().insert(ty, element);
+        Ok(element)
     }
 
     /// The [TYPE-2] buffer element domain: every flat copy element, plus a

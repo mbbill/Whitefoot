@@ -222,6 +222,7 @@ pub(crate) struct EntailmentContext<'check> {
     /// mathematical value.
     pub(crate) constant_ids: &'check HashMap<DeclarationId, CheckedConstantId>,
     pub(crate) nominals: &'check [CheckedNominal],
+    pub(crate) elements: &'check [CheckedType],
     /// Published earlier-component FN-9 declarations and proofs, indexed by
     /// concrete [`FunctionId`]. Same-component entries remain absent until
     /// the component's atomic publication boundary.

@@ -145,7 +145,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return Ok(true);
                 }
                 CheckedType::Vector { element, .. } | CheckedType::FixedVector { element, .. } => {
-                    pending.push(element.ty())
+                    pending.push(self.element_type(element)?)
                 }
                 CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
                     pending.push(element.ty());

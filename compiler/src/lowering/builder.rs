@@ -39,20 +39,28 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         .iter()
         .map(|alias| IrNominalId(alias.0))
         .collect::<Vec<_>>();
+    let (base_elements, base_element_map) = physical_types::base_elements(&checked.data, &erasure)?;
     let base_types = TypeLowering {
         nominals: &erasure,
+        elements: &base_element_map,
         releases: &[],
     };
     let base_nominals = lower_nominals(base_types, &checked.data)?;
     let constants = lower_constants(base_types, &checked.data)?;
     let physical = specialize::PhysicalFunctions::build(&checked.data)?;
-    let mut types = physical_types::PhysicalTypes::new(&checked.data, base_nominals);
+    let mut types = physical_types::PhysicalTypes::new(
+        &checked.data,
+        base_nominals,
+        base_elements,
+        base_element_map,
+    );
     let maps = physical
         .variants
         .iter()
         .map(|variant| types.map(&variant.releases))
         .collect::<Result<Vec<_>, _>>()?;
     let nominals = types.nominals;
+    let elements = types.elements;
     // Each function's declared IR result carries its result *mode*: a borrow
     // of addressed content is an address. A call site must produce exactly
     // the callee's declared result type, so the declared results are computed
@@ -67,7 +75,8 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
                 function.result_mode,
                 lower_type(
                     TypeLowering {
-                        nominals: map,
+                        nominals: &map.nominals,
+                        elements: &map.elements,
                         releases: &variant.releases,
                     },
                     function.result,
@@ -127,11 +136,13 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
             let function = &checked.data.functions[variant.source.0 as usize];
             let context = LoweringContext {
                 erasure: TypeLowering {
-                    nominals: &maps[index],
+                    nominals: &maps[index].nominals,
+                    elements: &maps[index].elements,
                     releases: &variant.releases,
                 },
                 physical_calls: &variant.calls,
                 nominals: &nominals,
+                elements: &elements,
                 constants: &constants,
                 function_results: &function_results,
                 function_actions: &function_actions,
@@ -154,6 +165,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         main: physical.main,
         _checked: checked,
         nominals,
+        elements,
         constants,
         functions,
         entry,
@@ -175,6 +187,7 @@ struct LoweringContext<'program> {
     erasure: TypeLowering<'program>,
     physical_calls: &'program [(NodePath, u32)],
     nominals: &'program [IrNominal],
+    elements: &'program [IrType],
     constants: &'program [IrGlobalConstant],
     /// Every physical function's declared IR result, indexed by its IR ordinal.
     function_results: &'program [IrType],
@@ -552,6 +565,7 @@ struct IrBuilder<'program> {
     erasure: TypeLowering<'program>,
     physical_calls: &'program [(NodePath, u32)],
     nominals: &'program [IrNominal],
+    elements: &'program [IrType],
     constants: &'program [IrGlobalConstant],
     bindings: HashMap<BindingId, IrValueId>,
     parameters: Vec<(IrValueId, IrType)>,
@@ -626,6 +640,7 @@ impl<'program> IrBuilder<'program> {
             erasure,
             physical_calls,
             nominals,
+            elements,
             constants,
             function_results,
             function_actions,
@@ -635,6 +650,7 @@ impl<'program> IrBuilder<'program> {
             erasure,
             physical_calls,
             nominals,
+            elements,
             constants,
             bindings: HashMap::new(),
             parameters: Vec::new(),
@@ -679,6 +695,7 @@ impl<'program> IrBuilder<'program> {
             erasure: self.erasure,
             physical_calls: self.physical_calls,
             nominals: self.nominals,
+            elements: self.elements,
             constants: self.constants,
             function_results: self.function_results,
             function_actions: self.function_actions,

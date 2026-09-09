@@ -21,12 +21,14 @@ mod specialize;
 #[derive(Clone, Copy)]
 struct TypeLowering<'a> {
     nominals: &'a [IrNominalId],
+    elements: &'a [Option<IrElement>],
     releases: &'a [(crate::DeclarationId, crate::semantic::CheckedReleaseClass)],
 }
 
 impl TypeLowering<'_> {
     const EMPTY: Self = Self {
         nominals: &[],
+        elements: &[],
         releases: &[],
     };
 
@@ -133,35 +135,14 @@ impl IrFlatElement {
     }
 }
 
-/// [BLK-1] the type of one slot of a run, with the same one-level lift the
-/// checked element domain carries: a flat element, or one run of flat
-/// elements whose descriptor lives in the slot.
+/// The complete type of a run element, interned in its program's type table.
+/// Structural nesting uses handles; only nominal edges can close a type graph.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum IrElement {
-    Flat(IrFlatElement),
-    FixedVector {
-        element: IrFlatElement,
-        length: u64,
-    },
-    Vector {
-        element: IrFlatElement,
-        release: IrReleaseClass,
-    },
-}
+pub struct IrElement(u32);
 
 impl IrElement {
-    pub const fn ty(self) -> IrType {
-        match self {
-            Self::Flat(element) => element.ty(),
-            Self::FixedVector { element, length } => IrType::FixedVector {
-                element: Self::Flat(element),
-                length,
-            },
-            Self::Vector { element, release } => IrType::Vector {
-                element: Self::Flat(element),
-                release,
-            },
-        }
+    pub(crate) const fn index(self) -> usize {
+        self.0 as usize
     }
 }
 
@@ -399,24 +380,12 @@ fn lower_element(
     erasure: TypeLowering<'_>,
     value: CheckedElement,
 ) -> Result<IrElement, LoweringFailure> {
-    Ok(match value {
-        CheckedElement::Flat(element) => IrElement::Flat(lower_flat_element(erasure, element)?),
-        CheckedElement::FixedVector { element, length } => IrElement::FixedVector {
-            element: lower_flat_element(erasure, element)?,
-            length: match length.value() {
-                Some(value) => value,
-                None => return Err(LoweringFailure::InvalidCheckedProgram),
-            },
-        },
-        CheckedElement::Vector {
-            element,
-            release,
-            region,
-        } => IrElement::Vector {
-            element: lower_flat_element(erasure, element)?,
-            release: lower_release_class(erasure.release(region, release)),
-        },
-    })
+    erasure
+        .elements
+        .get(value.index())
+        .copied()
+        .flatten()
+        .ok_or(LoweringFailure::InvalidCheckedProgram)
 }
 
 fn lower_flat_element(
@@ -456,11 +425,18 @@ fn lower_flat_element(
 /// work a split body would lose. A `None` answer is a malformed nominal
 /// reference, which each caller reports in its own vocabulary; no caller may
 /// read it as "no release", because unknown must never be silently inert.
-pub(crate) fn type_derives_release(nominals: &[IrNominal], ty: IrType) -> Option<bool> {
+pub(crate) fn type_derives_release(
+    nominals: &[IrNominal],
+    elements: &[IrType],
+    ty: IrType,
+) -> Option<bool> {
     let nominal_kind = |id: IrNominalId| nominals.get(id.index()).map(IrNominal::kind);
     let mut pending = vec![ty];
     let mut visited = std::collections::HashSet::new();
     while let Some(current) = pending.pop() {
+        if !visited.insert(current) {
+            continue;
+        }
         match current {
             IrType::Buffer { .. } => return Some(true),
             // A run's own backing action is its release class [PROV-6]: a
@@ -475,7 +451,7 @@ pub(crate) fn type_derives_release(nominals: &[IrNominal], ty: IrType) -> Option
                 ..
             } => return Some(true),
             IrType::Vector { element, .. } | IrType::FixedVector { element, .. } => {
-                pending.push(element.ty());
+                pending.push(*elements.get(element.index())?);
             }
             IrType::Provider => {}
             // S39 a cell needs a release exactly when its own storage or
@@ -500,7 +476,7 @@ pub(crate) fn type_derives_release(nominals: &[IrNominal], ty: IrType) -> Option
                 };
                 pending.push(*referent);
             }
-            IrType::Nominal(id) if visited.insert(id) => match nominal_kind(id)? {
+            IrType::Nominal(id) => match nominal_kind(id)? {
                 IrNominalKind::Struct { fields } => {
                     pending.extend(fields.iter().map(IrField::ty));
                 }
@@ -534,8 +510,7 @@ pub(crate) fn type_derives_release(nominals: &[IrNominal], ty: IrType) -> Option
             // [VIEW-1, PROV-3] a view is loan-bearing: it owns no storage and
             // no element, so nothing of it is ever released.
             | IrType::Slice { .. }
-            | IrType::Address(_)
-            | IrType::Nominal(_) => {}
+            | IrType::Address(_) => {}
         }
     }
     Some(false)
@@ -2295,6 +2270,7 @@ pub enum IrEntry {
 pub struct IrProgram<'classified, 'lexed, 'source> {
     _checked: CheckedProgram<'classified, 'lexed, 'source>,
     nominals: Vec<IrNominal>,
+    elements: Vec<IrType>,
     constants: Vec<IrGlobalConstant>,
     functions: Vec<IrFunction>,
     main: u32,
@@ -2305,6 +2281,14 @@ pub struct IrProgram<'classified, 'lexed, 'source> {
 impl IrProgram<'_, '_, '_> {
     pub fn nominals(&self) -> &[IrNominal] {
         &self.nominals
+    }
+
+    pub fn elements(&self) -> &[IrType] {
+        &self.elements
+    }
+
+    pub fn element(&self, element: IrElement) -> Option<IrType> {
+        self.elements.get(element.index()).copied()
     }
 
     /// The entry form program start must implement.

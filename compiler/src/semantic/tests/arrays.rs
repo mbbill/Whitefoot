@@ -1,9 +1,9 @@
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
 use super::super::model::{
-    CheckedConst, CheckedContainerRoot, CheckedElement, CheckedExpression, CheckedFlatElement,
-    CheckedPlaceStep, CheckedSetTarget, CheckedStatement, CheckedTargetDomainObligation,
-    CheckedType, CheckedValue, IntegerType,
+    CheckedConst, CheckedContainerRoot, CheckedExpression, CheckedFlatElement, CheckedPlaceStep,
+    CheckedSetTarget, CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue,
+    IntegerType,
 };
 use super::{assert_rule, assert_rule_kind, with_semantics};
 
@@ -171,9 +171,7 @@ command fn main() -> status: own ExitStatus pure {
                 value: CheckedExpression::ContainerMeasure {
                     root: CheckedContainerRoot {
                         ty: CheckedType::FixedVector {
-                            element: CheckedElement::Flat(CheckedFlatElement::Integer(
-                                IntegerType::I32
-                            )),
+                            element,
                             length: CheckedConst::Value(4),
                         },
                         ..
@@ -181,7 +179,7 @@ command fn main() -> status: own ExitStatus pure {
                     ..
                 },
                 ..
-            }
+            } if checked.element_type(*element) == Some(CheckedType::Integer(IntegerType::I32))
         ));
         assert!(matches!(
             &body[4],
@@ -278,14 +276,13 @@ command fn main() -> status: own ExitStatus pure {
         else {
             panic!("Holder must remain a struct");
         };
+        let CheckedType::FixedVector { element, length } = fields[0].ty else {
+            panic!("field must be a fixed run");
+        };
+        assert_eq!(length, CheckedConst::Value(2));
         assert_eq!(
-            fields[0].ty,
-            CheckedType::FixedVector {
-                element: CheckedElement::Flat(CheckedFlatElement::TagOnlyNominal(
-                    checked.data.nominals[0].id
-                )),
-                length: CheckedConst::Value(2),
-            }
+            checked.element_type(element),
+            Some(CheckedType::Nominal(checked.data.nominals[0].id))
         );
     });
 
@@ -325,12 +322,13 @@ fn indexed_set_retains_its_pre_rhs_guard_and_copy_target() {
         let [CheckedPlaceStep::Subscript(index)] = target.path.as_slice() else {
             panic!("the complete target must retain its subscript");
         };
+        let CheckedType::FixedVector { element, length } = index.base_type else {
+            panic!("index base must be a fixed run");
+        };
+        assert_eq!(length, CheckedConst::Value(2));
         assert_eq!(
-            index.base_type,
-            CheckedType::FixedVector {
-                element: CheckedElement::Flat(CheckedFlatElement::Integer(IntegerType::U8)),
-                length: CheckedConst::Value(2),
-            }
+            checked.element_type(element),
+            Some(CheckedType::Integer(IntegerType::U8))
         );
         assert_eq!(target.ty, CheckedType::Integer(IntegerType::U8));
         assert_eq!(index.offset.ty(), CheckedType::Integer(IntegerType::U64));
@@ -514,4 +512,66 @@ command fn main() -> status: own ExitStatus pure {
         SemanticRule::Stor5,
         expected,
     );
+}
+
+#[test]
+fn general_elements_allow_an_array_value_inside_a_run_slot() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
+  let row = array_new::<u64, 2>(7_u64);
+  let empty = fixed_vector::<array<u64, 2>, 2>();
+  let rows = place_back(vector: move empty, value: move row);
+  set rows[0_u64][1_u64] = 9_u64;
+  let value = rows[0_u64][1_u64];
+  let width = len_of(rows[0_u64]);
+  let capacity = cap_of(rows[0_u64]);
+  let head = head_of(rows[0_u64]);
+  let room = room_of(rows[0_u64]);
+  invariant width_lower: width >= 2_u64;
+  invariant width_upper: width <= 2_u64;
+  invariant capacity_lower: capacity >= 2_u64;
+  invariant capacity_upper: capacity <= 2_u64;
+  invariant head_zero: head <= 0_u64;
+  invariant room_zero: room <= 0_u64;
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("an array is a complete nameable run element: {outcome:?}");
+        };
+        let main = &checked.data.functions[checked.data.main.0 as usize];
+        let CheckedStatement::Set {
+            target: CheckedSetTarget::Storage(target),
+            ..
+        } = &main.body[3]
+        else {
+            panic!("nested array mutation must use the ordinary typed storage path");
+        };
+        assert_eq!(target.ty, CheckedType::Integer(IntegerType::U64));
+        assert!(
+            matches!(target.path.as_slice(), [CheckedPlaceStep::Subscript(_), CheckedPlaceStep::Subscript(index)]
+            if matches!(index.base_type, CheckedType::Array { length: CheckedConst::Value(2), .. }))
+        );
+    });
+}
+
+#[test]
+fn general_elements_reject_deep_stored_views_and_providers() {
+    for source in [
+        br#"fn invalid(value: own FixedVector<FixedVector<FixedVector<Slice<u8>, 1>, 1>, 1>) -> result: own unit pure {
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#.as_slice(),
+        br#"command fn main() -> status: own ExitStatus pure {
+  let invalid = fixed_vector::<FixedVector<FixedVector<Heap, 1>, 1>, 1>();
+  return exit_status(code: 0_u8);
+}
+"#.as_slice(),
+    ] {
+        assert_rule_kind(source, SemanticRule::Stor5, |kind| matches!(kind, SemanticIssueKind::RegionBearingStorage { .. }));
+    }
 }

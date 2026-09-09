@@ -433,6 +433,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             ),
                         );
                     };
+                    self.reject_region_bearing_storage_type(ty, &function.substitution)?;
                     instance.element = Some(self.parse_type_with(ty, &function.substitution)?);
                 }
                 KernelGenericKind::Const(which) => {
@@ -566,7 +567,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     instance.capacity = Some(length);
                 }
                 instance.run = Some(actual);
-                instance.element = Some(element.ty());
+                instance.element = Some(self.element_type(element)?);
                 Ok(actual)
             }
             // A provider operand supplies its own store region and, for a
@@ -766,32 +767,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    /// The element type of a run at one instance [BLK-1].
-    ///
-    /// [BLK-1] states what a slot may hold: every copy element, one
-    /// region-free affine nominal stored by value, one type parameter at the
-    /// symbolic instance, and one element that is itself a run. The last is
-    /// the one-level lift, so an element run whose own element is already a
-    /// run is outside the domain this version represents and is an explicit
-    /// unsupported capability rather than a source rejection.
+    /// [BLK-1] admits every nameable slot type. Stored-position restrictions
+    /// are checked independently by STOR-5 at the written type argument.
     fn kernel_element(
         &self,
         element: CheckedType,
-        node: NodeId,
+        _node: NodeId,
     ) -> Result<super::super::super::super::model::CheckedElement, CheckStop> {
-        use super::super::super::super::model::{CheckedElement, CheckedFlatElement};
-        if let CheckedType::Generic(declaration) = element {
-            return Ok(CheckedElement::Flat(CheckedFlatElement::Generic(
-                declaration,
-            )));
-        }
-        if let Some(lifted) = Self::run_element(element) {
-            return Ok(lifted);
-        }
-        match self.buffer_element(element)? {
-            Some(element) => Ok(CheckedElement::Flat(element)),
-            None => self.unsupported(crate::UnsupportedSemanticFeature::CompositeValues, node),
-        }
+        self.intern_element(element)
     }
 
     /// The row's declared requirement list, instantiated at this call.

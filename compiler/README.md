@@ -284,27 +284,25 @@ A source function can be generic over a store: a parameter type naming a formal
 region determines that region from its actual and is substituted with it, so
 `fn carve['s: affine](store: &uniq
 Arena<'s, 256, 16>) -> made: own Option<Vector<'s, u64>>` declares, checks and
-runs. Two further container limits remain here. A proved take whose count is not
+runs. A proved take whose count is not
 a closed expression stops, because `advance<T>(count)` is then an opaque term with no source
 spelling and its requirement has no difference-bound form a caller could
-discharge; the refusing row is the one for that position. And a run whose
-element type is itself a run of runs stops, explicitly: the element domain
-carries **one** level of lift, so `FixedVector<Vector<'s, u8>, 8>` and
-`FixedVector<FixedVector<u8, 4>, 4>` are represented and a third level is not.
-That one level is real all the way down: `CheckedElement` and `IrElement` are
-the lifted domain, a slot holding a run has that run's own layout in A.1's
-ceilings, the element read and the element store move the whole descriptor, and
-[PROV-6]'s release walk visits the window in ascending logical order before the
-run's own backing is released — a per-run helper the emitter derives, so a run
-of heap-owning elements frees each of them once
-(`tests/programs/block_pool.wf`, `prov6-pos-a-run-visits-its-window-before-its-backing`).
-A formal region a parameter names one level down, in a run's element type, is
-determined by its actual exactly as a top-level one is, which is what makes a
-helper generic over the store of the runs a run holds. A run's element type is
-otherwise every type [BLK-1] states —
-every copy element, one region-free affine nominal stored by value, and a type
-parameter under any of its three bounds, which [FN-2] resolves at every
-concrete instance. Element-position writes into
+discharge; the refusing row is the one for that position.
+
+Run elements use complete interned types in checking and lowering. Nested runs
+and array-valued elements have no separate compiler nesting ceiling. A
+`Vector` occupies its descriptor, so an owning node may contain a
+`Vector` of nodes without requiring an infinite inline layout. Inline
+`FixedVector` elements still occupy their complete element layout. The release
+helper inventory closes the finite type graph; execution visits each initialized
+window in ascending logical order before releasing its backing. Recursive
+ownership uses recursive helpers, while invalid inline layout cycles are refused.
+
+Nested element types retain their store brands through generic replay and
+region-polymorphic calls. Ordinary confinement, linearity and stored-content
+checks still apply at every depth; interning a type grants no new storage or
+borrow authority. The legacy array, buffer and view element restrictions remain
+unchanged. Element-position writes into
 a run execute: `set v[i] = e;` and `replace v[i] = e;` commit at the window's
 logical offset `(head_of + i) mod cap_of`, under [OP-4]'s ordinary subscript
 obligation judged at the target place and [MSR-2]'s storage-granular kill, so

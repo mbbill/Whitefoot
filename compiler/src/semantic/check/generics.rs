@@ -141,22 +141,9 @@ enum StableCheckedType {
     },
 }
 
-/// The interned form of [BLK-1]'s element domain, with the same one-level
-/// lift [`crate::semantic::CheckedElement`] carries.
+/// A structural bridge across speculative nominal rollback.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-enum StableElement {
-    Flat(StableFlatElement),
-    FixedVector {
-        element: StableFlatElement,
-        length: CheckedConst,
-    },
-    /// A store-branded element run. Its release class is a function of its
-    /// region alone, so it is recomputed on reification rather than interned.
-    Vector {
-        region: DeclarationId,
-        element: StableFlatElement,
-    },
-}
+struct StableElement(Box<StableCheckedType>);
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum StableFlatElement {
@@ -274,9 +261,9 @@ impl GenericSubstitution {
                 })
     }
 
-    pub(super) fn is_concrete(&self) -> bool {
+    pub(super) fn is_concrete(&self, elements: &[CheckedType]) -> bool {
         self.bindings.iter().all(|(_, argument)| match argument {
-            GenericArgument::Type(ty) => ty.is_concrete(),
+            GenericArgument::Type(ty) => ty.is_concrete(elements),
             GenericArgument::Const(value) => value.is_concrete(),
         })
     }
@@ -488,7 +475,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }
                     Err(stop) => return Err(stop),
                 };
-                if require_concrete && !substitution.is_concrete() {
+                if require_concrete && !substitution.is_concrete(&self.elements.borrow()) {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
                 let already_present = self
@@ -1501,23 +1488,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         visiting: &mut HashSet<NominalId>,
         allow_symbolic: bool,
     ) -> Result<Option<StableElement>, CheckStop> {
-        Ok(match element {
-            CheckedElement::Flat(flat) => self
-                .stabilize_flat_element(flat, nominal_checkpoint, visiting, allow_symbolic)?
-                .map(StableElement::Flat),
-            CheckedElement::FixedVector { element, length } => {
-                if !allow_symbolic && !length.is_concrete() {
-                    return Ok(None);
-                }
-                self.stabilize_flat_element(element, nominal_checkpoint, visiting, allow_symbolic)?
-                    .map(|element| StableElement::FixedVector { element, length })
-            }
-            CheckedElement::Vector {
-                region, element, ..
-            } => self
-                .stabilize_flat_element(element, nominal_checkpoint, visiting, allow_symbolic)?
-                .map(|element| StableElement::Vector { region, element }),
-        })
+        Ok(self
+            .stabilize_type(
+                self.element_type(element)?,
+                nominal_checkpoint,
+                visiting,
+                allow_symbolic,
+            )?
+            .map(|ty| StableElement(Box::new(ty))))
     }
 
     fn stabilize_flat_element(
@@ -1687,18 +1665,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     fn reify_element(&mut self, element: &StableElement) -> Result<CheckedElement, CheckStop> {
-        Ok(match element {
-            StableElement::Flat(flat) => CheckedElement::Flat(self.reify_flat_element(flat)?),
-            StableElement::FixedVector { element, length } => CheckedElement::FixedVector {
-                element: self.reify_flat_element(element)?,
-                length: *length,
-            },
-            StableElement::Vector { region, element } => CheckedElement::Vector {
-                region: *region,
-                element: self.reify_flat_element(element)?,
-                release: self.vector_release_class(*region)?,
-            },
-        })
+        let ty = self.reify_concrete_type(&element.0)?;
+        self.intern_element(ty)
     }
 
     fn reify_flat_element(
@@ -1739,7 +1707,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         nominal_checkpoint: usize,
     ) -> Result<PendingGenericRequirement, CheckStop> {
         let mut nominals = Vec::new();
-        collect_goal_nominals(&requirement.template.root, &mut nominals);
+        self.collect_goal_nominals(&requirement.template.root, &mut nominals)?;
         nominals.sort_by_key(|id| id.0);
         nominals.dedup();
 
@@ -1782,7 +1750,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
             }
-            rewrite_goal_nominals(
+            self.rewrite_goal_nominals(
                 &mut pending.requirement.template.root,
                 pending.nominal_checkpoint,
                 &replacements,
@@ -2659,308 +2627,348 @@ region parameter for",
     }
 }
 
-fn collect_goal_nominals(expression: &GoalExpression, output: &mut Vec<NominalId>) {
-    match expression {
-        GoalExpression::Datum(datum) => match datum {
-            GoalDatum::Parameter { ty, .. }
-            | GoalDatum::NamedConst { ty, .. }
-            | GoalDatum::Place { ty, .. } => collect_type_nominals(*ty, output),
-            GoalDatum::EvaluatedValue {
-                captured_type, ty, ..
+impl Checker<'_, '_, '_, '_> {
+    fn collect_goal_nominals(
+        &self,
+        expression: &GoalExpression,
+        output: &mut Vec<NominalId>,
+    ) -> Result<(), CheckStop> {
+        match expression {
+            GoalExpression::Datum(datum) => match datum {
+                GoalDatum::Parameter { ty, .. }
+                | GoalDatum::NamedConst { ty, .. }
+                | GoalDatum::Place { ty, .. } => self.collect_type_nominals(*ty, output)?,
+                GoalDatum::EvaluatedValue {
+                    captured_type, ty, ..
+                } => {
+                    self.collect_type_nominals(*captured_type, output)?;
+                    self.collect_type_nominals(*ty, output)?;
+                }
+                GoalDatum::Literal(value) => self.collect_value_nominals(value, output)?,
+            },
+            GoalExpression::Operation {
+                row,
+                type_arguments,
+                result,
+                arguments,
+                ..
             } => {
-                collect_type_nominals(*captured_type, output);
-                collect_type_nominals(*ty, output);
+                self.collect_operation_nominals(*row, output)?;
+                for ty in type_arguments {
+                    self.collect_type_nominals(*ty, output)?;
+                }
+                self.collect_type_nominals(*result, output)?;
+                for argument in arguments {
+                    self.collect_goal_nominals(argument, output)?;
+                }
             }
-            GoalDatum::Literal(value) => collect_value_nominals(value, output),
-        },
-        GoalExpression::Operation {
-            row,
-            type_arguments,
-            result,
-            arguments,
-            ..
-        } => {
-            collect_operation_nominals(*row, output);
-            for ty in type_arguments {
-                collect_type_nominals(*ty, output);
+        };
+        Ok(())
+    }
+
+    fn collect_operation_nominals(
+        &self,
+        operation: GoalOperation,
+        output: &mut Vec<NominalId>,
+    ) -> Result<(), CheckStop> {
+        match operation {
+            GoalOperation::Integer { operand_type, .. }
+            | GoalOperation::Float { operand_type, .. }
+            | GoalOperation::EnumEquality { operand_type, .. }
+            | GoalOperation::BufferFits {
+                element: operand_type,
+                ..
+            } => self.collect_type_nominals(operand_type, output)?,
+            GoalOperation::ArrayFill { element, .. }
+            | GoalOperation::ArrayMeasure { element, .. }
+            | GoalOperation::ArrayIndex { element, .. }
+            | GoalOperation::BufferMeasure { element, .. }
+            | GoalOperation::BufferIndex { element }
+            | GoalOperation::SliceMeasure { element, .. }
+            | GoalOperation::SliceIndex { element, .. } => {
+                self.collect_flat_element_nominals(element, output)?;
             }
-            collect_type_nominals(*result, output);
-            for argument in arguments {
-                collect_goal_nominals(argument, output);
+            GoalOperation::RunIndex { element, .. } => {
+                self.collect_element_nominals(element, output)?
             }
-        }
-    }
-}
-
-fn collect_operation_nominals(operation: GoalOperation, output: &mut Vec<NominalId>) {
-    match operation {
-        GoalOperation::Integer { operand_type, .. }
-        | GoalOperation::Float { operand_type, .. }
-        | GoalOperation::EnumEquality { operand_type, .. }
-        | GoalOperation::BufferFits {
-            element: operand_type,
-            ..
-        } => collect_type_nominals(operand_type, output),
-        GoalOperation::ArrayFill { element, .. }
-        | GoalOperation::ArrayMeasure { element, .. }
-        | GoalOperation::ArrayIndex { element, .. }
-        | GoalOperation::BufferMeasure { element, .. }
-        | GoalOperation::BufferIndex { element }
-        | GoalOperation::SliceMeasure { element, .. }
-        | GoalOperation::SliceIndex { element, .. } => {
-            collect_flat_element_nominals(element, output);
-        }
-        GoalOperation::RunIndex { element, .. } => collect_element_nominals(element, output),
-        GoalOperation::ContainerMeasure { element, .. } => {
-            if let Some(element) = element {
-                collect_element_nominals(element, output);
+            GoalOperation::ContainerMeasure { element, .. } => {
+                if let Some(element) = element {
+                    self.collect_element_nominals(element, output)?;
+                }
             }
-        }
-        GoalOperation::NumericConversion { .. }
-        | GoalOperation::Reinterpret { .. }
-        | GoalOperation::Boolean(_) => {}
+            GoalOperation::NumericConversion { .. }
+            | GoalOperation::Reinterpret { .. }
+            | GoalOperation::Boolean(_) => {}
+        };
+        Ok(())
     }
-}
 
-fn collect_type_nominals(ty: CheckedType, output: &mut Vec<NominalId>) {
-    match ty {
-        CheckedType::Nominal(id) => output.push(id),
-        CheckedType::Array { element, .. }
-        | CheckedType::Slice { element, .. }
-        | CheckedType::Buffer { element } => collect_flat_element_nominals(element, output),
-        CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
-            collect_element_nominals(element, output);
-        }
-        CheckedType::Unit
-        | CheckedType::Bool
-        | CheckedType::Integer(_)
-        | CheckedType::Float(_)
-        | CheckedType::Generic(_)
-        | CheckedType::GenericInt(_)
-        | CheckedType::GenericFloat(_)
-        | CheckedType::Heap { .. }
-        | CheckedType::Extent { .. } => {}
-    }
-}
-
-fn collect_element_nominals(element: CheckedElement, output: &mut Vec<NominalId>) {
-    match element {
-        CheckedElement::Flat(flat) => collect_flat_element_nominals(flat, output),
-        CheckedElement::FixedVector { element, .. } | CheckedElement::Vector { element, .. } => {
-            collect_flat_element_nominals(element, output);
-        }
-    }
-}
-
-fn collect_flat_element_nominals(element: CheckedFlatElement, output: &mut Vec<NominalId>) {
-    match element {
-        CheckedFlatElement::TagOnlyNominal(id) | CheckedFlatElement::Nominal(id) => output.push(id),
-        CheckedFlatElement::Unit
-        | CheckedFlatElement::Bool
-        | CheckedFlatElement::Integer(_)
-        | CheckedFlatElement::Float(_)
-        | CheckedFlatElement::GenericInt(_)
-        | CheckedFlatElement::GenericFloat(_)
-        | CheckedFlatElement::Generic(_) => {}
-    }
-}
-
-fn collect_value_nominals(value: &CheckedValue, output: &mut Vec<NominalId>) {
-    match value {
-        CheckedValue::NumericIdentity { ty, .. } => collect_type_nominals(*ty, output),
-        CheckedValue::Array { ty, elements } => {
-            collect_type_nominals(*ty, output);
-            for element in elements {
-                collect_value_nominals(element, output);
+    pub(super) fn collect_type_nominals(
+        &self,
+        ty: CheckedType,
+        output: &mut Vec<NominalId>,
+    ) -> Result<(), CheckStop> {
+        match ty {
+            CheckedType::Nominal(id) => output.push(id),
+            CheckedType::Array { element, .. }
+            | CheckedType::Slice { element, .. }
+            | CheckedType::Buffer { element } => {
+                self.collect_flat_element_nominals(element, output)?
             }
-        }
-        CheckedValue::Struct { ty, fields } => {
-            collect_type_nominals(*ty, output);
-            for field in fields {
-                collect_value_nominals(field, output);
+            CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
+                self.collect_element_nominals(element, output)?;
             }
-        }
-        CheckedValue::ConstGeneric { .. }
-        | CheckedValue::Unit
-        | CheckedValue::Bool(_)
-        | CheckedValue::Integer { .. }
-        | CheckedValue::Float { .. } => {}
+            CheckedType::Unit
+            | CheckedType::Bool
+            | CheckedType::Integer(_)
+            | CheckedType::Float(_)
+            | CheckedType::Generic(_)
+            | CheckedType::GenericInt(_)
+            | CheckedType::GenericFloat(_)
+            | CheckedType::Heap { .. }
+            | CheckedType::Extent { .. } => {}
+        };
+        Ok(())
     }
-}
 
-fn rewrite_goal_nominals(
-    expression: &mut GoalExpression,
-    checkpoint: usize,
-    replacements: &HashMap<NominalId, NominalId>,
-) -> Result<(), CheckStop> {
-    match expression {
-        GoalExpression::Datum(datum) => match datum {
-            GoalDatum::Parameter { ty, .. }
-            | GoalDatum::NamedConst { ty, .. }
-            | GoalDatum::Place { ty, .. } => rewrite_type_nominals(ty, checkpoint, replacements)?,
-            GoalDatum::EvaluatedValue {
-                captured_type, ty, ..
+    fn collect_element_nominals(
+        &self,
+        element: CheckedElement,
+        output: &mut Vec<NominalId>,
+    ) -> Result<(), CheckStop> {
+        self.collect_type_nominals(self.element_type(element)?, output)
+    }
+
+    fn collect_flat_element_nominals(
+        &self,
+        element: CheckedFlatElement,
+        output: &mut Vec<NominalId>,
+    ) -> Result<(), CheckStop> {
+        match element {
+            CheckedFlatElement::TagOnlyNominal(id) | CheckedFlatElement::Nominal(id) => {
+                output.push(id)
+            }
+            CheckedFlatElement::Unit
+            | CheckedFlatElement::Bool
+            | CheckedFlatElement::Integer(_)
+            | CheckedFlatElement::Float(_)
+            | CheckedFlatElement::GenericInt(_)
+            | CheckedFlatElement::GenericFloat(_)
+            | CheckedFlatElement::Generic(_) => {}
+        };
+        Ok(())
+    }
+
+    fn collect_value_nominals(
+        &self,
+        value: &CheckedValue,
+        output: &mut Vec<NominalId>,
+    ) -> Result<(), CheckStop> {
+        match value {
+            CheckedValue::NumericIdentity { ty, .. } => self.collect_type_nominals(*ty, output)?,
+            CheckedValue::Array { ty, elements } => {
+                self.collect_type_nominals(*ty, output)?;
+                for element in elements {
+                    self.collect_value_nominals(element, output)?;
+                }
+            }
+            CheckedValue::Struct { ty, fields } => {
+                self.collect_type_nominals(*ty, output)?;
+                for field in fields {
+                    self.collect_value_nominals(field, output)?;
+                }
+            }
+            CheckedValue::ConstGeneric { .. }
+            | CheckedValue::Unit
+            | CheckedValue::Bool(_)
+            | CheckedValue::Integer { .. }
+            | CheckedValue::Float { .. } => {}
+        };
+        Ok(())
+    }
+
+    fn rewrite_goal_nominals(
+        &self,
+        expression: &mut GoalExpression,
+        checkpoint: usize,
+        replacements: &HashMap<NominalId, NominalId>,
+    ) -> Result<(), CheckStop> {
+        match expression {
+            GoalExpression::Datum(datum) => match datum {
+                GoalDatum::Parameter { ty, .. }
+                | GoalDatum::NamedConst { ty, .. }
+                | GoalDatum::Place { ty, .. } => {
+                    self.rewrite_type_nominals(ty, checkpoint, replacements)?
+                }
+                GoalDatum::EvaluatedValue {
+                    captured_type, ty, ..
+                } => {
+                    self.rewrite_type_nominals(captured_type, checkpoint, replacements)?;
+                    self.rewrite_type_nominals(ty, checkpoint, replacements)?;
+                }
+                GoalDatum::Literal(value) => {
+                    self.rewrite_value_nominals(value, checkpoint, replacements)?
+                }
+            },
+            GoalExpression::Operation {
+                row,
+                type_arguments,
+                result,
+                arguments,
+                ..
             } => {
-                rewrite_type_nominals(captured_type, checkpoint, replacements)?;
-                rewrite_type_nominals(ty, checkpoint, replacements)?;
-            }
-            GoalDatum::Literal(value) => rewrite_value_nominals(value, checkpoint, replacements)?,
-        },
-        GoalExpression::Operation {
-            row,
-            type_arguments,
-            result,
-            arguments,
-            ..
-        } => {
-            rewrite_operation_nominals(row, checkpoint, replacements)?;
-            for ty in type_arguments {
-                rewrite_type_nominals(ty, checkpoint, replacements)?;
-            }
-            rewrite_type_nominals(result, checkpoint, replacements)?;
-            for argument in arguments {
-                rewrite_goal_nominals(argument, checkpoint, replacements)?;
+                self.rewrite_operation_nominals(row, checkpoint, replacements)?;
+                for ty in type_arguments {
+                    self.rewrite_type_nominals(ty, checkpoint, replacements)?;
+                }
+                self.rewrite_type_nominals(result, checkpoint, replacements)?;
+                for argument in arguments {
+                    self.rewrite_goal_nominals(argument, checkpoint, replacements)?;
+                }
             }
         }
+        Ok(())
     }
-    Ok(())
-}
 
-fn rewrite_operation_nominals(
-    operation: &mut GoalOperation,
-    checkpoint: usize,
-    replacements: &HashMap<NominalId, NominalId>,
-) -> Result<(), CheckStop> {
-    match operation {
-        GoalOperation::Integer { operand_type, .. }
-        | GoalOperation::Float { operand_type, .. }
-        | GoalOperation::EnumEquality { operand_type, .. }
-        | GoalOperation::BufferFits {
-            element: operand_type,
-            ..
-        } => rewrite_type_nominals(operand_type, checkpoint, replacements)?,
-        GoalOperation::ArrayFill { element, .. }
-        | GoalOperation::ArrayMeasure { element, .. }
-        | GoalOperation::ArrayIndex { element, .. }
-        | GoalOperation::BufferMeasure { element, .. }
-        | GoalOperation::BufferIndex { element }
-        | GoalOperation::SliceMeasure { element, .. }
-        | GoalOperation::SliceIndex { element, .. } => {
-            rewrite_flat_element_nominals(element, checkpoint, replacements)?;
-        }
-        GoalOperation::RunIndex { element, .. } => {
-            rewrite_element_nominals(element, checkpoint, replacements)?;
-        }
-        GoalOperation::ContainerMeasure { element, .. } => {
-            if let Some(element) = element {
-                rewrite_element_nominals(element, checkpoint, replacements)?;
+    fn rewrite_operation_nominals(
+        &self,
+        operation: &mut GoalOperation,
+        checkpoint: usize,
+        replacements: &HashMap<NominalId, NominalId>,
+    ) -> Result<(), CheckStop> {
+        match operation {
+            GoalOperation::Integer { operand_type, .. }
+            | GoalOperation::Float { operand_type, .. }
+            | GoalOperation::EnumEquality { operand_type, .. }
+            | GoalOperation::BufferFits {
+                element: operand_type,
+                ..
+            } => self.rewrite_type_nominals(operand_type, checkpoint, replacements)?,
+            GoalOperation::ArrayFill { element, .. }
+            | GoalOperation::ArrayMeasure { element, .. }
+            | GoalOperation::ArrayIndex { element, .. }
+            | GoalOperation::BufferMeasure { element, .. }
+            | GoalOperation::BufferIndex { element }
+            | GoalOperation::SliceMeasure { element, .. }
+            | GoalOperation::SliceIndex { element, .. } => {
+                self.rewrite_flat_element_nominals(element, checkpoint, replacements)?;
             }
-        }
-        GoalOperation::NumericConversion { .. }
-        | GoalOperation::Reinterpret { .. }
-        | GoalOperation::Boolean(_) => {}
-    }
-    Ok(())
-}
-
-fn rewrite_type_nominals(
-    ty: &mut CheckedType,
-    checkpoint: usize,
-    replacements: &HashMap<NominalId, NominalId>,
-) -> Result<(), CheckStop> {
-    match ty {
-        CheckedType::Nominal(id) if (id.0 as usize) >= checkpoint => {
-            *id = *replacements
-                .get(id)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        }
-        CheckedType::Array { element, .. }
-        | CheckedType::Slice { element, .. }
-        | CheckedType::Buffer { element } => {
-            rewrite_flat_element_nominals(element, checkpoint, replacements)?;
-        }
-        CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
-            rewrite_element_nominals(element, checkpoint, replacements)?;
-        }
-        CheckedType::Unit
-        | CheckedType::Bool
-        | CheckedType::Integer(_)
-        | CheckedType::Float(_)
-        | CheckedType::Generic(_)
-        | CheckedType::GenericInt(_)
-        | CheckedType::GenericFloat(_)
-        | CheckedType::Heap { .. }
-        | CheckedType::Extent { .. }
-        | CheckedType::Nominal(_) => {}
-    }
-    Ok(())
-}
-
-fn rewrite_element_nominals(
-    element: &mut CheckedElement,
-    checkpoint: usize,
-    replacements: &HashMap<NominalId, NominalId>,
-) -> Result<(), CheckStop> {
-    match element {
-        CheckedElement::Flat(flat) => rewrite_flat_element_nominals(flat, checkpoint, replacements),
-        CheckedElement::FixedVector { element, .. } | CheckedElement::Vector { element, .. } => {
-            rewrite_flat_element_nominals(element, checkpoint, replacements)
-        }
-    }
-}
-
-fn rewrite_flat_element_nominals(
-    element: &mut CheckedFlatElement,
-    checkpoint: usize,
-    replacements: &HashMap<NominalId, NominalId>,
-) -> Result<(), CheckStop> {
-    match element {
-        CheckedFlatElement::TagOnlyNominal(id) | CheckedFlatElement::Nominal(id)
-            if (id.0 as usize) >= checkpoint =>
-        {
-            *id = *replacements
-                .get(id)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        }
-        CheckedFlatElement::Unit
-        | CheckedFlatElement::Bool
-        | CheckedFlatElement::Integer(_)
-        | CheckedFlatElement::Float(_)
-        | CheckedFlatElement::GenericInt(_)
-        | CheckedFlatElement::GenericFloat(_)
-        | CheckedFlatElement::TagOnlyNominal(_)
-        | CheckedFlatElement::Nominal(_)
-        | CheckedFlatElement::Generic(_) => {}
-    }
-    Ok(())
-}
-
-fn rewrite_value_nominals(
-    value: &mut CheckedValue,
-    checkpoint: usize,
-    replacements: &HashMap<NominalId, NominalId>,
-) -> Result<(), CheckStop> {
-    match value {
-        CheckedValue::NumericIdentity { ty, .. } => {
-            rewrite_type_nominals(ty, checkpoint, replacements)?;
-        }
-        CheckedValue::Array { ty, elements } => {
-            rewrite_type_nominals(ty, checkpoint, replacements)?;
-            for element in elements {
-                rewrite_value_nominals(element, checkpoint, replacements)?;
+            GoalOperation::RunIndex { element, .. } => {
+                self.rewrite_element_nominals(element, checkpoint, replacements)?;
             }
-        }
-        CheckedValue::Struct { ty, fields } => {
-            rewrite_type_nominals(ty, checkpoint, replacements)?;
-            for field in fields {
-                rewrite_value_nominals(field, checkpoint, replacements)?;
+            GoalOperation::ContainerMeasure { element, .. } => {
+                if let Some(element) = element {
+                    self.rewrite_element_nominals(element, checkpoint, replacements)?;
+                }
             }
+            GoalOperation::NumericConversion { .. }
+            | GoalOperation::Reinterpret { .. }
+            | GoalOperation::Boolean(_) => {}
         }
-        CheckedValue::ConstGeneric { .. }
-        | CheckedValue::Unit
-        | CheckedValue::Bool(_)
-        | CheckedValue::Integer { .. }
-        | CheckedValue::Float { .. } => {}
+        Ok(())
     }
-    Ok(())
+
+    fn rewrite_type_nominals(
+        &self,
+        ty: &mut CheckedType,
+        checkpoint: usize,
+        replacements: &HashMap<NominalId, NominalId>,
+    ) -> Result<(), CheckStop> {
+        match ty {
+            CheckedType::Nominal(id) if (id.0 as usize) >= checkpoint => {
+                *id = *replacements
+                    .get(id)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            }
+            CheckedType::Array { element, .. }
+            | CheckedType::Slice { element, .. }
+            | CheckedType::Buffer { element } => {
+                self.rewrite_flat_element_nominals(element, checkpoint, replacements)?;
+            }
+            CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
+                self.rewrite_element_nominals(element, checkpoint, replacements)?;
+            }
+            CheckedType::Unit
+            | CheckedType::Bool
+            | CheckedType::Integer(_)
+            | CheckedType::Float(_)
+            | CheckedType::Generic(_)
+            | CheckedType::GenericInt(_)
+            | CheckedType::GenericFloat(_)
+            | CheckedType::Heap { .. }
+            | CheckedType::Extent { .. }
+            | CheckedType::Nominal(_) => {}
+        }
+        Ok(())
+    }
+
+    fn rewrite_element_nominals(
+        &self,
+        element: &mut CheckedElement,
+        checkpoint: usize,
+        replacements: &HashMap<NominalId, NominalId>,
+    ) -> Result<(), CheckStop> {
+        let mut ty = self.element_type(*element)?;
+        self.rewrite_type_nominals(&mut ty, checkpoint, replacements)?;
+        *element = self.intern_element(ty)?;
+        Ok(())
+    }
+
+    fn rewrite_flat_element_nominals(
+        &self,
+        element: &mut CheckedFlatElement,
+        checkpoint: usize,
+        replacements: &HashMap<NominalId, NominalId>,
+    ) -> Result<(), CheckStop> {
+        match element {
+            CheckedFlatElement::TagOnlyNominal(id) | CheckedFlatElement::Nominal(id)
+                if (id.0 as usize) >= checkpoint =>
+            {
+                *id = *replacements
+                    .get(id)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            }
+            CheckedFlatElement::Unit
+            | CheckedFlatElement::Bool
+            | CheckedFlatElement::Integer(_)
+            | CheckedFlatElement::Float(_)
+            | CheckedFlatElement::GenericInt(_)
+            | CheckedFlatElement::GenericFloat(_)
+            | CheckedFlatElement::TagOnlyNominal(_)
+            | CheckedFlatElement::Nominal(_)
+            | CheckedFlatElement::Generic(_) => {}
+        }
+        Ok(())
+    }
+
+    fn rewrite_value_nominals(
+        &self,
+        value: &mut CheckedValue,
+        checkpoint: usize,
+        replacements: &HashMap<NominalId, NominalId>,
+    ) -> Result<(), CheckStop> {
+        match value {
+            CheckedValue::NumericIdentity { ty, .. } => {
+                self.rewrite_type_nominals(ty, checkpoint, replacements)?;
+            }
+            CheckedValue::Array { ty, elements } => {
+                self.rewrite_type_nominals(ty, checkpoint, replacements)?;
+                for element in elements {
+                    self.rewrite_value_nominals(element, checkpoint, replacements)?;
+                }
+            }
+            CheckedValue::Struct { ty, fields } => {
+                self.rewrite_type_nominals(ty, checkpoint, replacements)?;
+                for field in fields {
+                    self.rewrite_value_nominals(field, checkpoint, replacements)?;
+                }
+            }
+            CheckedValue::ConstGeneric { .. }
+            | CheckedValue::Unit
+            | CheckedValue::Bool(_)
+            | CheckedValue::Integer { .. }
+            | CheckedValue::Float { .. } => {}
+        }
+        Ok(())
+    }
 }

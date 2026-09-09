@@ -339,6 +339,7 @@ pub(super) fn plan_target_frame(
         program,
         nominal: HashMap::new(),
         visiting: HashSet::new(),
+        visiting_elements: HashSet::new(),
     };
     let mut physical_fields = Vec::new();
     let mut logical_fields = Vec::with_capacity(slots.len());
@@ -395,6 +396,7 @@ pub(super) fn validate_static_storage(
         program,
         nominal: HashMap::new(),
         visiting: HashSet::new(),
+        visiting_elements: HashSet::new(),
     };
     let layout = layouts
         .storage_layout(ty)
@@ -457,6 +459,7 @@ pub(super) fn parallel_lane_frame_layout(
         program,
         nominal: HashMap::new(),
         visiting: HashSet::new(),
+        visiting_elements: HashSet::new(),
     };
     let mut fields = Vec::with_capacity(function.parameters().len() + 1);
     for (_, ty) in function.parameters() {
@@ -492,6 +495,7 @@ pub(super) fn validate_program(
         program,
         nominal: HashMap::new(),
         visiting: HashSet::new(),
+        visiting_elements: HashSet::new(),
     };
 
     for nominal in program.nominals() {
@@ -501,6 +505,12 @@ pub(super) fn validate_program(
         if let IrNominalKind::Box { referent, .. } = nominal.kind() {
             layouts.layout(*referent)?;
         }
+    }
+    // A run descriptor's representation does not contain its elements.
+    // Validate their complete layouts independently, so an ownership cycle
+    // through a Vector does not become a false inline-layout cycle.
+    for element in program.elements() {
+        layouts.layout(*element)?;
     }
     for constant in program.constants() {
         layouts
@@ -918,6 +928,7 @@ struct LayoutComputer<'program, 'classified, 'lexed, 'source> {
     program: &'program IrProgram<'classified, 'lexed, 'source>,
     nominal: HashMap<IrNominalId, Layout>,
     visiting: HashSet<IrNominalId>,
+    visiting_elements: HashSet<IrElement>,
 }
 
 impl LayoutComputer<'_, '_, '_, '_> {
@@ -1000,7 +1011,9 @@ impl LayoutComputer<'_, '_, '_, '_> {
             // window origin [BLK-1]; a provider is proof-only and carries at
             // most its own cursor.
             IrType::Vector { element, .. } => {
-                self.element(element)?;
+                self.program
+                    .element(element)
+                    .ok_or(TargetLayoutFailure::InvalidIr)?;
                 Ok(Layout { size: 32, align: 8 })
             }
             IrType::Provider => Ok(Layout { size: 16, align: 8 }),
@@ -1042,7 +1055,16 @@ impl LayoutComputer<'_, '_, '_, '_> {
     /// descriptor words inline, a `Vector`'s four-word descriptor -- so the
     /// slot layout is that type's own.
     fn element(&mut self, element: IrElement) -> Result<Layout, TargetLayoutFailure> {
-        self.layout(element.ty())
+        if !self.visiting_elements.insert(element) {
+            return Err(TargetLayoutFailure::InvalidIr);
+        }
+        let ty = self
+            .program
+            .element(element)
+            .ok_or(TargetLayoutFailure::InvalidIr)?;
+        let layout = self.layout(ty);
+        self.visiting_elements.remove(&element);
+        layout
     }
 
     fn nominal_layout(&mut self, id: IrNominalId) -> Result<Layout, TargetLayoutFailure> {

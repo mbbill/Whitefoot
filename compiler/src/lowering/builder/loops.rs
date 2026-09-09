@@ -205,6 +205,7 @@ impl IrBuilder<'_> {
             StagedScope {
                 erasure: self.erasure,
                 nominals: self.nominals,
+                elements: self.elements,
             },
         ) else {
             return Ok(false);
@@ -1293,6 +1294,7 @@ struct DirectStagedMatch<'body> {
 struct StagedScope<'program> {
     erasure: TypeLowering<'program>,
     nominals: &'program [crate::IrNominal],
+    elements: &'program [crate::IrType],
 }
 
 impl StagedScope<'_> {
@@ -1311,7 +1313,8 @@ impl StagedScope<'_> {
         drops.iter().all(|drop| {
             lower_type(self.erasure, drop.ty).is_ok_and(|ty| {
                 drop.release == SystemRelease::NONE
-                    && crate::lowering::type_derives_release(self.nominals, ty) == Some(false)
+                    && crate::lowering::type_derives_release(self.nominals, self.elements, ty)
+                        == Some(false)
             })
         })
     }

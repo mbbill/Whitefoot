@@ -323,7 +323,16 @@ fn collect_regions(
         } => {
             regions.insert(region);
             insert_default(defaults, region, release);
-            collect_regions(program, element.ty(), regions, visited, defaults)?;
+            collect_regions(
+                program,
+                *program
+                    .elements
+                    .get(element.index())
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                regions,
+                visited,
+                defaults,
+            )?;
         }
         CheckedType::Heap { region } => {
             regions.insert(region);
@@ -334,7 +343,16 @@ fn collect_regions(
             insert_default(defaults, region, CheckedReleaseClass::Extent);
         }
         CheckedType::FixedVector { element, .. } => {
-            collect_regions(program, element.ty(), regions, visited, defaults)?;
+            collect_regions(
+                program,
+                *program
+                    .elements
+                    .get(element.index())
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                regions,
+                visited,
+                defaults,
+            )?;
         }
         CheckedType::Array { element, .. }
         | CheckedType::Buffer { element }
@@ -350,6 +368,10 @@ fn collect_regions(
         | CheckedType::GenericFloat(_) => {}
     }
     Ok(())
+}
+
+pub(super) fn executable_types(function: &CheckedFunction) -> Vec<CheckedType> {
+    FunctionDependencies::collect(function).types
 }
 
 fn insert_default(

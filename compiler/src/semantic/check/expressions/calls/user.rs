@@ -10,8 +10,8 @@ use super::super::super::super::goal::{
     EvaluatedValueOccurrence, GoalDatum, GoalExpression, GoalProjection,
 };
 use super::super::super::super::model::{
-    CheckedElement, CheckedExpression, CheckedMode, CheckedNominalKind, CheckedResultBorrow,
-    CheckedSliceOrigin, CheckedStateOrigins, CheckedType, LoanStrength,
+    CheckedExpression, CheckedMode, CheckedNominalKind, CheckedResultBorrow, CheckedSliceOrigin,
+    CheckedStateOrigins, CheckedType, LoanStrength,
 };
 use super::super::super::borrows::{
     AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, SliceInfo, TemporaryLoan, places_overlap,
@@ -658,9 +658,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// that region from its actual, exactly as a borrow mode does, so the
     /// caller does not write it.
     ///
-    /// [BLK-1]'s one-level lift puts further places a store region can be
-    /// written: a frame-resident run of store-backed runs names its store in
-    /// its element position, and a flat nominal element can carry one through
+    /// [BLK-1] allows a store region to occur at any element depth: a
+    /// frame-resident run reaches the store in its element position, and a
+    /// nominal element can carry one through
     /// a PRE-1 wrapper such as `Option<Entry<'s>>`. Those regions are
     /// determined by the actual exactly as a top-level one is. Where both run
     /// levels name a region — `Vector<'s, Vector<'t, u8>>` — this reports the
@@ -709,12 +709,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
                 self.written_type_region(element.ty())
             }
-            CheckedType::FixedVector { element, .. } => match element {
-                CheckedElement::Flat(element) | CheckedElement::FixedVector { element, .. } => {
-                    self.written_type_region(element.ty())
-                }
-                CheckedElement::Vector { region, .. } => Ok(Some(region)),
-            },
+            CheckedType::FixedVector { element, .. } => {
+                self.written_type_region(self.element_type(element)?)
+            }
             _ => Ok(Self::written_container_type_region(ty)),
         }
     }
@@ -738,10 +735,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedType::Vector { region, .. }
             | CheckedType::Heap { region }
             | CheckedType::Extent { region, .. } => Some(region),
-            CheckedType::FixedVector {
-                element: CheckedElement::Vector { region, .. },
-                ..
-            } => Some(region),
             _ => None,
         }
     }

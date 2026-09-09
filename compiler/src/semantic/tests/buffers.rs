@@ -18,9 +18,9 @@ use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanti
 use super::super::entailment::{DerivationNode, GoalSign, ObligationFamily, SourceAffineFactRef};
 use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{
-    CheckedElement, CheckedExpression, CheckedFlatElement, CheckedLayoutMagnitude,
-    CheckedPlaceStep, CheckedSetTarget, CheckedStatement, CheckedTargetDomainObligation,
-    CheckedType, IntegerType, NominalId,
+    CheckedExpression, CheckedFlatElement, CheckedLayoutMagnitude, CheckedPlaceStep,
+    CheckedSetTarget, CheckedStatement, CheckedTargetDomainObligation, CheckedType, IntegerType,
+    NominalId,
 };
 use super::{
     assert_rule, assert_rule_kind, assert_unsupported, with_semantics, with_semantics_dark,
@@ -826,7 +826,7 @@ fn affine_element_views_and_structural_composites_stop_explicitly() {
     // [TYPE-2] but has no implemented representation.
     //
     // B7c4b left this half on the retiring surface: a run *of* runs is an
-    // ordinary [BLK-1] element (`CheckedElement::FixedVector`) and is
+    // ordinary [BLK-1] element (an interned complete type) and is
     // accepted, so the migrated declaration records no stop at all. The
     // property is `buffer<T>`'s own and retires with it.
     assert_unsupported(
@@ -955,12 +955,13 @@ command fn main() -> status: own ExitStatus pure {
         // PROV-6 visits struct fields in declaration order. STOR-3's
         // reverse declaration order applies to bindings, not these fields.
         assert_eq!(drops[0].fields, [0]);
+        let CheckedType::FixedVector { element, length } = drops[0].ty else {
+            panic!("field drop must retain the fixed run type");
+        };
+        assert_eq!(length, super::super::model::CheckedConst::Value(4));
         assert_eq!(
-            drops[0].ty,
-            CheckedType::FixedVector {
-                element: CheckedElement::Flat(CheckedFlatElement::Integer(IntegerType::U64)),
-                length: super::super::model::CheckedConst::Value(4),
-            }
+            checked.element_type(element),
+            Some(CheckedType::Integer(IntegerType::U64))
         );
         assert_eq!(drops[1].fields, [1]);
         assert_eq!(drops[1].ty, drops[0].ty);

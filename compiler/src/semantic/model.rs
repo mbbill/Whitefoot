@@ -391,75 +391,15 @@ pub(crate) enum CheckedReleaseClass {
     Extent,
 }
 
-/// [BLK-1] the type of one slot of a run: what a slot may hold.
-///
-/// The flat element domain is what every other storage type admits, and a run
-/// admits one thing more — an element that is itself a run, its descriptor
-/// included. The lift is exactly **one level**: the inner run's own element is
-/// flat, so `FixedVector<Vector<'s, u8>, 8>` and `FixedVector<FixedVector<u8,
-/// 4>, 4>` are representable and a third level is not. One level is what
-/// carries [MSR-1]'s `len_of(P[i])`, [BLK-1]'s element-position commit at a
-/// run element, and 3.L.4's block pool; a deeper nesting is an explicit
-/// unsupported capability and never a source rejection.
-///
-/// It is a lift and not a recursion for the reason [`CheckedType`] is `Copy`:
-/// an arbitrarily deep element would need an interned element table travelling
-/// with the checked program, or a boxed element that costs every checked type
-/// its `Copy`, and neither buys a program this language can write yet.
+/// [BLK-1] the complete type of one run slot, interned in the checked program.
+/// Structural children precede parents; recursive ownership graphs pass through
+/// nominal identities. The handle keeps every checked type compact and Copy.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) enum CheckedElement {
-    /// The flat element domain [TYPE-2]: every copy element, one region-free
-    /// affine nominal stored by value, and one type parameter at the symbolic
-    /// instance.
-    Flat(CheckedFlatElement),
-    /// One `FixedVector<T, n>` element, its two descriptor words inline in the
-    /// slot [BLK-1, OP-9].
-    FixedVector {
-        element: CheckedFlatElement,
-        length: CheckedConst,
-    },
-    /// One `Vector<'s, T>` element: the four-word descriptor lives in the
-    /// slot and the run it names lives in the store `'s` [PROV-1].
-    Vector {
-        region: DeclarationId,
-        element: CheckedFlatElement,
-        release: CheckedReleaseClass,
-    },
-}
+pub(crate) struct CheckedElement(pub(crate) u32);
 
 impl CheckedElement {
-    /// The complete type one slot holds.
-    pub(crate) const fn ty(self) -> CheckedType {
-        match self {
-            Self::Flat(element) => element.ty(),
-            Self::FixedVector { element, length } => CheckedType::FixedVector {
-                element: Self::Flat(element),
-                length,
-            },
-            Self::Vector {
-                region,
-                element,
-                release,
-            } => CheckedType::Vector {
-                region,
-                element: Self::Flat(element),
-                release,
-            },
-        }
-    }
-
-    /// The flat element this one is, when it is one.
-    pub(crate) const fn flat(self) -> Option<CheckedFlatElement> {
-        match self {
-            Self::Flat(element) => Some(element),
-            Self::FixedVector { .. } | Self::Vector { .. } => None,
-        }
-    }
-
-    /// Whether this element is itself a run, which is what [PROV-6]'s release
-    /// walk visits before the holding run's own backing is released.
-    pub(crate) const fn is_run(self) -> bool {
-        matches!(self, Self::FixedVector { .. } | Self::Vector { .. })
+    pub(crate) const fn index(self) -> usize {
+        self.0 as usize
     }
 }
 
@@ -566,15 +506,24 @@ pub(crate) enum CheckedType {
 }
 
 impl CheckedType {
-    pub(crate) const fn is_concrete(self) -> bool {
+    pub(crate) fn is_concrete(self, elements: &[CheckedType]) -> bool {
         match self {
             Self::Generic(_) | Self::GenericInt(_) | Self::GenericFloat(_) => false,
-            Self::Array { element, length } => element.ty().is_concrete() && length.is_concrete(),
-            Self::FixedVector { element, length } => {
-                element.ty().is_concrete() && length.is_concrete()
+            Self::Array { element, length } => {
+                element.ty().is_concrete(elements) && length.is_concrete()
             }
-            Self::Vector { element, .. } => element.ty().is_concrete(),
-            Self::Slice { element, .. } | Self::Buffer { element } => element.ty().is_concrete(),
+            Self::FixedVector { element, length } => {
+                elements
+                    .get(element.0 as usize)
+                    .is_some_and(|ty| ty.is_concrete(elements))
+                    && length.is_concrete()
+            }
+            Self::Vector { element, .. } => elements
+                .get(element.0 as usize)
+                .is_some_and(|ty| ty.is_concrete(elements)),
+            Self::Slice { element, .. } | Self::Buffer { element } => {
+                element.ty().is_concrete(elements)
+            }
             Self::Extent { bytes, align, .. } => bytes.is_concrete() && align.is_concrete(),
             Self::Unit
             | Self::Bool
@@ -1477,6 +1426,7 @@ impl CheckedContainerRoot {
     /// The measure-table row this place selects [MSR-1].
     pub(crate) const fn measured(&self) -> Option<MeasuredKind> {
         match self.ty {
+            CheckedType::Array { .. } => Some(MeasuredKind::Array),
             CheckedType::FixedVector { .. } => Some(MeasuredKind::FixedVector),
             CheckedType::Vector { .. } => Some(MeasuredKind::Vector),
             CheckedType::Extent { .. } => Some(MeasuredKind::Extent),
@@ -1499,7 +1449,9 @@ impl CheckedContainerRoot {
     /// none.
     pub(crate) const fn type_constant(&self) -> Option<CheckedConst> {
         match self.ty {
-            CheckedType::FixedVector { length, .. } => Some(length),
+            CheckedType::Array { length, .. } | CheckedType::FixedVector { length, .. } => {
+                Some(length)
+            }
             CheckedType::Extent { bytes, .. } => Some(bytes),
             _ => None,
         }
@@ -2724,6 +2676,9 @@ pub(crate) struct CheckedProgramData {
     /// size of the nominal-record block ahead of the constructor block.
     pub(crate) inventory: crate::Inventory,
     pub(crate) nominals: Vec<CheckedNominal>,
+    /// Append-only structural elements, including unreachable replay history.
+    /// Only handles reachable from executable types belong to lowering.
+    pub(crate) elements: Vec<CheckedType>,
     /// Which interned nominals are [SYS-2] system-declared structs, by catalog
     /// index, in catalog order.
     ///

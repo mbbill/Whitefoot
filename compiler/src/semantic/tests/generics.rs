@@ -1642,3 +1642,110 @@ command fn main() -> status: own ExitStatus pure {
         }
     });
 }
+
+#[test]
+fn general_elements_retain_deep_runs_through_generic_replay_and_nominal_fields() {
+    let source = br#"struct Wrapped {
+  values: FixedVector<FixedVector<FixedVector<u64, 2>, 2>, 2>;
+}
+
+fn pass<T: affine>(value: own T) -> result: own T pure {
+  return move value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let empty_leaf = fixed_vector::<u64, 2>();
+  let leaf = place_back(vector: move empty_leaf, value: 7_u64);
+  let empty_middle = fixed_vector::<FixedVector<u64, 2>, 2>();
+  let middle = place_back(vector: move empty_middle, value: move leaf);
+  let empty_outer = fixed_vector::<FixedVector<FixedVector<u64, 2>, 2>, 2>();
+  let outer = place_back(vector: move empty_outer, value: move middle);
+  let returned = pass::<FixedVector<FixedVector<FixedVector<u64, 2>, 2>, 2>>(value: move outer);
+  let wrapped = Wrapped(values: move returned);
+  let retained = pass::<Wrapped>(value: move wrapped);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("deep run elements and the nominal control must check: {outcome:?}");
+        };
+        let wrapper = checked
+            .data
+            .nominals
+            .iter()
+            .find(|nominal| nominal.name == "Wrapped")
+            .expect("the source nominal remains in the ordinary inventory");
+        let CheckedNominalKind::Struct { fields } = &wrapper.kind else {
+            panic!("the wrapper remains a source struct");
+        };
+        let mut ty = fields[0].ty;
+        for _ in 0..3 {
+            let CheckedType::FixedVector { element, length } = ty else {
+                panic!("every declared nested run must survive the checked graph");
+            };
+            assert_eq!(length, CheckedConst::Value(2));
+            ty = checked
+                .element_type(element)
+                .expect("a complete checked element");
+        }
+        assert_eq!(ty, CheckedType::Integer(IntegerType::U64));
+    });
+}
+
+#[test]
+fn general_elements_reify_nominal_children_after_the_schema_checkpoint() {
+    let source = br#"struct Pair<T: Int> {
+  value: T;
+}
+
+fn consume<T: affine>(value: own T) -> result: own unit pure {
+  return unit;
+}
+
+fn wrapper<U: affine>() -> result: own unit pure {
+  let pair = Pair<u8>(value: 7_u8);
+  let empty_inner = fixed_vector::<Pair<u8>, 1>();
+  let inner = place_back(vector: move empty_inner, value: move pair);
+  let empty_outer = fixed_vector::<FixedVector<Pair<u8>, 1>, 1>();
+  let outer = place_back(vector: move empty_outer, value: move inner);
+  consume::<FixedVector<FixedVector<Pair<u8>, 1>, 1>>(value: move outer);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("schema-created nominal element children must be reified: {outcome:?}");
+        };
+        let consume = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "consume")
+            .expect("the schema-written concrete call is retained");
+        let mut ty = consume.parameters[0].ty;
+        for _ in 0..2 {
+            let CheckedType::FixedVector { element, length } = ty else {
+                panic!("the concrete argument retains both structural layers");
+            };
+            assert_eq!(length, CheckedConst::Value(1));
+            ty = checked
+                .element_type(element)
+                .expect("a reified element handle");
+        }
+        let CheckedType::Nominal(id) = ty else {
+            panic!("the terminal element remains a source nominal");
+        };
+        assert!((id.0 as usize) < checked.data.executable_nominal_count);
+        let nominal = &checked.data.nominals[id.0 as usize];
+        assert!(nominal.name.starts_with("Pair<"));
+        let CheckedNominalKind::Struct { fields } = &nominal.kind else {
+            panic!("the terminal nominal must retain its original family");
+        };
+        assert_eq!(fields[0].ty, CheckedType::Integer(IntegerType::U8));
+    });
+}
