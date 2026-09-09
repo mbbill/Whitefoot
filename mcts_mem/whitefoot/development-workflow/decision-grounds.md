@@ -21,6 +21,8 @@
 
 - 2026-09-09 owner rationale: independently pinning the memory checker or copying its invocation into repository guidance can leave verification on old rules after the maintenance skill changes. Keep those instructions with the skill and inspect their execution at completion instead of maintaining a second tool contract. (sourced)
 
+- 2026-09-09 owner clarification: reassessing language decisions and exercising documentation maintenance do not authorize compiler implementation changes in a documentation PR. Read the requested scope at the start; an uncovered technical issue can remain an explicitly open finding without turning into implementation work. (sourced)
+
 ## Moves
 
 - 2026-09-07 replaced [[constitutional-derivation]]: a constitutional ancestor and an existing rule record did not distinguish a conditional consequence from empirical support or a provisional selection, and changed evidence could leave old grounds untouched; an explicit current index and update triggers keep those distinctions available during work (sourced)

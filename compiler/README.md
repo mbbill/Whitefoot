@@ -744,14 +744,13 @@ are still writable; it is removed with them, not repaired separately.
 
 ### Known cost: a large `proof_use` block is impractical well below its ceiling
 
-[PRF-1] admits 4096 `proof_use` entries in one block and calls that "a source
-structural ceiling, not a work or time budget". Measured, the checker costs
-389 ms at 64 entries, 3.0 s at 128, and 26.8 s at 256 — about eight times per
-doubling, which puts the admitted ceiling many hours away. Pre-existing and
-not specific to any one entry shape; a pre-v0.48 build measures the same at
-128. Nothing in the corpus writes a block anywhere near this size, so this is
-recorded rather than fixed. Removed when the ceiling is reachable, or when the
-specification says what the real limit is.
+[PRF-1] admits 4096 `proof_use` entries in one block as a structural source
+ceiling. The 2026-09-05 cost record reports 389 ms at 64 entries, 3.0 s at 128,
+and 26.8 s at 256, about eight times per doubling in that sample. Those figures
+are historical reports without a pinned reproduction bundle here; the
+4096-entry cost is an extrapolation, not a measured result. The lack of such
+large blocks in the existing corpus does not establish acceptable cost at the
+admitted ceiling. Practical checking at that scale remains unresolved.
 
 The source-proof path includes target AUTO for redundancy and separate proof
 queries for relation-form premises; named premises check published theorem
@@ -759,7 +758,9 @@ availability. Automatic queries can rebuild fact closures and enumerate
 premise combinations. Weighted sums also merge growing coefficient vectors.
 The recorded measurements do not isolate these costs, so they do not establish
 that certificate accumulation alone is the bottleneck. Profile the stages
-before changing the implementation or the accepted proof rules.
+before changing the implementation or the accepted proof rules. The
+[selection-ground assessment](../research/investigations/proof-certificate-architecture/SOURCE-CHECKING.md)
+distinguishes those unresolved costs from the safety obligations.
 
 ## Running and checking
 

@@ -390,3 +390,27 @@ step: a neighboring rule's rationale may need reconsideration even when its
 implementation is unchanged. It did not require a new workflow rule, a global
 ledger sweep, or a claim that all of CONST-2 had been reassessed. One application
 establishes neither reduced review cost nor long-term synchronization reliability.
+
+## Documentation scope during reassessment
+
+The source-proof reassessment exposed an existing complexity claim and a
+poorly attributed cost record. In the 2026-09-09 application, that finding
+prompted temporary compiler instrumentation and a program fixture before the
+owner restated the documentation-only scope. Those implementation edits were
+withdrawn. The surviving assessment separates supported arguments from open
+compiler questions and updates their affected document owners.
+
+This is a scope-following failure, not evidence that a new compiler mechanism
+was selected. The start occasion now explicitly reads the requested outcome
+and scope; discovering another problem does not expand it. A1 already checks
+task fit at completion, so no second checkpoint or approval rule is added.
+The final reviewer must compare the actual diff with the task constraints,
+including whether a proposed technical remedy belongs in a later task.
+
+The affected-set walk also reached MSR-4 through its shared AUTO rationale and
+an inaccurate host-qualification comment describing the specification delta.
+MSR-4's index now points to the scoped correction. The source comment's repair
+is outside this documentation-only source-file scope and remains an explicit
+finding in the source-proof assessment. Finding these connections demonstrates
+a concrete use of the dependency walk, not that every dependency is discoverable
+or that review cost is reduced. A recorded finding is not a completed repair.

@@ -20,8 +20,11 @@ starting point, not a certification that its historical vocabulary or
 [constitutional reassessment](../../research/investigations/decision-workflow/DESIGN.md#constitutional-reassessment)
 identifies the shared changes of premise; the five current convention and
 workflow rows below have narrower, explicit grounds. A later constant-initialization
-assessment covers only part of CONST-2 and remains revisitable. Other rows retain their
-open obligations for reassessment when their rule or material reason changes.
+assessment covers only part of CONST-2 and remains revisitable. The
+[source-proof assessment](../../research/investigations/proof-certificate-architecture/SOURCE-CHECKING.md)
+also distinguishes checked authority from provisional mechanisms in ENT-1,
+ENT-6, INV-1 and PRF-1; their remaining questions stay explicit. Other rows
+retain their open obligations when their rule or material reason changes.
 No historical status is automatically promoted into a new basis kind.
 
 The reassessment also records the retirement of the constitution's old letter
@@ -177,7 +180,7 @@ of source references. Historical rows cannot satisfy that check.
 | SYS-16 | unassessed | revisit | [Retained record](#v050-amendment-second-half--streams-and-tcp) |
 | SYS-17 | unassessed | revisit | [Retained record](#v050-amendment-second-half--streams-and-tcp) |
 | SYS-18 | unassessed | revisit | [Retained record](#v050-amendment-second-half--streams-and-tcp); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| ENT-1 | unassessed | revisit | [Retained record](#v048-amendment--a-use-cites-one-premise-activated-2026-09-05) |
+| ENT-1 | deduction+provisional | revisit | [Source proof grounds](../../research/investigations/proof-certificate-architecture/SOURCE-CHECKING.md#assessed-grounds-and-unresolved-choices): checked authority and consequences of specification-defined derivability; no-SMT selection, full vocabulary, generic policy and practical cost remain open. [Retained record](#v048-amendment--a-use-cites-one-premise-activated-2026-09-05). |
 | ENT-2 | unassessed | revisit | [Retained record](#v047-amendment--the-named-const-is-the-number-it-names-activated-2026-09-05); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
 | MSR-1 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
 | MSR-2 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
@@ -190,10 +193,10 @@ of source references. Historical rows cannot satisfy that check.
 | CALL-6 | unassessed | revisit | [Retained record](#v044-amendment--the-fact-machinery-activated-2026-09-04); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
 | ENT-4 | unassessed | revisit | [Retained record](#v028-amendment--verified-normal-return-postconditions-activated-2026-08-15) |
 | ENT-5 | unassessed | revisit | [Retained record](#v046-amendment--a-stated-relation-and-the-atom-that-discharges-it-activated-2026-09-05); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| ENT-6 | unassessed | revisit | [Retained record](#v046-amendment--a-stated-relation-and-the-atom-that-discharges-it-activated-2026-09-05); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| MSR-4 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| INV-1 | unassessed | revisit | [Retained record](#v047-amendment--the-named-const-is-the-number-it-names-activated-2026-09-05); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04) |
-| PRF-1 | unassessed | revisit | [Retained record](#v049-amendment--fold-by-the-declaration-not-by-the-expansion-activated-2026-09-05) |
+| ENT-6 | provisional | revisit | [Source proof grounds](../../research/investigations/proof-certificate-architecture/SOURCE-CHECKING.md#assessed-grounds-and-unresolved-choices): fixed automatic families are a selected boundary, not a constitutional necessity; exact family costs, integer-domain normalization and product publication remain unassessed. [Retained record](#v046-amendment--a-stated-relation-and-the-atom-that-discharges-it-activated-2026-09-05); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04). |
+| MSR-4 | unassessed | revisit | [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04); [Shared AUTO rationale correction](../../research/investigations/proof-certificate-architecture/SOURCE-CHECKING.md#alternatives-and-evidence-boundaries) does not assess the complete numeric disposition or its bridges. |
+| INV-1 | deduction+provisional | revisit | [Source proof grounds](../../research/investigations/proof-certificate-architecture/SOURCE-CHECKING.md#assessed-grounds-and-unresolved-choices): base and preservation justify the selected induction model; written affine syntax, placement, joins and exhaustion choices remain open. [Retained record](#v047-amendment--the-named-const-is-the-number-it-names-activated-2026-09-05); [Container amendment](#v051-amendment--multi-return-and-the-proof-surface-2026-09-04). |
+| PRF-1 | deduction+provisional | revisit | [Source proof grounds](../../research/investigations/proof-certificate-architecture/SOURCE-CHECKING.md#assessed-grounds-and-unresolved-choices): independently proved premises and checked nonnegative composition support the target; neither linear total cost, the 4096-use ceiling nor redundancy rejection follows from this argument. [Retained record](#v049-amendment--fold-by-the-declaration-not-by-the-expansion-activated-2026-09-05). |
 | EX-1 | unassessed | revisit | [Retained record](#ledger) |
 | META-1 | unassessed | revisit | [Retained record](#ledger) |
 | META-2 | unassessed | revisit | [Retained record](#ledger) |

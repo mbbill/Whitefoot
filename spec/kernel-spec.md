@@ -4015,7 +4015,7 @@ Each keeps its own normalization — which proposition it forms from its source 
 The per-family route lists this rule replaces are retired, and a family paragraph below states its normalization and then submits.
 
 This rule is not widened.
-Widening `AUTO` would change the derivation's complexity class and destroy the promise that an author can determine from [ENT-6] alone whether a target is automatic, so a derivation outside these exact shapes requires the explicit [PRF-1] `proof_use` list rather than compiler probing.
+A derivation outside these exact automatic families requires the explicit [PRF-1] `proof_use` list; this rule admits no additional automatic candidates.
 Step 1 is the disposition's own hazard and is stated first because it is real: in this language an inconsistent published relation is not a wrong fact, it is every fact, which is why [CALL-6] carries a consistency check at the declaration that publishes one.
 
 The numeric relation domain attaches exactly four normalized families in this version.
