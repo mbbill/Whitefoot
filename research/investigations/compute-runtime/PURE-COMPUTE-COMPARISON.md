@@ -1,6 +1,6 @@
 # Historical and recovered pure-compute runtimes
 
-## Scope and provisional conclusion
+## Scope and conclusion
 
 This report compares the last main POSIX compute runtime before shared
 compute/I/O scheduling with the recovered research runtime. The owner requested
@@ -14,8 +14,11 @@ invented faster scheduling architecture. A sensible future base would preserve
 their common current-stack design, bring forward the necessary correctness
 repairs, and remove experimental controls from the production core. This is a
 recommendation for owner discussion, not authorization to start integration.
-The local paired measurements below show no large old/research separation.
-Native CI measurements are being collected; no measured winner is selected here.
+Native CI does not establish one version as the overall winner. Most coarse
+compute cells are close, but historical code has a meaningful fine-grained FIR
+advantage on Linux x86-64. macOS noise prevents firm ranking there. It would be
+incorrect to assume the research file is the faster version simply because it
+was used in earlier first-tier experiments.
 
 ## Exact comparison inputs
 
@@ -88,6 +91,94 @@ defines the bounded FIR/Mandelbrot matrix, common correctness repairs, build
 flags, worker validation and raw artifacts. Previous unified/recovered ratios
 are not substituted for this two-pure-runtime question.
 
+### Four-target native CI
+
+At `4ff01e889f0b18a13adc03d1568c47206edfcbea`, all four
+[pure-comparison jobs](https://github.com/mbbill/Whitefoot/actions/runs/34407502237)
+passed their build, output, participation and complete-matrix checks: 4,400
+processes in total. This is a result of these four jobs, not a claim that the
+whole workflow or canonical gate passed. Every artifact ZIP hash matched GitHub's
+digest, all 43 source/object/compiler/binary hashes per artifact matched, and
+recomputing each full summary from raw process data reproduced it exactly.
+
+| Target | Exposed CPU / compiler | Participants | Processes | Complete artifact |
+| --- | --- | --- | ---: | --- |
+| Linux x86-64 | EPYC 7763; 2 cores / 4 SMT threads; Clang 18.1.3 | 1, 2, 4 | 1,200 | [raw/source/binaries](https://github.com/mbbill/Whitefoot/actions/runs/34407502237/artifacts/10126018792) |
+| Linux AArch64 | Neoverse-N2; 4 cores; Clang 18.1.3 | 1, 2, 4 | 1,200 | [raw/source/binaries](https://github.com/mbbill/Whitefoot/actions/runs/34407502237/artifacts/10125985573) |
+| macOS AArch64 | Virtual M1; 3 CPUs; Clang 15.0.0 | 1, 2 | 800 | [raw/source/binaries](https://github.com/mbbill/Whitefoot/actions/runs/34407502237/artifacts/10126016588) |
+| macOS x86-64 | i7-8700B; 4 exposed CPUs; Clang 17.0.0 | 1, 2, 4 | 1,200 | [raw/source/binaries](https://github.com/mbbill/Whitefoot/actions/runs/34407502237/artifacts/10126140243) |
+
+The [complete 660-row process comparison table](pure-comparison-4ff01e88.tsv)
+retains every case, width and contrast, including losses. It reproduces the four
+artifact summaries with a target column added. Retain this measured result
+while the report cites it; it is evidence, not an implementation or acceptance
+threshold. Machines differ, so compare old/research within a row, not absolute
+speed between architectures.
+
+FIR warm core: medians of five paired process medians; 16 taps, tile 64.
+Above one favors research. Bounds are observed pair ranges, not confidence
+intervals. A/A is the byte-identical research replica divided by research.
+
+| Target; participants | Outputs | Old/research | Pair range | A/A range |
+| --- | ---: | ---: | --- | --- |
+| Linux x86-64; 4 | 4,096 | 1.0066 | 0.9848–1.0234 | 0.9983–1.0218 |
+| Linux x86-64; 4 | 65,536 | 0.9821 | 0.9485–1.0052 | 0.9913–1.0011 |
+| Linux AArch64; 4 | 4,096 | 0.9035 | 0.8911–1.1240 | 0.9444–1.1510 |
+| Linux AArch64; 4 | 65,536 | 0.9963 | 0.9513–1.0102 | 0.9575–1.0159 |
+| macOS AArch64; 2 | 4,096 | 0.9926 | 0.8088–1.1566 | 0.8359–1.2063 |
+| macOS AArch64; 2 | 65,536 | 1.0014 | 0.9632–1.5594 | 0.9848–1.2287 |
+| macOS x86-64; 4 | 4,096 | 0.8901 | 0.5211–1.2726 | 0.8669–1.8624 |
+| macOS x86-64; 4 | 65,536 | 1.1357 | 1.0002–2.0671 | 0.9988–1.5062 |
+
+There is a real exception to a blanket "same performance" conclusion. Linux
+x86-64 at 4,096 outputs, **tile 16**, four participants gives old/research core
+0.7928 [0.6749, 0.8575], process wall 0.8125 [0.7746, 0.8775], CPU 0.8113,
+RSS 0.9876, and 1,645 fewer process context switches (median paired delta).
+All five pairs favor old. A/A core ranges 0.8526–1.1190 and process wall
+0.9454–1.0558: the host is not perfectly stable, but the old advantage is large
+enough to preserve as an unresolved performance difference. No causal runtime
+change was selected from this single cohort.
+
+The same Linux machine's 4,096/tile-64 case has nearly equal core time but
+old/research process wall 0.9142 [0.8793, 0.9479] and CPU 0.8539. The batch
+interval, which excludes process launch, also favors old (0.9108); the warm
+full-call cycle ratio is 0.8714. Startup alone therefore does not explain it.
+Do not erase this result by reporting only the core interval. Other intervals
+include preparation, allocations/copies, cleanup and checking, and interact
+with background workers and executable layout.
+
+Read-only object inspection adds a useful constraint: in the Linux x86-64
+artifact, unrelocated instruction bytes for `wf__par_publish`, `wf__par_join`,
+`wf__par_release`, `wf__par_worker_main` and `wf__par_split_budget` match between
+old and research. Their positions and relocations in the final executables
+are not identical, and startup differs. Thus the FIR difference is not evidence
+that research introduced a different join/steal algorithm. Layout, startup
+state and interaction with the host remain possible causes, not proven ones.
+
+Mandelbrot whole-process examples at 65,536 points; 16 repetitions:
+
+| Target; participants | Shape | Old/research wall median [range] | CPU ratio | RSS ratio | Context-switch delta |
+| --- | --- | --- | ---: | ---: | ---: |
+| Linux x86-64; 4 | Plane | 1.0064 [0.9899, 1.0490] | 0.9978 | 1.0141 | +23 |
+| Linux x86-64; 4 | Interior-first | 1.0012 [0.9914, 1.0285] | 0.9991 | 0.9916 | +20 |
+| Linux AArch64; 4 | Plane | 0.9778 [0.9340, 1.0287] | 0.9988 | 0.9820 | -31 |
+| Linux AArch64; 4 | Interior-first | 1.0012 [0.9973, 1.0039] | 0.9990 | 1.0064 | +125 |
+| macOS AArch64; 2 | Plane | 1.0025 [0.6018, 1.3959] | 1.0012 | 1.0000 | +15 |
+| macOS x86-64; 4 | Plane | 1.0703 [0.8642, 1.2846] | 1.0088 | 1.0000 | -25 |
+
+Neither tails nor counter removal establish a consistent winner. For example,
+Linux x86-64 tile-64 core p95 old/research medians are 1.1242 and 1.0551 at the
+two sizes, despite core medians near one; Linux ARM gives 0.9952 and 0.9576.
+These are ratios of each process's nearest-rank warm p95, not population p95.
+The large case has only 64 warm calls/process, so its tail estimate is coarse.
+Counter-off core ratios on Linux x86-64 are 1.0148 and 0.9965. On macOS ARM,
+small FIR counter-off is 0.8457 [0.6430, 0.8935], but its A/A range is wide;
+that deserves confirmation before selecting a counter policy.
+
+The report stops at this bounded comparison. Resolving every noisy cell or
+explaining the Linux fine-grain exception is further qualification work, not
+permission to resume production integration before the owner reads this report.
+
 ### Local Apple Silicon diagnostic cohort
 
 The 2026-09-09 local cohort used Apple Clang 21.0.0, Darwin 25.6.0 arm64,
@@ -129,6 +220,16 @@ bytes. No row supports claiming a new scheduler architecture is much faster.
 Keep full per-cell and tail data in the artifacts; these representative rows
 are not a universal equivalence claim.
 
+Both candidates share a visible policy limit: every 4,096-point Mandelbrot
+case leaves the pool unstarted even when four participants are requested.
+For the all-interior shape, the research whole-command median is 58.273 ms at
+one participant and 58.066 ms at four. At 65,536 points the same shape does
+start the pool and scales from 885.273 ms to 239.308 ms. These commands perform
+16 repetitions. This is evidence to revisit the shared split-cost estimate
+after choosing the runtime base; it is not evidence that one candidate has a
+better deque. Similar old/research performance does not mean scheduling is
+already optimal.
+
 This panel can distinguish a large runtime regression or a counter cost. It
 cannot rank all dynamic runtimes, prove top-1 performance, or cover interactive
 bursts, irregular recursive application graphs, NUMA and larger machines.
@@ -143,6 +244,16 @@ supplies POSIX/LP64 only. Historical Windows uses address waits and different
 startup/configuration refusal behavior. Its Clang atomics path also requires
 the thief-ordering audit. Keeping that file verbatim would not establish the
 same correctness and performance across the five supported targets.
+
+Windows has useful implementation choices that are absent from both POSIX
+files: a per-lane wake generation and address comparison before sleeping,
+and per-lane identity counters compiled only for probes. Its production steal
+path has no global successful-steal increment. Conversely, it requires 2–64
+participants and treats partial worker startup and an oversized task frame as
+fatal host failures; POSIX can decline the pool or frame. These are substantive
+platform differences to reconcile, not merely pthread-to-Windows spelling.
+The wake-generation mechanism is a candidate to retain, not a measured claim
+that it beats condition variables on another OS.
 
 After an owner choice, the bounded engineering work is to maintain one common
 compute protocol and queue implementation with narrow platform wait/thread
