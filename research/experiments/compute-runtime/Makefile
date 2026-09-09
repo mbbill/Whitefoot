@@ -54,6 +54,10 @@ endef
 
 force:
 
+.PHONY: formal-screen
+formal-screen: $(WFC)
+	OUT="$(OUT)" WFC="$(WFC)" CC="$(CC)" sh formal-screen.sh
+
 build: $(OUT)/probe $(OUT)/probe-no-stats $(OUT)/probe-events
 
 $(OUT)/probe $(OUT)/probe-no-stats $(OUT)/probe-events: runtime.c runtime.h runtime_events.h probe.c $(FLOOR) force

@@ -23,10 +23,10 @@ wf_sched_stack *wf_sched_current_stack(wf_sched_core *core) {
 
 /* ------------------------------------------------------------ the lists */
 
-/* Both lists are under the one mutex (§5, §7.1 item 5). The mutex says who
- * may touch their words; when a stack may be offered is the switch's rule
- * below, and it is the reason every EMPTY push is made from the stack switched
- * to. */
+/* Both lists are mutated under the one mutex (§5, §7.1 item 5). An atomic
+ * ready-head hint avoids locking an empty list. The switch rule below decides
+ * when a stack may be offered: every EMPTY push is made from the stack
+ * switched to. */
 
 static wf_sched_stack *wf_sched_pool_pop(wf_sched_core *core) {
     wf_sched_stack *stack;
@@ -56,7 +56,7 @@ static void wf_sched_ready_push(wf_sched_core *core, wf_sched_stack *stack) {
     stack->next = NULL;
     was_empty = core->ready_head == NULL;
     if (was_empty) {
-        core->ready_head = stack;
+        wf_prim_store_p((void **)&core->ready_head, stack, WF_PRIM_RELEASE);
     } else {
         core->ready_tail->next = stack;
     }
@@ -69,10 +69,18 @@ static void wf_sched_ready_push(wf_sched_core *core, wf_sched_stack *stack) {
 
 static wf_sched_stack *wf_sched_ready_pop(wf_sched_core *core) {
     wf_sched_stack *stack;
+    /* Idle compute workers usually find no suspended stack ready. Avoid
+     * contending on the list mutex just to establish that absence. Every
+     * head update is atomic; the lock still owns list removal and links.
+     * A push racing this look advances the wake epoch on the empty-to-ready
+     * transition, so the idle window cannot sleep past that publication. */
+    if (wf_prim_load_p((void *const *)&core->ready_head, WF_PRIM_ACQUIRE) == NULL) {
+        return NULL;
+    }
     wf_prim_lock(WF_PRIM_SECTION_READY_POP);
     stack = core->ready_head;
     if (stack != NULL) {
-        core->ready_head = stack->next;
+        wf_prim_store_p((void **)&core->ready_head, stack->next, WF_PRIM_RELEASE);
         if (core->ready_head == NULL) {
             core->ready_tail = NULL;
         }

@@ -1,5 +1,6 @@
 # Pure-compute calibration. Correctness remains in canonical research-tests;
-# these elapsed times never select acceptance or turn into timing gate limits.
+# these elapsed times never select source-language acceptance. The formal
+# runtime screen flags performance gaps; it is not full goal qualification.
 name: compute-bench
 
 on:
@@ -7,6 +8,9 @@ on:
   push:
     paths:
       - 'research/experiments/compute-runtime/**'
+      - 'compiler/src/backend/sched/**'
+      - 'compiler/src/backend/wf_floor*'
+      - 'compiler/src/bin/whitefootc.rs'
       - '.github/workflows/compute-bench.yml'
 
 concurrency:
@@ -14,6 +18,52 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  formal-runtime-posix:
+    name: formal-runtime (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify native target and fetch compiler dependencies
+        run: |
+          rustup default stable
+          rustc -vV | grep -Fx 'host: ${{ matrix.target }}'
+          test -x /usr/bin/clang
+          cargo fetch --locked --manifest-path compiler/Cargo.toml
+      - name: Compare the shared runtime with fixed controls
+        env:
+          OUT: ${{ runner.temp }}/formal-runtime
+        run: make -C research/experiments/compute-runtime formal-screen OUT="$OUT"
+      - name: Publish per-cell wall-time screen
+        if: always()
+        run: |
+          {
+            echo '## ${{ matrix.target }}: initial FIR runtime screen'
+            echo 'Same WF object; normal CLI correctness also checked. Broader workloads, CPU acceptance, and CLI timing remain open.'
+            echo '```text'
+            cat "$RUNNER_TEMP/formal-runtime/formal-screen/summary.tsv"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: formal-runtime-${{ matrix.target }}
+          path: ${{ runner.temp }}/formal-runtime/formal-screen
+
   compute-linux:
     name: ${{ matrix.workload }}-linux
     strategy:

@@ -1,4 +1,91 @@
-# Compute runtime without I/O scheduling
+# Compute performance in the shared runtime
+
+## Current delivery and acceptance scope (2026-09-09)
+
+The owner requires delivery through ordinary `whitefootc --par source.wf -o
+program`, using the maintained shared runtime in `compiler/src/backend/sched/`.
+Refactor that implementation where its design or code quality obstructs compute
+performance. Do not choose a different runtime because a module contains I/O.
+The existing research runtime is a frozen comparison input during this work,
+not the implementation home; retire the duplicate once its comparison purpose
+is served. I/O optimization is deferred, but completion, mixed compute/I/O
+progress, frame lifetimes and exhaustion handling must remain correct. Changes
+to source execution semantics or public ABI require discussion with the owner.
+
+The target set is the compiler's closed set in
+[`target.rs`](../../../compiler/src/backend/target.rs), not the smaller set
+currently covered by compute measurements:
+
+| Target | Required evidence |
+| --- | --- |
+| `aarch64-apple-darwin` | Native CI correctness and performance |
+| `x86_64-apple-darwin` | Native CI correctness and performance |
+| `aarch64-unknown-linux-gnu` | Native CI correctness and performance |
+| `x86_64-unknown-linux-gnu` | Native CI correctness and performance |
+| `x86_64-pc-windows-msvc` | Native CI correctness and performance |
+
+Completion requires measured acceptance on **every row**. Cross-compilation,
+emulation, local M1 measurements, missing runners or correctness-only jobs do
+not substitute for a row. Keep an unavailable or noisy row unresolved.
+
+Before selecting runtime changes, use these experimental criteria:
+
+- Compare candidate and baseline on the same CI machine, alternating order,
+  with identical inputs, worker budgets, arithmetic, vectorization and build
+  options. Scheduling comparisons disable SIMD and LTO on both sides. Retain
+  exact revisions, sources, commands, binaries and raw samples.
+- First isolate runtime cost with the identical generated WF object, then
+  measure normal CLI executables with pure compute and compute before/after
+  light I/O. An experimental linker comparison alone does not deliver the goal.
+- Cover the distinct computations in [WORKLOADS.md](WORKLOADS.md), including
+  fine/coarse work, skew, nested composition and repeated/bursty work. Check
+  outputs with independent oracles. Retain startup, wall time, CPU cost,
+  memory and scaling separately; instrumented runs explain ordinary timings.
+- Start with five alternating process pairs per cell, keeping warm invocations
+  inside a process distinct from independent process samples. Investigate a
+  repeatable candidate/baseline wall-time ratio above 1.05 in any cell. Use
+  further independent cohorts to resolve noise rather than discard outliers
+  or average a loss away. An unresolved cell cannot pass acceptance.
+- Matching the research baseline requires each cell to be within 5% on wall
+  time, with repeatable CPU or memory increases above 5% separately explained
+  and resolved; a wall-time win cannot hide excessive spinning. This 5% band
+  is an initial engineering equivalence criterion, not a universal noise
+  estimate. Native references from [BASELINES.md](BASELINES.md) still test
+  whether the baseline itself leaves avoidable scheduling cost.
+- The old research runtime is POSIX-only. Windows must use its existing formal
+  runtime as the before-control and matched native references to qualify the
+  resulting scheduler; an untested port of the old research code would not be
+  a qualified baseline. Report this difference explicitly.
+
+The first bounded candidate gave current-stack compute helping priority over
+taking another stack at a compute join. A local M1 FIR screen with the same
+scalar WF object found no consistent improvement; at four workers the 64-output
+tile mean went from 40.9 to 47.4 microseconds, versus 15.1 for the recovered
+control. That change was reverted. This screen used five processes per cell,
+256 warm calls per process, 4,096 outputs and 16 taps; it is not CI acceptance.
+
+The current candidate avoids locking the ready list merely to observe that it
+is empty. List mutation stays locked, the head is read and written atomically,
+and the wake-epoch protocol is unchanged. The native smoke and all four
+scheduler enumeration configurations pass. Initial local timings are mixed,
+so performance selection remains open: do not describe this as an accepted
+optimization. A sampled long FIR run found substantial condition-variable
+waiting, yielding and wake-mutex contention; ready-list locking alone does not
+explain the gap. Sampling includes output verification and idle threads and
+does not measure compute-region CPU fractions.
+
+`make -C research/experiments/compute-runtime formal-screen OUT=<fresh-path>`
+reproduces the initial POSIX screen through the current compiler, with fixed
+formal-before revision `188088d41552d0d3bccf8368798dcc44702bf75c`, a checked
+unchanged recovered baseline, and the candidate formal runtime. CI covers the
+four POSIX targets; the existing Windows native mixed-runtime protocol remains
+in `io-bench.yml`. This screen is FIR-only, its normal CLI execution is a
+correctness check, and its threshold evaluates warm core wall time only. It
+cannot complete the broader workload, CPU, CLI timing or five-target goal.
+Linked-image layout can also change despite using identical WF object bytes;
+small differences require independent confirmation and attribution.
+
+## Earlier investigation and evidence
 
 The selected question is whether Whitefoot's proof-derived compute parallelism
 can approach the fastest equivalent native implementations while tasks execute

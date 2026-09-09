@@ -234,9 +234,11 @@ typedef struct wf_sched_thread {
 
 /* The core's one instance. The runtime has exactly one; the enumerator makes
  * one per execution. Every word two threads touch is reached through a
- * primitive of `prim.h`; the lists are touched under the one mutex. */
+ * primitive of `prim.h`; list links are protected by the one mutex, with an
+ * atomic ready-head hint for empty checks outside the lock. */
 typedef struct wf_sched_core {
-    /* Under the one mutex: the ready list and the stack free list. */
+    /* Mutated under the one mutex. Ready-head stores are atomic to pair with
+     * the unlocked empty hint; all list traversal remains under the lock. */
     wf_sched_stack *ready_head;
     wf_sched_stack *ready_tail;
     wf_sched_stack *free_head;

@@ -105,6 +105,7 @@ enum word_class {
     W_PHASE,
     W_IDLE,
     W_STATUS,
+    W_READY_HEAD,
     W_TOP,
     W_BOTTOM,
     W_FREE,
@@ -447,6 +448,7 @@ static void build_words(void) {
     }
     add_word(&wf_enum_core.idle, W_IDLE, 0, 0);
     add_word(&wf_enum_core.status_posted, W_STATUS, 0, 0);
+    add_word(&wf_enum_core.ready_head, W_READY_HEAD, 0, 0);
     for (index = 0; index < wf_enum_core.thread_count; index += 1u) {
         wf_sched_lane *lane = &wf_enum_core.lanes[index];
         add_word(&lane->top, W_TOP, index, 0);
@@ -770,6 +772,11 @@ static void note_phase(const word *w, unsigned old, unsigned new, enum op_kind k
 static void note_word_write(const word *w, unsigned long long old, unsigned long long value, enum op_kind kind) {
     unsigned me = current_index();
     switch (w->cls) {
+    case W_READY_HEAD:
+        if (lock_holder != (int)me || kind != OP_STORE) {
+            fail_execution("the ready head changed outside its list lock");
+        }
+        break;
     case W_SLOT_STATE:
     case W_IO_STATE:
         if (value == WF_SCHED_COMPLETING && old != WF_SCHED_PENDING) {

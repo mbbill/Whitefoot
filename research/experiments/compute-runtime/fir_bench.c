@@ -44,6 +44,7 @@ extern int wf__floor_run(int, char **);
 #endif
 #ifdef WF_SHARED_CONTROL
 extern int wf__sched_report(char *, size_t);
+extern unsigned wf__sched_pool_running(void);
 #endif
 
 static uint64_t entered_at;
@@ -267,9 +268,15 @@ int wf__main_body(int argc, char **argv) {
            timeval_us(after.ru_stime) - timeval_us(before.ru_stime), rss,
            after.ru_nvcsw - before.ru_nvcsw, after.ru_nivcsw - before.ru_nivcsw);
 #ifdef WF_COMPUTE_CONTROL
-    printf("# actual_lanes=%u steals=%lu\n", wf_compute_worker_count(), wf__par_grants());
+    printf("# actual_lanes=%u", parallel ? wf_compute_worker_count() : 1u);
+#if WF_COMPUTE_STATS
+    printf(" steals=%lu\n", wf__par_grants());
+#else
+    puts(" steals=disabled");
+#endif
 #endif
 #ifdef WF_SHARED_CONTROL
+    printf("# actual_lanes=%u\n", wf__sched_pool_running() + 1u);
     char report[1024];
     if (wf__sched_report(report, sizeof(report))) printf("# %s\n", report);
     else puts("# shared_pool_report=not_initialized");
