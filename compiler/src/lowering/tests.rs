@@ -79,7 +79,7 @@ fn with_ir<ResultValue>(
 
 fn with_ir_mode<ResultValue>(
     source: &[u8],
-    overlap: OverlapLowering,
+    overlap: impl Into<crate::LoweringOptions>,
     run: impl for<'classified, 'lexed, 'source> FnOnce(
         &IrProgram<'classified, 'lexed, 'source>,
     ) -> ResultValue,
@@ -1587,9 +1587,36 @@ fn probe_needle_counts(program: &IrProgram<'_, '_, '_>) -> Vec<usize> {
 
 #[test]
 fn a_recognized_byte_walk_gains_one_wide_probe_with_its_needles() {
-    with_ir(&byte_walk_source(NEUTRAL_MIDDLE, "1_u64"), |program| {
-        assert_eq!(probe_needle_counts(program), vec![2]);
-    });
+    for vectorize in [true, false] {
+        with_ir_mode(
+            &byte_walk_source(NEUTRAL_MIDDLE, "1_u64"),
+            crate::LoweringOptions {
+                overlap: OverlapLowering::Off,
+                vectorize,
+            },
+            |program| {
+                assert_eq!(
+                    probe_needle_counts(program),
+                    if vectorize { vec![2] } else { vec![] }
+                );
+                assert!(
+                    program
+                        .functions()
+                        .iter()
+                        .flat_map(IrFunction::blocks)
+                        .flat_map(IrBlock::instructions)
+                        .any(|instruction| matches!(
+                            instruction,
+                            IrInstruction::Define {
+                                operation: IrOperation::BufferIndex { .. },
+                                ..
+                            }
+                        )),
+                    "the ordinary scalar body must remain in either lowering"
+                );
+            },
+        );
+    }
 }
 
 #[test]

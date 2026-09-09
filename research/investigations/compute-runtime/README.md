@@ -843,8 +843,9 @@ until the inner stack is SUSPENDED, then verifies one inline execution, one
 park/resume, the result and a repeated join. It passes, as do the six Rust
 scheduler tests, bridge ThreadSanitizer and Windows GNU core cross-compilation.
 These focused checks preceded the waiter repair; the combined-tree completion
-checks are recorded above. Native CI and the candidate's full canonical check
-remain unverified. Selection requires application and CPU improvement without
+checks are recorded above. Exact 98c283cb subsequently passes local canonical
+`make check` and all twelve gate CI jobs; its native performance results below
+do not qualify the candidate. Selection requires application and CPU improvement without
 losing these ownership and progress properties, not merely fewer instructions.
 
 Two local FIR cohorts each complete 90 fresh processes: one/two/four workers,
@@ -903,6 +904,87 @@ The combined-tree `whitefootc` binary is rebuilt through Cargo's gate profile.
 Its normal `--par ... -o ...` FIR and quadrature executables pass at one/four
 workers. This confirms current-source CLI integration and correctness, not
 ordinary CLI performance qualification.
+
+### Native result for 98c283cb: not qualified
+
+The [five-target run](https://github.com/mbbill/Whitefoot/actions/runs/34373190141)
+completes every native FIR screen and the 2,400-process quadrature panel.
+All five FIR screens fail performance acceptance. Ordinary CLI FIR correctness,
+native deque checks, the [gate](https://github.com/mbbill/Whitefoot/actions/runs/34373190119),
+[I/O host checks](https://github.com/mbbill/Whitefoot/actions/runs/34373190112)
+and [I/O benchmark checks](https://github.com/mbbill/Whitefoot/actions/runs/34373190123)
+pass. The prior intermittent Rayon sanitizer report does not recur in this gate;
+that is not a demonstrated lifecycle fix.
+
+Selected long-batch candidate / f2d9d0fa paired wall medians follow. Ratios below
+one favor the candidate. Each cell retains five independent processes per image;
+the two workloads are coarse 4,096 / tile1024 and fine 65,536 / tile16.
+
+| Native host | Coarse, 2 workers | Coarse, 4 workers | Fine, 2 workers | Fine, 4 workers | Long A/A cells outside band |
+|---|---:|---:|---:|---:|---:|
+| Linux x64 | 1.1646 | 1.2683 | 0.9562 | 0.9848 | 3 / 24 |
+| Linux ARM64 | 0.9997 | 0.9968 | 0.9783 | 0.9770 | 0 / 24 |
+| macOS ARM64 | 0.9292 | Not run: two CPUs | 1.0867 | Not run: two CPUs | 7 / 16 |
+| macOS x64 | 0.9360 | 0.9909 | 0.9870 | 0.9501 | 4 / 24 |
+| Windows x64 MSVC | 0.9646 | 1.1174 | 0.9632 | 1.0206 | 0 / 24 |
+
+Linux x64 coarse work regresses in every pair: two-worker range
+1.1516-1.2769 and four-worker 1.1624-1.2994, with corresponding A/A medians
+0.9867 and 1.0021. Windows four-worker coarse work also needs investigation
+(range 0.8992-1.1197). Mac gains or losses cannot be selected through the
+substantial identical-image variation. Linux ARM64 avoids the new coarse
+regression but remains 1.6038 times the recovered runtime at four workers;
+Linux x64 is 1.8132 times that control. Matching the preceding maintained
+revision is not matching the recovered baseline.
+
+Quadrature still loses against the recovered runtime. Center-peak leaf/four
+wall and CPU medians are 1.3692 and 1.5054; depth-cap leaf/four is 1.3993 and
+1.4460. These ratios are from this host's own controls, not a cross-run comparison
+of absolute times against f2's different CI host.
+
+The Linux x64 [artifact](https://github.com/mbbill/Whitefoot/actions/runs/34373190141/artifacts/10113055288)
+has ZIP SHA256 `3450c6d70a9462f99a9fd1306bed5117f305fdd10556ce3dec3b8fbf53038848`.
+Its disassembly keeps the join prefix and stack-frame size unchanged, removes
+the owner's generic completion tail call and shrinks join by 17 bytes. Later
+text, including both FIR computation functions, moves by 16 bytes. The separate
+four-worker coarse diagnostic reports candidate/previous inline counts
+3,976/2,201, steals 8,315/10,090 and parks 15/28; both execute 12,291 tasks.
+These instrumented, single-process counts are not paired timing evidence and
+do not establish why the ordinary five-process cohort regresses. Fewer parks
+alone does not explain or excuse the loss.
+
+The next Linux-only diagnostic places join after the other executable sections
+through a declaration and linker script, compiling the unchanged maintained
+sources. Before timing, it requires identical addresses for every other text
+symbol and a byte-identical candidate replica. Its separate 90-process cohort
+covers one/two/four workers, the coarse/fine cells above and five alternating
+passes. Symbol sizes, ELF maps and disassembly preserve possible instruction or
+data-placement differences: matching function starts alone does not eliminate
+all binary-layout effects. Ordinary placement remains measured with unchanged
+acceptance criteria. This control tests the following-function address
+explanation; it does not change the production
+linker or repair the regression. Remove it once that causal question is resolved.
+
+### Scalar builds through the ordinary compiler
+
+`whitefootc --no-vectorize` now supplies the missing general scalar build option
+in the maintained compiler. It suppresses explicit WF byte probes after semantic
+checking; normal native linking and stack-ledger generation also pass Clang's
+loop/SLP disabling flags. LLVM-only consumers must pass those host flags when
+they subsequently compile the IR. Default optimization remains `-O2`, and the
+default vectorization setting remains enabled. This is not a promise that
+platform library internals contain no SIMD.
+
+The option passes all-target Cargo checking, Clippy with warnings denied, and
+four focused tests: scalar lowering retains the ordinary loop, invalid proofs
+retain their diagnostics, CLI mode/ledger selection is independent, and the
+actual native CLI executes a boundary-sensitive byte walk with both ledgers
+enabled. Scoped independent review found one misleading LLVM-only documentation
+sentence, now corrected; no remaining compiler-option finding. New exact-tree
+canonical and cross-platform execution remain pending. FIR's five native CI
+commands now request this option; their host-driven attribution objects stay
+at the separately recorded `-O3` setting. Full ordinary CLI timing and broader
+native workload coverage remain open.
 
 ## Earlier investigation and evidence
 

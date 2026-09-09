@@ -103,15 +103,15 @@ printf '%s\n' "$CC $flags; recovered additionally -DWF_COMPUTE_STATS=0 -DWF_COMP
     'idle4096: current runtime sources with only -DWF_SCHED_IDLE_SPIN_ROUNDS=4096u changed; default remains 256' \
     'diagnostics: separate longer batches; candidate/previous/idle4096 use WF_SCHED_REPORT=1, before uses 0; not pooled into wall samples' \
     'wall samples: 4096 warm calls for n4096, 512 for n65536; first64 retained as a separate short view of each process, not independent extra samples' \
-    'WF: --par defaults; same optimized WF object in every attribution image' \
-    'CLI: normal --par link, correctness only; end-to-end timing remains open' > "$out/flags.txt"
+    'WF: --par --no-vectorize; same optimized WF object in every attribution image' \
+    'CLI: normal --par --no-vectorize link at -O2, correctness only; end-to-end timing remains open' > "$out/flags.txt"
 if test -n "$exe"; then
     printf '%s\n' 'Windows before: old scheduler/floor plus current host/completion overlay. Previous: its own frozen scheduler/floor/host/completion sources. Candidate: all current sources. Every set uses matching private headers.' \
         'Windows host-wait counts: batch deltas from each matching bridge, including verification; announcements are not guaranteed kernel sleeps, signals are not awakened-thread counts.' \
         'Windows diagnostic before: WF_SCHED_REPORT=0; historical scheduler counters are never read live.' >> "$out/flags.txt"
 fi
-"$WFC" --par --emit-llvm fir.wf fir_direct.wf -o "$out/module.ll"
-"$WFC" --par fir.wf fir_direct.wf -o "$out/command$exe"
+"$WFC" --par --no-vectorize --emit-llvm fir.wf fir_direct.wf -o "$out/module.ll"
+"$WFC" --par --no-vectorize fir.wf fir_direct.wf -o "$out/command$exe"
 sed -e 's/@main(/@wf_research_fir_command_main(/g' \
     -e 's/@wmain(/@wf_research_fir_windows_command_main(/g' \
     -e 's/@wf__main_body(/@wf_research_fir_command_body(/g' "$out/module.ll" > "$out/host.ll"
@@ -206,7 +206,7 @@ done
 # Process means, not individual warm calls, are the independent samples.
 # The short view overlaps the long view; it is never pooled as extra evidence.
 summarize() {
-awk -F '\t' -v references="$references" '
+awk -F '\t' -v references="${4:-$references}" -v subject="${3:-candidate}" '
     BEGIN {reference_count=split(references,reference," ")}
     NR==1 {next}
     {cell=$2 FS $3 FS $4; cells[cell]=1; value[$1 FS cell FS $5]=$6}
@@ -215,14 +215,15 @@ awk -F '\t' -v references="$references" '
         for(cell in cells) for(r=1;r<=reference_count;r++) {
             ref=reference[r]
             for(p=0;p<5;p++) {
-                a=value["candidate" FS cell FS p]; b=value[ref FS cell FS p]
+                a=value[subject FS cell FS p]; b=value[ref FS cell FS p]
                 if(a<=0||b<=0)exit 2
                 ratio[p]=a/b
             }
             for(i=0;i<5;i++)for(j=i+1;j<5;j++)if(ratio[j]<ratio[i]) {
                 tmp=ratio[i];ratio[i]=ratio[j];ratio[j]=tmp
             }
-            within=ratio[2]<=1.05 && (ref!="replica" || ratio[2]>=1/1.05)
+            identical=(ref=="replica" || ref=="layout-replica")
+            within=ratio[2]<=1.05 && (!identical || ratio[2]>=1/1.05)
             verdict=within?"within-band":"investigate"
             if(verdict=="investigate")failed=1
             printf "%s\t%s\t%.4f\t%.4f\t%.4f\t%s\n",cell,ref,ratio[2],ratio[0],ratio[4],verdict
@@ -274,6 +275,80 @@ for width in $widths; do
         done
     done
 done
+if test "$host" = Linux; then
+    # A smaller causal control for the measured x64 coarse-work regression.
+    # A declaration changes placement only, never the maintained runtime body.
+    # Keeping join in a separate ELF section prevents its size from shifting
+    # later computation functions. Verify every other text address before use.
+    mkdir "$out/layout"
+    cat > "$out/layout/join-section.h" <<'EOF'
+struct wf_sched_core;
+struct wf_sched_record;
+__attribute__((section(".wf_join")))
+void wf_sched_join(struct wf_sched_core *, struct wf_sched_record *, int);
+EOF
+    printf '%s\n' 'SECTIONS { .wf_join : { *(.wf_join) } } INSERT AFTER .fini;' > "$out/layout/join.ld"
+    for mode in previous candidate; do
+        runtime="$root/compiler/src/backend"
+        if test "$mode" = previous; then runtime="$out/previous-source/compiler/src/backend"; fi
+        # shellcheck disable=SC2086
+        "$CC" $flags -include "$out/layout/join-section.h" \
+            -c "$runtime/sched/core.c" -o "$out/layout/$mode-core.o"
+        # Both images use the same driver label to preserve string layout too.
+        # shellcheck disable=SC2086
+        "$CC" $flags -DWF_SHARED_CONTROL '-DFIR_RUNTIME="layout"' fir_bench.c \
+            "$runtime/$floor" "$out/layout/$mode-core.o" \
+            "$runtime/sched/$leaf" "$runtime/sched/entry.c" \
+            "$out/wf.o" "$out/native.o" "-Wl,-T,$out/layout/join.ld" $libraries -o "$out/layout-$mode"
+        nm -n --defined-only "$out/layout-$mode" > "$out/layout/$mode-symbols.txt"
+        nm -n -S --defined-only "$out/layout-$mode" > "$out/layout/$mode-symbol-sizes.txt"
+        readelf -W -S -l "$out/layout-$mode" > "$out/layout/$mode-sections.txt"
+        objdump -d "$out/layout-$mode" > "$out/layout/$mode-disassembly.txt"
+        awk '$2 ~ /^[tT]$/ && $3!="wf_sched_join" {print $1,$3}' \
+            "$out/layout/$mode-symbols.txt" > "$out/layout/$mode-other-text.txt"
+        test -s "$out/layout/$mode-other-text.txt"
+    done
+    cmp "$out/layout/previous-other-text.txt" "$out/layout/candidate-other-text.txt"
+    cp "$out/layout-candidate" "$out/layout-replica"
+    cmp "$out/layout-candidate" "$out/layout-replica"
+    printf '%s\n' 'Linux layout cohort: unchanged core sources, join placed after .fini; all non-join text symbol addresses match. Instruction/data equality is not assumed: size-bearing symbols, ELF maps and disassembly are retained. Smaller separate cohort, never pooled with ordinary samples.' >> "$out/flags.txt"
+    printf 'mode\tworkers\tn\ttile\tpass\tcore_mean_ns\tcycle_mean_ns\n' > "$out/layout-means.tsv"
+    cp "$out/layout-means.tsv" "$out/layout-short-means.tsv"
+    for width in $widths; do
+        for n in 4096 65536; do
+            tile=16
+            calls=512
+            if test "$n" = 4096; then tile=1024; calls=4096; fi
+            pass=0
+            while test "$pass" -lt 5; do
+                order='previous candidate replica'
+                if test "$((pass % 2))" = 1; then order='replica candidate previous'; fi
+                for mode in $order; do
+                    mode="layout-$mode"
+                    log="$out/raw/$mode-w$width-n$n-t$tile-p$pass.tsv"
+                    WF_WORKERS="$width" "$out/$mode" wf 16 "$n" "$tile" "$calls" 92821 "$pass" > "$log"
+                    awk -F '\t' -v mode="$mode" -v w="$width" -v n="$n" -v t="$tile" -v p="$pass" \
+                        -v expected="$calls" -v short_file="$out/layout-short-means.tsv" '
+                        /^# actual_lanes=/ {split($0,a,"="); lanes++; if(a[2]!=w)bad=1}
+                        $10=="warm" {
+                            core+=$11;cycle+=$12;calls++
+                            if(calls<=64){short_core+=$11;short_cycle+=$12}
+                        }
+                        END {
+                            if(bad || lanes!=1 || calls!=expected)exit 1
+                            printf "%s\t%s\t%s\t%s\t%s\t%.3f\t%.3f\n",mode,w,n,t,p,core/calls,cycle/calls
+                            printf "%s\t%s\t%s\t%s\t%s\t%.3f\t%.3f\n",mode,w,n,t,p,short_core/64,short_cycle/64 >> short_file
+                        }' "$log" >> "$out/layout-means.tsv"
+                done
+                pass=$((pass + 1))
+            done
+        done
+    done
+    summarize "$out/layout-means.tsv" "$out/layout-summary.tsv" layout-candidate 'layout-previous layout-replica' || result=$?
+    summarize "$out/layout-short-means.tsv" "$out/layout-short-summary.tsv" layout-candidate 'layout-previous layout-replica' || result=$?
+    cat "$out/layout-summary.tsv"
+    cat "$out/layout-short-summary.tsv"
+fi
 if test -n "$exe"; then
     find "$out" -type f ! -name manifest.sha256 -exec sha256sum {} + > "$out/manifest.sha256"
 else

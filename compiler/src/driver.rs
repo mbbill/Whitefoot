@@ -26,12 +26,21 @@ use crate::{
 ///
 /// One definition serves the driver executable and every test that links an
 /// emitted module, so no path can silently link an unoptimized binary while
-/// another links an optimized one. There is no writer-facing switch: the
-/// optimization level cannot change which programs are accepted, discharge a
-/// static source obligation, or insert a runtime proof fallback,
-/// so no writer decision exists and the default shape is the only shape. The
-/// level is provisional and may move once a measurement asks for it.
+/// another links an optimized one. The provisional level is fixed; the
+/// independent vectorization control selects a scalar comparison build.
+/// Neither choice changes acceptance, discharges a static source obligation,
+/// or inserts a runtime proof fallback.
 pub const HOST_OPTIMIZATION_ARGUMENTS: &[&str] = &["-O2"];
+
+/// Matching host settings for executable linking and stack-ledger assembly.
+pub fn host_optimization_arguments(vectorize: bool) -> impl Iterator<Item = &'static str> {
+    let scalar: &[&str] = if vectorize {
+        &[]
+    } else {
+        &["-fno-vectorize", "-fno-slp-vectorize"]
+    };
+    HOST_OPTIMIZATION_ARGUMENTS.iter().chain(scalar).copied()
+}
 
 /// The host libraries a link of an emitted module names, for the same
 /// one-definition reason.
@@ -283,7 +292,7 @@ pub fn compile(
 pub fn compile_with_overlap(
     inputs: &[SourceInput<'_>],
     limits: CompilerLimits,
-    overlap: crate::OverlapLowering,
+    overlap: impl Into<crate::LoweringOptions>,
 ) -> Result<String, CompilationFailure> {
     compile_reporting(inputs, limits, crate::Inventory::ACTIVE, overlap)
         .map(|reported| reported.module)
@@ -302,7 +311,7 @@ pub fn compile_with_overlap(
 pub fn compile_with_permission_ledger(
     inputs: &[SourceInput<'_>],
     limits: CompilerLimits,
-    overlap: crate::OverlapLowering,
+    overlap: impl Into<crate::LoweringOptions>,
 ) -> Result<(String, Vec<String>), CompilationFailure> {
     compile_reporting(inputs, limits, crate::Inventory::ACTIVE, overlap)
         .map(|reported| (reported.module, reported.ledger))
@@ -324,7 +333,7 @@ pub fn compile_with_permission_ledger(
 pub fn compile_with_io_notices(
     inputs: &[SourceInput<'_>],
     limits: CompilerLimits,
-    overlap: crate::OverlapLowering,
+    overlap: impl Into<crate::LoweringOptions>,
 ) -> Result<(String, Vec<String>), CompilationFailure> {
     compile_reporting(inputs, limits, crate::Inventory::ACTIVE, overlap)
         .map(|reported| (reported.module, reported.notices))
@@ -371,7 +380,7 @@ fn compile_reporting(
     inputs: &[SourceInput<'_>],
     limits: CompilerLimits,
     inventory: crate::Inventory,
-    overlap: crate::OverlapLowering,
+    overlap: impl Into<crate::LoweringOptions>,
 ) -> Result<Reported, CompilationFailure> {
     let bundle = SourceBundle::with_limits(inputs, limits.source).map_err(|failure| {
         CompilationFailure::new(
@@ -871,14 +880,17 @@ mod tests {
                 "INV-1",
             ),
         ] {
-            let failure = compile(
-                &[SourceInput::new(name, source)],
-                CompilerLimits::default(),
-            )
-            .expect_err("the focused invalid proof form must reject");
-            assert_eq!(failure.stage(), stage, "{name}: {failure}");
-            assert_eq!(failure.kind(), CompilationFailureKind::Source);
-            assert_eq!(failure.rule_id(), Some(rule), "{name}: {failure}");
+            for vectorize in [true, false] {
+                let failure = super::compile_with_overlap(
+                    &[SourceInput::new(name, source)],
+                    CompilerLimits::default(),
+                    crate::LoweringOptions { vectorize, ..crate::LoweringOptions::default() },
+                )
+                .expect_err("the focused invalid proof form must reject in either codegen mode");
+                assert_eq!(failure.stage(), stage, "{name}: {failure}");
+                assert_eq!(failure.kind(), CompilationFailureKind::Source);
+                assert_eq!(failure.rule_id(), Some(rule), "{name}: {failure}");
+            }
         }
     }
 

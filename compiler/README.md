@@ -187,6 +187,15 @@ reductions. A denied permission leaves the program sequential; it does not
 change source acceptance. Proof-only statements introduce no runtime branch,
 lock, dependency, scheduling event, or task edge.
 
+`--no-vectorize` disables WF's explicit wide byte probes. Native compilation
+and stack-ledger generation also disable the host compiler's loop/SLP
+vectorizers. With `--emit-llvm`, downstream consumers must supply matching
+`-fno-vectorize -fno-slp-vectorize` flags themselves. The normal scalar lowering
+remains; acceptance and proof obligations do not change. This supplies a scalar
+comparison build at the ordinary `-O2` level. It does not promise that platform
+libraries or memory operations contain no SIMD instructions. Vectorization
+remains enabled by default.
+
 Normal compilation uses the maintained shared scheduler in
 `src/backend/sched/`. Compute joins run an owned newest task inline and allow
 bounded current-stack helping before taking another stack; READY continuations

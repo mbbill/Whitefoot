@@ -8,11 +8,11 @@ use whitefoot::{
     Architecture, COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
-    COMPLETION_WINDOWS_IOCP_HEADER, CompilerLimits, FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS,
+    COMPLETION_WINDOWS_IOCP_HEADER, CompilerLimits, FLOOR_STACK_BYTES, LoweringOptions,
     OverlapLowering, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
     SCHED_PRIM_HEADER, SCHED_SWITCH_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER,
-    compile_with_io_notices, compile_with_permission_ledger, module_requires_completion_runtime,
-    module_requires_parallel_runtime, stack_ledger,
+    compile_with_io_notices, compile_with_permission_ledger, host_optimization_arguments,
+    module_requires_completion_runtime, module_requires_parallel_runtime, stack_ledger,
 };
 
 // `HOST_LINK_LIBRARIES` is here rather than above because its one reader is
@@ -32,7 +32,7 @@ use whitefoot::{
 };
 
 const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N|off] [--par-sequential-refusal] [--par-recursive-frontier N] [--no-overlap] [--par-ledger] \
-[--stack-ledger] [-o OUTPUT] SOURCE...";
+[--stack-ledger] [--no-vectorize] [-o OUTPUT] SOURCE...";
 
 // The compiler walks typed source and lowering trees recursively. Windows
 // gives the process's primary thread a 1 MiB stack by default, which is small
@@ -240,7 +240,7 @@ fn run() -> Result<(), String> {
         .zip(&bytes)
         .map(|((logical, display), bytes)| SourceInput::from_host_path(logical, display, bytes))
         .collect();
-    let overlap = options.overlap();
+    let lowering = options.lowering();
     let module = if options.par_ledger {
         // The permission ledger is developer output. It goes to stdout, which
         // `Options::parse` has already kept clear of the emitted module, and
@@ -250,7 +250,7 @@ fn run() -> Result<(), String> {
         // was handed — exist only where actualization was asked for, so `--par`
         // adds lines to this ledger rather than changing any of them.
         let (module, ledger) =
-            compile_with_permission_ledger(&inputs, CompilerLimits::default(), overlap)
+            compile_with_permission_ledger(&inputs, CompilerLimits::default(), lowering)
                 .map_err(|failure| failure.to_string())?;
         for line in &ledger {
             println!("{line}");
@@ -265,7 +265,7 @@ fn run() -> Result<(), String> {
         // all. `--par-ledger` above already prints these lines inside the full
         // report, so this branch is the only one that repeats them.
         let (module, notices) =
-            compile_with_io_notices(&inputs, CompilerLimits::default(), overlap)
+            compile_with_io_notices(&inputs, CompilerLimits::default(), lowering)
                 .map_err(|failure| failure.to_string())?;
         for line in io_notice_report(options.no_overlap, &notices) {
             eprintln!("{line}");
@@ -273,7 +273,7 @@ fn run() -> Result<(), String> {
         module
     };
     if options.stack_ledger {
-        for line in print_stack_ledger(&module)? {
+        for line in print_stack_ledger(&module, lowering.vectorize)? {
             println!("{line}");
         }
     }
@@ -289,6 +289,7 @@ fn run() -> Result<(), String> {
     compile_executable(
         &module,
         options.output.as_deref().unwrap_or(Path::new("a.out")),
+        lowering.vectorize,
     )
 }
 
@@ -335,7 +336,7 @@ fn io_notice_report(no_overlap: bool, notices: &[String]) -> Vec<String> {
 /// link does not produce. Both come out of the one compilation below, into a
 /// directory this function owns and removes, and none of it runs unless the
 /// ledger was asked for.
-fn print_stack_ledger(llvm: &str) -> Result<Vec<String>, String> {
+fn print_stack_ledger(llvm: &str, vectorize: bool) -> Result<Vec<String>, String> {
     let directory = std::env::temp_dir().join(format!("whitefootc-ledger-{}", std::process::id()));
     std::fs::create_dir_all(&directory)
         .map_err(|error| format!("cannot create the ledger directory: {error}"))?;
@@ -353,7 +354,7 @@ fn print_stack_ledger(llvm: &str) -> Result<Vec<String>, String> {
             .arg(&assembly)
             .arg("-fstack-usage")
             .arg("-Wno-override-module")
-            .args(HOST_OPTIMIZATION_ARGUMENTS)
+            .args(host_optimization_arguments(vectorize))
             .status()
             .map_err(|error| format!("cannot start {}: {error}", clang_executable()))?;
         if !status.success() {
@@ -412,7 +413,7 @@ fn runtime_units(core: bool, completion: bool) -> (Vec<RuntimeUnit>, Vec<&'stati
 /// Every one of those bytes travels inside this executable, so no installed
 /// path, no build directory, and no environment decides which runtime a
 /// program gets.
-fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
+fn compile_executable(llvm: &str, output: &Path, vectorize: bool) -> Result<(), String> {
     let completion_required = module_requires_completion_runtime(llvm);
     let core_required = module_requires_parallel_runtime(llvm) || completion_required;
     let directory = std::env::temp_dir().join(format!("whitefootc-{}", std::process::id()));
@@ -453,19 +454,19 @@ fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
                 .arg("c")
                 .arg(directory.join(relative_path));
         }
-        link(&mut command, llvm, output)
+        link(&mut command, llvm, output, vectorize)
     })();
     let _ = std::fs::remove_dir_all(&directory);
     result
 }
 
-fn link(command: &mut Command, llvm: &str, output: &Path) -> Result<(), String> {
+fn link(command: &mut Command, llvm: &str, output: &Path, vectorize: bool) -> Result<(), String> {
     let mut child = command
         .arg("-x")
         .arg("ir")
         .arg("-")
         .arg("-Wno-override-module")
-        .args(HOST_OPTIMIZATION_ARGUMENTS)
+        .args(host_optimization_arguments(vectorize))
         .args(TARGET_LINK_LIBRARIES)
         .arg("-o")
         .arg(output)
@@ -531,6 +532,8 @@ fn portable_logical_path(path: &str) -> bool {
 
 struct Options {
     emit_llvm: bool,
+    /// Disable explicit WF vector probes and host automatic vectorization.
+    no_vectorize: bool,
     /// Actualize the permission judgment's eligible groups on worker lanes.
     ///
     /// Compute outlining is off by default; compiler-owned completion I/O
@@ -613,6 +616,7 @@ struct Options {
 impl Options {
     fn parse(arguments: &[String]) -> Result<Self, String> {
         let mut emit_llvm = false;
+        let mut no_vectorize = false;
         let mut par = false;
         let mut scalar_leaf_limit = None;
         let mut sequential_refusal = false;
@@ -626,6 +630,7 @@ impl Options {
         while cursor < arguments.len() {
             match arguments[cursor].as_str() {
                 "--emit-llvm" => emit_llvm = true,
+                "--no-vectorize" => no_vectorize = true,
                 "--par" => par = true,
                 "--par-scalar-leaf-limit" => {
                     cursor += 1;
@@ -724,6 +729,7 @@ impl Options {
         }
         Ok(Self {
             emit_llvm,
+            no_vectorize,
             par,
             scalar_leaf_limit: if par {
                 scalar_leaf_limit.unwrap_or(Some(16))
@@ -738,6 +744,13 @@ impl Options {
             output,
             sources,
         })
+    }
+
+    fn lowering(&self) -> LoweringOptions {
+        LoweringOptions {
+            overlap: self.overlap(),
+            vectorize: !self.no_vectorize,
+        }
     }
 
     /// The lowering this invocation compiles: the shipped completion build
@@ -976,6 +989,34 @@ mod tests {
 
         let options = parse(&["--par", "--stack-ledger", "value.wf"]).expect("both are accepted");
         assert!(options.stack_ledger && options.par);
+    }
+
+    #[test]
+    fn scalar_codegen_is_independent_of_overlap_and_ledger_selection() {
+        for switches in [
+            vec![],
+            vec!["--par"],
+            vec!["--no-overlap"],
+            vec!["--par-ledger"],
+            vec!["--stack-ledger"],
+        ] {
+            let mut arguments = switches;
+            arguments.push("source.wf");
+            let default = parse(&arguments).expect("default codegen");
+            assert!(default.lowering().vectorize);
+            arguments.insert(0, "--no-vectorize");
+            let scalar = parse(&arguments).expect("scalar codegen");
+            assert!(!scalar.lowering().vectorize);
+            assert_eq!(scalar.overlap(), default.overlap());
+        }
+        assert_eq!(
+            whitefoot::host_optimization_arguments(true).collect::<Vec<_>>(),
+            ["-O2"]
+        );
+        assert_eq!(
+            whitefoot::host_optimization_arguments(false).collect::<Vec<_>>(),
+            ["-O2", "-fno-vectorize", "-fno-slp-vectorize"]
+        );
     }
 
     /// Either ledger may not be interleaved into a module that is itself going

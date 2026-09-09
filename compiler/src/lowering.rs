@@ -1566,6 +1566,30 @@ pub enum OverlapLowering {
     },
 }
 
+/// Independent code-generation choices applied after semantic checking.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LoweringOptions {
+    /// Which proved overlap permissions may be actualized.
+    pub overlap: OverlapLowering,
+    /// Permit compiler-generated vector operations, including wide byte probes.
+    pub vectorize: bool,
+}
+
+impl Default for LoweringOptions {
+    fn default() -> Self {
+        OverlapLowering::default().into()
+    }
+}
+
+impl From<OverlapLowering> for LoweringOptions {
+    fn from(overlap: OverlapLowering) -> Self {
+        Self {
+            overlap,
+            vectorize: true,
+        }
+    }
+}
+
 /// One group of pure sibling calls whose evaluations may be overlapped
 /// [PAR-1 candidate].
 ///

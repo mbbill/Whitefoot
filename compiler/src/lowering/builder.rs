@@ -28,8 +28,9 @@ use storage::collect_addressed_bindings;
 
 pub fn lower_checked<'classified, 'lexed, 'source>(
     checked: CheckedProgram<'classified, 'lexed, 'source>,
-    overlap: OverlapLowering,
+    options: impl Into<LoweringOptions>,
 ) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
+    let LoweringOptions { overlap, vectorize } = options.into();
     let sequential_compute_refusal = matches!(
         overlap,
         OverlapLowering::OnWithSequentialRefusal { .. }
@@ -123,6 +124,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     let synthesis = SynthesisCell::new(Synthesis::new(source_functions));
     let context = LoweringContext {
         erasure,
+        vectorize,
         nominals: &nominals,
         constants: &constants,
         function_results: &function_results,
@@ -170,6 +172,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
 /// growing an argument list at every level.
 #[derive(Clone, Copy)]
 struct LoweringContext<'program> {
+    vectorize: bool,
     /// [S20, PROV-1] each nominal's lowered identity, with its region axis
     /// erased.
     erasure: &'program [IrNominalId],
@@ -585,6 +588,7 @@ struct IrBuilder<'program> {
     /// function's IR. It remains permission-only unless lowering materializes
     /// either the complete one-slot edge or the bounded-batch driver.
     completion_pipeline: Option<IrCompletionPipeline>,
+    vectorize: bool,
     /// The selected loop's submitted call occurrence. The loop has already
     /// been selected by [`CheckedLoopId`]; this path is only the existing call
     /// identity used to map that cut to its IR value.
@@ -614,6 +618,7 @@ impl<'program> IrBuilder<'program> {
     ) -> Result<Self, LoweringFailure> {
         let LoweringContext {
             erasure,
+            vectorize,
             nominals,
             constants,
             function_results,
@@ -638,6 +643,7 @@ impl<'program> IrBuilder<'program> {
             call_results: HashMap::new(),
             permissions,
             overlap,
+            vectorize,
             completion_pipeline: None,
             staged_cut: None,
             synthesis,
@@ -664,6 +670,7 @@ impl<'program> IrBuilder<'program> {
     const fn context(&self) -> LoweringContext<'program> {
         LoweringContext {
             erasure: self.erasure,
+            vectorize: self.vectorize,
             nominals: self.nominals,
             constants: self.constants,
             function_results: self.function_results,
