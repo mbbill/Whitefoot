@@ -28,8 +28,8 @@
   loans, storage identity, and initialized responsibility explicit internally, but
   do not mistake a concrete checker model for a verified symbolic library or a
   production erasure path. General source-library representation authority remains
-  the D17 direction, deferred until an exact checked implementation and a real
-  workload establish its soundness and usefulness.
+  a checked extension direction whose selection requires an exact checked
+  implementation and a real workload establishing soundness and usefulness.
 - Prefer inherent fixed-block type facts and existing verified count contracts
   for the measured pool. Do not infer general element-refinement requirements
   from a fact that a fixed-capacity type already preserves. Do not infer that
@@ -118,14 +118,16 @@
   while the subsequent qualitative external sample supplies additional needs
   without measuring their prevalence or runtime importance.
   External forms are themselves constrained by their languages; the owner requires
-  recovering underlying needs rather than treating observed forms as requirements.
+  recovering underlying needs rather than treating observed forms as requirements. (sourced)
+
 - 2026-09-06 selection ground: main's `existence-only` correction separates a
   derived need from a minimality-selected form. The independent review and
   executable experiments compare forms against performance, checked authority,
   default source shape, and concrete resource contracts. Workload frequency
   selects priority, not whether a necessary capability exists. The complete
   selection and first implementation criteria are in
-  [the container assessment](../../../research/investigations/containers-and-resources/REASSESSMENT.md).
+  [the container assessment](../../../research/investigations/containers-and-resources/REASSESSMENT.md). (sourced)
+
 - 2026-09-06 measurement: on one arm64 macOS/Clang 21 run, the dense construction
   plus four-update trace at 16/256/4096 `u64` elements measured approximately
   408 ns/176 us/43.9 ms in the examined compiler baseline versus
@@ -133,7 +135,8 @@
   Retained whole-payload transfers explain an adverse work shape; at 4096 elements the Whitefoot entry
   and its constructor have simultaneous static frames totaling 229,648 bytes,
   excluding platform helpers. This is a workload result, not a general language
-  ranking. [Sources, 168 raw samples, controls, and limits](../../../research/experiments/container-representation/dense/RESULTS.md).
+  ranking. [Sources, 168 raw samples, controls, and limits](../../../research/experiments/container-representation/dense/RESULTS.md). (sourced)
+
 - 2026-09-06 external evidence: six complete source traces cover ripgrep 14.1.1
   (Rust/text search, `4649aa9700619f94cf9c66876e9549d83420e16c`), DuckDB v1.2.0
   (C++/analytical execution, `5f5512b827df6397afd31daedb4bbdee76520019`), and
@@ -143,7 +146,8 @@
   reservations, indexed heap correspondence, and out-of-order reader retirement.
   Multiple traces from one application are correlated evidence. No upstream
   timings, allocation profiles, or prevalence measurements were performed.
-  [Pinned sources, traces, alternative hypotheses, and unknowns](../../../research/investigations/containers-and-resources/EXTERNAL-WORKLOADS.md).
+  [Pinned sources, traces, alternative hypotheses, and unknowns](../../../research/investigations/containers-and-resources/EXTERNAL-WORKLOADS.md). (sourced)
+
 - 2026-09-06 external interpretation: the sample does not falsify owned places or
   value semantics. It requires distinguishing location from initialization and
   access authority, and it gives concrete relational workloads for reconsidering
@@ -151,12 +155,14 @@
   separate NULL bitmap, pointer/salt packing, stable list, or particular growth
   factor is necessary for a frozen cost contract remains unmeasured. Safe enum,
   ordinary collection, or indexed-log alternatives are hypotheses until checked
-  against the same behavior, failure, lifetime, and resource obligations.
+  against the same behavior, failure, lifetime, and resource obligations. (sourced)
+
 - 2026-09-06 control: native whole-value append also retains copies, whereas a
   separate noinline aggregate-return control writes directly to a caller's `sret`
   destination. Value semantics and physical aggregate copies are distinct; the
   result does not show that LLVM eliminates all move chains or that every ABI has
-  identical cost. The native controls are not checked Whitefoot implementations.
+  identical cost. The native controls are not checked Whitefoot implementations. (sourced)
+
 - 2026-09-06 source evidence: five complete lifecycle programs run, including pool
   count conservation and static-capacity block checkout/mutation/return. Capacity
   survives through the field type; the neighboring full-initialization assertion
@@ -164,19 +170,22 @@
   empty linear-owner discharge are separate source limitations. Two boxed-block
   cases expose incorrect compiler rejections for nested region inference and owned
   cell measures; they do not refute stable fixed storage. [Exact 15 outcomes and
-  source](../../../research/experiments/container-representation/lifecycle/RESULTS.md).
+  source](../../../research/experiments/container-representation/lifecycle/RESULTS.md). (sourced)
+
 - 2026-09-06 finite-model evidence: checked interval tokens account for all 510
   live sets at capacities 1..8, versus 184 single-window sets, and pass independent
   occupancy/conservation checks through cleanup. Two-span loans and middle-slot
   reuse are checked. The model has concrete endpoints, anonymous linear counts,
   and one storage context; it establishes neither public symbolic proof authority
-  nor runtime token overhead. [Model and limits](../../../research/experiments/container-representation/authority/RESULTS.md).
+  nor runtime token overhead. [Model and limits](../../../research/experiments/container-representation/authority/RESULTS.md). (sourced)
+
 - 2026-09-06 correction: removing the middle element of a capacity-three full run
   is not a sparse-window falsifier: remaining slots 0 and 2 form a circular window.
   Capacity four with initial live slots 0,1,2 and raw slot 3 supplies the actual
   `0101` separating state. An executable near-neighbor check corrected the paper
   claim. Cross-review also strengthened the model's independent oracle to retain
-  the obligation count from trace entry instead of recomputing it before cleanup.
+  the obligation count from trace entry instead of recomputing it before cleanup. (sourced)
+
 - 2026-09-06 implementation checkpoint: commit `f5dab70c` passes the frozen
   scalar correctness matrix and mandatory wide-record/inline-view execution
   probes. This closes their specific baseline capability stops, not the whole
@@ -188,17 +197,21 @@
   infer optimal storage or a language ranking from them. Parallel integration and
   the full repository gate remain incomplete.
   [Both measurements and limits](../../../research/experiments/container-representation/dense/RESULTS.md),
-  [current implementation boundary](../../../research/investigations/containers-and-resources/REASSESSMENT.md#first-implementation-scope-and-completion-evidence).
+  [current implementation boundary](../../../research/investigations/containers-and-resources/REASSESSMENT.md#first-implementation-scope-and-completion-evidence). (sourced)
+
 - 2026-09-07 (bb8eb30f) pitfall: the checked binding occurrence records whether
   it consumes its owner, but ordinary binding-expression lowering discards that
-  field. Formal own and borrow modes can also lower to the same descriptor or
-  opaque-handle type, and user-call lowering does not retain checked result
-  provenance. Type shape alone therefore cannot supply the source permissions
-  needed by an ownership-directed placement pass. The current conservative
-  content-liveness planner does not infer those permissions.
-  [Checked occurrences](../../../compiler/src/semantic/model.rs),
-  [parameter and expression lowering](../../../compiler/src/lowering/builder.rs),
-  [content storage planning](../../../compiler/src/backend/storage.rs). (code)
+  field. [Checked occurrences](../../../compiler/src/semantic/model.rs),
+  [expression lowering](../../../compiler/src/lowering/builder.rs). (code)
+- 2026-09-07 (bb8eb30f) pitfall: formal own and borrow modes can lower to the
+  same descriptor or opaque-handle type.
+  [Parameter lowering](../../../compiler/src/lowering/builder.rs). (code)
+- 2026-09-07 (bb8eb30f) pitfall: user-call lowering does not retain checked
+  result provenance. [Call lowering](../../../compiler/src/lowering/builder.rs). (code)
+- 2026-09-07 (bb8eb30f) limitation: type shape alone cannot supply the source
+  permissions needed by an ownership-directed placement pass. The current
+  conservative content-liveness planner does not infer those permissions.
+  [Content storage planning](../../../compiler/src/backend/storage.rs). (code)
 - 2026-09-07 (f5dab70c) mechanism: the dense helper result is first stored as an
   immutable aggregate, then copied to the addressable owner; cleanup obtains
   another aggregate snapshot. The retained three-field frame distinguishes
@@ -398,29 +411,27 @@
   [call closure](../../../compiler/src/lowering/specialize.rs),
   [execution evidence and scope](../../../research/experiments/container-representation/families/RESULTS.md). (code)
 
-## Moves
-
-- Selected general place/result-destination support as the first implementation,
+- 2026-09-06 (d998dd0a) historical rationale: Selected general place/result-destination support as the first implementation,
   including the semantic field/index/cell/borrow support needed to turn the frozen
   wide-record and inline-view probes into executed positives. Require element-sized
   loop work, correct failure/cleanup, and the same-workload measurements; keeping a
   known unsupported verdict does not complete that slice. Broad migration and
-  retirement wait for replacement capability.
-- Superseded the earlier integrated container dossier's universal-window and
+  retirement wait for replacement capability. (sourced)
+- 2026-09-06 (d998dd0a) historical rationale: Superseded the earlier integrated container dossier's universal-window and
   aggregate-reconstruction defaults. Retained providers, checked ownership, and
   working contract transport. Did not replace the separate I/O/resource research
-  or amend the active specification in this decision.
-- Deferred generalized representation privileges, arbitrary sparse stores, global
+  or amend the active specification in this decision. (sourced)
+- 2026-09-06 (d998dd0a) historical rationale: Deferred generalized representation privileges, arbitrary sparse stores, global
   stable handles, and quantified element refinements as prerequisites. Reconsider
   when a real frozen workload cannot meet its behavior/resource/cost contract with
   the selected states, or a complete checked alternative demonstrates a better
   form. Minimal operation count, a successful workaround that changes the contract,
-  and majority agreement among reviewers are not selection evidence.
-- Made the reconsideration questions concrete with the external traces: compare
+  and majority agreement among reviewers are not selection evidence. (sourced)
+- 2026-09-06 (4f8fb9d5) historical rationale: Made the reconsideration questions concrete with the external traces: compare
   ordinary nullable elements against separate validity/payload storage, require
   helper-preserved index/reservation relations, and compare stable nodes with a
   segmented history while preserving oldest-reader reclamation. These select
   later bounded experiments; they do not require six application ports or change
   the first slice into a universal storage proof framework. Reopen the owning
   layer if the checked ordinary form breaks the frozen contract, rather than
-  hiding the gap with a guard, hard cap, extra scan, or extra allocation.
+  hiding the gap with a guard, hard cap, extra scan, or extra allocation. (sourced)

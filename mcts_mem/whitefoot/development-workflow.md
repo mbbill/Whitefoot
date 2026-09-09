@@ -1,6 +1,7 @@
 - AGENTS.md and its identical CLAUDE.md entry own the complete work-branch and main boundary. Plans, task records, lead-agent review, and historical approvals create no additional permission requirement.
 - A selected question is investigated under research/investigations/; implementation proceeds on a work branch, and settled decisions are recorded in their owning memory nodes. Useful design and measurement evidence stays at its existing location after implementation.
 - Let concrete compiler capabilities, real programs, and measured costs select useful work. Preserve the intended program's behavior and safety obligations when resolving a blocker.
+- The constitution supplies objectives for exploring alternatives; technical arguments and scoped experiments support selections. Current rule grounds and decision/evidence update triggers follow [[decision-grounds]]. Model ability is an experimental condition, and a rejected mechanism retains the counterexample or cost it must address before reconsideration.
 - Keep docs/roadmap.md outside the working loop as reference material. Current language and implementation claims belong to the specification and compiler/README.md.
 - Update affected standing guidance when recording a new decision. Follow the authority map and local-context maintenance method in AGENTS.md and docs/practice.md instead of copying a new current-state paragraph into multiple documents.
 - Task-completion review combines mechanical integrity checks with a bounded semantic checklist. The reviewer identifies local violations; unresolved design questions return to the implementing agent.
@@ -25,6 +26,8 @@
 - 2026-09-06 pitfall: a node's standing rules and its Facts drift apart, because appending a Fact is easy and rewriting a rule is not. The 2026-09-06 ruling landed here as a Fact while the rules above it still sent what landed to `governance/APPROVALS.md` and language change to a guarded branch in `docs/WORKFLOW.md`, both retired by that same ruling. The tell is a standing rule naming a path that no longer resolves, which is checkable; the rules that go stale without naming a path are not, and are why the rules are read whole when a Fact is added. (sourced)
 - 2026-09-07 owner rationale: checking factual accuracy missed that editorial history and mutable memory references do not serve a constitution's reader. Standing guidance also supplied no definite occasion to check compliance. A task-completion checkpoint and explicit, locally checkable document boundaries address those two gaps without requiring a fast reviewer to reconstruct the project's design reasoning. (sourced)
 - 2026-09-07 owner rationale: the owner reviews changes only on pull requests. Completed work left in a local worktree is unavailable at that review surface and forces a separate reminder before review can begin. (sourced)
+
+- 2026-09-07 owner explanation: changing the author to AI changes an input to the software-development design problem. The constitution guides which solutions to explore, experiments inform whether to keep them, and decision memory preserves facts, conclusions, and changed directions. A rationale need not yield a unique answer. This supports conditional comparisons and explicit uncertainty rather than promoting an experiment or a plausible derivation into an immutable premise. (sourced)
 
 ## Moves
 

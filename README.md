@@ -1,25 +1,13 @@
 # Whitefoot
 
-Whitefoot is a proof-carrying systems language for AI-written, human-approved
-code. Source carries the statements and finite proof steps needed to justify
-partial operations. The compiler checks that evidence and erases it before
-execution. Verified ownership, effects, bounds, and algebraic facts can also
-authorize optimization and execution overlap.
-
-The language requires memory corruption, data races, uninitialized reads,
-silent overflow, and unproved partial operations to be unrepresentable in
-accepted programs, conditional on its declared trusted computing base. There
-is no writer-accessible `unsafe`, trusted assertion, or runtime proof trap.
-Expected failures use ordinary values and control flow. The active
-[specification](spec/kernel-spec.md) defines the exact guarantee, including
-the current external-resource boundary; compiler defects remain defects
-against that specification.
-
-Acceptance uses no SMT, timeout, or cumulative proof-work budget. Automatic
-derivation follows fixed, deterministic, terminating rules. Authors can use
-AI or offline tools to search for proofs; the compiler checks only evidence
-the language admits. More explicit evidence can make a safe program writable,
-but the current proof language does not express every true proposition.
+Whitefoot is a programming language designed as a harness for AI agents.
+It serves human-directed systems development with implementation delegated to
+agents, using constraints, explicit interfaces, and machine-checked proofs to
+guide authors toward safe, efficient programs.
+The compiler checks required source evidence and erases it before execution;
+writers have no unchecked
+escape hatch. The [specification](spec/kernel-spec.md) defines the exact
+guarantees and trusted boundary.
 
 ## Purpose
 
@@ -30,12 +18,13 @@ efficient, verifiable classes and to expose architectural mistakes early.
 The goal is useful default performance, not a guarantee that every accepted
 program is globally optimal.
 
-The intended long-term use includes many lower-cost AI writers implementing
-components under architecture and interface decisions made by stronger AI,
-with human approval. This motivates local contracts and explicit state
-ownership. The collaboration design and browser-scale validation remain
-research directions, not current compiler capabilities or a required agent
-workflow. The [constitution](docs/constitution.md) owns the objectives and
+Ease of manual source authorship is not an independent goal. Additional source
+and proof effort can be worthwhile when they improve performance or correctness,
+while usable feedback and enough information to complete the task still matter.
+Changing the intended author opens alternatives; experiments must establish
+which mechanisms work under their stated conditions.
+
+The [constitution](docs/constitution.md) owns the objectives and
 tradeoffs; [Agent instructions](AGENTS.md) own project priorities and workflow.
 
 ## Start here
@@ -50,7 +39,7 @@ Read the material that owns the question you are working on:
 | How do I work on a branch and prepare a merge? | [AGENTS.md](AGENTS.md); [CLAUDE.md](CLAUDE.md) is the identical alternate entry |
 | Which writer forms should I try? | [Patterns](docs/patterns.md) |
 | How should I investigate, verify, and maintain documentation? | [Engineering practice](docs/practice.md) |
-| Why was a design chosen? | [Decision memory](mcts_mem/whitefoot.md), with evidence links |
+| Why was a design chosen? | [Decision memory](mcts_mem/), with evidence links |
 | Which long-range directions have been considered? | [Reference roadmap](docs/roadmap.md) |
 
 The roadmap is outside the working loop and may be stale. It is not an
@@ -63,7 +52,7 @@ authority rules are in [AGENTS.md](AGENTS.md#authority-and-reading).
 - [compiler/](compiler/README.md): the Rust compiler, LLVM emission, and native
   runtime support.
 - [spec/](spec/): the active language, immutable version archives, and rule
-  derivation evidence.
+  [selection-ground index](spec/derivation/derivation-ledger.md#current-index).
 - [tests/](tests/): normative conformance evidence, recorded-verdict snapshots,
   executable programs, and code-generation evidence.
 - [docs/](docs/): principles, writer guidance, engineering practice, and

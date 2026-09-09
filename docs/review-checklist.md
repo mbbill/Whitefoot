@@ -15,6 +15,12 @@ working-tree changes as well. Read changed sections in context, the relevant
 document roles below, and directly affected definitions, callers, or cases.
 Do not load the whole repository or require a separate review packet.
 
+Judge the artifacts against the task and current owners, not just the author's
+summary. Mechanical checks cover their encoded properties; this review checks
+meaning, placement, and omitted dependent updates. Neither reconstructs an
+unrecorded reason or certifies the soundness of a design argument. Flag such
+uncertainty for the implementing agent rather than inventing missing evidence.
+
 Check the applicable items below. Skip sections whose trigger is absent.
 Use `pass`, `finding`, `unverified`, or `not applicable`; missing evidence is
 not a pass. When the task changes a review rule or an expected result, compare
@@ -49,17 +55,17 @@ or self-description merely to satisfy this table.
 | Document | Content that serves its reader | Content that does not belong |
 |---|---|---|
 | Root README | Project introduction, getting started, navigation | Detailed compiler inventory, a second specification, task history |
-| `docs/constitution.md` | Objectives, design principles, tradeoffs, their meaning and technical rationale | Who requested an edit and when, agent conversations, implementation progress, maintenance instructions |
+| `docs/constitution.md` | Complete statements of purpose, chosen objectives, obligations, prohibitions, tradeoffs, and applicable conditions that can guide a choice and test its grounds | Who requested an edit and when, agent conversations, implementation progress, maintenance instructions, abbreviated labels in place of clauses, per-clause usage checklists, a selected mechanism asserted as an inevitable consequence of the purpose |
 | `spec/kernel-spec.md` | Normative syntax, semantics, judgments, boundaries and relevant examples | Compiler convenience presented as law, task status, editing history |
 | `compiler/README.md` | Running and checking the compiler, implementation map, supported surface and known limitations | New language rules, task diaries, duplicated investigation reports |
 | `docs/patterns.md` | Writer problems, usable forms, examples, applicability and costs | Additional acceptance rules, unsupported universal performance claims, project administration |
 | `AGENTS.md` / `CLAUDE.md` | Agent entry, project constraints, authority, workflow and pointers to detailed guidance | Research narration, a second detailed checklist or compiler inventory |
-| `docs/practice.md` / this checklist | Engineering methods / completion checks and document boundaries | Language semantics, task-specific outcomes, new owner approval requirements |
+| `docs/practice.md` / this checklist | Engineering methods and decision-update triggers / completion checks and document boundaries | Language semantics, task-specific outcomes, new owner approval requirements |
 | `research/`; `governance/spec-evolution/` | Questions, alternatives, designs, change proposals, reproducible experiments, results and limitations; the research README provides navigation | Task completion as technical evidence, a proposal presented as an implemented rule |
 | `docs/ideas.md`; `docs/bargain.md`, `docs/why-whitefoot.md` | Candidate mechanisms; explanatory essays and dated rationale respectively | A live work queue, invented present-day measurements, contributor process inserted into an essay |
 | `docs/roadmap.md` | Long-range reference directions | Required task sequencing, approval, an authoritative current capability inventory; routine work does not require updating it |
 | `docs/ongoing/` | Existing, bounded implementation notes for their named subsystem | A new per-task reporting system, a second project-wide status inventory |
-| `spec/derivation/` | Rule derivations, selection grounds, evidence qualifications and historical amendments | Silent language changes, unsupported promotion of derivation status, task authorization |
+| `spec/derivation/` | Current rule-to-ground index with classified support and review state; retained historical derivations | A second detailed decision record, silent language changes, historical status treated as current support, task authorization |
 | `mcts_mem/` | Current design choices, sourced evidence and actual rejected alternatives, in skill-defined form | Module inventories, implementation transcripts, task progress or tree-maintenance bookkeeping |
 | PR description | This change's problem, resulting behavior, selection grounds, validation and limitations | An obsolete description of an earlier diff, a new permanent source of project rules |
 
@@ -109,7 +115,10 @@ Source: [repository hygiene](../AGENTS.md#repository-structure-and-hygiene).
 
 - [ ] **D1 — Purpose.** Each added or changed passage serves the containing
   document or code's reader. Check against the role table, including editorial
-  history and process instructions inserted into substantive documents.
+  history and process instructions inserted into substantive documents. For
+  constitutional changes, check that complete clauses state the relevant
+  obligations and conditions; a chosen prohibition is not merely a report of
+  current implementation behavior.
 - [ ] **D2 — References.** Changed references resolve to the intended file,
   heading or symbol, obey the citation boundaries, and support their claim.
   A correct relative path does not make an inappropriate citation acceptable.
@@ -160,9 +169,8 @@ Source: [specification and test integrity](../AGENTS.md#specification-and-test-i
   the new declaration and title agree. The change declares the [META-5] delta
   (rules, tokens, spellings, exceptions) and evidence/minimality selection
   ground. Affected cases/verdicts, generated syntax, compiler and documentation
-  follow the amendment. For changed rules or constitutional premises, check
-  affected derivation grounds and flag re-grounding needs; an `existence-only`
-  row still has a premise and form-selection condition. For conformance changes,
+  follow the amendment. For changed rules or constitutional premises, apply
+  R3–R4 below. For conformance changes,
   the PR explains the normative expectation and how the changed evidence tests
   it. Do not require an unrelated full-ledger sweep. [META-5/6] are defined in the
   [active specification](../spec/kernel-spec.md#20-spec-meta-rules-ci-checked).
@@ -176,6 +184,47 @@ Source: [specification and test integrity](../AGENTS.md#specification-and-test-i
   is detected. Reusing established machinery needs no new mutation campaign.
   Active build/test/tool paths do not depend on `archive/`.
 
+## R. Decisions — changed choices, premises or relevant evidence
+
+Source: [decision practice](practice.md#decision-work). These are checks on
+observable artifacts, not a claim to know an agent's internal reasoning or
+a second design review. A routine fix under unchanged design can skip this
+group; absence of a new memory file does not establish that the group is
+inapplicable.
+
+- [ ] **R1 — Stated ground.** A material choice has a retrievable explanation
+  of its purpose, required properties, assumptions, alternatives actually
+  considered, selection reason, and remaining uncertainty. Relevant prior
+  objections are addressed. Distinguish deductions, observations, and
+  provisional choices; a constitutional citation alone does not select a
+  particular mechanism. Flag a substantive question for the implementing
+  agent rather than inventing a rationale. Unresolved proposals and assumptions
+  have not become settled decisions through wording alone. Before real project
+  adoption, internal adaptation costs have not been used to reject a language
+  change, and test/example frequency has not been passed off as real usage.
+- [ ] **R2 — Discriminating evidence.** An experiment used to select a design
+  states what comparison could distinguish it, the conditions and protected
+  requirements, and the actual outcome. A claim of a prediction made before
+  measurement has an inspectable prior criterion; otherwise label the finding
+  exploratory or the timing unverified. A changed requirement, inconclusive
+  result, or trial on one model has not been reported as broader success.
+- [ ] **R3 — Consumed changes of reason.** For changed objectives, premises,
+  rules, cited sources, or evidence meeting a reopening condition, use the diff
+  and direct references to check the named affected set. The explanation says
+  which choices still stand, stand on different grounds, or need replacement.
+  Their current owners and memory agree. Remaining questions have a concrete
+  source and affected `revisit` rows; appending a Fact or marking the index
+  does not supersede contradictory standing guidance. Do not require an
+  unrelated project-wide sweep.
+- [ ] **R4 — Maintained index.** Added/changed/retired rules and changed or
+  moved grounds have corresponding current-index updates. Linked sources
+  resolve and support the stated scope, including relevant constitutional
+  aims and reopening conditions. The native spec check ran after index edits.
+  Historical rows or old `derived` labels have not been passed off as current
+  support. New choices have assessed grounds; unchanged legacy `unassessed`
+  rows may remain visible for gradual migration. Integrity success is not
+  proof that a cited argument is true.
+
 ## M. Decision memory — changed decisions or memory nodes
 
 Use the `mcts-mem-use` skill; this section does not replace its grammar.
@@ -185,11 +234,15 @@ Use the `mcts-mem-use` skill; this section does not replace its grammar.
   fix or refactor need not manufacture a decision entry. Read from the root
   into the relevant subsystem and alternatives; do not judge isolated search
   hits as the current tree.
-- [ ] **M2 — Integrity.** After tree edits, run `npx mcts-mem lint` and inspect
-  its result. For changed replacements, also check that both links name the
+- [ ] **M2 — Integrity.** Verify that tree edits were checked according to the
+  current `mcts-mem-use` skill and inspect the actual results, including any
+  limitation or fallback. For changed replacements, also check that both links name the
   actual paired nodes and their reasons match verbatim. Compare Facts/Moves
   with the task base to catch rewritten history even after a commit. Do not
   alter committed history or weaken lint merely to obtain a green result.
+  For a documented legacy format repair, compare every changed entry against
+  the identified original revision under decision practice; a clean lint on
+  the new HEAD does not validate that repair.
 - [ ] **M3 — Evidence.** New facts have the skill's provenance and an actual
   source; guesses and historical results are labeled accurately. Items state
   current choices, Facts record evidence, and Moves record actual re-decisions.
@@ -227,5 +280,5 @@ references; `make -C compiler format lint` and the
 [focused compiler commands](../compiler/README.md#running-and-checking) for
 code. `make static` does not check document purpose or all links, and compiler
 `docs` builds Rust API documentation, not this prose checklist. The root
-[Makefile](../Makefile) owns the full gate inventory; run `npx mcts-mem lint`
-separately for memory edits.
+[Makefile](../Makefile) owns the full gate inventory; memory verification follows
+the current skill and is checked under M2.
