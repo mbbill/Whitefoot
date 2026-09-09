@@ -2,7 +2,9 @@
 //!
 //! Source ownership is already checked and is not inferred here. A value gets
 //! independent backing unless complete CFG liveness proves that a selected
-//! update or edge transfer can reuse backing whose old contents are dead.
+//! update, edge transfer or alternative return can reuse backing whose old
+//! contents are dead. Returned groups containing entry parameters still need
+//! private backing while the prologue snapshots every indirect input.
 //! Projections and loads remain snapshots, never aliases. Exposed backing is
 //! not coalesced, and schedules whose reads can outlive an IR call keep every
 //! value separate until their actual retirement lifetimes are represented.
@@ -68,7 +70,15 @@ impl FunctionStoragePlan {
             .map(|ty| is_stored_aggregate(program, *ty).map(|stored| stored.then_some(*ty)))
             .collect::<Result<Vec<_>, _>>()?;
         let graph = FlowGraph::from_function(program, function)?;
-        let mut plan = graph.plan(types)?;
+        let returned: Vec<_> = function
+            .blocks()
+            .iter()
+            .filter_map(|block| match block.terminator() {
+                IrTerminator::Return { value, .. } => Some(index(*value)),
+                _ => None,
+            })
+            .collect();
+        let mut plan = graph.plan(types, &returned)?;
         plan.select_destinations(function, &graph, pipeline)?;
         Ok(plan)
     }
@@ -282,23 +292,45 @@ impl FlowGraph {
         })
     }
 
-    fn plan(&self, types: Vec<Option<IrType>>) -> Result<FunctionStoragePlan, BackendFailure> {
+    fn plan(
+        &self,
+        types: Vec<Option<IrType>>,
+        returned: &[usize],
+    ) -> Result<FunctionStoragePlan, BackendFailure> {
         self.validate(types.len())?;
+        if returned.iter().any(|value| *value >= types.len()) {
+            return Err(BackendFailure::InvalidIr);
+        }
         let mut groups: Vec<BTreeSet<usize>> = (0..types.len())
             .map(|value| BTreeSet::from([value]))
             .collect();
         let mut representative: Vec<usize> = (0..types.len()).collect();
         if self.coalesce {
             let (interference, frozen) = self.interference(&types);
-            // Try only semantic update and CFG transfer neighbors. Unrelated
-            // dead values are deliberately not packed into the same backing.
-            let candidates = self.blocks.iter().flat_map(|block| {
-                block
-                    .instructions
-                    .iter()
-                    .filter_map(|instruction| Some((instruction.result?, instruction.reuse?)))
-                    .chain(block.transfers.iter().copied())
-            });
+            // Update and CFG transfer neighbors can reuse backing. Returned
+            // values can also share their caller's destination, but returning
+            // on different edges does not by itself prove their storage dead:
+            // all definitions, reads, drops and exposed addresses still take
+            // part in the same interference check. If every returned group
+            // joins without an entry parameter, the emitter can omit its
+            // frame slot and return copy.
+            // Stored inputs retain their prologue snapshots, preserving the
+            // existing contract for a caller's consumed input/result alias.
+            let candidates = self
+                .blocks
+                .iter()
+                .flat_map(|block| {
+                    block
+                        .instructions
+                        .iter()
+                        .filter_map(|instruction| Some((instruction.result?, instruction.reuse?)))
+                        .chain(block.transfers.iter().copied())
+                })
+                .chain(
+                    returned.first().into_iter().flat_map(|first| {
+                        returned.iter().skip(1).map(move |other| (*first, *other))
+                    }),
+                );
             for (left, right) in candidates {
                 if types[left].is_none() || types[left] != types[right] {
                     continue;
@@ -751,9 +783,13 @@ mod tests {
     }
 
     fn plan(graph: &FlowGraph, values: usize) -> FunctionStoragePlan {
+        plan_returning(graph, values, &[])
+    }
+
+    fn plan_returning(graph: &FlowGraph, values: usize, returned: &[usize]) -> FunctionStoragePlan {
         let types = vec![Some(ARRAY); values];
         let (conflicts, _) = graph.interference(&types);
-        let plan = graph.plan(types).expect("well-formed flow graph");
+        let plan = graph.plan(types, returned).expect("well-formed flow graph");
         for (value, others) in conflicts.iter().enumerate() {
             for other in others {
                 assert_ne!(
@@ -764,6 +800,101 @@ mod tests {
         }
         compare_execution(graph, &plan);
         plan
+    }
+
+    #[test]
+    fn exclusive_returns_construct_in_one_destination() {
+        for successors in [[1, 2], [2, 1]] {
+            let mut entry = block(&[], Vec::new(), &[]);
+            entry.successors.extend(successors);
+            let graph = FlowGraph {
+                entry_parameters: Vec::new(),
+                blocks: vec![
+                    entry,
+                    block(&[], vec![define(0, &[], None)], &[0]),
+                    block(&[], vec![define(1, &[], None)], &[1]),
+                ],
+                coalesce: true,
+            };
+            let plan = plan_returning(&graph, 2, &[0, 1]);
+            assert_eq!(plan.slots.len(), 1);
+        }
+    }
+
+    #[test]
+    fn an_alternative_return_cannot_overwrite_a_value_read_in_a_successor() {
+        let mut entry = block(&[], vec![define(0, &[], None)], &[]);
+        entry.successors.extend([2, 1]);
+        let mut alternative = block(&[], vec![define(1, &[], None)], &[]);
+        alternative.successors.push(3);
+        let graph = FlowGraph {
+            entry_parameters: Vec::new(),
+            blocks: vec![
+                entry,
+                block(&[], Vec::new(), &[0]),
+                alternative,
+                block(&[], Vec::new(), &[0, 1]),
+            ],
+            coalesce: true,
+        };
+        let plan = plan_returning(&graph, 2, &[0, 1]);
+        assert_ne!(plan.values[0], plan.values[1]);
+    }
+
+    #[test]
+    fn an_exposed_return_keeps_its_backing_after_its_last_direct_read() {
+        let mut expose = define(1, &[0], None);
+        expose.exposed = Some(0);
+        let mut entry = block(&[], vec![define(0, &[], None), expose], &[]);
+        entry.successors.extend([2, 1]);
+        let graph = FlowGraph {
+            entry_parameters: Vec::new(),
+            blocks: vec![
+                entry,
+                block(&[], Vec::new(), &[0]),
+                block(&[], vec![define(2, &[], None)], &[1, 2]),
+            ],
+            coalesce: true,
+        };
+        let plan = plan_returning(&graph, 3, &[0, 2]);
+        assert_ne!(plan.values[0], plan.values[2]);
+    }
+
+    #[test]
+    fn an_alternative_return_preserves_values_read_after_a_backedge() {
+        let mut entry = block(&[], Vec::new(), &[]);
+        entry.successors.extend([2, 1]);
+        let mut body = block(&[], vec![define(1, &[0], None), define(2, &[], None)], &[]);
+        body.successors.extend([2, 3]);
+        let graph = FlowGraph {
+            entry_parameters: vec![0],
+            blocks: vec![
+                entry,
+                block(&[], Vec::new(), &[0]),
+                body,
+                block(&[], Vec::new(), &[2]),
+            ],
+            coalesce: true,
+        };
+        let plan = plan_returning(&graph, 3, &[0, 2]);
+        assert_ne!(plan.values[0], plan.values[2]);
+    }
+
+    #[test]
+    fn deferred_return_values_keep_distinct_destinations() {
+        let mut entry = block(&[], Vec::new(), &[]);
+        entry.successors.extend([1, 2]);
+        let graph = FlowGraph {
+            entry_parameters: Vec::new(),
+            blocks: vec![
+                entry,
+                block(&[], vec![define(0, &[], None)], &[0]),
+                block(&[], vec![define(1, &[], None)], &[1]),
+            ],
+            coalesce: false,
+        };
+        let plan = plan_returning(&graph, 2, &[0, 1]);
+        assert_ne!(plan.values[0], plan.values[1]);
     }
 
     /// A separate concrete oracle executes value snapshots and physical

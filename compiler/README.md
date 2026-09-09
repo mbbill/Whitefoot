@@ -337,6 +337,11 @@ one use, independent backing, and a matching dynamic lifetime. Ordinary static
 destinations must be acyclic; repeated staged construction uses the selected
 pipeline's per-slot backing through retirement. This removes the intermediate
 result-to-owner transfer for those cases without input/result aliasing.
+Alternative local return values can also share the caller's result destination
+when the complete CFG conflict and exposed-address checks admit one storage
+group. A group containing an entry parameter stays private: otherwise its
+prologue copy could overwrite a later input whose backing the caller reused for
+the result. Parameter snapshots remain independent before body/result writes.
 An ordinary synchronous call's whole result may also reuse one consumed,
 same-typed aggregate input when the callee snapshots its inputs before writing,
 CFG liveness kills the prior content, and no borrow exposes that backing.

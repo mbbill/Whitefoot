@@ -33,6 +33,234 @@ fn assert_success(module: &str) {
 }
 
 #[test]
+fn wide_result_returns_preserve_success_refusal_and_owned_children() {
+    let source = br#"struct Record {
+  words: array<u64, 512>;
+  first: box<u64>;
+  second: box<u64>;
+}
+
+fn make_record(seed: own u64) -> result: own Result<Record, u8> pure {
+  let first = box_new(seed);
+  if seed == 0_u64 {
+    return Err<Record, u8>(error: 1_u8);
+  }
+  let words = array_new::<u64, 512>(seed);
+  let second = box_new(29_u64);
+  let record = Record(words: move words, first: move first, second: move second);
+  return Ok<Record, u8>(value: move record);
+}
+
+fn relay(seed: own u64) -> result: own Result<Record, u8> pure {
+  return make_record(seed: seed);
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    match heap_vector::<Record>(store: &uniq heap, count: 1_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: reserved) => {
+        match relay(seed: 0_u64) {
+          Err(error: code) => {
+            if code != 1_u8 {
+              return exit_status(code: 2_u8);
+            }
+          }
+          Ok(value: unexpected) => {
+            return exit_status(code: 3_u8);
+          }
+        }
+        match relay(seed: 17_u64) {
+          Err(error: code) => {
+            return exit_status(code: 4_u8);
+          }
+          Ok(value: made) => {
+            let filled = place_back(vector: move reserved, value: move made);
+            let (empty, observed) = take_back(vector: move filled);
+            if observed.words[0_u64] != 17_u64 {
+              return exit_status(code: 5_u8);
+            }
+            if observed.words[511_u64] != 17_u64 {
+              return exit_status(code: 6_u8);
+            }
+            if deref(observed.first) != 17_u64 {
+              return exit_status(code: 7_u8);
+            }
+            if deref(observed.second) != 29_u64 {
+              return exit_status(code: 8_u8);
+            }
+            return exit_status(code: 0_u8);
+          }
+        }
+      }
+    }
+  }
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        let observed = retain_calls(&module)
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        for refused in [0, 1] {
+            let host = allocation_observer(4, refused);
+            let output = compile_link_and_run(&observed, Some(&host), &[]);
+            let (status, ledger): (i32, &[u8]) = if refused == 0 {
+                // Failure cleans the first child. Success moves both children
+                // through Result and the reserved run, releasing each once.
+                (0, b"A1;A2;F2;A3;A4;F3;F4;F1;")
+            } else {
+                // Refusing the reservation does not evaluate the producer.
+                (70, b"X1;")
+            };
+            assert_eq!(output.status.code(), Some(status), "{output:?}");
+            assert_eq!(output.stdout, ledger, "{output:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+        }
+    }
+}
+
+#[test]
+fn competing_wide_returns_preserve_live_and_borrowed_contents() {
+    let source = br#"fn choose_live(seed: own u64) -> result: own array<u64, 512> pure {
+  let original = array_new::<u64, 512>(seed);
+  if seed == 0_u64 {
+    return move original;
+  }
+  let candidate = array_new::<u64, 512>(37_u64);
+  if original[511_u64] != seed {
+    return move original;
+  }
+  return move candidate;
+}
+
+fn choose_borrowed(seed: own u64) -> result: own array<u64, 512> pure {
+  let original = array_new::<u64, 512>(seed);
+  if seed == 0_u64 {
+    return move original;
+  }
+  region {
+    let reader = slice_of(&original);
+    let candidate = array_new::<u64, 512>(43_u64);
+    if reader[511_u64] != seed {
+      return array_new::<u64, 512>(99_u64);
+    }
+    return move candidate;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let first = choose_live(seed: 0_u64);
+  let second = choose_live(seed: 17_u64);
+  let third = choose_borrowed(seed: 0_u64);
+  let fourth = choose_borrowed(seed: 19_u64);
+  if first[0_u64] != 0_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if first[511_u64] != 0_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if second[0_u64] != 37_u64 {
+    return exit_status(code: 3_u8);
+  }
+  if second[511_u64] != 37_u64 {
+    return exit_status(code: 4_u8);
+  }
+  if third[0_u64] != 0_u64 {
+    return exit_status(code: 5_u8);
+  }
+  if third[511_u64] != 0_u64 {
+    return exit_status(code: 6_u8);
+  }
+  if fourth[0_u64] != 43_u64 {
+    return exit_status(code: 7_u8);
+  }
+  if fourth[511_u64] != 43_u64 {
+    return exit_status(code: 8_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        assert_success(&retain_calls(&module));
+    }
+}
+
+#[test]
+fn returned_parameter_snapshots_precede_result_alias_writes() {
+    let source = br#"struct Row {
+  value: u64;
+}
+
+struct Holder {
+  row: Row;
+}
+
+fn discard(value: own Row) -> result: own unit pure {
+  return unit;
+}
+
+fn choose(left: own Row, right: own Row, watch: &u64) -> result: own Row reads(right.value, watch) {
+  let expected = deref(watch);
+  if right.value != expected {
+    let ignored = discard(value: move left);
+    return Row(value: 99_u64);
+  }
+  return move left;
+}
+
+fn relay(held: own Row, watch: &u64, offered: own u64) -> result: own Row reads(held.value, watch) {
+  let row = Row(value: offered);
+  let fresh = Holder(row: move row);
+  return choose(left: move fresh.row, right: move held, watch: watch);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let watch = 29_u64;
+  let first_input = Row(value: 29_u64);
+  let second_input = Row(value: 31_u64);
+  region {
+    let first = relay(held: move first_input, watch: &watch, offered: 11_u64);
+    let second = relay(held: move second_input, watch: &watch, offered: 17_u64);
+    if first.value != 11_u64 {
+      return exit_status(code: 1_u8);
+    }
+    if second.value != 99_u64 {
+      return exit_status(code: 2_u8);
+    }
+    if watch != 29_u64 {
+      return exit_status(code: 3_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        // The call inside relay can place its result in its consumed second
+        // input's backing. Retained calls keep the callee's parameter-copy
+        // order observable; constructing into that backing before snapshotting
+        // the second input changes the branch and returns 99 instead of 11.
+        assert_success(&retain_calls(&module));
+    }
+}
+
+#[test]
 fn general_and_extent_boxes_keep_distinct_cleanup_actions() {
     let source = br#"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {

@@ -21,7 +21,20 @@ pub(super) fn returned_storage_slot(
             returned = Some(slot);
         }
     }
-    returned
+    let returned = returned?;
+    // The caller may reuse a consumed argument's backing for the result.
+    // Every indirect input must therefore reach private storage before a
+    // result write can overwrite any other, not-yet-snapshotted input. This
+    // excludes a whole coalesced group, including updates and phi transfers
+    // descended from a parameter, rather than only literal parameter returns.
+    if function
+        .parameters()
+        .iter()
+        .any(|(value, _)| storage.slot(*value) == Some(returned))
+    {
+        return None;
+    }
+    Some(returned)
 }
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {

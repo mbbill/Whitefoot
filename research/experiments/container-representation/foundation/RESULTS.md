@@ -59,6 +59,36 @@ logical ownership transfer into a run does not by itself promise construction at
 that slot. It does not follow that an explicit source-level raw destination is
 necessary; a generic internal result-destination design remains a separate candidate.
 
+### Alternative return destinations
+
+The compiler's `wide_result_returns_preserve_success_refusal_and_owned_children`
+case in [`backend/tests/owned_places.rs`](../../../../compiler/src/backend/tests/owned_places.rs)
+extends the construction question to a record containing 512 `u64` words and two
+owning cells. It reserves a one-element run before calling the producer, exercises
+failure after constructing the first cell and success through a forwarding helper,
+then inserts, extracts and checks the record. Retained calls and an allocation
+observer check both normal execution and reservation refusal in all three lowering
+modes. This is a bounded construction witness, not a complete array API.
+
+On 2026-09-09, the emitted producer from baseline `4f971ea0` had separate array,
+record and two alternative Result slots: 16,472 bytes including its loop counter.
+Adding return-value candidates to the existing CFG storage analysis lets both
+Result constructions use the caller's destination. The same producer then retains
+8,216 bytes of compiler-planned storage, and each branch loses one 4,128-byte
+whole-Result transfer. The array-to-record and record-to-Ok payload transfers,
+whole-representation initialization, match extraction and run insertion remain.
+
+The matched allocation-observed LLVM modules were also compiled with Apple Clang
+21.0.0, `-O2`, arm64 macOS, retaining the producer/helper calls. The producer's
+explicit local stack reservation changes from 17,216 to 8,912 bytes, excluding
+its fixed register-save prologue. This is generated-code evidence, not measured
+stack high-water, memory traffic or elapsed time; the whole optimized module does
+not become smaller in this comparison. Native live-value and slice cases prevent
+competing returns from overwriting still-observable contents. A separate input
+alias case protects parameter snapshots: result storage may alias a later caller
+input, so an entry-parameter group must not become the result destination during
+the earlier prologue copies. Unproved placement retains independent storage.
+
 ## Finite result-tree construction model
 
 `construction.rs` is a safe Rust model of that candidate, measured 2026-09-07.
