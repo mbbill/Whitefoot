@@ -66,7 +66,7 @@ jobs:
             echo 'First 64 calls of the same processes (overlapping short view)'
             cat "$RUNNER_TEMP/formal-runtime/formal-screen/short-summary.tsv"
             if test -f "$RUNNER_TEMP/formal-runtime/formal-screen/layout-summary.tsv"; then
-              echo 'Separate Linux layout control: join moved after other text; non-join symbol addresses matched'
+              echo 'Separate frozen Linux join control (8b61e7c4 versus f2, not current candidate): non-join symbol addresses matched'
               cat "$RUNNER_TEMP/formal-runtime/formal-screen/layout-summary.tsv"
               echo 'Overlapping first64 view of the layout cohort'
               cat "$RUNNER_TEMP/formal-runtime/formal-screen/layout-short-summary.tsv"

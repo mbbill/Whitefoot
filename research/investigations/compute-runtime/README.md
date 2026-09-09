@@ -1020,6 +1020,44 @@ sizes differ. Function-address equality is the checked invariant, not wholesale
 instruction/data equality. The original-host loss stays unresolved; avoid a
 production linker change selected only from the new host's near-parity cohort.
 
+### Open counter-isolation experiment
+
+After 8b61e7c4, a maintained-core candidate aligns each physical thread's
+statistics to 128 bytes. Counters remain atomic and enabled; this does not
+change their live-observation contract. The thread record grows from 136 to
+256 bytes, adding 7,680 bytes across its 64-element array and shifting later
+core storage. The experiment therefore includes layout effects beyond counter
+sharing. It is not a selected optimization or a qualified delivery.
+
+Two local M1 cohorts use the same scalar WF object and byte-identical binaries
+across repetitions: one/four workers, FIR sizes 4,096/65,536, tiles 16/1,024,
+five alternating base/candidate/identical-replica process sets per cell,
+4,096 warm calls for the small input and 512 for the large. Four-worker small
+fine-work candidate/base core-wall medians are 0.9510 and 0.9610; large coarse
+medians are 0.9904 and 0.9931. Large fine work is unstable: 1.0582 and 0.8826,
+with first-cohort replica/candidate 1.1960. Neither cohort establishes general
+improvement. First-cohort whole-batch CPU ratios include verification and must
+not be attributed to scheduler cost alone; corresponding RSS medians range
+0.9783–1.0097. Startup and memory effects remain part of qualification.
+
+Native smoke, the 200,000-task deque/live-counter probe, and a rebuilt ordinary
+`whitefootc --par --no-vectorize` FIR command at one/four workers pass locally.
+Scoped independent review finds no storage/protocol blocker: typed static core
+storage propagates alignment, and initialization/enumerator offsets follow
+`sizeof`/`offsetof`. Five-platform native performance, broader workload coverage
+and a stable causal comparison remain required before retaining the change.
+Raw local cohorts are `count-isolation-run1` and `count-isolation-run2` under
+`/private/tmp/whitefoot-formal-runtime`; they are not published CI artifacts.
+
+The five-platform screen adds frozen 8b61e7c4 as `unaligned` while retaining
+every existing ordinary reference and threshold. Selection requires stable
+candidate/unaligned wall and CPU behavior beyond identical-image variation,
+with startup/RSS losses explained, plus the wider goal's workload and native
+reference coverage. The Linux join-placement cohort now freezes its subject
+at 8b61e7c4 versus f2: changing thread layout invalidates its non-join-address
+premise for the current candidate. Its original-host question remains open;
+its separate verdict cannot qualify the new candidate.
+
 ## Earlier investigation and evidence
 
 The selected question is whether Whitefoot's proof-derived compute parallelism

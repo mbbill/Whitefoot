@@ -241,7 +241,9 @@ typedef struct wf_sched_thread {
     void *entry_argument;
     wf_sched_stack *pending_empty;
     wf_sched_stack *pending_commit;
-    wf_sched_statistics counts;
+    /* Keep independent physical-thread writers on separate cache lines,
+     * including hosts with 128-byte lines. Live observation stays atomic. */
+    _Alignas(128) wf_sched_statistics counts;
 } wf_sched_thread;
 
 /* The core's one instance. The runtime has exactly one; the enumerator makes

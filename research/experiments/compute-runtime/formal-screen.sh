@@ -17,9 +17,9 @@ floor=wf_floor.c
 leaf=prim_host.c
 platform_flags=-pthread
 libraries=-lm
-modes='before candidate replica recovered previous idle4096'
-references='before recovered previous idle4096 replica'
-diagnostic_modes='candidate previous idle4096'
+modes='before candidate replica recovered previous unaligned idle4096'
+references='before recovered previous unaligned idle4096 replica'
+diagnostic_modes='candidate previous unaligned idle4096'
 case "$host" in
     Darwin|Linux) ;;
     MINGW*|MSYS*)
@@ -29,14 +29,15 @@ case "$host" in
         platform_flags=
         libraries='-lpsapi -lws2_32'
         # The frozen recovered control has no qualified Windows port.
-        modes='before candidate replica previous idle4096'
-        references='before previous idle4096 replica'
-        diagnostic_modes='before candidate previous idle4096'
+        modes='before candidate replica previous unaligned idle4096'
+        references='before previous unaligned idle4096 replica'
+        diagnostic_modes='before candidate previous unaligned idle4096'
         ;;
     *) echo "unsupported native screen host: $host" >&2; exit 1 ;;
 esac
 before=188088d41552d0d3bccf8368798dcc44702bf75c
 previous=f2d9d0fab8a8b9892c6c3c8fc74f7159164cff45
+unaligned=8b61e7c4387628c05fe5e98006ea524e54964521
 root=$(git rev-parse --show-toplevel)
 git -C "$root" diff --exit-code "$before" -- \
     research/experiments/compute-runtime/runtime.c \
@@ -45,7 +46,7 @@ git -C "$root" diff --exit-code "$before" -- \
 mkdir -p "$OUT"
 mkdir "$OUT/formal-screen"
 out=$(cd "$OUT/formal-screen" && pwd)
-mkdir -p "$out/baseline-source" "$out/previous-source" "$out/source" "$out/raw" "$out/diagnostics"
+mkdir -p "$out/baseline-source" "$out/previous-source" "$out/unaligned-source" "$out/source" "$out/raw" "$out/diagnostics"
 git -C "$root" archive "$before" compiler/src/backend/sched "compiler/src/backend/$floor" \
     > "$out/before.tar"
 tar -xf "$out/before.tar" -C "$out/baseline-source"
@@ -53,6 +54,10 @@ git -C "$root" archive "$previous" compiler/src/backend/sched compiler/src/backe
     compiler/src/backend/windows_runtime.c compiler/src/backend/windows_runtime.h "compiler/src/backend/$floor" \
     > "$out/previous.tar"
 tar -xf "$out/previous.tar" -C "$out/previous-source"
+git -C "$root" archive "$unaligned" compiler/src/backend/sched compiler/src/backend/completion \
+    compiler/src/backend/windows_runtime.c compiler/src/backend/windows_runtime.h "compiler/src/backend/$floor" \
+    > "$out/unaligned.tar"
+tar -xf "$out/unaligned.tar" -C "$out/unaligned-source"
 cp fir.wf fir_direct.wf fir_host.ll fir_bench.c fir_native.c fir_native.h \
     fir_check.c formal-screen.sh runtime.c runtime.h runtime_events.h "$out/source/"
 cp -R "$root/compiler/src/backend/sched" "$out/source/"
@@ -75,7 +80,7 @@ fi
 cp "$WFC" "$out/whitefootc"
 {
     git rev-parse HEAD
-    printf 'before=%s\nprevious=%s\n' "$before" "$previous"
+    printf 'before=%s\nprevious=%s\nunaligned=%s\n' "$before" "$previous" "$unaligned"
     git diff --stat
     uname -a
     "$CC" --version
@@ -100,8 +105,9 @@ printf '%s\n' "$CC $flags; recovered additionally -DWF_COMPUTE_STATS=0 -DWF_COMP
     "measured_modes=$modes; references=$references; libraries=$libraries" \
     'replica: byte-identical copy of candidate, independently invoked; raw runtime label remains candidate; A/A wall band is symmetric' \
     'previous: frozen f2d9d0fa maintained scheduler/floor and Windows host/completion sources with repaired wait rearming, before owned-inline completion' \
+    'unaligned: frozen 8b61e7c4 maintained runtime before counter isolation; same live atomic observation contract. Compare candidate/unaligned for this change; storage and instruction layout can also differ.' \
     'idle4096: current runtime sources with only -DWF_SCHED_IDLE_SPIN_ROUNDS=4096u changed; default remains 256' \
-    'diagnostics: separate longer batches; candidate/previous/idle4096 use WF_SCHED_REPORT=1, before uses 0; not pooled into wall samples' \
+    'diagnostics: separate longer batches; candidate/previous/unaligned/idle4096 use WF_SCHED_REPORT=1, before uses 0; not pooled into wall samples' \
     'wall samples: 4096 warm calls for n4096, 512 for n65536; first64 retained as a separate short view of each process, not independent extra samples' \
     'WF: --par --no-vectorize; same optimized WF object in every attribution image' \
     'CLI: normal --par --no-vectorize link at -O2, correctness only; end-to-end timing remains open' > "$out/flags.txt"
@@ -136,6 +142,7 @@ for mode in $modes; do
     runtime="$root/compiler/src/backend"
     policy_flags=
     if test "$mode" = previous; then runtime="$out/previous-source/compiler/src/backend"; fi
+    if test "$mode" = unaligned; then runtime="$out/unaligned-source/compiler/src/backend"; fi
     if test "$mode" = idle4096; then policy_flags=-DWF_SCHED_IDLE_SPIN_ROUNDS=4096u; fi
     if test "$mode" = before; then runtime="$out/baseline-source/compiler/src/backend"; fi
     set --
@@ -276,7 +283,10 @@ for width in $widths; do
     done
 done
 if test "$host" = Linux; then
-    # A smaller causal control for the measured x64 coarse-work regression.
+    # Keep the earlier join-placement question frozen at 8b61e7c4 versus f2.
+    # The new counter layout changes other function sizes and is not a valid
+    # subject for this non-join-address invariant. Ordinary screens above
+    # still test the current candidate against every reference.
     # A declaration changes placement only, never the maintained runtime body.
     # Keeping join in a separate ELF section prevents its size from shifting
     # later computation functions. Verify every other text address before use.
@@ -289,7 +299,7 @@ void wf_sched_join(struct wf_sched_core *, struct wf_sched_record *, int);
 EOF
     printf '%s\n' 'SECTIONS { .wf_join : { *(.wf_join) } } INSERT AFTER .fini;' > "$out/layout/join.ld"
     for mode in previous candidate; do
-        runtime="$root/compiler/src/backend"
+        runtime="$out/unaligned-source/compiler/src/backend"
         if test "$mode" = previous; then runtime="$out/previous-source/compiler/src/backend"; fi
         # shellcheck disable=SC2086
         "$CC" $flags -include "$out/layout/join-section.h" \
@@ -311,7 +321,7 @@ EOF
     cmp "$out/layout/previous-other-text.txt" "$out/layout/candidate-other-text.txt"
     cp "$out/layout-candidate" "$out/layout-replica"
     cmp "$out/layout-candidate" "$out/layout-replica"
-    printf '%s\n' 'Linux layout cohort: unchanged core sources, join placed after .fini; all non-join text symbol addresses match. Instruction/data equality is not assumed: size-bearing symbols, ELF maps and disassembly are retained. Smaller separate cohort, never pooled with ordinary samples.' >> "$out/flags.txt"
+    printf '%s\n' 'Linux layout cohort: frozen 8b61e7c4 (layout-candidate) versus f2 (layout-previous), not the current counter-isolation candidate. Join placed after .fini; all non-join text symbol addresses match. Instruction/data equality is not assumed: size-bearing symbols, ELF maps and disassembly are retained. Smaller separate cohort, never pooled with ordinary samples.' >> "$out/flags.txt"
     printf 'mode\tworkers\tn\ttile\tpass\tcore_mean_ns\tcycle_mean_ns\n' > "$out/layout-means.tsv"
     cp "$out/layout-means.tsv" "$out/layout-short-means.tsv"
     for width in $widths; do
