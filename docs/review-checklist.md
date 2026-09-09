@@ -15,6 +15,12 @@ working-tree changes as well. Read changed sections in context, the relevant
 document roles below, and directly affected definitions, callers, or cases.
 Do not load the whole repository or require a separate review packet.
 
+Judge the artifacts against the task and current owners, not just the author's
+summary. Mechanical checks cover their encoded properties; this review checks
+meaning, placement, and omitted dependent updates. Neither reconstructs an
+unrecorded reason or certifies the soundness of a design argument. Flag such
+uncertainty for the implementing agent rather than inventing missing evidence.
+
 Check the applicable items below. Skip sections whose trigger is absent.
 Use `pass`, `finding`, `unverified`, or `not applicable`; missing evidence is
 not a pass. When the task changes a review rule or an expected result, compare

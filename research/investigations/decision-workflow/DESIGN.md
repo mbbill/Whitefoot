@@ -67,13 +67,27 @@ existing specification and a distinguishing case. A choice about accepted
 programs, trust boundaries, representations, or important performance claims
 needs an explicit selection argument.
 
-| Occasion | Useful action | Result and existing home |
-|---|---|---|
-| Starting a relevant task | Identify the intended outcome, required behavior, and current rule or decision. Follow the relevant memory branch and alternatives when making a nontrivial choice. | Enough context to begin; no mandatory task document. An existing issue, PR, or conversation can identify the question. |
-| Reaching a material choice | Separate required properties from preferences and assumptions. Compare plausible alternatives, including keeping the current design when meaningful. Identify uncertainty that could change the choice. | A concise argument in the question's investigation; small choices can be explained directly in the PR. Do not invent alternatives to fill a form. |
-| Learning something discriminating | Use a witness, prototype, proof argument, or measurement that addresses the actual uncertainty. Preserve the task's behavior and comparison conditions. Investigate unexpected results. | Evidence in the relevant tests or research location; exploratory findings remain distinguishable from a previously stated prediction. |
-| A reason changes or a choice is settled | Revisit affected dependent decisions and current guidance. A dependent choice may survive on other grounds; explain that rather than automatically discarding it. | Current guidance in its owner and durable reasons in the appropriate MCTS-Mem node. Record settled choices when settled, including during a longer task. |
-| Completing a task | Run applicable technical checks and the existing fast completion review; address concrete findings and publish the delivered revision to its PR. | The existing compact PR report. Main still requires owner approval and the complete gate on the exact revision. |
+The 2026-09-09 refinement groups the method into four occasions: starting work,
+choosing, updating settled conclusions or changed grounds, and completion.
+Separate experiment and reconsideration rows duplicated the choice and update
+steps; their obligations remain within those steps. The owner identified rule
+volume and missing trigger occasions as reasons agents skip document upkeep.
+The entry instructions therefore point to one detailed procedure rather than
+another workflow document or per-task log.
+
+The selected division gives entry instructions responsibility for triggering
+actions, mechanical checks responsibility for their encoded invariants, and
+the completion reviewer responsibility for local meaning and affected-document
+consistency. A final reviewer cannot recover an experiment's unrecorded prior
+criterion or the actual rationale behind a choice. Recording at the choice or
+update occasion is therefore part of the proposed remedy, not a retrospective
+completion exercise. Reduced omission and upkeep cost remain unmeasured.
+
+No new CI mechanism is selected by this refinement. The existing gate covers
+executable checks and specification/index structure; memory lint remains a
+separate check. Moving a check into CI requires a reliable executable property
+and a usable baseline, rather than treating a model's approval as technical
+proof. A review report does not itself make an unsupported design claim true.
 
 Useful decision information fits into ordinary prose: the problem and scope;
 required properties and preferences; supporting facts and open assumptions;

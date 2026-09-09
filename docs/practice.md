@@ -24,22 +24,29 @@ and a falsifier.
 
 ## Decision work
 
-Use this method when choosing or reconsidering language behavior, a trust
-boundary, an interface or representation, an important performance claim,
-or a standing project rule. A routine fix under unchanged requirements and
-design normally needs the owning rule and a distinguishing case, without a
-new investigation or memory entry. Scale the reasoning to uncertainty, impact,
-the cost of a wrong choice, and reversibility; these actions add no approval
-stage.
+Use four occasions: start, choose, update, finish. A material choice changes
+accepted behavior, a safety or trust condition, a shared interface or
+representation, a significant performance commitment, or a standing project
+rule. Restoring already specified behavior or editing prose without changing
+its meaning is normally routine. If the work reveals a new design question,
+use the choice step then; task size and file count do not determine this.
+Scale the reasoning to uncertainty, impact, error cost, and reversibility.
 
-| Trigger | Action by the implementing agent | Observable result | Completion check |
-|---|---|---|---|
-| Starting or resuming work | Identify the intended outcome, protected behavior, and affected rules or interfaces. For a nontrivial choice, walk the relevant memory branch and its alternatives using `mcts-mem-use`. Recover current state from actual files and the PR when resuming. | The eventual explanation uses current owners and accounts for relevant prior objections. No start-of-task log is required. | R1 |
-| Reaching a material choice | Separate required properties, preferences, facts, and assumptions. Compare real alternatives, including retaining the current choice when meaningful. State why the selection is appropriate and what could change it. | A short argument in the existing investigation, or in the PR for a small choice; settled reasons are retained in memory. No invented alternatives or compulsory new document. | R1 |
-| Using an experiment to choose | Before running a discriminating measurement, state the comparison, protected requirements, and result that would favor or refute the candidate. Record actual conditions and outcomes. Treat a question invented after seeing results as exploratory. | The relevant experiment or investigation contains the criterion and result; cases test the intended behavior independently. An inconclusive result leaves the choice provisional. | R2, C2, V2 |
-| Settling or changing a choice | Update its standing owner and the affected memory Items; append the actual evidence or replacement history with the skill. Update affected index rows in the same change. | Current guidance agrees with the result; the memory explains it and the index reaches that reason. Record a settled choice during long work, not just at its end. | R3, M1–M3 |
-| Changing an objective, premise, cited source, or rule; finding contrary evidence; meeting a recorded reopening condition | Use rule IDs, index references, and the reason's material dependencies to find affected choices. Reconsider whether each choice still stands, stands on a different ground, or needs replacement. Update the reason and its consumers. | Affected rows and standing guidance are corrected. An unresolved reason is marked `revisit` with the concrete question at its source; it is not silently carried as current support. | R3, R4, T1 |
-| Completing the task | Run applicable checks and the fast completion review; fix findings and publish the reviewed revision to the existing PR. | The existing compact PR report states the checked scope, results, and unresolved questions. | V1–V4 |
+| Occasion | Action | Observable result / completion check |
+|---|---|---|
+| Start or resume | Read the affected current owner: the specification for language behavior, compiler guide and code for implementation, or document role for prose. For a material choice, read the relevant constitutional clauses and follow the rule index to its reasons; walk the relevant memory branch and alternatives with the skill. On resumption, verify the actual working tree and PR state. | The work follows the relevant requirements and accounts for prior objections. No reading log or task document. A1, D3, R1. |
+| Choose | State required properties, facts, assumptions, actual alternatives, the selection reason, and what could change it. Use deduction only for conclusions the stated premises entail; otherwise state the empirical or provisional ground. Before an experiment intended to select a design, record what result would distinguish the candidates; keep later exploration identifiable. | A concise reason in the existing investigation, or the PR for a small choice; experimental criteria and results at their source. R1, R2. |
+| Update | When a choice is settled or its grounds change, update the standing owner and memory; update index rows for affected language rules. Follow references and material dependencies into consumers, reconsidering each affected choice. Continue if its conclusion or grounds change; stop at an unaffected dependency. Keep unresolved grounds explicit, with a concrete question and affected rows marked `revisit`. Do this when the conclusion is reached, including during long tasks. | Current guidance, recorded reasons, and the index agree. State the affected set and any unresolved reason in the existing explanation. R3, R4, M1–M3. |
+| Finish | Run applicable mechanical checks, give another agent the task constraints, full diff and actual results, and use the completion checklist. Fix findings and recheck affected items, then publish the reviewed changes and compact report to the existing PR. | Check results, findings and limitations at the review surface. No separate review file or additional approval stage. V1–V4. |
+
+For a choice without an existing rule or memory node, use the nearest relevant
+owner and memory branch; do not require an index entry merely to begin.
+A recorded reason names its material premises and dependent rules or interfaces
+where known. Follow these links and search changed rule IDs or concepts to
+find consumers; a search supplements reading and cannot prove completeness.
+Choose where to write using the [document roles](review-checklist.md#document-roles).
+The skill determines whether a memory node is warranted; the index covers
+language rules, not every task or engineering choice.
 
 The constitution supplies purpose, objectives, tradeoffs, and conditional
 principles. It does not supply a unique solution. The active specification

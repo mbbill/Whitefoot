@@ -90,29 +90,23 @@ probably not the next work.
 Read only the material relevant to the current task. Do not turn historical
 research into an implied implementation requirement.
 
-Maintain a current fact in its owning document and link to it elsewhere. When
-a decision changes, update the affected standing guidance as well as recording
-the decision; appending history does not supersede a contradictory instruction.
-Follow rule IDs, named interfaces, and references to find the affected reading
-set. Do not require every task to load the whole repository. Check commands and
-links mechanically where useful, and review meaning across the affected owners;
-a text search cannot establish logical consistency. Dated evidence retains its
-experimental conditions and is not rewritten as a current capability claim.
-The practical maintenance method is in `docs/practice.md`.
+Follow the four occasions in [decision practice](docs/practice.md#decision-work):
 
-Use [decision practice](docs/practice.md#decision-work) when reaching a material
-choice, settling it, or learning something that changes its grounds. It defines
-the triggers, affected-set procedure, and observable results for updating
-current guidance, memory, and the rule index. Routine fixes under unchanged
-design do not require a new decision record. These are actions within work;
-the completion review below remains the single review checkpoint.
+1. **Start or resume:** read the affected current owners; for a material choice,
+   also recover the relevant constitutional aims and existing decision grounds.
+2. **Choose:** state why a material choice fits its requirements and evidence;
+   record a discriminating experiment's criterion before using it to choose.
+3. **Update:** when a conclusion or its grounds change, update current guidance,
+   memory, affected rule-index entries, and material dependents in the same work.
+4. **Finish:** run applicable checks and another agent's
+   [completion review](docs/review-checklist.md), fix findings, and publish the
+   result. This is the single review checkpoint; no separate review record or
+   owner approval is required for branch work.
 
-At the end of a repository-changing task, run the applicable checks in
-[the completion review checklist](docs/review-checklist.md) before reporting
-completion or handing over the result. It defines document content and
-citation boundaries and the bounded checks for a fast reviewing agent.
-Report concrete findings in the task or PR and recheck affected items after
-fixes; no separate review record or owner approval is required.
+Decision practice defines the material-choice boundary, reading and writing
+locations, and affected-set procedure. Routine fixes under unchanged design
+need no new decision record. Record reasons when choices settle, not by
+reconstructing them at task completion.
 
 When working on an existing open PR, use that PR as the owner's review
 surface. After each completed round of changes, applicable checks, and review,
