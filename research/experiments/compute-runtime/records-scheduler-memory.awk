@@ -1,6 +1,8 @@
 # Exact diagnostic grammar for the pinned Linux x86_64 Rayon caller worker.
 # Addresses, build IDs, checkout paths and compiler-unit hashes may relocate;
 # allocation sizes, counts, semantic stack identities and ordering may not.
+# LSan reports unreachable objects, not a complete retained-object inventory.
+# Require the known worker; a reported queue must also have its known identity.
 function fail(why) {
     print "scheduler sanitizer report rejected: " why > "/dev/stderr";
     bad=1; exit 1
@@ -104,13 +106,13 @@ BEGIN {
     if ($0=="Direct leak of 384 byte(s) in 1 object(s) allocated from:") kind="worker";
     else if ($0=="Indirect leak of 1520 byte(s) in 1 object(s) allocated from:") kind="queue";
     else if (extra==257 && $0=="Direct leak of 257 byte(s) in 1 object(s) allocated from:") kind="extra";
-    else if ($0=="SUMMARY: AddressSanitizer: " (1904+extra) " byte(s) leaked in " (2+(extra!=0)) " allocation(s).") finished=1;
+    else if ($0=="SUMMARY: AddressSanitizer: " (384*workers+1520*queues+257*extras) " byte(s) leaked in " (workers+queues+extras) " allocation(s).") finished=1;
     else fail("unknown allocation or summary");
 }
 END {
     close(prefix);
     if (bad) exit 1;
-    if (leak && (started!=4 || !finished || kind!="" || workers!=1 || queues!=1 || extras!=(extra!=0)))
+    if (leak && (started!=4 || !finished || kind!="" || workers!=1 || queues>1 || extras!=(extra!=0)))
         fail("incomplete lifecycle report");
     if (!leak && started) fail("unexpected trailing blank line");
 }

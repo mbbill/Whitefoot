@@ -3362,18 +3362,34 @@ prefix, using the timing driver's shared `records-scheduler-record.awk` for
 cadence rows. Clean cases require exit zero and no additional output.
 
 Linux x86_64 ASan checks retain LeakSanitizer with an explicit exit code of 23.
-For the pinned Rayon caller-worker API only, the required lifecycle report is
-one 384-byte direct worker allocation and one 1,520-byte indirect queue block,
-with the exact semantic allocation stacks checked by
+For the pinned Rayon caller-worker API only, the recognized lifecycle report
+contains one 384-byte direct worker allocation and optionally one 1,520-byte
+indirect queue block, with the exact semantic allocation stacks checked by
 `records-scheduler-memory.awk`. All fourteen Rayon reports in the
 [`08e58d63` scheduler run](https://github.com/mbbill/Whitefoot/actions/runs/34184353021)
-had that same shape, after successful functional qualification. The checker
+had both allocations, after successful functional qualification. The checker
 allows relocation addresses, source line numbers and compiler hashes to vary;
-changed allocation sizes, counts, stack identities, incomplete output, any
+changed per-object sizes or counts, stack identities, incomplete output, any
 additional diagnostic, and any other exit status fail. This documents retained
 process-lifetime storage, not a memory-clean teardown. No leak suppression is
 installed. Other platforms and non-address sanitizer builds require clean
 exit-zero reports; the explicit replay mode only tests archived Linux reports.
+
+The [dc383eef Linux gate](https://github.com/mbbill/Whitefoot/actions/runs/34385490336/job/102580579719)
+instead reports just the same known worker, totaling 384 bytes in one allocation.
+The old classifier rejects that report because it requires the queue too.
+Rayon's pinned `use_current_thread()` deliberately retains its caller worker;
+its FIFO allocates eagerly. The missing queue report is not evidence of lazy
+allocation or successful teardown. [LSan's reachability-based operation](https://github.com/google/sanitizers/wiki/AddressSanitizerLeakSanitizerDesignDocument#operation)
+reports unreachable blocks, not a complete inventory of retained objects.
+The corrected invariant is that every reported allocation has its established
+identity, with the summary matching exactly the parsed allocations. The reason
+this run does not report the queue remains unknown. A worker must still appear;
+unknown allocations, duplicate objects, wrong totals and incomplete reports
+still fail. `check-sanitizer-reports`, shared by the scheduler and quadrature
+checks, replays both shapes and their malformed variants on every host; it also
+requires the normal classifier to reject an injected 257-byte allocation with
+either shape. Actual Linux sanitizer execution and its status checks remain.
 
 A separate Linux x86_64 ASan executable injects a 257-byte C allocation after
 full qualification. The gate first requires the actual additional allocation

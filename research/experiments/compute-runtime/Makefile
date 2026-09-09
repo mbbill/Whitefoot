@@ -203,7 +203,11 @@ quadrature-formal-build: quadrature-build
 quadrature-formal-calibrate: quadrature-formal-build
 	OUT="$(OUT)" RESULTS="$(OUT)/quadrature/formal-calibration" sh quadrature-batch.sh formal-calibrate
 
-check-quadrature: quadrature-formal-build
+.PHONY: check-sanitizer-reports
+check-sanitizer-reports:
+	OUT="$(OUT)" sh records-scheduler-memory-test.sh
+
+check-quadrature: quadrature-formal-build check-sanitizer-reports
 	OUT="$(OUT)" sh quadrature-batch.sh formal-check
 	RUSTFLAGS='$(QUADRATURE_RUST_FLAGS)' cargo test --locked --offline --release \
 		--manifest-path records-rayon/Cargo.toml --target-dir "$(OUT)/quadrature/rayon-sanitized" \
@@ -618,7 +622,7 @@ scheduler-build:
 	$(CC) --version >> "$(OUT)/scheduler-flags.txt"
 	$(CXX) --version >> "$(OUT)/scheduler-flags.txt"
 
-check-scheduler-memory: scheduler-build
+check-scheduler-memory: scheduler-build check-sanitizer-reports
 	@for unit in records_native records_oracle records_work records_runtime records_static runtime; do \
 		stats=; if test $$unit = runtime; then stats=-DWF_COMPUTE_STATS=0; fi; \
 		$(CC) -std=c11 $(SCHEDULER_FLAGS) -fsanitize=$(SANITIZER) -fno-sanitize-recover=all \

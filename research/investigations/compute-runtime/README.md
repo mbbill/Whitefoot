@@ -1206,9 +1206,114 @@ supply no passing correctness or performance evidence. All six macOS gate
 jobs and the Windows I/O host and benchmark jobs pass.
 The follow-up workflow repair selects the runner's existing Ubuntu24.04
 `ubuntu.sources` for required packages, retaining its signing configuration
-and all tests. Its native execution is pending; a setup failure is not waived.
+and all tests. The follow-up execution below validates this setup repair;
+the earlier failed jobs are not passing evidence.
 The API integration also rejects job reruns and PR metadata writes with 403;
-branch pushes remain available. Canonical bf7c56df checking is running locally.
+branch pushes remain available. Exact bf7c56df subsequently passes canonical
+`make check` with the verified native dependency pins: compiler 610 seconds,
+research 212, conformance 98 and snapshot 21. This does not qualify later trees.
+
+The [dc383eef native cohort](https://github.com/mbbill/Whitefoot/actions/runs/34385490206)
+has the same runtime bytes as bf7c56df and runs past setup on all platforms.
+All five formal-runtime screens still fail performance acceptance. Long-view
+candidate/8b61 medians (below one favors the candidate) are:
+
+| Native host | 4096/tile1024 W2 | W4 | 65536/tile16 W2 | W4 |
+|---|---:|---:|---:|---:|
+| Linux x86_64 | 0.8528 | 0.8113 | 1.0084 | 1.0097 |
+| Linux AArch64 | 0.9950 | 0.9848 | 0.9486 | 0.9679 |
+| macOS AArch64 | 1.0743 | not run | 0.8552 | not run |
+| macOS x86_64 | 1.0285 | 1.1190 | 1.0184 | 1.1034 |
+| Windows x86_64 | 1.3366 | 0.9879 | 0.9954 | 1.0166 |
+
+Linux x86_64 W4 coarse repeats its improvement over 8b61, with ratios
+0.7738–0.8274 and A/A median 0.9833, but remains 1.4171 times recovered.
+Linux AArch64 W4 coarse is 1.5991 times recovered. macOS AArch64 W2 coarse
+is 1.6105 times recovered, and macOS x86_64 W4 coarse is 1.5656. Windows
+W4 coarse remains 2.4568 times historical formal-before (2.1527–2.9292),
+with noisy candidate/replica median 0.8600. Its W2 coarse regression against
+8b61 has range 1.0012–1.4551 and A/A median 1.0406. Retain both cohorts;
+these measurements do not establish portable acceptance of the slot change.
+
+Records, scheduler, FIR and Mandelbrot Linux jobs pass; quadrature fails its
+performance screen. The [gate](https://github.com/mbbill/Whitefoot/actions/runs/34385490336)
+has eleven passing jobs and one Linux research failure: the already-known
+Rayon caller-worker report contains only 384 bytes, which the old classifier
+rejects. The experiment README records the corrected report-membership
+invariant and its limits; this failing run is not retroactively marked green.
+Both [I/O host jobs](https://github.com/mbbill/Whitefoot/actions/runs/34385490308)
+and all four [I/O benchmark/read jobs](https://github.com/mbbill/Whitefoot/actions/runs/34385490307)
+pass. These are evidence of preserved I/O function, not compute acceptance.
+
+### Open delayed idle-registration experiment
+
+The next candidate compares with dc383eef, keeping task slots, counters,
+spin/yield limits and the stack policy fixed. The current idle turn publishes
+its idle bit before its bounded polling window. Every task publication that
+sees any such bit calls the shared wake primitive, which advances an atomic
+epoch even when notification coalescing avoids the host lock. The recovered
+runtime polls before publishing its idle bit. This difference is a candidate
+source of contention, not an established explanation of the measured losses.
+
+Test polling without a registration, then retain the complete pre-sleep
+sequence: publish the idle bit and optional in-place waiter, capture the
+epoch, flush/progress, check ready work, status and deques, and park only on
+that captured epoch. Keep a progress pass before polling as well, so pending
+I/O is not delayed by a new polling window. No unregistered path may sleep,
+and a path finding work must clear only a registration it actually made.
+The final registered window retains the existing lost-wake argument; the
+earlier scans cannot replace any of its checks.
+
+Selection requires all existing native and bounded-interleaving checks,
+mixed I/O progress, lower shared wake-epoch traffic in separate diagnostic
+batches, and no unresolved wall/CPU/RSS regression against the same-host
+dc383eef baseline. The full recovered-runtime and native-reference goals
+remain. Unchanged limits isolate announcement timing from simply spinning
+longer. If notification traffic falls without improving application costs,
+this hypothesis is insufficient. Native instruction layout can still differ.
+
+Local validation of the delayed-registration tree passes native smoke, all
+four bounded schedule enumerations, core-read/default-route checks and the
+default-route TSan check. The largest enumeration visits 98,769,875 states;
+no state ceiling or stranded-work assertion changes. A rebuilt compiler's
+ordinary `--par --no-vectorize` FIR command passes at one and four workers;
+that small impulse program is correctness evidence only.
+
+The local M1-series Mac cohort uses identical scalar computation objects,
+dc383eef runtime sources, the modified maintained runtime, and a byte-identical
+candidate replica. Five alternating passes cover all 12 cells (180 processes),
+after other local tests finish, plus 24 separate diagnostic processes. The
+`late-idle-perf-run2` raw rows, source copies, candidate patch, flags and
+reproduction script are retained locally only, not as a published CI artifact. All
+candidate/base wall medians lie between 0.9850 and 1.0242: no meaningful
+overall improvement. W4 small/fine is 1.0242 (0.9271–1.0968), small/coarse
+1.0119 (0.9913–1.0527), large/fine 0.9952 (0.9692–1.3198), large/coarse
+0.9998 (0.9876–1.0027). Batch CPU includes verification: W1 large/fine
+regresses to 1.0318 (1.0263–1.0340; CPU A/A 1.0000), and W2 large/fine
+to 1.0249 (1.0101–1.0283; CPU A/A 0.9963). All RSS medians are at most
+1.0223, without an allocation-policy change.
+
+In separate W4 large/fine diagnostics, wake-epoch advances fall from 172,999
+to 121,700, while parks stay at three and wall time barely changes. Small/fine
+advances instead rise from 738,363 to 740,403. These count notification-epoch
+advances, not task publications or kernel wakeups, and are not sampled inside
+timed calls. The local result
+does not select this policy; the CPU regressions remain open. The CI screen
+adds frozen dc383eef as `slotbase` while preserving all previous controls and
+acceptance limits, to test the different native hosts. Initial local setup and
+compile failures occurred before timing and are retained separately; no timed
+sample is discarded. Full candidate canonical checking and native CI remain
+pending.
+
+Independent review of this round over dc383eef covers the maintained idle
+protocol, frozen comparison sources, diagnostic boundaries, sanitizer grammar
+and its gate wiring, and the reported measurements. The reviewer checks shell
+syntax/whitespace, reconciles all five CI tables and recomputes the local
+wall/CPU/RSS results; supplied native/model/I/O logs pass. Both prose findings
+are corrected, with no remaining finding in that scope. Current canonical
+checking, cross-platform performance and normal-CLI timing are unverified;
+the local CPU regressions are unresolved. This is not whole-PR approval or
+completion of the delivery goal.
 
 ## Earlier investigation and evidence
 

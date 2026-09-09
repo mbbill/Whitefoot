@@ -61,6 +61,7 @@ extern int wf__floor_run(int, char **);
 #ifdef WF_SHARED_CONTROL
 extern int wf__sched_report(char *, size_t);
 extern unsigned wf__sched_pool_running(void);
+extern uint64_t wf_prim_epoch(void);
 #endif
 
 static uint64_t entered_at;
@@ -295,6 +296,11 @@ int wf__main_body(int argc, char **argv) {
     uint64_t wait_announcements_before = wf__completion_wait_announcements();
     uint64_t wait_signals_before = wf__completion_wait_signals();
 #endif
+#ifdef WF_SHARED_CONTROL
+    const char *report_setting = getenv("WF_SCHED_REPORT");
+    int observe_wake_epoch = report_setting != NULL && strcmp(report_setting, "1") == 0;
+    uint64_t wake_epoch_before = observe_wake_epoch ? wf_prim_epoch() : 0;
+#endif
     uint64_t batch_start = now();
     /* Call zero is retained as first invocation, then REPS warm invocations.
      * Checks warm the output/cache between calls and are never subtracted from
@@ -305,6 +311,9 @@ int wf__main_body(int argc, char **argv) {
         require(memcmp(state, expected_state, h * sizeof(double)) == 0, "wrong history bits");
     }
     uint64_t batch_ns = now() - batch_start;
+#ifdef WF_SHARED_CONTROL
+    uint64_t wake_epoch_delta = observe_wake_epoch ? wf_prim_epoch() - wake_epoch_before : 0;
+#endif
 #ifdef WF_COMPLETION_WAIT_STATS
     uint64_t wait_announcements = wf__completion_wait_announcements() - wait_announcements_before;
     uint64_t wait_signals = wf__completion_wait_signals() - wait_signals_before;
@@ -362,6 +371,10 @@ int wf__main_body(int argc, char **argv) {
     char report[1024];
     if (wf__sched_report(report, sizeof(report))) printf("# %s\n", report);
     else puts("# shared_pool_report=disabled_or_unavailable");
+    if (observe_wake_epoch) {
+        printf("# wake_epoch: advances=%" PRIu64 " scope=batch_including_checks\n",
+               wake_epoch_delta);
+    }
 #endif
 #ifdef WF_COMPLETION_WAIT_STATS
     printf("# host_wait: announcements=%" PRIu64 " signals=%" PRIu64
