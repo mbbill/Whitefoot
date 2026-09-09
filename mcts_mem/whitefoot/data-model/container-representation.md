@@ -25,6 +25,13 @@
   state; variable length and head are not universal array metadata. Placement and
   stable identity are separate axes, with no mandatory handle/store indirection
   on dense values. Current specification bytes still define source behavior.
+- Keep invariant type brands distinct from loan lifetimes at helper boundaries.
+  A named generic brand is meaningful even at one input position; store-brand
+  elision has PROV-1's already-determined meaning. Match every explicit type-name
+  position, including nested and multiple brands, without expanding nominal
+  fields or an opaque type parameter. Fixed input brands cannot be shortened by
+  loans; complete parameter types still agree after the final substitution.
+  Constructor fields use the same positional relation with exact field types.
 - Keep initial public storage transitions compiler-checked. Make finite ranges,
   loans, storage identity, and initialized responsibility explicit internally, but
   do not mistake a concrete checker model for a verified symbolic library or a
@@ -114,6 +121,16 @@
   release responsibility does not create another aggregate owner.
 
 ## Facts
+
+- 2026-09-09 selection: a single-input `SmallBytes<'s>` reader exposed a conflict
+  between FORM-8's former multiplicity-only naming and TYPE-2's required nominal
+  brand arguments. The selected repair retains named invariant brands and derives
+  all argument positions from the declared type structure. An unused provider
+  argument, tying the reader's loan to its backing lifetime, and expanding
+  concrete opaque type arguments were rejected as unnecessary coupling or
+  instantiation-dependent spelling. Generic hash/equality invocation, empty variant
+  brand supply, projected Result measures and compact enum layout remain separate
+  questions. [Selection and boundaries](../../../research/investigations/containers-and-resources/FOUNDATION.md#generic-brand-parameters). (sourced)
 
 - 2026-09-06 owner correction: Whitefoot has no substantial real-application
   corpus yet. This selection's small executable programs establish particular
