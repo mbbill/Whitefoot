@@ -1,4 +1,4 @@
-fn nibble['s](store: &uniq 's Arena<'s, 64, 1>) -> taken: own Option<Vector<'s, u8>> reads(store), writes(store), allocates(store) {
+fn nibble['s](store: &uniq Arena<'s, 64, 1>) -> taken: own Option<Vector<'s, u8>> reads(store), writes(store), allocates(store) {
   doc "Takes one byte and no more, so the amount its body moves the cursor by is not a fact of the signature.";
   region {
     return arena_vector::<u8>(store: &uniq deref(store), count: 1_u64);

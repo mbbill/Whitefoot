@@ -1,4 +1,4 @@
-fn reserve['s](store: &uniq 's Arena<'s, 64, 1>) -> taken: own Option<Vector<'s, u8>> reads(store), writes(store), allocates(store) {
+fn reserve['s](store: &uniq Arena<'s, 64, 1>) -> taken: own Option<Vector<'s, u8>> reads(store), writes(store), allocates(store) {
   doc "Takes eight bytes from the extent it was handed and hands the run back, which moves the extent's own cursor.";
   region {
     return arena_vector::<u8>(store: &uniq deref(store), count: 8_u64);
