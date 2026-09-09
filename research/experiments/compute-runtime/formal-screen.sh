@@ -82,6 +82,7 @@ else
     git show "$old:compiler/src/backend/par_runtime_windows.c" > "$out/source/old.original.c"
     sed -e 's/wf__par_load64_acquire(\&victim->top)/wf__par_load64_seq(\&victim->top)/' \
         -e 's/wf__par_load64_acquire(\&victim->bottom)/wf__par_load64_seq(\&victim->bottom)/' \
+        -e '/^static LONG64 wf__par_load64_acquire(/,/^}/d' \
         "$out/source/old.original.c" > "$out/old.c"
     cat >> "$out/old.c" <<'C'
 /* Read-only observer; historical production counters were disabled. */

@@ -227,7 +227,7 @@ jobs:
           tr -d $'\r' < "$record-adapter.txt" | grep -F 'route=posix-adapter' > /dev/null
 
       # The ring alone, with no bridge at all: a real positioned transfer found
-      # by the record's own address, published through the scheduler core, and
+      # by the record's own address, release-published by the adapter probe, and
       # waited for on the ring's own park.
       #
       # `windows_runtime.c` is in this link and is not the bridge: the ring's
@@ -242,6 +242,7 @@ jobs:
             -I compiler/src/backend/completion \
             compiler/src/backend/sched/core.c \
             compiler/src/backend/sched/prim_windows.c \
+            compiler/src/backend/sched/entry.c \
             compiler/src/backend/completion/runtime.c \
             compiler/src/backend/completion/wait_windows.c \
             compiler/src/backend/completion/native_contract.c \

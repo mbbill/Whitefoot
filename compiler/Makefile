@@ -497,6 +497,7 @@ completion-windows-cross:
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) \
 		$(SCHED_DIR)/core.c \
 		$(SCHED_DIR)/prim_windows.c \
+		$(SCHED_DIR)/entry.c \
 		$(COMPLETION_DIR)/runtime.c \
 		$(COMPLETION_DIR)/wait_windows.c \
 		$(COMPLETION_DIR)/native_contract.c \
