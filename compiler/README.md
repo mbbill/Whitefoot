@@ -717,11 +717,14 @@ stack-availability question [SCOPE-3] defers for a program that is not
 `resource_closed`, and the stack ledger reports it as a `STACK cycle` row.
 
 Contracts currently support the FN-8 requirement vocabulary and FN-9's
-restricted integer-result relations, including the selected `Ok` payload
-route. They are not a general specification language for aggregate results
-or mutable data-structure invariants. A contract-member `fn_sig` cannot carry
-a function `contract_block`. Verification is over the closed source bundle;
-independent module checking remains future work.
+restricted integer-result and container-measure relations, including the
+selected integer `Ok` payload route. On each selected return, a container result
+referenced by a postcondition must name an admitted place: bind a producing call
+before returning that binding. An unsupported returned expression is diagnosed
+at its return statement. Contracts are not a general specification language for
+aggregate results or mutable data-structure invariants. A contract-member
+`fn_sig` cannot carry a function `contract_block`. Verification is over the
+closed source bundle; independent module checking remains future work.
 
 ## Finding the implementation
 

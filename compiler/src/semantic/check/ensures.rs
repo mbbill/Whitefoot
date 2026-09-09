@@ -1050,14 +1050,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         self.collect_postcondition_binding_info(body, &mut binding_info);
 
-        // [FN-9, CALL-4] a return is selected for this clause only when every
-        // result ordinal the relation names evaluates there to one admitted
-        // datum; an ordinal the clause does not name imposes nothing.
+        // [FN-9, CALL-4] every result ordinal the relation names must
+        // evaluate at a selected return to one admitted datum, including a
+        // place named only under a measure. An unnamed ordinal imposes nothing.
         let named = relation
             .operands
             .iter()
             .filter_map(|operand| match &operand.datum {
                 RelationDatum::Result { ordinal, .. } => Some(*ordinal),
+                RelationDatum::Measure(
+                    _,
+                    PostconditionPlace {
+                        root: PostconditionPlaceRoot::Result { ordinal },
+                        ..
+                    },
+                ) => Some(*ordinal),
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -1233,26 +1240,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         }
                         (None, value) => vec![value],
                     };
+                    // [FN-9] route selection precedes datum admission for
+                    // every ordinal. An Err exit is unselected even when a
+                    // different result precedes it in the written list.
+                    let routed_payload = if selector.variant.is_some() {
+                        let ordinal = usize::try_from(selector.ordinal)
+                            .map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+                        let produced = ordinals
+                            .get(ordinal)
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                        match self.postcondition_route_payload(
+                            function,
+                            selector.ordinal,
+                            produced,
+                            node_path,
+                        )? {
+                            Some(payload) => Some(payload),
+                            None => continue,
+                        }
+                    } else {
+                        None
+                    };
                     let mut values = Vec::with_capacity(ordinals.len());
-                    let mut selected_at_all = true;
                     for (ordinal, produced) in ordinals.into_iter().enumerate() {
                         let Ok(ordinal) = u32::try_from(ordinal) else {
                             return Err(SemanticCompilerFailure::CounterOverflow.into());
                         };
-                        let routed = selector.variant.is_some() && ordinal == selector.ordinal;
-                        let produced = if routed {
-                            match self.postcondition_route_payload(
-                                function, ordinal, produced, node_path,
-                            )? {
-                                Some(payload) => payload,
-                                // A direct `Err` return is unselected for this
-                                // routed clause [FN-9].
-                                None => {
-                                    selected_at_all = false;
-                                    values.push(None);
-                                    continue;
-                                }
-                            }
+                        let produced = if ordinal == selector.ordinal {
+                            routed_payload.unwrap_or(produced)
                         } else {
                             produced
                         };
@@ -1263,12 +1278,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         }
                         values.push(datum);
                     }
-                    if selected_at_all {
-                        selected.push(SelectedPostconditionReturn {
-                            statement: node_path.clone(),
-                            values,
-                        });
-                    }
+                    selected.push(SelectedPostconditionReturn {
+                        statement: node_path.clone(),
+                        values,
+                    });
                 }
                 CheckedStatement::Match { arms, .. }
                 | CheckedStatement::ValueMatchLet { arms, .. } => {

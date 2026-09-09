@@ -1699,6 +1699,95 @@ command fn main() -> status: own ExitStatus pure {
     assert_complete(source);
 }
 
+fn measured_call_return_source(generic: bool, bind_result: bool, expected: u64) -> String {
+    let (parameters, element, arguments) = if generic {
+        ("<T: linear>", "T", "::<box<u64>>")
+    } else {
+        ("", "box<u64>", "")
+    };
+    let returned = if bind_result {
+        "let filled = place_back(vector: move vacant, value: move value);\n  return move filled;"
+    } else {
+        "return place_back(vector: move vacant, value: move value);"
+    };
+    format!(
+        "fn singleton{parameters}(value: own {element}) -> result: own FixedVector<{element}, 1> pure contract {{\n  ensures len_of(result) == {expected}_u64;\n}} {{\n  let vacant = fixed_vector::<{element}, 1>();\n  {returned}\n}}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  let value = box_new(17_u64);\n  let items = singleton{arguments}(value: move value);\n  return exit_status(code: 0_u8);\n}}\n"
+    )
+}
+
+#[test]
+fn a_direct_measured_call_return_reports_its_unsupported_result_datum() {
+    for generic in [false, true] {
+        let source = measured_call_return_source(generic, false, 1);
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::SourceIssue { issue } = outcome else {
+                panic!("an unnamed call result has no FN-9 return datum: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), SemanticRule::Fn9);
+            assert!(matches!(
+                issue.kind(),
+                SemanticIssueKind::InvalidPostconditionReturn
+            ));
+        });
+        assert_rule_at(
+            source.as_bytes(),
+            SemanticRule::Fn9,
+            "return place_back(vector: move vacant, value: move value);",
+        );
+    }
+}
+
+#[test]
+fn a_bound_measured_call_return_preserves_the_kernel_result_relation() {
+    for generic in [false, true] {
+        assert_complete(measured_call_return_source(generic, true, 1).as_bytes());
+    }
+}
+
+#[test]
+fn a_bound_measured_call_return_still_refutes_a_wrong_postcondition() {
+    for generic in [false, true] {
+        let source = measured_call_return_source(generic, true, 0);
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::SourceIssue { issue } = outcome else {
+                panic!("a wrong length relation must fail FN-9: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), SemanticRule::Fn9);
+            let SemanticIssueKind::UndischargedPostcondition(detail) = issue.kind() else {
+                panic!("a selected return must retain its proof failure: {issue:?}");
+            };
+            assert_eq!(
+                detail.disposition,
+                crate::PostconditionProofDisposition::Refuted
+            );
+        });
+        assert_rule_at(source.as_bytes(), SemanticRule::Fn9, "return move filled;");
+    }
+}
+
+#[test]
+fn an_unselected_error_skips_other_measured_call_return_datums() {
+    for late_route in [false, true] {
+        let (results, success, failure) = if late_route {
+            (
+                "items: own FixedVector<u8, 1>, status: own Result<u64, u8>",
+                "move full, Ok<u64, u8>(value: 0_u64)",
+                "fixed_vector::<u8, 1>(), Err<u64, u8>(error: 1_u8)",
+            )
+        } else {
+            (
+                "status: own Result<u64, u8>, items: own FixedVector<u8, 1>",
+                "Ok<u64, u8>(value: 0_u64), move full",
+                "Err<u64, u8>(error: 1_u8), fixed_vector::<u8, 1>()",
+            )
+        };
+        let source = format!(
+            "fn build(keep: own Bool) -> ({results}) pure contract {{\n  ensures when status is Ok(value: accepted): len_of(items) == 1_u64;\n}} {{\n  if keep {{\n    let empty = fixed_vector::<u8, 1>();\n    let full = place_back(vector: move empty, value: 17_u8);\n    return {success};\n  }}\n  return {failure};\n}}\n\n{COMMAND_MAIN}"
+        );
+        assert_complete(source.as_bytes());
+    }
+}
+
 #[test]
 fn a_holder_alias_does_not_change_the_selected_return_term_identity() {
     let source = br#"struct Pair {
