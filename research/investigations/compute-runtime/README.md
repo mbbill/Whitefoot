@@ -1097,9 +1097,10 @@ and both [I/O host jobs](https://github.com/mbbill/Whitefoot/actions/runs/343806
 pass. The Windows I/O benchmark stops because `io-warm` remains unstable after
 two cohorts; its mixed observer records 1,024 grants. This is not an I/O
 performance pass. Local canonical checking stops at missing pinned scheduler
-source paths after compiler checks pass; the unchanged revision is being
-rerun with verified TBB/Parlay pins and explicit source paths. No full local
-canonical pass is claimed for this revision yet.
+source paths after compiler checks pass. The unchanged revision subsequently
+passes canonical `make check` with verified TBB/Parlay pins and explicit source
+paths, including the complete native conformance adapter and snapshot corpus.
+This correctness pass does not change its failed performance verdict.
 
 ### Open owner-local slot experiment
 
@@ -1150,6 +1151,64 @@ configurations, and a rebuilt ordinary scalar CLI FIR command at one/four
 workers. Independent review finds no remaining correctness blocker after
 adding a per-step two-list membership/cycle check before state pruning.
 Cross-platform performance and full candidate canonical validation remain open.
+
+The [native screen at bf7c56df](https://github.com/mbbill/Whitefoot/actions/runs/34383558863)
+retains mixed results. These are long-batch median candidate/8b61e7c4 ratios;
+coarse means 4,096 outputs / tile1024, fine means 65,536 outputs / tile16.
+Values below one favor the candidate. The table is a representative subset,
+not a replacement for the complete per-cell artifacts and short-view failures.
+
+| Target | Coarse, 2 workers | Coarse, 4 workers | Fine, 2 workers | Fine, 4 workers |
+| --- | ---: | ---: | ---: | ---: |
+| Linux x64 | 0.8369 | 0.8082 | 0.9952 | 0.9980 |
+| Linux ARM64 | 0.9910 | 0.9701 | 0.9664 | 0.9692 |
+| Windows x64 | 0.9801 | 0.9077 | 0.9893 | 0.9986 |
+| macOS ARM64 | 0.9268 | no four-worker cell | 1.0206 | no four-worker cell |
+| macOS x64 | 1.1376 | 0.9626 | 0.9939 | 0.9833 |
+
+All five platforms finish with performance failures. On Linux x64,
+four-worker coarse improves against 8b61 in all five pairs (0.7769–0.8153;
+candidate/replica median 0.9877), but still costs 1.4472 times the recovered
+runtime. Linux ARM64's corresponding recovered ratio is 1.5219. macOS ARM64's
+two-worker coarse recovered ratio is 1.2125, and some identical-image medians
+are outside the band: single-worker 4,096 / tile64 is 1.1484. Local wins do
+not resolve these platform or measurement failures. macOS x64's two-worker
+coarse candidate/8b61 median is 1.1376 (1.0182–1.3961; candidate/replica
+1.0163): all five pairs regress. Its four-worker fine identical-image ratio
+is 1.1282, another unresolved noisy cell. The task-slot candidate is therefore
+not selected as a performance-qualified default. The follow-up CI setup repair
+retains its runtime bytes so a fresh cohort can check these results.
+
+Windows four-worker coarse remains 3.0540 times the historical formal-before
+control (2.9689–3.2050), with candidate/replica median 0.9953. Across the same
+five timed processes, candidate wait announcements are 9,507–12,124 versus
+436–469 before; signals are 7,208–9,340 versus 379–399. Whole-batch CPU
+candidate/before has median 1.1346, range 0.9375–1.2083; this includes checking
+and has quantized Windows accounting. Announcements are not actual sleeps,
+and signals are not resumed-thread counts.
+
+The same-source idle4096 control still exposes the waiting tradeoff. Windows
+four-worker coarse candidate/idle4096 wall is 3.7550 (3.2696–4.2841), and
+all five idle4096 processes have zero host wait announcements. But for 65,536
+outputs at tiles16 and1024, idle4096/candidate batch CPU medians are 1.3065
+(1.1212–1.4196) and 1.5094 (1.1833–1.8800), respectively. Their wall changes
+are small: candidate/idle4096 is 0.9911 and 0.9603. Keeping the default at 256
+avoids selecting a broad CPU regression to fix one burst-latency cell. These
+repeat measurements strengthen the existing idle/wake hypothesis; they do not
+identify a qualified adaptive policy. Windows artifact `10117283061` has
+verified ZIP SHA-256
+`92f7813c9d0af5e837db7cc21124efc0f81b14ed580eb2fa5428cf5a8e0d85dd`.
+
+This revision's five extended Linux workload jobs fail during toolchain setup:
+the runner's unrelated Chrome APT repository returns `Hash Sum mismatch`.
+All six Linux gate jobs and the Linux I/O jobs are also affected; these jobs
+supply no passing correctness or performance evidence. All six macOS gate
+jobs and the Windows I/O host and benchmark jobs pass.
+The follow-up workflow repair selects the runner's existing Ubuntu24.04
+`ubuntu.sources` for required packages, retaining its signing configuration
+and all tests. Its native execution is pending; a setup failure is not waived.
+The API integration also rejects job reruns and PR metadata writes with 403;
+branch pushes remain available. Canonical bf7c56df checking is running locally.
 
 ## Earlier investigation and evidence
 

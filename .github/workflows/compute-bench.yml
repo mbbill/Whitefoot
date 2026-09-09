@@ -152,8 +152,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install and record compiler
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang cmake
+          # These tools come from Ubuntu. Unrelated preinstalled browser
+          # repositories must not make compiler qualification depend on them.
+          test -s /etc/apt/sources.list.d/ubuntu.sources
+          apt_sources=(-o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=-)
+          sudo apt-get "${apt_sources[@]}" update
+          sudo apt-get "${apt_sources[@]}" install -y --no-install-recommends clang cmake
           rustup default stable
           cargo fetch --locked --manifest-path compiler/Cargo.toml
           /usr/bin/clang --version
@@ -167,7 +171,8 @@ jobs:
         env:
           OUT: ${{ runner.temp }}/compute-${{ matrix.workload }}
         run: |
-          sudo apt-get install -y --no-install-recommends linux-tools-generic
+          sudo apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources \
+            -o Dir::Etc::sourceparts=- install -y --no-install-recommends linux-tools-generic
           mkdir -p "$OUT/quadrature"
           # This is an ephemeral hosted runner. Record the permission change;
           # a VM without a PMU still reports hardware events as unavailable.

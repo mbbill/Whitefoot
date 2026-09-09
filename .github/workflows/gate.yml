@@ -90,8 +90,11 @@ jobs:
       - name: Install the host toolchain
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends clang cmake
+            # Only the Ubuntu toolchain sources are relevant to this gate.
+            test -s /etc/apt/sources.list.d/ubuntu.sources
+            apt_sources=(-o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=-)
+            sudo apt-get "${apt_sources[@]}" update
+            sudo apt-get "${apt_sources[@]}" install -y --no-install-recommends clang cmake
           fi
           test -x /usr/bin/clang
           /usr/bin/clang --version
