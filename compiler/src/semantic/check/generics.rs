@@ -102,7 +102,10 @@ enum StableCheckedType {
         substitution: StableGenericSubstitution,
     },
     Prelude(StablePreludeType),
-    Boxed(Box<StableCheckedType>),
+    Boxed {
+        region: Option<DeclarationId>,
+        referent: Box<StableCheckedType>,
+    },
     Arena {
         region: DeclarationId,
         content: Box<StableCheckedType>,
@@ -1321,7 +1324,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     StableCheckedType::System(system)
                 } else {
                     match kind {
-                        CheckedNominalKind::Box { referent, .. } => {
+                        CheckedNominalKind::Box {
+                            referent, region, ..
+                        } => {
                             let Some(referent) = self.stabilize_type(
                                 referent,
                                 nominal_checkpoint,
@@ -1332,7 +1337,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 visiting.remove(&id);
                                 return Ok(None);
                             };
-                            StableCheckedType::Boxed(Box::new(referent))
+                            StableCheckedType::Boxed {
+                                region,
+                                referent: Box::new(referent),
+                            }
                         }
                         CheckedNominalKind::Arena { region, content } => {
                             let Some(content) = self.stabilize_type(
@@ -1626,9 +1634,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 };
                 CheckedType::Nominal(self.intern_prelude_nominal(ty)?)
             }
-            StableCheckedType::Boxed(referent) => {
+            StableCheckedType::Boxed { region, referent } => {
                 let referent = self.reify_concrete_type(referent)?;
-                CheckedType::Nominal(self.intern_box_nominal(referent)?)
+                CheckedType::Nominal(match region {
+                    Some(region) => self.intern_store_box_nominal(*region, referent)?,
+                    None => self.intern_box_nominal(referent)?,
+                })
             }
             StableCheckedType::Arena { region, content } => {
                 let content = self.reify_concrete_type(content)?;

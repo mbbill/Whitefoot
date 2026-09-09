@@ -2884,7 +2884,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
 }
 
 #[test]
-fn staged_box_borrows_keep_each_owner_slot_until_retirement() {
+fn heap_box_loop_keeps_provider_order_and_updates_borrowed_owners() {
     let source = br#"fn probe['s](root: &DirectoryRead, permit: own HandlePermit, name: &buffer<u8>, cell: &uniq Box<'s, u64>, incoming: &uniq Box<'s, u64>) -> result: own u64 reads(root, permit, name, cell, incoming), writes(permit, cell, incoming) contract {
   define named = len_of(deref(name));
   requires 4_u64 <= named;
@@ -2951,15 +2951,54 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
   return exit_status(code: 0_u8);
 }
 "#;
-    let module = emit_with_overlap(source);
-    let main = function_body(&module, "@wf_main");
-    assert!(main.contains("par.staged.offered."));
-    assert!(main.contains("call void @wf__par_publish(ptr "));
-    assert!(main.contains("call void @wf__par_join(ptr "));
-    // Deferred publication holds at least two iterations live before their
-    // actual worker hand-outs. Each borrowed pointer slot must retain its own
-    // owner until retirement; swapping payload values would not test that ABI.
-    run_owned_lane_cases(source, &module, 0, 4, 9, 0, 2);
+    // PAR-3 retains this loop's provider ordering: allocation in the
+    // prologue and cell release in the epilogue share the same Heap. The
+    // separate Arena case below exercises real delayed worker retirement.
+    // Retain this complete Heap source, including both allocation failures.
+    for overlap in [
+        crate::OverlapLowering::Off,
+        crate::OverlapLowering::On,
+        crate::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        let main = function_body(&module, "@wf_main");
+        assert!(!main.contains("par.staged.offered."));
+        assert!(!main.contains("call ptr @wf__par_acquire_lane("));
+        let observed = module
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        // Allocation one belongs to the path buffer. Refuse each of the
+        // eight explicit cell allocations in turn, after any earlier pairs
+        // have completed; every retained owner must still be released once.
+        for refused in [0, 2, 3, 4, 5, 6, 7, 8, 9] {
+            let mut expected = String::from("A1;");
+            for first in [2, 4, 6, 8] {
+                if refused == first {
+                    expected.push_str(&format!("X{first};"));
+                    break;
+                }
+                expected.push_str(&format!("A{first};"));
+                let second = first + 1;
+                if refused == second {
+                    expected.push_str(&format!("X{second};F{first};"));
+                    break;
+                }
+                // The helper swaps owners. The inner incoming binding owns
+                // the first allocation and leaves before the outer cell.
+                expected.push_str(&format!("A{second};F{first};F{second};"));
+            }
+            expected.push_str("F1;");
+            let host = super::owned_places::allocation_observer(9, refused);
+            let output = super::compile_link_and_run(&observed, Some(&host), &[]);
+            assert_eq!(
+                output.status.code(),
+                Some(if refused == 0 { 0 } else { 70 }),
+                "{output:?}"
+            );
+            assert_eq!(output.stdout, expected.as_bytes(), "{output:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+        }
+    }
 }
 
 #[test]

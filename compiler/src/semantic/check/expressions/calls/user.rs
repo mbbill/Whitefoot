@@ -255,13 +255,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let (Some(formal), Some(actual)) = (formal, actual) else {
                     continue;
                 };
-                // [PROV-1] the entry heap's store region is minted before
-                // `main` and is no declaration's formal: a position naming it
-                // is already fixed and observes nothing.
-                if formal.is_entry_heap_region() {
+                // [FN-2, PROV-1] a concrete type argument can capture its
+                // caller's store brand. Like the entry heap, that brand is
+                // fixed, not a callee formal to infer. The exact argument
+                // type check above still requires that same captured brand.
+                let Some(index) = Self::formal_region_index(signature, formal) else {
                     continue;
-                }
-                let index = Self::formal_region_index(signature, formal)?;
+                };
                 let mut binding = *region_bindings
                     .get(index)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
@@ -951,15 +951,11 @@ call's own arguments and is not written",
     }
 
     /// The index of one formal region in the callee's formal-region list.
-    fn formal_region_index(
-        signature: &FunctionSignature,
-        formal: DeclarationId,
-    ) -> Result<usize, CheckStop> {
+    fn formal_region_index(signature: &FunctionSignature, formal: DeclarationId) -> Option<usize> {
         signature
             .region_parameters
             .iter()
             .position(|region| *region == formal)
-            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     /// Records one actual region observed at a position naming an inferred
@@ -1025,7 +1021,10 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
             CheckedMode::Shared(region) => (BorrowKind::Shared, region),
             CheckedMode::Unique(region) => (BorrowKind::Unique, region),
         };
-        let index = Self::formal_region_index(signature, formal)?;
+        // A mode region belongs to the callable declaration; captured type
+        // argument regions occur inside its type, never in this mode slot.
+        let index = Self::formal_region_index(signature, formal)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let binding = bindings
             .get(index)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
@@ -1051,7 +1050,8 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
             CheckedMode::Shared(region) => (BorrowKind::Shared, region),
             CheckedMode::Unique(region) => (BorrowKind::Unique, region),
         };
-        let index = Self::formal_region_index(signature, formal)?;
+        let index = Self::formal_region_index(signature, formal)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let actual = *regions
             .get(index)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
@@ -1144,10 +1144,9 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
         let Some(formal) = self.written_type_region(ty)? else {
             return Ok(ty);
         };
-        let Ok(index) = Self::formal_region_index(signature, formal) else {
-            // A region this declaration does not parameterize — the entry
-            // heap's store region [PROV-1] is the one such region a parameter
-            // type can name — is not substituted at a call.
+        let Some(index) = Self::formal_region_index(signature, formal) else {
+            // Entry-heap brands and regions captured inside concrete type
+            // arguments are fixed identities, not callee region formals.
             return Ok(ty);
         };
         let binding = bindings
@@ -1191,8 +1190,8 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
     /// region under `Option`, inside a nominal instance, in a run's element
     /// position, and in the result-list nominal a multi-result callable hands
     /// back. A region this declaration does not parameterize — the entry
-    /// heap's store region [PROV-1] is the one such region a signature can
-    /// name — occurs in no formal pair and is left alone.
+    /// heap or a brand captured inside a concrete type argument — occurs in
+    /// no formal pair and is left alone.
     fn substitute_result_type(
         &self,
         ty: CheckedType,

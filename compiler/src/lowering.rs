@@ -13,6 +13,35 @@ use crate::semantic::{
 };
 use crate::{SystemRelease, SystemResourceContract};
 
+mod physical_types;
+mod specialize;
+
+/// A closed executable instance's type interpretation. Source region identity
+/// has already been checked; only its storage reclamation remains in the IR.
+#[derive(Clone, Copy)]
+struct TypeLowering<'a> {
+    nominals: &'a [IrNominalId],
+    releases: &'a [(crate::DeclarationId, crate::semantic::CheckedReleaseClass)],
+}
+
+impl TypeLowering<'_> {
+    const EMPTY: Self = Self {
+        nominals: &[],
+        releases: &[],
+    };
+
+    fn release(
+        self,
+        region: crate::DeclarationId,
+        fallback: crate::semantic::CheckedReleaseClass,
+    ) -> crate::semantic::CheckedReleaseClass {
+        self.releases
+            .iter()
+            .find_map(|(candidate, class)| (*candidate == region).then_some(*class))
+            .unwrap_or(fallback)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct IrValueId(u32);
 
@@ -356,17 +385,18 @@ pub(crate) const fn lower_release_class(
 }
 
 /// One nominal's lowered identity, read through the region erasure
-/// [S20, PROV-1]: two instances of one declaration that differ only in their
-/// region arguments are two checked types and one IR nominal.
-fn erased_nominal(erasure: &[IrNominalId], id: crate::NominalId) -> IrNominalId {
+/// [S20, PROV-1]: instances of one declaration with different regions share
+/// an IR nominal when their complete reclamation graphs also agree.
+fn erased_nominal(erasure: TypeLowering<'_>, id: crate::NominalId) -> IrNominalId {
     erasure
+        .nominals
         .get(id.0 as usize)
         .copied()
         .unwrap_or(IrNominalId(id.0))
 }
 
 fn lower_element(
-    erasure: &[IrNominalId],
+    erasure: TypeLowering<'_>,
     value: CheckedElement,
 ) -> Result<IrElement, LoweringFailure> {
     Ok(match value {
@@ -379,16 +409,18 @@ fn lower_element(
             },
         },
         CheckedElement::Vector {
-            element, release, ..
+            element,
+            release,
+            region,
         } => IrElement::Vector {
             element: lower_flat_element(erasure, element)?,
-            release: lower_release_class(release),
+            release: lower_release_class(erasure.release(region, release)),
         },
     })
 }
 
 fn lower_flat_element(
-    erasure: &[IrNominalId],
+    erasure: TypeLowering<'_>,
     value: CheckedFlatElement,
 ) -> Result<IrFlatElement, LoweringFailure> {
     Ok(match value {
@@ -509,7 +541,7 @@ pub(crate) fn type_derives_release(nominals: &[IrNominal], ty: IrType) -> Option
     Some(false)
 }
 
-fn lower_type(erasure: &[IrNominalId], value: CheckedType) -> Result<IrType, LoweringFailure> {
+fn lower_type(erasure: TypeLowering<'_>, value: CheckedType) -> Result<IrType, LoweringFailure> {
     Ok(match value {
         CheckedType::Unit => IrType::Unit,
         CheckedType::Bool => IrType::Bool,
@@ -543,9 +575,11 @@ fn lower_type(erasure: &[IrNominalId], value: CheckedType) -> Result<IrType, Low
                 .ok_or(LoweringFailure::InvalidCheckedProgram)?,
         },
         CheckedType::Vector {
-            element, release, ..
+            element,
+            release,
+            region,
         } => IrType::Vector {
-            release: lower_release_class(release),
+            release: lower_release_class(erasure.release(region, release)),
             element: lower_element(erasure, element)?,
         },
         CheckedType::Heap { .. } | CheckedType::Extent { .. } => IrType::Provider,
@@ -678,7 +712,7 @@ pub enum IrEnumType {
     Nominal(IrNominalId),
 }
 
-fn lower_enum_type(erasure: &[IrNominalId], value: CheckedEnumType) -> IrEnumType {
+fn lower_enum_type(erasure: TypeLowering<'_>, value: CheckedEnumType) -> IrEnumType {
     match value {
         CheckedEnumType::Bool => IrEnumType::Bool,
         CheckedEnumType::Nominal(id) => IrEnumType::Nominal(erased_nominal(erasure, id)),

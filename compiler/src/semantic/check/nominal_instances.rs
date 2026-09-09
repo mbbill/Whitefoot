@@ -1030,14 +1030,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// [S20] where each nominal instance's region axis leaves the program.
     ///
-    /// Two instances of one declaration whose type and const arguments agree
-    /// and whose regions differ are two checked types and one representation:
-    /// a region names a store for the proof and nothing at run time, exactly
-    /// as `Vector<'a, T>` and `Vector<'b, T>` are one lowered run. The first
-    /// such instance is the one they all lower as, so a callee's own
-    /// formal-region instance and a caller's actual-region instance meet as
-    /// one IR nominal at the boundary between them.
+    /// Two instances share a representation when their region-erased source
+    /// families and complete reclamation graphs agree. Region identity is
+    /// proof-only, but the store's release class still selects runtime work.
+    /// This table uses declaration-level classes; physical specialization
+    /// interprets those classes in each accepted call's closed environment.
     pub(super) fn nominal_lowering_aliases(&self) -> Result<Vec<NominalId>, CheckStop> {
+        self.nominal_aliases(true)
+    }
+
+    /// The region-erased source/type family used to select a release-class
+    /// specialization after semantic acceptance. Unlike the ordinary
+    /// lowering alias, this deliberately ignores a Box or Vector release
+    /// class; the physical specialization key restores those classes before
+    /// any IR type or cleanup action is selected.
+    pub(super) fn nominal_physical_aliases(&self) -> Result<Vec<NominalId>, CheckStop> {
+        self.nominal_aliases(false)
+    }
+
+    fn nominal_aliases(&self, release_sensitive: bool) -> Result<Vec<NominalId>, CheckStop> {
         let mut aliases = Vec::with_capacity(self.nominals.len());
         for index in 0..self.nominals.len() {
             let id = NominalId(
@@ -1048,7 +1059,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let candidate = NominalId(
                     u32::try_from(earlier).map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
                 );
-                if self.nominals_differ_only_in_region(id, candidate)? {
+                if self.nominals_share_region_erased_family(id, candidate, release_sensitive)? {
                     alias = candidate;
                     break;
                 }
@@ -1395,48 +1406,128 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if left == right {
             return Ok(false);
         }
-        self.nominals_are_region_blind_equal(left, right, 0, &mut Vec::new())
+        self.nominals_share_region_erased_family(left, right, true)
     }
 
-    fn nominals_are_region_blind_equal(
+    fn nominals_share_region_erased_family(
         &self,
         left: NominalId,
         right: NominalId,
-        depth: usize,
-        assumed: &mut Vec<(NominalId, NominalId)>,
+        release_sensitive: bool,
     ) -> Result<bool, CheckStop> {
         if left == right {
-            return Ok(true);
-        }
-        // S39 a type whose release graph has a cycle — a cell-linked tree —
-        // compares against its own instance at another store, so the walk
-        // assumes the pair it is already deciding. Without it the comparison
-        // is the infinite one the depth cap used to cut off, and cutting it
-        // off answered `false` for two instances that differ only in region.
-        if assumed.contains(&(left, right)) {
-            return Ok(true);
-        }
-        if depth > 64 {
             return Ok(false);
         }
-        assumed.push((left, right));
-        let outcome = self.nominals_are_region_blind_equal_assuming(left, right, depth, assumed);
-        assumed.pop();
-        outcome
+        // Every obligation is a pair of nodes in the finite checked type
+        // graph. Visit each pair once, including recursive boxes, and finish
+        // every reachable obligation. Neither depth nor traversal order can
+        // turn two members of one family into unrelated representations.
+        let mut pending = vec![(CheckedType::Nominal(left), CheckedType::Nominal(right))];
+        let mut visited = HashSet::new();
+        while let Some((left, right)) = pending.pop() {
+            if left == right || !visited.insert((left, right)) {
+                continue;
+            }
+            let same = match (left, right) {
+                (CheckedType::Nominal(left), CheckedType::Nominal(right)) => self
+                    .nominals_have_same_region_erased_shape(
+                        left,
+                        right,
+                        release_sensitive,
+                        &mut pending,
+                    )?,
+                (
+                    CheckedType::Vector {
+                        element: left,
+                        release: left_release,
+                        ..
+                    },
+                    CheckedType::Vector {
+                        element: right,
+                        release: right_release,
+                        ..
+                    },
+                ) => {
+                    pending.push((left.ty(), right.ty()));
+                    !release_sensitive || left_release == right_release
+                }
+                (
+                    CheckedType::FixedVector {
+                        element: left,
+                        length: left_length,
+                    },
+                    CheckedType::FixedVector {
+                        element: right,
+                        length: right_length,
+                    },
+                ) => {
+                    pending.push((left.ty(), right.ty()));
+                    left_length == right_length
+                }
+                (
+                    CheckedType::Array {
+                        element: left,
+                        length: left_length,
+                    },
+                    CheckedType::Array {
+                        element: right,
+                        length: right_length,
+                    },
+                ) => {
+                    pending.push((left.ty(), right.ty()));
+                    left_length == right_length
+                }
+                (CheckedType::Buffer { element: left }, CheckedType::Buffer { element: right }) => {
+                    pending.push((left.ty(), right.ty()));
+                    true
+                }
+                (
+                    CheckedType::Slice {
+                        element: left,
+                        strength: left_strength,
+                        ..
+                    },
+                    CheckedType::Slice {
+                        element: right,
+                        strength: right_strength,
+                        ..
+                    },
+                ) => {
+                    pending.push((left.ty(), right.ty()));
+                    left_strength == right_strength
+                }
+                (CheckedType::Heap { .. }, CheckedType::Heap { .. }) => true,
+                (
+                    CheckedType::Extent {
+                        bytes: left_bytes,
+                        align: left_align,
+                        ..
+                    },
+                    CheckedType::Extent {
+                        bytes: right_bytes,
+                        align: right_align,
+                        ..
+                    },
+                ) => left_bytes == right_bytes && left_align == right_align,
+                _ => false,
+            };
+            if !same {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
-    fn nominals_are_region_blind_equal_assuming(
+    fn nominals_have_same_region_erased_shape(
         &self,
         left: NominalId,
         right: NominalId,
-        depth: usize,
-        assumed: &mut Vec<(NominalId, NominalId)>,
+        release_sensitive: bool,
+        pending: &mut Vec<(CheckedType, CheckedType)>,
     ) -> Result<bool, CheckStop> {
-        // [STOR-2] a box and an arena carry their whole content in the kind
-        // rather than in fields, so the content comparison below has nothing
-        // to read for them. A box also carries its release action [PROV-6];
-        // erasing that distinction would let an extent-backed box inherit a
-        // general store's `free` when the first equivalent nominal is lowered.
+        // Box and legacy arena content lives in the kind, rather than in
+        // fields. The ordinary lowering alias retains Box's release action;
+        // the physical family defers it to the closed release environment.
         match (&self.nominal(left)?.kind, &self.nominal(right)?.kind) {
             (
                 CheckedNominalKind::Box {
@@ -1450,24 +1541,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ..
                 },
             ) => {
-                return Ok(left_release == right_release
-                    && self.types_are_region_blind_equal(
-                        *left,
-                        *right,
-                        depth.saturating_add(1),
-                        assumed,
-                    )?);
+                pending.push((*left, *right));
+                return Ok(!release_sensitive || left_release == right_release);
             }
             (
                 CheckedNominalKind::Arena { content: left, .. },
                 CheckedNominalKind::Arena { content: right, .. },
             ) => {
-                return self.types_are_region_blind_equal(
-                    *left,
-                    *right,
-                    depth.saturating_add(1),
-                    assumed,
-                );
+                pending.push((*left, *right));
+                return Ok(true);
             }
             (CheckedNominalKind::Box { .. } | CheckedNominalKind::Arena { .. }, _)
             | (_, CheckedNominalKind::Box { .. } | CheckedNominalKind::Arena { .. }) => {
@@ -1475,20 +1557,47 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             _ => {}
         }
-        if !self.nominal_names_are_region_blind_equal(left, right, depth, assumed)? {
+        if !self.nominal_names_are_region_blind_equal(left, right, pending)? {
             return Ok(false);
         }
-        self.nominal_content_is_region_blind_equal(left, right, depth, assumed)
+        let (left_nominal, right_nominal) = (self.nominal(left)?, self.nominal(right)?);
+        if left_nominal.linear != right_nominal.linear {
+            return Ok(false);
+        }
+        match (&left_nominal.kind, &right_nominal.kind) {
+            (
+                CheckedNominalKind::Struct { fields: left },
+                CheckedNominalKind::Struct { fields: right },
+            ) => Ok(Self::queue_region_blind_fields(left, right, pending)),
+            (
+                CheckedNominalKind::Enum { variants: left },
+                CheckedNominalKind::Enum { variants: right },
+            ) => {
+                if left.len() != right.len() {
+                    return Ok(false);
+                }
+                for (left, right) in left.iter().zip(right) {
+                    if left.name != right.name
+                        || left.tag != right.tag
+                        || !Self::queue_region_blind_fields(&left.fields, &right.fields, pending)
+                    {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
     }
 
-    /// Whether two nominals name the same shape once every region is erased:
-    /// the half of the relation that is about identity rather than layout.
+    /// Compare identity before content: identical layout never merges two
+    /// source declarations, different const arguments, or phantom type
+    /// arguments. A type argument may itself contain the only region axis.
     fn nominal_names_are_region_blind_equal(
         &self,
         left: NominalId,
         right: NominalId,
-        depth: usize,
-        assumed: &mut Vec<(NominalId, NominalId)>,
+        pending: &mut Vec<(CheckedType, CheckedType)>,
     ) -> Result<bool, CheckStop> {
         let (left_source, right_source) = (
             self.source_nominal_instance_entry(left)?,
@@ -1497,21 +1606,49 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if let (Some((left_template, left_instance)), Some((right_template, right_instance))) =
             (left_source, right_source)
         {
-            return Ok(left_template == right_template
-                && left_instance.entries() == right_instance.entries()
-                && !left_instance.region_arguments().is_empty());
+            if left_template != right_template
+                || left_instance.entries().len() != right_instance.entries().len()
+            {
+                return Ok(false);
+            }
+            for ((left_declaration, left_argument), (right_declaration, right_argument)) in
+                left_instance.entries().iter().zip(right_instance.entries())
+            {
+                if left_declaration != right_declaration {
+                    return Ok(false);
+                }
+                use super::generics::GenericArgument;
+                match (left_argument, right_argument) {
+                    (GenericArgument::Type(left), GenericArgument::Type(right)) => {
+                        pending.push((*left, *right));
+                    }
+                    (GenericArgument::Const(left), GenericArgument::Const(right))
+                        if left == right => {}
+                    _ => return Ok(false),
+                }
+            }
+            return Ok(true);
         }
         if left_source.is_some() || right_source.is_some() {
             return Ok(false);
         }
         let (left_prelude, right_prelude) = (self.prelude_type(left), self.prelude_type(right));
-        if let (Some(left_prelude), Some(right_prelude)) = (left_prelude, right_prelude) {
-            return self.prelude_types_are_region_blind_equal(
-                left_prelude,
-                right_prelude,
-                depth,
-                assumed,
-            );
+        if let (Some(left), Some(right)) = (left_prelude, right_prelude) {
+            return Ok(match (left, right) {
+                (PreludeType::Option(left), PreludeType::Option(right)) => {
+                    pending.push((left, right));
+                    true
+                }
+                (
+                    PreludeType::Result(left_ok, left_error),
+                    PreludeType::Result(right_ok, right_error),
+                ) => {
+                    pending.push((left_ok, right_ok));
+                    pending.push((left_error, right_error));
+                    true
+                }
+                (left, right) => left == right,
+            });
         }
         if left_prelude.is_some() || right_prelude.is_some() {
             return Ok(false);
@@ -1520,42 +1657,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.result_list_ordinal_names(left),
             self.result_list_ordinal_names(right),
         );
-        if let (Some(left_list), Some(right_list)) = (&left_list, &right_list) {
-            return Ok(left_list == right_list);
-        }
-        Ok(false)
+        Ok(matches!((left_list, right_list), (Some(left), Some(right)) if left == right))
     }
 
-    /// One prelude instance's arguments, compared with every region erased.
-    fn prelude_types_are_region_blind_equal(
-        &self,
-        left: PreludeType,
-        right: PreludeType,
-        depth: usize,
-        assumed: &mut Vec<(NominalId, NominalId)>,
-    ) -> Result<bool, CheckStop> {
-        Ok(match (left, right) {
-            (PreludeType::Option(left), PreludeType::Option(right)) => {
-                self.types_are_region_blind_equal(left, right, depth.saturating_add(1), assumed)?
+    fn queue_region_blind_fields(
+        left: &[CheckedField],
+        right: &[CheckedField],
+        pending: &mut Vec<(CheckedType, CheckedType)>,
+    ) -> bool {
+        if left.len() != right.len() {
+            return false;
+        }
+        for (left, right) in left.iter().zip(right) {
+            if left.name != right.name {
+                return false;
             }
-            (
-                PreludeType::Result(left_ok, left_error),
-                PreludeType::Result(right_ok, right_error),
-            ) => {
-                self.types_are_region_blind_equal(
-                    left_ok,
-                    right_ok,
-                    depth.saturating_add(1),
-                    assumed,
-                )? && self.types_are_region_blind_equal(
-                    left_error,
-                    right_error,
-                    depth.saturating_add(1),
-                    assumed,
-                )?
-            }
-            (left, right) => left == right,
-        })
+            pending.push((left.ty, right.ty));
+        }
+        true
     }
 
     /// The ordinal names of a compiler-owned result-list nominal [CALL-4],
@@ -1565,210 +1684,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .iter()
             .find(|(_, candidate)| **candidate == id)
             .map(|(results, _)| results.iter().map(|(name, _)| name.clone()).collect())
-    }
-
-    /// The two instances' fields or variant payloads, compared with every
-    /// region erased and every region-derived datum kept [S20, PROV-6].
-    fn nominal_content_is_region_blind_equal(
-        &self,
-        left: NominalId,
-        right: NominalId,
-        depth: usize,
-        assumed: &mut Vec<(NominalId, NominalId)>,
-    ) -> Result<bool, CheckStop> {
-        if depth > 16 {
-            return Ok(false);
-        }
-        let (left_nominal, right_nominal) = (self.nominal(left)?, self.nominal(right)?);
-        if left_nominal.linear != right_nominal.linear {
-            return Ok(false);
-        }
-        let (left_types, right_types) = (
-            Self::nominal_content_types(&left_nominal.kind),
-            Self::nominal_content_types(&right_nominal.kind),
-        );
-        let (Some(left_types), Some(right_types)) = (left_types, right_types) else {
-            return Ok(false);
-        };
-        if left_types.len() != right_types.len() {
-            return Ok(false);
-        }
-        for (left_type, right_type) in left_types.into_iter().zip(right_types) {
-            if !self.types_are_region_blind_equal(left_type, right_type, depth, assumed)? {
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
-
-    fn nominal_content_types(kind: &CheckedNominalKind) -> Option<Vec<CheckedType>> {
-        match kind {
-            CheckedNominalKind::Struct { fields } => {
-                Some(fields.iter().map(|field| field.ty).collect())
-            }
-            CheckedNominalKind::Enum { variants } => Some(
-                variants
-                    .iter()
-                    .flat_map(|variant| variant.fields.iter().map(|field| field.ty))
-                    .collect(),
-            ),
-            _ => None,
-        }
-    }
-
-    /// One slot's content [BLK-1], compared with every region erased and every
-    /// region-derived datum kept [S20].
-    fn elements_are_region_blind_equal(
-        &self,
-        left: CheckedElement,
-        right: CheckedElement,
-        depth: usize,
-        assumed: &mut Vec<(NominalId, NominalId)>,
-    ) -> Result<bool, CheckStop> {
-        Ok(match (left, right) {
-            (CheckedElement::Flat(left), CheckedElement::Flat(right)) => {
-                self.flat_elements_are_region_blind_equal(left, right, depth, assumed)?
-            }
-            (
-                CheckedElement::FixedVector {
-                    element: left_element,
-                    length: left_length,
-                },
-                CheckedElement::FixedVector {
-                    element: right_element,
-                    length: right_length,
-                },
-            ) => {
-                left_length == right_length
-                    && self.flat_elements_are_region_blind_equal(
-                        left_element,
-                        right_element,
-                        depth,
-                        assumed,
-                    )?
-            }
-            (
-                CheckedElement::Vector {
-                    element: left_element,
-                    release: left_release,
-                    ..
-                },
-                CheckedElement::Vector {
-                    element: right_element,
-                    release: right_release,
-                    ..
-                },
-            ) => {
-                left_release == right_release
-                    && self.flat_elements_are_region_blind_equal(
-                        left_element,
-                        right_element,
-                        depth,
-                        assumed,
-                    )?
-            }
-            _ => false,
-        })
-    }
-
-    fn flat_elements_are_region_blind_equal(
-        &self,
-        left: CheckedFlatElement,
-        right: CheckedFlatElement,
-        depth: usize,
-        assumed: &mut Vec<(NominalId, NominalId)>,
-    ) -> Result<bool, CheckStop> {
-        Ok(match (left, right) {
-            (CheckedFlatElement::Nominal(left), CheckedFlatElement::Nominal(right))
-            | (
-                CheckedFlatElement::TagOnlyNominal(left),
-                CheckedFlatElement::TagOnlyNominal(right),
-            ) => self.types_are_region_blind_equal(
-                CheckedType::Nominal(left),
-                CheckedType::Nominal(right),
-                depth,
-                assumed,
-            )?,
-            _ => left == right,
-        })
-    }
-
-    fn types_are_region_blind_equal(
-        &self,
-        left: CheckedType,
-        right: CheckedType,
-        depth: usize,
-        assumed: &mut Vec<(NominalId, NominalId)>,
-    ) -> Result<bool, CheckStop> {
-        Ok(match (left, right) {
-            (CheckedType::Nominal(left), CheckedType::Nominal(right)) => {
-                self.nominals_are_region_blind_equal(left, right, depth.saturating_add(1), assumed)?
-            }
-            (
-                CheckedType::Vector {
-                    element: left_element,
-                    release: left_release,
-                    ..
-                },
-                CheckedType::Vector {
-                    element: right_element,
-                    release: right_release,
-                    ..
-                },
-            ) => {
-                left_release == right_release
-                    && self.elements_are_region_blind_equal(
-                        left_element,
-                        right_element,
-                        depth,
-                        assumed,
-                    )?
-            }
-            (
-                CheckedType::FixedVector {
-                    element: left_element,
-                    length: left_length,
-                },
-                CheckedType::FixedVector {
-                    element: right_element,
-                    length: right_length,
-                },
-            ) => {
-                left_length == right_length
-                    && self.elements_are_region_blind_equal(
-                        left_element,
-                        right_element,
-                        depth,
-                        assumed,
-                    )?
-            }
-            (
-                CheckedType::Slice {
-                    element: left_element,
-                    strength: left_strength,
-                    ..
-                },
-                CheckedType::Slice {
-                    element: right_element,
-                    strength: right_strength,
-                    ..
-                },
-            ) => left_element == right_element && left_strength == right_strength,
-            (CheckedType::Heap { .. }, CheckedType::Heap { .. }) => true,
-            (
-                CheckedType::Extent {
-                    bytes: left_bytes,
-                    align: left_align,
-                    ..
-                },
-                CheckedType::Extent {
-                    bytes: right_bytes,
-                    align: right_align,
-                    ..
-                },
-            ) => left_bytes == right_bytes && left_align == right_align,
-            _ => left == right,
-        })
     }
 
     /// The template index and instance arguments of one source nominal, when
@@ -1868,6 +1783,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.prelude_nominals
             .retain(|_, id| (id.0 as usize) < checkpoint);
         self.box_nominals
+            .retain(|_, id| (id.0 as usize) < checkpoint);
+        self.store_box_nominals
             .retain(|_, id| (id.0 as usize) < checkpoint);
         self.arena_nominals
             .retain(|_, id| (id.0 as usize) < checkpoint);

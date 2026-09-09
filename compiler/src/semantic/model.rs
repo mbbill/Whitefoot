@@ -2561,6 +2561,10 @@ pub(crate) struct CheckedFunction {
     pub(crate) declaration: DeclarationId,
     pub(crate) name: String,
     pub(crate) symbol: String,
+    /// Formal regions in the same declaration order `UserCall::goal_regions`
+    /// uses. Retained for post-acceptance physical release specialization;
+    /// semantic identity remains the canonical [`FunctionId`].
+    pub(crate) region_parameters: Vec<DeclarationId>,
     pub(crate) parameters: Vec<CheckedParameter>,
     pub(crate) result_mode: CheckedMode,
     pub(crate) result: CheckedType,
@@ -2736,15 +2740,24 @@ pub(crate) struct CheckedProgramData {
     // prefix. Later instances exist only to type-check static metadata.
     pub(crate) executable_nominal_count: usize,
     /// For each nominal, the instance it lowers as: itself, or the first
-    /// instance of the same declaration whose type and const arguments agree
-    /// and whose region axis differs [S20, PROV-1].
+    /// instance of the same region-erased source family whose complete
+    /// reclamation graph agrees [S20, PROV-1].
     ///
     /// A region is a proof-time identity. Two instances at two regions are two
     /// checked types — that is what makes a run of one store unusable at
-    /// another — and the same one runtime representation, exactly as
-    /// `Vector<'a, T>` and `Vector<'b, T>` are one [`IrType::Vector`]. This is
-    /// where the region leaves the program.
+    /// another. They share one runtime representation only when their store
+    /// release classes agree at every owning position. Physical lowering may
+    /// specialize the declaration-level classes in this default alias table.
     pub(crate) nominal_lowering_alias: Vec<NominalId>,
+    /// Region-erased nominal families before a store-backed Box or Vector's
+    /// release class is selected. Post-acceptance physical specialization
+    /// combines this identity with its closed release environment; it never
+    /// participates in source type equality or acceptance.
+    pub(crate) nominal_physical_alias: Vec<NominalId>,
+    /// Declaration-selected storage release classes for post-acceptance
+    /// physical function specialization. Loan regions do not become
+    /// specialization axes merely by occurring in this table.
+    pub(crate) region_release_defaults: Vec<(DeclarationId, CheckedReleaseClass)>,
     pub(crate) constants: Vec<CheckedConstant>,
     /// Immutable structural table for every symbolic const expression named
     /// by retained schema metadata. `DerivedConstId` is meaningful only

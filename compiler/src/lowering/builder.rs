@@ -39,21 +39,39 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         .iter()
         .map(|alias| IrNominalId(alias.0))
         .collect::<Vec<_>>();
-    let erasure = erasure.as_slice();
-    let nominals = lower_nominals(erasure, &checked.data)?;
-    let constants = lower_constants(erasure, &checked.data)?;
+    let base_types = TypeLowering {
+        nominals: &erasure,
+        releases: &[],
+    };
+    let base_nominals = lower_nominals(base_types, &checked.data)?;
+    let constants = lower_constants(base_types, &checked.data)?;
+    let physical = specialize::PhysicalFunctions::build(&checked.data)?;
+    let mut types = physical_types::PhysicalTypes::new(&checked.data, base_nominals);
+    let maps = physical
+        .variants
+        .iter()
+        .map(|variant| types.map(&variant.releases))
+        .collect::<Result<Vec<_>, _>>()?;
+    let nominals = types.nominals;
     // Each function's declared IR result carries its result *mode*: a borrow
     // of addressed content is an address. A call site must produce exactly
     // the callee's declared result type, so the declared results are computed
     // once and consulted at every `UserCall` [OWN-2, TYPE-7].
-    let function_results = checked
-        .data
-        .functions
+    let function_results = physical
+        .variants
         .iter()
-        .map(|function| {
+        .zip(&maps)
+        .map(|(variant, map)| {
+            let function = &checked.data.functions[variant.source.0 as usize];
             lower_borrow_mode_type(
                 function.result_mode,
-                lower_type(erasure, function.result)?,
+                lower_type(
+                    TypeLowering {
+                        nominals: map,
+                        releases: &variant.releases,
+                    },
+                    function.result,
+                )?,
                 &nominals,
             )
         })
@@ -62,11 +80,10 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     // A staged loop whose cut is a user call needs it: whether that call may
     // suspend is the callee's declared contract, not something a call site can
     // read off its own shape.
-    let function_actions = checked
-        .data
-        .functions
+    let function_actions = physical
+        .variants
         .iter()
-        .map(|function| function.target_action)
+        .map(|variant| checked.data.functions[variant.source.0 as usize].target_action)
         .collect::<Vec<_>>();
     // The [PAR-1 candidate] permission table, read exactly as the checker
     // produced it. Lowering selects which permitted groups it can actualize
@@ -80,24 +97,50 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     // Where a synthesized function's ordinal starts. A [PAR-2] split appends
     // its two halves after every source function, so nothing renumbers and a
     // `Call` still indexes one flat table.
-    let source_functions = u32::try_from(checked.data.functions.len())
-        .map_err(|_| LoweringFailure::CounterOverflow)?;
+    let source_functions =
+        u32::try_from(physical.variants.len()).map_err(|_| LoweringFailure::CounterOverflow)?;
     let synthesis = SynthesisCell::new(Synthesis::new(source_functions));
-    let context = LoweringContext {
-        erasure,
-        nominals: &nominals,
-        constants: &constants,
-        function_results: &function_results,
-        function_actions: &function_actions,
-        synthesis: &synthesis,
-    };
-    let mut functions = checked
-        .data
-        .functions
+    let symbols = physical
+        .variants
         .iter()
-        .map(|function| {
+        .enumerate()
+        .map(|(index, variant)| {
+            let symbol = &checked.data.functions[variant.source.0 as usize].symbol;
+            if physical
+                .variants
+                .iter()
+                .filter(|other| other.source == variant.source)
+                .count()
+                == 1
+            {
+                symbol.clone()
+            } else {
+                format!("{symbol}$release${index}")
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut functions = physical
+        .variants
+        .iter()
+        .enumerate()
+        .map(|(index, variant)| {
+            let function = &checked.data.functions[variant.source.0 as usize];
+            let context = LoweringContext {
+                erasure: TypeLowering {
+                    nominals: &maps[index],
+                    releases: &variant.releases,
+                },
+                physical_calls: &variant.calls,
+                nominals: &nominals,
+                constants: &constants,
+                function_results: &function_results,
+                function_actions: &function_actions,
+                synthesis: &synthesis,
+            };
             lower_function(
                 function,
+                index,
+                &symbols[index],
                 context,
                 permission.and_then(|table| table.of(function.id)),
                 overlap,
@@ -108,7 +151,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     functions.extend(synthesized);
     split::assign_weights(&mut functions);
     Ok(IrProgram {
-        main: checked.data.main.0,
+        main: physical.main,
         _checked: checked,
         nominals,
         constants,
@@ -129,10 +172,11 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
 struct LoweringContext<'program> {
     /// [S20, PROV-1] each nominal's lowered identity, with its region axis
     /// erased.
-    erasure: &'program [IrNominalId],
+    erasure: TypeLowering<'program>,
+    physical_calls: &'program [(NodePath, u32)],
     nominals: &'program [IrNominal],
     constants: &'program [IrGlobalConstant],
-    /// Every source function's declared IR result, indexed by [`FunctionId`].
+    /// Every physical function's declared IR result, indexed by its IR ordinal.
     function_results: &'program [IrType],
     /// Every source function's suspension summary, indexed the same way.
     function_actions: &'program [crate::TargetAction],
@@ -156,11 +200,17 @@ fn lower_scalar_constant(value: &CheckedValue) -> Result<IrConstant, LoweringFai
         CheckedValue::Unit => Ok(IrConstant::Unit),
         CheckedValue::Bool(value) => Ok(IrConstant::Bool(*value)),
         CheckedValue::Integer { ty, bits } => Ok(IrConstant::Integer {
-            ty: lower_type(&[], crate::semantic::CheckedType::Integer(*ty))?,
+            ty: lower_type(
+                TypeLowering::EMPTY,
+                crate::semantic::CheckedType::Integer(*ty),
+            )?,
             bits: *bits,
         }),
         CheckedValue::Float { ty, bits } => Ok(IrConstant::Float {
-            ty: lower_type(&[], crate::semantic::CheckedType::Float(*ty))?,
+            ty: lower_type(
+                TypeLowering::EMPTY,
+                crate::semantic::CheckedType::Float(*ty),
+            )?,
             bits: *bits,
         }),
         CheckedValue::ConstGeneric { .. }
@@ -189,7 +239,7 @@ fn lower_global_value(value: &CheckedValue) -> Result<IrGlobalValue, LoweringFai
 }
 
 fn lower_constants(
-    erasure: &[IrNominalId],
+    erasure: TypeLowering<'_>,
     data: &CheckedProgramData,
 ) -> Result<Vec<IrGlobalConstant>, LoweringFailure> {
     data.constants
@@ -210,7 +260,7 @@ fn lower_constants(
 }
 
 fn lower_nominals(
-    erasure: &[IrNominalId],
+    erasure: TypeLowering<'_>,
     data: &CheckedProgramData,
 ) -> Result<Vec<IrNominal>, LoweringFailure> {
     data.nominals
@@ -345,6 +395,8 @@ fn lower_nominals(
 
 fn lower_function<'program>(
     function: &crate::semantic::CheckedFunction,
+    physical_index: usize,
+    symbol: &'program str,
     context: LoweringContext<'program>,
     permissions: Option<&'program FunctionPermissions>,
     overlap: OverlapLowering,
@@ -361,7 +413,7 @@ fn lower_function<'program>(
     };
     let result = *context
         .function_results
-        .get(function.id.0 as usize)
+        .get(physical_index)
         .ok_or(LoweringFailure::InvalidCheckedProgram)?;
     // The whole permission table of this function, and only when this
     // compilation asked for actualization: with none, a permitted loop lowers
@@ -372,7 +424,7 @@ fn lower_function<'program>(
         addressed_bindings,
         permissions,
         overlap,
-        &function.symbol,
+        symbol,
     )?;
     for parameter in &function.parameters {
         let ty = lower_parameter_type(context.erasure, parameter, context.nominals)?;
@@ -391,7 +443,7 @@ fn lower_function<'program>(
     let overlaps = builder.overlaps();
     let completion_steps = builder.completion_steps();
     let mut lowered = builder.finish(
-        function.symbol.clone(),
+        symbol.to_owned(),
         overlaps,
         completion_steps,
         None,
@@ -441,7 +493,7 @@ fn lower_source_argument(argument: &CheckedExpression) -> IrSourceArgument {
 }
 
 fn lower_parameter_type(
-    erasure: &[IrNominalId],
+    erasure: TypeLowering<'_>,
     parameter: &CheckedParameter,
     nominals: &[IrNominal],
 ) -> Result<IrType, LoweringFailure> {
@@ -497,7 +549,8 @@ fn block_successors(block: &BuildingBlock) -> Vec<IrBlockId> {
 struct IrBuilder<'program> {
     /// [S20, PROV-1] each nominal's lowered identity, with its region axis
     /// erased.
-    erasure: &'program [IrNominalId],
+    erasure: TypeLowering<'program>,
+    physical_calls: &'program [(NodePath, u32)],
     nominals: &'program [IrNominal],
     constants: &'program [IrGlobalConstant],
     bindings: HashMap<BindingId, IrValueId>,
@@ -509,7 +562,7 @@ struct IrBuilder<'program> {
     loops: Vec<LoopTarget>,
     result: IrType,
     addressed_bindings: std::collections::HashSet<BindingId>,
-    /// Every function's declared IR result, indexed by [`FunctionId`], so a
+    /// Every physical function's result, indexed by its IR ordinal, so a
     /// call defines exactly the callee's declared result type — an address
     /// for a borrow of addressed content [OWN-2, TYPE-7].
     function_results: &'program [IrType],
@@ -571,6 +624,7 @@ impl<'program> IrBuilder<'program> {
     ) -> Result<Self, LoweringFailure> {
         let LoweringContext {
             erasure,
+            physical_calls,
             nominals,
             constants,
             function_results,
@@ -579,6 +633,7 @@ impl<'program> IrBuilder<'program> {
         } = context;
         let mut builder = Self {
             erasure,
+            physical_calls,
             nominals,
             constants,
             bindings: HashMap::new(),
@@ -612,6 +667,7 @@ impl<'program> IrBuilder<'program> {
     /// as, with its region axis erased.
     fn erased(&self, id: crate::NominalId) -> IrNominalId {
         self.erasure
+            .nominals
             .get(id.0 as usize)
             .copied()
             .unwrap_or(IrNominalId(id.0))
@@ -621,6 +677,7 @@ impl<'program> IrBuilder<'program> {
     const fn context(&self) -> LoweringContext<'program> {
         LoweringContext {
             erasure: self.erasure,
+            physical_calls: self.physical_calls,
             nominals: self.nominals,
             constants: self.constants,
             function_results: self.function_results,
@@ -1705,11 +1762,16 @@ impl<'program> IrBuilder<'program> {
                 self.define(ty, IrOperation::Constant(constant))
             }
             CheckedExpression::UserCall {
-                function,
+                call,
                 arguments,
                 result_borrow,
                 ..
             } => {
+                let function = self
+                    .physical_calls
+                    .iter()
+                    .find_map(|(site, target)| (site == call).then_some(*target))
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
                 let source_arguments = arguments.iter().map(lower_source_argument).collect();
                 let arguments = arguments
                     .iter()
@@ -1720,12 +1782,12 @@ impl<'program> IrBuilder<'program> {
                 // an address, not a referent value [OWN-2, TYPE-7].
                 let result = *self
                     .function_results
-                    .get(function.0 as usize)
+                    .get(function as usize)
                     .ok_or(LoweringFailure::InvalidCheckedProgram)?;
                 let result = self.define(
                     result,
                     IrOperation::Call {
-                        function: function.0,
+                        function,
                         arguments,
                     },
                 )?;

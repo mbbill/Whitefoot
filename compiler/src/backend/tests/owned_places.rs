@@ -85,6 +85,137 @@ fn general_and_extent_boxes_keep_distinct_cleanup_actions() {
 }
 
 #[test]
+fn region_polymorphic_box_calls_preserve_each_independent_release_class() {
+    let source = br#"struct Holder['s] {
+  cell: Box<'s, u64>;
+}
+
+struct Reversed['l, 'r] {
+  first: Holder<'r>;
+  second: Holder<'l>;
+}
+
+fn pass<T: linear>(value: own T) -> result: own T pure {
+  return move value;
+}
+
+fn identity['s](held: own Holder<'s>) -> result: own Holder<'s> pure {
+  return pass::<Holder<'s>>(value: move held);
+}
+
+fn reverse['l, 'r](left: own Holder<'l>, right: own Holder<'r>) -> result: own Reversed<'l, 'r> pure {
+  return Reversed(first: move right, second: move left);
+}
+
+fn reverse_results['l, 'r](left: own Holder<'l>, right: own Holder<'r>) -> (first: own Holder<'r>, second: own Holder<'l>) pure {
+  return move right, move left;
+}
+
+fn extract['s](cell: own Box<'s, u64>, witness: &Box<'s, u64>) -> value: own u64 pure {
+  let Box(value: value) = move cell;
+  return value;
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region 'a {
+    let store = arena_frame::<16, 8, 'a>();
+    region {
+      match heap_box(store: &uniq heap, value: 11_u64) {
+        Err(error: back) => {
+          return exit_status(code: 70_u8);
+        }
+        Ok(value: general) => {
+          match heap_box(store: &uniq heap, value: 44_u64) {
+            Err(error: back) => {
+              return exit_status(code: 70_u8);
+            }
+            Ok(value: general_witness) => {
+              match arena_box(store: &uniq store, value: 22_u64) {
+                Err(error: back) => {
+                  return exit_status(code: 70_u8);
+                }
+                Ok(value: extent) => {
+                  match arena_box(store: &uniq store, value: 33_u64) {
+                    Err(error: back) => {
+                      return exit_status(code: 70_u8);
+                    }
+                    Ok(value: extent_witness) => {
+                      let left_source = Holder(cell: move general);
+                      let right_source = Holder(cell: move extent);
+                      let left = identity(held: move left_source);
+                      let right = identity(held: move right_source);
+                      let reversed = reverse(left: move left, right: move right);
+                      let Reversed(first: first, second: second) = move reversed;
+                      let Holder(cell: extent_cell) = move first;
+                      let Holder(cell: general_cell) = move second;
+                      region {
+                        let value = extract(cell: move general_cell, witness: &general_witness);
+                        if value != 11_u64 {
+                          return exit_status(code: 1_u8);
+                        }
+                      }
+                      region {
+                        let value = extract(cell: move extent_cell, witness: &extent_witness);
+                        if value != 22_u64 {
+                          return exit_status(code: 2_u8);
+                        }
+                      }
+                      let remaining_left = Holder(cell: move extent_witness);
+                      let remaining_right = Holder(cell: move general_witness);
+                      let remaining = reverse(left: move remaining_left, right: move remaining_right);
+                      let Reversed(first: remaining_first, second: remaining_second) = move remaining;
+                      if deref(remaining_first.cell) != 44_u64 {
+                        return exit_status(code: 3_u8);
+                      }
+                      if deref(remaining_second.cell) != 33_u64 {
+                        return exit_status(code: 4_u8);
+                      }
+                      let (extent_result, general_result) = reverse_results(left: move remaining_first, right: move remaining_second);
+                      let (general_back, extent_back) = reverse_results(left: move extent_result, right: move general_result);
+                      if deref(general_back.cell) != 44_u64 {
+                        return exit_status(code: 5_u8);
+                      }
+                      if deref(extent_back.cell) != 33_u64 {
+                        return exit_status(code: 6_u8);
+                      }
+                      return exit_status(code: 0_u8);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        let observed = retain_calls(&module)
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        for (refused, status, expected) in
+            [(0, 0, "A1;A2;F1;F2;"), (1, 70, "X1;"), (2, 70, "A1;X2;F1;")]
+        {
+            let host = allocation_observer(2, refused);
+            let output = compile_link_and_run(&observed, Some(&host), &[]);
+            assert_eq!(output.status.code(), Some(status), "{output:?}");
+            // The two calls reverse the actual classes of independent
+            // formal regions. Explicit destructuring releases the first
+            // general cell; neither extent cell may reach the host free.
+            assert_eq!(output.stdout, expected.as_bytes(), "{output:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+        }
+    }
+}
+
+#[test]
 fn borrowed_box_replacement_updates_the_owner_and_releases_each_cell_once() {
     let source = br#"fn exchange['s](slot: &uniq Box<'s, u64>, incoming: own Box<'s, u64>) -> previous: own Box<'s, u64> reads(slot), writes(slot) {
   let displaced = replace deref(slot) = move incoming;
@@ -952,7 +1083,7 @@ command fn main() -> status: own ExitStatus pure {
 /// Observe only source allocations, without changing the host floor allocator.
 /// A duplicate or unknown release aborts instead of allowing a use-after-free
 /// to appear successful because its bytes happened to remain unchanged.
-fn allocation_observer(limit: usize, refused: usize) -> String {
+pub(super) fn allocation_observer(limit: usize, refused: usize) -> String {
     let slots = limit + 1;
     format!(
         r#"#include <stddef.h>

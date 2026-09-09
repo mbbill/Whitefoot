@@ -7,6 +7,25 @@ use super::super::model::{CheckedConst, CheckedNominalKind, CheckedType, Integer
 use super::{assert_rule, assert_rule_kind, assert_unsupported, with_semantics};
 
 #[test]
+fn a_captured_generic_box_brand_does_not_infer_a_different_store() {
+    let source = br#"fn pass<T: linear>(value: own T) -> result: own T pure {
+  return move value;
+}
+
+fn wrong['a, 'b](wanted: &Box<'a, u64>, given: own Box<'b, u64>, witness: &Box<'b, u64>) -> result: own Box<'a, u64> pure {
+  return pass::<Box<'a, u64>>(value: move given);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Type5, |kind| {
+        matches!(kind, SemanticIssueKind::TypeMismatch { .. })
+    });
+}
+
+#[test]
 fn explicit_int_generic_function_builds_each_reachable_concrete_instance() {
     let source = br#"fn identity<T: Int>(value: own T) -> result: own T pure {
   return value;
@@ -1299,5 +1318,327 @@ command fn main() -> status: own ExitStatus pure {
             panic!("OP-4 must cite the source operation");
         };
         assert_eq!(path.components().first(), Some(&0));
+    });
+}
+
+/// A wrapper's type argument can carry its entire region axis. The physical
+/// family erases that axis and defers release selection; ordinary aliases must
+/// still distinguish the Box and Vector cleanup classes nested inside it.
+#[test]
+fn nominal_physical_families_reach_regions_inside_type_arguments_and_result_lists() {
+    let source = br#"struct Wrapped<T: linear> {
+  value: T;
+}
+
+fn first['a: affine](value: own Wrapped<Result<Box<'a, u64>, Vector<'a, u64>>>, spare: own Box<'a, u64>) -> (back: own Wrapped<Result<Box<'a, u64>, Vector<'a, u64>>>, spare: own Box<'a, u64>) pure {
+  return move value, move spare;
+}
+
+fn second['b: affine](value: own Wrapped<Result<Box<'b, u64>, Vector<'b, u64>>>, spare: own Box<'b, u64>) -> (back: own Wrapped<Result<Box<'b, u64>, Vector<'b, u64>>>, spare: own Box<'b, u64>) pure {
+  return move value, move spare;
+}
+
+fn general['g](value: own Wrapped<Result<Box<'g, u64>, Vector<'g, u64>>>, spare: own Box<'g, u64>) -> (back: own Wrapped<Result<Box<'g, u64>, Vector<'g, u64>>>, spare: own Box<'g, u64>) pure {
+  return move value, move spare;
+}
+
+fn renamed['g](value: own Wrapped<Result<Box<'g, u64>, Vector<'g, u64>>>, spare: own Box<'g, u64>) -> (other: own Wrapped<Result<Box<'g, u64>, Vector<'g, u64>>>, spare: own Box<'g, u64>) pure {
+  return move value, move spare;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the wrapper and result declarations must check: {outcome:?}");
+        };
+        let function = |name: &str| {
+            checked
+                .data
+                .functions
+                .iter()
+                .find(|function| function.name == name)
+                .expect("each declaration has a checked function")
+        };
+        for ty in [
+            |function: &crate::semantic::model::CheckedFunction| function.parameters[0].ty,
+            |function: &crate::semantic::model::CheckedFunction| function.result,
+        ] {
+            let id = |name| match ty(function(name)) {
+                CheckedType::Nominal(id) => id,
+                other => panic!("the wrapper or result list must be nominal: {other:?}"),
+            };
+            let (first, second, general) = (id("first"), id("second"), id("general"));
+            assert_ne!(first, second, "source region identities remain distinct");
+            assert_eq!(
+                checked.data.nominal_lowering_alias[first.0 as usize],
+                checked.data.nominal_lowering_alias[second.0 as usize],
+                "equal release classes share the ordinary lowering alias"
+            );
+            assert_ne!(
+                checked.data.nominal_lowering_alias[first.0 as usize],
+                checked.data.nominal_lowering_alias[general.0 as usize],
+                "nested General and Extent releases remain separate"
+            );
+            assert_eq!(
+                checked.data.nominal_physical_alias[first.0 as usize],
+                checked.data.nominal_physical_alias[general.0 as usize],
+                "one physical family is specialized by the closed release environment"
+            );
+        }
+        let (CheckedType::Nominal(general), CheckedType::Nominal(renamed)) =
+            (function("general").result, function("renamed").result)
+        else {
+            panic!("both multi-result types must be nominal");
+        };
+        assert_ne!(
+            checked.data.nominal_physical_alias[general.0 as usize],
+            checked.data.nominal_physical_alias[renamed.0 as usize],
+            "result-list ordinal names remain part of the family"
+        );
+    });
+}
+
+/// Layout alone cannot erase source declaration identity or phantom generic
+/// arguments. Each of these empty structs has the same storage layout.
+#[test]
+fn nominal_physical_families_preserve_declarations_and_phantom_arguments() {
+    let source = br#"struct Marker<T: affine, const n: u64> {
+}
+
+struct AlternateMarker<T: affine, const n: u64> {
+}
+
+fn base(value: own Marker<u8, 1>) -> back: own Marker<u8, 1> pure {
+  return move value;
+}
+
+fn element(value: own Marker<u16, 1>) -> back: own Marker<u16, 1> pure {
+  return move value;
+}
+
+fn count(value: own Marker<u8, 2>) -> back: own Marker<u8, 2> pure {
+  return move value;
+}
+
+fn declaration(value: own AlternateMarker<u8, 1>) -> back: own AlternateMarker<u8, 1> pure {
+  return move value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the empty generic structs must check: {outcome:?}");
+        };
+        let mut aliases = Vec::new();
+        for name in ["base", "element", "count", "declaration"] {
+            let function = checked
+                .data
+                .functions
+                .iter()
+                .find(|function| function.name == name)
+                .expect("each declaration has a checked function");
+            let CheckedType::Nominal(id) = function.parameters[0].ty else {
+                panic!("the input must be an empty nominal");
+            };
+            let family = checked.data.nominal_physical_alias[id.0 as usize];
+            assert!(
+                !aliases.contains(&family),
+                "{name} must keep a distinct family"
+            );
+            aliases.push(family);
+        }
+    });
+}
+
+/// This acyclic graph exceeds both former implementation depth cutoffs.
+/// Accepted source depth must not change which region instances share a family.
+#[test]
+fn nominal_physical_families_complete_deep_finite_type_graphs() {
+    let mut source = String::from("struct Layer0['s] {\n  cell: Box<'s, u64>;\n}\n\n");
+    for depth in 1..=80 {
+        source.push_str(&format!(
+            "struct Layer{depth}['s] {{\n  inner: Layer{}<'s>;\n}}\n\n",
+            depth - 1
+        ));
+    }
+    source.push_str(
+        "fn first['a: affine](value: own Layer80<'a>) -> back: own Layer80<'a> pure {\n  return move value;\n}\n\n\
+         fn second['b: affine](value: own Layer80<'b>) -> back: own Layer80<'b> pure {\n  return move value;\n}\n\n\
+         command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+    );
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the finite nominal graph must check: {outcome:?}");
+        };
+        let ids = ["first", "second"].map(|name| {
+            let function = checked
+                .data
+                .functions
+                .iter()
+                .find(|function| function.name == name)
+                .expect("both declarations have checked functions");
+            let CheckedType::Nominal(id) = function.parameters[0].ty else {
+                panic!("the input must be a Layer80 nominal");
+            };
+            id
+        });
+        assert_ne!(ids[0], ids[1]);
+        for aliases in [
+            &checked.data.nominal_lowering_alias,
+            &checked.data.nominal_physical_alias,
+        ] {
+            assert_eq!(aliases[ids[0].0 as usize], aliases[ids[1].0 as usize]);
+        }
+    });
+}
+
+/// A back edge is only one obligation: the release class on another field
+/// must still be checked even after the recursive pair has been visited.
+#[test]
+fn nominal_physical_families_complete_cycles_and_check_remaining_fields() {
+    let source = br#"enum Tree['s, 't] {
+  Leaf();
+  Branch(next: Box<'s, Tree<'s, 't>>, values: Vector<'t, u64>);
+}
+
+fn first['a: affine, 'b: affine](value: own Tree<'a, 'b>) -> back: own Tree<'a, 'b> pure {
+  return move value;
+}
+
+fn second['c: affine, 'd: affine](value: own Tree<'c, 'd>) -> back: own Tree<'c, 'd> pure {
+  return move value;
+}
+
+fn mixed['e: affine, 'f](value: own Tree<'e, 'f>) -> back: own Tree<'e, 'f> pure {
+  return move value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the recursive nominal graph must check: {outcome:?}");
+        };
+        let ids = ["first", "second", "mixed"].map(|name| {
+            let function = checked
+                .data
+                .functions
+                .iter()
+                .find(|function| function.name == name)
+                .expect("each declaration has a checked function");
+            let CheckedType::Nominal(id) = function.parameters[0].ty else {
+                panic!("the input must be a Tree nominal");
+            };
+            id
+        });
+        assert_eq!(
+            checked.data.nominal_lowering_alias[ids[0].0 as usize],
+            checked.data.nominal_lowering_alias[ids[1].0 as usize]
+        );
+        assert_ne!(
+            checked.data.nominal_lowering_alias[ids[0].0 as usize],
+            checked.data.nominal_lowering_alias[ids[2].0 as usize],
+            "the nonrecursive Vector field still has a different release action"
+        );
+        assert_eq!(
+            checked.data.nominal_physical_alias[ids[0].0 as usize],
+            checked.data.nominal_physical_alias[ids[2].0 as usize]
+        );
+    });
+}
+
+/// Concrete generic calls are rebuilt after the symbolic inventory is rolled
+/// back. A Box type argument must retain its source store identity through that
+/// rebuild, including when the call is inside an uncalled ordinary helper.
+#[test]
+fn generic_replay_preserves_box_store_brands_and_legacy_boxes() {
+    use crate::semantic::model::CheckedReleaseClass;
+
+    let source = br#"fn pass<T: linear>(value: own T) -> result: own T pure {
+  return move value;
+}
+
+fn first_general['s](cell: own Box<'s, u64>) -> result: own Box<'s, u64> pure {
+  return pass::<Box<'s, u64>>(value: move cell);
+}
+
+fn second_general['s](cell: own Box<'s, u64>) -> result: own Box<'s, u64> pure {
+  return pass::<Box<'s, u64>>(value: move cell);
+}
+
+fn extent['s: affine](cell: own Box<'s, u64>) -> result: own Box<'s, u64> pure {
+  return pass::<Box<'s, u64>>(value: move cell);
+}
+
+fn legacy(cell: own box<u64>) -> result: own box<u64> pure {
+  return pass::<box<u64>>(value: move cell);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("generic replay must preserve each Box type argument: {outcome:?}");
+        };
+        let mut brands = Vec::new();
+        for (name, expected_release, branded) in [
+            ("first_general", CheckedReleaseClass::General, true),
+            ("second_general", CheckedReleaseClass::General, true),
+            ("extent", CheckedReleaseClass::Extent, true),
+            ("legacy", CheckedReleaseClass::General, false),
+        ] {
+            let relay = checked
+                .data
+                .functions
+                .iter()
+                .find(|function| function.name == name)
+                .expect("every written relay is checked even though main does not call it");
+            let box_type = relay.parameters[0].ty;
+            let CheckedType::Nominal(id) = box_type else {
+                panic!("{name} must take a Box nominal");
+            };
+            let CheckedNominalKind::Box {
+                region,
+                release,
+                referent,
+            } = checked.data.nominals[id.0 as usize].kind
+            else {
+                panic!("{name} must retain its Box kind");
+            };
+            assert_eq!(referent, CheckedType::Integer(IntegerType::U64));
+            assert_eq!(release, expected_release);
+            if branded {
+                let [expected_region] = relay.region_parameters.as_slice() else {
+                    panic!("{name} declares one store region");
+                };
+                assert_eq!(region, Some(*expected_region));
+                assert!(
+                    !brands.contains(expected_region),
+                    "the same written region name in another relay is a different store"
+                );
+                brands.push(*expected_region);
+            } else {
+                assert_eq!(region, None, "legacy box has no store brand");
+            }
+            assert_eq!(relay.result, box_type);
+            assert!(
+                checked.data.functions.iter().any(|function| {
+                    function.name == "pass"
+                        && function.parameters[0].ty == box_type
+                        && function.result == box_type
+                }),
+                "{name}'s explicit generic argument must produce an exact pass instance"
+            );
+        }
     });
 }

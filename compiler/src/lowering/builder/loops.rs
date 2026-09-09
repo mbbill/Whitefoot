@@ -11,7 +11,7 @@ use crate::{
 };
 
 use super::{GiveTarget, IrBuilder};
-use crate::lowering::lower_type;
+use crate::lowering::{TypeLowering, lower_type};
 
 pub(super) const U64: IrType = IrType::Integer {
     width: 64,
@@ -1291,7 +1291,7 @@ struct DirectStagedMatch<'body> {
 /// the release question is asked against.
 #[derive(Clone, Copy)]
 struct StagedScope<'program> {
-    erasure: &'program [crate::IrNominalId],
+    erasure: TypeLowering<'program>,
     nominals: &'program [crate::IrNominal],
 }
 

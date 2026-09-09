@@ -84,6 +84,34 @@ fn with_ir_mode<ResultValue>(
         &IrProgram<'classified, 'lexed, 'source>,
     ) -> ResultValue,
 ) -> ResultValue {
+    with_checked(source, |checked| {
+        let ir = lower_checked(checked, overlap).expect("checked system program must lower");
+        for function in ir.functions() {
+            for source in &function.source_calls {
+                let (target, arguments) = call_definition(function, source.result);
+                let signature = ir.functions()[target as usize]
+                    .source_signature
+                    .as_ref()
+                    .expect("a source call retains a source callee");
+                assert_eq!(source.arguments.len(), arguments.len());
+                assert_eq!(signature.parameters.len(), arguments.len());
+                if let Some(argument) = source.returned_borrow_argument {
+                    assert!(argument < arguments.len());
+                    assert_ne!(signature.parameters[argument], IrSourceMode::Own);
+                    assert_ne!(signature.result, IrSourceMode::Own);
+                }
+            }
+        }
+        run(&ir)
+    })
+}
+
+fn with_checked<ResultValue>(
+    source: &[u8],
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        crate::semantic::CheckedProgram<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
     let inputs = [SourceInput::new("test.wf", source)];
     let Ok(bundle) = SourceBundle::with_limits(&inputs, SOURCE_LIMITS) else {
         panic!("lowering test bundle must be valid");
@@ -116,24 +144,7 @@ fn with_ir_mode<ResultValue>(
     let SemanticOutcome::Complete(checked) = outcome else {
         panic!("lowering test source must check: {outcome:?}");
     };
-    let ir = lower_checked(*checked, overlap).expect("checked system program must lower");
-    for function in ir.functions() {
-        for source in &function.source_calls {
-            let (target, arguments) = call_definition(function, source.result);
-            let signature = ir.functions()[target as usize]
-                .source_signature
-                .as_ref()
-                .expect("a source call retains a source callee");
-            assert_eq!(source.arguments.len(), arguments.len());
-            assert_eq!(signature.parameters.len(), arguments.len());
-            if let Some(argument) = source.returned_borrow_argument {
-                assert!(argument < arguments.len());
-                assert_ne!(signature.parameters[argument], IrSourceMode::Own);
-                assert_ne!(signature.result, IrSourceMode::Own);
-            }
-        }
-    }
-    run(&ir)
+    run(*checked)
 }
 
 fn call_definition(function: &IrFunction, result: IrValueId) -> (u32, &[IrValueId]) {
@@ -154,6 +165,208 @@ fn call_definition(function: &IrFunction, result: IrValueId) -> (u32, &[IrValueI
             _ => None,
         })
         .expect("source metadata must name an actual IR call")
+}
+
+const RELEASE_INVENTORY_SOURCE: &[u8] = br#"fn observe['s](cell: &Box<'s, u64>, witness: &Box<'s, u64>) -> result: own unit pure {
+  return unit;
+}
+
+fn pair['l, 'r](left: &Box<'l, u64>, right: &Box<'r, u64>, left_witness: &Box<'l, u64>, right_witness: &Box<'r, u64>) -> result: own unit pure {
+  return unit;
+}
+
+fn pass<T: linear>(value: own T) -> result: own T pure {
+  return move value;
+}
+
+fn relay['s](cell: own Box<'s, u64>) -> result: own Box<'s, u64> pure {
+  return pass::<Box<'s, u64>>(value: move cell);
+}
+
+fn recurse['s](cell: &Box<'s, u64>, witness: &Box<'s, u64>, again: own Bool) -> result: own unit pure {
+  if again {
+    let stop = False();
+    return recurse(cell: cell, witness: witness, again: stop);
+  }
+  return unit;
+}
+
+fn borrow_scalar(value: &u64) -> result: own unit pure {
+  return unit;
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region 'a {
+    let first = arena_frame::<8, 8, 'a>();
+    region 'b {
+      let second = arena_frame::<8, 8, 'b>();
+      region {
+        match heap_box(store: &uniq heap, value: 1_u64) {
+          Err(error: back) => {
+            return exit_status(code: 70_u8);
+          }
+          Ok(value: general) => {
+            match arena_box(store: &uniq first, value: 2_u64) {
+              Err(error: back) => {
+                return exit_status(code: 70_u8);
+              }
+              Ok(value: extent_a) => {
+                match arena_box(store: &uniq second, value: 3_u64) {
+                  Err(error: back) => {
+                    return exit_status(code: 70_u8);
+                  }
+                  Ok(value: extent_b) => {
+                    let general_ready = relay(cell: move general);
+                    let extent_ready = relay(cell: move extent_a);
+                    region {
+                      let again = True();
+                      observe(cell: &general_ready, witness: &general_ready);
+                      observe(cell: &extent_ready, witness: &extent_ready);
+                      observe(cell: &extent_b, witness: &extent_b);
+                      pair(left: &general_ready, right: &extent_ready, left_witness: &general_ready, right_witness: &extent_ready);
+                      pair(left: &extent_ready, right: &general_ready, left_witness: &extent_ready, right_witness: &general_ready);
+                      recurse(cell: &general_ready, witness: &general_ready, again: again);
+                      recurse(cell: &extent_b, witness: &extent_b, again: again);
+                      return exit_status(code: 0_u8);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"#;
+
+#[test]
+fn physical_call_inventory_reuses_classes_and_keeps_independent_axes() {
+    use crate::semantic::CheckedReleaseClass::{Extent, General};
+
+    with_checked(RELEASE_INVENTORY_SOURCE, |checked| {
+        let plan = super::specialize::PhysicalFunctions::build(&checked.data)
+            .expect("accepted call inventory must close");
+        let variants = |name: &str| {
+            let source = checked
+                .data
+                .functions
+                .iter()
+                .find(|function| function.name == name)
+                .expect("named source function")
+                .id;
+            plan.variants
+                .iter()
+                .filter(|variant| variant.source == source)
+                .map(|variant| {
+                    variant
+                        .releases
+                        .iter()
+                        .map(|(_, class)| *class)
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(variants("observe"), [vec![General], vec![Extent]]);
+        assert_eq!(
+            variants("pair"),
+            [vec![General, Extent], vec![Extent, General]]
+        );
+        assert_eq!(
+            variants("borrow_scalar"),
+            [vec![]],
+            "loan-only regions are erased"
+        );
+        let main = &plan.variants[plan.main as usize];
+        let observe = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "observe")
+            .expect("observe declaration")
+            .id;
+        let calls = main
+            .calls
+            .iter()
+            .filter_map(|(_, target)| {
+                (plan.variants[*target as usize].source == observe).then_some(*target)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(calls.len(), 3);
+        assert_ne!(calls[0], calls[1]);
+        assert_eq!(
+            calls[1], calls[2],
+            "distinct extent brands share physical code"
+        );
+        assert!(
+            plan.variants
+                .windows(2)
+                .all(|pair| pair[0].source.0 <= pair[1].source.0)
+        );
+    });
+}
+
+#[test]
+fn physical_call_inventory_closes_captured_regions_and_recursive_edges() {
+    use crate::semantic::CheckedReleaseClass::{Extent, General};
+
+    with_checked(RELEASE_INVENTORY_SOURCE, |checked| {
+        let plan = super::specialize::PhysicalFunctions::build(&checked.data)
+            .expect("accepted recursive call inventory must close");
+        let pass = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "pass")
+            .expect("concrete generic pass instance");
+        assert!(
+            pass.region_parameters.is_empty(),
+            "the store is captured inside T"
+        );
+        let classes = plan
+            .variants
+            .iter()
+            .filter(|variant| variant.source == pass.id)
+            .map(|variant| {
+                variant
+                    .releases
+                    .iter()
+                    .map(|(_, class)| *class)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(classes, [vec![General], vec![Extent]]);
+        let recursive = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "recurse")
+            .expect("recursive source declaration")
+            .id;
+        let variants = plan
+            .variants
+            .iter()
+            .enumerate()
+            .filter(|(_, variant)| variant.source == recursive)
+            .collect::<Vec<_>>();
+        assert_eq!(variants.len(), 2);
+        for (index, variant) in variants {
+            assert_eq!(variant.calls.len(), 1);
+            assert_eq!(
+                variant.calls[0].1 as usize, index,
+                "recursive calls retain the class environment"
+            );
+        }
+        for variant in &plan.variants {
+            assert!(
+                variant
+                    .calls
+                    .iter()
+                    .all(|(_, target)| (*target as usize) < plan.variants.len())
+            );
+        }
+    });
 }
 
 fn source_call<'program>(
@@ -1536,6 +1749,56 @@ command fn main() -> status: own ExitStatus pure {
         };
         assert!(entry.instructions().is_empty());
         assert_eq!(entry.terminator(), &IrTerminator::Unreachable);
+    });
+}
+
+#[test]
+fn physical_call_inventory_omits_proof_closed_body_edges() {
+    let source = br#"fn child() -> result: own unit pure {
+  return unit;
+}
+
+fn impossible(value: own i32) -> result: own unit pure contract {
+  requires value == 0_i32;
+  requires value != 0_i32;
+} {
+  child();
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_checked(source, |checked| {
+        let impossible = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "impossible")
+            .expect("impossible declaration");
+        assert!(matches!(
+            impossible.body_disposition,
+            crate::semantic::CheckedBodyDisposition::Uninhabited { .. }
+        ));
+        assert!(impossible.body.iter().any(|statement| matches!(
+            statement,
+            crate::semantic::CheckedStatement::Evaluate(
+                crate::semantic::CheckedExpression::UserCall { .. }
+            )
+        )));
+        let plan = super::specialize::PhysicalFunctions::build(&checked.data)
+            .expect("proof-closed functions retain their physical signature");
+        let variant = plan
+            .variants
+            .iter()
+            .find(|variant| variant.source == impossible.id)
+            .expect("unreferenced source definition still emitted");
+        assert!(
+            variant.calls.is_empty(),
+            "a proof-closed body has no executable calls"
+        );
+        assert!(variant.releases.is_empty());
     });
 }
 

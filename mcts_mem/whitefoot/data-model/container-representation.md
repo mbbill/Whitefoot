@@ -8,6 +8,11 @@
   independently of parameter and result representation. Compiler-synthesized
   functions carry no invented source signature. These modes alone supply no loan
   origin, lifetime, or input/result aliasing permission.
+- Select executable storage-release variants after semantic acceptance. Keep
+  declaration obligations, proof summaries and parallel permissions canonical;
+  specialize the complete owning type graph by the actual stores' finite release
+  classes, including brands captured in type arguments. Equal pointer layout
+  alone grants no shared reclamation behavior.
 - User-call arguments retain their checked occurrence uses independently of
   their actual value identities. A direct borrow result retains its candidate
   actual argument; this relation may cover a wider place than the returned
@@ -381,6 +386,17 @@
   the matched C medians; host drift and an outlier prevent attributing a small
   difference from the earlier samples to this change alone.
   [Conditions, optimized code and retained measurements](../../../research/experiments/container-representation/families/RESULTS.md#consumed-input-and-result-destination-reuse). (code)
+
+- 2026-09-09 rationale: one admitted unbounded Box helper can receive either a
+  general-store cell or an extent cell. Explicit destructuring must reclaim the
+  former and leave the latter to its arena. Post-acceptance physical function
+  and nominal instances preserve that distinction without a runtime class
+  branch or caller-dependent source admission. Native tests retain helper calls,
+  check mixed two-region transfers and exact releases, and exercise actual
+  staged Arena retirement on allocation refusal.
+  [Physical lowering](../../../compiler/src/lowering/physical_types.rs),
+  [call closure](../../../compiler/src/lowering/specialize.rs),
+  [execution evidence and scope](../../../research/experiments/container-representation/families/RESULTS.md). (code)
 
 ## Moves
 

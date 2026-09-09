@@ -374,10 +374,15 @@ facts. Legacy Buffer roots reached through a Box still stop explicitly at
 through Box projections. These are implementation limits, not source rejections
 under TYPE-7 or MSR-1.
 Heap and extent Box cleanup identities remain distinct even when their pointer
-layouts agree. Unbounded store-polymorphic Box helper calls across these release
-classes still expose a typed call-boundary failure (`Backend InvalidIr`); their
-general lowering is unfinished. A shared physical pointer layout is not authority
-to select the wrong release action.
+layouts agree. After semantic acceptance, store-polymorphic calls select a
+physical function instance for the release classes of their actual stores.
+Canonical declaration checking, proof summaries and parallel permissions are
+shared; source obligations do not depend on which callers happen to exist.
+The finite instance inventory includes store regions captured inside generic
+type arguments. Contextual type lowering preserves nested Box/Vector cleanup
+through ordinary calls, ordered results and staged calls without a runtime
+class branch. Regions with the same complete reclamation graph share physical
+types; identical pointer layout alone does not select a release action.
 
 **There are two views now, and the exclusive one writes.** [S35] capitalizes the
 view nominals, so v0.44's `slice<'r, T>` is spelled `Slice<'r, T>` and the

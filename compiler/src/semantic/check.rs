@@ -1529,6 +1529,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             },
             executable_nominal_count,
             nominal_lowering_alias: self.nominal_lowering_aliases()?,
+            nominal_physical_alias: self.nominal_physical_aliases()?,
+            region_release_defaults: {
+                let mut defaults = self
+                    .resolved
+                    .declarations()
+                    .iter()
+                    .filter(|record| {
+                        matches!(
+                            record.role(),
+                            crate::DeclarationRole::LocalRegion
+                                | crate::DeclarationRole::RegionParameter
+                        )
+                    })
+                    .map(|record| Ok((record.id(), self.vector_release_class(record.id())?)))
+                    .collect::<Result<Vec<_>, CheckStop>>()?;
+                defaults.push((
+                    DeclarationId::ENTRY_HEAP_REGION,
+                    super::model::CheckedReleaseClass::General,
+                ));
+                defaults.sort_unstable_by_key(|(region, _)| *region);
+                defaults
+            },
             constants: self.checked_constants.clone(),
             derived_consts,
             functions,
@@ -2126,6 +2148,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             declaration: signature.declaration,
             name: signature.name.clone(),
             symbol: signature.symbol.clone(),
+            region_parameters: signature.region_parameters.clone(),
             parameters,
             result_mode: signature.result_mode,
             result: signature.result,
