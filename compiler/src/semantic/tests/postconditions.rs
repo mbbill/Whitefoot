@@ -1745,6 +1745,72 @@ fn a_bound_measured_call_return_preserves_the_kernel_result_relation() {
 }
 
 #[test]
+fn a_measured_postcondition_cannot_omit_a_direct_call_return() {
+    for returned in ["fixed_vector::<u8, 1>()", "empty()"] {
+        let source = format!(
+            "fn empty() -> result: own FixedVector<u8, 1> pure {{\n  return fixed_vector::<u8, 1>();\n}}\n\nfn choose(keep: own Bool) -> result: own FixedVector<u8, 1> pure contract {{\n  ensures len_of(result) == 1_u64;\n}} {{\n  if keep {{\n    let vacant = fixed_vector::<u8, 1>();\n    let full = place_back(vector: move vacant, value: 17_u8);\n    return move full;\n  }}\n  return {returned};\n}}\n\n{COMMAND_MAIN}"
+        );
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::SourceIssue { issue } = outcome else {
+                panic!("a proved branch must not hide an invalid selected return");
+            };
+            assert_eq!(issue.rule(), SemanticRule::Fn9);
+            assert!(matches!(
+                issue.kind(),
+                SemanticIssueKind::InvalidPostconditionReturn
+            ));
+        });
+        assert_rule_at(
+            source.as_bytes(),
+            SemanticRule::Fn9,
+            &format!("return {returned};"),
+        );
+    }
+}
+
+fn measured_recursive_return_source(bind_result: bool) -> String {
+    let returned = if bind_result {
+        "let forwarded = forward(items: move items, again: again);\n    return move forwarded;"
+    } else {
+        "return forward(items: move items, again: again);"
+    };
+    format!(
+        "fn forward(items: own FixedVector<u8, 1>, again: own Bool) -> result: own FixedVector<u8, 1> pure contract {{\n  requires len_of(items) == 1_u64;\n  ensures len_of(result) == 1_u64;\n}} {{\n  if again {{\n    {returned}\n  }}\n  return move items;\n}}\n\n{COMMAND_MAIN}"
+    )
+}
+
+#[test]
+fn a_measured_recursive_return_requires_a_named_result_datum() {
+    let source = measured_recursive_return_source(false);
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("a recursive call has no implicit return datum");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Fn9);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::InvalidPostconditionReturn
+        ));
+    });
+    assert_rule_at(
+        source.as_bytes(),
+        SemanticRule::Fn9,
+        "return forward(items: move items, again: again);",
+    );
+}
+
+#[test]
+fn a_bound_measured_recursive_return_cannot_assume_its_own_summary() {
+    let source = measured_recursive_return_source(true);
+    assert_fn9_unproved(source.as_bytes());
+    assert_rule_at(
+        source.as_bytes(),
+        SemanticRule::Fn9,
+        "return move forwarded;",
+    );
+}
+
+#[test]
 fn a_bound_measured_call_return_still_refutes_a_wrong_postcondition() {
     for generic in [false, true] {
         let source = measured_call_return_source(generic, true, 0);

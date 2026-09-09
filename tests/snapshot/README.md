@@ -51,9 +51,12 @@ rejection cites is a diagnostic choice, and pinning it here would turn every
 diagnostic improvement into a corpus failure. If you want a cited rule pinned,
 that is a conformance case, not a snapshot row.
 
-Twenty-one rows carry `agreement = no`: the author expected an accept and this
+Twenty-two rows carry `agreement = no`: the author expected an accept and this
 compiler rejects. Each row's `doc` gives the rule that decides it and the
 mechanism behind it — twelve are expectation errors; one
+(`indexing__writer-r1__merge_two_pointer`) gained an invalid postcondition during
+the B7c container migration which the checker previously failed to verify on
+every selected return; one
 (`kills__writer-r2__06_chain_middle_replace`) is a program whose stated
 expectation the compiler now meets in the part it was written to exercise, yet
 which still rejects for an unrelated unproved product; and eight are programs
@@ -77,6 +80,17 @@ case, the recorded verdict, the reached verdict, and the first diagnostic line.
   survive.
 
 Never delete a case or edit a verdict merely to get a green run.
+
+The `indexing__writer-r1__merge_two_pointer` rejection fixes an omitted proof
+obligation. B7c migrated its full `array<u32, 3>` values to variable-length
+`FixedVector<u32, 3>` values and added a fullness postcondition. The old checker
+silently omitted the two direct recursive returns from that postcondition's
+proof, then published its summary from the three proved base returns alone.
+FN-9 selects every unrouted return: a direct call has no admitted result datum,
+and binding that result would still not make a same-component summary available.
+The executable logic remains here with the author's accept expectation recorded;
+the original full-array program is a passing native compiler test, whose array
+extent needs no postcondition or recursive summary.
 
 ## What B7c4b-1 moved
 

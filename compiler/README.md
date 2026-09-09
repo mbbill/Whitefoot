@@ -726,8 +726,13 @@ Contracts currently support the FN-8 requirement vocabulary and FN-9's
 restricted integer-result and container-measure relations, including the
 selected integer `Ok` payload route. On each selected return, a container result
 referenced by a postcondition must name an admitted place: bind a producing call
-before returning that binding. An unsupported returned expression is diagnosed
-at its return statement. Contracts are not a general specification language for
+before returning that binding. A non-admitted returned expression is rejected
+under FN-9 at its return statement. This check closes an earlier proof omission: when a
+measured result had no return datum, the checker skipped that selected return
+and could publish a false summary from other, proved returns. Binding a recursive
+result fixes its datum shape but does not supply its postcondition: FN-9 keeps
+all same-component summaries unavailable during verification.
+Contracts are not a general specification language for
 aggregate results or mutable data-structure invariants. A contract-member
 `fn_sig` cannot carry a function `contract_block`. Verification is over the
 closed source bundle; independent module checking remains future work.

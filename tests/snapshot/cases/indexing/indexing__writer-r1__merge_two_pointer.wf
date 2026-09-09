@@ -7,7 +7,7 @@ fn merge_step(left: own FixedVector<u32, 3>, right: own FixedVector<u32, 3>, out
   requires k <= 3_u64;
   ensures len_of(result) >= 3_u64;
 } {
-  doc "ACCEPT: merges two sorted 3-slot arrays by recursively advancing whichever index holds the smaller current element; each recursive step re-establishes the same three-index contract, so no subscript needs a written certificate.";
+  doc "REJECT: the author expected recursive array merging to accept. B7c changed full arrays to FixedVector and added a fullness postcondition; direct recursive returns have no admitted result datum, and binding them would still leave the same-SCC summary unavailable. The old checker silently omitted those selected returns and proved only the base exits.";
   let i_more = i < 3_u64;
   if i_more {
   } else {
