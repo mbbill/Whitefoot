@@ -143,7 +143,10 @@ _Static_assert(
 
 static void wf_sched_push(wf_sched_lane *lane, wf_sched_slot *slot) {
     unsigned long long bottom = wf_prim_load_q(&lane->bottom, WF_PRIM_RELAXED);
-    lane->buffer[bottom & (WF_SCHED_LANE_SLOTS - 1u)] = slot;
+    /* A delayed thief can read a cell after its logical position has been
+     * consumed and the ring reused. Its failed CAS does not excuse a plain
+     * read/write race. The index publication carries the payload stores. */
+    wf_prim_store_p((void **)&lane->buffer[bottom & (WF_SCHED_LANE_SLOTS - 1u)], slot, WF_PRIM_RELAXED);
     wf_prim_store_q(&lane->bottom, bottom + 1u, WF_PRIM_SEQ_CST);
 }
 
@@ -161,7 +164,7 @@ static wf_sched_slot *wf_sched_pop(wf_sched_lane *lane) {
         wf_prim_store_q(&lane->bottom, bottom + 1u, WF_PRIM_RELAXED);
         return NULL;
     }
-    slot = lane->buffer[bottom & (WF_SCHED_LANE_SLOTS - 1u)];
+    slot = wf_prim_load_p((void *const *)&lane->buffer[bottom & (WF_SCHED_LANE_SLOTS - 1u)], WF_PRIM_RELAXED);
     if ((long long)(bottom - top) > 0) {
         return slot;
     }
@@ -180,21 +183,24 @@ static wf_sched_slot *wf_sched_newest(wf_sched_lane *lane) {
     if ((long long)(bottom - top) <= 0) {
         return NULL;
     }
-    return lane->buffer[(bottom - 1u) & (WF_SCHED_LANE_SLOTS - 1u)];
+    return wf_prim_load_p((void *const *)&lane->buffer[(bottom - 1u) & (WF_SCHED_LANE_SLOTS - 1u)], WF_PRIM_RELAXED);
 }
 
 static wf_sched_slot *wf_sched_steal(wf_sched_core *core, wf_sched_lane *victim) {
-    unsigned long long top = wf_prim_load_q(&victim->top, WF_PRIM_ACQUIRE);
-    unsigned long long bottom = wf_prim_load_q(&victim->bottom, WF_PRIM_ACQUIRE);
+    /* These two loads join the SC order of the owner's bottom decrement
+     * and top recheck. Acquire alone permits a newer top with an older
+     * bottom, letting a thief claim an entry already taken by the owner. */
+    unsigned long long top = wf_prim_load_q(&victim->top, WF_PRIM_SEQ_CST);
+    unsigned long long bottom = wf_prim_load_q(&victim->bottom, WF_PRIM_SEQ_CST);
     wf_sched_slot *slot;
     if ((long long)(bottom - top) <= 0) {
         return NULL;
     }
-    slot = victim->buffer[top & (WF_SCHED_LANE_SLOTS - 1u)];
+    slot = wf_prim_load_p((void *const *)&victim->buffer[top & (WF_SCHED_LANE_SLOTS - 1u)], WF_PRIM_RELAXED);
     if (!wf_prim_cas_q(&victim->top, &top, top + 1u, WF_PRIM_SEQ_CST, WF_PRIM_RELAXED)) {
         return NULL;
     }
-    wf_sched_current_thread(core)->counts.steals += 1u;
+    wf_prim_count_increment(&wf_sched_current_thread(core)->counts.steals);
     return slot;
 }
 
@@ -373,7 +379,7 @@ static int wf_sched_park(
                 )) {
                 wf_prim_fail("a cancel that owned its registration found its stack not SUSPENDING");
             }
-            thread->counts.cancels += 1u;
+            wf_prim_count_increment(&thread->counts.cancels);
             if (target_was_ready) {
                 wf_sched_ready_push(core, target);
             } else {
@@ -383,12 +389,12 @@ static int wf_sched_park(
         }
     }
     /* 5. switch, then commit on the target stack */
-    thread->counts.parks += 1u;
+    wf_prim_count_increment(&thread->counts.parks);
     thread->pending_commit = stack;
     wf_sched_switch_to(core, target);
     /* Resumed: the registration is cleared on every park exit (§6). */
     wf_prim_store_p((void **)&record->waiter, NULL, WF_PRIM_RELAXED);
-    wf_sched_current_thread(core)->counts.resumes += 1u;
+    wf_prim_count_increment(&wf_sched_current_thread(core)->counts.resumes);
     return 1;
 }
 
@@ -454,7 +460,7 @@ static int wf_sched_idle_looks(
              * registers this stack on the record itself and re-reads the
              * record's state after it does, so the in-place registration the
              * line above has just ended is not one it needs. */
-            thread->counts.late_parks += 1u;
+            wf_prim_count_increment(&thread->counts.late_parks);
             (void)wf_sched_park(core, on_record, ready, 1);
             return 1;
         }
@@ -561,7 +567,7 @@ void wf_sched_join(wf_sched_core *core, wf_sched_record *record, int is_io) {
         for (;;) {
             unsigned state = wf_prim_load_u(&record->state, WF_PRIM_ACQUIRE);
             if (state == WF_SCHED_DONE) {
-                thread->counts.line_one += 1u;
+                wf_prim_count_increment(&thread->counts.line_one);
                 return;
             }
             if (state != WF_SCHED_COMPLETING) {
@@ -575,7 +581,7 @@ void wf_sched_join(wf_sched_core *core, wf_sched_record *record, int is_io) {
             if (slot->home == thread->lane && wf_sched_newest(thread->lane) == slot) {
                 wf_sched_slot *popped = wf_sched_pop(thread->lane);
                 if (popped == slot) {
-                    thread->counts.inline_runs += 1u;
+                    wf_prim_count_increment(&thread->counts.inline_runs);
                     wf_sched_execute(core, slot);
                     return;
                 }
@@ -594,12 +600,12 @@ void wf_sched_join(wf_sched_core *core, wf_sched_record *record, int is_io) {
         }
         /* I/O exhaustion, or current-stack compute helping/exhaustion. */
         if (is_io) {
-            thread->counts.exhausted_io_waits += 1u;
+            wf_prim_count_increment(&thread->counts.exhausted_io_waits);
             (void)wf_sched_idle_step(core, record, &left);
             continue;
         }
         if (help_rounds == 0u) {
-            thread->counts.exhausted_compute_waits += 1u;
+            wf_prim_count_increment(&thread->counts.exhausted_compute_waits);
         }
         {
             wf_sched_slot *slot = wf_sched_pop(thread->lane);
@@ -885,14 +891,14 @@ void wf_sched_statistics_sum(const wf_sched_core *core, wf_sched_statistics *out
     memset(out, 0, sizeof(*out));
     for (index = 0; index < core->thread_count; index += 1u) {
         const wf_sched_statistics *counts = &core->threads[index].counts;
-        out->parks += counts->parks;
-        out->cancels += counts->cancels;
-        out->resumes += counts->resumes;
-        out->steals += counts->steals;
-        out->inline_runs += counts->inline_runs;
-        out->exhausted_io_waits += counts->exhausted_io_waits;
-        out->exhausted_compute_waits += counts->exhausted_compute_waits;
-        out->late_parks += counts->late_parks;
-        out->line_one += counts->line_one;
+        out->parks += wf_prim_count_read(&counts->parks);
+        out->cancels += wf_prim_count_read(&counts->cancels);
+        out->resumes += wf_prim_count_read(&counts->resumes);
+        out->steals += wf_prim_count_read(&counts->steals);
+        out->inline_runs += wf_prim_count_read(&counts->inline_runs);
+        out->exhausted_io_waits += wf_prim_count_read(&counts->exhausted_io_waits);
+        out->exhausted_compute_waits += wf_prim_count_read(&counts->exhausted_compute_waits);
+        out->late_parks += wf_prim_count_read(&counts->late_parks);
+        out->line_one += wf_prim_count_read(&counts->line_one);
     }
 }

@@ -193,6 +193,10 @@ bounded current-stack helping before taking another stack; READY continuations
 remain eligible and empty-handed turns still advance I/O completions. I/O joins
 keep their existing park/progress behavior. Runtime startup initializes only
 configured lanes and live metadata rather than touching all lane capacity.
+Deque ring cells use atomic pointer accesses even for failed steals racing
+cell reuse; thief index reads participate in the owner's sequentially
+consistent claim ordering. Diagnostic counters use single-writer atomic
+updates and permit live reads, without promising a simultaneous pool snapshot.
 These changes preserve ordinary calls and the emitted task-frame ABI. Their
 cross-platform performance qualification remains open in the
 [compute investigation](../research/investigations/compute-runtime/README.md).

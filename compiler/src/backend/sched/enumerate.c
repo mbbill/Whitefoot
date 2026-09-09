@@ -108,6 +108,7 @@ enum word_class {
     W_READY_HEAD,
     W_TOP,
     W_BOTTOM,
+    W_CELL,
     W_FREE,
     W_SLOT_STATE,
     W_SLOT_WAITER,
@@ -455,6 +456,7 @@ static void build_words(void) {
         add_word(&lane->bottom, W_BOTTOM, index, 0);
         add_word(&lane->free_head, W_FREE, index, 0);
         for (slot = 0; slot < WF_SCHED_LANE_SLOTS; slot += 1u) {
+            add_word(&lane->buffer[slot], W_CELL, index, slot);
             add_word(&lane->slots[slot].record.state, W_SLOT_STATE, index, slot);
             add_word(&lane->slots[slot].record.waiter, W_SLOT_WAITER, index, slot);
         }
@@ -826,6 +828,11 @@ static void note_word_write(const word *w, unsigned long long old, unsigned long
                 fail_execution("stack %d registered as a waiter in phase %u, not SUSPENDING", on,
                     wf_enum_core.stacks[on]->phase);
             }
+        }
+        break;
+    case W_CELL:
+        if (kind != OP_STORE || w->index != me) {
+            fail_execution("thread %u changed a deque cell outside its owning lane %u (I2)", me, w->index);
         }
         break;
     case W_BOTTOM:
@@ -2120,7 +2127,7 @@ ENUM_NO_ASAN static void digest_bytes(digest *d, const unsigned char *bytes, siz
 }
 
 /* The core's used part, less the words that do not decide its next step:
- * the per-thread counters, each lane's steal seed, a deque's dead cells, and
+ * the per-thread counters, each lane's steal seed, and
  * a free slot's frame and record. Residue in those would make equal states
  * hash apart. */
 static void digest_core(digest *d, size_t bytes) {
@@ -2137,22 +2144,15 @@ static void digest_core(digest *d, size_t bytes) {
     digest_bytes(d, base + cursor, offsetof(wf_sched_core, lanes) - cursor);
     for (index = 0; index < wf_enum_core.thread_count; index += 1u) {
         const wf_sched_lane *lane = &wf_enum_core.lanes[index];
-        unsigned long long position;
         unsigned free_mask = 0;
         unsigned head = lane->free_head;
         unsigned slot;
         digest_bytes(d, (const unsigned char *)&lane->top, sizeof lane->top);
         digest_bytes(d, (const unsigned char *)&lane->bottom, sizeof lane->bottom);
-        /* The cells from `top` to `bottom` inclusive: the owner's pop lowers
-         * `bottom` before it reads the cell it claimed, and a thief racing it
-         * for the last entry reads that same cell, so the cell at `bottom` is
-         * live for as long as either may still read it. */
-        for (position = lane->top;
-             (long long)(lane->bottom - position) >= 0 && position - lane->top <= WF_SCHED_LANE_SLOTS;
-             position += 1u) {
-            const wf_sched_slot *cell = lane->buffer[position & (WF_SCHED_LANE_SLOTS - 1u)];
-            digest_bytes(d, (const unsigned char *)&cell, sizeof cell);
-        }
+        /* Cell accesses are separate primitive steps, including stale
+         * thieves and unpublished pushes. Retain the full ring rather than
+         * assuming positions outside the current index interval are dead. */
+        digest_bytes(d, (const unsigned char *)lane->buffer, sizeof lane->buffer);
         digest_bytes(d, (const unsigned char *)&lane->free_head, sizeof lane->free_head);
         while (head != WF_SCHED_NO_SLOT && head < WF_SCHED_LANE_SLOTS && !((free_mask >> head) & 1u)) {
             free_mask |= 1u << head;

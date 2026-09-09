@@ -247,6 +247,18 @@ static inline int wf_prim_cas_p(
 
 #endif
 
+/* Observational counters have one physical-thread writer and may have live
+ * readers. They carry no scheduler state or synchronization edges. The
+ * enumerator excludes them from state and does not branch on their accesses.
+ * A load/store increment suffices because no second writer can intervene. */
+static inline unsigned long long wf_prim_count_read(const unsigned long long *word) {
+    return __atomic_load_n(word, __ATOMIC_RELAXED);
+}
+
+static inline void wf_prim_count_increment(unsigned long long *word) {
+    __atomic_store_n(word, wf_prim_count_read(word) + 1u, __ATOMIC_RELAXED);
+}
+
 /* ------------------------------------------------------- the rest (2-7) */
 
 /* 2. The switch. Spills the callee-saved state of the calling stack, stores

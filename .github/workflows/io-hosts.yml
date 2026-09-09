@@ -93,16 +93,18 @@ jobs:
       - name: Address and undefined sanitizers
         run: make -C compiler completion-sanitize CC=/usr/bin/clang
 
-      # Two thread-sanitizer runs, because they cover disjoint code. The
+      # Separate thread-sanitizer runs cover distinct code. The
       # core/read probe links neither the bridge nor the writer scheduler by
       # construction, so the helper pool, the queue wake and the join spin --
       # every thread the delivered runtime actually starts -- are outside it.
       # The default-route probe runs those, on the helper policy a delivered
-      # program gets.
+      # program gets. The deque probe stresses native ring reuse and live
+      # counter reads without switching away from host thread stacks.
       - name: Thread sanitizer
         run: |
           make -C compiler completion-core-read-tsan CC=/usr/bin/clang
           make -C compiler completion-default-route-tsan CC=/usr/bin/clang
+          make -C compiler sched-deque-tsan CC=/usr/bin/clang
 
       - name: Thread sanitizer over the bridge and the ring
         run: make -C compiler completion-tsan CC=/usr/bin/clang
@@ -121,6 +123,13 @@ jobs:
         run: |
           clang --version
           systeminfo | grep -E '^(OS Name|OS Version|System Type|Total Physical Memory)' || true
+
+      - name: Exercise native deque reuse and live counters
+        run: |
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
+            -DWF_SCHED_LANE_SLOTS=8u compiler/src/backend/sched/deque_probe.c \
+            compiler/src/backend/sched/prim_windows.c -o "$RUNNER_TEMP/sched-deque-probe.exe"
+          "$RUNNER_TEMP/sched-deque-probe.exe"
 
       # The runtime the driver stages on this target, in the three groups it
       # stages: the scheduler core with its Windows leaf, the completion

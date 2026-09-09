@@ -210,7 +210,7 @@ typedef struct wf_sched_lane {
 #define WF_SCHED_JOIN_HELP_ROUNDS 256u
 #endif
 
-/* The counters one thread keeps. */
+/* The counters one physical thread writes, with atomic live reads. */
 typedef struct wf_sched_statistics {
     unsigned long long parks;
     unsigned long long cancels;
@@ -270,8 +270,9 @@ typedef struct wf_sched_core {
     unsigned long long idle;
 } wf_sched_core;
 
-/* The counters a test reads back, kept per thread so that no two threads
- * ever write one word, and summed on request. None is on a hot path. */
+/* Sum live counters. Individual fields are atomic observations, not one
+ * instantaneous snapshot across all workers. Updates occur on hot paths;
+ * only the summation is out of line. */
 void wf_sched_statistics_sum(const wf_sched_core *core, wf_sched_statistics *out);
 
 /* --------------------------------------------------------------- the ABI */

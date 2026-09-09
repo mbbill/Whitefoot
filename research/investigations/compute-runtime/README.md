@@ -167,13 +167,71 @@ assertion. Its mixed I/O cases and poisoned initialization also pass. Independen
 scoped review found no remaining issue in these changes after correcting the
 model-coverage claim.
 
-Native code-quality work remains: deque cells are still plain accesses despite
-possible stale thieves racing ring reuse, and diagnostic counters can be read
-while workers update them. The screen avoids the concurrent counter snapshot,
-but the shared runtime still updates counters while the recovered timing build
-disables them. These are unresolved correctness/accounting issues, not justified
-by a successful enumeration or a faster timing. They must be addressed before
-final qualification.
+The [native CI screen at `aeb35be5`](https://github.com/mbbill/Whitefoot/actions/runs/34346052104)
+still fails the performance band on all four POSIX targets. Selected median
+paired candidate/recovered wall ratios are below; widths are configured pool
+participants, not proof of useful work on every participant.
+
+| Target | Width | 4,096 / tile 64 | 65,536 / tile 64 | 65,536 / tile 1,024 |
+| --- | ---: | ---: | ---: | ---: |
+| Linux x86-64 | 4 | 1.857 | 1.412 | 1.353 |
+| Linux AArch64 | 4 | 2.230 | 1.516 | 1.037 |
+| macOS x86-64 | 4 | 2.818 | 1.965 | 0.940 |
+| macOS AArch64 | 2 | 1.729 | 0.985 | 1.011 |
+
+Linux x86-64 at 65,536 / tile 256 reaches 0.990, while smaller tasks still
+lose substantially. Some paired ranges are wide: Linux AArch64 at 4,096 /
+tile 64 spans 1.303–5.332. A favorable median in such a cell does not establish
+stable equivalence. Canonical local `make check` passes at `aeb35be5`, including
+the full native conformance and snapshot adapters; performance acceptance is
+separate and remains open.
+
+Native correctness review found two defects in the shared deque: plain cell
+accesses race with stale thieves during ring reuse, and acquire-only thief
+index loads lack the ordering needed against the owner's claim. The maintained
+core now uses relaxed atomic cell loads/stores and sequentially consistent
+thief top/bottom loads. For the duplicate-claim history, the SC order is owner
+bottom decrement, owner top check, first thief CAS, second thief top read,
+second thief bottom read. The last read cannot select the older bottom. This
+argument assumes no complete 64-bit counter rollover; it is not a complete
+weak-memory proof. The ordering issue and atomic-cell requirement agree with
+the analysis in [Lê et al., PPoPP 2013](https://fzn.fr/readings/ppopp13.pdf).
+Apple ARM code generation changes from `ldapr` to `ldar` for the index loads;
+the repair's performance cost must be measured, not assumed zero.
+
+Live diagnostic counters now use relaxed atomic reads and single-writer
+load/store increments. The writer is the physical thread, reloaded after a
+possible migration. These observations add no synchronization or scheduling
+edge and are not one simultaneous snapshot. The enumerator does not branch on
+counter accesses; it now does branch on ring-cell accesses and hashes the full
+ring, retaining stale-reader and unpublished-push states. All four reduced
+configurations pass after that change, with 44,819,639 states for two threads
+and four stacks. This remains SC interleaving evidence, not weak-memory proof.
+
+The compiler-owned `sched-deque-test` exercises the actual core on ordinary
+host stacks with eight slots, 200,000 tasks, three thieves, owner pops and a
+live observer. It requires exactly-once execution, complete slot return and
+monotone observed steal counts. Both native M1 and ThreadSanitizer runs pass.
+The same probe reports a counter race with the old core; after applying only
+the counter repair to that old core, it reports the separate ring-cell race.
+No race suppression is used. POSIX canonical checks and Windows native CI run
+the probe; Linux CI additionally runs it under ThreadSanitizer. Native CI for
+the repair remains outstanding.
+
+The repair's local M1 cost comparison uses byte-identical WF object files,
+alternating repaired/`aeb35be5` binaries, widths one/four, inputs 4,096/65,536,
+tiles 64/1,024 and five processes with 256 warm calls each. All eight median
+wall ratios are within 5% (0.933–1.034); whole-batch CPU median ratios span
+1.011–1.050. The four-participant small-input/tile-64 wall ratios span
+0.817–1.152, so this does not establish a speedup or stable equivalence there.
+The broader 64-call FIR screen still fails. Correctness selects this repair;
+native CI and further controlled comparisons must establish its cost.
+
+The recovered runtime remains frozen, including its analogous deque defects;
+its timing is historical comparison evidence, not a correctness-qualified
+implementation to restore. The shared runtime still updates counters while
+the recovered timing build disables them. This accounting asymmetry and
+broader fair native references remain unresolved before final qualification.
 
 ## Earlier investigation and evidence
 

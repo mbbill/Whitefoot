@@ -239,7 +239,7 @@ docs:
 spec:
 	$(CARGO) run --bin whitefoot-spec --locked --offline
 
-completion-test: completion-core-read-test completion-default-route-test sched-smoke \
+completion-test: completion-core-read-test completion-default-route-test sched-smoke sched-deque-test \
 	sched-enumerate
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) $(COMPLETION_HARNESS_CFLAGS) $(COMPLETION_SOURCES) -o "$(COMPLETION_TMP)/harness"
@@ -318,6 +318,22 @@ sched-smoke:
 	$(CC) $(COMPLETION_BASE_CFLAGS) $(SCHED_DIR)/core.c $(SCHED_DIR)/prim_host.c \
 		$(SCHED_DIR)/smoke.c -o "$(COMPLETION_TMP)/sched-smoke"
 	"$(COMPLETION_TMP)/sched-smoke"
+
+# Real concurrent deque reuse and counter observation, without custom stack
+# switching, so ThreadSanitizer can track every tested thread normally.
+sched-deque-test:
+	@mkdir -p "$(COMPLETION_TMP)"
+	$(CC) $(COMPLETION_BASE_CFLAGS) -DWF_SCHED_LANE_SLOTS=8u \
+		$(SCHED_DIR)/deque_probe.c $(SCHED_DIR)/prim_host.c \
+		-o "$(COMPLETION_TMP)/sched-deque-probe"
+	"$(COMPLETION_TMP)/sched-deque-probe"
+
+sched-deque-tsan:
+	@mkdir -p "$(COMPLETION_TMP)"
+	$(CC) $(COMPLETION_BASE_CFLAGS) -fsanitize=thread -DWF_SCHED_LANE_SLOTS=8u \
+		$(SCHED_DIR)/deque_probe.c $(SCHED_DIR)/prim_host.c \
+		-o "$(COMPLETION_TMP)/sched-deque-tsan"
+	"$(COMPLETION_TMP)/sched-deque-tsan"
 
 # The §11 gate: every interleaving of the core's primitive steps at the four
 # configurations §11 derives from §5's floor, (T=1,S=2), (T=1,S=3), (T=2,S=3)
@@ -684,5 +700,5 @@ park-on-miss-measurements:
 	completion-sanitize \
 	completion-core-read-sanitize completion-default-route-test \
 	completion-default-route-sanitize completion-default-route-tsan sched-smoke \
-	sched-enumerate completion-windows-cross completion-windows-wine \
+	sched-enumerate sched-deque-test sched-deque-tsan completion-windows-cross completion-windows-wine \
 	park-on-miss-measurements

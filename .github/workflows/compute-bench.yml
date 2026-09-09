@@ -44,6 +44,10 @@ jobs:
           rustc -vV | grep -Fx 'host: ${{ matrix.target }}'
           test -x /usr/bin/clang
           cargo fetch --locked --manifest-path compiler/Cargo.toml
+      - name: Exercise native deque reuse and live counters
+        run: |
+          make -C compiler sched-deque-test CC=/usr/bin/clang \
+            COMPLETION_TMP="$RUNNER_TEMP/formal-deque"
       - name: Compare the shared runtime with fixed controls
         env:
           OUT: ${{ runner.temp }}/formal-runtime
