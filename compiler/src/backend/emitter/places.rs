@@ -81,6 +81,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             } => {
                 self.emit_array_index(result, ty, *root, *offset, *target_domain)?;
             }
+            IrOperation::FullArrayConversion { value } => {
+                self.emit_full_array_conversion(result, ty, *value)?;
+            }
             IrOperation::SliceFromArray { array } => {
                 self.emit_slice_from_array(result, ty, *array)?
             }
@@ -398,7 +401,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 let IrType::Array { element, .. } = base.ty() else {
                     return Err(BackendFailure::InvalidIr);
                 };
-                if element.ty() != referent.ty()
+                if self.program.element(element) != Some(referent.ty())
                     || *target_domain != IrTargetDomainObligation::ElementAddress
                     || self.value_type(*offset)
                         != Some(IrType::Integer {

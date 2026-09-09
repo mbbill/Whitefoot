@@ -1,11 +1,315 @@
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
 use super::super::model::{
-    CheckedConst, CheckedContainerRoot, CheckedExpression, CheckedFlatElement, CheckedPlaceStep,
-    CheckedSetTarget, CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue,
-    IntegerType,
+    CheckedConst, CheckedContainerRoot, CheckedExpression, CheckedPlaceStep, CheckedSetTarget,
+    CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue, IntegerType,
 };
 use super::{assert_rule, assert_rule_kind, with_semantics};
+
+#[test]
+fn nested_constant_array_accesses_keep_explicit_capability_boundaries() {
+    super::assert_unsupported(
+        br#"const rows: array<array<u64, 2>, 1> =[[7_u64, 9_u64]];
+
+command fn main() -> status: own ExitStatus pure {
+  let value = rows[0_u64][1_u64];
+  return exit_status(code: 0_u8);
+}
+"#,
+        crate::UnsupportedSemanticFeature::CompositeValues,
+    );
+    super::assert_unsupported(
+        br#"const rows: array<array<u64, 2>, 1> =[[7_u64, 9_u64]];
+
+fn read(values: &array<array<u64, 2>, 1>) -> result: own u64 reads(values) {
+  return deref(values)[0_u64][1_u64];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  region {
+    let value = read(values: &rows);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        crate::UnsupportedSemanticFeature::RegionsAndBorrows,
+    );
+    super::assert_unsupported(
+        br#"const rows: array<FixedVector<u64, 2>, 1> =[[7_u64, 9_u64]];
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        crate::UnsupportedSemanticFeature::CompositeValues,
+    );
+}
+
+#[test]
+fn constant_array_entries_follow_the_type_directed_value_shapes() {
+    for (inner, element) in [
+        ("array<u64, 2>", "array<u64, 2>"),
+        ("FixedVector<u64, 2>", "array<u64, 2>"),
+        ("array<u64, 2>", "FixedVector<u64, 2>"),
+        ("FixedVector<u64, 2>", "FixedVector<u64, 2>"),
+    ] {
+        let source = format!(
+            "const inner: {inner} =[7_u64, 9_u64];\n\nconst rows: array<{element}, 1> =[inner];\n\ncommand fn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        assert_rule_kind(source.as_bytes(), SemanticRule::Const2, |kind| {
+            matches!(kind, SemanticIssueKind::InvalidConstValue)
+        });
+    }
+    with_semantics(
+        br#"const scalar: u64 = 7_u64;
+
+const rows: array<u64, 1> =[scalar];
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "primitive entry references remain valid: {outcome:?}"
+            )
+        },
+    );
+}
+
+#[test]
+fn constant_array_eligibility_closes_recursive_types_before_checking_the_value() {
+    let source = br#"struct Recursive {
+  children: array<Recursive, 0>;
+}
+
+const invalid: Recursive = Recursive(children:[unit]);
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("finite malformed constant must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Const2);
+        assert_eq!(issue.kind(), &SemanticIssueKind::InvalidConstValue);
+        let crate::SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
+            panic!("expected source location");
+        };
+        let start = usize::try_from(coordinate.start().value()).expect("offset fits");
+        let end = usize::try_from(coordinate.end().value()).expect("offset fits");
+        assert_eq!(
+            &source[start..end],
+            b"[unit]",
+            "the initializer has one entry for a zero-extent field"
+        );
+    });
+    let forbidden = br#"const forbidden: array<array<box<u64>, 0>, 1> =[unit];
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(forbidden, |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("zero extent does not erase forbidden elements: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Const2);
+        assert_eq!(issue.kind(), &SemanticIssueKind::InvalidConstValue);
+        let crate::SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
+            panic!("expected forbidden type location");
+        };
+        let start = usize::try_from(coordinate.start().value()).expect("offset fits");
+        let end = usize::try_from(coordinate.end().value()).expect("offset fits");
+        assert_eq!(&forbidden[start..end], b"box<u64>");
+    });
+}
+
+#[test]
+fn full_array_conversion_requires_fullness_and_preserves_linear_obligations() {
+    assert_rule_kind(
+        br#"command fn main() -> status: own ExitStatus pure {
+  let empty = fixed_vector::<u64, 2>();
+  let partial = place_back(vector: move empty, value: 7_u64);
+  let invalid = array_from_fixed(vector: move partial);
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Blk0,
+        |kind| matches!(kind, SemanticIssueKind::UndischargedKernelRequirement(_)),
+    );
+    assert_rule_kind(
+        br#"linear struct Token {
+  value: u64;
+}
+
+fn abandon(values: own array<Token, 0>) -> result: own unit pure {
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Prov6,
+        |kind| matches!(kind, SemanticIssueKind::LinearValueNotConsumed { .. }),
+    );
+    with_semantics(
+        br#"linear struct Token {
+  value: u64;
+}
+
+fn convert(values: own array<Token, 0>) -> result: own FixedVector<Token, 0> pure {
+  return fixed_from_array(values: move values);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "whole conversion preserves the zero-extent obligation: {outcome:?}"
+            )
+        },
+    );
+}
+
+#[test]
+fn general_array_views_remain_an_explicit_capability_gap() {
+    super::assert_unsupported(
+        br#"command fn main() -> status: own ExitStatus pure {
+  let inner = array_new::<u64, 2>(7_u64);
+  let empty = fixed_vector::<array<u64, 2>, 1>();
+  let full = place_back(vector: move empty, value: move inner);
+  let values = array_from_fixed(vector: move full);
+  region {
+    let view = slice_of(&values);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        crate::UnsupportedSemanticFeature::CompositeValues,
+    );
+}
+
+#[test]
+fn incoming_array_element_reads_exhibit_the_resolved_formal_effect() {
+    let source = br#"fn read(values: own array<u64, 2>) -> result: own u64 pure {
+  return values[0_u64];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    // The old array-only read path omitted EFF-2 attribution. The complete
+    // typed storage path applies the same incoming-state rule as other owners.
+    assert_rule_kind(source, SemanticRule::Eff2, |kind| {
+        matches!(kind,
+        SemanticIssueKind::EffectMismatch { missing, .. } if missing == &["reads(values)".to_owned()])
+    });
+    let admitted = String::from_utf8(source.to_vec())
+        .expect("ASCII fixture")
+        .replacen("own u64 pure", "own u64 reads(values)", 1);
+    with_semantics(admitted.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "exact incoming read row: {outcome:?}"
+        )
+    });
+}
+
+#[test]
+fn full_array_elements_preserve_brands_through_generic_replay_and_borrowed_reads() {
+    let source = br#"struct Record {
+  value: u64;
+  owner: box<u64>;
+}
+
+fn pass<T: linear>(value: own T) -> result: own T pure {
+  return move value;
+}
+
+fn relay['s](values: own array<Box<'s, u64>, 2>) -> result: own array<Box<'s, u64>, 2> pure {
+  return pass::<array<Box<'s, u64>, 2>>(value: move values);
+}
+
+fn read(values: &array<Record, 2>) -> result: own u64 reads(values) {
+  return deref(values)[0_u64].value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("full owning array type graph: {outcome:?}");
+        };
+        let relay = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "relay")
+            .expect("relay");
+        assert_eq!(relay.parameters[0].ty, relay.result);
+        let CheckedType::Array {
+            element,
+            length: CheckedConst::Value(2),
+        } = relay.result
+        else {
+            panic!("relay must retain its full array result");
+        };
+        let Some(CheckedType::Nominal(owner)) = checked.element_type(element) else {
+            panic!("array must retain its owner element");
+        };
+        assert!(matches!(
+            checked.data.nominals[owner.0 as usize].kind,
+            super::super::model::CheckedNominalKind::Box {
+                region: Some(_),
+                ..
+            }
+        ));
+        let pass = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name.starts_with("pass"))
+            .expect("instantiated pass");
+        assert_eq!(pass.parameters[0].ty, relay.result);
+        assert_eq!(pass.result, relay.result);
+        crate::lower_checked(*checked, crate::lowering::OverlapLowering::Off)
+            .expect("full array borrowed read and relay lower");
+    });
+}
+
+#[test]
+fn full_arrays_preserve_storage_exclusions_and_inline_layout_boundaries() {
+    for content in ["Slice<'r, u8>", "Heap<'r>", "Arena<'r, 64, 8>"] {
+        let source = format!(
+            "struct Forbidden['r] {{\n  values: array<{content}, 0>;\n}}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        assert_rule_kind(source.as_bytes(), SemanticRule::Stor5, |kind| {
+            matches!(kind, SemanticIssueKind::RegionBearingStorage { .. })
+        });
+    }
+    super::assert_unsupported(
+        b"struct Recursive {\n  values: array<Recursive, 1>;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        crate::UnsupportedSemanticFeature::RecursiveNominalLayout,
+    );
+    with_semantics(
+        b"struct Empty {\n  values: array<Empty, 0>;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        |outcome| {
+            let SemanticOutcome::Complete(checked) = outcome else { panic!("zero extent has no recursive layout edge: {outcome:?}"); };
+            crate::lower_checked(*checked, crate::lowering::OverlapLowering::Off).expect("zero extent recursive type lowers");
+        },
+    );
+}
 
 /// [TYPE-7, MSR-1] an explicit dereference of an own Box is a measured place,
 /// not the implicit read of a borrow holder. The checked path retains the Box
@@ -152,13 +456,13 @@ command fn main() -> status: own ExitStatus pure {
             panic!("fixed-run family must check: {outcome:?}");
         };
         assert_eq!(checked.data.constants.len(), 2);
-        assert_eq!(
+        assert!(matches!(
             checked.data.constants[1].ty,
             CheckedType::Array {
-                element: CheckedFlatElement::Integer(IntegerType::U8),
+                element,
                 length: CheckedConst::Value(4),
-            }
-        );
+            } if checked.element_type(element) == Some(CheckedType::Integer(IntegerType::U8))
+        ));
         let CheckedValue::Array { elements, .. } = &checked.data.constants[1].value else {
             panic!("table must retain its complete checked initializer");
         };
@@ -286,15 +590,11 @@ command fn main() -> status: own ExitStatus pure {
         );
     });
 
-    // B7c4b left this negative on the retiring surface: [TYPE-2]'s
-    // flat-element restriction is `array<T, n>`'s own. A run's element domain
-    // is `CheckedElement`, which admits a region-free affine nominal stored by
-    // value, so `FixedVector<Payload, 2>` is an accepted field and this
-    // property has no twin to be rewritten as. It retires with `array<T, n>`.
-    assert_rule_kind(
+    // TYPE-2 now admits complete owning elements in full arrays too; the
+    // former flat-only rejection is superseded by that explicit amendment.
+    with_semantics(
         b"enum Payload {\n  Item(value: i32);\n}\n\nstruct Holder {\n  values: array<Payload, 2>;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
-        SemanticRule::Type2,
-        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
+        |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_)), "owning array member: {outcome:?}"),
     );
 }
 

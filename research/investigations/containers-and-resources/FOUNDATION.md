@@ -12,13 +12,14 @@ path. Compare executable cost, including initialization, lookup, mutation,
 allocation, movement, peak storage, tail work and necessary metadata. A compact
 proof or a small kernel inventory is not a substitute for those results.
 
-**Select ordinary valid values as the implementation baseline, and a projected
-slot layout as the next storage-extension experiment.** A general library
-resource-permission system remains a bounded alternative, not a selected public
-foundation. The experiment must preserve the operation and ownership contracts
-below without extra per-slot permission metadata; failure to do so reopens that
-choice. This is a next-implementation decision, not a claim that current WF
-covers every system container.
+**Keep ordinary valid values as the baseline; implement general full arrays
+through two consuming conversions as the next bounded experiment.** The
+[selected full-array experiment](#selected-full-array-experiment) removes a
+specific completed-value restriction and tests its actual ownership and layout
+cost. Projected slot layout remains the selected sparse-storage experiment;
+a general library resource-permission system remains its bounded challenger,
+not the public foundation. Neither choice claims coverage of every system
+container.
 
 The earlier pool-driven recommendation of nominal invariants and full-array
 conversion did not establish a container-wide priority. Its controlled contract
@@ -31,14 +32,20 @@ programs. The [compiler guide](../../../compiler/README.md) owns implemented
 capability. [REASSESSMENT.md](REASSESSMENT.md) records the merged owned-place work.
 The [external study](EXTERNAL-WORKLOADS.md) owns pinned source observations, and
 [representation experiments](../../experiments/container-representation/README.md)
-own executable evidence. The implementation experiments below now include
-general compiler repairs and a bounded storage-reuse optimization. They introduce
-no new source syntax or runtime interface.
+own executable evidence. The completed implementation experiments below include
+general compiler repairs and bounded storage-reuse optimizations without a new
+source interface. The selected full-array experiment is a language amendment
+with two kernel rows; its design is not evidence that implementation is complete.
 
 ## Ground and evidence
 
-The constitution's P0, R0, W1 and D17 provide the selection grounds. Comparison
-must distinguish four questions:
+The [constitution](../../../docs/constitution.md) chooses large-system and
+embedded capability, machine-checked safety, and runtime performance within
+practical development and verification costs. Those aims do not uniquely select
+a container representation. This investigation requires correct ownership and
+refusal behavior, useful common-family operation chains, and competitive
+operation-specific allocation, layout, and transfer costs. Comparison must
+distinguish four questions:
 
 1. Does a complete operation have a correct current-language expression?
 2. Is a rejected form excluded by the specification or blocked by the compiler?
@@ -83,7 +90,7 @@ a matched executable comparison before it can support a performance conclusion.
 
 | Family | Critical operation chain | Current route to test | Ceiling or missing evidence |
 | --- | --- | --- | --- |
-| Full arrays and fixed sequences | Construct non-copy elements, index, replace, consume, clean up | Full flat arrays; general-element fixed runs | Full-array element restriction; mandatory window metadata; final-place construction |
+| Full arrays and fixed sequences | Construct non-copy elements, index, replace, consume, clean up | General-element fixed runs; selected full-array conversion experiment | Execute the generalized array path, verify dense layout and transfer cost; final-place construction remains separate |
 | Growable vector and strings | Reserve, append, refuse without losing input, relocate, drain | Store-backed run with source-written allocation and movement | No current realloc row; initialization/copy costs; general helper contracts |
 | Deque and ring | Both ends, wrap, two-span processing, grow/rebase | Existing circular window | Two-span views and helper provenance; extra work when a consumer needs contiguous data |
 | HashMap and HashSet | Collisions, duplicate insertion, lookup, delete, reuse, rehash | Initialized optional entries; initialized byte/control and copy-payload alternatives | Ordinary complete trace and generic payload/behavior coverage; sparse layout cost |
@@ -173,10 +180,10 @@ writing a byte alone must not create an occupied generic payload.
 
 This is a selected experiment, not existing source syntax or a validated
 implementation. It could obtain sparse typed storage without requiring writers
-to prove an arbitrary ownership-set predicate. For R0, the expected W3/W1 delta
-is for authors of custom container representations: obtaining compact layout
-through checked ordinary value operations without unchecked implementation
-steps. This is not a claim that using Rust's existing safe collections requires
+to prove an arbitrary ownership-set predicate. The expected benefit for authors
+of custom container representations is compact layout through checked ordinary
+value operations without unchecked implementation steps. This is not a claim
+that using Rust's existing safe collections requires
 unsafe code, nor a measured speedup over Rust or a demonstrated WF authoring win.
 It has concrete limits:
 
@@ -425,45 +432,253 @@ under its stated conditions.
 
 ## Evidence-backed implementation sequence
 
-The next implementation experiment can be chosen without declaring a universal
-container substrate. The current evidence supports this order:
+The owning-box replacement, nested store-polymorphic helpers, and complete
+run-element paths now have bounded native evidence in the
+[family results](../../experiments/container-representation/families/RESULTS.md).
+The [consumed-input result](../../experiments/container-representation/families/RESULTS.md#consumed-input-and-result-destination-reuse)
+removes the caller's complete-run transfer after a one-result push; its matched
+heap remains about 2.8 times the C control at 16 rounds under that measurement.
+The separate [alternative-return result](../../experiments/container-representation/foundation/RESULTS.md#alternative-return-destinations)
+reduces the measured producer's frame and removes two whole-result transfers;
+element-to-record transfers and general construction destinations remain open.
+These are scoped repairs and costs, not a completed container foundation.
 
-1. Repair the existing owning-box replacement defect through the general borrowed
-   owner descriptor path. The deferred ordered-node program must become an
-   ordinary native success in all three modes. This restores a correctness
-   baseline for owning-node algorithms; it does not add a new tree primitive.
-   The reduced boxed-helper region-substitution discrepancy also blocks this
-   nested-result helper composition: first repair FN-2 substitution through
-   nested input/output types, then validate the rest of the deferred program.
-2. Investigate ordinary owned-helper argument/result destinations using the heap
-   cost control and the earlier dense and fallible-result controls. A move into a
-   helper followed by return to the owner should not intrinsically require a
-   payload copy at every call. The byte-growth control adds a separate loop/bulk
-   lowering question: investigate whether contiguous-access and alias facts
-   enable better ordinary loop/bulk lowering, then measure the same operation.
-   Reuse must preserve RHS
-   evaluation, reads of the old value, aliasing, failure cleanup and actual loan
-   retirement. Re-measure
-   the same operations after the change; the current ratio is not a promised
-   speedup. This is a general lowering experiment, not a heap-specific ABI.
-   The [first bounded result](../../experiments/container-representation/families/RESULTS.md#consumed-input-and-result-destination-reuse)
-   removes the caller's complete-run transfer after a one-result push. Ordered
-   multi-results and callee snapshots still retain copies; the matched heap
-   remains about 2.8 times the C control at 16 rounds. This does not close the
-   general transfer or performance question.
-3. Prototype projected layout for ordinary slot enums against the native owning
-   sparse control below. Keep construction, matching, transfer and cleanup on
-   general valid-value operations. The target is one backing with compact control
-   and payload planes, runtime-indexed access and no second occupancy/token table.
-   Compare with the current ordinary representation and preserve the same refusal
-   and migration outcomes. The resource-proof route remains a challenger with
-   explicit symbolic checking and erasure obligations.
+Owner routing has a separate correctness gap in ordinary reusable mutation,
+including mutation through a borrow. The counterexamples and candidate boundary
+below are not covered by the native Box writeback or transfer measurements.
 
-The first two steps now have bounded production compiler results, recorded in
-the family evidence; their remaining transfer and performance questions stay
-open. No source syntax or runtime interface has changed. The third step remains
-a proposed implementation experiment: it tests whether a general layout
-mechanism can retain the native sparse representation advantage with WF authority.
+Next, execute the full-array contract below through the same typed element,
+place, ownership, and release machinery. Then prototype projected layout for
+ordinary slot enums against the native owning sparse control. Keep that sparse
+experiment's construction, matching, transfer and cleanup on general valid-value
+operations, with one backing, compact control and payload planes, runtime-indexed
+access, and no second occupancy/token table. The resource-proof route remains a
+challenger with explicit symbolic checking and erasure obligations. Neither
+experiment blocks a separately justified repair to general transfer or byte-loop
+lowering.
+
+### Selected full-array experiment
+
+The concrete requirement is a completed fixed-size record sequence whose
+elements may own resources: build a prefix with fallible element constructors,
+freeze only the complete sequence, pass it through ordinary helpers, inspect
+and replace elements, then consume or reclaim every owner. A completed array
+must need no mutable length/head descriptor, per-element tag, or allocation of
+its own. These are useful contracts for fixed records, table entries, and node
+contents, not a claim about their frequency in a production WF workload.
+
+The chosen mechanism generalizes the existing `array<T, N>` element domain and
+adds `array_from_fixed` and `fixed_from_array` to BLK-3. It does not introduce a
+parallel full-value family. The first conversion requires `len_of(vector) == N`
+and transfers the complete window in logical order; the reverse conversion
+produces a full, zero-head fixed run. Both consume their input, preserve each
+element's exact type and store identity, and allocate and release nothing.
+Ordinary moves and loans still govern when a transfer is legal. T and N are
+supplied by the operand under BLK-0, so neither call writes generic arguments.
+The existing `array_new` remains copy-fill and CONST-2 remains unchanged.
+
+This separates the conditional safety argument from the provisional interface
+choice. Given a full initialized window and exclusive ownership for its consume,
+transferring each logical element exactly once produces N initialized owned
+elements without a hole. Reversing that transfer produces the full window with
+known measures. The argument does not prove compiler correctness or make these
+two spellings uniquely necessary. Reusing the already expressible partial run
+lets the first experiment test full values without selecting a public vacant-T
+permission or a new proof system.
+
+Two alternatives remain useful comparisons. Keeping only FixedVector requires
+a variable-window representation and associated operations at completed-value
+boundaries, even when all N elements remain present; an optimizer may remove
+those costs locally, but the full-value interface should not depend on that
+success. A public checked initialization destination could remove a large
+temporary, but it also needs partial-construction and failure ownership rules;
+the existing destination evidence does not establish that broader mechanism.
+The selected slice isolates the full-value question while retaining that
+construction comparison.
+
+A `head == 0` premise is unnecessary for the inline conversion. A full wrapped
+run has the same N logical values, and moving its two spans into dense order is
+safe. Requiring source rebase would add work without strengthening the result's
+contract. Inline movement is permitted in either direction; zero-copy and
+address stability are not promises. For an unwrapped source, lowering should
+use the ordinary direct destination or one contiguous transfer where possible;
+for a wrapped source, inspect the actual logical-order transfer. An adoption of
+an existing store-backed allocation is a separate question: it must preserve
+its original base and release identity, which an inline conversion followed by
+`heap_box` does not establish. No allocation-adoption operation is selected in
+this amendment.
+
+Before evaluating the implementation, the discriminating witness is an array
+of records owning modern Heap- or Arena-backed Boxes, with a generic helper
+boundary. Exercise construction failure after a nonempty prefix, full success,
+wrapped input, actual-place indexed reads and replacement, thaw, drain, and
+ordinary final cleanup. Verify returned values and an exact allocation/release
+ledger in facts-off, facts-on, and completion modes. Include zero extent and a
+zero-byte affine element representation: physical byte count cannot erase
+logical ownership, and zero extent must execute no element access or release.
+Measure the dense array layout and retained transfers against the equivalent
+fixed-run and native dense representations; do not infer throughput from a
+descriptor count or a green correctness test. Reopen the route if it forces an
+extra allocation, persistent metadata, or material unavoidable transfer at a
+required boundary, or if the ordinary proof path makes the witness impractical.
+
+This first slice needs actual-place access and replacement; reading a copied
+snapshot cannot stand in for borrowing an affine element. General view
+implementation remains a named compiler gap and must report Unsupported where
+the language admits the source. The conservative element-type linearity closure
+also remains: even a zero-extent array or an empty run of explicitly linear T
+has no new terminal discharge here. Affine elements can complete the lifecycle
+while required providers are held; this is not evidence of complete explicitly
+linear drain support. Stored loans, provider payloads, type cycles, effect
+attribution, and target layout retain their existing judgments.
+
+The amendment's META-5 delta is numbered rules +0/-0, grammar productions +0/-0,
+fixed tokens +0/-0, writer operation spellings +2/-0, kernel declaration records
++2/-0, nominal families +0/-0, and exceptions +0/-0. Its selection ground is
+evidence-selected: existing flat-array and general-element-run implementations
+and the retained layout/transfer controls identify a concrete full-value gap.
+They support this bounded experiment, not a measured performance victory for
+the unimplemented conversion. Under META-6 the safety consequences above are
+conditional deductions and the representation/interface choice is provisional.
+
+The affected rules are TYPE-2 (complete element domain), TYPE-4 (scope its
+`cvt` statement to numeric value conversion), PROV-6 and STOR-3
+(element ownership and release closure), STOR-1 (dense inline representation),
+BLK-0 and BLK-3 (two inferred-argument conversion records), BLK-1 (whole-window
+transfer), BLK-4/VIEW-2 (retain arrays and their existing recursive and view
+judgments), and CALL-3 (apply its existing inner-descriptor kills to every
+admitted viewed element). Their current index points here for this scoped amendment; other
+grounds remain with the general rule assessment. The directly affected VIEW-1
+grounds now distinguish the compiler's flat-element limit from the language's
+view domain. OWN-1/5, SET-2/LIV-2, OP-1/4/9, CONST-2, FN-2, STOR-5/6, MSR,
+and the other CALL rules are unchanged dependencies, not
+new permissions. The array-retirement proposal in the historical S34 design is
+superseded for this choice. The existing META-5 editorial question stays open;
+this amendment does not redefine its evidence/minimality labels.
+
+### Current owner-routing gap
+
+Two small source checks expose lost identities, without requiring a new storage
+permission. In a full `FixedVector<ReadFile, 1>`, replace slot zero with an
+incoming `ReadFile`, return both the run and the displaced file, and release both
+in a caller. The caller must retain the incoming file's release effect. A focused
+check against revision `1f545791` instead rejects that caller's
+`writes(files, incoming)` as having an extra `writes(incoming)`. The
+[current replacement analyzer](../../../compiler/src/semantic/check/result_state_origin.rs)
+updates ordinary binding/field origins but does not update a `Storage` target;
+the body checker and the result analyzer also disagree about the extracted
+origin. The defect is lost ownership flow, not lost runtime length information.
+An independent static-field precision defect is repaired in `16a20bb9`. For an
+owned formal `Holder { before: u64; file: ReadFile; after: u64; }`, resource
+borrows now project their origins to `holder.file`, rather than charging all
+three fields. The body checker and result-origin replay share this projection.
+Eight focused cases cover direct and nested fields, reborrows, exact read/write
+rows, rejection of omitted or extra effects, and the displaced owner's returned
+field origin. This repair does not supply the post-call owner update below.
+
+The same failure needs no container. Consider this complete helper body:
+
+```wf
+fn exchange(target: &uniq ReadFile, incoming: own ReadFile) -> previous: own ReadFile reads(target), writes(target) {
+  let previous = replace deref(target) = move incoming;
+  return move previous;
+}
+```
+
+A caller with owned parameters `file` and `incoming` invokes it with
+`target: &uniq file, incoming: move incoming`, then releases the returned owner
+and the owner still in `file`. Revision `9e731905` rejects the caller's correct
+`reads(file), writes(file, incoming)` row and accepts a control omitting
+`writes(incoming)`. These are semantic compilation observations, not native I/O
+measurements. The accepted control's emitted LLVM has a further physical defect:
+the helper receives both resource descriptors by value, returns the old one,
+and never writes back the new one; the caller's two closes use the old descriptor.
+An independent native observer subsequently invoked the retained helper with
+inert descriptor identities 17 and 29: it observed current=17 and previous=17,
+confirming the duplicate old descriptor without performing OS I/O.
+
+The physical defect is repaired in `2caf694e` (integrated as `a1c19710`). An
+opaque-resource borrow passes the resolved owner's address; source reborrows
+retain that address, while qualified system calls load its current descriptor
+at the call's argument evaluation point. Native scalar `ReadFile` and aggregate
+`HostString` cases exercise shared/exclusive parameters, selected fields,
+reborrows, borrowed results, and pointer/extent observations in all three
+execution modes. The qualified runtime ABI is unchanged. These tests establish
+physical writeback and descriptor access, while the missing semantic post-call
+owner routing remains open.
+
+The required transfer has two outputs. If the entry target owns F and the
+incoming argument owns I, the returned owner is F and the target's exit content
+is I. A second exchange with J must return I and leave J. A result-only summary
+cannot express the caller storage left behind by an exclusive borrowed actual.
+FN-1 currently specifies result-state routing, while EFF-2 requires preserved
+owner identities through moves and borrows; it does not explicitly specify this
+post-call stored-owner summary. Before implementing that boundary, state its
+entry-to-normal-exit transfer and its application to the actual resolved place.
+All returned and written-back origins must be instantiated from one entry
+snapshot and committed together, including static fields, nested owning paths,
+and multiple disjoint unique actuals. Reborrows must update the ultimate owner,
+not merely a copied holder record. A missing transfer cannot mean fresh or
+unchanged; an unavailable case must remain an explicit compiler limitation.
+
+A candidate implementation represents finite current ownership state with typed
+paths, not execution history. Keep an owning Box or run's storage anchor separate
+from its current contained owners. Use exact product fields, sparse literal-slot
+overrides, and a residual may-origin set; a repeated access may share a symbolic
+slot only when it uses the same captured index value. A strong overwrite removes
+the old origin from that slot. It does not remove that origin from unknown other
+slots without sufficient cardinality information. At loop joins, combine origin
+metadata separately from ownership liveness and fold dynamic index versions into
+finite sets. The generic priority insertion witness already stops at
+`OwnershipJoin` when its pending affine payload alternates between an input
+payload and a displaced queue entry; it does not require an unbounded history to
+describe those possibilities. Preserve the record's field precision so a payload
+join does not turn a priority-field read into a payload access.
+
+This candidate must use one transfer semantics for normal checking and callable
+summary derivation, preserving the existing typed storage paths. Origin data is
+erased and is never a runtime graph, ownership permission, or allocation identity.
+Reject permanent unions of replaced owners: they retain effects of values no
+longer present. Reject loop or helper-history expansion as the termination
+argument. A finite graph can share snapshots internally, but its queries must not
+distribute branch alternatives or unfold recursive types/calls without a bound.
+The intended bound is polynomial in checked source/type nodes, explicit tracked
+paths, and formal-origin atoms, independent of numeric capacity and runtime
+iterations. This is an implementation criterion, not an established complexity
+result; unknown selections and residual contents remain a precision boundary.
+
+Two attribution choices remain to be stated precisely. Existing EFF-1 names the
+complete state supplied by a bare formal, and current call projection includes
+all current origins under that path. Retaining that broad projection for a
+container helper is the initial comparison: a helper that only permutes elements
+and one that retires them may both declare `writes(run)`. Finer storage/content
+contracts need a concrete lost-independence or cost witness; a larger effect row
+alone is insufficient when the imported owner has already moved under the run's
+exclusive ownership. Always assigning extracted resources to the container's
+place is invalid because it loses the incoming owner's identity.
+
+Separately, SET-2 says a commit touches the target's ultimate storage origin,
+while ordinary binding and static-field replacement change the current value
+origin and EFF-2 adds no permanent parent ancestry. The proposed ordinary-leaf
+interpretation keeps the borrowed address/loan fixed, changes the current owner
+F to I, and attributes a second direct leaf replacement to I, like the existing
+static-field transfer. Interior run-slot mutation instead retains that run's
+actual storage anchor. This distinction is not selected by the counterexamples;
+its exact rule and borrowed-summary boundary remain open. Adding a permanent
+cell ancestry to every local or reference is not an accepted repair.
+
+The first implementation must cover both consumed-and-returned owners and
+exclusive borrowed writeback, including the direct resource leaf, static fields,
+Box contents, and exact singleton/literal-slot exchanges. Before implementation,
+the falsifiers are two successive replacements and helper calls with independently
+released old/current owners; omission and spurious addition of each formal effect;
+reborrowed and disjoint-field writeback; same captured versus changed indices;
+branch and priority-loop joins; and retained native descriptor replacement with
+an exact release observer. Check source-size growth with long overwrite chains,
+branch diamonds and repeated helper composition. Unknown residual indices,
+general recursive summaries, finer source contracts and proof-informed exclusion
+remain explicit questions. A fix limited to own-input/result helpers, a green
+Box ABI test, or one straight-line graph cannot close this gap.
 
 ### Sparse experiment contract and decision boundary
 
@@ -528,7 +743,7 @@ The available evidence supports different next actions for different families:
 | Area | Current disposition | Evidence that would change it |
 | --- | --- | --- |
 | Dense/fixed sequences and priority queues | Use ordinary valid values; correct and improve general storage transfer first | Matched operations still force material initialization, descriptor or movement cost after that repair |
-| Full arrays of general elements | Distinct completed-value form remains useful; current flat-element restriction and linear-empty cleanup are language boundaries | A checked construction/consumption route and its actual representation, not an empty pool contract alone |
+| Full arrays of general elements | Generalize the existing array through the selected two-conversion experiment; explicit linear-empty termination remains a separate gap | The complete build/failure/freeze/use/replace/thaw/drain witness and measured layout/transfer cost |
 | Hash and ordered containers | Ordinary scalar operations and a boxed migration component work; prototype projected sparse layout next | Failure to preserve the native owning-map contract/cost, or a required operation beyond ordinary projected values; ordered mutation follows owning-box repair |
 | Deques and rings | A wrapped logical-index trace works; a wrapped run is correctly refused as one contiguous view | A two-span consumer/growth trace that prices any required copying and admits the actual loans |
 | Growable runs, strings and inline/spill forms | Source-written byte growth/refusal executes and has loop/bulk/realloc controls; no WF realloc or finished spill result | General owner-return helper, repeated reserve/spill and copy-heavy resize controls including peak storage and address validity |
@@ -544,9 +759,9 @@ separately restricted by STOR-5. Allocation/resize and variable-tail layout need
 their own provider and layout contracts. A slot permission alone supplies none
 of these, and the architecture must not claim those system needs solved.
 
-The decision has three explicit outcomes. Ordinary valid values remain the
-baseline for families whose measured problems lie in lowering. Projected layout
-is selected for a bounded prototype because compact sparse storage has a
+Ordinary valid values remain the baseline, with the selected full-array
+experiment extending its completed-value domain. Projected layout is selected
+for a bounded sparse prototype because compact sparse storage has a
 concrete physical advantage without yet requiring a new writer resource logic.
 General resource permissions become the preferred candidate only if a required
 operation, layout or lifetime cannot be retained through ordinary/projected
@@ -555,7 +770,7 @@ erasure path. Equal native code cannot choose between proof authorities.
 
 Research can therefore hand off to those implementation experiments without
 claiming a universal container substrate. Generic behavior, complete ordered
-mutation, two-span consumers, inline spill, full general arrays, stored lifetime,
+mutation, two-span consumers, inline spill, the full-array implementation, stored lifetime,
 variable tails and concurrent retirement remain named capability questions.
 They are not silently counted as solved or prerequisites to fixing the observed
 compiler defects. Reopen the selected route when one supplies a concrete

@@ -498,16 +498,7 @@ fn buffer_fits_admits_direct_region_free_array_and_buffer_types() {
             panic!("direct region-free composite types belong to buffer_fits: {outcome:?}");
         };
         let main = &checked.data.functions[0];
-        let expected = [
-            CheckedType::Array {
-                element: CheckedFlatElement::Integer(IntegerType::U8),
-                length: super::super::model::CheckedConst::Value(4),
-            },
-            CheckedType::Buffer {
-                element: CheckedFlatElement::Integer(IntegerType::U8),
-            },
-        ];
-        for (statement, expected) in main.body.iter().take(2).zip(expected) {
+        for (index, statement) in main.body.iter().take(2).enumerate() {
             let CheckedStatement::Let {
                 value: CheckedExpression::BufferFits { element, .. },
                 ..
@@ -515,7 +506,19 @@ fn buffer_fits_admits_direct_region_free_array_and_buffer_types() {
             else {
                 panic!("each binding must retain its typed buffer_fits expression");
             };
-            assert_eq!(*element, expected);
+            if index == 0 {
+                assert!(matches!(*element, CheckedType::Array {
+                    element,
+                    length: super::super::model::CheckedConst::Value(4),
+                } if checked.element_type(element) == Some(CheckedType::Integer(IntegerType::U8))));
+            } else {
+                assert_eq!(
+                    *element,
+                    CheckedType::Buffer {
+                        element: CheckedFlatElement::Integer(IntegerType::U8),
+                    }
+                );
+            }
         }
     });
 }

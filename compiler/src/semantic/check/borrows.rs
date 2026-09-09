@@ -899,7 +899,7 @@ absent when it writes none",
     /// [OWN-2] restricts no type, so this states what the checker, lowering,
     /// and backend carry today rather than a language rule: every directly
     /// stored value, plus the descriptor and opaque-handle types that are
-    /// already their own borrow. `array` content and an unsubstituted generic
+    /// already their own borrow. An unsubstituted generic
     /// stay explicitly unsupported instead of being misreported as invalid
     /// source.
     pub(super) fn borrowable_type(&self, ty: CheckedType) -> Result<bool, CheckStop> {
@@ -914,7 +914,7 @@ absent when it writes none",
             CheckedType::Vector { .. } | CheckedType::Heap { .. } | CheckedType::Extent { .. } => {
                 true
             }
-            CheckedType::FixedVector { .. } => true,
+            CheckedType::Array { .. } | CheckedType::FixedVector { .. } => true,
             CheckedType::Nominal(nominal) => matches!(
                 self.nominal(nominal)?.kind,
                 CheckedNominalKind::Struct { .. }
@@ -926,10 +926,9 @@ absent when it writes none",
             | CheckedType::Bool
             | CheckedType::Integer(_)
             | CheckedType::Float(_) => true,
-            CheckedType::Array { .. }
-            | CheckedType::Generic(_)
-            | CheckedType::GenericInt(_)
-            | CheckedType::GenericFloat(_) => false,
+            CheckedType::Generic(_) | CheckedType::GenericInt(_) | CheckedType::GenericFloat(_) => {
+                false
+            }
         })
     }
 
@@ -962,11 +961,11 @@ absent when it writes none",
             // through it.
             CheckedType::Heap { .. }
             | CheckedType::Extent { .. }
+            | CheckedType::Array { .. }
             | CheckedType::FixedVector { .. }
             | CheckedType::Vector { .. } => true,
             CheckedType::Buffer { .. }
             | CheckedType::Slice { .. }
-            | CheckedType::Array { .. }
             | CheckedType::Generic(_)
             | CheckedType::GenericInt(_)
             | CheckedType::GenericFloat(_) => false,

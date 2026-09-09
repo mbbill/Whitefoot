@@ -1500,7 +1500,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 allocates_arenas: signature.declared_effects.allocates_arenas.clone(),
             })
             .collect::<Vec<_>>();
-        let permission = analyze_permission(&functions, &permission_signatures);
+        let permission = analyze_permission(
+            &functions,
+            &permission_signatures,
+            &self.nominals,
+            &self.elements.borrow(),
+        );
         // The ledger is rendered here because only the checker still holds the
         // syntax tree the citations name. It is pure presentation over the
         // table above and reaches no decision.
@@ -1591,9 +1596,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.collect_concrete_function_signatures()
     }
 
-    /// Collects every non-nominal-typed const declaration. Runs before
+    /// Collects every const declaration with a nominal-free type. Runs before
     /// nominal completion because a nominal field's array length may name an
-    /// earlier const; nominal-typed const declarations [CONST-2 candidate]
+    /// earlier const; constants containing nominal types [CONST-2]
     /// need completed field inventories and are collected by the second pass
     /// below.
     fn collect_constants(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
@@ -1615,11 +1620,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
-    /// Collects the nominal-typed const declarations deferred by the first
+    /// Collects constants containing nominal types, deferred by the first
     /// pass, in item order, after `complete_nominals` has filled the field
     /// inventories they are checked against. CONST-2's declaration-before-use
-    /// rule is unaffected: a non-nominal const can never reference a
-    /// nominal-typed one (a cvalue reference must have the exact expected
+    /// rule is unaffected: a nominal-free constant cannot reference a value
+    /// containing a nominal type (a cvalue reference has the exact expected
     /// type), so the two passes never reorder a legal dependency.
     fn collect_deferred_nominal_constants(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
         let nodes = items
@@ -1647,10 +1652,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::Type)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        Ok(self
-            .tree
-            .direct_token_with(ty, crate::TerminalPredicate::TypeIdentifier)?
-            .is_some())
+        let mut pending = vec![ty];
+        while let Some(node) = pending.pop() {
+            if self.tree.production(node)? == Production::Type
+                && self
+                    .tree
+                    .direct_token_with(node, crate::TerminalPredicate::TypeIdentifier)?
+                    .is_some()
+            {
+                return Ok(true);
+            }
+            pending.extend(self.tree.children(node)?.iter().copied());
+        }
+        Ok(false)
     }
 
     pub(super) fn collect_constants_for_postconditions(
@@ -3018,7 +3032,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 operand_type: self.instantiate_goal_type(operand_type, signature, regions)?,
             },
             GoalOperation::ArrayFill { element, length } => GoalOperation::ArrayFill {
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                element: self.instantiate_goal_element(element, signature, regions)?,
                 length: self.instantiate_goal_const(length, signature)?,
             },
             GoalOperation::ArrayMeasure {
@@ -3027,11 +3041,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 length,
             } => GoalOperation::ArrayMeasure {
                 measure,
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                element: self.instantiate_goal_element(element, signature, regions)?,
                 length: self.instantiate_goal_const(length, signature)?,
             },
             GoalOperation::ArrayIndex { element, length } => GoalOperation::ArrayIndex {
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                element: self.instantiate_goal_element(element, signature, regions)?,
                 length: self.instantiate_goal_const(length, signature)?,
             },
             GoalOperation::BufferMeasure { measure, element } => GoalOperation::BufferMeasure {
@@ -3112,7 +3126,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .type_argument(declaration)
                 .unwrap_or(ty),
             CheckedType::Array { element, length } => CheckedType::Array {
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                element: self.instantiate_goal_element(element, signature, regions)?,
                 length: self.instantiate_goal_const(length, signature)?,
             },
             CheckedType::Slice {

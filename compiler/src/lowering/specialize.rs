@@ -342,7 +342,7 @@ fn collect_regions(
             regions.insert(region);
             insert_default(defaults, region, CheckedReleaseClass::Extent);
         }
-        CheckedType::FixedVector { element, .. } => {
+        CheckedType::Array { element, .. } | CheckedType::FixedVector { element, .. } => {
             collect_regions(
                 program,
                 *program
@@ -354,9 +354,7 @@ fn collect_regions(
                 defaults,
             )?;
         }
-        CheckedType::Array { element, .. }
-        | CheckedType::Buffer { element }
-        | CheckedType::Slice { element, .. } => {
+        CheckedType::Buffer { element } | CheckedType::Slice { element, .. } => {
             collect_regions(program, element.ty(), regions, visited, defaults)?;
         }
         CheckedType::Unit

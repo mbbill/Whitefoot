@@ -50,7 +50,9 @@ pub(super) fn base_elements(
     }
     let mut needed = BTreeSet::new();
     while let Some(ty) = pending.pop() {
-        if let CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } = ty
+        if let CheckedType::Array { element, .. }
+        | CheckedType::FixedVector { element, .. }
+        | CheckedType::Vector { element, .. } = ty
             && needed.insert(element.index())
         {
             pending.push(
@@ -289,6 +291,14 @@ impl<'a> PhysicalTypes<'a> {
         releases: &[(DeclarationId, CheckedReleaseClass)],
     ) -> Result<IrType, LoweringFailure> {
         match ty {
+            CheckedType::Array { element, length } => {
+                return Ok(IrType::Array {
+                    element: self.element(element, releases)?,
+                    length: length
+                        .value()
+                        .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                });
+            }
             CheckedType::FixedVector { element, length } => {
                 return Ok(IrType::FixedVector {
                     element: self.element(element, releases)?,
@@ -325,9 +335,9 @@ impl<'a> PhysicalTypes<'a> {
                 CheckedType::Nominal(id) => {
                     map[id.0 as usize] = self.nominal(id, releases)?;
                 }
-                CheckedType::Array { element, .. }
-                | CheckedType::Buffer { element }
-                | CheckedType::Slice { element, .. } => pending.push(element.ty()),
+                CheckedType::Buffer { element } | CheckedType::Slice { element, .. } => {
+                    pending.push(element.ty())
+                }
                 _ => {}
             }
         }
@@ -496,7 +506,18 @@ impl<'a> PhysicalTypes<'a> {
                         element: right,
                         length: rn,
                     },
-                ) if ln == rn => pending.push((left.ty(), right.ty())),
+                ) if ln == rn => pending.push((
+                    *self
+                        .data
+                        .elements
+                        .get(left.index())
+                        .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                    *self
+                        .data
+                        .elements
+                        .get(right.index())
+                        .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                )),
                 (CheckedType::Buffer { element: left }, CheckedType::Buffer { element: right })
                 | (
                     CheckedType::Slice { element: left, .. },

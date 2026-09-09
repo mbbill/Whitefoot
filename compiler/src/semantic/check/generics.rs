@@ -112,7 +112,7 @@ enum StableCheckedType {
     },
     System(u8),
     Array {
-        element: StableFlatElement,
+        element: StableElement,
         length: CheckedConst,
     },
     Slice {
@@ -1359,12 +1359,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 stable
             }
             CheckedType::Array { element, length } => {
-                let Some(element) = self.stabilize_flat_element(
-                    element,
-                    nominal_checkpoint,
-                    visiting,
-                    allow_symbolic,
-                )?
+                let Some(element) =
+                    self.stabilize_element(element, nominal_checkpoint, visiting, allow_symbolic)?
                 else {
                     return Ok(None);
                 };
@@ -1627,7 +1623,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Nominal(self.intern_system_nominal(*index)?)
             }
             StableCheckedType::Array { element, length } => CheckedType::Array {
-                element: self.reify_flat_element(element)?,
+                element: self.reify_element(element)?,
                 length: *length,
             },
             StableCheckedType::Slice {
@@ -2679,16 +2675,16 @@ impl Checker<'_, '_, '_, '_> {
                 element: operand_type,
                 ..
             } => self.collect_type_nominals(operand_type, output)?,
-            GoalOperation::ArrayFill { element, .. }
-            | GoalOperation::ArrayMeasure { element, .. }
-            | GoalOperation::ArrayIndex { element, .. }
-            | GoalOperation::BufferMeasure { element, .. }
+            GoalOperation::BufferMeasure { element, .. }
             | GoalOperation::BufferIndex { element }
             | GoalOperation::SliceMeasure { element, .. }
             | GoalOperation::SliceIndex { element, .. } => {
                 self.collect_flat_element_nominals(element, output)?;
             }
-            GoalOperation::RunIndex { element, .. } => {
+            GoalOperation::ArrayFill { element, .. }
+            | GoalOperation::ArrayMeasure { element, .. }
+            | GoalOperation::ArrayIndex { element, .. }
+            | GoalOperation::RunIndex { element, .. } => {
                 self.collect_element_nominals(element, output)?
             }
             GoalOperation::ContainerMeasure { element, .. } => {
@@ -2710,12 +2706,12 @@ impl Checker<'_, '_, '_, '_> {
     ) -> Result<(), CheckStop> {
         match ty {
             CheckedType::Nominal(id) => output.push(id),
-            CheckedType::Array { element, .. }
-            | CheckedType::Slice { element, .. }
-            | CheckedType::Buffer { element } => {
+            CheckedType::Slice { element, .. } | CheckedType::Buffer { element } => {
                 self.collect_flat_element_nominals(element, output)?
             }
-            CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
+            CheckedType::Array { element, .. }
+            | CheckedType::FixedVector { element, .. }
+            | CheckedType::Vector { element, .. } => {
                 self.collect_element_nominals(element, output)?;
             }
             CheckedType::Unit
@@ -2844,16 +2840,16 @@ impl Checker<'_, '_, '_, '_> {
                 element: operand_type,
                 ..
             } => self.rewrite_type_nominals(operand_type, checkpoint, replacements)?,
-            GoalOperation::ArrayFill { element, .. }
-            | GoalOperation::ArrayMeasure { element, .. }
-            | GoalOperation::ArrayIndex { element, .. }
-            | GoalOperation::BufferMeasure { element, .. }
+            GoalOperation::BufferMeasure { element, .. }
             | GoalOperation::BufferIndex { element }
             | GoalOperation::SliceMeasure { element, .. }
             | GoalOperation::SliceIndex { element, .. } => {
                 self.rewrite_flat_element_nominals(element, checkpoint, replacements)?;
             }
-            GoalOperation::RunIndex { element, .. } => {
+            GoalOperation::ArrayFill { element, .. }
+            | GoalOperation::ArrayMeasure { element, .. }
+            | GoalOperation::ArrayIndex { element, .. }
+            | GoalOperation::RunIndex { element, .. } => {
                 self.rewrite_element_nominals(element, checkpoint, replacements)?;
             }
             GoalOperation::ContainerMeasure { element, .. } => {
@@ -2880,12 +2876,12 @@ impl Checker<'_, '_, '_, '_> {
                     .get(id)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
             }
-            CheckedType::Array { element, .. }
-            | CheckedType::Slice { element, .. }
-            | CheckedType::Buffer { element } => {
+            CheckedType::Slice { element, .. } | CheckedType::Buffer { element } => {
                 self.rewrite_flat_element_nominals(element, checkpoint, replacements)?;
             }
-            CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
+            CheckedType::Array { element, .. }
+            | CheckedType::FixedVector { element, .. }
+            | CheckedType::Vector { element, .. } => {
                 self.rewrite_element_nominals(element, checkpoint, replacements)?;
             }
             CheckedType::Unit

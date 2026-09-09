@@ -28,7 +28,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         else {
             return Err(BackendFailure::InvalidIr);
         };
-        if array_element != element {
+        if self.program.element(array_element) != Some(element.ty()) {
             return Err(BackendFailure::InvalidIr);
         }
 

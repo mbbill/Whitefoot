@@ -461,9 +461,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::FixedVector { element, length } => (Some(element), Some(length)),
                 CheckedType::Vector { element, .. } => (Some(element), None),
                 CheckedType::Extent { bytes, .. } => (None, Some(bytes)),
-                CheckedType::Array { element, length } => {
-                    (Some(self.intern_element(element.ty())?), Some(length))
-                }
+                CheckedType::Array { element, length } => (Some(element), Some(length)),
                 CheckedType::Buffer { element } | CheckedType::Slice { element, .. } => {
                     (Some(self.intern_element(element.ty())?), None)
                 }

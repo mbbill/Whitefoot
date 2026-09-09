@@ -706,10 +706,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
         }
         match ty {
-            CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
-                self.written_type_region(element.ty())
-            }
-            CheckedType::FixedVector { element, .. } => {
+            CheckedType::Buffer { element } => self.written_type_region(element.ty()),
+            CheckedType::Array { element, .. } | CheckedType::FixedVector { element, .. } => {
                 self.written_type_region(self.element_type(element)?)
             }
             _ => Ok(Self::written_container_type_region(ty)),

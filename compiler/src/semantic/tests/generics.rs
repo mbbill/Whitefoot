@@ -892,15 +892,12 @@ command fn main() -> status: own ExitStatus pure {
     );
 }
 
-/// B7c4b left the vehicle on the retiring surface: the case needs a member
-/// whose own [TYPE-2] judgment fails under the declared bound, and
-/// `array<T, 2>` at an `affine` parameter is that member. A run's element
-/// domain admits a symbolic type parameter, so the migrated declaration is
-/// valid and records no rejection at all. It retires with `array<T, n>`.
+/// TYPE-2 admits a symbolic owning array element under its declared bound.
+/// The former flat-only rejection is superseded by the full-array amendment.
 #[test]
-fn unused_generic_nominal_members_are_checked_under_their_declared_bounds() {
-    assert_rule_kind(
-        br#"struct Invalid<T: affine> {
+fn unused_generic_array_members_admit_their_declared_owning_bound() {
+    with_semantics(
+        br#"struct Holder<T: affine> {
   values: array<T, 2>;
 }
 
@@ -908,8 +905,12 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
-        SemanticRule::Type2,
-        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "generic owning array: {outcome:?}"
+            )
+        },
     );
 }
 

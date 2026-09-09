@@ -181,6 +181,35 @@ impl IrBuilder<'_> {
                 }
                 self.define(result_type, IrOperation::FixedVector)
             }
+            crate::KernelRow::ArrayFromFixed | crate::KernelRow::FixedFromArray => {
+                let [value] = arguments else {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                };
+                let value = self.expression(value)?;
+                let valid = match (row, self.value_type(value)?, result_type) {
+                    (
+                        crate::KernelRow::ArrayFromFixed,
+                        IrType::FixedVector {
+                            element: source,
+                            length: source_length,
+                        },
+                        IrType::Array { element, length },
+                    )
+                    | (
+                        crate::KernelRow::FixedFromArray,
+                        IrType::Array {
+                            element: source,
+                            length: source_length,
+                        },
+                        IrType::FixedVector { element, length },
+                    ) => source == element && source_length == length,
+                    _ => false,
+                };
+                if !valid {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                self.define(result_type, IrOperation::FullArrayConversion { value })
+            }
             crate::KernelRow::PlaceBack
             | crate::KernelRow::PlaceFront
             | crate::KernelRow::TakeBack

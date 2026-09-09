@@ -216,18 +216,18 @@ pub(crate) enum GoalOperation {
     /// Pure, total `array_new`. FN-8's copy-only clause-local rule keeps this
     /// out of GoalTemplates, but ENT-3 body-origin expansion may retain it.
     ArrayFill {
-        element: CheckedFlatElement,
+        element: CheckedElement,
         length: CheckedConst,
     },
     ArrayMeasure {
         measure: CheckedMeasure,
-        element: CheckedFlatElement,
+        element: CheckedElement,
         length: CheckedConst,
     },
     /// One array element value whose own OP-4 obligation has already been
     /// discharged before this expression is used as a proof operand.
     ArrayIndex {
-        element: CheckedFlatElement,
+        element: CheckedElement,
         length: CheckedConst,
     },
     BufferMeasure {

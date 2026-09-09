@@ -1381,8 +1381,9 @@ impl<'check> StagedSurvey<'check, '_> {
             | CheckedType::Bool
             | CheckedType::Integer(_)
             | CheckedType::Float(_) => true,
-            CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
-                is_copy_element(element)
+            CheckedType::Buffer { element } => is_copy_element(element),
+            CheckedType::Array { element, .. } => {
+                self.interned_element_is_copy(element).unwrap_or(false)
             }
             // A run carries a window descriptor whose replication this
             // judgment does not model, and a provider is one store; both are
@@ -1396,6 +1397,14 @@ impl<'check> StagedSurvey<'check, '_> {
             | CheckedType::Vector { .. }
             | CheckedType::Heap { .. }
             | CheckedType::Extent { .. } => false,
+        }
+    }
+
+    fn interned_element_is_copy(&self, element: super::model::CheckedElement) -> Option<bool> {
+        let ty = *self.program.elements.get(element.index())?;
+        match ty {
+            CheckedType::Nominal(id) => Some(self.program.nominals.get(id.0 as usize)?.is_copy()),
+            _ => Some(is_copy_type(ty)),
         }
     }
 
@@ -1416,7 +1425,7 @@ impl<'check> StagedSurvey<'check, '_> {
         let copy_elements = match value {
             CheckedExpression::BufferFill { element, .. } => Some(is_copy_element(*element)),
             CheckedExpression::ArrayFill { ty, .. } => match ty {
-                CheckedType::Array { element, .. } => Some(is_copy_element(*element)),
+                CheckedType::Array { element, .. } => self.interned_element_is_copy(*element),
                 _ => None,
             },
             // `buffer_vacant` fills the interned `Option<T>` instance its own
@@ -1451,6 +1460,8 @@ impl<'check> StagedSurvey<'check, '_> {
                 | crate::KernelRow::PlaceFront
                 | crate::KernelRow::TakeBack
                 | crate::KernelRow::TakeFront
+                | crate::KernelRow::ArrayFromFixed
+                | crate::KernelRow::FixedFromArray
                 | crate::KernelRow::SliceOf
                 | crate::KernelRow::MutSliceOf => return,
             },

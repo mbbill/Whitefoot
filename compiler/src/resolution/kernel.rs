@@ -130,6 +130,10 @@ pub enum KernelRow {
     TakeBack,
     /// `take_front(vector)` [BLK-3].
     TakeFront,
+    /// `array_from_fixed(vector)` [BLK-3].
+    ArrayFromFixed,
+    /// `fixed_from_array(values)` [BLK-3].
+    FixedFromArray,
     /// `slice_of(vector)` [VIEW-2]: the shared view over a viewable operand.
     SliceOf,
     /// `mut_slice_of(vector)` [VIEW-2]: the exclusive view over one.
@@ -152,8 +156,8 @@ pub struct KernelOperation {
     pub results: &'static [&'static str],
 }
 
-/// The eleven operations of the inventory, in [BLK-2] then [BLK-3] order.
-pub const KERNEL_OPERATIONS: [KernelOperation; 11] = [
+/// The operations of the inventory, in [BLK-2] then [BLK-3] order.
+pub const KERNEL_OPERATIONS: [KernelOperation; 13] = [
     KernelOperation {
         spelling: "fixed_vector",
         row: KernelRow::FixedVector,
@@ -219,6 +223,18 @@ pub const KERNEL_OPERATIONS: [KernelOperation; 11] = [
         row: KernelRow::TakeFront,
         parameters: &["vector"],
         results: &["rest", "value"],
+    },
+    KernelOperation {
+        spelling: "array_from_fixed",
+        row: KernelRow::ArrayFromFixed,
+        parameters: &["vector"],
+        results: &["result"],
+    },
+    KernelOperation {
+        spelling: "fixed_from_array",
+        row: KernelRow::FixedFromArray,
+        parameters: &["values"],
+        results: &["result"],
     },
 ];
 

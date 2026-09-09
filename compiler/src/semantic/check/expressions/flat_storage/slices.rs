@@ -157,19 +157,9 @@ inside the `region` block whose region it takes",
         let indexed = self.check_indexed_place(
             place_node, bindings, &suffixes, place_node, function, loop_depth,
         )?;
-        // [OP-2] the element is the viewed place's, and [STOR-4] still confines
-        // a slice to flat elements — now judged on the derived one.
-        //
-        // DELIBERATELY UNTESTED, by the 2026-08-08 ruling. Once the element is
-        // derived rather than written, no source appears to reach this arm:
-        // `array<T, N>` and `buffer<T>` already require a flat T, so every
-        // route tried — a non-copy struct element, a generic element, a nested
-        // array element, an `array_new` of a struct — is rejected earlier by
-        // TYPE-2 or by OP-1 on the array type itself, each confirmed with a
-        // control that deletes the `slice_of` line and fails identically. That
-        // is "not shown reachable", not "proven unreachable", so the rejection
-        // stays. Widening what `array<T, N>` or `buffer<T>` admit re-opens the
-        // question and owes this arm a test.
+        // [OP-2] derives the element from the viewed place. Full arrays and
+        // runs admit owning elements; general element views remain a
+        // capability gap, not a source-language rejection.
         let element_type = indexed.element_type(self)?;
         // An affine-element buffer is viewable in principle ([OP-1] states no
         // copy bound on the viewed T), but the in-place borrowed element read
@@ -181,11 +171,7 @@ inside the `region` block whose region it takes",
             return self.unsupported(UnsupportedSemanticFeature::CompositeValues, atoms[0]);
         }
         let Some(element) = self.flat_element(element_type)? else {
-            return self.issue_node(
-                SemanticRule::Op1,
-                atoms[0],
-                SemanticIssueKind::InvalidOperation,
-            );
+            return self.unsupported(UnsupportedSemanticFeature::CompositeValues, atoms[0]);
         };
         let offsets = match &indexed {
             CheckedIndexedPlace::Container(container) => container.offsets.clone(),
@@ -603,6 +589,9 @@ take the view in a region it outlives"
             return self.unsupported(UnsupportedSemanticFeature::ArenaRuntime, place_node);
         }
         let CheckedType::Array { element, length } = content else {
+            return self.unsupported(UnsupportedSemanticFeature::CompositeValues, place_node);
+        };
+        let Some(element) = self.flat_element(self.element_type(element)?)? else {
             return self.unsupported(UnsupportedSemanticFeature::CompositeValues, place_node);
         };
         let resolved = ResolvedPlace::fields(declaration, Vec::new());

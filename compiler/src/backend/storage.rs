@@ -681,6 +681,7 @@ pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
         IrOperation::NumericConversion { value, .. }
         | IrOperation::Reinterpret { value, .. }
         | IrOperation::ArrayFill { value, .. }
+        | IrOperation::FullArrayConversion { value }
         | IrOperation::BoxNew { value, .. }
         | IrOperation::BoxTake { value, .. }
         | IrOperation::BoxDeref { value, .. }
@@ -764,12 +765,11 @@ mod tests {
 
     use super::*;
 
-    const ARRAY: IrType = IrType::Array {
+    const AGGREGATE: IrType = IrType::Buffer {
         element: crate::IrFlatElement::Integer {
             width: 64,
             signed: false,
         },
-        length: 4,
     };
 
     fn define(result: usize, operands: &[usize], reuse: Option<usize>) -> FlowInstruction {
@@ -800,7 +800,7 @@ mod tests {
     }
 
     fn plan_returning(graph: &FlowGraph, values: usize, returned: &[usize]) -> FunctionStoragePlan {
-        let types = vec![Some(ARRAY); values];
+        let types = vec![Some(AGGREGATE); values];
         let (conflicts, _) = graph.interference(&types);
         let plan = graph.plan(types, returned).expect("well-formed flow graph");
         for (value, others) in conflicts.iter().enumerate() {

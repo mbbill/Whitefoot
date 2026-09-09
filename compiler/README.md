@@ -306,12 +306,42 @@ ownership uses recursive helpers, while invalid inline layout cycles are refused
 Nested element types retain their store brands through generic replay and
 region-polymorphic calls. Ordinary confinement, linearity and stored-content
 checks still apply at every depth; interning a type grants no new storage or
-borrow authority. The legacy array, buffer and view element restrictions remain
+borrow authority. Legacy buffer and view element restrictions remain
 unchanged. Element-position writes into
 a run execute: `set v[i] = e;` and `replace v[i] = e;` commit at the window's
 logical offset `(head_of + i) mod cap_of`, under [OP-4]'s ordinary subscript
 obligation judged at the target place and [MSR-2]'s storage-granular kill, so
 the store kills every measure of the element and none of the run's own.
+
+Full `array<T, N>` values use the same complete element graph, including nested
+owners and exact store brands. Their storage contains exactly `N` consecutive
+elements, with no run descriptor. `array_from_fixed(vector: move full)` requires
+the existing length to equal `N` and preserves logical order even for a wrapped
+window. `fixed_from_array(values: move values)` returns a full run with head zero.
+Both consume their operand without allocating, releasing elements, or duplicating
+owners; they do not promise zero-copy conversion or stable element addresses.
+`array_new` remains the existing copy-fill operation. Element reads, assignment,
+replacement and shared whole-array borrows use the normal typed storage path.
+Cleanup visits indices in ascending order. Zero-length arrays execute no element
+access or release, while their element type still contributes to store confinement
+and linear obligations.
+
+Native array cases retain helper calls and exercise wrapped conversion, replacement,
+generic Heap/Arena ownership, zero-length and zero-byte elements, and real allocation
+refusal after each initialized prefix. General element views and the explicitly
+linear empty-run terminal remain unsupported capabilities. Conversion can still
+incur payload copies and a private incoming snapshot; dense storage alone does not
+establish optimal transfer cost across calls.
+
+The unchanged recursive [CONST-2] relation admits nested constant arrays and
+array elements containing eligible structs; their globals use recursive aggregate
+layout. This does not yet provide complete source access to those globals:
+direct nested const subscripts stop at `Unsupported(CompositeValues)`, and a
+shared borrow of the whole nested array stops at `Unsupported(RegionsAndBorrows)`.
+Eligible `FixedVector` constants nested inside another constant also stop at
+`Unsupported(CompositeValues)`; only the top-level run's dense constant storage
+normalization is implemented. Native C observation tests the emitted global
+layout, not an otherwise unavailable WF read path.
 
 **Control headers retire only their own non-escaping temporary loans.** After an
 `own` enum scrutinee or exact `own Bool` condition has completed, the checker
@@ -411,8 +441,7 @@ unselected owning content needs a complete cleanup account before that path
 can execute. General borrows rooted in an owning Box referent, including
 Box-to-run element borrows, remain incomplete. Legacy Buffer roots reached
 through a Box still stop explicitly at
-`Unsupported(CompositeValues)`, and legacy Array roots have not been generalized
-through Box projections. These are implementation limits, not source rejections
+`Unsupported(CompositeValues)`. These are implementation limits, not source rejections
 under LIV-2, TYPE-7 or MSR-1.
 Heap and extent Box cleanup identities remain distinct even when their pointer
 layouts agree. After semantic acceptance, store-polymorphic calls select a
@@ -455,9 +484,8 @@ requirement `head_of(vector) <= room_of(vector)`, submitted at the call and
 judged under [MSR-4]: a run whose window wraps is refused citing [BLK-0], and one
 drained to empty is accepted. The two formation rows' record data is [BLK-0]'s —
 a viewable operand class, a shared-borrow operand mode, the requirement and four
-published relations — while their spelling stays an [OP-1] table entry until
-`array<T, N>` and `buffer<T>` retire, because two domains may not claim one
-spelling.
+published relations — while the shared spellings remain [OP-1] table entries
+covering their admitted storage domains.
 **A shared view of a place a live exclusive view holds is that view's child
 reborrow**: it is admitted, and the parent may not write the elements it views
 until the child's last use. **The same child forms through a view holder.**

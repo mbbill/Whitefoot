@@ -1,0 +1,12 @@
+linear struct Token {
+  value: u64;
+}
+
+fn abandon(values: own array<Token, 0>) -> result: own unit pure {
+  doc "PROV-6 follows an array's element type even at zero extent. No runtime element exists to visit, but the array's statically linear ownership obligation still forbids implicit abandonment.";
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

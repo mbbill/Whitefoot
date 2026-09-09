@@ -609,7 +609,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 instance.region = Some(region);
                 Ok(actual)
             }
-            KernelShape::FixedVector | KernelShape::Vector | KernelShape::OptionVector => {
+            KernelShape::Array | KernelShape::FixedVector => {
+                let actual = argument.expression.ty();
+                let (element, length) = match (shape, actual) {
+                    (KernelShape::Array, CheckedType::Array { element, length })
+                    | (KernelShape::FixedVector, CheckedType::FixedVector { element, length }) => (element, length),
+                    _ => return self.issue_node(
+                        SemanticRule::Type5,
+                        atom,
+                        SemanticIssueKind::type_mismatch(
+                            if shape == KernelShape::Array { "an `array<T, n>`" } else { "a `FixedVector<T, n>`" },
+                            self.checked_type_name(actual)?,
+                        ),
+                    ),
+                };
+                instance.element = Some(self.element_type(element)?);
+                instance.capacity = Some(length);
+                Ok(actual)
+            }
+            KernelShape::Vector | KernelShape::OptionVector => {
                 Err(SemanticCompilerFailure::InvalidResolution.into())
             }
         }
@@ -720,6 +738,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .run
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?,
             KernelShape::FixedVector => CheckedType::FixedVector {
+                element: self.kernel_element(instance.element, node)?,
+                length: instance
+                    .capacity
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+            },
+            KernelShape::Array => CheckedType::Array {
                 element: self.kernel_element(instance.element, node)?,
                 length: instance
                     .capacity

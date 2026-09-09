@@ -22,7 +22,9 @@ impl IrBuilder<'_> {
                 else {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 };
-                if actual != element || Some(actual_length) != length.value() {
+                if self.element_type(actual)? != element.ty()
+                    || Some(actual_length) != length.value()
+                {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 IrOperation::SliceFromArray { array }

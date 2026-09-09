@@ -134,6 +134,33 @@ fn round_up_layout_magnitude(value: CheckedLayoutMagnitude, align: u64) -> Check
 }
 
 impl CheckedIndexedPlace {
+    /// Mutable array owners use the same typed storage path as run slots.
+    /// Keep constant arrays on their immutable-global read path.
+    fn into_element_storage(self) -> Result<Self, CheckStop> {
+        let Self::Array(array) = self else {
+            return Ok(self);
+        };
+        let CheckedArrayRoot::Binding { binding, fields } = &array.root else {
+            return Ok(Self::Array(array));
+        };
+        Ok(Self::Container(CheckedContainerPlace {
+            root: CheckedContainerRoot {
+                binding: *binding,
+                path: fields
+                    .iter()
+                    .copied()
+                    .map(CheckedPlaceStep::Field)
+                    .collect(),
+                ty: array.array_type,
+            },
+            resolved: array
+                .resolved_place()
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+            holder: None,
+            offsets: CarriedOperands::default(),
+        }))
+    }
+
     /// The declaration this place is rooted in, where it has one. A place
     /// rooted in a named const has none, and no proof-point admission
     /// restricts a const.
@@ -294,7 +321,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(TypedExpression::owned(
             CheckedExpression::ArrayFill {
                 carrier: self.tree.path(node)?.clone(),
-                ty: CheckedType::Array { element, length },
+                ty: CheckedType::Array {
+                    element: self.intern_element(element.ty())?,
+                    length,
+                },
                 value: Box::new(value.expression),
                 target_domain: CheckedTargetDomainObligation::ElementAddress,
             },
@@ -521,7 +551,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if length == 0 {
                     return finish(CheckedLayoutMagnitude::Finite(0), 1);
                 }
-                let element = self.layout_ceiling_inner(element.ty(), visiting)?;
+                let element =
+                    self.layout_ceiling_inner(self.element_type(element).ok()?, visiting)?;
                 finish(
                     multiply_layout_magnitude(element.stride, length),
                     element.align,
@@ -933,14 +964,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         options: PlaceUseOptions,
     ) -> Result<TypedExpression, CheckStop> {
         let suffix = suffixes[subscript];
-        let indexed = self.check_indexed_place(
-            place,
-            bindings,
-            &suffixes[..subscript],
-            suffix,
-            function,
-            options.loop_depth,
-        )?;
+        let indexed = self
+            .check_indexed_place(
+                place,
+                bindings,
+                &suffixes[..subscript],
+                suffix,
+                function,
+                options.loop_depth,
+            )?
+            .into_element_storage()?;
         if let CheckedIndexedPlace::Container(container) = indexed {
             let container = self.extend_storage_place(
                 container,
@@ -1161,14 +1194,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         form: MutationForm,
     ) -> Result<MutationTarget, CheckStop> {
         let suffix = suffixes[subscript];
-        let indexed = self.check_indexed_place(
-            node,
-            bindings,
-            &suffixes[..subscript],
-            suffix,
-            function,
-            loop_depth,
-        )?;
+        let indexed = self
+            .check_indexed_place(
+                node,
+                bindings,
+                &suffixes[..subscript],
+                suffix,
+                function,
+                loop_depth,
+            )?
+            .into_element_storage()?;
         if let CheckedIndexedPlace::Container(container) = indexed {
             let container = self.extend_storage_place(
                 container,
@@ -1483,10 +1518,9 @@ view",
             // [OP-4] each suffix selects the complete element type of its
             // already-typed base. Array storage can be nested in a run slot.
             let element_type = match ty {
-                CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
-                    self.element_type(element)?
-                }
-                CheckedType::Array { element, .. } => element.ty(),
+                CheckedType::Array { element, .. }
+                | CheckedType::FixedVector { element, .. }
+                | CheckedType::Vector { element, .. } => self.element_type(element)?,
                 CheckedType::Buffer { .. } | CheckedType::Slice { .. } => {
                     return self.unsupported(UnsupportedSemanticFeature::CompositeValues, suffix);
                 }
@@ -1614,7 +1648,14 @@ view",
             .first_child_with(node, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         if self.has_fixed(pbase, FixedTerminal::Deref)? {
-            return self.check_dereferenced_buffer_place(node, pbase, base_suffixes, bindings);
+            return self.check_dereferenced_buffer_place(
+                node,
+                pbase,
+                base_suffixes,
+                bindings,
+                function,
+                loop_depth,
+            );
         }
         if !self.tree.children(pbase)?.is_empty() {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
@@ -1720,7 +1761,7 @@ view",
                     root,
                     declaration,
                     array_type: ty,
-                    element_type: element.ty(),
+                    element_type: self.element_type(element)?,
                     length,
                 }))
             }

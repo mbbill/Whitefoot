@@ -238,7 +238,7 @@ fn lower_global_value(value: &CheckedValue) -> Result<IrGlobalValue, LoweringFai
         CheckedValue::Array { elements, .. } => Ok(IrGlobalValue::Array(
             elements
                 .iter()
-                .map(lower_scalar_constant)
+                .map(lower_global_value)
                 .collect::<Result<Vec<_>, _>>()?,
         )),
         CheckedValue::Struct { fields, .. } => Ok(IrGlobalValue::Struct(
@@ -1982,7 +1982,7 @@ impl<'program> IrBuilder<'program> {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 };
                 let value = self.expression(value)?;
-                if self.value_type(value)? != element.ty() {
+                if self.value_type(value)? != self.element_type(element)? {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 self.define(
@@ -2044,7 +2044,9 @@ impl<'program> IrBuilder<'program> {
                 let length = length
                     .value()
                     .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-                if element.ty() != lower_type(self.erasure, *element_type)? || actual != length {
+                if self.element_type(element)? != lower_type(self.erasure, *element_type)?
+                    || actual != length
+                {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 let offset = self.expression(offset)?;
@@ -2057,7 +2059,7 @@ impl<'program> IrBuilder<'program> {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 self.define(
-                    element.ty(),
+                    self.element_type(element)?,
                     IrOperation::ArrayIndex {
                         root,
                         offset,
@@ -2628,6 +2630,13 @@ impl<'program> IrBuilder<'program> {
     fn value_type(&self, value: IrValueId) -> Result<IrType, LoweringFailure> {
         self.values
             .get(value.index())
+            .copied()
+            .ok_or(LoweringFailure::InvalidCheckedProgram)
+    }
+
+    fn element_type(&self, element: IrElement) -> Result<IrType, LoweringFailure> {
+        self.elements
+            .get(element.index())
             .copied()
             .ok_or(LoweringFailure::InvalidCheckedProgram)
     }

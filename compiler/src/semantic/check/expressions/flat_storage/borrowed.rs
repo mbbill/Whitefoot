@@ -7,11 +7,8 @@ use super::super::super::super::model::{
     CheckedBufferRoot, CheckedContainerRoot, CheckedPlaceStep, CheckedSliceRoot, CheckedType,
 };
 use super::super::super::borrows::AccessKind;
-use super::super::super::{CheckStop, Checker, LocalBinding};
-use super::{
-    CarriedOperands, CheckedBufferPlace, CheckedContainerPlace, CheckedIndexedPlace,
-    CheckedSlicePlace,
-};
+use super::super::super::{CheckStop, Checker, FunctionSignature, LocalBinding};
+use super::{CheckedBufferPlace, CheckedContainerPlace, CheckedIndexedPlace, CheckedSlicePlace};
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     pub(super) fn check_dereferenced_buffer_place(
@@ -20,6 +17,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         pbase: NodeId,
         base_suffixes: &[NodeId],
         bindings: &HashMap<DeclarationId, LocalBinding>,
+        function: &FunctionSignature,
+        loop_depth: usize,
     ) -> Result<CheckedIndexedPlace, CheckStop> {
         let inner = self
             .tree
@@ -31,9 +30,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         }
         let (binding, mut path) = self.explicit_container_path(&place.expression, node)?;
-        let (suffix_fields, ty) = self.resolve_struct_path(base_suffixes, place.ty)?;
-        path.extend(suffix_fields.iter().copied().map(CheckedPlaceStep::Field));
-        place.resolved.extend_fields(&suffix_fields);
+        let (suffix_path, ty, offsets) = self.resolve_storage_path(
+            base_suffixes,
+            place.ty,
+            bindings,
+            function,
+            loop_depth,
+            true,
+        )?;
+        place.resolved.extend_storage(&suffix_path);
+        path.extend(suffix_path);
         let fields = super::field_prefix(&path);
         let holder = place.borrow.as_ref().map(|_| place.declaration);
         match ty {
@@ -94,13 +100,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // the place carries that holder's `deref` step. [BLK-4] refuses
             // only the `&uniq` of a run, so a holder that reaches one here is
             // a shared one or an own-mode cell.
-            CheckedType::FixedVector { .. }
+            CheckedType::Array { .. }
+            | CheckedType::FixedVector { .. }
             | CheckedType::Vector { .. }
             | CheckedType::Extent { .. } => {
                 Ok(CheckedIndexedPlace::Container(CheckedContainerPlace {
                     root: CheckedContainerRoot { binding, path, ty },
                     resolved: place.resolved,
-                    offsets: CarriedOperands::default(),
+                    offsets,
                     holder,
                 }))
             }

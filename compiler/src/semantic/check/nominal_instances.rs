@@ -1122,7 +1122,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedType::GenericFloat(_) => ty,
             CheckedType::Nominal(id) => self.substitute_nominal_regions(id, regions)?,
             CheckedType::Array { element, length } => CheckedType::Array {
-                element: self.substitute_flat_element_regions(element, regions)?,
+                element: self.substitute_element_regions(element, regions)?,
                 length,
             },
             CheckedType::Slice {
@@ -1457,7 +1457,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         length: right_length,
                     },
                 ) => {
-                    pending.push((left.ty(), right.ty()));
+                    pending.push((self.element_type(left)?, self.element_type(right)?));
                     left_length == right_length
                 }
                 (CheckedType::Buffer { element: left }, CheckedType::Buffer { element: right }) => {

@@ -51,12 +51,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// measures, and every row that hands a provider's post-state back is a
     /// compiler-owned record whose relations are complete.
     ///
-    /// The two legacy flat containers `array<T, N>` and `buffer<T>` are
-    /// outside the refusal: each has one measure, fixed at its formation and
-    /// unmovable by any operation, so a callee holding one `&uniq` changes no
-    /// measure its caller retained. The two runs are refused because their
-    /// four boundary operations [BLK-3] move exactly those measures. When the
-    /// flat containers retire into the runs, the position retires with them.
+    /// Full arrays and legacy buffers are outside the refusal. An array's
+    /// four measures are fixed by its type; a buffer's length is fixed at
+    /// formation. A callee holding one `&uniq` cannot change those outer
+    /// measures. The two runs are refused because their four boundary
+    /// operations [BLK-3] change the window's measures.
     pub(super) fn check_unique_parameter_confinement(
         &self,
         mode: super::CheckedMode,
@@ -144,10 +143,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Vector { region, .. } if region.is_entry_heap_region() => {
                     return Ok(true);
                 }
-                CheckedType::Vector { element, .. } | CheckedType::FixedVector { element, .. } => {
+                CheckedType::Array { element, .. }
+                | CheckedType::Vector { element, .. }
+                | CheckedType::FixedVector { element, .. } => {
                     pending.push(self.element_type(element)?)
                 }
-                CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
+                CheckedType::Buffer { element } => {
                     pending.push(element.ty());
                 }
                 CheckedType::Nominal(id) => {
@@ -214,7 +215,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // its caller's own measures standing.
                 CheckedType::Slice { .. } => {}
                 CheckedType::Generic(_) => return Ok(Some(ReachedSurface::TypeParameter)),
-                CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
+                CheckedType::Array { element, .. } => pending.push(self.element_type(element)?),
+                CheckedType::Buffer { element } => {
                     pending.push(element.ty());
                 }
                 CheckedType::Nominal(id) => {

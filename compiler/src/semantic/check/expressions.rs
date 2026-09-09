@@ -534,7 +534,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedType::Array { element, length } => {
                 let length = self.checked_const_name(length)?;
-                format!("array<{}, {length}>", self.checked_type_name(element.ty())?)
+                format!(
+                    "array<{}, {length}>",
+                    self.checked_type_name(self.element_type(element)?)?
+                )
             }
             CheckedType::Slice {
                 region,
@@ -1819,10 +1822,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         UnsupportedSemanticFeature::BorrowedBufferDescriptorMutation,
                     ));
                 }
-                CheckedType::Array { element, .. } => pending.push(element.ty()),
-                CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
-                    pending.push(self.element_type(element)?)
-                }
+                CheckedType::Array { element, .. }
+                | CheckedType::FixedVector { element, .. }
+                | CheckedType::Vector { element, .. } => pending.push(self.element_type(element)?),
                 CheckedType::Nominal(id) if visited.insert(id) => match &self.nominal(id)?.kind {
                     CheckedNominalKind::Struct { fields } => {
                         pending.extend(fields.iter().map(|field| field.ty));

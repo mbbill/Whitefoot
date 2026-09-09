@@ -104,9 +104,9 @@
 
 use super::loop_permission::LoopPermission;
 use super::model::{
-    BindingId, CheckedArrayRoot, CheckedExpression, CheckedFunction, CheckedMode, CheckedSetTarget,
-    CheckedSliceSource, CheckedStatePath, CheckedStatement, CheckedType, FunctionId,
-    expression_children,
+    BindingId, CheckedArrayRoot, CheckedExpression, CheckedFunction, CheckedMode, CheckedNominal,
+    CheckedSetTarget, CheckedSliceSource, CheckedStatePath, CheckedStatement, CheckedType,
+    FunctionId, expression_children,
 };
 use super::places::{PlaceMap, PlaceRoot, PlaceTerm, ResolvedPlace};
 use super::staged_permission::StagedPermission;
@@ -492,10 +492,14 @@ impl PermissionMetadata {
 pub(crate) fn analyze_permission(
     functions: &[CheckedFunction],
     signatures: &[PermissionSignature],
+    nominals: &[CheckedNominal],
+    elements: &[CheckedType],
 ) -> PermissionMetadata {
     let program = Program {
         functions,
         signatures,
+        nominals,
+        elements,
     };
     PermissionMetadata {
         functions: functions
@@ -508,6 +512,8 @@ pub(crate) fn analyze_permission(
 pub(super) struct Program<'check> {
     functions: &'check [CheckedFunction],
     signatures: &'check [PermissionSignature],
+    pub(super) nominals: &'check [CheckedNominal],
+    pub(super) elements: &'check [CheckedType],
 }
 
 /// One candidate statement: a statement whose call position holds exactly one
@@ -749,6 +755,8 @@ pub(super) fn kernel_release_footprint(
         | crate::KernelRow::PlaceFront
         | crate::KernelRow::TakeBack
         | crate::KernelRow::TakeFront
+        | crate::KernelRow::ArrayFromFixed
+        | crate::KernelRow::FixedFromArray
         | crate::KernelRow::SliceOf
         | crate::KernelRow::MutSliceOf => return None,
     }

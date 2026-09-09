@@ -378,12 +378,13 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // [FN-7] ordinal 6, `command.heap`, which supplies the proof-only provider
 // value and opens no handle. The v0.50 mapping therefore carries forward
 // complete.
-// v0.52 qualification review: the specification header, META-6's evidence
-// index contract, and selection-rationale prose change. System operations,
-// representations, release rows, entry forms, and host mappings retain their
-// outgoing v0.51 semantics. The qualified table therefore carries forward
+// v0.53 qualification review: full arrays admit complete owning element
+// types and gain two consuming conversions with fixed runs. Their dense
+// storage and element cleanup are ordinary compiler lowering; system IDs,
+// opaque resource representations and release rows, host ABIs, and entry
+// forms retain their v0.52 semantics. The qualified table carries forward
 // unchanged; the version tripwire remains in force.
-const REVIEWED_FOR: &str = "v0.52";
+const REVIEWED_FOR: &str = "v0.53";
 
 /// The number of [SYS-2] opaque resource types with a release row.
 ///

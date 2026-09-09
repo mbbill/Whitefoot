@@ -135,7 +135,7 @@ impl IrFlatElement {
     }
 }
 
-/// The complete type of a run element, interned in its program's type table.
+/// The complete type of an array or run element, interned in its program's type table.
 /// Structural nesting uses handles; only nominal edges can close a type graph.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct IrElement(u32);
@@ -245,9 +245,9 @@ pub enum IrAddressed {
         element: IrElement,
         length: u64,
     },
-    /// Inline legacy array storage reached by a checked mutation target.
+    /// Dense inline array storage reached through a checked borrow or target.
     Array {
-        element: IrFlatElement,
+        element: IrElement,
         length: u64,
     },
     /// One `Vector<'s, T>` [BLK-1]. Its descriptor is storage in its owner's
@@ -327,7 +327,7 @@ pub enum IrType {
     Nominal(IrNominalId),
     Address(IrAddressed),
     Array {
-        element: IrFlatElement,
+        element: IrElement,
         length: u64,
     },
     Buffer {
@@ -450,7 +450,9 @@ pub(crate) fn type_derives_release(
                 release: IrReleaseClass::General,
                 ..
             } => return Some(true),
-            IrType::Vector { element, .. } | IrType::FixedVector { element, .. } => {
+            IrType::Array { element, .. }
+            | IrType::Vector { element, .. }
+            | IrType::FixedVector { element, .. } => {
                 pending.push(*elements.get(element.index())?);
             }
             IrType::Provider => {}
@@ -506,7 +508,6 @@ pub(crate) fn type_derives_release(
             | IrType::Bool
             | IrType::Integer { .. }
             | IrType::Float { .. }
-            | IrType::Array { .. }
             // [VIEW-1, PROV-3] a view is loan-bearing: it owns no storage and
             // no element, so nothing of it is ever released.
             | IrType::Slice { .. }
@@ -532,7 +533,7 @@ fn lower_type(erasure: TypeLowering<'_>, value: CheckedType) -> Result<IrType, L
         }
         CheckedType::Nominal(id) => IrType::Nominal(erased_nominal(erasure, id)),
         CheckedType::Array { element, length } => IrType::Array {
-            element: lower_flat_element(erasure, element)?,
+            element: lower_element(erasure, element)?,
             length: length
                 .value()
                 .ok_or(LoweringFailure::InvalidCheckedProgram)?,
@@ -902,7 +903,7 @@ pub enum IrConstant {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IrGlobalValue {
     Scalar(IrConstant),
-    Array(Vec<IrConstant>),
+    Array(Vec<IrGlobalValue>),
     /// One struct-typed rodata constant [CONST-2 candidate]: complete field
     /// values in declared order.
     Struct(Vec<IrGlobalValue>),
@@ -1158,6 +1159,11 @@ pub enum IrOperation {
     ArrayFill {
         value: IrValueId,
         target_domain: IrTargetDomainObligation,
+    },
+    /// BLK-3's consuming conversion between a full fixed run and its dense
+    /// array. Source and result have identical element type and extent.
+    FullArrayConversion {
+        value: IrValueId,
     },
     /// One discharged source subscript read [OP-4]: the checker has already
     /// derived the bounds obligation, so no runtime branch is emitted in any

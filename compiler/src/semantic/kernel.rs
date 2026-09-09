@@ -13,8 +13,8 @@
 //! The resolver's table [`crate::resolution::kernel`] carries what resolution
 //! needs — spellings, parameter names, result binder spellings. This table
 //! carries what checking needs, in a closed shape language that is exactly as
-//! wide as the twelve rows of the inventory: [BLK-2]'s formation and
-//! reservation rows and [BLK-3]'s four boundary rows.
+//! wide as the rows of the inventory: [BLK-2]'s formation and
+//! reservation rows and [BLK-3]'s boundary and full-array conversion rows.
 
 use crate::KernelRow;
 
@@ -37,6 +37,8 @@ pub(crate) enum KernelShape {
     Run,
     /// `FixedVector<T, n>`.
     FixedVector,
+    /// `array<T, n>`.
+    Array,
     /// `Vector<'s, T>`.
     Vector,
     /// `Option<Vector<'s, T>>`.
@@ -432,6 +434,11 @@ const CAPACITY_WRITTEN: KernelGenericParameter = KernelGenericParameter {
     name: "n",
     kind: KernelGenericKind::Const(KernelConst::Capacity),
     supplied: false,
+};
+
+const CAPACITY_SUPPLIED: KernelGenericParameter = KernelGenericParameter {
+    supplied: true,
+    ..CAPACITY_WRITTEN
 };
 
 const BYTES_WRITTEN: KernelGenericParameter = KernelGenericParameter {
@@ -1192,6 +1199,91 @@ const SEQ_TAKE_FRONT: KernelSignature = KernelSignature {
     fits: None,
 };
 
+/// Full arrays and based full fixed runs expose the same four exact measures.
+const FULL_ARRAY_RELATIONS: [KernelRelation; 4] = [
+    KernelRelation::plain(
+        KernelTerm::new(KernelOperand::Measure(
+            CheckedMeasure::Length,
+            KernelPlace::Result(0),
+        )),
+        KernelComparison::Equal,
+        KernelTerm::new(KernelOperand::Const(KernelConst::Capacity)),
+    ),
+    KernelRelation::plain(
+        KernelTerm::new(KernelOperand::Measure(
+            CheckedMeasure::Capacity,
+            KernelPlace::Result(0),
+        )),
+        KernelComparison::Equal,
+        KernelTerm::new(KernelOperand::Const(KernelConst::Capacity)),
+    ),
+    KernelRelation::plain(
+        KernelTerm::new(KernelOperand::Measure(
+            CheckedMeasure::Room,
+            KernelPlace::Result(0),
+        )),
+        KernelComparison::Equal,
+        KernelTerm::constant(0),
+    ),
+    KernelRelation::plain(
+        KernelTerm::new(KernelOperand::Measure(
+            CheckedMeasure::Head,
+            KernelPlace::Result(0),
+        )),
+        KernelComparison::Equal,
+        KernelTerm::constant(0),
+    ),
+];
+
+const ARRAY_FROM_FIXED: KernelSignature = KernelSignature {
+    row: KernelRow::ArrayFromFixed,
+    spelling: "array_from_fixed",
+    generics: &[TYPE_SUPPLIED, CAPACITY_SUPPLIED],
+    parameters: &[KernelParameter {
+        name: "vector",
+        mode: KernelMode::Own,
+        shape: KernelShape::FixedVector,
+    }],
+    results: &[KernelResult {
+        name: "result",
+        shape: KernelShape::Array,
+    }],
+    effects: KernelEffects {
+        reads: Some(0),
+        writes: None,
+        allocates: None,
+    },
+    requires: &[KernelRelation::plain(
+        KernelTerm::new(KernelOperand::Measure(
+            CheckedMeasure::Length,
+            KernelPlace::Parameter(0),
+        )),
+        KernelComparison::Equal,
+        KernelTerm::new(KernelOperand::Const(KernelConst::Capacity)),
+    )],
+    ensures: &FULL_ARRAY_RELATIONS,
+    fits: None,
+};
+
+const FIXED_FROM_ARRAY: KernelSignature = KernelSignature {
+    row: KernelRow::FixedFromArray,
+    spelling: "fixed_from_array",
+    generics: &[TYPE_SUPPLIED, CAPACITY_SUPPLIED],
+    parameters: &[KernelParameter {
+        name: "values",
+        mode: KernelMode::Own,
+        shape: KernelShape::Array,
+    }],
+    results: &[KernelResult {
+        name: "result",
+        shape: KernelShape::FixedVector,
+    }],
+    effects: KernelEffects::PURE,
+    requires: &[],
+    ensures: &FULL_ARRAY_RELATIONS,
+    fits: None,
+};
+
 /// The one value parameter both [VIEW-2] formation rows write: the viewable
 /// storage the view is formed over, borrowed at the row's own strength.
 const VIEW_PARAMETER: [KernelParameter; 2] = [
@@ -1321,12 +1413,11 @@ const MUT_SLICE_OF: KernelSignature = KernelSignature {
 /// The last two are [VIEW-2]'s formation rows. Their record data is this
 /// domain's — the operand class, the borrow mode, the non-wrap requirement
 /// and the four published relations — while their *spelling* is still the
-/// [OP-1] family entry every existing program writes, because the transitional
-/// operand domain includes `array<T, N>` and `buffer<T>` and those two types
-/// retire with S34. Two domains may not claim one spelling [TYPE-6], so the
-/// spelling passes to the kernel IDENT domain in the same change that retires
-/// them, and until then these two rows carry no resolver entry.
-pub(crate) const KERNEL_SIGNATURES: [KernelSignature; 13] = [
+/// [OP-1] family entry covering the admitted operand domain. Two declaration
+/// domains may not claim one spelling [TYPE-6], so moving these spellings to
+/// the kernel IDENT domain is deferred under [VIEW-2]. That change does not
+/// require array retirement; these two rows currently carry no resolver entry.
+pub(crate) const KERNEL_SIGNATURES: [KernelSignature; 15] = [
     SEQ_FIXED,
     SEQ_ARENA,
     SEQ_ARENA_PROVED,
@@ -1338,6 +1429,8 @@ pub(crate) const KERNEL_SIGNATURES: [KernelSignature; 13] = [
     SEQ_PLACE_FRONT,
     SEQ_TAKE,
     SEQ_TAKE_FRONT,
+    ARRAY_FROM_FIXED,
+    FIXED_FROM_ARRAY,
     SLICE_OF,
     MUT_SLICE_OF,
 ];
@@ -1552,6 +1645,7 @@ mod tests {
             // quantity and is published the same way.
             for (index, result) in signature.results.iter().enumerate() {
                 let measured = match result.shape {
+                    KernelShape::Array => MeasuredKind::Array,
                     KernelShape::FixedVector => MeasuredKind::FixedVector,
                     KernelShape::Vector | KernelShape::OptionVector => MeasuredKind::Vector,
                     KernelShape::Extent => MeasuredKind::Extent,
@@ -1710,7 +1804,10 @@ mod tests {
                         (generic.kind, parameter.shape),
                         (
                             KernelGenericKind::Type,
-                            KernelShape::Element | KernelShape::Run
+                            KernelShape::Element
+                                | KernelShape::Run
+                                | KernelShape::Array
+                                | KernelShape::FixedVector
                         ) | (KernelGenericKind::Type, KernelShape::Viewable)
                             | (
                                 KernelGenericKind::Region,
@@ -1724,6 +1821,10 @@ mod tests {
                                 KernelShape::Viewable
                             )
                             | (KernelGenericKind::Const(_), KernelShape::Extent)
+                            | (
+                                KernelGenericKind::Const(super::KernelConst::Capacity),
+                                KernelShape::Array | KernelShape::FixedVector
+                            )
                     )
                 });
                 assert_eq!(

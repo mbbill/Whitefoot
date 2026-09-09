@@ -4772,7 +4772,7 @@ impl Analyzer<'_, '_> {
                         element: *element,
                         length: *length,
                     },
-                    vec![element.ty()],
+                    vec![*self.context.elements.get(element.index())?],
                     vec![*length],
                     *ty,
                     vec![self.goal_expression(value, admitted_partial)?],
@@ -4814,7 +4814,9 @@ impl Analyzer<'_, '_> {
                 else {
                     return None;
                 };
-                if root_length != *length || element.ty() != *element_type {
+                if root_length != *length
+                    || self.context.elements.get(element.index()) != Some(element_type)
+                {
                     return None;
                 }
                 build_operation(
@@ -14836,11 +14838,11 @@ fn invalidate_goal_origin_for_set(state: &mut FactState, target: &CheckedSetTarg
 /// The type one slot of an indexable base holds [OP-4, BLK-1].
 fn element_type(input: CheckedType, elements: &[CheckedType]) -> Option<CheckedType> {
     match input {
-        CheckedType::Array { element, .. } | CheckedType::Buffer { element } => Some(element.ty()),
+        CheckedType::Buffer { element } => Some(element.ty()),
         CheckedType::Slice { element, .. } => Some(element.ty()),
-        CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
-            elements.get(element.0 as usize).copied()
-        }
+        CheckedType::Array { element, .. }
+        | CheckedType::FixedVector { element, .. }
+        | CheckedType::Vector { element, .. } => elements.get(element.0 as usize).copied(),
         _ => None,
     }
 }

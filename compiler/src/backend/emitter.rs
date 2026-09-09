@@ -531,7 +531,7 @@ fn global_constant_value(
                 return Ok("zeroinitializer".to_owned());
             }
             let mut text = String::from("[");
-            let element_type = element.ty();
+            let element_type = program.element(element).ok_or(BackendFailure::InvalidIr)?;
             let llvm_element_type = llvm_type(program, element_type)?;
             for (index, value) in elements.iter().enumerate() {
                 if index != 0 {
@@ -540,7 +540,7 @@ fn global_constant_value(
                 write!(
                     text,
                     "{llvm_element_type} {}",
-                    constant_operand(*value, element_type)?
+                    global_constant_value(program, value, element_type)?
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
@@ -1926,6 +1926,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 value,
                 target_domain,
             } => self.emit_array_fill(result, ty, *value, *target_domain),
+            IrOperation::FullArrayConversion { value } => {
+                self.emit_full_array_conversion(result, ty, *value)
+            }
             IrOperation::ArrayIndex {
                 root,
                 offset,
@@ -2274,10 +2277,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         }
         let reads_content = match drop.ty() {
-            IrType::Array { .. } | IrType::Slice { .. } => false,
-            IrType::FixedVector { .. } | IrType::Vector { .. } | IrType::Provider => {
-                type_requires_cleanup(self.program, drop.ty())?
-            }
+            IrType::Slice { .. } => false,
+            IrType::Array { .. }
+            | IrType::FixedVector { .. }
+            | IrType::Vector { .. }
+            | IrType::Provider => type_requires_cleanup(self.program, drop.ty())?,
             IrType::Buffer { .. } => true,
             IrType::Nominal(nominal) if !self.nominal(nominal)?.is_tag_only_enum() => {
                 match self.nominal(nominal)?.kind() {
@@ -2550,7 +2554,10 @@ fn llvm_type(program: &IrProgram<'_, '_, '_>, ty: IrType) -> Result<String, Back
         IrType::Array { length: 0, .. } => Ok("[0 x i8]".to_owned()),
         IrType::Array { element, length } => Ok(format!(
             "[{length} x {}]",
-            llvm_type(program, element.ty())?
+            llvm_type(
+                program,
+                program.element(element).ok_or(BackendFailure::InvalidIr)?
+            )?
         )),
         IrType::Buffer { .. } | IrType::Slice { .. } => Ok("{ ptr, i64 }".to_owned()),
         // A `Vector` descriptor is `{ pointer, cap, len, head }`; a

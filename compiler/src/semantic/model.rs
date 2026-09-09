@@ -342,7 +342,7 @@ pub(crate) enum CheckedFlatElement {
     TagOnlyNominal(NominalId),
     /// One affine aggregate element type: a region-free non-copy nominal
     /// stored by value. [TYPE-2] admits this element domain for `buffer`
-    /// formation only; arrays and slices keep the flat copy domain, so
+    /// formation only; slices keep the flat copy domain, so
     /// their element constructors never produce this variant.
     Nominal(NominalId),
     /// One unbounded type parameter in a run's element position [BLK-1].
@@ -391,7 +391,8 @@ pub(crate) enum CheckedReleaseClass {
     Extent,
 }
 
-/// [BLK-1] the complete type of one run slot, interned in the checked program.
+/// [TYPE-2, BLK-1] the complete type of one array or run element, interned in
+/// the checked program.
 /// Structural children precede parents; recursive ownership graphs pass through
 /// nominal identities. The handle keeps every checked type compact and Copy.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -451,7 +452,7 @@ pub(crate) enum CheckedType {
     GenericFloat(DeclarationId),
     Nominal(NominalId),
     Array {
-        element: CheckedFlatElement,
+        element: CheckedElement,
         length: CheckedConst,
     },
     /// One view [VIEW-1]: `Slice<'r, T>` at shared strength and
@@ -509,10 +510,7 @@ impl CheckedType {
     pub(crate) fn is_concrete(self, elements: &[CheckedType]) -> bool {
         match self {
             Self::Generic(_) | Self::GenericInt(_) | Self::GenericFloat(_) => false,
-            Self::Array { element, length } => {
-                element.ty().is_concrete(elements) && length.is_concrete()
-            }
-            Self::FixedVector { element, length } => {
+            Self::Array { element, length } | Self::FixedVector { element, length } => {
                 elements
                     .get(element.0 as usize)
                     .is_some_and(|ty| ty.is_concrete(elements))
@@ -1434,12 +1432,12 @@ impl CheckedContainerRoot {
         }
     }
 
-    /// The element type of a run, which a bump extent has none of.
+    /// The element type of a full array or run; a bump extent has none.
     pub(crate) const fn element(&self) -> Option<CheckedElement> {
         match self.ty {
-            CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
-                Some(element)
-            }
+            CheckedType::Array { element, .. }
+            | CheckedType::FixedVector { element, .. }
+            | CheckedType::Vector { element, .. } => Some(element),
             _ => None,
         }
     }

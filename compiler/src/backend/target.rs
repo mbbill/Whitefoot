@@ -986,7 +986,7 @@ impl LayoutComputer<'_, '_, '_, '_> {
             IrType::Address(_) => Ok(POINTER_LAYOUT),
             IrType::Array { length: 0, .. } => Ok(Layout { size: 0, align: 1 }),
             IrType::Array { element, length } => {
-                let element = self.layout(element.ty())?;
+                let element = self.element(element)?;
                 let stride = align_up(
                     self.target,
                     element.size,

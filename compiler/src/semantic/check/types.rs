@@ -32,9 +32,6 @@ const TYPE5_NO_TARGS_FOUND: &str = "a written `<...>` type-argument list on a ty
 /// mechanical there.
 const RESULT_TARGS_EXPECTED: &str = "Result with both type arguments written: as a type `Result<u64, IoError>`, and as a variant constructor `Ok<u64, IoError>(value: v)`";
 const OPTION_TARGS_EXPECTED: &str = "Option with its type argument written: as a type `Option<u64>`, and as a variant constructor `Some<u64>(value: v)`";
-/// [TYPE-2]'s flat-element requirement, in the terms the rule states it.
-const TYPE2_FLAT_ELEMENT: &str = "a flat element type: an integer, a float, Bool, unit, or a struct or enum whose fields are themselves flat element types";
-
 /// [EFF-1]'s five row conditions, each with the repair it admits.
 ///
 /// The rule text carries every one of these sentences; the diagnostic did not,
@@ -191,7 +188,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .first_child_with(node, Production::Const)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let element_type = self.parse_type_with(element_node, substitution)?;
-            let element = self.checked_flat_element(element_type, element_node)?;
+            let element = self.intern_element(element_type)?;
             return Ok(CheckedType::Array {
                 element,
                 length: self.parse_const_expression_with(length_node, substitution)?,
@@ -465,10 +462,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Slice { .. }
                 | CheckedType::Heap { .. }
                 | CheckedType::Extent { .. } => return Ok(true),
-                CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
+                CheckedType::Buffer { element } => {
                     pending.push(element.ty());
                 }
-                CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
+                CheckedType::Array { element, .. }
+                | CheckedType::FixedVector { element, .. }
+                | CheckedType::Vector { element, .. } => {
                     pending.push(self.element_type(element)?);
                 }
                 CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
@@ -1618,6 +1617,20 @@ extent's region is one the caller must choose, so it is written at every positio
             .direct_token_with(node, TerminalPredicate::Identifier)?
             .is_some()
         {
+            // CONST-2 permits earlier-constant identifiers only for primitive
+            // values. Arrays/runs require lists and structs require a complete
+            // construction; physical constant storage cannot authorize an
+            // implicit conversion between array and fixed-run source types.
+            if !matches!(
+                expected,
+                CheckedType::Unit | CheckedType::Integer(_) | CheckedType::Float(_)
+            ) {
+                return self.issue_node(
+                    SemanticRule::Const2,
+                    node,
+                    SemanticIssueKind::InvalidConstValue,
+                );
+            }
             let usage = self.use_at(node, LexicalUseRole::ConstValue)?;
             let ResolvedTarget::Source {
                 declaration,
@@ -1642,6 +1655,12 @@ extent's region is one the caller must choose, so it is written at every positio
                 SemanticIssueKind::InvalidConstValue,
             );
         }
+        if matches!(expected, CheckedType::FixedVector { .. }) {
+            // Top-level constant runs use dense array storage. A run nested
+            // in another constant needs the same normalization at its field
+            // or element position; that representation path is not wired yet.
+            return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
+        }
         let CheckedType::Array { element, length } = expected else {
             return self.issue_node(
                 SemanticRule::Const2,
@@ -1663,7 +1682,7 @@ extent's region is one the caller must choose, so it is written at every positio
                 SemanticIssueKind::InvalidConstValue,
             );
         }
-        let element_type = element.ty();
+        let element_type = self.element_type(element)?;
         let mut elements = Vec::with_capacity(entries.len());
         for entry in entries {
             elements.push(self.parse_const_value(entry, element_type)?);
@@ -1795,57 +1814,13 @@ extent's region is one the caller must choose, so it is written at every positio
     }
 
     pub(super) fn parse_const_type(&self, node: NodeId) -> Result<CheckedType, CheckStop> {
-        let directly_ineligible = (!crate::semantic::V031_CANDIDATE_SEMANTICS
-            && self
-                .tree
-                .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
-                .is_some())
-            || self.written_loan_strength(node)?.is_some()
-            || self.has_fixed(node, FixedTerminal::Box)?
-            || self.has_fixed(node, FixedTerminal::Arena)?
-            || self.has_fixed(node, FixedTerminal::Buffer)?;
-        if directly_ineligible {
-            return self.issue_node(
-                SemanticRule::Const2,
-                node,
-                SemanticIssueKind::InvalidConstValue,
-            );
-        }
-        // [CONST-2] none of the compiler-owned container nominals is
-        // const-eligible: a const is pure static rodata, and each of the five
-        // names storage, a store region, or a release action. The question is
-        // decided here, on the resolved declaration class and before the
-        // type's own arguments are parsed, because a cell type is interned
-        // per (store region, referent) and a `const` item is not one of the
-        // positions the interning pass visits — parsing one there reported an
-        // internal deferred-nominal failure instead of this rejection.
-        if self
-            .tree
-            .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
-            .is_some()
-            && matches!(
-                self.use_at(node, LexicalUseRole::Type)?.target(),
-                ResolvedTarget::Container(_)
-            )
-            && !self.written_type_is_fixed_vector(node)?
-        {
-            return self.issue_node(
-                SemanticRule::Const2,
-                node,
-                SemanticIssueKind::InvalidConstValue,
-            );
-        }
+        self.reject_ineligible_const_storage(node)?;
         let ty = self.parse_type(node)?;
-        // [CONST-1, CONST-2, S34] the one const-eligible container form: a
-        // `FixedVector<T, n>` of const-eligible flat `T` with exactly `n`
-        // literal entries. It lowers to **element storage only** — its four
-        // measures are the standing facts `len_of = cap_of = n` and
-        // `room_of = head_of = 0`, materialized from the type at each use
-        // rather than stored — so the const's storage type is the run of `n`
-        // slots itself, which is the place every read of it resolves to and
-        // the measure row every one of its four measures already reads.
+        // [CONST-1, CONST-2, S34] a top-level fixed-run constant occupies only
+        // dense element storage. Its four measures are materialized from the
+        // type rather than stored in a window descriptor.
         if let CheckedType::FixedVector { element, length } = ty {
-            let Some(element) = self.flat_element(self.element_type(element)?)? else {
+            let Some(_) = self.flat_element(self.element_type(element)?)? else {
                 return self.issue_node(
                     SemanticRule::Const2,
                     node,
@@ -1873,6 +1848,68 @@ extent's region is one the caller must choose, so it is written at every positio
         }
     }
 
+    /// Reject forbidden storage constructors before parsing types whose
+    /// nominal instances need not exist for an ineligible const declaration.
+    /// Follow only array/run element positions: arbitrary nominal type
+    /// arguments may be phantom and do not themselves decide eligibility.
+    fn reject_ineligible_const_storage(&self, root: NodeId) -> Result<(), CheckStop> {
+        let mut current = Some(root);
+        while let Some(node) = current {
+            let directly_ineligible = (!crate::semantic::V031_CANDIDATE_SEMANTICS
+                && self
+                    .tree
+                    .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
+                    .is_some())
+                || self.written_loan_strength(node)?.is_some()
+                || self.has_fixed(node, FixedTerminal::Box)?
+                || self.has_fixed(node, FixedTerminal::Arena)?
+                || self.has_fixed(node, FixedTerminal::Buffer)?;
+            if directly_ineligible {
+                return self.issue_node(
+                    SemanticRule::Const2,
+                    node,
+                    SemanticIssueKind::InvalidConstValue,
+                );
+            }
+            // FixedVector is the one eligible compiler-owned container. The
+            // other constructors name storage, a store region, or release.
+            if self
+                .tree
+                .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
+                .is_some()
+                && matches!(
+                    self.use_at(node, LexicalUseRole::Type)?.target(),
+                    ResolvedTarget::Container(_)
+                )
+                && !self.written_type_is_fixed_vector(node)?
+            {
+                return self.issue_node(
+                    SemanticRule::Const2,
+                    node,
+                    SemanticIssueKind::InvalidConstValue,
+                );
+            }
+            current = if self.has_fixed(node, FixedTerminal::Array)? {
+                self.tree.first_child_with(node, Production::Type)?
+            } else if self.written_type_is_fixed_vector(node)? {
+                match self.tree.first_child_with(node, Production::Targs)? {
+                    Some(targs) => {
+                        match self.tree.children_with(targs, Production::Targ)?.first() {
+                            Some(argument) => {
+                                self.tree.first_child_with(*argument, Production::Type)?
+                            }
+                            None => None,
+                        }
+                    }
+                    None => None,
+                }
+            } else {
+                None
+            };
+        }
+        Ok(())
+    }
+
     /// Whether one written `type` node spells the compiler-owned inline run
     /// [BLK-1], which is the one container nominal a `const` item may write
     /// [CONST-2, S34].
@@ -1886,66 +1923,52 @@ extent's region is one the caller must choose, so it is written at every positio
         Ok(self.tree.token_bytes(token)? == b"FixedVector")
     }
 
-    /// The CONST-2 const-eligibility relation: a primitive, an array of
-    /// const-eligible flat elements, or — under the v0.31 candidate — a
-    /// source struct whose every field type is const-eligible. Enums, boxes,
-    /// buffers, slices, arenas, and generics remain ineligible (a const is
-    /// pure static rodata: no allocation, no region, no drop).
+    /// Check every type reachable through CONST-2's element and field
+    /// relation. Zero-length arrays still require eligible element types;
+    /// a visited set closes recursive zero-extent nominal graphs. Parsing
+    /// the finite cvalue separately checks every written element and field.
     fn const_eligible_type(&self, ty: CheckedType) -> Result<bool, CheckStop> {
-        Ok(match ty {
-            CheckedType::Unit | CheckedType::Integer(_) | CheckedType::Float(_) => true,
-            CheckedType::Array { element, .. } => {
-                matches!(
-                    element,
-                    CheckedFlatElement::Unit
-                        | CheckedFlatElement::Integer(_)
-                        | CheckedFlatElement::Float(_)
-                )
+        let mut pending = vec![ty];
+        let mut visited = HashSet::new();
+        while let Some(ty) = pending.pop() {
+            if !visited.insert(ty) {
+                continue;
             }
-            CheckedType::Nominal(id) if crate::semantic::V031_CANDIDATE_SEMANTICS => {
-                match &self.nominal(id)?.kind {
-                    super::super::model::CheckedNominalKind::Struct { fields } => {
-                        let fields = fields.iter().map(|field| field.ty).collect::<Vec<_>>();
-                        for field in fields {
-                            if !self.const_eligible_type(field)? {
-                                return Ok(false);
-                            }
-                        }
-                        true
-                    }
-                    _ => false,
+            match ty {
+                CheckedType::Unit | CheckedType::Integer(_) | CheckedType::Float(_) => {}
+                CheckedType::Array { element, .. } => {
+                    pending.push(self.element_type(element)?);
                 }
+                CheckedType::FixedVector { element, .. } => {
+                    let element = self.element_type(element)?;
+                    if self.flat_element(element)?.is_none() {
+                        return Ok(false);
+                    }
+                    pending.push(element);
+                }
+                CheckedType::Nominal(id) if crate::semantic::V031_CANDIDATE_SEMANTICS => {
+                    let CheckedNominalKind::Struct { fields } = &self.nominal(id)?.kind else {
+                        return Ok(false);
+                    };
+                    pending.extend(fields.iter().map(|field| field.ty));
+                }
+                // The top-level FixedVector const form is normalized to dense
+                // element storage by parse_const_type. Other eligible nesting
+                // must be implemented or reported as a capability gap, never
+                // made ineligible merely because its layout is unsupported.
+                CheckedType::Bool
+                | CheckedType::Generic(_)
+                | CheckedType::GenericInt(_)
+                | CheckedType::GenericFloat(_)
+                | CheckedType::Nominal(_)
+                | CheckedType::Slice { .. }
+                | CheckedType::Buffer { .. }
+                | CheckedType::Vector { .. }
+                | CheckedType::Heap { .. }
+                | CheckedType::Extent { .. } => return Ok(false),
             }
-            CheckedType::Bool
-            | CheckedType::Generic(_)
-            | CheckedType::GenericInt(_)
-            | CheckedType::GenericFloat(_)
-            | CheckedType::Nominal(_) => false,
-            // The `FixedVector` const form is [S34]'s and lands with
-            // `array`'s retirement; a run, a heap, and an extent are not
-            // static rodata in this version.
-            CheckedType::Slice { .. }
-            | CheckedType::Buffer { .. }
-            | CheckedType::FixedVector { .. }
-            | CheckedType::Vector { .. }
-            | CheckedType::Heap { .. }
-            | CheckedType::Extent { .. } => false,
-        })
-    }
-
-    pub(super) fn checked_flat_element(
-        &self,
-        ty: CheckedType,
-        node: NodeId,
-    ) -> Result<CheckedFlatElement, CheckStop> {
-        match self.flat_element(ty)? {
-            Some(element) => Ok(element),
-            None => self.issue_node(
-                SemanticRule::Type2,
-                node,
-                SemanticIssueKind::type_mismatch(TYPE2_FLAT_ELEMENT, self.checked_type_name(ty)?),
-            ),
         }
+        Ok(true)
     }
 
     /// Resolve one checked-program-local structural element handle.
@@ -1979,8 +2002,8 @@ extent's region is one the caller must choose, so it is written at every positio
     }
 
     /// The [TYPE-2] buffer element domain: every flat copy element, plus a
-    /// region-free affine nominal stored by value. Arrays and slices keep
-    /// [`Self::flat_element`]'s copy domain.
+    /// region-free affine nominal stored by value. Slices keep
+    /// [`Self::flat_element`]'s copy domain; arrays use complete elements.
     pub(super) fn buffer_element(
         &self,
         ty: CheckedType,

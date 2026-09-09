@@ -110,6 +110,16 @@ fn emit_run_drop_helper(
     )
     .map_err(|_| BackendFailure::TextEmission)?;
     let element = match ty {
+        // A full array has no window descriptor. Every logical element is
+        // live; the shared walk performs no access for an empty array.
+        IrType::Array { element, length } => {
+            writeln!(
+                output,
+                "  %storage = alloca {run_llvm}\n  store {run_llvm} %value, ptr %storage\n  %pointer = getelementptr inbounds {run_llvm}, ptr %storage, i64 0, i64 0\n  %capacity = add i64 {length}, 0\n  %length = add i64 {length}, 0\n  %origin = add i64 0, 0"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+            element
+        }
         // A frame-resident run's slots are inside its own value, so the walk
         // needs an address for it; its capacity is the type constant.
         IrType::FixedVector { element, length } => {
@@ -151,13 +161,16 @@ fn emit_run_drop_helper(
     Ok(())
 }
 
-/// Every run type whose initialized window holds values deriving release
-/// work. The complete type graph includes arbitrary nested runs and cycles;
+/// Every full array or run whose live elements derive release work.
+/// The complete type graph includes arbitrary nested arrays, runs, and cycles;
 /// its deterministic inventory fixes helper identities without a depth cap.
 fn cleanup_run_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, BackendFailure> {
     let mut needed = Vec::new();
     for ty in program_types(program)? {
-        let (IrType::FixedVector { element, .. } | IrType::Vector { element, .. }) = ty else {
+        let (IrType::Array { element, .. }
+        | IrType::FixedVector { element, .. }
+        | IrType::Vector { element, .. }) = ty
+        else {
             continue;
         };
         let element = program.element(element).ok_or(BackendFailure::InvalidIr)?;
@@ -229,12 +242,12 @@ fn program_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, Backend
         }
         types.push(ty);
         match ty {
-            IrType::FixedVector { element, .. } | IrType::Vector { element, .. } => {
+            IrType::Array { element, .. }
+            | IrType::FixedVector { element, .. }
+            | IrType::Vector { element, .. } => {
                 pending.push(program.element(element).ok_or(BackendFailure::InvalidIr)?);
             }
-            IrType::Array { element, .. }
-            | IrType::Buffer { element }
-            | IrType::Slice { element } => pending.push(element.ty()),
+            IrType::Buffer { element } | IrType::Slice { element } => pending.push(element.ty()),
             IrType::Address(referent) => pending.push(referent.ty()),
             IrType::Nominal(id) => {
                 let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
@@ -490,7 +503,7 @@ fn emit_cleanup_jobs(
                         .map_err(|_| BackendFailure::TextEmission)?;
                     }
                 }
-                IrType::FixedVector { element, .. } => {
+                IrType::Array { element, .. } | IrType::FixedVector { element, .. } => {
                     let element = program.element(element).ok_or(BackendFailure::InvalidIr)?;
                     if type_requires_cleanup(program, element)? {
                         let symbol =
@@ -504,7 +517,6 @@ fn emit_cleanup_jobs(
                 | IrType::Bool
                 | IrType::Integer { .. }
                 | IrType::Float { .. }
-                | IrType::Array { .. }
                 | IrType::Slice { .. }
                 | IrType::Provider
                 | IrType::Address(_) => {}

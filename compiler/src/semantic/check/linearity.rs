@@ -97,10 +97,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<bool, CheckStop> {
         match ty {
             CheckedType::Slice { .. } => Ok(true),
-            CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
-                self.loan_bearing_with(element.ty(), visited)
-            }
-            CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
+            CheckedType::Buffer { element } => self.loan_bearing_with(element.ty(), visited),
+            CheckedType::Array { element, .. }
+            | CheckedType::FixedVector { element, .. }
+            | CheckedType::Vector { element, .. } => {
                 self.loan_bearing_with(self.element_type(element)?, visited)
             }
             CheckedType::Nominal(id) => {
@@ -161,12 +161,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 nodes.push(current);
             }
             match current {
-                CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
+                CheckedType::Buffer { element } => {
                     pending.push(element.ty());
                 }
                 // A run owns the elements of its window [BLK-1], so its
                 // element is a sub-node exactly as a field is.
-                CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
+                CheckedType::Array { element, .. }
+                | CheckedType::FixedVector { element, .. }
+                | CheckedType::Vector { element, .. } => {
                     pending.push(self.element_type(element)?);
                 }
                 CheckedType::Nominal(id) => pending.extend(self.owned_components(id)?),

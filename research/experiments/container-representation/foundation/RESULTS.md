@@ -116,6 +116,44 @@ ownership transport or a timing result. The complete `families/priority.wf` push
 functions are unchanged: their addressed local storage and multi-result
 transfers remain separate problems.
 
+### Dense full-array operations
+
+The owning-array cases in
+[`backend/tests/arrays.rs`](../../../../compiler/src/backend/tests/arrays.rs)
+exercise wrapped conversion, indexed reads and replacement, a generic whole-value
+relay, zero extents, and Heap/Arena element release. The three-element fallible
+builder additionally checks every allocation-refusal prefix before conversion and
+the complete returned array on success. These are operation and ownership
+witnesses, not a representative application distribution.
+
+A retained-call comparison on 2026-09-09 uses a record containing sixteen `u64`
+words and one owning cell. On arm64 macOS its stride is 136 bytes, the full
+three-element array is 408 bytes, and the corresponding circular fixed run is
+424 bytes. Emit the wrapped-record case with `--emit-llvm --no-overlap`, export
+the user helpers and mark those helpers `noinline`, then compile with Apple
+Clang 21.0.0 `-O2`. A matched C control uses the same record and array layouts,
+reads `values[index].payload[7]`, and performs the same tail/prefix copies and
+length/head stores for conversions, under the same valid-index and disjoint
+source/result premises. The C control supplies no ownership proof.
+
+The borrowed read has identical native instructions in both languages: stride
+calculation and one scalar load, with no bounds branch or aggregate copy. The
+array-to-fixed helper optimizes to one 408-byte transfer and sets two metadata fields;
+WF retains `memmove` where C uses `memcpy`, with a 32-byte register-save frame in
+each. The fixed-to-array helper still snapshots all 424 input bytes before its
+two split transfers, whose combined size is 408 bytes. Its native frame is 496
+bytes including register saves, versus 48 bytes of register saves for the C
+control without that snapshot. This remaining input-copy cost is not a runtime
+proof check, and the conversion is not zero-copy.
+
+An independent native observer calls the retained WF helpers at each head value
+zero, one and two. It initializes every word and three distinct allocated owner
+cells, checks logical order and exact pointer identity, converts back, checks
+full length and zero head, and frees each final owner once; all cases pass.
+The maintained WF tests separately check compiler-derived cleanup and failure
+paths in all three lowering modes. No elapsed-time result or overall parity with
+a C container is inferred from this bounded layout and instruction comparison.
+
 ### Encoding the remaining snapshots
 
 An exploratory rewrite of the retained owning-record LLVM module showed that

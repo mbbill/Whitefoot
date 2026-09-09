@@ -1,8 +1,10 @@
+use std::collections::HashSet;
+
 use crate::{PreludeDeclarationId, SemanticCompilerFailure, UnsupportedSemanticFeature};
 
 use super::super::model::{
-    CheckedConstructor, CheckedField, CheckedNominal, CheckedNominalKind, CheckedType,
-    CheckedVariant, IntegerType, LoanStrength, NominalId,
+    CheckedConst, CheckedConstructor, CheckedField, CheckedNominal, CheckedNominalKind,
+    CheckedType, CheckedVariant, IntegerType, LoanStrength, NominalId,
 };
 use super::{CheckStop, Checker, PendingNominal, PreludeType};
 
@@ -64,22 +66,32 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedNominalKind::ArenaStorage
             | CheckedNominalKind::SystemResource { .. } => Vec::new(),
         };
-        Ok(fields
-            .into_iter()
-            .filter_map(|field| match field.ty {
-                CheckedType::Nominal(id)
-                    if !matches!(
-                        self.nominals
-                            .get(id.0 as usize)
-                            .map(|nominal| &nominal.kind),
-                        Some(CheckedNominalKind::Box { .. })
-                    ) =>
-                {
-                    Some(id)
+        let mut pending: Vec<_> = fields.into_iter().map(|field| field.ty).collect();
+        let mut visited = HashSet::new();
+        let mut dependencies = Vec::new();
+        while let Some(ty) = pending.pop() {
+            if !visited.insert(ty) {
+                continue;
+            }
+            match ty {
+                CheckedType::Nominal(id) => {
+                    if !matches!(self.nominal(id)?.kind, CheckedNominalKind::Box { .. }) {
+                        dependencies.push(id);
+                    }
                 }
-                _ => None,
-            })
-            .collect())
+                CheckedType::Array { element, length } if length != CheckedConst::Value(0) => {
+                    pending.push(self.element_type(element)?);
+                }
+                CheckedType::FixedVector { element, .. } => {
+                    pending.push(self.element_type(element)?);
+                }
+                // The target spells an empty array as [0 x i8], independently
+                // of T. Fixed runs retain their payload's element layout even
+                // at N0; descriptor-owned runs never embed their elements.
+                _ => {}
+            }
+        }
+        Ok(dependencies)
     }
 
     pub(super) fn nominal(&self, id: NominalId) -> Result<&CheckedNominal, CheckStop> {
