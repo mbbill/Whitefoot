@@ -213,8 +213,16 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
 
 fn collect_place(root: &crate::semantic::CheckedContainerRoot, bindings: &mut HashSet<BindingId>) {
     for step in &root.path {
-        if let crate::semantic::CheckedPlaceStep::Subscript(subscript) = step {
-            collect_expression(&subscript.offset, bindings);
+        match step {
+            // A Box projection follows the pointer in its actual owner slot,
+            // including when only a descriptor measure is read through it.
+            crate::semantic::CheckedPlaceStep::BoxReferent(_) => {
+                bindings.insert(root.binding);
+            }
+            crate::semantic::CheckedPlaceStep::Subscript(subscript) => {
+                collect_expression(&subscript.offset, bindings);
+            }
+            crate::semantic::CheckedPlaceStep::Field(_) => {}
         }
     }
 }

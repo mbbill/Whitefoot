@@ -53,11 +53,10 @@ pub(super) enum MutationForm {
 
 /// One formed and judged mutation target [SET-1, SET-2, LIV-2].
 ///
-/// The resolved place is what the commit writes and what every judgment
-/// stated over places reads: [LIV-2]'s pairwise disjointness, its read-out
-/// matching, and [OWN-5]'s loan state. It is not the written spelling: a
-/// `deref` target resolves through its holder to the borrowed place, so two
-/// targets that overlap are refused however they are spelled.
+/// The resolved place carries both [OWN-7]'s conservative overlap path and
+/// [LIV-2]'s storage path, whose owning dereferences distinguish a target
+/// from its strict prefixes. Borrow-holder dereferences resolve to the
+/// borrowed origin, so neither relation depends on the holder's spelling.
 pub(in crate::semantic::check) struct MutationTarget {
     /// The source declaration the written place is rooted at: the value
     /// binding for a bare, field or subscript target, the holder for a
@@ -68,8 +67,10 @@ pub(in crate::semantic::check) struct MutationTarget {
     /// The access captured during target formation, rechecked after the RHS
     /// without evaluating its source offsets again [SET-1, OWN-5].
     pub(in crate::semantic::check) access: MutationAccess,
-    /// Whether the write selects one element of `place` rather than `place`
-    /// itself, which is the granularity [MSR-2] states over storage.
+    /// Whether the target uses the element-position judgment [MSR-2].
+    /// Legacy indexed targets retain their base in `place`; typed Storage
+    /// targets already retain the complete selected path. Commit formation
+    /// accounts for that distinction before matching any read-out.
     pub(in crate::semantic::check) element: bool,
     pub(in crate::semantic::check) target: CheckedSetTarget,
     pub(in crate::semantic::check) effects: EffectSet,
@@ -1735,6 +1736,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &HashMap<DeclarationId, LocalBinding>,
         form: MutationForm,
     ) -> Result<MutationTarget, CheckStop> {
+        if let Some(target) = self.check_box_storage_set_target(node, bindings, form)? {
+            return Ok(target);
+        }
         // [SET-1] makes a `deref` target writable through either of two roots:
         // an explicit `deref` of a live usable `&uniq` holder, or a live
         // own-mode binding whose storage the `deref` reaches [STOR-1]. Only

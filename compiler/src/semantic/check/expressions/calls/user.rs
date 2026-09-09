@@ -1318,10 +1318,9 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
         if let Some(slice) = slice {
             for origin in &slice.origins {
                 let place = match origin {
-                    CheckedSliceOrigin::SourcePlace { root, path, .. } => ResolvedPlace {
-                        root: *root,
-                        path: path.clone(),
-                    },
+                    CheckedSliceOrigin::SourcePlace { root, path, .. } => {
+                        ResolvedPlace::from_path(*root, path.clone())
+                    }
                     CheckedSliceOrigin::FormalSlice { parameter, .. } => {
                         ResolvedPlace::fields(*parameter, Vec::new())
                     }

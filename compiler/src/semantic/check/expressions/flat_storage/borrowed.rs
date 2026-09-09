@@ -108,7 +108,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
-    fn explicit_container_path(
+    pub(in crate::semantic::check) fn explicit_container_path(
         &self,
         expression: &super::super::super::super::model::CheckedExpression,
         node: NodeId,

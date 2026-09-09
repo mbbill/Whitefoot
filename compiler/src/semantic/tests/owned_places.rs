@@ -3,7 +3,7 @@
 
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
 
-use super::{assert_rule_kind, assert_unsupported, with_semantics};
+use super::{assert_rule_at, assert_rule_kind, assert_unsupported, with_semantics};
 
 const ROWS: &str = r#"struct Row {
   left: u64;
@@ -33,6 +33,193 @@ fn accepts(source: &str) {
             "{outcome:?}"
         );
     });
+}
+
+const BOX_READ_OUT: &str = r#"struct Payload {
+  value: u64;
+}
+
+struct Pair {
+  left: Payload;
+  right: Payload;
+}
+
+fn fresh['s](owner: own Box<'s, Payload>, store: &uniq Heap<'s>) -> result: own Payload writes(store) {
+  return Payload(value: 7_u64);
+}
+
+"#;
+
+fn box_read_out(body: &str) -> String {
+    let body = body.trim().replace("}\nfn", "}\n\nfn");
+    format!(
+        "{}\n\n{body}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n",
+        BOX_READ_OUT.trim()
+    )
+}
+
+#[test]
+fn box_referent_read_out_reinitializes_direct_borrowed_and_nested_storage() {
+    accepts(&box_read_out(
+        r#"
+fn direct['s](owner: own Box<'s, Payload>) -> result: own Box<'s, Payload> reads(owner), writes(owner) {
+  set deref(owner) = move deref(owner);
+  return move owner;
+}
+fn borrowed(owner: &uniq Box<Payload>) -> result: own unit reads(owner), writes(owner) {
+  set deref(deref(owner)) = move deref(deref(owner));
+  return unit;
+}
+fn nested['s](owner: own Box<'s, Box<'s, Payload>>) -> result: own Box<'s, Box<'s, Payload>> reads(owner), writes(owner) {
+  set deref(deref(owner)) = move deref(deref(owner));
+  return move owner;
+}
+fn field['s](owner: own Box<'s, Pair>) -> result: own Box<'s, Pair> reads(owner), writes(owner) {
+  set deref(owner).left = move deref(owner).left;
+  return move owner;
+}
+fn append['s](storage: own Box<'s, FixedVector<u64, 16>>, value: own u64) -> result: own Box<'s, FixedVector<u64, 16>> reads(storage), writes(storage) contract {
+  requires room_of(deref(storage)) > 0_u64;
+} {
+  set deref(storage) = place_back(vector: move deref(storage), value: value);
+  return move storage;
+}
+"#,
+    ));
+}
+
+#[test]
+fn box_referent_read_out_spends_the_selected_storage_once() {
+    for statement in [
+        "set (deref(owner).left, deref(owner).right) = move deref(owner).left, move deref(owner).left;",
+        "set (deref(owner).left, scalar) = move deref(owner).left, deref(owner).left.value;",
+        "set (deref(owner).left, moved) = move deref(owner).left, move owner;",
+    ] {
+        let source = box_read_out(&format!(
+            r#"
+fn repeat['s](owner: own Box<'s, Pair>) -> result: own Box<'s, Pair> reads(owner), writes(owner) {{
+  let scalar = 0_u64;
+  {statement}
+  return move owner;
+}}
+"#
+        ));
+        assert_rule_kind(source.as_bytes(), SemanticRule::Own1, |kind| {
+            matches!(kind, SemanticIssueKind::UseAfterMove { .. })
+        });
+    }
+}
+
+#[test]
+fn box_referent_target_does_not_turn_an_owner_move_into_a_read_out() {
+    let source = box_read_out(
+        r#"
+fn outer['s](owner: own Box<'s, Payload>, store: &uniq Heap<'s>) -> result: own unit writes(owner, store) {
+  set deref(owner) = fresh(owner: move owner, store: move store);
+  return unit;
+}
+"#,
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Own1, |kind| {
+        matches!(kind, SemanticIssueKind::UseAfterMove { .. })
+    });
+}
+
+#[test]
+fn box_referent_read_out_preserves_shared_and_non_target_boundaries() {
+    let source = box_read_out(
+        r#"
+fn shared(owner: &Box<Payload>) -> result: own unit reads(owner) {
+  set deref(deref(owner)) = move deref(deref(owner));
+  return unit;
+}
+
+"#,
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Own5, |kind| {
+        matches!(kind, SemanticIssueKind::BorrowConflict)
+    });
+    for body in [
+        "let value = move deref(owner);",
+        "set deref(owner) = move deref(other);",
+    ] {
+        let source = box_read_out(&format!(
+            r#"
+fn extract['s](owner: own Box<'s, Payload>, other: own Box<'s, Payload>) -> result: own unit reads(owner, other), writes(owner) {{
+  {body}
+  return unit;
+}}
+"#
+        ));
+        assert_unsupported(
+            source.as_bytes(),
+            UnsupportedSemanticFeature::BoxReferentMove,
+        );
+    }
+}
+
+#[test]
+fn box_referent_read_out_preserves_holder_suspension() {
+    let source = box_read_out(
+        r#"
+fn identity_box['r, 's](value: &uniq 'r Box<'s, Payload>) -> result: &uniq 'r Box<'s, Payload> pure {
+  return &uniq 'r deref(value);
+}
+
+fn suspended(owner: &uniq Box<Payload>) -> result: own unit reads(owner), writes(owner) {
+  region {
+    let child = identity_box(value: &uniq deref(owner));
+    set deref(deref(owner)) = move deref(deref(owner));
+  }
+  return unit;
+}
+"#,
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Own5, |kind| {
+        matches!(kind, SemanticIssueKind::BorrowConflict)
+    });
+}
+
+#[test]
+fn box_referent_descendant_extraction_keeps_its_cleanup_capability_boundary() {
+    let source = box_read_out(
+        r#"
+fn rebuild(value: own Payload) -> result: own Pair pure {
+  let other = Payload(value: 9_u64);
+  return Pair(left: move value, right: move other);
+}
+
+fn descendant['s](owner: own Box<'s, Pair>) -> result: own Box<'s, Pair> reads(owner), writes(owner) {
+  set deref(owner) = rebuild(value: move deref(owner).left);
+  return move owner;
+}
+"#,
+    );
+    assert_unsupported(
+        source.as_bytes(),
+        UnsupportedSemanticFeature::BoxReferentMove,
+    );
+}
+
+#[test]
+fn box_referent_read_out_rejects_a_later_reborrow_at_its_use() {
+    let source = box_read_out(
+        r#"
+fn keep(value: own Payload, alias: &uniq Box<Payload>) -> result: own Payload pure {
+  return move value;
+}
+
+fn late(owner: &uniq Box<Payload>) -> result: own unit reads(owner), writes(owner) {
+  region {
+    set deref(deref(owner)) = keep(value: move deref(deref(owner)), alias: &uniq deref(owner));
+  }
+  return unit;
+}
+"#,
+    );
+    // [LIV-2] the target is spent during RHS evaluation. Its later borrow
+    // fails at that use, before post-RHS writability can fail at the target.
+    assert_rule_at(source.as_bytes(), SemanticRule::Own1, "&uniq deref(owner)");
 }
 
 fn rejects(source: &str, rule: SemanticRule) {

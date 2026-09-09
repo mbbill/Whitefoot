@@ -7,10 +7,14 @@ use crate::{
     SemanticCompilerFailure, SemanticIssueKind, SemanticRule, UnsupportedSemanticFeature,
 };
 
-use super::super::super::model::{CheckedExpression, CheckedMode, CheckedNominalKind, CheckedType};
+use super::super::super::model::{
+    CheckedContainerRoot, CheckedExpression, CheckedMode, CheckedNominalKind, CheckedSetTarget,
+    CheckedType,
+};
+use super::super::super::places::PlaceProjection;
 use super::super::borrows::{AccessKind, BorrowInfo, ResolvedPlace};
 use super::super::{CheckStop, Checker, EffectSet, LocalBinding, PlaceAccess, TypedExpression};
-use super::{PlaceUseContext, PlaceUseOptions};
+use super::{MutationAccess, MutationForm, MutationTarget, PlaceUseContext, PlaceUseOptions};
 
 pub(super) struct ExplicitPlace {
     pub(super) declaration: DeclarationId,
@@ -38,8 +42,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if place.holder_pending {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         }
+        self.check_commit_place_live(&place.resolved, use_node, false)?;
         let copy = self.is_copy_type(place.ty)?;
-        if !copy {
+        if !copy && options.explicit_move && self.is_box_descendant_read_out(&place.resolved) {
+            return self.unsupported(UnsupportedSemanticFeature::BoxReferentMove, use_node);
+        }
+        let read_out = !copy
+            && options.explicit_move
+            && !matches!(place.mode, CheckedMode::Shared(_))
+            && self.take_commit_read_out(&place.resolved);
+        if !copy && !read_out {
             if options.explicit_move && place.mode != CheckedMode::Own {
                 return self.issue_node(
                     SemanticRule::Own5,
@@ -60,7 +72,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 );
             }
         }
-        if options.explicit_move && self.judges_class_spelling() {
+        if copy && options.explicit_move && self.judges_class_spelling() {
             return self.issue_node(
                 SemanticRule::Own1,
                 use_node,
@@ -70,14 +82,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         if place.borrow.is_some() {
-            self.check_loan_access(
-                bindings,
-                Some(place.declaration),
-                &place.resolved,
-                AccessKind::Read,
-                use_node,
-            )?;
+            let local = bindings
+                .get(&place.declaration)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            self.check_holder_not_suspended(local, use_node)?;
         }
+        self.check_loan_access(
+            bindings,
+            place.borrow.as_ref().map(|_| place.declaration),
+            &place.resolved,
+            if read_out {
+                AccessKind::Move
+            } else {
+                AccessKind::Read
+            },
+            use_node,
+        )?;
         let mut effects = EffectSet::NONE;
         // [EFF-1] a loan-bearing parameter's effect path names the viewed
         // backing state and not the descriptor, and merely moving, returning
@@ -91,13 +111,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 effects.add_read(path);
             }
         }
-        let (mode, borrow, holder) = if copy {
+        let (mode, borrow, holder) = if copy || read_out {
             (CheckedMode::Own, None, None)
         } else {
             (place.mode, place.borrow.clone(), Some(place.declaration))
         };
+        let expression = if read_out {
+            let (binding, path) = self.explicit_container_path(&place.expression, node)?;
+            CheckedExpression::ReadStorage {
+                carrier: self.tree.path(use_node)?.clone(),
+                root: CheckedContainerRoot {
+                    binding,
+                    path,
+                    ty: place.ty,
+                },
+            }
+        } else {
+            place.expression
+        };
         Ok(TypedExpression {
-            expression: place.expression,
+            expression,
             mode,
             borrow,
             slice: None,
@@ -448,6 +481,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     value: Box::new(inner.expression),
                 };
                 inner.ty = referent;
+                inner.resolved.storage_path.push(PlaceProjection::Deref);
             }
             CheckedNominalKind::Arena { content, .. } => {
                 inner.expression = CheckedExpression::ArenaDeref {
@@ -469,5 +503,59 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         Ok(inner)
+    }
+
+    /// [SET-1, SET-2] an owning Box edge is a typed storage projection, both
+    /// from an own binding and after dereferencing an exclusive holder.
+    pub(super) fn check_box_storage_set_target(
+        &self,
+        node: NodeId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        form: MutationForm,
+    ) -> Result<Option<MutationTarget>, CheckStop> {
+        let place = self.resolve_explicit_place(node, node, bindings)?;
+        if !place
+            .resolved
+            .storage_path
+            .contains(&PlaceProjection::Deref)
+        {
+            return Ok(None);
+        }
+        if matches!(place.mode, CheckedMode::Shared(_)) {
+            return self.issue_node(SemanticRule::Own5, node, SemanticIssueKind::BorrowConflict);
+        }
+        let holder = place.borrow.as_ref().map(|_| place.declaration);
+        if holder.is_some() {
+            let local = bindings
+                .get(&place.declaration)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            self.check_holder_not_suspended(local, node)?;
+        }
+        self.check_loan_access(bindings, holder, &place.resolved, AccessKind::Write, node)?;
+        self.check_mutation_target_class(node, place.ty, form)?;
+        let mut effects = EffectSet::NONE;
+        for path in self.effect_paths_for_place(&place.resolved, bindings)? {
+            effects.add_write(path.clone());
+            if form.is_replace() {
+                effects.add_read(path);
+            }
+        }
+        let (binding, path) = self.explicit_container_path(&place.expression, node)?;
+        Ok(Some(MutationTarget {
+            declaration: place.declaration,
+            access: MutationAccess::Place {
+                holder,
+                place: place.resolved.clone(),
+            },
+            place: place.resolved,
+            element: false,
+            target: CheckedSetTarget::Storage(CheckedContainerRoot {
+                binding,
+                path,
+                ty: place.ty,
+            }),
+            effects,
+            unsupported: None,
+        }))
     }
 }

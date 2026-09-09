@@ -11,7 +11,7 @@ use super::super::model::{
     CheckedBufferRoot, CheckedContainerRoot, CheckedExpression, CheckedMode, CheckedNominalKind,
     CheckedPlaceStep, CheckedSliceOrigin, CheckedStatePath, CheckedType, LoanStrength,
 };
-use super::super::places::{PlaceStep, paths_diverge};
+use super::super::places::{PlaceProjection, PlaceStep, paths_diverge};
 use super::linearity::LinearityClass;
 use super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, ParameterSignature,
@@ -125,23 +125,64 @@ const OWN6_ARGUMENT_POSITION: &str = "a reborrow is an argument only to a call r
 const OWN6_HOLDER: &str = "reborrow only a parameter or let-bound holder, take `&uniq` only from \
      a `&uniq` holder, and introduce the child region inside the holder's own region";
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub(super) struct ResolvedPlace {
     pub(super) root: DeclarationId,
     pub(super) path: Vec<PlaceStep>,
+    /// [LIV-2] identity retains owning indirection, which [OWN-7]'s
+    /// conservative path deliberately erases. Borrow provenance carries both.
+    pub(super) storage_path: Vec<PlaceProjection>,
 }
+
+// Existing loan identities compare the conservative origin. Exact storage
+// identity is a separate relation, used by the commit's read-out judgment.
+impl PartialEq for ResolvedPlace {
+    fn eq(&self, other: &Self) -> bool {
+        self.root == other.root && self.path == other.path
+    }
+}
+
+impl Eq for ResolvedPlace {}
 
 impl ResolvedPlace {
     pub(super) fn fields(root: DeclarationId, fields: Vec<u32>) -> Self {
+        Self::from_path(root, fields.into_iter().map(PlaceStep::Field).collect())
+    }
+
+    pub(super) fn from_path(root: DeclarationId, path: Vec<PlaceStep>) -> Self {
         Self {
             root,
-            path: fields.into_iter().map(PlaceStep::Field).collect(),
+            storage_path: path
+                .iter()
+                .map(|step| match step {
+                    PlaceStep::Field(field) => PlaceProjection::Field(*field),
+                    PlaceStep::Subscript(offset) => PlaceProjection::Subscript(*offset),
+                })
+                .collect(),
+            path,
         }
     }
 
     pub(super) fn extend_fields(&mut self, fields: &[u32]) {
         self.path
             .extend(fields.iter().copied().map(PlaceStep::Field));
+        self.storage_path
+            .extend(fields.iter().copied().map(PlaceProjection::Field));
+    }
+
+    pub(super) fn push_subscript(&mut self, offset: super::super::places::PlaceOffset) {
+        self.path.push(PlaceStep::Subscript(offset));
+        self.storage_path.push(PlaceProjection::Subscript(offset));
+    }
+
+    pub(super) fn extend_storage(&mut self, path: &[CheckedPlaceStep]) {
+        for step in path {
+            match step {
+                CheckedPlaceStep::Field(field) => self.extend_fields(&[*field]),
+                CheckedPlaceStep::BoxReferent(_) => self.storage_path.push(PlaceProjection::Deref),
+                CheckedPlaceStep::Subscript(index) => self.push_subscript(index.place_offset),
+            }
+        }
     }
 
     /// The source-expressible prefix used by state/effect contracts, whose
@@ -298,10 +339,7 @@ impl SliceInfo {
                     path,
                     origin_region,
                 } => Some((
-                    ResolvedPlace {
-                        root: *root,
-                        path: path.clone(),
-                    },
+                    ResolvedPlace::from_path(*root, path.clone()),
                     *origin_region,
                 )),
                 CheckedSliceOrigin::ImmutableConst | CheckedSliceOrigin::FormalSlice { .. } => None,
@@ -313,10 +351,9 @@ impl SliceInfo {
         let mut places = Vec::new();
         for origin in &self.origins {
             let place = match origin {
-                CheckedSliceOrigin::SourcePlace { root, path, .. } => Some(ResolvedPlace {
-                    root: *root,
-                    path: path.clone(),
-                }),
+                CheckedSliceOrigin::SourcePlace { root, path, .. } => {
+                    Some(ResolvedPlace::from_path(*root, path.clone()))
+                }
                 CheckedSliceOrigin::FormalSlice { parameter, .. } => {
                     Some(ResolvedPlace::fields(*parameter, Vec::new()))
                 }
@@ -1087,13 +1124,8 @@ inside the `region` block whose region it takes",
         let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
         let (path, ty, offsets) =
             self.resolve_storage_path(&suffixes, local.ty, bindings, function, loop_depth, true)?;
-        let place = ResolvedPlace {
-            root: declaration,
-            path: path
-                .iter()
-                .filter_map(CheckedPlaceStep::place_step)
-                .collect(),
-        };
+        let mut place = ResolvedPlace::fields(declaration, Vec::new());
+        place.extend_storage(&path);
         let fields = place.field_prefix();
         let only_fields = fields.len() == path.len();
         self.check_commit_place_live(&place, node, false)?;
@@ -1515,6 +1547,10 @@ and name it on the returned reborrow"
         let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
         let mut place = parent.place.clone();
         place.extend_fields(&fields);
+        // [LIV-2] a target already read out is dead for the remaining RHS,
+        // including a child reborrow. Reject at this use, before the commit
+        // would independently reject its surviving temporary loan.
+        self.check_commit_place_live(&place, node, false)?;
         self.check_loan_access(
             bindings,
             Some(holder),

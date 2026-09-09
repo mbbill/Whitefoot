@@ -30,10 +30,10 @@ Its parts answer different questions:
 - `families/`: current-language hash-table operations, a binary heap with a
   native cost control, an ordered-node component, and variable-record byte-page
   insertion/deletion; boxed-entry dynamic migration and matched byte-growth
-  allocation/refusal controls. Exact rejected forms, a deferred helper-region
-  discrepancy and a boxed-tree runtime defect distinguish specification limits from
-  implementation gaps; the latter is compiled, but not certified as executing
-  correctly, by the ordinary check.
+  allocation/refusal controls. Intentional rejected forms distinguish source
+  restrictions from the repaired nested-region substitution and Box replacement
+  defects. Both former defect witnesses now execute in the ordinary check;
+  `families/RESULTS.md` states their coverage and remaining limits.
 
 These small programs test specific capabilities and costs. They are not a
 representative corpus of real applications and supply no workload-frequency data.

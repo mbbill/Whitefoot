@@ -1109,10 +1109,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if let crate::semantic::model::CheckedSliceOrigin::SourcePlace { root, path, .. } =
                 origin
             {
-                wanted.entry(*root).or_default().push(ResolvedPlace {
-                    root: *root,
-                    path: path.clone(),
-                });
+                wanted
+                    .entry(*root)
+                    .or_default()
+                    .push(ResolvedPlace::from_path(*root, path.clone()));
             }
         }
         for (root, places) in wanted {

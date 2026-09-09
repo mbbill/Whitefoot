@@ -320,7 +320,8 @@ written for a child remains its formation and type-validity ceiling even when
 the control-header endpoint is earlier.
 
 **Owned values and physical storage are separate.** The lowering retains typed
-field/index addresses for reads, writes and borrows of container content.
+field, index and Box-referent addresses for supported reads, writes and borrows
+of container content.
 Aggregate IR values remain independent snapshots; deterministic CFG liveness
 permits dead storage to be reused, and internal aggregate results use explicit
 destinations. An exposed address or deferred use prevents unsafe reuse. A
@@ -367,10 +368,26 @@ boxes retain their pointer representation; the fix does not add a payload copy.
 Borrowed enum payloads project from the actual scrutinee storage as well.
 An owning Box's run or extent referent supports measures and indexed access
 through the same typed place path. Replacing its owner invalidates referent
-facts. Legacy Buffer roots reached through a Box still stop explicitly at
+facts. Box content also supports copy assignment, affine replacement and
+[LIV-2] read-out into the same statement's commit, including
+`set deref(storage) = place_back(vector: move deref(storage), value: value);`
+when the operation's ordinary room obligation is proved. The target may be
+reached through nested Boxes or a live usable exclusive holder, and may select
+a field of the referent. Checked storage paths retain each owning Box
+dereference: moving the whole owner remains a strict-prefix consume rather
+than a read-out of its content. The conservative overlap and loan relations
+still associate that content with its owning root.
+
+Moving Box content outside a matching commit remains
+`Unsupported(BoxReferentMove)`. Reading a proper descendant out to rebuild a
+larger Box-content target also keeps that explicit capability boundary: the
+unselected owning content needs a complete cleanup account before that path
+can execute. General borrows rooted in an owning Box referent, including
+Box-to-run element borrows, remain incomplete. Legacy Buffer roots reached
+through a Box still stop explicitly at
 `Unsupported(CompositeValues)`, and legacy Array roots have not been generalized
 through Box projections. These are implementation limits, not source rejections
-under TYPE-7 or MSR-1.
+under LIV-2, TYPE-7 or MSR-1.
 Heap and extent Box cleanup identities remain distinct even when their pointer
 layouts agree. After semantic acceptance, store-polymorphic calls select a
 physical function instance for the release classes of their actual stores.

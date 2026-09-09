@@ -1121,3 +1121,144 @@ void wf_test_release(void *allocation) {{
 "#
     )
 }
+
+/// A full bounded append returns its input rather than overwriting an element.
+/// The same helper updates heap and extent cells without replacing either cell.
+#[test]
+fn boxed_fixed_vector_read_out_preserves_storage_and_elements() {
+    let source = br#"struct Checked['s] {
+  storage: Box<'s, FixedVector<box<u64>, 2>>;
+  code: u8;
+}
+
+fn append['s](storage: own Box<'s, FixedVector<box<u64>, 2>>, value: own box<u64>) -> result: own Box<'s, FixedVector<box<u64>, 2>> reads(storage), writes(storage) contract {
+  requires room_of(deref(storage)) > 0_u64;
+} {
+  set deref(storage) = place_back(vector: move deref(storage), value: move value);
+  return move storage;
+}
+
+fn try_append['s](storage: own Box<'s, FixedVector<box<u64>, 2>>, value: own box<u64>) -> (result: own Box<'s, FixedVector<box<u64>, 2>>, returned: own Option<box<u64>>) reads(storage), writes(storage) {
+  let room = room_of(deref(storage));
+  if room > 0_u64 {
+    let updated = append(storage: move storage, value: move value);
+    return move updated, None<box<u64>>();
+  }
+  return move storage, Some<box<u64>>(value: move value);
+}
+
+fn inspect(values: own FixedVector<box<u64>, 2>) -> code: own u8 reads(values), writes(values) {
+  let length = len_of(values);
+  if length != 2_u64 {
+    return 4_u8;
+  }
+  let (one, second) = take_back(vector: move values);
+  let (empty, first) = take_back(vector: move one);
+  if deref(first) != 17_u64 {
+    return 5_u8;
+  }
+  if deref(second) != 29_u64 {
+    return 6_u8;
+  }
+  return 0_u8;
+}
+
+fn exercise['s](storage: own Box<'s, FixedVector<box<u64>, 2>>) -> result: own Checked<'s> reads(storage), writes(storage) {
+  let first = box_new(17_u64);
+  let (one, first_returned) = try_append(storage: move storage, value: move first);
+  match first_returned {
+    None() => {
+    }
+    Some(value: unwanted) => {
+      return Checked(storage: move one, code: 1_u8);
+    }
+  }
+  let second = box_new(29_u64);
+  let (two, second_returned) = try_append(storage: move one, value: move second);
+  match second_returned {
+    None() => {
+    }
+    Some(value: unwanted) => {
+      return Checked(storage: move two, code: 2_u8);
+    }
+  }
+  let third = box_new(41_u64);
+  let (full, third_returned) = try_append(storage: move two, value: move third);
+  match third_returned {
+    None() => {
+      return Checked(storage: move full, code: 3_u8);
+    }
+    Some(value: refused) => {
+      if deref(refused) != 41_u64 {
+        return Checked(storage: move full, code: 7_u8);
+      }
+      return Checked(storage: move full, code: 0_u8);
+    }
+  }
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region 'a {
+    let store = arena_frame::<128, 16, 'a>();
+    let empty_heap = fixed_vector::<box<u64>, 2>();
+    region {
+      match heap_box(store: &uniq heap, value: move empty_heap) {
+        Err(error: back) => {
+          return exit_status(code: 70_u8);
+        }
+        Ok(value: heap_cell) => {
+          let heap_result = exercise(storage: move heap_cell);
+          let Checked(storage: heap_storage, code: heap_code) = move heap_result;
+          if heap_code != 0_u8 {
+            return exit_status(code: heap_code);
+          }
+          let Box(value: heap_values) = move heap_storage;
+          let heap_inspected = inspect(values: move heap_values);
+          if heap_inspected != 0_u8 {
+            return exit_status(code: heap_inspected);
+          }
+          let empty_arena = fixed_vector::<box<u64>, 2>();
+          match arena_box(store: &uniq store, value: move empty_arena) {
+            Err(error: back) => {
+              return exit_status(code: 70_u8);
+            }
+            Ok(value: arena_cell) => {
+              let arena_result = exercise(storage: move arena_cell);
+              let Checked(storage: arena_storage, code: arena_code) = move arena_result;
+              if arena_code != 0_u8 {
+                return exit_status(code: arena_code);
+              }
+              let Box(value: arena_values) = move arena_storage;
+              let arena_inspected = inspect(values: move arena_values);
+              return exit_status(code: arena_inspected);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        let observed = retain_calls(&module)
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        for (refused, status, expected) in [
+            (0, 0, "A1;A2;A3;A4;F4;F1;F2;F3;A5;A6;A7;F7;F5;F6;"),
+            (1, 70, "X1;"),
+        ] {
+            let host = allocation_observer(7, refused);
+            let output = compile_link_and_run(&observed, Some(&host), &[]);
+            assert_eq!(output.status.code(), Some(status), "{output:?}");
+            // Refused elements leave first. Destructuring releases only the
+            // heap cell's backing; inspecting consumes both remaining elements.
+            assert_eq!(output.stdout, expected.as_bytes(), "{output:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+        }
+    }
+}

@@ -799,10 +799,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             loop_depth,
             false,
         )?;
-        place
-            .resolved
-            .path
-            .extend(path.iter().filter_map(CheckedPlaceStep::place_step));
+        place.resolved.extend_storage(&path);
         place.root.path.extend(path);
         place.root.ty = ty;
         place.offsets.effects = place.offsets.effects.union(offsets.effects);
@@ -822,7 +819,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let read_out = liveness.is_ok()
             && options.explicit_move
             && !copy
-            && self.take_commit_element_read_out(&place.resolved, &place.root.place_path());
+            && self.take_commit_element_read_out(&place.resolved);
         // [DIAG-1] an explicit affine element move without an admitted
         // read-out violates TYPE-2 even when that same use is also dead under
         // OWN-1. TYPE-2 is defined first and owns their simultaneous event.
@@ -903,7 +900,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
     ) -> Result<bool, CheckStop> {
-        let Some(place) = indexed.indexed_base_place() else {
+        let Some(mut place) = indexed.indexed_base_place() else {
             return Ok(false);
         };
         let Some(offset_node) = self.subscript_offset(suffix)? else {
@@ -918,10 +915,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         {
             return Ok(false);
         }
-        let path = indexed.indexed_element_path(
+        place.push_subscript(
             Self::place_offset_of(&offset.expression).unwrap_or(PlaceOffset::Opaque),
         );
-        Ok(self.take_commit_element_read_out(&place, &path))
+        Ok(self.take_commit_element_read_out(&place))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1315,20 +1312,20 @@ view",
         let access = match &indexed {
             CheckedIndexedPlace::Array(array) => MutationAccess::Place {
                 holder: None,
-                place: ResolvedPlace {
-                    root: array.declaration.ok_or_else(|| {
+                place: ResolvedPlace::from_path(
+                    array.declaration.ok_or_else(|| {
                         self.issue_value(
                             SemanticRule::Const2,
                             node,
                             SemanticIssueKind::ImmutableSetTarget,
                         )
                     })?,
-                    path: indexed.indexed_element_path(offset_place),
-                },
+                    indexed.indexed_element_path(offset_place),
+                ),
             },
             CheckedIndexedPlace::Buffer(buffer) => {
                 let mut place = buffer.resolved.clone();
-                place.path.push(PlaceStep::Subscript(offset_place));
+                place.push_subscript(offset_place);
                 MutationAccess::Place {
                     holder: buffer.holder,
                     place,
@@ -1819,10 +1816,7 @@ view",
                     .collect();
                 Ok(CheckedIndexedPlace::Container(CheckedContainerPlace {
                     root: CheckedContainerRoot { binding, path, ty },
-                    resolved: ResolvedPlace {
-                        root: declaration,
-                        path: resolved_path,
-                    },
+                    resolved: ResolvedPlace::from_path(declaration, resolved_path),
                     offsets,
                     holder: None,
                 }))

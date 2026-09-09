@@ -184,13 +184,19 @@ command fn main() -> status: own ExitStatus pure {
 /// over it is the second root and never needs a holder; the target-side
 /// dispatch nevertheless resolved a holder for every `deref` target and
 /// reported these spec-legal targets as TYPE-7 "deref requires a borrow
-/// holder". Cell content is copy-typed here, so SET-1 admits the target and it
-/// stops explicitly: the target names the root binding, which lowers to the
-/// content pointer under the cell's own IR type, so no store addresses the
-/// content.
+/// holder". The shared typed storage path now retains the Box indirection,
+/// so both copy assignment and affine replacement address its content.
 #[test]
 fn cell_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
-    assert_unsupported(
+    let assert_admitted = |source: &[u8]| {
+        with_semantics(source, |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{outcome:?}"
+            );
+        });
+    };
+    assert_admitted(
         br#"fn hold(store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
   region {
     match heap_box(store: &uniq deref(store), value: 4_i32) {
@@ -209,11 +215,10 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
-        UnsupportedSemanticFeature::RegionsAndBorrows,
     );
     // [SET-2] shares SET-1's writability relation, so an affine, region-free
-    // cell content is a legal `replace` target and reaches the same stop.
-    assert_unsupported(
+    // cell content is a legal `replace` target on the same storage path.
+    assert_admitted(
         br#"fn hold(store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
   let bytes = fixed_vector::<u8, 1>();
   let other = fixed_vector::<u8, 1>();
@@ -234,7 +239,6 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
-        UnsupportedSemanticFeature::RegionsAndBorrows,
     );
 }
 
