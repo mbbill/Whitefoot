@@ -6,7 +6,7 @@ use super::{compile, compile_and_run, compile_link_and_run};
 /// Retain the ordinary emitted call boundaries for a second execution. This
 /// changes only optimization permission, so a passing inlined body cannot hide
 /// a broken aggregate argument or result ABI.
-fn retain_calls(module: &str) -> String {
+pub(super) fn retain_calls(module: &str) -> String {
     let mut retained = 0;
     let result = module
         .lines()

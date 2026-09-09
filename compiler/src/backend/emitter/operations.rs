@@ -91,6 +91,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 IrNominalKind::Struct { .. }
                     | IrNominalKind::Enum { .. }
                     | IrNominalKind::Box { .. }
+                    | IrNominalKind::SystemResource(_)
             ),
             IrAddressed::Unit
             | IrAddressed::Bool

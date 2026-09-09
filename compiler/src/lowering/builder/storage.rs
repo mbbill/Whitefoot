@@ -124,7 +124,8 @@ fn collect_borrowed_place_expression(
         CheckedExpression::Binding { binding, .. }
         | CheckedExpression::DerefAddressed { binding, .. }
         | CheckedExpression::ReborrowAddressed { binding, .. }
-        | CheckedExpression::BorrowBox { binding, .. } => {
+        | CheckedExpression::BorrowBox { binding, .. }
+        | CheckedExpression::BorrowSystemResource { binding, .. } => {
             bindings.insert(*binding);
         }
         CheckedExpression::Project { binding, .. } => {
@@ -145,7 +146,8 @@ fn collect_borrowed_place_expression(
 
 fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<BindingId>) {
     match expression {
-        CheckedExpression::BorrowBox { binding, .. } => {
+        CheckedExpression::BorrowBox { binding, .. }
+        | CheckedExpression::BorrowSystemResource { binding, .. } => {
             bindings.insert(*binding);
         }
         CheckedExpression::BorrowAddressed { root, .. }
@@ -204,7 +206,6 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         | CheckedExpression::SliceOf { .. }
         | CheckedExpression::SliceMeasure { .. }
         | CheckedExpression::BorrowBuffer { .. }
-        | CheckedExpression::BorrowSystemResource { .. }
         | CheckedExpression::ReborrowAddressed { .. }
         | CheckedExpression::DerefAddressed { .. }
         | CheckedExpression::Project { .. } => {}
@@ -456,10 +457,14 @@ impl IrBuilder<'_> {
             .copied()
             .ok_or(LoweringFailure::InvalidCheckedProgram)?;
         let ty = self.value_type(value)?;
-        // A borrowed parameter already names its caller's stable storage.
-        // Reading a checked child path must not introduce another owner or
-        // redirect mutations into a local copy of that referent.
+        // Initialization can supply an address directly for a borrow parameter,
+        // returned borrow, or borrowed match binder. That binding carries the
+        // address itself: a later ordinary use must not perform the implicit
+        // load used for an owner which this method promotes into storage.
+        // Synthesized captures inherit already-classified bindings without
+        // reinitializing them here.
         if matches!(ty, IrType::Address(_)) {
+            self.addressed_bindings.remove(&binding);
             return Ok(());
         }
         let referent = self.addressed_referent(ty)?;
@@ -488,6 +493,7 @@ impl IrBuilder<'_> {
                 IrNominalKind::Struct { .. }
                     | IrNominalKind::Enum { .. }
                     | IrNominalKind::Box { .. }
+                    | IrNominalKind::SystemResource(_)
             )
         {
             return Err(LoweringFailure::InvalidCheckedProgram);

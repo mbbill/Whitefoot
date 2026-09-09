@@ -1165,13 +1165,11 @@ inside the `region` block whose region it takes",
                     nominal,
                 }
             }
-            // An opaque resource value is its own borrow, whether the
-            // binding is that resource or a field of one. A system struct's
-            // `receive` and `send` are ordinary field places [SYS-18], so a
-            // borrow of one carries the field path and nothing else changes:
-            // the loan `place` above already names the field, so [OWN-5]
-            // decides two loans on disjoint fields exactly as it does for a
-            // source struct.
+            // Opaque resources retain their owner-slot field path. A system
+            // struct's `receive` and `send` are ordinary field places
+            // [SYS-18], so [OWN-5] decides loans on disjoint fields exactly as
+            // for a source struct. Lowering addresses the selected slot;
+            // qualification still owns the resource's target value ABI.
             CheckedType::Nominal(nominal)
                 if only_fields
                     && matches!(
@@ -1573,9 +1571,9 @@ and name it on the returned reborrow"
                     element,
                 },
             },
-            // An opaque resource value is its own borrow, so a child reborrow
-            // of a borrow-mode holder is that same inline value: there is no
-            // content to address and nothing to reload [SYS-2, OWN-6].
+            // A child of an opaque-resource holder keeps the same owner-slot
+            // address and selected fields. Its region and suspension remain
+            // the ordinary reborrow judgment [SYS-2, OWN-6].
             CheckedType::Nominal(nominal)
                 if matches!(
                     self.nominal(nominal)?.kind,
@@ -1596,8 +1594,7 @@ and name it on the returned reborrow"
             // A view value is already a descriptor, so the child reborrow a
             // helper takes of its own view holder is that same descriptor
             // read once more: there is no content to address and nothing to
-            // reload, exactly as a system-resource holder's child is
-            // [OWN-6, VIEW-1]. The child carries the parent's range and its
+            // reload [OWN-6, VIEW-1]. The child carries the parent's range and its
             // loan region, and [OWN-6]'s ordinary suspension freezes the
             // holder while the child lives [OWN-5].
             CheckedType::Slice { .. } if fields.is_empty() => CheckedExpression::Binding {

@@ -384,6 +384,14 @@ borrows, and child reborrows keep the same address. Explicit dereference chains
 first read the value behind the borrow before reading a box's referent. Owned
 boxes retain their pointer representation; the fix does not add a payload copy.
 Borrowed enum payloads project from the actual scrutinee storage as well.
+Opaque resources likewise borrow their owning slots, including scalar
+descriptors and aggregate leases. System-call lowering reads the qualified
+resource value from that address; the target ABI stays unchanged. Retained-call
+native controls cover descriptor exchange with inert test identities and
+HostString field replacement through borrowed results and reborrows.
+Effect-origin routing after a resource is written back through a borrowed
+actual remains incomplete; these address tests do not establish correct
+release-effect attribution for that separate flow.
 An owning Box's run or extent referent supports measures and indexed access
 through the same typed place path. Replacing its owner invalidates referent
 facts. Box content also supports copy assignment, affine replacement and

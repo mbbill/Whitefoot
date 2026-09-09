@@ -516,8 +516,9 @@ fn lower_parameter_type(
 /// The representation a borrow-mode value carries.
 ///
 /// A borrow addresses the owner's storage, including a Box's pointer slot.
-/// Opaque system handles and the legacy buffer/view ABI retain their value
-/// representation [OWN-2, SYS-2].
+/// Opaque resources use the same address path; their qualified value ABI is
+/// adapted only when lowering a system operation [OWN-2, SYS-2]. The legacy
+/// buffer/view ABI retains its value representation.
 fn lower_borrow_mode_type(
     mode: CheckedMode,
     ty: IrType,
@@ -535,7 +536,10 @@ fn lower_borrow_mode_type(
                 .get(nominal.index())
                 .ok_or(LoweringFailure::InvalidCheckedProgram)?
                 .kind,
-            IrNominalKind::Struct { .. } | IrNominalKind::Enum { .. } | IrNominalKind::Box { .. }
+            IrNominalKind::Struct { .. }
+                | IrNominalKind::Enum { .. }
+                | IrNominalKind::Box { .. }
+                | IrNominalKind::SystemResource(_)
         )
     {
         return Ok(ty);
@@ -1826,7 +1830,14 @@ impl<'program> IrBuilder<'program> {
             } => {
                 let arguments = arguments
                     .iter()
-                    .map(|argument| self.expression(argument))
+                    .map(|argument| {
+                        let value = self.expression(argument)?;
+                        // Source borrows address their owner's storage, while
+                        // the qualified system ABI receives the resource value.
+                        // Loading here also preserves the ordinary argument
+                        // evaluation point before a possibly suspended call.
+                        self.load_storage_value(value)
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
                 self.define(
                     lower_type(self.erasure, *result)?,
@@ -1837,29 +1848,23 @@ impl<'program> IrBuilder<'program> {
                     },
                 )
             }
-            // An opaque resource value is its own borrow: it has no
-            // source-visible content and needs no stable address, exactly as
-            // a `box` borrow does. A borrow of one that is a struct field is
-            // the same value, read out of the aggregate: the field path is
-            // projected without consuming the root, because a borrow leaves
-            // the whole value live [SYS-18].
+            // Opaque content does not make the owning slot immutable: SET-2
+            // may replace the resource through an exclusive borrow. Retain
+            // that slot's address across calls, returns and reborrows.
             CheckedExpression::BorrowSystemResource {
                 binding,
                 fields,
                 nominal,
                 ..
-            } => {
-                let root = self.binding_value(*binding)?;
-                let value = if fields.is_empty() {
-                    root
-                } else {
-                    self.project_struct_path(root, fields, false)?
-                };
-                if self.value_type(value)? != IrType::Nominal(self.erased(*nominal)) {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                }
-                Ok(value)
-            }
+            } => self.lower_place_address(&crate::semantic::CheckedContainerRoot {
+                binding: *binding,
+                path: fields
+                    .iter()
+                    .copied()
+                    .map(crate::semantic::CheckedPlaceStep::Field)
+                    .collect(),
+                ty: CheckedType::Nominal(*nominal),
+            }),
             CheckedExpression::IntegerOperation {
                 operation,
                 operand_type,
