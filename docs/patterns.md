@@ -1298,16 +1298,18 @@ is the statement for the one place where the peak is the point.
 Replaces: holding a value to the end of its scope because there was no way to
 say otherwise.
 
-## P25. Write a store's region only where it relates two positions
+## P25. Name a generic store brand; elide an already-determined brand
 
-Problem: the two runs and the two providers carry the store that backs them in
-their own types [PROV-1], so every one of them names a region. Writing that
+Problem: store-backed containers and providers carry the store that backs them
+in their own types [PROV-1]. Writing that
 region everywhere would put a region parameter on every hosted nominal and
 every hosted signature, and the design counted fifteen brand occurrences and
 twelve call-site brand arguments in one byte-string program before it stopped.
 
-Pattern: write the region exactly where it relates two positions, and elide it
-everywhere else. An elided store brand at a field, an enum payload, a run
+Pattern: write a formal region when a type is generic over its brand, including
+a reader with only one branded input. Elision uses the brand PROV-1 already
+fixes, either an enclosing nominal's formal or the concrete entry heap; it
+introduces no anonymous generic store. An elided store brand at a field, an enum payload, a run
 element, or a written type argument denotes the enclosing nominal's sole region
 parameter when it declares one, and the entry heap's store region otherwise; at
 a parameter or a result it denotes the entry heap's store region. So a nominal
@@ -1319,8 +1321,9 @@ struct Bytes {
 }
 ```
 
-and a nominal over a bump extent declares exactly one and writes it at the one
-field that must be branded to it:
+and a nominal over a bump extent declares a region. This example writes that
+brand at the field explicitly; PROV-1 also fixes an elided brand there to the
+nominal's sole region parameter:
 
 ```whitefoot
 struct Chunk['s] {
@@ -1328,11 +1331,27 @@ struct Chunk['s] {
 }
 ```
 
-The rule is the ordinary [FORM-8] discipline read over stores: a region a
-reader cannot check and a transposition cannot catch is deleted, and a region
-the caller must choose is written. A bump extent's own region is always the
-second kind, so an `Arena` writes it at every position: `Arena<4096, 16>` is a
-[FORM-8] rejection and `Arena<'s, 4096, 16>` is the form.
+An ordinary reader can name the brand while leaving its independent, single
+input loan lifetime elided:
+
+```whitefoot
+fn chunk_length['s](chunk: &Chunk<'s>) -> count: own u64 reads(chunk.page) {
+  return len_of(deref(chunk).page);
+}
+```
+
+The caller's actual chunk fixes `'s`; the call writes no region argument.
+The reader's temporary loan does not become the chunk's store lifetime. With
+multiple or nested brands, the parameter's explicit type positions determine
+each one. Two occurrences of one formal brand must receive the same actual
+brand, even when one store outlives the other. A pure loan name appearing at
+only one input position is still elided under FORM-8.
+
+A bump extent has no default concrete brand, so an `Arena` writes it at every
+position: `Arena<4096, 16>` is a FORM-8 rejection and `Arena<'s, 4096, 16>` is
+the form. An empty variant whose fields supply no brand still requires its
+constructor's undetermined brand argument; the reader rule does not introduce
+expected-type inference for construction.
 
 Replaces: putting a region parameter on every declaration that touches a run.
 

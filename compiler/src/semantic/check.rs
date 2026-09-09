@@ -15,6 +15,7 @@ pub(crate) mod publication;
 mod requires;
 mod result_state_origin;
 mod support;
+mod type_regions;
 mod types;
 
 use std::cell::{Cell, RefCell};
@@ -78,6 +79,7 @@ struct ParameterSignature {
     name: String,
     mode: CheckedMode,
     ty: CheckedType,
+    region_shape: type_regions::TypeRegionShape,
 }
 
 /// One declared result ordinal of a callable boundary [GRAM-2, FN-1].
@@ -365,6 +367,7 @@ struct ConstructorShape {
     /// of this constructor does, which is exactly the region argument the
     /// construct writes.
     determining_field: Vec<Option<usize>>,
+    field_regions: Vec<type_regions::TypeRegionShape>,
 }
 
 /// A nominal instance a derived type named, awaiting interning.
@@ -719,7 +722,7 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// driver between attempts at one function.
     pending_nominals: RefCell<Vec<PendingNominal>>,
     /// [PROV-1] the region an elided store brand denotes at the position
-    /// being parsed: the enclosing nominal.s sole region parameter while a
+    /// being parsed: the enclosing nominal's sole region parameter while a
     /// `struct_decl` or `enum_decl` body is being read, and `None`
     /// everywhere else, where the brand resolves to the entry heap's store
     /// region.

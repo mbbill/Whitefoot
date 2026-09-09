@@ -712,8 +712,8 @@ region block that most closely encloses it, and a loop body is one",
 
     /// [FORM-8] over one `fn_decl` or `fn_sig` boundary.
     ///
-    /// A region name is written exactly where the same region is meant at two
-    /// or more positions of the declaration, or where an output position names
+    /// Invariant type brands are named even at one input position. Other
+    /// regions are written where two positions share them or an output names
     /// a region no parameter position names. `region_params` then lists
     /// exactly those names, once each, in order of first written occurrence.
     pub(super) fn check_declaration_region_spelling(&self, node: NodeId) -> Result<(), CheckStop> {
@@ -765,7 +765,8 @@ the result shares, or a region parameter of its own that the caller supplies",
         for (position, name) in inputs.iter().chain(outputs.iter()) {
             let related = counts.get(name.as_str()).copied().unwrap_or_default() >= 2;
             let caller_chosen = !input_names.contains(&name.as_str());
-            if !related && !caller_chosen {
+            let invariant = self.tree.production(*position)? == Production::Targ;
+            if !related && !caller_chosen && !invariant {
                 return self.issue_node(
                     SemanticRule::Form8,
                     *position,

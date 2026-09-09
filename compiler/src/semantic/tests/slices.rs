@@ -6,6 +6,90 @@ use super::super::model::{
 use super::{assert_rule, assert_rule_kind, assert_unsupported, with_semantics};
 
 #[test]
+fn region_substitution_does_not_implicitly_shorten_direct_view_values() {
+    let prefix = "const data: array<u8, 2> =[7_u8, 9_u8];\n\nfn choose['r](first: own Slice<'r, u8>, second: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {\n  return first;\n}\n\n";
+    let distinct = format!(
+        "{prefix}command fn main() -> status: own ExitStatus pure {{\n  region {{\n    let first = slice_of(&data);\n    region {{\n      let second = slice_of(&data);\n      let result = choose(first: first, second: second);\n    }}\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+    );
+    assert_rule_kind(distinct.as_bytes(), SemanticRule::Type5, |kind| {
+        matches!(kind, SemanticIssueKind::TypeMismatch { .. })
+    });
+    let same = format!(
+        "{prefix}command fn main() -> status: own ExitStatus pure {{\n  region {{\n    let first = slice_of(&data);\n    let second = slice_of(&data);\n    let result = choose(first: first, second: second);\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+    );
+    with_semantics(same.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        )
+    });
+}
+
+#[test]
+fn invariant_brands_require_exact_view_types_in_either_parameter_order() {
+    for reversed in [false, true] {
+        let (parameters, arguments) = if reversed {
+            (
+                "view: own Slice<'s, u8>, marker: &Mark<'s>",
+                "view: view, marker: &marker",
+            )
+        } else {
+            (
+                "marker: &Mark<'s>, view: own Slice<'s, u8>",
+                "marker: &marker, view: view",
+            )
+        };
+        let source = format!(
+            "struct Mark['s] {{\n  value: u64;\n}}\n\nconst data: array<u8, 2> =[7_u8, 9_u8];\n\nfn inspect['s]({parameters}) -> result: own u64 pure {{\n  return 0_u64;\n}}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  region {{\n    let view = slice_of(&data);\n    region 'inner {{\n      let marker = Mark<'inner>(value: 1_u64);\n      region {{\n        let result = inspect({arguments});\n      }}\n    }}\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        assert_rule_kind(source.as_bytes(), SemanticRule::Type5, |kind| {
+            matches!(kind, SemanticIssueKind::TypeMismatch { .. })
+        });
+    }
+}
+
+#[test]
+fn matching_view_brands_preserve_the_explicit_child_view_capability_boundary() {
+    let source = br#"struct Mark['s] {
+  value: u64;
+}
+
+const data: array<u8, 2> =[7_u8, 9_u8];
+
+fn inspect['s](marker: &Mark<'s>, view: own Slice<'s, u8>) -> result: own u64 reads(view) {
+  return len_of(view);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  region {
+    let parent = &data;
+    region 'inner {
+      let view = slice_of(&deref(parent));
+      let marker = Mark<'inner>(value: 1_u64);
+      region {
+        let result = inspect(marker: &marker, view: view);
+        if result == 2_u64 {
+          return exit_status(code: 0_u8);
+        }
+      }
+    }
+  }
+  return exit_status(code: 1_u8);
+}
+"#;
+    assert_unsupported(source, UnsupportedSemanticFeature::RegionsAndBorrows);
+    let direct = std::str::from_utf8(source)
+        .unwrap()
+        .replace("slice_of(&deref(parent))", "slice_of(&data)");
+    with_semantics(direct.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        )
+    });
+}
+
+#[test]
 fn slices_retain_type_source_and_access_operations() {
     let source = br#"const bytes: FixedVector<u8, 2> =[4_u8, 9_u8];
 

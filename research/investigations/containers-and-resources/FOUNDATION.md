@@ -12,11 +12,13 @@ path. Compare executable cost, including initialization, lookup, mutation,
 allocation, movement, peak storage, tail work and necessary metadata. A compact
 proof or a small kernel inventory is not a substitute for those results.
 
-**Keep ordinary valid values as the baseline; implement general full arrays
-through two consuming conversions as the next bounded experiment.** The
-[selected full-array experiment](#selected-full-array-experiment) removes a
-specific completed-value restriction and tests its actual ownership and layout
-cost. Projected slot layout remains the selected sparse-storage experiment;
+**Keep ordinary valid values as the baseline and test ordinary reusable helper
+boundaries before selecting a new storage permission.** The
+[full-array experiment](#selected-full-array-experiment) now has
+[native ownership and layout evidence](../../experiments/container-representation/foundation/RESULTS.md#dense-full-array-operations).
+The [generic brand boundary](#generic-brand-parameters) and current owner routing
+below are separate correctness and composability gaps. Projected slot layout
+remains the selected sparse-storage experiment;
 a general library resource-permission system remains its bounded challenger,
 not the public foundation. Neither choice claims coverage of every system
 container.
@@ -90,7 +92,7 @@ a matched executable comparison before it can support a performance conclusion.
 
 | Family | Critical operation chain | Current route to test | Ceiling or missing evidence |
 | --- | --- | --- | --- |
-| Full arrays and fixed sequences | Construct non-copy elements, index, replace, consume, clean up | General-element fixed runs; selected full-array conversion experiment | Execute the generalized array path, verify dense layout and transfer cost; final-place construction remains separate |
+| Full arrays and fixed sequences | Construct non-copy elements, index, replace, consume, clean up | General-element fixed runs and complete owning arrays, with two consuming conversions | Native dense-layout and ownership evidence exists; residual transfers and final-place construction remain separate |
 | Growable vector and strings | Reserve, append, refuse without losing input, relocate, drain | Store-backed run with source-written allocation and movement | No current realloc row; initialization/copy costs; general helper contracts |
 | Deque and ring | Both ends, wrap, two-span processing, grow/rebase | Existing circular window | Two-span views and helper provenance; extra work when a consumer needs contiguous data |
 | HashMap and HashSet | Collisions, duplicate insertion, lookup, delete, reuse, rehash | Initialized optional entries; initialized byte/control and copy-payload alternatives | Ordinary complete trace and generic payload/behavior coverage; sparse layout cost |
@@ -143,7 +145,13 @@ comparators, not acceptance authority for WF.
 
 Generic behavior is a separate axis: hash/equality/comparison and callbacks must
 have an admitted invocation mechanism and effects. A concrete u64 table does not
-establish a reusable arbitrary-key library. Memory safety also differs from
+establish a reusable arbitrary-key library. FN-2/3 provide built-in numeric and
+ownership bounds; FN-5 supplies no user behavior invocation through `contract`
+or `conform`. A generic storage/probing core with concrete caller-side hash and
+equality is a candidate decomposition, not a completed generic lookup API.
+Precomputed hashes do not remove collision equality, and the cost of transferring
+candidates across that boundary still needs a complete operation witness.
+Memory safety also differs from
 ordinary map correctness: fully initialized indexed storage can be memory-safe
 without proving the entire abstract map algorithm. Prove additional semantic
 properties when a contract or partial-operation domain actually needs them, and
@@ -447,8 +455,9 @@ Owner routing has a separate correctness gap in ordinary reusable mutation,
 including mutation through a borrow. The counterexamples and candidate boundary
 below are not covered by the native Box writeback or transfer measurements.
 
-Next, execute the full-array contract below through the same typed element,
-place, ownership, and release machinery. Then prototype projected layout for
+The full-array contract below now executes through the same typed element,
+place, ownership, and release machinery. Preserve its native controls while
+repairing generic brand parameters and current-owner transfer. Prototype projected layout for
 ordinary slot enums against the native owning sparse control. Keep that sparse
 experiment's construction, matching, transfer and cleanup on general valid-value
 operations, with one backing, compact control and payload planes, runtime-indexed
@@ -537,8 +546,10 @@ fixed tokens +0/-0, writer operation spellings +2/-0, kernel declaration records
 +2/-0, nominal families +0/-0, and exceptions +0/-0. Its selection ground is
 evidence-selected: existing flat-array and general-element-run implementations
 and the retained layout/transfer controls identify a concrete full-value gap.
-They support this bounded experiment, not a measured performance victory for
-the unimplemented conversion. Under META-6 the safety consequences above are
+They support this bounded experiment. The subsequent
+[native result](../../experiments/container-representation/foundation/RESULTS.md#dense-full-array-operations)
+establishes dense layout, correct ownership and remaining transfer costs, not
+throughput parity. Under META-6 the safety consequences above are
 conditional deductions and the representation/interface choice is provisional.
 
 The affected rules are TYPE-2 (complete element domain), TYPE-4 (scope its
@@ -555,6 +566,53 @@ and the other CALL rules are unchanged dependencies, not
 new permissions. The array-retirement proposal in the historical S34 design is
 superseded for this choice. The existing META-5 editorial question stays open;
 this amendment does not redefine its evidence/minimality labels.
+
+### Generic brand parameters
+
+A reusable reader of `SmallBytes<'s>` must accept the caller's exact store brand
+without borrowing a provider it does not use. The earlier FORM-8 multiplicity
+rule rejects a named `'s` in a single input, while TYPE-2 requires a source
+nominal's brand arguments in type position. For built-in `Vector<u8>`, elision
+instead selects the concrete entry heap under PROV-1. Elision therefore cannot
+stand for an arbitrary brand in either case. This is a language-rule conflict,
+not an inability to recover a runtime container length.
+
+The selected amendment distinguishes invariant type brands from loan regions.
+A formal brand stays named even at one input position. The input's explicit
+type structure determines each actual brand, including multiple nominal region
+arguments, nested explicit type arguments and PROV-1's declaration-local elided
+slots. A type parameter remains opaque; its eventual argument adds no new
+formal positions. Matching a nominal's name does not inspect its fields or
+unfold a recursive ownership graph. A constructor applies the same correspondence
+to its selected variant's direct declared field types, without an expected type.
+
+Exact identity takes precedence over loan adaptation. If one formal names both
+an input brand and an input loan, the actual brand fixes it and every actual loan must outlive
+that fixed region. No parameter order may shorten the brand. Formals appearing
+only in non-brand positions retain their previous region judgment. Complete type
+equality is checked after the final substitution: outlives alone does not convert
+one direct view type into another. Explicit VIEW-2 formation remains the route
+for a shorter view in the language. The checked `slice_of(&deref(parent))`
+counterexample still reaches the compiler's `RegionsAndBorrows` capability gap;
+this amendment does not implement that existing formation rule. Stored-content
+restrictions and provider-release bounds remain intact.
+The old single-region extractor is insufficient even after fixing spelling:
+`Pair<'a, 'b>` and `Vector<'a, Vector<'b, u8>>` require both positions.
+
+Rejected alternatives are an unused provider parameter, which falsely ties a
+reader's API to allocation capability; equating its loan with its backing brand,
+which requires an unnecessarily long loan; and expanding concrete generic types
+or nominal fields, which makes the boundary depend on instantiation or recursive
+representation. An anonymous brand syntax could express genericity but is not
+needed to resolve this conflict and would introduce another grammar choice.
+
+The conformance additions pin a single-brand reader, multi-brand field and
+parameter correspondence, repeated-brand mismatch and the short-loan refusal.
+Compiler tests must additionally cover parameter order, opaque generic arguments,
+recursive nominals and inherited field brands. This amendment adds no grammar,
+kernel operation or runtime metadata, and claims no new optimization. Inline
+variants whose operands supply no brand, composite Result measure postconditions,
+ordinary owning-element spill and compact enum layout remain independent gaps.
 
 ### Current owner-routing gap
 

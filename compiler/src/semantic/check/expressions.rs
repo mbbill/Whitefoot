@@ -1940,7 +1940,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .get(field)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
             let ty = operand.expression.ty();
-            let Some(actual) = self.written_type_region(ty)? else {
+            let matches = self.match_type_regions(&site.shape.field_regions[field], ty)?;
+            let Some((_, actual)) = matches
+                .into_iter()
+                .find(|(position, _)| position.formal == *formal)
+            else {
                 return self.issue_node(
                     SemanticRule::Type5,
                     atom,

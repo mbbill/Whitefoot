@@ -805,24 +805,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         let mut constructors = Vec::with_capacity(variants.len());
         for fields in variants {
+            let field_regions = fields
+                .iter()
+                .map(|field| self.type_region_shape(field.ty, None))
+                .collect::<Result<Vec<_>, _>>()?;
             let mut determining_field = vec![None; region_parameters.len()];
-            for (index, field) in fields.iter().enumerate() {
-                let Some(region) = self.written_type_region(field.ty)? else {
-                    continue;
-                };
-                let Some(slot) = region_parameters
-                    .iter()
-                    .position(|parameter| *parameter == region)
-                else {
-                    continue;
-                };
-                if determining_field[slot].is_none() {
-                    determining_field[slot] = Some(index);
+            for (index, shape) in field_regions.iter().enumerate() {
+                for (slot, formal) in region_parameters.iter().enumerate() {
+                    if determining_field[slot].is_none() && shape.determines(*formal) {
+                        determining_field[slot] = Some(index);
+                    }
                 }
             }
             constructors.push(super::ConstructorShape {
                 fields: fields.iter().map(|field| field.name.clone()).collect(),
                 determining_field,
+                field_regions,
             });
         }
         Ok(constructors)
@@ -925,15 +923,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .get(template_index)
             .cloned()
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let kind = match template.role {
-            DeclarationRole::Struct => CheckedNominalKind::Struct {
-                fields: self.parse_struct_fields(template.node, &substitution)?,
-            },
-            DeclarationRole::Enum => CheckedNominalKind::Enum {
-                variants: self.parse_enum_variants(template.node, &substitution)?,
-            },
-            _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+        // [PROV-1] an elided stored brand belongs to this declaration's
+        // sole region, not a caller's enclosing nominal. Zero/multiple
+        // regions deliberately mask an outer default with the entry heap.
+        let brand = match substitution.region_arguments() {
+            [(_, region)] => Some(*region),
+            _ => None,
         };
+        let outer_brand = self.elided_store_brand.replace(brand);
+        let kind = (|| {
+            Ok(match template.role {
+                DeclarationRole::Struct => CheckedNominalKind::Struct {
+                    fields: self.parse_struct_fields(template.node, &substitution)?,
+                },
+                DeclarationRole::Enum => CheckedNominalKind::Enum {
+                    variants: self.parse_enum_variants(template.node, &substitution)?,
+                },
+                _ => return Err(CheckStop::from(SemanticCompilerFailure::InvalidResolution)),
+            })
+        })();
+        self.elided_store_brand.set(outer_brand);
+        let kind = kind?;
         self.nominals
             .get_mut(id.0 as usize)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?

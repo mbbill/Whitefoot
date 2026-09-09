@@ -119,6 +119,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 name: declaration.spelling().to_owned(),
                 mode,
                 ty,
+                region_shape: self.type_region_shape(ty, Some(ty_node))?,
             });
         }
         Ok(parameters)

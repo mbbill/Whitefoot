@@ -1893,11 +1893,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(true);
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
+        let arguments = &arguments[self.user_call_region_prefix(&arguments)?..];
         if arguments.len() < callee_parameters.len() {
             return Ok(true);
         }
         let mut position = 0;
-        for (parameter, argument) in callee_parameters.iter().zip(&arguments) {
+        for (parameter, argument) in callee_parameters.iter().zip(arguments) {
             if !matches!(parameter, GenericParameter::Type { .. }) {
                 continue;
             }
@@ -2124,13 +2125,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(false);
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
+        let arguments = &arguments[self.user_call_region_prefix(&arguments)?..];
         if arguments.len() != callee_parameters.len() {
             return Ok(false);
         }
         for ((caller_parameter, callee_parameter), argument) in caller_parameters
             .iter()
             .zip(callee_parameters)
-            .zip(&arguments)
+            .zip(arguments)
         {
             let repeats = match (caller_parameter, callee_parameter) {
                 (
@@ -2305,15 +2307,43 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         template: &FunctionTemplate,
         caller: &GenericSubstitution,
     ) -> Result<GenericSubstitution, CheckStop> {
-        // [DIAG-1] a user-generic call's argument list is FN-2's.
+        let leading_regions = match self.tree.first_child_with(node, Production::Targs)? {
+            Some(targs) => {
+                self.user_call_region_prefix(&self.tree.children_with(targs, Production::Targ)?)?
+            }
+            None => 0,
+        };
+        // [FORM-8] user calls write caller-chosen regions before type/const
+        // arguments. [DIAG-1] their generic argument list is FN-2's.
         self.generic_substitution(
             node,
             &template.generic_parameters,
             caller,
-            true,
             SemanticRule::Fn2,
-            0,
+            leading_regions,
         )
+    }
+
+    /// The shared split for user-call instantiation, region binding, and
+    /// syntactic generic-cycle judgments. Kernel rows keep their own table
+    /// argument order and do not use this function [FORM-8, FN-2, FN-6].
+    pub(super) fn user_call_region_prefix(&self, arguments: &[NodeId]) -> Result<usize, CheckStop> {
+        let mut count = 0;
+        for argument in arguments {
+            if self
+                .tree
+                .first_child_with(*argument, Production::Type)?
+                .is_some()
+                || self
+                    .tree
+                    .first_child_with(*argument, Production::Const)?
+                    .is_some()
+            {
+                break;
+            }
+            count += 1;
+        }
+        Ok(count)
     }
 
     /// One nominal instance's complete argument list: its region arguments,
@@ -2374,7 +2404,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 node,
                 parameters,
                 caller,
-                false,
                 SemanticRule::Type5,
                 written_parameters.len(),
             )?
@@ -2466,13 +2495,11 @@ region parameter for",
         node: NodeId,
         parameters: &[GenericParameter],
         caller: &GenericSubstitution,
-        allow_trailing_regions: bool,
         argument_rule: SemanticRule,
         leading_regions: usize,
     ) -> Result<GenericSubstitution, CheckStop> {
         if parameters.is_empty() {
             if leading_regions == 0
-                && !allow_trailing_regions
                 && self
                     .tree
                     .first_child_with(node, Production::Targs)?
@@ -2519,9 +2546,7 @@ region parameter for",
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
         let expected = parameters.len().saturating_add(leading_regions);
-        if (allow_trailing_regions && arguments.len() < expected)
-            || (!allow_trailing_regions && arguments.len() != expected)
-        {
+        if arguments.len() != expected {
             return self.issue_node(
                 argument_rule,
                 node,
@@ -2531,8 +2556,9 @@ region parameter for",
                 ),
             );
         }
-        // [S20, FORM-8] the leading members are the nominal's region
-        // arguments, already read by `nominal_region_arguments`.
+        // [FORM-8] the leading region members are checked by the callee
+        // class's own nominal/call region judgment, separately from these
+        // type and const arguments.
         let arguments = arguments
             .into_iter()
             .skip(leading_regions)

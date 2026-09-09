@@ -1,0 +1,27 @@
+struct Marker['s] {
+  value: u64;
+}
+
+struct Pair['a, 'b] {
+  first: Marker<'a>;
+  second: Marker<'b>;
+}
+
+fn same_brand['s](pair: &Pair<'s, 's>) -> value: own u64 reads(pair.first.value) {
+  return deref(pair).first.value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "TYPE-5: two occurrences of one formal brand inside a single parameter type must match exactly. The outer region outliving the inner one does not permit replacing two distinct nominal brands with one.";
+  region 'outer {
+    let first = Marker<'outer>(value: 7_u64);
+    region 'inner {
+      let second = Marker<'inner>(value: 9_u64);
+      let pair = Pair(first: move first, second: move second);
+      region {
+        let value = same_brand(pair: &pair);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,6 +1,114 @@
 use super::{compile, compile_and_run, compile_rejection, emitted_function};
 
 #[test]
+fn ordinary_generic_brand_readers_execute_inline_heap_and_extent_values() {
+    let source = br#"enum SmallBytes<const n: u64>['s] {
+  Inline(values: FixedVector<u8, n>);
+  Spilled(values: Vector<'s, u8>);
+}
+
+fn checksum<const n: u64>['s](bytes: &SmallBytes<'s, n>) -> result: own u64 reads(bytes) {
+  let result = 0_u64;
+  match deref(bytes) {
+    Inline(values: run) => {
+      let length = len_of(deref(run));
+      for (index in 0_u64..length) {
+        let byte = deref(run)[index];
+        let word = cvt::<u8, u64>(byte);
+        let prefix = result *wrap 31_u64;
+        set result = prefix +wrap word;
+      }
+    }
+    Spilled(values: run) => {
+      let length = len_of(deref(run));
+      for (index in 0_u64..length) {
+        let byte = deref(run)[index];
+        let word = cvt::<u8, u64>(byte);
+        let prefix = result *wrap 31_u64;
+        set result = prefix +wrap word;
+      }
+    }
+  }
+  return result;
+}
+
+fn read<const n: u64>['s](bytes: &SmallBytes<'s, n>) -> result: own u64 reads(bytes) {
+  return checksum::<n>(bytes: bytes);
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: run) => {
+        set run = place_back(vector: move run, value: 7_u8);
+        set run = place_back(vector: move run, value: 11_u8);
+        let spilled = Spilled<4>(values: move run);
+        region {
+          let actual = read::<4>(bytes: &spilled);
+          if actual != 228_u64 {
+            return exit_status(code: 1_u8);
+          }
+        }
+      }
+    }
+  }
+  region 'a {
+    let store = arena_frame::<32, 8, 'a>();
+    region {
+      match arena_vector::<u8>(store: &uniq store, count: 4_u64) {
+        None() => {
+          return exit_status(code: 71_u8);
+        }
+        Some(value: run) => {
+          set run = place_back(vector: move run, value: 13_u8);
+          set run = place_back(vector: move run, value: 17_u8);
+          let spilled = Spilled<4>(values: move run);
+          let inline = fixed_vector::<u8, 4>();
+          set inline = place_back(vector: move inline, value: 19_u8);
+          set inline = place_back(vector: move inline, value: 23_u8);
+          let (rest, first) = take_front(vector: move inline);
+          let rotated = place_back(vector: move rest, value: first);
+          let small = Inline<'a, 4>(values: move rotated);
+          region {
+            let actual = read::<4>(bytes: &spilled);
+            let local = read::<4>(bytes: &small);
+            if actual != 420_u64 {
+              return exit_status(code: 2_u8);
+            }
+            if local != 732_u64 {
+              return exit_status(code: 3_u8);
+            }
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        // External visibility plus noinline preserves an ordinary pointer
+        // ABI, including the helper-to-helper call, under host optimization.
+        let module = retain_nested_run_calls(&super::emit_lowered(source, overlap))
+            .replace("define internal ", "define ")
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        let observer = super::owned_places::allocation_observer(1, 0);
+        let output = super::compile_link_and_run(&module, Some(&observer), &[]);
+        assert_eq!(output.status.code(), Some(0), "{overlap:?}: {output:?}");
+        assert_eq!(output.stdout, b"A1;F1;", "{overlap:?}: {output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+}
+
+#[test]
 fn constant_typed_places_execute_shared_calls_and_nested_projections() {
     let source = br#"struct Entry {
   tag: u64;

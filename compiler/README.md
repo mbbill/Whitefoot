@@ -620,8 +620,26 @@ of which names `'s`, is still built `Ticket<'a>(count: 7_u64)`. The instance is
 therefore formed *after* the operands are checked and not before — the shape a
 construct needs beforehand is read off the declaration's own symbolic instance,
 whose region arguments are its region parameters — and construction still
-consults no expected nominal type. Where the axis leaves the
-program is the lowering: a region names a store for the proof and nothing at run
+consults no expected nominal type.
+
+A single-input reader may name an invariant brand independently of its loan:
+`fn length['s](values: &Vector<'s, u8>) -> count: own u64 reads(values)` needs
+no unused provider parameter. Its brand is determined by the actual type; its
+single loan lifetime remains elided. Function parameters and constructor fields
+match every explicit brand position, including multi-brand nominals, nested type
+arguments and PROV-1's inherited field brands. They do not unfold nominal fields
+or discover new formals inside a concrete argument substituted for opaque `T`.
+All invariant occurrences of one formal must agree. An input loan sharing that
+formal must outlive its fixed brand, regardless of parameter order; it cannot
+shorten the brand. Complete parameter types are checked after the final
+substitution, so a direct view requires the exact resulting view type rather
+than implicit lifetime conversion. The language's explicit shared child-view
+route `slice_of(&deref(parent))` still reaches `Unsupported(RegionsAndBorrows)`;
+the brand repair does not implement that separate capability. Empty variant
+construction still requires any brand its operands do not supply.
+
+Where the axis leaves the program is the lowering: a region names a store for
+the proof and nothing at run
 time, so two instances that differ only in their region arguments — and in
 nothing a run time can see, a run's release class included — are **one IR
 nominal**, which is what lets a callee's own formal-region instance and a
