@@ -25,7 +25,7 @@ case "$host" in
         floor=wf_floor_windows.c
         leaf=prim_windows.c
         platform_flags=
-        libraries=-lpsapi
+        libraries='-lpsapi -lws2_32'
         # The frozen recovered control has no qualified Windows port.
         modes='before candidate'
         references=before
@@ -49,6 +49,21 @@ cp fir.wf fir_direct.wf fir_host.ll fir_bench.c fir_native.c fir_native.h \
     fir_check.c formal-screen.sh runtime.c runtime.h runtime_events.h "$out/source/"
 cp -R "$root/compiler/src/backend/sched" "$out/source/"
 cp "$root/compiler/src/backend/$floor" "$out/source/"
+if test -n "$exe"; then
+    # The generated Windows object reaches host diagnostics even for compute.
+    # Keep current host/completion sources identical across controls, while
+    # compiling each with its own scheduler headers and private layout.
+    for destination in "$out/source" "$out/baseline-source/compiler/src/backend"; do
+        mkdir -p "$destination/completion"
+        cp "$root/compiler/src/backend/windows_runtime.h" "$destination/"
+        cp "$root"/compiler/src/backend/completion/*.h "$destination/completion/"
+        for unit in windows_runtime.c completion/runtime.c completion/wait_windows.c \
+            completion/file_adapter.c completion/file_windows.c completion/bridge.c \
+            completion/windows_iocp.c; do
+            cp "$root/compiler/src/backend/$unit" "$destination/$unit"
+        done
+    done
+fi
 cp "$WFC" "$out/whitefootc"
 {
     git rev-parse HEAD
@@ -80,6 +95,7 @@ printf '%s\n' "$CC $flags; recovered additionally -DWF_COMPUTE_STATS=0 -DWF_COMP
 "$WFC" --par --emit-llvm fir.wf fir_direct.wf -o "$out/module.ll"
 "$WFC" --par fir.wf fir_direct.wf -o "$out/command$exe"
 sed -e 's/@main(/@wf_research_fir_command_main(/g' \
+    -e 's/@wmain(/@wf_research_fir_windows_command_main(/g' \
     -e 's/@wf__main_body(/@wf_research_fir_command_body(/g' "$out/module.ll" > "$out/host.ll"
 cat fir_host.ll >> "$out/host.ll"
 # Deliberate word splitting: flags is the fixed compiler argument list above.
@@ -94,6 +110,14 @@ cat fir_host.ll >> "$out/host.ll"
 for mode in $modes; do
     runtime="$root/compiler/src/backend"
     if test "$mode" = before; then runtime="$out/baseline-source/compiler/src/backend"; fi
+    set --
+    if test -n "$exe"; then
+        for unit in windows_runtime.c completion/runtime.c completion/wait_windows.c \
+            completion/file_adapter.c completion/file_windows.c completion/bridge.c \
+            completion/windows_iocp.c; do
+            set -- "$@" "$runtime/$unit"
+        done
+    fi
     if test "$mode" = recovered; then
         # The existing, unchanged POSIX control is a baseline only.
         # shellcheck disable=SC2086
@@ -105,7 +129,7 @@ for mode in $modes; do
         "$CC" $flags -DWF_SHARED_CONTROL "-DFIR_RUNTIME=\"$mode\"" fir_bench.c \
             "$runtime/$floor" "$runtime/sched/core.c" \
             "$runtime/sched/$leaf" "$runtime/sched/entry.c" \
-            "$out/wf.o" "$out/native.o" $libraries -o "$out/$mode$exe"
+            "$@" "$out/wf.o" "$out/native.o" $libraries -o "$out/$mode$exe"
     fi
 done
 if test -n "$exe"; then cpus=$NUMBER_OF_PROCESSORS; else cpus=$(getconf _NPROCESSORS_ONLN); fi

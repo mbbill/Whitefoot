@@ -5,6 +5,9 @@
  */
 #define _POSIX_C_SOURCE 200809L
 #define _DARWIN_C_SOURCE 1
+#if defined(_WIN32)
+#define _CRT_SECURE_NO_WARNINGS 1
+#endif
 #include <errno.h>
 #include <inttypes.h>
 #include <stdint.h>
