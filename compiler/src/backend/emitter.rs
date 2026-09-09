@@ -1525,10 +1525,20 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             }
             self.emit_block_parameters(block_id, block)?;
             if index == 0 {
-                for ((value, _), parameter) in
-                    self.function.parameters().iter().zip(abi.parameters())
-                {
-                    if parameter.is_indirect() {
+                // A result can alias any consumed caller input. Snapshot
+                // every other indirect input first, then initialize the one
+                // entry group using the result. Scalar/address parameters
+                // already arrived as SSA values before either pass.
+                for writes_result in [false, true] {
+                    for ((value, _), parameter) in
+                        self.function.parameters().iter().zip(abi.parameters())
+                    {
+                        let uses_result = self
+                            .result_slot
+                            .is_some_and(|slot| self.storage.slot(*value) == Some(slot));
+                        if !parameter.is_indirect() || uses_result != writes_result {
+                            continue;
+                        }
                         let destination = self.value_place(*value)?;
                         self.copy_storage(
                             parameter.ty(),

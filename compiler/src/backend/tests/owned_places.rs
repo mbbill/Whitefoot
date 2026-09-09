@@ -198,6 +198,72 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn an_owned_parameter_uses_same_or_distinct_result_storage_after_entry_transfer() {
+    let source = br#"fn append(items: own FixedVector<u64, 16>, value: own u64, watch: &u64) -> updated: own FixedVector<u64, 16> reads(items, watch), writes(items) contract {
+  requires room_of(items) >= 1_u64;
+  ensures len_of(updated) == len_of(items) + 1_u64;
+} {
+  let bias = deref(watch);
+  let adjusted = value +wrap bias;
+  let filled = place_back(vector: move items, value: adjusted);
+  return move filled;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let watch = 5_u64;
+  let same = fixed_vector::<u64, 16>();
+  region {
+    set same = append(items: move same, value: 12_u64, watch: &watch);
+    let vacant = fixed_vector::<u64, 16>();
+    let distinct = append(items: move vacant, value: 24_u64, watch: &watch);
+    let same_count = len_of(same);
+    let distinct_count = len_of(distinct);
+    if same_count != 1_u64 {
+      return exit_status(code: 1_u8);
+    }
+    if distinct_count != 1_u64 {
+      return exit_status(code: 2_u8);
+    }
+    if same[0_u64] != 17_u64 {
+      return exit_status(code: 3_u8);
+    }
+    if distinct[0_u64] != 29_u64 {
+      return exit_status(code: 4_u8);
+    }
+    if watch != 5_u64 {
+      return exit_status(code: 5_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let module = super::emit_lowered(source, super::OverlapLowering::Off);
+    let append = super::emitted_function(&module, "append");
+    assert!(!append.contains("alloca"), "{append}");
+    assert_eq!(append.matches("call void @llvm.memmove.").count(), 1);
+    let main = super::emitted_function(&module, "main");
+    let calls = main
+        .lines()
+        .filter_map(|line| line.split_once("@wf_append(").map(|(_, tail)| tail))
+        .map(|arguments| {
+            let mut arguments = arguments.split(',').map(str::trim);
+            let result = arguments.next().expect("result pointer");
+            let input = arguments.next().expect("input pointer");
+            result == input
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        calls.contains(&true),
+        "exercise a consumed input/result alias"
+    );
+    assert!(
+        calls.contains(&false),
+        "exercise an independent result destination"
+    );
+    assert_success(&retain_calls(&module));
+}
+
+#[test]
 fn returned_parameter_snapshots_precede_result_alias_writes() {
     let source = br#"struct Row {
   value: u64;
@@ -253,9 +319,10 @@ command fn main() -> status: own ExitStatus pure {
     ] {
         let module = super::emit_lowered(source, overlap);
         // The call inside relay can place its result in its consumed second
-        // input's backing. Retained calls keep the callee's parameter-copy
-        // order observable; constructing into that backing before snapshotting
-        // the second input changes the branch and returns 99 instead of 11.
+        // input's backing while choose returns its first input. Retained calls
+        // keep snapshot ordering observable: save the second input privately
+        // before the first input initializes result storage, or the branch
+        // changes and returns 99 instead of 11.
         assert_success(&retain_calls(&module));
     }
 }

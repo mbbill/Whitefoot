@@ -22,15 +22,28 @@ pub(super) fn returned_storage_slot(
         }
     }
     let returned = returned?;
-    // The caller may reuse a consumed argument's backing for the result.
-    // Every indirect input must therefore reach private storage before a
-    // result write can overwrite any other, not-yet-snapshotted input. This
-    // excludes a whole coalesced group, including updates and phi transfers
-    // descended from a parameter, rather than only literal parameter returns.
-    if function
+    let mut parameters = function
         .parameters()
         .iter()
-        .any(|(value, _)| storage.slot(*value) == Some(returned))
+        .enumerate()
+        .filter(|(_, (value, _))| storage.slot(*value) == Some(returned));
+    let Some((ordinal, _)) = parameters.next() else {
+        return Some(returned);
+    };
+    // All other indirect inputs reach private storage before this group's
+    // entry transfer writes the result. The result may alias any consumed
+    // argument, not necessarily this parameter. Keep that last transfer:
+    // the same ABI also admits an independent result destination.
+    // Source roles, complete CFG interference and exposed-storage exclusion
+    // remain independent prerequisites; a matching representation grants none.
+    let signature = function.source_signature()?;
+    if parameters.next().is_some()
+        || signature.parameters().get(ordinal) != Some(&crate::IrSourceMode::Own)
+        || signature.result() != crate::IrSourceMode::Own
+        || storage.is_exposed(returned)
+        || function.target_action().may_suspend()
+        || !function.overlaps().is_empty()
+        || function.completion_pipeline().is_some()
     {
         return None;
     }

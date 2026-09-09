@@ -3,8 +3,8 @@
 //! Source ownership is already checked and is not inferred here. A value gets
 //! independent backing unless complete CFG liveness proves that a selected
 //! update, edge transfer or alternative return can reuse backing whose old
-//! contents are dead. Returned groups containing entry parameters still need
-//! private backing while the prologue snapshots every indirect input.
+//! contents are dead. A returned group containing one owned entry parameter
+//! may use the result after every other indirect input reaches private storage.
 //! Projections and loads remain snapshots, never aliases. Exposed backing is
 //! not coalesced, and schedules whose reads can outlive an IR call keep every
 //! value separate until their actual retirement lifetimes are represented.
@@ -53,6 +53,7 @@ pub(super) fn is_stored_aggregate(
 pub(super) struct FunctionStoragePlan {
     values: Vec<Option<usize>>,
     slots: Vec<IrType>,
+    exposed: BTreeSet<usize>,
     /// A fresh binding can be the destination of its initializing value.
     /// The frame plan supplies this address's static or per-iteration backing.
     destinations: Vec<Option<IrValueId>>,
@@ -95,6 +96,10 @@ impl FunctionStoragePlan {
 
     pub(super) fn destination(&self, slot: usize) -> Option<IrValueId> {
         self.destinations.get(slot).copied().flatten()
+    }
+
+    pub(super) fn is_exposed(&self, slot: usize) -> bool {
+        self.exposed.contains(&slot)
     }
 
     /// Redirect a value's construction into the fresh place that consumes it.
@@ -312,10 +317,10 @@ impl FlowGraph {
             // on different edges does not by itself prove their storage dead:
             // all definitions, reads, drops and exposed addresses still take
             // part in the same interference check. If every returned group
-            // joins without an entry parameter, the emitter can omit its
-            // frame slot and return copy.
-            // Stored inputs retain their prologue snapshots, preserving the
-            // existing contract for a caller's consumed input/result alias.
+            // joins, the emitter can omit its frame slot and return copy.
+            // A group containing an entry parameter additionally needs the
+            // prologue's private-input-before-result ordering. Its input
+            // transfer remains; no caller input/result equality is assumed.
             let candidates = self
                 .blocks
                 .iter()
@@ -370,9 +375,17 @@ impl FlowGraph {
             }
         }
         let destinations = vec![None; slots.len()];
+        let exposed = self
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .filter_map(|instruction| instruction.exposed)
+            .filter_map(|value| values[value])
+            .collect();
         Ok(FunctionStoragePlan {
             values,
             slots,
+            exposed,
             destinations,
         })
     }
@@ -1089,6 +1102,8 @@ mod tests {
         };
         let plan = plan(&graph, 3);
         assert_ne!(plan.values[0], plan.values[2]);
+        assert!(plan.is_exposed(plan.values[0].expect("stored exposed input")));
+        assert!(!plan.is_exposed(plan.values[2].expect("stored update result")));
     }
 
     #[test]

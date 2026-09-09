@@ -86,8 +86,35 @@ stack high-water, memory traffic or elapsed time; the whole optimized module doe
 not become smaller in this comparison. Native live-value and slice cases prevent
 competing returns from overwriting still-observable contents. A separate input
 alias case protects parameter snapshots: result storage may alias a later caller
-input, so an entry-parameter group must not become the result destination during
-the earlier prologue copies. Unproved placement retains independent storage.
+input. Every other indirect input now reaches private storage before the one
+owned entry group sharing the result receives its entry transfer. The old
+counterexample returns 99 instead of 11 if the first input overwrites the second
+before its snapshot; making that result write the last entry transfer preserves
+the expected values. Exposed groups, groups containing multiple entry parameters,
+and functions with deferred uses remain excluded. Unproved placement retains
+independent storage.
+
+This ordering is a narrower mechanism than a new input/result ABI. The existing
+ABI still permits different input and result addresses, so the selected input's
+entry transfer remains. It also permits a result alias of a different consumed
+input, which a same-type-parameter count alone would exclude unnecessarily.
+All parameter snapshots precede body execution; the change only orders private
+destinations before the potentially aliased result destination.
+
+On the `9e731905` baseline, a retained helper appending one `u64` to an owned
+`FixedVector<u64, 16>` copied all 144 bytes into private storage and copied them
+back on return, even when its caller supplied the same input/result pointer.
+With the reordered prologue and eligible return group, it has one 144-byte entry
+transfer and no private aggregate slot. Exporting the helper and marking it
+`noinline` in both experimental LLVM modules, then compiling with Apple Clang
+21.0.0 `-O2` for arm64 macOS, retains these two full transfers versus one and
+reduces the helper's explicit stack reservation from 144 bytes to zero. The
+native compiler test checks both equal and distinct input/result pointers with
+a borrowed companion; the earlier two-input alias case checks the ordering.
+This removes one full transfer and the private slot; it is not zero-copy
+ownership transport or a timing result. The complete `families/priority.wf` push/pop
+functions are unchanged: their addressed local storage and multi-result
+transfers remain separate problems.
 
 ### Encoding the remaining snapshots
 

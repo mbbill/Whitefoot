@@ -340,9 +340,12 @@ pipeline's per-slot backing through retirement. This removes the intermediate
 result-to-owner transfer for those cases without input/result aliasing.
 Alternative local return values can also share the caller's result destination
 when the complete CFG conflict and exposed-address checks admit one storage
-group. A group containing an entry parameter stays private: otherwise its
-prologue copy could overwrite a later input whose backing the caller reused for
-the result. Parameter snapshots remain independent before body/result writes.
+group. A group containing one owned entry parameter can use that destination
+after every other indirect input has reached private storage. Its entry transfer
+runs last, so a result alias of any caller input cannot overwrite an unread
+argument. The transfer remains necessary when input and result addresses differ;
+this removes the private slot and return transfer, not every payload copy.
+Exposed groups and functions with deferred uses retain private parameter storage.
 An ordinary synchronous call's whole result may also reuse one consumed,
 same-typed aggregate input when the callee snapshots its inputs before writing,
 CFG liveness kills the prior content, and no borrow exposes that backing.
