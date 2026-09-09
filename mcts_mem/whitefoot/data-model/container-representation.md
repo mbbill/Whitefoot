@@ -16,7 +16,8 @@
 - User-call arguments retain their checked occurrence uses independently of
   their actual value identities. A direct borrow result retains its candidate
   actual argument; this relation may cover a wider place than the returned
-  suffix and supplies neither exact disjointness nor a complete loan lifetime.
+  suffix and supplies neither exact value identity, exact disjointness, nor a
+  complete loan lifetime.
   Absence of a candidate record does not imply that an owned view has no borrowed
   backing.
 - Distinguish full fixed arrays, initialized prefixes, and circular windows.
@@ -442,6 +443,16 @@
   and owner identities in an independent native observer. This is code-shape and
   behavior evidence, not elapsed-time parity or zero-copy construction.
   [Matched source, assembly and limits](../../../research/experiments/container-representation/foundation/RESULTS.md#dense-full-array-operations). (sourced)
+
+- 2026-09-09 (0e98bd79) pitfall: a shared borrowed result may point at immutable
+  storage instead of its candidate input. Reusing the input's value facts when
+  forwarding that result falsely admitted an array access: the input was zero,
+  but the returned constant was nine. Result holders now keep their own proof
+  identity; candidate paths remain loan ceilings. Negative helper, copied-holder,
+  reborrow and projected-field cases reject before lowering, while an intended
+  branch on the delivered value admits the valid access or returns normally.
+  [Proof counterexamples](../../../compiler/src/semantic/tests/requires.rs),
+  [Guarded native execution](../../../compiler/src/backend/tests/requires.rs). (code)
 
 - 2026-09-06 (d998dd0a) historical rationale: Selected general place/result-destination support as the first implementation,
   including the semantic field/index/cell/borrow support needed to turn the frozen
