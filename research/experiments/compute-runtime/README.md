@@ -24,6 +24,48 @@ Keep this control while it distinguishes recovery
 from the shared runtime; consolidate it into the compiler runtime and its tests,
 or remove it, when a qualified replacement makes the duplicate unnecessary.
 
+## Historical versus recovered pure-compute comparison
+
+The owner requested a report before selecting a production compute runtime.
+`make pure-compare OUT=<fresh-absolute-path>` builds the current compiler and
+compares the historical POSIX runtime at `9051576f` with frozen research
+`runtime.c` at `d858008f`. Both consume the same scalar WF object per workload.
+The [comparison report](../../investigations/compute-runtime/PURE-COMPUTE-COMPARISON.md)
+owns the source review, results and recommendation; this is an authorized
+historical comparison, not another maintained compiler implementation.
+
+`pure-compare-repairs.patch` applies only to exported scratch copies. It makes
+thief index reads sequentially consistent in both, makes old deque pointer
+cells atomic, and adds read-only historical observation adapters. The frozen
+originals remain in each artifact. These are **repaired variants**, not exact
+original-release timings. In particular the original research runtime still
+has the index-ordering issue; its earlier timings do not qualify that issue.
+
+The primary pair enables successful-steal counters in both runtimes. A separate
+research-off variant disables its counter, and a byte-identical research
+replica measures process noise. No capacity-budget overrides, SIMD, FMA or LTO
+are enabled. FIR host strings/statistics branches and final executable layout
+can differ; only the WF compute object is identical, not the entire executable.
+
+Five process rounds cover FIR at 4,096/65,536 samples and tiles 16/64/1,024,
+plus Mandelbrot's seven spatial/skew shapes at both sizes. Widths are 1/2/4
+where available; `PURE_WIDTHS` and `PURE_PASSES` select an explicit diagnostic
+subset. The saved plan is independently checked against all expected records.
+FIR checks every output/history bit against an independently qualified native
+kernel. Mandelbrot checks an ordered digest from the native independent-orbit
+oracle. Every process verifies actual pool participation; Mandelbrot's 4,096
+point default intentionally remains sequential. Its common exit observer's
+stderr write is included in whole-command time.
+
+`process.tsv` retains process wall/CPU/RSS/context switches; `summary.tsv`
+reports paired ratios without pooling unlike workloads. `raw/` retains FIR's
+first/warm core and cycle samples, counts and steals. These warm samples are
+not independent process repetitions. Sources, compiler, objects, binaries,
+host metadata and SHA-256 manifest accompany the logs. A green CI job means
+build/output/matrix checks passed, not performance acceptance. Four POSIX
+targets are measured; the unported research implementation cannot supply a
+Windows comparison. The report records that gap instead of inventing a port.
+
 ## Source and execution boundary
 
 The WF programs use the current `len_of` measure spelling. Their legacy

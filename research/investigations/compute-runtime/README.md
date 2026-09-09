@@ -1,6 +1,17 @@
 # Compute performance in the shared runtime
 
-## Current delivery and acceptance scope (2026-09-09)
+## Current owner direction (2026-09-09)
+
+Pause integration and optimization of the unified scheduler. First compare
+the historical main pure-compute runtime with the recovered research compute
+runtime, reporting performance, correctness, code quality, portability and
+integration tradeoffs. The owner reads that report before selecting and
+integrating a formal compute runtime. Earlier sections below record the unified
+experiment and its unresolved results; they do not authorize proceeding past
+this report-first boundary. The unified compiler implementation is preserved
+as an exact [research checkpoint](../io-model/UNIFIED-RUNTIME-CHECKPOINT.md).
+
+## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o
 program`, using the maintained shared runtime in `compiler/src/backend/sched/`.

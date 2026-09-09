@@ -54,6 +54,11 @@ endef
 
 force:
 
+.PHONY: pure-compare
+pure-compare: $(WFC)
+	OUT="$(OUT)" WFC="$(WFC)" CC="$(CC)" CXX="$(CXX)" sh pure-compare.sh build
+	OUT="$(OUT)" WFC="$(WFC)" CC="$(CC)" CXX="$(CXX)" sh pure-compare.sh run
+
 .PHONY: formal-screen
 formal-screen: $(WFC)
 	OUT="$(OUT)" WFC="$(WFC)" CC="$(CC)" sh formal-screen.sh

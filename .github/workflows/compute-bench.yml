@@ -20,6 +20,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  pure-runtime-comparison:
+    name: pure-comparison (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build common compiler and compare repaired historical runtimes
+        run: |
+          rustup default stable
+          rustc -vV | grep -Fx 'host: ${{ matrix.target }}'
+          export OUT="$RUNNER_TEMP/pure-runtime"
+          cargo build --locked --profile gate --bin whitefootc \
+            --manifest-path compiler/Cargo.toml --target-dir "$OUT/compiler"
+          export WFC="$OUT/compiler/gate/whitefootc"
+          export PURE_WIDTHS='1 2'
+          if test "$(getconf _NPROCESSORS_ONLN)" -ge 4; then PURE_WIDTHS='1 2 4'; fi
+          sh research/experiments/compute-runtime/pure-compare.sh build
+          sh research/experiments/compute-runtime/pure-compare.sh run
+      - name: Publish bounded comparison
+        if: always()
+        run: |
+          {
+            echo '## ${{ matrix.target }}: old / recovered pure compute'
+            echo 'Common WF object, scalar arithmetic; explicit correctness repairs to both frozen inputs. Old vs research matches steal counters; research-off isolates disabling them. Replica is byte-identical to research.'
+            echo 'Whole-process ratios include startup, computation and correctness checks. Above one favors stats-on research. Raw FIR logs retain per-call core/cycle timings; this panel does not select a production runtime or establish top-tier performance.'
+            echo '```text'
+            cat "$RUNNER_TEMP/pure-runtime/pure-compare/summary.tsv"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pure-comparison-${{ matrix.target }}
+          path: ${{ runner.temp }}/pure-runtime/pure-compare
+
   mandelbrot-command:
     name: ordinary-command (${{ matrix.target }})
     strategy:
