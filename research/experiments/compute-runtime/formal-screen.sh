@@ -220,6 +220,83 @@ summarize "$out/means.tsv" "$out/summary.tsv" && result=0 || result=$?
 summarize "$out/short-means.tsv" "$out/short-summary.tsv" || result=$?
 cat "$out/summary.tsv"
 cat "$out/short-summary.tsv"
+if test "$host" = Linux && test "$(uname -m)" = x86_64 && test "$cpus" -ge 4; then
+    # Old/recovered steady-state instructions match after removing relocation
+    # addresses, yet this small cell differs. Hold common WF/consumer text
+    # offsets fixed before attributing that difference to scheduler algorithms.
+    layout=$out/layout
+    mkdir "$layout"
+    ld -r "$out/candidate-host.o" "$out/wf.o" "$out/native.o" -o "$layout/common.o"
+    objcopy --rename-section .text=.wf_common "$layout/common.o"
+    objdump -t "$layout/common.o" > "$layout/common.symbol-table"
+    awk '$3=="F" && $4!="*UND*" {
+        n++; if($4!=".wf_common")bad=1
+        if($2!="w")print $5,$6
+    } END {exit bad || !n}' "$layout/common.symbol-table" > "$layout/required.unsorted"
+    sort "$layout/required.unsorted" > "$layout/required.symbols"
+    test -s "$layout/required.symbols"
+    head -n 1 "$out/means.tsv" > "$layout/means.tsv"
+    for mode in old recovered candidate replica; do
+        if test "$mode" = replica; then
+            cp "$layout/candidate" "$layout/replica"
+            cmp "$layout/candidate" "$layout/replica"
+            continue
+        fi
+        case "$mode" in
+            old) set -- "$out/old.c" "$out/control-observer.c";;
+            recovered) set -- -I"$out/source" "$out/research.c" "$out/control-observer.c";;
+            candidate) set -- "$out/source/sched/core.c" "$out/candidate-observer.c";;
+        esac
+        "$CC" $flags "$layout/common.o" "$out/source/$floor" \
+            "$out/source/sched/entry.c" "$out/source/sched/$leaf" "$@" \
+            -Wl,--section-start=.wf_common=0x200000 $libraries -o "$layout/$mode"
+        objdump -t "$layout/$mode" > "$layout/$mode.symbol-table"
+        objdump -h "$layout/$mode" > "$layout/$mode.sections"
+        awk '$2==".wf_common" {
+            n++; if($4!="0000000000200000")bad=1
+            if(!getline || $0!~/ALLOC/ || $0!~/CODE/)bad=1
+        } END {exit bad || n!=1}' "$layout/$mode.sections"
+        awk 'NR==FNR {required[$2]=$1; next}
+            $3=="F" && ($6 in required) {
+                if($4!=".wf_common" || $5!=required[$6])bad=1
+                seen[$6]++
+            }
+            END {for(name in required)if(seen[name]!=1)bad=1; exit bad}' \
+            "$layout/required.symbols" "$layout/$mode.symbol-table"
+        awk '$4==".wf_common" {print $1,$5,$6; n++} END {if(!n)exit 1}' "$layout/$mode.symbol-table" \
+            | sort > "$layout/$mode.symbols"
+        test -s "$layout/$mode.symbols"
+        if test "$mode" != old; then cmp "$layout/old.symbols" "$layout/$mode.symbols"; fi
+    done
+    cat > "$layout/conditions.txt" <<'TEXT'
+Diagnostic only: Linux x86-64, W4, n4096, tile16, 4096 warm calls, five pairs.
+The identical combined candidate host/WF/native object places its entire text
+at ELF-relative address 0x200000 in each image; symbol addresses and sizes are
+checked equal. Every image uses the internal candidate label; filenames and
+means.tsv identify its scheduler. The original unmodified panel remains above.
+Runtime/PLT/data layout and relocation bytes still differ; this does not prove
+that every instruction address or cache influence has been made identical.
+No fixed text address is added to production linking. Common text includes the
+serial result consumer: a change may alter inter-call idle time as well as core.
+TEXT
+    for pass in 0 1 2 3 4; do
+        order='old recovered candidate replica'
+        if test "$((pass%2))" = 1; then order='replica candidate recovered old'; fi
+        for mode in $order; do
+            log=$layout/$mode-p$pass.tsv
+            WF_WORKERS=4 "$layout/$mode" wf 16 4096 16 4096 92821 "$pass" > "$log"
+            awk '/^# actual_lanes=/ {seen++; if($2!="actual_lanes=4")bad=1} END {exit bad || seen!=1}' "$log"
+            awk -F '\t' -v mode="$mode" -v pass="$pass" \
+                '$10=="warm" {core+=$11;cycle+=$12;calls++}
+                 END {if(calls!=4096)exit 1; printf "%s\t4\t4096\t16\t%s\t%.3f\t%.3f\n",mode,pass,core/calls,cycle/calls}' \
+                "$log" >> "$layout/means.tsv"
+        done
+    done
+    # Diagnostic failure does not replace or weaken the original screen.
+    if summarize "$layout/means.tsv" "$layout/summary.tsv"; then :
+    else case "$?" in 1) :;; *) exit 2;; esac; fi
+    cat "$layout/summary.tsv"
+fi
 # Binaries, copied sources, actual flags and every raw sample are reproducible
 # evidence even when the performance band fails.
 find "$out" -type f ! -name manifest.sha256 -exec shasum -a 256 {} + > "$out/manifest.sha256"

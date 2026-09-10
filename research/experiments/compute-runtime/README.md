@@ -35,6 +35,18 @@ An identical production image is the noise control. Raw artifacts retain core
 and allocation-inclusive durations, process CPU and memory; wall-time summaries
 are an initial screen, not whole-workload or all-platform acceptance.
 
+On Linux x86-64, the additional `layout/` diagnostic fixes the shared WF,
+native oracle and host-consumer text at the same ELF-relative address across
+old/recovered/candidate images and verifies equal symbol addresses and sizes.
+It retains an identical candidate replica and measures just the unresolved
+W4/4,096-output/tile16 cell with five process pairs. The original matrix stays
+unchanged. Runtime, PLT and data layout still differ, so this is a bounded
+test of common-code placement, not complete layout normalization. Convergence
+would weaken an algorithmic explanation for the old/recovered gap; persistence
+would leave other layout, scheduling and host-interference causes open.
+No fixed address is used in production, and the diagnostic cannot replace
+ordinary executable performance qualification.
+
 ## Historical versus recovered pure-compute comparison
 
 The owner requested a report before selecting a production compute runtime.

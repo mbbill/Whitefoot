@@ -107,6 +107,35 @@ ranges 0.965–1.043. Candidate/historical is 0.984. This independent cohort
 confirms the comparison gap; the short-command interference traces do not
 explain or excuse this different workload's loss.
 
+The [b20852c6 priority cohort](https://github.com/mbbill/Whitefoot/actions/runs/34424786215)
+completed both Linux diagnostic panels with every participant's requested
+priority read back. Median paired high/default-priority wall ratios are:
+
+| Target | Work threshold | 32 repetitions | 256 repetitions |
+| --- | ---: | ---: | ---: |
+| Linux x86-64 | 60,000 | 0.844 | 0.997 |
+| Linux x86-64 | 120,000 | 0.901 | 1.005 |
+| Linux AArch64 | 60,000 | 0.913 | 0.971 |
+| Linux AArch64 | 120,000 | 0.888 | 0.969 |
+
+Native static high/default ratios remain about 0.996–0.999. Short WF
+replica ranges are wide; longer high-priority WF/static ratios remain about
+1.08–1.11. The controls establish priority sensitivity, not complete removal
+of background interference or production performance acceptance. Both
+conditions use root, fixed affinity and the same measurement wrapper; no
+correction is applied to ordinary-user samples. The actual child cgroup,
+autogroup, UID and per-thread settings are retained in the artifact.
+
+Independent examination of the x86-64 FIR images found matching
+address-normalized instructions in historical/recovered worker, join,
+publish, release, acquire and sampled WF compute/accessor functions. This
+FIR program recursively publishes by tile and does not call `split_budget`.
+The unresolved gap therefore does not establish a missing grain-policy or
+idle-algorithm optimization. The next bounded formal-panel control fixes
+shared WF/host-consumer text addresses, retaining the original images and
+their failures. It tests one layout influence, not all possible cache or
+scheduling effects, and leaves production linking unchanged.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o
