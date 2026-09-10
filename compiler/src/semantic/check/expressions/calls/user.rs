@@ -387,7 +387,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .state_origins
                         .take()
                         .unwrap_or_else(CheckedStateOrigins::fresh)
-                        .replace_path(&fields, Some(image)),
+                        .replace_value_path(&fields, Some(image)),
                 );
             }
         }

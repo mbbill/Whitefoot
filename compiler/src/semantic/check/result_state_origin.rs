@@ -4,8 +4,9 @@ use super::super::model::{
     BindingId, CheckedBorrowedStateOrigin, CheckedCommitValues, CheckedExpression, CheckedFunction,
     CheckedLoopId, CheckedMatchArm, CheckedMode, CheckedPlaceStep, CheckedResultStateOrigin,
     CheckedResultStatePath, CheckedSetTarget, CheckedStateOrigin, CheckedStateOrigins,
-    CheckedStatePath, CheckedStatement,
+    CheckedStatePath, CheckedStateStep, CheckedStatement,
 };
+use super::super::state_origins::{exclude_routes, project_routes, union_routes};
 use super::{CheckStop, Checker};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -29,10 +30,10 @@ impl OriginSet {
             formals: leaves
                 .into_iter()
                 .map(|fields| CheckedResultStatePath {
-                    result_fields: fields.clone(),
-                    result_variant: None,
+                    result_fields: CheckedStateStep::fields(&fields),
                     parameter: formal,
-                    parameter_fields: fields,
+                    parameter_fields: CheckedStateStep::fields(&fields),
+                    exclusions: Vec::new(),
                 })
                 .collect(),
         }
@@ -44,78 +45,61 @@ impl OriginSet {
             (_, Self::Unknown) => *self = Self::Unknown,
             (Self::Absent, finite @ Self::Finite { .. }) => *self = finite,
             (Self::Finite { formals: left }, Self::Finite { formals: right }) => {
-                for formal in right {
-                    if !left.contains(&formal) {
-                        left.push(formal);
-                    }
-                }
-                left.sort_unstable();
+                union_routes(left, &right);
             }
             (Self::Absent, Self::Absent) | (Self::Finite { .. }, Self::Absent) => {}
         }
     }
 
-    fn projected(mut self, fields: &[u32]) -> Self {
-        if let Self::Finite { formals, .. } = &mut self {
-            formals.retain_mut(|formal| {
-                if !formal.result_fields.starts_with(fields) {
-                    return false;
-                }
-                formal.result_fields.drain(..fields.len());
-                true
-            });
-        }
-        self
+    fn projected(self, fields: &[u32]) -> Self {
+        self.projected_value(&CheckedStateStep::fields(fields))
     }
 
-    fn enum_payload(mut self, variant: u32, field: u32) -> Self {
+    fn projected_value(mut self, path: &[CheckedStateStep]) -> Self {
         if let Self::Finite { formals } = &mut self {
-            formals.retain_mut(|origin| match origin.result_variant {
-                Some(actual) if actual != variant => false,
-                Some(_) => {
-                    if origin.result_fields.first() != Some(&field) {
-                        return false;
-                    }
-                    origin.result_fields.remove(0);
-                    origin.result_variant = None;
-                    true
-                }
-                None => {
-                    origin.result_fields.clear();
-                    true
-                }
-            });
+            *formals = project_routes(formals, path);
         }
         self
     }
 
-    fn replace_path(self, fields: &[u32], replacement: Self) -> Self {
-        if fields.is_empty() {
+    fn enum_payload(self, variant: u32, field: u32) -> Self {
+        self.projected_value(&[CheckedStateStep::VariantField { variant, field }])
+    }
+
+    fn prefixed(mut self, prefix: &[CheckedStateStep]) -> Self {
+        if let Self::Finite { formals } = &mut self {
+            for origin in formals {
+                let mut path = prefix.to_vec();
+                path.append(&mut origin.result_fields);
+                origin.result_fields = path;
+            }
+        }
+        self
+    }
+
+    fn replace_path(self, path: &[CheckedStateStep], replacement: Self) -> Self {
+        if path.is_empty() {
             return replacement;
+        }
+        // Reinstalling exactly the current subvalue changes no owner. In
+        // particular, recursive scalar-only mutations must not expand an
+        // unchanged aggregate into an ever deeper list of identity routes.
+        if self.clone().projected_value(path) == replacement {
+            return self;
         }
         match (self, replacement) {
             (Self::Unknown, _) | (_, Self::Unknown) => Self::Unknown,
-            (Self::Absent, replacement) => replacement,
-            (Self::Finite { .. }, Self::Absent) => Self::Absent,
+            (Self::Absent, replacement) => replacement.prefixed(path),
             (
                 Self::Finite {
                     formals: mut current,
                 },
-                Self::Finite {
-                    formals: replacement,
-                },
+                replacement,
             ) => {
-                current.retain(|origin| !origin.result_fields.starts_with(fields));
-                for mut origin in replacement {
-                    let mut result_fields = fields.to_vec();
-                    result_fields.extend_from_slice(&origin.result_fields);
-                    origin.result_fields = result_fields;
-                    if !current.contains(&origin) {
-                        current.push(origin);
-                    }
-                }
-                current.sort_unstable();
-                Self::Finite { formals: current }
+                exclude_routes(&mut current, path);
+                let mut current = Self::Finite { formals: current };
+                current.union(replacement.prefixed(path));
+                current
             }
         }
     }
@@ -126,7 +110,7 @@ struct OriginEnvironment {
     values: HashMap<BindingId, OriginSet>,
     // A missing entry is an ordinary owner. None is a borrowed result whose
     // signature gives a provenance ceiling, not an exact returned location.
-    aliases: HashMap<BindingId, Option<(BindingId, Vec<u32>)>>,
+    aliases: HashMap<BindingId, Option<(BindingId, Vec<CheckedStateStep>)>>,
 }
 
 impl OriginEnvironment {
@@ -136,7 +120,18 @@ impl OriginEnvironment {
     fn insert(&mut self, binding: BindingId, origin: OriginSet) {
         self.values.insert(binding, origin);
     }
-    fn place(&self, binding: BindingId, fields: &[u32]) -> Option<(BindingId, Vec<u32>)> {
+    fn place(
+        &self,
+        binding: BindingId,
+        fields: &[u32],
+    ) -> Option<(BindingId, Vec<CheckedStateStep>)> {
+        self.value_place(binding, &CheckedStateStep::fields(fields))
+    }
+    fn value_place(
+        &self,
+        binding: BindingId,
+        fields: &[CheckedStateStep],
+    ) -> Option<(BindingId, Vec<CheckedStateStep>)> {
         let (root, mut path) = match self.aliases.get(&binding) {
             Some(alias) => alias.clone()?,
             None => (binding, Vec::new()),
@@ -145,20 +140,30 @@ impl OriginEnvironment {
         Some((root, path))
     }
     fn read(&self, binding: BindingId, fields: &[u32]) -> OriginSet {
-        self.place(binding, fields)
+        self.read_value(binding, &CheckedStateStep::fields(fields))
+    }
+    fn read_value(&self, binding: BindingId, fields: &[CheckedStateStep]) -> OriginSet {
+        self.value_place(binding, fields)
             .map_or(OriginSet::Unknown, |(root, fields)| {
                 self.values
                     .get(&root)
                     .cloned()
                     .unwrap_or(OriginSet::Unknown)
-                    .projected(&fields)
+                    .projected_value(&fields)
             })
     }
-    fn write(&mut self, place: Option<(BindingId, Vec<u32>)>, origin: OriginSet) {
+    fn write(&mut self, place: Option<(BindingId, Vec<CheckedStateStep>)>, origin: OriginSet) {
         if let Some((root, fields)) = place {
             let current = self.values.remove(&root).unwrap_or(OriginSet::Unknown);
             self.values
                 .insert(root, current.replace_path(&fields, origin));
+        } else {
+            // Without an exact returned location, replay cannot silently
+            // frame the update out. Ordinary checking reports the capability
+            // gap wherever one of these images is subsequently required.
+            for value in self.values.values_mut() {
+                *value = OriginSet::Unknown;
+            }
         }
     }
 }
@@ -277,8 +282,8 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 self.expression(value, &mut environment)?;
                 Ok(OriginFlow::continuing(environment))
             }
-            // [CALL-4] binder i takes result ordinal i, which is field i of
-            // the one result-list value the call produced.
+            // [CALL-4, S39] a result-list/struct binder takes a field; a
+            // consumed cell's sole binder takes its referent.
             CheckedStatement::DestructuringLet {
                 bindings, value, ..
             } => {
@@ -286,7 +291,8 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 for (ordinal, (binding, _)) in bindings.iter().enumerate() {
                     let field = u32::try_from(ordinal)
                         .map_err(|_| crate::SemanticCompilerFailure::CounterOverflow)?;
-                    environment.insert(*binding, origin.clone().projected(&[field]));
+                    let selector = self.checker.destructured_state_step(value.ty(), field)?;
+                    environment.insert(*binding, origin.clone().projected_value(&[selector]));
                 }
                 Ok(OriginFlow::continuing(environment))
             }
@@ -367,7 +373,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 let place = self.target_place(target, &environment);
                 let extracted = if self.checker.type_carries_identity(target.ty())? {
                     place.as_ref().map_or(OriginSet::Unknown, |(root, fields)| {
-                        environment.read(*root, fields)
+                        environment.read_value(*root, fields)
                     })
                 } else {
                     OriginSet::Absent
@@ -464,7 +470,16 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 };
                 arm_environment.insert(binder.binding, origin);
                 if binder.mode != CheckedMode::Own {
-                    arm_environment.aliases.insert(binder.binding, None);
+                    let place =
+                        self.borrow_place(scrutinee, &environment)?
+                            .map(|(root, mut path)| {
+                                path.push(CheckedStateStep::VariantField {
+                                    variant: arm.tag,
+                                    field: binder.field,
+                                });
+                                (root, path)
+                            });
+                    arm_environment.aliases.insert(binder.binding, place);
                 }
             }
             let arm_flow = self.scan_block(&arm.body, arm_environment)?;
@@ -554,12 +569,33 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
         &self,
         target: &CheckedSetTarget,
         environment: &OriginEnvironment,
-    ) -> Option<(BindingId, Vec<u32>)> {
+    ) -> Option<(BindingId, Vec<CheckedStateStep>)> {
         match target {
             CheckedSetTarget::Place(place) => environment.place(place.binding, &place.fields),
             CheckedSetTarget::Storage(root) => {
                 let fields = static_fields(&root.path)?;
-                environment.place(root.binding()?, &fields)
+                environment.value_place(root.binding()?, &fields)
+            }
+            CheckedSetTarget::ArrayIndex(target) => {
+                let (root, mut path) = environment.place(target.binding, &target.fields)?;
+                let super::super::places::PlaceOffset::Literal(index) =
+                    Checker::place_offset_of(&target.offset)?
+                else {
+                    return None;
+                };
+                path.push(CheckedStateStep::Element(index));
+                Some((root, path))
+            }
+            CheckedSetTarget::BufferIndex(target) => {
+                let (root, mut path) =
+                    environment.place(target.root.binding, &target.root.fields)?;
+                let super::super::places::PlaceOffset::Literal(index) =
+                    Checker::place_offset_of(&target.offset)?
+                else {
+                    return None;
+                };
+                path.push(CheckedStateStep::Element(index));
+                Some((root, path))
             }
             _ => None,
         }
@@ -572,6 +608,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
     ) -> bool {
         match expression {
             CheckedExpression::BorrowBox { .. }
+            | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowSystemResource { .. }
             | CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::ReborrowAddressed { .. } => true,
@@ -585,20 +622,31 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
         &self,
         expression: &CheckedExpression,
         environment: &OriginEnvironment,
-    ) -> Result<Option<(BindingId, Vec<u32>)>, CheckStop> {
+    ) -> Result<Option<(BindingId, Vec<CheckedStateStep>)>, CheckStop> {
         Ok(match expression {
             CheckedExpression::Binding { binding, .. }
             | CheckedExpression::BorrowBox { binding, .. }
+            | CheckedExpression::DerefAddressed { binding, .. }
             | CheckedExpression::ReborrowAddressed { binding, .. } => {
                 environment.place(*binding, &[])
             }
             CheckedExpression::BorrowSystemResource {
                 binding, fields, ..
             } => environment.place(*binding, fields),
+            CheckedExpression::BorrowBuffer { root, .. } => {
+                environment.place(root.binding, &root.fields)
+            }
             CheckedExpression::BorrowAddressed { root, .. } => root
                 .binding()
                 .zip(static_fields(&root.path))
-                .and_then(|(binding, fields)| environment.place(binding, &fields)),
+                .and_then(|(binding, fields)| environment.value_place(binding, &fields)),
+            CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::ArenaDeref { value, .. } => self
+                .borrow_place(value, environment)?
+                .map(|(root, mut path)| {
+                    path.push(CheckedStateStep::Referent);
+                    (root, path)
+                }),
             CheckedExpression::UserCall {
                 function,
                 arguments,
@@ -651,10 +699,18 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                         };
                         origins.formals.push(CheckedStateOrigin {
                             value_fields: route.result_fields.clone(),
-                            variant: route.result_variant,
+                            exclusions: route.exclusions.clone(),
+                            source_value_fields: route.parameter_fields.clone(),
                             source: CheckedStatePath {
                                 root: parameter.declaration,
-                                fields: route.parameter_fields.clone(),
+                                fields: route
+                                    .parameter_fields
+                                    .iter()
+                                    .map_while(|step| match step {
+                                        CheckedStateStep::Field(field) => Some(*field),
+                                        _ => None,
+                                    })
+                                    .collect(),
                             },
                         });
                     }
@@ -686,9 +742,9 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
             };
             formals.push(CheckedResultStatePath {
                 result_fields: origin.value_fields,
-                result_variant: origin.variant,
                 parameter,
-                parameter_fields: origin.source.fields,
+                parameter_fields: origin.source_value_fields,
+                exclusions: origin.exclusions,
             });
         }
         formals.sort_unstable();
@@ -711,17 +767,8 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 let Some(binding) = root.binding() else {
                     return Ok(OriginSet::fresh());
                 };
-                let fields = root
-                    .path
-                    .iter()
-                    .map(|step| match step {
-                        crate::semantic::model::CheckedPlaceStep::Field(field) => Some(*field),
-                        crate::semantic::model::CheckedPlaceStep::BoxReferent(_)
-                        | crate::semantic::model::CheckedPlaceStep::Subscript(_) => None,
-                    })
-                    .collect::<Option<Vec<_>>>();
-                fields.map_or(OriginSet::Unknown, |fields| {
-                    environment.read(binding, &fields)
+                static_fields(&root.path).map_or(OriginSet::Unknown, |fields| {
+                    environment.read_value(binding, &fields)
                 })
             }
             CheckedExpression::Project {
@@ -730,6 +777,9 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
             | CheckedExpression::BorrowSystemResource {
                 binding, fields, ..
             } => environment.read(*binding, fields),
+            CheckedExpression::BorrowBuffer { root, .. } => {
+                environment.read(root.binding, &root.fields)
+            }
             CheckedExpression::SystemCall { operation, .. } => match crate::SYSTEM_OPERATIONS
                 .get(usize::from(*operation))
                 .map(|operation| operation.result_state_origin)
@@ -770,6 +820,67 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 }
             }
             CheckedExpression::KernelCall {
+                row:
+                    crate::KernelRow::FixedVector
+                    | crate::KernelRow::ArenaVector
+                    | crate::KernelRow::ArenaVectorProved
+                    | crate::KernelRow::HeapVector
+                    | crate::KernelRow::ArenaFrame,
+                arguments,
+                ..
+            } => {
+                for argument in arguments {
+                    self.expression(argument, environment)?;
+                }
+                OriginSet::fresh()
+            }
+            CheckedExpression::KernelCall {
+                row: crate::KernelRow::HeapBox | crate::KernelRow::ArenaBox,
+                arguments,
+                ..
+            } => {
+                let mut value_origin = OriginSet::fresh();
+                for (index, argument) in arguments.iter().enumerate() {
+                    let origin = self.expression(argument, environment)?;
+                    if index == 1 {
+                        value_origin = origin;
+                    }
+                }
+                let mut origin = value_origin.clone().prefixed(&[
+                    CheckedStateStep::VariantField {
+                        variant: 0,
+                        field: 0,
+                    },
+                    CheckedStateStep::Referent,
+                ]);
+                origin.union(value_origin.prefixed(&[CheckedStateStep::VariantField {
+                    variant: 1,
+                    field: 0,
+                }]));
+                origin
+            }
+            CheckedExpression::KernelCall {
+                row: crate::KernelRow::PlaceBack | crate::KernelRow::PlaceFront,
+                instance,
+                arguments,
+                ..
+            } => {
+                let mut run_origin = OriginSet::Unknown;
+                for (index, argument) in arguments.iter().enumerate() {
+                    let origin = self.expression(argument, environment)?;
+                    if index == 0 {
+                        run_origin = origin;
+                    }
+                }
+                if self.checker.is_copy_type(instance.element)? {
+                    run_origin
+                } else {
+                    // Logical insertion needs a slot transfer, not the
+                    // default child union used by scalar expressions.
+                    OriginSet::Unknown
+                }
+            }
+            CheckedExpression::KernelCall {
                 row: crate::KernelRow::TakeBack | crate::KernelRow::TakeFront,
                 instance,
                 arguments,
@@ -786,7 +897,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 // run belongs to result ordinal zero, just as in body checking.
                 if let OriginSet::Finite { formals } = &mut origin {
                     for formal in formals {
-                        formal.result_fields.insert(0, 0);
+                        formal.result_fields.insert(0, CheckedStateStep::Field(0));
                     }
                 }
                 origin
@@ -799,7 +910,9 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                     let mut field_origin = self.expression(field, environment)?;
                     if let OriginSet::Finite { formals, .. } = &mut field_origin {
                         for formal in formals {
-                            formal.result_fields.insert(0, ordinal);
+                            formal
+                                .result_fields
+                                .insert(0, CheckedStateStep::Field(ordinal));
                         }
                     }
                     origin.union(field_origin);
@@ -816,8 +929,13 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                     let mut field_origin = self.expression(value, environment)?;
                     if let OriginSet::Finite { formals, .. } = &mut field_origin {
                         for formal in formals {
-                            formal.result_fields.insert(0, field);
-                            formal.result_variant = Some(*variant);
+                            formal.result_fields.insert(
+                                0,
+                                CheckedStateStep::VariantField {
+                                    variant: *variant,
+                                    field,
+                                },
+                            );
                         }
                     }
                     origin.union(field_origin);
@@ -828,12 +946,15 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 let mut origin = self.expression(value, environment)?;
                 if let OriginSet::Finite { formals, .. } = &mut origin {
                     for formal in formals {
-                        formal.result_fields.clear();
-                        formal.result_variant = None;
+                        formal.result_fields.insert(0, CheckedStateStep::Referent);
                     }
                 }
                 origin
             }
+            CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::ArenaDeref { value, .. } => self
+                .expression(value, environment)?
+                .projected_value(&[CheckedStateStep::Referent]),
             _ => {
                 let mut origin = OriginSet::Absent;
                 for child in super::super::model::expression_children(expression) {
@@ -844,6 +965,32 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
         };
         if !self.checker.type_carries_identity(expression.ty())? {
             return Ok(OriginSet::Absent);
+        }
+        if let OriginSet::Finite { formals } = &origin {
+            for route in formals {
+                let Some(parameter) = self.function.parameters.get(route.parameter as usize) else {
+                    return Ok(OriginSet::Unknown);
+                };
+                if !self
+                    .checker
+                    .state_selector_is_acyclic(parameter.ty, &route.parameter_fields)?
+                    || !self
+                        .checker
+                        .state_selector_is_acyclic(expression.ty(), &route.result_fields)?
+                {
+                    return Ok(OriginSet::Unknown);
+                }
+                for excluded in &route.exclusions {
+                    let mut path = route.result_fields.clone();
+                    path.extend_from_slice(excluded);
+                    if !self
+                        .checker
+                        .state_selector_is_acyclic(expression.ty(), &path)?
+                    {
+                        return Ok(OriginSet::Unknown);
+                    }
+                }
+            }
         }
         Ok(match origin {
             // `Absent` is the recursive fixed-point bottom only for a user
@@ -971,11 +1118,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 }
 
-fn static_fields(path: &[CheckedPlaceStep]) -> Option<Vec<u32>> {
+fn static_fields(path: &[CheckedPlaceStep]) -> Option<Vec<CheckedStateStep>> {
     path.iter()
         .map(|step| match step {
-            CheckedPlaceStep::Field(field) => Some(*field),
-            _ => None,
+            CheckedPlaceStep::Field(field) => Some(CheckedStateStep::Field(*field)),
+            CheckedPlaceStep::BoxReferent(_) => Some(CheckedStateStep::Referent),
+            CheckedPlaceStep::Subscript(index) => match index.place_offset {
+                super::super::places::PlaceOffset::Literal(index) => {
+                    Some(CheckedStateStep::Element(index))
+                }
+                _ => None,
+            },
         })
         .collect()
 }

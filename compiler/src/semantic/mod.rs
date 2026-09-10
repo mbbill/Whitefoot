@@ -17,6 +17,7 @@ mod places;
 pub(crate) use places::PlaceRoot as CheckedPlaceRoot;
 mod postcondition;
 mod staged_permission;
+mod state_origins;
 mod target_action;
 mod tree;
 

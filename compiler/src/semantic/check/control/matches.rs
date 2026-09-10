@@ -641,6 +641,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 let mut place = parent.place;
                 place
+                    .state_variants
+                    .push((place.storage_path.len(), variant.tag));
+                place
                     .extend_fields(&[u32::try_from(index)
                         .map_err(|_| SemanticCompilerFailure::CounterOverflow)?]);
                 Some(BorrowInfo { place, ..parent })

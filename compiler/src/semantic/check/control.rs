@@ -1,3 +1,4 @@
+use crate::semantic::model::CheckedStateOrigins;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
@@ -796,8 +797,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .and_then(|binding| binding.state_origins.clone());
         let target_fields = self.state_fields_of_target(&target, &place, bindings)?;
         let previous_origins = match (previous_whole_origins.clone(), target_fields.as_deref()) {
-            (Some(origins), Some(fields)) => Some(origins.projected(fields)),
-            (origins, None) => origins,
+            (Some(origins), Some(fields)) => Some(origins.projected_value(fields)),
+            (_, None) => Some(CheckedStateOrigins::unknown()),
             (None, Some(_)) => None,
         };
         let target_carries_identity = self.type_carries_identity(target.ty())?;
@@ -838,10 +839,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             let updated = match (previous_whole_origins, target_fields.as_deref()) {
                 (Some(origins), Some(fields)) => {
-                    Some(origins.replace_path(fields, replacement_origins))
+                    Some(origins.replace_value_path(fields, replacement_origins))
                 }
                 (_, Some(_)) => replacement_origins,
-                (origins, None) => origins,
+                (_, None) => Some(CheckedStateOrigins::unknown()),
             };
             bindings
                 .get_mut(&place.root)

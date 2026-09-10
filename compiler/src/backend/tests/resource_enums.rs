@@ -16,7 +16,7 @@ fn abandon(owner: own Owner) -> result: own unit pure {
   return unit;
 }
 
-fn consume(owner: own Owner) -> result: own u8 pure {
+fn consume(owner: own Owner) -> result: own u8 reads(owner) {
   match move owner {
     Empty() => {
       return 0_u8;
@@ -53,6 +53,15 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
+    // Moving the enum into its payload binders preserves incoming state;
+    // the element read contributes EFF-2 even though cleanup only frees buffers.
+    let omitted = std::str::from_utf8(source).unwrap().replace(
+        "fn consume(owner: own Owner) -> result: own u8 reads(owner)",
+        "fn consume(owner: own Owner) -> result: own u8 pure",
+    );
+    let failure = compile_rejection(omitted.as_bytes());
+    assert_eq!(failure.rule_id(), Some("EFF-2"));
+    assert!(failure.detail().contains("reads(owner)"));
     let llvm = compile(source);
     let helper_start = llvm
         .find("define private void @wf.drop.t1")

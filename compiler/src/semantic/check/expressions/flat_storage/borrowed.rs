@@ -135,6 +135,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 path.push(CheckedPlaceStep::BoxReferent(*nominal));
                 Ok((binding, path))
             }
+            CheckedExpression::ArenaDeref { .. } => {
+                self.unsupported(UnsupportedSemanticFeature::ArenaRuntime, node)
+            }
             CheckedExpression::ProjectValue { value, field, .. } => {
                 let (binding, mut path) = self.explicit_container_path(value, node)?;
                 path.push(CheckedPlaceStep::Field(*field));

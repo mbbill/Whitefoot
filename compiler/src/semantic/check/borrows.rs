@@ -118,6 +118,9 @@ pub(super) struct ResolvedPlace {
     /// [LIV-2] identity retains owning indirection, which [OWN-7]'s
     /// conservative path deliberately erases. Borrow provenance carries both.
     pub(super) storage_path: Vec<PlaceProjection>,
+    /// Active match tags annotate payload field steps for value-state routing.
+    /// They do not narrow the conservative loan identity or change an address.
+    pub(super) state_variants: Vec<(usize, u32)>,
 }
 
 // Existing loan identities compare the conservative origin. Exact storage
@@ -146,6 +149,7 @@ impl ResolvedPlace {
                 })
                 .collect(),
             path,
+            state_variants: Vec::new(),
         }
     }
 
@@ -179,17 +183,6 @@ impl ResolvedPlace {
             .map_while(|step| match step {
                 PlaceStep::Field(field) => Some(*field),
                 PlaceStep::Subscript(_) => None,
-            })
-            .collect()
-    }
-
-    /// An exact static product path, unlike the enclosing effect-path prefix.
-    pub(super) fn state_fields(&self) -> Option<Vec<u32>> {
-        self.storage_path
-            .iter()
-            .map(|step| match step {
-                PlaceProjection::Field(field) => Some(*field),
-                PlaceProjection::Deref | PlaceProjection::Subscript(_) => None,
             })
             .collect()
     }
@@ -443,9 +436,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if origins.unknown && !self.deriving_result_state_origin.get() {
                 return self.unsupported(UnsupportedSemanticFeature::OwnerStateRouting, node);
             }
-            let mut paths = origins
-                .clone()
-                .projected(&canonical.fields)
+            let selected = match self.state_fields_of_place(place, bindings)? {
+                Some(path) => origins.clone().projected_value(&path),
+                None => origins.clone().projected(&canonical.fields),
+            };
+            let mut paths = selected
                 .formals
                 .into_iter()
                 .map(|origin| origin.source)

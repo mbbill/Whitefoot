@@ -238,9 +238,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let ordinal =
                 u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
             let state_origins = if self.type_carries_identity(field.ty)? {
+                let selector = self.destructured_state_step(value.expression.ty(), ordinal)?;
                 whole_origins
                     .clone()
-                    .map(|origins| origins.projected(&[ordinal]))
+                    .map(|origins| origins.projected_value(&[selector]))
             } else {
                 None
             };

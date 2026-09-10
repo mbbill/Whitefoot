@@ -620,8 +620,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 bindings,
             )?
             else {
-                // Owning indirection and indexed contents need separate
-                // allocation/element identities; this slice changes neither.
+                // An unrepresented interior update is not an unchanged value.
+                // Retain the capability gap until the root is wholly replaced.
+                bindings
+                    .get_mut(&target.mutation.place.root)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                    .state_origins = Some(crate::semantic::model::CheckedStateOrigins::unknown());
                 continue;
             };
             let local = bindings
@@ -632,7 +636,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .state_origins
                     .take()
                     .unwrap_or_else(crate::semantic::model::CheckedStateOrigins::fresh)
-                    .replace_path(&fields, image),
+                    .replace_value_path(&fields, image),
             );
         }
         Ok(())

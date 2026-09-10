@@ -114,7 +114,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let (mode, borrow, holder) = if copy || read_out {
             (CheckedMode::Own, None, None)
         } else {
-            (place.mode, place.borrow.clone(), Some(place.declaration))
+            (
+                place.mode,
+                place.borrow.clone().map(|borrow| BorrowInfo {
+                    place: place.resolved.clone(),
+                    ..borrow
+                }),
+                Some(place.declaration),
+            )
         };
         let expression = if read_out {
             let (binding, path) = self.explicit_container_path(&place.expression, node)?;
@@ -523,6 +530,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     value: Box::new(inner.expression),
                 };
                 inner.ty = content;
+                inner.resolved.storage_path.push(PlaceProjection::Deref);
             }
             _ => {
                 return self.issue_node(

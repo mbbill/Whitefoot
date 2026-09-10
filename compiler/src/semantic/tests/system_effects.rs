@@ -5,12 +5,369 @@
 //! that may run on a normal control-flow edge, scoped by [STOR-3] to the
 //! system resource families whose [SYS-5] contract fixes a nonempty row.
 
+use crate::semantic::model::CheckedStateStep;
 use crate::{SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule};
 
 use super::super::model::{CheckedResultStateOrigin, CheckedResultStatePath};
 use super::{assert_rule, assert_rule_kind, with_semantics};
 
 const RELEASE_FIX: &str = "declare the release effects of every resource this function may release, or move the owner out";
+
+#[test]
+fn replacing_one_literal_element_preserves_its_siblings_owner() {
+    let source = br#"fn read['s](value: &Box<'s, u64>) -> result: own u64 reads(value) {
+  return deref(deref(value));
+}
+
+fn exchange['s](slots: own array<Box<'s, u64>, 2>, incoming: own Box<'s, u64>) -> (updated: own array<Box<'s, u64>, 2>, previous: own Box<'s, u64>, sibling: own u64) reads(slots), writes(slots) {
+  let previous = replace slots[0_u64] = move incoming;
+  region {
+    let sibling = read(value: &slots[1_u64]);
+    return move slots, move previous, sibling;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source);
+    let source = std::str::from_utf8(source).unwrap();
+    let spurious = source.replace("reads(slots)", "reads(slots, incoming)");
+    assert_rule_kind(spurious.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { extra, .. }
+            if extra.iter().any(|effect| effect == "reads(incoming)"))
+    });
+    let replaced = source.replace("read(value: &slots[1_u64])", "read(value: &slots[0_u64])");
+    assert_rule_kind(replaced.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
+            if missing.iter().any(|effect| effect == "reads(incoming)"))
+    });
+}
+
+#[test]
+fn nested_box_content_replacement_preserves_the_incoming_owner() {
+    let source = br#"fn exchange(storage: &uniq box<box<u64>>, incoming: own box<u64>) -> previous: own box<u64> reads(storage), writes(storage) {
+  let previous = replace deref(deref(storage)) = move incoming;
+  return move previous;
+}
+
+fn observe(storage: own box<box<u64>>, incoming: own box<u64>) -> result: own u64 reads(storage, incoming), writes(storage) {
+  region {
+    let previous = exchange(storage: &uniq storage, incoming: move incoming);
+    let old = deref(previous);
+    let current = deref(deref(storage));
+    return old +wrap current;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "the outer allocation must retain its new content's origin: {outcome:?}"
+        );
+    });
+    let omitted = std::str::from_utf8(source)
+        .unwrap()
+        .replace("reads(storage, incoming)", "reads(storage)");
+    assert_rule_kind(omitted.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
+            if missing.iter().any(|effect| effect == "reads(incoming)"))
+    });
+}
+
+#[test]
+fn nested_box_successive_exchanges_do_not_retain_the_displaced_owner() {
+    let source = br#"fn exchange(storage: &uniq box<box<u64>>, incoming: own box<u64>) -> previous: own box<u64> reads(storage), writes(storage) {
+  let previous = replace deref(deref(storage)) = move incoming;
+  return move previous;
+}
+
+fn twice(storage: &uniq box<box<u64>>, first: own box<u64>, second: own box<u64>) -> previous: own box<u64> reads(storage, first), writes(storage, first) {
+  region {
+    let old = exchange(storage: &uniq deref(storage), incoming: move first);
+    let previous = exchange(storage: &uniq deref(storage), incoming: move second);
+    return move previous;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("successive interior updates must check: {outcome:?}");
+        };
+        let twice = &program.data.functions[1];
+        assert_eq!(
+            twice.result_state_origin,
+            CheckedResultStateOrigin::Finite {
+                formals: vec![root(1)]
+            }
+        );
+        let CheckedResultStateOrigin::Finite { formals } = &twice.borrowed_state_origins[0].origin
+        else {
+            panic!("the final containing owner must have a finite image");
+        };
+        assert!(formals.iter().all(|route| route.parameter != 1));
+        assert!(formals.iter().any(|route| route.parameter == 0
+            && route.exclusions == vec![vec![CheckedStateStep::Referent]]));
+        assert!(
+            formals.iter().any(|route| route.parameter == 2
+                && route.result_fields == vec![CheckedStateStep::Referent])
+        );
+    });
+}
+
+#[test]
+fn arena_cell_content_preserves_imported_owners_through_direct_and_helper_replacement() {
+    let source = r#"fn exchange['s](storage: &uniq Box<'s, box<u64>>, incoming: own box<u64>) -> previous: own box<u64> reads(storage), writes(storage) {
+  let previous = replace deref(deref(storage)) = move incoming;
+  return move previous;
+}
+
+fn observe(initial: own box<u64>, incoming: own box<u64>) -> result: own u64 reads(initial, incoming), writes(initial) {
+  region 'a {
+    let store = arena_frame::<64, 16, 'a>();
+    region {
+      match arena_box(store: &uniq store, value: move initial) {
+        Ok(value: storage) => {
+          region {
+            let previous = replace deref(storage) = move incoming;
+            let old = deref(previous);
+            let current = deref(deref(storage));
+            return old +wrap current;
+          }
+        }
+        Err(error: back) => {
+          return deref(back);
+        }
+      }
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    for source in [
+        source.to_owned(),
+        source.replace(
+            "replace deref(storage) = move incoming",
+            "exchange(storage: &uniq storage, incoming: move incoming)",
+        ),
+    ] {
+        assert_complete(source.as_bytes());
+        for (written, omitted, expected) in [
+            (
+                "reads(initial, incoming)",
+                "reads(initial)",
+                "reads(incoming)",
+            ),
+            (
+                "reads(initial, incoming)",
+                "reads(incoming)",
+                "reads(initial)",
+            ),
+            (
+                "reads(initial, incoming), writes(initial)",
+                "reads(initial, incoming)",
+                "writes(initial)",
+            ),
+        ] {
+            let omitted = source.replace(written, omitted);
+            with_semantics(omitted.as_bytes(), |outcome| {
+                let SemanticOutcome::SourceIssue { issue } = outcome else {
+                    panic!("the omitted effect must reject: {outcome:?}");
+                };
+                assert_eq!(issue.rule(), SemanticRule::Eff2);
+                assert!(
+                    matches!(issue.kind(), SemanticIssueKind::EffectMismatch { missing, .. }
+                    if missing.iter().any(|effect| effect == expected)),
+                    "{issue:?}"
+                );
+            });
+        }
+    }
+}
+
+#[test]
+fn consuming_a_cell_preserves_its_payloads_origin_directly_and_through_a_helper() {
+    let source = r#"fn extract['s](cell: own Box<'s, box<u64>>) -> inner: own box<u64> pure {
+  let Box(value: inner) = move cell;
+  return move inner;
+}
+
+fn observe(value: own box<u64>) -> result: own u64 reads(value) {
+  region 'a {
+    let store = arena_frame::<64, 16, 'a>();
+    region {
+      match arena_box(store: &uniq store, value: move value) {
+        Ok(value: cell) => {
+          let Box(value: inner) = move cell;
+          return deref(inner);
+        }
+        Err(error: back) => {
+          return 0_u64;
+        }
+      }
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let value = box_new(37_u64);
+  let result = observe(value: move value);
+  if result != 37_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for source in [
+        source.to_owned(),
+        source.replace(
+            "          let Box(value: inner) = move cell;",
+            "          let inner = extract(cell: move cell);",
+        ),
+    ] {
+        assert_complete(source.as_bytes());
+        let omitted = source.replace("reads(value)", "pure");
+        assert_rule_kind(omitted.as_bytes(), SemanticRule::Eff2, |kind| {
+            matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
+                if missing.iter().any(|effect| effect == "reads(value)"))
+        });
+    }
+}
+
+#[test]
+fn front_insertion_cannot_reuse_the_previous_logical_slot_origins() {
+    let source = br#"fn shift(slots: own FixedVector<box<u64>, 2>, incoming: own box<u64>) -> result: own box<u64> reads(slots, incoming), writes(slots, incoming) contract {
+  requires len_of(slots) == 1_u64;
+} {
+  let displaced = replace slots[0_u64] = move incoming;
+  let first = box_new(7_u64);
+  let both = place_front(vector: move slots, value: move first);
+  let empty = box_new(0_u64);
+  let recovered = replace both[1_u64] = move empty;
+  return move recovered;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    // The returned owner is incoming, which moved from logical slot zero to
+    // one. An unchanged operand union would instead route the old slot one
+    // of slots. Until insertion has its own transfer, retain the capability
+    // gap rather than publishing that incorrect normal-exit summary.
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Unsupported { unsupported } = outcome else {
+            panic!("owning insertion needs a logical slot transfer: {outcome:?}");
+        };
+        assert_eq!(
+            unsupported.feature(),
+            crate::UnsupportedSemanticFeature::OwnerStateRouting
+        );
+    });
+}
+
+#[test]
+fn fresh_outer_storage_keeps_an_inserted_formal_through_an_extracting_helper() {
+    let source = br#"fn extract(storage: own box<box<u64>>) -> previous: own box<u64> reads(storage), writes(storage) {
+  let empty = box_new(0_u64);
+  let previous = replace deref(storage) = move empty;
+  return move previous;
+}
+
+fn observe(incoming: own box<u64>) -> value: own u64 reads(incoming), writes(incoming) {
+  let empty = box_new(0_u64);
+  let storage = box_new(move empty);
+  let old = replace deref(storage) = move incoming;
+  let previous = extract(storage: move storage);
+  return deref(previous);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source);
+    let omitted = std::str::from_utf8(source)
+        .unwrap()
+        .replace("reads(incoming), writes(incoming)", "writes(incoming)");
+    assert_rule_kind(omitted.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
+            if missing.iter().any(|effect| effect == "reads(incoming)"))
+    });
+}
+
+#[test]
+fn recursive_contained_selectors_remain_an_explicit_finite_summary_gap() {
+    let source = br#"enum Chain {
+  End(value: box<u64>);
+  Link(next: box<Chain>);
+}
+
+fn extract(value: own Chain) -> result: own box<u64> reads(value), writes(value) {
+  match value {
+    End(value: leaf) => {
+      return move leaf;
+    }
+    Link(next: child) => {
+      let zero = box_new(0_u64);
+      let empty = End(value: move zero);
+      let next = replace deref(child) = move empty;
+      return extract(value: move next);
+    }
+  }
+}
+
+fn observe(value: own Chain) -> result: own u64 reads(value), writes(value) {
+  let leaf = extract(value: move value);
+  return deref(leaf);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let number = box_new(37_u64);
+  let last = End(value: move number);
+  let child = box_new(move last);
+  let chain = Link(next: move child);
+  let result = observe(value: move chain);
+  if result != 37_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Unsupported { unsupported } = outcome else {
+            panic!("recursive contained selectors need an explicit capability stop: {outcome:?}");
+        };
+        assert_eq!(
+            unsupported.feature(),
+            crate::UnsupportedSemanticFeature::OwnerStateRouting
+        );
+        assert_eq!(
+            unsupported.node.components(),
+            &[2, 0, 4, 0, 0, 0],
+            "the unresolved returned owner stops at observe's deref(leaf), not an unrelated operation"
+        );
+    });
+    // The same recursive type and its directly selected owned payload must
+    // still work when this function does not recursively extract a child.
+    let direct = std::str::from_utf8(source).unwrap().replace(
+        "return extract(value: move next);",
+        "let fallback = box_new(37_u64);\n      return move fallback;",
+    );
+    assert_complete(direct.as_bytes());
+}
 
 #[test]
 fn whole_unique_borrow_results_preserve_ordinary_box_writeback() {
@@ -240,7 +597,7 @@ command fn main() -> status: own ExitStatus pure {
 fn root(parameter: u32) -> CheckedResultStatePath {
     CheckedResultStatePath {
         result_fields: Vec::new(),
-        result_variant: None,
+        exclusions: Vec::new(),
         parameter,
         parameter_fields: Vec::new(),
     }
@@ -781,16 +1138,16 @@ command fn main() -> status: own ExitStatus pure {
             CheckedResultStateOrigin::Finite {
                 formals: vec![
                     CheckedResultStatePath {
-                        result_fields: vec![0],
-                        result_variant: None,
+                        result_fields: vec![CheckedStateStep::Field(0)],
+                        exclusions: Vec::new(),
                         parameter: 0,
-                        parameter_fields: vec![0],
+                        parameter_fields: vec![CheckedStateStep::Field(0)],
                     },
                     CheckedResultStatePath {
-                        result_fields: vec![1],
-                        result_variant: None,
+                        result_fields: vec![CheckedStateStep::Field(1)],
+                        exclusions: Vec::new(),
                         parameter: 0,
-                        parameter_fields: vec![1],
+                        parameter_fields: vec![CheckedStateStep::Field(1)],
                     },
                 ],
             }
@@ -859,16 +1216,16 @@ command fn main() -> status: own ExitStatus pure {
             CheckedResultStateOrigin::Finite {
                 formals: vec![
                     CheckedResultStatePath {
-                        result_fields: vec![0],
-                        result_variant: None,
+                        result_fields: vec![CheckedStateStep::Field(0)],
+                        exclusions: Vec::new(),
                         parameter: 0,
-                        parameter_fields: vec![0],
+                        parameter_fields: vec![CheckedStateStep::Field(0)],
                     },
                     CheckedResultStatePath {
-                        result_fields: vec![1],
-                        result_variant: None,
+                        result_fields: vec![CheckedStateStep::Field(1)],
+                        exclusions: Vec::new(),
                         parameter: 0,
-                        parameter_fields: vec![1],
+                        parameter_fields: vec![CheckedStateStep::Field(1)],
                     },
                 ],
             },
@@ -902,9 +1259,9 @@ command fn main() -> status: own ExitStatus pure {
             CheckedResultStateOrigin::Finite {
                 formals: vec![CheckedResultStatePath {
                     result_fields: Vec::new(),
-                    result_variant: None,
+                    exclusions: Vec::new(),
                     parameter: 0,
-                    parameter_fields: vec![0],
+                    parameter_fields: vec![CheckedStateStep::Field(0)],
                 }],
             }
         );
@@ -1094,7 +1451,7 @@ command fn main() -> status: own ExitStatus pure {
                 panic!("copy run take must preserve its remaining owner: {outcome:?}");
             };
             let mut rest = root(0);
-            rest.result_fields = vec![0];
+            rest.result_fields = vec![CheckedStateStep::Field(0)];
             assert_eq!(
                 program.data.functions[0].result_state_origin,
                 CheckedResultStateOrigin::Finite {
@@ -1271,8 +1628,11 @@ command fn main(command.stdout as out: own OutputStream) -> status: own ExitStat
             program.data.functions[0].result_state_origin,
             CheckedResultStateOrigin::Finite {
                 formals: vec![CheckedResultStatePath {
-                    result_fields: vec![0],
-                    result_variant: Some(0),
+                    result_fields: vec![CheckedStateStep::VariantField {
+                        variant: 0,
+                        field: 0
+                    }],
+                    exclusions: Vec::new(),
                     parameter: 0,
                     parameter_fields: Vec::new(),
                 }],
@@ -1450,9 +1810,9 @@ fn resource_field_borrow_projects_the_returned_displaced_owner_summary() {
             CheckedResultStateOrigin::Finite {
                 formals: vec![CheckedResultStatePath {
                     result_fields: Vec::new(),
-                    result_variant: None,
+                    exclusions: Vec::new(),
                     parameter: 0,
-                    parameter_fields: vec![1],
+                    parameter_fields: vec![CheckedStateStep::Field(1)],
                 }],
             }
         );
@@ -1705,10 +2065,10 @@ command fn main() -> status: own ExitStatus pure {
         let expected = vec![0, 1]
             .into_iter()
             .map(|field| CheckedResultStatePath {
-                result_fields: vec![field],
-                result_variant: None,
+                result_fields: vec![CheckedStateStep::Field(field)],
+                exclusions: Vec::new(),
                 parameter: 0,
-                parameter_fields: vec![field],
+                parameter_fields: vec![CheckedStateStep::Field(field)],
             })
             .collect();
         assert_eq!(
@@ -1793,16 +2153,16 @@ command fn main() -> status: own ExitStatus pure {
             CheckedResultStateOrigin::Finite {
                 formals: vec![
                     CheckedResultStatePath {
-                        result_fields: vec![0],
-                        result_variant: None,
+                        result_fields: vec![CheckedStateStep::Field(0)],
+                        exclusions: Vec::new(),
                         parameter: 1,
                         parameter_fields: Vec::new()
                     },
                     CheckedResultStatePath {
-                        result_fields: vec![1],
-                        result_variant: None,
+                        result_fields: vec![CheckedStateStep::Field(1)],
+                        exclusions: Vec::new(),
                         parameter: 0,
-                        parameter_fields: vec![0]
+                        parameter_fields: vec![CheckedStateStep::Field(0)]
                     },
                 ]
             }
@@ -1959,7 +2319,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn ordinary_displaced_box_result_reports_the_unrepresented_origin_at_use() {
+fn ordinary_displaced_box_result_keeps_the_extracted_owners_origin() {
     let source = br#"fn exchange(target: &uniq box<box<u64>>, incoming: own box<u64>) -> previous: own box<u64> reads(target), writes(target) {
   let previous = replace deref(deref(target)) = move incoming;
   return move previous;
@@ -1976,16 +2336,18 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics(source, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Unsupported { ref unsupported } if unsupported.feature() == crate::UnsupportedSemanticFeature::OwnerStateRouting),
-            "a valid displaced-owner read must report the missing routing capability, not an internal failure: {outcome:?}"
-        );
+    assert_complete(source);
+    let spurious = std::str::from_utf8(source)
+        .unwrap()
+        .replace("reads(owner)", "reads(owner, incoming)");
+    assert_rule_kind(spurious.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { extra, .. }
+            if extra.iter().any(|effect| effect == "reads(incoming)"))
     });
 }
 
 #[test]
-fn ordinary_displaced_run_reports_unknown_origin_at_kernel_use() {
+fn ordinary_displaced_run_keeps_its_origin_and_inherent_capacity() {
     let helper = br#"fn extract(target: own box<FixedVector<u64, 0>>, incoming: own FixedVector<u64, 0>) -> previous: own FixedVector<u64, 0> reads(target), writes(target) {
   let previous = replace deref(target) = move incoming;
   return move previous;
@@ -2000,12 +2362,13 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics(helper, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Unsupported { ref unsupported }
-                if unsupported.feature() == crate::UnsupportedSemanticFeature::OwnerStateRouting),
-            "kernel effect projection must report its missing origin capability: {outcome:?}"
-        );
+    assert_complete(helper);
+    let not_always_full = std::str::from_utf8(helper)
+        .unwrap()
+        .replace("FixedVector<u64, 0>", "FixedVector<u64, 1>")
+        .replace("array<u64, 0>", "array<u64, 1>");
+    assert_rule_kind(not_always_full.as_bytes(), SemanticRule::Blk0, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedKernelRequirement(_))
     });
     assert_complete(br#"fn convert(owner: own box<FixedVector<u64, 0>>, incoming: own FixedVector<u64, 0>) -> result: own array<u64, 0> reads(owner), writes(owner) {
   let previous = replace deref(owner) = move incoming;

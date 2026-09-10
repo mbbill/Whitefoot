@@ -11,9 +11,10 @@ use crate::{
 use super::super::model::{
     CheckedConst, CheckedConstant, CheckedConstantId, CheckedElement, CheckedExpression,
     CheckedFlatElement, CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedSetTarget,
-    CheckedStateOrigins, CheckedStatePath, CheckedStatement, CheckedType, CheckedValue,
-    ConstOperation, FloatType, IntegerType, LoanStrength, evaluate_const_operation,
+    CheckedStateOrigins, CheckedStatePath, CheckedStateStep, CheckedStatement, CheckedType,
+    CheckedValue, ConstOperation, FloatType, IntegerType, LoanStrength, evaluate_const_operation,
 };
+use super::super::places::PlaceProjection;
 use super::floats::parse_float_literal;
 use super::generics::GenericSubstitution;
 use super::{
@@ -1131,6 +1132,26 @@ extent's region is one the caller must choose, so it is written at every positio
         Ok(!self.type_state_leaf_paths(ty)?.is_empty())
     }
 
+    /// [CALL-4, S39] result lists and structs contain fields; consuming a
+    /// cell selects its referent. Construction and destructuring must use
+    /// the same value selector independently of their binder ordinal.
+    pub(super) fn destructured_state_step(
+        &self,
+        ty: CheckedType,
+        ordinal: u32,
+    ) -> Result<CheckedStateStep, CheckStop> {
+        let CheckedType::Nominal(nominal) = ty else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        match &self.nominal(nominal)?.kind {
+            CheckedNominalKind::Box { .. } if ordinal == 0 => Ok(CheckedStateStep::Referent),
+            CheckedNominalKind::Struct { fields } if (ordinal as usize) < fields.len() => {
+                Ok(CheckedStateStep::Field(ordinal))
+            }
+            _ => Err(SemanticCompilerFailure::InvalidResolution.into()),
+        }
+    }
+
     /// An access may name its containing storage for effects without naming
     /// the value being replaced. In particular, legacy indexed targets retain
     /// a root-level access projection; it never authorizes a whole-owner update.
@@ -1139,45 +1160,115 @@ extent's region is one the caller must choose, so it is written at every positio
         target: &CheckedSetTarget,
         place: &super::borrows::ResolvedPlace,
         bindings: &HashMap<crate::DeclarationId, LocalBinding>,
-    ) -> Result<Option<Vec<u32>>, CheckStop> {
+    ) -> Result<Option<Vec<CheckedStateStep>>, CheckStop> {
         match target {
-            CheckedSetTarget::ArrayIndex(_)
-            | CheckedSetTarget::BufferIndex(_)
-            | CheckedSetTarget::SliceIndex(_) => Ok(None),
+            CheckedSetTarget::ArrayIndex(target) => {
+                self.state_fields_of_index_target(place, &target.offset, bindings)
+            }
+            CheckedSetTarget::BufferIndex(target) => {
+                self.state_fields_of_index_target(place, &target.offset, bindings)
+            }
+            CheckedSetTarget::SliceIndex(_) => Ok(None),
             CheckedSetTarget::Place(_) | CheckedSetTarget::Storage(_) => {
                 self.state_fields_of_place(place, bindings)
             }
         }
     }
 
-    /// The current finite owner image has ordinary roots and static product
-    /// fields. Enum payloads, indexed elements, and owning referents need
-    /// their distinct value/storage representation before a strong update.
+    fn state_fields_of_index_target(
+        &self,
+        base: &super::borrows::ResolvedPlace,
+        offset: &CheckedExpression,
+        bindings: &HashMap<crate::DeclarationId, LocalBinding>,
+    ) -> Result<Option<Vec<CheckedStateStep>>, CheckStop> {
+        let Some(super::super::places::PlaceOffset::Literal(index)) = Self::place_offset_of(offset)
+        else {
+            return Ok(None);
+        };
+        let mut place = base.clone();
+        place.push_subscript(super::super::places::PlaceOffset::Literal(index));
+        self.state_fields_of_place(&place, bindings)
+    }
+
+    /// Value selectors distinguish an allocation's referent from its owner.
+    /// An effect-path prefix alone never authorizes a strong value update.
     pub(super) fn state_fields_of_place(
         &self,
         place: &super::borrows::ResolvedPlace,
         bindings: &HashMap<crate::DeclarationId, LocalBinding>,
-    ) -> Result<Option<Vec<u32>>, CheckStop> {
-        let Some(fields) = place.state_fields() else {
-            return Ok(None);
-        };
+    ) -> Result<Option<Vec<CheckedStateStep>>, CheckStop> {
         let mut ty = bindings
             .get(&place.root)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?
-            .ty;
-        for field in &fields {
+            .map(|binding| binding.ty)
+            .or_else(|| {
+                self.constants
+                    .get(&place.root)
+                    .and_then(|id| self.checked_constants.get(id.0 as usize))
+                    .map(|constant| constant.ty)
+            })
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let mut path = Vec::new();
+        for (depth, step) in place.storage_path.iter().enumerate() {
+            if let PlaceProjection::Subscript(super::super::places::PlaceOffset::Literal(index)) =
+                step
+            {
+                if let CheckedType::Buffer { element } = ty {
+                    ty = element.ty();
+                    path.push(CheckedStateStep::Element(*index));
+                    continue;
+                }
+                let element = match ty {
+                    CheckedType::Array { element, .. }
+                    | CheckedType::FixedVector { element, .. }
+                    | CheckedType::Vector { element, .. } => element,
+                    _ => return Ok(None),
+                };
+                ty = self.element_type(element)?;
+                path.push(CheckedStateStep::Element(*index));
+                continue;
+            }
             let CheckedType::Nominal(id) = ty else {
                 return Ok(None);
             };
-            let CheckedNominalKind::Struct { fields, .. } = &self.nominal(id)?.kind else {
-                return Ok(None);
-            };
-            ty = fields
-                .get(*field as usize)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                .ty;
+            match (step, &self.nominal(id)?.kind) {
+                (PlaceProjection::Field(field), CheckedNominalKind::Struct { fields, .. }) => {
+                    ty = fields
+                        .get(*field as usize)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                        .ty;
+                    path.push(CheckedStateStep::Field(*field));
+                }
+                (PlaceProjection::Deref, CheckedNominalKind::Box { referent, .. }) => {
+                    ty = *referent;
+                    path.push(CheckedStateStep::Referent);
+                }
+                (PlaceProjection::Deref, CheckedNominalKind::Arena { content, .. }) => {
+                    ty = *content;
+                    path.push(CheckedStateStep::Referent);
+                }
+                (PlaceProjection::Field(field), CheckedNominalKind::Enum { variants }) => {
+                    let Some((_, tag)) = place
+                        .state_variants
+                        .iter()
+                        .find(|(index, _)| *index == depth)
+                    else {
+                        return Ok(None);
+                    };
+                    let selected = variants
+                        .iter()
+                        .find(|variant| variant.tag == *tag)
+                        .and_then(|variant| variant.fields.get(*field as usize))
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    ty = selected.ty;
+                    path.push(CheckedStateStep::VariantField {
+                        variant: *tag,
+                        field: *field,
+                    });
+                }
+                _ => return Ok(None),
+            }
         }
-        Ok(Some(fields))
+        Ok(Some(path))
     }
 
     /// Follows a checked value through moves, borrows, and closed-world call
@@ -1190,21 +1281,26 @@ extent's region is one the caller must choose, so it is written at every positio
         if !self.type_carries_identity(value.expression.ty())? {
             return Ok(None);
         }
-        let rooted = if let Some(borrow) = value.borrow.as_ref() {
+        let rooted_place = value
+            .borrow
+            .as_ref()
+            .map(|borrow| &borrow.place)
+            .or_else(|| (value.accesses.len() == 1).then(|| &value.accesses[0].place));
+        let rooted = if let Some(place) = rooted_place {
+            let path = self.state_fields_of_place(place, bindings)?;
             bindings
-                .get(&borrow.place.root)
+                .get(&place.root)
                 .and_then(|binding| binding.state_origins.clone())
-                .map(|origins| origins.projected(&borrow.place.field_prefix()))
+                .map(|origins| {
+                    path.as_ref()
+                        .map_or_else(CheckedStateOrigins::unknown, |path| {
+                            origins.projected_value(path)
+                        })
+                })
         } else if let Some(holder) = value.holder {
             bindings
                 .get(&holder)
                 .and_then(|binding| binding.state_origins.clone())
-        } else if value.accesses.len() == 1 {
-            let access = &value.accesses[0];
-            bindings
-                .get(&access.place.root)
-                .and_then(|binding| binding.state_origins.clone())
-                .map(|origins| origins.projected(&access.place.field_prefix()))
         } else {
             None
         };
@@ -1322,6 +1418,60 @@ extent's region is one the caller must choose, so it is written at every positio
                 .cloned()
                 .map_or(StateOriginResolution::Absent, StateOriginResolution::Finite),
             CheckedExpression::KernelCall {
+                row:
+                    crate::KernelRow::FixedVector
+                    | crate::KernelRow::ArenaVector
+                    | crate::KernelRow::ArenaVectorProved
+                    | crate::KernelRow::HeapVector
+                    | crate::KernelRow::ArenaFrame,
+                ..
+            } => StateOriginResolution::Finite(CheckedStateOrigins::fresh()),
+            CheckedExpression::KernelCall {
+                row: crate::KernelRow::HeapBox | crate::KernelRow::ArenaBox,
+                arguments,
+                call,
+                ..
+            } => {
+                let Some(value) = arguments.get(1) else {
+                    return StateOriginResolution::Unknown(call.clone());
+                };
+                let mut origin = self.expression_state_origins(value);
+                if let StateOriginResolution::Finite(origins) = &mut origin {
+                    let value = origins.clone();
+                    *origins = value.clone().prefixed(&[
+                        CheckedStateStep::VariantField {
+                            variant: 0,
+                            field: 0,
+                        },
+                        CheckedStateStep::Referent,
+                    ]);
+                    origins.union(&value.prefixed(&[CheckedStateStep::VariantField {
+                        variant: 1,
+                        field: 0,
+                    }]));
+                }
+                origin
+            }
+            CheckedExpression::KernelCall {
+                row: crate::KernelRow::PlaceBack | crate::KernelRow::PlaceFront,
+                instance,
+                arguments,
+                call,
+                ..
+            } => {
+                // Insertion changes logical element positions. A union of
+                // the operand images would leave old slot selectors in place
+                // and put the new element at the run's root. Until this has
+                // a slot transfer, it must not manufacture an exact image.
+                if !self.is_copy_type(instance.element).unwrap_or(false) {
+                    return StateOriginResolution::Unknown(call.clone());
+                }
+                arguments.first().map_or_else(
+                    || StateOriginResolution::Unknown(call.clone()),
+                    |run| self.expression_state_origins(run),
+                )
+            }
+            CheckedExpression::KernelCall {
                 row: crate::KernelRow::TakeBack | crate::KernelRow::TakeFront,
                 instance,
                 arguments,
@@ -1341,7 +1491,7 @@ extent's region is one the caller must choose, so it is written at every positio
                 let mut origins = self.expression_state_origins(run);
                 if let StateOriginResolution::Finite(origins) = &mut origins {
                     for origin in &mut origins.formals {
-                        origin.value_fields.insert(0, 0);
+                        origin.value_fields.insert(0, CheckedStateStep::Field(0));
                     }
                 }
                 origins
@@ -1358,7 +1508,9 @@ extent's region is one the caller must choose, so it is written at every positio
                             );
                         };
                         for origin in &mut field_origins.formals {
-                            origin.value_fields.insert(0, ordinal);
+                            origin
+                                .value_fields
+                                .insert(0, CheckedStateStep::Field(ordinal));
                         }
                     }
                     origins.union(field_origins);
@@ -1379,8 +1531,13 @@ extent's region is one the caller must choose, so it is written at every positio
                     let mut field_origins = self.expression_state_origins(value);
                     if let StateOriginResolution::Finite(field_origins) = &mut field_origins {
                         for origin in &mut field_origins.formals {
-                            origin.value_fields.insert(0, field);
-                            origin.variant = Some(*variant);
+                            origin.value_fields.insert(
+                                0,
+                                CheckedStateStep::VariantField {
+                                    variant: *variant,
+                                    field,
+                                },
+                            );
                         }
                     }
                     origins.union(field_origins);
@@ -1391,11 +1548,20 @@ extent's region is one the caller must choose, so it is written at every positio
                 let mut origins = self.expression_state_origins(value);
                 if let StateOriginResolution::Finite(origins) = &mut origins {
                     for origin in &mut origins.formals {
-                        origin.value_fields.clear();
-                        origin.variant = None;
+                        origin.value_fields.insert(0, CheckedStateStep::Referent);
                     }
                 }
                 origins
+            }
+            CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::ArenaDeref { value, .. } => {
+                let mut origin = self.expression_state_origins(value);
+                if let StateOriginResolution::Finite(origins) = &mut origin {
+                    *origins = origins
+                        .clone()
+                        .projected_value(&[CheckedStateStep::Referent]);
+                }
+                origin
             }
             _ => {
                 let mut origins = StateOriginResolution::Absent;
@@ -1412,6 +1578,66 @@ extent's region is one the caller must choose, so it is written at every positio
         ty: CheckedType,
     ) -> Result<Vec<Vec<u32>>, CheckStop> {
         self.identity_leaf_paths(ty, false)
+    }
+
+    /// The path-list implementation does not unfold a recursive object graph.
+    /// A cyclic selector needs a finite recursive summary representation;
+    /// report that compiler capability as unknown instead of growing paths
+    /// without bound in a loop or callable fixed point. This is not a source
+    /// rejection or a proof-work limit.
+    pub(super) fn state_selector_is_acyclic(
+        &self,
+        mut ty: CheckedType,
+        path: &[CheckedStateStep],
+    ) -> Result<bool, CheckStop> {
+        let mut visited = HashSet::new();
+        for step in path {
+            if !visited.insert(ty) {
+                return Ok(false);
+            }
+            if let CheckedStateStep::Element(_) = step {
+                if let CheckedType::Buffer { element } = ty {
+                    ty = element.ty();
+                    continue;
+                }
+                let element = match ty {
+                    CheckedType::Array { element, .. }
+                    | CheckedType::FixedVector { element, .. }
+                    | CheckedType::Vector { element, .. } => element,
+                    _ => return Ok(false),
+                };
+                ty = self.element_type(element)?;
+                continue;
+            }
+            let CheckedType::Nominal(id) = ty else {
+                return Ok(false);
+            };
+            ty = match (step, &self.nominal(id)?.kind) {
+                (CheckedStateStep::Field(field), CheckedNominalKind::Struct { fields }) => {
+                    let Some(field) = fields.get(*field as usize) else {
+                        return Ok(false);
+                    };
+                    field.ty
+                }
+                (CheckedStateStep::Referent, CheckedNominalKind::Box { referent, .. }) => *referent,
+                (CheckedStateStep::Referent, CheckedNominalKind::Arena { content, .. }) => *content,
+                (
+                    CheckedStateStep::VariantField { variant, field },
+                    CheckedNominalKind::Enum { variants },
+                ) => {
+                    let Some(field) = variants
+                        .iter()
+                        .find(|candidate| candidate.tag == *variant)
+                        .and_then(|variant| variant.fields.get(*field as usize))
+                    else {
+                        return Ok(false);
+                    };
+                    field.ty
+                }
+                _ => return Ok(false),
+            };
+        }
+        Ok(true)
     }
 
     fn identity_leaf_paths(

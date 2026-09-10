@@ -3568,9 +3568,9 @@ fn close_goal_contradictions(
 /// its reflexive and integer-range edges cannot be a useful middle: entering
 /// and leaving it adds a nonnegative range cycle to the path already available
 /// through `ZERO` (and an equal path has greater proof depth). Live relation
-/// endpoints can be useful, as can an exact array-length alias connected to
-/// one, so those are the only additional middle vertices the fixed point
-/// needs. Opaque goals are included because their opposite sign can be proved
+/// endpoints can be useful, as can the endpoints of implicit edges between
+/// distinct nonzero terms, including measure aliases and length/capacity
+/// orderings. Opaque goals are included because their opposite sign can be proved
 /// from a projected or normalized relation and form a contradiction.
 fn closure_middle_terms(
     state: &FactState,
@@ -3629,17 +3629,18 @@ fn closure_middle_terms(
         }
     }
 
-    // Array/slice length aliases are the only implicit non-zero-to-non-zero
-    // edges. Every such edge needs both endpoints as middles even without a
-    // live source: the length range transfers to an otherwise unbounded const
-    // parameter, and two lengths equal to that parameter become equal to one
-    // another. `available` keeps an excluded receiver out of this universe.
+    // A standing relation can need transitivity without any written fact:
+    // len(P) <= cap(P) and cap(P) == 0 imply len(P) == 0. Omitting capacity
+    // as a middle loses that proof until an unrelated source read happens to
+    // mention it. Derive this inventory from the complete implicit edge set,
+    // so future measure rows cannot silently evade the same fixed point.
     for id in ids {
-        let Some(MeasureBound::Equal(parameter)) = terms.measure_bound(*id) else {
-            continue;
-        };
-        active.0[id.0 as usize] = true;
-        admit(parameter, &mut active);
+        for_each_implicit_bound(terms, *id, |left, right, _, _| {
+            if left != right && left != ZERO && right != ZERO {
+                admit(left, &mut active);
+                admit(right, &mut active);
+            }
+        });
     }
     active
 }

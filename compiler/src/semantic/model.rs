@@ -1532,187 +1532,10 @@ pub(crate) enum CheckedSliceOrigin {
     },
 }
 
-/// The finite set of caller-formal state paths a checked value may carry.
-///
-/// An empty formal set means every identity in the value is invocation-local;
-/// the value's affine type, not this attribution summary, says whether such an
-/// identity exists.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct CheckedStateOrigins {
-    pub(crate) unknown: bool,
-    pub(crate) formals: Vec<CheckedStateOrigin>,
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) struct CheckedStateOrigin {
-    /// Path inside the value carrying this origin.
-    pub(crate) value_fields: Vec<u32>,
-    /// Selected enum variant while the origin is still correlated with a
-    /// direct constructor or match. `None` is the conservative whole-enum
-    /// route used at callable boundaries.
-    pub(crate) variant: Option<u32>,
-    /// Exact incoming formal state leaf supplying it.
-    pub(crate) source: CheckedStatePath,
-}
-
-impl CheckedStateOrigins {
-    /// Instantiate one boundary image from the same pre-call argument values
-    /// used for every other result and exclusive-referent image.
-    pub(crate) fn instantiate(
-        image: &CheckedResultStateOrigin,
-        arguments: &[Option<Self>],
-    ) -> Self {
-        let formals = match image {
-            CheckedResultStateOrigin::NoState => return Self::fresh(),
-            CheckedResultStateOrigin::Unknown => return Self::unknown(),
-            CheckedResultStateOrigin::Finite { formals } => formals,
-        };
-        let mut result = Self::fresh();
-        for formal in formals {
-            let Some(argument) = arguments.get(formal.parameter as usize) else {
-                return Self::unknown();
-            };
-            let mut mapped = argument
-                .clone()
-                .unwrap_or_else(Self::fresh)
-                .projected(&formal.parameter_fields);
-            for origin in &mut mapped.formals {
-                let mut fields = formal.result_fields.clone();
-                fields.extend_from_slice(&origin.value_fields);
-                origin.value_fields = fields;
-                if formal.result_variant.is_some() {
-                    origin.variant = formal.result_variant;
-                }
-            }
-            result.union(&mapped);
-        }
-        result
-    }
-
-    pub(crate) fn fresh() -> Self {
-        Self {
-            unknown: false,
-            formals: Vec::new(),
-        }
-    }
-
-    pub(crate) fn formal_leaves(formal: DeclarationId, leaves: Vec<Vec<u32>>) -> Self {
-        Self {
-            unknown: false,
-            formals: leaves
-                .into_iter()
-                .map(|fields| CheckedStateOrigin {
-                    value_fields: fields.clone(),
-                    variant: None,
-                    source: CheckedStatePath {
-                        root: formal,
-                        fields,
-                    },
-                })
-                .collect(),
-        }
-    }
-
-    pub(crate) fn union(&mut self, other: &Self) {
-        self.unknown |= other.unknown;
-        for formal in &other.formals {
-            if !self.formals.contains(formal) {
-                self.formals.push(formal.clone());
-            }
-        }
-        self.formals.sort();
-    }
-
-    pub(crate) fn unknown() -> Self {
-        Self {
-            unknown: true,
-            formals: Vec::new(),
-        }
-    }
-
-    pub(crate) fn projected(mut self, fields: &[u32]) -> Self {
-        self.formals.retain_mut(|formal| {
-            if !formal.value_fields.starts_with(fields) {
-                return false;
-            }
-            formal.value_fields.drain(..fields.len());
-            true
-        });
-        self
-    }
-
-    pub(crate) fn enum_payload(mut self, variant: u32, field: u32) -> Self {
-        self.formals.retain_mut(|origin| match origin.variant {
-            Some(actual) if actual != variant => false,
-            Some(_) => {
-                if origin.value_fields.first() != Some(&field) {
-                    return false;
-                }
-                origin.value_fields.remove(0);
-                origin.variant = None;
-                true
-            }
-            // A formal whole-enum route cannot distinguish variants. Keep it
-            // conservatively, but expose it as the selected payload's root.
-            None => {
-                origin.value_fields.clear();
-                true
-            }
-        });
-        self
-    }
-
-    pub(crate) fn replace_path(mut self, fields: &[u32], replacement: Option<Self>) -> Self {
-        if fields.is_empty() {
-            return replacement.unwrap_or_else(Self::fresh);
-        }
-        self.formals
-            .retain(|origin| !origin.value_fields.starts_with(fields));
-        if let Some(mut replacement) = replacement {
-            self.unknown |= replacement.unknown;
-            for mut origin in replacement.formals.drain(..) {
-                let mut value_fields = fields.to_vec();
-                value_fields.extend_from_slice(&origin.value_fields);
-                origin.value_fields = value_fields;
-                if !self.formals.contains(&origin) {
-                    self.formals.push(origin);
-                }
-            }
-            self.formals.sort();
-        }
-        self
-    }
-}
-
-/// Closed-world origin summary for one concrete function result.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum CheckedResultStateOrigin {
-    /// The complete result type carries no opaque state identity.
-    NoState,
-    /// Every result state identity comes from this finite origin set.
-    Finite {
-        /// Formal paths which may supply the returned state.
-        formals: Vec<CheckedResultStatePath>,
-    },
-    /// The current compiler could not close the result-origin equation.
-    Unknown,
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) struct CheckedResultStatePath {
-    pub(crate) result_fields: Vec<u32>,
-    pub(crate) result_variant: Option<u32>,
-    pub(crate) parameter: u32,
-    pub(crate) parameter_fields: Vec<u32>,
-}
-
-/// The current value left in an exclusive formal's referent on normal exits.
-/// Its sources use the same entry-parameter coordinates as a returned owner.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedBorrowedStateOrigin {
-    pub(crate) parameter: u32,
-    pub(crate) origin: CheckedResultStateOrigin,
-}
+pub(crate) use super::state_origins::{
+    CheckedBorrowedStateOrigin, CheckedResultStateOrigin, CheckedResultStatePath,
+    CheckedStateOrigin, CheckedStateOrigins, CheckedStateStep,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedSliceSource {
@@ -2414,14 +2237,14 @@ pub(crate) enum CheckedStatement {
         value: CheckedExpression,
     },
     /// [GRAM-4, CALL-4] `let (a, b) = f(...);`. One evaluation of a call whose
-    /// callee declares an ordered result list, and one fresh binding per
-    /// result ordinal in written order: binder i takes ordinal i, which is
-    /// field i of the callee's result-list value.
+    /// callee declares an ordered result list, or the source consumes a
+    /// struct or cell. Binders follow field order for products; a cell's
+    /// sole binder receives its referent.
     DestructuringLet {
         node_path: NodePath,
-        /// Binder i and the type of result ordinal i, in written order.
+        /// Each binder and its selected value type, in written order.
         bindings: Vec<(BindingId, CheckedType)>,
-        /// The callee's result-list nominal [CALL-4].
+        /// The consumed product or cell nominal [CALL-4, TYPE-6, S39].
         nominal: NominalId,
         value: CheckedExpression,
     },
