@@ -71,7 +71,9 @@ constant cost per steal. They remain separate from the original timing matrix.
 
 After the formal screen, Linux CI runs `formal-screen.sh profile` on its exact
 old/recovered/current/replica executables. This external `perf record -e
-cpu-clock -F 997` observer samples CPU execution without rebuilding the images.
+cpu-clock -F 997 --sample-cpu` observer samples CPU execution without rebuilding
+the images. Events retain CPU identifiers and nanosecond timestamps; `inputs.txt`
+records the guest's thread-sibling, core and package topology from sysfs.
 It uses N4096/tile64 on x86-64 and N65536/tile1024 on AArch64, at widths 1/4,
 with five passes in alternating image order. Each sampled process has a plain
 process immediately before it, with identical inputs and existing call counts.
@@ -87,8 +89,12 @@ result accessor, allocation/destruction, compute callbacks or worker search.
 Compare sample locations with each image's plain CPU/full-call measurements;
 percentages alone are not absolute costs. Sampling changes scheduling and may
 miss short intervals, and `cpu-clock` does not measure off-CPU waits or hardware
-stalls. These observations do not replace the original performance screen or
-justify another runtime change without a localized cause. Remove this bounded
+stalls. CPU identifiers test whether a repeated difference in sampled thread
+placement accompanies the full-call gap. Changes between samples are only a
+lower bound on migrations; guest topology and samples cannot establish physical
+host contention. Earlier profiles without `--sample-cpu` cannot answer that
+placement question. These observations do not replace the original performance
+screen or justify another runtime change without a localized cause. Remove this bounded
 observer when that attribution question is resolved.
 
 On x86-64, the formal matrix gives every scheduler reference the maintained

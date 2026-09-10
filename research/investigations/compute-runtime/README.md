@@ -1138,6 +1138,85 @@ thresholds. No queue, waiting-policy limit, ABI, I/O path or publication setting
 changes as part of this rejection. All-platform performance qualification and
 the ordinary compiler's wider workload gaps remain open.
 
+### Restored core at 2ae2b37e: reproduced Linux full-call gap
+
+The [2ae2b37e cohort](https://github.com/mbbill/Whitefoot/actions/runs/34456384659)
+restores the exact `4fabd264` core and inline primitives. The exact local
+canonical `make check`, all twelve gate jobs, both I/O host jobs and all four
+I/O benchmark jobs pass. All five formal performance jobs still fail.
+Their long/first64 investigate counts are Linux x86-64 1/90 and 15/90,
+Linux ARM 0/72 and 10/72, Mac ARM 16/48 and 20/48, Mac Intel 20/90 and
+36/90, and Windows 1/48 and 12/48. The ordinary Mac ARM reader passes,
+but all 476 wall/CPU rows are `noisy-open`; that green job is not performance
+qualification. No default publication policy changes in this cohort.
+
+On Linux x86-64, again reporting EPYC 7763 with two cores/four hardware
+threads, W4/N65536/tile1024 full-call/previous is 0.9961
+[0.9840, 1.0037] and CPU/previous is 0.9972 [0.9933, 1.0023]. The
+rejected hint's repeated large-input CPU regression is absent in this
+same-host comparison with the unhinted control. Cross-cohort elapsed times
+are not used to estimate the rollback's effect.
+
+The unresolved W4/N4096/tile64 full-call/research ratio is 1.0856
+[1.0441, 1.1048], CPU/research 1.0881 [1.0420, 1.1053], and core/research
+0.9910 [0.9838, 0.9984]. This time the external observer reproduces the
+gap on its original hashed images. Five paired process ratios are summarized
+as median [minimum, maximum], without treating individual calls as independent
+process replications:
+
+| Observation | Full call (current/research) | Process CPU (current/research) | Core (current/research) |
+|---|---:|---:|---:|
+| Plain processes preceding sampling | 1.0790 [1.0600, 1.1149] | 1.0865 [1.0637, 1.0905] | 0.9974 [0.9597, 1.0313] |
+| CPU-sampled processes | 1.0910 [1.0680, 1.0997] | 1.1031 [1.0643, 1.1428] | 0.9943 [0.9794, 1.0147] |
+| Existing exit-time steal-counter observation | 1.0843 [1.0625, 1.1029] | 1.0948 [1.0606, 1.1053] | 1.0036 [0.9926, 1.0057] |
+| Existing sequential-entry control | 1.0126 [0.9675, 1.0249] | 1.0126 [0.9681, 1.0242] | 1.0023 [0.9621, 1.0132] |
+
+Independent replay verifies all eighty profile processes, 327,760 calls,
+249 profile hashes and 26,483 samples; all forty perf reports record zero
+lost samples. Current/replica sampled full-call A/A is 1.0000
+[0.9864, 1.0198]. Summed W4 owner samples are 1458/1334 for current/research,
+and helper samples are 4161/3781. Every pair has more samples in both roles;
+worker-loop samples account for 3341/2979, and result-getter samples for
+911/810. The getter identifies the actual calling thread; the three helper
+TIDs execute the worker loop. These observations cannot distinguish more
+expensive individual searches from longer consumption keeping helpers busy.
+Sampled timings are perturbed and are not corrected by subtracting an observer
+cost. Absence of a fifth sampled TID does not prove zero bootstrap CPU.
+
+The separate serial/counter replay verifies 72 hashed files, 45 processes
+and 184,365 oracle-checked calls. Successful steals/current over research
+are 0.9729 [0.9223, 0.9768]; more successful steals cannot explain the
+current image's higher CPU usage. These counts include startup and all warm
+calls and do not count unsuccessful searches. Voluntary switch counts are
+slightly higher in four pairs and equal in one, within the replica variation;
+involuntary differences reverse direction. Neither count measures wait duration
+or explains the full-call gap.
+The sequential selector retains the owned result-tree form but uses a
+different existing WF entry; it does not isolate scheduling from code placement
+or allocation history. Its lack of a repeated full-call regression is a useful
+constraint, not a causal proof about the parallel gap.
+
+Mac ARM's W2/N65536/tile16 full-minus-core/research signal weakens in this
+third cohort: current is 1.0579 [1.0193, 1.2090], replica is 1.0842
+[0.9982, 1.2115], and A/A is 0.9980 [0.8420, 1.0472]. Prior stronger
+cohorts remain evidence, but these results cannot yield a fixed runtime cost.
+All-platform performance and wider ordinary-command workloads remain open.
+
+The next bounded observation adds CPU identifiers to the existing external
+Linux sampler and records guest-reported sibling/core/package topology. All
+forty `2ae2b37e` records have sample type `0x107`, which omits the
+[Linux CPU sample field](https://github.com/torvalds/linux/blob/v6.8/include/uapi/linux/perf_event.h#L130-L139).
+No CPU placement or migration claim can be recovered from those records.
+The [perf record option](https://github.com/torvalds/linux/blob/v6.8/tools/perf/Documentation/perf-record.txt#L324-L325)
+adds that field without relinking a runtime or adding a hot-path counter.
+The discriminating question is whether the reproduced full-call/CPU gap
+coincides with consistent owner/helper CPU placement differences. If the gap
+is absent during observation, or placement has no consistent differential,
+the observation cannot select an affinity or waiting-policy change. Sample
+transitions only bound migrations from below; guest topology does not reveal
+physical-host contention. Runtime source, waiting limits, workload, plain
+controls and performance acceptance remain unchanged.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o

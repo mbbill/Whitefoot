@@ -41,9 +41,15 @@ if test "${1:-screen}" = profile; then
         printf 'kernel=wf k=16 n=%s tile=%s calls=%s seed=92821 workers=1,4 passes=5\n' "$n" "$tile" "$calls"
         printf '%s\n' 'unchanged images; every CPU-sampled process has a preceding plain process' \
             'cpu-clock samples attribute user/kernel CPU, not off-CPU wait duration or hardware stalls' \
+            'sample CPU and guest topology describe observed placement, not exact migrations or host-core contention' \
             'sampled timings are descriptive; no observer cost is subtracted from the original screen'
         uname -a
         for path in /proc/sys/kernel/perf_event_paranoid /sys/fs/cgroup/cpu.max /sys/fs/cgroup/cpuset.cpus.effective; do
+            if test -r "$path"; then printf '%s: ' "$path"; cat "$path"; fi
+        done
+        for path in /sys/devices/system/cpu/cpu[0-9]*/topology/thread_siblings_list \
+                    /sys/devices/system/cpu/cpu[0-9]*/topology/core_id \
+                    /sys/devices/system/cpu/cpu[0-9]*/topology/physical_package_id; do
             if test -r "$path"; then printf '%s: ' "$path"; cat "$path"; fi
         done
         sha256sum "$out/old" "$out/recovered" "$out/candidate" "$out/replica"
@@ -56,7 +62,7 @@ if test "${1:-screen}" = profile; then
         printf '%s\n' 'four native CPUs unavailable' > "$profile/availability.txt"
         exit 0
     fi
-    if ! "$perf" record -e cpu-clock -F 997 -o "$profile/probe.data" -- true \
+    if ! "$perf" record -e cpu-clock -F 997 --sample-cpu -o "$profile/probe.data" -- true \
         > "$profile/probe.log" 2>&1; then
         printf '%s\n' 'cpu-clock sampling unavailable; see probe.log' > "$profile/availability.txt"
         exit 0
@@ -73,7 +79,7 @@ if test "${1:-screen}" = profile; then
                 printf 'WF_WORKERS=%s WF_SCHED_REPORT=0 %s wf 16 %s %s %s 92821 %s\n' \
                     "$width" "$out/$image" "$n" "$tile" "$calls" "$pass" >> "$profile/commands.txt"
                 WF_WORKERS="$width" "$out/$image" wf 16 "$n" "$tile" "$calls" 92821 "$pass" > "$stem.plain.tsv"
-                WF_WORKERS="$width" "$perf" record -e cpu-clock -F 997 -o "$stem.cpu.data" \
+                WF_WORKERS="$width" "$perf" record -e cpu-clock -F 997 --sample-cpu -o "$stem.cpu.data" \
                     -- "$out/$image" wf 16 "$n" "$tile" "$calls" 92821 "$pass" \
                     > "$stem.sampled.tsv" 2> "$stem.cpu.log"
                 for log in "$stem.plain.tsv" "$stem.sampled.tsv"; do
@@ -90,7 +96,7 @@ if test "${1:-screen}" = profile; then
                         END {exit bad || lanes!=1 || passed!=1 || rows!=calls+1}' "$log"
                 done
                 "$perf" report --stdio --no-children -i "$stem.cpu.data" > "$stem.cpu.txt"
-                "$perf" script -i "$stem.cpu.data" > "$stem.cpu-events.txt"
+                "$perf" script -F +cpu --ns -i "$stem.cpu.data" > "$stem.cpu-events.txt"
             done
             pass=$((pass + 1))
         done
