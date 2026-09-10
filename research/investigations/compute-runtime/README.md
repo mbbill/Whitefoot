@@ -1400,6 +1400,37 @@ noisy default A/A. A global threshold reduction cannot be called a general win
 from this evidence. Preserve the existing knob and original failed screen;
 this does not select a new cost model or make default-policy performance pass.
 
+### Equivalent victim-address traversal
+
+The c85e69af external Linux x86-64 sample has 2,602 of 4,501 W4 samples in
+the worker loop. Its emitted scan recomputes a wrapped integer index, scales
+it by the lane stride and compares the resulting pointer with the owner on
+each iteration. This is a common cost, not an explanation of the remaining
+current/research difference. Sampling does not assign an instruction's latency.
+Test one equivalent implementation in the maintained core: start at the same
+random victim, advance its pointer, and wrap at the same captured lane count.
+Keep the random sequence, exact victim order, deque atomics, counters and
+spin/yield/park thresholds unchanged. No new runtime storage or interface is
+needed, including during partial startup.
+
+First check generated code and existing concurrent deque/startup tests. If
+address work is not reduced, discard the candidate before native timing.
+Otherwise compare it with the prior maintained core and frozen controls in the
+existing five-target formal and ordinary matrices, including complete-call and
+CPU costs. A sample share or a shorter scan does not establish a net program
+benefit: faster empty scans can change when the unchanged park threshold is
+reached. Retain only measured useful gains without a repeatable regression;
+do not compensate a loss by adjusting waits, grain or the acceptance screen.
+
+Local macOS ARM smoke tests cover normal/refused/partial startup and delayed
+readiness; both 200,000-task deque probes and all seventeen loop backend tests
+pass. Independent review confirms bounds through the 64-lane tail pointer,
+unchanged victim order and the existing stale-count startup argument. Native
+ARM and cross-compiled macOS x86-64 O2 disassembly move lane scaling outside
+the inner scan. Reported object text changes by -36 and +90 bytes respectively.
+These are code-shape and correctness observations, not measured speedups or
+five-platform qualification.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o
