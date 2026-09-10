@@ -50,8 +50,11 @@ These checks establish execution and artifact integrity, not performance parity.
 The original formal long/first64 screens still report investigate cells:
 Linux x86-64 3/120 and 27/120; Linux ARM 0/96 and 3/96; Mac Intel 39/120 and
 49/120; Mac ARM 17/72 and 26/72; Windows 3/72 and 9/72. Every ordinary-command
-screen also remains red. Quadrature's calibration rejects timing variability
-after its correctness checks pass. No screen or threshold is relaxed.
+screen also remains red. Quadrature's formal/research parity screen remains
+red after its correctness checks pass. Its center-peak/wf-leaf-seq/W4 cell
+has wall/CPU medians 1.0695/1.0448, with wall range 1.0024–1.1554. Many other
+cells have substantially wider ranges; these losses remain unresolved rather
+than establishing a common scheduler cause. No screen or threshold is relaxed.
 
 The clearest remaining runtime comparison loss is Linux x86-64 FIR at
 W4/N4096/tile64. Against the repaired research control, candidate and replica
