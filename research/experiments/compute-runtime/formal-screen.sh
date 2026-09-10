@@ -201,14 +201,14 @@ C
     cp "$root/compiler/src/backend/windows_runtime.c" "$root/compiler/src/backend/windows_runtime.h" "$out/source/"
     cp -R "$root/compiler/src/backend/completion" "$out/source/"
 fi
-# Freeze the maintained core and inline primitives to isolate the spin hint.
-# Earlier slot/counter/Windows ablations stay in git.
+# Freeze the maintained core and inline primitives as the previous control.
+# Rejected slot/counter/spin-hint adjustments stay in git and measured artifacts.
 git show "$previous:compiler/src/backend/sched/core.c" > "$out/previous.c"
 mkdir "$out/previous-sched"
 for header in core.h entry.h prim.h; do
     git show "$previous:compiler/src/backend/sched/$header" > "$out/previous-sched/$header"
 done
-printf '\nPrevious maintained core/headers=%s; same WF/host objects, flags and platform source implementations. Core source remains identical, but the candidate adds PAUSE to the existing POSIX x86-64 empty-scan hint; previous uses its original header. ARM and Windows hint bodies are unchanged. Both use the internal candidate label; filenames and means.tsv distinguish their process samples.\n' "$previous" >> "$out/flags.txt"
+printf '\nPrevious maintained core/headers=%s; same WF/host objects, flags and platform source implementations. The candidate restores this core and its inline primitives after rejecting the counter and POSIX x86-64 spin-hint changes. Both use the internal candidate label; filenames and means.tsv distinguish their process samples.\n' "$previous" >> "$out/flags.txt"
 cat > "$out/candidate-observer.c" <<'C'
 extern unsigned wf__sched_pool_running(void);
 unsigned wf_bench_worker_count(void) { return wf__sched_pool_running() + 1; }

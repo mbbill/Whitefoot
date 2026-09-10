@@ -1057,23 +1057,23 @@ Large shape1/N65536/W2 already starts one helper but still takes 1.0725
 [1.0598, 1.1377]. These separate insufficient publication from remaining
 parallel execution costs; the current experiment does not change that policy.
 
-### Test the existing spin-hint primitive on POSIX x86-64
+### POSIX x86-64 spin-hint experiment at f950af4d (rejected)
 
-The CPU observations give a concrete reason to test the platform primitive,
+The CPU observations gave a concrete reason to test the platform primitive,
 without changing victim selection, the 4096-scan/16-yield limits or native
 waiting. Windows already emits its historical `YieldProcessor` hint; POSIX
-currently leaves `wf_prim_spin_hint` empty. Add `_mm_pause()` only for POSIX
+at `849183a0` left `wf_prim_spin_hint` empty. `f950af4d` added `_mm_pause()` only for POSIX
 x86-64. It emits PAUSE, not a system call or SIMD computation; Clang's intrinsic
 header and the [Intel optimization manual](https://cdrdv2-public.intel.com/821612/248966-Optimization-Reference-Manual-V1-050.pdf)
 identify its spin-wait purpose. Processor-specific delay and execution costs
 still require measurement; the unchanged scan count does not imply an unchanged
 wall-clock spin duration. Busy-loop samples alone do not establish benefit.
 
-The hypothesis is reduced interference from empty searches on shared physical
-cores without losing small-task responsiveness. The candidate must improve
-complete-call wall/CPU behavior against the unhinted maintained baseline and
-retain correctness, first64 responsiveness and the wider workload comparisons.
-Retention also requires no reproducible core, full-call or CPU regression
+The recorded hypothesis was reduced interference from empty searches on shared
+physical cores without losing small-task responsiveness. Retention required
+improved complete-call wall/CPU behavior against the unhinted maintained baseline
+while preserving correctness, first64 responsiveness and the wider comparisons.
+Retention also required no reproducible core, full-call or CPU regression
 against that baseline across the retained matrix.
 No all-platform improvement is assumed. The formal previous control freezes
 the old primitive header as well as the core; otherwise a shared new header
@@ -1087,6 +1087,56 @@ before/after objects are byte-identical for those same settings. Native M1
 smoke/deque checks and the ordinary compiler's 48-input Mandelbrot oracle panel
 pass. These are code-generation and correctness checks, not native x86-64
 performance qualification.
+
+The [f950af4d native cohort](https://github.com/mbbill/Whitefoot/actions/runs/34452581006)
+rejects this change. Exact local canonical `make check`, all twelve gate jobs,
+both I/O host jobs and all four I/O benchmark jobs pass, but all five formal
+performance screens fail. The ordinary Mac Intel reader passes; its raw
+measurements do not establish a reliable performance win.
+
+Linux x86-64 runs on EPYC 7763 with two physical cores/four hardware threads.
+At W4/N4096/tile64, full-call/previous is 0.9186 [0.9089, 0.9720] and
+CPU/previous is 0.9420 [0.9108, 0.9717]. At W4/N65536/tile1024, however,
+full-call/previous is 1.0902 [1.0476, 1.0965] and CPU/previous is
+1.2304 [1.2071, 1.2575]; replica CPU/previous is 1.2296
+[1.1918, 1.2744], while CPU A/A is 1.0155 [0.9472, 1.0331].
+The tile16/tile64 large-input CPU ratios are also 1.1068 and 1.1713, with
+all five pairs above 1.05. The original long screen is 0/90 investigate,
+but first64 is 17/90 and the independently checked CPU losses reject the hint.
+The previous headers match exact `4fabd264`; disassembly confirms zero/two
+processor PAUSE instructions in previous/current. The common POSIX `pause`
+function used by exhaustion handling is a different operation.
+
+Mac Intel confirms the wall/CPU tradeoff independently. W2/N4096/tile16
+core/previous is 0.5098 [0.4719, 0.5264] and full-call/previous is
+0.8899 [0.8238, 0.9480], but CPU/previous is 1.1683
+[1.0827, 1.2501], with replica 1.1974 [1.1161, 1.2262]. At
+W4/N65536/tile1024, CPU/previous is 1.2884 [1.2602, 1.3814],
+replica 1.3349 [1.1492, 1.3710], and CPU A/A 1.0026 [0.9440, 1.1082].
+Its long/first64 investigate counts are both 34/90. Linux ARM is 2/72
+and 3/72, with no core/full-call/CPU cell above 1.05 in all five pairs;
+Mac ARM is 11/48 and 22/48. Both ARM executable text images match their
+previous controls. Mac ARM still has W2/N65536/tile16 full-call/research
+1.2072 [1.0578, 1.2983], replica 1.1893 [1.1057, 1.3329]. That unresolved
+gap cannot be attributed to the x86-64 hint.
+
+Windows is 4/48 long and 9/48 first64 investigate. Its W4/N4096/tile1024
+full-call/previous ratio is 0.9951 [0.9341, 1.0570], CPU/previous 1.0250
+[0.9524, 1.0526], and full-call/old 0.8668 [0.8225, 0.9032]. Previous/current
+executable text is identical; those timings do not measure a new Windows hint.
+
+The ordinary Mac Intel panel marks 624 of 708 wall/CPU rows `noisy-open`.
+Its four-leaf wall/previous ratio 0.8245 [0.6484, 0.8352] accompanies
+wide wall A/A 0.8631 [0.7038, 1.0486], so its green reader is not a strong
+gain. The Linux ordinary four-leaf control instead has CPU/previous 1.0595
+[1.0504, 1.0777], with CPU A/A 1.0202 [1.0114, 1.0236]. Noisy wall
+measurements must not hide that repeated CPU regression.
+
+Restore the prior POSIX primitive under the recorded no-regression criterion.
+Keep the complete previous-header freeze, raw artifacts and unchanged screening
+thresholds. No queue, waiting-policy limit, ABI, I/O path or publication setting
+changes as part of this rejection. All-platform performance qualification and
+the ordinary compiler's wider workload gaps remain open.
 
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 

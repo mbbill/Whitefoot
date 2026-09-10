@@ -26,11 +26,11 @@ runtime; remove it when the production replacement has passed the comparison.
 against repaired historical and recovered cores on POSIX, and the repaired
 historical native core on Windows. It also checks the ordinary CLI executable.
 All targets also compare the maintained core and its headers at `4fabd264`.
-The explicit-owner steal-counter adjustment at `bca257bb` was rejected and
-reverted. Core sources remain identical; the candidate now adds PAUSE to the
-existing POSIX x86-64 empty-scan hint. The previous control retains its original
-primitive header, preventing it from inheriting the candidate hint. ARM and
-Windows primitive bodies are unchanged. WF/host objects, compiler options and
+The explicit-owner steal-counter adjustment at `bca257bb` and POSIX x86-64
+spin hint at `f950af4d` both failed their no-regression conditions and are
+reverted. Current and previous core sources and inline primitives are again
+identical. The previous control keeps its own headers so a future primitive
+change cannot silently enter both sides. WF/host objects, compiler options and
 out-of-line platform source implementations are shared. Both raw logs use the
 same internal runtime label; filenames and summary rows distinguish their
 process samples. The earlier compact-slot comparison remains in the recorded
