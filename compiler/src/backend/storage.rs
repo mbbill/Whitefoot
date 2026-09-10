@@ -117,14 +117,6 @@ impl FunctionStoragePlan {
                 uses[*value] = uses[*value].saturating_add(1);
             }
         }
-        if let Some(pipeline) = function.completion_pipeline() {
-            for (origin, _) in pipeline.staged_carries() {
-                let count = uses
-                    .get_mut(index(*origin))
-                    .ok_or(BackendFailure::InvalidIr)?;
-                *count = count.saturating_add(1);
-            }
-        }
         let mut members = vec![0_usize; self.slots.len()];
         for slot in self.values.iter().flatten() {
             members[*slot] += 1;

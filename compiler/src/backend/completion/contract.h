@@ -6,8 +6,8 @@
  *
  * This is an internal compiler/runtime ABI, not a writer-visible API.  It
  * deliberately contains no function pointer which could name Whitefoot code:
- * target adapters fill a record and complete it, and the scheduler core alone
- * decides which stack becomes runnable.
+ * target adapters fill and publish a record; its submitter waits on its own
+ * ordinary stack.
  *
  * One record per operation, and it is a block of the frame that submitted the
  * operation (`research/investigations/io-model/PARK-ON-MISS.md` §5).  There is
@@ -17,7 +17,7 @@
  * can be refused for want of capacity, because there is no pool to exhaust.
  */
 
-#include "../sched/core.h"
+
 
 #include <stdalign.h>
 #include <stdatomic.h>
@@ -306,24 +306,13 @@ typedef union wf_completion_ring_state {
     uint64_t native[WF_COMPLETION_RING_WORDS];
 } wf_completion_ring_state;
 
-/* The one record type.
- *
- * `sched` is first, so the address of the record is the address of its
- * `wf_sched_record`: the drain and the join pass one pointer and the
- * scheduler core reads the two words it owns without knowing anything else
- * about the block (design §5, `sched/core.h`).
- *
- * An emitted frame reserves one block of exactly WF_COMPLETION_RECORD_BYTES
- * bytes, at WF_COMPLETION_RECORD_ALIGN alignment, for every operation that
- * frame can have outstanding, and hands the block's address to submit and to
- * join.  The runtime owns the block's contents between those two calls.  The
- * emitted module never learns the layout: it holds one opaque pointer and
- * nothing else, which is why the size and the alignment are ABI constants of
- * this contract and are asserted against this record on both sides. */
+/* Results become readable after an acquire observation of DONE. The engine
+ * must make publication its final record access: join may immediately end
+ * the submitting frame's lifetime. No scheduler or stack pointer is stored. */
+#define WF_COMPLETION_PENDING 1u
+#define WF_COMPLETION_DONE 2u
 typedef struct wf_completion_record {
-    /* The core's two words: the state that goes PENDING to DONE exactly once,
-     * and the waiter, if any. */
-    wf_sched_record sched;
+    _Atomic unsigned state;
     /* The typed request, filled by submit. */
     wf_file_request request;
     /* The result the one publication stores, read by the join. */
@@ -358,11 +347,9 @@ typedef struct wf_completion_record {
 /* The ABI constants, and the two assertions that keep them true.  A record
  * that outgrew the reservation is a build failure instead of a kernel write
  * past it. */
-/* 160 is the smallest multiple of sixteen that holds this record on every
- * platform: 128 bytes of it are the same everywhere, and the ring state adds
- * 32 more on Windows, where an `OVERLAPPED` and its handle live in the record
- * rather than in the entry pool this design deleted (design §7, §12's
- * per-frame record growth). */
+/* Preserve the emitted record reservation across the scheduler change.
+ * Windows stores OVERLAPPED and its handle in the record; the assertions
+ * below check every target's actual layout against this ABI capacity. */
 #define WF_COMPLETION_RECORD_BYTES 160u
 #define WF_COMPLETION_RECORD_ALIGN 8u
 
@@ -374,10 +361,7 @@ _Static_assert(
     _Alignof(wf_completion_record) <= WF_COMPLETION_RECORD_ALIGN,
     "the completion record must not out-align the reserved block"
 );
-_Static_assert(
-    offsetof(wf_completion_record, sched) == 0,
-    "the record's address is the address of its scheduler record"
-);
+
 /* The request union is where a new request kind grows this record, and the
  * six TCP kinds are the first ones whose arms approach the open's.  Stating
  * the bound here means an arm that outgrows it fails at the union that caused
@@ -391,12 +375,14 @@ _Static_assert(
     "record was sized around"
 );
 
-/* The one publication.  Whichever engine finished the operation -- the CQE
- * reaper, a helper thread, or the submitting thread itself -- stores the
- * result head and then calls `wf_sched_complete`, which stores DONE and wakes
- * the waiter.  There is exactly one such call per submission (design §7).
- *
- * It is defined by the bridge, which owns the one `wf_sched_core`. */
+static inline void wf_completion_record_init(wf_completion_record *record) {
+    atomic_init(&record->state, WF_COMPLETION_PENDING);
+}
+/* Final access by the publisher; notification may use permanent engine
+ * storage afterward, never the record or any other submitting-frame bytes. */
+static inline void wf_completion_record_publish(wf_completion_record *record) {
+    atomic_store_explicit(&record->state, WF_COMPLETION_DONE, memory_order_release);
+}
 void wf_completion_record_complete(wf_completion_record *record);
 
 /* ------------------------------------------------------------- the wait */
@@ -472,6 +458,9 @@ typedef struct wf_completion_runtime {
     wf_completion_wait wait;
     _Atomic uint64_t wake_epoch;
     _Atomic unsigned parked_schedulers;
+    /* New announcements set this. Condition-wait notifications clear it under
+     * wait's lock; external endpoints retain per-publication notifications. */
+    _Atomic unsigned wake_needed;
 
     _Atomic uint64_t stat_parks;
     _Atomic uint64_t stat_wake_signals;
@@ -484,6 +473,10 @@ typedef struct wf_completion_runtime {
 
 /* Returns zero on success. */
 int wf_completion_runtime_init(wf_completion_runtime *runtime);
+
+/* Announce a new wait while holding runtime->wait. The caller must recheck
+ * wake_epoch with SC ordering before sleeping and withdraw its count on exit. */
+void wf_completion_announce_park_locked(wf_completion_runtime *runtime);
 
 /* Destroy refuses while any parked scheduler still exists.  It returns zero
  * on success and EBUSY/EINVAL otherwise. */

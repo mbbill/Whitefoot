@@ -318,24 +318,12 @@ fn an_exhausted_lane_writes_the_same_resource_record() {
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
-/// Whether a recursion completes is not decided by a steal race.
-///
-/// A stolen call is an ordinary Whitefoot call that starts at the bottom of the
-/// stealing lane's own stack. When a lane's stack was smaller than the entry's,
-/// that made a steal *lose* headroom, and the same binary on the same input
-/// either finished or died depending on which thread got there first: on this
-/// recursion, 11 of 30 runs at two workers, 3 of 30 at eight, and 4 of 30 at
-/// the default. [PAR-1] survives that — overlap-resource exhaustion is outside
-/// its observables — but "does my program run" is not something a schedule may
-/// decide.
-///
-/// A lane sized like the entry makes a steal strictly headroom-positive
-/// instead: no thread has less room than the entry, and a stolen subtree gets a
-/// whole fresh stack, so the deepest any schedule reaches is at least what the
-/// no-steal schedule reaches. The case is the whole worker range rather than
-/// one setting because the failure it guards was a distribution, not a
-/// threshold — it showed up at every count above one, and worst where the pool
-/// was largest.
+/// The regression input completes with equally reserved command/worker stacks.
+/// Smaller historical worker stacks made this input fail after some steals.
+/// Current joins can help or steal from inside an existing callback, so a
+/// stolen subtree does not necessarily receive an empty stack. This case pins
+/// the tested input and worker counts; it does not prove schedule-independent
+/// available depth or include runtime C frames in the compiler's stack ledger.
 #[test]
 fn a_deep_recursion_completes_at_every_worker_count() {
     let directory = test_directory();
@@ -406,12 +394,22 @@ int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
 /// wild pointer, a fault at a chosen address, a signal raised at the process.
 /// Everything else is the shipped mechanism: the same translation unit, the
 /// same optimization arguments, entered through the same `wf__floor_run`.
-fn build_floor_fixture(body: &str, directory: &std::path::Path) -> std::path::PathBuf {
+/// An optional prelude substitutes native facilities for setup-refusal tests;
+/// it leaves the floor's control flow and its ordinary callers intact.
+fn build_floor_fixture(
+    body: &str,
+    floor_prelude: &str,
+    directory: &std::path::Path,
+) -> std::path::PathBuf {
     let source = directory.join("floor_body.c");
     let floor = directory.join("wf_floor.c");
     let executable = directory.join("floor_fixture");
     std::fs::write(&source, body).expect("write the fixture body");
-    std::fs::write(&floor, crate::FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
+    std::fs::write(
+        &floor,
+        format!("{floor_prelude}\n{}", crate::FLOOR_RUNTIME_SOURCE),
+    )
+    .expect("write the floor runtime");
     let compiled = Command::new("/usr/bin/clang")
         .arg("-pthread")
         .arg("-x")
@@ -431,10 +429,152 @@ fn build_floor_fixture(body: &str, directory: &std::path::Path) -> std::path::Pa
     executable
 }
 
+// Substitute only calls made by the floor; the separate fixture translation
+// unit can still call the real host facilities on the successful paths.
+const FLOOR_SETUP_PRELUDE: &str = r#"
+#define _GNU_SOURCE
+#include <pthread.h>
+#include <signal.h>
+#include <sys/mman.h>
+#include <unistd.h>
+extern void *wf_probe_mmap(void *, size_t, int, int, int, off_t);
+extern int wf_probe_sigaltstack(const stack_t *, stack_t *);
+extern int wf_probe_sigaction(int, const struct sigaction *, struct sigaction *);
+extern long wf_probe_sysconf(int);
+#define mmap wf_probe_mmap
+#define sigaltstack wf_probe_sigaltstack
+#define sigaction(...) wf_probe_sigaction(__VA_ARGS__)
+#define sysconf wf_probe_sysconf
+#if defined(__APPLE__)
+extern void *wf_probe_stackaddr(pthread_t);
+extern size_t wf_probe_stacksize(pthread_t);
+#define pthread_get_stackaddr_np wf_probe_stackaddr
+#define pthread_get_stacksize_np wf_probe_stacksize
+#else
+extern int wf_probe_getattr(pthread_t, pthread_attr_t *);
+extern int wf_probe_getstack(const pthread_attr_t *, void **, size_t *);
+#define pthread_getattr_np wf_probe_getattr
+#define pthread_attr_getstack wf_probe_getstack
+#endif
+"#;
+
+const FLOOR_SETUP_BODY: &str = r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <pthread.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <sys/mman.h>
+#include <unistd.h>
+extern int wf__floor_run(int, char **);
+extern void wf__floor_attach_thread(void);
+static int fault;
+static int active;
+static int worker_only;
+static int worker_entered;
+void *wf_probe_mmap(void *p, size_t n, int prot, int flags, int fd, off_t offset) {
+    if (active && fault == 1) { errno = ENOMEM; return MAP_FAILED; }
+    return mmap(p, n, prot, flags, fd, offset);
+}
+int wf_probe_sigaltstack(const stack_t *stack, stack_t *old) {
+    if (active && fault == 2) { errno = ENOMEM; return -1; }
+    return sigaltstack(stack, old);
+}
+int wf_probe_sigaction(int signo, const struct sigaction *action, struct sigaction *old) {
+    if (active && ((fault == 3 && signo == SIGSEGV) || (fault == 4 && signo == SIGBUS))) {
+        errno = ENOMEM; return -1;
+    }
+    return sigaction(signo, action, old);
+}
+long wf_probe_sysconf(int name) {
+    if (active && fault == 5 && name == _SC_PAGESIZE) { errno = EINVAL; return -1; }
+    return sysconf(name);
+}
+#if defined(__APPLE__)
+void *wf_probe_stackaddr(pthread_t thread) {
+    return active && fault == 6 ? NULL : pthread_get_stackaddr_np(thread);
+}
+size_t wf_probe_stacksize(pthread_t thread) {
+    return active && fault == 7 ? 0 : pthread_get_stacksize_np(thread);
+}
+#else
+int wf_probe_getattr(pthread_t thread, pthread_attr_t *attributes) {
+    return active && fault == 6 ? ENOMEM : pthread_getattr_np(thread, attributes);
+}
+int wf_probe_getstack(const pthread_attr_t *attributes, void **base, size_t *size) {
+    return active && fault == 7 ? EINVAL : pthread_attr_getstack(attributes, base, size);
+}
+#endif
+static void *worker(void *unused) {
+    (void)unused;
+    wf__floor_attach_thread();
+    worker_entered = 1;
+    return NULL;
+}
+int wf__main_body(int argc, char **argv) {
+    (void)argc; (void)argv;
+    if (worker_only) {
+        pthread_t thread;
+        active = 1;
+        if (pthread_create(&thread, NULL, worker, NULL) != 0) return 61;
+        if (pthread_join(thread, NULL) != 0 || worker_entered != 1) return 62;
+    }
+    if (write(1, "ran\n", 4) != 4) return 63;
+    return 73;
+}
+int main(int argc, char **argv) {
+    if (argc != 3) return 64;
+    fault = atoi(argv[1]);
+    worker_only = atoi(argv[2]);
+    active = !worker_only;
+    return wf__floor_run(argc, argv);
+}
+"#;
+
+/// Failed native prerequisites must stop before a command or attached worker
+/// executes its body. Setup failure is distinct from actual stack exhaustion;
+/// neither successful return nor a fabricated stack-overflow record is valid.
+#[test]
+fn floor_setup_refusal_stops_before_unprotected_execution() {
+    let directory = test_directory();
+    let executable = build_floor_fixture(FLOOR_SETUP_BODY, FLOOR_SETUP_PRELUDE, &directory);
+    for worker_only in [false, true] {
+        for fault in 0..=7 {
+            // Signal dispositions and page size are process-wide setup only.
+            if worker_only && (3..=5).contains(&fault) {
+                continue;
+            }
+            let output = Command::new(&executable)
+                .arg(fault.to_string())
+                .arg(if worker_only { "1" } else { "0" })
+                .output()
+                .expect("run the floor setup fixture");
+            if fault == 0 {
+                assert_eq!(output.status.code(), Some(73));
+                assert_eq!(output.stdout, b"ran\n");
+                assert!(output.stderr.is_empty());
+            } else {
+                assert_eq!(
+                    signal_of(&output),
+                    Some(libc_sigabrt()),
+                    "setup refusal {fault}, worker_only={worker_only}: {:?}",
+                    output.status,
+                );
+                assert!(output.stdout.is_empty(), "unprotected body executed");
+                assert_eq!(
+                    output.stderr,
+                    b"whitefoot floor: stack exhaustion protection could not be installed\n",
+                );
+            }
+        }
+    }
+    std::fs::remove_dir_all(directory).expect("remove the test directory");
+}
+
 #[test]
 fn a_fault_that_is_not_exhaustion_keeps_its_own_disposition() {
     let directory = test_directory();
-    let executable = build_floor_fixture(WILD_FAULT_BODY, &directory);
+    let executable = build_floor_fixture(WILD_FAULT_BODY, "", &directory);
     let output = Command::new(&executable).output().expect("run the fault");
     assert!(
         output.stderr.is_empty(),
@@ -590,7 +730,7 @@ int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
 fn only_a_fault_within_the_probe_stride_is_read_as_an_exhausted_stack() {
     let page = page_size();
     let directory = test_directory();
-    let executable = build_floor_fixture(OFFSET_FAULT_BODY, &directory);
+    let executable = build_floor_fixture(OFFSET_FAULT_BODY, "", &directory);
     // Inside the stride, so a descent really can land here.
     for below in [page / 2, page] {
         let output = Command::new(&executable)
@@ -681,7 +821,7 @@ int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
 #[test]
 fn an_externally_delivered_signal_does_not_disarm_the_floor() {
     let directory = test_directory();
-    let executable = build_floor_fixture(EXTERNAL_SIGNAL_BODY, &directory);
+    let executable = build_floor_fixture(EXTERNAL_SIGNAL_BODY, "", &directory);
     let output = Command::new(&executable)
         .output()
         .expect("run the externally signalled program");
@@ -755,7 +895,7 @@ int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
 #[test]
 fn the_floor_and_the_module_share_one_record_latch() {
     let directory = test_directory();
-    let executable = build_floor_fixture(PREACQUIRED_LATCH_BODY, &directory);
+    let executable = build_floor_fixture(PREACQUIRED_LATCH_BODY, "", &directory);
     let output = Command::new(&executable)
         .output()
         .expect("run the pre-acquired latch fixture");

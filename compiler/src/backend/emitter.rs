@@ -53,7 +53,7 @@ pub use completion::{
     COMPLETION_WAIT_HOST_SOURCE, COMPLETION_WAIT_WINDOWS_SOURCE, COMPLETION_WINDOWS_IOCP_HEADER,
     COMPLETION_WINDOWS_IOCP_SOURCE, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER,
     SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_PRIM_WINDOWS_SOURCE,
-    SCHED_SWITCH_HEADER, module_requires_completion_runtime,
+    module_requires_completion_runtime,
 };
 use floor::FLOOR_RUNTIME_FALLBACK;
 pub use floor::FLOOR_STACK_BYTES;
@@ -678,17 +678,6 @@ enum FunctionSlot {
     StagedAddress(IrValueId),
     ArenaList(IrValueId),
     Completion(IrValueId, CompletionSlot),
-    /// The lane frame each in-flight iteration of a staged loop was granted,
-    /// or null where it was refused one. This is what the pipeline slot holds
-    /// for the lane form, exactly as the record block is what it holds for a
-    /// submitted system operation.
-    StagedFrame(IrValueId),
-    /// Each in-flight iteration's own answer, written where the call ran and
-    /// read by the drain.
-    StagedResult(IrValueId),
-    /// One issue-stage value per in-flight iteration, keyed by the value the
-    /// issue stage defines.
-    StagedCarry(IrValueId),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -727,7 +716,6 @@ struct FunctionFramePlan {
 struct FunctionFrameContents<'plan> {
     completion_steps: &'plan HashMap<IrValueId, IrCompletionStep>,
     pipeline: Option<&'plan crate::IrCompletionPipeline>,
-    staged_lane: Option<&'plan parallel::StagedLane>,
     storage: &'plan FunctionStoragePlan,
     result_slot: Option<usize>,
 }
@@ -743,7 +731,6 @@ impl FunctionFramePlan {
         let FunctionFrameContents {
             completion_steps,
             pipeline,
-            staged_lane,
             storage,
             result_slot,
         } = contents;
@@ -842,43 +829,6 @@ impl FunctionFramePlan {
                 }
             }
         }
-        // The staged lane hand-out's ring, reserved once for the whole loop.
-        // Its elements are a *plan* of the emission rather than an instruction
-        // of the IR, so they are pushed here rather than found in the walk
-        // above: the frame the iteration was granted, the answer it produced,
-        // and the issue-stage values its drain reads back.
-        if let Some(staged) = staged_lane {
-            let slots = staged.slots;
-            if staged.frame_bytes.is_some() {
-                push_function_slot(
-                    &mut specifications,
-                    &mut ordered,
-                    FunctionSlot::StagedFrame(staged.result),
-                    TargetStorageType::array(TargetStorageType::pointer(), slots),
-                    None,
-                )?;
-            }
-            push_function_slot(
-                &mut specifications,
-                &mut ordered,
-                FunctionSlot::StagedResult(staged.result),
-                TargetStorageType::array(TargetStorageType::source(staged.result_type), slots),
-                None,
-            )?;
-            for (origin, _) in &staged.carries {
-                let carried = function
-                    .value_type(*origin)
-                    .ok_or(BackendFailure::InvalidIr)?;
-                push_function_slot(
-                    &mut specifications,
-                    &mut ordered,
-                    FunctionSlot::StagedCarry(*origin),
-                    TargetStorageType::array(TargetStorageType::source(carried), slots),
-                    None,
-                )?;
-            }
-        }
-
         let target_plan = plan_target_frame(target, qualification, program, &specifications)
             .map_err(BackendFailure::TargetLayout)?;
         let mut slots = HashMap::with_capacity(ordered.len());
@@ -1193,10 +1143,6 @@ struct FunctionEmitter<'program, 'state> {
     /// use typed completion; another qualified target executes a bounded
     /// batch with a direct-call window of one.
     pipeline: Option<&'program crate::IrCompletionPipeline>,
-    /// The staged lane hand-out this world emits for this function's driven
-    /// loop, or `None` where the loop's staged call is a submitted system
-    /// operation and where the function drives no such loop at all.
-    staged_lane: Option<parallel::StagedLane>,
     /// The slot index the block being emitted addresses its ring through,
     /// where the pipeline gives it one.
     ///
@@ -1262,14 +1208,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             completion_used,
             sequential_clones,
         } = module;
-        // The staged call of a driven [PAR-3] loop, when that call is a
-        // may-suspend user call. It has a hand-out form of its own — the lane
-        // frame — so it is not a call the emitter has to withdraw the
-        // submission of.
-        let staged_lane_call = function
-            .driven_completion_pipeline()
-            .filter(|pipeline| pipeline.lane_handout())
-            .and_then(crate::IrCompletionPipeline::driven_result);
         // A sequential clone suppresses compute hand-outs only. Target
         // completion is independent of the compute-pool choice and remains
         // active in both worlds.
@@ -1297,7 +1235,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                             definition_operation(function, step.call()),
                             Some(IrOperation::SystemCall { operation, .. })
                                 if system::completion_file_operation(*operation).is_some()
-                        ) || staged_lane_call == Some(step.call());
+                        );
                         let step = if handed_out {
                             step
                         } else {
@@ -1387,15 +1325,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     .is_some_and(crate::IrCompletionStep::submit)
             })
         });
-        let staged_lane = parallel::staged_lane_plan(
-            program,
-            qualification,
-            target,
-            function,
-            pipeline,
-            &completion_steps,
-            sequential_clones.is_none(),
-        )?;
         let storage = FunctionStoragePlan::build(program, function, pipeline)?;
         let result_slot = places::returned_storage_slot(function, &storage);
         let frame = FunctionFramePlan::build(
@@ -1406,7 +1335,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             FunctionFrameContents {
                 completion_steps: &completion_steps,
                 pipeline,
-                staged_lane: staged_lane.as_ref(),
                 storage: &storage,
                 result_slot,
             },
@@ -1434,7 +1362,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             branching_completions,
             handed_out: Vec::new(),
             pipeline,
-            staged_lane,
             block_slot: None,
             block_carries: false,
             block_drains: false,
@@ -1540,9 +1467,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 .pipeline
                 .is_some_and(|pipeline| pipeline.drains(block_id));
             self.emit_completion_window(block_id)?;
-            if self.block_drains {
-                self.emit_staged_lane_retirement()?;
-            }
             for (instruction_index, instruction) in block.instructions().iter().enumerate() {
                 self.emit_instruction(block_id, instruction_index, instruction)?;
             }
@@ -1649,7 +1573,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                         &self.completion_steps,
                         &self.branching_completions,
                         self.pipeline,
-                        self.staged_lane.as_ref(),
                     )
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
@@ -1693,9 +1616,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrInstruction::Define { .. } => {}
         }
         self.emit_instruction_body(block, index, instruction)?;
-        if let IrInstruction::Define { result, .. } = instruction {
-            self.store_staged_carry(*result)?;
-        }
         Ok(())
     }
 
@@ -1725,13 +1645,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                         }
                         self.emit_handed_out_system_call(*result, *ty, *operation, arguments)?;
                     }
-                    // A staged may-suspend user call: the lane frame is what
-                    // the slot holds for this iteration, and the exact drain
-                    // is where its answer is read.
-                    IrOperation::Call {
-                        function,
-                        arguments,
-                    } => self.emit_staged_lane_call(*result, *ty, *function, arguments)?,
                     _ => return Err(BackendFailure::InvalidIr),
                 }
             } else if self.is_overlap_join_site(*result) {
@@ -2063,19 +1976,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         // storage or a runtime query.
         if !self.qualification.target().supports_posix_file_completion()
             && pipeline.planned_batch_driver().is_some()
-        {
-            writeln!(self.output, "  %{name} = add i64 0, 1")
-                .map_err(|_| BackendFailure::TextEmission)?;
-            return Ok(());
-        }
-        // A world that offers no lane carries no iteration in flight, so it
-        // asks for no depth: one issue before every drain is the sequential
-        // schedule, iteration by iteration, which is what the sequential clone
-        // exists to be and what a frame the runtime's slot cannot hold gets.
-        if self
-            .staged_lane
-            .as_ref()
-            .is_some_and(|staged| staged.frame_bytes.is_none())
         {
             writeln!(self.output, "  %{name} = add i64 0, 1")
                 .map_err(|_| BackendFailure::TextEmission)?;
@@ -2725,7 +2625,6 @@ fn block_exit_label(
     completion_steps: &HashMap<IrValueId, IrCompletionStep>,
     branching_completions: &HashSet<IrValueId>,
     pipeline: Option<&crate::IrCompletionPipeline>,
-    staged_lane: Option<&parallel::StagedLane>,
 ) -> String {
     let mut label = block_label(block_id);
     let driven_result = pipeline
@@ -2737,16 +2636,6 @@ fn block_exit_label(
         });
     let drains_pipeline = pipeline.is_some_and(|pipeline| pipeline.drains(block_id));
     let protected_result = driven_result.filter(|_| !drains_pipeline);
-    // A staged lane retirement is emitted before this block's own
-    // instructions, so the drain starts where that retirement left it. Only a
-    // world that offers a lane opens a block there; the sequential form is one
-    // load and moves the label nowhere.
-    if let Some(staged) = staged_lane
-        && drains_pipeline
-        && staged.frame_bytes.is_some()
-    {
-        label = parallel::par_staged_done_label(staged.result);
-    }
     // The direct completion hand-outs this block has submitted and not yet
     // joined, in `FunctionEmitter::handed_out` order. The exact drain starts
     // with the pipeline result its feeder left outstanding on the incoming
@@ -2770,21 +2659,9 @@ fn block_exit_label(
                 &mut label,
             );
             if step.submit() {
-                // A staged lane hand-out is not an outstanding completion
-                // operation: nothing joins it at a block boundary, and its own
-                // drain reads it from the ring rather than from this queue.
-                match staged_lane.filter(|staged| staged.result == *result) {
-                    Some(staged) => {
-                        if staged.frame_bytes.is_some() {
-                            label = parallel::par_staged_offered_label(*result);
-                        }
-                    }
-                    None => {
-                        outstanding.push(*result);
-                        if branching_completions.contains(result) {
-                            label = completion_offered_label(*result);
-                        }
-                    }
+                outstanding.push(*result);
+                if branching_completions.contains(result) {
+                    label = completion_offered_label(*result);
                 }
             } else {
                 definition_exit_label(block_id, index, instruction, &mut label);
