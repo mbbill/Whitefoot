@@ -84,6 +84,19 @@ if test "$mode" = profile; then
     fi
     perf=$(command -v "$perf")
     sudo=$(command -v sudo || true)
+    # perf creates root-only data files when recording scheduling events.
+    # Return those experiment files to the runner even after a later failure,
+    # so artifact upload can preserve the measurements and probe diagnostics.
+    cleanup_profile() {
+        if test -n "$sudo"; then
+            for data in "$profile"/*.data; do
+                if test -e "$data" && ! test -r "$data"; then
+                    "$sudo" -n chown "$(id -u):$(id -g)" "$data"
+                fi
+            done
+        fi
+    }
+    trap cleanup_profile 0
     if test "$(getconf _NPROCESSORS_ONLN)" -lt 4; then
         printf '%s\n' 'four native CPUs unavailable' > "$profile/availability.txt"
         exit 0

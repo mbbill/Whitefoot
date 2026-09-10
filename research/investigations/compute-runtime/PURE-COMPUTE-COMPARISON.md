@@ -2,18 +2,19 @@
 
 ## Scope and conclusion
 
-This report compares the last main POSIX compute runtime before shared
-compute/I/O scheduling with the recovered research runtime. The owner requested
-the comparison on 2026-09-09 and will choose a direction after reading it.
-Production-runtime integration is paused. The current unified implementation
-is retained in the [restorable checkpoint](../io-model/UNIFIED-RUNTIME-CHECKPOINT.md).
+This report records the 2026-09-09 comparison of the last main POSIX compute
+runtime before shared compute/I/O scheduling with the recovered research
+runtime. It preceded the owner's selection of their common current-stack
+design for production integration; the [current scope](README.md) records that
+selection. The unified implementation is retained in the
+[restorable checkpoint](../io-model/UNIFIED-RUNTIME-CHECKPOINT.md).
 
 The two compute candidates share the same central scheduler. Research is a
 recovery with safety fixes and experimental instrumentation, not a newly
 invented faster scheduling architecture. A sensible future base would preserve
 their common current-stack design, bring forward the necessary correctness
-repairs, and remove experimental controls from the production core. This is a
-recommendation for owner discussion, not authorization to start integration.
+repairs, and remove experimental controls from the production core. Those
+were the grounds for the recommendation made before integration.
 Native CI does not establish one version as the overall winner. Most coarse
 compute cells are close, but historical code has a meaningful fine-grained FIR
 advantage on Linux x86-64. macOS noise prevents firm ranking there. It would be

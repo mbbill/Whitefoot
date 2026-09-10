@@ -12,6 +12,7 @@ export WF_SCHED_REPORT
 root=$(git rev-parse --show-toplevel)
 old=9051576f6a4d723b4eb072850f49859853decae7
 recovered=d858008f560b25da896af2a17f8b1d07ac49fd6e
+unhinted=d39b4836ce5e770f5a800bee22ca7d8843100b25
 host=$(uname -s)
 exe=; floor=wf_floor.c; leaf=prim_host.c; platform_flags=-pthread; libraries=-lm
 modes='old recovered candidate replica'
@@ -21,7 +22,7 @@ case "$host" in
     MINGW*|MSYS*)
         exe=.exe; floor=wf_floor_windows.c; leaf=prim_windows.c
         platform_flags=; libraries='-lpsapi -lws2_32'
-        modes='old candidate replica'; references='old replica'
+        modes='old unhinted candidate replica'; references='old unhinted replica'
         ;;
     *) echo "unsupported native host: $host" >&2; exit 2;;
 esac
@@ -97,6 +98,12 @@ unsigned wf_bench_worker_count(void) { return wf__sched_pool_running() + 1; }
 C
     cp "$root/compiler/src/backend/windows_runtime.c" "$root/compiler/src/backend/windows_runtime.h" "$out/source/"
     cp -R "$root/compiler/src/backend/completion" "$out/source/"
+    # The prior maintained core isolates restoring YieldProcessor in the two
+    # spin loops. It shares today's WF/host objects, counters and platform leaves.
+    git show "$unhinted:compiler/src/backend/sched/core.c" > "$out/unhinted.c"
+    sed '/^[[:space:]]*wf_prim_spin_hint();$/d' "$out/source/sched/core.c" > "$out/core-without-hints.c"
+    cmp "$out/unhinted.c" "$out/core-without-hints.c"
+    printf '\nWindows unhinted core=%s; same WF/host objects and platform sources. Both use the internal candidate label; filenames and means.tsv distinguish the core.\n' "$unhinted" >> "$out/flags.txt"
 fi
 cat > "$out/candidate-observer.c" <<'C'
 extern unsigned wf__sched_pool_running(void);
@@ -112,6 +119,7 @@ cat fir_host.ll >> "$out/host.ll"
 "$CC" $flags -c fir_native.c -o "$out/native.o"
 "$CC" $flags -DWF_FILTER_NATIVE fir_check.c "$out/native.o" $libraries -o "$out/oracle$exe"
 "$out/oracle$exe" > "$out/oracle.txt"
+"$CC" $flags -DWF_RUNTIME_CONTROL '-DFIR_RUNTIME="candidate"' -c fir_bench.c -o "$out/candidate-host.o"
 for mode in $modes; do
     if test "$mode" = replica; then
         cp "$out/candidate$exe" "$out/replica$exe"
@@ -122,6 +130,7 @@ for mode in $modes; do
     case "$mode" in
         old) set -- "$@" "$out/old.c" "$out/control-observer.c";;
         recovered) set -- "$@" -I"$out/source" "$out/research.c" "$out/control-observer.c";;
+        unhinted) set -- "$@" -I"$out/source/sched" "$out/unhinted.c" "$out/candidate-observer.c";;
         candidate) set -- "$@" "$out/source/sched/core.c" "$out/candidate-observer.c";;
     esac
     if test -n "$exe"; then
@@ -130,7 +139,9 @@ for mode in $modes; do
             set -- "$@" "$out/source/$unit"
         done
     fi
-    "$CC" $flags -DWF_RUNTIME_CONTROL "-DFIR_RUNTIME=\"$mode\"" fir_bench.c \
+    host_input=fir_bench.c
+    case "$mode" in candidate|unhinted) host_input=$out/candidate-host.o;; esac
+    "$CC" $flags -DWF_RUNTIME_CONTROL "-DFIR_RUNTIME=\"$mode\"" "$host_input" \
         "$@" "$out/wf.o" "$out/native.o" $libraries -o "$out/$mode$exe"
 done
 if test -n "$exe"; then cpus=$NUMBER_OF_PROCESSORS; else cpus=$(getconf _NPROCESSORS_ONLN); fi

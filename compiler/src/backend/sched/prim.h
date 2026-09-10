@@ -13,6 +13,13 @@ typedef struct { SRWLOCK lock; CONDITION_VARIABLE signal; } wf_prim_wait;
 typedef struct { pthread_mutex_t lock; pthread_cond_t signal; } wf_prim_wait;
 #endif
 typedef struct { void (*entry)(void *); void *argument; } wf_prim_thread;
+/* Keep the Windows historical spin hint distinct from an OS thread yield.
+ * Other platforms retain their current polling behavior. */
+static inline void wf_prim_spin_hint(void) {
+#if defined(_WIN32)
+    YieldProcessor();
+#endif
+}
 int wf_prim_wait_init(wf_prim_wait *wait);
 void wf_prim_wait_destroy(wf_prim_wait *wait);
 void wf_prim_wait_lock(wf_prim_wait *wait);

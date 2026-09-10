@@ -25,6 +25,12 @@ runtime; remove it when the production replacement has passed the comparison.
 `make formal-screen OUT=<fresh-absolute-path>` compares one scalar WF object
 against repaired historical and recovered cores on POSIX, and the repaired
 historical native core on Windows. It also checks the ordinary CLI executable.
+Windows additionally compares the prior maintained core at `d39b4836` with
+the restored `YieldProcessor` hints. Only the two empty-scan spin sites differ;
+the script checks that source delta and shares the WF/host objects and platform
+sources. Both raw logs use the same internal runtime label; filenames and
+summary rows distinguish the cores. This isolates the net hint effect, including its change to elapsed
+spin duration; it does not isolate SMT contention from park frequency.
 An identical production image is the noise control. Raw artifacts retain core
 and allocation-inclusive durations, process CPU and memory; wall-time summaries
 are an initial screen, not whole-workload or all-platform acceptance.

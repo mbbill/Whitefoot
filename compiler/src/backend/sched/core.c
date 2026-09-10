@@ -213,6 +213,7 @@ static void wf__par_wait(struct wf__par_lane *lane, struct wf__par_slot *target)
         }
         if (rounds < WF_PAR_SPIN_ROUNDS) {
             rounds += 1;
+            wf_prim_spin_hint();
             continue;
         }
         if (rounds < WF_PAR_SPIN_ROUNDS + WF_PAR_YIELD_ROUNDS) {
@@ -252,6 +253,7 @@ static void wf__par_worker_main(void *opaque) {
         }
         if (rounds < WF_PAR_SPIN_ROUNDS) {
             rounds += 1;
+            wf_prim_spin_hint();
             continue;
         }
         if (rounds < WF_PAR_SPIN_ROUNDS + WF_PAR_YIELD_ROUNDS) {
