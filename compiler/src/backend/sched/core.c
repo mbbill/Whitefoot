@@ -163,8 +163,8 @@ static struct wf__par_slot *wf__par_find(struct wf__par_lane *lane) {
     lane->seed = lane->seed * 6364136223846793005ull + 1442695040888963407ull;
     random = lane->seed >> 33;
 #if defined(__linux__) && defined(__x86_64__)
-    /* Native measurements support this fast path on Linux x86-64. Preserve
-     * the remainder and victim sequence, including partial pools. */
+    /* Masking preserves the remainder and victim sequence for these counts;
+     * partial pools still need the general remainder. */
     if ((count & (count - 1)) == 0) {
         offset = (int)(random & (unsigned long long)(count - 1));
     } else

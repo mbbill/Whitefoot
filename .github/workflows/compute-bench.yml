@@ -221,11 +221,15 @@ jobs:
             echo 'formal screen did not finish; no CPU profile' > "$profile/availability.txt"
             exit 0
           fi
+          profile_kptr=$(sysctl -n kernel.kptr_restrict)
+          trap 'sudo sysctl -w kernel.kptr_restrict="$profile_kptr"' EXIT
           {
             sudo apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources \
               -o Dir::Etc::sourceparts=- install -y --no-install-recommends linux-tools-generic || true
             sysctl kernel.perf_event_paranoid
             sudo sysctl -w kernel.perf_event_paranoid=-1 || true
+            sysctl kernel.kptr_restrict
+            sudo sysctl -w kernel.kptr_restrict=0 || true
           } > "$profile/setup.txt" 2>&1
           if test -d /usr/lib/linux-tools; then
             export PERF="$(find -L /usr/lib/linux-tools -type f -name perf | sort -V | tail -1)"

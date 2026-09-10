@@ -24,27 +24,34 @@ if test "${1:-screen}" = profile; then
         find "$profile" -type f ! -name manifest.sha256 -exec sha256sum {} + > "$profile/manifest.sha256"
     }
     trap profile_manifest 0
+    case "$(uname -m)" in
+        x86_64)
+            n=4096; tile=16; calls=4096; widths='1 2 4'; width_list=1,2,4
+            images='previous candidate replica'; reverse='replica candidate previous';;
+        aarch64)
+            n=65536; tile=1024; calls=512; widths='1 4'; width_list=1,4
+            images='old recovered candidate replica'; reverse='replica candidate recovered old';;
+        *) printf '%s\n' 'unsupported profiling host' > "$profile/availability.txt"; exit 0;;
+    esac
     : > "$profile/images.sha256"
-    for image in old recovered candidate replica; do
+    for image in $images; do
         awk -v path="$out/$image" '
             substr($0,67)==path {print; found++}
             END {if(found!=1)exit 1}' "$out/manifest.sha256" >> "$profile/images.sha256"
     done
     sha256sum -c "$profile/images.sha256" > "$profile/images-check.txt"
     perf=${PERF:-perf}
-    case "$(uname -m)" in
-        x86_64) n=4096; tile=64; calls=4096;;
-        aarch64) n=65536; tile=1024; calls=512;;
-        *) printf '%s\n' 'unsupported profiling host' > "$profile/availability.txt"; exit 0;;
-    esac
     {
-        printf 'kernel=wf k=16 n=%s tile=%s calls=%s seed=92821 workers=1,4 passes=5\n' "$n" "$tile" "$calls"
+        printf 'kernel=wf k=16 n=%s tile=%s calls=%s seed=92821 workers=%s passes=5\n' \
+            "$n" "$tile" "$calls" "$width_list"
+        printf 'images=%s\n' "$images"
         printf '%s\n' 'unchanged images; every CPU-sampled process has a preceding plain process' \
             'cpu-clock samples attribute user/kernel CPU, not off-CPU wait duration or hardware stalls' \
             'sample CPU and guest topology describe observed placement, not exact migrations or host-core contention' \
             'sampled timings are descriptive; no observer cost is subtracted from the original screen'
         uname -a
-        for path in /proc/sys/kernel/perf_event_paranoid /sys/fs/cgroup/cpu.max /sys/fs/cgroup/cpuset.cpus.effective; do
+        for path in /proc/sys/kernel/perf_event_paranoid /proc/sys/kernel/kptr_restrict \
+                    /sys/fs/cgroup/cpu.max /sys/fs/cgroup/cpuset.cpus.effective; do
             if test -r "$path"; then printf '%s: ' "$path"; cat "$path"; fi
         done
         for path in /sys/devices/system/cpu/cpu[0-9]*/topology/thread_siblings_list \
@@ -52,7 +59,7 @@ if test "${1:-screen}" = profile; then
                     /sys/devices/system/cpu/cpu[0-9]*/topology/physical_package_id; do
             if test -r "$path"; then printf '%s: ' "$path"; cat "$path"; fi
         done
-        sha256sum "$out/old" "$out/recovered" "$out/candidate" "$out/replica"
+        for image in $images; do sha256sum "$out/$image"; done
     } > "$profile/inputs.txt"
     if ! "$perf" version > "$profile/perf-version.txt" 2>&1; then
         printf '%s\n' 'perf unavailable' > "$profile/availability.txt"
@@ -69,11 +76,11 @@ if test "${1:-screen}" = profile; then
     fi
     printf '%s\n' 'cpu-clock sampling available' > "$profile/availability.txt"
     : > "$profile/commands.txt"
-    for width in 1 4; do
+    for width in $widths; do
         pass=0
         while test "$pass" -lt 5; do
-            order='old recovered candidate replica'
-            if test "$((pass % 2))" = 1; then order='replica candidate recovered old'; fi
+            order=$images
+            if test "$((pass % 2))" = 1; then order=$reverse; fi
             for image in $order; do
                 stem=$profile/$image-w$width-p$pass
                 printf 'WF_WORKERS=%s WF_SCHED_REPORT=0 %s wf 16 %s %s %s 92821 %s\n' \

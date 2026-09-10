@@ -27,6 +27,8 @@ staged-loop lowering and their tests. Reuse the existing workload/reference
 panels for five-target native CI qualification below; do not build another
 benchmark framework or tune I/O. Historical safety evidence has the limited
 scope stated in the comparison, not a claim that every earlier audit was wrong.
+The latest [native confirmation and attribution question](#exhaustion-floor-confirmation-and-kernel-cpu-attribution)
+still leave all-platform performance qualification open.
 
 ## Compute-first measurements at b87e7548 (2026-09-09)
 
@@ -1925,7 +1927,104 @@ refusals. It requires the setup diagnostic, SIGABRT and no body output for
 each refusal. All 23 exhaustion tests pass locally. The deep-recursion test
 description is also corrected: nested helping uses an existing stack, so
 equal stack reservations do not prove universally equal available depth.
-Native Linux execution and the exact new revision's full gate remain required.
+The new refusal case also passes native Linux CI. Exact revision
+`0872e2ebbcd7d115f45f4c9d6ebec81c83aa5ed6` passes local canonical
+`make check`, all 12 [gate jobs](https://github.com/mbbill/Whitefoot/actions/runs/34492454227)
+and both [I/O-host jobs](https://github.com/mbbill/Whitefoot/actions/runs/34492454163).
+Three [I/O-bench jobs](https://github.com/mbbill/Whitefoot/actions/runs/34492454213)
+pass; Windows stops because compute timing remains unstable after two complete
+cohorts. Its separate I/O execution checks pass.
+
+### Exhaustion-floor confirmation and kernel-CPU attribution
+
+The [0872 native performance run](https://github.com/mbbill/Whitefoot/actions/runs/34492454246)
+again verifies 2,940 formal processes and 6,776,700 calls across five targets.
+Captured sources, previous headers, repaired controls, oracles and original
+reducers replay correctly. The following failures remain open:
+
+| Native target | Artifact | ZIP SHA256 | Long / first64 investigate |
+| --- | --- | --- | --- |
+| Linux x86-64 | 10158836042 | `16cfc5e005c6d6c0cd3b71a2a0199272d14e19f3196044950772450609093962` | 6/120; 26/120 |
+| Linux ARM | 10158623952 | `1eaae86ab92ef12577a1bebb8555ab3f30df1ec593ca3ba9f3f7155ab907ceb4` | 3/96; 3/96 |
+| Mac Intel | 10158890166 | `1df28f9c9046121a04fcaaf4059cd01bd1c27f0cadf0bfba0e68f5d890d27e8c` | 19/120; 23/120 |
+| Mac ARM | 10158784455 | `eb00d7d5571c61351b17f66434d6542ac1c0cf5951934e3e2407ae80a00b8048` | 23/72; 27/72 |
+| Windows x86-64 | 10158735158 | `78618e65ca3ea663d81164d68c637d3d89975bf7ee77d380651f9eddaf8b96cd` | 1/72; 12/72 |
+
+The Linux x86-64 guest is now EPYC 9V74, still two cores/four logical CPUs
+with Clang 18.1.3 and the same scalar flags. W4/N4096/tile64 no longer
+shows a joint benefit: current/previous full-call/CPU medians are
+0.9985/0.9996, replica 1.0079/1.0054. POSIX floor code and native images
+also changed, so this is not an isolated processor comparison. Linux-wide
+benefit has not been established.
+
+Tile16 core losses recur more clearly. W4 current/previous core is
+1.0414 [1.0385, 1.0716], replica 1.0501 [1.0343, 1.0762]; core A/A is
+[0.9785, 1.0167]. At W2 they are 1.1066 [1.0191, 1.2307] and 1.1489
+[1.1153, 1.1938]. Both widths lose every core pair for both images.
+W4 full-call/CPU medians are instead 0.9795/0.9859 and 0.9919/0.9933.
+Retaining the candidate still requires explaining this phase-specific cost.
+
+Existing batch metadata narrows the question. In the two preceding EPYC 7763
+cohorts, W4/tile16 system CPU rises in every current/previous and
+replica/previous pair, with paired medians 2.82/2.83 and 3.08/2.83.
+User CPU decreases, leaving total CPU near parity. In 0872 the same
+system-CPU ratios are 2.51/1.87; voluntary-switch ratios are 9.34/9.14,
+again increasing in every pair. W2 also increases system CPU and voluntary
+switches. These process totals include first/warm calls, allocation, result
+access/release and checks; they do not identify core-phase CPU, syscall counts
+or wait duration. Tile64 system CPU is small and includes zero denominators,
+so it supplies no complete meaningful ratio comparison.
+
+The other targets remain unresolved. Formal candidate/previous executable
+sections on Linux ARM, all sections on both Macs, and Windows `.text` match
+because each pair shares the new floor. That does not imply unchanged POSIX
+images across revisions. Mac ARM's earlier W2/N65536/tile16 historical loss
+does not jointly recur, but its wide A/A range cannot establish that it is
+resolved. Mac Intel W4/N65536/tile64 is slower than research in every
+full-call and CPU pair for both images, with wide A/A ranges limiting the
+magnitude. Windows has no new five-pair loss above 5% versus previous or old;
+its original failed screens remain.
+
+All five ordinary-command artifacts replay 7,620 processes and verify both
+compilers' embedded floor sources. The Linux x86-64 shape5/N4096/W2
+current/previous wall/CPU medians are 1.1428/1.1357, replica
+1.1365/1.1370; every pair is slower, though wall A/A [0.7685, 1.3999]
+prevents a precise attribution. Mac Intel shape2/N65536/W2 has a smaller
+CPU increase of 1.0254 for both images, also in every pair. The floor runs
+at entry/attach, but changed images and these observations still need to be
+accounted for rather than assumed free. Windows has eight default cells with
+zero CPU readings. Mac ARM exits zero with all 476 wall/CPU summary rows
+noisy-open. Neither that exit nor a selected small median qualifies performance.
+
+The next observation reuses the existing external CPU profiler, keeping the
+production instructions and original timing matrix unchanged. On Linux
+x86-64, replace tile64's old/research/current/replica observation with
+tile16's previous/current/replica at widths 1/2/4. This gives 90 processes,
+five alternating pairs per image/width with a plain process before each
+sampled one. AArch64 retains its previous observation. The exact original
+image hashes, raw oracles, actual widths, CPU metadata and unavailable-tool
+handling remain required. The existing parser enforces call rows, oracle and
+actual widths; the result audit must also verify raw CPU metadata. Earlier perf
+logs report restricted kernel maps and unresolved kernel addresses. The Linux
+observer step now attempts to expose kernel symbols and restores the original
+`kernel.kptr_restrict` value on exit; the setting's scope is described by the
+[kernel documentation](https://docs.kernel.org/admin-guide/sysctl/kernel.html#kptr-restrict).
+Symbol availability must still be verified from the new recording and reports.
+
+A faster unsuccessful scan may exhaust 4,096 spin rounds sooner and enter
+the 16 yield rounds or sleeping earlier. Allocator synchronization,
+cross-thread frees and page faults are alternative explanations. Compare
+absolute process CPU and samples in kernel, libc/allocator and worker paths
+against previous and the identical replica. A repeated concentration would
+localize process cost; missing symbols, observer-sensitive rankings or no
+clear concentration leave the hypothesis unresolved. Perf observes the whole
+process, whereas batch CPU excludes pre-batch preparation and final reporting.
+Lazy worker startup inside the first invocation remains included. A floor/setup
+sample outside the batch cannot directly explain its CPU delta; multiplying
+sample percentages by batch CPU does not give phase costs. Sampling does not
+label core/readout phases or justify changing wait parameters by itself. Any later
+runtime candidate still needs unobserved full-call, CPU, memory and matrix
+qualification; the remainder fast path is not accepted from its local win.
 
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 

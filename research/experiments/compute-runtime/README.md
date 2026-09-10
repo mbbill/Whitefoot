@@ -77,12 +77,16 @@ gap. Its exact source and artifact remain linked in the
 The original caller, complete performance matrix and acceptance checks remain.
 
 After the formal screen, Linux CI runs `formal-screen.sh profile` on its exact
-old/recovered/current/replica executables. This external `perf record -e
+measured executables. This external `perf record -e
 cpu-clock -F 997 --sample-cpu` observer samples CPU execution without rebuilding
 the images. Events retain CPU identifiers and nanosecond timestamps; `inputs.txt`
 records the guest's thread-sibling, core and package topology from sysfs.
-It uses N4096/tile64 on x86-64 and N65536/tile1024 on AArch64, at widths 1/4,
-with five passes in alternating image order. Each sampled process has a plain
+On x86-64 it observes N4096/tile16 at widths 1/2/4, comparing the previous
+maintained core with current and its identical replica. Earlier tile64
+profiles lacked previous and cannot explain the repeated tile16 core and
+kernel-CPU increases. AArch64 retains N65536/tile1024 at widths 1/4 and its
+old/recovered/current/replica controls. Both use five passes in alternating
+image order. Each sampled process has a plain
 process immediately before it, with identical inputs and existing call counts.
 Every process must pass the oracle and report the requested actual lane count.
 `profile/` retains commands, image hashes, raw calls, CPU samples, symbol reports
@@ -90,9 +94,23 @@ and its own manifest; it is produced after the original screen manifest.
 The sampled images must match that original manifest, and an existing profile
 attempt cannot be reused; start a fresh formal screen for another observation.
 Missing tools or kernel support are recorded as unavailable, never zero cost.
+The Linux CI step attempts to expose kernel symbols for the observer and
+restores the previous `kernel.kptr_restrict` value when the step exits. Earlier
+recordings report restricted kernel maps and unresolved kernel addresses;
+changing `perf_event_paranoid` alone did not make those symbols available.
+Availability must still be verified from the new recording and reports.
 
-The question is whether the complete-call gap corresponds to more CPU in the
-result accessor, allocation/destruction, compute callbacks or worker search.
+The question is whether the observed gap corresponds to more CPU in kernel
+paths, allocation/destruction, result accessors, compute callbacks or worker
+search. The x86-64 tile16 observation specifically tests the larger system
+CPU seen after the remainder change. Faster empty scans reaching fixed-count
+yield/park thresholds sooner is a hypothesis; allocator synchronization and
+page faults are alternatives. Process CPU and context-switch totals alone do
+not distinguish them, and these samples do not label core versus readout phases.
+The profiler covers the whole process, whereas batch CPU excludes pre-batch
+preparation and final reporting. Lazy worker startup inside the first
+invocation remains included. Samples outside the batch cannot explain its CPU
+delta, and multiplying sample percentages by batch CPU does not give phase costs.
 Compare sample locations with each image's plain CPU/full-call measurements;
 percentages alone are not absolute costs. Sampling changes scheduling and may
 miss short intervals, and `cpu-clock` does not measure off-CPU waits or hardware
