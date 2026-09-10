@@ -111,9 +111,9 @@ jobs:
           fi
           cargo build --locked --profile gate --bin whitefootc \
             --manifest-path compiler/Cargo.toml --target-dir "$scratch/compiler"
-          # Compare the compact waiting flag with the prior official runtime,
+          # Compare restored waiter pointers with the compact-flag revision,
           # keeping compiler options and ordinary entry points unchanged.
-          baseline=7776c3cdb4e1b72876e062b3d16f019328b5d2d7
+          baseline=a8227af4ed382a881b6c85f53e9553056f634a60
           mkdir -p "$scratch/previous-source"
           git archive "$baseline" compiler spec | tar -x -C "$scratch/previous-source"
           cargo build --locked --profile gate --bin whitefootc \

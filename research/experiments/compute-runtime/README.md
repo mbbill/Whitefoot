@@ -25,8 +25,8 @@ runtime; remove it when the production replacement has passed the comparison.
 `make formal-screen OUT=<fresh-absolute-path>` compares one scalar WF object
 against repaired historical and recovered cores on POSIX, and the repaired
 historical native core on Windows. It also checks the ordinary CLI executable.
-All targets also compare the prior maintained core at `7776c3cd`, before its
-redundant waiter pointer became an atomic flag. It shares the WF/host objects,
+All targets also compare the compact-flag core at `a8227af4`; the maintained
+candidate restores the prior waiter pointer. It shares the WF/host objects,
 compiler options and platform sources with the candidate. Both raw logs use
 the same internal runtime label; filenames and summary rows distinguish them.
 The completed Windows `d39b4836` spin-hint ablation is retired from the active
@@ -1194,8 +1194,8 @@ produces 1,405 processes, including five work120000 samples for the
 shape4/count4096/W4 four-leaf diagnostic; the initial panel before these
 controls had 770.
 
-The waiting-flag qualification additionally rebuilds official compiler
-`7776c3cdb4e1b72876e062b3d16f019328b5d2d7` from its unchanged `compiler/` and
+The waiting-representation comparison additionally rebuilds official compiler
+`a8227af4ed382a881b6c85f53e9553056f634a60` from its unchanged `compiler/` and
 `spec/` sources on the same CI host. `BASE_WFC` and `BASE_REV` supply that
 compiler to the existing build step. It compiles the same WF sources through
 ordinary `--par --no-vectorize`, with no private linking override. Its
@@ -1209,11 +1209,22 @@ The reducer requires all planned baseline observations; retained negative
 reports prove missing default/four-leaf/replica samples reject. The baseline
 executable, both compiler binaries and hashes, and exact source revision
 accompany the artifact. Retire this
-bounded baseline when the waiting-flag comparison is settled; it is a prior
+bounded baseline when the waiting-representation comparison is settled; it is a prior
 official compiler, not a separate research implementation. The earlier
 `7776c3cd` cohort used `b00bf240` to compare loop alignment through the normal
 CLI; those results retain that comparison and must not be relabeled as a
-waiting-flag effect.
+waiting-flag effect. The `a8227af4` cohort compared the flag with `7776c3cd`;
+the current comparison reverses that representation change while preserving
+its strengthened reuse tests.
+
+On Windows, the native reference retains PDB information but explicitly uses
+`/INCREMENTAL:NO /OPT:REF /OPT:ICF`, matching the ordinary WF release-link
+optimization defaults. The former `-g`-only native link instead enabled
+incremental trampolines and disabled those default optimizations. Its old
+results remain measurements of that debug-link reference, not qualification
+of the strongest release reference. The shared runner is unchanged, as are
+the formal FIR panel's matched O3 debug links, all source algorithms, scalar
+settings, inputs and thresholds. POSIX build settings are unchanged.
 Raw process samples, oracle inputs/digests, tool flags, source copies, host
 metadata and executable/compiler hashes are artifacts. Requested counts do not
 prove every worker executed a task; runtime attribution needs separate evidence.

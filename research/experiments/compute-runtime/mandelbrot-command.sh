@@ -18,8 +18,14 @@ out=$(cd "$OUT/mandelbrot-command" && pwd)
 exe=
 thread_flags=-pthread
 runner_flags=
+native_link_flags=
 case "$(uname -s)" in
-    MINGW*|MSYS*) exe=.exe; thread_flags=; runner_flags='-municode -lpsapi';;
+    MINGW*|MSYS*)
+        exe=.exe; thread_flags=; runner_flags='-municode -lpsapi'
+        # Keep PDB evidence without changing the ordinary WF release-link
+        # defaults. Hyphen options avoid MSYS rewriting slash options as paths.
+        native_link_flags='-Wl,-incremental:no,-opt:ref,-opt:icf'
+        ;;
 esac
 previous=0
 if test -f "$out/previous-revision.txt"; then previous=1; fi
@@ -72,7 +78,7 @@ if test "$mode" = build; then
     cp "$out/par$exe" "$out/replica$exe"
     cmp "$out/par$exe" "$out/replica$exe"
     # Word splitting is intentional for these fixed compiler argument lists.
-    "$CXX" -std=c++17 $scalar_flags $thread_flags mandelbrot_command.cpp -o "$out/native$exe"
+    "$CXX" -std=c++17 $scalar_flags $thread_flags $native_link_flags mandelbrot_command.cpp -o "$out/native$exe"
     "$CC" -std=c11 $scalar_flags command_runner.c $runner_flags -o "$out/runner$exe"
     if test "$(uname -s)" = Linux; then
         "$CC" -std=c11 $scalar_flags -fPIC -shared -pthread thread-placement.c \
@@ -88,6 +94,7 @@ if test "$mode" = build; then
         git rev-parse HEAD
         "$CXX" --version
         printf '%s\n' "native=$scalar_flags $thread_flags" \
+            "native_link=$native_link_flags" \
             'WF: ordinary --par or --no-overlap with --no-vectorize at default -O2; no private ABI or runtime override' \
             'policy controls use the identical par image with WF_SPLIT_WORK=60000,240000,0; baseline and replica use the unset default' \
             'shape4/count4096/workers4 additionally uses work120000: exactly four leaves at measured weight219, isolating decomposition before runtime changes' \

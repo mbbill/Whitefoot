@@ -209,7 +209,7 @@ then helps or steals on the current stack; an empty search eventually yields
 and sleeps. There is no managed-stack pool, continuation migration or ready
 queue. Deque cells are atomic, thief index loads participate in the owner's
 SC claim order, and only the offering thread joins and releases its slots.
-Each slot has an atomic waiting flag and an immutable owner. A completion
+Each slot has an atomic waiter pointer and an immutable owner. A completion
 tail may signal that owner after slot reuse; the join rechecks completion
 under its wait lock, so a late notification cannot complete the new task.
 Workers start lazily, with the same stack reservation and exhaustion handling

@@ -392,7 +392,7 @@ from EPYC 9V74 to 7763, and Rust changes from 1.98.0 to 1.98.1. Layout and
 sampling remain unseparated; a larger failure count alone does not identify
 an algorithmic regression.
 
-### Compact waiting metadata candidate
+### Compact waiting metadata candidate (not retained)
 
 The maintained runtime permits only the offering thread to join and release
 a slot, and the slot's `home` remains immutable until process exit. Its waiter
@@ -405,7 +405,7 @@ remains 256 bytes with sixteen-byte alignment. The ordinary task ABI, source
 rules, worker configuration and native wait primitives do not change.
 
 The alternatives are to keep the pointer or encode waiting in the completion
-state with an exchange. The flag is provisional: it removes redundant storage
+state with an exchange. The flag was provisional: it removes redundant storage
 without adding an RMW to every completion. The exchange alternative is not
 selected because its ARM cost is unmeasured and the current protocol already
 provides the necessary ordering. After DONE, an old executor may see the new
@@ -516,8 +516,8 @@ are not byte-identical A/A and cannot quantify sampling noise alone.
 Native debug layouts confirm slot size 304 to 288 bytes; ordinary Linux ARM
 BSS falls by 65,536 bytes. The ordinary Windows/ARM four-leaf paired RSS
 medians are both 1.0. No stable speed or peak-resident-memory improvement is
-established. Keep the runtime and publication policy fixed while reconciling
-these existing losses; the smaller slot is not a reason to add more tuning.
+established. These measurements do not qualify the compact flag; the return
+to the prior representation below avoids extending this storage experiment.
 
 The cancelled macOS research job rebuilds the compiler in two target
 directories: the compute experiment first uses its private target, then the
@@ -525,10 +525,57 @@ container tests rebuild the same compiler under `compiler/target`. The second
 build is interrupted at the workflow's eight-minute limit. The root research
 target now builds the ordinary compiler once and supplies that executable to
 the compute tests, allowing container tests to reuse the same Cargo output.
-All research test targets and the CI time limit remain unchanged. A native
-CI result for this build-reuse fix is still required. The unchanged local
-`make research-tests` passes with the supplied ordinary compiler; the container
-stage's Cargo invocation reuses the same output and finishes in 0.00 seconds.
+All research test targets and the CI time limit remain unchanged. The unchanged
+local `make research-tests` passes with the supplied ordinary compiler; the
+container stage's Cargo invocation reuses the same output in 0.00 seconds.
+Exact `e46396127c82d889180ddf88eaed2044c9f315c9` subsequently passes all twelve
+[native gate jobs](https://github.com/mbbill/Whitefoot/actions/runs/34435318201)
+and both [completion jobs](https://github.com/mbbill/Whitefoot/actions/runs/34435318197).
+The macOS research log builds the compiler once in 56.20 seconds; the container
+stage reuses it in 0.01 seconds. This verifies the build-reuse fix, not the
+later waiting-representation or Windows reference changes below.
+
+### Restore the prior waiting representation
+
+The compact flag fails its stated condition: it has no established speed or
+peak-RSS benefit and retains repeatable full-call losses against its parent.
+The sequential ARM evidence rules out executing the flag as that cell's cause;
+it does not make the changed executable's performance acceptable. Restore the
+`7776c3cd` waiter pointer and its exact registration/publication memory orders.
+This returns each slot to 304 bytes, with the same 256-byte payload and
+sixteen-byte alignment. Retain the new deterministic registered-wait/reuse
+case, generation capture before DONE and notification witness under the owner
+lock. No safety fix, source rule, public ABI, publication policy or I/O path
+is removed. Keeping the flag and searching more layouts is not selected: the
+optional storage saving does not justify prolonging runtime qualification.
+
+The existing formal and ordinary comparisons now use exact `a8227af4` as
+their immediate previous control, alongside the unchanged historical,
+recovered, native and identical-image controls. Reversing the representation
+does not by itself establish a performance recovery; full-call/CPU/memory
+comparisons and all native correctness checks remain required.
+
+Local ordinary, ThreadSanitizer and ASan/UBSan smoke checks pass with waiter
+pointers, including the retained registered-wait/reuse witness. The concurrent
+200,000-operation deque checks pass with and without counters, including TSan;
+both embedded compiler scheduler tests also pass. Independent review verifies
+that the production tokens, after excluding comments and test hooks, match
+`7776c3cd`; same-input-path Apple Clang O2 assembly is byte-identical. These
+checks do not replace native CI or exact-revision canonical validation.
+
+Independent inspection also finds an actual Windows ordinary-reference build
+asymmetry in artifact `10135281908`: `native.pdb` records `-debug`, with no
+explicit OPT/INCREMENTAL overrides, and contains 2,826 incremental trampolines.
+The WF par/previous/seq executables have no CodeView/PDB entry and the ordinary
+compiler passes no `-g`. Microsoft's
+[/DEBUG documentation](https://learn.microsoft.com/en-us/cpp/build/reference/debug-generate-debug-info?view=msvc-170)
+confirms that it enables incremental linking and changes the REF/ICF defaults.
+The native reference now explicitly restores `/INCREMENTAL:NO /OPT:REF
+/OPT:ICF` while retaining PDB evidence. This corrects the reference's release
+link settings, not the WF runtime. No speedup is inferred; native correctness
+and new Windows binary metadata must verify the actual result. Keep the former
+measurements with their debug-link limitation. The shared measurement runner,
+POSIX flags and the mutually matched formal O3 images are unchanged.
 
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 

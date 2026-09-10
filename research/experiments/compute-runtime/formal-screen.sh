@@ -12,7 +12,7 @@ export WF_SCHED_REPORT
 root=$(git rev-parse --show-toplevel)
 old=9051576f6a4d723b4eb072850f49859853decae7
 recovered=d858008f560b25da896af2a17f8b1d07ac49fd6e
-previous=7776c3cdb4e1b72876e062b3d16f019328b5d2d7
+previous=a8227af4ed382a881b6c85f53e9553056f634a60
 host=$(uname -s)
 exe=; floor=wf_floor.c; leaf=prim_host.c; platform_flags=-pthread; libraries=-lm
 modes='old recovered previous candidate replica'
@@ -114,7 +114,7 @@ fi
 # The completed Windows spin-hint ablation is retained at 7776c3cd. It no
 # longer isolates the current source change; compare the actual prior core.
 git show "$previous:compiler/src/backend/sched/core.c" > "$out/previous.c"
-printf '\nPrevious maintained core=%s; same WF/host objects, flags and platform sources. It retains pointer-valued waiting metadata. Both use the internal candidate label; filenames and means.tsv distinguish the cores.\n' "$previous" >> "$out/flags.txt"
+printf '\nPrevious maintained core=%s; same WF/host objects, flags and platform sources. It uses compact waiting flags; the candidate restores waiter pointers. Both use the internal candidate label; filenames and means.tsv distinguish the cores.\n' "$previous" >> "$out/flags.txt"
 cat > "$out/candidate-observer.c" <<'C'
 extern unsigned wf__sched_pool_running(void);
 unsigned wf_bench_worker_count(void) { return wf__sched_pool_running() + 1; }
