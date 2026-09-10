@@ -540,3 +540,28 @@
   supplies precision independently of the unchanged owner-routing summary and
   loan ceiling; general selected subplaces remain an open separate question.
   [Argument and discriminating controls](../../../research/investigations/containers-and-resources/FOUNDATION.md#owner-identity-across-replacement-and-calls). (sourced)
+- 2026-09-10 (ad624ab7) measurement: a same-function full-array to fixed-run to
+  full-array round trip already optimizes to its direct-return control. For
+  three 136-byte owning records both retain only a 408-byte tail transfer and
+  no private frame; three-byte and zero-extent pairs likewise have equal native
+  code. The forward conversion's known zero head is essential to this comparison;
+  arbitrary-head split copies and separately retained conversions remain
+  different costs. Added destination machinery for this case has no demonstrated
+  native work to remove.
+  [Checked helper source and ABI observations](../../../research/experiments/container-representation/foundation/RESULTS.md#dense-full-array-operations). (code)
+- 2026-09-10 (a7e98bd5) measurement: a fixed scalar heap expressed through
+  borrowed complete-array storage and scalar count contracts has no whole-heap
+  transfers in its optimized ordinary or retained-helper trace. With both
+  implementations' mutation helpers retained, the measured 16-round medians
+  are 4.35 microseconds for Whitefoot and 4.38 for the matched C algorithm.
+  This is a concrete efficient ordinary-value competitor, not generic payload
+  construction, comparison behavior, or a remedy for every owning-run cost.
+  [Source, samples and limits](../../../research/experiments/container-representation/families/RESULTS.md#borrowed-full-array-heap). (code)
+- 2026-09-10 (a7e98bd5) evidence: ordinary complete arrays of enum slots admit
+  runtime-probed insertion, replacement, lookup, deletion, tombstone reuse and
+  full-table input return with modern owning boxes. A full scan after deletion
+  reuses the returned owner without allocation. The independent native observer
+  checks one success and all 192 allocation-refusal positions, conserving every
+  supplied owner across 193 executions. Capacity growth, returned migration
+  progress and projected sparse layout are not established by this trace.
+  [Operation and refusal contract](../../../research/experiments/container-representation/families/RESULTS.md#operation-contracts-and-recorded-runs). (code)

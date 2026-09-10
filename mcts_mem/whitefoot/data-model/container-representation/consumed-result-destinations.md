@@ -30,6 +30,12 @@
   [Owned-place controls](../../../../compiler/src/backend/tests/owned_places.rs),
   [storage planner](../../../../compiler/src/backend/storage.rs). (code)
 
+- 2026-09-10 (ad624ab7) measurement: two alternating baseline/current timing
+  cohorts retain all 224 samples. The current sixteen-round heap medians remain
+  about 2.85 and 2.89 times their same-run C controls, with substantial ranges;
+  removal of the caller transfers does not close the same-algorithm cost gap.
+  [Samples, conditions and remaining comparison](../../../../research/experiments/container-representation/families/RESULTS.md#compiler-selected-result-fields). (code)
+
 ## Moves
 
 - 2026-09-10 (e3924d7f) replaced [[whole-result-only]]: Whole-result-only reuse could not eliminate the measured post-pop transfers; placement within the complete result allocation preserves the input snapshot and field-lifetime obligations while removing those transfers. (sourced)
