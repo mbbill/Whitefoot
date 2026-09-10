@@ -52,6 +52,17 @@ flags and acceptance thresholds are unchanged. The former Windows one-leaf
 diagnostic and its measured result remain at `9253ceb3`; replacing it removes
 tree depth as a difference between the serial control and the parallel case.
 
+Linux x86-64 additionally runs `scheduler-observation/` for the same
+N4096/tile64 cell, with five interleaved processes per old/recovered/current/
+replica image. `WF_SCHED_REPORT=2` reads their already-enabled successful-steal
+counters at process exit; it does not rebuild the images or add hot-path
+instrumentation. Raw call timings and stderr are retained with `counts.tsv`.
+The counts include the first invocation and all 4,096 warm calls. Every process
+must start four participants and pass the result oracle. These observations
+test whether cross-worker task claims differ consistently; they do not count
+failed steals, identify which allocations ran on each thread or establish a
+constant cost per steal. They remain separate from the original timing matrix.
+
 On x86-64, the formal matrix gives every scheduler reference the maintained
 compiler's `-falign-loops=32` setting. An additional `unaligned` image recompiles
 the current candidate's WF, host, oracle and runtime C with the previous host

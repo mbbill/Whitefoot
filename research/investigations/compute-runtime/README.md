@@ -896,6 +896,16 @@ checked WF/host/native objects and four aligned images match 7db, although
 the complete object/EXE files differ. No runtime improvement follows from
 this cohort's changed ratios, and sequential equivalence is not established.
 
+The next Linux observation uses the same four old/research/current/replica
+images at N4096/tile64 with `WF_SCHED_REPORT=2`. Both POSIX controls and
+production already count successful steals; this setting only registers an
+exit-time report. Five interleaved process samples retain the original result
+checks, CPU and call durations alongside the total claims. A consistent claim
+difference would support investigating task distribution and allocation
+ownership before changing idle behavior; similar counts would not establish
+equal allocation placement or eliminate background-worker interference.
+This observation changes no runtime, host, generated function or timing gate.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o

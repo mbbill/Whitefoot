@@ -283,6 +283,37 @@ if test -n "$serial_tile"; then
         pass=$((pass + 1))
     done
 fi
+# Observe the existing counters after the measured Linux batch. Both cores
+# already update them in the original images; report=2 only registers the
+# exit-time read. Keep these observations separate from the timing matrix.
+if test "$(uname -s)-$(uname -m)" = Linux-x86_64; then
+    mkdir "$out/scheduler-observation"
+    printf 'mode\tpass\tcalls\tsteals\n' > "$out/scheduler-observation/counts.tsv"
+    pass=0
+    while test "$pass" -lt 5; do
+        order='old recovered candidate replica'
+        if test "$((pass % 2))" = 1; then order='replica candidate recovered old'; fi
+        for mode in $order; do
+            log="$out/scheduler-observation/$mode-p$pass"
+            WF_WORKERS=4 WF_SCHED_REPORT=2 "$out/$mode" wf 16 4096 64 4096 92821 "$pass" > "$log.tsv" 2> "$log.stderr"
+            awk '
+                /^# actual_lanes=/ {if($2!="actual_lanes=4")exit 1; lanes++}
+                /^# FIR bench PASS:/ {if($5!="calls=4097")exit 1; passed++}
+                END {if(lanes!=1 || passed!=1)exit 1}' "$log.tsv"
+            awk -v mode="$mode" -v pass="$pass" '
+                /^compute:/ {
+                    if(NF!=5 || $2!="threads=4" || $3!="workers_started=3" ||
+                        $4!~/^steals=[0-9]+$/ || $5!="slots_per_lane=64")exit 1
+                    split($4,a,"="); steals=a[2]; reports++
+                }
+                END {
+                    if(reports!=1 || steals>4097*63)exit 1
+                    printf "%s\t%s\t4097\t%s\n",mode,pass,steals
+                }' "$log.stderr" >> "$out/scheduler-observation/counts.tsv"
+        done
+        pass=$((pass + 1))
+    done
+fi
 # Binaries, copied sources, actual flags and every raw sample are reproducible
 # evidence even when the performance band fails.
 if test -n "$exe"; then
