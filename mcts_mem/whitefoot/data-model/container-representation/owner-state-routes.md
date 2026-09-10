@@ -22,6 +22,7 @@
 - 2026-09-09 (4bcb9961) pitfall: Typed projections require matching producer and consumer selectors. Cell destructuring through a product-field selector discards referent origins; retaining old logical indices across front insertion can discard the shifted owner's origin. The latter remains a capability gap until its transfer is represented. (code)
 - 2026-09-09 (e298ca67) pitfall: A loop's ownership permissions can agree while its current owner comes from different inputs on later iterations. Checking only the entry image misses those reads; stable entry/backedge origin headers and counted exhaustion expose the second supplier without relaxing liveness or loan equality. (code)
 - 2026-09-09 (a577b7cb) pitfall: Address-evaluation access roots can name an enclosing aggregate rather than the transferred field. Adding those roots after projecting a captured owner image widens the field's effect to unrelated state. (code)
+- 2026-09-09 (984ed390) pitfall: Discarding a known typed prefix when an inner element selector is dynamic makes unrelated field origins unlocated. The optional-slot program and own-returned/exclusive-borrowed helper controls require the uncertain old and incoming suppliers to remain bounded inside that prefix while sibling reads retain their precise attribution. (code)
 
 ## Moves
 
