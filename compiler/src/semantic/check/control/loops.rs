@@ -34,13 +34,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         entry: Option<&LocalBinding>,
         backedge: Option<&LocalBinding>,
     ) -> bool {
-        if !self.deriving_result_state_origin.get() {
-            return entry == backedge;
-        }
-        // The preliminary pass builds the typed body from which callable
-        // origin summaries are derived. Its call images are not resolved yet.
-        // Only that metadata is deferred: liveness, loans and every other
-        // binding property still agree, and the final check compares it all.
+        let origins_agree = self.deriving_result_state_origin.get()
+            || match (
+                entry.and_then(|binding| binding.state_origins.as_ref()),
+                backedge.and_then(|binding| binding.state_origins.as_ref()),
+            ) {
+                (None, None) => true,
+                (Some(header), Some(backedge)) => {
+                    let mut joined = header.clone();
+                    joined.union(backedge);
+                    joined == *header
+                }
+                _ => false,
+            };
+        // Only erased origins form a may-union. Every permission and live/dead
+        // property still has its ordinary loop equality requirement.
         let mut entry = entry.cloned();
         let mut backedge = backedge.cloned();
         if let Some(binding) = &mut entry {
@@ -49,7 +57,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if let Some(binding) = &mut backedge {
             binding.state_origins = None;
         }
-        entry == backedge
+        origins_agree && entry == backedge
+    }
+
+    fn install_loop_origins(
+        &self,
+        function: &FunctionSignature,
+        id: CheckedLoopId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<(), CheckStop> {
+        if self.deriving_result_state_origin.get() {
+            return Ok(());
+        }
+        let inventories = self.loop_state_origins.borrow();
+        let header = inventories
+            .get(function.id.0 as usize)
+            .and_then(|loops| loops.get(&id))
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        for local in bindings.values_mut() {
+            if local.state_origins.is_some() {
+                local.state_origins = Some(
+                    header
+                        .get(&local.binding)
+                        .cloned()
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                );
+            }
+        }
+        Ok(())
     }
 
     fn form_loop_invariants(
@@ -115,10 +150,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .binding_names
             .push(binder_declaration.spelling().to_owned());
 
-        // The structural false-header edge always carries this exact state to
-        // the continuation. The binder and body locals exist only in the
-        // separate header/body state below.
-        let base_bindings = bindings.clone();
+        // Exhaustion can follow any iteration, so it carries the stable
+        // header image, including entry and every possible backedge origin.
+        let mut base_bindings = bindings.clone();
+        self.install_loop_origins(function, id, &mut base_bindings)?;
         let base_keys = base_bindings.keys().copied().collect::<Vec<_>>();
         let preserved = base_keys.iter().copied().collect::<HashSet<_>>();
         let mut body_bindings = base_bindings.clone();
@@ -494,7 +529,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .optional_declaration_at(node, DeclarationRole::LoopLabel)?
             .map(crate::DeclarationRecord::id);
         let id = Self::allocate_loop(counters.next_loop)?;
-        let base_bindings = bindings.clone();
+        let mut base_bindings = bindings.clone();
+        self.install_loop_origins(function, id, &mut base_bindings)?;
         let base_keys = base_bindings.keys().copied().collect::<Vec<_>>();
         let preserved = base_keys.iter().copied().collect::<HashSet<_>>();
         let mut nested_loops = scope.loops.to_vec();

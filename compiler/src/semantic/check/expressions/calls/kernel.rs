@@ -215,6 +215,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let result = self.kernel_result_type(node, record, signature, &instance)?;
         let requirements = self.kernel_requirements(signature, &instance, &goal_arguments)?;
+        let result_origins = if self.type_carries_identity(result)? {
+            let argument_images = state_origins
+                .into_iter()
+                .map(|origin| {
+                    origin.unwrap_or_else(crate::semantic::model::CheckedStateOrigins::fresh)
+                })
+                .collect::<Vec<_>>();
+            Some(Box::new(
+                crate::semantic::state_origins::kernel_state_image(
+                    record.row,
+                    self.is_copy_type(instance.element)?,
+                    &argument_images,
+                ),
+            ))
+        } else {
+            None
+        };
 
         self.statement_loans
             .borrow_mut()
@@ -227,6 +244,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 instance: Box::new(instance),
                 argument_nodes,
                 arguments,
+                state_origins: result_origins,
                 goal_arguments,
                 requirements,
                 result,
@@ -1040,7 +1058,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 paths.push(self.state_path(place, bindings)?);
             }
             if let Some(origins) = state_origins.get(index).and_then(Option::as_ref) {
-                if origins.unknown && !self.deriving_result_state_origin.get() {
+                if origins.lacks_exact_origins() && !self.deriving_result_state_origin.get() {
                     return self
                         .unsupported(crate::UnsupportedSemanticFeature::OwnerStateRouting, node);
                 }

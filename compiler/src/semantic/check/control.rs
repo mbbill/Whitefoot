@@ -798,6 +798,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let target_fields = self.state_fields_of_target(&target, &place, bindings)?;
         let previous_origins = match (previous_whole_origins.clone(), target_fields.as_deref()) {
             (Some(origins), Some(fields)) => Some(origins.projected_value(fields)),
+            (Some(origins), None) => Some(origins.unlocated()),
             (_, None) => Some(CheckedStateOrigins::unknown()),
             (None, Some(_)) => None,
         };
@@ -842,6 +843,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     Some(origins.replace_value_path(fields, replacement_origins))
                 }
                 (_, Some(_)) => replacement_origins,
+                (Some(mut origins), None) => {
+                    if let Some(replacement) = replacement_origins {
+                        origins.union(&replacement);
+                    }
+                    Some(origins.unlocated())
+                }
                 (_, None) => Some(CheckedStateOrigins::unknown()),
             };
             bindings

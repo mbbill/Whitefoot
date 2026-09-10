@@ -127,6 +127,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let (binding, path) = self.explicit_container_path(&place.expression, node)?;
             CheckedExpression::ReadStorage {
                 carrier: self.tree.path(use_node)?.clone(),
+                state_origins: Some(Box::new(
+                    self.owner_image_at_place(&place.resolved, bindings)?,
+                )),
                 root: CheckedContainerRoot {
                     root: crate::semantic::CheckedPlaceRoot::Binding(binding),
                     path,

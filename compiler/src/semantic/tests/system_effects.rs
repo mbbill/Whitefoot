@@ -279,6 +279,119 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn bounded_run_helpers_preserve_imported_sources_and_resolve_fresh_actuals() {
+    let helpers = r#"fn pack(value: own box<u64>) -> result: own FixedVector<box<u64>, 1> pure contract {
+  ensures len_of(result) == 1_u64;
+} {
+  let empty = fixed_vector::<box<u64>, 1>();
+  let full = place_back(vector: move empty, value: move value);
+  return move full;
+}
+
+fn relay(value: own box<u64>) -> result: own FixedVector<box<u64>, 1> pure contract {
+  ensures len_of(result) == 1_u64;
+} {
+  let full = pack(value: move value);
+  return move full;
+}
+"#;
+    let fresh = format!(
+        r#"{helpers}
+command fn main() -> status: own ExitStatus pure {{
+  let value = box_new(37_u64);
+  let full = relay(value: move value);
+  let (empty, extracted) = take_back(vector: move full);
+  if deref(extracted) != 37_u64 {{
+    return exit_status(code: 1_u8);
+  }}
+  return exit_status(code: 0_u8);
+}}
+"#
+    );
+    assert_complete(fresh.as_bytes());
+    let imported = format!(
+        r#"{helpers}
+fn observe(value: own box<u64>) -> result: own u64 pure {{
+  let full = relay(value: move value);
+  let (empty, extracted) = take_back(vector: move full);
+  return deref(extracted);
+}}
+
+command fn main() -> status: own ExitStatus pure {{
+  let value = box_new(37_u64);
+  let observed = observe(value: move value);
+  return exit_status(code: 0_u8);
+}}
+"#
+    );
+    with_semantics(imported.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Unsupported { ref unsupported }
+            if unsupported.feature() == crate::UnsupportedSemanticFeature::OwnerStateRouting),
+            "a finite source bound must not become fresh across calls: {outcome:?}"
+        );
+    });
+}
+
+#[test]
+fn storage_read_out_captures_the_value_image_before_a_helper_call() {
+    use super::super::model::{CheckedExpression, CheckedStatement};
+    let source = br#"fn keep(value: own box<u64>) -> result: own box<u64> pure {
+  return move value;
+}
+
+fn carry(slots: own FixedVector<box<u64>, 2>) -> result: own FixedVector<box<u64>, 2> reads(slots), writes(slots) contract {
+  requires 0_u64 < len_of(slots);
+} {
+  set slots[0_u64] = keep(value: move slots[0_u64]);
+  return move slots;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("the transport itself needs no precise displaced slot: {outcome:?}");
+        };
+        let function = &program.data.functions[1];
+        let CheckedStatement::Set {
+            value: CheckedExpression::UserCall { arguments, .. },
+            ..
+        } = &function.body[0]
+        else {
+            panic!("expected the ordinary read-out call");
+        };
+        let CheckedExpression::ReadStorage {
+            state_origins: Some(image),
+            ..
+        } = &arguments[0]
+        else {
+            panic!("read-out must capture its typed storage's value image");
+        };
+        assert!(!image.lacks_exact_origins());
+        assert!(
+            image.formals.iter().any(|origin| !origin.unlocated
+                && origin.source.root == function.parameters[0].declaration)
+        );
+        assert_eq!(
+            image.formals[0].source_value_fields,
+            vec![CheckedStateStep::Element(0)]
+        );
+    });
+    // LIV-2 identifies read-out offsets only by equal literals. A bound
+    // index is a normative rejection, not a missing origin image.
+    let dynamic = std::str::from_utf8(source).unwrap().replace(
+        "  set slots[0_u64] = keep(value: move slots[0_u64]);",
+        "  let index = 0_u64;\n  set slots[index] = keep(value: move slots[index]);",
+    );
+    assert_rule_kind(dynamic.as_bytes(), SemanticRule::Type2, |kind| {
+        matches!(kind, SemanticIssueKind::AffineElementMove { .. })
+    });
+}
+
+#[test]
 fn fresh_outer_storage_keeps_an_inserted_formal_through_an_extracting_helper() {
     let source = br#"fn extract(storage: own box<box<u64>>) -> previous: own box<u64> reads(storage), writes(storage) {
   let empty = box_new(0_u64);
@@ -596,6 +709,7 @@ command fn main() -> status: own ExitStatus pure {
 
 fn root(parameter: u32) -> CheckedResultStatePath {
     CheckedResultStatePath {
+        unlocated: false,
         result_fields: Vec::new(),
         exclusions: Vec::new(),
         parameter,
@@ -1138,12 +1252,14 @@ command fn main() -> status: own ExitStatus pure {
             CheckedResultStateOrigin::Finite {
                 formals: vec![
                     CheckedResultStatePath {
+                        unlocated: false,
                         result_fields: vec![CheckedStateStep::Field(0)],
                         exclusions: Vec::new(),
                         parameter: 0,
                         parameter_fields: vec![CheckedStateStep::Field(0)],
                     },
                     CheckedResultStatePath {
+                        unlocated: false,
                         result_fields: vec![CheckedStateStep::Field(1)],
                         exclusions: Vec::new(),
                         parameter: 0,
@@ -1216,12 +1332,14 @@ command fn main() -> status: own ExitStatus pure {
             CheckedResultStateOrigin::Finite {
                 formals: vec![
                     CheckedResultStatePath {
+                        unlocated: false,
                         result_fields: vec![CheckedStateStep::Field(0)],
                         exclusions: Vec::new(),
                         parameter: 0,
                         parameter_fields: vec![CheckedStateStep::Field(0)],
                     },
                     CheckedResultStatePath {
+                        unlocated: false,
                         result_fields: vec![CheckedStateStep::Field(1)],
                         exclusions: Vec::new(),
                         parameter: 0,
@@ -1258,6 +1376,7 @@ command fn main() -> status: own ExitStatus pure {
             program.data.functions[0].result_state_origin,
             CheckedResultStateOrigin::Finite {
                 formals: vec![CheckedResultStatePath {
+                    unlocated: false,
                     result_fields: Vec::new(),
                     exclusions: Vec::new(),
                     parameter: 0,
@@ -1496,7 +1615,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn changing_loop_origins_do_not_hide_a_later_iterations_read() {
     let source =
-        br#"fn cycle(first: own box<u64>, second: own box<u64>) -> result: own unit reads(first) {
+        br#"fn cycle(first: own box<u64>, second: own box<u64>) -> result: own unit reads(first), writes(first, second) {
   for (iteration in 0_u64..2_u64) {
     let observed = deref(first);
     set (first, second) = move second, move first;
@@ -1508,16 +1627,37 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics(source, |outcome| {
-        // Iteration two reads the original second owner. The preliminary pass
-        // may defer origin comparison, but the final pass cannot accept this
-        // row merely because iteration one reads only the original first.
-        assert!(
-            matches!(outcome, SemanticOutcome::Unsupported { ref unsupported }
-                if unsupported.feature() == crate::UnsupportedSemanticFeature::OwnershipJoin),
-            "a changing header image still needs the missing loop-origin capability: {outcome:?}"
-        );
+    assert_rule_kind(source, SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { missing, extra, .. }
+            if missing == &["reads(second)"] && extra.is_empty())
     });
+    let complete = std::str::from_utf8(source)
+        .unwrap()
+        .replace("reads(first)", "reads(first, second)");
+    assert_complete(complete.as_bytes());
+}
+
+#[test]
+fn counted_exhaustion_retains_entry_and_backedge_sources() {
+    let source = br#"fn after(first: own box<u64>, second: own box<u64>, count: own u64) -> result: own u64 reads(first), writes(first, second) {
+  for (iteration in 0_u64..count) {
+    set (first, second) = move second, move first;
+  }
+  return deref(first);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { missing, extra, .. }
+            if missing == &["reads(second)"] && extra.is_empty())
+    });
+    let complete = std::str::from_utf8(source)
+        .unwrap()
+        .replace("reads(first)", "reads(first, second)");
+    assert_complete(complete.as_bytes());
 }
 
 #[test]
@@ -1628,6 +1768,7 @@ command fn main(command.stdout as out: own OutputStream) -> status: own ExitStat
             program.data.functions[0].result_state_origin,
             CheckedResultStateOrigin::Finite {
                 formals: vec![CheckedResultStatePath {
+                    unlocated: false,
                     result_fields: vec![CheckedStateStep::VariantField {
                         variant: 0,
                         field: 0
@@ -1809,6 +1950,7 @@ fn resource_field_borrow_projects_the_returned_displaced_owner_summary() {
             program.data.functions[1].result_state_origin,
             CheckedResultStateOrigin::Finite {
                 formals: vec![CheckedResultStatePath {
+                    unlocated: false,
                     result_fields: Vec::new(),
                     exclusions: Vec::new(),
                     parameter: 0,
@@ -2065,6 +2207,7 @@ command fn main() -> status: own ExitStatus pure {
         let expected = vec![0, 1]
             .into_iter()
             .map(|field| CheckedResultStatePath {
+                unlocated: false,
                 result_fields: vec![CheckedStateStep::Field(field)],
                 exclusions: Vec::new(),
                 parameter: 0,
@@ -2153,12 +2296,14 @@ command fn main() -> status: own ExitStatus pure {
             CheckedResultStateOrigin::Finite {
                 formals: vec![
                     CheckedResultStatePath {
+                        unlocated: false,
                         result_fields: vec![CheckedStateStep::Field(0)],
                         exclusions: Vec::new(),
                         parameter: 1,
                         parameter_fields: Vec::new()
                     },
                     CheckedResultStatePath {
+                        unlocated: false,
                         result_fields: vec![CheckedStateStep::Field(1)],
                         exclusions: Vec::new(),
                         parameter: 0,

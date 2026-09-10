@@ -394,7 +394,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let Some(origins) = origins else {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             };
-            if origins.unknown && !self.deriving_result_state_origin.get() {
+            if origins.lacks_exact_origins() && !self.deriving_result_state_origin.get() {
                 let node = self
                     .tree
                     .node_with_path(source)

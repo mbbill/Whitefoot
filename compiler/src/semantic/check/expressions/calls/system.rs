@@ -309,7 +309,7 @@ occurs at one parameter position, so this call's own arguments determine it",
                     paths.push(self.state_path(place, bindings)?);
                 }
                 if let Some(origins) = actuals.state_origins.get(index).and_then(Option::as_ref) {
-                    if origins.unknown && !self.deriving_result_state_origin.get() {
+                    if origins.lacks_exact_origins() && !self.deriving_result_state_origin.get() {
                         return self.unsupported(
                             crate::UnsupportedSemanticFeature::OwnerStateRouting,
                             node,

@@ -1,0 +1,50 @@
+struct Entry {
+  value: u64;
+}
+
+struct Slot {
+  entry: Option<Entry>;
+}
+
+fn view(entry: &Option<Entry>) -> result: own u64 reads(entry) {
+  match deref(entry) {
+    Some(value: present) => {
+      return deref(present).value;
+    }
+    None() => {
+      return 0_u64;
+    }
+  }
+}
+
+fn lookup(slots: &FixedVector<Slot, 1>) -> result: own u64 reads(slots) contract {
+  requires 1_u64 <= len_of(deref(slots));
+} {
+  region {
+    let found = view(entry: &deref(slots)[0_u64].entry);
+    return found;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let present = Entry(value: 37_u64);
+  let some = Some<Entry>(value: move present);
+  let none = None<Entry>();
+  let occupied = Slot(entry: move some);
+  let vacant = Slot(entry: move none);
+  let first = fixed_vector::<Slot, 1>();
+  let with_value = place_back(vector: move first, value: move occupied);
+  let second = fixed_vector::<Slot, 1>();
+  let without_value = place_back(vector: move second, value: move vacant);
+  region {
+    let found = lookup(slots: &with_value);
+    if found != 37_u64 {
+      return exit_status(code: 1_u8);
+    }
+    let absent = lookup(slots: &without_value);
+    if absent != 0_u64 {
+      return exit_status(code: 2_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

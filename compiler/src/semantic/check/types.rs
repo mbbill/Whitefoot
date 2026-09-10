@@ -1273,6 +1273,24 @@ extent's region is one the caller must choose, so it is written at every positio
 
     /// Follows a checked value through moves, borrows, and closed-world call
     /// summaries to every direct formal path which may supply its state leaves.
+    pub(super) fn owner_image_at_place(
+        &self,
+        place: &super::borrows::ResolvedPlace,
+        bindings: &HashMap<crate::DeclarationId, LocalBinding>,
+    ) -> Result<CheckedStateOrigins, CheckStop> {
+        if self.constants.contains_key(&place.root) {
+            return Ok(CheckedStateOrigins::fresh());
+        }
+        let image = bindings
+            .get(&place.root)
+            .and_then(|binding| binding.state_origins.clone())
+            .unwrap_or_else(CheckedStateOrigins::unknown);
+        Ok(match self.state_fields_of_place(place, bindings)? {
+            Some(path) => image.projected_value(&path),
+            None => image.unlocated(),
+        })
+    }
+
     pub(super) fn state_origins_of_value(
         &self,
         value: &TypedExpression,
@@ -1291,11 +1309,9 @@ extent's region is one the caller must choose, so it is written at every positio
             bindings
                 .get(&place.root)
                 .and_then(|binding| binding.state_origins.clone())
-                .map(|origins| {
-                    path.as_ref()
-                        .map_or_else(CheckedStateOrigins::unknown, |path| {
-                            origins.projected_value(path)
-                        })
+                .map(|origins| match path.as_ref() {
+                    Some(path) => origins.projected_value(path),
+                    None => origins.unlocated(),
                 })
         } else if let Some(holder) = value.holder {
             bindings
@@ -1417,85 +1433,14 @@ extent's region is one the caller must choose, so it is written at every positio
                 .as_deref()
                 .cloned()
                 .map_or(StateOriginResolution::Absent, StateOriginResolution::Finite),
-            CheckedExpression::KernelCall {
-                row:
-                    crate::KernelRow::FixedVector
-                    | crate::KernelRow::ArenaVector
-                    | crate::KernelRow::ArenaVectorProved
-                    | crate::KernelRow::HeapVector
-                    | crate::KernelRow::ArenaFrame,
-                ..
-            } => StateOriginResolution::Finite(CheckedStateOrigins::fresh()),
-            CheckedExpression::KernelCall {
-                row: crate::KernelRow::HeapBox | crate::KernelRow::ArenaBox,
-                arguments,
-                call,
-                ..
-            } => {
-                let Some(value) = arguments.get(1) else {
-                    return StateOriginResolution::Unknown(call.clone());
-                };
-                let mut origin = self.expression_state_origins(value);
-                if let StateOriginResolution::Finite(origins) = &mut origin {
-                    let value = origins.clone();
-                    *origins = value.clone().prefixed(&[
-                        CheckedStateStep::VariantField {
-                            variant: 0,
-                            field: 0,
-                        },
-                        CheckedStateStep::Referent,
-                    ]);
-                    origins.union(&value.prefixed(&[CheckedStateStep::VariantField {
-                        variant: 1,
-                        field: 0,
-                    }]));
-                }
-                origin
-            }
-            CheckedExpression::KernelCall {
-                row: crate::KernelRow::PlaceBack | crate::KernelRow::PlaceFront,
-                instance,
-                arguments,
-                call,
-                ..
-            } => {
-                // Insertion changes logical element positions. A union of
-                // the operand images would leave old slot selectors in place
-                // and put the new element at the run's root. Until this has
-                // a slot transfer, it must not manufacture an exact image.
-                if !self.is_copy_type(instance.element).unwrap_or(false) {
-                    return StateOriginResolution::Unknown(call.clone());
-                }
-                arguments.first().map_or_else(
-                    || StateOriginResolution::Unknown(call.clone()),
-                    |run| self.expression_state_origins(run),
-                )
-            }
-            CheckedExpression::KernelCall {
-                row: crate::KernelRow::TakeBack | crate::KernelRow::TakeFront,
-                instance,
-                arguments,
-                call,
-                ..
-            } => {
-                // BLK-3 returns (rest, value), not the run at the result root.
-                // A copy observation transfers no owned identity (EFF-2), so
-                // the run image survives unchanged in ordinal zero. Affine
-                // contents need a separate remainder/element transfer image.
-                if !self.is_copy_type(instance.element).unwrap_or(false) {
-                    return StateOriginResolution::Unknown(call.clone());
-                }
-                let Some(run) = arguments.first() else {
-                    return StateOriginResolution::Unknown(call.clone());
-                };
-                let mut origins = self.expression_state_origins(run);
-                if let StateOriginResolution::Finite(origins) = &mut origins {
-                    for origin in &mut origins.formals {
-                        origin.value_fields.insert(0, CheckedStateStep::Field(0));
-                    }
-                }
-                origins
-            }
+            CheckedExpression::ReadStorage { state_origins, .. } => state_origins
+                .as_deref()
+                .cloned()
+                .map_or(StateOriginResolution::Absent, StateOriginResolution::Finite),
+            CheckedExpression::KernelCall { state_origins, .. } => state_origins
+                .as_deref()
+                .cloned()
+                .map_or(StateOriginResolution::Absent, StateOriginResolution::Finite),
             CheckedExpression::ConstructStruct { fields, .. } => {
                 let mut origins = StateOriginResolution::Absent;
                 for (ordinal, field) in fields.iter().enumerate() {

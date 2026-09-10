@@ -104,13 +104,16 @@ a matched executable comparison before it can support a performance conclusion.
 | Intrusive kernel structures | Link an externally owned object into multiple relations, unlink | Owning containers or IDs are possible different contracts | Stored membership references, stable placement and reclamation are independent needs |
 | Shared/concurrent containers | Publish, observe, mutate, retire, reclaim | Existing staged lexical access covers only its stated scope | RCU/epoch/shared lifetime is not supplied by a sequential slot API |
 
-The first [current-language family witnesses](../../experiments/container-representation/families/RESULTS.md)
-now execute a bounded optional-entry hash table, a dense binary heap, a
+The first [family-witness runs](../../experiments/container-representation/families/RESULTS.md)
+executed a bounded optional-entry hash table, a dense binary heap, a
 B+ tree leaf-split component, and a variable-record byte page with insertion,
 deletion, overlapping movement and ordinary invalid-input/refusal outcomes.
-An additional boxed-entry component now executes runtime-indexed migration and
+An additional boxed-entry component executed runtime-indexed migration and
 collision probing, with earlier map operations prepared at selected positions.
-It does not establish a general map API or return/resume migration contract;
+The current owner-routing prototype stops the optional-entry map, boxed migration
+and nested boxed helper with an explicit capability gap; their earlier successful
+runs do not establish current readiness. The migration component does not
+establish a general map API or return/resume migration contract;
 the leaf component is not a complete ordered map. The boxed-tree replacement
 reproducer now uses a borrowed owner slot and executes in the ordinary native
 gate. It restores the owning-node correctness baseline; it is not a full tree
@@ -759,8 +762,10 @@ kept callable effects and all output components on one entry snapshot, and
 applied simultaneous updates only to exact actual places. A returned borrow's
 signature ceiling is insufficient to identify such a place. The typed-path
 extension below preserves that call-entry rule and adds owning referents,
-selected enum payloads and literal slots; dynamic, implicit-boundary and
-recursive contents remain incomplete. Neither permanent unions of replaced owners nor
+selected enum payloads and literal slots. The source-bound recovery below adds
+composition through dynamic and implicit-boundary transfers without supplying
+their exact content placement; recursive contents remain incomplete.
+Neither permanent unions of replaced owners nor
 treating unrepresented transfers as fresh was selected.
 
 For a returned exclusive borrow, a narrower declaration-only argument can
@@ -794,6 +799,15 @@ legal static-field reborrows stopped before existing typed address lowering.
 They now use that ordinary address path, with no ABI change. Shared-constant
 requirements and prewrite scalar facts remain negative controls; forwarding
 an inexact field result through a whole-type identity remains unsupported.
+
+The revised region rule also invalidates the old shared-option-view rejection.
+Its original lookup/helper bodies now use the ordinary typed storage path for
+a child borrow of an element's field. The executable command checks present and
+absent entries in three modes. Indexed child formation retains the normal bound,
+holder-strength and sibling-exclusivity judgments; explicit negative controls
+isolate each one. A separate retained-call array-field writer checks the changed
+element and three unaffected fields. This is reuse of ordinary addressed storage,
+not a new subscript permission or container-specific reborrow rule.
 
 The proposed `deref(deref(owner)).next` return is not a legal OWN-14 form:
 the rule admits `deref(h)` followed by suffixes, and the extra dereference is
@@ -838,12 +852,11 @@ payload replacement; the third needs precise writeback through a returned
 borrow. The published `5aaef50a` canonical and both-host CI unit runs pass the third
 case with its original source and executable assertions. The typed-path
 extension restores the boxed enum child's original retained native consumer
-and exact allocation/release trace. The heap full-array case still needs the
-owning run-boundary image: the explicit insertion capability stop also blocks
-its construction path. Full-array construction, boxed-run read-out and
-wide-owned-result cases retain that same dependency on complete insertion and
-extraction transfers. All original executable assertions remain intact;
-the prototype remains incomplete until those and the broader run consumers pass.
+and exact allocation/release trace. Finite source bounds now restore the heap
+full-array and wide-owned-result consumers when their suppliers resolve to fresh
+local state. The imported-owner generic array helper and boxed-run read-out still
+need more precise insertion and extraction images. All original executable
+assertions remain intact; these are distinct remaining capability gaps.
 
 The `f586e04c` CI run exposed two further implementation defects in loops. The
 preliminary body check compared unresolved call-result origin images at the
@@ -851,11 +864,16 @@ backedge before those bodies could supply callable summaries. Deferring only
 that metadata comparison in the preliminary pass restores the existing
 [valid loop-invariant snapshot](../../../tests/snapshot/cases/contracts/contracts__adversary-r2__p06_loop_invariant_requires_valid.wf)
 and [off-by-one rejection snapshot](../../../tests/snapshot/cases/contracts/contracts__adversary-r2__p07_loop_invariant_offbyone_attempt.wf);
-all liveness, loan and other binding fields still agree, and final checking
-still compares the complete state. The ordinary
-Box relay loop checks both loop forms. A two-iteration Box swap with only the
-first input's read declared remains unadmitted: accepting its first iteration
-alone would hide the second input read on the next iteration.
+all liveness, loan and other binding fields still agree. Final checking now
+uses a stable origin header derived after callable summaries converge and
+requires each backedge's origins to be contained in it. Counted-loop exhaustion
+uses that header too, rather than only the pre-loop image. The ordinary Box
+relay loop checks both loop forms. A two-iteration Box swap with both writes
+declared but only the first input's read now reports exactly the missing second
+read. Its paired complete row passes. A separate post-exhaustion read control
+has the same precise negative and positive, and native retained-call tests cover
+zero, one and two iterations. Ignoring origin equality without checking the body
+against the stable header would hide a later iteration's read and was not selected.
 The existing FixedVector identity-helper loop also now succeeds. Its former
 `OwnershipJoin` expectation recorded the same preliminary-checking limitation,
 not a source-language rejection. The exact program remains in the capability
@@ -868,8 +886,9 @@ access projection as a whole-owner target overwrote the Buffer's origin image
 with the element's. Consulting the typed target before selecting a strong
 update repaired that whole-root overwrite but did not yet implement indexed
 contents. The current extension admits exact literal element updates. An
-unrepresented dynamic update remains unknown, including legacy cleanup consumers
-that the earlier incomplete model accepted; it cannot be treated as unchanged.
+unrepresented dynamic update now retains a complete finite supplier bound when
+its root and replacement have one. Its placement remains unresolved; it cannot
+be treated as unchanged or as a precise slot image.
 
 The byte-string and fixed-run failures exposed another defect: the generic
 kernel-expression fallback unions argument origins at the result root, although
@@ -893,16 +912,15 @@ capacity-one case with unknown length still fails the kernel precondition. No
 runtime branch or special rule for a zero-capacity container supplies that proof.
 
 Noncopy elements need separate remainder/element images and their contained-state
-transfer. That path now stays explicitly unknown rather than reusing the
-root-level union: extracting a Box and observing it exposes `OwnerStateRouting`.
-This also limits previously admitted affine-run consumers; it is a missing
-implementation capability, not a new source rejection. In particular, the
-retained `boxed_fixed_vector_read_out_preserves_storage_and_elements` and
-`wide_result_returns_preserve_success_refusal_and_owned_children` native cases,
-and `block_pool.wf`, now expose that missing image. Their executable success
-assertions remain unchanged; the prototype is still incomplete. Relaxing final loop
-equality, treating empty current origin lists as proof of freshness, or
-duplicating all old origins into every output does not repair it. These defects
+transfer. A finite supplier bound now preserves both outputs without asserting
+that every supplier actually remains in each one. An imported bound used as an
+exact origin still exposes `OwnerStateRouting`; this is a missing implementation
+capability, not a new source rejection. The retained boxed-run read-out case
+still exposes that missing image, while the wide-result native case and
+`block_pool.wf` resolve their actual suppliers and execute again. Their
+executable success assertions remain unchanged. Ignoring a loop's changed
+origins, treating an unknown summary as fresh, or counting duplicated bounds as
+exact output contents does not repair the remaining gap. These defects
 under existing ordinary-object operations supply no evidence for a new
 container API or an I/O-specific source rule. The repairs change no language
 rule or normative conformance verdict.
@@ -958,7 +976,7 @@ Direct and helper-returned destructuring controls require the payload's read
 effect after an Arena-backed cell is consumed. The legacy arena value retains
 its existing explicit runtime capability boundary.
 Implicit run-boundary placement and extraction of owning elements still lack
-their own slot/content transfer and cannot reuse a root-level argument union.
+an exact slot/content transfer and cannot use a root-level argument union as one.
 Front insertion also shifts existing logical indices: leaving a route at slot
 zero can misattribute a later extraction from slot one. The corresponding
 normal-return witness retains a capability stop until that transfer is supplied;
@@ -971,10 +989,11 @@ slot only when it uses the same captured index value. A strong overwrite removes
 the old origin from that slot. It does not remove that origin from unknown other
 slots without sufficient cardinality information. At loop joins, combine origin
 metadata separately from ownership liveness and fold dynamic index versions into
-finite sets. The generic priority insertion witness already stops at
-`OwnershipJoin` when its pending affine payload alternates between an input
-payload and a displaced queue entry; it does not require an unbounded history to
-describe those possibilities. Preserve the record's field precision so a payload
+finite sets. A priority insertion loop's pending affine payload can alternate
+between an input payload and a displaced queue entry; it does not require an
+unbounded history to describe those possibilities. Stable header export now
+provides the origin join, but it does not supply an exact dynamic-slot image.
+Preserve the record's field precision so a payload
 join does not turn a priority-field read into a payload access.
 
 The complete candidate must use one transfer semantics for normal checking and callable
@@ -1024,6 +1043,47 @@ branch diamonds and repeated helper composition. Unknown residual indices,
 recursive contained-state summaries, finer source contracts and proof-informed exclusion
 remain explicit questions. A fix limited to own-input/result helpers, a green
 Box ABI test, or one straight-line graph cannot close this gap.
+
+A recovery experiment distinguishes an unresolved source from a finite source
+bound whose destination placement is unresolved. Only a completely described
+value transfer may construct the latter: moving run elements cannot introduce
+an owner other than one supplied by its operands. An unlocated route denotes a
+bound, never an exact structural correspondence. Selecting below it retains
+the complete source subtree; instantiation must not append that destination
+selector to the source. A nonempty surviving bound cannot justify an EFF-2
+effect row. Unknown remains unknown even for apparently fresh actuals.
+
+The experiment's criterion is whether this distinction restores
+ordinary fresh-state construction and helper composition while preserving the
+normal-return imported-owner counterexamples, exact-field controls and all
+required rejection expectations. An excluded fresh replacement must not fall
+back to an older bound. This is a precision recovery experiment, not a proposed
+replacement for exact slot transfer, residual contents or cardinality evidence;
+those remain necessary for general imported-owner container operations. Reject
+the experiment if its bound loses a possible supplier, if a placement query
+silently treats the bound as exact, or if it adds unbounded call-history paths.
+
+The implemented transfer distinguishes this finite bound from a wholly unknown
+source. Kernel expressions capture the already checked argument images; storage
+read-out captures its resolved value image, independently of the access list
+used to calculate its address. Callable replay uses the same kernel transfer and
+preserves side effects while evaluating index and loop-endpoint expressions.
+The ordinary helper control constructs, relays and extracts a fresh Box, while
+the normally returning imported-owner control retains the capability stop.
+The route-algebra control checks fresh overrides, sibling bounds and source
+selection during substitution. A literal-element LIV-2 read-out retains its
+formal element route across a helper. The attempted dynamic-index read-out is
+rejected by LIV-2's current literal identity rule; it is a negative control, not
+evidence of an accepted dynamic read-out defect.
+
+The focused effect, algebra and native-loop controls pass. The canonical unit
+stage restores 26 of the preceding 29 failures with the original successful
+execution expectations. Three remaining failures separate the next questions:
+complete run-to-array transport needs whole-source coverage, nested helpers
+need that coverage at call projection, and repeated owning extraction needs
+the run's storage and residual contents distinguished. The bound alone selects
+none of those precise images. Broader family readiness and performance remain
+the experiment's original completion requirement.
 
 ### Sparse experiment contract and decision boundary
 
@@ -1089,7 +1149,7 @@ The available evidence supports different next actions for different families:
 | --- | --- | --- |
 | Dense/fixed sequences and priority queues | Use ordinary valid values; correct and improve general storage transfer first | Matched operations still force material initialization, descriptor or movement cost after that repair |
 | Full arrays of general elements | Generalize the existing array through the selected two-conversion experiment; explicit linear-empty termination remains a separate gap | The complete build/failure/freeze/use/replace/thaw/drain witness and measured layout/transfer cost |
-| Hash and ordered containers | Ordinary scalar operations and a boxed migration component work; prototype projected sparse layout next | Failure to preserve the native owning-map contract/cost, or a required operation beyond ordinary projected values; ordered mutation follows owning-box repair |
+| Hash and ordered containers | Earlier map and boxed-migration traces ran; current owner routing blocks them while the ordered component still checks. Restore those contracts before the projected sparse-layout comparison | Failure to preserve the native owning-map contract/cost, or a required operation beyond ordinary projected values; ordered mutation follows owning-box repair |
 | Deques and rings | A wrapped logical-index trace works; a wrapped run is correctly refused as one contiguous view | A two-span consumer/growth trace that prices any required copying and admits the actual loans |
 | Growable runs, strings and inline/spill forms | Source-written byte growth/refusal executes and has loop/bulk/realloc controls; no WF realloc or finished spill result | General owner-return helper, repeated reserve/spill and copy-heavy resize controls including peak storage and address validity |
 | Packed byte records | Current initialized byte storage executes variable records and overlapping movement | Measured bulk/initialization/compact-handle cost, or an actually required typed layout that byte codecs cannot preserve |

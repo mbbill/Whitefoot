@@ -1666,6 +1666,9 @@ pub(crate) enum CheckedExpression {
         instance: Box<CheckedKernelInstance>,
         argument_nodes: Vec<NodePath>,
         arguments: Vec<CheckedExpression>,
+        /// Result origins derived from the captured argument images. Address
+        /// expressions do not themselves embed their referent's owner image.
+        state_origins: Option<Box<CheckedStateOrigins>>,
         /// Pre-transfer caller images, exactly as an ordinary call retains
         /// them, so [ENT-3.S13] can mint this call's call datums.
         goal_arguments: Vec<super::goal::GoalExpression>,
@@ -1808,6 +1811,7 @@ pub(crate) enum CheckedExpression {
     ReadStorage {
         carrier: NodePath,
         root: CheckedContainerRoot,
+        state_origins: Option<Box<CheckedStateOrigins>>,
     },
     BufferIndex {
         carrier: NodePath,

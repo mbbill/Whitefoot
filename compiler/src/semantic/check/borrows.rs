@@ -14,8 +14,7 @@ use super::super::model::{
 use super::super::places::{PlaceProjection, PlaceStep, paths_diverge};
 use super::linearity::LinearityClass;
 use super::{
-    CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, ParameterSignature,
-    TypedExpression,
+    CheckStop, Checker, FunctionSignature, LocalBinding, ParameterSignature, TypedExpression,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -433,13 +432,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .get(&place.root)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         if let Some(origins) = &binding.state_origins {
-            if origins.unknown && !self.deriving_result_state_origin.get() {
-                return self.unsupported(UnsupportedSemanticFeature::OwnerStateRouting, node);
-            }
             let selected = match self.state_fields_of_place(place, bindings)? {
                 Some(path) => origins.clone().projected_value(&path),
                 None => origins.clone().projected(&canonical.fields),
             };
+            if selected.lacks_exact_origins() && !self.deriving_result_state_origin.get() {
+                return self.unsupported(UnsupportedSemanticFeature::OwnerStateRouting, node);
+            }
             let mut paths = selected
                 .formals
                 .into_iter()
@@ -1061,7 +1060,7 @@ inside the `region` block whose region it takes",
                 );
             }
             return self.check_child_reborrow(
-                node, place_node, pbase, region, kind, bindings, loop_depth, position,
+                node, place_node, pbase, region, kind, bindings, function, loop_depth, position,
             );
         }
         if !self.borrow_region_is_inside_current_loops(region, node, loop_depth)? {
@@ -1478,6 +1477,7 @@ inside the `region` block whose region it takes",
         region: DeclarationId,
         kind: BorrowKind,
         bindings: &HashMap<DeclarationId, LocalBinding>,
+        function: &FunctionSignature,
         loop_depth: usize,
         position: ReborrowPosition,
     ) -> Result<TypedExpression, CheckStop> {
@@ -1597,15 +1597,24 @@ inside the `region` block whose region it takes",
             }
         }
         let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
-        let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
+        let (path, ty, offsets) =
+            self.resolve_storage_path(&suffixes, local.ty, bindings, function, loop_depth, true)?;
         // A returned holder may carry only its candidate's loan ceiling.
         // A field of its runtime referent is not necessarily that field of
         // the ceiling, so do not turn this projection into an exact place.
-        if !fields.is_empty() && !parent.exact_place {
+        if !path.is_empty() && !parent.exact_place {
             return self.unsupported(UnsupportedSemanticFeature::OwnerStateRouting, place_node);
         }
         let mut place = parent.place.clone();
-        place.extend_fields(&fields);
+        place.extend_storage(&path);
+        let fields = path
+            .iter()
+            .map_while(|step| match step {
+                CheckedPlaceStep::Field(field) => Some(*field),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let only_fields = fields.len() == path.len();
         // [LIV-2] a target already read out is dead for the remaining RHS,
         // including a child reborrow. Reject at this use, before the commit
         // would independently reject its surviving temporary loan.
@@ -1621,7 +1630,7 @@ inside the `region` block whose region it takes",
             node,
         )?;
         let expression = match ty {
-            CheckedType::Buffer { element } => CheckedExpression::BorrowBuffer {
+            CheckedType::Buffer { element } if only_fields => CheckedExpression::BorrowBuffer {
                 carrier: self.tree.path(carrier)?.clone(),
                 root: CheckedBufferRoot {
                     binding: local.binding,
@@ -1633,10 +1642,11 @@ inside the `region` block whose region it takes",
             // address and selected fields. Its region and suspension remain
             // the ordinary reborrow judgment [SYS-2, OWN-6].
             CheckedType::Nominal(nominal)
-                if matches!(
-                    self.nominal(nominal)?.kind,
-                    CheckedNominalKind::SystemResource { .. }
-                ) =>
+                if only_fields
+                    && matches!(
+                        self.nominal(nominal)?.kind,
+                        CheckedNominalKind::SystemResource { .. }
+                    ) =>
             {
                 CheckedExpression::BorrowSystemResource {
                     carrier: self.tree.path(carrier)?.clone(),
@@ -1655,7 +1665,7 @@ inside the `region` block whose region it takes",
             // reload [OWN-6, VIEW-1]. The child carries the parent's range and its
             // loan region, and [OWN-6]'s ordinary suspension freezes the
             // holder while the child lives [OWN-5].
-            CheckedType::Slice { .. } if fields.is_empty() => CheckedExpression::Binding {
+            CheckedType::Slice { .. } if path.is_empty() => CheckedExpression::Binding {
                 carrier: self.tree.path(carrier)?.clone(),
                 binding: local.binding,
                 state_origins: local.state_origins.clone(),
@@ -1667,7 +1677,7 @@ inside the `region` block whose region it takes",
                     .unwrap_or_default(),
                 consume_root: false,
             },
-            _ if fields.is_empty() && self.borrow_addresses_storage(ty)? => {
+            _ if path.is_empty() && self.borrow_addresses_storage(ty)? => {
                 CheckedExpression::ReborrowAddressed {
                     carrier: self.tree.path(carrier)?.clone(),
                     binding: local.binding,
@@ -1678,7 +1688,7 @@ inside the `region` block whose region it takes",
                 carrier: self.tree.path(carrier)?.clone(),
                 root: CheckedContainerRoot {
                     root: crate::semantic::CheckedPlaceRoot::Binding(local.binding),
-                    path: fields.into_iter().map(CheckedPlaceStep::Field).collect(),
+                    path,
                     ty,
                 },
             },
@@ -1705,8 +1715,8 @@ inside the `region` block whose region it takes",
             slice,
             holder: Some(holder),
             reference_value: true,
-            effects: EffectSet::NONE,
-            accesses: Vec::new(),
+            effects: offsets.effects,
+            accesses: offsets.accesses,
         })
     }
 

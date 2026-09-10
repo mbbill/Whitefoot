@@ -1433,13 +1433,14 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
                     actual_paths.push(path);
                 }
                 if let Some(origins) = state_origins.get(index).and_then(Option::as_ref) {
-                    if origins.unknown && !self.deriving_result_state_origin.get() {
+                    let origins = origins.clone().projected(&formal.fields);
+                    if origins.lacks_exact_origins() && !self.deriving_result_state_origin.get() {
                         return self.unsupported(
                             crate::UnsupportedSemanticFeature::OwnerStateRouting,
                             node,
                         );
                     }
-                    for origin in origins.clone().projected(&formal.fields).formals {
+                    for origin in origins.formals {
                         actual_paths.push(origin.source);
                     }
                 }

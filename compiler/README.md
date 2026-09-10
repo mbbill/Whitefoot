@@ -444,39 +444,49 @@ Whole-value routes retain exclusions for replaced subtrees, keeping an owning
 allocation distinct from its current contents. Reading an exact sibling does
 not inherit the replaced sibling's new origin. Consuming a cell projects the
 same referent used by its constructor, including through helper results.
-Unknown indices, implicit run
-boundary insertion/extraction of owning elements, and recursive contained-owner
-extraction do not yet have a complete image. Using an unknown returned owner's state
-reports `OwnerStateRouting`; a returned borrow's candidate ceiling alone is not
+Dynamic updates and owning run-boundary transfers retain finite source bounds
+when all suppliers are described, even when their destination slots are not.
+Such a bound is not an exact effect origin. It can resolve to fresh state when
+helper substitution proves every selected supplier fresh; a surviving imported
+bound or wholly unknown source still reports `OwnerStateRouting` when an exact
+state use is required. Kernel transfers use captured operand images, and storage
+read-out captures the selected value rather than reconstructing it from address
+expressions. Ordinary checking and callable replay share the transfer rules.
+A returned borrow's candidate ceiling alone is not
 an exact writeback location. A separate declaration-only judgment preserves an
 already exact actual when an exclusive result has the same complete type as
 its sole candidate and that type cannot occur at a proper typed subplace.
 Shared results, recursive same-type containment, unresolved generics and
 inexact actuals do not establish this whole-location property. Writes still
-kill prior value facts. Static-field child reborrows use ordinary addressed
-storage; projecting through an inexact result remains a capability gap.
-An unrepresented interior replacement marks the owner image unknown, including
-when the displaced value is discarded. It cannot silently preserve stale
-contents. These boundaries apply to ordinary memory and resource objects alike.
+kill prior value facts. Child reborrows use the ordinary typed storage path for
+fields and proved element subscripts, including fields beneath an element.
+Their evaluated offsets retain their effects and accesses; projecting through
+an inexact result remains a capability gap.
+An unresolved interior replacement retains both the previous and incoming
+suppliers as a bound, including when the displaced value is discarded. A
+wholly unresolved location remains unknown. Neither case silently preserves
+stale exact contents. These boundaries apply to memory and resource objects alike.
 Boxed enum-child replacement retains its native execution and release-observer
-behavior. Owning full-array construction and replacement, boxed-run read-out,
-wide results containing owners, and other owning run-boundary consumers remain
-blocked by the incomplete content image. All executable assertions remain
-enabled. The investigation records why an empty current origin list alone cannot safely
-recover an unknown summary.
-Loop-origin comparison is deferred only in the preliminary pass that builds
-callable summaries; the final pass retains its full backedge comparison.
+behavior. Fresh-state full-array construction and replacement, wide results
+containing owners and the block-pool program execute again. Imported-owner
+array construction through generic helpers, boxed-run read-out and some nested
+helper calls remain blocked by incomplete content placement. All executable
+assertions remain enabled. An empty current origin list alone does not recover
+a wholly unknown summary.
+Loop headers carry the stable union of entry and backedge owner origins. The
+final body check uses that image, and counted-loop exhaustion retains it.
+Backedges require containment in the header image while every other binding
+property, including liveness and loans, retains its ordinary equality check.
+Precise negative controls catch reads of a second supplier on later iterations
+and after exhaustion; retained native calls cover zero, one and two iterations.
 Indexed mutation targets no longer overwrite the containing owner's image
 merely because their effect access names that storage root. For copy elements,
 kernel run-take result lists preserve the run's origin in the remainder's
 ordinal through direct calls and helper summaries; the removed observation
-carries no identity. Noncopy elements still need separate remainder/content
-images and remain unknown at state uses. Owning insertion likewise needs an
-explicit logical-slot transfer; a generic union cannot describe front insertion
-because it shifts every existing element. This also blocks the retained boxed-run
-read-out and wide-result owning-child native cases, as well as the block-pool
-program. Their successful execution assertions remain unchanged. General
-changing-origin loop headers remain a separate capability gap.
+carries no identity. Noncopy elements retain complete supplier bounds, but exact
+remainder/content images still need their own transfer: front insertion shifts
+logical indices, and removal does not leave every old owner in both outputs.
+Recursive contained-owner extraction remains a separate capability gap.
 An owning Box's run or extent referent supports measures and indexed access
 through the same typed place path. Replacing its owner invalidates referent
 facts. Box content also supports copy assignment, affine replacement and
@@ -646,10 +656,9 @@ that resolves to no binding becomes an ordinary `let` declaration there.
 `tests/programs/arena_workspace.wf` is the store-backed companion: it reserves
 an extent, reads the store's own cursor across each take, fills a taken run and
 observes that a refused take leaves the cursor where it was.
-`tests/programs/block_pool.wf` contains the complete block-pool source, but its
-retained execution test is currently blocked by noncopy run-take origin
-routing. Its two nominals are `struct BlockPool['s]`, holding the free list, and
-`linear struct Lease['s]`, holding the leased run. The functions `pool_new`,
+`tests/programs/block_pool.wf` compiles and executes its block-pool trace through
+the ordinary helper path. Its two nominals are `struct BlockPool['s]`, holding
+the free list, and `linear struct Lease['s]`, holding the leased run. The functions `pool_new`,
 `pool_take` and `pool_release` are all generic over the store. A source nominal's
 `region_params` are components of its type name, so an instance is keyed on its
 region arguments beside its type and const arguments and two instances at two

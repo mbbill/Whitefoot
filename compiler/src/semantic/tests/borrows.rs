@@ -548,6 +548,68 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn indexed_child_reborrows_keep_bounds_and_exclusivity() {
+    let source = r#"fn write(value: &uniq u64) -> result: own unit writes(value) {
+  set deref(value) = 7_u64;
+  return unit;
+}
+
+fn proxy(values: &uniq array<u64, 2>, index: own u64) -> result: own unit writes(values) contract {
+  requires index < len_of(deref(values));
+} {
+  region {
+    write(value: &uniq deref(values)[index]);
+    write(value: &uniq deref(values)[index]);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+    let unproved = source.replace(
+        " contract {\n  requires index < len_of(deref(values));\n}",
+        "",
+    );
+    assert_rule_kind(unproved.as_bytes(), SemanticRule::Op4, |_| true);
+    let shared = source
+        .replace("values: &uniq array", "values: &array")
+        .replace("writes(values) contract", "pure contract");
+    assert_rule_kind(shared.as_bytes(), SemanticRule::Own6, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidChildReborrow { .. })
+    });
+
+    assert_rule(
+        br#"fn pair['r](first: &uniq 'r u64, second: &uniq 'r u64) -> result: own unit pure {
+  return unit;
+}
+
+fn proxy(values: &uniq array<u64, 2>, index: own u64) -> result: own unit pure contract {
+  requires index < 2_u64;
+} {
+  region {
+    pair(first: &uniq deref(values)[index], second: &uniq deref(values)[index]);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Own12,
+        SemanticIssueKind::BorrowConflict,
+    );
+}
+
+#[test]
 fn child_reborrow_shape_and_sibling_exclusivity_follow_own6() {
     let positive = br#"struct Counter {
   value: u64;

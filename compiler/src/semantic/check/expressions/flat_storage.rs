@@ -964,6 +964,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for path in self.effect_paths_for_place(node, &place.resolved, bindings)? {
             effects.add_read(path);
         }
+        let state_origins = if self.type_carries_identity(place.root.ty)? {
+            Some(Box::new(
+                self.owner_image_at_place(&place.resolved, bindings)?,
+            ))
+        } else {
+            None
+        };
         let mut accesses = place.offsets.accesses;
         accesses.push(PlaceAccess {
             place: place.resolved,
@@ -973,6 +980,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             expression: CheckedExpression::ReadStorage {
                 carrier: self.tree.path(node)?.clone(),
                 root: place.root,
+                state_origins,
             },
             mode: CheckedMode::Own,
             borrow: None,

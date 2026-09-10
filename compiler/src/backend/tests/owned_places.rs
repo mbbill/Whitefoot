@@ -33,6 +33,126 @@ fn assert_success(module: &str) {
 }
 
 #[test]
+fn indexed_child_reborrows_update_only_the_selected_field() {
+    let source = br#"struct Point {
+  x: u64;
+  y: u64;
+}
+
+fn write(value: &uniq u64) -> result: own unit writes(value) {
+  set deref(value) = 7_u64;
+  return unit;
+}
+
+fn update(points: &uniq array<Point, 2>, index: own u64) -> result: own unit writes(points) contract {
+  requires index < 2_u64;
+} {
+  region {
+    write(value: &uniq deref(points)[index].x);
+    write(value: &uniq deref(points)[index].x);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let first = Point(x: 17_u64, y: 29_u64);
+  let second = Point(x: 41_u64, y: 53_u64);
+  let empty = fixed_vector::<Point, 2>();
+  let one = place_back(vector: move empty, value: move first);
+  let full = place_back(vector: move one, value: move second);
+  let points = array_from_fixed(vector: move full);
+  region {
+    update(points: &uniq points, index: 1_u64);
+  }
+  if points[0_u64].x != 17_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if points[0_u64].y != 29_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if points[1_u64].x != 7_u64 {
+    return exit_status(code: 3_u8);
+  }
+  if points[1_u64].y != 53_u64 {
+    return exit_status(code: 4_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        assert_success(&module);
+        assert_success(&retain_calls(&module));
+    }
+}
+
+#[test]
+fn loop_owner_sources_cover_later_iterations_and_counted_exhaustion() {
+    let source = br#"fn rotate(first: own box<u64>, second: own box<u64>, count: own u64) -> result: own u64 reads(first, second), writes(first, second) {
+  for (iteration in 0_u64..count) {
+    set (first, second) = move second, move first;
+  }
+  return deref(first);
+}
+
+fn once(first: own box<u64>, second: own box<u64>) -> result: own u64 reads(first, second), writes(first, second) {
+  let repeat = True();
+  loop {
+    let observed = deref(first);
+    if repeat {
+      set repeat = False();
+      set (first, second) = move second, move first;
+    } else {
+      break;
+    }
+  }
+  return deref(first);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let a = box_new(17_u64);
+  let b = box_new(29_u64);
+  let zero = rotate(first: move a, second: move b, count: 0_u64);
+  let c = box_new(17_u64);
+  let d = box_new(29_u64);
+  let one = rotate(first: move c, second: move d, count: 1_u64);
+  let e = box_new(17_u64);
+  let f = box_new(29_u64);
+  let two = rotate(first: move e, second: move f, count: 2_u64);
+  let g = box_new(17_u64);
+  let h = box_new(29_u64);
+  let ordinary = once(first: move g, second: move h);
+  if zero != 17_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if one != 29_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if two != 17_u64 {
+    return exit_status(code: 3_u8);
+  }
+  if ordinary != 29_u64 {
+    return exit_status(code: 4_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        assert_success(&module);
+        assert_success(&retain_calls(&module));
+    }
+}
+
+#[test]
 fn wide_result_returns_preserve_success_refusal_and_owned_children() {
     let source = br#"struct Record {
   words: array<u64, 512>;

@@ -620,12 +620,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 bindings,
             )?
             else {
-                // An unrepresented interior update is not an unchanged value.
-                // Retain the capability gap until the root is wholly replaced.
-                bindings
+                // A dynamic replacement changes an unknown part of this
+                // root, but cannot import an owner outside these two images.
+                let local = bindings
                     .get_mut(&target.mutation.place.root)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                    .state_origins = Some(crate::semantic::model::CheckedStateOrigins::unknown());
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let mut origins = local
+                    .state_origins
+                    .take()
+                    .unwrap_or_else(crate::semantic::model::CheckedStateOrigins::unknown);
+                if let Some(image) = image {
+                    origins.union(&image);
+                }
+                local.state_origins = Some(origins.unlocated());
                 continue;
             };
             let local = bindings

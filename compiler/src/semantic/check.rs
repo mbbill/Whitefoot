@@ -768,6 +768,7 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// concrete or symbolic function inventory, indexed by FunctionId.
     result_state_origins: RefCell<Vec<CheckedResultStateOrigin>>,
     borrowed_state_origins: RefCell<Vec<Vec<CheckedBorrowedStateOrigin>>>,
+    loop_state_origins: RefCell<Vec<result_state_origin::LoopStateOrigins>>,
     /// The preliminary body pass records enough checked control/data flow to
     /// derive the summaries but deliberately postpones EFF-2 equality until
     /// the summaries reach a fixed point.
@@ -1324,6 +1325,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             functions_by_declaration: HashMap::new(),
             result_state_origins: RefCell::new(Vec::new()),
             borrowed_state_origins: RefCell::new(Vec::new()),
+            loop_state_origins: RefCell::new(Vec::new()),
             deriving_result_state_origin: Cell::new(false),
             constants: HashMap::new(),
             checked_constants: Vec::new(),

@@ -4,13 +4,19 @@ These probes ask whether current Whitefoot can execute representative container
 operations. They are capability examples, not prevalence evidence or complete
 container implementations. `make check` compiles and runs each supported
 Whitefoot source in the default, `--par`, and `--no-overlap` modes, checks the
-two intentional source rejections, and checks the matched priority-queue and
+intentional source rejection, and checks the matched priority-queue and
 byte-growth C controls. The original measurements used compiler revision
 `3cd7a8ebbc459b52989806442eff73538f131b96`; the added sources and retained samples
 are in this directory. Checks and measurements were run on 2026-09-08, arm64
 macOS 26.6.2, using Apple Clang 21.0.0 and Rust 1.98.1.
 
-## Supported shapes
+The owner-routing prototype currently stops `hashmap.wf`, `boxed-migration.wf`
+and `boxed-helper-gap.wf` with `OwnerStateRouting`. Their original executable
+expectations remain in `make check`. The recorded successful runs and cost
+comparisons below do not certify the current compiler at these helper and
+content-routing boundaries.
+
+## Operation contracts and recorded runs
 
 `hashmap.wf` implements an eight-slot open-addressed table with
 `Option<Entry>` payloads and a separate tombstone bit. Its pure
@@ -26,18 +32,19 @@ arithmetic. The trace supplies consistent values; this is not a verified
 representation invariant for an arbitrary caller-supplied size. The `Full` return
 is implemented but not exercised by this trace, whose maximum live size is three.
 
-The map safely reads an affine option through a small borrowed helper. Current
-`find` takes and returns the unchanged run because the rejected two-statement
-child-reborrow spelling below cannot retain the helper result. This is a local
-operator/region shape and an extra source/ABI burden. It does not show that an
-`Option<Entry>` map or shared lookup is generally inexpressible.
+The map reads an affine option through a small borrowed helper. The measured
+`find` takes and returns the unchanged run; its original motivation was OWN-6's
+then-required one-statement child region. The current rule admits the separate
+shared-option witness below. The map source retains its measured shape rather
+than using that old restriction as a claim that shared lookup is inexpressible.
 
 `priority.wf` is a fixed-capacity indexed min-heap trace with scalar push and
 pop behavior checked against both an independent sorting oracle and a matched
-C heap. Creating the initial owner through `empty_heap()` also avoids the current
-compiler's `OwnershipJoin` capability limit when a fresh run first becomes a
-callee-attributed owner on a loop backedge. Existing compiler ownership tests
-retain a smaller example of that limit; this is not a new language rejection.
+C heap. The measured source retains its `empty_heap()` initialization helper.
+The former owner-routing prototype stopped when a fresh run's image changed
+on a loop backedge; current checking derives stable origin headers instead.
+The semantic loop controls and retained-call native tests cover changing owners,
+without making that helper a language requirement.
 Direct numeric postconditions carry length, room, and head changes across heap
 operations without tracking global mutation history.
 
@@ -104,13 +111,19 @@ field-selected result place. Its `len_of(table.slots)` postcondition is rejected
 with `InvalidPostconditionSelector`; the direct-run map contracts therefore
 publish `len_of(result)` instead of hiding the run in a nominal wrapper.
 
-`rejected-shared-option-view.wf` records the OWN-6 restriction on binding the
-result of a child reborrow call and using it in a second statement. It is
-rejected with `InvalidChildReborrow`. The case is a near-neighbor source-shape
-boundary, not a map-wide rejection.
+`shared-option-view.wf` retains the formerly rejected lookup body: one region
+binds the result of a child reborrow call, then returns it in a second statement.
+OWN-6 now ends that temporary argument loan at the call statement; the region
+can contain both statements. The witness adds a command checking both present
+and absent entries and belongs to the three-mode native-success loop. The old
+file had no command and now reaches FN-7's missing-entry rejection instead of
+its former OWN-6 rejection; that is not evidence against the revised region
+rule. This supersedes the old negative expectation on its amended semantic
+ground, preserving the original lookup and helper bodies.
 
-`boxed-helper-gap.wf` now executes nested helper composition in the ordinary
-three-mode native loop. `compose` passes two boxes with the same declared store
+`boxed-helper-gap.wf` is the nested helper-composition witness in the ordinary
+three-mode native loop, currently stopped by the owner-routing gap above.
+`compose` passes two boxes with the same declared store
 region to `build`, then passes its returned run and an entry made from its returned
 box to `replace_one`. FN-2 substitution now reaches the nominal element under
 `FixedVector<Option<Entry<'s>>, 1>` in call arguments, results and contract goals.
@@ -119,9 +132,9 @@ that structural substitution. FORM-8 therefore infers regions which occur in suc
 nested input positions; the four migration-helper calls no longer explicitly
 write that inferable argument.
 
-The command now allocates payloads 11 and 22 and actually calls these helpers.
+The command allocates payloads 11 and 22 and calls these helpers.
 The public `compose` postcondition supplies the length fact required to extract
-the updated entry. Execution checks the returned old payload is 11 and the new
+the updated entry. Its recorded execution checks the returned old payload is 11 and the new
 payload is 22, then ordinary cleanup releases the owners. It is not a generic
 map, and this family runner does not inject allocator refusal or count releases.
 `make reproduce-region-gap` invokes the same maintained runtime witness.
