@@ -12,6 +12,223 @@ use super::{assert_rule, assert_rule_kind, with_semantics};
 
 const RELEASE_FIX: &str = "declare the release effects of every resource this function may release, or move the owner out";
 
+#[test]
+fn whole_unique_borrow_results_preserve_ordinary_box_writeback() {
+    for body in [
+        "return move value;",
+        "return &uniq 'r deref(value);",
+        "region {\n    pause(value: &uniq deref(value));\n  }\n  return move value;",
+    ] {
+        let source = r#"fn pause(value: &uniq box<u64>) -> result: own unit pure {
+  return unit;
+}
+
+fn alias['r](value: &uniq 'r box<u64>) -> result: &uniq 'r box<u64> pure {
+  BODY
+}
+
+fn exchange(target: &uniq box<u64>, incoming: own box<u64>) -> previous: own box<u64> reads(target), writes(target) {
+  let previous = replace deref(target) = move incoming;
+  return move previous;
+}
+
+fn observe_previous(target: &uniq box<u64>, incoming: own box<u64>) -> result: own u64 reads(target), writes(target) {
+  let previous = exchange(target: move target, incoming: move incoming);
+  let old = deref(previous);
+  return old;
+}
+
+fn observe(owner: own box<u64>, incoming: own box<u64>) -> result: own u64 reads(owner, incoming), writes(owner) {
+  region {
+    let holder = alias(value: &uniq owner);
+    region {
+      let old = observe_previous(target: &uniq deref(holder), incoming: move incoming);
+    }
+  }
+  return deref(owner);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#
+        .replace("BODY", body);
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::Complete(program) = outcome else {
+                panic!("whole unique borrow writeback must check: {outcome:?}");
+            };
+            let helper = &program.data.functions[3];
+            assert_eq!(
+                helper.result_state_origin,
+                CheckedResultStateOrigin::NoState
+            );
+            assert_eq!(
+                helper.borrowed_state_origins[0].origin,
+                CheckedResultStateOrigin::Finite {
+                    formals: vec![root(1)]
+                }
+            );
+        });
+        // Keep the original two-statement child region as a rejection case:
+        // its second statement extends the child region past the call.
+        let oversized_region = source.replace(
+            "let old = observe_previous(target: &uniq deref(holder), incoming: move incoming);",
+            "let previous = exchange(target: &uniq deref(holder), incoming: move incoming);\n      let old = deref(previous);",
+        );
+        assert_rule_kind(oversized_region.as_bytes(), SemanticRule::Own6, |kind| {
+            matches!(kind, SemanticIssueKind::InvalidChildReborrow { .. })
+        });
+        let omitted = source.replace("reads(owner, incoming)", "reads(owner)");
+        assert_rule_kind(omitted.as_bytes(), SemanticRule::Eff2, |kind| {
+            matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
+                if missing.iter().any(|effect| effect == "reads(incoming)"))
+        });
+    }
+}
+
+#[test]
+fn a_whole_unique_result_does_not_make_an_inexact_actual_exact() {
+    let source = br#"struct Holder {
+  value: box<u64>;
+}
+
+fn field['r](owner: &uniq 'r Holder) -> result: &uniq 'r box<u64> pure {
+  return &uniq 'r deref(owner).value;
+}
+
+fn identity['r](value: &uniq 'r box<u64>) -> result: &uniq 'r box<u64> pure {
+  return move value;
+}
+
+fn exchange(target: &uniq box<u64>, incoming: own box<u64>) -> previous: own box<u64> reads(target), writes(target) {
+  let previous = replace deref(target) = move incoming;
+  return move previous;
+}
+
+fn observe(owner: own Holder, incoming: own box<u64>) -> result: own box<u64> reads(owner.value), writes(owner.value) {
+  region {
+    let child = field(owner: &uniq owner);
+    let forwarded = identity(value: move child);
+    return exchange(target: move forwarded, incoming: move incoming);
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Unsupported { ref unsupported }
+                if unsupported.feature() == crate::UnsupportedSemanticFeature::OwnerStateRouting),
+            "identity forwarding cannot certify an inexact actual's location: {outcome:?}"
+        );
+    });
+}
+
+#[test]
+fn nested_dereference_is_not_a_returned_reborrow_form() {
+    let source = br#"struct Node {
+  next: box<Node>;
+  value: u64;
+}
+
+fn child['r](owner: &uniq 'r box<Node>) -> result: &uniq 'r box<Node> pure {
+  return &uniq 'r deref(deref(owner)).next;
+}
+
+fn exchange(target: &uniq box<Node>, incoming: own box<Node>) -> previous: own box<Node> reads(target), writes(target) {
+  let previous = replace deref(target) = move incoming;
+  return move previous;
+}
+
+fn observe(owner: own box<Node>, incoming: own box<Node>) -> result: own box<Node> reads(owner), writes(owner) {
+  region {
+    let descendant = child(owner: &uniq owner);
+    return exchange(target: move descendant, incoming: move incoming);
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    // OWN-14 permits deref(holder) followed by field/subscript suffixes.
+    // The extra deref is not such a suffix, so this source cannot witness
+    // returned-location routing: it must fail the earlier language rule.
+    assert_rule_kind(source, SemanticRule::Own14, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidReborrowPosition { .. })
+    });
+    let invalid_lifetime = std::str::from_utf8(source)
+        .expect("ASCII fixture")
+        .replace(
+            "fn child['r](owner: &uniq 'r box<Node>)",
+            "fn child['s](owner: &uniq box<Node>)",
+        )
+        .replace(
+            "-> result: &uniq 'r box<Node>",
+            "-> result: &uniq 's box<Node>",
+        )
+        .replace(
+            "return &uniq 'r deref(deref(owner)).next;",
+            "return &uniq 's deref(deref(owner)).next;",
+        );
+    assert_rule_kind(invalid_lifetime.as_bytes(), SemanticRule::Own10, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidBorrowLifetime { .. })
+    });
+    let suspended = std::str::from_utf8(source)
+        .expect("ASCII fixture")
+        .replace(
+            "fn child['r]",
+            "fn identity['r](owner: &uniq 'r box<Node>) -> result: &uniq 'r box<Node> pure {\n  return move owner;\n}\n\nfn child['r]",
+        )
+        .replace(
+            "return &uniq 'r deref(deref(owner)).next;",
+            "let selected = identity(owner: &uniq 'r deref(owner));\n  return &uniq 'r deref(deref(owner)).next;",
+        );
+    assert_rule_kind(suspended.as_bytes(), SemanticRule::Own5, |kind| {
+        matches!(kind, SemanticIssueKind::BorrowConflict)
+    });
+}
+
+#[test]
+fn recursive_types_do_not_establish_whole_result_locations() {
+    let source = br#"struct Node {
+  next: box<Node>;
+  value: u64;
+}
+
+fn identity['r](owner: &uniq 'r box<Node>) -> result: &uniq 'r box<Node> pure {
+  return move owner;
+}
+
+fn exchange(target: &uniq box<Node>, incoming: own box<Node>) -> previous: own box<Node> reads(target), writes(target) {
+  let previous = replace deref(target) = move incoming;
+  return move previous;
+}
+
+fn observe(owner: own box<Node>, incoming: own box<Node>) -> result: own box<Node> reads(owner), writes(owner) {
+  region {
+    let selected = identity(owner: &uniq owner);
+    return exchange(target: move selected, incoming: move incoming);
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    // The declaration-only type walk is deliberately conservative through
+    // owning recursion. It does not inspect this identity body for precision.
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Unsupported { ref unsupported }
+                if unsupported.feature() == crate::UnsupportedSemanticFeature::OwnerStateRouting),
+            "a recursive type does not certify a whole candidate: {outcome:?}"
+        );
+    });
+}
+
 fn root(parameter: u32) -> CheckedResultStatePath {
     CheckedResultStatePath {
         result_fields: Vec::new(),
@@ -1637,7 +1854,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn owner_writeback_does_not_treat_a_returned_loan_ceiling_as_an_exact_place() {
+fn whole_unique_resource_result_preserves_owner_writeback() {
     let source = br#"fn alias['r](value: &uniq 'r ReadFile) -> result: &uniq 'r ReadFile pure {
   return &uniq 'r deref(value);
 }
@@ -1661,12 +1878,10 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics(source, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Unsupported { ref unsupported } if unsupported.feature() == crate::UnsupportedSemanticFeature::OwnerStateRouting),
-            "an inexact location must remain an explicit capability gap: {outcome:?}"
-        );
-    });
+    // This unchanged source has a unique, same-typed whole candidate, not a
+    // selected subplace. The field/recursive controls above retain the
+    // distinction between an inexact ceiling and an exact returned location.
+    assert_complete(source);
 }
 
 #[test]

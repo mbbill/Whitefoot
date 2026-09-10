@@ -647,9 +647,16 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_unsupported(
-        source.as_bytes(),
-        UnsupportedSemanticFeature::RegionsAndBorrows,
+    // Static-field reborrows now use ordinary addressed storage. Preserve
+    // this source as the positive sibling case and challenge overlapping
+    // fields before the existing parent-transfer controls below.
+    accepts(source);
+    rejects(
+        &source.replace(
+            "change(value: &uniq deref(holder).right)",
+            "change(value: &uniq deref(holder).left)",
+        ),
+        SemanticRule::Own5,
     );
     let buffers = source
         .replace("left: u64;", "left: buffer<u8>;")

@@ -118,6 +118,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
+    /// FN-1 confines a mutable result to its unique candidate; const storage
+    /// cannot supply it. With the same complete type and no same-typed proper
+    /// subplace, only the entire candidate can be returned. This declaration
+    /// judgment changes neither the loan ceiling nor an inexact actual.
+    pub(in crate::semantic::check) fn whole_result_borrow_candidate(
+        &self,
+        signature: &FunctionSignature,
+    ) -> Result<Option<usize>, CheckStop> {
+        if !matches!(signature.result_mode, CheckedMode::Unique(_)) {
+            return Ok(None);
+        }
+        let Some(candidate) = self.result_borrow_candidate(signature) else {
+            return Ok(None);
+        };
+        if signature.parameters[candidate].ty != signature.result
+            || !self.has_no_same_typed_subplace(signature.result)?
+        {
+            return Ok(None);
+        }
+        Ok(Some(candidate))
+    }
+
     pub(super) fn check_user_call(
         &self,
         node: NodeId,
@@ -395,12 +417,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // remainder of its life: the claim may outlive the statement inside
         // the bound result, so statement-end resumption would leave two
         // usable paths to one place.
+        let whole_candidate = self.whole_result_borrow_candidate(signature)?;
         let result_borrow_info = result_candidate
             .and_then(|index| checked_borrows.get(index))
             .cloned()
             .flatten()
             .map(|mut borrow| {
-                borrow.exact_place = false;
+                borrow.exact_place &= whole_candidate == result_candidate;
                 borrow
             });
         let result_borrow =

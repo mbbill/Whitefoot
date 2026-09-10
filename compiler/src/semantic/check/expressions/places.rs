@@ -178,6 +178,38 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .is_some_and(|local| local.borrow.is_some()))
     }
 
+    /// OWN-14 admits a returned reborrow only over `deref(h)` and suffixes,
+    /// where `h` itself is a holder binding. An extra owning dereference
+    /// cannot be hidden inside that holder position.
+    pub(in crate::semantic::check) fn check_returned_reborrow_holder_shape(
+        &self,
+        node: NodeId,
+        place_node: NodeId,
+        pbase: NodeId,
+        region: DeclarationId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<(), CheckStop> {
+        if self.is_direct_borrow_holder(pbase, bindings)? {
+            return Ok(());
+        }
+        let place = self.resolve_explicit_place(node, place_node, bindings)?;
+        if let Some(parent) = &place.borrow {
+            let local = bindings
+                .get(&place.declaration)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            self.check_holder_not_suspended(local, node)?;
+            self.check_returned_reborrow_lifetime(place.declaration, parent, region, node)?;
+            return self.issue_node(
+                SemanticRule::Own14,
+                node,
+                SemanticIssueKind::InvalidReborrowPosition {
+                    mechanical_fix: super::super::borrows::OWN14_RESTRUCTURING,
+                },
+            );
+        }
+        Ok(())
+    }
+
     fn check_direct_borrowed_place_use(
         &self,
         use_node: NodeId,

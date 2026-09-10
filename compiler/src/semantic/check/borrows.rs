@@ -87,7 +87,7 @@ const _: () = {
 };
 
 /// [OWN-14]'s exact restructuring for a rejected reborrow form.
-const OWN14_RESTRUCTURING: &str = "pass the reborrow as a statement-scoped child in argument position, \
+pub(super) const OWN14_RESTRUCTURING: &str = "pass the reborrow as a statement-scoped child in argument position, \
      return it as the complete return expression from a parameter or let-bound holder, \
      or return the holder itself";
 
@@ -1567,6 +1567,9 @@ inside the `region` block whose region it takes",
                 }
             }
         }
+        if position == ReborrowPosition::ReturnExpression {
+            self.check_returned_reborrow_holder_shape(node, place_node, pbase, region, bindings)?;
+        }
         let (holder, local, parent) = self.resolve_dereference_holder(node, pbase, bindings)?;
         // No reborrow is created through a holder [OWN-13] suspended: its
         // live arm-scoped children's loans overlap every place it reaches,
@@ -1592,32 +1595,7 @@ inside the `region` block whose region it takes",
                 }
             }
             ReborrowPosition::ReturnExpression => {
-                // [OWN-10]'s borrow-rooted case is the creation obligation and
-                // is defined before OWN-14, so its violation is cited first at
-                // this node [DIAG-1].
-                if !self.region_outlives(parent.region, region)? {
-                    return self.issue_node(
-                        SemanticRule::Own10,
-                        node,
-                        SemanticIssueKind::InvalidBorrowLifetime {
-                            region: self.region_phrase(region)?,
-                            binder: self.declaration_spelling(holder)?,
-                            // The holder's own region is what a legal
-                            // reborrow names. A region [FORM-8] leaves
-                            // unwritten has no name to give.
-                            mechanical_fix: match self.written_region_name(parent.region)? {
-                                Some(name) => format!(
-                                    "a returned child reborrow names a region its holder's own \
-region {name} outlives; name {name} itself, or a region {name} outlives, on the returned reborrow"
-                                ),
-                                None => "a returned child reborrow names a region its holder's \
-own region outlives; that region is unwritten here, so relate the holder's region to this result \
-and name it on the returned reborrow"
-                                    .to_owned(),
-                            },
-                        },
-                    );
-                }
+                self.check_returned_reborrow_lifetime(holder, &parent, region, node)?;
                 // [OWN-14] admission: a parameter or let-bound holder, never a
                 // match binder, and mode preserved in both directions.
                 if !matches!(
@@ -1637,6 +1615,12 @@ and name it on the returned reborrow"
         }
         let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
         let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
+        // A returned holder may carry only its candidate's loan ceiling.
+        // A field of its runtime referent is not necessarily that field of
+        // the ceiling, so do not turn this projection into an exact place.
+        if !fields.is_empty() && !parent.exact_place {
+            return self.unsupported(UnsupportedSemanticFeature::OwnerStateRouting, place_node);
+        }
         let mut place = parent.place.clone();
         place.extend_fields(&fields);
         // [LIV-2] a target already read out is dead for the remaining RHS,
@@ -1707,6 +1691,14 @@ and name it on the returned reborrow"
                     ty,
                 }
             }
+            _ if self.borrow_addresses_storage(ty)? => CheckedExpression::BorrowAddressed {
+                carrier: self.tree.path(carrier)?.clone(),
+                root: CheckedContainerRoot {
+                    root: crate::semantic::CheckedPlaceRoot::Binding(local.binding),
+                    path: fields.into_iter().map(CheckedPlaceStep::Field).collect(),
+                    ty,
+                },
+            },
             _ => {
                 return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
             }
@@ -1733,6 +1725,38 @@ and name it on the returned reborrow"
             effects: EffectSet::NONE,
             accesses: Vec::new(),
         })
+    }
+
+    /// OWN-10's creation obligation precedes OWN-14 at the same return node,
+    /// including when a malformed holder expression selects borrowed storage.
+    pub(super) fn check_returned_reborrow_lifetime(
+        &self,
+        holder: DeclarationId,
+        parent: &BorrowInfo,
+        region: DeclarationId,
+        node: NodeId,
+    ) -> Result<(), CheckStop> {
+        if self.region_outlives(parent.region, region)? {
+            return Ok(());
+        }
+        self.issue_node(
+            SemanticRule::Own10,
+            node,
+            SemanticIssueKind::InvalidBorrowLifetime {
+                region: self.region_phrase(region)?,
+                binder: self.declaration_spelling(holder)?,
+                mechanical_fix: match self.written_region_name(parent.region)? {
+                    Some(name) => format!(
+                        "a returned child reborrow names a region its holder's own \
+region {name} outlives; name {name} itself, or a region {name} outlives, on the returned reborrow"
+                    ),
+                    None => "a returned child reborrow names a region its holder's \
+own region outlives; that region is unwritten here, so relate the holder's region to this result \
+and name it on the returned reborrow"
+                        .to_owned(),
+                },
+            },
+        )
     }
 
     fn child_region_is_statement_scoped(

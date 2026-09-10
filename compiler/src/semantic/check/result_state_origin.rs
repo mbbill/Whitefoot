@@ -266,7 +266,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
             CheckedStatement::Let { binding, value, .. } => {
                 let origin = self.expression(value, &mut environment)?;
                 if self.is_borrow_expression(value, &environment) {
-                    let place = self.borrow_place(value, &environment);
+                    let place = self.borrow_place(value, &environment)?;
                     environment.aliases.insert(*binding, place);
                 }
                 environment.insert(*binding, origin);
@@ -585,8 +585,8 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
         &self,
         expression: &CheckedExpression,
         environment: &OriginEnvironment,
-    ) -> Option<(BindingId, Vec<u32>)> {
-        match expression {
+    ) -> Result<Option<(BindingId, Vec<u32>)>, CheckStop> {
+        Ok(match expression {
             CheckedExpression::Binding { binding, .. }
             | CheckedExpression::BorrowBox { binding, .. }
             | CheckedExpression::ReborrowAddressed { binding, .. } => {
@@ -595,11 +595,30 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
             CheckedExpression::BorrowSystemResource {
                 binding, fields, ..
             } => environment.place(*binding, fields),
-            CheckedExpression::BorrowAddressed { root, .. } => {
-                environment.place(root.binding()?, &static_fields(&root.path)?)
+            CheckedExpression::BorrowAddressed { root, .. } => root
+                .binding()
+                .zip(static_fields(&root.path))
+                .and_then(|(binding, fields)| environment.place(binding, &fields)),
+            CheckedExpression::UserCall {
+                function,
+                arguments,
+                ..
+            } => {
+                let signature = self
+                    .checker
+                    .signatures
+                    .get(function.0 as usize)
+                    .ok_or(crate::SemanticCompilerFailure::InvalidResolution)?;
+                let Some(candidate) = self.checker.whole_result_borrow_candidate(signature)? else {
+                    return Ok(None);
+                };
+                let argument = arguments
+                    .get(candidate)
+                    .ok_or(crate::SemanticCompilerFailure::InvalidResolution)?;
+                self.borrow_place(argument, environment)?
             }
             _ => None,
-        }
+        })
     }
 
     // Replay and the ordinary call checker share the same field substitution.
@@ -728,7 +747,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 let mut places = Vec::with_capacity(arguments.len());
                 for argument in arguments {
                     entry.push(self.expression(argument, environment)?);
-                    places.push(self.borrow_place(argument, environment));
+                    places.push(self.borrow_place(argument, environment)?);
                 }
                 if let Some(summary) = self.summaries.get(function.0 as usize) {
                     let result = self.instantiate(&summary.result, &entry);

@@ -250,6 +250,69 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
     }
 }
 
+/// A returned unique field borrow still addresses its caller's owner slot.
+/// Observe both owners and adjacent fields across retained call boundaries.
+#[test]
+fn ordinary_box_field_reborrows_preserve_both_owners_and_adjacent_fields() {
+    let source = br#"struct Holder {
+  before: u64;
+  value: box<u64>;
+  after: u64;
+}
+
+fn alias['r](value: &uniq 'r box<u64>) -> result: &uniq 'r box<u64> pure {
+  return &uniq 'r deref(value);
+}
+
+fn exchange(target: &uniq box<u64>, incoming: own box<u64>) -> previous: own box<u64> reads(target), writes(target) {
+  let previous = replace deref(target) = move incoming;
+  return move previous;
+}
+
+fn replace_field(holder: &uniq Holder, incoming: own box<u64>) -> previous: own box<u64> reads(holder.value), writes(holder.value) {
+  region {
+    let selected = alias(value: &uniq deref(holder).value);
+    region {
+      return exchange(target: &uniq deref(selected), incoming: move incoming);
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let first = box_new(17_u64);
+  let holder = Holder(before: 101_u64, value: move first, after: 303_u64);
+  let incoming = box_new(29_u64);
+  region {
+    let previous = replace_field(holder: &uniq holder, incoming: move incoming);
+    if deref(previous) != 17_u64 {
+      return exit_status(code: 1_u8);
+    }
+  }
+  if deref(holder.value) != 29_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if holder.before != 101_u64 {
+    return exit_status(code: 3_u8);
+  }
+  if holder.after != 303_u64 {
+    return exit_status(code: 4_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [
+        OverlapLowering::Off,
+        OverlapLowering::On,
+        OverlapLowering::Completion,
+    ] {
+        let module = emit_lowered(source, overlap);
+        let output = compile_and_run(&super::owned_places::retain_calls(&module));
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(output.stdout.is_empty(), "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+}
+
 #[test]
 fn statement_scoped_child_reborrows_resume_their_parent() {
     let llvm = compile(include_bytes!(
@@ -329,9 +392,8 @@ command fn main() -> status: own ExitStatus pure {
 /// bound result becomes a holder, and a statement-scoped grandchild of that
 /// result carries the callee write back into the owner's storage.
 ///
-/// A *suffixed* reborrow (`&uniq 'r deref(p).left`) remains an explicit
-/// RegionsAndBorrows capability stop in both admitted positions, so the
-/// executable chain stays on whole-referent reborrows.
+/// This case exercises whole-referent reborrows; the ordinary Box field case
+/// above also verifies a suffixed child through its caller's owner slot.
 #[test]
 fn extension_chains_execute_and_write_the_owners_storage() {
     let llvm = emit_reborrow_extension(

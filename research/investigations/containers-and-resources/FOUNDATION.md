@@ -761,6 +761,60 @@ paths through owning indirection, enum payloads, and indexed contents remain
 the separate candidate below. Neither permanent unions of replaced owners nor
 treating unrepresented transfers as fresh was selected.
 
+For a returned exclusive borrow, a narrower declaration-only argument can
+establish the whole location without deriving a new body summary. FN-1 confines
+the mutable result to its sole signature candidate; OWN-10 excludes callee-local
+storage, and immutable constants cannot supply an exclusive result. If the
+complete result type equals the candidate's referent type and no proper typed
+subplace can have that same type, the only possible location is the entire
+candidate. This does not recover precision for an already inexact actual.
+The finite type graph follows product fields, sum payloads, owning referents,
+and element types, without enumerating capacities; a repeated target type or
+an unresolved generic prevents this conclusion. Shared results remain inexact.
+
+The discriminating checks for this deduction are the unchanged retained
+returned-borrow native case, ordinary Box identity/reborrow helpers, and
+negative controls for a returned field, recursive same-type containment,
+shared constant alternatives, and forwarding an already inexact actual. A
+helper that writes before returning the same scalar location must still kill
+the previous value's proof facts. A body-derived location summary was considered
+but adds a new callable-boundary component unnecessarily for these whole-place
+cases; it remains a separate option for genuinely selected subplaces. Location
+precision must not narrow the existing loan ceiling or change its suspension
+and kill rules.
+
+These controls now pass: ordinary Box helpers retain both displaced-owner
+reads and installed-owner writeback, and the original opaque-owner native
+source needs no change. A retained-call Box-field executable observes the old
+value, the installed value, and both adjacent fields in all three lowering
+modes. The field control initially exposed an independent implementation gap:
+legal static-field reborrows stopped before existing typed address lowering.
+They now use that ordinary address path, with no ABI change. Shared-constant
+requirements and prewrite scalar facts remain negative controls; forwarding
+an inexact field result through a whole-type identity remains unsupported.
+
+The proposed `deref(deref(owner)).next` return is not a legal OWN-14 form:
+the rule admits `deref(h)` followed by suffixes, and the extra dereference is
+not a suffix. It therefore tests the OWN-14 rejection, not returned-location
+routing. A separate terminating identity helper over a recursive type tests
+the conservative declaration predicate. The new Box witness's initial
+two-statement child region likewise violated OWN-6; its valid helper form
+retains the displaced-owner read, and the original structure remains an
+OWN-6 rejection control. Neither observation selects a language amendment.
+
+The two-statement witness also reopens a separate design question: must a
+non-escaping argument child's written region be confined to its receiving
+statement, or is a statement-end loan endpoint sufficient under a larger
+region ceiling? The original [bounded-reborrow study](../reborrow-investigation/DOSSIER.md#4-option-b--relax-to-bounded-non-escaping-statement-scoped-reborrows)
+selected syntactic suspension/resumption to keep the checker small. Its
+single-usable-mutable-path argument requires the parent to remain suspended
+while a conflicting child survives; it does not alone require the surrounding
+block to contain one statement. A candidate must admit the direct displaced-Box
+read without a helper while still excluding surviving result/view loans,
+overlapping siblings, parent access during argument evaluation, and premature
+resumption across suspension. No performance benefit or amended rule is
+established by the current test refactoring.
+
 The related LIV-2 amendment distinguishes a complete binding already dead at
 statement entry from a same-statement read-out. Reinitializing the former
 writes no previous owner's state; the latter still performs its atomic read
@@ -788,10 +842,14 @@ The broader compiler suite challenges this implementation boundary: the native
 cases `heap_full_arrays_preserve_elements_across_calls_replacement_and_refusal`,
 `borrowed_enum_payload_replacement_updates_the_child_owner_in_its_box`, and
 `opaque_resource_borrows_write_back_through_calls_fields_and_reborrows` all
-passed at `d53ffe95` but stop with `OwnerStateRouting` under the new prototype.
+passed at `d53ffe95` but stopped with `OwnerStateRouting` in the published
+`f586e04c` and `6f29022c` prototypes.
 The first two need a displaced value to cross a helper after indexed or enum
 payload replacement; the third needs precise writeback through a returned
-borrow. Their original executable assertions remain intact. The prototype is
+borrow. The local whole-location repair's canonical unit run passes the third
+case with its original source and executable assertions; the published
+`6f29022c` CI still fails it. The first two remain blocked locally as well.
+All original executable assertions remain intact. The prototype is
 therefore not ready to replace the existing implementation, and focused
 whole-Box success does not discharge these regressions.
 

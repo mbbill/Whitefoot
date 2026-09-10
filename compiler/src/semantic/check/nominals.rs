@@ -146,6 +146,57 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
+    /// Whether the complete type cannot occur at a proper accessible subplace.
+    /// Follow type edges, including owning indirection, rather than expanding
+    /// values or capacities. Recursive occurrences and unresolved generics do
+    /// not establish uniqueness of the whole place.
+    pub(super) fn has_no_same_typed_subplace(&self, ty: CheckedType) -> Result<bool, CheckStop> {
+        let mut pending = vec![ty];
+        let mut visited = HashSet::new();
+        while let Some(current) = pending.pop() {
+            if !visited.insert(current) {
+                continue;
+            }
+            let children = match current {
+                CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
+                    CheckedNominalKind::Struct { fields } => {
+                        fields.iter().map(|field| field.ty).collect::<Vec<_>>()
+                    }
+                    CheckedNominalKind::Enum { variants } => variants
+                        .iter()
+                        .flat_map(|variant| variant.fields.iter().map(|field| field.ty))
+                        .collect(),
+                    CheckedNominalKind::Box { referent, .. } => vec![*referent],
+                    CheckedNominalKind::Arena { content, .. } => vec![*content],
+                    CheckedNominalKind::SystemResource { .. } => Vec::new(),
+                    CheckedNominalKind::ArenaStorage => return Ok(false),
+                },
+                CheckedType::Array { element, .. }
+                | CheckedType::FixedVector { element, .. }
+                | CheckedType::Vector { element, .. } => vec![self.element_type(element)?],
+                CheckedType::Buffer { element } | CheckedType::Slice { element, .. } => {
+                    vec![element.ty()]
+                }
+                CheckedType::Generic(_)
+                | CheckedType::GenericInt(_)
+                | CheckedType::GenericFloat(_) => return Ok(false),
+                CheckedType::Unit
+                | CheckedType::Bool
+                | CheckedType::Integer(_)
+                | CheckedType::Float(_)
+                | CheckedType::Heap { .. }
+                | CheckedType::Extent { .. } => Vec::new(),
+            };
+            for child in children {
+                if child == ty {
+                    return Ok(false);
+                }
+                pending.push(child);
+            }
+        }
+        Ok(true)
+    }
+
     pub(super) fn prelude_type(&self, id: NominalId) -> Option<PreludeType> {
         self.prelude_types.get(id.0 as usize).copied().flatten()
     }

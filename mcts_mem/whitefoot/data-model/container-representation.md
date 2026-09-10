@@ -28,6 +28,11 @@
   does not establish nested-content, indexed-element or enum-payload routing;
   a borrow-result ceiling supplies no exact writeback target. Unknown origin
   dependencies remain explicit compiler limitations, never fresh state.
+- An exclusive returned borrow can retain an already exact actual through a
+  declaration-only whole-location judgment: one candidate, the same complete
+  type, and no same-typed proper subplace. This adds no body-derived location
+  summary and narrows no loan ceiling. Shared results and unresolved or
+  recursive containment do not establish that judgment.
 - Reinitializing a complete binding already dead at statement entry contributes
   no write of its moved-out owner's state. Same-statement read-out retains the
   read and commit write. Preserve the RHS effects, commit kill, term identity,
@@ -528,3 +533,13 @@
   such a list falsely empty. That recovery was rejected before implementation;
   a sound complete-content bound is still required.
   [Counterexample and retained regressions](../../../research/investigations/containers-and-resources/FOUNDATION.md#owner-identity-across-replacement-and-calls). (sourced)
+- 2026-09-09 rationale: the unchanged returned-borrow writeback witness needs
+  exact location information, but not a body-derived location summary. A sole
+  exclusive candidate of the same complete type, with no same-typed proper
+  subplace, identifies the whole actual under FN-1 and OWN-10. Shared constants,
+  inexact actuals, and recursive containment prevent this inference; a write
+  still invalidates prior value facts. A nested-dereference return is excluded
+  by OWN-14 and cannot serve as a routing counterexample. The type predicate
+  supplies precision independently of the unchanged owner-routing summary and
+  loan ceiling; general selected subplaces remain an open separate question.
+  [Argument and discriminating controls](../../../research/investigations/containers-and-resources/FOUNDATION.md#owner-identity-across-replacement-and-calls). (sourced)

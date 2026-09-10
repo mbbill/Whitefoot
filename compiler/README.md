@@ -441,14 +441,21 @@ read-out retains its commit write. Ordinary Box direct/helper controls and
 retained native calls cover both state attribution and physical writeback.
 Nested owning contents, indexed elements and enum payload updates do not yet
 have a complete separate state image. Using an unknown returned owner's state
-reports `OwnerStateRouting`; a returned borrow's candidate ceiling is not
-treated as an exact writeback location. Internal replacement returning no
+reports `OwnerStateRouting`; a returned borrow's candidate ceiling alone is not
+an exact writeback location. A separate declaration-only judgment preserves an
+already exact actual when an exclusive result has the same complete type as
+its sole candidate and that type cannot occur at a proper typed subplace.
+Shared results, recursive same-type containment, unresolved generics and
+inexact actuals do not establish this whole-location property. Writes still
+kill prior value facts. Static-field child reborrows use ordinary addressed
+storage; projecting through an inexact result remains a capability gap.
+Internal replacement returning no
 tracked owner remains an unresolved routing limitation, not evidence that its
 contained owners stayed unchanged. These boundaries apply to ordinary memory
 and resource objects alike.
 The current normal-exit prototype still regresses retained native cases for
-heap full-array replacement, boxed enum-child replacement, and replacement
-through a returned resource borrow. They remain enabled and must pass before
+heap full-array replacement, boxed enum-child replacement, boxed-run read-out,
+and wide results containing owners. They remain enabled and must pass before
 this prototype is considered complete. The investigation records why an empty
 current origin list alone cannot safely recover an unknown summary.
 Loop-origin comparison is deferred only in the preliminary pass that builds

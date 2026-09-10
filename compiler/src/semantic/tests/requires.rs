@@ -9,6 +9,43 @@ use super::super::model::{
 };
 use super::{assert_rule, with_semantics, with_semantics_dark};
 
+#[test]
+fn whole_unique_result_preserves_location_but_not_prewrite_value_facts() {
+    for actual in ["deref(chosen)", "&deref(chosen)"] {
+        let (mode, term, read, effects) = if actual.starts_with('&') {
+            ("&", "deref(value)", "deref(value)", "reads(value)")
+        } else {
+            ("own ", "value", "value", "pure")
+        };
+        for changed in [false, true] {
+            let (select_effect, write, forward_effect) = if changed {
+                (
+                    "writes(value)",
+                    "  set deref(value) = 9_u64;\n",
+                    "reads(value), writes(value)",
+                )
+            } else {
+                ("pure", "", "reads(value)")
+            };
+            let source = format!(
+                "fn select['r](value: &uniq 'r u64) -> result: &uniq 'r u64 {select_effect} {{\n{write}  return move value;\n}}\n\nfn indexed(value: {mode}u64) -> result: own u64 {effects} contract {{\n  requires {term} < 1_u64;\n}} {{\n  let rows = array_new::<u64, 1>(7_u64);\n  let index = {read};\n  return rows[index];\n}}\n\nfn forward(value: &uniq u64) -> result: own u64 {forward_effect} contract {{\n  requires deref(value) < 1_u64;\n}} {{\n  let chosen = select(value: move value);\n  region {{\n    return indexed(value: {actual});\n  }}\n}}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            );
+            if changed {
+                super::assert_rule_kind(source.as_bytes(), SemanticRule::Fn8, |kind| {
+                    matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
+                });
+            } else {
+                with_semantics(source.as_bytes(), |outcome| {
+                    assert!(
+                        matches!(outcome, SemanticOutcome::Complete(_)),
+                        "unchanged unique whole location preserves its established fact: {outcome:?}"
+                    );
+                });
+            }
+        }
+    }
+}
+
 /// FN-1's candidate is a loan ceiling. A shared result may instead point to
 /// immutable static storage, so the input's predicate is not a predicate of
 /// the delivered referent [ENT-2]. These sources must fail before lowering.
