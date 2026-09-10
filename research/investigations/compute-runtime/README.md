@@ -27,8 +27,64 @@ staged-loop lowering and their tests. Reuse the existing workload/reference
 panels for five-target native CI qualification below; do not build another
 benchmark framework or tune I/O. Historical safety evidence has the limited
 scope stated in the comparison, not a claim that every earlier audit was wrong.
-The latest [kernel-CPU observation rejects the remainder candidate](#kernel-cpu-observation-and-remainder-rejection).
+The latest [native results](#native-results-after-restoration) cover the restored
+core and remaining gaps after rejecting the remainder candidate.
 All-platform performance qualification remains open.
+
+## Native results after restoration
+
+Revision `2861607f770423c828f9952fd814443f069233c2` restores the maintained
+core exactly to `4fabd264` while retaining the exhaustion-floor repair.
+Its canonical `make check` passed, as did all twelve
+[gate jobs](https://github.com/mbbill/Whitefoot/actions/runs/34499114433), both
+[completion jobs](https://github.com/mbbill/Whitefoot/actions/runs/34499114302)
+and all four [I/O benchmark jobs](https://github.com/mbbill/Whitefoot/actions/runs/34499114467).
+The [compute cohort](https://github.com/mbbill/Whitefoot/actions/runs/34499114220)
+completed all five native compiler/ordinary-command correctness steps.
+Replay verifies 2,940 formal processes with 6,776,700 checked FIR calls and
+7,620 whole-command processes. Captured sources, previous headers, repaired
+controls, raw results and original reducers match; the ordinary compiler
+images embed the maintained scheduler, platform and exhaustion-floor sources.
+These checks establish execution and artifact integrity, not performance parity.
+
+The original formal long/first64 screens still report investigate cells:
+Linux x86-64 3/120 and 27/120; Linux ARM 0/96 and 3/96; Mac Intel 39/120 and
+49/120; Mac ARM 17/72 and 26/72; Windows 3/72 and 9/72. Every ordinary-command
+screen also remains red. Quadrature's calibration rejects timing variability
+after its correctness checks pass. No screen or threshold is relaxed.
+
+The clearest remaining runtime comparison loss is Linux x86-64 FIR at
+W4/N4096/tile64. Against the repaired research control, candidate and replica
+full-call medians are 1.0631 and 1.0532; batch CPU medians are 1.0710 and
+1.0641. All ten full-call and CPU pairs lose. Candidate core time is 0.9998,
+so core parity alone misses the full-call cost. These measurements include
+result handling and checks; they do not isolate scheduler CPU. Linux ARM
+does not reproduce this stable loss. Mac timing variability prevents a
+resolved ranking; Windows has no executed research-runtime control.
+
+Default task publication leaves a larger whole-program gap on small,
+all-interior Mandelbrot inputs. Both sides use scalar arithmetic, the same
+input/recurrence and participant budget. Five-pair median wall ratios below
+are WF/static for N4096, 32 repetitions and iteration limit 256; values above
+one favor static partitioning. `work60000` changes only the existing
+`WF_SPLIT_WORK` knob on the same WF image and is a diagnostic, not a new default.
+
+| Native target | Participants | Default / static | work60000 / static |
+| --- | ---: | ---: | ---: |
+| Linux x86-64 | 4 | 3.3209 | 1.3001 |
+| Linux ARM | 4 | 3.7076 | 1.5168 |
+| Mac Intel | 4 | 1.9271 | 1.1260 |
+| Mac ARM | 2 | 1.9159 | 0.9980 |
+| Windows x86-64 | 4 | 1.8033 | 0.8913 |
+
+Separate diagnostics report zero started helpers for every default row.
+Mac A/A variability prevents treating those medians as qualified rankings.
+Static partitioning is a useful regular-work reference, not a ceiling for
+skewed work. A smaller threshold improves these inputs but does not select
+a generally best publication policy. Linux x86-64's roughly two-millisecond
+all-exterior command also has candidate/previous wall medians 1.0619 and
+1.1013 for its replica, with A/A range 0.7570–1.3367: the observed loss remains
+unresolved rather than being dismissed or attributed to worker scheduling.
 
 ## Compute-first measurements at b87e7548 (2026-09-09)
 
@@ -2091,8 +2147,9 @@ startup test, complete original performance matrix and previous headers.
 The existing observation will also check the restoration against previous;
 the rejected image remains reproducible from this artifact and revision.
 The restored core passes all eight local smoke scenarios and both
-200,000-task deque probes. Restoration still needs its own canonical gate
-and native qualification.
+200,000-task deque probes. Its subsequent canonical and native results are
+recorded [above](#native-results-after-restoration); performance qualification
+remains open.
 
 The other four formal artifacts also replay, bringing the cohort to 2,940
 processes and 6,776,700 calls. Their original failures remain:

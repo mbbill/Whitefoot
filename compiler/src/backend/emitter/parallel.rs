@@ -19,10 +19,10 @@
 //! **Lane acquisition comes before the frame.** The frame belongs to the lane, not to
 //! the calling function, and nothing about it is built until a lane has been
 //! granted. An activation that is refused a lane executes a null test and its
-//! own call: no stack slot, no argument spills, nothing the sequential
-//! lowering did not already do. That is what keeps the recursion depth of a
-//! `--par` build the recursion depth of the sequential build, whether the pool
-//! is off or merely busy. The earlier shape — a frame in the calling
+//! own call without reserving a task frame on the caller's stack. This removes
+//! that additional frame from each recursive activation; it does not guarantee
+//! identical spills or recursion depth in parallel and sequential machine code.
+//! The earlier shape — a frame in the calling
 //! function's entry block — put a slot and its stores in *every* activation of
 //! an eligible recursive function, which cost about four times the stack per
 //! frame on a small one and turned a recursion that ran into a bare SIGSEGV.
