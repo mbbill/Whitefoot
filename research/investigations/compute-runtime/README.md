@@ -1300,6 +1300,55 @@ The retained test releases helpers gradually when the creator polls and
 still rejects a one-check-only readiness barrier. No production waiting
 threshold, default publication policy, I/O path or ABI change survives.
 
+The [fa77a029 restored cohort](https://github.com/mbbill/Whitefoot/actions/runs/34468351790)
+does not reproduce the two selected warm regressions against its same-host
+previous control. Linux ARM W2/N65536/tile1024 full-call/previous is 0.9996
+[0.9984, 1.0056], CPU 0.9993 [0.9987, 1.0053]. Windows W4/N4096/tile1024
+full-call/previous is 1.0024 [0.9965, 1.0204]; its quantized CPU ratio is
+1.0278 [0.9167, 1.0588]. Current/previous executable code sections match on
+both platforms. Windows now uses Xeon 6973P-C; cross-cohort absolute times
+cannot establish a rollback speedup.
+
+Linux x86-64 W4/N4096/tile64 still has a full-call/research difference:
+1.0399 [1.0355, 1.0864], with CPU 1.0458 [1.0229, 1.0963] and core
+0.9675 [0.9485, 1.0180]. Full-call A/A is 1.0018 [0.9944, 1.0123].
+The three targets retain their original performance-screen failures. All
+twelve gate jobs and both I/O host jobs pass; the separate Windows I/O
+benchmark stops on its unchanged two-cohort timing-stability check, while
+the other three I/O benchmark jobs pass. This is not full qualification.
+
+### Locate the remaining full-call cost
+
+The restored core's repeated Linux x86-64 W4/N4096/tile64 full-call loss
+survives external sampling, while its core interval is near research parity.
+The core interval includes WF computation, result allocation and joins; it
+is not an isolated scheduler measurement. More getter and helper-loop samples
+do not establish which makes the other run longer. Before another production
+change, add one timestamp to the existing FIR caller, after result/history
+reading and before result destruction. A separately built diagnostic caller
+records this readout interval beside the existing core/full-call values,
+retaining all output checks. The original images and timing matrix remain.
+
+Use the same W4/N4096/tile64 input, five alternating process rounds and
+old/research/current/byte-identical-replica controls on Linux x86-64. Each
+diagnostic process is preceded by its original image as a perturbation control.
+If the full-call gap repeats but readout does not carry it, investigate the
+remaining prefix allocation/copy and destruction interval. If observation
+removes the gap or the replica is unstable, the observation cannot select a
+runtime change. A readout difference alone does not distinguish getter
+instructions, allocation history, cache effects or competing helper work.
+Batch CPU still includes all threads and between-call correctness checks;
+it cannot be assigned to the new interval. No waiting or publication parameter
+changes accompany this observation.
+
+Local macOS ARM validation runs the same diagnostic driver block over forty
+processes and 163,880 complete oracle-checked calls, with all forty process
+means independently replayed. Both replicas are byte-identical; disabling the
+diagnostic retains the previous caller's exact executable text. The reader
+rejects eight malformed-log variants, including missing/invalid CPU metadata,
+a changed header, an empty call index and readout outside the full interval.
+This validates observation plumbing, not the Linux performance hypothesis.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o

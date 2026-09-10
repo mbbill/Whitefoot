@@ -70,6 +70,20 @@ test whether cross-worker task claims differ consistently; they do not count
 failed steals, identify which allocations ran on each thread or establish a
 constant cost per steal. They remain separate from the original timing matrix.
 
+The same Linux x86-64 cell also has `readout-observation/`: the existing caller
+is compiled once with `FIR_READOUT_TIMING`, adding one clock read after result
+and history access, before destruction. Its old/research/current images share
+that host object and the original WF/native objects; its replica is byte-identical.
+Five alternating rounds run each original image immediately before its diagnostic
+image. Both retain full output/history oracles and core/full-call readings; the
+diagnostic adds `readout_ns`. Raw logs also retain whole-batch CPU and memory.
+If the full-call gap repeats, this interval tests whether result reading carries
+it. Full-minus-core-minus-readout still combines prefix allocation/copy and
+destruction. A missing gap or unstable replica cannot select an optimization;
+readout timing alone cannot distinguish getter instructions, allocation history
+or interference from helpers. Instrumented timings do not replace the original
+performance screen. Remove this bounded observer when that question is resolved.
+
 After the formal screen, Linux CI runs `formal-screen.sh profile` on its exact
 old/recovered/current/replica executables. This external `perf record -e
 cpu-clock -F 997 --sample-cpu` observer samples CPU execution without rebuilding
