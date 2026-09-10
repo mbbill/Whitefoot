@@ -306,6 +306,72 @@ used exclusive host isolation. These timings cannot establish a small causal
 speedup over the earlier run. The removed caller copy is directly visible in IR;
 the substantial remaining performance gap stays open.
 
+### Multi-result destination experiment
+
+The next discriminating control keeps `priority.wf` and the complete `wf_pop`
+callee unchanged. Its caller currently keeps separate storage for a 144-byte
+heap and a 152-byte `(heap, value)` result, then transfers the result's first
+field back to the heap after every pop. The candidate gives the heap the first
+field of one complete, correctly aligned 152-byte result allocation and uses
+that allocation for the call result. It must never place a 152-byte result in
+a 144-byte allocation. The callee's existing input snapshot must finish before
+any result write, and the old heap is consumed at this ordinary synchronous
+call. No view, deferred call, or new source acceptance is part of this control.
+
+The experiment changes only the caller's allocation and its two address
+definitions in a copy of the emitted LLVM. It retains the original transfer
+instruction so ordinary LLVM optimization, rather than deletion by the
+experiment, must recognize the identical addresses. Its selection criterion is
+that both existing independent 320-input sorting checks still pass, including
+the extracted scalar, and retained optimized code loses the caller's 144-byte
+post-pop transfer. Callee instructions and all other functions must remain
+byte-identical before native optimization. A successful result establishes a
+placement opportunity for this consumer, not an implemented compiler feature,
+an admissible general alias rule, or a timing improvement. General result-field
+placement still needs CFG liveness, address-exposure, input-alias, and deferred
+retirement evidence before it can replace separate compiler storage.
+
+The control met that criterion on 2026-09-10 with the rebuilt v0.56 compiler
+working tree based on `13cc6ca8` and Apple Clang 21.0.0, `-O2`, arm64 macOS.
+Both unmodified controls and both adapted controls passed their 320-input
+checks. The adapter verified that reversing exactly the three changed lines
+restored the entire input module, including the unchanged `wf_pop` body and
+post-pop `memmove`. Both optimized traces retain all 16 `wf_pop` calls per
+round. The original trace has four 32-byte load/store pairs and one 16-byte
+load/store pair after each of the first 15 calls; LLVM already removes the
+final dead-result transfer. The adapted trace reads only the returned scalar
+before updating its checksum, so those 15 additional 144-byte post-pop
+transfers are absent. The trace's
+explicit stack adjustment changes from 416 to 272 bytes. This is static
+instruction and frame evidence, not elapsed-time, memory-traffic, or whole-call
+stack high-water evidence; the callee's existing transfers remain.
+
+Reproduce from the ordinary exported `.build/priority.ll` produced by the
+targets above. In a separate copy, replace only this prefix of
+`wf_priority_round`:
+
+```llvm
+%wf.frame = alloca { { [16 x i64], i64, i64 }, %wf.t3 }, align 8
+%wf.slot.0 = getelementptr inbounds { { [16 x i64], i64, i64 }, %wf.t3 }, ptr %wf.frame, i32 0, i32 0
+%wf.slot.1 = getelementptr inbounds { { [16 x i64], i64, i64 }, %wf.t3 }, ptr %wf.frame, i32 0, i32 1
+```
+
+with the complete result allocation and its two selected addresses:
+
+```llvm
+%wf.frame = alloca %wf.t3, align 8
+%wf.slot.0 = getelementptr inbounds %wf.t3, ptr %wf.frame, i32 0, i32 0
+%wf.slot.1 = getelementptr inbounds %wf.t3, ptr %wf.frame, i32 0
+```
+
+Here `%wf.t3` must still be `{ { [16 x i64], i64, i64 }, i64 }`; do not apply
+the transformation if the input frame, type, or snapshot protocol differs.
+Build the copy with the same `priority-costs.c` commands as the original,
+once normally and once with `-DRETAIN_HELPERS`, and run each executable with
+`check`. Emit assembly for both modules with `clang -O2 -Wno-override-module
+-x ir -S` and compare the retained `wf_priority_trace` pop sequences. No timing
+samples were taken for this control.
+
 ## Explicit byte-run growth and refusal
 
 `growth.wf` allocates and fills an initial byte run, then either keeps it, refuses
