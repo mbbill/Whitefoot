@@ -661,8 +661,8 @@ affine atom [MSR-6, INV-1]. The fixed-run library source in
 `tests/programs/fixed_run_library.wf` exercises these facilities through
 `vacant`, `filled`, `take_at`, `try_place`, `try_take` and `rebase`, each
 capacity-parametric loop stating its bound as the const generic itself. The
-current owner-routing prototype blocks this program at noncopy removal; its
-retained test still requires the complete program to prove and execute.
+complete program proves and executes, including its noncopy removal helpers;
+whole-function effect bounds do not make the returned element origins exact.
 All six functions are generic in their element type: a type parameter carries
 exactly one written bound [S37], the three classes form the chain
 `copy < affine < linear` whose satisfaction is

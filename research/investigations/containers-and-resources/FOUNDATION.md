@@ -110,9 +110,10 @@ B+ tree leaf-split component, and a variable-record byte page with insertion,
 deletion, overlapping movement and ordinary invalid-input/refusal outcomes.
 An additional boxed-entry component executed runtime-indexed migration and
 collision probing, with earlier map operations prepared at selected positions.
-The current owner-routing prototype stops the optional-entry map, boxed migration
-and nested boxed helper with an explicit capability gap; their earlier successful
-runs do not establish current readiness. The migration component does not
+The whole-effect refinement restores the optional-entry map and nested boxed
+helper in all three execution modes. Boxed migration still exposes an explicit
+capability gap; its earlier successful run does not establish current readiness.
+The migration component does not
 establish a general map API or return/resume migration contract;
 the leaf component is not a complete ordered map. The boxed-tree replacement
 reproducer now uses a borrowed owner slot and executes in the ordinary native
@@ -1155,8 +1156,8 @@ replacement's no-change shortcut requires exact selected routes in both body
 checking and callable replay. These controls narrow the complete-coverage
 claim to its actual call-boundary evidence.
 
-The whole-effect experiment separates exact whole-function effects from exact placement
-at every contributing operation. For each written effect category, retain a
+The whole-effect experiment separates exact whole-function effects from exact
+placement at every contributing operation. For each written effect category, retain a
 lower set of established body-syntactic contributions and an upper set including
 every possible contribution of a finitely bounded query. EFF-2's exact union is
 known when these sets agree; the declaration is compared only afterwards and
@@ -1192,6 +1193,10 @@ root for its fields. The former extraction and shifted-slot capability sentinels
 now inspect the retained bounded result summaries, and the imported `pure`
 helper checks its actual missing read and write. These changes refine compiler
 effect knowledge without changing source rules or any native success expectation.
+The unchanged fixed-run library, optional-entry map and nested boxed helper also
+execute. The remaining boxed migration stops at its function's still-incomplete
+effect union, not at the earlier individual access. These outcomes establish
+composition for those witnesses, not general residual-content or release selection.
 
 ### Sparse experiment contract and decision boundary
 
@@ -1257,7 +1262,7 @@ The available evidence supports different next actions for different families:
 | --- | --- | --- |
 | Dense/fixed sequences and priority queues | Use ordinary valid values; correct and improve general storage transfer first | Matched operations still force material initialization, descriptor or movement cost after that repair |
 | Full arrays of general elements | Generalize the existing array through the selected two-conversion experiment; explicit linear-empty termination remains a separate gap | The complete build/failure/freeze/use/replace/thaw/drain witness and measured layout/transfer cost |
-| Hash and ordered containers | Earlier map and boxed-migration traces ran; current owner routing blocks them while the ordered component still checks. Restore those contracts before the projected sparse-layout comparison | Failure to preserve the native owning-map contract/cost, or a required operation beyond ordinary projected values; ordered mutation follows owning-box repair |
+| Hash and ordered containers | The scalar map and nested boxed helper execute again; boxed migration still needs finer attribution while the ordered component checks. Restore that contract before the projected sparse-layout comparison | Failure to preserve the native owning-map contract/cost, or a required operation beyond ordinary projected values; ordered mutation follows owning-box repair |
 | Deques and rings | A wrapped logical-index trace works; a wrapped run is correctly refused as one contiguous view | A two-span consumer/growth trace that prices any required copying and admits the actual loans |
 | Growable runs, strings and inline/spill forms | Source-written byte growth/refusal executes and has loop/bulk/realloc controls; no WF realloc or finished spill result | General owner-return helper, repeated reserve/spill and copy-heavy resize controls including peak storage and address validity |
 | Packed byte records | Current initialized byte storage executes variable records and overlapping movement | Measured bulk/initialization/compact-handle cost, or an actually required typed layout that byte codecs cannot preserve |

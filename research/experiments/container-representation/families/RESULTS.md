@@ -10,11 +10,13 @@ byte-growth C controls. The original measurements used compiler revision
 are in this directory. Checks and measurements were run on 2026-09-08, arm64
 macOS 26.6.2, using Apple Clang 21.0.0 and Rust 1.98.1.
 
-The owner-routing prototype currently stops `hashmap.wf`, `boxed-migration.wf`
-and `boxed-helper-gap.wf` with `OwnerStateRouting`. Their original executable
-expectations remain in `make check`. The recorded successful runs and cost
-comparisons below do not certify the current compiler at these helper and
-content-routing boundaries.
+The whole-effect refinement at `ebc6d059` restores `hashmap.wf` and
+`boxed-helper-gap.wf` with their original source and assertions in all three
+execution modes. `boxed-migration.wf` still stops with `OwnerStateRouting` at
+the owning migration function's effect row. Its original executable expectation
+remains in `make check`; the earlier successful run does not certify the current
+compiler at that content-routing boundary. These recovery runs add behavior
+evidence, not new timing samples to the recorded cost comparisons below.
 
 ## Operation contracts and recorded runs
 
@@ -122,7 +124,8 @@ rule. This supersedes the old negative expectation on its amended semantic
 ground, preserving the original lookup and helper bodies.
 
 `boxed-helper-gap.wf` is the nested helper-composition witness in the ordinary
-three-mode native loop, currently stopped by the owner-routing gap above.
+three-mode native loop. Separate runs also verify all three modes when the
+earlier boxed-migration witness stops that loop.
 `compose` passes two boxes with the same declared store
 region to `build`, then passes its returned run and an entry made from its returned
 box to `replace_one`. FN-2 substitution now reaches the nominal element under
