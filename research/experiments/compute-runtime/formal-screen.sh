@@ -241,6 +241,33 @@ summarize "$out/means.tsv" "$out/summary.tsv" && result=0 || result=$?
 summarize "$out/short-means.tsv" "$out/short-summary.tsv" || result=$?
 cat "$out/summary.tsv"
 cat "$out/short-summary.tsv"
+if test -n "$exe"; then
+    # The unresolved Windows full-call loss includes result access/release.
+    # Reuse the same images with one leaf: this branch never offers a task.
+    # Both controls must actually run one lane despite WF_WORKERS=4. This is
+    # a diagnostic, not a replacement for the parallel acceptance matrix.
+    mkdir "$out/leaf-control"
+    printf 'mode\tworkers\tn\ttile\tpass\tcore_mean_ns\tcycle_mean_ns\n' > "$out/leaf-control/means.tsv"
+    pass=0
+    while test "$pass" -lt 5; do
+        order='old candidate replica'
+        if test "$((pass % 2))" = 1; then order='replica candidate old'; fi
+        for mode in $order; do
+            log="$out/leaf-control/$mode-p$pass.tsv"
+            WF_WORKERS=4 "$out/$mode$exe" wf 16 4096 4096 4096 92821 "$pass" > "$log"
+            awk '
+                /^# actual_lanes=/ {split($2,a,"="); seen++; if(a[2]!=1)exit 1}
+                END {if(seen!=1)exit 1}' "$log"
+            awk -F '\t' -v mode="$mode" -v p="$pass" '
+                $10=="warm" {core+=$11;cycle+=$12;calls++}
+                END {
+                    if(calls!=4096)exit 1
+                    printf "%s\t1\t4096\t4096\t%s\t%.3f\t%.3f\n",mode,p,core/calls,cycle/calls
+                }' "$log" >> "$out/leaf-control/means.tsv"
+        done
+        pass=$((pass + 1))
+    done
+fi
 # Binaries, copied sources, actual flags and every raw sample are reproducible
 # evidence even when the performance band fails.
 if test -n "$exe"; then

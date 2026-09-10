@@ -577,6 +577,101 @@ and new Windows binary metadata must verify the actual result. Keep the former
 measurements with their debug-link limitation. The shared measurement runner,
 POSIX flags and the mutually matched formal O3 images are unchanged.
 
+### Native qualification at a130886a
+
+Exact `a130886a7f1bfe85326476b86f2ebb6dc7c58b95` passes local canonical
+`make check`, all twelve [repository gate jobs](https://github.com/mbbill/Whitefoot/actions/runs/34436252124),
+both [native completion jobs](https://github.com/mbbill/Whitefoot/actions/runs/34436252103),
+and all four [I/O benchmark jobs](https://github.com/mbbill/Whitefoot/actions/runs/34436252114).
+The [compute cohort](https://github.com/mbbill/Whitefoot/actions/runs/34436252146)
+finishes with nine successful and ten failed jobs. Performance qualification
+remains incomplete; the runtime is held unchanged while these losses are
+classified.
+
+All five formal artifacts have verified manifests, source identities,
+byte-identical replicas, complete raw matrices and reproduced means/reducers.
+Windows source comparison normalizes checkout CRLF only; its manifest verifies
+the original bytes. The counts below concern core-time screens, including
+identical-image comparisons; first64 overlaps the full window.
+
+| Native target | Artifact | Full-window investigate | First64 investigate | Ordinary CLI reducer |
+| --- | ---: | ---: | ---: | --- |
+| Linux x86-64 | 10136376116 | 0 / 90 | 21 / 90 | failed |
+| Linux AArch64 | 10136361436 | 0 / 72 | 4 / 72 | failed |
+| macOS x86-64 | 10136574594 | 25 / 90 | 32 / 90 | failed; artifact upload failed |
+| macOS AArch64 | 10136475961 | 15 / 48 | 13 / 48 | passed, with unresolved noisy cells |
+| Windows x86-64 | 10136382206 | 5 / 48 | 6 / 48 | failed |
+
+Linux ARM's previously regressed 65,536/tile1024 full-call ratios against
+`a8227af4` are now 0.9491, 0.9339 and 0.9195 at W1/2/4; against research
+they are 0.9984, 0.9992 and 1.0003. All eighteen configurations have full-call
+medians against historical/research/previous at most 1.05. The recovered
+performance supports rejecting the compact representation; it does not prove
+that executing a pointer wait is intrinsically faster, especially on the W1
+path that never executes the scheduler.
+
+Linux x64's eighteen full-call medians against previous range from 0.9798 to
+1.0224; against historical/research none exceeds 1.02. At W4/4,096/tile16,
+full-call/research is 0.9831 [0.9737, 0.9973], CPU is 0.9745 and full-call
+A/A is 0.9889. Short-window failures remain, including W1/4,096/tile64
+first64 full-call/historical 1.3542 with A/A 1.2885 and replica/historical
+1.0132.
+
+Windows verifies 388 manifest entries, 300 processes and 691,200 warm calls.
+At W4/4,096/tile1024, full-call/historical is 1.1857 [1.1360, 2.2987],
+core/historical 1.0219 [0.9257, 3.3385], and full-call/previous 1.0220
+[0.9353, 1.9904]. The paired ratios of per-process full-minus-core means
+are 1.2753 [1.2698, 1.6688] against historical and 0.9970
+[0.9833, 1.0162] against the identical replica. This preserves the measured
+loss outside the core interval, which includes preparation, result access and
+release; it does not identify a wait primitive or the representation reversal
+as its cause. W2 in that configuration also loses full-call/historical by
+1.2083 [1.0861, 1.3425].
+
+Neither macOS panel is qualified. Intel W2/65,536/tile1024 full-call/previous
+is 1.0952 [1.0110, 1.1682], with A/A 1.0724 [0.7918, 1.1539] and
+replica/previous 1.0433 [0.9491, 1.2867]. ARM W2/4,096/tile16
+full-call/research is 1.1654 [0.9765, 1.2696], while A/A is 1.0501
+[1.0019, 1.2422]. These are unresolved losses, not proof of a new runtime
+defect or permission to discard the cells.
+
+Four ordinary-command artifacts reproduce their raw matrices and reducers:
+Linux x64 `10136362468`, Linux ARM `10136397091`, macOS ARM `10136379628`
+and Windows `10136515258`. None has a default current/previous wall or CPU
+cell with all five ratios above 1.05; this does not resolve application gaps.
+Linux x64 shape4/4,096/W4 default/static remains 3.3446
+[3.3329, 3.3641], with diagnostics confirming no helpers started. Its existing
+four-leaf policy reduces that ratio to 1.4892 [1.4522, 1.6748], with CPU
+1.0179. Windows four-leaf/static RSS is 1.1865 [1.1843, 1.1878]. The Intel
+macOS job passes both compilers' correctness matrices and finishes the screen,
+but artifact creation times out after five upload attempts; its raw results
+cannot be independently replayed from this run.
+
+The Windows ordinary native PDB matches its executable's GUID/age and records
+`/INCREMENTAL:NO /OPT:REF /OPT:ICF`. It is nonincremental with zero trampolines,
+versus 2,826 in the earlier debug-link reference. This verifies the reference
+fix on Clang 20.1.8. The two Windows cohorts use different CPUs, so no
+cross-cohort speedup is attributed to those flags.
+
+Quadrature artifact `10136413144` verifies all eight manifest entries and
+2,400 raw processes, including 633,600 calls with warmups. Its original
+reducer reproduces 13/80 investigate cells. No WF cell has wall or CPU ratios
+above 1.05 in every pair, but smooth/frontier W4/depth8 still has wall
+1.0825 [1.0025, 1.2623] and CPU 2.0335 [0.9467, 3.7368]. Native cross-image
+variation is not a byte-identical A/A control; qualification remains open.
+
+The next bounded Windows diagnostic reuses each cohort's old/candidate/replica
+binaries with 4,096 outputs in one leaf. The emitted leaf branch bypasses
+all compute acquire/publish/join calls; actual-lane observations must confirm
+no helpers started. A persisting difference would exclude executing task
+scheduling as its cause. Disappearance would not identify that cause because
+tree depth also changes. This adds no production change, instrumentation,
+link option or replacement for the existing parallel acceptance matrix.
+The added shell block runs locally against the native a130 macOS ARM images:
+all fifteen processes and 61,455 calls pass, each with one actual lane.
+Wrong-lane and missing-lane reports reject. This validates the diagnostic's
+execution and checks; Windows execution and its performance result remain open.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o
