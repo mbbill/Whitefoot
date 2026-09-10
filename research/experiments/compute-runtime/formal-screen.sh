@@ -12,7 +12,7 @@ export WF_SCHED_REPORT
 root=$(git rev-parse --show-toplevel)
 old=9051576f6a4d723b4eb072850f49859853decae7
 recovered=d858008f560b25da896af2a17f8b1d07ac49fd6e
-previous=a8227af4ed382a881b6c85f53e9553056f634a60
+previous=4fabd26448eddc9316499f5c58e66c556d9ca7cb
 host=$(uname -s)
 exe=; floor=wf_floor.c; leaf=prim_host.c; platform_flags=-pthread; libraries=-lm
 modes='old recovered previous candidate replica'
@@ -111,10 +111,10 @@ C
     cp "$root/compiler/src/backend/windows_runtime.c" "$root/compiler/src/backend/windows_runtime.h" "$out/source/"
     cp -R "$root/compiler/src/backend/completion" "$out/source/"
 fi
-# The completed Windows spin-hint ablation is retained at 7776c3cd. It no
-# longer isolates the current source change; compare the actual prior core.
+# Compare the actual maintained core before passing the existing search owner
+# to its successful-steal counter. Earlier slot/Windows ablations stay in git.
 git show "$previous:compiler/src/backend/sched/core.c" > "$out/previous.c"
-printf '\nPrevious maintained core=%s; same WF/host objects, flags and platform sources. It uses compact waiting flags; the candidate restores waiter pointers. Both use the internal candidate label; filenames and means.tsv distinguish the cores.\n' "$previous" >> "$out/flags.txt"
+printf '\nPrevious maintained core=%s; same WF/host objects, flags and platform sources. The candidate passes the known search owner to its successful-steal counter instead of rereading TLS. Slot layout, queue ordering and waiting policy are unchanged. Both use the internal candidate label; filenames and means.tsv distinguish the cores.\n' "$previous" >> "$out/flags.txt"
 cat > "$out/candidate-observer.c" <<'C'
 extern unsigned wf__sched_pool_running(void);
 unsigned wf_bench_worker_count(void) { return wf__sched_pool_running() + 1; }
@@ -291,8 +291,8 @@ if test "$(uname -s)-$(uname -m)" = Linux-x86_64; then
     printf 'mode\tpass\tcalls\tsteals\n' > "$out/scheduler-observation/counts.tsv"
     pass=0
     while test "$pass" -lt 5; do
-        order='old recovered candidate replica'
-        if test "$((pass % 2))" = 1; then order='replica candidate recovered old'; fi
+        order='old recovered previous candidate replica'
+        if test "$((pass % 2))" = 1; then order='replica candidate previous recovered old'; fi
         for mode in $order; do
             log="$out/scheduler-observation/$mode-p$pass"
             WF_WORKERS=4 WF_SCHED_REPORT=2 "$out/$mode" wf 16 4096 64 4096 92821 "$pass" > "$log.tsv" 2> "$log.stderr"

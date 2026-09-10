@@ -896,15 +896,63 @@ checked WF/host/native objects and four aligned images match 7db, although
 the complete object/EXE files differ. No runtime improvement follows from
 this cohort's changed ratios, and sequential equivalence is not established.
 
-The next Linux observation uses the same four old/research/current/replica
-images at N4096/tile64 with `WF_SCHED_REPORT=2`. Both POSIX controls and
-production already count successful steals; this setting only registers an
-exit-time report. Five interleaved process samples retain the original result
-checks, CPU and call durations alongside the total claims. A consistent claim
-difference would support investigating task distribution and allocation
-ownership before changing idle behavior; similar counts would not establish
-equal allocation placement or eliminate background-worker interference.
-This observation changes no runtime, host, generated function or timing gate.
+### Existing-steal observation at 4fabd264
+
+The [Linux observation](https://github.com/mbbill/Whitefoot/actions/runs/34445055343)
+at `4fabd26448eddc9316499f5c58e66c556d9ca7cb` uses the same four
+old/research/current/replica images at N4096/tile64 with `WF_SCHED_REPORT=2`.
+Both POSIX controls and production already count successful steals; the setting
+registers an exit-time report. Artifact `10139449436` verifies 658 manifest
+entries and all twenty observation processes/81,940 calls. The selected original
+and sequential controls bring the reviewed scope to seventy processes/286,790
+calls. The original long/first64 readers still flag 6/90 and 25/90 cells.
+
+The host is now Xeon 6973P-C, with two cores/four SMT CPUs. All checked
+WF/host/native objects and five aligned runtime images are byte-identical to
+bc, but this host does not reproduce the EPYC full-call loss: current/research
+is 1.0019 [0.9575, 1.0060] in the original matrix and 1.0010
+[0.9750, 1.0134] in the observation. Observation CPU/research is 0.9964
+[0.9605, 1.0331]. Successful-steal totals, including all 4,097 calls, are:
+
+| Image | Median [minimum, maximum] |
+| --- | --- |
+| Current | 34,260 [33,024, 35,213] |
+| Research | 33,353 [31,946, 34,177] |
+| Replica | 33,857 [33,691, 35,153] |
+
+Paired current/research count ratios are 1.0337 [0.9872, 1.0677], with
+A/A 1.0119 [0.9598, 1.0452]. They have no consistent direction. The intended
+discriminator was a consistent claim difference accompanying the full-call
+loss; its absence here cannot explain the earlier EPYC result. Counts also do
+not identify allocation placement, failed steals or background-worker costs.
+
+### Pass the known search owner to steal statistics
+
+The maintained `wf__par_find` already holds the current lane, but the successful
+claim counter reread `wf__par_self` through TLS inside `wf__par_steal`. Pass the
+known lane to this private helper. Every caller follows the existing current-
+stack owner invariant; the same relaxed counter load/store stays immediately
+after a successful claim. This removes redundant context lookup without
+changing queue operations, memory ordering, slot layout, worker policy or ABI.
+
+Local Clang 22.1.8 builds remove the successful-claim TLS access on Mac ARM
+and Intel at O2/O3, with the normal 32-byte loop alignment on Intel. Static
+instruction counts include padding and are not dynamic costs or measured
+speedups. With `WF_SCHED_STATS=0`, complete before/after objects are byte-
+identical on both targets and optimization levels. Native `sched-smoke` and
+`sched-deque-test` pass, including startup failure, partial startup, nested
+execution and 200,000 deque tasks with live counters both enabled and disabled.
+The rebuilt ordinary compiler also passes the maintained 48-input scalar
+Mandelbrot oracle panel at widths 1/2/4 and all four existing split settings.
+The private-helper change also passes scoped independent ownership review.
+
+The formal and ordinary-command comparisons use actual pre-change production
+`4fabd264` as `previous`, replacing the completed compact-slot ablation; repaired
+historical/research and replica controls remain. The Linux observation includes
+that previous image. Retaining the change requires native correctness and no
+reproducible core/full-call/CPU regression against this baseline. The existing
+historical/research qualification remains required; neither the Xeon result nor
+shorter local assembly establishes that the earlier EPYC loss is fixed.
 
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 

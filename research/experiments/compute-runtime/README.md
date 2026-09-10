@@ -25,10 +25,14 @@ runtime; remove it when the production replacement has passed the comparison.
 `make formal-screen OUT=<fresh-absolute-path>` compares one scalar WF object
 against repaired historical and recovered cores on POSIX, and the repaired
 historical native core on Windows. It also checks the ordinary CLI executable.
-All targets also compare the compact-flag core at `a8227af4`; the maintained
-candidate restores the prior waiter pointer. It shares the WF/host objects,
+All targets also compare the maintained core at `4fabd264`, before the
+successful-steal counter receives the searching lane already held by its caller
+instead of rereading thread-local storage. Slot layout, deque ordering and
+waiting policy are unchanged. This control shares the WF/host objects,
 compiler options and platform sources with the candidate. Both raw logs use
 the same internal runtime label; filenames and summary rows distinguish them.
+The earlier compact-slot comparison remains in the recorded `4fabd264` cohort;
+it is replaced here by the actual before-change core for this optimization.
 The completed Windows `d39b4836` spin-hint ablation is retired from the active
 matrix: it would no longer isolate the current source change. Its measurements,
 checked source delta and original commands remain in the `7776c3cd` artifact
@@ -53,8 +57,8 @@ diagnostic and its measured result remain at `9253ceb3`; replacing it removes
 tree depth as a difference between the serial control and the parallel case.
 
 Linux x86-64 additionally runs `scheduler-observation/` for the same
-N4096/tile64 cell, with five interleaved processes per old/recovered/current/
-replica image. `WF_SCHED_REPORT=2` reads their already-enabled successful-steal
+N4096/tile64 cell, with five interleaved processes per old/recovered/previous/
+current/replica image. `WF_SCHED_REPORT=2` reads their already-enabled successful-steal
 counters at process exit; it does not rebuild the images or add hot-path
 instrumentation. Raw call timings and stderr are retained with `counts.tsv`.
 The counts include the first invocation and all 4,096 warm calls. Every process
