@@ -1400,7 +1400,7 @@ noisy default A/A. A global threshold reduction cannot be called a general win
 from this evidence. Preserve the existing knob and original failed screen;
 this does not select a new cost model or make default-policy performance pass.
 
-### Equivalent victim-address traversal
+### Equivalent victim-address traversal (rejected)
 
 The c85e69af external Linux x86-64 sample has 2,602 of 4,501 W4 samples in
 the worker loop. Its emitted scan recomputes a wrapped integer index, scales
@@ -1430,6 +1430,45 @@ ARM and cross-compiled macOS x86-64 O2 disassembly move lane scaling outside
 the inner scan. Reported object text changes by -36 and +90 bytes respectively.
 These are code-shape and correctness observations, not measured speedups or
 five-platform qualification.
+
+The [79170ebc cohort](https://github.com/mbbill/Whitefoot/actions/runs/34473362742)
+does not select this candidate. The
+[Windows artifact](https://github.com/mbbill/Whitefoot/actions/runs/34473362742/artifacts/10150686065)
+has a repeated W4/N4096/tile1024 regression against the prior maintained core:
+
+| Metric | Current / previous | Replica / previous | Current / replica |
+| --- | --- | --- | --- |
+| Full call | 1.1638 [1.0351, 1.2255] | 1.1518 [1.1015, 1.1708] | 1.0104 [0.9397, 1.0467] |
+| Whole-batch CPU | 1.1500 [1.0750, 1.2632] | 1.1500 [1.1000, 1.2000] | 1.0435 [0.9348, 1.0667] |
+| Core | 1.0011 [0.7766, 1.1724] | 0.9954 [0.9185, 1.0477] | 1.0058 [0.8454, 1.1190] |
+
+Each entry is the median [minimum, maximum] of five process pairs. Windows
+CPU readings are quantized, but every replica pair increases CPU by 10–20%
+and full-call time by 10–17%; core parity cannot excuse that cost. The
+[Linux ARM artifact](https://github.com/mbbill/Whitefoot/actions/runs/34473362742/artifacts/10150714447)
+has a smaller local gain at W4/N4096/tile16: CPU/previous is 0.9600
+[0.9392, 0.9715], replica 0.9580 [0.9481, 0.9688], with CPU A/A
+[0.9879, 1.0051]. Full call is 1.0063 [0.9760, 1.0177], so this does not
+establish a corresponding wall-time gain. Neither platform has a five-pair
+RSS increase above 5%. These observations do not locate the regression's cause.
+
+Independent audits verify all 407 Windows and 505 ARM manifest entries,
+300/450 processes, 691,500/1,037,250 checked calls, exact current/prior/frozen
+sources and repairs, means and the unchanged reducers. Their long/first64
+investigate counts remain 1/48 and 10/48 on Windows, 4/72 and 3/72 on ARM.
+Four ordinary-command artifacts (Linux x86-64/ARM, Windows and
+macOS Intel) also replay their complete 1,625-process matrices and 1,062-row
+summaries, with byte-identical current replicas. None establishes a useful
+same-policy delivered gain; their original screens remain failed. The Windows
+formal result already fails the candidate's selection condition; other target
+results are not needed to reject it and are not counted as passing here.
+
+Restore the exact prior `4fabd264` core, including its original index traversal.
+Retain no new runtime parameter, wait change or benchmark check from this
+candidate. Its exact revision `79170ebc49ff454e0d71c63c18bdf5f3d5384ed8` passes
+local canonical `make check`, both I/O host jobs and all four I/O benchmark
+jobs; correctness does not override the performance rejection. The overall
+compute-first runtime's cross-platform performance qualification remains open.
 
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 

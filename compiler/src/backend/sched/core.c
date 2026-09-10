@@ -156,24 +156,26 @@ static struct wf__par_slot *wf__par_find(struct wf__par_lane *lane) {
     int count = __atomic_load_n(&wf__par_lane_count, __ATOMIC_RELAXED);
     int offset;
     int step;
-    struct wf__par_lane *victim;
-    struct wf__par_lane *end;
     if (count < 2) {
         return NULL;
     }
     lane->seed = lane->seed * 6364136223846793005ull + 1442695040888963407ull;
     offset = (int)((lane->seed >> 33) % (unsigned long long)count);
-    victim = &wf__par_lanes[offset];
-    end = &wf__par_lanes[count];
     for (step = 0; step < count; step += 1) {
-        if (victim != lane) {
-            struct wf__par_slot *slot = wf__par_steal(victim);
-            if (slot != NULL) {
-                return slot;
-            }
+        int index = offset + step;
+        struct wf__par_lane *victim;
+        struct wf__par_slot *slot;
+        if (index >= count) {
+            index -= count;
         }
-        victim += 1;
-        if (victim == end) victim = wf__par_lanes;
+        victim = &wf__par_lanes[index];
+        if (victim == lane) {
+            continue;
+        }
+        slot = wf__par_steal(victim);
+        if (slot != NULL) {
+            return slot;
+        }
     }
     return NULL;
 }
