@@ -25,12 +25,14 @@ runtime; remove it when the production replacement has passed the comparison.
 `make formal-screen OUT=<fresh-absolute-path>` compares one scalar WF object
 against repaired historical and recovered cores on POSIX, and the repaired
 historical native core on Windows. It also checks the ordinary CLI executable.
-Windows additionally compares the prior maintained core at `d39b4836` with
-the restored `YieldProcessor` hints. Only the two empty-scan spin sites differ;
-the script checks that source delta and shares the WF/host objects and platform
-sources. Both raw logs use the same internal runtime label; filenames and
-summary rows distinguish the cores. This isolates the net hint effect, including its change to elapsed
-spin duration; it does not isolate SMT contention from park frequency.
+All targets also compare the prior maintained core at `7776c3cd`, before its
+redundant waiter pointer became an atomic flag. It shares the WF/host objects,
+compiler options and platform sources with the candidate. Both raw logs use
+the same internal runtime label; filenames and summary rows distinguish them.
+The completed Windows `d39b4836` spin-hint ablation is retired from the active
+matrix: it would no longer isolate the current source change. Its measurements,
+checked source delta and original commands remain in the `7776c3cd` artifact
+and git. The historical Windows runtime comparison remains active.
 An identical production image is the noise control. Raw artifacts retain core
 and allocation-inclusive durations, process CPU and memory; wall-time summaries
 are an initial screen, not whole-workload or all-platform acceptance.
@@ -1192,8 +1194,8 @@ produces 1,405 processes, including five work120000 samples for the
 shape4/count4096/W4 four-leaf diagnostic; the initial panel before these
 controls had 770.
 
-The loop-alignment qualification additionally rebuilds official compiler
-`b00bf2406d234a585d84c1c9206e07419d237c5f` from its unchanged `compiler/` and
+The waiting-flag qualification additionally rebuilds official compiler
+`7776c3cdb4e1b72876e062b3d16f019328b5d2d7` from its unchanged `compiler/` and
 `spec/` sources on the same CI host. `BASE_WFC` and `BASE_REV` supply that
 compiler to the existing build step. It compiles the same WF sources through
 ordinary `--par --no-vectorize`, with no private linking override. Its
@@ -1202,12 +1204,16 @@ cell also compares `work120000` with `previous-work120000` under the identical
 policy. A `replica-work120000` observation runs the byte-identical current
 replica under that same policy, so the four-leaf comparison has its own A/A
 noise check. This adds 220 processes on a four-participant host, for 1,625 total.
-Both compilers' programs pass the independent input/policy oracle checks.
+Both compilers' programs must pass the independent input/policy oracle checks.
 The reducer requires all planned baseline observations; retained negative
-reports prove missing default/four-leaf/replica samples reject. The baseline executable,
-compiler hash and exact source revision accompany the artifact. Retire this
-bounded baseline when the normal-codegen alignment decision is settled; it is
-a prior official compiler, not a separate research implementation.
+reports prove missing default/four-leaf/replica samples reject. The baseline
+executable, both compiler binaries and hashes, and exact source revision
+accompany the artifact. Retire this
+bounded baseline when the waiting-flag comparison is settled; it is a prior
+official compiler, not a separate research implementation. The earlier
+`7776c3cd` cohort used `b00bf240` to compare loop alignment through the normal
+CLI; those results retain that comparison and must not be relabeled as a
+waiting-flag effect.
 Raw process samples, oracle inputs/digests, tool flags, source copies, host
 metadata and executable/compiler hashes are artifacts. Requested counts do not
 prove every worker executed a task; runtime attribution needs separate evidence.

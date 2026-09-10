@@ -60,6 +60,7 @@ verify_report() {
 if test "$mode" = build; then
     "$WFC" --par --no-vectorize mandelbrot.wf mandelbrot_command.wf -o "$out/par$exe"
     "$WFC" --no-overlap --no-vectorize mandelbrot.wf mandelbrot_command.wf -o "$out/seq$exe"
+    cp "$WFC" "$out/whitefootc$exe"
     if test -n "${BASE_WFC:-}"; then
         : "${BASE_REV:?identify the previous compiler revision}"
         "$BASE_WFC" --par --no-vectorize mandelbrot.wf mandelbrot_command.wf -o "$out/previous$exe"
@@ -417,9 +418,9 @@ if test "$mode" = screen; then
         done
     done
     if test -n "$exe"; then
-        sha256sum "$WFC" "$out"/*.exe "$out/screen/source/"* > "$out/screen/manifest.sha256"
+        sha256sum "$out"/*.exe "$out/screen/source/"* > "$out/screen/manifest.sha256"
     else
-        shasum -a 256 "$WFC" "$out/par" "$out/seq" "$out/replica" "$out/native" "$out/runner" "$out/screen/source/"* > "$out/screen/manifest.sha256"
+        shasum -a 256 "$out/whitefootc" "$out/par" "$out/seq" "$out/replica" "$out/native" "$out/runner" "$out/screen/source/"* > "$out/screen/manifest.sha256"
     fi
     if test "$previous" = 1; then
         cp "$out/previous-revision.txt" "$out/screen/previous-revision.txt"

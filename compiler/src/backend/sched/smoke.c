@@ -10,7 +10,19 @@ static unsigned worker_limit = WF_SCHED_MAX_THREADS;
 static int owner_allowed = 1;
 static unsigned hold_tail;
 static unsigned tail_entered;
+static unsigned tail_finished;
 static void *tail_frame;
+static _Thread_local int delayed_tail;
+static void *waiting_frame;
+static unsigned waiting_phase;
+static unsigned first_released;
+static unsigned second_released;
+static unsigned task_entered;
+static unsigned second_waits;
+static unsigned tail_notified;
+static unsigned second_rewaited;
+static unsigned second_joined;
+static unsigned coordinator_done;
 static unsigned held_thief;
 static unsigned release_thief;
 static unsigned arm_thief;
@@ -34,11 +46,38 @@ static void wf_sched_test_after_steal(int claimed) {
         __atomic_store_n(&thief_returned, 1, __ATOMIC_RELEASE);
     }
 }
-static void wf_sched_test_after_done(void *frame) {
-    if (frame == __atomic_load_n(&tail_frame, __ATOMIC_ACQUIRE)
-        && __atomic_load_n(&hold_tail, __ATOMIC_ACQUIRE)) {
+static void wf_sched_test_before_done(void *frame) {
+    /* Capture this generation before DONE permits the owner to rearm the
+     * same address. A delayed older tail must not capture a later test. */
+    delayed_tail = frame == __atomic_load_n(&tail_frame, __ATOMIC_ACQUIRE)
+        && __atomic_load_n(&hold_tail, __ATOMIC_ACQUIRE);
+}
+static void wf_sched_test_after_done(void) {
+    if (delayed_tail) {
         __atomic_store_n(&tail_entered, 1, __ATOMIC_RELEASE);
         while (__atomic_load_n(&hold_tail, __ATOMIC_ACQUIRE)) wf_prim_yield();
+    }
+}
+static void wf_sched_test_signal_locked(void) {
+    /* The owner cannot observe this marker until the actual notification
+     * releases its wait lock, even if the OS permits spurious returns. */
+    if (delayed_tail && __atomic_load_n(&waiting_phase, __ATOMIC_ACQUIRE) == 2)
+        __atomic_store_n(&tail_notified, 1u, __ATOMIC_RELEASE);
+}
+static void wf_sched_test_after_notify(void) {
+    if (delayed_tail) {
+        delayed_tail = 0;
+        __atomic_add_fetch(&tail_finished, 1u, __ATOMIC_RELEASE);
+    }
+}
+static void wf_sched_test_before_wait(void *frame) {
+    if (frame != __atomic_load_n(&waiting_frame, __ATOMIC_ACQUIRE)) return;
+    unsigned phase = __atomic_load_n(&waiting_phase, __ATOMIC_ACQUIRE);
+    if (phase == 1) __atomic_store_n(&first_released, 1u, __ATOMIC_RELEASE);
+    if (phase == 2) {
+        __atomic_add_fetch(&second_waits, 1u, __ATOMIC_RELEASE);
+        if (__atomic_load_n(&tail_notified, __ATOMIC_ACQUIRE))
+            __atomic_store_n(&second_rewaited, 1u, __ATOMIC_RELEASE);
     }
 }
 #include "core.c"
@@ -65,6 +104,62 @@ static uint64_t sum(unsigned depth) {
     return left + right;
 }
 static void stamp(void *opaque) { *(uint64_t *)opaque = 42; }
+
+typedef struct { unsigned generation; uint64_t result; } held_frame;
+static void held_task(void *opaque) {
+    held_frame *frame = opaque;
+    unsigned generation = frame->generation;
+    unsigned *released = generation == 1 ? &first_released : &second_released;
+    __atomic_store_n(&task_entered, generation, __ATOMIC_RELEASE);
+    while (!__atomic_load_n(released, __ATOMIC_ACQUIRE)) wf_prim_yield();
+    frame->result = 42;
+}
+static void late_notification(void *owner) {
+    /* The first callback completes only after the owner enters its wait.
+     * Wake that owner while the original notification remains held. */
+    while (!__atomic_load_n(&tail_entered, __ATOMIC_ACQUIRE)) wf_prim_yield();
+    wf__par_signal(owner);
+    while (!__atomic_load_n(&second_waits, __ATOMIC_ACQUIRE)) wf_prim_yield();
+    __atomic_store_n(&hold_tail, 0u, __ATOMIC_RELEASE);
+    while (!__atomic_load_n(&tail_finished, __ATOMIC_ACQUIRE)) wf_prim_yield();
+    while (!__atomic_load_n(&second_rewaited, __ATOMIC_ACQUIRE)) wf_prim_yield();
+    check(!__atomic_load_n(&second_joined, __ATOMIC_ACQUIRE), "late signal completed a pending task");
+    __atomic_store_n(&second_released, 1u, __ATOMIC_RELEASE);
+    __atomic_store_n(&coordinator_done, 1u, __ATOMIC_RELEASE);
+}
+static void check_registered_wait_reuse(void) {
+    static wf_prim_thread coordinator;
+    held_frame *frame = wf__par_acquire_lane(sizeof(*frame));
+    check(frame != NULL, "registered-wait frame refused");
+    __atomic_store_n(&tail_entered, 0u, __ATOMIC_RELAXED);
+    __atomic_store_n(&tail_finished, 0u, __ATOMIC_RELAXED);
+    __atomic_store_n(&tail_frame, frame, __ATOMIC_RELEASE);
+    __atomic_store_n(&waiting_frame, frame, __ATOMIC_RELEASE);
+    __atomic_store_n(&waiting_phase, 1u, __ATOMIC_RELEASE);
+    __atomic_store_n(&hold_tail, 1u, __ATOMIC_RELEASE);
+    frame->generation = 1;
+    check(wf_prim_thread_start(&coordinator, late_notification, wf__par_self, 0) == 0,
+          "late-notification coordinator creation failed");
+    wf__par_publish(frame, held_task);
+    while (__atomic_load_n(&task_entered, __ATOMIC_ACQUIRE) != 1) wf_prim_yield();
+    wf__par_join(frame);
+    check(frame->result == 42, "registered DONE did not publish the payload");
+    wf__par_release(frame);
+    held_frame *reused = wf__par_acquire_lane(sizeof(*reused));
+    check(reused == frame, "registered-wait test did not reuse its slot");
+    reused->generation = 2;
+    reused->result = 99;
+    __atomic_store_n(&waiting_phase, 2u, __ATOMIC_RELEASE);
+    wf__par_publish(reused, held_task);
+    while (__atomic_load_n(&task_entered, __ATOMIC_ACQUIRE) != 2) wf_prim_yield();
+    wf__par_join(reused);
+    __atomic_store_n(&second_joined, 1u, __ATOMIC_RELEASE);
+    check(reused->result == 42, "late notification bypassed the second completion");
+    wf__par_release(reused);
+    while (!__atomic_load_n(&coordinator_done, __ATOMIC_ACQUIRE)) wf_prim_yield();
+    __atomic_store_n(&waiting_frame, NULL, __ATOMIC_RELEASE);
+    __atomic_store_n(&waiting_phase, 0u, __ATOMIC_RELEASE);
+}
 
 int main(int argc, char **argv) {
     if (argc > 1 && strcmp(argv[1], "owner-fail") == 0) owner_allowed = 0;
@@ -96,7 +191,7 @@ int main(int argc, char **argv) {
         wf__par_release(frames[i-1]);
     }
     /* Hold a publisher after DONE, then reuse the same frame while its tail
-     * is still outstanding. Only permanent atomic metadata may be read. */
+     * is still outstanding. Only permanent synchronization metadata is read. */
     uint64_t *frame = wf__par_acquire_lane(8);
     __atomic_store_n(&tail_frame, frame, __ATOMIC_RELEASE);
     __atomic_store_n(&hold_tail, 1, __ATOMIC_RELEASE);
@@ -113,6 +208,10 @@ int main(int argc, char **argv) {
     wf__par_join(reused);
     check(*reused == 42, "completion tail corrupted next generation");
     wf__par_release(reused);
+    while (!__atomic_load_n(&tail_finished, __ATOMIC_ACQUIRE)) wf_prim_yield();
+    /* This case holds one helper's notification while a second helper runs
+     * the reused task. Partial startup with one helper is checked above. */
+    if (workers > 1) check_registered_wait_reuse();
     /* Delay a thief before its ring-cell read across several complete wraps.
      * Its stale CAS must lose, and reading the reused cell must stay atomic. */
     __atomic_store_n(&arm_thief, 1, __ATOMIC_RELEASE);

@@ -12,17 +12,17 @@ export WF_SCHED_REPORT
 root=$(git rev-parse --show-toplevel)
 old=9051576f6a4d723b4eb072850f49859853decae7
 recovered=d858008f560b25da896af2a17f8b1d07ac49fd6e
-unhinted=d39b4836ce5e770f5a800bee22ca7d8843100b25
+previous=7776c3cdb4e1b72876e062b3d16f019328b5d2d7
 host=$(uname -s)
 exe=; floor=wf_floor.c; leaf=prim_host.c; platform_flags=-pthread; libraries=-lm
-modes='old recovered candidate replica'
-references='old recovered replica'
+modes='old recovered previous candidate replica'
+references='old recovered previous replica'
 case "$host" in
     Darwin|Linux) ;;
     MINGW*|MSYS*)
         exe=.exe; floor=wf_floor_windows.c; leaf=prim_windows.c
         platform_flags=; libraries='-lpsapi -lws2_32'
-        modes='old unhinted candidate replica'; references='old unhinted replica'
+        modes='old previous candidate replica'; references='old previous replica'
         ;;
     *) echo "unsupported native host: $host" >&2; exit 2;;
 esac
@@ -44,7 +44,7 @@ if test "$(uname -m)" = x86_64; then
 fi
 {
     git rev-parse HEAD
-    printf 'historical=%s\nrecovered=%s\nflags=%s\nmodes=%s\n' "$old" "$recovered" "$flags" "$modes"
+    printf 'historical=%s\nrecovered=%s\nprevious=%s\nflags=%s\nmodes=%s\n' "$old" "$recovered" "$previous" "$flags" "$modes"
     uname -a
     "$CC" --version
     rustc -vV
@@ -110,13 +110,11 @@ unsigned wf_bench_worker_count(void) { return wf__sched_pool_running() + 1; }
 C
     cp "$root/compiler/src/backend/windows_runtime.c" "$root/compiler/src/backend/windows_runtime.h" "$out/source/"
     cp -R "$root/compiler/src/backend/completion" "$out/source/"
-    # The prior maintained core isolates restoring YieldProcessor in the two
-    # spin loops. It shares today's WF/host objects, counters and platform leaves.
-    git show "$unhinted:compiler/src/backend/sched/core.c" > "$out/unhinted.c"
-    sed '/^[[:space:]]*wf_prim_spin_hint();$/d' "$out/source/sched/core.c" > "$out/core-without-hints.c"
-    cmp "$out/unhinted.c" "$out/core-without-hints.c"
-    printf '\nWindows unhinted core=%s; same WF/host objects and platform sources. Both use the internal candidate label; filenames and means.tsv distinguish the core.\n' "$unhinted" >> "$out/flags.txt"
 fi
+# The completed Windows spin-hint ablation is retained at 7776c3cd. It no
+# longer isolates the current source change; compare the actual prior core.
+git show "$previous:compiler/src/backend/sched/core.c" > "$out/previous.c"
+printf '\nPrevious maintained core=%s; same WF/host objects, flags and platform sources. It retains pointer-valued waiting metadata. Both use the internal candidate label; filenames and means.tsv distinguish the cores.\n' "$previous" >> "$out/flags.txt"
 cat > "$out/candidate-observer.c" <<'C'
 extern unsigned wf__sched_pool_running(void);
 unsigned wf_bench_worker_count(void) { return wf__sched_pool_running() + 1; }
@@ -148,7 +146,7 @@ for mode in $modes; do
     case "$mode" in
         old) set -- "$@" "$out/old.c" "$out/control-observer.c";;
         recovered) set -- "$@" -I"$out/source" "$out/research.c" "$out/control-observer.c";;
-        unhinted) set -- "$@" -I"$out/source/sched" "$out/unhinted.c" "$out/candidate-observer.c";;
+        previous) set -- "$@" -I"$out/source/sched" "$out/previous.c" "$out/candidate-observer.c";;
         candidate|unaligned) set -- "$@" "$out/source/sched/core.c" "$out/candidate-observer.c";;
     esac
     if test -n "$exe"; then
@@ -158,7 +156,7 @@ for mode in $modes; do
         done
     fi
     host_input=fir_bench.c
-    case "$mode" in candidate|unhinted) host_input=$out/candidate-host.o;; esac
+    case "$mode" in candidate|previous) host_input=$out/candidate-host.o;; esac
     link_flags=$flags; wf_input=$out/wf.o; native_input=$out/native.o
     runtime_label=$mode
     if test "$mode" = unaligned; then
@@ -245,5 +243,10 @@ cat "$out/summary.tsv"
 cat "$out/short-summary.tsv"
 # Binaries, copied sources, actual flags and every raw sample are reproducible
 # evidence even when the performance band fails.
-find "$out" -type f ! -name manifest.sha256 -exec shasum -a 256 {} + > "$out/manifest.sha256"
+if test -n "$exe"; then
+    find "$out" -type f ! -name manifest.sha256 -exec sha256sum {} + > "$out/manifest.sha256"
+else
+    find "$out" -type f ! -name manifest.sha256 -exec shasum -a 256 {} + > "$out/manifest.sha256"
+fi
+test -s "$out/manifest.sha256"
 exit "$result"

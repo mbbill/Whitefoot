@@ -1,7 +1,7 @@
 /* Ordinary-call, current-stack compute scheduling. Derived from main
  * 9051576f; atomic ring cells and SC thief reads repair the two deque races.
- * Slots and lanes live until process exit. Only the offering thread releases
- * its slots; writer callbacks must not block on I/O or migrate stacks. */
+ * Slots and lanes live until process exit. Only the offering thread joins and
+ * releases its slots; callbacks must not block on I/O or migrate stacks. */
 #include "entry.h"
 #include "prim.h"
 #include <stdlib.h>
@@ -24,7 +24,8 @@ struct wf__par_slot {
     _Alignas(16) unsigned char frame[WF_PAR_FRAME_BYTES];
     void (*run)(void *);
     int state;
-    struct wf__par_lane *waiter;
+    /* The only possible waiter is home; do not store a redundant pointer. */
+    int waiting;
     struct wf__par_lane *home;
     int next_free;
 };
@@ -65,6 +66,9 @@ extern size_t wf__floor_stack_bytes(void);
 static void wf__par_signal(struct wf__par_lane *lane) {
     wf_prim_wait_lock(&lane->wait);
     lane->posted = 1;
+#if defined(WF_SCHED_TEST)
+    wf_sched_test_signal_locked();
+#endif
     wf_prim_wait_signal(&lane->wait);
     wf_prim_wait_unlock(&lane->wait);
 }
@@ -176,19 +180,23 @@ static struct wf__par_slot *wf__par_find(struct wf__par_lane *lane) {
     return NULL;
 }
 
-/* After DONE, only atomic waiter metadata in permanent slot storage may be
- * read. The owner can already reuse the frame; a late signal is harmless. */
+/* After DONE, only the atomic waiting flag and immutable home in permanent
+ * slot storage may be read. Reuse can cause a harmless late signal to home. */
 static void wf__par_execute(struct wf__par_slot *slot) {
-    struct wf__par_lane *waiter;
     slot->run(slot->frame);
+#if defined(WF_SCHED_TEST)
+    wf_sched_test_before_done(slot->frame);
+#endif
     __atomic_store_n(&slot->state, WF_PAR_SLOT_DONE, __ATOMIC_SEQ_CST);
 #if defined(WF_SCHED_TEST)
-    wf_sched_test_after_done(slot->frame);
+    wf_sched_test_after_done();
 #endif
-    waiter = __atomic_load_n(&slot->waiter, __ATOMIC_SEQ_CST);
-    if (waiter != NULL) {
-        wf__par_signal(waiter);
+    if (__atomic_load_n(&slot->waiting, __ATOMIC_SEQ_CST)) {
+        wf__par_signal(slot->home);
     }
+#if defined(WF_SCHED_TEST)
+    wf_sched_test_after_notify();
+#endif
 }
 
 /* Nested helping is safe for structured compute calls: no I/O continuation
@@ -223,11 +231,14 @@ static void wf__par_wait(struct wf__par_lane *lane, struct wf__par_slot *target)
         }
 
         wf_prim_wait_lock(&lane->wait);
-        __atomic_store_n(&target->waiter, lane, __ATOMIC_SEQ_CST);
+        __atomic_store_n(&target->waiting, 1, __ATOMIC_SEQ_CST);
         while (__atomic_load_n(&target->state, __ATOMIC_SEQ_CST) != WF_PAR_SLOT_DONE) {
+#if defined(WF_SCHED_TEST)
+            wf_sched_test_before_wait(target->frame);
+#endif
             wf_prim_wait_sleep(&lane->wait);
         }
-        __atomic_store_n(&target->waiter, NULL, __ATOMIC_RELAXED);
+        __atomic_store_n(&target->waiting, 0, __ATOMIC_RELAXED);
         lane->posted = 0;
         wf_prim_wait_unlock(&lane->wait);
         return;
@@ -295,7 +306,7 @@ static void wf__par_prepare(struct wf__par_lane *lane, int index) {
     for (slot = 0; slot < (int)WF_PAR_LANE_SLOTS; slot += 1) {
         lane->slots[slot].home = lane;
         lane->slots[slot].state = WF_PAR_SLOT_FREE;
-        lane->slots[slot].waiter = NULL;
+        lane->slots[slot].waiting = 0;
         lane->slots[slot].next_free = slot + 1;
     }
     lane->slots[WF_PAR_LANE_SLOTS - 1].next_free = -1;

@@ -295,6 +295,148 @@ checks distinguish quiet/noisy four-leaf A/A from default-policy A/A and cover
 one/two/four participants plus operation without the optional baseline. These
 are harness checks, not native CI qualification or additional performance data.
 
+### Ordinary compiler paired qualification at 7776c3cd
+
+The [7776c3cd cohort](https://github.com/mbbill/Whitefoot/actions/runs/34430234703)
+completed all nineteen compute jobs. Exact revision
+`7776c3cdb4e1b72876e062b3d16f019328b5d2d7` passed local canonical `make check`.
+The [repository gate](https://github.com/mbbill/Whitefoot/actions/runs/34430234778)
+has eleven successful jobs and one cancelled macOS research job; the
+[Linux and Windows completion jobs](https://github.com/mbbill/Whitefoot/actions/runs/34430234877)
+passed. A cancelled job is not a successful all-platform gate. Performance
+qualification remains open:
+
+| Native target | Full-window investigate / comparisons | First64 investigate / comparisons | Ordinary CLI screen |
+| --- | ---: | ---: | --- |
+| Linux x86-64 | 0 / 72 | 11 / 72 | failed |
+| Linux AArch64 | 2 / 54 | 4 / 54 | failed |
+| macOS x86-64 | 13 / 72 | 28 / 72 | failed |
+| macOS AArch64 | 9 / 36 | 15 / 36 | passed |
+| Windows x86-64 | 1 / 48 | 3 / 48 | failed |
+
+The counts are the existing core-time screen, including replica comparisons;
+first64 overlaps the full window. They do not establish full-call parity or
+permit discarding failed observations as noise.
+
+Linux formal artifact `10134294731` ran on an EPYC 7763, reproducing the CPU
+model with the earlier large gap. Independent replay checked all 450 processes
+and 1,037,250 calls, source identity and both mean tables. At W4/4,096/tile16,
+current/unaligned paired core time is 0.5561 [0.5422, 0.5990] and full call is
+0.7075 [0.6950, 0.7207]. Current/recovered ratios are respectively
+0.9785 [0.9764, 1.0076] and 0.9947 [0.9829, 1.0105]; current/replica full call
+is 0.9989 [0.9816, 1.0174]. Across all eighteen configurations, no median
+full-call, batch CPU or RSS ratio against unaligned/historical/recovered
+exceeds 1.05. Whole-image text grows from 27,913 to 28,601 bytes. This supports
+the general loop-placement change on this O3 workload; it does not isolate a
+particular CPU frontend mechanism or establish ordinary O2 CLI improvement.
+
+The ordinary Linux x86-64 artifact `10134301411` ran on a different host,
+Xeon 8370C. Independent replay verified all 1,625 rows and reproduced the
+failing summary. Against the prior official compiler `b00bf240`, twenty-nine
+of forty-two default-policy wall medians exceed one, twelve in all five pairs.
+Examples are shape1/4,096/W1 at 1.0320 [1.0247, 1.0374] and shape4/4,096/W4
+at 1.0188 [1.0144, 1.0307]. The four-leaf wall ratio
+1.1798 [0.9562, 1.3571] has noisy same-policy A/A, so it does not identify a
+stable runtime regression. Text grows from 20,049 to 20,529 bytes. These
+small repeatable losses remain costs; there is no general normal-CLI net-win
+claim for loop alignment.
+
+Linux AArch64 artifact `10134276221` instead has byte-identical current,
+previous and replica executables. Its four-leaf current/previous wall ratio
+is 1.1342 [0.8353, 1.2696], with own-policy A/A
+1.1517 [1.0242, 1.2959]. This supplies a direct noise control, not a reason to
+assume all ARM observations are noise. macOS AArch64 artifact `10134357602`
+has identical current/previous `__text` bytes but different whole-file hashes;
+the remaining image difference has not been classified.
+
+Windows formal artifact `10134427787` retains its sources, binaries and raw
+measurements, but its recorded `manifest.sha256` is empty. The
+[job log](https://github.com/mbbill/Whitefoot/actions/runs/34430234703/job/102724030775)
+reports `find: 'shasum': No such file or directory`. It therefore has an
+additional provenance-generation failure, independent of its performance
+screen. Do not claim a verified original manifest or replace it after the
+fact. The next run uses the same Windows `sha256sum` path as the ordinary CLI
+panel and requires a nonempty manifest.
+
+Independent raw replay nevertheless verifies its 300 processes, 691,200 warm
+calls, both mean tables, and local candidate/replica byte equality. At
+W4/4,096/tile1024, current/historical core is 1.0202 [0.9945, 1.0277], full
+call is 1.1221 [1.1156, 1.1275], and batch CPU is 1.1111 [1.0833, 1.1765].
+Full-call A/A is 1.0023 [1.0003, 1.0093], with CPU median 1.0. The full-call
+loss therefore exceeds the observed A/A spread in this cell. Its larger
+outside-core component includes prefix preparation, result materialization
+and release; it does not isolate a scheduler operation. The earlier
+W4/65,536/tile1024 loss does not repeat clearly: full call is now
+1.0312 [0.8714, 1.0879].
+
+macOS Intel ordinary artifact `10134474673` contains 1,625 checked raw rows
+and 1,062 exactly reproduced summary rows. No default current/previous cell
+has wall time more than 5% worse in all five pairs. The same-policy four-leaf
+wall/CPU medians are 0.9936/0.9939, with own A/A 1.0039/1.0071. Wall A/A ranges
+from 0.9576 to 1.0566, so this four-leaf comparison remains `noisy-open`.
+Against native static, its wall median is 1.0446 [0.9478, 1.0909], while RSS is 1.2458 and
+higher in every pair. Fourteen of fifteen manifest entries are verifiable;
+the current compiler binary was outside the uploaded directory. The next
+ordinary build retains that compiler beside the already retained prior one,
+so both recorded hashes can be checked from the artifact.
+
+Quadrature artifact `10134438790` retains all 2,400 processes and reports
+22 investigate WF cells out of 80. The prior W1 smooth/frontier4 and
+left-peak/frontier4 signals become 0.9572 and 1.0032 with mixed pair directions.
+Native-only controls still have same-direction cross-image losses at W1:
+smooth/Rayon with spawn depth 4 is 1.1300 and left-peak/Parlay-left with
+spawn depth 8 is 1.2169. This is not a measured runtime fix: scheduler/host
+sources and the selected WF objects match the
+previous cohort, but full images and native objects differ, the CPU changes
+from EPYC 9V74 to 7763, and Rust changes from 1.98.0 to 1.98.1. Layout and
+sampling remain unseparated; a larger failure count alone does not identify
+an algorithmic regression.
+
+### Compact waiting metadata candidate
+
+The maintained runtime permits only the offering thread to join and release
+a slot, and the slot's `home` remains immutable until process exit. Its waiter
+pointer therefore represents only two states: no waiter or `home`. Replacing
+that redundant pointer with an atomic integer flag preserves the existing
+SC registration, DONE publication and final waiting check, including the
+relaxed clear under the owner wait lock. No new common-path RMW is introduced.
+Local M1 debug layout changes from 304 to 288 bytes per slot; payload capacity
+remains 256 bytes with sixteen-byte alignment. The ordinary task ABI, source
+rules, worker configuration and native wait primitives do not change.
+
+The alternatives are to keep the pointer or encode waiting in the completion
+state with an exchange. The flag is provisional: it removes redundant storage
+without adding an RMW to every completion. The exchange alternative is not
+selected because its ARM cost is unmeasured and the current protocol already
+provides the necessary ordering. After DONE, an old executor may see the new
+generation's waiting flag and signal immutable `home`; the owner must recheck
+the new generation's completion under its wait lock.
+
+A deterministic smoke case forces registration, DONE, slot reuse and the old
+notification while the new task remains pending. Its witness is ordered by
+the actual notification under the wait lock, so an earlier spurious return
+cannot satisfy it. Local ordinary, TSan and ASan/UBSan smoke checks and the
+embedded compiler scheduler tests pass. The existing 200,000-operation deque
+stress also passes with statistics enabled and disabled. Independent source
+and test review closed two test-handshake findings; native Windows execution
+and all-platform performance are still required.
+
+Local ordinary compilation with both the candidate and prior `7776c3cd`
+passes the same 48-input oracle matrix at widths 1/2/4 and split-work settings
+0/60,000/240,000/1,200,000. The local formal matrix completed all 450 processes
+and retained its noisy performance failures. These establish execution and
+harness coverage on M1, not native CI performance qualification.
+
+The next formal matrix compares the candidate with exact prior core
+`7776c3cd` using the same WF/host objects, flags and platform leaves. The
+ordinary matrix rebuilds that same prior official compiler and uses normal
+CLI commands with matched default and four-leaf policies. Retain the historical,
+recovered, native and A/A controls. Accept the flag only with preserved
+correctness and no unexplained repeatable performance loss on any native
+target; retain failed/noisy cells as open. Smaller storage alone is not a
+speedup claim. The earlier alignment decision and existing workload losses
+remain unresolved obligations, not benefits inherited by this candidate.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o

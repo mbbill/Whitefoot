@@ -111,9 +111,9 @@ jobs:
           fi
           cargo build --locked --profile gate --bin whitefootc \
             --manifest-path compiler/Cargo.toml --target-dir "$scratch/compiler"
-          # Rebuild the last official compiler before loop alignment on this
-          # same host. Retire this bounded baseline once that setting is decided.
-          baseline=b00bf2406d234a585d84c1c9206e07419d237c5f
+          # Compare the compact waiting flag with the prior official runtime,
+          # keeping compiler options and ordinary entry points unchanged.
+          baseline=7776c3cdb4e1b72876e062b3d16f019328b5d2d7
           mkdir -p "$scratch/previous-source"
           git archive "$baseline" compiler spec | tar -x -C "$scratch/previous-source"
           cargo build --locked --profile gate --bin whitefootc \
