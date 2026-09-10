@@ -744,6 +744,86 @@ historical and candidate images still pass the ordinary four-lane parallel
 smoke. The emitted sequential recursion retains the branch/leaf constructors
 and contains no task operations. Native Windows timing remains unverified.
 
+### Same-tree control and five-target results at 7db76f23
+
+Exact `7db76f238ab653b82266e74adcfeb5ea24b743a7` passes local canonical
+`make check`, all twelve [gate jobs](https://github.com/mbbill/Whitefoot/actions/runs/34440572321)
+and both [native completion jobs](https://github.com/mbbill/Whitefoot/actions/runs/34440572381).
+The local gate uses the existing pinned `TBB_SOURCE` and `PARLAY_SOURCE`
+checkouts; its initial invocation omitted those paths and stopped at dependency
+discovery. Restoring the verified paths required no source or test change.
+The [compute cohort](https://github.com/mbbill/Whitefoot/actions/runs/34440572427)
+finishes with nine successful and ten failed jobs. Only macOS ARM passes the
+ordinary-command job; the other four ordinary jobs and quadrature remain
+failed. The formal results below do not qualify those application comparisons.
+
+All five formal artifacts independently reproduce their raw matrices, means
+and original reducers, with captured source identities and identical-image
+replicas verified. These counts are core-time screens, including A/A controls;
+the first64 window overlaps the long window and is not an independent sample.
+
+| Target | Artifact | Long investigate | First64 investigate |
+| --- | ---: | ---: | ---: |
+| Linux x86-64 | 10137899684 | 1 / 90 | 15 / 90 |
+| Linux AArch64 | 10137944975 | 2 / 72 | 5 / 72 |
+| macOS AArch64 | 10137976134 | 15 / 48 | 16 / 48 |
+| macOS x86-64 | 10138195492 | 17 / 90 | 33 / 90 |
+| Windows x86-64 | 10137975056 | 0 / 48 | 5 / 48 |
+
+The Windows artifact verifies 404 manifest entries and 315 processes/752,955
+calls. Its fifteen new sequential processes all preserve the four-leaf tree,
+select `wf-seq`, request four participants and observe one actual lane.
+On this Xeon 8573C/Clang 20.1.8 host, paired current/historical ratios are:
+
+| N4096/tile1024 execution | Core | Full call | Batch CPU |
+| --- | --- | --- | --- |
+| Sequential | 0.9586 [0.8851, 1.0004] | 0.9001 [0.8474, 0.9480] | 0.8571 [0.8571, 1.0000] |
+| Four participants | 1.0165 [0.9654, 1.0280] | 0.9496 [0.9248, 0.9639] | 0.9167 [0.8750, 0.9375] |
+
+Full-call A/A is respectively 1.0033 [0.9659, 1.0379] and 1.0005
+[0.9773, 1.0272]. The former four-leaf full-call disadvantage does not
+reproduce in this cohort. The runtime and compiler are unchanged from a130;
+the host selection code and linked images changed. Neither the faster ratios
+nor the reversal of the earlier ranking establish a runtime improvement or
+identify code placement, heap history or another specific cause. This control
+does not justify subtracting sequential from parallel ratios as scheduler cost.
+
+Windows still has W4/N4096/tile16 full-call/previous 1.0415
+[1.0309, 1.0512], CPU/previous 1.0458 [1.0131, 1.0604], and full-call
+A/A 1.0038 [0.9912, 1.0186]. Replica/previous full call is also 1.0417
+[1.0120, 1.0605]. Preserve this approximately four-percent difference even
+though it is below the original threshold. W2/N65536/tile1024 CPU/previous
+is 1.1136 [1.0426, 1.2326], but CPU A/A is 0.9800 [0.9800, 1.2927]
+and replica/previous crosses one. CPU timing is coarse on this host; that
+cell remains unresolved. No Windows full-call, CPU or RSS cell exceeds
+historical/previous by five percent in every pair.
+
+Linux x64 has a reproducible full-call loss at W4/N4096/tile64 against research:
+1.1139 [1.0860, 1.1227], with CPU 1.1080 [1.0624, 1.1138]. Full-call
+A/A is 1.0152 [0.9957, 1.0287], and replica/research is also slower at
+1.0914 [1.0836, 1.1199]. Core/research is only 1.0169
+[1.0081, 1.0404]; full-minus-core is 1.1369 [1.1076, 1.1492]. This
+EPYC 7763/Clang 18.1.3 result prevents declaring parity from core alone.
+The same cell's full-call/historical and full-call/previous medians are
+1.0197 and 1.0326. No other cell has a full-call, CPU or RSS median more
+than five percent above historical/research/previous.
+
+Linux ARM has no full-call, CPU or RSS cell more than two percent above
+historical/research/previous in every pair. N65536/tile1024 full-call/research at W1/2/4 is
+0.9976, 1.0030 and 0.9986. W4/N4096/tile1024 core/historical is 1.0690
+[0.9473, 1.1186], with core A/A 1.0330 [0.9735, 1.1630]; its original
+failed screen remains open rather than being relabeled parity.
+
+Neither Mac panel qualifies. ARM W2/N65536/tile16 full-call/previous is
+1.1287 [1.0766, 1.1949], but A/A is 1.0638 [0.8151, 1.1886] and
+replica/previous crosses one. Intel W2/N4096/tile64 full-call/research is
+1.2416 [0.9428, 1.4524], with A/A 1.0625 [1.0207, 1.2930]. The earlier
+Intel W4/N65536/tile64 loss also does not reproduce: full-call/historical is
+0.9731 [0.8958, 1.0193]. These are changed observations under unchanged
+production sources, not evidence that the host selector optimized the runtime.
+The Linux x64 full-call loss and the noisy Mac comparisons still require
+qualification; the Windows result neither explains nor removes them.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o
