@@ -145,7 +145,7 @@ fi
     "$CC" --version
     rustc -vV
     if test "$host" = Darwin; then sysctl hw.model hw.ncpu hw.memsize
-    elif test "$host" = Linux; then lscpu
+    elif test "$host" = Linux; then lscpu; lscpu --caches
     else powershell.exe -NoProfile -Command 'Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors | Format-List'; fi
 } > "$out/host.txt"
 cat > "$out/flags.txt" <<'TEXT'
@@ -214,7 +214,7 @@ mkdir "$out/previous-sched"
 for header in core.h entry.h prim.h; do
     git show "$previous:compiler/src/backend/sched/$header" > "$out/previous-sched/$header"
 done
-printf '\nPrevious maintained core/headers=%s; same WF/host objects, flags and platform source implementations. The candidate restores this core and its inline primitives after rejecting the counter, POSIX x86-64 spin-hint and startup-wait changes. Both use the internal candidate label; filenames and means.tsv distinguish their process samples.\n' "$previous" >> "$out/flags.txt"
+printf '\nPrevious maintained core/headers=%s; same WF/host objects, flags and platform source implementations. The previous control retains the separately aligned per-lane counter; the candidate groups it with the same writer\047s allocation/random metadata. Both use the internal candidate label; filenames and means.tsv distinguish their process samples.\n' "$previous" >> "$out/flags.txt"
 cat > "$out/candidate-observer.c" <<'C'
 extern unsigned wf__sched_pool_running(void);
 unsigned wf_bench_worker_count(void) { return wf__sched_pool_running() + 1; }

@@ -1550,6 +1550,51 @@ complete cohorts. No new runtime change, default policy, ABI or performance
 threshold is selected by this consolidation. Five-target qualification and
 the ordinary-workload losses remain open.
 
+### Group the per-lane counter with the same writer's metadata
+
+The repeated EPYC 7763 W4/N4096/tile64 loss warrants a bounded layout
+candidate in the maintained core. The existing 2ae images' DWARF records
+show current lane size `0x5000` (20,480 bytes), versus research `0x4f80`
+(20,352). The separately aligned per-lane counter adds 128 bytes: current
+`steals` is at `0x380` and slots at `0x400`, while research slots start at
+`0x380`. Corresponding top indices across current lanes, and likewise bottom
+indices, repeat their respective offsets modulo 4 KiB. This is an address
+fact, not measured cache-conflict
+attribution. Record guest cache geometry with the existing Linux host report;
+neither geometry nor the CPU model proves that conflicts explain the loss.
+
+Move `steals` next to `seed` in existing metadata padding. Preserve its single
+writer and atomic observers, the separate wait alignment, frame capacity,
+slot count, atomic ordering, victim sequence and waiting limits. This removes
+the counter's separate aligned region without a new pointer or counter scheme.
+It also increases sharing: the final ring cell, allocation/random metadata
+and statistics occupy the same cache line. Thieves can read the ring cell,
+and a live observer can read the counter. This is not an owner-private line.
+
+Check native layouts and generated address arithmetic, including lane-pointer
+differences and startup/reporting scans, at O2/O3 with statistics on/off.
+A smaller structure does not guarantee fewer instructions or better timing.
+Run the existing startup, reuse and live-observer deque tests, then compare
+the maintained compiler against exact 4fab and the repaired frozen controls
+in the unchanged five-target formal and ordinary matrices. Retention requires
+a repeatable full-call/CPU benefit at the existing loss, without a repeated
+regression elsewhere; core, first64, RSS and default-policy losses remain
+visible. A host that does not reproduce the original difference cannot
+establish that this candidate resolves it. No public ABI, I/O behavior,
+publication setting or benchmark threshold changes.
+
+Local Clang 22.1.8 builds verify all sixteen native ARM/cross-compiled macOS
+x86-64 objects at O2/O3 with statistics on/off. Lane size changes from 20,480
+to 20,352 bytes, with the counter at 664; wait offset 768, 304-byte slots,
+sixteen-byte frame alignment and 256-byte payload remain unchanged. Address
+arithmetic does change: x86-64 uses an immediate multiply instead of a
+scale/shift sequence, while ARM materializes a longer reciprocal before the
+worker's main loop. Fewer static x86 instructions do not establish lower
+latency. Existing startup/reuse smoke checks and both 200,000-task deque
+probes pass, including both statistics settings under ThreadSanitizer with
+live counter observation. These are local correctness/layout checks, not
+native five-target performance qualification.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o
