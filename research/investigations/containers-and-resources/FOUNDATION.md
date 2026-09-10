@@ -451,6 +451,15 @@ run-element paths now have bounded native evidence in the
 The [consumed-input result](../../experiments/container-representation/families/RESULTS.md#consumed-input-and-result-destination-reuse)
 removes the caller's complete-run transfer after a one-result push; its matched
 heap remains about 2.8 times the C control at 16 rounds under that measurement.
+The [result-field placement](../../experiments/container-representation/families/RESULTS.md#compiler-selected-result-fields)
+extends the general storage planner to a consumed input and one consuming
+field of a complete call result. Independent sorting checks preserve the pop
+contract while optimized code removes the measured post-pop transfers.
+The complete parent allocation, field offsets, surviving sibling reads, input
+snapshots, CFG conflicts and exposed loans remain explicit obligations; a
+child-sized external result never supplies the parent's backing. This changes
+physical placement without changing source ownership or acceptance. It does
+not supply arbitrary destination aliases or deferred-call retirement.
 The separate [alternative-return result](../../experiments/container-representation/foundation/RESULTS.md#alternative-return-destinations)
 reduces the measured producer's frame and removes two whole-result transfers;
 element-to-record transfers and general construction destinations remain open.

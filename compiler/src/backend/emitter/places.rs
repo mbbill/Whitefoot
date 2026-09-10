@@ -7,7 +7,7 @@
 
 use super::*;
 
-pub(super) fn returned_storage_slot(
+pub(in crate::backend) fn returned_storage_slot(
     function: &IrFunction,
     storage: &FunctionStoragePlan,
 ) -> Option<usize> {
@@ -22,16 +22,25 @@ pub(super) fn returned_storage_slot(
         }
     }
     let returned = returned?;
+    // A caller supplies only the returned type's extent. A child-sized result
+    // cannot replace the complete struct allocation that backs that child.
+    if storage.allocation_root(returned) != returned {
+        return None;
+    }
     let mut parameters = function
         .parameters()
         .iter()
         .enumerate()
-        .filter(|(_, (value, _))| storage.slot(*value) == Some(returned));
+        .filter(|(_, (value, _))| {
+            storage
+                .slot(*value)
+                .is_some_and(|slot| storage.allocation_root(slot) == returned)
+        });
     let Some((ordinal, _)) = parameters.next() else {
         return Some(returned);
     };
     // All other indirect inputs reach private storage before this group's
-    // entry transfer writes the result. The result may alias any consumed
+    // entry transfer writes the result or a field within it. The result may alias any consumed
     // argument, not necessarily this parameter. Keep that last transfer:
     // the same ABI also admits an independent result destination.
     // Source roles, complete CFG interference and exposed-storage exclusion
@@ -464,6 +473,18 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 
     pub(super) fn value_place(&mut self, value: IrValueId) -> Result<String, BackendFailure> {
         let slot = self.storage.slot(value).ok_or(BackendFailure::InvalidIr)?;
+        if let Some(field) = self.storage.field_destination(slot) {
+            let parent = self.slot_place(field.parent_slot)?;
+            return self.aggregate_field_pointer(
+                IrType::Nominal(field.nominal),
+                &parent,
+                field.field as usize,
+            );
+        }
+        self.slot_place(slot)
+    }
+
+    fn slot_place(&mut self, slot: usize) -> Result<String, BackendFailure> {
         if let Some(destination) = self.storage.destination(slot) {
             self.binding_place(destination)
         } else if Some(slot) == self.result_slot {

@@ -33,6 +33,154 @@ fn assert_success(module: &str) {
 }
 
 #[test]
+fn consumed_result_fields_preserve_padding_siblings_and_smaller_returns() {
+    let source = br#"struct Row {
+  left: u64;
+  right: u64;
+}
+
+fn split(value: own Row, bias: own u64) -> (before: own u8, updated: own Row, after: own u16) reads(value.left, value.right), writes(value.left, value.right) {
+  set value.left = value.left +wrap bias;
+  set value.right = value.right +wrap 3_u64;
+  return 7_u8, move value, 513_u16;
+}
+
+fn relay(value: own Row, bias: own u64) -> result: own Row reads(value.left, value.right), writes(value.left, value.right) {
+  let (before, updated, after) = split(value: move value, bias: bias);
+  let stamp = 0_u64;
+  if before == 7_u8 {
+    set stamp = stamp +wrap 1_u64;
+  }
+  if after == 513_u16 {
+    set stamp = stamp +wrap 2_u64;
+  }
+  set updated.left = updated.left +wrap stamp;
+  return move updated;
+}
+
+fn repeat(value: own Row, count: own u64) -> result: own Row reads(value.left, value.right), writes(value.left, value.right) {
+  let before = 0_u8;
+  let after = 0_u16;
+  for (iteration in 0_u64..count) {
+    set (before, value, after) = split(value: move value, bias: 5_u64);
+    if before != 7_u8 {
+      return Row(left: 0_u64, right: 0_u64);
+    }
+    if after != 513_u16 {
+      return Row(left: 0_u64, right: 0_u64);
+    }
+  }
+  return move value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let input = Row(left: 11_u64, right: 29_u64);
+  let result = relay(value: move input, bias: 5_u64);
+  if result.left != 19_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if result.right != 32_u64 {
+    return exit_status(code: 2_u8);
+  }
+  let empty_input = Row(left: 41_u64, right: 53_u64);
+  let empty = repeat(value: move empty_input, count: 0_u64);
+  if empty.left != 41_u64 {
+    return exit_status(code: 3_u8);
+  }
+  if empty.right != 53_u64 {
+    return exit_status(code: 4_u8);
+  }
+  let loop_input = Row(left: 41_u64, right: 53_u64);
+  let loop_result = repeat(value: move loop_input, count: 3_u64);
+  if loop_result.left != 56_u64 {
+    return exit_status(code: 5_u8);
+  }
+  if loop_result.right != 62_u64 {
+    return exit_status(code: 6_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        // Retaining calls makes the callee write the complete padded result
+        // before its caller extracts the middle field and the later sibling.
+        // relay returns only Row, whose output is smaller than split's tuple.
+        assert_success(&module);
+        assert_success(&retain_calls(&module));
+    }
+}
+
+#[test]
+fn replaced_array_snapshots_remain_independent_through_multi_result_calls() {
+    // Arrays are affine even with copy elements. Replacement supplies a valid
+    // independent old value while leaving the containing packet writable.
+    let source = br#"struct Packet {
+  items: array<u64, 2>;
+  stamp: u64;
+}
+
+fn split(items: own array<u64, 2>) -> (before: own u8, updated: own array<u64, 2>, after: own u16) writes(items) {
+  set items[0_u64] = 17_u64;
+  return 7_u8, move items, 513_u16;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let original = array_new::<u64, 2>(29_u64);
+  let packet = Packet(items: move original, stamp: 97_u64);
+  let replacement = array_new::<u64, 2>(61_u64);
+  let extracted = replace packet.items = move replacement;
+  let (before, updated, after) = split(items: move extracted);
+  set packet.items[0_u64] = 83_u64;
+  if before != 7_u8 {
+    return exit_status(code: 1_u8);
+  }
+  if after != 513_u16 {
+    return exit_status(code: 2_u8);
+  }
+  if updated[0_u64] != 17_u64 {
+    return exit_status(code: 3_u8);
+  }
+  if updated[1_u64] != 29_u64 {
+    return exit_status(code: 4_u8);
+  }
+  if packet.items[0_u64] != 83_u64 {
+    return exit_status(code: 5_u8);
+  }
+  let next = array_new::<u64, 2>(43_u64);
+  let snapshot = replace packet.items = move next;
+  set packet.items[1_u64] = 107_u64;
+  if snapshot[0_u64] != 83_u64 {
+    return exit_status(code: 6_u8);
+  }
+  if snapshot[1_u64] != 61_u64 {
+    return exit_status(code: 7_u8);
+  }
+  if packet.items[1_u64] != 107_u64 {
+    return exit_status(code: 8_u8);
+  }
+  if packet.stamp != 97_u64 {
+    return exit_status(code: 9_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        assert_success(&module);
+        assert_success(&retain_calls(&module));
+    }
+}
+
+#[test]
 fn indexed_child_reborrows_update_only_the_selected_field() {
     let source = br#"struct Point {
   x: u64;

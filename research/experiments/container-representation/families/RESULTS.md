@@ -308,8 +308,8 @@ the substantial remaining performance gap stays open.
 
 ### Multi-result destination experiment
 
-The next discriminating control keeps `priority.wf` and the complete `wf_pop`
-callee unchanged. Its caller currently keeps separate storage for a 144-byte
+The discriminating control recorded at `8bc22df5` keeps `priority.wf` and the complete `wf_pop`
+callee unchanged. Its baseline caller keeps separate storage for a 144-byte
 heap and a 152-byte `(heap, value)` result, then transfers the result's first
 field back to the heap after every pop. The candidate gives the heap the first
 field of one complete, correctly aligned 152-byte result allocation and uses
@@ -346,8 +346,10 @@ explicit stack adjustment changes from 416 to 272 bytes. This is static
 instruction and frame evidence, not elapsed-time, memory-traffic, or whole-call
 stack high-water evidence; the callee's existing transfers remain.
 
-Reproduce from the ordinary exported `.build/priority.ll` produced by the
-targets above. In a separate copy, replace only this prefix of
+Reproduce the three-line control with the pre-field-placement compiler at
+`8bc22df5`, using its ordinary exported `.build/priority.ll` from the targets
+above. The current compiler already selects field placement, as described in
+the next section. In a separate copy of the baseline, replace only this prefix of
 `wf_priority_round`:
 
 ```llvm
@@ -371,6 +373,47 @@ once normally and once with `-DRETAIN_HELPERS`, and run each executable with
 `check`. Emit assembly for both modules with `clang -O2 -Wno-override-module
 -x ir -S` and compare the retained `wf_priority_trace` pop sequences. No timing
 samples were taken for this control.
+
+### Compiler-selected result fields
+
+The compiler now selects the complete-result placement through its general
+storage planner. A synchronous call may place one consumed aggregate input and
+its consumed result field in that field of the full result allocation. The
+parent has only distinct consuming projections in the call's block. Existing
+coalesced groups undergo complete CFG interference checking, with only the
+particular call's input read and selected consuming projection admitting the
+overlap. Exposed storage and deferred calls remain excluded. Field offsets come
+from the actual struct type, and a returned child keeps its normal copy into
+the smaller caller-provided result. The choice does not require a new source
+rule, an input/result value-equality proof, or a runtime alias test.
+
+On 2026-09-10, the developing v0.56 working tree based on `8bc22df5` used the
+ordinary build targets above to regenerate both priority executables from
+unchanged `priority.wf`; both independent 320-input checks
+passed. The emitted round owns one 152-byte tuple allocation, with its heap in
+field zero. The original 144-byte transfer instruction remains between equal
+field addresses. Apple Clang 21.0.0 at `-O2` removes the same 15 post-pop copies
+identified by the earlier control and retains all 16 pop calls. The optimized
+trace's explicit stack adjustment is 272 bytes, versus the baseline's 416.
+The exported LLVM SHA-256 is
+`d8802dc87cad0c0d15be77f5d08ebcc7b6cb988362420ead11dfb839f40e93c9`;
+the preserved baseline is
+`99acd8a67620facad1da6dbd3dcfcebf23b22dcfd7279ba813b73abd9a875211`.
+These are compiler-selected placement and static code results, not new timing
+samples. The callee's entry snapshot and internal movement remain.
+
+The native owned-place controls also execute a three-result tuple with an
+aggregate between a byte and a 16-bit scalar, preserve both siblings, return
+the smaller aggregate through another helper, and repeat the call zero and
+three times. A separate replacement control extracts an old array, sends it
+through a multi-result helper, then verifies it remains independent of writes
+to the original containing place. Arrays are affine; this control uses
+replacement rather than a nonexistent implicit array copy. Both controls run
+with normal and retained helper calls in all three lowering modes. Planner
+controls check the full parent extent and preserve unrelated conflicts and
+exposed values. Cross-block parent uses, repeated field reads, whole-parent
+uses, and nested or conflicting placement components remain unresolved by this
+selection and retain their independent backing.
 
 ## Explicit byte-run growth and refusal
 

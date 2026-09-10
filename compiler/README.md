@@ -400,8 +400,15 @@ the existing read/write order and overlap behavior. This avoids expanding a
 large snapshot into aggregate SSA fields; it does not eliminate the snapshot,
 initialize a vacant element, or change its ownership. Simultaneous CFG transfers
 still read every incoming value before writing any destination.
-Ambiguous inputs, ordered multi-results and overlap/completion schedules retain
-separate storage; general alias-directed placement remains incomplete.
+A consumed input and one consuming struct-result field can also occupy that
+field of a complete result allocation. The parent must be read only by distinct
+consuming field projections after the call in the same block; all participating
+storage groups retain the complete CFG conflict and exposed-address checks.
+Real field types determine offsets and padding. Returning a child keeps the
+ordinary return transfer because a child-sized caller result cannot hold the
+complete parent. Ambiguous inputs, whole-parent or cross-block uses, nested
+field placements, and overlap/completion schedules retain separate storage;
+general alias-directed placement remains incomplete.
 
 Checked cleanup names either a saved value or content at a typed place. Scope
 exit and whole-binding `dispose` project addressed owners without loading a

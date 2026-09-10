@@ -16,7 +16,7 @@ mod floor;
 mod integer;
 mod operations;
 mod parallel;
-mod places;
+pub(super) mod places;
 mod reinterpret;
 mod runs;
 mod slice;
@@ -758,7 +758,10 @@ impl FunctionFramePlan {
         let mut specifications = Vec::new();
         let mut ordered = Vec::new();
         for (slot, ty) in storage.slots().iter().copied().enumerate() {
-            if Some(slot) != result_slot && storage.destination(slot).is_none() {
+            if Some(slot) != result_slot
+                && storage.destination(slot).is_none()
+                && storage.field_destination(slot).is_none()
+            {
                 push_function_slot(
                     &mut specifications,
                     &mut ordered,
@@ -1533,9 +1536,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     for ((value, _), parameter) in
                         self.function.parameters().iter().zip(abi.parameters())
                     {
-                        let uses_result = self
-                            .result_slot
-                            .is_some_and(|slot| self.storage.slot(*value) == Some(slot));
+                        let uses_result = self.result_slot.is_some_and(|result_slot| {
+                            self.storage.slot(*value).is_some_and(|slot| {
+                                self.storage.allocation_root(slot) == result_slot
+                            })
+                        });
                         if !parameter.is_indirect() || uses_result != writes_result {
                             continue;
                         }
