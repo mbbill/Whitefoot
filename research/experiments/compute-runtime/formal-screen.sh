@@ -221,7 +221,7 @@ mkdir "$out/previous-sched"
 for header in core.h entry.h prim.h; do
     git show "$previous:compiler/src/backend/sched/$header" > "$out/previous-sched/$header"
 done
-printf '\nPrevious maintained core/headers=%s; same WF/host objects, flags and platform source implementations. The Linux x86-64 candidate adds a power-of-two remainder fast path with the same victim sequence; previous and other targets retain the general remainder. Both use the internal candidate label; filenames and means.tsv distinguish their process samples.\n' "$previous" >> "$out/flags.txt"
+printf '\nPrevious maintained core/headers=%s; same WF/host objects, flags and platform source implementations. The rejected Linux x86-64 remainder experiment is reverted; current and previous core sources again match. Both use the internal candidate label; filenames and means.tsv distinguish their process samples.\n' "$previous" >> "$out/flags.txt"
 cat > "$out/candidate-observer.c" <<'C'
 extern unsigned wf__sched_pool_running(void);
 unsigned wf_bench_worker_count(void) { return wf__sched_pool_running() + 1; }

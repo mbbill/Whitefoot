@@ -28,10 +28,13 @@ historical native core on Windows. It also checks the ordinary CLI executable.
 All targets also compare the maintained core and its headers at `4fabd264`.
 The explicit-owner steal-counter adjustment at `bca257bb` and POSIX x86-64
 spin hint at `f950af4d` both failed their no-regression conditions and are
-reverted. Startup condition waiting at `7f56548d` also failed its no-regression
-condition and is reverted. Current and previous core sources and inline
-primitives are again identical. The previous control keeps its own headers so a future primitive
-change cannot silently enter both sides. WF/host objects, compiler options and
+reverted. Startup condition waiting at `7f56548d` and the Linux remainder
+fast path also failed their no-regression conditions and are reverted. The
+[kernel-CPU observation](../../investigations/compute-runtime/README.md#kernel-cpu-observation-and-remainder-rejection)
+records the latter's repeated small-task loss. Current and previous core sources
+and inline primitives are again identical. The previous control keeps its own
+headers so a future primitive change cannot silently enter both sides.
+WF/host objects, compiler options and
 out-of-line platform source implementations are shared. Both raw logs use the
 same internal runtime label; filenames and summary rows distinguish their
 process samples. The earlier compact-slot comparison remains in the recorded
@@ -102,9 +105,11 @@ Availability must still be verified from the new recording and reports.
 
 The question is whether the observed gap corresponds to more CPU in kernel
 paths, allocation/destruction, result accessors, compute callbacks or worker
-search. The x86-64 tile16 observation specifically tests the larger system
-CPU seen after the remainder change. Faster empty scans reaching fixed-count
-yield/park thresholds sooner is a hypothesis; allocator synchronization and
+search. The x86-64 tile16 observation identified more kernel scheduling samples
+after the remainder change, which is now reverted. Its unchanged inputs also
+check the restoration against the previous core; they cannot independently
+replay the rejected image, retained in the `3fedf04b` artifact. Faster empty
+scans reaching fixed-count yield/park thresholds sooner is a hypothesis; allocator synchronization and
 page faults are alternatives. Process CPU and context-switch totals alone do
 not distinguish them, and these samples do not label core versus readout phases.
 The profiler covers the whole process, whereas batch CPU excludes pre-batch

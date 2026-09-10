@@ -27,8 +27,8 @@ staged-loop lowering and their tests. Reuse the existing workload/reference
 panels for five-target native CI qualification below; do not build another
 benchmark framework or tune I/O. Historical safety evidence has the limited
 scope stated in the comparison, not a claim that every earlier audit was wrong.
-The latest [native confirmation and attribution question](#exhaustion-floor-confirmation-and-kernel-cpu-attribution)
-still leave all-platform performance qualification open.
+The latest [kernel-CPU observation rejects the remainder candidate](#kernel-cpu-observation-and-remainder-rejection).
+All-platform performance qualification remains open.
 
 ## Compute-first measurements at b87e7548 (2026-09-09)
 
@@ -2025,6 +2025,103 @@ sample percentages by batch CPU does not give phase costs. Sampling does not
 label core/readout phases or justify changing wait parameters by itself. Any later
 runtime candidate still needs unobserved full-call, CPU, memory and matrix
 qualification; the remainder fast path is not accepted from its local win.
+
+### Kernel-CPU observation and remainder rejection
+
+Exact `3fedf04bffaae1efda7e98a2efa192ee1679e592` changes the observer and
+documentation, with no production instruction change from `0872e2eb`. It
+passes local canonical `make check`, all twelve
+[gate jobs](https://github.com/mbbill/Whitefoot/actions/runs/34496650203), both
+[I/O-host jobs](https://github.com/mbbill/Whitefoot/actions/runs/34496649982)
+and all four [I/O-bench jobs](https://github.com/mbbill/Whitefoot/actions/runs/34496650061).
+These correctness and existing I/O checks do not qualify compute performance.
+
+The [Linux x86-64 artifact](https://github.com/mbbill/Whitefoot/actions/runs/34496650047/artifacts/10160439879)
+has ZIP SHA256 `aaffac5e0d7c04184a968b8a60bd8f880048a9d5b6b790fcaa313769f175d889`.
+Independent replay verifies 852 original hashes, 22 captured sources, previous
+core/headers and repaired controls, 720 formal processes, 1,659,600 calls and
+1,440 means. Original long/first64 screens still fail at 6/120 and 21/120.
+On this EPYC 9V74 guest (two cores/four SMT CPUs), five-pair medians [ranges]
+against the previous maintained core are:
+
+| N4096 case | Current / previous | Replica / previous |
+| --- | --- | --- |
+| W2/tile16 core | 1.1637 [1.1010, 1.2152] | 1.1542 [1.1202, 1.2136] |
+| W2/tile16 full call | 1.0566 [1.0184, 1.0791] | 1.0600 [1.0323, 1.0930] |
+| W2/tile16 batch CPU | 1.0241 [0.9893, 1.0333] | 1.0224 [0.9988, 1.0521] |
+| W4/tile64 full call | 0.9959 [0.9771, 1.0160] | 1.0037 [0.9797, 1.0201] |
+| W4/tile64 batch CPU | 1.0001 [0.9849, 1.0093] | 1.0060 [0.9858, 1.0122] |
+
+W2/tile16 loses all ten core and full-call pairs. Its A/A ranges are
+[0.9828, 1.0145] for core and [0.9866, 0.9968] for full call. W4/tile16
+still trades a slower core for faster full calls against previous: current
+medians 1.0333/0.9754, replica 1.0438/0.9849. The established W4/tile64
+target does not repeat its earlier joint full-call/CPU benefit. The candidate
+therefore fails its original retention condition even without assuming why
+the timing changed.
+
+The external observation verifies 279 hashes, 90 processes, 368,730 checked
+calls and 41,463 CPU samples, with no lost samples. Original image hashes,
+actual widths, raw CPU metadata and reports all match. Kernel symbols resolve
+with `kernel.kptr_restrict=0`; no kernel sample is left unnamed. At W2,
+both current and replica retain every core/full-call loss in both the plain
+and sampled processes. Current/previous plain core/full medians are
+1.1785/1.0630, sampled 1.1422/1.0372. Sampling does not reproduce the exact
+magnitude; W4 sampled core A/A is especially wider than the plain comparison.
+
+Kernel sample counts increase in all five pairs for both images:
+
+| Width | Previous counts, by pass | Current | Replica |
+| --- | --- | --- | --- |
+| 2 | 39, 39, 54, 40, 36 | 76, 78, 72, 74, 64 | 88, 65, 69, 71, 73 |
+| 4 | 21, 21, 28, 34, 32 | 97, 95, 114, 117, 41 | 102, 111, 92, 122, 92 |
+
+Much of the increase lands in `__schedule`, `do_syscall_64`, `schedule`
+and related dispatch paths. Samples in the worker function fall in every
+W2 pair. This localizes increased process-level kernel execution; it does
+not identify the callers of generic scheduler symbols or distinguish yield
+from condition-wait wakeups. There are no call stacks or core/readout phase
+markers. Neither batch CPU nor sample counts prove the faster-scan/earlier-park
+hypothesis, and these observations do not select new waiting parameters.
+
+Reject the Linux remainder fast path and restore `core.c` exactly to `4fabd264`.
+The smaller instruction sequence is not a sufficient reason to keep a repeated
+complete-call loss. Preserve the exhaustion-floor repair, three-participant
+startup test, complete original performance matrix and previous headers.
+The existing observation will also check the restoration against previous;
+the rejected image remains reproducible from this artifact and revision.
+The restored core passes all eight local smoke scenarios and both
+200,000-task deque probes. Restoration still needs its own canonical gate
+and native qualification.
+
+The other four formal artifacts also replay, bringing the cohort to 2,940
+processes and 6,776,700 calls. Their original failures remain:
+
+| Target | Artifact | Long / first64 investigate |
+| --- | --- | --- |
+| Linux ARM | [10160449696](https://github.com/mbbill/Whitefoot/actions/runs/34496650047/artifacts/10160449696) | 1/96; 3/96 |
+| Mac Intel | [10160561166](https://github.com/mbbill/Whitefoot/actions/runs/34496650047/artifacts/10160561166) | 12/120; 11/120 |
+| Mac ARM | [10160281376](https://github.com/mbbill/Whitefoot/actions/runs/34496650047/artifacts/10160281376) | 24/72; 31/72 |
+| Windows x86-64 | [10160413605](https://github.com/mbbill/Whitefoot/actions/runs/34496650047/artifacts/10160413605) | 0/72; 12/72 |
+
+Their executable sections match the preceding cohort's corresponding images.
+The earlier Mac Intel W4/N65536/tile64 research loss and Mac ARM W2/tile16
+historical losses do not stably recur; large A/A ranges still prevent declaring
+them resolved. Windows formal now runs on Xeon 8370C, so its changed ranking
+is not a code improvement. Linux ARM's W4/N65536/tile1024 full/CPU ratios to
+previous remain near one, with individual core outliers.
+
+The five ordinary-command artifacts replay all 7,620 processes. Linux x86-64's
+earlier shape5/N4096/W2 wall/CPU loss and Mac Intel's shape2/N65536/W2 CPU
+loss do not recur consistently even though their WF executables are unchanged.
+These repetitions constrain attribution to the floor, rather than proving a
+fix. The stable default-policy gap also remains: at shape4/N4096, default/static
+wall medians are 3.3945 on Linux x86-64, 3.7139 on Linux ARM, 2.8376 on Mac
+Intel and 3.2923 on Windows, all with four allowed participants. Default starts
+zero helpers in the independent diagnostics. Mac ARM uses two participants
+and gives 1.7656 with wide variation. Windows still has eight default cells
+with zero CPU readings; Mac ARM still labels every one of its 476 wall/CPU
+summary rows noisy-open. None of these results qualifies the complete runtime.
 
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
