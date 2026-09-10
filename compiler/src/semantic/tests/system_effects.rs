@@ -826,6 +826,92 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn copy_run_take_preserves_the_remainder_origin_through_loops_and_helpers() {
+    for operation in ["take_front", "take_back"] {
+        let source = r#"fn take(vector: own FixedVector<u64, 2>) -> (rest: own FixedVector<u64, 2>, value: own u64) reads(vector), writes(vector) contract {
+  requires len_of(vector) >= 1_u64;
+  ensures len_of(rest) + 1_u64 == len_of(vector);
+} {
+  let (rest, value) = TAKE(vector: move vector);
+  return move rest, value;
+}
+
+fn drain(vector: own FixedVector<u64, 2>) -> result: own FixedVector<u64, 2> reads(vector), writes(vector) contract {
+  requires len_of(vector) == 2_u64;
+} {
+  for (
+    index in 0_u64..2_u64,
+    invariant left: len_of(vector) + index >= 2_u64
+  ) {
+    set (vector, observed) = take(vector: move vector);
+  }
+  return move vector;
+}
+
+fn observe(vector: own FixedVector<u64, 2>) -> result: own u64 reads(vector) {
+  return len_of(vector);
+}
+
+fn after_drain(vector: own FixedVector<u64, 2>) -> result: own u64 reads(vector), writes(vector) contract {
+  requires len_of(vector) == 2_u64;
+} {
+  let empty = drain(vector: move vector);
+  return observe(vector: move empty);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#
+        .replace("TAKE", operation);
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::Complete(program) = outcome else {
+                panic!("copy run take must preserve its remaining owner: {outcome:?}");
+            };
+            let mut rest = root(0);
+            rest.result_fields = vec![0];
+            assert_eq!(
+                program.data.functions[0].result_state_origin,
+                CheckedResultStateOrigin::Finite {
+                    formals: vec![rest],
+                }
+            );
+            assert_eq!(
+                program.data.functions[1].result_state_origin,
+                CheckedResultStateOrigin::Finite {
+                    formals: vec![root(0)],
+                }
+            );
+        });
+    }
+}
+
+#[test]
+fn affine_run_take_does_not_use_the_copy_result_shortcut() {
+    for operation in ["take_front", "take_back"] {
+        let source = r#"fn observe(vector: own FixedVector<box<u64>, 1>) -> result: own u64 reads(vector), writes(vector) contract {
+  requires len_of(vector) >= 1_u64;
+} {
+  let (rest, taken) = TAKE(vector: move vector);
+  return deref(taken);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#
+        .replace("TAKE", operation);
+        with_semantics(source.as_bytes(), |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Unsupported { ref unsupported }
+                    if unsupported.feature() == crate::UnsupportedSemanticFeature::OwnerStateRouting),
+                "affine removal needs its contained-owner image: {outcome:?}"
+            );
+        });
+    }
+}
+
+#[test]
 fn changing_loop_origins_do_not_hide_a_later_iterations_read() {
     let source =
         br#"fn cycle(first: own box<u64>, second: own box<u64>) -> result: own unit reads(first) {

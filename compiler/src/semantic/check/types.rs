@@ -1321,6 +1321,31 @@ extent's region is one the caller must choose, so it is written at every positio
                 .as_deref()
                 .cloned()
                 .map_or(StateOriginResolution::Absent, StateOriginResolution::Finite),
+            CheckedExpression::KernelCall {
+                row: crate::KernelRow::TakeBack | crate::KernelRow::TakeFront,
+                instance,
+                arguments,
+                call,
+                ..
+            } => {
+                // BLK-3 returns (rest, value), not the run at the result root.
+                // A copy observation transfers no owned identity (EFF-2), so
+                // the run image survives unchanged in ordinal zero. Affine
+                // contents need a separate remainder/element transfer image.
+                if !self.is_copy_type(instance.element).unwrap_or(false) {
+                    return StateOriginResolution::Unknown(call.clone());
+                }
+                let Some(run) = arguments.first() else {
+                    return StateOriginResolution::Unknown(call.clone());
+                };
+                let mut origins = self.expression_state_origins(run);
+                if let StateOriginResolution::Finite(origins) = &mut origins {
+                    for origin in &mut origins.formals {
+                        origin.value_fields.insert(0, 0);
+                    }
+                }
+                origins
+            }
             CheckedExpression::ConstructStruct { fields, .. } => {
                 let mut origins = StateOriginResolution::Absent;
                 for (ordinal, field) in fields.iter().enumerate() {

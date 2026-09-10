@@ -819,16 +819,31 @@ with the element's. Both `set` and `replace` now consult the typed target before
 selecting a strong update; the existing cleanup cases execute again. This does
 not implement an indexed-content image or authorize ignoring an interior update.
 
-The remaining byte-string and fixed-run failures have a concrete additional
-cause: the generic kernel-expression fallback unions argument origins at the
-result root, although `take_back` and `take_front` deliver an ordered result
-list. Projecting ordinal zero at a commit can therefore discard the run's
-formal origin. A complete repair needs separate remainder/element images and
-their contained-state transfer; relaxing final loop equality or duplicating all
-old origins into every output is not such a repair. These are compiler defects
-under existing ordinary-object operations, not evidence for a new container API
-or an I/O-specific source rule. Neither bounded loop repair changes a language
-rule or a normative conformance verdict.
+The byte-string and fixed-run failures exposed another defect: the generic
+kernel-expression fallback unions argument origins at the result root, although
+`take_back` and `take_front` deliver an ordered result list. Projecting ordinal
+zero at a commit could therefore discard the run's formal origin. For copy
+elements, BLK-3 returns the same run while EFF-2's removed copy observation owns
+no state. Both body checking and callable-summary analysis now place the
+unchanged run image at result ordinal zero and no origin at ordinal one.
+Unknown inputs remain unknown. A wrapper and a two-iteration drain check both
+rows through helper boundaries; the retained growable-byte-vector and byte-string
+programs compile and execute again.
+
+Noncopy elements need separate remainder/element images and their contained-state
+transfer. That path now stays explicitly unknown rather than reusing the
+root-level union: extracting a Box and observing it exposes `OwnerStateRouting`.
+This also limits previously admitted affine-run consumers; it is a missing
+implementation capability, not a new source rejection. In particular, the
+retained `boxed_fixed_vector_read_out_preserves_storage_and_elements` and
+`wide_result_returns_preserve_success_refusal_and_owned_children` native cases,
+and `block_pool.wf`, now expose that missing image. Their executable success
+assertions remain unchanged; the prototype is still incomplete. Relaxing final loop
+equality, treating empty current origin lists as proof of freshness, or
+duplicating all old origins into every output does not repair it. These defects
+under existing ordinary-object operations supply no evidence for a new
+container API or an I/O-specific source rule. The repairs change no language
+rule or normative conformance verdict.
 
 One tempting recovery is to instantiate an unknown summary as formal-free
 when every actual currently has an explicitly empty origin set. That would be

@@ -446,7 +446,7 @@ treated as an exact writeback location. Internal replacement returning no
 tracked owner remains an unresolved routing limitation, not evidence that its
 contained owners stayed unchanged. These boundaries apply to ordinary memory
 and resource objects alike.
-The current normal-exit prototype still regresses three retained native cases:
+The current normal-exit prototype still regresses retained native cases for
 heap full-array replacement, boxed enum-child replacement, and replacement
 through a returned resource borrow. They remain enabled and must pass before
 this prototype is considered complete. The investigation records why an empty
@@ -454,9 +454,13 @@ current origin list alone cannot safely recover an unknown summary.
 Loop-origin comparison is deferred only in the preliminary pass that builds
 callable summaries; the final pass retains its full backedge comparison.
 Indexed mutation targets no longer overwrite the containing owner's image
-merely because their effect access names that storage root. Kernel run-take
-result lists still lack separate origin images for the remainder and removed
-element, which blocks existing byte-string and fixed-run programs; general
+merely because their effect access names that storage root. For copy elements,
+kernel run-take result lists preserve the run's origin in the remainder's
+ordinal through direct calls and helper summaries; the removed observation
+carries no identity. Noncopy elements still need separate remainder/content
+images and remain unknown at state uses. This also blocks the retained boxed-run
+read-out and wide-result owning-child native cases, as well as the block-pool
+program. Their successful execution assertions remain unchanged. General
 changing-origin loop headers remain a separate capability gap.
 An owning Box's run or extent referent supports measures and indexed access
 through the same typed place path. Replacing its owner invalidates referent
@@ -610,13 +614,15 @@ not only its own, so a run two field levels down arrives at its new path with
 what it had. A `requires` or `ensures` side is an affine
 expression [GRAM-4, GRAM-5, MSR-5], a parameter's measure named in an
 `ensures` is its entry datum [MSR-3], and an in-scope const generic is an
-affine atom [MSR-6, INV-1], which together are what let the container
-design's own fixed-run library — `vacant`, `filled`, `take_at`, `try_place`,
-`try_take` and `rebase` — prove its contracts and execute
-(`tests/programs/fixed_run_library.wf`), each capacity-parametric loop stating
-its bound as the const generic itself. All six are generic in their element
-type again: a type parameter carries exactly one written bound [S37], the
-three classes form the chain `copy < affine < linear` whose satisfaction is
+affine atom [MSR-6, INV-1]. The fixed-run library source in
+`tests/programs/fixed_run_library.wf` exercises these facilities through
+`vacant`, `filled`, `take_at`, `try_place`, `try_take` and `rebase`, each
+capacity-parametric loop stating its bound as the const generic itself. The
+current owner-routing prototype blocks this program at noncopy removal; its
+retained test still requires the complete program to prove and execute.
+All six functions are generic in their element type: a type parameter carries
+exactly one written bound [S37], the three classes form the chain
+`copy < affine < linear` whose satisfaction is
 that chain read left to right, and the template is the spelling authority, so
 one `affine`-bounded body serves `u8` and `Option<u8>` and the program
 exercises each at both. `rebase` is what needed [LIV-2]'s declaring `set`
@@ -625,10 +631,11 @@ that resolves to no binding becomes an ordinary `let` declaration there.
 `tests/programs/arena_workspace.wf` is the store-backed companion: it reserves
 an extent, reads the store's own cursor across each take, fills a taken run and
 observes that a refused take leaves the cursor where it was.
-`tests/programs/block_pool.wf` is 3.L.4's block pool **entire**, its two
-nominals included: `struct BlockPool['s]` holds the free list,
-`linear struct Lease['s]` holds the leased run, and `pool_new`, `pool_take` and
-`pool_release` are all three generic over the store. A source nominal's
+`tests/programs/block_pool.wf` contains the complete block-pool source, but its
+retained execution test is currently blocked by noncopy run-take origin
+routing. Its two nominals are `struct BlockPool['s]`, holding the free list, and
+`linear struct Lease['s]`, holding the leased run. The functions `pool_new`,
+`pool_take` and `pool_release` are all generic over the store. A source nominal's
 `region_params` are components of its type name, so an instance is keyed on its
 region arguments beside its type and const arguments and two instances at two
 regions are two types; a `type` position writes those arguments as the

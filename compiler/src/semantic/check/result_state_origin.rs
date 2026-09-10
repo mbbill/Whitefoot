@@ -750,6 +750,28 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                     OriginSet::Unknown
                 }
             }
+            CheckedExpression::KernelCall {
+                row: crate::KernelRow::TakeBack | crate::KernelRow::TakeFront,
+                instance,
+                arguments,
+                ..
+            } => {
+                let Some(run) = arguments.first() else {
+                    return Ok(OriginSet::Unknown);
+                };
+                let mut origin = self.expression(run, environment)?;
+                if !self.checker.is_copy_type(instance.element)? {
+                    return Ok(OriginSet::Unknown);
+                }
+                // The scalar observation carries no identity; the unchanged
+                // run belongs to result ordinal zero, just as in body checking.
+                if let OriginSet::Finite { formals } = &mut origin {
+                    for formal in formals {
+                        formal.result_fields.insert(0, 0);
+                    }
+                }
+                origin
+            }
             CheckedExpression::ConstructStruct { fields, .. } => {
                 let mut origin = OriginSet::Absent;
                 for (ordinal, field) in fields.iter().enumerate() {
