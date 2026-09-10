@@ -1,6 +1,197 @@
 use super::*;
 
 #[test]
+fn borrowed_array_views_preserve_delegation_and_original_storage_across_calls() {
+    let source = br#"struct Packet {
+  before: u64;
+  bytes: array<u64, 3>;
+  after: u64;
+}
+
+const fixed: array<u64, 3> =[2_u64, 3_u64, 5_u64];
+
+fn relay['r](values: own Slice<'r, u64>) -> result: own Slice<'r, u64> pure contract {
+  requires len_of(values) == 3_u64;
+  ensures len_of(result) == 3_u64;
+} {
+  return values;
+}
+
+fn read(values: own Slice<u64>, index: own u64) -> result: own u64 reads(values) contract {
+  requires index < len_of(values);
+} {
+  return values[index];
+}
+
+fn write(values: &uniq MutSlice<u64>, index: own u64, value: own u64) -> result: own unit writes(values) contract {
+  requires index < len_of(deref(values));
+} {
+  set deref(values)[index] = value;
+  return unit;
+}
+
+fn delegate(view: own MutSlice<u64>) -> result: own unit writes(view) contract {
+  requires len_of(view) == 3_u64;
+} {
+  let writer = move view;
+  region {
+    let done = write(values: &uniq writer, index: 1_u64, value: 109_u64);
+  }
+  return unit;
+}
+
+fn shared_read(values: &array<u64, 3>) -> result: own u64 reads(values) {
+  region {
+    let view = slice_of(&deref(values));
+    let copied = view;
+    let forwarded = relay(values: copied);
+    let first = read(values: view, index: 0_u64);
+    let second = read(values: copied, index: 1_u64);
+    let third = read(values: forwarded, index: 2_u64);
+    let prefix = first +wrap second;
+    return prefix +wrap third;
+  }
+}
+
+fn revise(values: &uniq array<u64, 3>) -> result: own u64 reads(values), writes(values) {
+  region {
+    let view = slice_of(&deref(values));
+    let copied = view;
+    let forwarded = relay(values: copied);
+    let first = read(values: view, index: 0_u64);
+    let second = read(values: copied, index: 1_u64);
+    let third = read(values: forwarded, index: 2_u64);
+    let prefix = first +wrap second;
+    let previous = prefix +wrap third;
+    set deref(values)[0_u64] = 101_u64;
+    let writable = mut_slice_of(&uniq deref(values));
+    region {
+      let done = write(values: &uniq writable, index: 1_u64, value: 103_u64);
+    }
+    return previous;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let values = array_new::<u64, 3>(7_u64);
+  let before0 = values[0_u64];
+  let before1 = values[1_u64];
+  region {
+    let initial = shared_read(values: &values);
+    if initial != 21_u64 {
+      return exit_status(code: 1_u8);
+    }
+  }
+  region {
+    let previous = revise(values: &uniq values);
+    if previous != 21_u64 {
+      return exit_status(code: 2_u8);
+    }
+  }
+  if values[0_u64] != 101_u64 {
+    return exit_status(code: 3_u8);
+  }
+  if values[1_u64] != 103_u64 {
+    return exit_status(code: 4_u8);
+  }
+  if values[2_u64] != 7_u64 {
+    return exit_status(code: 5_u8);
+  }
+  if before0 != 7_u64 {
+    return exit_status(code: 6_u8);
+  }
+  if before1 != 7_u64 {
+    return exit_status(code: 7_u8);
+  }
+  region {
+    let current = shared_read(values: &values);
+    if current != 211_u64 {
+      return exit_status(code: 8_u8);
+    }
+  }
+  let bytes = array_new::<u64, 3>(13_u64);
+  let packet = Packet(before: 53_u64, bytes: move bytes, after: 59_u64);
+  region {
+    let holder = &uniq packet.bytes;
+    region {
+      let writable = mut_slice_of(&uniq deref(holder));
+      set writable[2_u64] = 107_u64;
+    }
+  }
+  if packet.before != 53_u64 {
+    return exit_status(code: 9_u8);
+  }
+  if packet.after != 59_u64 {
+    return exit_status(code: 10_u8);
+  }
+  if packet.bytes[0_u64] != 13_u64 {
+    return exit_status(code: 11_u8);
+  }
+  if packet.bytes[1_u64] != 13_u64 {
+    return exit_status(code: 12_u8);
+  }
+  if packet.bytes[2_u64] != 107_u64 {
+    return exit_status(code: 13_u8);
+  }
+  region {
+    let holder = &packet.bytes;
+    region {
+      let view = slice_of(&deref(holder));
+      let selected = read(values: view, index: 2_u64);
+      if selected != 107_u64 {
+        return exit_status(code: 14_u8);
+      }
+    }
+  }
+  region {
+    let observed = shared_read(values: &fixed);
+    if observed != 10_u64 {
+      return exit_status(code: 15_u8);
+    }
+  }
+  region {
+    let holder = &fixed;
+    region {
+      let view = slice_of(&deref(holder));
+      let selected = read(values: view, index: 1_u64);
+      if selected != 3_u64 {
+        return exit_status(code: 16_u8);
+      }
+    }
+  }
+  let delegated = array_new::<u64, 3>(17_u64);
+  region {
+    let view = mut_slice_of(&uniq delegated);
+    let done = delegate(view: move view);
+  }
+  if delegated[0_u64] != 17_u64 {
+    return exit_status(code: 17_u8);
+  }
+  if delegated[1_u64] != 109_u64 {
+    return exit_status(code: 18_u8);
+  }
+  if delegated[2_u64] != 17_u64 {
+    return exit_status(code: 19_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [
+        OverlapLowering::Off,
+        OverlapLowering::On,
+        OverlapLowering::Completion,
+    ] {
+        let module = emit_lowered(source, overlap);
+        for module in [&module, &super::owned_places::retain_calls(&module)] {
+            let output = compile_and_run(module);
+            assert_eq!(output.status.code(), Some(0), "{overlap:?}: {output:?}");
+            assert!(output.stdout.is_empty(), "{output:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+        }
+    }
+}
+
+#[test]
 fn exclusive_array_views_write_original_local_and_field_storage() {
     let source = br#"struct Packet {
   before: u64;

@@ -220,6 +220,17 @@ impl TemporaryLoan {
 pub(super) struct SliceInfo {
     pub(super) region: DeclarationId,
     pub(super) origins: Vec<CheckedSliceOrigin>,
+    /// The exact continuing claims carried by this value. Equal storage
+    /// origins do not make a new view a holder of an older view's loan.
+    pub(super) loans: Vec<SliceLoanKey>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct SliceLoanKey {
+    pub(super) region: DeclarationId,
+    pub(super) place: ResolvedPlace,
+    pub(super) parent: Option<DeclarationId>,
+    pub(super) strength: LoanStrength,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -229,14 +240,17 @@ pub(super) struct SliceLoan {
     pub(super) region: DeclarationId,
     /// The exact source place protected while the loan is live.
     pub(super) place: ResolvedPlace,
+    /// The checked borrow holder that supplied this view's permission, if
+    /// formation went through a storage holder. Origins identify backing
+    /// storage; they do not by themselves delegate a holder's authority.
+    pub(super) parent: Option<DeclarationId>,
     /// [VIEW-1] the strength of the loan the view value holds.
     ///
     /// It is carried because two exclusive loans on one range are what
     /// [OWN-5] 606 refuses, and because a target path through a view is
     /// admitted at exclusive strength and at no other [SET-1].
     pub(super) strength: LoanStrength,
-    /// [PROV-3] the bindings that hold this loan: every view binding whose
-    /// origin set names the loan's place.
+    /// [PROV-3] the bindings that carry this exact continuing claim.
     ///
     /// A loan begins where its value is formed or copied and ends where that
     /// value's own liveness ends. For a **copy** view that end is its last
@@ -250,6 +264,25 @@ pub(super) struct SliceLoan {
 }
 
 impl SliceLoan {
+    pub(super) fn new(key: SliceLoanKey) -> Self {
+        Self {
+            region: key.region,
+            place: key.place,
+            parent: key.parent,
+            strength: key.strength,
+            descriptors: Vec::new(),
+        }
+    }
+
+    pub(super) fn key(&self) -> SliceLoanKey {
+        SliceLoanKey {
+            region: self.region,
+            place: self.place.clone(),
+            parent: self.parent,
+            strength: self.strength,
+        }
+    }
+
     /// Whether one access to the origin conflicts with this loan [OWN-5].
     ///
     /// A shared loan refuses what a shared borrow refuses: a write, a move,
@@ -325,6 +358,23 @@ impl BorrowInfo {
 }
 
 impl SliceInfo {
+    pub(super) fn child(&self, region: DeclarationId) -> Self {
+        Self {
+            region,
+            origins: self.origins.clone(),
+            loans: self
+                .loans
+                .iter()
+                .cloned()
+                .map(|mut loan| {
+                    loan.region = region;
+                    loan.strength = LoanStrength::Shared;
+                    loan
+                })
+                .collect(),
+        }
+    }
+
     pub(super) fn source_places(&self) -> Vec<(ResolvedPlace, Option<DeclarationId>)> {
         self.origins
             .iter()
@@ -1099,7 +1149,10 @@ absent when it writes none",
     }
 
     pub(super) fn parameter_slice(&self, parameter: &ParameterSignature) -> Option<SliceInfo> {
-        let CheckedType::Slice { region, .. } = parameter.ty else {
+        let CheckedType::Slice {
+            region, strength, ..
+        } = parameter.ty
+        else {
             return None;
         };
         Some(SliceInfo {
@@ -1107,6 +1160,14 @@ absent when it writes none",
             origins: vec![CheckedSliceOrigin::FormalSlice {
                 parameter: parameter.declaration,
                 region,
+            }],
+            // An incoming view supplies its own permission. No local
+            // formation loan is registered until it forms a shared child.
+            loans: vec![SliceLoanKey {
+                region,
+                place: ResolvedPlace::fields(parameter.declaration, Vec::new()),
+                parent: (parameter.mode != CheckedMode::Own).then_some(parameter.declaration),
+                strength,
             }],
         })
     }
@@ -2269,21 +2330,43 @@ and name it on the returned reborrow"
             .and_then(|holder| bindings.get(&holder))
             .and_then(|holder| holder.borrow.as_ref())
             .map(|borrow| &borrow.place);
+        // A view continues the permission its formation obtained from an
+        // actual checked child borrow [VIEW-2]. Copies and permitted returns
+        // register their descriptors on that same loan. Matching an origin
+        // alone is insufficient: only this descriptor's recorded parent may
+        // supply the access, and only inside the loan's protected place.
+        let view_parents: Vec<DeclarationId> = bindings
+            .values()
+            .flat_map(|local| &local.slice_loans)
+            .filter(|loan| {
+                through_holder.is_some_and(|holder| loan.descriptors.contains(&holder))
+                    && place.root == loan.place.root
+                    && place.path.starts_with(&loan.place.path)
+            })
+            .filter_map(|loan| loan.parent)
+            .collect();
         for (declaration, local) in bindings {
             if let Some(loan) = &local.borrow
                 && Some(*declaration) != through_holder
                 && places_overlap(&loan.place, place)
             {
+                let extends_loan = |child: &ResolvedPlace| {
+                    child.root == loan.place.root && child.path.starts_with(&loan.place.path)
+                };
                 let suspended_ancestor = local.suspended
-                    && through_place.is_some_and(|child| {
-                        child.root == loan.place.root && child.path.starts_with(&loan.place.path)
-                    });
+                    && (through_place.is_some_and(extends_loan)
+                        || view_parents.iter().any(|parent| {
+                            bindings
+                                .get(parent)
+                                .and_then(|binding| binding.borrow.as_ref())
+                                .is_some_and(|borrow| extends_loan(&borrow.place))
+                        }));
                 let conflicts = match access {
                     AccessKind::Read => loan.kind == BorrowKind::Unique,
                     AccessKind::Write | AccessKind::Move | AccessKind::UniqueBorrow => true,
                     AccessKind::SharedBorrow => loan.kind == BorrowKind::Unique,
                 };
-                if conflicts && !suspended_ancestor {
+                if conflicts && !suspended_ancestor && !view_parents.contains(declaration) {
                     return self.issue_node(
                         SemanticRule::Own5,
                         node,
@@ -2316,8 +2399,14 @@ and name it on the returned reborrow"
         // one indirection earlier. Refusing them here is what makes the
         // freeze a property of the loan rather than of the one statement
         // form that happened to check it.
-        if matches!(access, AccessKind::UniqueBorrow | AccessKind::Move) {
-            let frozen: Vec<ResolvedPlace> = bindings
+        // A callee may receive an already-bound descriptor holder. Its
+        // projected write must check the same freeze even though no new
+        // descriptor borrow is formed at that call.
+        if matches!(
+            access,
+            AccessKind::Write | AccessKind::UniqueBorrow | AccessKind::Move
+        ) {
+            let mut frozen: Vec<ResolvedPlace> = bindings
                 .values()
                 .flat_map(|local| local.slice_loans.iter())
                 .filter(|loan| {
@@ -2326,6 +2415,20 @@ and name it on the returned reborrow"
                 })
                 .map(|loan| loan.place.clone())
                 .collect();
+            // Incoming views already carry permission, even after being
+            // moved to a local binding; there need not be a local exclusive
+            // formation record. Check those carried claims in addition to
+            // every descriptor association retained by the loan state above.
+            if let Some(slice) = bindings
+                .get(&place.root)
+                .and_then(|local| local.slice.as_ref())
+            {
+                for key in &slice.loans {
+                    if key.strength == LoanStrength::Exclusive && !frozen.contains(&key.place) {
+                        frozen.push(key.place.clone());
+                    }
+                }
+            }
             if !frozen.is_empty() {
                 self.check_child_reborrow_freeze_at(
                     bindings,

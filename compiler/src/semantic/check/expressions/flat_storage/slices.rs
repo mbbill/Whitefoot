@@ -7,10 +7,12 @@ use crate::{
 };
 
 use super::super::super::super::model::{
-    CheckedExpression, CheckedMode, CheckedSliceOrigin, CheckedSliceSource, CheckedType,
-    LoanStrength, MeasuredKind,
+    CheckedContainerRoot, CheckedExpression, CheckedMode, CheckedSliceOrigin, CheckedSliceSource,
+    CheckedType, LoanStrength, MeasuredKind,
 };
-use super::super::super::borrows::{AccessKind, ResolvedPlace, SliceInfo, SliceLoan};
+use super::super::super::borrows::{
+    AccessKind, ReborrowPosition, ResolvedPlace, SliceInfo, SliceLoanKey, TemporaryLoan,
+};
 use super::super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PlaceAccess, TypedExpression,
 };
@@ -117,6 +119,11 @@ inside the `region` block whose region it takes",
         if self.has_fixed(pbase, FixedTerminal::Deref)? {
             if let Some(formed) = self.check_view_holder_slice_of(
                 node, borrow, place_node, pbase, region, strength, bindings, loop_depth, atoms[0],
+            )? {
+                return Ok(formed);
+            }
+            if let Some(formed) = self.check_storage_holder_slice_of(
+                node, borrow, place_node, pbase, region, strength, function, bindings, loop_depth,
             )? {
                 return Ok(formed);
             }
@@ -247,19 +254,15 @@ inside the `region` block whose region it takes",
             LoanStrength::Shared => AccessKind::SharedBorrow,
             LoanStrength::Exclusive => AccessKind::UniqueBorrow,
         };
-        let mut accesses = if let Some(owner) = owner {
+        let mut loans = Vec::new();
+        let mut accesses = if owner.is_some() {
             self.check_loan_access(bindings, None, &resolved, taken, borrow)?;
-            bindings
-                .get_mut(&owner)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                .push_slice_loan(SliceLoan {
-                    region,
-                    place: resolved.clone(),
-                    strength,
-                    // [PROV-3] the formed value holds the loan; the binding
-                    // that takes that value is registered at its own `let`.
-                    descriptors: Vec::new(),
-                });
+            loans.push(SliceLoanKey {
+                region,
+                place: resolved.clone(),
+                parent: None,
+                strength,
+            });
             vec![PlaceAccess {
                 place: resolved,
                 kind: taken,
@@ -268,6 +271,12 @@ inside the `region` block whose region it takes",
             Vec::new()
         };
         accesses.extend(offsets.accesses);
+        let slice = SliceInfo {
+            region,
+            origins: origins.clone(),
+            loans,
+        };
+        Self::publish_slice_loans(&slice, bindings)?;
         Ok(TypedExpression {
             expression: CheckedExpression::SliceOf {
                 carrier: self.tree.path(node)?.clone(),
@@ -279,12 +288,160 @@ inside the `region` block whose region it takes",
             },
             mode: CheckedMode::Own,
             borrow: None,
-            slice: Some(SliceInfo { region, origins }),
+            slice: Some(slice),
             holder: None,
             reference_value: false,
             effects: offsets.effects,
             accesses,
         })
+    }
+
+    /// [VIEW-2, OWN-6] form a storage view through the ordinary checked child
+    /// borrow. Its physical address and ultimate origin are separate results
+    /// of that judgment; neither is inferred from a holder's spelling.
+    #[allow(clippy::too_many_arguments)]
+    fn check_storage_holder_slice_of(
+        &self,
+        node: NodeId,
+        borrow: NodeId,
+        place_node: NodeId,
+        pbase: NodeId,
+        region: DeclarationId,
+        strength: LoanStrength,
+        function: &FunctionSignature,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+    ) -> Result<Option<TypedExpression>, CheckStop> {
+        let Some(inner) = self.tree.first_child_with(pbase, Production::Place)? else {
+            return Ok(None);
+        };
+        let Some(base) = self.tree.first_child_with(inner, Production::Pbase)? else {
+            return Ok(None);
+        };
+        if self.has_fixed(base, FixedTerminal::Deref)?
+            || !self.tree.children(base)?.is_empty()
+            || !self
+                .tree
+                .children_with(inner, Production::Psuffix)?
+                .is_empty()
+        {
+            return Ok(None);
+        }
+        let usage = self.use_at(base, LexicalUseRole::PlaceBase)?;
+        let ResolvedTarget::Source {
+            declaration,
+            class: DeclarationClass::Value,
+        } = usage.target()
+        else {
+            return Ok(None);
+        };
+        let Some(local) = bindings.get(&declaration) else {
+            return Ok(None);
+        };
+        if local.mode == CheckedMode::Own {
+            return Ok(None);
+        }
+        let argument = self.check_borrow(
+            borrow,
+            function,
+            bindings,
+            loop_depth,
+            ReborrowPosition::CallArgument {
+                own_result: true,
+                result_candidate: false,
+            },
+        )?;
+        let ty = argument.expression.ty();
+        let element_type = match ty {
+            CheckedType::Array { element, .. }
+            | CheckedType::FixedVector { element, .. }
+            | CheckedType::Vector { element, .. } => self.element_type(element)?,
+            CheckedType::Buffer { element } => element.ty(),
+            _ => {
+                return self.issue_node(
+                    SemanticRule::Op1,
+                    node,
+                    SemanticIssueKind::InvalidOperation,
+                );
+            }
+        };
+        if let CheckedType::Nominal(id) = element_type
+            && !self.nominal(id)?.is_copy()
+        {
+            return self.unsupported(UnsupportedSemanticFeature::CompositeValues, place_node);
+        }
+        let Some(element) = self.flat_element(element_type)? else {
+            return self.unsupported(UnsupportedSemanticFeature::CompositeValues, place_node);
+        };
+        let source = match argument.expression.clone() {
+            CheckedExpression::ReborrowAddressed { binding, .. } => {
+                CheckedSliceSource::Run(CheckedContainerRoot {
+                    root: crate::semantic::CheckedPlaceRoot::Binding(binding),
+                    path: Vec::new(),
+                    ty,
+                })
+            }
+            CheckedExpression::BorrowAddressed { root, .. } => CheckedSliceSource::Run(root),
+            CheckedExpression::BorrowBuffer { root, .. } => CheckedSliceSource::Buffer(root),
+            _ => {
+                return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
+            }
+        };
+        let loan = argument
+            .borrow
+            .as_ref()
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let mut loans = Vec::new();
+        let origin = if self.constants.contains_key(&loan.place.root) {
+            CheckedSliceOrigin::ImmutableConst
+        } else {
+            loans.push(SliceLoanKey {
+                region,
+                place: loan.place.clone(),
+                parent: argument.holder,
+                strength,
+            });
+            CheckedSliceOrigin::SourcePlace {
+                root: loan.place.root,
+                path: loan.place.path.clone(),
+                origin_region: loan.origin_region,
+            }
+        };
+        self.statement_loans
+            .borrow_mut()
+            .push(TemporaryLoan::new(loan.clone(), &argument));
+        let origins = vec![origin];
+        let slice = SliceInfo {
+            region,
+            origins: origins.clone(),
+            loans,
+        };
+        Self::publish_slice_loans(&slice, bindings)?;
+        let mut accesses = argument.accesses;
+        accesses.push(PlaceAccess {
+            place: loan.place.clone(),
+            kind: match strength {
+                LoanStrength::Shared => AccessKind::SharedBorrow,
+                LoanStrength::Exclusive => AccessKind::UniqueBorrow,
+            },
+        });
+        Ok(Some(TypedExpression {
+            expression: CheckedExpression::SliceOf {
+                carrier: self.tree.path(node)?.clone(),
+                source,
+                region,
+                element,
+                strength,
+                origins: origins.clone(),
+            },
+            mode: CheckedMode::Own,
+            borrow: None,
+            slice: Some(slice),
+            holder: None,
+            reference_value: false,
+            effects: argument.effects,
+            accesses,
+        }))
     }
 
     /// [VIEW-2, OWN-6] `slice_of` over a **view holder**: the shared child
@@ -423,19 +580,10 @@ region outlives; name that region, or one it outlives, on this borrow"
             AccessKind::SharedBorrow,
             borrow,
         )?;
-        // [OWN-5] the freeze: while this child lives the parent may not write
-        // the elements it views. The parent is reached through its holder, so
-        // the loan stands at the holder's own place, which is exactly what an
-        // element write through that holder resolves its origin to.
-        bindings
-            .get_mut(&declaration)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?
-            .push_slice_loan(SliceLoan {
-                region,
-                place: holder_place,
-                strength: LoanStrength::Shared,
-                descriptors: Vec::new(),
-            });
+        // The child carries the actual parent's routes, including a local
+        // holder whose descriptor and ultimate storage are different places.
+        let slice = parent.child(region);
+        Self::publish_slice_loans(&slice, bindings)?;
         let origins = parent.origins.clone();
         Ok(Some(TypedExpression {
             expression: CheckedExpression::SliceOf {
@@ -451,7 +599,7 @@ region outlives; name that region, or one it outlives, on this borrow"
             },
             mode: CheckedMode::Own,
             borrow: None,
-            slice: Some(SliceInfo { region, origins }),
+            slice: Some(slice),
             holder: None,
             reference_value: false,
             effects: EffectSet::NONE,
@@ -592,15 +740,6 @@ take the view in a region it outlives"
             LoanStrength::Exclusive => AccessKind::UniqueBorrow,
         };
         self.check_loan_access(bindings, None, &resolved, taken, borrow)?;
-        bindings
-            .get_mut(&declaration)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?
-            .push_slice_loan(SliceLoan {
-                region,
-                place: resolved.clone(),
-                strength,
-                descriptors: Vec::new(),
-            });
         // The origin is the complete resolved place reached in arena content
         // [OWN-5]; reads through the formed view stay reads of storage this
         // function owns, so the formation carries no boundary effect.
@@ -609,6 +748,17 @@ take the view in a region it outlives"
             path: Vec::new(),
             origin_region: None,
         }];
+        let slice = SliceInfo {
+            region,
+            origins: origins.clone(),
+            loans: vec![SliceLoanKey {
+                region,
+                place: resolved.clone(),
+                parent: None,
+                strength,
+            }],
+        };
+        Self::publish_slice_loans(&slice, bindings)?;
         Ok(TypedExpression {
             expression: CheckedExpression::SliceOf {
                 carrier: self.tree.path(node)?.clone(),
@@ -624,7 +774,7 @@ take the view in a region it outlives"
             },
             mode: CheckedMode::Own,
             borrow: None,
-            slice: Some(SliceInfo { region, origins }),
+            slice: Some(slice),
             holder: None,
             reference_value: false,
             effects: EffectSet::NONE,

@@ -411,8 +411,8 @@ are captured before cleanup and destination writes follow it. Required value
 snapshots, including proper-part consumes with residual releases, remain intact.
 Runtime arrays with supported flat elements and inline fixed runs form views
 over their original typed storage. Array fields use the same place path.
-Direct view formation through a borrowed array holder and general affine-element
-views remain separate implementation gaps.
+Flat storage views also form through ordinary borrowed array and run holders.
+General affine-element views remain an implementation gap.
 
 Rebinding a legacy `buffer` descriptor through a borrowed root is explicitly
 unsupported (`BorrowedBufferDescriptorMutation`). The legacy borrowed-parameter
@@ -578,8 +578,9 @@ storage; reading an owned old value still creates an independent snapshot.
 Runtime arrays with supported flat elements now use that same typed storage
 path, including array fields. Writes through their exclusive views are visible
 after the loan ends; immutable constant arrays keep their shared constant path.
-Direct formation through a borrowed array holder still stops at
-`RegionsAndBorrows`, and general affine-element views remain incomplete.
+Formation through a borrowed array or run holder reuses its checked child
+borrow and typed storage address. Array fields and local holders retain the
+same original backing. General affine-element views remain incomplete.
 Exclusivity is not a clause of its own: the formation takes the borrow
 its strength names, so a second `mut_slice_of` over one place meets the first
 view's loan and is refused there as an ordinary [OWN-5] conflict, while two
@@ -603,11 +604,18 @@ until the child's last use. **The same child forms through a view holder.**
 `slice_of(&'r deref(destination))` at a `&uniq MutSlice<'r, u8>` parameter is
 that reborrow with a view as the parent: the child carries the parent's origin
 set and range, its region is the one the operand borrow writes and the parent's
-own region must outlive it, and the freeze stands both inside the callee — where
-the loan sits at the holder's own place, which is what an element write through
-that holder resolves its origin to — and at the caller, where a shared loan is
-registered on every origin place the returned child reaches that already carries
-an exclusive one. `mut_slice_of` over a view holder is refused citing [OWN-5].
+own region must outlive it, and the freeze stands both inside the callee and
+at the caller. View values carry their exact continuing loan keys separately
+from storage origins: data region, place, strength and checked parent holder.
+Copies and own-view result relays preserve those keys; a child has its own
+shared key at its result region, derived from the actual parent's keys.
+Descriptor registration does not attach a new exclusive view to an older
+shared claim merely because both reach the same storage. Incoming exclusive
+views retain their child freeze when moved into local bindings, even without
+a local formation record. Passing a view by descriptor borrow preserves its
+complete backing effects; the descriptor's own loan check still applies.
+`mut_slice_of` over a
+view holder is refused citing [OWN-5].
 The result is legal because [VIEW-6]'s ceiling admits a borrow-mode view
 parameter's formal origin for a **shared** view result at the same region and
 element type, at either parent strength, and for no exclusive one.
@@ -735,9 +743,9 @@ formal must outlive its fixed brand, regardless of parameter order; it cannot
 shorten the brand. Complete parameter types are checked after the final
 substitution, so a direct view requires the exact resulting view type rather
 than implicit lifetime conversion. VIEW-2's shared child through a borrowed
-`Slice` or `MutSlice` is supported. A separate `&array` probe reaches
-`Unsupported(RegionsAndBorrows)` before the ordinary OWN-6 reborrow judgment.
-The brand repair does not change that capability boundary. Empty variant
+`Slice` or `MutSlice` is supported. The separate borrowed-array formation path
+now reaches the ordinary OWN-6 judgment and preserves the exact view brand;
+the retained const-array holder probe checks successfully. Empty variant
 construction still requires any brand its operands do not supply.
 
 Where the axis leaves the program is the lowering: a region names a store for
@@ -758,8 +766,8 @@ A provider allocation can therefore be bound by `let` and inspected by a later
 Box likewise remains available for a later read in the same region. Borrowed
 results and surviving view loans retain their independent lifetimes. The
 region change adds no last-use analysis or runtime lifetime mechanism.
-Shared children of formal views now register their descriptors on the same
-origin loans as local-storage children. VIEW-2 restores the parent's writes
+Shared children of formal views register their descriptors on their exact
+continuing claims, as local-storage children do. VIEW-2 restores the parent's writes
 after every copy's last use. A helper-returned shared child also freezes an
 incoming exclusive view even when that parent has no local formation loan;
 a surviving child or copy still forbids the parent write. Semantic controls
@@ -767,7 +775,9 @@ cover direct formation, returned children and local holders. Native controls
 observe the old and updated elements with helper calls retained in all three
 lowering modes. The
 [view investigation](../research/investigations/containers-and-resources/FOUNDATION.md#temporary-child-regions-and-statement-endpoints)
-records the two former descriptor-registration defects.
+records the endpoint controls; the
+[storage-holder investigation](../research/investigations/containers-and-resources/FOUNDATION.md#views-formed-through-storage-holders)
+records why origin-only descriptor registration was replaced.
 
 The pool retains a separate contract boundary: every clause naming
 a measure over a *result*'s field — `ensures head_of(rest.free) == ...` — is

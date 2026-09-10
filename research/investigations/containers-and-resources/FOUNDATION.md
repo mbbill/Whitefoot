@@ -573,6 +573,79 @@ new permissions. The array-retirement proposal in the historical S34 design is
 superseded for this choice. The existing META-5 editorial question stays open;
 this amendment does not redefine its evidence/minimality labels.
 
+### Views formed through storage holders
+
+The next view control passes an array by shared or exclusive borrow, forms a
+view inside an ordinary helper, reads through a copied shared descriptor and
+another helper, then resumes parent mutation after the last shared use. Its
+exclusive view writes and reads the same original array, including when that
+array is a field. The preceding formation dispatcher sends non-view holder
+dereferences into the legacy arena path and stops before these operations.
+VIEW-2 already admits the storage domain; this is an implementation experiment.
+
+First reuse the ordinary argument-reborrow judgment and the existing typed
+storage address. A result's possible storage origins are not authority to
+ignore a live unique ancestor. If the existing loan representation cannot
+carry that delegation, retain the checked parent-loan relation separately from
+origins through descriptor copies, arguments and permitted view results.
+The criterion is an executable direct/helper operation with no array snapshot,
+preserved parent freezing while a child is live, restored access at its stated
+endpoint, ordinary lifetime and overlap refusals, and unchanged staged
+retirement controls. No field or origin match alone may manufacture a loan
+permission, and this repair selects no new public container or pointer API.
+
+The origin-only prototype reached the helper read after carrying the actual
+parent holder, then rejected the later exclusive view's own write. Registering
+every descriptor on every loan with the same storage origin made that new
+writer a holder of the older, already dead shared loan. A shared copy, an
+own-view relay and a newly formed exclusive view require distinct treatment
+even when their possible storage origins are equal.
+
+The implemented candidate carries a finite structural loan key with each
+view: data region, exact protected place, strength and actual checked parent
+holder. Formation publishes that claim; binding and copying register on only
+the carried keys. An own-view result substitutes the supplying actuals' keys
+under VIEW-6's complete signature ceiling. A borrowed-view result publishes
+new shared keys at the result region, inheriting those actual parent routes.
+An incoming formal view carries its declared permission without inventing a
+local formation record. Equal keys can share the union of descriptor uses;
+these represent identical continuing restrictions, not an inferred exact
+runtime supplier. None of this metadata reaches the runtime descriptor.
+
+A separate incoming-view control moves a formal exclusive descriptor into a
+local binding, obtains a shared child, then transfers the parent to another
+helper before reading the child. The preceding implementation accepted that
+transfer because the formal permission had no local exclusive-formation record.
+The descriptor check now includes its carried exclusive keys in addition to
+every association in the existing loan-state scan. Reading the last child
+before the transfer is the positive control; a live child still forbids even
+transfer to a pure helper. The compiler does not inspect a callee's body to
+recover permission to transfer the parent.
+
+Borrowed-view effect projection exposed another independent defect: a write
+through a helper receiving the moved descriptor by exclusive borrow was
+attributed only to that local descriptor and disappeared from the enclosing
+row. EFF-2 already requires projection through the view's complete backing
+origins regardless of the descriptor's parameter mode. The implementation
+retains the descriptor's call-loan check and projects effects through those
+origins. Missing writes and spurious writes remain separate negative controls.
+Passing an already-bound descriptor holder also needs that check to apply the
+child freeze to its projected write; there is no new borrow formation at that
+call. The live-child and previous-statement-last-use pair now distinguishes
+that route as well as direct exclusive borrowing and own-view transfer.
+
+The native control
+`borrowed_array_views_preserve_delegation_and_original_storage_across_calls`
+executes in all three lowering modes, normally and with helper calls retained.
+It observes shared and exclusive array parameters, descriptor copies and
+relays, subsequent writes, unchanged neighboring elements and fields, previous
+scalar snapshots, local holders and const arrays. No array snapshot is needed
+to form the view. A separate array is written only by the exclusive-borrow
+helper after its formal view moves into a local binding; no direct write can
+hide a missing projected effect. The caller observes that write and unchanged
+neighbors. This is behavior and address evidence, not a throughput
+comparison. General affine-element views remain a separate capability gap.
+
 ### Generic brand parameters
 
 A reusable reader of `SmallBytes<'s>` must accept the caller's exact store brand
@@ -599,10 +672,10 @@ only in non-brand positions retain their previous region judgment. Complete type
 equality is checked after the final substitution: outlives alone does not convert
 one direct view type into another. VIEW-2's explicit shared child through a
 borrowed `Slice` or `MutSlice` is supported. The separate probe whose `parent`
-borrows an array stops at `RegionsAndBorrows` before the OWN-6 judgment. That
-capability stop does not determine source legality; v0.55 no longer rejects a
-child merely because its local region contains several statements. The brand
-correspondence change does not implement borrowed-array access. Stored-content
+borrows an array previously stopped at `RegionsAndBorrows` before the OWN-6
+judgment. The storage-holder repair above now checks that same source and its
+exact brand relation; v0.55 does not reject a child merely because its local
+region contains several statements. Stored-content
 restrictions and provider-release bounds remain intact.
 The old single-region extractor is insufficient even after fixing spelling:
 `Pair<'a, 'b>` and `Vector<'a, Vector<'b, u8>>` require both positions.
@@ -1464,9 +1537,12 @@ fn reuse(view: &uniq MutSlice<u8>) -> result: own u8 reads(view), writes(view) c
 
 This was an implementation gap, not another required rejection or a reason to
 retain the old region restriction. The formed loan had no registered descriptor
-when its origin was a formal slice. Descriptor registration now uses the same
-origin-to-place projection for formal views and local storage. The existing
-last-use judgment can therefore end the child's freeze at its specified point.
+when its origin was a formal slice. The initial repair registered formal-view
+and local-storage descriptors through the same origin-to-place projection.
+The storage-holder experiment above exposed that projection's inability to
+distinguish a new exclusive claim from an old shared one. Registration now uses
+the value's exact continuing keys; the existing last-use judgment still ends
+each child's freeze at its specified point.
 
 The helper-return control exposed the opposite defect. A returned shared child
 was registered only where the caller had a local exclusive-formation loan.

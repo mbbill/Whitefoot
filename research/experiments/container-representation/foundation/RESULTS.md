@@ -162,9 +162,18 @@ unchanged neighboring fields/elements and prior scalar observations, a later
 shared read, and a zero-length descriptor. Default, overlap-off and completion
 lowering each execute ordinary and retained-call modules. The same source
 stops at the earlier compiler's explicit exclusive-array-view capability.
-This reuses the existing typed storage path; general affine-element views and
-direct view formation through a borrowed array holder remain separate limits.
-The new checks add behavior evidence, not a new timing comparison.
+This reuses the existing typed storage path. A second native control,
+`borrowed_array_views_preserve_delegation_and_original_storage_across_calls`,
+forms views through shared/exclusive array parameters and local holders,
+copies and relays shared views, and resumes parent mutation after the last
+shared use. All six normal/retained executions across the same three modes
+pass, including field-selected and const arrays, unchanged neighbors and
+scalar snapshots. An independent array is modified only through an
+exclusive-borrow helper after an incoming view moves into a local binding;
+the caller observes `[17, 109, 17]` from `[17, 17, 17]`. This also requires the
+helper's enclosing write effect to survive descriptor movement and borrowing.
+General affine-element views remain a separate limit.
+These checks add behavior evidence, not a new timing comparison.
 
 ### Encoding the remaining snapshots
 

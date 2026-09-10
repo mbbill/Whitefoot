@@ -391,7 +391,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 );
             }
         }
-        let slice = self.substitute_slice_result(signature, result, &checked_slices)?;
+        let slice = self.substitute_slice_result(signature, result, &checked_slices, bindings)?;
         let slice_origins = slice
             .as_ref()
             .map(|slice| slice.origins.clone())
@@ -1226,11 +1226,13 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
         signature: &FunctionSignature,
         result: CheckedType,
         arguments: &[Option<SliceInfo>],
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
     ) -> Result<Option<SliceInfo>, CheckStop> {
         let CheckedType::Slice { region, .. } = result else {
             return Ok(None);
         };
         let mut origins = Vec::new();
+        let mut loans = Vec::new();
         for origin in &signature.slice_return_ceiling {
             match origin {
                 CheckedSliceOrigin::ImmutableConst => {
@@ -1249,13 +1251,34 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
                     for actual_origin in &actual.origins {
                         push_slice_origin(&mut origins, actual_origin.clone());
                     }
+                    // [VIEW-6] an own-view formal relays the actual's
+                    // existing claims. A borrowed-view formal can supply
+                    // only a shared child, whose new claim has the result
+                    // region and inherits those exact parent routes.
+                    let child;
+                    let actual = if signature.parameters[index].mode == CheckedMode::Own {
+                        actual
+                    } else {
+                        child = actual.child(region);
+                        Self::publish_slice_loans(&child, bindings)?;
+                        &child
+                    };
+                    for key in &actual.loans {
+                        if !loans.contains(key) {
+                            loans.push(key.clone());
+                        }
+                    }
                 }
                 CheckedSliceOrigin::SourcePlace { .. } => {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
             }
         }
-        Ok(Some(SliceInfo { region, origins }))
+        Ok(Some(SliceInfo {
+            region,
+            origins,
+            loans,
+        }))
     }
 
     pub(super) fn check_call_borrow_overlap(
@@ -1382,10 +1405,15 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
                         access,
                         node,
                     )?;
-                    for path in self.effect_paths_for_whole_place(node, &place, bindings)? {
-                        actual_paths.push(path);
+                    // Borrowing a view still checks the descriptor's loan.
+                    // Its callee effects refer to the viewed backing below,
+                    // just as they do when that same view is passed by value.
+                    if !matches!(parameter.ty, CheckedType::Slice { .. }) {
+                        actual_paths
+                            .extend(self.effect_paths_for_whole_place(node, &place, bindings)?);
                     }
-                } else if let CheckedType::Slice { strength, .. } = parameter.ty {
+                }
+                if let CheckedType::Slice { strength, .. } = parameter.ty {
                     let slice = slices
                         .get(index)
                         .and_then(Option::as_ref)

@@ -1511,6 +1511,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         access,
                         access_kind,
                     );
+                    if slice.is_some() {
+                        // Projected callee effects use this descriptor's
+                        // continuing view loan, just as a direct index does.
+                        expression.holder = Some(declaration);
+                    }
                     expression.slice = slice;
                     Ok(expression)
                 } else {

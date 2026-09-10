@@ -103,7 +103,82 @@ fn array_views_preserve_exclusivity_and_element_domains() {
 }
 
 #[test]
-fn borrowed_array_view_probe_stops_before_the_reborrow_judgment() {
+fn borrowed_storage_views_preserve_parent_permissions() {
+    let source = r#"fn relay['r](view: own Slice<'r, u64>) -> result: own Slice<'r, u64> pure contract {
+  ensures len_of(result) == len_of(view);
+} {
+  return view;
+}
+
+fn first(view: own Slice<u64>) -> result: own u64 reads(view) contract {
+  requires len_of(view) == 2_u64;
+} {
+  return view[0_u64];
+}
+
+fn inspect(values: &array<u64, 2>) -> result: own u64 reads(values) {
+  region {
+    let view = slice_of(&deref(values));
+    return first(view: view);
+  }
+}
+
+fn edit(values: &uniq array<u64, 2>) -> (before: own u64, after: own u64) reads(values), writes(values) {
+  region {
+    let view = slice_of(&deref(values));
+    let before = first(view: view);
+    let duplicate = view;
+    let observed = duplicate[1_u64];
+    set deref(values)[0_u64] = 19_u64;
+    region {
+      let writer = mut_slice_of(&uniq deref(values));
+      set writer[1_u64] = 23_u64;
+      let after = writer[1_u64];
+      return before, after;
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+    let relayed = source.replace(
+        "let duplicate = view;",
+        "let duplicate = relay(view: view);",
+    );
+    with_semantics(relayed.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+    for source in [source.to_owned(), relayed] {
+        let early_write = source.replace(
+            "let observed = duplicate[1_u64];",
+            "set deref(values)[1_u64] = 17_u64;\n    let observed = duplicate[1_u64];",
+        );
+        assert_rule_kind(early_write.as_bytes(), SemanticRule::Own5, |kind| {
+            matches!(kind, SemanticIssueKind::BorrowConflict)
+        });
+        let second_writer = source.replace(
+            "set writer[1_u64] = 23_u64;",
+            "let second = mut_slice_of(&uniq deref(values));\n      set writer[1_u64] = 23_u64;",
+        );
+        assert_rule_kind(second_writer.as_bytes(), SemanticRule::Own5, |kind| {
+            matches!(kind, SemanticIssueKind::BorrowConflict)
+        });
+    }
+}
+
+#[test]
+fn borrowed_array_views_preserve_exact_brand_parameters() {
     let source = br#"struct Mark['s] {
   value: u64;
 }
@@ -131,10 +206,14 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 1_u8);
 }
 "#;
-    // This array-holder probe stops before the ordinary reborrow judgment;
-    // it is not VIEW-2's implemented Slice/MutSlice-holder path. A longer
-    // local child region is admitted by v0.55, but does not fill this gap.
-    assert_unsupported(source, UnsupportedSemanticFeature::RegionsAndBorrows);
+    // The former unsupported probe now reaches VIEW-2 through the ordinary
+    // child-borrow path. The source and its exact brand relation are retained.
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
     let direct = std::str::from_utf8(source)
         .unwrap()
         .replace("slice_of(&deref(parent))", "slice_of(&data)");
@@ -144,6 +223,223 @@ command fn main() -> status: own ExitStatus pure {
             "{outcome:?}"
         )
     });
+}
+
+#[test]
+fn selected_view_results_preserve_each_borrowed_storage_parent() {
+    let source = r#"fn choose['r](first: own Slice<'r, u64>, second: own Slice<'r, u64>, left: own Bool) -> result: own Slice<'r, u64> pure contract {
+  requires len_of(first) == 2_u64;
+  requires len_of(second) == 2_u64;
+  ensures len_of(result) == 2_u64;
+} {
+  if left {
+    return first;
+  } else {
+    return second;
+  }
+}
+
+fn read_first(view: own Slice<u64>) -> result: own u64 reads(view) contract {
+  requires len_of(view) == 2_u64;
+} {
+  return view[0_u64];
+}
+
+fn inspect(left: &uniq array<u64, 2>, right: &uniq array<u64, 2>, select_first: own Bool) -> result: own u64 reads(left, right), writes(left, right) {
+  region {
+    let a = slice_of(&deref(left));
+    let b = slice_of(&deref(right));
+    let selected = choose(first: a, second: b, left: select_first);
+    let observed = read_first(view: selected);
+    set deref(left)[0_u64] = 19_u64;
+    set deref(right)[0_u64] = 23_u64;
+    return observed;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+    for parent in ["left", "right"] {
+        let early_write = source.replace(
+            "let observed = read_first(view: selected);",
+            &format!(
+                "set deref({parent})[1_u64] = 31_u64;\n    let observed = read_first(view: selected);"
+            ),
+        );
+        assert_rule_kind(early_write.as_bytes(), SemanticRule::Own5, |kind| {
+            matches!(kind, SemanticIssueKind::BorrowConflict)
+        });
+    }
+}
+
+#[test]
+fn borrowed_storage_child_views_preserve_live_and_dead_relay_copies() {
+    let source = r#"fn child['r](view: &uniq MutSlice<'r, u64>) -> result: own Slice<'r, u64> pure contract {
+  requires len_of(deref(view)) == 2_u64;
+  ensures len_of(result) == 2_u64;
+} {
+  let result = slice_of(&'r deref(view));
+  return result;
+}
+
+fn relay['r](view: own Slice<'r, u64>) -> result: own Slice<'r, u64> pure contract {
+  ensures len_of(result) == len_of(view);
+} {
+  return view;
+}
+
+fn inspect(values: &uniq array<u64, 2>) -> result: own u64 reads(values), writes(values) {
+  region {
+    let writer = mut_slice_of(&uniq deref(values));
+    region {
+      let parent = &uniq writer;
+      region {
+        let shared = FORM;
+        let copied = relay(view: shared);
+        let observed = copied[0_u64];
+        set deref(parent)[1_u64] = 23_u64;
+        return observed;
+      }
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    for formation in [
+        "slice_of(&deref(parent))",
+        "child(view: &uniq deref(parent))",
+    ] {
+        let source = source.replace("FORM", formation);
+        with_semantics(source.as_bytes(), |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{outcome:?}"
+            );
+        });
+        let early_write = source.replace(
+            "let observed = copied[0_u64];",
+            "set deref(parent)[1_u64] = 17_u64;\n        let observed = copied[0_u64];",
+        );
+        assert_rule_kind(early_write.as_bytes(), SemanticRule::Own5, |kind| {
+            matches!(kind, SemanticIssueKind::BorrowConflict)
+        });
+    }
+}
+
+#[test]
+fn moved_formal_views_keep_their_shared_children_frozen_across_calls() {
+    let source = r#"fn child['r](view: &uniq MutSlice<'r, u64>) -> result: own Slice<'r, u64> pure contract {
+  requires len_of(deref(view)) == 2_u64;
+  ensures len_of(result) == 2_u64;
+} {
+  let result = slice_of(&'r deref(view));
+  return result;
+}
+
+fn overwrite(view: own MutSlice<u64>) -> result: own unit writes(view) contract {
+  requires len_of(view) == 2_u64;
+} {
+  set view[0_u64] = 19_u64;
+  return unit;
+}
+
+fn update(view: &uniq MutSlice<u64>) -> result: own unit writes(view) contract {
+  requires len_of(deref(view)) == 2_u64;
+} {
+  set deref(view)[0_u64] = 19_u64;
+  return unit;
+}
+
+fn accept_view(view: own MutSlice<u64>) -> result: own unit pure {
+  return unit;
+}
+
+fn inspect(view: own MutSlice<u64>) -> result: own u64 reads(view), writes(view) contract {
+  requires len_of(view) == 2_u64;
+} {
+  let writer = move view;
+  region {
+    let shared = child(view: &uniq writer);
+    let done = CALL;
+    let observed = shared[0_u64];
+    return observed;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    for (call, effects) in [
+        ("overwrite(view: move writer)", "reads(view), writes(view)"),
+        ("update(view: &uniq writer)", "reads(view), writes(view)"),
+        ("update(view: move parent)", "reads(view), writes(view)"),
+        ("accept_view(view: move writer)", "reads(view)"),
+    ] {
+        let source = source.replace("CALL", call).replace(
+            "result: own u64 reads(view), writes(view) contract",
+            &format!("result: own u64 {effects} contract"),
+        );
+        let source = if call == "update(view: move parent)" {
+            source.replace(
+                "  let writer = move view;\n  region {\n    let shared = child(view: &uniq writer);\n    let done = update(view: move parent);\n    let observed = shared[0_u64];\n    return observed;\n  }",
+                "  let writer = move view;\n  region {\n    let parent = &uniq writer;\n    region {\n      let shared = slice_of(&deref(parent));\n      let done = update(view: move parent);\n      let observed = shared[0_u64];\n      return observed;\n    }\n  }",
+            )
+        } else {
+            source
+        };
+        assert_rule_kind(source.as_bytes(), SemanticRule::Own5, |kind| {
+            matches!(kind, SemanticIssueKind::BorrowConflict)
+        });
+        let indent = if call == "update(view: move parent)" {
+            "      "
+        } else {
+            "    "
+        };
+        let last_use = source.replace(
+            &format!("let done = {call};\n{indent}let observed = shared[0_u64];"),
+            &format!("let observed = shared[0_u64];\n{indent}let done = {call};"),
+        );
+        with_semantics(last_use.as_bytes(), |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{call}: {outcome:?}"
+            );
+        });
+        let wrong_effects = if effects == "reads(view)" {
+            last_use.replace(
+                "result: own u64 reads(view) contract",
+                "result: own u64 reads(view), writes(view) contract",
+            )
+        } else {
+            last_use.replace(
+                "result: own u64 reads(view), writes(view) contract",
+                "result: own u64 reads(view) contract",
+            )
+        };
+        if effects == "reads(view)" {
+            assert_rule_kind(wrong_effects.as_bytes(), SemanticRule::Eff2, |kind| {
+                matches!(kind, SemanticIssueKind::EffectMismatch { extra, .. }
+                    if extra == &["writes(view)".to_owned()])
+            });
+        } else {
+            assert_rule_kind(wrong_effects.as_bytes(), SemanticRule::Eff2, |kind| {
+                matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
+                    if missing == &["writes(view)".to_owned()])
+            });
+        }
+    }
 }
 
 #[test]
@@ -863,8 +1159,7 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         UnsupportedSemanticFeature::CompositeValues,
     );
-    assert_unsupported(
-        br#"fn invalid(values: &FixedVector<u8, 2>) -> result: own unit pure {
+    let borrowed_run = br#"fn invalid(values: &FixedVector<u8, 2>) -> result: own unit pure {
   region {
     let window = slice_of(&deref(values));
   }
@@ -874,9 +1169,22 @@ command fn main() -> status: own ExitStatus pure {
 command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
-"#,
-        UnsupportedSemanticFeature::RegionsAndBorrows,
+"#;
+    // Formation through a storage holder is implemented. This unchanged
+    // source still owes VIEW-2's non-wrap premise, now reached at BLK-0.
+    assert_rule_kind(borrowed_run, SemanticRule::Blk0, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedKernelRequirement(_))
+    });
+    let contiguous = std::str::from_utf8(borrowed_run).unwrap().replace(
+        "fn invalid(values: &FixedVector<u8, 2>) -> result: own unit pure {",
+        "fn invalid(values: &FixedVector<u8, 2>) -> result: own unit pure contract {\n  requires head_of(deref(values)) <= room_of(deref(values));\n} {",
     );
+    with_semantics(contiguous.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
     assert_rule_kind(
         br#"fn invalid['r](values: own FixedVector<u8, 2>) -> result: own Slice<'r, u8> pure {
   return slice_of(&'r values);
