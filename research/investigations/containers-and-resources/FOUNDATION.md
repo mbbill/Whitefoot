@@ -650,10 +650,10 @@ incoming `ReadFile`, return both the run and the displaced file, and release bot
 in a caller. The caller must retain the incoming file's release effect. A focused
 check against revision `1f545791` instead rejects that caller's
 `writes(files, incoming)` as having an extra `writes(incoming)`. The
-[current replacement analyzer](../../../compiler/src/semantic/check/result_state_origin.rs)
-updates ordinary binding/static-field origins but does not update an indexed
+[replacement analyzer at that revision](https://github.com/mbbill/Whitefoot/blob/1f545791/compiler/src/semantic/check/result_state_origin.rs)
+updated ordinary binding/static-field origins without updating an indexed
 `Storage` target's contained-owner image;
-the body checker and the result analyzer also disagree about the extracted
+the body checker and the result analyzer also disagreed about the extracted
 origin. The defect is lost ownership flow, not lost runtime length information.
 An independent static-field precision defect is repaired in `16a20bb9`. For an
 owned formal `Holder { before: u64; file: ReadFile; after: u64; }`, resource
@@ -743,22 +743,24 @@ test's unsupported premise rather than selecting a new summary lattice.
 
 The earlier nested `box<ReadFile>` unit-returning test also assumed an exact
 `Unsupported` outcome without settling how the outer allocation and current
-contained owner's identities are represented separately. It is replaced by
-`ordinary_displaced_box_result_reports_the_unrepresented_origin_at_use`: an
-ordinary `box<box<u64>>` helper returns the inner Box displaced by SET-2 and its
+contained owner's identities are represented separately. Its replacement used an
+ordinary `box<box<u64>>` helper that returns the inner Box displaced by SET-2; its
 caller reads that old result. SET-2 and FN-1 already determine the old value's
 identity. The prior implementation reported `InvalidResolution` at the read;
-the capability diagnostic now reports `OwnerStateRouting` there. This is not
-implementation of nested-content transfer. Unit-returning internal replacement,
-including its post-call contained-state image, remains unresolved and must not
-be counted as unchanged contents or as completed container support.
+the diagnostic-only repair then reported `OwnerStateRouting` there. The typed
+referent extension now preserves that old owner, and the same source is the
+positive `ordinary_displaced_box_result_keeps_the_extracted_owners_origin` case,
+paired with an extra-effect rejection. Exact internal replacement also updates
+the stored owner when no owner is returned. An unrepresented interior path still
+cannot be counted as unchanged contents or as completed container support.
 
-The selected representation implements whole owners and static product fields,
-keeps callable effects and all output components on one entry snapshot, and
-applies simultaneous updates only to exact actual places. A returned borrow's
-signature ceiling is insufficient to identify such a place. General typed
-paths through owning indirection, enum payloads, and indexed contents remain
-the separate candidate below. Neither permanent unions of replaced owners nor
+The first representation implemented whole owners and static product fields,
+kept callable effects and all output components on one entry snapshot, and
+applied simultaneous updates only to exact actual places. A returned borrow's
+signature ceiling is insufficient to identify such a place. The typed-path
+extension below preserves that call-entry rule and adds owning referents,
+selected enum payloads and literal slots; dynamic, implicit-boundary and
+recursive contents remain incomplete. Neither permanent unions of replaced owners nor
 treating unrepresented transfers as fresh was selected.
 
 For a returned exclusive borrow, a narrower declaration-only argument can
@@ -834,11 +836,14 @@ passed at `d53ffe95` but stopped with `OwnerStateRouting` in the published
 The first two need a displaced value to cross a helper after indexed or enum
 payload replacement; the third needs precise writeback through a returned
 borrow. The published `5aaef50a` canonical and both-host CI unit runs pass the third
-case with its original source and executable assertions. The first two remain
-blocked, together with the boxed-run read-out and wide-owned-result cases.
-All original executable assertions remain intact. The prototype is
-therefore not ready to replace the existing implementation, and focused
-whole-Box success does not discharge these regressions.
+case with its original source and executable assertions. The typed-path
+extension restores the boxed enum child's original retained native consumer
+and exact allocation/release trace. The heap full-array case still needs the
+owning run-boundary image: the explicit insertion capability stop also blocks
+its construction path. Full-array construction, boxed-run read-out and
+wide-owned-result cases retain that same dependency on complete insertion and
+extraction transfers. All original executable assertions remain intact;
+the prototype remains incomplete until those and the broader run consumers pass.
 
 The `f586e04c` CI run exposed two further implementation defects in loops. The
 preliminary body check compared unresolved call-result origin images at the
@@ -860,9 +865,11 @@ The same run's three recursive Buffer cleanup cases exposed a different
 mistake. A legacy indexed mutation's effect access names the containing Buffer,
 but its `CheckedSetTarget::BufferIndex` still names one element. Treating the
 access projection as a whole-owner target overwrote the Buffer's origin image
-with the element's. Both `set` and `replace` now consult the typed target before
-selecting a strong update; the existing cleanup cases execute again. This does
-not implement an indexed-content image or authorize ignoring an interior update.
+with the element's. Consulting the typed target before selecting a strong
+update repaired that whole-root overwrite but did not yet implement indexed
+contents. The current extension admits exact literal element updates. An
+unrepresented dynamic update remains unknown, including legacy cleanup consumers
+that the earlier incomplete model accepted; it cannot be treated as unchanged.
 
 The byte-string and fixed-run failures exposed another defect: the generic
 kernel-expression fallback unions argument origins at the result root, although
@@ -874,6 +881,16 @@ unchanged run image at result ordinal zero and no origin at ordinal one.
 Unknown inputs remain unknown. A wrapper and a two-iteration drain check both
 rows through helper boundaries; the retained growable-byte-vector and byte-string
 programs compile and execute again.
+
+Restoring an empty-run helper also exposed an independent proof-closure defect.
+A returned zero-capacity fixed run retained its correct type and measure bounds,
+but the closure omitted the capacity term as a transitive middle for the implicit
+length-at-most-capacity edge. Reading capacity in an extra source statement
+accidentally restored the proof. Both proof-retaining closure and contradiction
+checking now derive useful implicit middle terms from the complete bound inventory.
+The original helper proves its length is zero without an extra read; the paired
+capacity-one case with unknown length still fails the kernel precondition. No
+runtime branch or special rule for a zero-capacity container supplies that proof.
 
 Noncopy elements need separate remainder/element images and their contained-state
 transfer. That path now stays explicitly unknown rather than reusing the
@@ -893,8 +910,8 @@ rule or normative conformance verdict.
 One tempting recovery is to instantiate an unknown summary as formal-free
 when every actual currently has an explicitly empty origin set. That would be
 valid if those sets were sound upper bounds on all currently reachable state.
-The current incomplete content updates do not establish that premise. For
-example, create a fresh `box<box<u64>>`, replace its inner cell with the owned
+The incomplete content updates did not establish that premise. For example,
+create a fresh `box<box<u64>>`, replace its inner cell with the owned
 formal `incoming`, then pass the outer Box to a helper that returns its old
 inner cell. The later read is a read of `incoming`. If the unrepresented
 replacement leaves the outer Box's old empty metadata, the proposed recovery
@@ -902,10 +919,52 @@ incorrectly frames that read out. The recovery was rejected without applying
 it; treating `None` and explicitly unknown actuals conservatively does not
 repair the falsely empty actual. A complete content-state upper bound or an
 explicit completeness argument must precede any such refinement. No test is
-retired or expectation relaxed to bypass this challenge.
+retired or expectation relaxed to bypass this challenge. The current typed
+referent routes preserve the incoming owner in that witness, including through
+the extracting helper. Its positive and omitted-effect cases are retained in
+the compiler's ordinary effect tests. That local repair does not establish the
+complete-upper-bound premise for every unrepresented container operation.
 
-A candidate implementation represents finite current ownership state with typed
-paths, not execution history. Keep an owning Box or run's storage anchor separate
+The finite-path prototype implements the exact-path part of this candidate.
+Its selectors distinguish product fields, owning referents, active enum payloads
+and literal elements. A route denotes a whole input subvalue, with relative
+subtree exclusions for contents that have been replaced. Strong replacement
+excludes the old contents and installs the incoming routes at the target.
+Body checking and summary replay share projection, exclusion, join and call
+substitution. Effect projection uses the selected subvalue where that path is
+exact; an effect-row prefix alone cannot select an interior overwrite. Normal
+checking still judges loans against their existing conservative places.
+
+Two representation identities are essential for termination. Reinstalling the
+same selected subvalue is a no-op, not an expansion into ancestor and child
+routes. Otherwise a recursive scalar-only tree fold generates deeper routes
+at every iteration despite never changing an owner. Projection also merges
+routes that become identical after selecting a child. A partial fixed-point
+bottom excludes only the overwritten subtree, retaining independent siblings.
+The existing shared and unique recursive folds and successive-exchange controls
+distinguish these cases. This is not a general complexity proof.
+
+The current path-list representation stops with an explicit compiler capability
+gap when a selector needs to revisit a recursive type; even some finite written
+paths through recursive contents remain outside it. Whole-owner and scalar-only
+recursive calls do not require that unfolding. Recursive extraction needs a
+finite summary representation beyond this prototype, not a language rejection
+or an acceptance time budget. Kernel reservation creates invocation-local empty
+storage, not an owner inherited from its borrowed provider. Cell formation
+places the value's routes under the success referent or the refusal payload.
+Cell destructuring must use that same referent selector: treating its sole
+binder as an ordinary product field discards an imported payload's route.
+Direct and helper-returned destructuring controls require the payload's read
+effect after an Arena-backed cell is consumed. The legacy arena value retains
+its existing explicit runtime capability boundary.
+Implicit run-boundary placement and extraction of owning elements still lack
+their own slot/content transfer and cannot reuse a root-level argument union.
+Front insertion also shifts existing logical indices: leaving a route at slot
+zero can misattribute a later extraction from slot one. The corresponding
+normal-return witness retains a capability stop until that transfer is supplied;
+an unchanged child union is not a conservative upper bound.
+
+The remaining candidate keeps an owning Box or run's storage anchor separate
 from its current contained owners. Use exact product fields, sparse literal-slot
 overrides, and a residual may-origin set; a repeated access may share a symbolic
 slot only when it uses the same captured index value. A strong overwrite removes
@@ -918,7 +977,7 @@ payload and a displaced queue entry; it does not require an unbounded history to
 describe those possibilities. Preserve the record's field precision so a payload
 join does not turn a priority-field read into a payload access.
 
-This candidate must use one transfer semantics for normal checking and callable
+The complete candidate must use one transfer semantics for normal checking and callable
 summary derivation, preserving the existing typed storage paths. Origin data is
 erased and is never a runtime graph, ownership permission, or allocation identity.
 Reject permanent unions of replaced owners: they retain effects of values no
@@ -944,8 +1003,8 @@ Separately, SET-2 says a commit touches the target's ultimate storage origin,
 while ordinary binding and static-field replacement change the current value
 origin and EFF-2 adds no permanent parent ancestry. The selected whole-owner and
 static-field rule keeps the borrowed address/loan fixed, changes the current
-owner F to I, and attributes a second direct replacement to I. The separate
-representation of an owning allocation and its changing contents remains open:
+owner F to I, and attributes a second direct replacement to I. The complete
+representation of an owning allocation and its changing run contents remains open:
 an interior run-slot mutation retains the run's actual storage anchor while
 transferring its contained owners. The scalar Box direct/helper controls do not
 select that internal representation or settle every nested effect projection.

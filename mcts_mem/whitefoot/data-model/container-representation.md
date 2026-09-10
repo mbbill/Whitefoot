@@ -24,8 +24,7 @@
   left in exclusive referents on normal exit. Instantiate their origins and
   call effects from one entry image, then install stored outputs together at
   exact actual places. A pointer slot or formal spelling is not the identity of
-  the current value it holds. The implemented whole-owner/static-field image
-  does not establish nested-content, indexed-element or enum-payload routing;
+  the current value it holds. Use [[owner-state-routes]] for subvalue attribution;
   a borrow-result ceiling supplies no exact writeback target. Unknown origin
   dependencies remain explicit compiler limitations, never fresh state.
 - An exclusive returned borrow can retain an already exact actual through a

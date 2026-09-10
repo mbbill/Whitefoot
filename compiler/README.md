@@ -431,16 +431,22 @@ descriptors and aggregate leases. System-call lowering reads the qualified
 resource value from that address; the target ABI stays unchanged. Retained-call
 native controls cover descriptor exchange with inert test identities and
 HostString field replacement through borrowed results and reborrows.
-Normal-exit state summaries preserve ordinary whole owners and static struct
-fields replaced through exclusive actuals, including unit-result helpers,
+Normal-exit state summaries preserve ordinary whole owners, static struct
+fields, Box referents, selected enum payloads and literal element replacements
+through exclusive actuals, including unit-result helpers,
 reborrows, simultaneous disjoint updates, and recursive callable composition.
 Effects, returned owners and stored outputs use one call-entry image; later
 reads and releases follow the current owner. A complete binding already dead
 at statement entry initializes without an old-owner write, while same-statement
 read-out retains its commit write. Ordinary Box direct/helper controls and
 retained native calls cover both state attribution and physical writeback.
-Nested owning contents, indexed elements and enum payload updates do not yet
-have a complete separate state image. Using an unknown returned owner's state
+Whole-value routes retain exclusions for replaced subtrees, keeping an owning
+allocation distinct from its current contents. Reading an exact sibling does
+not inherit the replaced sibling's new origin. Consuming a cell projects the
+same referent used by its constructor, including through helper results.
+Unknown indices, implicit run
+boundary insertion/extraction of owning elements, and recursive contained-owner
+extraction do not yet have a complete image. Using an unknown returned owner's state
 reports `OwnerStateRouting`; a returned borrow's candidate ceiling alone is not
 an exact writeback location. A separate declaration-only judgment preserves an
 already exact actual when an exclusive result has the same complete type as
@@ -449,15 +455,15 @@ Shared results, recursive same-type containment, unresolved generics and
 inexact actuals do not establish this whole-location property. Writes still
 kill prior value facts. Static-field child reborrows use ordinary addressed
 storage; projecting through an inexact result remains a capability gap.
-Internal replacement returning no
-tracked owner remains an unresolved routing limitation, not evidence that its
-contained owners stayed unchanged. These boundaries apply to ordinary memory
-and resource objects alike.
-The current normal-exit prototype still regresses retained native cases for
-heap full-array replacement, boxed enum-child replacement, boxed-run read-out,
-and wide results containing owners. They remain enabled and must pass before
-this prototype is considered complete. The investigation records why an empty
-current origin list alone cannot safely recover an unknown summary.
+An unrepresented interior replacement marks the owner image unknown, including
+when the displaced value is discarded. It cannot silently preserve stale
+contents. These boundaries apply to ordinary memory and resource objects alike.
+Boxed enum-child replacement retains its native execution and release-observer
+behavior. Owning full-array construction and replacement, boxed-run read-out,
+wide results containing owners, and other owning run-boundary consumers remain
+blocked by the incomplete content image. All executable assertions remain
+enabled. The investigation records why an empty current origin list alone cannot safely
+recover an unknown summary.
 Loop-origin comparison is deferred only in the preliminary pass that builds
 callable summaries; the final pass retains its full backedge comparison.
 Indexed mutation targets no longer overwrite the containing owner's image
@@ -465,7 +471,9 @@ merely because their effect access names that storage root. For copy elements,
 kernel run-take result lists preserve the run's origin in the remainder's
 ordinal through direct calls and helper summaries; the removed observation
 carries no identity. Noncopy elements still need separate remainder/content
-images and remain unknown at state uses. This also blocks the retained boxed-run
+images and remain unknown at state uses. Owning insertion likewise needs an
+explicit logical-slot transfer; a generic union cannot describe front insertion
+because it shifts every existing element. This also blocks the retained boxed-run
 read-out and wide-result owning-child native cases, as well as the block-pool
 program. Their successful execution assertions remain unchanged. General
 changing-origin loop headers remain a separate capability gap.
