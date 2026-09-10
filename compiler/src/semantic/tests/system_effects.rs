@@ -202,7 +202,8 @@ fn rotate(value: own box<u64>) -> result: own FixedVector<box<u64>, 1000000000> 
   set values = place_back(vector: move values, value: move value);
   for (
     round in 0_u64..8_u64,
-    invariant one: len_of(values) == 1_u64
+    invariant at_most_one: len_of(values) <= 1_u64,
+    invariant at_least_one: len_of(values) >= 1_u64
   ) {
     let (rest, first) = take_front(vector: move values);
     set values = place_back(vector: move rest, value: move first);
