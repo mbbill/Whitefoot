@@ -15,6 +15,86 @@ use super::{assert_rule, assert_rule_kind, with_semantics};
 const RELEASE_FIX: &str = "declare the release effects of every resource this function may release, or move the owner out";
 
 #[test]
+fn dynamic_slot_mutation_frames_siblings_through_owner_and_borrowed_helpers() {
+    let source = r#"struct Slots {
+  values: array<box<u64>, 2>;
+  sibling: box<u64>;
+}
+
+MUTATOR
+
+fn observe(values: own array<box<u64>, 2>, sibling: own box<u64>, incoming: own box<u64>, index: own u64) -> result: own u64 reads(values, sibling), writes(values) contract {
+  requires index < 2_u64;
+} {
+  let state = Slots(values: move values, sibling: move sibling);
+  INVOKE
+  return deref(OBSERVED);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    for (mutator, invoke, target, observed) in [
+        (
+            r#"fn mutate(state: own Slots, incoming: own box<u64>, index: own u64) -> result: own Slots reads(state.values), writes(state.values) contract {
+  requires index < 2_u64;
+} {
+  OPERATION
+  return move state;
+}"#,
+            "let updated = mutate(state: move state, incoming: move incoming, index: index);",
+            "state.values[index]",
+            "updated.sibling",
+        ),
+        (
+            r#"fn mutate(state: &uniq Slots, incoming: own box<u64>, index: own u64) -> result: own unit reads(state.values), writes(state.values) contract {
+  requires index < 2_u64;
+} {
+  OPERATION
+  return unit;
+}"#,
+            "region {\n    let done = mutate(state: &uniq state, incoming: move incoming, index: index);\n  }",
+            "deref(state).values[index]",
+            "state.sibling",
+        ),
+    ] {
+        for (operation, legal) in [
+            (
+                format!("let previous = replace {target} = move incoming;"),
+                true,
+            ),
+            (format!("set {target} = move incoming;"), false),
+        ] {
+            let source = source
+                .replace("MUTATOR", &mutator.replace("OPERATION", &operation))
+                .replace("INVOKE", invoke)
+                .replace("OBSERVED", observed);
+            if !legal {
+                // A live affine element still needs replace. Preserving a
+                // known prefix adds no new read-out or overwrite permission.
+                assert_rule_kind(source.as_bytes(), SemanticRule::Stor1, |kind| {
+                    matches!(kind, SemanticIssueKind::AffineSetTarget { .. })
+                });
+                continue;
+            }
+            assert_complete(source.as_bytes());
+            let omitted = source.replace("reads(values, sibling)", "reads(values)");
+            assert_rule_kind(omitted.as_bytes(), SemanticRule::Eff2, |kind| {
+                matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
+                    if missing.iter().any(|effect| effect == "reads(sibling)"))
+            });
+            let spurious =
+                source.replace("reads(values, sibling)", "reads(values, sibling, incoming)");
+            assert_rule_kind(spurious.as_bytes(), SemanticRule::Eff2, |kind| {
+                matches!(kind, SemanticIssueKind::EffectMismatch { extra, .. }
+                    if extra.iter().any(|effect| effect == "reads(incoming)"))
+            });
+        }
+    }
+}
+
+#[test]
 fn complete_content_coverage_does_not_select_descriptor_or_release_effects() {
     for source in [
         br#"fn length(value: own box<u64>) -> result: own u64 pure {

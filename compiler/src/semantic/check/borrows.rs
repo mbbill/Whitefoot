@@ -453,23 +453,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .get(&place.root)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         if let Some(origins) = &binding.state_origins {
-            let selected = match self.state_fields_of_place(place, bindings)? {
-                Some(path) => origins.clone().projected_value(&path),
-                None => {
-                    let mut selected = origins.clone().projected(&canonical.fields);
-                    // A dynamic selector cannot inherit intact coverage of
-                    // a rearranged aggregate. Exact incoming-place routes
-                    // retain their ordinary enclosing formal attribution.
-                    for origin in &mut selected.formals {
-                        if origin.precision
-                            == super::super::state_origins::StateOriginPrecision::Whole
-                        {
-                            origin.precision =
-                                super::super::state_origins::StateOriginPrecision::Bound;
-                        }
+            let selection = self.state_selection_of_place(place, bindings)?;
+            let selected = if selection.exact {
+                origins.clone().projected_value(&selection.path)
+            } else {
+                let mut selected = origins.clone().projected_value(&selection.path);
+                // A dynamic selector cannot inherit intact coverage of
+                // a rearranged aggregate. Exact incoming-place routes
+                // retain their ordinary enclosing formal attribution.
+                for origin in &mut selected.formals {
+                    if origin.precision == super::super::state_origins::StateOriginPrecision::Whole
+                    {
+                        origin.precision = super::super::state_origins::StateOriginPrecision::Bound;
                     }
-                    selected
                 }
+                selected
             };
             let incomplete = if whole {
                 selected.lacks_whole_origins()

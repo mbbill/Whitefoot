@@ -471,12 +471,15 @@ fields and proved element subscripts, including fields beneath an element.
 Their evaluated offsets retain their effects and accesses; projecting through
 an inexact result remains a capability gap.
 An unresolved interior replacement retains both the previous and incoming
-suppliers as a bound, including when the displaced value is discarded. A
-wholly unresolved location remains unknown. Neither case silently preserves
+suppliers as a bound within its longest known typed prefix, including when the
+displaced value is discarded. Independent fields retain their precise origins
+through direct operations, returned owners and exclusive borrowed writeback.
+A wholly unresolved location remains unknown. Neither case silently preserves
 stale exact contents. These boundaries apply to memory and resource objects alike.
 Boxed enum-child replacement retains its native execution and release-observer
 behavior. Fresh-state full-array construction and replacement, wide results
-containing owners and the block-pool program execute again. Imported-owner
+containing owners, the block-pool program and the optional-slot program execute
+again. Imported-owner
 array construction through generic helpers also executes; complete nested-run
 transport checks. Boxed-run read-out, descriptor reads on reconstructed imported
 contents, and helpers needing extracted, residual or type-selected release

@@ -1155,39 +1155,43 @@ extent's region is one the caller must choose, so it is written at every positio
     /// An access may name its containing storage for effects without naming
     /// the value being replaced. In particular, legacy indexed targets retain
     /// a root-level access projection; it never authorizes a whole-owner update.
-    pub(super) fn state_fields_of_target(
+    pub(super) fn state_selection_of_target(
         &self,
         target: &CheckedSetTarget,
         place: &super::borrows::ResolvedPlace,
         bindings: &HashMap<crate::DeclarationId, LocalBinding>,
-    ) -> Result<Option<Vec<CheckedStateStep>>, CheckStop> {
+    ) -> Result<super::super::state_origins::StateSelection, CheckStop> {
         match target {
             CheckedSetTarget::ArrayIndex(target) => {
-                self.state_fields_of_index_target(place, &target.offset, bindings)
+                self.state_selection_of_index_target(place, &target.offset, bindings)
             }
             CheckedSetTarget::BufferIndex(target) => {
-                self.state_fields_of_index_target(place, &target.offset, bindings)
+                self.state_selection_of_index_target(place, &target.offset, bindings)
             }
-            CheckedSetTarget::SliceIndex(_) => Ok(None),
+            CheckedSetTarget::SliceIndex(_) => Ok(super::super::state_origins::StateSelection {
+                path: Vec::new(),
+                exact: false,
+            }),
             CheckedSetTarget::Place(_) | CheckedSetTarget::Storage(_) => {
-                self.state_fields_of_place(place, bindings)
+                self.state_selection_of_place(place, bindings)
             }
         }
     }
 
-    fn state_fields_of_index_target(
+    fn state_selection_of_index_target(
         &self,
         base: &super::borrows::ResolvedPlace,
         offset: &CheckedExpression,
         bindings: &HashMap<crate::DeclarationId, LocalBinding>,
-    ) -> Result<Option<Vec<CheckedStateStep>>, CheckStop> {
-        let Some(super::super::places::PlaceOffset::Literal(index)) = Self::place_offset_of(offset)
-        else {
-            return Ok(None);
+    ) -> Result<super::super::state_origins::StateSelection, CheckStop> {
+        let Some(offset) = Self::place_offset_of(offset) else {
+            let mut selection = self.state_selection_of_place(base, bindings)?;
+            selection.exact = false;
+            return Ok(selection);
         };
         let mut place = base.clone();
-        place.push_subscript(super::super::places::PlaceOffset::Literal(index));
-        self.state_fields_of_place(&place, bindings)
+        place.push_subscript(offset);
+        self.state_selection_of_place(&place, bindings)
     }
 
     /// Value selectors distinguish an allocation's referent from its owner.
@@ -1197,6 +1201,15 @@ extent's region is one the caller must choose, so it is written at every positio
         place: &super::borrows::ResolvedPlace,
         bindings: &HashMap<crate::DeclarationId, LocalBinding>,
     ) -> Result<Option<Vec<CheckedStateStep>>, CheckStop> {
+        let selection = self.state_selection_of_place(place, bindings)?;
+        Ok(selection.exact.then_some(selection.path))
+    }
+
+    pub(super) fn state_selection_of_place(
+        &self,
+        place: &super::borrows::ResolvedPlace,
+        bindings: &HashMap<crate::DeclarationId, LocalBinding>,
+    ) -> Result<super::super::state_origins::StateSelection, CheckStop> {
         let mut ty = bindings
             .get(&place.root)
             .map(|binding| binding.ty)
@@ -1207,28 +1220,31 @@ extent's region is one the caller must choose, so it is written at every positio
                     .map(|constant| constant.ty)
             })
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let mut path = Vec::new();
+        let mut selection = super::super::state_origins::StateSelection {
+            path: Vec::new(),
+            exact: false,
+        };
         for (depth, step) in place.storage_path.iter().enumerate() {
             if let PlaceProjection::Subscript(super::super::places::PlaceOffset::Literal(index)) =
                 step
             {
                 if let CheckedType::Buffer { element } = ty {
                     ty = element.ty();
-                    path.push(CheckedStateStep::Element(*index));
+                    selection.path.push(CheckedStateStep::Element(*index));
                     continue;
                 }
                 let element = match ty {
                     CheckedType::Array { element, .. }
                     | CheckedType::FixedVector { element, .. }
                     | CheckedType::Vector { element, .. } => element,
-                    _ => return Ok(None),
+                    _ => return Ok(selection),
                 };
                 ty = self.element_type(element)?;
-                path.push(CheckedStateStep::Element(*index));
+                selection.path.push(CheckedStateStep::Element(*index));
                 continue;
             }
             let CheckedType::Nominal(id) = ty else {
-                return Ok(None);
+                return Ok(selection);
             };
             match (step, &self.nominal(id)?.kind) {
                 (PlaceProjection::Field(field), CheckedNominalKind::Struct { fields, .. }) => {
@@ -1236,15 +1252,15 @@ extent's region is one the caller must choose, so it is written at every positio
                         .get(*field as usize)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?
                         .ty;
-                    path.push(CheckedStateStep::Field(*field));
+                    selection.path.push(CheckedStateStep::Field(*field));
                 }
                 (PlaceProjection::Deref, CheckedNominalKind::Box { referent, .. }) => {
                     ty = *referent;
-                    path.push(CheckedStateStep::Referent);
+                    selection.path.push(CheckedStateStep::Referent);
                 }
                 (PlaceProjection::Deref, CheckedNominalKind::Arena { content, .. }) => {
                     ty = *content;
-                    path.push(CheckedStateStep::Referent);
+                    selection.path.push(CheckedStateStep::Referent);
                 }
                 (PlaceProjection::Field(field), CheckedNominalKind::Enum { variants }) => {
                     let Some((_, tag)) = place
@@ -1252,7 +1268,7 @@ extent's region is one the caller must choose, so it is written at every positio
                         .iter()
                         .find(|(index, _)| *index == depth)
                     else {
-                        return Ok(None);
+                        return Ok(selection);
                     };
                     let selected = variants
                         .iter()
@@ -1260,15 +1276,16 @@ extent's region is one the caller must choose, so it is written at every positio
                         .and_then(|variant| variant.fields.get(*field as usize))
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                     ty = selected.ty;
-                    path.push(CheckedStateStep::VariantField {
+                    selection.path.push(CheckedStateStep::VariantField {
                         variant: *tag,
                         field: *field,
                     });
                 }
-                _ => return Ok(None),
+                _ => return Ok(selection),
             }
         }
-        Ok(Some(path))
+        selection.exact = true;
+        Ok(selection)
     }
 
     /// Follows a checked value through moves, borrows, and closed-world call
@@ -1285,10 +1302,7 @@ extent's region is one the caller must choose, so it is written at every positio
             .get(&place.root)
             .and_then(|binding| binding.state_origins.clone())
             .unwrap_or_else(CheckedStateOrigins::unknown);
-        Ok(match self.state_fields_of_place(place, bindings)? {
-            Some(path) => image.projected_value(&path),
-            None => image.unlocated(),
-        })
+        Ok(self.state_selection_of_place(place, bindings)?.read(image))
     }
 
     pub(super) fn state_origins_of_value(
@@ -1305,14 +1319,11 @@ extent's region is one the caller must choose, so it is written at every positio
             .map(|borrow| &borrow.place)
             .or_else(|| (value.accesses.len() == 1).then(|| &value.accesses[0].place));
         let rooted = if let Some(place) = rooted_place {
-            let path = self.state_fields_of_place(place, bindings)?;
+            let selection = self.state_selection_of_place(place, bindings)?;
             bindings
                 .get(&place.root)
                 .and_then(|binding| binding.state_origins.clone())
-                .map(|origins| match path.as_ref() {
-                    Some(path) => origins.projected_value(path),
-                    None => origins.unlocated(),
-                })
+                .map(|origins| selection.read(origins))
         } else if let Some(holder) = value.holder {
             bindings
                 .get(&holder)

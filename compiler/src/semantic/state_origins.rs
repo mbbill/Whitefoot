@@ -16,8 +16,44 @@ pub(crate) trait StateImage: Clone {
     fn unknown() -> Self;
     fn merged(self, other: Self) -> Self;
     fn prefixed(self, path: &[CheckedStateStep]) -> Self;
+    fn projected_value(self, path: &[CheckedStateStep]) -> Self;
+    fn replaced_value(self, path: &[CheckedStateStep], replacement: Self) -> Self;
     fn unlocated(self) -> Self;
     fn whole_transfer(self) -> Self;
+}
+
+/// The longest represented value path. An inexact selection lies somewhere
+/// within that subtree; uncertainty there does not change independent fields.
+#[derive(Clone, Debug)]
+pub(crate) struct StateSelection {
+    pub(crate) path: Vec<CheckedStateStep>,
+    pub(crate) exact: bool,
+}
+
+impl StateSelection {
+    pub(crate) fn read<I: StateImage>(&self, image: I) -> I {
+        let selected = image.projected_value(&self.path);
+        if self.exact {
+            selected
+        } else {
+            selected.unlocated()
+        }
+    }
+
+    pub(crate) fn replace<I: StateImage>(&self, image: I, replacement: I) -> I {
+        let replacement = if self.exact {
+            replacement
+        } else {
+            // No owner outside this subtree or the incoming value can enter
+            // it. An unknown slot cannot strongly exclude any old supplier.
+            image
+                .clone()
+                .projected_value(&self.path)
+                .merged(replacement)
+                .unlocated()
+        };
+        image.replaced_value(&self.path, replacement)
+    }
 }
 
 pub(crate) fn kernel_state_image<I: StateImage>(
@@ -251,6 +287,12 @@ impl StateImage for CheckedStateOrigins {
     }
     fn prefixed(self, path: &[CheckedStateStep]) -> Self {
         self.prefixed(path)
+    }
+    fn projected_value(self, path: &[CheckedStateStep]) -> Self {
+        self.projected_value(path)
+    }
+    fn replaced_value(self, path: &[CheckedStateStep], replacement: Self) -> Self {
+        self.replace_value_path(path, Some(replacement))
     }
     fn unlocated(self) -> Self {
         self.unlocated()
@@ -492,6 +534,42 @@ pub(crate) struct CheckedBorrowedStateOrigin {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_uncertain_slot_keeps_both_suppliers_but_does_not_contaminate_siblings() {
+        let slots = DeclarationId::from_index(0).unwrap();
+        let sibling = DeclarationId::from_index(1).unwrap();
+        let incoming = DeclarationId::from_index(2).unwrap();
+        let supplied = |source| CheckedStateOrigins::formal_leaves(source, vec![Vec::new()]);
+        let state = supplied(slots)
+            .prefixed(&[CheckedStateStep::Field(0)])
+            .merged(supplied(sibling).prefixed(&[CheckedStateStep::Field(1)]));
+        let selection = StateSelection {
+            path: vec![CheckedStateStep::Field(0)],
+            exact: false,
+        };
+        let changed = selection.replace(state, supplied(incoming));
+        assert_eq!(
+            changed.clone().projected(&[1]),
+            supplied(sibling),
+            "an independent field still denotes its exact supplied owner"
+        );
+        let contents = selection.read(changed.clone());
+        assert!(contents.lacks_whole_origins());
+        assert_eq!(
+            contents
+                .formals
+                .iter()
+                .map(|route| route.source.root)
+                .collect::<Vec<_>>(),
+            vec![slots, incoming],
+            "neither old nor incoming contents may be dropped from the bound"
+        );
+        let restored =
+            changed.replace_value_path(&selection.path, Some(CheckedStateOrigins::fresh()));
+        assert!(restored.clone().projected(&[0]).formals.is_empty());
+        assert_eq!(restored.projected(&[1]), supplied(sibling));
+    }
 
     #[test]
     fn whole_coverage_survives_component_transport_but_not_selection_or_partition() {

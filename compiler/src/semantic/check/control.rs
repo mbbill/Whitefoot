@@ -795,13 +795,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let previous_whole_origins = bindings
             .get(&place.root)
             .and_then(|binding| binding.state_origins.clone());
-        let target_fields = self.state_fields_of_target(&target, &place, bindings)?;
-        let previous_origins = match (previous_whole_origins.clone(), target_fields.as_deref()) {
-            (Some(origins), Some(fields)) => Some(origins.projected_value(fields)),
-            (Some(origins), None) => Some(origins.unlocated()),
-            (_, None) => Some(CheckedStateOrigins::unknown()),
-            (None, Some(_)) => None,
-        };
+        let selection = self.state_selection_of_target(&target, &place, bindings)?;
+        let previous_origins = previous_whole_origins
+            .clone()
+            .map(|origins| selection.read(origins))
+            .or_else(|| (!selection.exact).then(CheckedStateOrigins::unknown));
         let target_carries_identity = self.type_carries_identity(target.ty())?;
         // The moved-out value's sole owner is the fresh ordinary binding;
         // the target root stays live [SET-2, OWN-1].
@@ -838,19 +836,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self
                     .unsupported(UnsupportedSemanticFeature::OwnerStateRouting, target_node);
             }
-            let updated = match (previous_whole_origins, target_fields.as_deref()) {
-                (Some(origins), Some(fields)) => {
-                    Some(origins.replace_value_path(fields, replacement_origins))
+            let current = previous_whole_origins.unwrap_or_else(|| {
+                if selection.exact {
+                    CheckedStateOrigins::fresh()
+                } else {
+                    CheckedStateOrigins::unknown()
                 }
-                (_, Some(_)) => replacement_origins,
-                (Some(mut origins), None) => {
-                    if let Some(replacement) = replacement_origins {
-                        origins.union(&replacement);
-                    }
-                    Some(origins.unlocated())
-                }
-                (_, None) => Some(CheckedStateOrigins::unknown()),
-            };
+            });
+            let updated = Some(selection.replace(
+                current,
+                replacement_origins.unwrap_or_else(CheckedStateOrigins::fresh),
+            ));
             bindings
                 .get_mut(&place.root)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?

@@ -996,6 +996,28 @@ provides the origin join, but it does not supply an exact dynamic-slot image.
 Preserve the record's field precision so a payload
 join does not turn a priority-field read into a payload access.
 
+The next recovery experiment isolates that framing obligation. A dynamic
+replacement at `record.slots[index]` has an unknown element selector but a known
+`record.slots` prefix. Bound only the selected subtree, preserving unrelated
+fields in both body checking and callable replay. The existing optional-slot
+program must execute unchanged; direct and helper-returned field readers must
+retain the required sibling effect and reject omitted or spurious effects.
+Controls must keep both old and incoming suppliers in the uncertain subtree
+without making either supplier an exact extracted value. This experiment does
+not establish precise descriptor, residual-slot or release selection.
+
+The prefix repair restores the unchanged optional-slot program's native fill,
+pop and cleanup checks. Source controls return the changed aggregate by value
+or update it through an exclusive helper borrow, then read an independent
+Box field. Omitting that field's read or adding the incoming element's read
+rejects by EFF-2. Direct overwrite of a live affine indexed element still
+rejects by STOR-1; the prefix does not grant new overwrite permission.
+Both checkers share the subtree selection and update algebra. Unknown slots
+retain old and incoming supplier bounds only within the represented prefix;
+the displaced value remains bounded, and unrepresented borrowed-result
+locations remain unknown. This repairs lost field framing under the existing
+typed-route design without adding a slot-identity or content-selection rule.
+
 The complete candidate must use one transfer semantics for normal checking and callable
 summary derivation, preserving the existing typed storage paths. Origin data is
 erased and is never a runtime graph, ownership permission, or allocation identity.

@@ -614,37 +614,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .flatten()
                     .map(|image| image.projected(&[field]))
             };
-            let Some(fields) = self.state_fields_of_target(
+            let selection = self.state_selection_of_target(
                 &target.mutation.target,
                 &target.mutation.place,
                 bindings,
-            )?
-            else {
-                // A dynamic replacement changes an unknown part of this
-                // root, but cannot import an owner outside these two images.
-                let local = bindings
-                    .get_mut(&target.mutation.place.root)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                let mut origins = local
-                    .state_origins
-                    .take()
-                    .unwrap_or_else(crate::semantic::model::CheckedStateOrigins::unknown);
-                if let Some(image) = image {
-                    origins.union(&image);
-                }
-                local.state_origins = Some(origins.unlocated());
-                continue;
-            };
+            )?;
             let local = bindings
                 .get_mut(&target.mutation.place.root)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            local.state_origins = Some(
-                local
-                    .state_origins
-                    .take()
-                    .unwrap_or_else(crate::semantic::model::CheckedStateOrigins::fresh)
-                    .replace_value_path(&fields, image),
-            );
+            let current = local.state_origins.take().unwrap_or_else(|| {
+                if selection.exact {
+                    crate::semantic::model::CheckedStateOrigins::fresh()
+                } else {
+                    crate::semantic::model::CheckedStateOrigins::unknown()
+                }
+            });
+            local.state_origins = Some(selection.replace(
+                current,
+                image.unwrap_or_else(crate::semantic::model::CheckedStateOrigins::fresh),
+            ));
         }
         Ok(())
     }

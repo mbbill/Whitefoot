@@ -8,7 +8,8 @@ use super::super::model::{
     CheckedStatePath, CheckedStateStep, CheckedStatement,
 };
 use super::super::state_origins::{
-    StateOriginPrecision, exclude_routes, project_routes, union_routes, unlocated_routes,
+    StateOriginPrecision, StateSelection, exclude_routes, project_routes, union_routes,
+    unlocated_routes,
 };
 use super::{CheckStop, Checker};
 
@@ -34,6 +35,12 @@ impl super::super::state_origins::StateImage for OriginSet {
     }
     fn prefixed(self, path: &[CheckedStateStep]) -> Self {
         self.prefixed(path)
+    }
+    fn projected_value(self, path: &[CheckedStateStep]) -> Self {
+        self.projected_value(path)
+    }
+    fn replaced_value(self, path: &[CheckedStateStep], replacement: Self) -> Self {
+        self.replace_path(path, replacement)
     }
     fn unlocated(self) -> Self {
         self.unlocated()
@@ -420,12 +427,11 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
             } => {
                 self.target_offsets(target, &mut environment)?;
                 let replacement = self.expression(value, &mut environment)?;
-                let place = self.target_place(target, &environment);
                 let extracted = if self.checker.type_carries_identity(target.ty())? {
-                    match place.as_ref() {
-                        Some((root, fields)) => environment.read_value(*root, fields),
-                        None => self.target_bound(target, &environment),
-                    }
+                    self.target_selection(target, &environment)
+                        .map_or(OriginSet::Unknown, |(root, selection)| {
+                            selection.read(environment.read_value(root, &[]))
+                        })
                 } else {
                     OriginSet::Absent
                 };
@@ -632,49 +638,45 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
         })
     }
 
-    fn target_place(
+    fn target_selection(
         &self,
         target: &CheckedSetTarget,
         environment: &OriginEnvironment,
-    ) -> Option<(BindingId, Vec<CheckedStateStep>)> {
+    ) -> Option<(BindingId, StateSelection)> {
+        let exact = |(root, path)| (root, StateSelection { path, exact: true });
+        let indexed = |(root, mut path): (BindingId, Vec<CheckedStateStep>), offset| {
+            let exact = if let Some(super::super::places::PlaceOffset::Literal(index)) = offset {
+                path.push(CheckedStateStep::Element(index));
+                true
+            } else {
+                false
+            };
+            (root, StateSelection { path, exact })
+        };
         match target {
-            CheckedSetTarget::Place(place) => environment.place(place.binding, &place.fields),
+            CheckedSetTarget::Place(place) => {
+                environment.place(place.binding, &place.fields).map(exact)
+            }
             CheckedSetTarget::Storage(root) => {
-                let fields = static_fields(&root.path)?;
-                environment.value_place(root.binding()?, &fields)
+                let selection = storage_selection(&root.path);
+                let (root, path) = environment.value_place(root.binding()?, &selection.path)?;
+                Some((
+                    root,
+                    StateSelection {
+                        path,
+                        exact: selection.exact,
+                    },
+                ))
             }
-            CheckedSetTarget::ArrayIndex(target) => {
-                let (root, mut path) = environment.place(target.binding, &target.fields)?;
-                let super::super::places::PlaceOffset::Literal(index) =
-                    Checker::place_offset_of(&target.offset)?
-                else {
-                    return None;
-                };
-                path.push(CheckedStateStep::Element(index));
-                Some((root, path))
-            }
-            CheckedSetTarget::BufferIndex(target) => {
-                let (root, mut path) =
-                    environment.place(target.root.binding, &target.root.fields)?;
-                let super::super::places::PlaceOffset::Literal(index) =
-                    Checker::place_offset_of(&target.offset)?
-                else {
-                    return None;
-                };
-                path.push(CheckedStateStep::Element(index));
-                Some((root, path))
-            }
+            CheckedSetTarget::ArrayIndex(target) => Some(indexed(
+                environment.place(target.binding, &target.fields)?,
+                Checker::place_offset_of(&target.offset),
+            )),
+            CheckedSetTarget::BufferIndex(target) => Some(indexed(
+                environment.place(target.root.binding, &target.root.fields)?,
+                Checker::place_offset_of(&target.offset),
+            )),
             _ => None,
-        }
-    }
-
-    fn target_root(&self, target: &CheckedSetTarget) -> Option<BindingId> {
-        match target {
-            CheckedSetTarget::Place(place) => Some(place.binding),
-            CheckedSetTarget::Storage(root) => root.binding(),
-            CheckedSetTarget::ArrayIndex(target) => Some(target.binding),
-            CheckedSetTarget::BufferIndex(target) => Some(target.root.binding),
-            CheckedSetTarget::SliceIndex(_) => None,
         }
     }
 
@@ -703,32 +705,15 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
         Ok(())
     }
 
-    fn target_bound(
-        &self,
-        target: &CheckedSetTarget,
-        environment: &OriginEnvironment,
-    ) -> OriginSet {
-        self.target_root(target)
-            .map_or(OriginSet::Unknown, |binding| {
-                environment.read(binding, &[]).unlocated()
-            })
-    }
-
     fn write_target(
         &self,
         target: &CheckedSetTarget,
         replacement: OriginSet,
         environment: &mut OriginEnvironment,
     ) {
-        if let Some(place) = self.target_place(target, environment) {
-            environment.write(Some(place), replacement);
-        } else if let Some(place) = self
-            .target_root(target)
-            .and_then(|binding| environment.place(binding, &[]))
-        {
-            let mut bound = environment.read_value(place.0, &place.1);
-            bound.union(replacement);
-            environment.write(Some(place), bound.unlocated());
+        if let Some((root, selection)) = self.target_selection(target, environment) {
+            let updated = selection.replace(environment.read_value(root, &[]), replacement);
+            environment.write(Some((root, Vec::new())), updated);
         } else {
             environment.write(None, replacement);
         }
@@ -907,10 +892,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 let Some(binding) = root.binding() else {
                     return Ok(OriginSet::fresh());
                 };
-                match static_fields(&root.path) {
-                    Some(fields) => environment.read_value(binding, &fields),
-                    None => environment.read(binding, &[]).unlocated(),
-                }
+                storage_selection(&root.path).read(environment.read_value(binding, &[]))
             }
             CheckedExpression::Project {
                 binding, fields, ..
@@ -1216,8 +1198,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 }
 
 fn static_fields(path: &[CheckedPlaceStep]) -> Option<Vec<CheckedStateStep>> {
-    path.iter()
-        .map(|step| match step {
+    let selection = storage_selection(path);
+    selection.exact.then_some(selection.path)
+}
+
+fn storage_selection(path: &[CheckedPlaceStep]) -> StateSelection {
+    let mut selection = StateSelection {
+        path: Vec::new(),
+        exact: false,
+    };
+    for step in path {
+        let step = match step {
             CheckedPlaceStep::Field(field) => Some(CheckedStateStep::Field(*field)),
             CheckedPlaceStep::BoxReferent(_) => Some(CheckedStateStep::Referent),
             CheckedPlaceStep::Subscript(index) => match index.place_offset {
@@ -1226,8 +1217,14 @@ fn static_fields(path: &[CheckedPlaceStep]) -> Option<Vec<CheckedStateStep>> {
                 }
                 _ => None,
             },
-        })
-        .collect()
+        };
+        let Some(step) = step else {
+            return selection;
+        };
+        selection.path.push(step);
+    }
+    selection.exact = true;
+    selection
 }
 
 fn export_origin(origin: OriginSet) -> CheckedResultStateOrigin {
