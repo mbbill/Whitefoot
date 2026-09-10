@@ -75,7 +75,8 @@ NR==2 {
     if (footer || block!=count || seen!=calls || NF!=7) bad("footer position")
     if (field($4,"outputs=")!=count*calls || field($5,"stats=")!=stats ||
         field($6,"steals=")!=steals || field($7,"migrated=")!=migrated) bad("footer totals")
-    if (stats && parallel && width==4 && mode!="exhaust" && !steals) bad("no actual steal")
+    # Zero steals is legal when every published task is popped by its owner.
+    # Per-call publication opportunities and conservation remain mandatory.
     footer=1;next
 }
 /^# worker_nodes / {

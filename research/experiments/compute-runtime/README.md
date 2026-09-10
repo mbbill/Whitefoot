@@ -3103,8 +3103,9 @@ the value; the instrumented root additionally reports counters through a C
 callback. The generated Rust C symbol is resolved from that exact build's IR,
 without unsafe Rust or export attributes. All branches join before reporting.
 These are application fork/migration counts, not internal Rayon job counts
-or OS context switches. Instrumented W4 qualification must observe migration;
-an all-zero migration report is a maintained negative case.
+or OS context switches. Instrumented calls may execute entirely on the caller;
+the controlled two-worker barrier check described below verifies migration
+capability independently of the timing run's schedule.
 
 The pool includes the caller as worker zero, with three helpers at width4.
 It is process-lived, as in the earlier records control. Full and batch
@@ -3487,6 +3488,23 @@ actualization assertion with a controlled path check; no numerical, memory,
 resource-exhaustion or work-conservation check is removed. The extracted
 helper may affect code layout, so earlier timing results stay bound to their
 original images rather than being assigned to this repair.
+
+The [f220e288 macOS research job](https://github.com/mbbill/Whitefoot/actions/runs/34425771649/job/102710552954)
+exposed the equivalent WF assumption: `parallel actualization` required a
+positive steal count in each short four-participant instrumented process.
+This diagnostic uses the recovered research control; the formal runtime
+batch image does not execute that assertion. Owner-local execution of all
+published tasks is valid. `check-runtime` already forces every helper into a
+held callback, checks that it runs on a foreign thread, and checks successful
+steal counts. It covers widths two/four and
+statistics-on/off/event builds, independently of benchmark timing.
+
+Quadrature therefore retains exact results, width, publication opportunities,
+task conservation, sequential exclusion and exhaustion checks while dropping
+the per-process positive-steal requirement. A maintained all-local WF report
+must pass; removing one local pop must fail task conservation, and removing
+every offer must fail the independent opportunity count. This corrects the
+schedule assumption without adding waits or retries to measured code.
 
 These are computation-node counts, not equally expensive instructions, task
 durations, upstream internal jobs or OS context switches. The added worker

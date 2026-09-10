@@ -410,7 +410,8 @@ int wf__main_body(int argc,char **argv) {
         }
     }
 #if WF_COMPUTE_STATS
-    if(parallel_form && requested==4 && !exhaust)require(total_steals>0,"parallel actualization");
+    /* An all-local schedule is valid. check-runtime's held-worker protocol
+     * forces foreign execution independently of these short timed calls. */
     if(!parallel_form && !native_wf)require(total_steals==0,"sequential task exclusion");
 #else
     if((parallel_form || (native_wf && spawn_depth)) && requested==4)require(pool_lanes()==4,"four-worker startup");

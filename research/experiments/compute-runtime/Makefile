@@ -235,6 +235,20 @@ check-quadrature: quadrature-formal-build check-sanitizer-reports
 		awk -v mode=exhaust -v form=$$form -v spawn=$$spawn -v width=4 -v stats=$$stats -f quadrature.awk "$$log"; \
 		grep -E '^# quadrature PASS: outputs=20 stats=[01] steals=0 migrated=0$$' "$$log"; \
 	done; done
+	@awk '!/^#/ {$$13=$$12;$$10=0} /^# quadrature PASS:/ {$$6="steals=0"} {print}' \
+		"$(OUT)/quadrature/check-sanitized-w4-wf-leaf.tsv" > "$(OUT)/quadrature/serial-wf-schedule.tsv"
+	@awk -v mode=check -v form=wf-leaf -v width=4 -v stats=1 -f quadrature.awk "$(OUT)/quadrature/serial-wf-schedule.tsv"
+	@set -e; for mutation in lost-pop no-offers; do \
+		bad="$(OUT)/quadrature/negative-wf-$$mutation.tsv"; \
+		case $$mutation in \
+			lost-pop) awk '!/^#/ && !changed && $$12>0 {$$13--;changed=1} {print}' "$(OUT)/quadrature/serial-wf-schedule.tsv" > "$$bad"; reason='joined task conservation';; \
+			no-offers) awk '!/^#/ {$$12=0;$$13=0;$$14=0;$$15=0;$$16=0} {print}' "$(OUT)/quadrature/serial-wf-schedule.tsv" > "$$bad"; reason='task opportunities';; \
+		esac; \
+		if awk -v mode=check -v form=wf-leaf -v width=4 -v stats=1 -f quadrature.awk "$$bad" > "$$bad.log" 2>&1; then \
+			echo "quadrature accepted wrong WF $$mutation" >&2; exit 1; \
+		fi; \
+		grep -Fx "quadrature report: $$reason" "$$bad.log"; \
+	done
 	@awk '!/^#/ {$$19=0;n=$$17} /^# worker_nodes / {$$5="w0=" n;$$6="w1=0";$$7="w2=0";$$8="w3=0"} /^# quadrature PASS:/ {$$7="migrated=0"} {print}' \
 		"$(OUT)/quadrature/check-sanitized-w4-rayon-d8.tsv" > "$(OUT)/quadrature/serial-rayon-schedule.tsv"
 	@awk -v mode=check -v form=rayon -v spawn=8 -v width=4 -v stats=1 -f quadrature.awk "$(OUT)/quadrature/serial-rayon-schedule.tsv"
