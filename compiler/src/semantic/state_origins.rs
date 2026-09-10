@@ -5,6 +5,8 @@
 //! and installs the replacement's routes at the same value path. Thus a Box's
 //! allocation remains distinct from the owner currently stored inside it.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use crate::DeclarationId;
 
 use super::model::CheckedStatePath;
@@ -21,6 +23,156 @@ pub(crate) trait StateImage: Clone {
     fn selected_bound(self) -> Self;
     fn unlocated(self) -> Self;
     fn whole_transfer(self) -> Self;
+    fn run_lengths(&self) -> Option<&KnownRunLengths>;
+    fn with_run_lengths(self, lengths: KnownRunLengths) -> Self;
+
+    fn with_run_length(self, length: Option<u64>) -> Self {
+        let mut lengths = self.run_lengths().cloned().unwrap_or_default();
+        lengths.lengths.remove(&Vec::new());
+        if let Some(length) = length {
+            lengths.lengths.insert(Vec::new(), length);
+        }
+        self.with_run_lengths(lengths)
+    }
+
+    fn with_variant(self, variant: u32) -> Self {
+        let mut lengths = self.run_lengths().cloned().unwrap_or_default();
+        lengths
+            .variants
+            .insert(Vec::new(), BTreeSet::from([variant]));
+        self.with_run_lengths(lengths)
+    }
+}
+
+/// Value facts, independent of supplier identity. Composition places disjoint
+/// values together; a control-flow join retains only facts common to both.
+/// Known discriminants distinguish an absent variant payload from a payload
+/// with unknown length. These facts do not enumerate a run's capacity.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct KnownRunLengths {
+    lengths: BTreeMap<Vec<CheckedStateStep>, u64>,
+    variants: BTreeMap<Vec<CheckedStateStep>, BTreeSet<u32>>,
+}
+
+impl KnownRunLengths {
+    pub(crate) fn root(&self) -> Option<u64> {
+        self.lengths.get(&Vec::new()).copied()
+    }
+
+    pub(crate) fn paths(&self) -> impl Iterator<Item = &[CheckedStateStep]> {
+        self.lengths
+            .keys()
+            .chain(self.variants.keys())
+            .map(Vec::as_slice)
+    }
+
+    pub(crate) fn compose(&mut self, other: &Self) {
+        for (path, length) in &other.lengths {
+            self.lengths.insert(path.clone(), *length);
+        }
+        for (path, variants) in &other.variants {
+            self.variants
+                .entry(path.clone())
+                .or_default()
+                .extend(variants);
+        }
+    }
+
+    pub(crate) fn join(&mut self, other: &Self) {
+        let mut lengths = BTreeMap::new();
+        for (path, length) in &self.lengths {
+            if other.lengths.get(path) == Some(length) || other.excludes(path) {
+                lengths.insert(path.clone(), *length);
+            }
+        }
+        for (path, length) in &other.lengths {
+            if self.excludes(path) {
+                lengths.insert(path.clone(), *length);
+            }
+        }
+        let mut variants = BTreeMap::new();
+        for (path, left) in &self.variants {
+            if let Some(right) = other.variants.get(path) {
+                variants.insert(path.clone(), left.union(right).copied().collect());
+            } else if other.excludes(path) {
+                variants.insert(path.clone(), left.clone());
+            }
+        }
+        for (path, right) in &other.variants {
+            if self.excludes(path) {
+                variants.insert(path.clone(), right.clone());
+            }
+        }
+        self.lengths = lengths;
+        self.variants = variants;
+    }
+
+    fn excludes(&self, path: &[CheckedStateStep]) -> bool {
+        path.iter().enumerate().any(|(index, step)| {
+            matches!(step, CheckedStateStep::VariantField { variant, .. }
+                if self.variants.get(&path[..index]).is_some_and(|active| !active.contains(variant)))
+        })
+    }
+
+    pub(crate) fn prefixed(self, prefix: &[CheckedStateStep]) -> Self {
+        fn prefix_paths<T>(
+            paths: BTreeMap<Vec<CheckedStateStep>, T>,
+            prefix: &[CheckedStateStep],
+        ) -> BTreeMap<Vec<CheckedStateStep>, T> {
+            paths
+                .into_iter()
+                .map(|(path, value)| {
+                    let mut selected = prefix.to_vec();
+                    selected.extend(path);
+                    (selected, value)
+                })
+                .collect()
+        }
+        Self {
+            lengths: prefix_paths(self.lengths, prefix),
+            variants: prefix_paths(self.variants, prefix),
+        }
+    }
+
+    pub(crate) fn projected(self, path: &[CheckedStateStep]) -> Self {
+        // A dynamic element could also select an unrepresented element.
+        // Per-slot constants alone do not establish a universal element fact.
+        if path.contains(&CheckedStateStep::AnyElement) {
+            return Self::default();
+        }
+        fn project_paths<T>(
+            paths: BTreeMap<Vec<CheckedStateStep>, T>,
+            path: &[CheckedStateStep],
+        ) -> BTreeMap<Vec<CheckedStateStep>, T> {
+            paths
+                .into_iter()
+                .filter_map(|(stored, value)| {
+                    stored
+                        .strip_prefix(path)
+                        .map(|suffix| (suffix.to_vec(), value))
+                })
+                .collect()
+        }
+        Self {
+            lengths: project_paths(self.lengths, path),
+            variants: project_paths(self.variants, path),
+        }
+    }
+
+    pub(crate) fn exclude(&mut self, path: &[CheckedStateStep]) {
+        self.lengths.retain(|stored, _| !stored.starts_with(path));
+        self.variants.retain(|stored, _| !stored.starts_with(path));
+    }
+
+    fn outside(&self, path: &[CheckedStateStep], keep_root: bool) -> Self {
+        let mut outside = self.clone();
+        let retain = |stored: &Vec<CheckedStateStep>| {
+            !stored.starts_with(path) || (keep_root && stored.as_slice() == path)
+        };
+        outside.lengths.retain(|stored, _| retain(stored));
+        outside.variants.retain(|stored, _| retain(stored));
+        outside
+    }
 }
 
 /// The exact prefix bounds a weak update. The complete query also retains
@@ -72,6 +224,12 @@ impl StateSelection {
     }
 
     pub(crate) fn replace<I: StateImage>(&self, image: I, replacement: I) -> I {
+        let surviving_lengths = (!self.exact).then(|| {
+            image.run_lengths().cloned().unwrap_or_default().outside(
+                &self.path,
+                self.query.get(self.path.len()) == Some(&CheckedStateStep::AnyElement),
+            )
+        });
         let replacement = if self.exact {
             replacement
         } else {
@@ -83,7 +241,11 @@ impl StateSelection {
                 .merged(replacement)
                 .unlocated()
         };
-        image.replaced_value(&self.path, replacement)
+        let replaced = image.replaced_value(&self.path, replacement);
+        match surviving_lengths {
+            Some(lengths) => replaced.with_run_lengths(lengths),
+            None => replaced,
+        }
     }
 }
 
@@ -95,11 +257,16 @@ pub(crate) fn kernel_state_image<I: StateImage>(
     use crate::KernelRow;
     let argument = |index| arguments.get(index).cloned().unwrap_or_else(I::unknown);
     match row {
-        KernelRow::FixedVector
-        | KernelRow::ArenaVector
-        | KernelRow::ArenaVectorProved
-        | KernelRow::HeapVector
-        | KernelRow::ArenaFrame => I::fresh(),
+        KernelRow::FixedVector | KernelRow::ArenaVectorProved => {
+            I::fresh().with_run_length(Some(0))
+        }
+        KernelRow::ArenaVector | KernelRow::HeapVector => I::fresh()
+            .with_run_length(Some(0))
+            .prefixed(&[CheckedStateStep::VariantField {
+                variant: 1,
+                field: 0,
+            }]),
+        KernelRow::ArenaFrame => I::fresh(),
         KernelRow::HeapBox | KernelRow::ArenaBox => {
             let value = argument(1);
             value
@@ -116,25 +283,53 @@ pub(crate) fn kernel_state_image<I: StateImage>(
                     field: 0,
                 }]))
         }
-        KernelRow::PlaceFront | KernelRow::PlaceBack if !copy_element => {
-            argument(0).merged(argument(1)).whole_transfer()
+        KernelRow::PlaceFront | KernelRow::PlaceBack => {
+            let run = argument(0);
+            let length = run.run_lengths().and_then(KnownRunLengths::root);
+            let next_length = length.and_then(|length| length.checked_add(1));
+            if copy_element {
+                run.with_run_length(next_length)
+            } else if row == KernelRow::PlaceBack
+                && let Some(length) = length
+            {
+                run.replaced_value(&[CheckedStateStep::Element(length)], argument(1))
+                    .with_run_length(next_length)
+            } else {
+                run.merged(argument(1))
+                    .whole_transfer()
+                    .with_run_length(next_length)
+            }
         }
         KernelRow::TakeFront | KernelRow::TakeBack => {
             let value = argument(0);
+            let remaining = value
+                .run_lengths()
+                .and_then(KnownRunLengths::root)
+                .and_then(|length| length.checked_sub(1));
             if copy_element {
-                value.prefixed(&[CheckedStateStep::Field(0)])
+                value
+                    .with_run_length(remaining)
+                    .prefixed(&[CheckedStateStep::Field(0)])
+            } else if row == KernelRow::TakeBack
+                && let Some(index) = remaining
+            {
+                let path = [CheckedStateStep::Element(index)];
+                let taken = value.clone().projected_value(&path);
+                value
+                    .replaced_value(&path, I::fresh())
+                    .with_run_length(remaining)
+                    .prefixed(&[CheckedStateStep::Field(0)])
+                    .merged(taken.prefixed(&[CheckedStateStep::Field(1)]))
             } else {
                 let bound = value.unlocated();
                 bound
                     .clone()
+                    .with_run_length(remaining)
                     .prefixed(&[CheckedStateStep::Field(0)])
                     .merged(bound.prefixed(&[CheckedStateStep::Field(1)]))
             }
         }
-        KernelRow::PlaceFront
-        | KernelRow::PlaceBack
-        | KernelRow::ArrayFromFixed
-        | KernelRow::FixedFromArray => argument(0),
+        KernelRow::ArrayFromFixed | KernelRow::FixedFromArray => argument(0),
         // Views carry their separately checked backing-place provenance.
         KernelRow::SliceOf | KernelRow::MutSliceOf => I::fresh(),
     }
@@ -326,6 +521,7 @@ pub(crate) fn union_routes<R: StateRoute + Ord>(routes: &mut Vec<R>, added: &[R]
 pub(crate) struct CheckedStateOrigins {
     pub(crate) unknown: bool,
     pub(crate) formals: Vec<CheckedStateOrigin>,
+    pub(crate) run_lengths: KnownRunLengths,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -345,7 +541,7 @@ impl StateImage for CheckedStateOrigins {
         Self::unknown()
     }
     fn merged(mut self, other: Self) -> Self {
-        self.union(&other);
+        self.compose(&other);
         self
     }
     fn prefixed(self, path: &[CheckedStateStep]) -> Self {
@@ -366,6 +562,15 @@ impl StateImage for CheckedStateOrigins {
     }
     fn whole_transfer(self) -> Self {
         self.whole_transfer()
+    }
+    fn run_lengths(&self) -> Option<&KnownRunLengths> {
+        (!self.unknown).then_some(&self.run_lengths)
+    }
+    fn with_run_lengths(mut self, lengths: KnownRunLengths) -> Self {
+        if !self.unknown {
+            self.run_lengths = lengths;
+        }
+        self
     }
 }
 
@@ -423,11 +628,13 @@ impl CheckedStateOrigins {
         Self {
             unknown: true,
             formals: Vec::new(),
+            run_lengths: KnownRunLengths::default(),
         }
     }
     pub(crate) fn formal_leaves(formal: DeclarationId, leaves: Vec<Vec<u32>>) -> Self {
         Self {
             unknown: false,
+            run_lengths: KnownRunLengths::default(),
             formals: leaves
                 .into_iter()
                 .map(|fields| {
@@ -449,13 +656,27 @@ impl CheckedStateOrigins {
     pub(crate) fn union(&mut self, other: &Self) {
         self.unknown |= other.unknown;
         union_routes(&mut self.formals, &other.formals);
+        self.run_lengths.join(&other.run_lengths);
+        if self.unknown {
+            self.run_lengths = KnownRunLengths::default();
+        }
+    }
+    pub(crate) fn compose(&mut self, other: &Self) {
+        self.unknown |= other.unknown;
+        union_routes(&mut self.formals, &other.formals);
+        self.run_lengths.compose(&other.run_lengths);
+        if self.unknown {
+            self.run_lengths = KnownRunLengths::default();
+        }
     }
     pub(crate) fn unlocated(mut self) -> Self {
         unlocated_routes(&mut self.formals, false);
+        self.run_lengths = KnownRunLengths::default();
         self
     }
     pub(crate) fn whole_transfer(mut self) -> Self {
         unlocated_routes(&mut self.formals, true);
+        self.run_lengths = KnownRunLengths::default();
         self
     }
     pub(crate) fn lacks_exact_origins(&self) -> bool {
@@ -480,12 +701,14 @@ impl CheckedStateOrigins {
     }
     pub(crate) fn projected_value(mut self, path: &[CheckedStateStep]) -> Self {
         self.formals = project_routes(&self.formals, path);
+        self.run_lengths = self.run_lengths.projected(path);
         self
     }
     pub(crate) fn enum_payload(self, variant: u32, field: u32) -> Self {
         self.projected_value(&[CheckedStateStep::VariantField { variant, field }])
     }
     pub(crate) fn prefixed(mut self, prefix: &[CheckedStateStep]) -> Self {
+        self.run_lengths = self.run_lengths.prefixed(prefix);
         for origin in &mut self.formals {
             let mut path = prefix.to_vec();
             path.append(&mut origin.value_fields);
@@ -506,8 +729,9 @@ impl CheckedStateOrigins {
             return self;
         }
         exclude_routes(&mut self.formals, path);
+        self.run_lengths.exclude(path);
         if let Some(replacement) = replacement {
-            self.union(&replacement.prefixed(path));
+            self.compose(&replacement.prefixed(path));
         }
         self
     }
@@ -515,10 +739,13 @@ impl CheckedStateOrigins {
         image: &CheckedResultStateOrigin,
         arguments: &[Option<Self>],
     ) -> Self {
-        let formals = match image {
+        let (formals, lengths) = match image {
             CheckedResultStateOrigin::NoState => return Self::fresh(),
             CheckedResultStateOrigin::Unknown => return Self::unknown(),
-            CheckedResultStateOrigin::Finite { formals } => formals,
+            CheckedResultStateOrigin::Finite {
+                formals,
+                run_lengths,
+            } => (formals, run_lengths),
         };
         let mut result = Self::fresh();
         for formal in formals {
@@ -534,11 +761,15 @@ impl CheckedStateOrigins {
                 StateOriginPrecision::Whole => mapped.whole_transfer(),
                 StateOriginPrecision::Bound => mapped.unlocated(),
             };
+            // Owner correspondence is not a window-length postcondition.
+            // A helper may preserve the former while changing the latter.
+            mapped.run_lengths = KnownRunLengths::default();
             for excluded in &formal.exclusions {
                 exclude_routes(&mut mapped.formals, excluded);
             }
-            result.union(&mapped.prefixed(&formal.result_fields));
+            result.compose(&mapped.prefixed(&formal.result_fields));
         }
+        result.run_lengths = lengths.clone();
         result
     }
 }
@@ -548,6 +779,7 @@ pub(crate) enum CheckedResultStateOrigin {
     NoState,
     Finite {
         formals: Vec<CheckedResultStatePath>,
+        run_lengths: KnownRunLengths,
     },
     Unknown,
 }
@@ -603,6 +835,118 @@ pub(crate) struct CheckedBorrowedStateOrigin {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn run_lengths_compose_by_place_but_join_only_common_facts() {
+        let first = CheckedStateOrigins::fresh().with_run_length(Some(1));
+        let second = CheckedStateOrigins::fresh().with_run_length(Some(2));
+        let mut record = first.prefixed(&[CheckedStateStep::Field(0)]);
+        record.compose(&second.prefixed(&[CheckedStateStep::Field(1)]));
+        assert_eq!(record.clone().projected(&[0]).run_lengths.root(), Some(1));
+        assert_eq!(record.clone().projected(&[1]).run_lengths.root(), Some(2));
+        let alternate = record.clone().replace_value_path(
+            &[CheckedStateStep::Field(0)],
+            Some(CheckedStateOrigins::fresh().with_run_length(Some(3))),
+        );
+        record.union(&alternate);
+        assert_eq!(record.clone().projected(&[0]).run_lengths.root(), None);
+        assert_eq!(record.projected(&[1]).run_lengths.root(), Some(2));
+    }
+
+    #[test]
+    fn absent_variants_are_neutral_but_unknown_payload_lengths_are_not() {
+        let some = CheckedStateStep::VariantField {
+            variant: 1,
+            field: 0,
+        };
+        let mut optional = CheckedStateOrigins::fresh()
+            .with_run_length(Some(1))
+            .prefixed(&[some])
+            .with_variant(1);
+        optional.union(&CheckedStateOrigins::fresh().with_variant(0));
+        assert_eq!(
+            optional.clone().projected_value(&[some]).run_lengths.root(),
+            Some(1)
+        );
+        let longer = CheckedStateOrigins::fresh()
+            .with_run_length(Some(2))
+            .prefixed(&[some])
+            .with_variant(1);
+        let mut differing = optional.clone();
+        differing.union(&longer);
+        assert_eq!(differing.projected_value(&[some]).run_lengths.root(), None);
+        optional.union(&CheckedStateOrigins::fresh().with_variant(1));
+        assert_eq!(optional.projected_value(&[some]).run_lengths.root(), None);
+    }
+
+    #[test]
+    fn owner_correspondence_alone_does_not_forward_a_callers_length() {
+        let source = DeclarationId::from_index(0).unwrap();
+        let actual =
+            CheckedStateOrigins::formal_leaves(source, vec![Vec::new()]).with_run_length(Some(3));
+        let summary = CheckedResultStateOrigin::Finite {
+            formals: vec![CheckedResultStatePath {
+                precision: StateOriginPrecision::Exact,
+                result_fields: Vec::new(),
+                parameter: 0,
+                parameter_fields: Vec::new(),
+                exclusions: Vec::new(),
+            }],
+            run_lengths: KnownRunLengths::default(),
+        };
+        let returned = CheckedStateOrigins::instantiate(&summary, &[Some(actual)]);
+        assert_eq!(returned.run_lengths.root(), None);
+        assert!(!returned.lacks_exact_origins());
+    }
+
+    #[test]
+    fn dynamic_element_replacement_preserves_only_the_enclosing_length() {
+        let child = CheckedStateOrigins::fresh().with_run_length(Some(2));
+        let outer = child
+            .prefixed(&[CheckedStateStep::Element(0)])
+            .with_run_length(Some(1));
+        let selection = StateSelection {
+            path: Vec::new(),
+            query: vec![CheckedStateStep::AnyElement],
+            exact: false,
+            complete: true,
+        };
+        let updated =
+            selection.replace(outer, CheckedStateOrigins::fresh().with_run_length(Some(7)));
+        assert_eq!(updated.run_lengths.root(), Some(1));
+        assert_eq!(
+            updated
+                .projected_value(&[CheckedStateStep::Element(0)])
+                .run_lengths
+                .root(),
+            None
+        );
+    }
+
+    #[test]
+    fn back_extraction_removes_the_taken_source_from_the_remaining_slots() {
+        let first = DeclarationId::from_index(0).unwrap();
+        let second = DeclarationId::from_index(1).unwrap();
+        let mut value = CheckedStateOrigins::fresh().with_run_length(Some(0));
+        for source in [first, second] {
+            value = kernel_state_image(
+                crate::KernelRow::PlaceBack,
+                false,
+                &[
+                    value,
+                    CheckedStateOrigins::formal_leaves(source, vec![Vec::new()]),
+                ],
+            );
+        }
+        let split = kernel_state_image(crate::KernelRow::TakeBack, false, &[value]);
+        let taken = split.clone().projected(&[1]);
+        assert_eq!(taken.formals.len(), 1);
+        assert_eq!(taken.formals[0].source.root, second);
+        let remaining = split.projected(&[0]);
+        assert_eq!(remaining.run_lengths.root(), Some(1));
+        assert_eq!(remaining.formals.len(), 1);
+        assert_eq!(remaining.formals[0].source.root, first);
+    }
 
     #[test]
     fn an_unrepresented_suffix_cannot_reuse_the_prefix_values_field_layout() {
@@ -710,6 +1054,7 @@ mod tests {
     fn a_complete_summary_cannot_upgrade_incomplete_actual_contents() {
         let source = DeclarationId::from_index(0).unwrap();
         let summary = CheckedResultStateOrigin::Finite {
+            run_lengths: Default::default(),
             formals: vec![CheckedResultStatePath {
                 precision: StateOriginPrecision::Whole,
                 result_fields: vec![CheckedStateStep::Field(1)],
@@ -755,6 +1100,7 @@ mod tests {
         );
 
         let summary = CheckedResultStateOrigin::Finite {
+            run_lengths: Default::default(),
             formals: vec![CheckedResultStatePath {
                 precision: StateOriginPrecision::Bound,
                 result_fields: Vec::new(),

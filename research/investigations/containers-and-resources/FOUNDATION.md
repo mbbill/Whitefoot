@@ -111,8 +111,8 @@ deletion, overlapping movement and ordinary invalid-input/refusal outcomes.
 An additional boxed-entry component executed runtime-indexed migration and
 collision probing, with earlier map operations prepared at selected positions.
 The whole-effect refinement restores the optional-entry map and nested boxed
-helper in all three execution modes. Boxed migration still exposes an explicit
-capability gap; its earlier successful run does not establish current readiness.
+helper in all three execution modes. Known back-endpoint images now also
+restore boxed migration in the maintained three-mode native loop.
 The migration component does not
 establish a general map API or return/resume migration contract;
 the leaf component is not a complete ordered map. The boxed-tree replacement
@@ -1099,12 +1099,40 @@ supplier bound remains a separate correspondence question.
 
 The boxed migration witness also needed an ordinary source correction:
 `replacement` is read after installation and later exchanged out, requiring
-both categories in its declaration. The remaining incomplete union concerns
+both categories in its declaration. At `2451cc5e` the incomplete union concerned
 `inserted`, the last append's payload. Earlier append calls already establish
 the first and second owners' effects, while literal replacement establishes
-the replacement owner's effects; the last appended owner's position is lost
+the replacement owner's effects; the last appended owner's position was lost
 before its later selection. Widening its row or the meaning of a supplier
 bound cannot supply that missing placement evidence.
+
+The endpoint experiment carries known logical run lengths independently
+of owner routes. Empty run constructors establish zero; a known length locates
+back insertion and extraction without changing earlier logical indices.
+Structural composition transports facts with fields, while control-flow joins
+retain only common lengths. Callable owner identity alone must not preserve an
+input length: a helper may keep an owner while changing its window. Unknown
+lengths and front shifts retain conservative content bounds. The selection
+criterion is the unchanged boxed migration together with repeated extraction,
+nested helper, branch-length mismatch and large-capacity loop controls; the
+analysis must not enumerate capacity or iterations. Descriptor-only length
+reads must remain separate from imported element effects. This experiment
+does not establish symbolic endpoint contracts or general front-shift images.
+
+The candidate restores the maintained boxed migration and the complete native
+family runner without altering their source or assertions. Its length facts
+carry known enum alternatives: a None return contributes no constraint on a
+Some payload that does not exist on that edge, while another Some with a
+different or unknown length invalidates the fact. Heap and Arena allocation
+success use Option's Some tag; Box allocation continues to use Result's Ok tag.
+These conditional facts describe a payload only when it exists; they neither
+prune control-flow edges nor grant more precise loans.
+Descriptor-only queries and typed release projection accompany precise element
+routes, preventing unrelated payload reads and memory-only sibling writes.
+Owning arrays use their elements' release rows, with no element action at zero
+extent. The omitted and spurious release controls retain their negative meaning.
+The caller's input lengths are deliberately not substituted through plain owner
+correspondence; symbolic unchanged/changed-window contracts remain future work.
 
 A recovery experiment distinguishes an unresolved source from a finite source
 bound whose destination placement is unresolved. Only a completely described
@@ -1185,7 +1213,8 @@ Local descriptor reads and type-directed release are separate queries. A fresh
 run holding an imported Box does not read that Box merely to observe its length;
 releasing a run whose element contains a state-writing resource and an ordinary
 memory Box does not write the latter. Both ordinary source controls retain
-their specified rows and the current explicit descriptor/release selection gap.
+their specified rows; the endpoint experiment above repairs these selections
+using descriptor roots and type-directed release components.
 Complete coverage may not turn either into a demand for a spurious effect.
 Likewise, two equal supplier bounds are not an exact subvalue identity:
 replacement's no-change shortcut requires exact selected routes in both body
@@ -1229,10 +1258,12 @@ root for its fields. The former extraction and shifted-slot capability sentinels
 now inspect the retained bounded result summaries, and the imported `pure`
 helper checks its actual missing read and write. These changes refine compiler
 effect knowledge without changing source rules or any native success expectation.
-The unchanged fixed-run library, optional-entry map and nested boxed helper also
-execute. The remaining boxed migration stops at its function's still-incomplete
-effect union, not at the earlier individual access. These outcomes establish
-composition for those witnesses, not general residual-content or release selection.
+The whole-effect refinement also restores the unchanged fixed-run library,
+optional-entry map and nested boxed helper. It leaves the boxed migration at a
+still-incomplete effect union, as observed at `2451cc5e`; the endpoint experiment
+above then restores that migration by retaining the last appended owner's
+position. These outcomes establish composition for those witnesses, not general
+dynamic residual-content selection.
 
 ### Sparse experiment contract and decision boundary
 
@@ -1297,8 +1328,8 @@ The available evidence supports different next actions for different families:
 | Area | Current disposition | Evidence that would change it |
 | --- | --- | --- |
 | Dense/fixed sequences and priority queues | Use ordinary valid values; correct and improve general storage transfer first | Matched operations still force material initialization, descriptor or movement cost after that repair |
-| Full arrays of general elements | Generalize the existing array through the selected two-conversion experiment; explicit linear-empty termination remains a separate gap | The complete build/failure/freeze/use/replace/thaw/drain witness and measured layout/transfer cost |
-| Hash and ordered containers | The scalar map and nested boxed helper execute again; boxed migration still needs finer attribution while the ordered component checks. Restore that contract before the projected sparse-layout comparison | Failure to preserve the native owning-map contract/cost, or a required operation beyond ordinary projected values; ordered mutation follows owning-box repair |
+| Full arrays of general elements | The selected two-conversion experiment executes build/failure/freeze/use/replace/thaw/drain; general views, construction transfers and explicit linear-empty termination remain separate gaps | Matched final-place construction and transfer cost, and ordinary checked views of owning elements |
+| Hash and ordered containers | The scalar map, nested boxed helper and runtime-indexed boxed migration execute; the ordered split component checks. The projected sparse-layout comparison and complete generic operations remain open | Failure to preserve the native owning-map contract/cost, or a required operation beyond ordinary projected values; a complete ordered mutation trace |
 | Deques and rings | A wrapped logical-index trace works; a wrapped run is correctly refused as one contiguous view | A two-span consumer/growth trace that prices any required copying and admits the actual loans |
 | Growable runs, strings and inline/spill forms | Source-written byte growth/refusal executes and has loop/bulk/realloc controls; no WF realloc or finished spill result | General owner-return helper, repeated reserve/spill and copy-heavy resize controls including peak storage and address validity |
 | Packed byte records | Current initialized byte storage executes variable records and overlapping movement | Measured bulk/initialization/compact-handle cost, or an actually required typed layout that byte codecs cannot preserve |
@@ -1324,8 +1355,9 @@ erasure path. Equal native code cannot choose between proof authorities.
 
 Research can therefore hand off to those implementation experiments without
 claiming a universal container substrate. Generic behavior, complete ordered
-mutation, two-span consumers, inline spill, the full-array implementation, stored lifetime,
-variable tails and concurrent retirement remain named capability questions.
+mutation, two-span consumers, inline spill, general array views and construction
+destinations, stored lifetime, variable tails and concurrent retirement remain
+named capability questions.
 They are not silently counted as solved or prerequisites to fixing the observed
 compiler defects. Reopen the selected route when one supplies a concrete
 contract/cost counterexample; do not infer either universal coverage or universal

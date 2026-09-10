@@ -458,6 +458,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .clone()
                 .map(|origins| origins.projected(&fields));
             effects = effects.union(self.effects_of_row(
+                ty,
                 release.row,
                 state_origins.as_ref(),
                 self.tree.path(node)?,

@@ -425,7 +425,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         place: &ResolvedPlace,
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<Vec<EffectPath>, CheckStop> {
-        self.state_effect_paths_for_place(node, place, bindings, false)
+        self.state_effect_paths_for_place(node, place, bindings, false, false)
     }
 
     /// A callee's declared formal effect covers the complete selected actual.
@@ -436,7 +436,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         place: &ResolvedPlace,
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<Vec<EffectPath>, CheckStop> {
-        self.state_effect_paths_for_place(node, place, bindings, true)
+        self.state_effect_paths_for_place(node, place, bindings, true, false)
+    }
+
+    /// A measure reads the selected run descriptor, not the values stored in
+    /// its element slots. Unlocated suppliers remain conservative bounds.
+    pub(super) fn effect_paths_for_descriptor(
+        &self,
+        node: NodeId,
+        place: &ResolvedPlace,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<Vec<EffectPath>, CheckStop> {
+        self.state_effect_paths_for_place(node, place, bindings, false, true)
     }
 
     fn state_effect_paths_for_place(
@@ -445,6 +456,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         place: &ResolvedPlace,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         whole: bool,
+        descriptor: bool,
     ) -> Result<Vec<EffectPath>, CheckStop> {
         if self.constants.contains_key(&place.root) {
             return Ok(Vec::new());
@@ -455,7 +467,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         if let Some(origins) = &binding.state_origins {
             let selection = self.state_selection_of_place(place, bindings)?;
-            let selected = if !selection.complete {
+            let mut selected = if !selection.complete {
                 selection.read(origins.clone())
             } else if selection.exact {
                 origins.clone().projected_value(&selection.query)
@@ -472,6 +484,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 selected
             };
+            if descriptor {
+                selected
+                    .formals
+                    .retain(|origin| origin.value_fields.is_empty());
+            }
             return self.effect_paths_for_origins(node, &selected, bindings, whole);
         }
         let parameter = self.resolved.declarations().iter().any(|declaration| {

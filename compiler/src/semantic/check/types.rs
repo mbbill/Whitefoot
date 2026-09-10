@@ -15,6 +15,7 @@ use super::super::model::{
     CheckedValue, ConstOperation, FloatType, IntegerType, LoanStrength, evaluate_const_operation,
 };
 use super::super::places::PlaceProjection;
+use super::super::state_origins::StateImage;
 use super::floats::parse_float_literal;
 use super::generics::GenericSubstitution;
 use super::{
@@ -66,6 +67,15 @@ impl StateOriginResolution {
             (_, Self::Unknown(path)) => *self = Self::Unknown(path),
             (Self::Absent, finite @ Self::Finite(_)) => *self = finite,
             (Self::Finite(left), Self::Finite(right)) => left.union(&right),
+            (Self::Absent, Self::Absent) | (Self::Finite(_), Self::Absent) => {}
+        }
+    }
+    fn compose(&mut self, other: Self) {
+        match (&mut *self, other) {
+            (Self::Unknown(_), _) => {}
+            (_, Self::Unknown(path)) => *self = Self::Unknown(path),
+            (Self::Absent, finite @ Self::Finite(_)) => *self = finite,
+            (Self::Finite(left), Self::Finite(right)) => left.compose(&right),
             (Self::Absent, Self::Absent) | (Self::Finite(_), Self::Absent) => {}
         }
     }
@@ -1477,20 +1487,25 @@ extent's region is one the caller must choose, so it is written at every positio
                                 StateOriginResolution::Unknown,
                             );
                         };
-                        for origin in &mut field_origins.formals {
-                            origin
-                                .value_fields
-                                .insert(0, CheckedStateStep::Field(ordinal));
-                        }
+                        *field_origins = field_origins
+                            .clone()
+                            .prefixed(&[CheckedStateStep::Field(ordinal)]);
                     }
-                    origins.union(field_origins);
+                    origins.compose(field_origins);
                 }
                 origins
             }
             CheckedExpression::ConstructEnum {
                 variant, fields, ..
             } => {
-                let mut origins = StateOriginResolution::Absent;
+                let carries_length = self
+                    .type_carries_run_length(expression.ty())
+                    .unwrap_or(false);
+                let mut origins = if carries_length {
+                    StateOriginResolution::Finite(CheckedStateOrigins::fresh())
+                } else {
+                    StateOriginResolution::Absent
+                };
                 for (field, value) in fields.iter().enumerate() {
                     let Ok(field) = u32::try_from(field) else {
                         return expression.carrier().cloned().map_or(
@@ -1500,26 +1515,25 @@ extent's region is one the caller must choose, so it is written at every positio
                     };
                     let mut field_origins = self.expression_state_origins(value);
                     if let StateOriginResolution::Finite(field_origins) = &mut field_origins {
-                        for origin in &mut field_origins.formals {
-                            origin.value_fields.insert(
-                                0,
-                                CheckedStateStep::VariantField {
+                        *field_origins =
+                            field_origins
+                                .clone()
+                                .prefixed(&[CheckedStateStep::VariantField {
                                     variant: *variant,
                                     field,
-                                },
-                            );
-                        }
+                                }]);
                     }
-                    origins.union(field_origins);
+                    origins.compose(field_origins);
+                }
+                if carries_length && let StateOriginResolution::Finite(image) = &mut origins {
+                    *image = image.clone().with_variant(*variant);
                 }
                 origins
             }
             CheckedExpression::BoxNew { value, .. } | CheckedExpression::ArenaNew { value, .. } => {
                 let mut origins = self.expression_state_origins(value);
                 if let StateOriginResolution::Finite(origins) = &mut origins {
-                    for origin in &mut origins.formals {
-                        origin.value_fields.insert(0, CheckedStateStep::Referent);
-                    }
+                    *origins = origins.clone().prefixed(&[CheckedStateStep::Referent]);
                 }
                 origins
             }
@@ -1548,6 +1562,40 @@ extent's region is one the caller must choose, so it is written at every positio
         ty: CheckedType,
     ) -> Result<Vec<Vec<u32>>, CheckStop> {
         self.identity_leaf_paths(ty, false)
+    }
+
+    /// Discriminant facts are retained only to guard lengths of contained
+    /// runs. Traverse the finite type graph, never an allocation's contents.
+    pub(super) fn type_carries_run_length(&self, ty: CheckedType) -> Result<bool, CheckStop> {
+        let mut pending = vec![ty];
+        let mut visited = HashSet::new();
+        while let Some(ty) = pending.pop() {
+            if !visited.insert(ty) {
+                continue;
+            }
+            match ty {
+                CheckedType::Array { .. }
+                | CheckedType::FixedVector { .. }
+                | CheckedType::Vector { .. } => return Ok(true),
+                CheckedType::Buffer { element } => pending.push(element.ty()),
+                CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
+                    CheckedNominalKind::Struct { fields } => {
+                        pending.extend(fields.iter().map(|field| field.ty))
+                    }
+                    CheckedNominalKind::Enum { variants } => pending.extend(
+                        variants
+                            .iter()
+                            .flat_map(|variant| variant.fields.iter().map(|field| field.ty)),
+                    ),
+                    CheckedNominalKind::Box { referent, .. } => pending.push(*referent),
+                    CheckedNominalKind::Arena { content, .. } => pending.push(*content),
+                    CheckedNominalKind::SystemResource { .. }
+                    | CheckedNominalKind::ArenaStorage => {}
+                },
+                _ => {}
+            }
+        }
+        Ok(false)
     }
 
     /// The path-list implementation does not unfold a recursive object graph.

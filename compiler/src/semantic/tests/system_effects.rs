@@ -15,6 +15,225 @@ use super::{assert_rule, assert_rule_kind, with_semantics};
 const RELEASE_FIX: &str = "declare the release effects of every resource this function may release, or move the owner out";
 
 #[test]
+fn owning_array_and_optional_cleanup_select_only_released_state() {
+    let array = r#"fn release(values: own array<ReadFile, 2>) -> result: own unit writes(values) {
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(array.as_bytes());
+    let omitted = array.replace("writes(values)", "pure");
+    assert_rule_kind(omitted.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::ReleaseEffectMismatch { .. })
+    });
+    let zero = omitted.replace("array<ReadFile, 2>", "array<ReadFile, 0>");
+    assert_complete(zero.as_bytes());
+
+    let optional = r#"struct Entry {
+  file: ReadFile;
+  spare: box<u64>;
+}
+
+fn release(file: own ReadFile, spare: own box<u64>) -> result: own unit writes(file) {
+  let entry = Entry(file: move file, spare: move spare);
+  let present = Some<Entry>(value: move entry);
+  return unit;
+}
+
+fn empty() -> result: own unit pure {
+  let absent = None<Entry>();
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(optional.as_bytes());
+    let omitted = optional.replace("writes(file)", "pure");
+    assert_rule_kind(omitted.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::ReleaseEffectMismatch { .. })
+    });
+    let spurious = optional.replace("writes(file)", "writes(file, spare)");
+    assert_rule_kind(spurious.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { extra, .. }
+            if extra == &["writes(spare)"])
+    });
+}
+
+#[test]
+fn known_back_positions_survive_helpers_and_unrelated_replacement() {
+    let source = r#"struct Packed {
+  values: FixedVector<box<u64>, 2>;
+}
+
+fn pack(first: own box<u64>, second: own box<u64>) -> (values: own FixedVector<box<u64>, 2>, stamp: own u64) reads(first), writes(first) contract {
+  ensures len_of(values) == 2_u64;
+} {
+  let values = fixed_vector::<box<u64>, 2>();
+  set values = place_back(vector: move values, value: move first);
+  set values = place_back(vector: move values, value: move second);
+  return move values, 7_u64;
+}
+
+fn read(value: &box<u64>) -> result: own u64 reads(value) {
+  return deref(deref(value));
+}
+
+fn observe(first: own box<u64>, second: own box<u64>, replacement: own box<u64>) -> result: own u64 reads(first, second), writes(first) {
+  let (values, stamp) = pack(first: move first, second: move second);
+  let packed = Packed(values: move values);
+  let old = replace packed.values[0_u64] = move replacement;
+  region {
+    return read(value: &packed.values[1_u64]);
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source.as_bytes());
+    let omitted = source.replace("reads(first, second)", "reads(first)");
+    assert_rule_kind(omitted.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
+            if missing == &["reads(second)"])
+    });
+    let spurious = source.replace("reads(first, second)", "reads(first, second, replacement)");
+    assert_rule_kind(spurious.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { extra, .. }
+            if extra == &["reads(replacement)"])
+    });
+}
+
+#[test]
+fn acquired_run_success_carries_length_without_giving_it_to_refusal() {
+    let source = r#"fn pack['s](store: &uniq STORE, value: own box<u64>) -> result: own Option<Vector<'s, box<u64>>> reads(store), writes(store), allocates(store) {
+  region {
+    match ACQUIRE::<box<u64>>(store: &uniq deref(store), count: 1_u64) {
+      None() => {
+        return None<Vector<'s, box<u64>>>();
+      }
+      Some(value: empty) => {
+        let full = place_back(vector: move empty, value: move value);
+        return Some<Vector<'s, box<u64>>>(value: move full);
+      }
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    for (store, acquire) in [
+        ("Heap<'s>", "heap_vector"),
+        ("Arena<'s, 64, 16>", "arena_vector"),
+    ] {
+        let source = source.replace("STORE", store).replace("ACQUIRE", acquire);
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::Complete(program) = outcome else {
+                panic!("acquired run endpoints must check: {outcome:?}");
+            };
+            let image = crate::semantic::model::CheckedStateOrigins::instantiate(
+                &program.data.functions[0].result_state_origin,
+                &[None, None],
+            );
+            assert_eq!(image.clone().enum_payload(1, 0).run_lengths.root(), Some(1));
+            assert_eq!(image.enum_payload(0, 0).run_lengths.root(), None);
+        });
+    }
+}
+
+#[test]
+fn known_back_extraction_returns_the_corresponding_owner() {
+    let source = r#"fn tail(first: own box<u64>, second: own box<u64>) -> result: own box<u64> reads(first, second), writes(first, second) {
+  let values = fixed_vector::<box<u64>, 2>();
+  set values = place_back(vector: move values, value: move first);
+  set values = place_back(vector: move values, value: move second);
+  let (rest, last) = take_back(vector: move values);
+  RETURN
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    for (tail, parameter) in [
+        ("return move last;", 1),
+        (
+            "let (empty, previous) = take_back(vector: move rest);\n  return move previous;",
+            0,
+        ),
+    ] {
+        let source = source.replace("RETURN", tail);
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::Complete(program) = outcome else {
+                panic!("known endpoint extraction must check: {outcome:?}");
+            };
+            assert_eq!(
+                program.data.functions[0].result_state_origin,
+                CheckedResultStateOrigin::Finite {
+                    formals: vec![root(parameter)],
+                    run_lengths: Default::default(),
+                }
+            );
+        });
+    }
+}
+
+#[test]
+fn run_length_joins_do_not_enumerate_capacity_or_preserve_different_lengths() {
+    let source = br#"fn choose(first: own box<u64>, second: own box<u64>, extra: own Bool) -> result: own FixedVector<box<u64>, 1000000000> reads(first), writes(first) {
+  let values = fixed_vector::<box<u64>, 1000000000>();
+  set values = place_back(vector: move values, value: move first);
+  if extra {
+    set values = place_back(vector: move values, value: move second);
+    return move values;
+  }
+  return move values;
+}
+
+fn rotate(value: own box<u64>) -> result: own FixedVector<box<u64>, 1000000000> reads(value), writes(value) {
+  let values = fixed_vector::<box<u64>, 1000000000>();
+  set values = place_back(vector: move values, value: move value);
+  for (
+    round in 0_u64..8_u64,
+    invariant one: len_of(values) == 1_u64
+  ) {
+    let (rest, first) = take_front(vector: move values);
+    set values = place_back(vector: move rest, value: move first);
+  }
+  return move values;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("finite branch and loop images must check: {outcome:?}");
+        };
+        let CheckedResultStateOrigin::Finite { run_lengths, .. } =
+            &program.data.functions[0].result_state_origin
+        else {
+            panic!("the joined owner image must remain finite");
+        };
+        assert_eq!(run_lengths.root(), None);
+        let CheckedResultStateOrigin::Finite { formals, .. } =
+            &program.data.functions[1].result_state_origin
+        else {
+            panic!("the rotating owner image must remain finite");
+        };
+        assert!(formals.iter().any(|route| route.parameter == 0));
+    });
+}
+
+#[test]
 fn dynamic_element_queries_keep_field_effects_separate() {
     let source = r#"struct Slot {
   key: u64;
@@ -262,9 +481,8 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn complete_content_coverage_does_not_select_descriptor_or_release_effects() {
-    for source in [
-        br#"fn length(value: own box<u64>) -> result: own u64 pure {
+fn precise_run_contents_separate_descriptor_and_release_effects() {
+    let length = br#"fn length(value: own box<u64>) -> result: own u64 pure {
   let empty = fixed_vector::<box<u64>, 1>();
   let one = place_back(vector: move empty, value: move value);
   return len_of(one);
@@ -273,9 +491,17 @@ fn complete_content_coverage_does_not_select_descriptor_or_release_effects() {
 command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
-"#
-        .as_slice(),
-        br#"struct Entry {
+"#;
+    // The descriptor is fresh even though its sole element is imported.
+    // Exact element placement now resolves the former capability sentinel.
+    assert_complete(length);
+    let spurious = String::from_utf8_lossy(length).replace("u64 pure {", "u64 reads(value) {");
+    assert_rule_kind(spurious.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { extra, .. }
+            if extra == &["reads(value)"])
+    });
+
+    let release = br#"struct Entry {
   file: ReadFile;
   spare: box<u64>;
 }
@@ -290,20 +516,19 @@ fn release(file: own ReadFile, spare: own box<u64>) -> result: own unit writes(f
 command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
-"#
-        .as_slice(),
-    ] {
-        // These ordinary sources require descriptor/content selection or a
-        // type-directed release image. Complete call-effect coverage alone
-        // cannot select those sources, nor justify changing their written rows.
-        with_semantics(source, |outcome| {
-            assert!(
-                matches!(outcome, SemanticOutcome::Unsupported { ref unsupported }
-                    if unsupported.feature() == crate::UnsupportedSemanticFeature::OwnerStateRouting),
-                "an incomplete component image is a capability gap: {outcome:?}"
-            );
-        });
-    }
+"#;
+    // Typed selection now resolves the release sentinel as well. Dropping
+    // the ordinary memory-only sibling contributes no resource write.
+    assert_complete(release);
+    let omitted = String::from_utf8_lossy(release).replace("writes(file)", "pure");
+    assert_rule_kind(omitted.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::ReleaseEffectMismatch { .. })
+    });
+    let spurious = String::from_utf8_lossy(release).replace("writes(file)", "writes(file, spare)");
+    assert_rule_kind(spurious.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { extra, .. }
+            if extra == &["writes(spare)"])
+    });
 }
 
 #[test]
@@ -451,10 +676,12 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(
             twice.result_state_origin,
             CheckedResultStateOrigin::Finite {
+                run_lengths: Default::default(),
                 formals: vec![root(1)]
             }
         );
-        let CheckedResultStateOrigin::Finite { formals } = &twice.borrowed_state_origins[0].origin
+        let CheckedResultStateOrigin::Finite { formals, .. } =
+            &twice.borrowed_state_origins[0].origin
         else {
             panic!("the final containing owner must have a finite image");
         };
@@ -614,7 +841,7 @@ command fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("established effects allow the bounded result: {outcome:?}");
         };
-        let CheckedResultStateOrigin::Finite { formals } =
+        let CheckedResultStateOrigin::Finite { formals, .. } =
             &program.data.functions[0].result_state_origin
         else {
             panic!("the transferred suppliers are finite");
@@ -887,6 +1114,7 @@ command fn main() -> status: own ExitStatus pure {
             assert_eq!(
                 helper.borrowed_state_origins[0].origin,
                 CheckedResultStateOrigin::Finite {
+                    run_lengths: Default::default(),
                     formals: vec![root(1)]
                 }
             );
@@ -1349,6 +1577,7 @@ fn a_user_result_cannot_wash_an_output_formal_origin() {
         assert_eq!(
             program.data.functions[0].result_state_origin,
             CheckedResultStateOrigin::Finite {
+                run_lengths: Default::default(),
                 formals: vec![root(0)],
             }
         );
@@ -1435,6 +1664,7 @@ fn a_control_flow_result_projects_to_every_possible_formal() {
         assert_eq!(
             program.data.functions[0].result_state_origin,
             CheckedResultStateOrigin::Finite {
+                run_lengths: Default::default(),
                 formals: vec![root(0), root(1)],
             }
         );
@@ -1546,6 +1776,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(
             program.data.functions[0].result_state_origin,
             CheckedResultStateOrigin::Finite {
+                run_lengths: Default::default(),
                 formals: vec![root(0)],
             }
         );
@@ -1602,6 +1833,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(
             program.data.functions[0].result_state_origin,
             CheckedResultStateOrigin::Finite {
+                run_lengths: Default::default(),
                 formals: vec![
                     CheckedResultStatePath {
                         precision: StateOriginPrecision::Exact,
@@ -1668,6 +1900,7 @@ command fn main() -> status: own ExitStatus pure {
             assert_eq!(
                 function.result_state_origin,
                 CheckedResultStateOrigin::Finite {
+                    run_lengths: Default::default(),
                     formals: vec![root(0)],
                 },
                 "{name} must use the ordinary owner-transfer route"
@@ -1682,6 +1915,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(
             record.result_state_origin,
             CheckedResultStateOrigin::Finite {
+                run_lengths: Default::default(),
                 formals: vec![
                     CheckedResultStatePath {
                         precision: StateOriginPrecision::Exact,
@@ -1727,6 +1961,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(
             program.data.functions[0].result_state_origin,
             CheckedResultStateOrigin::Finite {
+                run_lengths: Default::default(),
                 formals: vec![CheckedResultStatePath {
                     precision: StateOriginPrecision::Exact,
                     result_fields: Vec::new(),
@@ -1805,6 +2040,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(
             program.data.functions[0].result_state_origin,
             CheckedResultStateOrigin::Finite {
+                run_lengths: Default::default(),
                 formals: vec![root(0)],
             }
         );
@@ -1926,12 +2162,14 @@ command fn main() -> status: own ExitStatus pure {
             assert_eq!(
                 program.data.functions[0].result_state_origin,
                 CheckedResultStateOrigin::Finite {
+                    run_lengths: Default::default(),
                     formals: vec![rest],
                 }
             );
             assert_eq!(
                 program.data.functions[1].result_state_origin,
                 CheckedResultStateOrigin::Finite {
+                    run_lengths: Default::default(),
                     formals: vec![root(0)],
                 }
             );
@@ -1974,6 +2212,7 @@ command fn main() -> status: own ExitStatus pure {
             assert_eq!(
                 program.data.functions[0].result_state_origin,
                 CheckedResultStateOrigin::Finite {
+                    run_lengths: Default::default(),
                     formals: vec![rest, value],
                 }
             );
@@ -2070,6 +2309,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(
             program.data.functions[0].result_state_origin,
             CheckedResultStateOrigin::Finite {
+                run_lengths: Default::default(),
                 formals: vec![root(0)],
             }
         );
@@ -2095,6 +2335,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(
             program.data.functions[0].result_state_origin,
             CheckedResultStateOrigin::Finite {
+                run_lengths: Default::default(),
                 formals: Vec::new(),
             }
         );
@@ -2136,6 +2377,7 @@ command fn main(command.stdout as out: own OutputStream) -> status: own ExitStat
         assert_eq!(
             program.data.functions[0].result_state_origin,
             CheckedResultStateOrigin::Finite {
+                run_lengths: Default::default(),
                 formals: vec![CheckedResultStatePath {
                     precision: StateOriginPrecision::Exact,
                     result_fields: vec![CheckedStateStep::VariantField {
@@ -2318,6 +2560,7 @@ fn resource_field_borrow_projects_the_returned_displaced_owner_summary() {
         assert_eq!(
             program.data.functions[1].result_state_origin,
             CheckedResultStateOrigin::Finite {
+                run_lengths: Default::default(),
                 formals: vec![CheckedResultStatePath {
                     precision: StateOriginPrecision::Exact,
                     result_fields: Vec::new(),
@@ -2418,6 +2661,7 @@ fn owner_writeback_tracks_two_exchanges_and_a_unit_result() {
             assert_eq!(
                 function.borrowed_state_origins[0].origin,
                 CheckedResultStateOrigin::Finite {
+                    run_lengths: Default::default(),
                     formals: vec![root(1)]
                 }
             );
@@ -2425,6 +2669,7 @@ fn owner_writeback_tracks_two_exchanges_and_a_unit_result() {
         assert_eq!(
             program.data.functions[0].result_state_origin,
             CheckedResultStateOrigin::Finite {
+                run_lengths: Default::default(),
                 formals: vec![root(0)]
             }
         );
@@ -2533,6 +2778,7 @@ command fn main() -> status: own ExitStatus pure {
             assert_eq!(
                 function.result_state_origin,
                 CheckedResultStateOrigin::Finite {
+                    run_lengths: Default::default(),
                     formals: Vec::new()
                 }
             );
@@ -2585,11 +2831,15 @@ command fn main() -> status: own ExitStatus pure {
             .collect();
         assert_eq!(
             program.data.functions[1].result_state_origin,
-            CheckedResultStateOrigin::Finite { formals: expected }
+            CheckedResultStateOrigin::Finite {
+                formals: expected,
+                run_lengths: Default::default()
+            }
         );
         assert_eq!(
             program.data.functions[2].result_state_origin,
             CheckedResultStateOrigin::Finite {
+                run_lengths: Default::default(),
                 formals: Vec::new()
             }
         );
@@ -2653,9 +2903,11 @@ command fn main() -> status: own ExitStatus pure {
                 .collect::<Vec<_>>(),
             vec![
                 CheckedResultStateOrigin::Finite {
+                    run_lengths: Default::default(),
                     formals: vec![root(2)]
                 },
                 CheckedResultStateOrigin::Finite {
+                    run_lengths: Default::default(),
                     formals: vec![root(0)]
                 }
             ]
@@ -2663,6 +2915,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(
             program.data.functions[1].result_state_origin,
             CheckedResultStateOrigin::Finite {
+                run_lengths: Default::default(),
                 formals: vec![
                     CheckedResultStatePath {
                         precision: StateOriginPrecision::Exact,
@@ -2723,12 +2976,14 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(
             program.data.functions[0].result_state_origin,
             CheckedResultStateOrigin::Finite {
+                run_lengths: Default::default(),
                 formals: vec![root(0)]
             }
         );
         assert_eq!(
             program.data.functions[0].borrowed_state_origins[0].origin,
             CheckedResultStateOrigin::Finite {
+                run_lengths: Default::default(),
                 formals: vec![root(1)]
             }
         );

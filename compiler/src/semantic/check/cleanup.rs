@@ -1,8 +1,8 @@
 use crate::{SemanticCompilerFailure, SystemRelease, SystemReleaseRow};
 
 use super::super::model::{
-    BindingId, CheckedDrop, CheckedExpression, CheckedNominalKind, CheckedSetTarget,
-    CheckedStatement, CheckedType, NominalId,
+    BindingId, CheckedConst, CheckedDrop, CheckedExpression, CheckedNominalKind, CheckedSetTarget,
+    CheckedStateOrigins, CheckedStateStep, CheckedStatement, CheckedType, NominalId,
 };
 use super::{CheckStop, Checker, EffectSet};
 
@@ -60,12 +60,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // release contribution exactly as a box referent's does.
             return self.release_row_of_type(element.ty(), visited);
         }
-        if let CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } = ty {
+        if matches!(
+            ty,
+            CheckedType::Array {
+                length: CheckedConst::Value(0),
+                ..
+            }
+        ) {
+            return Ok(SystemReleaseRow::EMPTY);
+        }
+        if let CheckedType::FixedVector { element, .. }
+        | CheckedType::Vector { element, .. }
+        | CheckedType::Array { element, .. } = ty
+        {
             return self.release_row_of_type(self.element_type(element)?, visited);
         }
         let CheckedType::Nominal(id) = ty else {
-            // Scalars carry no release action, and array and slice elements
-            // are flat copy data with no release of their own.
+            // Scalars and borrowed views carry no owning release action.
             return Ok(SystemReleaseRow::EMPTY);
         };
         if !visited.insert(id) {
@@ -192,8 +203,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     let source = value
                         .carrier()
                         .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-                    let effects =
-                        self.effects_of_row(release.row, state_origins.as_ref(), source)?;
+                    let effects = self.effects_of_row(
+                        value.ty(),
+                        release.row,
+                        state_origins.as_ref(),
+                        source,
+                    )?;
                     if effects != EffectSet::NONE {
                         sites.push(ReleaseSite {
                             owner: ReleaseOwner::ExpressionResult,
@@ -268,6 +283,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // The drop record already carries its [SYS-5] row, so attribution
             // reads the checked program rather than rederiving it.
             let mut effects = self.effects_of_row(
+                drop.ty,
                 drop.release.row,
                 drop.state_origins.as_ref(),
                 &drop.source_edge,
@@ -302,6 +318,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             } => {
                 for drop in residual_drops {
                     let effects = self.effects_of_row(
+                        drop.ty,
                         drop.release.row,
                         drop.state_origins.as_ref(),
                         carrier,
@@ -385,6 +402,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// every state leaf it releases.
     pub(super) fn effects_of_row(
         &self,
+        ty: CheckedType,
         row: SystemReleaseRow,
         origins: Option<&super::super::model::CheckedStateOrigins>,
         source: &crate::NodePath,
@@ -394,6 +412,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let Some(origins) = origins else {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             };
+            let origins = self.release_state_origins(ty, origins.clone(), &mut HashSet::new())?;
             if origins.lacks_exact_origins() && !self.deriving_result_state_origin.get() {
                 let node = self
                     .tree
@@ -407,6 +426,85 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         Ok(effects)
+    }
+
+    /// Select the value components whose ordinary release contracts write
+    /// state. A container's nonempty release row does not write every stored
+    /// field, and its backing allocation is not a contained resource.
+    fn release_state_origins(
+        &self,
+        ty: CheckedType,
+        origins: CheckedStateOrigins,
+        visited: &mut HashSet<CheckedType>,
+    ) -> Result<CheckedStateOrigins, CheckStop> {
+        if !self.release_of_type(ty)?.row.state_write {
+            return Ok(CheckedStateOrigins::fresh());
+        }
+        if !visited.insert(ty) {
+            // Recursive release can visit further contents. No finite typed
+            // route for them is supplied by reaching the type a second time.
+            return Ok(origins.unlocated());
+        }
+        let children = match ty {
+            CheckedType::Buffer { element } => {
+                vec![(CheckedStateStep::AnyElement, element.ty())]
+            }
+            CheckedType::FixedVector { element, .. }
+            | CheckedType::Vector { element, .. }
+            | CheckedType::Array { element, .. } => {
+                if !origins.unknown && origins.run_lengths.root() == Some(0) {
+                    Vec::new()
+                } else {
+                    vec![(CheckedStateStep::AnyElement, self.element_type(element)?)]
+                }
+            }
+            CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
+                CheckedNominalKind::SystemResource { .. } => {
+                    visited.remove(&ty);
+                    return Ok(origins);
+                }
+                CheckedNominalKind::Struct { fields } => fields
+                    .iter()
+                    .enumerate()
+                    .map(|(field, value)| {
+                        u32::try_from(field)
+                            .map(|field| (CheckedStateStep::Field(field), value.ty))
+                            .map_err(|_| SemanticCompilerFailure::CounterOverflow.into())
+                    })
+                    .collect::<Result<Vec<_>, CheckStop>>()?,
+                CheckedNominalKind::Enum { variants } => {
+                    let mut children = Vec::new();
+                    for (variant, value) in variants.iter().enumerate() {
+                        let variant = u32::try_from(variant)
+                            .map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+                        for (field, value) in value.fields.iter().enumerate() {
+                            let field = u32::try_from(field)
+                                .map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+                            children.push((
+                                CheckedStateStep::VariantField { variant, field },
+                                value.ty,
+                            ));
+                        }
+                    }
+                    children
+                }
+                CheckedNominalKind::Box { referent, .. } => {
+                    vec![(CheckedStateStep::Referent, *referent)]
+                }
+                CheckedNominalKind::Arena { content, .. } => {
+                    vec![(CheckedStateStep::Referent, *content)]
+                }
+                CheckedNominalKind::ArenaStorage => Vec::new(),
+            },
+            _ => Vec::new(),
+        };
+        let mut released = CheckedStateOrigins::fresh();
+        for (selector, child) in children {
+            let image = origins.clone().projected_value(&[selector]);
+            released.compose(&self.release_state_origins(child, image, visited)?);
+        }
+        visited.remove(&ty);
+        Ok(released)
     }
 
     /// Attaches the [STOR-3] release record to each derived drop path, so

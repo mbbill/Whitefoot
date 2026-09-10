@@ -491,15 +491,27 @@ replay share that query; borrowed helper effects retain the selected fields.
 An unrepresented suffix still uses the conservative prefix bound. Instantiating
 an arbitrary bounded owned result does not preserve a complete field layout.
 These queries neither locate an exact writeback address nor narrow a loan.
-Append positions and exact residual membership remain separate limitations.
+Known logical run lengths now locate back insertion and extraction precisely,
+preserving earlier slots and removing a taken slot from the remaining image.
+These value facts travel with fields and results independently of owner routes.
+Control-flow joins keep common lengths; known enum alternatives distinguish an
+absent payload from one with an unknown length. These conditional facts do not
+filter control-flow edges or strengthen any loan; they hold only when their
+corresponding variant payload exists. A helper's owner correspondence
+alone never forwards its caller's length. Front shifts, unknown lengths and
+general dynamic residual membership still use conservative bounds.
+Measure reads select the run descriptor; typed cleanup selects only components
+whose release contracts write state, including owning arrays. Imported payloads
+therefore do not become descriptor reads or writes of memory-only siblings.
 Boxed enum-child replacement retains its native execution and release-observer
 behavior. Fresh-state full-array construction and replacement, wide results
 containing owners, the block-pool program and the optional-slot program execute
-again. Imported-owner array construction through generic helpers and boxed-run
-read-out also execute; complete nested-run transport checks. Descriptor reads on
-reconstructed imported contents and helpers whose exact effects or type-selected
-release require a finer extracted/residual image remain capability gaps. All executable
-assertions remain enabled. An empty current origin list alone does not recover
+again. Imported-owner array construction through generic helpers, boxed-run
+read-out and runtime-indexed boxed migration also execute; complete nested-run
+transport checks. Descriptor reads on unlocated contents and helpers whose exact
+effects or type-selected release require a finer extracted/residual image remain
+capability gaps. All executable assertions remain enabled. An empty current
+origin list alone does not recover
 a wholly unknown summary.
 Loop headers carry the stable union of entry and backedge owner origins. The
 final body check uses that image, and counted-loop exhaustion retains it.

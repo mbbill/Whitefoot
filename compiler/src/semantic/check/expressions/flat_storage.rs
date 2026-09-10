@@ -773,7 +773,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     AccessKind::Read,
                     atoms[0],
                 )?;
-                for path in self.effect_paths_for_place(atoms[0], &container.resolved, bindings)? {
+                for path in
+                    self.effect_paths_for_descriptor(atoms[0], &container.resolved, bindings)?
+                {
                     effects.add_read(path);
                 }
                 // [EFF-2] an offset occurring inside the measured place is

@@ -8,8 +8,8 @@ use super::super::model::{
     CheckedStatePath, CheckedStateStep, CheckedStatement,
 };
 use super::super::state_origins::{
-    StateOriginPrecision, StateSelection, exclude_routes, project_routes, union_routes,
-    unlocated_routes,
+    KnownRunLengths, StateImage, StateOriginPrecision, StateSelection, exclude_routes,
+    project_routes, union_routes, unlocated_routes,
 };
 use super::{CheckStop, Checker};
 
@@ -18,6 +18,7 @@ enum OriginSet {
     Absent,
     Finite {
         formals: Vec<CheckedResultStatePath>,
+        run_lengths: KnownRunLengths,
     },
     Unknown,
 }
@@ -30,7 +31,7 @@ impl super::super::state_origins::StateImage for OriginSet {
         Self::Unknown
     }
     fn merged(mut self, other: Self) -> Self {
-        self.union(other);
+        self.compose(other);
         self
     }
     fn prefixed(self, path: &[CheckedStateStep]) -> Self {
@@ -43,7 +44,7 @@ impl super::super::state_origins::StateImage for OriginSet {
         self.replace_path(path, replacement)
     }
     fn selected_bound(mut self) -> Self {
-        if let Self::Finite { formals } = &mut self {
+        if let Self::Finite { formals, .. } = &mut self {
             super::super::state_origins::bound_selected_routes(formals);
         }
         self
@@ -54,17 +55,31 @@ impl super::super::state_origins::StateImage for OriginSet {
     fn whole_transfer(self) -> Self {
         self.whole_transfer()
     }
+    fn run_lengths(&self) -> Option<&KnownRunLengths> {
+        match self {
+            Self::Finite { run_lengths, .. } => Some(run_lengths),
+            _ => None,
+        }
+    }
+    fn with_run_lengths(mut self, lengths: KnownRunLengths) -> Self {
+        if let Self::Finite { run_lengths, .. } = &mut self {
+            *run_lengths = lengths;
+        }
+        self
+    }
 }
 
 impl OriginSet {
     fn fresh() -> Self {
         Self::Finite {
             formals: Vec::new(),
+            run_lengths: KnownRunLengths::default(),
         }
     }
 
     fn formal_leaves(formal: u32, leaves: Vec<Vec<u32>>) -> Self {
         Self::Finite {
+            run_lengths: KnownRunLengths::default(),
             formals: leaves
                 .into_iter()
                 .map(|fields| CheckedResultStatePath {
@@ -83,8 +98,40 @@ impl OriginSet {
             (Self::Unknown, _) => {}
             (_, Self::Unknown) => *self = Self::Unknown,
             (Self::Absent, finite @ Self::Finite { .. }) => *self = finite,
-            (Self::Finite { formals: left }, Self::Finite { formals: right }) => {
+            (
+                Self::Finite {
+                    formals: left,
+                    run_lengths: lengths,
+                },
+                Self::Finite {
+                    formals: right,
+                    run_lengths,
+                },
+            ) => {
                 union_routes(left, &right);
+                lengths.join(&run_lengths);
+            }
+            (Self::Absent, Self::Absent) | (Self::Finite { .. }, Self::Absent) => {}
+        }
+    }
+
+    fn compose(&mut self, other: Self) {
+        match (&mut *self, other) {
+            (Self::Unknown, _) => {}
+            (_, Self::Unknown) => *self = Self::Unknown,
+            (Self::Absent, finite @ Self::Finite { .. }) => *self = finite,
+            (
+                Self::Finite {
+                    formals: left,
+                    run_lengths: lengths,
+                },
+                Self::Finite {
+                    formals: right,
+                    run_lengths,
+                },
+            ) => {
+                union_routes(left, &right);
+                lengths.compose(&run_lengths);
             }
             (Self::Absent, Self::Absent) | (Self::Finite { .. }, Self::Absent) => {}
         }
@@ -95,22 +142,37 @@ impl OriginSet {
     }
 
     fn unlocated(mut self) -> Self {
-        if let Self::Finite { formals } = &mut self {
+        if let Self::Finite {
+            formals,
+            run_lengths,
+        } = &mut self
+        {
             unlocated_routes(formals, false);
+            *run_lengths = KnownRunLengths::default();
         }
         self
     }
 
     fn whole_transfer(mut self) -> Self {
-        if let Self::Finite { formals } = &mut self {
+        if let Self::Finite {
+            formals,
+            run_lengths,
+        } = &mut self
+        {
             unlocated_routes(formals, true);
+            *run_lengths = KnownRunLengths::default();
         }
         self
     }
 
     fn projected_value(mut self, path: &[CheckedStateStep]) -> Self {
-        if let Self::Finite { formals } = &mut self {
+        if let Self::Finite {
+            formals,
+            run_lengths,
+        } = &mut self
+        {
             *formals = project_routes(formals, path);
+            *run_lengths = run_lengths.clone().projected(path);
         }
         self
     }
@@ -120,7 +182,12 @@ impl OriginSet {
     }
 
     fn prefixed(mut self, prefix: &[CheckedStateStep]) -> Self {
-        if let Self::Finite { formals } = &mut self {
+        if let Self::Finite {
+            formals,
+            run_lengths,
+        } = &mut self
+        {
+            *run_lengths = run_lengths.clone().prefixed(prefix);
             for origin in formals {
                 let mut path = prefix.to_vec();
                 path.append(&mut origin.result_fields);
@@ -138,7 +205,7 @@ impl OriginSet {
         // particular, recursive scalar-only mutations must not expand an
         // unchanged aggregate into an ever deeper list of identity routes.
         let selected = self.clone().projected_value(path);
-        if matches!(&selected, Self::Finite { formals }
+        if matches!(&selected, Self::Finite { formals, .. }
             if formals.iter().all(|route| route.precision == StateOriginPrecision::Exact))
             && selected == replacement
         {
@@ -150,12 +217,17 @@ impl OriginSet {
             (
                 Self::Finite {
                     formals: mut current,
+                    mut run_lengths,
                 },
                 replacement,
             ) => {
                 exclude_routes(&mut current, path);
-                let mut current = Self::Finite { formals: current };
-                current.union(replacement.prefixed(path));
+                run_lengths.exclude(path);
+                let mut current = Self::Finite {
+                    formals: current,
+                    run_lengths,
+                };
+                current.compose(replacement.prefixed(path));
                 current
             }
         }
@@ -806,7 +878,11 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
     // The bridge uses this function's real formal declarations; no synthetic
     // source identity or recursive call-history node is introduced.
     fn instantiate(&self, image: &OriginSet, arguments: &[OriginSet]) -> OriginSet {
-        let OriginSet::Finite { formals } = image else {
+        let OriginSet::Finite {
+            formals,
+            run_lengths,
+        } = image
+        else {
             return image.clone();
         };
         if formals.iter().any(|route| {
@@ -827,6 +903,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
         let instantiated = CheckedStateOrigins::instantiate(
             &CheckedResultStateOrigin::Finite {
                 formals: formals.clone(),
+                run_lengths: run_lengths.clone(),
             },
             &arguments,
         );
@@ -856,14 +933,22 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
         }
         formals.sort_unstable();
         formals.dedup();
-        OriginSet::Finite { formals }
+        OriginSet::Finite {
+            formals,
+            run_lengths: instantiated.run_lengths,
+        }
     }
 
     fn checked_image(&self, image: &OriginSet) -> CheckedStateOrigins {
-        let OriginSet::Finite { formals } = image else {
+        let OriginSet::Finite {
+            formals,
+            run_lengths,
+        } = image
+        else {
             return CheckedStateOrigins::unknown();
         };
         let mut origins = CheckedStateOrigins::fresh();
+        origins.run_lengths = run_lengths.clone();
         for route in formals {
             let Some(parameter) = self.function.parameters.get(route.parameter as usize) else {
                 return CheckedStateOrigins::unknown();
@@ -894,7 +979,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
         expression: &CheckedExpression,
         environment: &mut OriginEnvironment,
     ) -> Result<OriginSet, CheckStop> {
-        let origin = match expression {
+        let mut origin = match expression {
             CheckedExpression::Binding { binding, .. }
             | CheckedExpression::BorrowBox { binding, .. }
             | CheckedExpression::ReborrowAddressed { binding, .. }
@@ -988,48 +1073,39 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                     let ordinal = u32::try_from(ordinal)
                         .map_err(|_| crate::SemanticCompilerFailure::CounterOverflow)?;
                     let mut field_origin = self.expression(field, environment)?;
-                    if let OriginSet::Finite { formals, .. } = &mut field_origin {
-                        for formal in formals {
-                            formal
-                                .result_fields
-                                .insert(0, CheckedStateStep::Field(ordinal));
-                        }
-                    }
-                    origin.union(field_origin);
+                    field_origin = field_origin.prefixed(&[CheckedStateStep::Field(ordinal)]);
+                    origin.compose(field_origin);
                 }
                 origin
             }
             CheckedExpression::ConstructEnum {
                 variant, fields, ..
             } => {
-                let mut origin = OriginSet::Absent;
+                let carries_length = self.checker.type_carries_run_length(expression.ty())?;
+                let mut origin = if carries_length {
+                    OriginSet::fresh()
+                } else {
+                    OriginSet::Absent
+                };
                 for (field, value) in fields.iter().enumerate() {
                     let field = u32::try_from(field)
                         .map_err(|_| crate::SemanticCompilerFailure::CounterOverflow)?;
                     let mut field_origin = self.expression(value, environment)?;
-                    if let OriginSet::Finite { formals, .. } = &mut field_origin {
-                        for formal in formals {
-                            formal.result_fields.insert(
-                                0,
-                                CheckedStateStep::VariantField {
-                                    variant: *variant,
-                                    field,
-                                },
-                            );
-                        }
-                    }
-                    origin.union(field_origin);
+                    field_origin = field_origin.prefixed(&[CheckedStateStep::VariantField {
+                        variant: *variant,
+                        field,
+                    }]);
+                    origin.compose(field_origin);
                 }
-                origin
+                if carries_length {
+                    origin.with_variant(*variant)
+                } else {
+                    origin
+                }
             }
             CheckedExpression::BoxNew { value, .. } | CheckedExpression::ArenaNew { value, .. } => {
-                let mut origin = self.expression(value, environment)?;
-                if let OriginSet::Finite { formals, .. } = &mut origin {
-                    for formal in formals {
-                        formal.result_fields.insert(0, CheckedStateStep::Referent);
-                    }
-                }
-                origin
+                self.expression(value, environment)?
+                    .prefixed(&[CheckedStateStep::Referent])
             }
             CheckedExpression::BoxDeref { value, .. }
             | CheckedExpression::ArenaDeref { value, .. } => self
@@ -1046,7 +1122,21 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
         if !self.checker.type_carries_identity(expression.ty())? {
             return Ok(OriginSet::Absent);
         }
-        if let OriginSet::Finite { formals } = &origin {
+        if let OriginSet::Finite { run_lengths, .. } = &mut origin {
+            let mut cyclic = Vec::new();
+            for path in run_lengths.paths() {
+                if !self
+                    .checker
+                    .state_selector_is_acyclic(expression.ty(), path)?
+                {
+                    cyclic.push(path.to_vec());
+                }
+            }
+            for path in cyclic {
+                run_lengths.exclude(&path);
+            }
+        }
+        if let OriginSet::Finite { formals, .. } = &origin {
             for route in formals {
                 let Some(parameter) = self.function.parameters.get(route.parameter as usize) else {
                     return Ok(OriginSet::Unknown);
@@ -1237,7 +1327,13 @@ fn storage_selection(path: &[CheckedPlaceStep]) -> StateSelection {
 
 fn export_origin(origin: OriginSet) -> CheckedResultStateOrigin {
     match origin {
-        OriginSet::Finite { formals } => CheckedResultStateOrigin::Finite { formals },
+        OriginSet::Finite {
+            formals,
+            run_lengths,
+        } => CheckedResultStateOrigin::Finite {
+            formals,
+            run_lengths,
+        },
         OriginSet::Absent | OriginSet::Unknown => CheckedResultStateOrigin::Unknown,
     }
 }
