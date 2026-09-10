@@ -1,8 +1,9 @@
 ; Research-only adapter appended to the retained compiler-emitted FIR module.
 ; C passes scalars/pointers; descriptor aggregates are constructed explicitly.
 ; These calls qualify this emitted revision, not a public or stable WF ABI.
-; The host selects the same parallel/sequential world as the command entry,
-; once under wf_floor, and keeps every tree alive until all lookups complete.
+; The host normally selects the command entry's parallel/sequential world once
+; under wf_floor. The formal wf-seq diagnostic explicitly selects sequential.
+; Every tree remains alive until all lookups complete.
 
 define ptr @wf_research_fir_parallel(ptr %input, i64 %input_count, ptr %taps, i64 %tap_count, i64 %first, i64 %end, i64 %last_tap, i64 %tile_size) {
   %in0 = insertvalue { ptr, i64 } zeroinitializer, ptr %input, 0

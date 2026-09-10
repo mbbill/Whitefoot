@@ -37,16 +37,18 @@ An identical production image is the noise control. Raw artifacts retain core
 and allocation-inclusive durations, process CPU and memory; wall-time summaries
 are an initial screen, not whole-workload or all-platform acceptance.
 
-The Windows `leaf-control/` diagnostic reuses the same old/candidate/replica
-binaries with 4,096 outputs in one leaf, five interleaved processes per image.
-The `filter_tiles` leaf branch contains no task offer; the observer must report
-one actual lane for every image, although configuration still requests four.
-This checks whether the unresolved full-call difference also occurs without
-executing task scheduling. It adds no instrumentation or build setting. A
-persisting difference cannot come from executing task scheduling; disappearance
-does not establish that cause, because the result tree is also shallower.
-Its raw core/full-call durations and process usage remain diagnostic evidence;
-the parallel matrix, inputs, flags and acceptance thresholds are unchanged.
+The Windows `serial-control/` diagnostic reuses the same old/candidate/replica
+binaries, 4,096 outputs and tile1024, five interleaved processes per image.
+The formal host's `wf-seq` selector chooses the compiler's existing sequential
+entry before timing starts. This preserves the four-leaf result structure
+without offering tasks; the observer must report one actual lane for every
+image, although configuration still requests four. Its raw core/full-call
+durations and process usage test whether the unresolved difference persists
+without executing task scheduling. It does not isolate code placement, heap
+history or a particular consumer operation. The parallel matrix, inputs,
+flags and acceptance thresholds are unchanged. The former one-leaf diagnostic
+and its measured result remain at `9253ceb3`; replacing it removes tree depth
+as a difference between the serial control and the parallel case.
 
 On x86-64, the formal matrix gives every scheduler reference the maintained
 compiler's `-falign-loops=32` setting. An additional `unaligned` image recompiles

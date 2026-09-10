@@ -36,6 +36,11 @@
 #ifndef FIR_WF_KERNEL
 #define FIR_WF_KERNEL "wf"
 #endif
+#ifdef WF_RUNTIME_CONTROL
+#define FIR_WF_CHOICES FIR_WF_KERNEL "|wf-seq"
+#else
+#define FIR_WF_CHOICES FIR_WF_KERNEL
+#endif
 
 typedef void *(*FilterEntry)(const double *, uint64_t, const double *, uint64_t,
                              uint64_t, uint64_t, uint64_t, uint64_t);
@@ -215,9 +220,9 @@ static Reading invoke(FilterEntry wf, FirNativeKernel native,
 int wf__main_body(int argc, char **argv) {
     uint64_t body_at = now();
 #ifdef WF_FILTER_STATIC
-    require(argc == 8, "usage: bench " FIR_WF_KERNEL "|direct|lanes4|lanes8|lanes16|static-direct|static-lanes4|static-lanes8|static-lanes16 K N TILE REPS SEED PASS");
+    require(argc == 8, "usage: bench " FIR_WF_CHOICES "|direct|lanes4|lanes8|lanes16|static-direct|static-lanes4|static-lanes8|static-lanes16 K N TILE REPS SEED PASS");
 #else
-    require(argc == 8, "usage: bench " FIR_WF_KERNEL "|direct|lanes4|lanes8|lanes16 K N TILE REPS SEED PASS");
+    require(argc == 8, "usage: bench " FIR_WF_CHOICES "|direct|lanes4|lanes8|lanes16 K N TILE REPS SEED PASS");
 #endif
     size_t k = number(argv[2], 64);
     size_t n = number(argv[3], 16777216);
@@ -241,9 +246,16 @@ int wf__main_body(int argc, char **argv) {
         }
     }
 #endif
-    require(native != NULL || strcmp(argv[1], FIR_WF_KERNEL) == 0, "unknown kernel");
+    int force_sequential = 0;
+#ifdef WF_RUNTIME_CONTROL
+    /* Use the compiler's existing sequential entry without changing the
+     * result tree. Selection stays outside every core/cycle/batch interval. */
+    force_sequential = strcmp(argv[1], "wf-seq") == 0;
+#endif
+    require(native != NULL || force_sequential || strcmp(argv[1], FIR_WF_KERNEL) == 0,
+            "unknown kernel");
     uint64_t select_at = now();
-    int parallel = native ? 0 : wf__par_pool_active();
+    int parallel = (native || force_sequential) ? 0 : wf__par_pool_active();
     FilterEntry wf = parallel ? wf_research_fir_parallel : wf_research_fir_sequential;
     uint64_t select_ns = now() - select_at;
     const char *workers = getenv("WF_WORKERS");

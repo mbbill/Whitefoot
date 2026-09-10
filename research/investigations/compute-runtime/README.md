@@ -672,6 +672,78 @@ all fifteen processes and 61,455 calls pass, each with one actual lane.
 Wrong-lane and missing-lane reports reject. This validates the diagnostic's
 execution and checks; Windows execution and its performance result remain open.
 
+### Windows execution attribution at 9253ceb3
+
+Exact `9253ceb3db748a6569a031f0db27d16ee02362f6` passes local canonical
+`make check`, all twelve [gate jobs](https://github.com/mbbill/Whitefoot/actions/runs/34438394092)
+and both [native completion jobs](https://github.com/mbbill/Whitefoot/actions/runs/34438394162).
+Its [compute cohort](https://github.com/mbbill/Whitefoot/actions/runs/34438394140)
+finishes with eight successful and eleven failed jobs. The `compiler/` tree is
+unchanged from a130; neither the failures nor the changed ratios establish a
+new production regression or improvement.
+
+Windows artifact `10137129963` verifies 404 manifest entries and all 315
+processes/752,955 calls, including the one-leaf diagnostic. Its Xeon 8573C
+differs from a130's EPYC 7763. Ratios below are paired current/historical
+medians and five-pair ranges, on this host only:
+
+| Input and actual participants | Full call | Full-minus-core interval |
+| --- | --- | --- |
+| Four leaves, W4 | 1.0767 [1.0567, 1.0781] | 1.1186 [1.0885, 1.1413] |
+| One leaf, W1 candidate | 1.0428 [1.0206, 1.0660] | 1.1041 [1.0482, 1.1323] |
+| One leaf, W1 replica | 1.0644 [1.0423, 1.0921] | 1.1272 [1.0720, 1.1974] |
+
+The one-leaf images request four participants but actually start no helpers;
+the emitted leaf branch executes no task operations. Both identical current
+images retain a difference outside the core. An old/current difference can
+therefore persist without executing task scheduling; this does not determine
+how much of the four-leaf loss has the same cause. Its precise size is not a
+fixed cost: one-leaf full-call A/A is 0.9792 [0.9675, 0.9994], and outer
+A/A is 0.9463 [0.9352, 1.0182]. Four-leaf full-call A/A is tighter at
+0.9992 [0.9888, 1.0010]; that original loss remains unresolved. Neither
+subtracting the leaf ratios nor comparing the two CPU cohorts isolates a
+scheduler cost.
+
+The returning paths of `wf_research_fir_get` have identical leading 89 bytes
+in the old and candidate Windows images; their addresses differ by 416 bytes.
+The following abort-call relocation differs. This excludes extra getter
+instructions on those paths, not code placement, cache effects, heap history
+or costs elsewhere in the full-minus-core interval. It is not grounds for
+changing the scheduler's waiting policy or searching production layouts.
+
+The ordinary Intel macOS artifact now uploads successfully as `10137166008`;
+it is new evidence for unchanged compiler sources, not recovery of a130's
+missing raw data. It and Windows artifact `10137165293` each verify all
+fifteen manifest entries, 1,625 raw processes and 1,062 reproduced summary
+rows. Both reducers still fail. Neither has a default/previous wall or CPU
+cell with all five ratios above 1.05. Windows shape4/4,096/W4 under the
+existing four-leaf policy has wall/native-static 1.0225 [0.7024, 1.0380]
+and RSS 1.1863 [1.1854, 1.1901]; the default policy's wall ratio remains
+3.0921 [2.0793, 3.1126]. Intel four-leaf A/A is 1.2057
+[1.0074, 2.0012], so its timing remains unqualified.
+
+Mac ARM/Intel formal artifacts `10137264744`/`10137239933` also reproduce
+their full matrices and reducers: long core investigate counts 15/48 and
+14/90, first64 counts 19/48 and 26/90. Intel W4/65,536/tile64
+full-call/historical is 1.1334 [1.0735, 1.3977], with A/A 1.0092
+[0.9798, 1.2285] and replica/historical 1.1107 [0.9945, 1.2430]. This
+loss remains open. ARM has no full-call cell with all five ratios above 1.05;
+its noisy cells still do not qualify performance.
+
+The one-leaf control has answered its limited question, but changes tree
+depth. Replace it in place with `wf-seq`: the existing compiler-emitted
+sequential entry, 4,096 outputs and tile1024, preserving the four-leaf tree.
+The C host selects that entry outside the timed intervals; no runtime or
+language path is added. Actual-lane and selected-world checks must confirm
+sequential execution. This next control can test the original representation
+without task execution; the ordinary parallel matrix remains authoritative.
+Local macOS ARM execution of the exact added shell block verifies fifteen
+processes and 61,455 calls, with all raw means reproduced. The guard rejects
+wrong execution worlds, wrong/missing lane counts and missing headers. Both
+historical and candidate images still pass the ordinary four-lane parallel
+smoke. The emitted sequential recursion retains the branch/leaf constructors
+and contains no task operations. Native Windows timing remains unverified.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o

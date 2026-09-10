@@ -243,27 +243,32 @@ cat "$out/summary.tsv"
 cat "$out/short-summary.tsv"
 if test -n "$exe"; then
     # The unresolved Windows full-call loss includes result access/release.
-    # Reuse the same images with one leaf: this branch never offers a task.
+    # Reuse the same images and four-leaf tree with the existing sequential
+    # WF entry. No task is offered; the ordinary parallel matrix stays intact.
     # Both controls must actually run one lane despite WF_WORKERS=4. This is
     # a diagnostic, not a replacement for the parallel acceptance matrix.
-    mkdir "$out/leaf-control"
-    printf 'mode\tworkers\tn\ttile\tpass\tcore_mean_ns\tcycle_mean_ns\n' > "$out/leaf-control/means.tsv"
+    mkdir "$out/serial-control"
+    printf 'mode\tworkers\tn\ttile\tpass\tcore_mean_ns\tcycle_mean_ns\n' > "$out/serial-control/means.tsv"
     pass=0
     while test "$pass" -lt 5; do
         order='old candidate replica'
         if test "$((pass % 2))" = 1; then order='replica candidate old'; fi
         for mode in $order; do
-            log="$out/leaf-control/$mode-p$pass.tsv"
-            WF_WORKERS=4 "$out/$mode$exe" wf 16 4096 4096 4096 92821 "$pass" > "$log"
+            log="$out/serial-control/$mode-p$pass.tsv"
+            WF_WORKERS=4 "$out/$mode$exe" wf-seq 16 4096 1024 4096 92821 "$pass" > "$log"
             awk '
+                /^# runtime=/ {
+                    headers++
+                    if($3!="kernel=wf-seq" || $4!="workers_requested=4" || $5!="world=sequential")exit 1
+                }
                 /^# actual_lanes=/ {split($2,a,"="); seen++; if(a[2]!=1)exit 1}
-                END {if(seen!=1)exit 1}' "$log"
+                END {if(headers!=1 || seen!=1)exit 1}' "$log"
             awk -F '\t' -v mode="$mode" -v p="$pass" '
                 $10=="warm" {core+=$11;cycle+=$12;calls++}
                 END {
                     if(calls!=4096)exit 1
-                    printf "%s\t1\t4096\t4096\t%s\t%.3f\t%.3f\n",mode,p,core/calls,cycle/calls
-                }' "$log" >> "$out/leaf-control/means.tsv"
+                    printf "%s\t1\t4096\t1024\t%s\t%.3f\t%.3f\n",mode,p,core/calls,cycle/calls
+                }' "$log" >> "$out/serial-control/means.tsv"
         done
         pass=$((pass + 1))
     done
