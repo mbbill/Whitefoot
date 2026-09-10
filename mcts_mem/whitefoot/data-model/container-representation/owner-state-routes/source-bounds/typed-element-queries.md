@@ -5,8 +5,10 @@
 - Keep a completely selected value's relative field layout inside a supplier
   bound. An unrepresented suffix instead retains an unlocated prefix bound.
 - Share query projection between ordinary checking and callable replay.
-  Dynamic queries supply no exact destination or loan authority; arbitrary
-  bounded owned-result substitution still forgets mapped internal layout.
+  Dynamic queries supply no exact destination or loan authority.
+- Preserve complete typed choices across owned results through
+  [[typed-result-correspondence]]. Arbitrary unlocated bounds retain their
+  conservative projection without recovering internal layout.
 
 ## Moves
 
