@@ -1072,7 +1072,8 @@ chose that syntactic restriction to keep suspension simple. OWN-4 and the
 later completed-header rule already separate a temporary loan's endpoint from
 its region's formation and type-validity ceiling.
 
-The criterion recorded before the experiment was to admit the direct displaced
+The [criterion recorded in the pre-experiment revision](https://github.com/mbbill/Whitefoot/blob/5aaef50a4c37b43de1780f08abfa3db211ce7bf8/research/investigations/containers-and-resources/FOUNDATION.md#owner-identity-across-replacement-and-calls)
+was to admit the direct displaced
 Box read without a helper while retaining surviving result/view loans,
 overlapping-sibling rejection, parent suspension throughout argument and
 statement evaluation, and the existing parallel retirement obligations.
@@ -1144,7 +1145,8 @@ the incorrect rejection as a regression expectation. The genuine surviving-
 view negative and the inner-region-ending positive are retained. General view
 association remains part of the unfinished container-foundation work.
 
-Selection grounds are conditional deduction (parent suspension and independent
+The change is evidence-selected under META-5. Its more precise selection
+grounds are conditional deduction (parent suspension and independent
 surviving loans preserve the one-usable-mutable-path invariant), empirical
 (the executable and rejection controls), and provisional (the retained lexical
 ceiling and statement endpoints, without a global optimality claim). They serve
